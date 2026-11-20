@@ -31,13 +31,14 @@ import crypto from "node:crypto";
 import zlib from "node:zlib";
 import { pool } from "../db";
 import { pq, type Queryable } from "./connectors/pq";
-import { decryptSecret, encryptSecret } from "./secret-vault";
+import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secret-vault";
 import { DomainError } from "../errors";
 import { createLogger } from "../config/logger";
 
 const log = createLogger("backup-service");
 
 export const BACKUP_FORMAT_VERSION = "2.0";
+const BANK_GL_MIGRATION_FINDINGS = "bank_gl_migration_findings";
 
 /** Company-scoped tables deliberately NOT in a backup, and why. */
 export const BACKUP_EXCLUDED_TABLES: Readonly<Record<string, string>> = {
@@ -49,6 +50,8 @@ export const BACKUP_EXCLUDED_TABLES: Readonly<Record<string, string>> = {
   company_invitations: "access control",
   api_keys: "credentials: a restore must never revive a revoked key",
   bank_feed_oauth_states: "short-lived OAuth state",
+  [BANK_GL_MIGRATION_FINDINGS]:
+    "operator-only migration diagnostics can contain references to other companies and must survive tenant restores",
   portal_login_codes: "short-lived credentials",
   portal_access_tokens: "credentials",
   payslip_tokens: "credentials",
@@ -328,7 +331,7 @@ export function openSnapshot(
   checksum: string | null
 ): { json: string; snapshot: CompanySnapshot | LegacySnapshot } {
   let json: string;
-  if (stored.startsWith("enc:v1:")) {
+  if (isEncryptedSecret(stored)) {
     const plain = decryptSecret(stored) ?? "";
     json = plain.startsWith("gz1:")
       ? zlib.gunzipSync(Buffer.from(plain.slice(4), "base64")).toString("utf8")
@@ -348,6 +351,22 @@ export function openSnapshot(
     }
   }
   return { json, snapshot: JSON.parse(json) };
+}
+
+/** Older v2 snapshots can contain migration diagnostics that current backups exclude. */
+export function exportSnapshot(
+  stored: string,
+  checksum: string | null,
+  encrypted: boolean
+): string {
+  const { json, snapshot } = openSnapshot(stored, checksum);
+  if (!("tables" in snapshot) || !Object.hasOwn(snapshot.tables, BANK_GL_MIGRATION_FINDINGS)) {
+    return encrypted ? stored : json;
+  }
+  delete snapshot.tables[BANK_GL_MIGRATION_FINDINGS];
+  return encrypted && isEncryptedSecret(stored)
+    ? sealSnapshot(snapshot).sealed
+    : JSON.stringify(snapshot);
 }
 
 interface LegacySnapshot {

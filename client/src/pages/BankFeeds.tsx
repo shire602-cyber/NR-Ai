@@ -149,13 +149,14 @@ export default function BankFeeds() {
     () => (providers?.statuses ?? []).filter((p) => p.configured),
     [providers?.statuses]
   );
+  const noProvider = !providersLoading && available.length === 0;
   const connectionFor = (accountId: string) =>
     (connections ?? []).find((c) => c.provider !== "manual" && c.bankAccountId === accountId);
 
   const header = (
     <PageHeader
       eyebrow={tt["shell.nav.banking"]}
-      title={tt["banking.feeds.title"]}
+      title={tt[noProvider ? "banking.feeds.unavailableTitle" : "banking.feeds.title"]}
     />
   );
 
@@ -181,7 +182,7 @@ export default function BankFeeds() {
     );
   }
 
-  if (available.length === 0) {
+  if (noProvider) {
     return (
       <div className="space-y-6">
         {header}
@@ -189,7 +190,7 @@ export default function BankFeeds() {
           <EmptyState
             size="md"
             icon={Landmark}
-            title={tt["banking.feeds.unavailableTitle"]}
+            title={tt["banking.recon.importStatement"]}
             description={tt["banking.feeds.unavailableBody"]}
             action={{
               label: tt["banking.feeds.importStatement"],

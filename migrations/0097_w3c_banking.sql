@@ -46,18 +46,54 @@ CREATE INDEX IF NOT EXISTS "idx_bank_transactions_import_batch"
   ON "bank_transactions" ("import_batch_id") WHERE "import_batch_id" IS NOT NULL;
 --> statement-breakpoint
 
+-- ── bank_transaction_matches (R06-02, R06-21) ─────────────────────────────────
+CREATE TABLE IF NOT EXISTS "bank_transaction_matches" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "company_id" uuid NOT NULL REFERENCES "companies"("id") ON DELETE CASCADE,
+  "bank_transaction_id" uuid NOT NULL REFERENCES "bank_transactions"("id") ON DELETE CASCADE,
+  "match_group_id" uuid NOT NULL,
+  "target_type" text NOT NULL,
+  "target_id" uuid,
+  "amount" numeric(15,2) NOT NULL DEFAULT 0,
+  "journal_entry_id" uuid REFERENCES "journal_entries"("id") ON DELETE SET NULL,
+  "payment_id" uuid,
+  "account_id" uuid,
+  "created_journal" boolean NOT NULL DEFAULT false,
+  "status" text NOT NULL DEFAULT 'active',
+  "idempotency_key" text,
+  "created_by" uuid,
+  "created_at" timestamp DEFAULT now() NOT NULL,
+  "reversed_at" timestamp,
+  "reversed_by" uuid
+);
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_bank_txn_matches_txn" ON "bank_transaction_matches" ("bank_transaction_id");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_bank_txn_matches_group" ON "bank_transaction_matches" ("match_group_id");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_bank_txn_matches_target" ON "bank_transaction_matches" ("company_id", "target_type", "target_id");
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_bank_txn_matches_idempotency"
+  ON "bank_transaction_matches" ("company_id", "idempotency_key")
+  WHERE "idempotency_key" IS NOT NULL;
+--> statement-breakpoint
+
 -- ── R06-18: data check. A row is reconciled exactly when match_status = matched. ─
 UPDATE "bank_transactions" SET "match_status" = 'unmatched'
  WHERE "match_status" IS NULL OR "match_status" NOT IN ('unmatched', 'suggested', 'matched');
 --> statement-breakpoint
 -- R06-04: rows the old rule engine flagged reconciled with no entry, payment or link go back to
--- the worklist (the books never recorded them).
-UPDATE "bank_transactions"
+-- the worklist. On replay, an existing active or pending allocation is evidence of a match.
+UPDATE "bank_transactions" bt
    SET "is_reconciled" = false, "match_status" = 'unmatched'
- WHERE "is_reconciled" = true
-   AND "matched_journal_entry_id" IS NULL
-   AND "matched_invoice_id" IS NULL
-   AND "matched_receipt_id" IS NULL;
+ WHERE bt."is_reconciled" = true
+   AND bt."matched_journal_entry_id" IS NULL
+   AND bt."matched_invoice_id" IS NULL
+   AND bt."matched_receipt_id" IS NULL
+   AND NOT EXISTS (
+     SELECT 1 FROM "bank_transaction_matches" m
+      WHERE m."bank_transaction_id" = bt."id" AND m."status" IN ('active', 'pending')
+   );
 --> statement-breakpoint
 UPDATE "bank_transactions" SET "match_status" = 'matched'
  WHERE "is_reconciled" = true AND "match_status" <> 'matched';
@@ -69,6 +105,7 @@ UPDATE "bank_transactions" SET "match_status" = 'suggested'
 -- ── R06-01: GL link comes from the managed bank account ───────────────────────
 -- Clear stale matches above so their GL links are repaired on the first pass.
 -- A UUID foreign key alone does not guarantee company ownership.
+-- Preserve the cached GL on already allocated lines when replaying this migration.
 UPDATE "bank_transactions" bt
    SET "bank_account_id" = gl."id"
   FROM "bank_accounts" ba
@@ -76,7 +113,11 @@ UPDATE "bank_transactions" bt
  WHERE bt."bank_statement_account_id" = ba."id"
    AND bt."company_id" = ba."company_id"
    AND bt."bank_account_id" IS DISTINCT FROM gl."id"
-   AND (bt."bank_account_id" IS NULL OR bt."is_reconciled" = false);
+   AND (bt."bank_account_id" IS NULL OR bt."is_reconciled" = false)
+   AND NOT EXISTS (
+     SELECT 1 FROM "bank_transaction_matches" m
+      WHERE m."bank_transaction_id" = bt."id" AND m."status" IN ('active', 'pending')
+   );
 --> statement-breakpoint
 
 CREATE OR REPLACE FUNCTION "bank_transactions_match_state"() RETURNS trigger AS $$
@@ -133,72 +174,44 @@ CREATE TABLE IF NOT EXISTS "bank_import_batches" (
 CREATE INDEX IF NOT EXISTS "idx_bank_import_batches_company" ON "bank_import_batches" ("company_id", "created_at");
 --> statement-breakpoint
 
--- ── bank_transaction_matches (R06-02, R06-21) ─────────────────────────────────
-CREATE TABLE IF NOT EXISTS "bank_transaction_matches" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-  "company_id" uuid NOT NULL REFERENCES "companies"("id") ON DELETE CASCADE,
-  "bank_transaction_id" uuid NOT NULL REFERENCES "bank_transactions"("id") ON DELETE CASCADE,
-  "match_group_id" uuid NOT NULL,
-  "target_type" text NOT NULL,
-  "target_id" uuid,
-  "amount" numeric(15,2) NOT NULL DEFAULT 0,
-  "journal_entry_id" uuid REFERENCES "journal_entries"("id") ON DELETE SET NULL,
-  "payment_id" uuid,
-  "account_id" uuid,
-  "created_journal" boolean NOT NULL DEFAULT false,
-  "status" text NOT NULL DEFAULT 'active',
-  "idempotency_key" text,
-  "created_by" uuid,
-  "created_at" timestamp DEFAULT now() NOT NULL,
-  "reversed_at" timestamp,
-  "reversed_by" uuid
-);
---> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "idx_bank_txn_matches_txn" ON "bank_transaction_matches" ("bank_transaction_id");
---> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "idx_bank_txn_matches_group" ON "bank_transaction_matches" ("match_group_id");
---> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "idx_bank_txn_matches_target" ON "bank_transaction_matches" ("company_id", "target_type", "target_id");
---> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "uq_bank_txn_matches_idempotency"
-  ON "bank_transaction_matches" ("company_id", "idempotency_key")
-  WHERE "idempotency_key" IS NOT NULL;
---> statement-breakpoint
 -- Existing reconciled rows get the allocation unmatch needs (created entry vs linked document).
-INSERT INTO "bank_transaction_matches"
-  ("company_id", "bank_transaction_id", "match_group_id", "target_type", "target_id", "amount",
-   "journal_entry_id", "payment_id", "created_journal", "status", "created_at")
-SELECT bt."company_id", bt."id", gen_random_uuid(),
-       CASE
-         WHEN bt."matched_invoice_id" IS NOT NULL THEN 'invoice'
-         WHEN bt."matched_receipt_id" IS NOT NULL THEN 'receipt'
-         WHEN je."source" = 'bank_reconciliation' AND je."source_id" = bt."id" THEN 'entry'
-         ELSE 'journal'
-       END,
-       COALESCE(bt."matched_invoice_id", bt."matched_receipt_id", bt."matched_journal_entry_id"),
-       abs(bt."amount"),
-       bt."matched_journal_entry_id",
-       ip."id",
-       COALESCE(je."source" = 'bank_reconciliation' AND je."source_id" = bt."id", false),
-       'active',
-       bt."created_at"
-  FROM "bank_transactions" bt
-  LEFT JOIN "journal_entries" je ON je."id" = bt."matched_journal_entry_id"
-  LEFT JOIN LATERAL (
-    SELECT p."id" FROM "invoice_payments" p
-     WHERE p."journal_entry_id" = bt."matched_journal_entry_id"
-       AND bt."matched_invoice_id" IS NOT NULL
-     LIMIT 1
-  ) ip ON true
- WHERE bt."is_reconciled" = true
-   AND NOT EXISTS (
-     SELECT 1 FROM "bank_transaction_matches" m WHERE m."bank_transaction_id" = bt."id"
-   );
---> statement-breakpoint
+-- Set matched_type only for allocations created here, never for a live match on replay.
+WITH inserted AS (
+  INSERT INTO "bank_transaction_matches"
+    ("company_id", "bank_transaction_id", "match_group_id", "target_type", "target_id", "amount",
+     "journal_entry_id", "payment_id", "created_journal", "status", "created_at")
+  SELECT bt."company_id", bt."id", gen_random_uuid(),
+         CASE
+           WHEN bt."matched_invoice_id" IS NOT NULL THEN 'invoice'
+           WHEN bt."matched_receipt_id" IS NOT NULL THEN 'receipt'
+           WHEN je."source" = 'bank_reconciliation' AND je."source_id" = bt."id" THEN 'entry'
+           ELSE 'journal'
+         END,
+         COALESCE(bt."matched_invoice_id", bt."matched_receipt_id", bt."matched_journal_entry_id"),
+         abs(bt."amount"),
+         bt."matched_journal_entry_id",
+         ip."id",
+         COALESCE(je."source" = 'bank_reconciliation' AND je."source_id" = bt."id", false),
+         'active',
+         bt."created_at"
+    FROM "bank_transactions" bt
+    LEFT JOIN "journal_entries" je ON je."id" = bt."matched_journal_entry_id"
+    LEFT JOIN LATERAL (
+      SELECT p."id" FROM "invoice_payments" p
+       WHERE p."journal_entry_id" = bt."matched_journal_entry_id"
+         AND bt."matched_invoice_id" IS NOT NULL
+       LIMIT 1
+    ) ip ON true
+   WHERE bt."is_reconciled" = true
+     AND NOT EXISTS (
+       SELECT 1 FROM "bank_transaction_matches" m WHERE m."bank_transaction_id" = bt."id"
+     )
+   RETURNING "bank_transaction_id", "target_type"
+)
 UPDATE "bank_transactions" bt
    SET "matched_type" = m."target_type"
-  FROM "bank_transaction_matches" m
- WHERE m."bank_transaction_id" = bt."id" AND m."status" = 'active' AND bt."matched_type" IS NULL;
+  FROM inserted m
+ WHERE m."bank_transaction_id" = bt."id" AND bt."matched_type" IS NULL;
 --> statement-breakpoint
 
 -- ── bank_reconciliations (R06-20) ─────────────────────────────────────────────

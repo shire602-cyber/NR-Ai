@@ -37,11 +37,14 @@ recovery procedures are in the release runbook. [Deploy runbook](release/DEPLOY-
    of the seeded baseline. Verify the original `0097` ledger hash and confirm the legacy GL
    states. Run the release entry point with only `0138` pending and verify the repair, ownership
    findings, and original ledger entries. Repeat the release migration to check the resulting
-   state.
+   state. Replay the forward repair SQL directly, then replay all 50 files from `0089` through
+   `0138` in journal order with the pending allocation and existing reconciliation still present.
 4. **Preservation and replay.** Compare the seeded business records before and after upgrade and
    check the expected backfills. Run the tracked release entry point again against the migrated
    databases and compare the schema, rows, sequences, and ledger. Replay the `0089`
-   through `0138` SQL in order on a separate copy to test the migration statements themselves.
+   through `0138` SQL in order on a separate copy with an active allocation whose legacy
+   reconciliation fields are empty. Require both ordered replays to preserve the schema, ledger,
+   table rows, and sequences.
    The earlier migrations include one-time DDL, such as the unguarded `CREATE TABLE` in `0000`.
    The ordered first run and ledger check cover those files.
 5. **Failure and recovery.** Force `0134` to encounter an occupied legacy subscription table.
@@ -70,7 +73,10 @@ The banking fixture includes four stale matches with a wrong same-company GL lin
 invoice matches. Two additional rows isolate the ownership checks. One links to another company's
 statement account and one links to a local statement account with a foreign GL target. The test
 verifies both findings and the retention of the existing GL links. The forward-upgrade fixture
-also covers an empty GL link, an existing reconciliation, and a pending allocation.
+also covers an empty GL link, an existing reconciliation, and a pending allocation whose cached
+GL differs from its managed statement account's current GL. The full SQL replay preserves that
+pending allocation and the earlier reconciliation. The upgrade-copy replay also preserves an
+active allocation, its reconciled status, and its empty legacy match and GL fields.
 
 ## Migration fixes
 
@@ -80,7 +86,9 @@ also covers an empty GL link, an existing reconciliation, and a pending allocati
 - `0097` repairs stale reconciliation state before filling in the GL account from the managed
   bank account. The original order fixed the reconciliation flags on the first pass and needed a
   second pass to correct the GL link. The fixture now verifies both repairs on the first pass,
-  together with separate checks for statement ownership and target GL ownership.
+  together with separate checks for statement ownership and target GL ownership. The migration
+  now checks for active or pending allocations before clearing reconciliation flags or filling
+  GL links. It fills the match type only on rows for which it creates a legacy allocation.
   [0097 migration](../migrations/0097_w3c_banking.sql)
 - `0138` repairs eligible legacy GL links on databases that already ran `0097`. The transaction,
   statement bank account, and target GL account must belong to the same company. Reconciled rows
@@ -118,41 +126,47 @@ Use the related account IDs in `details` to review ownership and assess the inte
 the affected company's records. A rerun preserves the existing finding for each transaction and
 kind.
 
+Findings are for database operators and can reference another company's account identifiers.
+Tenant backup creation, downloads of older tenant backups, and tenant restores exclude these
+diagnostics. Full database archives retain them.
+
 ## Results
 
-The rehearsal passed on 2026-11-21 (Dubai time) with PostgreSQL 16.16 and Node 22.22.0. The clean
+The latest local rehearsal passed with PostgreSQL 16.16 and Node 22.22.2. The clean
 and upgraded release databases had identical schemas and 138 correctly ordered ledger entries.
 Seeded business data matched across both upgrade paths. On the previously migrated copy, the
 release appended the one `0138` entry, repaired the eligible GL links, and recorded two distinct
-ownership findings. The tracked reruns, ordered replay of all 50 pending files, and direct replay
-of the forward repair preserved the checked schema, rows, and sequences. Both automated rehearsal
-tests passed in a separate run (45.1 seconds).
+ownership findings. The tracked reruns, both ordered replays of all 50 files, and direct replay
+of the forward repair preserved the checked schema, rows, and sequences. A separate run with
+the preceding revision of the migration failed the full historical replay because the bank
+transaction rows changed. Both automated rehearsal tests passed in 45.9 seconds.
 
 | Step                                                  |  Elapsed |
 | ----------------------------------------------------- | -------: |
-| Clean release migration (138 files)                   | 3,622 ms |
-| Tracked rerun on clean database                       | 1,166 ms |
-| Apply baseline (88 files) and seed                    | 1,714 ms |
-| Create custom-format backup (425,635 bytes)           |   241 ms |
+| Clean release migration (138 files)                   | 4,367 ms |
+| Tracked rerun on clean database                       | 1,108 ms |
+| Apply baseline (88 files) and seed                    | 1,625 ms |
+| Create custom-format backup (425,634 bytes)           |   217 ms |
 | Verify by restoring the backup                        |   808 ms |
-| Migrate a seeded copy through `0097` and check guards |   238 ms |
-| Time the pending files individually on a clone        | 1,087 ms |
-| Seeded upgrade using Drizzle Kit                      | 1,728 ms |
-| Guarded failure at `0134` and transaction rollback    | 3,867 ms |
-| Restore the pre-upgrade backup after the failure      |   878 ms |
-| Seeded release migration after restore (50 files)     | 2,388 ms |
-| Tracked rerun on upgraded database                    | 1,292 ms |
-| Ordered SQL replay on upgraded copy (50 files)        |   204 ms |
-| Restore the separate historical-upgrade copy          |   800 ms |
-| Apply the historical files through `0137`             |   955 ms |
-| Release migration with only `0138` pending            | 2,060 ms |
-| Tracked rerun after the forward repair                | 1,265 ms |
-| Direct replay of the forward repair SQL               |    15 ms |
+| Migrate a seeded copy through `0097` and check guards |   206 ms |
+| Time the pending files individually on a clone        | 1,009 ms |
+| Seeded upgrade using Drizzle Kit                      | 1,586 ms |
+| Guarded failure at `0134` and transaction rollback    | 2,238 ms |
+| Restore the pre-upgrade backup after the failure      |   752 ms |
+| Seeded release migration after restore (50 files)     | 2,028 ms |
+| Tracked rerun on upgraded database                    | 1,188 ms |
+| Ordered SQL replay on upgraded copy (50 files)        |   181 ms |
+| Restore the separate historical-upgrade copy          |   708 ms |
+| Apply the historical files through `0137`             |   939 ms |
+| Release migration with only `0138` pending            | 1,143 ms |
+| Tracked rerun after the forward repair                | 1,167 ms |
+| Direct replay of the forward repair SQL               |    13 ms |
+| Ordered SQL replay with live allocations (50 files)   |   216 ms |
 
 The release and Drizzle Kit measurements include command startup. The timing copy ran one
 transaction per file and produced the same schema as Drizzle Kit. Its file timings added up to
-947 ms, with `0103_w4d_portals_comms` (76 ms), `0108_w5d_firm` (65 ms), and
-`0096_w3b_purchases` (51 ms) the slowest in this run. A separate test inserted a duplicate active
+872 ms, with `0103_w4d_portals_comms` (76 ms), `0108_w5d_firm` (62 ms), and
+`0096_w3b_purchases` (50 ms) the slowest in this run. A separate test inserted a duplicate active
 Starter subscription and verified that the multiset check rejected it.
 
 Separate local checks covered both historical `0136` states. Starting with either the portal

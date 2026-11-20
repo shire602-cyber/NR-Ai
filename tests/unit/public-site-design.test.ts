@@ -9,6 +9,11 @@ import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
+import {
+  bankingDescriptionSelectors,
+  publicBankFeedPromises,
+  publicBankingCopy,
+} from "../e2e/lib/public-banking-copy.mjs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -75,6 +80,7 @@ const UNSUPPORTED_CLAIMS = [
   /FTA[-\s]?(accredited|compliant|registered|approved)/i,
   /submits? (your|the) (VAT )?return(s)? (to|with) the FTA automatically/i,
   /(?:connect to|sync from) (?:a |your )?(?:live )?bank feeds?/i,
+  ...publicBankFeedPromises,
   /money-back/i,
   /UAE-hosted/i,
   // "Most popular" is a plan-card highlight the owner asked for (X6b); it states no user count.
@@ -83,6 +89,44 @@ const UNSUPPORTED_CLAIMS = [
 ];
 
 describe("D1 public site", () => {
+  it.each(["en", "ar"] as const)(
+    "keeps the %s banking FAQ, product and metadata CSV-focused",
+    async (locale) => {
+      const { default: PhaseRoot } =
+        await import("../../client/src/components/marketing/phase/PhaseRoot");
+      const previousUrl = window.location.href;
+      const { question, answer } = publicBankingCopy[locale];
+      try {
+        window.history.replaceState(null, "", `/${locale}`);
+        await act(async () => root.render(createElement(PhaseRoot)));
+        const faq = [...container.querySelectorAll("details")].find(
+          (details) => details.querySelector("summary")?.textContent?.trim() === question
+        );
+        expect(faq?.querySelector("p")?.textContent).toBe(answer);
+        const { t } = await import("../../client/src/lib/i18n");
+        expect(t[locale]["marketing.faq3A"]).toBe(answer);
+        expect(t[locale]["banking.feeds.unavailableBody"]).toBe(answer);
+        expect(t[locale]["serverErrors.BANK_FEED_NOT_CONFIGURED"]).toBe(answer);
+        for (const promise of publicBankFeedPromises) {
+          expect(container.textContent ?? "").not.toMatch(promise);
+        }
+
+        await act(async () =>
+          window.history.pushState(null, "", `/${locale}/product/bank-reconciliation`)
+        );
+        expect(container.querySelector(".phase-lead")?.textContent).toBe(answer);
+        for (const selector of bankingDescriptionSelectors) {
+          expect(document.head.querySelector(selector)?.getAttribute("content")).toBe(answer);
+        }
+        for (const promise of publicBankFeedPromises) {
+          expect(container.textContent ?? "").not.toMatch(promise);
+        }
+      } finally {
+        window.history.replaceState(null, "", previousUrl);
+      }
+    }
+  );
+
   it("[D1] the landing page leads with an honest value proposition and sets its SEO meta", async () => {
     const { default: PhaseSite } =
       await import("../../client/src/components/marketing/phase/PhaseSite");
@@ -90,16 +134,18 @@ describe("D1 public site", () => {
     const h1 = container.querySelector("h1");
     expect(h1?.textContent).toBe("Accounting and VAT for UAE businesses");
     expect(document.title).toContain(h1?.textContent);
-    expect(document.head.querySelector('meta[name="description"]')?.getAttribute("content")).toContain(
-      "Send bilingual invoices"
-    );
+    expect(
+      document.head.querySelector('meta[name="description"]')?.getAttribute("content")
+    ).toContain("Send bilingual invoices");
     // Primary CTAs keep their routes.
     const register = container.querySelector('[data-testid="button-hero-start"]');
     expect(register?.getAttribute("href")).toBe("/register");
     expect(container.querySelector('[data-testid="button-hero-demo"]')?.getAttribute("href")).toBe(
       "/en/book-a-demo"
     );
-    expect(container.textContent).toContain("Prepare and review VAT 201 in the app, then submit it in EmaraTax.");
+    expect(container.textContent).toContain(
+      "Prepare and review VAT 201 in the app, then submit it in EmaraTax."
+    );
     for (const claim of UNSUPPORTED_CLAIMS) {
       expect(container.textContent ?? "", String(claim)).not.toMatch(claim);
     }

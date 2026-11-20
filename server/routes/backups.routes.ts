@@ -41,7 +41,7 @@ import {
   companyScopedTables,
   createCompanyBackup,
   exclusionReason,
-  openSnapshot,
+  exportSnapshot,
   restoreBackupIntoCompany,
   restoreCompanyBackup,
   runScheduledBackups,
@@ -307,7 +307,7 @@ export function registerBackupRoutes(app: Express) {
         throw new DomainError("BACKUP_NOT_COMPLETE", 409, undefined, "Backup is not complete");
       }
       const encrypted = req.query.format === "encrypted";
-      const body = encrypted ? stored : openSnapshot(stored, rows[0].checksum).json;
+      const body = exportSnapshot(stored, rows[0].checksum, encrypted);
       await storage.createActivityLog({
         companyId: backup.companyId,
         userId: req.user!.id,

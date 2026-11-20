@@ -46,5 +46,7 @@ test("rehearses the journal and rollback entirely on disposable PostgreSQL", () 
   assert.match(result.stdout, /Forward GL repair and tenant mismatch findings verified/);
   assert.match(result.stdout, /Tracked rerun historical_upgrade \d+ ms/);
   assert.match(result.stdout, /Base-to-head direct SQL replay \d+ ms/);
+  assert.match(result.stdout, /Ordered SQL replay with live allocations \d+ ms/);
+  assert.match(result.stdout, /Live allocation state and GL links preserved/);
   assert.match(result.stdout, /Migration rehearsal passed/);
 });

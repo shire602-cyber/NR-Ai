@@ -432,6 +432,10 @@ async function checkHistoricalUpgrade() {
   const before = await databaseState(database);
   await timed("Base-to-head direct SQL replay", () => replaySql(database, historicalCount));
   verifyState(await databaseState(database), before, "Base-to-head direct SQL replay");
+  await timed("Ordered SQL replay with live allocations", () => replaySql(database, baselineCount));
+  verifyState(await databaseState(database), before, "Ordered SQL replay with live allocations");
+  fixture(database, "assert-forward-bank.sql");
+  console.log("Live allocation state and GL links preserved");
 }
 
 async function replaySql(database, start) {
@@ -452,6 +456,7 @@ async function replaySql(database, start) {
 
 async function checkRawReplay() {
   createDatabase("raw_replay", "upgrade");
+  fixture("raw_replay", "seed-replay-bank.sql");
   const before = await databaseState("raw_replay");
   await timed("Ordered SQL replay " + String(files.length - baselineCount) + " files", () =>
     replaySql("raw_replay", baselineCount)
