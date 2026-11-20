@@ -989,7 +989,7 @@
   "pages.payrollNoAccessTitle": "Payroll is not available to your role",
   "pages.payrollNoAccessBody": "Payroll and employee pay are visible to owners, administrators, accountants and approvers. Ask the company owner if you need access.",
   "pages.billPayTotalRemaining": "Total: {total} | Remaining: {remaining}",
-  "pages.receiptsSubtitleManual": "Upload receipts and enter the details yourself, or attach them as proof",
+  "pages.receiptsSubtitleManual": "Upload a receipt, then enter its details and save the image with the expense.",
   "pages.subscriptionArrivesLater": "Arrives later",
   "pages.movementOpening": "Opening stock",
   "pages.unitShort.each": "each",
@@ -1005,10 +1005,10 @@
   "pages.subscriptionFirmBilled": "Billed through your accounting firm",
   "pages.subscriptionPlanPageDescription": "Your plan, this month's usage and billing documents.",
   "pages.subscriptionStateTrial": "Trial",
-  "pages.subscriptionStateReadOnly": "Read-only",
+  "pages.subscriptionStateReadOnly": "Locked",
   "pages.subscriptionTrialEnds": "Trial ends",
   "pages.subscriptionTrialExplain": "Every feature is open during the trial. Choosing a plan alone doesn't keep you working: activate one before it ends.",
-  "pages.subscriptionExpiredExplain": "Your data is safe and readable. Choose a plan and activate it to add and change records again.",
+  "pages.subscriptionExpiredExplain": "Choose and activate a paid plan to regain access. Your data is saved.",
   "pages.subscriptionUnlimitedUsersNote": "Every plan includes unlimited users.",
   "pages.subscriptionChooseAPlan": "Choose a plan",
   "pages.subscriptionChoosePlanContact": "Choose {plan}",
@@ -1033,5 +1033,5 @@
   "pages.subscriptionBilled_monthly": "billed monthly",
   "pages.subscriptionBilled_yearly": "billed yearly",
   "pages.subscriptionTrialOpen": "Every feature is open during the trial.",
-  "pages.subscriptionExpiredSafe": "Your data is safe and readable."
+  "pages.subscriptionExpiredSafe": "Your data is saved."
 }

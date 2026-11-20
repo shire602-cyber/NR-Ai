@@ -1718,7 +1718,7 @@ export default function Receipts() {
         title={t["purchases.receiptsTitle"]}
         description={
           autoReadUnavailable
-            ? t["pageLabels.receiptsManualWorkflow"]
+            ? t["pages.receiptsSubtitleManual"]
             : (t as any).receiptScannerSubtitle
         }
         actions={

@@ -189,9 +189,9 @@ describe("Mobile launch UX guards", () => {
   describe("Bank import launch UX", () => {
     it("keeps a sample CSV path for buyers without live bank feeds", () => {
       expect(source).toContain("muhasib-sample-bank-statement.csv");
-      expect(source).toContain('t["bankReconciliation.liveBankFeedsAreNot"]');
+      expect(source).not.toContain('t["bankReconciliation.liveBankFeedsAreNot"]');
       // Step 1 / F4: the supported-format lines are catalog copy (en and ar), not page literals.
-      for (const key of ["formatCsv", "formatDelimiters", "formatDrCr"]) {
+      for (const key of ["formatCsv", "formatDelimiters", "formatDrCr", "csvRequired"]) {
         expect(source).toContain(`banking.import.${key}`);
       }
       const bankingEn = JSON.parse(readFileSync("client/src/locales/en/banking.json", "utf8"));
@@ -203,6 +203,7 @@ describe("Mobile launch UX guards", () => {
         "Amount + Dr/Cr type columns are supported"
       );
       expect(source).toContain('data-testid="button-download-sample-bank-csv"');
+      expect(source).not.toContain("application/pdf");
     });
 
     it("keeps duplicate import feedback visible to users", () => {

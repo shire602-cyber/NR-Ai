@@ -1,3 +1,4 @@
+import { siteLocale } from "@/components/marketing/phase/routes";
 // zod 3-compatible validation messages for forms (R17-27). Installed by the app root
 // (and by the public pages' providers) rather than main.tsx, so the landing page does
 // not download zod before its first paint (D1b).
@@ -42,7 +43,7 @@ const AuthCallback = lazyWithReload(() => import("@/pages/AuthCallback"));
 const ForgotPassword = lazyWithReload(() => import("@/pages/ForgotPassword"));
 const ResetPassword = lazyWithReload(() => import("@/pages/ResetPassword"));
 const Dashboard = lazyWithReload(() => import("@/pages/Dashboard"));
-const LandingPage = lazyWithReload(() => import("@/pages/MuhasibLanding"));
+const PhaseSite = lazyWithReload(() => import("@/components/marketing/phase/PhaseSite"));
 const Services = lazyWithReload(() => import("@/pages/Services"));
 const Pricing = lazyWithReload(() => import("@/pages/Pricing"));
 const PublicInvoiceView = lazyWithReload(() => import("@/pages/PublicInvoiceView"));
@@ -214,6 +215,7 @@ import { canRunCompanyOnboarding } from "@/lib/companyRole";
 import { PlanLimitDialog } from "@/components/billing/PlanLimitDialog";
 import { PlanLockBanner } from "@/components/billing/PlanLockBanner";
 import { ReadOnlyForms } from "@/components/billing/ReadOnlyForms";
+import { TrialAccessGate } from "@/components/billing/TrialAccessGate";
 import { CommandPaletteProvider } from "@/components/CommandPaletteProvider";
 import { GlobalShortcutsProvider } from "@/components/ShortcutsHelp";
 import { SkipLink } from "@/components/SkipLink";
@@ -257,6 +259,20 @@ function FirmContextBanner() {
         {t["shell.backToFirm"]}
       </Button>
     </div>
+  );
+}
+
+function WorkspaceLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <TrialAccessGate
+      billing={
+        <Suspense fallback={<PageLoader variant="form" />}>
+          <Subscription />
+        </Suspense>
+      }
+    >
+      <ProtectedLayout>{children}</ProtectedLayout>
+    </TrialAccessGate>
   );
 }
 
@@ -506,11 +522,11 @@ function Router() {
   // Landing page (public only).
   // `initial={false}` skips the entry fade so the page is visible immediately;
   // a stalled or throttled animation must never leave the root at opacity:0.
-  if (pathname === "/" && !user) {
+  if ((pathname === "/" && !user) || siteLocale(pathname)) {
     return (
       <div key="landing">
         <Suspense fallback={<MinimalPageLoader />}>
-          <LandingPage />
+          <PhaseSite />
         </Suspense>
       </div>
     );
@@ -545,9 +561,11 @@ function Router() {
   if (pathname === "/onboarding") {
     return (
       <ProtectedRoute>
-        <Suspense fallback={<PageLoader variant="form" />}>
-          <Onboarding />
-        </Suspense>
+        <TrialAccessGate>
+          <Suspense fallback={<PageLoader variant="form" />}>
+            <Onboarding />
+          </Suspense>
+        </TrialAccessGate>
       </ProtectedRoute>
     );
   }
@@ -615,7 +633,7 @@ function Router() {
   // Protected routes (with sidebar)
   return (
     <ProtectedRoute>
-      <ProtectedLayout>
+      <WorkspaceLayout>
         <Suspense fallback={<PageLoader variant="list" />}>
           <Switch>
             <Route path="/dashboard" component={Dashboard} />
@@ -869,7 +887,7 @@ function Router() {
             <Route component={NotFound} />
           </Switch>
         </Suspense>
-      </ProtectedLayout>
+      </WorkspaceLayout>
     </ProtectedRoute>
   );
 }

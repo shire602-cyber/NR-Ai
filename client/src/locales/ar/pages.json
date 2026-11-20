@@ -989,7 +989,7 @@
   "pages.payrollNoAccessTitle": "كشوف الرواتب غير متاحة لدورك",
   "pages.payrollNoAccessBody": "تظهر الرواتب وأجور الموظفين للمالكين والمسؤولين والمحاسبين والمعتمِدين. اطلب من مالك الشركة إذا كنت بحاجة إلى صلاحية الوصول.",
   "pages.billPayTotalRemaining": "الإجمالي: {total} | المتبقي: {remaining}",
-  "pages.receiptsSubtitleManual": "ارفع الإيصالات وأدخل التفاصيل بنفسك، أو أرفقها كإثبات",
+  "pages.receiptsSubtitleManual": "ارفع إيصالًا، ثم أدخل تفاصيله واحفظ الصورة مع المصروف.",
   "pages.subscriptionArrivesLater": "يصل لاحقًا",
   "pages.movementOpening": "رصيد افتتاحي",
   "pages.unitShort.each": "لكل وحدة",
@@ -1005,10 +1005,10 @@
   "pages.subscriptionFirmBilled": "تُفوتر عبر مكتب المحاسبة",
   "pages.subscriptionPlanPageDescription": "خطتك واستخدام هذا الشهر ومستندات الفوترة.",
   "pages.subscriptionStateTrial": "تجربة",
-  "pages.subscriptionStateReadOnly": "للقراءة فقط",
+  "pages.subscriptionStateReadOnly": "مقفلة",
   "pages.subscriptionTrialEnds": "تنتهي التجربة",
   "pages.subscriptionTrialExplain": "كل الميزات متاحة خلال الفترة التجريبية. اختيار خطة وحده لا يُبقي عملك مستمرًا: فعّل خطة قبل انتهائها.",
-  "pages.subscriptionExpiredExplain": "بياناتك محفوظة ومتاحة للقراءة. اختر خطة وفعّلها لتعود إلى إضافة السجلات وتعديلها.",
+  "pages.subscriptionExpiredExplain": "اختر خطة مدفوعة وفعّلها لاستعادة الوصول. بياناتك محفوظة.",
   "pages.subscriptionUnlimitedUsersNote": "كل خطة تشمل عددًا غير محدود من المستخدمين.",
   "pages.subscriptionChooseAPlan": "اختر خطة",
   "pages.subscriptionChoosePlanContact": "اختر {plan}",
@@ -1033,5 +1033,5 @@
   "pages.subscriptionBilled_monthly": "تُدفع شهريًا",
   "pages.subscriptionBilled_yearly": "تُدفع سنويًا",
   "pages.subscriptionTrialOpen": "كل الميزات متاحة خلال الفترة التجريبية.",
-  "pages.subscriptionExpiredSafe": "بياناتك محفوظة ومتاحة للقراءة."
+  "pages.subscriptionExpiredSafe": "بياناتك محفوظة."
 }

@@ -8,7 +8,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { isBlockedIp, validateOutboundUrl } from "../../server/services/url-guard";
+import {
+  __setOutboundGuardForTests,
+  isBlockedIp,
+  validateOutboundUrl,
+} from "../../server/services/url-guard";
 
 const originalEnv = {
   NODE_ENV: process.env.NODE_ENV,
@@ -20,6 +24,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  __setOutboundGuardForTests(null);
   if (originalEnv.NODE_ENV === undefined) delete process.env.NODE_ENV;
   else process.env.NODE_ENV = originalEnv.NODE_ENV;
   if (originalEnv.WEBHOOK_ALLOW_PRIVATE_URLS === undefined)
@@ -111,8 +116,13 @@ describe("validateOutboundUrl", () => {
   });
 
   it("rejects unresolvable hostnames", async () => {
-    const verdict = await validateOutboundUrl("https://definitely-not-a-real-host.invalid/hook");
-    expect(verdict.ok).toBe(false);
+    __setOutboundGuardForTests({
+      resolve: async () => {
+        throw new Error("Name resolution failed");
+      },
+    });
+    const verdict = await validateOutboundUrl("https://unresolvable.invalid/hook");
+    expect(verdict).toEqual({ ok: false, reason: "Hostname could not be resolved" });
   });
 
   it("requires HTTPS in production", async () => {

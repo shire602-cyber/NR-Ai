@@ -18,7 +18,7 @@ import crypto from "node:crypto";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { pq } from "../services/connectors/pq";
 import { createLogger } from "../config/logger";
-import { billingEnforced, companyPlanId, getTierFeatures } from "./featureGate";
+import { billingEnforced, companyEntitlement, refuseExpiredTrial } from "./featureGate";
 
 const log = createLogger("api-key-auth");
 
@@ -196,14 +196,14 @@ export const apiKeyAuth: RequestHandler = (req: Request, res: Response, next: Ne
 
     // Plan gate: the public API is the `apiAccess` feature (same matrix as the pricing page).
     if (billingEnforced()) {
-      // Fails closed (S5): no subscription row = Free; null only for firm-billed client books.
-      const planId = await companyPlanId(key.company_id);
-      if (planId !== null && !getTierFeatures(planId).apiAccess) {
+      const entitlement = await companyEntitlement(key.company_id);
+      if (entitlement?.state === "expired") return refuseExpiredTrial(res, key.company_id);
+      if (entitlement && !entitlement.features.apiAccess) {
         res.status(403).json({
           message: "Upgrade required to use the public API",
           code: "TIER_LOCKED",
           feature: "apiAccess",
-          currentTier: planId,
+          currentTier: entitlement.planId,
         });
         return;
       }

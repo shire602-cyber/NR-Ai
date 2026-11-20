@@ -156,7 +156,6 @@ export default function BankFeeds() {
     <PageHeader
       eyebrow={tt["shell.nav.banking"]}
       title={tt["banking.feeds.title"]}
-      description={tt["banking.feeds.description"]}
     />
   );
 

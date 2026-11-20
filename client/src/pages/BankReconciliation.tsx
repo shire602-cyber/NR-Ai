@@ -668,7 +668,7 @@ export default function BankReconciliation() {
     if (!file) return;
     resetStatementPreview();
     if (!/\.csv$/i.test(file.name)) {
-      setPreviewError(t["pageLabels.bankCsvFileRequired"]);
+      setPreviewError(t["banking.import.csvRequired"]);
       return;
     }
     setImportFile(file);
@@ -1616,9 +1616,6 @@ export default function BankReconciliation() {
                     <CheckCircle2 className="w-3.5 h-3.5 text-success" />
                     <span>{strings.formatDrCr}</span>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {t["bankReconciliation.liveBankFeedsAreNot"]}
-                  </p>
                 </div>
                 <Button
                   type="button"

@@ -9,7 +9,7 @@
  *   - billed monthly or yearly; yearly = 10 × monthly (two months free); no quarterly;
  *   - a 14-day free trial of the top plan, no card (shared/trial.ts); then choose a plan;
  *   - plan limits are enforced: a module the plan does not include is read-only (its data stays
- *     readable, nothing is deleted); after the trial without a plan every module is read-only.
+ *     readable, nothing is deleted); after the trial without an active paid plan the workspace is locked.
  *
  * The stored `subscriptions.plan_id` for a company without a paid plan is the legacy value
  * "free" (NO_PLAN_ID): it means "trial, then no plan", never a Free plan with its own limits.
@@ -234,7 +234,7 @@ export const YEARLY_FREE_MONTHS = 12 - YEARLY_MONTHS_CHARGED;
 /**
  * trial   — no paid plan, inside the trial: the top plan's features (TRIAL_LIMITS caps).
  * active  — on a paid plan: that plan's features and limits.
- * expired — no paid plan, trial over: read-only (no features, NO_PLAN_LIMITS).
+ * expired — no paid plan, trial over: workspace locked (no features, NO_PLAN_LIMITS).
  */
 export type PlanState = "trial" | "active" | "expired";
 
@@ -334,7 +334,7 @@ export function publicPlanCatalog() {
 //
 // The choice is recorded next to the subscription and NEVER feeds the gates: the trial stays a
 // planless trial of the top plan (resolveEntitlement above is unchanged), and after the trial the
-// workspace is read-only until the chosen plan is activated.
+// workspace is locked until the chosen plan is activated.
 
 /** Where a recorded choice came from (the audit trail shows the funnel). */
 export const PLAN_CHOICE_SOURCES = [
