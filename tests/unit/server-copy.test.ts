@@ -139,6 +139,33 @@ describe("server copy templates", () => {
     });
   });
 
+  it("uses the current import wording for new and stored bank notifications in both languages", async () => {
+    const legacy = {
+      title: "Bank feed sync failed",
+      message: "The bank feed (Wio) could not sync: HTTP 502. Reconnect it under Banking.",
+    };
+    const current = await notificationForEvent({
+      type: "bank.sync_failed",
+      payload: {
+        companyId: "c1",
+        entityId: "bank-1",
+        provider: "Wio",
+        reason: "HTTP 502",
+        occurredAt: "2026-11-16T00:00:00.000Z",
+      },
+    } as never);
+    const english = {
+      title: "Bank transaction import failed",
+      message: "The bank connection (Wio) could not import transactions: HTTP 502.",
+    };
+    expect(current).toMatchObject(english);
+    expect(localizeNotification(legacy, en)).toEqual(english);
+    expect(localizeNotification(legacy, ar, "ar")).toEqual({
+      title: "تعذّر استيراد الحركات البنكية",
+      message: "تعذّر استيراد الحركات عبر الاتصال البنكي (Wio): HTTP 502.",
+    });
+  });
+
   it("emits the same sentences the engine used to write, now with keys", async () => {
     const issued = await notificationForEvent({
       type: "invoice.issued",

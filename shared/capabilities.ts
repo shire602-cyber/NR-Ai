@@ -169,7 +169,7 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_lean",
-    label: { en: "Bank feeds via Lean", ar: "الربط البنكي عبر Lean" },
+    label: { en: "Bank connection via Lean", ar: "ربط الحسابات البنكية عبر Lean" },
     externalAction: {
       en: "Sign a Lean Technologies contract and obtain a production app token.",
       ar: "وقّع عقداً مع Lean Technologies واحصل على رمز تطبيق إنتاجي.",
@@ -185,7 +185,7 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_tarabut",
-    label: { en: "Bank feeds via Tarabut", ar: "الربط البنكي عبر Tarabut" },
+    label: { en: "Bank connection via Tarabut", ar: "ربط الحسابات البنكية عبر Tarabut" },
     externalAction: {
       en: "Sign a Tarabut Gateway contract and obtain production client credentials.",
       ar: "وقّع عقداً مع Tarabut Gateway واحصل على بيانات اعتماد إنتاجية.",
@@ -201,7 +201,7 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_wio",
-    label: { en: "Wio Bank feed", ar: "الربط مع بنك Wio" },
+    label: { en: "Wio Bank connection", ar: "ربط الحساب مع بنك Wio" },
     externalAction: {
       en: "Register with Wio Business open-banking and obtain production client credentials.",
       ar: "سجّل في الخدمات المصرفية المفتوحة لدى Wio Business واحصل على بيانات اعتماد إنتاجية.",

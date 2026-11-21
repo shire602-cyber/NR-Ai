@@ -499,12 +499,18 @@ describe("Complyance over loopback HTTP", () => {
   it("returns the documented duplicate outcome after an ambiguous timeout on the same request", async () => {
     const duplicate = fixture("complyance", "submit_duplicate_422");
     const { url, seen } = await loopback([{ ...duplicate, status: 200, stall: true }, duplicate]);
-    const provider = complyance(url, { COMPLYANCE_TIMEOUT_MS: "500" });
-    expect(await provider.submit(submission)).toMatchObject({
+    const credentials = { COMPLYANCE_API_KEY: randomUUID() };
+    const initial = complyance(url, { ...credentials, COMPLYANCE_TIMEOUT_MS: "1500" });
+    expect(await initial.submit(submission)).toMatchObject({
       status: "failed",
       errorCode: "TRANSPORT_ERROR",
     });
-    expect(await provider.submit(submission)).toMatchObject({
+    expect(seen).toHaveLength(1);
+
+    // Only the deliberately stalled response needs a short deadline. The duplicate reply
+    // uses the normal deadline so a busy test worker can still read the complete response.
+    const retry = complyance(url, credentials);
+    expect(await retry.submit(submission)).toMatchObject({
       status: "rejected",
       errorCode: "COMPLYANCE_DUPLICATE_NUMBER",
       numberAlreadyHeld: true,
@@ -512,7 +518,8 @@ describe("Complyance over loopback HTTP", () => {
     });
     expect(seen).toHaveLength(2);
     expect(seen[0].body).toBe(seen[1].body);
-  });
+    expect(seen[0].headers.authorization === seen[1].headers.authorization).toBe(true);
+  }, 15_000);
 
   it("binds a retry to the credential and source used by the original company", async () => {
     const { url, seen } = await loopback([]);
