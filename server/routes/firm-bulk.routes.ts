@@ -379,7 +379,8 @@ const bulkInvoicesSchema = z.object({
   amount: z.number().transform((amount, ctx) => {
     const result = zPositiveFils.safeParse(amount);
     if (result.success) return result.data;
-    for (const issue of result.error.issues) ctx.addIssue(issue);
+    for (const issue of result.error.issues)
+      ctx.addIssue({ code: "custom", message: issue.message });
     return z.NEVER;
   }),
   vatRate: z
