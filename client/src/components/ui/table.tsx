@@ -11,7 +11,7 @@ const Table = React.forwardRef<HTMLTableElement, TableProps>(
   ({ className, density = "default", ...props }, ref) => (
     // A scrolling region must be reachable by keyboard (axe: scrollable-region-focusable).
     <div
-      className="relative w-full overflow-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="relative w-full min-w-0 max-w-full overflow-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       tabIndex={0}
       role={props["aria-label"] ? "region" : undefined}
       aria-label={props["aria-label"]}

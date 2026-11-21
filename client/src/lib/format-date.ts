@@ -10,8 +10,12 @@
  */
 
 import { boundaryCalendarParts } from "@shared/uae-date";
+import { isolateLtrText, isolateRtlText } from "./format-bidi";
 
 export type DateInput = Date | string | number | null | undefined;
+
+// The UAE UI uses Gregorian dates and Latin digits in both languages.
+export const ARABIC_DISPLAY_LOCALE = "ar-AE-u-ca-gregory-nu-latn";
 
 const ISO_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -76,17 +80,9 @@ const EN_MONTHS = [
   "Dec",
 ] as const;
 
-const monthFormatters = new Map<string, Intl.DateTimeFormat>();
+const arabicMonthFormatter = new Intl.DateTimeFormat(ARABIC_DISPLAY_LOCALE, { month: "long" });
 function monthName(date: Date, locale: string): string {
-  if (locale !== "ar") return EN_MONTHS[date.getMonth()];
-  const tag = "ar-AE-u-nu-latn";
-  let f = monthFormatters.get(tag);
-  if (!f) {
-    f = new Intl.DateTimeFormat(tag, { month: "long" });
-    monthFormatters.set(tag, f);
-  }
-  // en-GB abbreviates September as "Sept"; the app uses three letters everywhere (P8).
-  return locale === "ar" ? f.format(date) : f.format(date).replace(/^Sept$/, "Sep");
+  return locale === "ar" ? arabicMonthFormatter.format(date) : EN_MONTHS[date.getMonth()];
 }
 
 /** "16 Nov 2026" / "16 نوفمبر 2026"; "" for an empty or invalid value. */
@@ -105,8 +101,18 @@ export function formatMonthYear(value: DateInput, locale: string = "en"): string
 
 const EN_DASH = "–";
 
+interface DateRangeOptions {
+  /** Use plain text for workbooks and external document titles. */
+  plain?: boolean;
+}
+
 /** "1–16 Nov 2026", "28 Oct – 16 Nov 2026", "28 Dec 2025 – 3 Jan 2026". */
-export function formatDateRange(from: DateInput, to: DateInput, locale: string = "en"): string {
+export function formatDateRange(
+  from: DateInput,
+  to: DateInput,
+  locale: string = "en",
+  { plain = false }: DateRangeOptions = {}
+): string {
   const a = toCalendarDate(from);
   const b = toCalendarDate(to);
   if (!a && !b) return "";
@@ -116,7 +122,10 @@ export function formatDateRange(from: DateInput, to: DateInput, locale: string =
   const sameMonth = sameYear && a.getMonth() === b.getMonth();
   if (sameMonth && a.getDate() === b.getDate()) return formatDate(a, locale);
   if (sameMonth) {
-    return `${a.getDate()}${EN_DASH}${b.getDate()} ${monthName(b, locale)} ${b.getFullYear()}`;
+    const days = `${a.getDate()}${EN_DASH}${b.getDate()}`;
+    // The neutral dash otherwise reverses the two days in an RTL paragraph.
+    const displayDays = locale === "ar" && !plain ? isolateLtrText(days) : days;
+    return `${displayDays} ${monthName(b, locale)} ${b.getFullYear()}`;
   }
   if (sameYear) {
     return `${a.getDate()} ${monthName(a, locale)} ${EN_DASH} ${b.getDate()} ${monthName(
@@ -137,10 +146,14 @@ const MONTH_IN_TEXT = /(?<![\w/-])(\d{4})-(0[1-9]|1[0-2])(?![\w-])/g;
  * "1 Jul – 30 Sep 2026", "2026-11-17" -> "17 Nov 2026", "2026-11" -> "Nov 2026". Codes such
  * as "INV-2026-01" are left alone (a date must not touch a letter, digit, "-" or "/").
  */
-export function formatEmbeddedDates(text: string, locale: string = "en"): string {
+export function formatEmbeddedDates(
+  text: string,
+  locale: string = "en",
+  options?: DateRangeOptions
+): string {
   if (!text) return text;
   return text
-    .replace(RANGE_IN_TEXT, (_m, a: string, b: string) => formatDateRange(a, b, locale))
+    .replace(RANGE_IN_TEXT, (_m, a: string, b: string) => formatDateRange(a, b, locale, options))
     .replace(DAY_IN_TEXT, (_m, d: string) => formatDate(d, locale))
     .replace(MONTH_IN_TEXT, (_m, y: string, mo: string) =>
       formatMonthYear(`${y}-${mo}-01`, locale)
@@ -202,10 +215,6 @@ function dateTimeParts(
   };
 }
 
-const RLI = "\u2067";
-const LRI = "\u2066";
-const PDI = "\u2069";
-
 /**
  * "16 Nov 2026, 14:05" / "16 نوفمبر 2026، 14:05": one line, for logs and timestamps on screen.
  * In Arabic the date and the time are separate bidi isolates inside one right-to-left run, so the
@@ -216,5 +225,7 @@ export function formatDateTime(value: DateInput, locale: string = "en"): string 
   const parts = dateTimeParts(value, locale);
   if (!parts) return "";
   if (locale !== "ar") return `${parts.date}${parts.separator}${parts.time}`;
-  return `${RLI}${RLI}${parts.date}${PDI}${parts.separator}${LRI}${parts.time}${PDI}${PDI}`;
+  return isolateRtlText(
+    `${isolateRtlText(parts.date)}${parts.separator}${isolateLtrText(parts.time)}`
+  );
 }

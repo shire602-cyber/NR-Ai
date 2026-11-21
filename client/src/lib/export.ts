@@ -461,7 +461,7 @@ function vatPeriodForExport(period: unknown): string {
   if (typeof period === "string") return period;
   if (period && typeof period === "object") {
     const { from, to } = period as { from?: string | null; to?: string | null };
-    return formatDateRange(from, to, currentExportLocale());
+    return formatDateRange(from, to, currentExportLocale(), { plain: true });
   }
   return "";
 }

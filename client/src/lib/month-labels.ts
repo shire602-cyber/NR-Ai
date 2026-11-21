@@ -1,7 +1,9 @@
+import { ARABIC_DISPLAY_LOCALE } from "./format-date";
+
 // Month and VAT close-group labels in the reader's language (no hard-coded English months).
 export function monthName(month: number, locale: string, style: "long" | "short"): string {
   // en-US short months are all three letters (en-GB gives "Sept").
-  return new Intl.DateTimeFormat(locale === "ar" ? "ar-AE-u-nu-latn" : "en-US", {
+  return new Intl.DateTimeFormat(locale === "ar" ? ARABIC_DISPLAY_LOCALE : "en-US", {
     month: style,
   }).format(new Date(2000, month - 1, 1));
 }

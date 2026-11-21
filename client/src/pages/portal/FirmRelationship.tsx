@@ -112,11 +112,12 @@ function StatusPill({ status }: { status: string }) {
 
 export default function FirmRelationship() {
   const { companyId, company } = useDefaultCompany();
+  const { t } = useTranslation();
   return (
     <SettingsLayout>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Settings"
+          eyebrow={t.settings}
           title={<T k="portal.firmRelationshipTitle" />}
           description={<T k="portal.firmRelationshipSubtitle" />}
         />
@@ -180,6 +181,7 @@ function InvitationsCard() {
         ) : (
           invitations.map((inv) => {
             const target = chosen[inv.id] ?? owned[0]?.id ?? "";
+            const companyFieldId = `firm-invitation-company-${inv.id}`;
             return (
               <div
                 key={inv.id}
@@ -187,28 +189,36 @@ function InvitationsCard() {
                 data-testid={`row-firm-invitation-${inv.id}`}
               >
                 <div className="min-w-0 space-y-1">
-                  <p className="font-medium">{inv.firmName}</p>
+                  <p className="font-medium [overflow-wrap:anywhere]">
+                    <bdi translate="no">{inv.firmName}</bdi>
+                  </p>
                   {inv.message ? (
-                    <p className="text-sm text-muted-foreground">{inv.message}</p>
+                    <p
+                      className="text-sm text-muted-foreground [overflow-wrap:anywhere]"
+                      dir="auto"
+                      translate="no"
+                    >
+                      {inv.message}
+                    </p>
                   ) : null}
                 </div>
                 <div className="flex flex-wrap items-end gap-2">
                   {owned.length > 0 ? (
-                    <div className="space-y-1">
-                      <Label className="text-xs">
+                    <div className="min-w-0 basis-full space-y-1 sm:basis-auto">
+                      <Label htmlFor={companyFieldId} className="text-xs">
                         <T k="portal.firmInvitationCompany" />
                       </Label>
                       <Select
                         value={target}
                         onValueChange={(v) => setChosen((c) => ({ ...c, [inv.id]: v }))}
                       >
-                        <SelectTrigger className="w-56">
+                        <SelectTrigger id={companyFieldId} className="w-full sm:w-56">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           {owned.map((c) => (
                             <SelectItem key={c.id} value={c.id}>
-                              {c.name}
+                              <bdi translate="no">{c.name}</bdi>
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -287,6 +297,7 @@ function FirmAccessCard({ companyId, companyName }: { companyId: string; company
               value={reason}
               maxLength={500}
               onChange={(e) => setReason(e.target.value)}
+              dir="auto"
             />
           </div>
           <AlertDialogFooter>
@@ -303,7 +314,13 @@ function FirmAccessCard({ companyId, companyName }: { companyId: string; company
       </AlertDialog>
       <CardHeader>
         <CardTitle className="text-base">
-          <T k="portal.firmAccess" /> {companyName ? `· ${companyName}` : null}
+          <T k="portal.firmAccess" />
+          {companyName ? (
+            <>
+              {" "}
+              · <bdi translate="no">{companyName}</bdi>
+            </>
+          ) : null}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -322,8 +339,10 @@ function FirmAccessCard({ companyId, companyName }: { companyId: string; company
               className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
               data-testid={`row-firm-link-${link.id}`}
             >
-              <div className="flex items-center gap-2">
-                <span className="font-medium">{link.firmName}</span>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <bdi className="font-medium [overflow-wrap:anywhere]" translate="no">
+                  {link.firmName}
+                </bdi>
                 <StatusPill status={link.status} />
               </div>
               {link.status === "active" ? (
@@ -387,6 +406,12 @@ function EngagementLettersCard({ companyId }: { companyId: string }) {
         ) : (
           letters.map((letter) => {
             const typed = names[letter.id] ?? "";
+            const nameFieldId = `firm-letter-name-${letter.id}`;
+            const billingCycle = letter.billingCycle;
+            const billingCycleLabel =
+              billingCycle && ["monthly", "quarterly", "annually"].includes(billingCycle)
+                ? t[`pages.${billingCycle}`]
+                : billingCycle;
             return (
               <div
                 key={letter.id}
@@ -394,27 +419,47 @@ function EngagementLettersCard({ companyId }: { companyId: string }) {
                 data-testid={`row-engagement-letter-${letter.id}`}
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{letter.title}</span>
-                  <span className="text-xs text-muted-foreground">{letter.firmName}</span>
+                  <bdi className="font-medium [overflow-wrap:anywhere]" translate="no">
+                    {letter.title}
+                  </bdi>
+                  <bdi
+                    className="text-xs text-muted-foreground [overflow-wrap:anywhere]"
+                    translate="no"
+                  >
+                    {letter.firmName}
+                  </bdi>
                   <StatusPill status={letter.status} />
                 </div>
-                <p className="whitespace-pre-wrap text-sm">{letter.body}</p>
+                <p
+                  className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]"
+                  dir="auto"
+                  translate="no"
+                >
+                  {letter.body}
+                </p>
                 {letter.feeAmount != null ? (
-                  <p className="text-xs text-muted-foreground" dir="ltr">
+                  <p className="text-xs text-muted-foreground">
                     <Money amount={Number(letter.feeAmount)} currency="AED" />
-                    {letter.billingCycle ? ` / ${letter.billingCycle}` : ""}
+                    {billingCycleLabel ? (
+                      <>
+                        {" "}
+                        / <bdi>{billingCycleLabel}</bdi>
+                      </>
+                    ) : null}
                   </p>
                 ) : null}
                 {letter.status === "sent" ? (
                   <div className="flex flex-wrap items-end gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">
+                    <div className="min-w-0 basis-full space-y-1 sm:basis-auto">
+                      <Label htmlFor={nameFieldId} className="text-xs">
                         <T k="portal.letterTypedName" />
                       </Label>
                       <Input
-                        className="w-64"
+                        id={nameFieldId}
+                        className="w-full sm:w-64"
                         value={typed}
                         maxLength={200}
+                        dir="auto"
                         onChange={(e) => setNames((n) => ({ ...n, [letter.id]: e.target.value }))}
                         data-testid={`input-letter-name-${letter.id}`}
                       />
@@ -447,7 +492,8 @@ function EngagementLettersCard({ companyId }: { companyId: string }) {
                   </div>
                 ) : letter.acceptedName ? (
                   <p className="text-xs text-muted-foreground">
-                    <T k="portal.letterAcceptedBy" /> {letter.acceptedName}
+                    <T k="portal.letterAcceptedBy" />{" "}
+                    <bdi translate="no">{letter.acceptedName}</bdi>
                   </p>
                 ) : null}
               </div>
@@ -512,16 +558,33 @@ function RequestListCard({ companyId }: { companyId: string }) {
               >
                 <div className="min-w-0 space-y-0.5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{r.title}</span>
+                    <bdi className="font-medium [overflow-wrap:anywhere]" translate="no">
+                      {r.title}
+                    </bdi>
                     <StatusPill status={r.status} />
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {r.firmName} · {r.listName}
-                    {r.dueDate ? ` · ${formatDate(r.dueDate, locale)}` : ""}
+                  <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                    <bdi translate="no">{r.firmName}</bdi> · <bdi translate="no">{r.listName}</bdi>
+                    {r.dueDate ? (
+                      <>
+                        {" "}
+                        · <bdi>{formatDate(r.dueDate, locale)}</bdi>
+                      </>
+                    ) : null}
                   </p>
-                  {r.description ? <p className="text-sm">{r.description}</p> : null}
+                  {r.description ? (
+                    <p className="text-sm [overflow-wrap:anywhere]" dir="auto" translate="no">
+                      {r.description}
+                    </p>
+                  ) : null}
                   {r.status === "rejected" && r.reviewNote ? (
-                    <p className="text-xs text-destructive">{r.reviewNote}</p>
+                    <p
+                      className="text-xs text-destructive [overflow-wrap:anywhere]"
+                      dir="auto"
+                      translate="no"
+                    >
+                      {r.reviewNote}
+                    </p>
                   ) : null}
                 </div>
                 {open ? (

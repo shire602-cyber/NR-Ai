@@ -27,6 +27,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { ApiError, apiRequest } from "@/lib/queryClient";
+import { bidiIsolate } from "@/lib/customer-link";
+import { isolateLtrText } from "@/lib/format-bidi";
 import { formatDate } from "@/lib/format-date";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { defaultInviteLanguage, portalAccessKey, portalSummaryKey } from "@/lib/portal-invite";
@@ -135,11 +137,13 @@ function InviteForm({
     const en = {
       lang: "en",
       // The English subject mirrors server/services/portal-invite-email.ts.
-      text: `${supplierName} invited you to view your invoices`, // i18n-ignore: the English email subject
+      text: `${bidiIsolate(supplierName)} invited you to view your invoices`, // i18n-ignore: the English email subject
     };
     const ar = {
       lang: "ar",
-      text: formatMessage(t["portal.invite.previewSubjectAr"], { supplier: supplierName }),
+      text: formatMessage(t["portal.invite.previewSubjectAr"], {
+        supplier: bidiIsolate(supplierName),
+      }),
     };
     return language === "ar" ? [ar] : language === "bilingual" ? [en, ar] : [en];
   }, [language, supplierName, t]);
@@ -226,8 +230,10 @@ function InviteForm({
           dir="auto"
           data-testid="pa-note"
         />
-        <p className="mt-1 text-end text-caption text-muted-foreground tabular-nums">
-          {note.length}/{PORTAL_INVITE_MESSAGE_MAX}
+        <p className="mt-1 text-end text-caption text-muted-foreground">
+          <bdi dir="ltr" className="tabular-nums">
+            {note.length}/{PORTAL_INVITE_MESSAGE_MAX}
+          </bdi>
         </p>
       </div>
       <div className="rounded-lg bg-muted/50 p-3" data-testid="pa-preview">
@@ -327,7 +333,11 @@ export function PortalAccessSheet({
   };
   const reportDelivery = (res: InviteResponse) => {
     if (res.delivery === "email") {
-      toast({ title: formatMessage(t["portal.invite.sentTo"], { email: res.invitation.email }) });
+      toast({
+        title: formatMessage(t["portal.invite.sentTo"], {
+          email: isolateLtrText(res.invitation.email),
+        }),
+      });
     } else {
       toast({ title: t["portal.invite.queued"] });
     }
@@ -369,8 +379,10 @@ export function PortalAccessSheet({
         >
           <SheetHeader className="border-b border-border p-5 pb-4">
             <SheetTitle>{t["customerContacts.portalAccess"]}</SheetTitle>
-            <SheetDescription dir="auto">
-              {contact ? formatMessage(t["portal.access.forName"], { name: contact.name }) : ""}
+            <SheetDescription>
+              {contact
+                ? formatMessage(t["portal.access.forName"], { name: bidiIsolate(contact.name) })
+                : ""}
             </SheetDescription>
           </SheetHeader>
 
@@ -395,15 +407,21 @@ export function PortalAccessSheet({
                       data-testid={`pa-person-${p.id}`}
                     >
                       <span className="min-w-0">
-                        <span className="block truncate text-small font-medium" dir="auto">
+                        <bdi
+                          className="block truncate text-small font-medium"
+                          translate="no"
+                          title={p.name}
+                        >
                           {p.name}
-                        </span>
-                        <span
+                        </bdi>
+                        <bdi
                           className="block truncate text-caption text-muted-foreground"
                           dir="ltr"
+                          translate="no"
+                          title={p.email}
                         >
                           {p.email}
-                        </span>
+                        </bdi>
                         <span className="block text-caption text-muted-foreground">
                           {p.lastSeenAt
                             ? formatMessage(t["portal.access.lastSeen"], {
@@ -451,9 +469,14 @@ export function PortalAccessSheet({
                         data-status={inv.status}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <span className="min-w-0 truncate text-small font-medium" dir="ltr">
+                          <bdi
+                            className="min-w-0 truncate text-small font-medium"
+                            dir="ltr"
+                            translate="no"
+                            title={inv.email}
+                          >
                             {inv.email}
-                          </span>
+                          </bdi>
                           <StatusBadge tone={STATUS_TONE[inv.status] ?? "neutral"}>
                             {t[`portal.access.status.${inv.status}`]}
                           </StatusBadge>
@@ -560,9 +583,13 @@ export function PortalAccessSheet({
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirm?.kind === "remove"
-                ? formatMessage(t["portal.access.removeConfirm"], { name: confirm.name })
+                ? formatMessage(t["portal.access.removeConfirm"], {
+                    name: bidiIsolate(confirm.name),
+                  })
                 : confirm?.kind === "revoke"
-                  ? formatMessage(t["portal.access.revokeConfirm"], { email: confirm.email })
+                  ? formatMessage(t["portal.access.revokeConfirm"], {
+                      email: isolateLtrText(confirm.email),
+                    })
                   : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
