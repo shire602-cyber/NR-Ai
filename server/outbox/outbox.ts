@@ -23,6 +23,11 @@ import {
 } from "../../shared/schema";
 import { createLogger } from "../config/logger";
 import { RETIRED_BANK_NOTIFICATION_PREFIX } from "../../shared/notification-copy";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
+import {
+  canDeliverCompanyNotification,
+  containsRetiredNotificationCopy,
+} from "../storage/notification-visibility";
 import {
   NOTIFICATION_DIGEST_ENTITY,
   rebuildNotificationDigest,
@@ -41,6 +46,7 @@ const BASE_BACKOFF_MS = 60_000; // 1, 2, 4, 8, 16 min …
 const MAX_BACKOFF_MS = 6 * 60 * 60 * 1000;
 const LOCK_MS = 5 * 60 * 1000;
 const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
+const notificationRecipientKey = /^notif:.+:([\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12})$/i;
 
 export interface EnqueueEmailInput {
   to: string;
@@ -222,6 +228,12 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
   if (row.idempotencyKey?.startsWith(`notif:${RETIRED_BANK_NOTIFICATION_PREFIX}`)) {
     return cancelPendingEmail(row.id);
   }
+  if (
+    row.category === "notification" &&
+    containsRetiredNotificationCopy(`${row.subject} ${row.textBody ?? ""} ${row.html ?? ""}`)
+  ) {
+    return cancelPendingEmail(row.id);
+  }
   const transport = resolveTransport();
   if (!transport) {
     const [blocked] = await db
@@ -244,6 +256,17 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
   const attempts = row.attempts + 1;
   let digest: Awaited<ReturnType<typeof rebuildNotificationDigest>> | undefined;
   try {
+    if (row.category === "notification") {
+      // Historical and new notification keys end in the intended user id.
+      const recipientId = notificationRecipientKey.exec(row.idempotencyKey ?? "")?.[1];
+      if (
+        !recipientId ||
+        !row.companyId ||
+        !(await canDeliverCompanyNotification(recipientId, row.toAddress, row.companyId))
+      ) {
+        return await cancelPendingEmail(row.id);
+      }
+    }
     if (row.category === "digest") digest = await rebuildNotificationDigest(row);
     if (digest === null) return await cancelPendingEmail(row.id);
     const content = digest ?? row;
@@ -393,11 +416,12 @@ export async function listOutboxForCompany(
 ) {
   const conds = [eq(emailOutbox.companyId, companyId)];
   if (opts.relatedEntityId) conds.push(eq(emailOutbox.relatedEntityId, opts.relatedEntityId));
-  return db
+  const rows = await db
     .select({
       id: emailOutbox.id,
       toAddress: emailOutbox.toAddress,
       subject: emailOutbox.subject,
+      idempotencyKey: emailOutbox.idempotencyKey,
       category: emailOutbox.category,
       relatedEntityType: emailOutbox.relatedEntityType,
       relatedEntityId: emailOutbox.relatedEntityId,
@@ -415,6 +439,18 @@ export async function listOutboxForCompany(
     .where(and(...conds))
     .orderBy(desc(emailOutbox.createdAt))
     .limit(Math.min(opts.limit ?? 100, 500));
+  return rows.map(({ idempotencyKey, ...row }) => ({
+    ...row,
+    subject:
+      idempotencyKey?.startsWith(`notif:${RETIRED_BANK_NOTIFICATION_PREFIX}`) ||
+      containsRetiredNotificationCopy(row.subject)
+        ? BANK_RECONCILIATION_COPY.en
+        : row.subject,
+    lastError:
+      row.lastError && containsRetiredNotificationCopy(row.lastError)
+        ? BANK_RECONCILIATION_COPY.en
+        : row.lastError,
+  }));
 }
 
 export type ProviderEventType = "delivered" | "bounced" | "complained" | "opened" | "failed";

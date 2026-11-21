@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { useHarness } from "./harness";
 import type { OutgoingEmail } from "../../server/outbox/providers";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 
 const h = useHarness();
 
@@ -30,10 +31,18 @@ async function memberWithNotifications() {
     );
     expect(removed.status, removed.text).toBe(204);
   }
-  return { member, revoked, retained, personal, unreadBefore: before.body.unreadCount, remove };
+  return {
+    owner,
+    member,
+    revoked,
+    retained,
+    personal,
+    unreadBefore: before.body.unreadCount,
+    remove,
+  };
 }
 
-async function deliverPendingDigest(id: string) {
+async function deliverPendingEmail(id: string) {
   const { setEmailTransportOverride } = await import("../../server/outbox/providers");
   const { processOutbox } = await import("../../server/outbox/outbox");
   const delivered: OutgoingEmail[] = [];
@@ -53,6 +62,94 @@ async function deliverPendingDigest(id: string) {
 }
 
 describe("Notification access after team removal", () => {
+  it.each(["access revoked", "email changed", "still authorized"] as const)(
+    "checks the current recipient of a queued payment email when %s",
+    async (scenario) => {
+      const { owner, member, remove } = await memberWithNotifications();
+      const preferences = await member.as.put("/api/notification-preferences", {
+        inAppEnabled: false,
+        emailEnabled: true,
+        typePreferences: { "payment.received": { email: true } },
+      });
+      expect(preferences.status, preferences.text).toBe(200);
+      const { emitDomainEvent, drainDomainEvents } =
+        await import("../../server/platform/domain-events");
+      await emitDomainEvent("payment.received", {
+        companyId: owner.company.id,
+        entityId: crypto.randomUUID(),
+        amountFils: 472500,
+      });
+      await drainDomainEvents();
+      const [queued] = await h.sql<{ id: string; status: string; html: string }>(
+        `SELECT id, status, html FROM email_outbox
+         WHERE company_id = $1 AND to_address = $2 AND category = 'notification'`,
+        [owner.company.id, member.email]
+      );
+      expect(queued.status).toBe("blocked_no_provider");
+      expect(queued.html).toContain("4,725.00");
+      if (scenario === "access revoked") await remove();
+      if (scenario === "email changed") {
+        await h.sql("UPDATE users SET email = $2 WHERE id = $1", [
+          member.user.id,
+          `updated-${member.email}`,
+        ]);
+      }
+
+      const delivered = await deliverPendingEmail(queued.id);
+      if (scenario === "still authorized") {
+        expect(delivered).toHaveLength(1);
+        expect(delivered[0].to).toBe(member.email);
+        expect(delivered[0].html).toContain("4,725.00");
+      } else {
+        expect(delivered).toEqual([]);
+        expect(
+          await h.sql("SELECT status, html, text_body FROM email_outbox WHERE id = $1", [queued.id])
+        ).toEqual([{ status: "cancelled", html: null, text_body: null }]);
+      }
+    }
+  );
+
+  it("hides retired copy with no event key from the inbox and unread count", async () => {
+    const t = await h.createTenant();
+    const [arabic, english, current] = await h.sql<{ id: string }>(
+      `INSERT INTO notifications (user_id, company_id, type, title, message)
+       VALUES ($1, $2, 'system', 'الربط البنكي', 'Legacy detail'),
+              ($1, $2, 'system', 'Old alert', 'Check your bank-feed connection'),
+              ($1, $2, 'system', 'Statement imported', 'Your CSV is ready')
+       RETURNING id`,
+      [t.user.id, t.company.id]
+    );
+    const inbox = await t.as.get("/api/notifications");
+    expect(inbox.status, inbox.text).toBe(200);
+    expect(inbox.body.unreadCount).toBe(1);
+    expect(inbox.body.notifications.map(({ id }: { id: string }) => id)).toEqual([current.id]);
+    for (const { id } of [english, arabic]) {
+      expect((await t.as.patch(`/api/notifications/${id}/read`)).status).toBe(404);
+    }
+  });
+
+  it("sanitizes retired subjects in the company email log", async () => {
+    const t = await h.createTenant();
+    const [oldArabic, oldEnglish, retained] = await h.sql<{ id: string }>(
+      `INSERT INTO email_outbox (company_id, to_address, subject, category, status, idempotency_key)
+       VALUES ($1, $2, 'الربط البنكي', 'notification', 'sent', NULL),
+              ($1, $2, 'Bank feed sync failed', 'notification', 'cancelled', NULL),
+              ($1, $2, 'Invoice issued', 'notification', 'sent', NULL)
+       RETURNING id`,
+      [t.company.id, t.email]
+    );
+    const log = await t.as.get(`/api/companies/${t.company.id}/email-outbox`);
+    expect(log.status, log.text).toBe(200);
+    expect(log.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: oldArabic.id, subject: BANK_RECONCILIATION_COPY.en }),
+        expect.objectContaining({ id: oldEnglish.id, subject: BANK_RECONCILIATION_COPY.en }),
+        expect.objectContaining({ id: retained.id, subject: "Invoice issued" }),
+      ])
+    );
+    expect(log.text).not.toMatch(/الربط البنكي|Bank feed sync failed/i);
+  });
+
   it("hides revoked company notices from the list, unread count and update endpoints", async () => {
     const { member, revoked, retained, personal, unreadBefore, remove } =
       await memberWithNotifications();
@@ -127,7 +224,7 @@ describe("Notification access after team removal", () => {
        VALUES ($1, 'system', 'New notice', 'New detail')`,
       [member.user.id]
     );
-    const delivered = await deliverPendingDigest(queued.id);
+    const delivered = await deliverPendingEmail(queued.id);
     expect(delivered).toHaveLength(1);
     expect(delivered[0].subject).toMatch(/2 update\(s\)/);
     for (const body of [delivered[0].html, delivered[0].text]) {
@@ -164,7 +261,7 @@ describe("Notification access after team removal", () => {
     });
     await remove();
 
-    const delivered = await deliverPendingDigest(queued.id);
+    const delivered = await deliverPendingEmail(queued.id);
     expect(delivered).toHaveLength(1);
     expect(delivered[0].subject).toMatch(/1 update\(s\)/);
     for (const body of [delivered[0].html, delivered[0].text]) {
@@ -190,7 +287,7 @@ describe("Notification access after team removal", () => {
     });
     await remove();
 
-    expect(await deliverPendingDigest(queued.id)).toHaveLength(0);
+    expect(await deliverPendingEmail(queued.id)).toHaveLength(0);
     expect(
       await h.sql(`SELECT status, html, text_body FROM email_outbox WHERE id = $1`, [queued.id])
     ).toEqual([{ status: "cancelled", html: null, text_body: null }]);

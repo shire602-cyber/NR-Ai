@@ -308,13 +308,42 @@ export async function captureSnapshot(
   return { version: BACKUP_FORMAT_VERSION, createdAt: new Date().toISOString(), companyId, tables };
 }
 
+const retiredBankCredentialColumns = [
+  "access_token",
+  "refresh_token",
+  "token_expires_at",
+  "consent_id",
+] as const;
+
+function withoutRetiredBankCredentials(snapshot: CompanySnapshot): CompanySnapshot {
+  const connections = snapshot.tables.bank_connections;
+  if (!connections) return snapshot;
+  let changed = false;
+  const rows = connections.map((row) => {
+    if (!row || typeof row !== "object") return row;
+    const connection = row as Record<string, unknown>;
+    if (
+      !connection.auto_sync &&
+      retiredBankCredentialColumns.every((key) => connection[key] == null)
+    )
+      return row;
+    changed = true;
+    const sanitized: Record<string, unknown> = { ...connection, auto_sync: false };
+    for (const column of retiredBankCredentialColumns) sanitized[column] = null;
+    return sanitized;
+  });
+  return changed
+    ? { ...snapshot, tables: { ...snapshot.tables, bank_connections: rows } }
+    : snapshot;
+}
+
 export function sealSnapshot(snapshot: CompanySnapshot): {
   sealed: string;
   checksum: string;
   sizeBytes: number;
   counts: Record<string, number>;
 } {
-  const json = JSON.stringify(snapshot);
+  const json = JSON.stringify(withoutRetiredBankCredentials(snapshot));
   const checksum = crypto.createHash("sha256").update(json).digest("hex");
   const gz = zlib.gzipSync(Buffer.from(json, "utf8")).toString("base64");
   const sealed = encryptSecret(`gz1:${gz}`)!;
@@ -326,7 +355,7 @@ export function sealSnapshot(snapshot: CompanySnapshot): {
 export function openSnapshot(
   stored: string,
   checksum: string | null
-): { json: string; snapshot: CompanySnapshot | LegacySnapshot } {
+): { json: string; snapshot: CompanySnapshot | LegacySnapshot; redacted?: CompanySnapshot } {
   let json: string;
   if (stored.startsWith("enc:v1:")) {
     const plain = decryptSecret(stored) ?? "";
@@ -347,7 +376,13 @@ export function openSnapshot(
       );
     }
   }
-  return { json, snapshot: JSON.parse(json) };
+  const snapshot = JSON.parse(json) as CompanySnapshot | LegacySnapshot;
+  if ("tables" in snapshot) {
+    const redacted = withoutRetiredBankCredentials(snapshot);
+    if (redacted !== snapshot)
+      return { json: JSON.stringify(redacted), snapshot: redacted, redacted };
+  }
+  return { json, snapshot };
 }
 
 interface LegacySnapshot {

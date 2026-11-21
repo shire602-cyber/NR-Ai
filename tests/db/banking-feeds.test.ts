@@ -53,7 +53,7 @@ describe("Banking authorization retirement and CSV import", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("expires in-flight state, disables existing imports and preserves statement history", async () => {
+  it("expires in-flight state, purges credentials and preserves statement history", async () => {
     const t = await h.createTenant();
     const account = await t.as.post(`/api/companies/${t.company.id}/bank-accounts`, {
       nameEn: "Operating account",
@@ -61,16 +61,18 @@ describe("Banking authorization retirement and CSV import", () => {
     });
     expect(account.status, account.text).toBe(201);
 
-    const { storage } = await import("../../server/storage");
-    const connection = await storage.createBankConnection({
-      companyId: t.company.id,
-      provider: "lean",
-      connectionType: "open_banking",
-      bankAccountId: account.body.id,
-      autoSync: true,
-      accessToken: "fixture-access-credential",
-      status: "active",
-    });
+    const { encryptSecret } = await import("../../server/services/secret-vault");
+    const accessToken = encryptSecret("fixture-access-credential");
+    const refreshToken = encryptSecret("fixture-refresh-credential");
+    const [connection, disabledConnection] = await h.sql<{ id: string }>(
+      `INSERT INTO bank_connections (
+         company_id, provider, connection_type, bank_account_id, auto_sync,
+         access_token, refresh_token, token_expires_at, consent_id
+       ) VALUES ($1, 'lean', 'open_banking', $2, true, $3, $4, now(), 'fixture-consent'),
+                ($1, 'wio', 'open_banking', $2, false, $3, $4, now(), 'fixture-consent')
+       RETURNING id`,
+      [t.company.id, account.body.id, accessToken, refreshToken]
+    );
     const base = `/api/companies/${t.company.id}/bank-connections`;
     const imported = await t.as.post(`${base}/${connection.id}/import`, {
       csvContent: "Date,Description,Debit,Credit\n2026-10-01,Prior statement,,100.00",
@@ -83,13 +85,7 @@ describe("Banking authorization retirement and CSV import", () => {
        RETURNING id`,
       [t.company.id, t.user.id, redirectUrl]
     );
-    const pinned = (
-      await h.sql<{ access_token: string }>(
-        "SELECT access_token FROM bank_connections WHERE id = $1",
-        [connection.id]
-      )
-    )[0].access_token;
-    expect(pinned).toMatch(/^enc:v1:/);
+    expect(accessToken).toMatch(/^enc:v1:/);
 
     const { retireAutomaticBanking } = await import("../../server/services/bank-feeds");
     await retireAutomaticBanking();
@@ -103,10 +99,23 @@ describe("Banking authorization retirement and CSV import", () => {
       await h.sql("SELECT used_at FROM bank_feed_oauth_states WHERE id = $1", [oauth.id])
     ).toEqual([state]);
     expect(
-      await h.sql("SELECT auto_sync, access_token FROM bank_connections WHERE id = $1", [
-        connection.id,
-      ])
-    ).toEqual([{ auto_sync: false, access_token: pinned }]);
+      await h.sql(
+        `SELECT id, auto_sync, access_token, refresh_token, token_expires_at, consent_id
+         FROM bank_connections WHERE company_id = $1`,
+        [t.company.id]
+      )
+    ).toEqual(
+      expect.arrayContaining(
+        [connection.id, disabledConnection.id].map((id) => ({
+          id,
+          auto_sync: false,
+          access_token: null,
+          refresh_token: null,
+          token_expires_at: null,
+          consent_id: null,
+        }))
+      )
+    );
     const { listJobs } = await import("../../server/platform/job-registry");
     expect(listJobs().map((job) => job.name)).not.toContain("bankFeeds.sync");
 
@@ -120,8 +129,7 @@ describe("Banking authorization retirement and CSV import", () => {
         hasToken: false,
       })
     );
-    expect(list.text).not.toContain(pinned);
-    expect(list.text).not.toContain("fixture-access-credential");
+    expect(list.text).not.toMatch(/fixture-(access|refresh|consent)|enc:v1:/);
     const sync = `/api/bank-connections/${connection.id}/sync`;
     const stopped = await t.as.post(sync, {});
     expect(stopped.status, stopped.text).toBe(410);

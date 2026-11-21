@@ -3,6 +3,8 @@
  * encrypted, permissioned snapshots with merge / replace restore.
  */
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 import { useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -100,6 +102,63 @@ describe("W5-B backups", () => {
     expect(dl.status).toBe(200);
     expect(dl.body.tables.vendor_bills[0].vendor_name).toBe("Raw SQL Vendor");
     expect(dl.body.companyId).toBe(t.company.id);
+  });
+
+  it("strips retired connection credentials when capturing, downloading, or restoring backups", async () => {
+    const t = await h.createTenant();
+    const { encryptSecret, decryptSecret } = await import("../../server/services/secret-vault");
+    const [connection] = await h.sql<{ id: string }>(
+      `INSERT INTO bank_connections (
+        company_id, provider, connection_type, access_token, refresh_token,
+        token_expires_at, consent_id, auto_sync, account_name
+      ) VALUES ($1, 'lean', 'open_banking', $2, $3, now(), 'old-consent', true, 'Operating')
+      RETURNING id`,
+      [t.company.id, encryptSecret("old-access"), encryptSecret("old-refresh")]
+    );
+    const b = await backup(t);
+    const [newBackup] = await h.sql<{ data_snapshot: string }>(
+      "SELECT data_snapshot FROM backups WHERE id = $1",
+      [b.id]
+    );
+    const readSealed = (sealed: string) =>
+      JSON.parse(gunzipSync(Buffer.from(decryptSecret(sealed)!.slice(4), "base64")).toString());
+    const stripped = {
+      id: connection.id,
+      account_name: "Operating",
+      access_token: null,
+      refresh_token: null,
+      token_expires_at: null,
+      consent_id: null,
+      auto_sync: false,
+    };
+    const clean = readSealed(newBackup.data_snapshot);
+    expect(clean.tables.bank_connections[0]).toMatchObject(stripped);
+
+    const [originalConnection] = await h.sql("SELECT * FROM bank_connections WHERE id = $1", [
+      connection.id,
+    ]);
+    clean.tables.bank_connections[0] = originalConnection;
+    const oldJson = JSON.stringify(clean);
+    await h.sql("UPDATE backups SET data_snapshot = $2, checksum = $3 WHERE id = $1", [
+      b.id,
+      encryptSecret(oldJson),
+      createHash("sha256").update(oldJson).digest("hex"),
+    ]);
+    const download = await t.as.get(`/api/backups/${b.id}/download`);
+    expect(download.status, download.text).toBe(200);
+    expect(download.body.tables.bank_connections[0]).toMatchObject(stripped);
+    const encrypted = await t.as.get(`/api/backups/${b.id}/download?format=encrypted`);
+    expect(encrypted.status, encrypted.text).toBe(200);
+    expect(readSealed(encrypted.text).tables.bank_connections[0]).toMatchObject(stripped);
+
+    await h.sql("DELETE FROM bank_connections WHERE id = $1", [connection.id]);
+    const restored = await t.as.post(`/api/backups/${b.id}/restore`, {
+      mode: "merge",
+      confirmRestore: true,
+    });
+    expect(restored.status, restored.text).toBe(200);
+    const [row] = await h.sql("SELECT * FROM bank_connections WHERE id = $1", [connection.id]);
+    expect(row).toMatchObject(stripped);
   });
 
   it("[R19-07] replace mode reverts an edited invoice, brings back a deleted contact and removes later rows", async () => {

@@ -113,7 +113,6 @@ export async function registerBankRoutes(app: Express) {
         accountName: body.accountName ?? null,
         bankAccountId: body.bankAccountId ?? null,
         iban: body.iban ?? null,
-        autoSync: false,
         status: "active",
       });
       logger.info({ connectionId: connection.id, companyId }, "Bank connection created");

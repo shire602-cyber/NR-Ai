@@ -29,11 +29,7 @@ import { isCapabilityLive } from "../../shared/capabilities";
 import { notificationCopy, renderServerCopy } from "../../shared/server-copy";
 import { customerVisibleNotification } from "../storage/notification-visibility";
 import { deliverOutboxMessage, enqueueEmail } from "../outbox/outbox";
-import {
-  currentDigestCopy,
-  DIGEST_WINDOW_MS,
-  renderNotificationDigest,
-} from "./notification-digest";
+import { DIGEST_WINDOW_MS, renderNotificationDigest } from "./notification-digest";
 
 const log = createLogger("notification-engine");
 
@@ -547,7 +543,7 @@ export async function sendDailyDigests(now: Date = new Date()): Promise<number> 
     );
   let sent = 0;
   for (const u of optedIn) {
-    const candidates = await db
+    const rows = await db
       .select()
       .from(notifications)
       .where(
@@ -558,8 +554,8 @@ export async function sendDailyDigests(now: Date = new Date()): Promise<number> 
           gte(notifications.createdAt, since)
         )
       )
-      .orderBy(notifications.createdAt, notifications.id);
-    const rows = candidates.filter(currentDigestCopy).slice(0, 100);
+      .orderBy(notifications.createdAt, notifications.id)
+      .limit(100);
     if (!rows.length || !u.email) continue;
     const day = now.toISOString().slice(0, 10);
     const { subject, html, textBody } = renderNotificationDigest(day, rows);

@@ -9,8 +9,6 @@ export const NOTIFICATION_DIGEST_ENTITY = "notification_digest";
 export const DIGEST_WINDOW_MS = 26 * 3_600_000;
 
 type DigestItem = Pick<typeof notifications.$inferSelect, "title" | "message">;
-const retiredWording =
-  /\bbank[\s‑–—-]+feeds?\b|\blive\s+(?:bank\s+)?feeds?\b|\bopen[\s-]+banking\b|الربط (?:البنكي|المصرفي)|مزامنة (?:الحساب|الخلاصة) البنكي/i;
 
 function digestItemHtml({ title, message }: DigestItem): string {
   return `<strong>${escapeHtml(title)}</strong> — ${escapeHtml(message)}`;
@@ -22,10 +20,6 @@ function legacyDigestItems(html: string): Map<string, number> {
     items.set(item, (items.get(item) ?? 0) + 1);
   }
   return items;
-}
-
-export function currentDigestCopy(item: DigestItem): boolean {
-  return !retiredWording.test(`${item.title} ${item.message}`);
 }
 
 export function renderNotificationDigest(day: string, rows: readonly DigestItem[]) {
@@ -85,7 +79,6 @@ export async function rebuildNotificationDigest(row: EmailOutboxRow) {
     .orderBy(notifications.createdAt, notifications.id);
   const legacyItems = exactBatch ? null : legacyDigestItems(row.html ?? "");
   const items = candidates.filter((item) => {
-    if (!currentDigestCopy(item)) return false;
     if (!legacyItems) return true;
     const html = digestItemHtml(item);
     const remaining = legacyItems.get(html) ?? 0;

@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { useTranslation } from "@/lib/i18n";
 import { BANK_RECONCILIATION_COPY } from "@shared/bank-reconciliation-copy";
+import { BANK_STATEMENT_ENTRY } from "@shared/bank-statement-routes";
 
 /** Keep old banking links usable through statement import. */
 export default function BankFeeds() {
@@ -20,7 +21,7 @@ export default function BankFeeds() {
           description={BANK_RECONCILIATION_COPY[locale]}
           action={{
             label: t["banking.recon.importStatement"],
-            href: "/bank-reconciliation?import=1",
+            href: BANK_STATEMENT_ENTRY,
             icon: Upload,
             testId: "button-feeds-import-statement",
           }}

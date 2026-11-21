@@ -319,7 +319,7 @@ try {
     for (const method of ["GET", "HEAD"]) {
       const response = await page.request.fetch(callback, { method, maxRedirects: 0 });
       assert.equal(response.status(), 303, callback);
-      assert.equal(response.headers().location, "/bank-feeds", callback);
+      assert.equal(response.headers().location, "/bank-reconciliation?import=1", callback);
       assert.equal(response.headers()["referrer-policy"], "no-referrer", callback);
     }
   }

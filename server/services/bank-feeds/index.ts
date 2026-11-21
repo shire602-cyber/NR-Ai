@@ -1,4 +1,4 @@
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { db } from "../../db";
 import { DomainError } from "../../errors";
 import { storage } from "../../storage";
@@ -10,13 +10,27 @@ import {
   type BankConnection,
 } from "../../../shared/schema";
 
-/** Stop automatic imports and invalidate outstanding returns without modifying ledger history. */
+/** Remove retired credentials and invalidate outstanding returns while preserving statement history. */
 export async function retireAutomaticBanking(): Promise<void> {
   await db.transaction(async (tx) => {
     await tx
       .update(bankConnections)
-      .set({ autoSync: false })
-      .where(and(eq(bankConnections.autoSync, true), ne(bankConnections.provider, "manual")));
+      .set({
+        autoSync: false,
+        accessToken: null,
+        refreshToken: null,
+        tokenExpiresAt: null,
+        consentId: null,
+      })
+      .where(
+        or(
+          eq(bankConnections.autoSync, true),
+          isNotNull(bankConnections.accessToken),
+          isNotNull(bankConnections.refreshToken),
+          isNotNull(bankConnections.tokenExpiresAt),
+          isNotNull(bankConnections.consentId)
+        )
+      );
     await tx
       .update(bankFeedOauthStates)
       .set({ usedAt: new Date() })
@@ -30,9 +44,17 @@ export function retiredBankingError(): DomainError {
 
 /** Public view of a historical connection. */
 export function sanitizeConnection(connection: BankConnection) {
-  const { accessToken: _access, refreshToken: _refresh, ...rest } = connection;
+  const {
+    accessToken: _access,
+    refreshToken: _refresh,
+    tokenExpiresAt: _expiry,
+    consentId: _consent,
+    ...rest
+  } = connection;
   void _access;
   void _refresh;
+  void _expiry;
+  void _consent;
   return {
     ...rest,
     hasToken: false,

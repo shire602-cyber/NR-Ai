@@ -45,6 +45,7 @@ import {
   restoreBackupIntoCompany,
   restoreCompanyBackup,
   runScheduledBackups,
+  sealSnapshot,
 } from "../services/backup.service";
 import { listJobs, registerJob } from "../platform/job-registry";
 import { hasRecentMfa } from "../services/security/policy";
@@ -307,7 +308,9 @@ export function registerBackupRoutes(app: Express) {
         throw new DomainError("BACKUP_NOT_COMPLETE", 409, undefined, "Backup is not complete");
       }
       const encrypted = req.query.format === "encrypted";
-      const body = encrypted ? stored : openSnapshot(stored, rows[0].checksum).json;
+      const opened = openSnapshot(stored, rows[0].checksum);
+      let body = opened.json;
+      if (encrypted) body = opened.redacted ? sealSnapshot(opened.redacted).sealed : stored;
       await storage.createActivityLog({
         companyId: backup.companyId,
         userId: req.user!.id,
