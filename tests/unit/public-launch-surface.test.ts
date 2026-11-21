@@ -142,6 +142,30 @@ describe("Public SaaS launch surface", () => {
     }
   });
 
+  it("describes CSV reconciliation in both locales and omits the bank feed roadmap", () => {
+    const bankFeedRoadmap = /live\s+bank feeds|الربط البنكي المباشر[^"\n]*(?:لاحق|قريب)/i;
+    const files = [
+      "client/src/components/marketing/phase/PhaseSite.tsx",
+      "client/src/components/marketing/phase/content.ts",
+      "server/routes/integration-status.routes.ts",
+      "docs/EXTERNAL_DEPENDENCIES.md",
+    ];
+    for (const locale of ["en", "ar"]) {
+      const prefix = `client/src/locales/${locale}`;
+      const keys = {
+        marketing: "marketing.faq3A",
+        banking: "banking.feeds.unavailableBody",
+        serverErrors: "serverErrors.BANK_FEED_NOT_CONFIGURED",
+      };
+      for (const [catalog, key] of Object.entries(keys)) {
+        const file = `${prefix}/${catalog}.json`;
+        files.push(file);
+        expect(JSON.parse(readRepoFile(file))[key], `${locale} ${key}`).toMatch(/CSV/);
+      }
+    }
+    for (const file of files) expect(readRepoFile(file), file).not.toMatch(bankFeedRoadmap);
+  });
+
   it("keeps authenticated SaaS chrome and dashboard copy claim-safe", () => {
     const appSource = readRepoFile("client/src/App.tsx");
     const dashboardSource = readDashboardSource();

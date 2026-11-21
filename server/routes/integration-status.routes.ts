@@ -81,7 +81,7 @@ export function registerIntegrationStatusRoutes(app: Express) {
         },
         {
           key: "openBanking",
-          name: "Live bank feeds",
+          name: "Open banking provider",
           configured: isOpenBankingConfigured(),
           detail: null,
           requiredEnv: [

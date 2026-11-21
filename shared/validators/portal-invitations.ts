@@ -34,11 +34,14 @@ export const portalBulkInviteBody = z.object({
 });
 export type PortalBulkInviteBody = z.output<typeof portalBulkInviteBody>;
 
-export const portalAcceptBody = z.object({
+export const PORTAL_INVITE_TOKEN_RE = /^[0-9a-f]{64}$/i;
+
+export const portalInviteLookupBody = z.object({ token: z.string().max(256) });
+
+export const portalAcceptBody = portalInviteLookupBody.extend({
+  email: zEmail,
   name: zText(100, { min: 1 }).optional(),
   password: z.string().max(256).optional(),
   acceptTerms: z.literal(true),
 });
 export type PortalAcceptBody = z.output<typeof portalAcceptBody>;
-
-export const PORTAL_INVITE_TOKEN_RE = /^[0-9a-f]{64}$/i;

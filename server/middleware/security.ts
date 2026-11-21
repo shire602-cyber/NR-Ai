@@ -3,6 +3,7 @@ import cors from "cors";
 import type { Express, Request, Response, NextFunction } from "express";
 import { getEnv, isProduction } from "../config/env";
 import { createLogger } from "../config/logger";
+import { portalInviteLogPath } from "../http/portal-invite-privacy";
 import { buildLimiter, clientIp, limiterProfiles } from "./rateLimit";
 import {
   cspNonce,
@@ -260,7 +261,7 @@ export function applySecurityMiddleware(app: Express): void {
       ...limiterProfiles.auth,
       keyGenerator: clientIp,
       skipSuccessfulRequests: true,
-      skipIf: (req) => req.method !== "POST" || !/\/accept$/.test(req.path),
+      skipIf: (req) => req.method !== "POST" || !/^\/accept\/?$/i.test(req.path),
     })
   );
   app.use("/api/ai/", buildLimiter(limiterProfiles.ai));
@@ -322,7 +323,10 @@ export function applySecurityMiddleware(app: Express): void {
     const fullUrl = req.originalUrl || req.url;
     for (const pattern of suspiciousPatterns) {
       if (pattern.test(fullUrl) || pattern.test(JSON.stringify(req.body || ""))) {
-        log.warn({ ip: req.ip, method: req.method, url: fullUrl }, "Suspicious request detected");
+        log.warn(
+          { ip: req.ip, method: req.method, url: portalInviteLogPath(fullUrl) ?? fullUrl },
+          "Suspicious request detected"
+        );
         break;
       }
     }

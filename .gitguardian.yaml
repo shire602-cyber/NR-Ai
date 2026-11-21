@@ -18,3 +18,8 @@ secret:
     # next commit). Not a credential: the test mocks the network. Historical-commit entry only.
     - name: "Fake fixture password in step4-signup-plan.test.ts, commit 89147f8c (not a credential)"
       match: 478d99d4725e43a17e258c061a34a070f291d4691b01728be5ebc978c66b73e9
+    # Incident 40680664 ("Generic Password"): the Tailwind inline-end padding class checked
+    # by a DOM assertion at tests/unit/portal-join-page.test.ts:188 in commit a99f5ba4.
+    # The assertion's variable held an input element. Match only the CSS class reported there.
+    - name: "Tailwind padding class in portal join RTL test, commit a99f5ba4 (incident 40680664)"
+      match: c7c74e1eaff1bb6a4ce31f8e9b0d7118af1a83fae60d24e52329b9ba5997f9fb

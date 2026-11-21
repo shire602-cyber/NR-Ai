@@ -17,6 +17,8 @@ import {
   emailDeliveryEvents,
   emailOutbox,
   emailOutboxAttachments,
+  customerPortalInvitations,
+  oauthMailboxChallenges,
   type EmailOutboxRow,
   type EmailOutboxStatus,
 } from "../../shared/schema";
@@ -31,6 +33,7 @@ import {
 const log = createLogger("email-outbox");
 
 export const DEFAULT_MAX_ATTEMPTS = 6;
+export const OAUTH_MAILBOX_CHALLENGE_ENTITY = "oauth_mailbox_challenge";
 const BASE_BACKOFF_MS = 60_000; // 1, 2, 4, 8, 16 min …
 const MAX_BACKOFF_MS = 6 * 60 * 60 * 1000;
 const LOCK_MS = 5 * 60 * 1000;
@@ -102,7 +105,7 @@ async function recordEvent(
 }
 
 /** Insert a message (and its attachments). Never sends. */
-export async function enqueueEmail(input: EnqueueEmailInput): Promise<OutboxResult> {
+export async function enqueueEmail(input: EnqueueEmailInput, executor = db): Promise<OutboxResult> {
   if (!input.to || !input.to.includes("@")) {
     throw new Error("enqueueEmail: a recipient address is required");
   }
@@ -112,14 +115,15 @@ export async function enqueueEmail(input: EnqueueEmailInput): Promise<OutboxResu
     throw new Error(`enqueueEmail: attachments exceed ${MAX_ATTACHMENT_BYTES} bytes`);
   }
   if (input.idempotencyKey) {
-    const [existing] = await db
+    const [existing] = await executor
       .select()
       .from(emailOutbox)
       .where(eq(emailOutbox.idempotencyKey, input.idempotencyKey));
     if (existing) return toResult(existing, true);
   }
   const provider = activeProviderName();
-  const row = await db.transaction(async (tx: typeof db) => {
+  const insert = async (tx: typeof db) => {
+    const now = new Date();
     const [inserted] = await tx
       .insert(emailOutbox)
       .values({
@@ -135,6 +139,9 @@ export async function enqueueEmail(input: EnqueueEmailInput): Promise<OutboxResu
         relatedEntityType: input.relatedEntityType ?? null,
         relatedEntityId: input.relatedEntityId ?? null,
         status: provider ? "queued" : "blocked_no_provider",
+        nextAttemptAt: now,
+        createdAt: now,
+        updatedAt: now,
         maxAttempts: input.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
         sensitive: input.sensitive === true,
         idempotencyKey: input.idempotencyKey ?? null,
@@ -153,32 +160,50 @@ export async function enqueueEmail(input: EnqueueEmailInput): Promise<OutboxResu
       });
     }
     return inserted as EmailOutboxRow;
-  });
+  };
+  const row = executor === db ? await db.transaction(insert) : await insert(executor);
   if (!row) {
     // Lost an idempotency race: return the winner.
-    const [existing] = await db
+    const [existing] = await executor
       .select()
       .from(emailOutbox)
       .where(eq(emailOutbox.idempotencyKey, input.idempotencyKey ?? ""));
     return toResult(existing, true);
   }
-  await recordEvent(row.id, row.status === "blocked_no_provider" ? "blocked" : "queued");
+  const eventType = row.status === "blocked_no_provider" ? "blocked" : "queued";
+  if (executor === db) await recordEvent(row.id, eventType);
+  else await executor.insert(emailDeliveryEvents).values({ outboxId: row.id, eventType });
   return toResult(row);
 }
+
+// A queued link can be superseded, revoked, or expire before a worker picks it up.
+const isCurrentPortalInvite = sql`EXISTS (
+  SELECT 1 FROM ${customerPortalInvitations} AS invite
+  WHERE invite.id = ${emailOutbox.relatedEntityId} AND invite.last_outbox_id = ${emailOutbox.id}
+    AND invite.status = 'pending' AND invite.expires_at > (now() AT TIME ZONE 'UTC')
+)`;
+
+// The challenge is deleted when consumed or when its permitted attempts are exhausted.
+const isCurrentMailboxChallenge = sql`EXISTS (
+  SELECT 1 FROM ${oauthMailboxChallenges} AS challenge
+  WHERE challenge.id = ${emailOutbox.relatedEntityId}
+    AND challenge.expires_at > (now() AT TIME ZONE 'UTC')
+)`;
 
 /** Claim rows for delivery (FOR UPDATE SKIP LOCKED); stale `sending` locks are reclaimed. */
 async function claim(ids: string[] | null, limit: number): Promise<EmailOutboxRow[]> {
   const params: unknown[] = [LOCK_MS, limit];
-  let filter = `(status IN ('queued','retrying') AND next_attempt_at <= now())
-                OR (status = 'sending' AND locked_until < now())`;
+  let filter = `(status IN ('queued','retrying') AND next_attempt_at <= (now() AT TIME ZONE 'UTC'))
+                OR (status = 'sending' AND locked_until < (now() AT TIME ZONE 'UTC'))`;
   if (ids) {
     params.push(ids);
     filter = `id = ANY($3::uuid[]) AND (status IN ('queued','retrying')
-              OR (status = 'sending' AND locked_until < now()))`;
+              OR (status = 'sending' AND locked_until < (now() AT TIME ZONE 'UTC')))`;
   }
   const { rows } = await pool.query(
     `UPDATE email_outbox SET status = 'sending',
-            locked_until = now() + ($1::int * interval '1 millisecond'), updated_at = now()
+            locked_until = (now() AT TIME ZONE 'UTC') + ($1::int * interval '1 millisecond'),
+            updated_at = now() AT TIME ZONE 'UTC'
       WHERE id IN (SELECT id FROM email_outbox WHERE ${filter}
                     ORDER BY next_attempt_at LIMIT $2 FOR UPDATE SKIP LOCKED)
       RETURNING id`,
@@ -197,6 +222,33 @@ async function claim(ids: string[] | null, limit: number): Promise<EmailOutboxRo
 }
 
 async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
+  const deliveryGuard =
+    row.category === "portal_invite"
+      ? isCurrentPortalInvite
+      : row.relatedEntityType === OAUTH_MAILBOX_CHALLENGE_ENTITY
+        ? isCurrentMailboxChallenge
+        : null;
+  if (deliveryGuard) {
+    const [current] = await db
+      .select({ id: emailOutbox.id })
+      .from(emailOutbox)
+      .where(and(eq(emailOutbox.id, row.id), deliveryGuard));
+    if (!current) {
+      const [cancelled] = await db
+        .update(emailOutbox)
+        .set({
+          status: "cancelled",
+          lockedUntil: null,
+          html: null,
+          textBody: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(emailOutbox.id, row.id))
+        .returning();
+      await recordEvent(row.id, "cancelled");
+      return toResult(cancelled);
+    }
+  }
   const transport = resolveTransport();
   if (!transport) {
     const [blocked] = await db
@@ -252,7 +304,9 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     log.info({ outboxId: row.id, provider: transport.name }, "Email delivered to provider");
     return toResult(sent as EmailOutboxRow);
   } catch (err) {
-    const message = (err as Error)?.message || "Email provider error";
+    const message = row.sensitive
+      ? "Sensitive email delivery failed"
+      : (err as Error)?.message || "Email provider error";
     const permanent = err instanceof EmailTransportError && err.permanent;
     const dead = permanent || attempts >= row.maxAttempts;
     const [failed] = await db
@@ -292,10 +346,10 @@ export async function deliverOutboxMessage(id: string): Promise<OutboxResult | n
 export async function processOutbox(limit = 50): Promise<Record<string, number>> {
   if (activeProviderName()) {
     await pool.query(
-      `UPDATE email_outbox SET status = 'queued', next_attempt_at = now(), last_error = NULL,
-              updated_at = now()
+      `UPDATE email_outbox SET status = 'queued', next_attempt_at = now() AT TIME ZONE 'UTC', last_error = NULL,
+              updated_at = now() AT TIME ZONE 'UTC'
         WHERE status = 'blocked_no_provider'
-          AND created_at > now() - CASE WHEN sensitive THEN interval '1 hour'
+          AND created_at > (now() AT TIME ZONE 'UTC') - CASE WHEN sensitive THEN interval '1 hour'
                                         ELSE interval '24 hours' END`
     );
   }
@@ -326,7 +380,8 @@ export async function requeueOutboxMessage(
       and(
         eq(emailOutbox.id, id),
         eq(emailOutbox.companyId, companyId),
-        inArray(emailOutbox.status, ["dead", "blocked_no_provider", "retrying"])
+        inArray(emailOutbox.status, ["dead", "blocked_no_provider", "retrying"]),
+        sql`(${emailOutbox.category} <> 'portal_invite' OR ${isCurrentPortalInvite})`
       )
     )
     .returning();
@@ -394,9 +449,10 @@ export async function applyProviderEvent(evt: {
     row = byMsg as EmailOutboxRow | undefined;
   }
   if (!row) {
-    await recordEvent(null, evt.type, evt.detail, evt.provider, evt.providerMessageId);
+    await recordEvent(null, evt.type, null, evt.provider, evt.providerMessageId);
     return null;
   }
+  const detail = row.sensitive ? null : evt.detail;
   const now = new Date();
   const patch: Partial<typeof emailOutbox.$inferInsert> = { updatedAt: now };
   if (evt.type === "delivered" && ["sent", "sending", "retrying"].includes(row.status)) {
@@ -405,16 +461,16 @@ export async function applyProviderEvent(evt: {
   } else if (evt.type === "bounced") {
     patch.status = "bounced";
     patch.bouncedAt = now;
-    patch.lastError = evt.detail ?? "Bounced";
+    patch.lastError = detail ?? "Bounced";
   } else if (evt.type === "complained") {
     patch.status = "complained";
     patch.complainedAt = now;
   } else if (evt.type === "failed" && row.status !== "delivered") {
     patch.status = "dead";
     patch.deadAt = now;
-    patch.lastError = evt.detail ?? "Delivery failed";
+    patch.lastError = detail ?? "Delivery failed";
   }
   await db.update(emailOutbox).set(patch).where(eq(emailOutbox.id, row.id));
-  await recordEvent(row.id, evt.type, evt.detail, evt.provider, evt.providerMessageId);
+  await recordEvent(row.id, evt.type, detail, evt.provider, evt.providerMessageId);
   return row.id;
 }

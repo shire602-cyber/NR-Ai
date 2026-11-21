@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useSyncExternalStore } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -24,10 +24,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ApiError, apiRequest } from "@/lib/queryClient";
-import { getSelectedPortalAccount, setSelectedPortalAccount } from "@/lib/auth";
+import { ApiError, portalQuery } from "@/lib/queryClient";
+import {
+  clearRevokedPortalSelection,
+  getPortalAccountSelection,
+  PORTAL_SELECTION_REQUIRED,
+  setSelectedPortalAccount,
+  subscribeToPortalAccountSelection,
+} from "@/lib/portal-state";
 import { useSessionActions } from "@/hooks/useSessionActions";
 import { PortalStatePage } from "@/components/portal/PortalStatePage";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useActiveIntoView, useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { bidiIsolate } from "@/lib/customer-link";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
@@ -53,21 +60,66 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
   const { setLocale } = useI18n();
   const queryClient = useQueryClient();
   const { signOut } = useSessionActions();
+  const selection = useSyncExternalStore(
+    subscribeToPortalAccountSelection,
+    getPortalAccountSelection
+  );
+  const selectionRequired = selection === PORTAL_SELECTION_REQUIRED;
   const mobileNav = useRef<HTMLElement>(null);
   const mobileNavFade = useEdgeFade(mobileNav);
   useActiveIntoView(mobileNav);
 
-  const { data: company, error: companyError } = useQuery({
-    queryKey: ["portal-company"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/company"),
+  const { data: boundCompany, error: companyError } = useQuery({
+    ...portalQuery("/api/client-portal/company", selection),
+    enabled: !selectionRequired,
     staleTime: 5 * 60 * 1000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
     retry: false,
   });
-  const { data: accounts = [] } = useQuery<PortalAccountRow[]>({
-    queryKey: ["portal-accounts"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/accounts"),
-    staleTime: 5 * 60 * 1000,
+  const {
+    data: accounts = [],
+    isSuccess: accountsAvailable,
+    isFetchedAfterMount: accountsChecked,
+  } = useQuery<PortalAccountRow[]>({
+    ...portalQuery("/api/client-portal/accounts", selection),
+    staleTime: selectionRequired ? 0 : 5 * 60 * 1000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
+  const missingSelection =
+    !!selection &&
+    !selectionRequired &&
+    accountsAvailable &&
+    accountsChecked &&
+    !accounts.some((a) => a.id === selection);
+
+  useEffect(() => {
+    // Pin the server's first-visit default before mounting any supplier-scoped pages.
+    if (
+      selection === null &&
+      !companyError &&
+      boundCompany?.portalAccountId &&
+      getPortalAccountSelection() === null
+    ) {
+      queryClient.setQueryData(["portal-company", boundCompany.portalAccountId], boundCompany);
+      setSelectedPortalAccount(boundCompany.portalAccountId);
+    }
+  }, [selection, boundCompany, companyError, queryClient]);
+
+  useEffect(() => {
+    if (missingSelection) clearRevokedPortalSelection(selection);
+  }, [selection, missingSelection]);
+
+  useEffect(() => {
+    if (selectionRequired && getPortalAccountSelection() === PORTAL_SELECTION_REQUIRED) {
+      queryClient.removeQueries({
+        predicate: (q) =>
+          String(q.queryKey[0]).startsWith("portal-") &&
+          q.queryKey[1] !== PORTAL_SELECTION_REQUIRED,
+      });
+    }
+  }, [selectionRequired, queryClient]);
 
   async function handleLogout() {
     // Clears the httpOnly session cookies on the server, not just local state (G4).
@@ -77,17 +129,16 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
 
   function switchSupplier(id: string) {
     setSelectedPortalAccount(id);
-    queryClient.removeQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("portal-") });
-    void queryClient.invalidateQueries();
     navigate("/client-portal/dashboard");
   }
 
-  const selectedId = getSelectedPortalAccount();
-  const current = accounts.find((a) => a.id === selectedId) ?? accounts[0];
   const removed =
-    companyError instanceof ApiError &&
-    (companyError.body?.code === "PORTAL_ACCESS_REVOKED" ||
-      companyError.body?.code === "PORTAL_CONTACT_NOT_LINKED");
+    selectionRequired ||
+    missingSelection ||
+    (companyError instanceof ApiError &&
+      (companyError.body?.code === "PORTAL_ACCESS_REVOKED" ||
+        companyError.body?.code === "PORTAL_CONTACT_NOT_LINKED"));
+  const company = selection && !removed ? boundCompany : undefined;
 
   const title =
     t[NAV_ITEMS.find((n) => location.startsWith(n.href))?.labelKey ?? "shell.portalFallbackTitle"];
@@ -214,7 +265,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                 t["portal.doc.clientPortal"]
               )}
             </span>
-            {accounts.length > 1 && (
+            {company && accounts.length > 1 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -228,9 +279,9 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                       className="min-w-0 truncate"
                       dir="auto"
                       translate="no"
-                      title={current?.company.name}
+                      title={company.name}
                     >
-                      {current?.company.name}
+                      {company.name}
                     </span>
                     <ChevronsUpDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
                   </Button>
@@ -248,7 +299,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                       >
                         {a.company.name}
                       </span>
-                      {a.id === current?.id && <Check className="h-4 w-4" aria-hidden />}
+                      {a.id === selection && <Check className="h-4 w-4" aria-hidden />}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -334,22 +385,27 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                   tone="danger"
                   title={t["portal.states.removedTitle"]}
                   body={formatMessage(t["portal.states.removedBody"], {
-                    supplier: current
-                      ? bidiIsolate(current.company.name)
-                      : t["portal.join.theSupplier"],
+                    supplier: t["portal.join.theSupplier"],
                   })}
                   actions={
                     <>
-                      {accounts.length > 1 && accounts.find((a) => a.id !== current?.id) ? (
-                        <Button
-                          className="h-11"
-                          onClick={() =>
-                            switchSupplier(accounts.find((a) => a.id !== current?.id)!.id)
-                          }
+                      {accounts.length > 0 && (
+                        <div
+                          className="flex flex-col gap-2"
+                          role="group"
+                          aria-label={t["portal.states.useOther"]}
                         >
-                          {t["portal.states.useOther"]}
-                        </Button>
-                      ) : null}
+                          {accounts.map((account) => (
+                            <Button
+                              key={account.id}
+                              className="min-h-11"
+                              onClick={() => switchSupplier(account.id)}
+                            >
+                              <bdi>{account.company.name}</bdi>
+                            </Button>
+                          ))}
+                        </div>
+                      )}
                       <Button
                         className="h-11"
                         variant="outline"
@@ -361,8 +417,17 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                   }
                 />
               </div>
+            ) : company ? (
+              <Fragment key={selection}>{children}</Fragment>
+            ) : companyError ? (
+              <p className="mx-auto max-w-md py-16 text-center" role="alert">
+                {companyError.message}
+              </p>
             ) : (
-              children
+              <div className="mx-auto max-w-[960px] space-y-4" role="status" aria-busy="true">
+                <Skeleton className="h-8 w-48" />
+                <Skeleton className="h-24 w-full" />
+              </div>
             )}
           </div>
         </main>

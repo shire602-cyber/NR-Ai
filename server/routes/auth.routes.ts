@@ -3,10 +3,11 @@ import type { Request, Response } from "express";
 import { Router } from "express";
 import type { Express } from "express";
 import bcrypt from "bcryptjs";
-import { randomBytes, createHash, randomUUID } from "crypto";
+import { randomBytes, createHash, createHmac, randomUUID } from "crypto";
 import { z } from "zod";
 
 import { storage } from "../storage";
+import { errorCode, errorProperty } from "../errors";
 import { getEnv, isProduction } from "../config/env";
 import { notificationCopy } from "../../shared/server-copy";
 import {
@@ -71,6 +72,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
 import { ensureFreeSubscription } from "../middleware/featureGate";
 import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
 import { forgotPasswordSchema, resetPasswordSchema } from "../../shared/validators";
 import { zEmail, zText, zUuid } from "../../shared/validators/primitives";
 import {
@@ -95,17 +97,26 @@ import {
   consumeOAuthState,
   createOAuthAuthorizationUrl,
   exchangeOAuthCallback,
+  frontendBaseUrl,
   getAuthIdentity,
   getOAuthProviderInfo,
   getUserByNormalizedOAuthEmail,
+  hasOAuthMailboxProof,
   isOAuthProviderId,
   linkAuthIdentity,
   markOAuthLogin,
   oauthCallbackFailureUrl,
   oauthCallbackSuccessUrl,
   oauthRedirectUri,
+  OAUTH_STATE_TTL_MS,
+  OAuthIdentityError,
   type OAuthIdentityProfile,
 } from "../services/oauth.service";
+import {
+  consumeMicrosoftMailboxChallenge,
+  OAUTH_MAILBOX_TTL_MS,
+  startMicrosoftMailboxChallenge,
+} from "../services/oauth-mailbox.service";
 
 const log = createLogger("auth");
 
@@ -122,6 +133,16 @@ function publicUser(user: Record<string, unknown>) {
 /** httpOnly cookie carrying the MFA-pending token after a social sign-in. */
 function mfaPendingCookie(): string {
   return isProduction() ? "__Host-muhasib-mfa" : "muhasib-mfa";
+}
+
+function microsoftCookie(step: "state" | "mailbox"): string {
+  return `${isProduction() ? "__Host-" : ""}muhasib-microsoft-${step}`;
+}
+
+function microsoftBrowserProof(state: string): string {
+  return createHmac("sha256", getEnv().SESSION_SECRET)
+    .update(`microsoft-browser:${state}`)
+    .digest("hex");
 }
 
 function readCookie(req: Request, name: string): string | null {
@@ -237,7 +258,7 @@ async function createOAuthCustomer(
     userType: "customer",
     isAdmin: false,
     passwordHash,
-    emailVerified: true,
+    emailVerified: hasOAuthMailboxProof(profile),
     avatarUrl: profile.picture,
   } as unknown as Parameters<typeof storage.createUser>[0]);
   const company = await provisionCustomerCompany(user.id, `${profile.name}'s Company`);
@@ -251,30 +272,68 @@ async function createOAuthCustomer(
 async function resolveOAuthUser(
   req: Request,
   profile: OAuthIdentityProfile,
-  signupPlan: SignupPlanChoice | null = null
+  signupPlan: SignupPlanChoice | null = null,
+  expectedUserId?: string | null
 ): Promise<{ user: User; mode: "existing_identity" | "linked_existing" | "created_customer" }> {
+  // Legacy Microsoft links may have been marked verified without a verified email claim.
+  if (profile.provider === "microsoft" && !hasOAuthMailboxProof(profile)) {
+    throw new OAuthIdentityError("Microsoft sign-in requires mailbox proof");
+  }
   const identity = await getAuthIdentity(profile);
   if (identity) {
-    const user = await storage.getUser(identity.userId);
-    if (!user) throw new Error("OAuth identity is linked to a missing user");
-    await markOAuthLogin(user.id, profile);
-    return { user: (await storage.getUser(user.id)) ?? user, mode: "existing_identity" };
+    if (expectedUserId !== undefined && identity.userId !== expectedUserId) {
+      throw new OAuthIdentityError("OAuth account changed during mailbox verification");
+    }
+    const user = await markOAuthLogin(identity.userId, profile);
+    return { user, mode: "existing_identity" };
   }
 
   const existingUser = await getUserByNormalizedOAuthEmail(profile.email);
+  if (expectedUserId !== undefined && (existingUser?.id ?? null) !== expectedUserId) {
+    throw new OAuthIdentityError("OAuth account changed during mailbox verification");
+  }
   if (existingUser) {
+    if (!hasOAuthMailboxProof(profile)) {
+      throw new OAuthIdentityError(
+        "A verified provider email is required to link an existing account"
+      );
+    }
     await linkAuthIdentity(existingUser.id, profile);
-    await markOAuthLogin(existingUser.id, profile);
-    return {
-      user: (await storage.getUser(existingUser.id)) ?? existingUser,
-      mode: "linked_existing",
-    };
+    const user = await markOAuthLogin(existingUser.id, profile);
+    return { user, mode: "linked_existing" };
   }
 
   const createdUser = await createOAuthCustomer(req, profile, signupPlan);
   await linkAuthIdentity(createdUser.id, profile);
-  await markOAuthLogin(createdUser.id, profile);
-  return { user: (await storage.getUser(createdUser.id)) ?? createdUser, mode: "created_customer" };
+  const user = await markOAuthLogin(createdUser.id, profile);
+  return { user, mode: "created_customer" };
+}
+
+async function completeOAuthSignIn(
+  req: Request,
+  res: Response,
+  profile: OAuthIdentityProfile,
+  nextPath: string,
+  expectedUserId?: string | null
+): Promise<string> {
+  const { user, mode } = await resolveOAuthUser(
+    req,
+    profile,
+    parseSignupPlanFromPath(nextPath),
+    expectedUserId
+  );
+  if (await isMfaEnabled(user.id)) {
+    clearAuthCookies(res);
+    res.cookie(mfaPendingCookie(), generateMfaPendingToken(user), {
+      ...authCookieBaseOptions(),
+      maxAge: 5 * 60 * 1000,
+    });
+    return `${frontendBaseUrl()}/login?mfa=1&next=${encodeURIComponent(nextPath)}`;
+  }
+  await issueAuthTokens(req, res, user);
+  await recordLoginSuccess(req, user, { method: "oauth", provider: profile.provider, mode });
+  log.info({ provider: profile.provider, userId: user.id, mode }, "OAuth login completed");
+  return oauthCallbackSuccessUrl(nextPath);
 }
 
 function callbackUrlFromRequest(req: Request, provider: "google" | "microsoft"): URL {
@@ -350,7 +409,7 @@ async function provisionCustomerCompany(
 }
 
 function isUniqueViolation(err: unknown): boolean {
-  return (err as { code?: string } | null)?.code === "23505";
+  return errorCode(err) === "23505" || errorCode(errorProperty(err, "cause")) === "23505";
 }
 
 // ─── Request schemas ──────────────────────────────────────────────────────
@@ -390,6 +449,7 @@ const mfaDisableSchema = z.object({
   code: mfaCodeSchema,
 });
 const verifyEmailSchema = z.object({ token: z.string().min(1).max(256) });
+const microsoftMailboxSchema = z.object({ code: z.string().regex(/^[0-9]{8}$/) });
 const loginHistoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
@@ -584,8 +644,8 @@ export function registerAuthRoutes(app: Express): void {
       let user;
       try {
         if (claimable && existingUser) {
-          await storage.updateUserPassword(existingUser.id, passwordHash);
-          user = await storage.updateUser(existingUser.id, { name: body.name });
+          user = await storage.claimUncredentialedUser(existingUser, body.name, passwordHash);
+          if (!user) return res.json(genericRegisterBody());
         } else {
           user = await storage.createUser({
             name: body.name,
@@ -597,7 +657,9 @@ export function registerAuthRoutes(app: Express): void {
           } as Parameters<typeof storage.createUser>[0]);
         }
       } catch (err) {
-        if (isUniqueViolation(err)) return res.json(genericRegisterBody());
+        if (isUniqueViolation(err) || errorCode(err) === "PORTAL_INVITE_EMAIL_RESERVED") {
+          return res.json(genericRegisterBody());
+        }
         throw err;
       }
 
@@ -786,6 +848,7 @@ export function registerAuthRoutes(app: Express): void {
   router.get(
     "/auth/oauth/:provider/start",
     asyncHandler(async (req: Request, res: Response) => {
+      res.set("Cache-Control", "no-store");
       const provider = req.params.provider;
       if (!isOAuthProviderId(provider)) {
         return res
@@ -795,6 +858,16 @@ export function registerAuthRoutes(app: Express): void {
 
       try {
         const redirectTo = await createOAuthAuthorizationUrl(provider, req, req.query.next);
+        if (provider === "microsoft") {
+          const state = redirectTo.searchParams.get("state");
+          if (!state) throw new OAuthIdentityError("Microsoft authorization state is missing");
+          res.clearCookie(microsoftCookie("mailbox"), authCookieBaseOptions());
+          res.cookie(microsoftCookie("state"), microsoftBrowserProof(state), {
+            ...authCookieBaseOptions(),
+            sameSite: "lax",
+            maxAge: OAUTH_STATE_TTL_MS,
+          });
+        }
         log.info({ provider, ip: req.ip }, "OAuth login started");
         return res.redirect(redirectTo.toString());
       } catch (err) {
@@ -807,48 +880,90 @@ export function registerAuthRoutes(app: Express): void {
   router.get(
     "/auth/oauth/:provider/callback",
     asyncHandler(async (req: Request, res: Response) => {
+      res.set("Cache-Control", "no-store");
+      res.set("Referrer-Policy", "no-referrer");
       const provider = req.params.provider;
       if (!isOAuthProviderId(provider)) {
         return res.redirect(oauthCallbackFailureUrl());
       }
 
       try {
+        if (provider === "microsoft") {
+          const browserState = readCookie(req, microsoftCookie("state"));
+          const state = req.query.state;
+          if (
+            typeof state !== "string" ||
+            !state ||
+            browserState !== microsoftBrowserProof(state)
+          ) {
+            throw new OAuthIdentityError("Microsoft authorization did not start in this browser");
+          }
+          res.clearCookie(microsoftCookie("state"), {
+            ...authCookieBaseOptions(),
+            sameSite: "lax",
+          });
+        }
         const state = await consumeOAuthState(provider, req.query.state);
         const profile = await exchangeOAuthCallback(
           provider,
           callbackUrlFromRequest(req, provider),
           state
         );
-        const { user, mode } = await resolveOAuthUser(
-          req,
-          profile,
-          parseSignupPlanFromPath(state.nextPath)
-        );
-
-        // W5-E: social sign-in does not skip MFA. The pending token travels in a
-        // short-lived httpOnly cookie; the login page asks for the code.
-        if (await isMfaEnabled(user.id)) {
+        if (provider === "microsoft" && !profile.emailVerified) {
+          const secret = await startMicrosoftMailboxChallenge(profile, state.nextPath);
           clearAuthCookies(res);
-          res.cookie(mfaPendingCookie(), generateMfaPendingToken(user), {
+          res.cookie(microsoftCookie("mailbox"), secret, {
             ...authCookieBaseOptions(),
-            maxAge: 5 * 60 * 1000,
+            maxAge: OAUTH_MAILBOX_TTL_MS,
           });
-          return res.redirect(oauthCallbackFailureUrl().replace("oauth_error=1", "mfa=1"));
+          return res.redirect(`${frontendBaseUrl()}/login?microsoft_mailbox=1`);
         }
-
-        await issueAuthTokens(req, res, user);
-        await recordLoginSuccess(req, user, {
-          method: "oauth",
-          provider: profile.provider,
-          mode,
-        });
-        log.info({ provider, userId: user.id, mode }, "OAuth login completed");
-
-        return res.redirect(oauthCallbackSuccessUrl(state.nextPath));
+        return res.redirect(await completeOAuthSignIn(req, res, profile, state.nextPath));
       } catch (err) {
-        log.warn({ err, provider, ip: req.ip }, "OAuth login callback failed");
+        log.warn({ code: errorCode(err), provider, ip: req.ip }, "OAuth login callback failed");
         clearAuthCookies(res);
         return res.redirect(oauthCallbackFailureUrl());
+      }
+    })
+  );
+
+  router.post(
+    "/auth/oauth/microsoft/verify-mailbox",
+    strictBody(microsoftMailboxSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      res.set("Cache-Control", "no-store");
+      const { code } = parsedBody<z.output<typeof microsoftMailboxSchema>>(req);
+      const pending = await consumeMicrosoftMailboxChallenge(
+        readCookie(req, microsoftCookie("mailbox")),
+        code
+      );
+      if (!pending) {
+        return res.status(400).json({
+          code: "OAUTH_MAILBOX_CODE_INVALID",
+          message: "The Microsoft verification code is invalid or expired.",
+        });
+      }
+      res.clearCookie(microsoftCookie("mailbox"), authCookieBaseOptions());
+      try {
+        const redirectTo = await completeOAuthSignIn(
+          req,
+          res,
+          pending.profile,
+          pending.nextPath,
+          pending.expectedUserId
+        );
+        return res.json({ redirectTo });
+      } catch (err) {
+        // Log neither the submitted code nor browser secret.
+        log.warn(
+          { code: errorCode(err) },
+          "Microsoft sign-in could not complete after mailbox verification"
+        );
+        clearAuthCookies(res);
+        return res.status(403).json({
+          code: "OAUTH_MAILBOX_ACCOUNT_CHANGED",
+          message: "Microsoft sign-in could not be completed. Start again from the sign-in page.",
+        });
       }
     })
   );
@@ -1012,8 +1127,13 @@ export function registerAuthRoutes(app: Express): void {
       const tokenHash = hashResetToken(rawToken);
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-      await storage.deletePasswordResetTokensForUser(user.id);
-      await storage.createPasswordResetToken({ userId: user.id, tokenHash, expiresAt });
+      const issued = await storage.replacePasswordResetToken({
+        userId: user.id,
+        email: user.email,
+        tokenHash,
+        expiresAt,
+      });
+      if (!issued) return res.json(genericResponse);
       await auditSecurityEvent(req, "auth.password_reset_requested", user.id, {});
 
       const env = getEnv();
@@ -1073,8 +1193,15 @@ export function registerAuthRoutes(app: Express): void {
 
       const tokenHash = hashResetToken(token);
       const record = await storage.findValidPasswordResetToken(tokenHash);
+      const reset =
+        record &&
+        (await storage.resetPasswordWithToken(
+          record.userId,
+          tokenHash,
+          await bcrypt.hash(password, 10)
+        ));
 
-      if (!record) {
+      if (!record || !reset) {
         resetPasswordLockout.recordFailure(key);
         return res.status(400).json({
           message: "This reset link is invalid or has expired. Please request a new one.",
@@ -1082,10 +1209,6 @@ export function registerAuthRoutes(app: Express): void {
         });
       }
 
-      const passwordHash = await bcrypt.hash(password, 10);
-      await storage.updateUserPassword(record.userId, passwordHash);
-      await storage.markPasswordResetTokenUsed(record.id);
-      await storage.deletePasswordResetTokensForUser(record.userId);
       // R01-06: every device signed in before the reset is signed out.
       await revokeAllUserTokens(record.userId);
       await auditSecurityEvent(req, "auth.password_reset", record.userId, {});

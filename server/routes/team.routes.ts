@@ -531,9 +531,13 @@ export function registerTeamRoutes(app: Express) {
         }
         const passwordHash = await bcrypt.hash(body.password, 10);
         if (claimable && existing) {
-          await storage.updateUserPassword(existing.id, passwordHash);
-          await storage.updateUser(existing.id, { name: body.name });
-          userId = existing.id;
+          const claimed = await storage.claimUncredentialedUser(existing, body.name, passwordHash);
+          if (!claimed) {
+            return res
+              .status(409)
+              .json({ message: "Sign in to accept this invitation", code: "LOGIN_REQUIRED" });
+          }
+          userId = claimed.id;
         } else {
           const user = await storage.createUser({
             name: body.name,
