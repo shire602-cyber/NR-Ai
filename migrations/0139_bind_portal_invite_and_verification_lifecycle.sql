@@ -5,6 +5,23 @@ DELETE FROM email_verification_tokens WHERE email IS NULL;
 ALTER TABLE password_reset_tokens ADD COLUMN IF NOT EXISTS email text;
 DELETE FROM password_reset_tokens WHERE email IS NULL;
 
+-- Pending Microsoft callbacks with an email claim but no provider mailbox proof.
+CREATE TABLE IF NOT EXISTS oauth_mailbox_challenges (
+  challenge_hash text PRIMARY KEY,
+  code_hash text NOT NULL,
+  issuer text NOT NULL,
+  provider_subject text NOT NULL,
+  email text NOT NULL,
+  display_name text NOT NULL,
+  avatar_url text,
+  next_path text NOT NULL,
+  expected_user_id uuid REFERENCES users(id) ON DELETE CASCADE,
+  expires_at timestamp NOT NULL,
+  attempts integer NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_mailbox_challenges_expires_at
+  ON oauth_mailbox_challenges (expires_at);
+
 CREATE OR REPLACE FUNCTION revoke_portal_invitations_after_contact_change()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN

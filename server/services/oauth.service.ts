@@ -30,6 +30,8 @@ export interface OAuthIdentityProfile {
   subject: string;
   email: string;
   emailVerified: boolean;
+  /** Set only after the app consumes its own Microsoft mailbox challenge. */
+  mailboxVerified?: boolean;
   name: string;
   picture?: string;
   claims: Record<string, unknown>;
@@ -78,7 +80,7 @@ const PROVIDERS: Record<OAuthProviderId, { label: string; issuer: string }> = {
 };
 
 const OAUTH_SCOPE = "openid email profile";
-const STATE_TTL_MS = 10 * 60 * 1000;
+export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const encryptionPrefix = "v1";
 
 const configCache = new Map<OAuthProviderId, Promise<oidc.Configuration>>();
@@ -89,6 +91,12 @@ export function isOAuthProviderId(value: string): value is OAuthProviderId {
 
 export function normalizeOAuthEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+export function hasOAuthMailboxProof(profile: OAuthIdentityProfile): boolean {
+  return (
+    profile.emailVerified || (profile.provider === "microsoft" && profile.mailboxVerified === true)
+  );
 }
 
 function providerCredentials(provider: OAuthProviderId): {
@@ -259,7 +267,7 @@ export async function createOAuthAuthorizationUrl(
     encryptedNonce: encryptOAuthSecret(nonce),
     nonceHash: hashOAuthSecret(nonce),
     nextPath,
-    expiresAt: new Date(Date.now() + STATE_TTL_MS),
+    expiresAt: new Date(Date.now() + OAUTH_STATE_TTL_MS),
     ipAddress: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
   });
@@ -428,8 +436,8 @@ export async function getAuthIdentity(profile: OAuthIdentityProfile, executor: t
 
 function microsoftMailboxMatch(profile: OAuthIdentityProfile) {
   if (profile.provider !== "microsoft") return undefined;
-  if (!profile.emailVerified) {
-    throw new OAuthIdentityError("Microsoft sign-in requires a verified provider email");
+  if (!hasOAuthMailboxProof(profile)) {
+    throw new OAuthIdentityError("Microsoft sign-in requires mailbox proof");
   }
   return sql`lower(${users.email}) = ${normalizeOAuthEmail(profile.email)}`;
 }
@@ -478,7 +486,7 @@ export async function markOAuthLogin(userId: string, profile: OAuthIdentityProfi
       .update(users)
       .set({
         lastLoginAt: now,
-        ...(profile.emailVerified
+        ...(hasOAuthMailboxProof(profile)
           ? {
               emailVerified: sql<boolean>`CASE WHEN lower(${users.email}) = ${normalizeOAuthEmail(profile.email)} THEN true ELSE ${users.emailVerified} END`,
             }

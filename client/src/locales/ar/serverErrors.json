@@ -1037,6 +1037,8 @@
   "serverErrors.RESEND_TOO_SOON": "انتظر قليلًا قبل إعادة إرسال هذه الدعوة.",
   "serverErrors.PORTAL_INVITE_RATE_LIMITED": "أُرسلت دعوات كثيرة. حاول مرة أخرى لاحقًا.",
   "serverErrors.PORTAL_ACCESS_REVOKED": "أُزيل وصولك إلى بوابة العملاء هذه.",
+  "serverErrors.OAUTH_MAILBOX_CODE_INVALID": "رمز التحقق من Microsoft غير صالح أو انتهت صلاحيته. تحقّق من الرمز أو أعد تسجيل الدخول.",
+  "serverErrors.OAUTH_MAILBOX_ACCOUNT_CHANGED": "تعذّر إكمال تسجيل الدخول عبر Microsoft. ابدأ من جديد من صفحة تسجيل الدخول.",
   "serverErrors.PORTAL_USER_APP_DENIED": "لا يمكن لحسابات بوابة العملاء استخدام تطبيق الشركة.",
   "serverErrors.INVITATION_NOT_RESENDABLE": "لا يمكن إعادة إرسال هذه الدعوة بعد الآن.",
   "serverErrors.INVITATION_NOT_REVOCABLE": "يمكن إلغاء الدعوات المعلّقة فقط.",

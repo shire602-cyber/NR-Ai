@@ -3,16 +3,22 @@
  * flow, plus the SSO status surfaces (OAuth configuration, SAML as
  * requires_external).
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { generateSync } from "otplib";
+import type { OutgoingEmail } from "../../server/outbox";
 import { useHarness } from "./harness";
 import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 
 const profiles: Array<Record<string, unknown>> = [];
+const sent: OutgoingEmail[] = [];
 
 vi.mock("../../server/services/oauth.service", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../server/services/oauth.service")>();
   return {
     ...actual,
+    createOAuthAuthorizationUrl: vi.fn(
+      async () => new URL("https://login.microsoftonline.com/authorize?state=s")
+    ),
     consumeOAuthState: vi.fn(async (provider: string) => ({
       state: "s",
       provider,
@@ -29,6 +35,24 @@ vi.mock("../../server/services/oauth.service", async (importOriginal) => {
 });
 
 const h = useHarness();
+
+beforeEach(async () => {
+  const { setEmailTransportOverride } = await import("../../server/outbox");
+  sent.length = 0;
+  setEmailTransportOverride({
+    name: "test",
+    send: async (message) => {
+      sent.push(message);
+      return { providerMessageId: `test-mail-${sent.length}` };
+    },
+  });
+});
+
+afterEach(async () => {
+  const { setEmailTransportOverride } = await import("../../server/outbox");
+  setEmailTransportOverride(null);
+  profiles.length = 0;
+});
 
 function profile(subject: string, email: string) {
   return {
@@ -51,12 +75,61 @@ function microsoft(subject: string, email: string, emailVerified = false) {
   };
 }
 
-async function callback(provider = "google") {
-  const r = await h.anon.get(`/api/auth/oauth/${provider}/callback?state=s&code=c`);
-  const cookies = r.headers.getSetCookie().map((c) => c.split(";")[0]);
-  const access = cookies.find((c) => c.startsWith("muhasib-access="))?.split("=")[1];
-  return { r, access };
+function cookie(headers: Headers, name: string) {
+  return headers
+    .getSetCookie()
+    .map((value) => value.split(";")[0])
+    .find((value) => value.startsWith(`${name}=`));
 }
+
+function accessFrom(headers: Headers) {
+  return cookie(headers, "muhasib-access")?.split("=")[1];
+}
+
+async function callback(provider = "google") {
+  const options =
+    provider === "microsoft" ? { headers: { cookie: await startMicrosoft() } } : undefined;
+  const r = await h.anon.get(`/api/auth/oauth/${provider}/callback?state=s&code=c`, options);
+  return {
+    r,
+    access: accessFrom(r.headers),
+    mailboxCookie: cookie(r.headers, "muhasib-microsoft-mailbox"),
+  };
+}
+
+async function startMicrosoft() {
+  const start = await h.anon.get("/api/auth/oauth/microsoft/start");
+  expect(start.status).toBe(302);
+  const state = cookie(start.headers, "muhasib-microsoft-state");
+  expect(state).toBeTruthy();
+  return state!;
+}
+
+async function verifyMailbox(code: string, mailboxCookie?: string) {
+  const csrf = await h.anon.get("/api/csrf-token");
+  const csrfCookies = csrf.headers.getSetCookie().map((value) => value.split(";")[0]);
+  return h.anon.post(
+    "/api/auth/oauth/microsoft/verify-mailbox",
+    { code },
+    {
+      headers: {
+        cookie: [...csrfCookies, mailboxCookie].filter(Boolean).join("; "),
+        "x-csrf-token": csrf.body.csrfToken,
+      },
+    }
+  );
+}
+
+function codeFor(email: string) {
+  const message = sent.findLast(
+    (mail) => mail.to === email && mail.subject.startsWith("Microsoft sign-in verification")
+  );
+  const code = /^(\d{8})$/m.exec(message?.text ?? "")?.[1];
+  expect(code).toBeDefined();
+  return code!;
+}
+
+const wrongCode = (code: string) => `${code.startsWith("0") ? "1" : "0"}${code.slice(1)}`;
 
 describe("R01-15 OAuth flow with a mocked provider", () => {
   it("R01-15: first login creates a customer with a lower-cased email and a session; repeat logins reuse it", async () => {
@@ -122,7 +195,9 @@ describe("R01-15 OAuth flow with a mocked provider", () => {
   it("requires mailbox proof before a Microsoft signup or account link", async () => {
     const email = "microsoft-unverified@example.test";
     profiles.push(microsoft("ms-unverified", email));
-    expect((await callback("microsoft")).access).toBeFalsy();
+    const pending = await callback("microsoft");
+    expect(pending.access).toBeFalsy();
+    expect(pending.r.headers.get("location")).toContain("microsoft_mailbox=1");
     expect(await h.sql("SELECT id FROM users WHERE email = $1", [email])).toHaveLength(0);
     expect(
       await h.sql("SELECT id FROM auth_identities WHERE provider_email = $1", [email])
@@ -132,12 +207,22 @@ describe("R01-15 OAuth flow with a mocked provider", () => {
     profiles.push(microsoft("ms-unverified-collision", existing.email));
     const rejected = await callback("microsoft");
     expect(rejected.access).toBeFalsy();
-    expect(rejected.r.headers.get("location")).toContain("oauth_error=1");
+    expect(rejected.r.headers.get("location")).toContain("microsoft_mailbox=1");
     expect(
       await h.sql(
         "SELECT id FROM auth_identities WHERE provider_subject = 'ms-unverified-collision'"
       )
     ).toHaveLength(0);
+    const linked = await verifyMailbox(codeFor(existing.email), rejected.mailboxCookie);
+    expect(linked.status, linked.text).toBe(200);
+    expect(
+      (await h.client(decodeURIComponent(accessFrom(linked.headers)!)).get("/api/auth/me")).body.id
+    ).toBe(existing.user.id);
+    const signedUp = await verifyMailbox(codeFor(email), pending.mailboxCookie);
+    expect(signedUp.status, signedUp.text).toBe(200);
+    expect(await h.sql("SELECT email_verified FROM users WHERE email = $1", [email])).toEqual([
+      { email_verified: true },
+    ]);
 
     const verified = "microsoft-verified@example.test";
     profiles.push(microsoft("ms-verified", verified, true));
@@ -170,17 +255,21 @@ describe("R01-15 OAuth flow with a mocked provider", () => {
 
     const sessions = () => h.sql("SELECT id FROM refresh_sessions WHERE user_id = $1", [t.user.id]);
     const before = await sessions();
-    for (const unproven of [
-      microsoft(legacy.subject, t.email),
-      microsoft(legacy.subject, oldEmail, true),
-    ]) {
-      profiles.push(unproven);
-      expect((await callback("microsoft")).access).toBeFalsy();
-    }
+    profiles.push(microsoft(legacy.subject, oldEmail, true));
+    expect((await callback("microsoft")).access).toBeFalsy();
+    profiles.push(microsoft(legacy.subject, t.email));
+    const pending = await callback("microsoft");
+    expect(pending.access).toBeFalsy();
+    expect(pending.r.headers.get("location")).toContain("microsoft_mailbox=1");
+    const code = codeFor(t.email);
+    expect((await verifyMailbox(code)).status).toBe(400);
+    expect((await verifyMailbox(wrongCode(code), pending.mailboxCookie)).status).toBe(400);
     expect(await sessions()).toEqual(before);
 
-    profiles.push(microsoft(legacy.subject, t.email, true));
-    const { access } = await callback("microsoft");
+    const complete = await verifyMailbox(code, pending.mailboxCookie);
+    expect(complete.status, complete.text).toBe(200);
+    expect(complete.body.redirectTo).toMatch(/\/auth\/callback\?next=/);
+    const access = accessFrom(complete.headers);
     expect(access).toBeTruthy();
     expect((await h.client(decodeURIComponent(access!)).get("/api/auth/me")).body.id).toBe(
       t.user.id
@@ -190,5 +279,72 @@ describe("R01-15 OAuth flow with a mocked provider", () => {
         legacy.subject,
       ])
     ).toEqual([{ provider_email: t.email }]);
+    const replay = await verifyMailbox(code, pending.mailboxCookie);
+    expect(replay.status).toBe(400);
+    expect(accessFrom(replay.headers)).toBeFalsy();
+  });
+
+  it("requires a matching browser state and rejects a code after the account mailbox changes", async () => {
+    const t = await h.createTenant();
+    const subject = "ms-changed-mailbox";
+    await startMicrosoft();
+    const foreignBrowser = await h.anon.get("/api/auth/oauth/microsoft/callback?state=s&code=c");
+    expect(foreignBrowser.headers.get("location")).toContain("oauth_error=1");
+    expect(sent.some((mail) => mail.subject.startsWith("Microsoft sign-in verification"))).toBe(
+      false
+    );
+
+    profiles.push(microsoft(subject, t.email));
+    const pending = await callback("microsoft");
+    await h.sql("UPDATE users SET email = $2 WHERE id = $1", [t.user.id, `changed-${t.email}`]);
+    const rejected = await verifyMailbox(codeFor(t.email), pending.mailboxCookie);
+    expect(rejected.body.code).toBe("OAUTH_MAILBOX_ACCOUNT_CHANGED");
+    expect(accessFrom(rejected.headers)).toBeFalsy();
+    expect(
+      await h.sql("SELECT id FROM auth_identities WHERE provider_subject = $1", [subject])
+    ).toHaveLength(0);
+  });
+
+  it("expires Microsoft mailbox proof and stops accepting codes after five wrong attempts", async () => {
+    const email = "mailbox-attempts@example.test";
+    profiles.push(microsoft("ms-attempts", email));
+    const pending = await callback("microsoft");
+    const code = codeFor(email);
+    for (let i = 0; i < 5; i += 1) {
+      expect((await verifyMailbox(wrongCode(code), pending.mailboxCookie)).body.code).toBe(
+        "OAUTH_MAILBOX_CODE_INVALID"
+      );
+    }
+    expect((await verifyMailbox(code, pending.mailboxCookie)).body.code).toBe(
+      "OAUTH_MAILBOX_CODE_INVALID"
+    );
+
+    profiles.push(microsoft("ms-attempts", email));
+    const expired = await callback("microsoft");
+    await h.sql(
+      "UPDATE oauth_mailbox_challenges SET expires_at = now() - interval '1 minute' WHERE email = $1",
+      [email]
+    );
+    expect((await verifyMailbox(codeFor(email), expired.mailboxCookie)).body.code).toBe(
+      "OAUTH_MAILBOX_CODE_INVALID"
+    );
+    expect(await h.sql("SELECT id FROM users WHERE email = $1", [email])).toHaveLength(0);
+  });
+
+  it("keeps an MFA-enabled account in the second-factor step after mailbox proof", async () => {
+    const t = await h.createTenant();
+    const enrol = await t.as.post("/api/auth/mfa/enroll", {});
+    expect(enrol.status, enrol.text).toBe(200);
+    const confirm = await t.as.post("/api/auth/mfa/enroll/confirm", {
+      code: generateSync({ secret: enrol.body.secret }),
+    });
+    expect(confirm.status, confirm.text).toBe(200);
+    profiles.push(microsoft("ms-mfa", t.email));
+    const pending = await callback("microsoft");
+    const verified = await verifyMailbox(codeFor(t.email), pending.mailboxCookie);
+    expect(verified.status, verified.text).toBe(200);
+    expect(verified.body.redirectTo).toContain("/login?mfa=1");
+    expect(cookie(verified.headers, "muhasib-mfa")).toBeTruthy();
+    expect(accessFrom(verified.headers)).toBeFalsy();
   });
 });

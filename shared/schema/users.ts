@@ -200,6 +200,27 @@ export const insertOAuthLoginStateSchema = createInsertSchema(oauthLoginStates).
 export type InsertOAuthLoginState = z.infer<typeof insertOAuthLoginStateSchema>;
 export type OAuthLoginState = typeof oauthLoginStates.$inferSelect;
 
+/** Browser-bound, one-time mailbox proof for a completed Microsoft callback. */
+export const oauthMailboxChallenges = pgTable(
+  "oauth_mailbox_challenges",
+  {
+    challengeHash: text("challenge_hash").primaryKey(),
+    codeHash: text("code_hash").notNull(),
+    issuer: text("issuer").notNull(),
+    providerSubject: text("provider_subject").notNull(),
+    email: text("email").notNull(),
+    displayName: text("display_name").notNull(),
+    avatarUrl: text("avatar_url"),
+    nextPath: text("next_path").notNull(),
+    expectedUserId: uuid("expected_user_id").references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+  },
+  (table) => ({
+    expiresAtIdx: index("idx_oauth_mailbox_challenges_expires_at").on(table.expiresAt),
+  })
+);
+
 // One-time tokens issued by /auth/forgot-password and consumed by /auth/reset-password.
 // Successful resets delete the token. usedAt is retained to reject redeemed legacy rows.
 export const passwordResetTokens = pgTable(

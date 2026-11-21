@@ -20,7 +20,9 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
     const duration = Date.now() - start;
     const url = req.originalUrl || req.url;
     const invitePath = portalInviteLogPath(url);
-    const path = invitePath ?? url;
+    // OAuth callbacks carry the authorization code and browser state in the query string.
+    const oauthCallback = /^\/api\/auth\/oauth\/(google|microsoft)\/callback\/?$/i.test(req.path);
+    const path = invitePath ?? (oauthCallback ? req.path : url);
 
     // Only log API requests (skip static files)
     if (!path.startsWith("/api") && path !== "/health") return;

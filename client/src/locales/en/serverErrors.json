@@ -1037,6 +1037,8 @@
   "serverErrors.RESEND_TOO_SOON": "Please wait a moment before sending this invitation again.",
   "serverErrors.PORTAL_INVITE_RATE_LIMITED": "Too many invitations were sent. Try again later.",
   "serverErrors.PORTAL_ACCESS_REVOKED": "Your access to this customer portal was removed.",
+  "serverErrors.OAUTH_MAILBOX_CODE_INVALID": "The Microsoft verification code is invalid or expired. Check the code or start sign-in again.",
+  "serverErrors.OAUTH_MAILBOX_ACCOUNT_CHANGED": "Microsoft sign-in could not be completed. Start again from the sign-in page.",
   "serverErrors.PORTAL_USER_APP_DENIED": "Customer portal accounts cannot use the company app.",
   "serverErrors.INVITATION_NOT_RESENDABLE": "This invitation can no longer be resent.",
   "serverErrors.INVITATION_NOT_REVOCABLE": "Only pending invitations can be cancelled.",
