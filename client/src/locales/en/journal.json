@@ -454,6 +454,7 @@
   "journal.memo.line.vatAmendedReturnRefund": "Amended VAT return {from} to {to}: VAT refund from the FTA",
   "journal.memo.line.vatSettlementFxGain": "VAT return {from} to {to}: realized exchange gain",
   "journal.memo.line.vatSettlementFxLoss": "VAT return {from} to {to}: realized exchange loss",
+  "journal.memo.line.vatGroupIntercompany": "VAT return {from} to {to}: balance with VAT group members",
   "journal.memo.line.vatReliefOutput": "Output VAT relief - {ref}",
   "journal.memo.line.vatReliefRecovered": "VAT recovered on bad debt - {ref}",
   "journal.memo.line.irrecoverableInputVat": "Irrecoverable input VAT",

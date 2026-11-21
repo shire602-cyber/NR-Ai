@@ -27,6 +27,7 @@ import { fromFils, toFils } from "../../shared/money";
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
 import { postJournal, reverseEntry, withLedgerTx } from "../ledger";
 import {
+  assertVatGroupManagers,
   legacyFilingVatGroups,
   loadVatGroupForRepresentative,
   UNVERIFIED_VAT_GROUP,
@@ -565,11 +566,6 @@ export async function upsertVatGroup(input: {
 }) {
   const trn = validateUaeTrn(input.groupTrn);
   if (!trn.valid) throw new DomainError("INVALID_TRN", 422, { issue: trn.issue });
-  for (const id of input.memberCompanyIds) {
-    if (!(await storage.hasCompanyAccess(input.userId, id))) {
-      throw new DomainError("COMPANY_ACCESS_DENIED", 403, { companyId: id });
-    }
-  }
   return withLedgerTx(async (tx) => {
     await lockVatGroupMembership(tx, input.representativeCompanyId);
     const existing = await loadVatGroupForRepresentative(input.representativeCompanyId, tx);
@@ -583,6 +579,7 @@ export async function upsertVatGroup(input: {
       ...(existing?.memberIds ?? []),
       ...legacy.flatMap(({ group }) => group.memberIds),
     ]);
+    await assertVatGroupManagers(tx, input.userId, [...members]);
     for (const { row, group } of legacy) {
       await tx
         .update(vatReturns)
@@ -625,9 +622,15 @@ export async function upsertVatGroup(input: {
       entityType: "vat_group",
       entityId: groupId,
       before: existing ? { members: existing.memberIds } : undefined,
-      after: { name: input.name, groupTrn: trn.trn, members: [...members] },
+      after: {
+        name: input.name,
+        groupTrn: trn.trn,
+        members: [...members],
+        memberAuthority: "settings.company",
+      },
       req: input.req,
       tx,
+      required: true,
     });
     return { id: groupId, name: input.name, groupTrn: trn.trn, memberCompanyIds: [...members] };
   });

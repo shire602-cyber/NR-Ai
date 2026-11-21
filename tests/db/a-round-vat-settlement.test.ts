@@ -114,7 +114,277 @@ async function getSettledReturn(t: Tenant, id: string) {
   return result.body;
 }
 
+async function vatGroup(representative: Tenant, member: Tenant) {
+  await h.sql("INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'owner')", [
+    member.company.id,
+    representative.user.id,
+  ]);
+  const group = await representative.as.put(`${base(representative)}/vat/group`, {
+    name: "VAT group",
+    groupTrn: "100000000000029",
+    memberCompanyIds: [member.company.id],
+  });
+  expect(group.status, group.text).toBe(200);
+}
+
 describe("VAT return settlement", () => {
+  it("clears each USD member's own controls and translates group cash at the settlement rate", async () => {
+    const representative = await vatTenant("USD");
+    const member = await vatTenant("USD");
+    for (const company of [representative, member]) await setAedRate(company, "USD", 0.25);
+    await foreignSale(representative, "USD", 1000);
+    await foreignSale(member, "USD", 200);
+    await vatGroup(representative, member);
+    const ret = await generate(representative, "2026-01-01", "2026-03-31");
+    await submit(ret.id, representative);
+    for (const company of [representative, member])
+      await setAedRate(company, "USD", 0.3, "2026-04-20");
+    const bank = await accountByCode(representative, "1020");
+    const url = `/api/vat-returns/${ret.id}/settlement`;
+    const payment = { date: "2026-04-20", paymentAccountId: bank.id, reference: "GROUP-1" };
+    const paid = await representative.as.post(url, payment);
+    expect(paid.status, paid.text).toBe(201);
+    expect(paid.body).toMatchObject({ outputVat: 240, inputVat: 0, netPayable: 240 });
+    expect(await linesOf(paid.body.journalEntryId)).toEqual({
+      "2020": [50, 0],
+      "1087": [12, 0],
+      "1020": [0, 72],
+      "5140": [10, 0],
+    });
+    const [memberEntry] = await h.sql<{ id: string }>(
+      "SELECT id FROM journal_entries WHERE company_id=$1 AND source_id=$2 AND source='vat_return_settlement'",
+      [member.company.id, ret.id]
+    );
+    expect(await linesOf(memberEntry.id)).toEqual({
+      "2020": [10, 0],
+      "2087": [0, 12],
+      "5140": [2, 0],
+    });
+    expect(await glBalance(representative, "2020")).toBe(0);
+    expect(await glBalance(member, "2020")).toBe(0);
+    const replay = await representative.as.post(url, payment);
+    expect(replay.status, replay.text).toBe(201);
+    expect(replay.body).toEqual(paid.body);
+
+    const amendment = await representative.as.post(`/api/vat-returns/${ret.id}/amend`, {
+      reason: "Include the member's additional sale",
+    });
+    expect(amendment.status, amendment.text).toBe(201);
+    await foreignSale(member, "USD", 200, "2026-02-10");
+    const amendmentId = amendment.body.id as string;
+    expect(await generate(representative, "2026-01-01", "2026-03-31")).toMatchObject({
+      id: amendmentId,
+    });
+    await submit(amendmentId, representative);
+    const amendmentUrl = `/api/vat-returns/${amendmentId}/settlement`;
+    const amended = await representative.as.post(amendmentUrl, {
+      ...payment,
+      reference: "GROUP-2",
+      date: "2026-04-21",
+    });
+    expect(amended.status, amended.text).toBe(201);
+    expect(amended.body).toMatchObject({ netPayable: 40, previouslySettled: { netPaid: 240 } });
+    expect(await linesOf(amended.body.journalEntryId)).toEqual({
+      "1087": [12, 0],
+      "1020": [0, 12],
+    });
+    const wrongOrder = await representative.as.post(`${url}/reverse`, {
+      date: "2026-04-22",
+      reason: "Reverse settlements",
+    });
+    expect(wrongOrder.status, wrongOrder.text).toBe(409);
+    expect(wrongOrder.body.code).toBe("VAT_SETTLEMENT_COUNTED_BY_AMENDMENT");
+    const reversedAmendment = await representative.as.post(`${amendmentUrl}/reverse`, {
+      date: "2026-04-22",
+      reason: "Reverse amendment",
+    });
+    expect(reversedAmendment.status, reversedAmendment.text).toBe(200);
+
+    const reversed = await representative.as.post(`${url}/reverse`, {
+      date: "2026-04-21",
+      reason: "Reverse group remittance",
+    });
+    expect(reversed.status, reversed.text).toBe(200);
+    expect(await glBalance(representative, "2020")).toBe(-50);
+    expect(await glBalance(member, "2020")).toBe(-20);
+    expect((await representative.as.get(url)).body.settlement).toBeNull();
+  });
+
+  it("tracks and reverses member-only control journals when the representative has no lines", async () => {
+    const representative = await vatTenant();
+    const member = await vatTenant();
+    await foreignSale(member, "AED", 1000);
+    const bill = await member.as.post(`${base(member)}/bills`, {
+      vendor_name: "External supplier",
+      vendor_trn: "100000000000011",
+      bill_number: "GROUP-NET-0",
+      bill_date: "2026-02-20",
+      due_date: "2026-03-31",
+      currency: "AED",
+      line_items: [{ description: "Taxable purchase", quantity: 1, unit_price: 1000, vat_rate: 5 }],
+    });
+    expect(bill.status, bill.text).toBe(200);
+    const approved = await member.as.post(`/api/bills/${bill.body.id}/approve`, {});
+    expect(approved.status, approved.text).toBe(200);
+    await vatGroup(representative, member);
+    const ret = await generate(representative, "2026-01-01", "2026-03-31");
+    await submit(ret.id, representative);
+    const bank = await accountByCode(representative, "1020");
+    const url = `/api/vat-returns/${ret.id}/settlement`;
+    const payment = { date: "2026-04-20", paymentAccountId: bank.id };
+    const paid = await representative.as.post(url, payment);
+    expect(paid.status, paid.text).toBe(201);
+    expect(paid.body).toMatchObject({ outputVat: 50, inputVat: 50, netPayable: 0 });
+    const entries = await h.sql(
+      "SELECT id,company_id FROM journal_entries WHERE source='vat_return_settlement' AND source_id=$1",
+      [ret.id]
+    );
+    expect(entries).toEqual([{ id: paid.body.journalEntryId, company_id: member.company.id }]);
+    expect(await linesOf(paid.body.journalEntryId)).toEqual({ "2020": [50, 0], "1050": [0, 50] });
+    expect((await representative.as.get(url)).body.settlement).toMatchObject({
+      id: paid.body.journalEntryId,
+      kind: "none",
+    });
+    const replay = await representative.as.post(url, payment);
+    expect(replay.status, replay.text).toBe(201);
+    expect(replay.body).toEqual(paid.body);
+    const reversed = await representative.as.post(`${url}/reverse`, {
+      date: "2026-04-21",
+      reason: "Undo settlement",
+    });
+    expect(reversed.status, reversed.text).toBe(200);
+    expect(await glBalance(member, "2020")).toBe(-50);
+    expect(await glBalance(member, "1050")).toBe(50);
+  });
+
+  it("requires posted evidence before settling USD workpaper figures with no VAT controls", async () => {
+    const t = await vatTenant("USD");
+    await setAedRate(t, "USD", 0.25);
+    const bank = await accountByCode(t, "1020");
+    const ret = await generate(t, "2026-01-01", "2026-03-31");
+    // Workpaper generation writes the approved aggregate boxes without an engine version.
+    await h.sql(
+      `UPDATE vat_returns SET status = 'pending_review', engine_version = NULL,
+               box12_total_due_tax = 50, box14_payable_tax = 50 WHERE id = $1`,
+      [ret.id]
+    );
+    await submit(ret.id, t);
+    const url = `/api/vat-returns/${ret.id}/settlement`;
+    const paid = await t.as.post(url, { date: "2026-04-20", paymentAccountId: bank.id });
+    expect(paid.status, paid.text).toBe(409);
+    expect(paid.body.code).toBe("VAT_SETTLEMENT_RECONCILIATION_REQUIRED");
+    expect((await t.as.get(url)).body.settlement).toBeNull();
+    expect((await getSettledReturn(t, ret.id)).paymentAmount).toBeNull();
+  });
+
+  it("requires evidence for an older filed AED return linked to a workpaper", async () => {
+    const t = await vatTenant();
+    const bank = await accountByCode(t, "1020");
+    const ret = await generate(t, "2026-01-01", "2026-03-31");
+    await h.sql(
+      `UPDATE vat_returns SET status='filed', engine_version=NULL, reconciliation_snapshot=NULL,
+         box12_total_due_tax=50, box14_payable_tax=50 WHERE id=$1`,
+      [ret.id]
+    );
+    await h.sql(
+      `INSERT INTO vat_workpapers (company_id, period_start, period_end, due_date, status, generated_vat_return_id, created_by)
+       SELECT company_id, period_start, period_end, due_date, 'filed', id, $2 FROM vat_returns WHERE id=$1`,
+      [ret.id, t.user.id]
+    );
+    const url = `/api/vat-returns/${ret.id}/settlement`;
+    const paid = await t.as.post(url, { date: "2026-04-20", paymentAccountId: bank.id });
+    expect(paid.status, paid.text).toBe(409);
+    expect(paid.body.code).toBe("VAT_SETTLEMENT_RECONCILIATION_REQUIRED");
+    expect((await t.as.get(url)).body.settlement).toBeNull();
+  });
+
+  it("retains the ready override and settles current carrying values with unchanged AED VAT", async () => {
+    const t = await vatTenant("USD");
+    await setAedRate(t, "USD", 0.25);
+    const bank = await accountByCode(t, "1020");
+    const output = await accountByCode(t, "2020");
+    const invoice = await foreignSale(t, "USD", 1000);
+    const { postJournal } = await import("../../server/ledger");
+    await postJournal(
+      {
+        companyId: t.company.id,
+        date: "2026-02-05",
+        source: "invoice",
+        status: "posted",
+        lines: [
+          { accountId: bank.id, debitFils: 500 },
+          { accountId: output.id, creditFils: 500, systemVat: true },
+        ],
+      },
+      { actorId: t.user.id }
+    );
+    const ret = await generate(t, "2026-01-01", "2026-03-31");
+    const ready = await t.as.post(`/api/vat-returns/${ret.id}/ready`, {
+      overrideReason: "Reviewed the remaining ledger-only VAT movement",
+    });
+    expect(ready.status, ready.text).toBe(200);
+    expect(ready.body.reconciliationSnapshot).toMatchObject({
+      returnOutputVatFils: 5000,
+      unexplainedOutputFils: -500,
+    });
+    const voided = await t.as.patch(`/api/invoices/${invoice}/status`, { status: "void" });
+    expect(voided.status, voided.text).toBe(200);
+    await setAedRate(t, "USD", 0.2, "2026-03-01");
+    await foreignSale(t, "USD", 800, "2026-03-01");
+    await submit(ret.id, t);
+    const filed = await getSettledReturn(t, ret.id);
+    expect(filed.reconciliationSnapshot).toMatchObject({
+      returnOutputVatFils: 5000,
+      unexplainedOutputFils: -500,
+    });
+    const url = `/api/vat-returns/${ret.id}/settlement`;
+    const payment = { date: "2026-04-20", paymentAccountId: bank.id };
+    await h.sql(
+      "UPDATE vat_returns SET reconciliation_snapshot = reconciliation_snapshot - 'filingReconciliation' WHERE id=$1",
+      [ret.id]
+    );
+    const legacy = await t.as.post(url, payment);
+    expect(legacy.status, legacy.text).toBe(409);
+    expect(legacy.body.code).toBe("VAT_SETTLEMENT_RECONCILIATION_REQUIRED");
+    await h.sql("UPDATE vat_returns SET reconciliation_snapshot=$2::jsonb WHERE id=$1", [
+      ret.id,
+      JSON.stringify(filed.reconciliationSnapshot),
+    ]);
+    const paid = await t.as.post(`/api/vat-returns/${ret.id}/settlement`, {
+      date: "2026-04-20",
+      paymentAccountId: bank.id,
+    });
+    expect(paid.status, paid.text).toBe(201);
+    expect(paid.body.netPayable).toBe(200);
+    expect(await linesOf(paid.body.journalEntryId)).toEqual({ "1020": [0, 40], "2020": [40, 0] });
+  });
+
+  it("rejects an incomplete workpaper computation before accepting an override", async () => {
+    const t = await vatTenant("EUR");
+    const rateId = await setAedRate(t, "EUR", 0.25);
+    await foreignSale(t, "EUR", 1000);
+    const ret = await generate(t, "2026-01-01", "2026-03-31");
+    await h.sql("UPDATE vat_returns SET engine_version = NULL WHERE id = $1", [ret.id]);
+    await h.sql("DELETE FROM exchange_rates WHERE id = $1 AND company_id = $2", [
+      rateId,
+      t.company.id,
+    ]);
+    const filed = await t.as.post(`/api/vat-returns/${ret.id}/submit`, {
+      ftaReferenceNumber: "FTA-INCOMPLETE",
+      reconciliationOverrideReason: "An override cannot fill missing exchange-rate evidence",
+    });
+    expect(filed.status, filed.text).toBe(422);
+    expect(filed.body.code).toBe("NO_EXCHANGE_RATE");
+    expect((await getSettledReturn(t, ret.id)).status).toBe("draft");
+    await h.sql("UPDATE vat_returns SET status='submitted' WHERE id=$1", [ret.id]);
+    const olderSubmission = await t.as.post(`/api/vat-returns/${ret.id}/submit`, {
+      ftaReferenceNumber: "FTA-INCOMPLETE",
+    });
+    expect(olderSubmission.status, olderSubmission.text).toBe(422);
+    expect(olderSubmission.body.code).toBe("NO_EXCHANGE_RATE");
+    expect((await getSettledReturn(t, ret.id)).status).toBe("submitted");
+  });
+
   it("pays AED 200 from a USD ledger as USD 50 at the configured rate", async () => {
     const t = await vatTenant("USD");
     const bank = await accountByCode(t, "1020");
@@ -311,18 +581,43 @@ describe("VAT return settlement", () => {
     expect(await glBalance(t, "1050")).toBe(0);
   });
 
-  it("uses the rounded net remittance and preserves an AED input amount too small for its own USD line", async () => {
+  it("rounds the net AED remittance and clears the frozen gross USD controls", async () => {
     const t = await vatTenant("USD");
     const bank = await accountByCode(t, "1020");
     await setAedRate(t, "USD", 0.25);
     const ret = await generate(t, "2026-01-01", "2026-03-31");
-    // Imported return with filed AED boxes and no historical functional-currency snapshot.
-    await h.sql(
-      `UPDATE vat_returns SET status = 'filed', reconciliation_snapshot = NULL,
-               box12_total_due_tax = 0.02, box13_recoverable_tax = 0.01, box14_payable_tax = 0.01
+    // Snapshot fixture carries both controls in USD, even when a gross AED amount
+    // is too small to translate to a cent at the later settlement rate.
+    const setFiledAmounts = (outputAedFils: number) =>
+      h.sql(
+        `UPDATE vat_returns SET status = 'filed', reconciliation_snapshot = $2::jsonb,
+               box12_total_due_tax = $3, box13_recoverable_tax = 0.01, box14_payable_tax = $4
          WHERE id = $1`,
-      [ret.id]
-    );
+        [
+          ret.id,
+          JSON.stringify({
+            filingReconciliation: {
+              outputAedFils,
+              inputAedFils: 1,
+              members: [
+                {
+                  companyId: t.company.id,
+                  baseCurrency: "USD",
+                  outputAedFils,
+                  inputAedFils: 1,
+                  outputBaseFils: 2,
+                  inputBaseFils: 1,
+                  ledgerOutputBaseFils: 2,
+                  ledgerInputBaseFils: 1,
+                },
+              ],
+            },
+          }),
+          outputAedFils / 100,
+          (outputAedFils - 1) / 100,
+        ]
+      );
+    await setFiledAmounts(2);
     const url = `/api/vat-returns/${ret.id}/settlement`;
     const payment = { date: "2026-04-20", paymentAccountId: bank.id };
     const tooSmall = await t.as.post(url, payment);
@@ -330,17 +625,14 @@ describe("VAT return settlement", () => {
     expect(tooSmall.body.code).toBe("VAT_SETTLEMENT_ROUNDS_TO_ZERO");
     expect((await t.as.get(url)).body.settlement).toBeNull();
 
-    await h.sql(
-      "UPDATE vat_returns SET box12_total_due_tax = 0.06, box14_payable_tax = 0.05 WHERE id = $1",
-      [ret.id]
-    );
+    await setFiledAmounts(6);
     const paid = await t.as.post(url, payment);
     expect(paid.status, paid.text).toBe(201);
     expect(paid.body).toMatchObject({ outputVat: 0.06, inputVat: 0.01, netPayable: 0.05 });
     expect(await linesOf(paid.body.journalEntryId)).toEqual({
       "1020": [0, 0.01],
       "2020": [0.02, 0],
-      "4090": [0, 0.01],
+      "1050": [0, 0.01],
     });
     const replay = await t.as.post(url, payment);
     expect(replay.status, replay.text).toBe(201);

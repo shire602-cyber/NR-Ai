@@ -14,9 +14,14 @@ import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
 import { defineMachine, withLedgerTx, type LedgerTx } from "../ledger";
 import { todayIso } from "../ledger/normalize";
-import { lockVatGroupMembership, lockVatReturnCompanies } from "../ledger/vat-lock";
+import {
+  findFiledVatPeriod,
+  lockVatGroupMembership,
+  lockVatReturnCompanies,
+} from "../ledger/vat-lock";
 import {
   assertVerifiedVatGroup,
+  authorizeVatFilingGroup,
   getFilingVatGroup,
   loadVatGroupForRepresentative,
   resolveFilingVatGroup,
@@ -26,8 +31,14 @@ import {
   type VerifiedVatGroup,
 } from "../ledger/vat-group-scope";
 import { getVatReturnSettlement } from "./vat-settlement.service";
-import { computeVat201, loadVatCompany, type VatComputation } from "./vat-engine";
+import {
+  computeVat201,
+  loadVatCompany,
+  vatMemberComputations,
+  type VatComputation,
+} from "./vat-engine";
 import { assertAlignedPeriod } from "./vat-periods";
+import type { VatFilingReconciliation } from "./vat-reconciliation";
 import {
   DERIVED_BOX_KEYS,
   EMIRATE_BOX_PREFIX,
@@ -128,6 +139,24 @@ export function reconciliationSnapshot(c: VatComputation) {
       outOfScopeDocuments: c.excluded.outOfScope.length,
       intraGroupDocuments: c.excluded.intraGroup.length,
     },
+  };
+}
+
+function currentFilingReconciliation(computation: VatComputation): VatFilingReconciliation {
+  return {
+    ...reconciliationSnapshot(computation),
+    outputAedFils: computation.boxesFils.box12TotalDueTax,
+    inputAedFils: computation.boxesFils.box13RecoverableTax,
+    members: vatMemberComputations(computation).map((member) => ({
+      companyId: member.companyId,
+      baseCurrency: member.company.baseCurrency,
+      outputAedFils: member.boxesFils.box12TotalDueTax,
+      inputAedFils: member.boxesFils.box13RecoverableTax,
+      outputBaseFils: member.reconciliation.returnOutputVatFils,
+      inputBaseFils: member.reconciliation.returnInputVatFils,
+      ledgerOutputBaseFils: member.reconciliation.ledgerOutputVatFils,
+      ledgerInputBaseFils: member.reconciliation.ledgerInputVatFils,
+    })),
   };
 }
 
@@ -252,8 +281,9 @@ export async function generateVatReturn(input: {
     const { from, to, dueDate } = await validateReturnPeriod(input, tx);
     const existing = await findReturnForPeriod(tx, input.companyId, from, to);
     assertReturnIsEditable(existing);
-    const group = await lockVatReturnScope(tx, input.companyId, existing);
-    assertVerifiedVatGroup(group);
+    const scope = await lockVatReturnScope(tx, input.companyId, existing);
+    assertVerifiedVatGroup(scope);
+    const group = await authorizeVatFilingGroup(tx, scope, input.userId);
     await assertPeriodNotLocked(input.companyId, to, tx);
     const computation = await computeVat201({ companyId: input.companyId, from, to }, tx, group);
     const snapshot = reconciliationSnapshot(computation);
@@ -318,29 +348,29 @@ async function prepareReturnForFinalization(
   tx: LedgerTx,
   vatReturn: VatReturn,
   group: VerifiedVatGroup | null,
-  input: { userId: string; overrideReason?: string | null; req?: Request }
+  input: { userId: string; overrideReason?: string | null; req?: Request },
+  filing = false
 ) {
   const from = dateOf(vatReturn.periodStart);
   const to = dateOf(vatReturn.periodEnd);
   const { postPartialExemptionForPeriod } = await import("./vat-partial-exemption.service");
-  await postPartialExemptionForPeriod({
-    companyId: vatReturn.companyId,
-    from,
-    to,
-    actorId: input.userId,
-    vatReturnId: vatReturn.id,
-    tx,
-  });
-  const computation = await computeVat201(
-    {
-      companyId: vatReturn.companyId,
+  // Reject blocking engine issues before any approval or apportionment is recorded.
+  const compute = () => computeVat201({ companyId: vatReturn.companyId, from, to }, tx, group);
+  let computation = await compute();
+  let posted = false;
+  for (const member of vatMemberComputations(computation)) {
+    const apportionment = await postPartialExemptionForPeriod({
+      companyId: member.companyId,
       from,
       to,
-      allowIncomplete: true,
-    },
-    tx,
-    group
-  );
+      actorId: input.userId,
+      vatReturnId: vatReturn.id,
+      computation: member,
+      tx,
+    });
+    posted ||= apportionment.posted;
+  }
+  if (posted) computation = await compute();
   if (
     vatReturn.engineVersion &&
     diffReturns(vatReturn as unknown as Record<string, unknown>, computation.boxes).length
@@ -353,11 +383,13 @@ async function prepareReturnForFinalization(
     );
   }
   const snapshot = reconciliationSnapshot(computation);
+  const filingReconciliation = filing ? currentFilingReconciliation(computation) : undefined;
+  const currentSnapshot = filingReconciliation ? { ...snapshot, filingReconciliation } : snapshot;
   const current = {
     vatGroupId: computation.group?.groupId ?? null,
     reconciliationSnapshot: vatReturn.amendsReturnId
-      ? withFilingVatGroup(snapshot, group)
-      : snapshot,
+      ? withFilingVatGroup(currentSnapshot, group)
+      : currentSnapshot,
   };
   const r = computation.reconciliation;
   if (!r.hasUnexplainedDifference) {
@@ -378,8 +410,16 @@ async function prepareReturnForFinalization(
     approved.unexplainedOutputFils === r.unexplainedOutputFils &&
     approved.unexplainedInputFils === r.unexplainedInputFils
   ) {
-    // Retain the snapshot that supports the recorded approval.
-    return { vatGroupId: current.vatGroupId };
+    // The ready evidence supports the approval. Settlement uses the current filing evidence.
+    return {
+      vatGroupId: current.vatGroupId,
+      ...(filingReconciliation && {
+        reconciliationSnapshot: {
+          ...(vatReturn.reconciliationSnapshot as object),
+          filingReconciliation,
+        },
+      }),
+    };
   }
   if (!reason) {
     throw new DomainError(
@@ -413,7 +453,11 @@ async function prepareReturnForFinalization(
   };
 }
 
-async function assertNoOtherFinalReturn(tx: LedgerTx, vatReturn: VatReturn): Promise<void> {
+async function assertNoOtherFinalReturn(
+  tx: LedgerTx,
+  vatReturn: VatReturn,
+  group: VerifiedVatGroup | null
+): Promise<void> {
   const [other] = await tx
     .select()
     .from(vatReturns)
@@ -428,6 +472,18 @@ async function assertNoOtherFinalReturn(tx: LedgerTx, vatReturn: VatReturn): Pro
     )
     .limit(1);
   assertReturnIsEditable(other);
+  const from = dateOf(vatReturn.periodStart);
+  const to = dateOf(vatReturn.periodEnd);
+  for (const memberId of group?.memberIds ?? [vatReturn.companyId]) {
+    if (await findFiledVatPeriod(tx, memberId, from, to, vatReturn.id)) {
+      throw new DomainError(
+        "VAT_RETURN_SCOPE_OVERLAP",
+        409,
+        undefined,
+        "A company covered by this VAT return already has a submitted or filed return for an overlapping period."
+      );
+    }
+  }
 }
 
 async function transitionReturn(
@@ -468,13 +524,18 @@ export async function markVatReturnReady(input: {
   req?: Request;
 }): Promise<VatReturn> {
   return withLedgerTx(async (tx) => {
-    const { row: existing, group } = await loadVatReturnForUpdate(tx, input.companyId, input.id);
+    const { row: existing, group: scope } = await loadVatReturnForUpdate(
+      tx,
+      input.companyId,
+      input.id
+    );
     if (existing.status === "ready") return existing;
     if (!vatReturnMachine.can(existing.status, "ready")) {
       throw new DomainError("INVALID_TRANSITION", 409, { from: existing.status, to: "ready" });
     }
-    await assertNoOtherFinalReturn(tx, existing);
-    assertVerifiedVatGroup(group);
+    assertVerifiedVatGroup(scope);
+    const group = await authorizeVatFilingGroup(tx, scope, input.userId);
+    await assertNoOtherFinalReturn(tx, existing, group);
     const reconciliation = await prepareReturnForFinalization(tx, existing, group, input);
     return transitionReturn(
       tx,
@@ -534,7 +595,11 @@ export async function submitVatReturn(input: {
   const target = reference ? "filed" : "submitted";
   const { filedOn } = input;
   return withLedgerTx(async (tx) => {
-    const { row: existing, group } = await loadVatReturnForUpdate(tx, input.companyId, input.id);
+    const { row: existing, group: scope } = await loadVatReturnForUpdate(
+      tx,
+      input.companyId,
+      input.id
+    );
     if (filedOn) validateFilingDate(filedOn, reference, existing.periodEnd);
     if (existing.status === target) {
       const storedDate = existing.declarationDate && dateOf(existing.declarationDate);
@@ -554,8 +619,9 @@ export async function submitVatReturn(input: {
     if (!vatReturnMachine.can(existing.status, target)) {
       throw new DomainError("INVALID_TRANSITION", 409, { from: existing.status, to: target });
     }
-    assertVerifiedVatGroup(group);
-    await assertNoOtherFinalReturn(tx, existing);
+    assertVerifiedVatGroup(scope);
+    const group = await authorizeVatFilingGroup(tx, scope, input.userId);
+    await assertNoOtherFinalReturn(tx, existing, group);
     await assertPeriodNotLocked(existing.companyId, existing.periodEnd, tx);
     if (filedOn && existing.status === "submitted") {
       const settlement = await getVatReturnSettlement(existing.companyId, existing.id, tx);
@@ -568,10 +634,44 @@ export async function submitVatReturn(input: {
         );
       }
     }
-    const reconciliation: Partial<typeof vatReturns.$inferInsert> =
-      existing.status === "submitted"
-        ? {}
-        : await prepareReturnForFinalization(tx, existing, group, input);
+    let reconciliation: Partial<typeof vatReturns.$inferInsert> = {};
+    if (existing.status !== "submitted") {
+      reconciliation = await prepareReturnForFinalization(tx, existing, group, input, true);
+    } else {
+      const prior = existing.reconciliationSnapshot as {
+        filingReconciliation?: VatFilingReconciliation;
+      } | null;
+      if (!prior?.filingReconciliation) {
+        // Older submissions lacked closing evidence. A filed marker cannot validate an
+        // incomplete period or post missing apportionment into books already closed.
+        const computation = await computeVat201(
+          {
+            companyId: existing.companyId,
+            from: dateOf(existing.periodStart),
+            to: dateOf(existing.periodEnd),
+          },
+          tx,
+          group
+        );
+        if (
+          (existing.engineVersion &&
+            diffReturns(existing as unknown as Record<string, unknown>, computation.boxes)
+              .length) ||
+          vatMemberComputations(computation).some((member) => member.partialExemption.unpostedFils)
+        ) {
+          throw new DomainError(
+            "VAT_RETURN_STALE",
+            409,
+            undefined,
+            "The books no longer support the submitted VAT return. Amend and reconcile the return before recording the filing."
+          );
+        }
+        reconciliation.reconciliationSnapshot = {
+          ...prior,
+          filingReconciliation: currentFilingReconciliation(computation),
+        };
+      }
+    }
     const snapshot = reconciliation.reconciliationSnapshot ?? existing.reconciliationSnapshot;
     const filingSnapshot = group ? withFilingVatGroup(snapshot, group) : snapshot;
     const declaration = filedOn ? new Date(`${filedOn}T08:00:00Z`) : null;
@@ -609,7 +709,11 @@ export async function amendVatReturn(input: {
   computation: VatComputation;
 }> {
   return withLedgerTx(async (tx) => {
-    const { row: original, group } = await loadVatReturnForUpdate(tx, input.companyId, input.id);
+    const { row: original, group: scope } = await loadVatReturnForUpdate(
+      tx,
+      input.companyId,
+      input.id
+    );
     if (original.status !== "submitted" && original.status !== "filed") {
       throw new DomainError(
         "VAT_RETURN_NOT_FINAL",
@@ -618,7 +722,8 @@ export async function amendVatReturn(input: {
         "Only a submitted or filed return can be amended; regenerate the draft instead."
       );
     }
-    assertVerifiedVatGroup(group);
+    assertVerifiedVatGroup(scope);
+    const group = await authorizeVatFilingGroup(tx, scope, input.userId);
     const from = new Date(original.periodStart).toISOString().slice(0, 10);
     const to = new Date(original.periodEnd).toISOString().slice(0, 10);
     const computation = await computeVat201({ companyId: original.companyId, from, to }, tx, group);
@@ -655,7 +760,8 @@ export async function amendVatReturn(input: {
       .set({
         status: "amended",
         updatedAt: new Date(),
-        ...(getFilingVatGroup(original.reconciliationSnapshot) === undefined
+        ...(getFilingVatGroup(original.reconciliationSnapshot)?.memberAuthority !==
+        group?.memberAuthority
           ? {
               vatGroupId: group?.groupId ?? null,
               reconciliationSnapshot: withFilingVatGroup(original.reconciliationSnapshot, group),

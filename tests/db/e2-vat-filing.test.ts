@@ -313,7 +313,13 @@ describe("VAT filing and settlement transaction boundaries", () => {
     return group.body.id as string;
   }
 
-  async function seedLegacyGroup(representative: Tenant, member: Tenant) {
+  async function seedLegacyGroup(representative: Tenant, member: Tenant, canAuthorize = true) {
+    if (canAuthorize) {
+      await h.sql(
+        `INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'owner')`,
+        [member.company.id, representative.user.id]
+      );
+    }
     const [group] = await h.sql<{ id: string }>(
       `INSERT INTO vat_groups (representative_company_id, name, group_trn, created_by)
        VALUES ($1, 'VAT Group', '100000000000029', $2) RETURNING id`,
@@ -326,6 +332,57 @@ describe("VAT filing and settlement transaction boundaries", () => {
     ]);
     return group.id;
   }
+
+  it("keeps viewer-created legacy group links from closing a member's books", async () => {
+    const representative = await vatTenant();
+    const member = await vatTenant();
+    const id = await draftReturn(representative);
+    await h.sql("INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')", [
+      member.company.id,
+      representative.user.id,
+    ]);
+    const input = {
+      name: "VAT Group",
+      groupTrn: "100000000000029",
+      memberCompanyIds: [member.company.id],
+    };
+    const route = `${base(representative)}/vat/group`;
+    const denied = await representative.as.put(route, input);
+    expect(denied.status, denied.text).toBe(403);
+    expect(denied.body.code).toBe("VAT_GROUP_MEMBER_AUTHORIZATION_REQUIRED");
+    const groupId = await seedLegacyGroup(representative, member, false);
+    const deniedFiling = await representative.as.post(`/api/vat-returns/${id}/submit`, {});
+    expect(deniedFiling.status, deniedFiling.text).toBe(403);
+    expect(deniedFiling.body.code).toBe("VAT_GROUP_MEMBER_AUTHORIZATION_REQUIRED");
+
+    // Simulate a closure created before authority was required, then explicitly approve future use.
+    await h.sql(
+      `UPDATE vat_returns SET status='submitted',vat_group_id=$2,
+      reconciliation_snapshot=$3::jsonb WHERE id=$1`,
+      [
+        id,
+        groupId,
+        JSON.stringify({
+          filingVatGroup: {
+            groupId,
+            name: input.name,
+            groupTrn: input.groupTrn,
+            memberIds: [member.company.id, representative.company.id],
+            provenance: "recorded",
+          },
+        }),
+      ]
+    );
+    await h.sql("UPDATE company_users SET role='owner' WHERE company_id=$1 AND user_id=$2", [
+      member.company.id,
+      representative.user.id,
+    ]);
+    const authorized = await representative.as.put(route, input);
+    expect(authorized.status, authorized.text).toBe(200);
+    const post = await prepareBackdatedSale(member, 100);
+    const backdated = await post();
+    expect(backdated.status, backdated.text).toBe(200);
+  });
 
   async function draftSale(company: Tenant, unitPrice: number, date = "2026-03-25") {
     const invoice = await company.as.post(`${base(company)}/invoices`, {
@@ -585,7 +642,11 @@ describe("VAT filing and settlement transaction boundaries", () => {
     const postUnrelated = await prepareBackdatedSale(unrelated, 1000);
     const unrelatedPosting = await postUnrelated();
     expect(unrelatedPosting.status, unrelatedPosting.text).toBe(200);
-    for (const post of [postOld, postAdded, postGuessed]) expectVerificationRequired(await post());
+    expectVerificationRequired(await postOld());
+    for (const post of [postAdded, postGuessed]) {
+      const allowed = await post();
+      expect(allowed.status, allowed.text).toBe(200);
+    }
     for (const change of Object.values(oldChanges)) expectVerificationRequired(await change());
     const unrelatedReversal = await unrelatedChanges.reverse();
     expect(unrelatedReversal.status, unrelatedReversal.text).toBe(200);
@@ -640,6 +701,7 @@ describe("VAT filing and settlement transaction boundaries", () => {
             name: historical.name,
             groupTrn: historical.groupTrn,
             members: historical.memberIds,
+            memberAuthority: "settings.company",
           },
         }),
       ]
@@ -653,7 +715,7 @@ describe("VAT filing and settlement transaction boundaries", () => {
     const recovered = await returnRow(representative, id);
     expect(recovered.reconciliationSnapshot).toEqual({
       ...legacy.reconciliationSnapshot,
-      filingVatGroup: { ...historical, provenance: "audit" },
+      filingVatGroup: { ...historical, provenance: "audit", memberAuthority: "settings.company" },
     });
     const formerMember = await postOld();
     expect(formerMember.status, formerMember.text).toBe(409);
@@ -661,10 +723,6 @@ describe("VAT filing and settlement transaction boundaries", () => {
       code: "VAT_PERIOD_FILED",
       details: { vatReturnId: id },
     });
-    for (const post of [postAdded, postGuessed]) {
-      const open = await post();
-      expect(open.status, open.text).toBe(200);
-    }
     const filed = await representative.as.post(submitUrl, groupFiling);
     expect(filed.status, filed.text).toBe(200);
     expect(filed.body).toMatchObject({
@@ -677,7 +735,7 @@ describe("VAT filing and settlement transaction boundaries", () => {
     const representative = await vatTenant();
     const oldMember = await vatTenant({ trn_vat_number: "100000000000011" });
     const added = await vatTenant({ trn_vat_number: "100000000000037" });
-    await seedLegacyGroup(representative, oldMember);
+    await changeGroup(representative, [oldMember]);
     const id = await draftReturn(representative, {
       periodStart: "2025-10-01",
       periodEnd: "2025-12-31",
@@ -703,12 +761,13 @@ describe("VAT filing and settlement transaction boundaries", () => {
     expect(
       (await returnRow(representative, id)).reconciliationSnapshot.filingVatGroup
     ).toBeUndefined();
-    for (const company of [oldMember, added]) {
-      const post = await prepareBackdatedSale(company, 100, "2025-12-15");
-      const blocked = await post();
-      expect(blocked.status, blocked.text).toBe(409);
-      expect(blocked.body.code).toBe("VAT_GROUP_MEMBERSHIP_VERIFICATION_REQUIRED");
-    }
+    const postFormerMember = await prepareBackdatedSale(oldMember, 100, "2025-12-15");
+    const blocked = await postFormerMember();
+    expect(blocked.status, blocked.text).toBe(409);
+    expect(blocked.body.code).toBe("VAT_GROUP_MEMBERSHIP_VERIFICATION_REQUIRED");
+    const postAdded = await prepareBackdatedSale(added, 100, "2025-12-15");
+    const open = await postAdded();
+    expect(open.status, open.text).toBe(200);
   });
 
   it("finds a verified amendment ancestor with no current or audited link to the former member", async () => {

@@ -2,7 +2,8 @@
  * W4-E firm VAT workpaper controls: R15-01 (period / rate validation), R07-09 + R15-06 (no Dubai
  * default), R15-02 (maker-checker state machine), R07-03 (books pull reads the VAT engine).
  */
-import { describe, expect, it } from "vitest";
+import pg from "pg";
+import { describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -188,6 +189,92 @@ describe("W4-E firm VAT workpaper", () => {
     }
     const existing = await t.as.get(returns);
     expect(existing.body.map((r: { id: string }) => r.id)).toEqual([direct.body.id]);
+  });
+
+  it("includes a row edit committed while workpaper generation waits for the VAT lock", async (ctx) => {
+    ctx.skip(!h.concurrencySupported);
+    const { t, base } = await setup();
+    const created = await t.as.post(`${base}/rows`, row());
+    expect(created.status, created.text).toBe(201);
+    const approved = await t.as.post(`${base}/rows/bulk-status`, { to: "approved" });
+    expect(approved.status, approved.text).toBe(200);
+    const prepared = await t.as.patch(`${base}/status`, { status: "prepared" });
+    expect(prepared.status, prepared.text).toBe(200);
+
+    const blocker = new pg.Client({ connectionString: h.databaseUrl });
+    await blocker.connect();
+    let generating: ReturnType<Tenant["as"]["post"]> | undefined;
+    try {
+      const [lock] = await h.sql<{ key: string }>(
+        "SELECT hashtextextended('vat-returns:' || $1::uuid::text, 0)::text AS key",
+        [t.company.id]
+      );
+      await blocker.query("SELECT pg_advisory_lock($1::bigint)", [lock.key]);
+      generating = t.as.post(`${base}/generate-return`, {});
+      await vi.waitFor(async () => {
+        const waiting = await h.sql(
+          `SELECT 1 FROM pg_locks
+           WHERE locktype = 'advisory' AND NOT granted AND objsubid = 1
+             AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+             AND classid::bigint = (($1::bigint >> 32) & 4294967295)
+             AND objid::bigint = ($1::bigint & 4294967295)`,
+          [lock.key]
+        );
+        expect(waiting).toHaveLength(1);
+      });
+
+      const edited = await t.as.patch(`${base}/rows/${created.body.id}`, {
+        taxableAmount: 2000,
+        vatAmount: 100,
+      });
+      expect(edited.status, edited.text).toBe(200);
+    } finally {
+      await blocker.end();
+    }
+
+    const generated = await generating!;
+    expect(generated.status, generated.text).toBe(200);
+    expect(Number(generated.body.vatReturn.box12TotalDueTax)).toBe(100);
+    const detail = await t.as.get(base);
+    expect(detail.body.workpaper.totalsSnapshot.box12TotalDueTax).toBe(100);
+  });
+
+  it("posts sales and expense workpaper rows with their document links", async () => {
+    const { t, base } = await setup();
+    const fixtures = [
+      {
+        input: row({ rowCategory: "exempt_sale", emirate: null, vatAmount: 0 }),
+        documentType: "invoice",
+        status: "posted",
+      },
+      {
+        input: row({
+          rowCategory: "standard_expense",
+          counterpartyName: "Supplier",
+          counterpartyTrn: "100000000000011",
+        }),
+        documentType: "bill",
+        status: "pending_approval",
+      },
+    ];
+    for (const { input, documentType, status } of fixtures) {
+      const created = await t.as.post(`${base}/rows`, input);
+      expect(created.status, created.text).toBe(201);
+      const url = `${base}/rows/${created.body.id}/post`;
+      const posted = await t.as.post(url, {});
+      expect(posted.status, posted.text).toBe(200);
+      expect(posted.body).toMatchObject({ documentType, status });
+      const detail = await t.as.get(base);
+      expect(detail.body.rows).toContainEqual(
+        expect.objectContaining({
+          id: created.body.id,
+          sourceDocumentType: documentType,
+          sourceDocumentId: posted.body.documentId,
+        })
+      );
+      const repeated = await t.as.post(url, {});
+      expect(repeated.status, repeated.text).toBe(409);
+    }
   });
 
   it("[R07-03] pull-from-books reads the VAT engine: out-of-scope lines produce no row, rows carry the invoice emirate", async () => {
