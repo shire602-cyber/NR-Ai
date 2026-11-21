@@ -195,7 +195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerFinancialStatementRoutes(app);
   registerReconciliationRuleRoutes(app);
   registerInvoiceTemplateRoutes(app);
-  registerBankRoutes(app);
+  await registerBankRoutes(app);
   registerDocumentVersionRoutes(app);
   registerApiKeyRoutes(app);
   registerBillingRoutes(app);

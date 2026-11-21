@@ -1,268 +1,153 @@
-/**
- * W3-C bank feeds to the external boundary (R06-14, R06-19): connect is impossible without
- * provider credentials (503), the OAuth state is verified on callback, the redirect URI is
- * allow-listed, tokens are encrypted at rest and never returned, sync dedupes by provider id.
- * Provider HTTP is a recorded sandbox-shaped fixture; nothing calls a real bank.
- */
-import { afterEach, describe, expect, it } from "vitest";
-import { useHarness, type Tenant } from "./harness";
-import type { FetchLike } from "../../server/services/bank-feeds/types";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { useHarness } from "./harness";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 
 const h = useHarness();
-const REDIRECT = "https://app.example.test/bank-feeds/callback";
-const ENTITY_SECRET = "lean-entity-7f1c2d9e-secret";
+const redirectUrl = "https://app.example.test/bank-feeds/callback";
 
-function leanFixture(calls: string[]): FetchLike {
-  return async (url, init) => {
-    calls.push(url);
-    const body = init?.body ? JSON.parse(init.body) : {};
-    const json = (data: unknown) => ({
-      ok: true,
-      status: 200,
-      json: async () => data,
-      text: async () => JSON.stringify(data),
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  const { setBankFeedFetch } = await import("../../server/services/bank-feeds/http");
+  setBankFeedFetch(null);
+});
+
+describe("Banking authorization retirement and CSV import", () => {
+  it("ends new authorizations and old returns without contacting a configured provider", async () => {
+    vi.stubEnv("LEAN_APP_TOKEN", "fixture-app-token");
+    vi.stubEnv("BANK_FEED_REDIRECT_URIS", redirectUrl);
+    const { setBankFeedFetch } = await import("../../server/services/bank-feeds/http");
+    const fetch = vi.fn(async () => {
+      throw new Error("Unexpected external request");
     });
-    if (url.endsWith("/data/v1/accounts")) {
-      expect(body.entity_id).toBe(ENTITY_SECRET);
-      return json({
-        status: "OK",
-        payload: {
-          accounts: [
-            {
-              account_id: "acc-0001",
-              name: "Current Account",
-              currency_code: "AED",
-              iban: "AE070331234567890123456",
-              institution: { name: "Emirates NBD" },
-            },
-          ],
-        },
+    setBankFeedFetch(fetch);
+
+    const t = await h.createTenant();
+    const base = `/api/companies/${t.company.id}/bank-connections`;
+    const status = await t.as.get("/api/bank/providers");
+    expect(status.status, status.text).toBe(200);
+    expect(status.body).toEqual({
+      providers: [],
+      isConfigured: false,
+      statuses: [],
+      redirectUris: [],
+      capabilities: [],
+      csvImport: { available: true, message: BANK_RECONCILIATION_COPY },
+    });
+    const connect = await t.as.post(`${base}/connect`, { provider: "lean", redirectUrl });
+    const callback = await t.as.post(`${base}/callback`, {
+      provider: "lean",
+      code: "old-code",
+      state: "old-state",
+    });
+    for (const result of [connect, callback]) {
+      expect(result.status, result.text).toBe(410);
+      expect(result.body).toMatchObject({
+        code: "BANK_FEED_NOT_SUPPORTED",
+        message: BANK_RECONCILIATION_COPY.en,
       });
+      expect(result.body).not.toHaveProperty("authUrl");
     }
-    if (url.endsWith("/data/v1/transactions")) {
-      return json({
-        status: "OK",
-        payload: {
-          transactions: [
-            {
-              transaction_id: "tx-1",
-              timestamp: "2026-10-03T08:00:00Z",
-              description: "POS CARREFOUR",
-              amount: -105.5,
-              balance: 9894.5,
-            },
-            {
-              transaction_id: "tx-2",
-              timestamp: "2026-10-04T09:00:00Z",
-              description: "SALARY ACME",
-              amount: "2000.00",
-            },
-            { transaction_id: "tx-3", timestamp: "not-a-date", description: "BROKEN", amount: 1 },
-          ],
-        },
-      });
-    }
-    return { ok: false, status: 404, json: async () => ({}), text: async () => "not found" };
-  };
-}
-
-// Server modules load lazily: importing them before the harness starts would bind the db
-// module to the wrong database.
-async function setBankFeedFetch(fn: FetchLike | null): Promise<void> {
-  const mod = await import("../../server/services/bank-feeds");
-  mod.setBankFeedFetch(fn);
-}
-
-async function clearEnv() {
-  delete process.env.LEAN_APP_TOKEN;
-  delete process.env.BANK_FEED_REDIRECT_URIS;
-  await setBankFeedFetch(null);
-}
-
-afterEach(clearEnv);
-
-async function tenant(): Promise<Tenant> {
-  return h.createTenant({ name: "Feeds" });
-}
-
-describe("W3-C bank feeds", () => {
-  it("[R06-14] connect with an unconfigured provider is 503 BANK_FEED_NOT_CONFIGURED", async () => {
-    await clearEnv();
-    const t = await tenant();
-    for (const provider of ["lean", "tarabut", "wio"]) {
-      const r = await t.as.post(`/api/companies/${t.company.id}/bank-connections/connect`, {
-        provider,
-        redirectUrl: REDIRECT,
-      });
-      expect(r.status, r.text).toBe(503);
-      expect(r.body.code).toBe("BANK_FEED_NOT_CONFIGURED");
-    }
-    const status = await t.as.get(`/api/bank/providers`);
-    expect(status.body.isConfigured).toBe(false);
-    for (const s of status.body.statuses) {
-      expect(s).toMatchObject({ configured: false, status: "requires_external" });
-      expect(s.message.en).toBe("Not connected — requires provider contract");
-    }
+    expect(
+      await h.sql("SELECT id FROM bank_feed_oauth_states WHERE company_id = $1", [t.company.id])
+    ).toEqual([]);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("[R06-14] the redirect URI must be allow-listed and the callback state must match", async () => {
-    process.env.LEAN_APP_TOKEN = "sandbox-app-token";
-    process.env.BANK_FEED_REDIRECT_URIS = REDIRECT;
-    const t = await tenant();
-    const evil = await t.as.post(`/api/companies/${t.company.id}/bank-connections/connect`, {
-      provider: "lean",
-      redirectUrl: "http://x",
+  it("expires in-flight state, disables existing imports and preserves statement history", async () => {
+    const t = await h.createTenant();
+    const account = await t.as.post(`/api/companies/${t.company.id}/bank-accounts`, {
+      nameEn: "Operating account",
+      bankName: "Example Bank",
     });
-    expect(evil.status).toBe(400);
-    expect(evil.body.code).toBe("REDIRECT_URI_NOT_ALLOWED");
+    expect(account.status, account.text).toBe(201);
 
-    const ok = await t.as.post(`/api/companies/${t.company.id}/bank-connections/connect`, {
+    const { storage } = await import("../../server/storage");
+    const connection = await storage.createBankConnection({
+      companyId: t.company.id,
       provider: "lean",
-      redirectUrl: REDIRECT,
+      connectionType: "open_banking",
+      bankAccountId: account.body.id,
+      autoSync: true,
+      accessToken: "fixture-access-credential",
+      status: "active",
     });
-    expect(ok.status, ok.text).toBe(200);
-    const state = new URL(ok.body.authUrl).searchParams.get("state");
-    expect(state && state.length >= 32).toBe(true);
-    const stored = await h.sql<{ state_hash: string }>(
-      `SELECT state_hash FROM bank_feed_oauth_states WHERE company_id = $1`,
-      [t.company.id]
+    const base = `/api/companies/${t.company.id}/bank-connections`;
+    const imported = await t.as.post(`${base}/${connection.id}/import`, {
+      csvContent: "Date,Description,Debit,Credit\n2026-10-01,Prior statement,,100.00",
+    });
+    expect(imported.status, imported.text).toBe(200);
+    expect(imported.body.imported).toBe(1);
+    const [oauth] = await h.sql<{ id: string }>(
+      `INSERT INTO bank_feed_oauth_states (company_id, user_id, provider, state_hash, redirect_uri, expires_at)
+       VALUES ($1, $2, 'lean', 'fixture-state-hash', $3, now() + interval '10 minutes')
+       RETURNING id`,
+      [t.company.id, t.user.id, redirectUrl]
     );
-    expect(stored[0].state_hash).not.toBe(state);
+    const pinned = (
+      await h.sql<{ access_token: string }>(
+        "SELECT access_token FROM bank_connections WHERE id = $1",
+        [connection.id]
+      )
+    )[0].access_token;
+    expect(pinned).toMatch(/^enc:v1:/);
 
-    const wrong = await t.as.post(`/api/companies/${t.company.id}/bank-connections/callback`, {
-      provider: "lean",
-      code: ENTITY_SECRET,
-      state: "x".repeat(43),
-    });
-    expect(wrong.status).toBe(400);
-    expect(wrong.body.code).toBe("INVALID_OAUTH_STATE");
+    const { retireAutomaticBanking } = await import("../../server/services/bank-feeds");
+    await retireAutomaticBanking();
+    const [state] = await h.sql<{ used_at: Date }>(
+      "SELECT used_at FROM bank_feed_oauth_states WHERE id = $1",
+      [oauth.id]
+    );
+    expect(state.used_at).toBeTruthy();
+    await retireAutomaticBanking();
+    expect(
+      await h.sql("SELECT used_at FROM bank_feed_oauth_states WHERE id = $1", [oauth.id])
+    ).toEqual([state]);
+    expect(
+      await h.sql("SELECT auto_sync, access_token FROM bank_connections WHERE id = $1", [
+        connection.id,
+      ])
+    ).toEqual([{ auto_sync: false, access_token: pinned }]);
+    const { listJobs } = await import("../../server/platform/job-registry");
+    expect(listJobs().map((job) => job.name)).not.toContain("bankFeeds.sync");
 
-    // Another tenant cannot redeem this tenant's state.
+    const list = await t.as.get(base);
+    expect(list.status, list.text).toBe(200);
+    expect(list.body).toContainEqual(
+      expect.objectContaining({
+        id: connection.id,
+        bankAccountId: account.body.id,
+        autoSync: false,
+        hasToken: false,
+      })
+    );
+    expect(list.text).not.toContain(pinned);
+    expect(list.text).not.toContain("fixture-access-credential");
+    const sync = `/api/bank-connections/${connection.id}/sync`;
+    const stopped = await t.as.post(sync, {});
+    expect(stopped.status, stopped.text).toBe(410);
+    expect(stopped.body.message).toBe(BANK_RECONCILIATION_COPY.en);
     const other = await h.createSecondTenant();
-    const stolen = await other.as.post(
-      `/api/companies/${other.company.id}/bank-connections/callback`,
-      {
-        provider: "lean",
-        code: ENTITY_SECRET,
-        state,
-      }
-    );
-    expect(stolen.status).toBe(400);
-  });
+    const hidden = await other.as.post(sync, {});
+    expect(hidden.status, hidden.text).toBe(404);
 
-  it("[R06-14] tokens are encrypted at rest, never returned, and sync dedupes by provider id [R06-19]", async () => {
-    process.env.LEAN_APP_TOKEN = "sandbox-app-token";
-    process.env.BANK_FEED_REDIRECT_URIS = REDIRECT;
-    const calls: string[] = [];
-    await setBankFeedFetch(leanFixture(calls));
-    const t = await tenant();
-    const ba = await t.as.post(`/api/companies/${t.company.id}/bank-accounts`, {
-      nameEn: "ENBD current",
-      bankName: "Emirates NBD",
+    const manual = await t.as.post(base, {
+      bankName: "Example Bank",
+      bankAccountId: account.body.id,
     });
-    expect(ba.status, ba.text).toBe(201);
-    const connect = await t.as.post(`/api/companies/${t.company.id}/bank-connections/connect`, {
-      provider: "lean",
-      redirectUrl: REDIRECT,
-      bankAccountId: ba.body.id,
+    expect(manual.status, manual.text).toBe(201);
+    const csv = await t.as.post(`${base}/${manual.body.id}/import`, {
+      csvContent: "Date,Description,Debit,Credit\n2026-10-02,CSV deposit,,200.00",
     });
-    const state = new URL(connect.body.authUrl).searchParams.get("state") as string;
-    const cb = await t.as.post(`/api/companies/${t.company.id}/bank-connections/callback`, {
-      provider: "lean",
-      code: ENTITY_SECRET,
-      state,
-    });
-    expect(cb.status, cb.text).toBe(201);
-    expect(cb.text).not.toContain(ENTITY_SECRET);
-    const conn = cb.body.connections[0];
-    expect(conn.accessToken).toBeUndefined();
-    expect(conn.bankAccountId).toBe(ba.body.id);
-
-    const raw = await h.sql<{ access_token: string }>(
-      `SELECT access_token FROM bank_connections WHERE id = $1`,
-      [conn.id]
-    );
-    expect(raw[0].access_token).not.toBe(ENTITY_SECRET);
-    expect(raw[0].access_token.startsWith("enc:v1:")).toBe(true);
-
-    // The state is single use.
-    const replay = await t.as.post(`/api/companies/${t.company.id}/bank-connections/callback`, {
-      provider: "lean",
-      code: ENTITY_SECRET,
-      state,
-    });
-    expect(replay.status).toBe(400);
-
-    const list = await t.as.get(`/api/companies/${t.company.id}/bank-connections`);
-    expect(list.text).not.toContain(ENTITY_SECRET);
-
-    const s1 = await t.as.post(`/api/bank-connections/${conn.id}/sync`, {
-      fromDate: "2026-10-01",
-      toDate: "2026-10-31",
-    });
-    expect(s1.status, s1.text).toBe(200);
-    expect(s1.body).toMatchObject({ fetched: 2, imported: 2, rejected: 1 });
-    const s2 = await t.as.post(`/api/bank-connections/${conn.id}/sync`, {
-      fromDate: "2026-10-01",
-      toDate: "2026-10-31",
-    });
-    expect(s2.body).toMatchObject({ imported: 0, duplicates: 2 });
-    const rows = await h.sql<{
-      amount: string;
-      external_id: string;
-      bank_statement_account_id: string;
-    }>(
-      `SELECT amount::text, external_id, bank_statement_account_id FROM bank_transactions WHERE company_id = $1 ORDER BY external_id`,
-      [t.company.id]
-    );
-    expect(rows).toEqual([
-      { amount: "-105.50", external_id: "tx-1", bank_statement_account_id: ba.body.id },
-      { amount: "2000.00", external_id: "tx-2", bank_statement_account_id: ba.body.id },
+    expect(csv.status, csv.text).toBe(200);
+    expect(csv.body.imported).toBe(1);
+    expect(
+      await h.sql(
+        "SELECT description, bank_statement_account_id FROM bank_transactions WHERE company_id = $1 ORDER BY description",
+        [t.company.id]
+      )
+    ).toEqual([
+      { description: "CSV deposit", bank_statement_account_id: account.body.id },
+      { description: "Prior statement", bank_statement_account_id: account.body.id },
     ]);
-  });
-
-  it("[R06-19] a provider failure marks the connection and emits bank.sync_failed", async () => {
-    process.env.LEAN_APP_TOKEN = "sandbox-app-token";
-    process.env.BANK_FEED_REDIRECT_URIS = REDIRECT;
-    await setBankFeedFetch(leanFixture([]));
-    const t = await tenant();
-    const ba = await t.as.post(`/api/companies/${t.company.id}/bank-accounts`, {
-      nameEn: "ENBD",
-      bankName: "Emirates NBD",
-    });
-    const connect = await t.as.post(`/api/companies/${t.company.id}/bank-connections/connect`, {
-      provider: "lean",
-      redirectUrl: REDIRECT,
-      bankAccountId: ba.body.id,
-    });
-    const state = new URL(connect.body.authUrl).searchParams.get("state") as string;
-    const cb = await t.as.post(`/api/companies/${t.company.id}/bank-connections/callback`, {
-      provider: "lean",
-      code: ENTITY_SECRET,
-      state,
-    });
-    const id = cb.body.connections[0].id;
-    const { onDomainEvent } = await import("../../server/platform/domain-events");
-    const seen: string[] = [];
-    const off = onDomainEvent("bank.sync_failed", (e) => {
-      seen.push(e.payload.entityId);
-    });
-    await setBankFeedFetch(async () => ({
-      ok: false,
-      status: 500,
-      json: async () => ({}),
-      text: async () => "boom",
-    }));
-    const r = await t.as.post(`/api/bank-connections/${id}/sync`, {});
-    expect(r.status).toBe(502);
-    expect(r.body.code).toBe("BANK_FEED_PROVIDER_ERROR");
-    await new Promise((res) => setTimeout(res, 50));
-    expect(seen).toContain(id);
-    if (typeof off === "function") off();
-    const row = await h.sql<{ status: string }>(
-      `SELECT status FROM bank_connections WHERE id = $1`,
-      [id]
-    );
-    expect(row[0].status).toBe("error");
   });
 });

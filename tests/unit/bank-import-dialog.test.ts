@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * Step 1 / F4: the bank statement import dialog is catalog copy in both languages. In Arabic it
- * has no English outside user data and brand names (the "Supported formats" lines and the Import
+ * has no English outside user data and brand names (the CSV requirements and the Import
  * button used to stay English), and its content is allowed to shrink to the phone width.
  */
 import { createElement, act } from "react";
@@ -9,6 +9,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -93,7 +94,7 @@ async function mountPage(locale: "en" | "ar") {
 const dialog = () => document.querySelector('[role="dialog"]') as HTMLElement | null;
 
 describe("bank statement import dialog", () => {
-  it("in Arabic: every line is Arabic, including the supported formats and the Import button", async () => {
+  it("in Arabic: shows the approved CSV guidance and an Arabic Import button", async () => {
     await mountPage("ar");
     const d = dialog();
     expect(d).not.toBeNull();
@@ -106,18 +107,24 @@ describe("bank statement import dialog", () => {
     expect(lines.filter((line) => isEnglishLine(line))).toEqual([]);
     const text = d!.textContent ?? "";
     expect(text).toContain("استيراد");
-    expect(text).toContain("الصيغ المدعومة");
-    expect(text).toContain("CSV");
-    expect(text).not.toContain("PDF");
+    expect(text).toContain("متطلبات ملف CSV");
+    expect(text).toContain(BANK_RECONCILIATION_COPY.ar);
+    expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT\.053|OFX/i);
+    expect(d!.querySelector('[data-testid="button-download-sample-bank-csv"]')).not.toBeNull();
     expect(d!.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
       "استيراد"
     );
   });
 
-  it("in English: the same lines come from the catalog", async () => {
+  it("in English: shows the approved CSV guidance and the sample download", async () => {
     await mountPage("en");
     const text = dialog()?.textContent ?? "";
-    expect(text).toContain("Comma, semicolon, and tab-delimited Excel exports are supported");
+    expect(text).toContain(BANK_RECONCILIATION_COPY.en);
+    expect(text).toContain("CSV files can use commas, semicolons, or tabs");
+    expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT\.053|OFX/i);
+    expect(
+      dialog()?.querySelector('[data-testid="button-download-sample-bank-csv"]')
+    ).not.toBeNull();
     expect(dialog()?.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
       "Import"
     );

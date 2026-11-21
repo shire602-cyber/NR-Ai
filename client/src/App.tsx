@@ -6,7 +6,8 @@ import { landingPathFor, onboardingRedirectTarget } from "@/lib/app-landing";
 import "@shared/zod-config";
 import { useCallback, useEffect, Suspense } from "react";
 import { lazyWithReload, clearChunkReloadGuards } from "@/lib/lazyWithReload";
-import { Switch, Route, useLocation, Link } from "wouter";
+import { Switch, Route, Redirect, useLocation, Link } from "wouter";
+import { BANK_STATEMENT_ENTRY, isRetiredBankReturnPath } from "@shared/bank-statement-routes";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useIsFetching } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -510,6 +511,8 @@ function Router() {
     }
   }, [pathname, user, setLocation]);
 
+  if (isRetiredBankReturnPath(pathname)) return <Redirect to={BANK_STATEMENT_ENTRY} replace />;
+
   // Guard: authenticated users at root - wait for redirect
   if (pathname === "/" && userLoading) {
     return null;
@@ -763,7 +766,6 @@ function Router() {
             <Route path="/analytics" component={AnalyticsHub} />
             <Route path="/bank-reconciliation" component={BankReconciliation} />
             <Route path="/bank-accounts" component={BankAccounts} />
-            <Route path="/bank-feeds/callback" component={BankFeeds} />
             <Route path="/bank-feeds" component={BankFeeds} />
             <Route path="/evidence-center" component={EvidenceCenter} />
             <Route path="/vat-filing" component={VATFiling} />

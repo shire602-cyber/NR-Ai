@@ -1,5 +1,5 @@
 /**
- * Bank-feed provider adapter contract (W3-C, R06-19). Adapters are pure HTTP clients: they never
+ * Financial-data provider adapter contract (W3-C, R06-19). Adapters are pure HTTP clients: they never
  * touch the database. Amounts are integer fils (shared/money.ts), dates are YYYY-MM-DD.
  */
 import type { CapabilityId } from "../../../shared/capabilities";

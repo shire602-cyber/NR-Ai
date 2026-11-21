@@ -188,7 +188,7 @@ against the managed target. [Application pool](../server/db.ts#L17-L69) ·
 WAL, PITR backups, replicas, snapshots, restore environments and migration artefacts.
 If the requirement covers all customer processing, map Vercel's global ingress/CDN, logs,
 traces and support access, object storage and caches, jobs, and external providers for AI/OCR,
-payments, bank feeds, email and e-invoicing. Pin sensitive compute and storage, explicitly
+payments, email and e-invoicing. Pin sensitive compute and storage, explicitly
 choose acceptable failover regions and retention, keep previews synthetic, and minimize
 payloads and personal data in logs and event messages. A second UAE availability zone
 protects against an AZ failure. A UAE-wide recovery objective needs a separate in-country

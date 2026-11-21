@@ -45,7 +45,6 @@ export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billApproved.title", "Bill approved {label}"),
   T("notification.billPaid.title", "Bill paid {label}"),
   T("notification.payrollApproved.title", "Payroll approved"),
-  T("notification.bankSyncFailed.title", "Bank feed sync failed"),
   T("notification.deadlineDue.title", "Deadline due[ {dueDate}]"),
   T("notification.taskDue.title", "Task due[ {dueDate}]"),
   T("notification.invoiceOverdue.title", "Invoice {number} is overdue"),
@@ -85,10 +84,6 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billApproved.message", "Bill {label} was approved for payment."),
   T("notification.billPaid.message", "Bill {label} was paid."),
   T("notification.payrollApproved.message", "Payroll for {month}/{year} was approved."),
-  T(
-    "notification.bankSyncFailed.message",
-    "The bank feed[ ({provider})] could not sync[: {reason}]. Reconnect it under Banking."
-  ),
   T("notification.deadlineDueGeneric.message", "A compliance obligation is due[ on {dueDate}]."),
   T("notification.taskDue.message", "A task is due[ on {dueDate}]."),
   T("notification.invoiceOverdue.message", "Invoice {number} for {customer} was due on {dueDate}."),

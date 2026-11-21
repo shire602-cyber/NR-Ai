@@ -419,7 +419,6 @@ Scored across 8 dimensions (10 points each, 80 max):
 
 | Gap | Who Has It | Priority | Impact |
 |-----|-----------|----------|--------|
-| **Open Banking / Live Bank Feeds** | QuickBooks, Xero, Sage, Wafeq | HIGH | Real-time transaction import vs. CSV upload |
 | **Native Mobile Apps (iOS/Android)** | QuickBooks, Xero, Zoho, Wafeq, Fiskl | HIGH | PWA is good but native apps rank in app stores |
 | **App Marketplace / API Ecosystem** | QuickBooks (750+), Xero (1000+), Zoho (50+) | MEDIUM | Third-party integrations expand functionality |
 | **SOC 2 / ISO 27001 Certification** | Truewind, Tyms, Zeni, Ramp | MEDIUM | Required for enterprise/investor credibility |

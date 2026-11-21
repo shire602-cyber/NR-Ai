@@ -21,6 +21,7 @@ import {
 import { BrandMark } from "@/components/BrandMark";
 import { usePageMeta } from "../hooks";
 import { useI18n } from "@/lib/i18n";
+import { loadWithChunkRetry } from "@/lib/lazyWithReload";
 import { Link, useLocation } from "wouter";
 import {
   bankCopy,
@@ -33,12 +34,35 @@ import {
 } from "./content";
 import { DemoRequest, FreeTool } from "./Forms";
 import { marketingBrand, supportEmail } from "@shared/marketing-brand";
-import { siteLocale } from "./routes";
+import { siteLocale, type SiteLocale } from "./routes";
+import { editorialPages, editorialPath } from "./editorial/pages";
 import "@fontsource/noto-sans-arabic/arabic-400.css";
 import "@fontsource/noto-sans-arabic/arabic-700.css";
 import "./phase.css";
 
 const MonthlyPlans = lazy(() => import("./MonthlyPlans"));
+const EditorialContent = lazy(() =>
+  loadWithChunkRetry(() => import("./editorial/EditorialContent"), {
+    key: "marketing-editorial",
+    reload: false,
+  }).catch(() => ({ default: EditorialUnavailable }))
+);
+
+function EditorialUnavailable({ locale }: { locale: SiteLocale }) {
+  const ar = locale === "ar";
+  return (
+    <div className="phase-editorial">
+      <p role="alert">{ar ? "تعذّر تحميل محتوى الصفحة." : "This page’s content couldn’t load."}</p>
+      <button
+        className="phase-button phase-primary"
+        type="button"
+        onClick={() => window.location.reload()}
+      >
+        {ar ? "أعِد المحاولة" : "Retry"}
+      </button>
+    </div>
+  );
+}
 
 const start = ["Start free trial", "ابدأ التجربة المجانية"] as const;
 const demo = ["Book a demo", "احجز عرضًا توضيحيًا"] as const;
@@ -87,6 +111,8 @@ function Picture({
   alt: string;
   high?: boolean;
 }) {
+  // React 18 forwards this HTML attribute verbatim.
+  const priority = high ? { fetchpriority: "high" } : undefined;
   return (
     <img
       className="phase-shot"
@@ -101,7 +127,7 @@ function Picture({
       width={1280}
       height={800}
       loading={high ? "eager" : "lazy"}
-      fetchPriority={high ? "high" : undefined}
+      {...priority}
     />
   );
 }
@@ -132,10 +158,12 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
       id: "resources",
       title: ["Resources", "الموارد"],
       items: [
+        { title: editorialPages["/resources"].title, href: `${base}/resources` },
+        { title: editorialPages["/compare"].title, href: `${base}/compare` },
+        { title: editorialPages["/migration-guides"].title, href: `${base}/migration-guides` },
+        { title: editorialPages["/trust"].title, href: `${base}/trust` },
         { title: ["Help centre", "مركز المساعدة"], href: "/help" },
         { title: ["Sample workspace", "مساحة عمل تجريبية"], href: "/demo" },
-        { title: ["Migration guides", "أدلة الانتقال"], href: "/migration-guides" },
-        { title: ["Trust and security", "الثقة والأمان"], href: "/trust" },
       ],
     },
   ];
@@ -206,7 +234,7 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
       </div>
     );
   }
-  const services = <Link href="/services">{tr(["Services", "الخدمات"])}</Link>;
+  const services = <Link href={`${base}/services`}>{tr(["Services", "الخدمات"])}</Link>;
   const plans = <Link href={`${base}/pricing`}>{tr(pricing)}</Link>;
   return (
     <header className="phase-header">
@@ -445,13 +473,7 @@ const homeLead = [
   "أرسل فواتير ثنائية اللغة، وامسح الإيصالات بالذكاء الاصطناعي، وأعدّ إقرار ضريبة القيمة المضافة، وامنح محاسبك وصولاً إلى دفاترك.",
 ] as const;
 const faqs: readonly [Bilingual, Bilingual][] = [
-  [
-    ["How do I reconcile my bank account?", "كيف أطابق حسابي البنكي؟"],
-    [
-      `${bankCopy[0]}. Live bank feeds are coming later.`,
-      `${bankCopy[1]}. سيتوفر الربط البنكي المباشر لاحقًا.`,
-    ],
-  ],
+  [["How do I reconcile my bank statement?", "كيف أطابق كشف حسابي البنكي؟"], bankCopy],
   [["How do I file my VAT return?", "كيف أقدّم إقرار ضريبة القيمة المضافة؟"], vatCopy],
   [
     ["Do I need a card to try it?", "هل أحتاج إلى بطاقة مصرفية للتجربة؟"],
@@ -616,17 +638,22 @@ function Home({ base, locale, tr }: { base: string; locale: string; tr: Translat
                 "خطّط للانتقال، واستورد السجلات المدعومة بصيغة CSV، وتحقّق من الأرصدة الافتتاحية قبل بدء الترحيل.",
               ])}
             </Heading>
-            <Link className="phase-textlink" href="/migration-guides">
+            <Link className="phase-textlink" href={`${base}/migration-guides`}>
               {tr(["Read migration guides", "اقرأ أدلة الانتقال"])}{" "}
               <ArrowRight aria-hidden="true" />
             </Link>
           </div>
           <ul>
-            {["Excel", "Wafeq", "Mazeed", "Zoho Books"].map((name) => (
-              <li key={name}>
-                <bdi lang="en" translate="no">
-                  {name}
-                </bdi>
+            {(
+              [
+                ["excel", ["Excel", "إكسل"]],
+                ["wafeq", ["Wafeq", "وافق"]],
+                ["mazeed", ["Mazeed", "مزيد"]],
+                ["zoho", ["Zoho Books", "زوهو بوكس"]],
+              ] as const
+            ).map(([source, name]) => (
+              <li key={source}>
+                <Link href={`${base}/migration-guides/${source}`}>{tr(name)}</Link>
               </li>
             ))}
           </ul>
@@ -688,6 +715,9 @@ export default function PhaseSite() {
   const base = `/${locale}`;
   const [, , route, slug, extra] = path.replace(/\/$/, "").split("/");
   const section = extra ? "404" : route;
+  const editorial = editorialPath(path.slice(base.length).replace(/\/$/, ""));
+  const page = editorial && editorialPages[editorial];
+  const parent = editorial && slug ? editorialPath(`/${section}`) : undefined;
   const feature = section === "product" ? features.find((f) => f.slug === slug) : undefined;
   const audience = section === "solutions" ? audiences.find((a) => a.slug === slug) : undefined;
   const tool = section === "tools" ? tools.find((t) => t.slug === slug) : undefined;
@@ -700,9 +730,10 @@ export default function PhaseSite() {
       : (feature?.title ??
           audience?.title ??
           tool?.title ??
+          page?.title ??
           (booking ? demo : plans ? pricing : ["Page not found", "الصفحة غير موجودة"]))
   );
-  const lead = tr(home ? homeLead : (feature?.lead ?? audience?.lead ?? ["", ""]));
+  const lead = tr(home ? homeLead : (feature?.lead ?? audience?.lead ?? page?.lead ?? ["", ""]));
   usePageMeta(`${title} | ${marketingBrand}`, lead);
   return (
     <div className="phase-site" lang={locale} dir={locale === "ar" ? "rtl" : "ltr"}>
@@ -716,9 +747,19 @@ export default function PhaseSite() {
         ) : (
           <section className="phase-section phase-subpage">
             <div className="phase-wrap">
-              <Link className="phase-textlink" href={base}>
-                {tr(["Home", "الرئيسية"])}
-              </Link>
+              <nav className="phase-breadcrumb" aria-label={tr(["Breadcrumb", "مسار التنقل"])}>
+                <Link className="phase-textlink" href={base}>
+                  {tr(["Home", "الرئيسية"])}
+                </Link>
+                {parent && (
+                  <>
+                    <span aria-hidden="true">/</span>
+                    <Link className="phase-textlink" href={`${base}${parent}`}>
+                      {tr(editorialPages[parent].title)}
+                    </Link>
+                  </>
+                )}
+              </nav>
               <h1>{title}</h1>
               {lead && <p className="phase-lead">{lead}</p>}
               {feature && (
@@ -757,6 +798,11 @@ export default function PhaseSite() {
                   })}
                 </div>
               )}
+              {editorial && (
+                <Suspense fallback={null}>
+                  <EditorialContent path={editorial} locale={locale} />
+                </Suspense>
+              )}
               {tool && <FreeTool key={tool.slug} slug={tool.slug} tr={tr} locale={locale} />}
               {booking && <DemoRequest tr={tr} />}
               {plans && (
@@ -779,6 +825,7 @@ export default function PhaseSite() {
             <bdi>{marketingBrand}</bdi>
           </Link>
           <nav aria-label={tr(["Footer", "روابط التذييل"])}>
+            <Link href={`${base}/trust`}>{tr(editorialPages["/trust"].title)}</Link>
             <Link href="/privacy">{tr(["Privacy", "الخصوصية"])}</Link>
             <Link href="/terms">{tr(["Terms", "الشروط"])}</Link>
             <Link href="/help">{tr(["Help", "المساعدة"])}</Link>

@@ -38,7 +38,7 @@ const overlay = JSON.parse(
 const ARABIC = /[؀-ۿ]/;
 // Latin words allowed inside Arabic overlay values (brands, formats, codes).
 const ALLOWED_LATIN =
-  /^(?:PDF|Excel|Google|Sheets|VAT|WPS|SIF|AED|FX|NBV|OCR|UTC|CTA|KPI|API|A\/R|A\/P|P&L|DSO|DPO|Roll-up)$/;
+  /^(?:PDF|CSV|Excel|Google|Sheets|VAT|WPS|SIF|AED|FX|NBV|OCR|UTC|CTA|KPI|API|A\/R|A\/P|P&L|DSO|DPO|Roll-up)$/;
 
 function sourceFile(rel: string): string {
   return readFileSync(join(process.cwd(), rel), "utf8");

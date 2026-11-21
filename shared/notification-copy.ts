@@ -5,6 +5,9 @@
  * detail goes to the server log only.
  */
 
+/** Event key prefix for historical alerts about retired provider diagnostics. */
+export const RETIRED_BANK_NOTIFICATION_PREFIX = "bank.sync_failed:";
+
 /** Body of a report-delivery notification when no email provider is configured. */
 export const EMAIL_NOT_SET_UP_MESSAGE =
   "Email isn't set up yet, so nothing was sent. The report pack is ready to download.";

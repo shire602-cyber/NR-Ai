@@ -11,16 +11,22 @@
  *                    ↘ retrying → sending … → dead                   (after max_attempts)
  *   queued → blocked_no_provider → queued (when a provider appears, rows < 24h old)
  */
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import {
   emailDeliveryEvents,
   emailOutbox,
   emailOutboxAttachments,
+  notifications,
   type EmailOutboxRow,
   type EmailOutboxStatus,
 } from "../../shared/schema";
 import { createLogger } from "../config/logger";
+import { RETIRED_BANK_NOTIFICATION_PREFIX } from "../../shared/notification-copy";
+import {
+  NOTIFICATION_DIGEST_ENTITY,
+  rebuildNotificationDigest,
+} from "../services/notification-digest";
 import {
   EmailTransportError,
   activeProviderName,
@@ -46,6 +52,7 @@ export interface EnqueueEmailInput {
   fromName?: string | null;
   companyId?: string | null;
   category?: string;
+  notificationDigest?: { userId: string; notificationIds: readonly string[] };
   relatedEntityType?: string | null;
   relatedEntityId?: string | null;
   attachments?: OutgoingAttachment[];
@@ -119,6 +126,8 @@ export async function enqueueEmail(input: EnqueueEmailInput): Promise<OutboxResu
     if (existing) return toResult(existing, true);
   }
   const provider = activeProviderName();
+  const digest = input.notificationDigest;
+  const digestAt = digest ? new Date() : undefined;
   const row = await db.transaction(async (tx: typeof db) => {
     const [inserted] = await tx
       .insert(emailOutbox)
@@ -132,8 +141,9 @@ export async function enqueueEmail(input: EnqueueEmailInput): Promise<OutboxResu
         html: input.html,
         textBody: input.text ?? null,
         category: input.category ?? "generic",
-        relatedEntityType: input.relatedEntityType ?? null,
-        relatedEntityId: input.relatedEntityId ?? null,
+        relatedEntityType: digest ? NOTIFICATION_DIGEST_ENTITY : (input.relatedEntityType ?? null),
+        relatedEntityId: digest?.userId ?? input.relatedEntityId ?? null,
+        ...(digestAt ? { createdAt: digestAt } : {}),
         status: provider ? "queued" : "blocked_no_provider",
         maxAttempts: input.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
         sensitive: input.sensitive === true,
@@ -143,6 +153,18 @@ export async function enqueueEmail(input: EnqueueEmailInput): Promise<OutboxResu
       .onConflictDoNothing()
       .returning();
     if (!inserted) return null;
+    if (digest && digestAt) {
+      await tx
+        .update(notifications)
+        .set({ digestedAt: digestAt })
+        .where(
+          and(
+            eq(notifications.userId, digest.userId),
+            isNull(notifications.digestedAt),
+            inArray(notifications.id, digest.notificationIds)
+          )
+        );
+    }
     for (const a of attachments) {
       await tx.insert(emailOutboxAttachments).values({
         outboxId: inserted.id,
@@ -197,6 +219,9 @@ async function claim(ids: string[] | null, limit: number): Promise<EmailOutboxRo
 }
 
 async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
+  if (row.idempotencyKey?.startsWith(`notif:${RETIRED_BANK_NOTIFICATION_PREFIX}`)) {
+    return cancelPendingEmail(row.id);
+  }
   const transport = resolveTransport();
   if (!transport) {
     const [blocked] = await db
@@ -217,16 +242,20 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     .from(emailOutboxAttachments)
     .where(eq(emailOutboxAttachments.outboxId, row.id));
   const attempts = row.attempts + 1;
+  let digest: Awaited<ReturnType<typeof rebuildNotificationDigest>> | undefined;
   try {
+    if (row.category === "digest") digest = await rebuildNotificationDigest(row);
+    if (digest === null) return await cancelPendingEmail(row.id);
+    const content = digest ?? row;
     const { providerMessageId } = await transport.send({
       outboxId: row.id,
       to: row.toAddress,
       cc: row.cc,
       replyTo: row.replyTo,
       fromName: row.fromName,
-      subject: row.subject,
-      html: row.html ?? "",
-      text: row.textBody,
+      subject: content.subject,
+      html: content.html ?? "",
+      text: content.textBody,
       attachments: attachments.map((a: typeof emailOutboxAttachments.$inferSelect) => ({
         filename: a.filename,
         contentType: a.contentType,
@@ -236,6 +265,7 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     const [sent] = await db
       .update(emailOutbox)
       .set({
+        ...digest,
         status: "sent",
         attempts,
         provider: transport.name,
@@ -258,6 +288,7 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     const [failed] = await db
       .update(emailOutbox)
       .set({
+        ...digest,
         status: dead ? "dead" : "retrying",
         attempts,
         provider: transport.name,
@@ -273,6 +304,23 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     log.warn({ outboxId: row.id, attempts, dead, err: message }, "Email delivery failed");
     return toResult(failed as EmailOutboxRow);
   }
+}
+
+async function cancelPendingEmail(id: string): Promise<OutboxResult> {
+  const [cancelled] = await db
+    .update(emailOutbox)
+    .set({
+      status: "cancelled",
+      lockedUntil: null,
+      updatedAt: new Date(),
+      html: null,
+      textBody: null,
+      lastError: null,
+    })
+    .where(eq(emailOutbox.id, id))
+    .returning();
+  await recordEvent(id, "cancelled");
+  return toResult(cancelled);
 }
 
 /** Try to deliver one message now (no-op unless it is claimable). */

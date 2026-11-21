@@ -6,27 +6,17 @@ import { requirePermission } from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
-import { storage } from "../storage";
-import { getCapabilitySnapshot } from "../../shared/capabilities";
-import {
-  bankFeedCallbackBody,
-  bankFeedConnectBody,
-  bankFeedSyncBody,
-  manualBankConnectionBody,
-} from "../../shared/validators/banking";
-import {
-  allowedRedirectUris,
-  completeCallback,
-  linkConnection,
-  providerStatuses,
-  registerBankFeedJobs,
-  sanitizeConnection,
-  startConnect,
-  syncConnection,
-} from "../services/bank-feeds";
-import { getAvailableProviders, isOpenBankingConfigured } from "../services/open-banking.service";
-import { importBankStatement, parseCSVBankStatement } from "../services/bank-import.service";
 import { createLogger } from "../config/logger";
+import { storage } from "../storage";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
+import { manualBankConnectionBody } from "../../shared/validators/banking";
+import {
+  linkConnection,
+  retireAutomaticBanking,
+  retiredBankingError,
+  sanitizeConnection,
+} from "../services/bank-feeds";
+import { importBankStatement, parseCSVBankStatement } from "../services/bank-import.service";
 import { z } from "zod";
 import { zUuid } from "../../shared/validators/primitives";
 import { parseReportDate, uaeToday } from "../reporting";
@@ -56,8 +46,8 @@ async function ownedConnection(req: Request, id: string, companyId?: string) {
 const connectionImportBody = z.object({ csvContent: z.string().min(1).max(5_000_000) }).strict();
 const connectionLinkBody = z.object({ bankAccountId: zUuid }).strict();
 
-export function registerBankRoutes(app: Express) {
-  registerBankFeedJobs();
+export async function registerBankRoutes(app: Express) {
+  await retireAutomaticBanking();
 
   // ─── Bank-account balances in account and base currency (W5-C, R14-16) ──
 
@@ -102,7 +92,7 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
-  // Manual (statement-only) connection record. Open-banking connections come only from callback.
+  // Create a statement source for CSV uploads.
   app.post(
     "/api/companies/:companyId/bank-connections",
     authMiddleware,
@@ -193,23 +183,27 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
-  // ─── Open banking (to the external boundary) ────────────────────────────
-
+  // Legacy routes stay explicit so old clients receive the CSV fallback.
   app.get(
     "/api/bank/providers",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (_req: Request, res: Response) => {
-      const snapshot = getCapabilitySnapshot();
       res.json({
-        providers: getAvailableProviders(),
-        isConfigured: isOpenBankingConfigured(),
-        statuses: providerStatuses(),
-        redirectUris: allowedRedirectUris(),
-        capabilities: snapshot.capabilities.filter((c) => c.id.startsWith("bank_feed_")),
+        providers: [],
+        isConfigured: false,
+        statuses: [],
+        redirectUris: [],
+        capabilities: [],
+        csvImport: { available: true, message: BANK_RECONCILIATION_COPY },
       });
     })
   );
+
+  const retiredAuthorization = asyncHandler(async (req: Request, _res: Response) => {
+    await assertAccess(req, req.params.companyId);
+    throw retiredBankingError();
+  });
 
   app.post(
     "/api/companies/:companyId/bank-connections/connect",
@@ -217,20 +211,7 @@ export function registerBankRoutes(app: Express) {
     requireCustomer,
     requireFeature("bankImport"),
     requirePermission("settings.company"),
-    strictBody(bankFeedConnectBody),
-    asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
-      await assertAccess(req, companyId);
-      const body = parsedBody<z.output<typeof bankFeedConnectBody>>(req);
-      const result = await startConnect({
-        companyId,
-        userId: userId(req),
-        provider: body.provider,
-        redirectUrl: body.redirectUrl,
-        bankAccountId: body.bankAccountId,
-      });
-      res.json({ authUrl: result.authUrl, provider: result.provider, expiresAt: result.expiresAt });
-    })
+    retiredAuthorization
   );
 
   app.post(
@@ -239,21 +220,7 @@ export function registerBankRoutes(app: Express) {
     requireCustomer,
     requireFeature("bankImport"),
     requirePermission("settings.company"),
-    strictBody(bankFeedCallbackBody),
-    asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
-      await assertAccess(req, companyId);
-      const body = parsedBody<z.output<typeof bankFeedCallbackBody>>(req);
-      const result = await completeCallback({
-        companyId,
-        userId: userId(req),
-        provider: body.provider,
-        code: body.code,
-        state: body.state,
-      });
-      logger.info({ companyId, count: result.connections.length }, "Bank feed connected");
-      res.status(201).json(result);
-    })
+    retiredAuthorization
   );
 
   app.post(
@@ -261,22 +228,9 @@ export function registerBankRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     requireFeature("bankImport"),
-    strictBody(bankFeedSyncBody),
-    asyncHandler(async (req: Request, res: Response) => {
-      const connection = await ownedConnection(req, req.params.id);
-      if (connection.provider === "manual")
-        throw new DomainError(
-          "BANK_FEED_NOT_SUPPORTED",
-          400,
-          undefined,
-          "This connection is statement-only"
-        );
-      const result = await syncConnection(connection, {
-        from: req.body.fromDate,
-        to: req.body.toDate,
-        actorId: userId(req),
-      });
-      res.json({ synced: result.imported, total: result.fetched, ...result });
+    asyncHandler(async (req: Request, _res: Response) => {
+      await ownedConnection(req, req.params.id);
+      throw retiredBankingError();
     })
   );
 
@@ -291,7 +245,7 @@ export function registerBankRoutes(app: Express) {
         "BANK_FEED_BALANCE_UNAVAILABLE",
         503,
         undefined,
-        "Live balances need a configured bank feed; use the reconciliation statement instead"
+        BANK_RECONCILIATION_COPY.en
       );
     })
   );

@@ -48,7 +48,7 @@ Detailed analysis of navigation structures across 6 major accounting platforms, 
 | 6 | **Customers** | Customer Center, Create Estimates, Create Invoices, Create Sales Receipts, Enter Statement Charges, Receive Payments, Create Credit Memos/Refunds |
 | 7 | **Vendors** | Vendor Center, Enter Bills, Pay Bills, Create Purchase Orders, Manage Sales Tax, Print 1099s/1096s |
 | 8 | **Employees** | Employee Center, Payroll Center, Enter Time (single/weekly), Pay Employees, Payroll Tax Forms & W-2s |
-| 9 | **Banking** | Write Checks, Make Deposits, Transfer Funds, Reconcile, Enter Credit Card Charges, Online Banking, Bank Feeds |
+| 9 | **Banking** | Write Checks, Make Deposits, Transfer Funds, Reconcile, Enter Credit Card Charges |
 | 10 | **Reports** | Report Center, Memorized Reports, Company & Financial, Customers & Receivables, Vendors & Payables, Banking, Budgets & Forecasts |
 | 11 | **Help** | QuickBooks Help, QuickBooks Desktop Help, Learning Center, Support, About QuickBooks |
 
@@ -153,7 +153,7 @@ Organized visually by workflow category: Sales, Customers, Vendors, Employees, B
 | 2 | **Sales** | Invoices, Estimates, Recurring Invoices, Customer Statements, Credit Card Payments, Customers, Products, Services |
 | 3 | **Purchases** | Bills, Receipts, Vendors, Products, Services |
 | 4 | **Accounting** | Transactions, Reconciliation, Chart of Accounts, Hire a Bookkeeper (action link) |
-| 5 | **Banking** | Connected Bank Accounts, Payouts, Bank Syncing |
+| 5 | **Banking** | Bank Accounts, Payouts |
 | 6 | **Payroll** | Employee management, Timesheets, Payroll processing, Payroll Reports |
 | 7 | **Reports** | Trial Balance, Balance Sheet, P&L, Income by Customer, Account Transactions, Expense by Vendor, General Ledger, Aged Receivables, Aged Payables, Sales Tax Report, Gain/Loss on Forex |
 

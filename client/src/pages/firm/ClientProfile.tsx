@@ -417,7 +417,7 @@ export default function ClientProfile() {
                 <p className="text-sm font-semibold mt-0.5">
                   {stats.lastReceiptDate
                     ? formatDate(stats.lastReceiptDate, locale)
-                    : t["banking.feeds.never"]}
+                    : t["banking.common.never"]}
                 </p>
               </CardContent>
             </Card>
