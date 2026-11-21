@@ -5,6 +5,11 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bankStatementCopy } from "../../shared/bank-statement-copy";
+import {
+  legacySyncMessage,
+  legacySyncSubject,
+  unsupportedStatementCopy,
+} from "../helpers/statement-copy.mjs";
 import { useHarness, type Tenant } from "./harness";
 
 const resendSend = vi.fn();
@@ -37,7 +42,7 @@ async function issued(t: Tenant) {
 describe("W4-D email outbox", () => {
   it("shows normalized subjects for legacy notification events while preserving delivery history", async () => {
     const t = await h.createTenant();
-    const subject = "Bank feed sync failed";
+    const subject = legacySyncSubject;
     const key = `notif:bank.sync_failed:fixture:${t.user.id}`;
     const [legacy] = await h.sql<{ id: string }>(
       `INSERT INTO email_outbox (company_id, to_address, subject, category, status, idempotency_key, sent_at)
@@ -70,8 +75,8 @@ describe("W4-D email outbox", () => {
       await import("../../server/services/notification-email-copy");
     const { renderBilingualEmail } = await import("../../server/services/email-layout");
     const old = {
-      title: "Bank feed sync failed",
-      message: "The bank feed (lean) could not sync: outage & retry. Reconnect it under Banking.",
+      title: legacySyncSubject,
+      message: legacySyncMessage.replace("sync.", "sync: outage & retry."),
     };
     const digestHtml = renderBilingualEmail(
       {
@@ -124,7 +129,8 @@ describe("W4-D email outbox", () => {
     expect(daily.html).toContain("Other update</strong> — Keep this");
     expect(daily.html).toContain("No new transactions from Emirates NBD; 2 already imported");
     expect(daily.html).toContain("لديك ثلاثة إشعارات.");
-    expect(delivered.html + daily.html).not.toMatch(/bank feed|reconnect|OFX|QFX/i);
+    expect(delivered.html + daily.html).not.toMatch(unsupportedStatementCopy);
+    expect(delivered.html + daily.html).not.toMatch(/reconnect|OFX|QFX/i);
     const persisted = await h.sql(`SELECT html, status FROM email_outbox WHERE id IN ($1, $2)`, [
       immediate.id,
       digest.id,

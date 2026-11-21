@@ -9,6 +9,7 @@ import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
+import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -74,8 +75,7 @@ function arabicModeEnglishLines(): string[] {
 const UNSUPPORTED_CLAIMS = [
   /FTA[-\s]?(accredited|compliant|registered|approved)/i,
   /submits? (your|the) (VAT )?return(s)? (to|with) the FTA automatically/i,
-  /(?:connect to|sync from) (?:a |your )?(?:live )?bank feeds?/i,
-  /\b(?:bank|live) feeds?\b|الربط البنكي المباشر/i,
+  unsupportedStatementCopy,
   /money-back/i,
   /UAE-hosted/i,
   // "Most popular" is a plan-card highlight the owner asked for (X6b); it states no user count.
@@ -116,7 +116,7 @@ describe("D1 public site", () => {
         await act(async () => root.render(createElement(PhaseSite)));
         expect(container.querySelector(".phase-lead")?.textContent).toBe(copy);
         expect(container.querySelector(".phase-product-detail ol")?.textContent).not.toMatch(
-          /\b(?:bank|live) feeds?\b|الربط البنكي المباشر/i
+          unsupportedStatementCopy
         );
         expect(t[locale]["marketing.faq3A"]).toBe(copy);
         expect(t[locale]["marketing.prEveryBankBody"]).toBe(copy);

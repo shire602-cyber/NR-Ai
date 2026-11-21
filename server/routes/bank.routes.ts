@@ -33,6 +33,7 @@ import { z } from "zod";
 import { zUuid } from "../../shared/validators/primitives";
 import { parseReportDate, uaeToday } from "../reporting";
 import { bankAccountBalances } from "../services/fx/bank-balances";
+import { requireCompanyMfaEnrollment } from "../services/security/policy";
 
 const logger = createLogger("bank-routes");
 
@@ -128,7 +129,7 @@ export function registerBankRoutes(app: Express) {
         autoSync: false,
         status: "active",
       });
-      logger.info({ connectionId: connection.id, companyId }, "Bank connection created");
+      logger.info({ connectionId: connection.id, companyId }, "Statement association created");
       res.status(201).json(sanitizeConnection(connection));
     })
   );
@@ -140,7 +141,7 @@ export function registerBankRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const connection = await ownedConnection(req, req.params.id);
       await storage.deleteBankConnection(connection.id);
-      res.json({ message: "Bank connection deleted" });
+      res.json({ message: "Record deleted" });
     })
   );
 
@@ -261,6 +262,7 @@ export function registerBankRoutes(app: Express) {
       req.params.companyId = companyId;
       next();
     }),
+    requireCompanyMfaEnrollment,
     requireFeature("bankImport"),
     requirePermission("settings.company"),
     finishAuthorization

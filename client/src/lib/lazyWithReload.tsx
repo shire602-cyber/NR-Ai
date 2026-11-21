@@ -108,7 +108,7 @@ export async function loadWithChunkRetry<T>(
   }
 }
 
-export function lazyWithReload<T extends ComponentType<unknown>>(
+export function lazyWithReload<T extends ComponentType<any>>(
   factory: () => Promise<{ default: T }>,
   key?: string
 ): React.LazyExoticComponent<T> {

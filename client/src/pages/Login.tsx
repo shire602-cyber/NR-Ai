@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AUTH_BUTTON, AUTH_INPUT, AuthAlert, AuthHeader } from "@/components/auth/AuthBlocks";
 import { VerifyEmailState } from "@/components/auth/VerifyEmailState";
+import { BANK_AUTHORIZATION_RETURN_PATH } from "@shared/bank-authorization-paths";
 
 function safeNextPath(): string {
   const params = new URLSearchParams(window.location.search);
@@ -142,7 +143,9 @@ function SignIn() {
         if (user) {
           const fallback = landingPathFor(user);
           const next = safeNextPath();
-          setLocation(next === "/dashboard" ? fallback : next);
+          setLocation(next === "/dashboard" ? fallback : next, {
+            replace: next === BANK_AUTHORIZATION_RETURN_PATH,
+          });
         }
       })
       .catch(() => {});
@@ -156,7 +159,9 @@ function SignIn() {
     const currentUser = await establishAuthenticatedSession(user);
     const fallback = landingPathFor(currentUser);
     const next = result?.mfaEnrollmentRequired ? "/settings/security" : safeNextPath();
-    setLocation(next === "/dashboard" ? fallback : next);
+    setLocation(next === "/dashboard" ? fallback : next, {
+      replace: next === BANK_AUTHORIZATION_RETURN_PATH,
+    });
   };
 
   return (

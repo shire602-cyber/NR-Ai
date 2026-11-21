@@ -17,10 +17,7 @@ import { AppSidebar } from "@/components/layout/AppSidebar";
 import { PortalLayout } from "@/components/layout/PortalLayout";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { isAppSectionPath } from "@/components/layout/app-sections";
-import {
-  BANK_AUTHORIZATION_RETURN_PATH,
-  LEGACY_BANK_AUTHORIZATION_RETURN_PATH,
-} from "@shared/bank-authorization-paths";
+import { useBankAuthorizationReturn } from "@/lib/bank-authorization-return";
 import { ErrorBoundary, SectionBoundary } from "@/components/ErrorBoundary";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -223,7 +220,7 @@ import { TrialAccessGate } from "@/components/billing/TrialAccessGate";
 import { CommandPaletteProvider } from "@/components/CommandPaletteProvider";
 import { GlobalShortcutsProvider } from "@/components/ShortcutsHelp";
 import { SkipLink } from "@/components/SkipLink";
-import { RawQueryRedirect, RedirectTo } from "@/components/layout/RedirectTo";
+import { RedirectTo } from "@/components/layout/RedirectTo";
 import { openCommandPalette } from "@/lib/commandPalette";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { BrandMark } from "@/components/BrandMark";
@@ -506,6 +503,7 @@ function Router() {
   const [location, setLocation] = useLocation();
   const { data: user, isLoading: userLoading } = useCurrentUser();
   const pathname = pathnameOnly(location);
+  const authorization = useBankAuthorizationReturn(pathname);
 
   // Redirect authenticated users from landing to their home (portal or main dashboard)
   useEffect(() => {
@@ -570,26 +568,31 @@ function Router() {
     );
   }
 
-  if (pathname === LEGACY_BANK_AUTHORIZATION_RETURN_PATH) {
+  // Scrub the URL before the sign-in gate builds its return link. The callback API resolves
+  // the workspace independently of the active workspace or its loading state.
+  if (authorization.isCallback) {
     return (
-      <Route path="/banking/callback">
-        <PageLoader variant="form" />
-        <RawQueryRedirect to={BANK_AUTHORIZATION_RETURN_PATH} />
-      </Route>
-    );
-  }
-
-  // Authorization returns need to survive workspace lookup failures. The callback API applies
-  // the usual entitlement and permission checks before it accepts the return.
-  if (pathname === BANK_AUTHORIZATION_RETURN_PATH) {
-    return (
-      <ProtectedRoute>
-        <main className="mx-auto w-full max-w-3xl p-4 sm:p-8">
-          <Suspense fallback={<PageLoader variant="form" />}>
-            <Route path="/bank-feeds/callback" component={BankFeeds} />
-          </Suspense>
-        </main>
-      </ProtectedRoute>
+      <Switch>
+        <Route path="/banking/callback">
+          <PageLoader variant="form" />
+        </Route>
+        <Route path="/bank-feeds/callback">
+          {authorization.cleaning ? (
+            <PageLoader variant="form" />
+          ) : (
+            <ProtectedRoute replaceOnLoginRedirect>
+              <main className="mx-auto w-full max-w-3xl p-4 sm:p-8">
+                <Suspense fallback={<PageLoader variant="form" />}>
+                  <BankFeeds
+                    initialReturn={authorization.returned}
+                    onReturnClaimed={authorization.clear}
+                  />
+                </Suspense>
+              </main>
+            </ProtectedRoute>
+          )}
+        </Route>
+      </Switch>
     );
   }
 
@@ -790,7 +793,9 @@ function Router() {
             <Route path="/analytics" component={AnalyticsHub} />
             <Route path="/bank-reconciliation" component={BankReconciliation} />
             <Route path="/bank-accounts" component={BankAccounts} />
-            <Route path="/bank-feeds" component={BankFeeds} />
+            <Route path="/bank-feeds">
+              <BankFeeds />
+            </Route>
             <Route path="/evidence-center" component={EvidenceCenter} />
             <Route path="/vat-filing" component={VATFiling} />
             <Route path="/vat-autopilot" component={VATAutopilot} />

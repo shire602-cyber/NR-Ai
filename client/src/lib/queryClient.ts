@@ -33,6 +33,14 @@ export class ApiError extends Error {
   }
 }
 
+/** Preparation failed before the mutation was submitted or queued. */
+export class ApiRequestNotSentError extends ApiError {
+  constructor(message: string) {
+    super(message, 0);
+    this.name = "ApiRequestNotSentError";
+  }
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     let errorMessage = res.statusText;
@@ -128,17 +136,27 @@ export async function apiRequest(
   options?: { queueWhenOffline?: boolean }
 ): Promise<any> {
   const withExtra = (h: Record<string, string>) => (extraHeaders ? { ...h, ...extraHeaders } : h);
-  let headers = withExtra(await buildRequestHeaders(method, data));
+  const upperMethod = method.toUpperCase();
+  const isMutation = MUTATING_METHODS.has(upperMethod);
+  const immediateOnly = isMutation && options?.queueWhenOffline === false;
+  if (immediateOnly && !isOnline()) throw new ApiRequestNotSentError("You are offline.");
+
+  let headers: Record<string, string>;
+  try {
+    headers = withExtra(await buildRequestHeaders(method, data));
+  } catch (error) {
+    if (immediateOnly) throw new ApiRequestNotSentError("Could not prepare the request.");
+    throw error;
+  }
 
   const fullUrl = apiUrl(url);
-  const upperMethod = method.toUpperCase();
   const body = data !== undefined ? JSON.stringify(data) : undefined;
 
   // If we're offline and this is a mutation, queue it for the service worker
   // to replay once connectivity returns. Reads are not queued — they should
   // surface a clear error so the UI can render its offline state.
-  if (!isOnline() && MUTATING_METHODS.has(upperMethod)) {
-    if (options?.queueWhenOffline === false) throw new ApiError("You are offline.", 0);
+  if (isMutation && !isOnline()) {
+    if (immediateOnly) throw new ApiRequestNotSentError("You are offline.");
     await queueForSync({ url: fullUrl, method: upperMethod, headers, body });
     throw new ApiError("You are offline. This change will sync when you reconnect.", 0);
   }

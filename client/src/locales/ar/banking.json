@@ -176,7 +176,7 @@
   "banking.imports.sourceImport": "استيراد كشف حساب",
   "banking.feeds.returnPending": "جارٍ إكمال التفويض…",
   "banking.feeds.returnCancelled": "أُلغي التفويض",
-  "banking.feeds.returnOffline": "أنت غير متصل بالإنترنت. أعد المحاولة بعد استعادة الاتصال لإكمال التفويض.",
+  "banking.feeds.returnOffline": "تعذّر الاتصال بالخادم. أعد المحاولة لإكمال التفويض.",
   "banking.feeds.returnRetry": "إعادة المحاولة",
   "banking.feeds.returnError": "تعذّر إكمال التفويض",
   "banking.import.statementRecognized": "تم التعرّف على كشف الحساب",

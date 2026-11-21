@@ -1,5 +1,5 @@
 /**
- * W3-C bank feeds to the external boundary (R06-14, R06-19): connect is impossible without
+ * W3-C financial-data authorization (R06-14, R06-19): initiation requires
  * provider credentials (503), the OAuth state is verified on callback, the redirect URI is
  * allow-listed, tokens are encrypted at rest and never returned, sync dedupes by provider id.
  * Provider HTTP is a recorded sandbox-shaped fixture; nothing calls a real bank.
@@ -88,7 +88,7 @@ async function tenant(): Promise<Tenant> {
   return h.createTenant({ name: "Feeds" });
 }
 
-describe("W3-C bank feeds", () => {
+describe("W3-C financial-data authorization", () => {
   it("[R06-14] connect with an unconfigured provider is 503 BANK_FEED_NOT_CONFIGURED", async () => {
     await clearEnv();
     const t = await tenant();
@@ -247,6 +247,52 @@ describe("W3-C bank feeds", () => {
     const bConnections = await a.as.get(`/api/companies/${b.company.id}/bank-connections`);
     expect(aConnections.body).toMatchObject([{ companyId: a.company.id, provider: "lean" }]);
     expect(bConnections.body).toEqual([]);
+  });
+
+  it("honors MFA enrollment required after the authorization was initiated", async () => {
+    vi.stubEnv("LEAN_APP_TOKEN", "sandbox-app-token");
+    vi.stubEnv("BANK_FEED_REDIRECT_URIS", REDIRECT);
+    const { setCompanyMfaPolicy } = await import("../../server/services/security/policy");
+    const calls: string[] = [];
+    await setBankFeedFetch(leanFixture(calls));
+    const { as, company, user } = await tenant();
+    const started = await as.post(`/api/companies/${company.id}/bank-connections/connect`, {
+      provider: "lean",
+      redirectUrl: REDIRECT,
+    });
+    expect(started.status, started.text).toBe(200);
+    const state = new URL(started.body.authUrl).searchParams.get("state");
+    const payload = { code: ENTITY_SECRET, state };
+
+    await setCompanyMfaPolicy(company.id, "owners_admins", user.id);
+    const denied = await as.post("/api/bank-connections/callback", payload);
+    expect(denied.status, denied.text).toBe(403);
+    expect(denied.body).toMatchObject({
+      code: "MFA_ENROLLMENT_REQUIRED",
+      details: { companyId: company.id, policy: "owners_admins", setupUrl: "/settings/security" },
+    });
+    expect(calls).toEqual([]);
+    const [authorization] = await h.sql(
+      `SELECT used_at FROM bank_feed_oauth_states WHERE company_id = $1`,
+      [company.id]
+    );
+    expect(authorization.used_at).toBeNull();
+
+    await setCompanyMfaPolicy(company.id, "none", user.id);
+    const completed = await as.post("/api/bank-connections/callback", payload);
+    expect(completed.status, completed.text).toBe(201);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("confirms deletion with neutral wording", async () => {
+    const { as, company } = await tenant();
+    const created = await as.post(`/api/companies/${company.id}/bank-connections`, {
+      bankName: "Fixture institution",
+    });
+    expect(created.status, created.text).toBe(201);
+    const deleted = await as.delete(`/api/bank-connections/${created.body.id}`);
+    expect(deleted.status, deleted.text).toBe(200);
+    expect(deleted.body).toEqual({ message: "Record deleted" });
   });
 
   it("[R06-14] tokens are encrypted at rest, never returned, and sync dedupes by provider id [R06-19]", async () => {

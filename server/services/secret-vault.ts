@@ -1,6 +1,6 @@
 /**
  * Application-layer encryption for secrets stored in database columns
- * (bank connection tokens, future API credentials).
+ * (external processor tokens, future API credentials).
  *
  * AES-256-GCM. The key comes from TOKEN_ENCRYPTION_KEY (32+ chars) when set,
  * otherwise it is derived from SESSION_SECRET via HKDF so encryption is

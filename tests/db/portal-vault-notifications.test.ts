@@ -5,6 +5,11 @@
 import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { bankStatementCopy } from "../../shared/bank-statement-copy";
+import {
+  legacySyncMessage,
+  legacySyncSubject,
+  unsupportedStatementCopy,
+} from "../helpers/statement-copy.mjs";
 import { useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -372,11 +377,7 @@ describe("W4-D notification engine", () => {
     await h.sql(
       `UPDATE notifications SET title = $2, message = $3
        WHERE user_id = $1 AND event_key LIKE 'bank.sync_failed:%'`,
-      [
-        d.user.id,
-        "Bank feed sync failed",
-        "The bank feed (lean) could not sync. Reconnect it under Banking.",
-      ]
+      [d.user.id, legacySyncSubject, legacySyncMessage]
     );
     await emit("task.due", {
       companyId: d.company.id,
@@ -398,7 +399,8 @@ describe("W4-D notification engine", () => {
     expect(digest.length).toBe(1);
     expect(digest[0].html).toContain(bankStatementCopy.en);
     expect(digest[0].html).toContain("Task due");
-    expect(digest[0].html).not.toMatch(/bank feed|reconnect/i);
+    expect(digest[0].html).not.toMatch(unsupportedStatementCopy);
+    expect(digest[0].html).not.toMatch(/reconnect/i);
     expect(digest[0].subject).toContain("2 update(s)");
     expect(
       (await t.as.put("/api/notification-preferences", { digestFrequency: "hourly" })).status

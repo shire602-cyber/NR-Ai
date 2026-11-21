@@ -124,12 +124,12 @@ describe("client portal light root", () => {
       async () => {
         await act(async () => {});
         expect(container.querySelector("h1")).not.toBeNull();
+        expect(text()).toContain("INV-2026-00001");
       },
       { timeout: 10000 }
     );
     expect(container.querySelectorAll("h1")).toHaveLength(1);
     expect(container.querySelector("h1")!.textContent).toBe("Overview");
-    expect(text()).toContain("INV-2026-00001");
     expect(container.querySelector("table.row-cards")).not.toBeNull();
     // The tab is named after the page and the company, not the marketing default.
     expect(document.title).toBe("Dashboard · Al Noor Trading LLC");

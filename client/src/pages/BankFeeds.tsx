@@ -6,44 +6,31 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { useTranslation } from "@/lib/i18n";
-import { ApiError, apiRequest } from "@/lib/queryClient";
+import { ApiRequestNotSentError, apiRequest } from "@/lib/queryClient";
+import type { AuthorizationReturn } from "@/lib/bank-authorization-return";
 import { BANK_AUTHORIZATION_RETURN_PATH as callbackPath } from "@shared/bank-authorization-paths";
 
-type AuthorizationReturn =
-  | { kind: "pending" | "retry"; code: string; state: string }
-  | { kind: "submitting" | "cancelled" | "failed" }
+type ReturnStatus =
+  | AuthorizationReturn
+  | { kind: "retry"; code: string; state: string }
+  | { kind: "submitting" }
   | null;
 
-function readAuthorizationReturn(search: string): AuthorizationReturn {
-  if (!search) return null;
-  const params = new URLSearchParams(search);
-  const error = params.get("error");
-  const status = params.get("status");
-  if (error === "access_denied" || /^(?:cancelled|canceled)$/i.test(status ?? "")) {
-    return { kind: "cancelled" };
-  }
-  const code = params.get("code") || params.get("entity_id");
-  const state = params.get("state");
-  return !error && code && state ? { kind: "pending", code, state } : { kind: "failed" };
+interface BankFeedsProps {
+  initialReturn?: AuthorizationReturn | null;
+  onReturnClaimed?: () => void;
 }
 
 /** Keep existing banking links and callback bookmarks pointed at statement import. */
-export default function BankFeeds() {
+export default function BankFeeds({ initialReturn = null, onReturnClaimed }: BankFeedsProps) {
   const { t } = useTranslation();
   const [path, navigate] = useLocation();
-  const [returned, setReturned] = useState(() =>
-    path === callbackPath && typeof window !== "undefined"
-      ? readAuthorizationReturn(window.location.search)
-      : null
-  );
-  const cleaned = useRef(false);
+  const [returned, setReturned] = useState<ReturnStatus>(initialReturn);
   const submitted = useRef(false);
 
   useEffect(() => {
-    if (path !== callbackPath || !returned || cleaned.current) return;
-    cleaned.current = true;
-    navigate(callbackPath, { replace: true });
-  }, [path, returned, navigate]);
+    if (initialReturn) onReturnClaimed?.();
+  }, [initialReturn, onReturnClaimed]);
 
   useEffect(() => {
     if (path !== callbackPath || returned?.kind !== "pending" || submitted.current) return;
@@ -57,8 +44,7 @@ export default function BankFeeds() {
         if (window.location.pathname === callbackPath) navigate("/bank-feeds", { replace: true });
       },
       (error: unknown) => {
-        // An offline refusal occurs before the POST. Keep the return in memory for retry.
-        if (error instanceof ApiError && error.status === 0) {
+        if (error instanceof ApiRequestNotSentError) {
           submitted.current = false;
           setReturned({ kind: "retry", code, state });
         } else {
