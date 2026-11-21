@@ -1,5 +1,5 @@
 /**
- * Bank feeds to the external boundary (W3-C: R06-14, R06-19).
+ * Financial-data adapter processing (W3-C: R06-14, R06-19).
  *
  *  - connect refuses with 503 BANK_FEED_NOT_CONFIGURED when the provider has no credentials
  *  - the OAuth state is random, stored as a SHA-256 hash, single-use, 10-minute expiry, bound to
@@ -228,7 +228,7 @@ function providerFailure(adapter: BankFeedAdapter, err: unknown): DomainError {
   const status = err instanceof BankFeedProviderError ? err.status : 0;
   log.warn(
     { provider: adapter.id, status, err: (err as Error).message },
-    "Bank feed provider call failed"
+    "Financial-data provider request failed"
   );
   return new DomainError(
     "BANK_FEED_PROVIDER_ERROR",
@@ -401,7 +401,7 @@ export async function runScheduledBankFeedSync(): Promise<{ synced: number; fail
       failed++;
       log.warn(
         { connectionId: raw.id, err: (err as Error).message },
-        "Scheduled bank feed sync failed"
+        "Scheduled financial-data import failed"
       );
     }
   }

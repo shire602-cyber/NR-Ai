@@ -3,6 +3,7 @@
 // (client/src/lib/reportCatalogText.ts); tests/unit/report-catalog-arabic.test.ts enforces coverage
 // of every field the launcher and dashboard render.
 import { registerDeliverySubscriptions } from "./deliveryTitleRegistry";
+import { BANK_RECONCILIATION_COPY } from "@shared/bank-reconciliation-copy";
 
 export const reportTabs = [
   "pl",
@@ -547,7 +548,8 @@ export const reportPersonaWorkspaces: ReportPersonaWorkspace[] = [
       cadence: "Weekly Monday morning plus month-end close",
       delivery: "Excel or Google Sheets pack",
       recipients: "Business owner, solo entrepreneur, and finance admin",
-      trigger: "Refresh after bank, invoices, bills, receipts, and VAT reports are updated.",
+      trigger:
+        "Refresh after reconciling the bank CSV and updating invoices, bills, receipts, and VAT reports.",
       automation: "Send when collections, VAT, or cash warnings are open.",
     },
     setupChecklist: [
@@ -3418,7 +3420,7 @@ export const reportAutomationStarters: ReportAutomationStarter[] = [
     outcome:
       "Turns cash forecast pressure, overdue customers, and sales-mix changes into a weekly command pack.",
     setupTime: "10-minute setup",
-    trigger: "Run after invoices, payments, bank activity, and sales lines refresh.",
+    trigger: "Run after reconciling the bank CSV and updating invoices, payments, and sales lines.",
     reportIds: [
       "bank-reconciliation-report",
       "balance-sheet",
@@ -3436,7 +3438,7 @@ export const reportAutomationStarters: ReportAutomationStarter[] = [
     playbookIds: ["owner-cash-collections"],
     queueIds: ["collections", "planning-risk", "sales-mix"],
     setupSteps: [
-      "Connect invoice and bank refreshes.",
+      BANK_RECONCILIATION_COPY.en,
       "Schedule the owner weekly command pack.",
       "Route overdue balances to payment chasing.",
     ],
@@ -4399,7 +4401,8 @@ export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
     persona: "owner",
     title: "Owner weekly executive delivery",
     audience: "Business owner, solo entrepreneur, and finance admin",
-    cadence: "Every Monday at 8:00 AM after bank, invoice, and receipt refresh",
+    cadence:
+      "Every Monday at 8:00 AM after reconciling the bank CSV and updating invoices and receipts",
     channel: "Email with PDF and Excel attachments",
     googleSheetsCopy: true,
     format: "Management pack workbook",

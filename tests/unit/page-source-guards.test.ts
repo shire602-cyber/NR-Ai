@@ -187,7 +187,7 @@ describe("Mobile launch UX guards", () => {
   const source = read("client/src/pages/BankReconciliation.tsx");
 
   describe("Bank import launch UX", () => {
-    it("keeps a sample CSV path for buyers without live bank feeds", () => {
+    it("keeps a sample CSV available to buyers", () => {
       expect(source).toContain("muhasib-sample-bank-statement.csv");
       expect(source).not.toContain('t["bankReconciliation.liveBankFeedsAreNot"]');
       // Step 1 / F4: the supported-format lines are catalog copy (en and ar), not page literals.
@@ -197,7 +197,7 @@ describe("Mobile launch UX guards", () => {
       const bankingEn = JSON.parse(readFileSync("client/src/locales/en/banking.json", "utf8"));
       expect(bankingEn["banking.import.formatCsv"]).toContain("Arabic/English generic");
       expect(bankingEn["banking.import.formatDelimiters"]).toBe(
-        "Comma, semicolon, and tab-delimited Excel exports are supported"
+        "CSV files can use commas, semicolons, or tabs"
       );
       expect(bankingEn["banking.import.formatDrCr"]).toBe(
         "Amount + Dr/Cr type columns are supported"

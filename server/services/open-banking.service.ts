@@ -1,5 +1,5 @@
 /**
- * Compatibility facade over server/services/bank-feeds (W3-C, R06-14/R06-19).
+ * Compatibility facade for financial-data adapters (W3-C, R06-14/R06-19).
  *
  * The old Wio/Lean classes built auth URLs with empty credentials and arbitrary redirect URIs and
  * never verified OAuth state. All provider logic now lives in bank-feeds/adapters.ts behind the

@@ -299,15 +299,24 @@ describe("W4-D notification engine", () => {
       date: new Date(Date.now() - 40 * 86_400_000).toISOString().slice(0, 10),
       lines: [{ description: "Line", quantity: 1, unitPrice: 100, vatRate: 5 }],
     });
-    await t.as.patch(`/api/invoices/${inv.body.id}/status`, { status: "sent" });
-    const bank = await h.sql(`SELECT id FROM accounts WHERE company_id = $1 AND code = '1020'`, [
-      t.company.id,
-    ]);
-    await t.as.post(`/api/companies/${t.company.id}/invoices/${inv.body.id}/payments`, {
-      date: new Date().toISOString().slice(0, 10),
-      method: "bank",
-      paymentAccountId: bank[0].id,
-      amount: 20,
+    expect(inv.status, inv.text).toBe(200);
+    // Seed the state consumed by the overdue scan and exercise the other
+    // handlers through their domain events. Invoice posting is tested separately.
+    await h.sql(
+      `UPDATE invoices SET status = 'sent', due_date = now() - interval '3 days' WHERE id = $1`,
+      [inv.body.id]
+    );
+    await emit("invoice.issued", {
+      companyId: t.company.id,
+      entityId: inv.body.id,
+      number: inv.body.number,
+      totalFils: 10500,
+    });
+    await emit("payment.received", {
+      companyId: t.company.id,
+      entityId: crypto.randomUUID(),
+      invoiceId: inv.body.id,
+      amountFils: 2000,
     });
     await emit("bank.sync_failed", {
       companyId: t.company.id,
@@ -319,9 +328,6 @@ describe("W4-D notification engine", () => {
       entityId: crypto.randomUUID(),
       dueDate: "2026-12-01",
     });
-    await h.sql(`UPDATE invoices SET due_date = now() - interval '3 days' WHERE id = $1`, [
-      inv.body.id,
-    ]);
     const { scanOverdueInvoices } =
       await import("../../server/services/notification-engine.service");
     await scanOverdueInvoices();

@@ -581,7 +581,6 @@ export default function BankReconciliation() {
     colDescription: t["banking.import.colDescription"],
     colDebit: t["banking.import.colDebit"],
     colCredit: t["banking.import.colCredit"],
-    formats: t["banking.import.formats"],
     formatCsv: t["banking.import.formatCsv"],
     formatDelimiters: t["banking.import.formatDelimiters"],
     formatDrCr: t["banking.import.formatDrCr"],
@@ -1578,15 +1577,11 @@ export default function BankReconciliation() {
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1.5">
                   <p className="font-medium text-xs">
-                    <T k="pageLabels.supportedFormats" />
+                    <T k="banking.import.csvDetails" />
                   </p>
                   <div className="flex items-center gap-2 text-xs">
                     <FileSpreadsheet className="w-3.5 h-3.5 text-success" />
                     <span>{strings.formatCsv}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-success" />
-                    <span>{strings.formats}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <CheckCircle2 className="w-3.5 h-3.5 text-success" />

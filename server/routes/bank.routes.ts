@@ -252,7 +252,7 @@ export function registerBankRoutes(app: Express) {
         code: body.code,
         state: body.state,
       });
-      logger.info({ companyId, count: result.connections.length }, "Bank feed connected");
+      logger.info({ companyId, count: result.connections.length }, "Financial-data authorization completed");
       res.status(201).json(result);
     })
   );
