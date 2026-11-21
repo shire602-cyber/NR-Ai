@@ -196,6 +196,42 @@ export async function runMigrations(migrationsFolder: string): Promise<void> {
   }
 }
 
+async function ensureVatGroupAuditMembershipIndex(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    // Indexing older histories can take longer than the normal request deadline.
+    await client.query("SELECT set_config('statement_timeout', $1, false)", [
+      String(Math.max(POOL_CONFIG.statement_timeout, 300_000)),
+    ]);
+    // Serialize release runners while checking for and repairing an interrupted build.
+    await client.query(
+      "SELECT pg_advisory_lock(hashtextextended('schema:idx_audit_logs_vat_group_member_ids', 0))"
+    );
+    const { rows } = await client.query<{ indisvalid: boolean }>(
+      `SELECT indisvalid FROM pg_index
+        WHERE indexrelid = to_regclass('public.idx_audit_logs_vat_group_member_ids')`
+    );
+    if (rows[0]?.indisvalid) return;
+    if (rows.length) {
+      await client.query("DROP INDEX CONCURRENTLY public.idx_audit_logs_vat_group_member_ids");
+    }
+    // Limit index keys for oversized payloads, including malformed legacy audit text.
+    await client.query(`
+      CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_audit_logs_vat_group_member_ids
+        ON public.audit_logs USING gin ((
+          CASE WHEN octet_length(details) <= 2048
+               THEN string_to_array(lower(details), '"')
+               ELSE regexp_split_to_array(lower(details), '"|[^"]{37,}')
+          END
+        ))
+        WHERE resource_type = 'vat_group' AND action = 'vat.group.upsert'
+    `);
+  } finally {
+    // Closing the dedicated connection releases the session lock even if the build fails.
+    client.release(true);
+  }
+}
+
 /**
  * Belt-and-suspenders schema guard: ensures critical columns exist regardless
  * of Drizzle migration tracking state. Every statement uses IF NOT EXISTS so
@@ -1295,6 +1331,16 @@ export async function ensureCriticalSchema(): Promise<void> {
       log.error({ step: step.name, err: errorMessage(err) }, "Schema guard step failed");
       failed++;
     }
+  }
+  try {
+    await ensureVatGroupAuditMembershipIndex();
+    ok++;
+  } catch (err: unknown) {
+    failed++;
+    log.error(
+      { step: "audit_logs.vat_group_member_ids index", err: errorMessage(err) },
+      "Schema guard step failed"
+    );
   }
   log.info({ ok, failed, mode: "schema-only" }, "Critical schema guard completed");
 }

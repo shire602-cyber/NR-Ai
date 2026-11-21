@@ -165,15 +165,16 @@ export async function findFiledVatPeriod(
          AND period_start < ${to}::date + interval '1 day'
        ORDER BY period_end DESC LIMIT 1
     ),
-    group_audits AS MATERIALIZED (
-      SELECT company_id, resource_id, details
-        FROM audit_logs
-       WHERE resource_type = 'vat_group' AND action = 'vat.group.upsert'
-    ),
     linked_audits AS MATERIALIZED (
       SELECT DISTINCT a.company_id, a.resource_id
-        FROM group_audits a
-       WHERE a.details ILIKE ${`%${memberId}%`}
+        FROM audit_logs a
+       WHERE a.resource_type = 'vat_group'
+         AND a.action = 'vat.group.upsert'
+         -- Match the release GIN expression and verify exact JSON membership below.
+         AND CASE WHEN octet_length(a.details) <= 2048
+                  THEN string_to_array(lower(a.details), '"')
+                  ELSE regexp_split_to_array(lower(a.details), '"|[^"]{37,}')
+             END @> ARRAY[${memberId}::text]
          AND CASE WHEN pg_input_is_valid(a.details, 'jsonb')
                   THEN lower((a.details::jsonb #> '{before,members}')::text)::jsonb @> ${auditMembers}
                     OR lower((a.details::jsonb #> '{after,members}')::text)::jsonb @> ${auditMembers}
