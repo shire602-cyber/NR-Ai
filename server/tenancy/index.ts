@@ -22,6 +22,7 @@ import { and, eq, type InferSelectModel, type SQL } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { db } from "../db";
 import { DomainError } from "../errors";
+import type { LedgerTx } from "../ledger/types";
 
 /** A Drizzle table with `id` and `companyId` columns. */
 export type TenantTable = PgTable & { id: PgColumn; companyId: PgColumn };
@@ -61,10 +62,11 @@ function scope<T extends TenantTable>(table: T, companyId: string, id: string): 
 export async function scopedGet<T extends TenantTable>(
   table: T,
   companyId: string,
-  id: string
+  id: string,
+  tx: LedgerTx = db
 ): Promise<TenantRow<T> | undefined> {
   if (!isScopedIdPair(companyId, id)) return undefined;
-  const rows = await loose
+  const rows = await (tx as unknown as LooseBuilder)
     .select()
     .from(table)
     .where(scope(table, companyId, id))

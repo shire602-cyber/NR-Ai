@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { NextFunction, Request, Response } from "express";
 import { pool } from "../db";
+import { ledgerQueryable } from "../ledger/tx";
+import type { LedgerTx } from "../ledger/types";
 import { AppError } from "../middleware/errorHandler";
 import { DomainError } from "../errors";
 import { todayIso } from "../ledger/normalize";
@@ -63,9 +65,10 @@ function toIsoDate(date: Date | string): string | null {
 /** The strongest lock covering `isoDate` (hard beats soft), or null. */
 export async function getEffectiveLock(
   companyId: string,
-  isoDate: string
+  isoDate: string,
+  tx?: LedgerTx
 ): Promise<EffectiveLock | null> {
-  const result = await pool.query(
+  const result = await ledgerQueryable(tx).query(
     `SELECT period_end::date::text AS period_end, lock_type, lock_scope
        FROM month_end_close
       WHERE company_id = $1
@@ -111,9 +114,10 @@ export type CloseActor =
 
 export async function resolveCloseActor(
   companyId: string,
-  user: { id: string; isAdmin?: boolean; firmRole?: string | null }
+  user: { id: string; isAdmin?: boolean; firmRole?: string | null },
+  tx?: LedgerTx
 ): Promise<CloseActor> {
-  const r = await pool.query(
+  const r = await ledgerQueryable(tx).query(
     `SELECT role FROM company_users WHERE company_id = $1 AND user_id = $2 LIMIT 1`,
     [companyId, user.id]
   );
@@ -143,14 +147,15 @@ export function canManageClose(actor: CloseActor): boolean {
  */
 export async function assertPeriodNotLocked(
   companyId: string,
-  date: Date | string | null | undefined
+  date: Date | string | null | undefined,
+  tx?: LedgerTx
 ): Promise<void> {
   if (!companyId) return;
   if (!date) return;
   const isoDate = toIsoDate(date);
   if (!isoDate) return;
 
-  const lock = await getEffectiveLock(companyId, isoDate);
+  const lock = await getEffectiveLock(companyId, isoDate, tx);
   if (!lock) return;
 
   const label = `${isoDate.slice(5, 7)}/${isoDate.slice(0, 4)}`;
@@ -174,7 +179,7 @@ export async function assertPeriodNotLocked(
   const user = req?.user;
   // X5 (J1 D3): the refusal tells the client whether this user may override with a reason,
   // so the UI asks for one (and retries) only when it would be accepted.
-  const actor = user ? await resolveCloseActor(companyId, user) : null;
+  const actor = user ? await resolveCloseActor(companyId, user, tx) : null;
   const canOverride = !!actor && canManageClose(actor);
   if (user && reason.length >= 3) {
     if (canOverride) {
@@ -188,6 +193,7 @@ export async function assertPeriodNotLocked(
         before: null,
         after: { postingDate: isoDate, lockedThrough: lock.periodEnd, reason },
         req,
+        tx,
       });
       return;
     }

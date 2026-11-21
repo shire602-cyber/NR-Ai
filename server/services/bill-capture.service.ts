@@ -17,6 +17,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { pool } from "../db";
 import { DomainError, errorCode } from "../errors";
 import { loadBaseCurrency } from "../ledger";
+import { ledgerQueryable } from "../ledger/tx";
+import type { LedgerTx } from "../ledger/types";
 import { inspectUpload, UploadRejectedError } from "./upload-guard";
 import { saveReceiptFile } from "./fileStorage";
 import { extractBillDocument } from "./ocr-extraction.service";
@@ -29,15 +31,21 @@ import {
 } from "../../shared/bill-capture";
 
 /** The company's own TRN (companies.trn_vat_number), or null. */
-export async function companyOwnTrn(companyId: string): Promise<string | null> {
-  const r = await pool.query(`SELECT trn_vat_number FROM companies WHERE id = $1`, [companyId]);
+export async function companyOwnTrn(companyId: string, tx?: LedgerTx): Promise<string | null> {
+  const r = await ledgerQueryable(tx).query(`SELECT trn_vat_number FROM companies WHERE id = $1`, [
+    companyId,
+  ]);
   return (r.rows[0]?.trn_vat_number as string | null | undefined) ?? null;
 }
 
 /** 4.7: a bill may not carry the company's own TRN as the seller's TRN. */
-export async function assertNotOwnTrn(companyId: string, sellerTrn: string | null | undefined) {
+export async function assertNotOwnTrn(
+  companyId: string,
+  sellerTrn: string | null | undefined,
+  tx?: LedgerTx
+) {
   if (!sellerTrn) return;
-  if (isOwnTrn(sellerTrn, await companyOwnTrn(companyId))) {
+  if (isOwnTrn(sellerTrn, await companyOwnTrn(companyId, tx))) {
     throw new DomainError(
       "SELF_TRN_BILL",
       422,

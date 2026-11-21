@@ -18,7 +18,9 @@
  * `tx` itself; pass `tx` down (e.g. `inventory.onGoodsReceived(event, tx)`,
  * `recordAudit({ ..., tx })`).
  */
-import { db } from "../db";
+import { sql, type SQL } from "drizzle-orm";
+import type { QueryResultRow } from "pg";
+import { db, pool } from "../db";
 import { createLogger } from "../config/logger";
 import type { LedgerTx } from "./types";
 
@@ -82,4 +84,34 @@ export function rowsOf<T>(result: unknown): T[] {
   if (Array.isArray(result)) return result as T[];
   const rows = (result as { rows?: unknown })?.rows;
   return Array.isArray(rows) ? (rows as T[]) : [];
+}
+
+/** Bind values in existing pg-style SQL, including arrays as single parameters. */
+export function parameterizedSql(text: string, params: unknown[]): SQL {
+  const parts = text.split(/\$(\d+)/);
+  const chunks: SQL[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 0) {
+      if (parts[i]) chunks.push(sql.raw(parts[i]));
+    } else {
+      const index = Number(parts[i]) - 1;
+      if (index < 0 || index >= params.length) {
+        throw new Error(`Missing SQL parameter $${parts[i]}`);
+      }
+      // sql.param binds the value as ONE parameter (a `${array}` would expand to a tuple).
+      chunks.push(sql`${sql.param(params[index])}`);
+    }
+  }
+  return sql.join(chunks, sql.raw(""));
+}
+
+/** Run pg-style queries on the same connection as a ledger write when given a transaction. */
+export function ledgerQueryable(tx?: LedgerTx) {
+  return tx
+    ? {
+        async query(text: string, params: unknown[] = []) {
+          return { rows: rowsOf<QueryResultRow>(await tx.execute(parameterizedSql(text, params))) };
+        },
+      }
+    : pool;
 }

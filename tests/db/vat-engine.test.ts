@@ -370,15 +370,22 @@ describe("W4-E VAT engine: report 07 scenario", () => {
     expect(ok.status, ok.text).toBe(200);
     expect(ok.body.status).toBe("ready");
     expect(ok.body.reconciliationOverrideReason).toContain("restored");
+    const sub = await t.as.post(`/api/vat-returns/${gen.body.id}/submit`, {});
+    expect(sub.status, sub.text).toBe(200);
+    expect(sub.body.status).toBe("submitted");
+    const { filingReconciliation, ...approvalEvidence } = sub.body.reconciliationSnapshot;
+    expect(approvalEvidence).toEqual(ok.body.reconciliationSnapshot);
+    expect(filingReconciliation).toMatchObject({
+      unexplainedInputFils: approvalEvidence.unexplainedInputFils,
+      unexplainedOutputFils: approvalEvidence.unexplainedOutputFils,
+    });
+    expect(sub.body.reconciliationOverrideAt).toBe(ok.body.reconciliationOverrideAt);
+    expect(sub.body.filing.transmittedByMuhasib).toBe(false);
     const audit = await h.sql(
       `SELECT 1 FROM audit_logs WHERE action = 'vat_return.reconciliation_override' AND resource_id = $1`,
       [gen.body.id]
     );
-    expect(audit.length).toBe(1);
-    const sub = await t.as.post(`/api/vat-returns/${gen.body.id}/submit`, {});
-    expect(sub.status, sub.text).toBe(200);
-    expect(sub.body.status).toBe("submitted");
-    expect(sub.body.filing.transmittedByMuhasib).toBe(false);
+    expect(audit).toHaveLength(1);
   });
 });
 

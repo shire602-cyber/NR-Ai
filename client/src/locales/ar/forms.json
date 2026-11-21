@@ -354,6 +354,8 @@
   "forms.serverErrors.VAT_FILED_ON_FUTURE": "لا يمكن أن يكون تاريخ التقديم في المستقبل.",
   "forms.serverErrors.VAT_FILED_ON_IN_PERIOD": "يُقدَّم إقرار ضريبة القيمة المضافة بعد انتهاء فترته الضريبية. اختر تاريخ تقديم لاحقًا.",
   "forms.serverErrors.VAT_SETTLEMENT_DATE_IN_PERIOD": "يجب أن يكون تاريخ دفع الضريبة أو استردادها بعد نهاية فترة الإقرار.",
+  "forms.serverErrors.VAT_SETTLEMENT_ROUNDS_TO_ZERO": "مبلغ تسوية ضريبة القيمة المضافة أصغر من أن يُسجّل بالعملة المحددة.",
+  "forms.serverErrors.VAT_SETTLEMENT_RECONCILIATION_REQUIRED": "طابق أرقام إقرار ضريبة القيمة المضافة المقدّم مع حسابات مراقبة الضريبة المرحلة قبل تسجيل التسوية.",
   "forms.serverErrors.VAT_RETURN_ALREADY_SETTLED": "يوجد دفع مسجَّل لهذا الإقرار. اعكسه أولًا لتسجيل دفع مختلف.",
   "forms.serverErrors.VAT_RETURN_NOT_SUBMITTED": "سجّل تقديم الإقرار عبر إمارات تاكس قبل تسجيل الدفع أو الاسترداد.",
   "forms.serverErrors.VAT_RETURN_NOTHING_TO_SETTLE": "لا يوجد في هذا الإقرار مبلغ للدفع أو الاسترداد.",

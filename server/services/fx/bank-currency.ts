@@ -19,6 +19,7 @@
 import Decimal from "decimal.js";
 import { pool } from "../../db";
 import { DomainError } from "../../errors";
+import type { LedgerTx } from "../../ledger/types";
 import { fromFils, mulRate } from "../../../shared/money";
 import { getRate } from "./rates";
 
@@ -57,10 +58,11 @@ export async function bankRateOn(
   bankCurrency: string,
   base: string,
   date: string,
-  docCurrency: string
+  docCurrency: string,
+  tx?: LedgerTx
 ): Promise<string> {
   try {
-    const r = await getRate(companyId, bankCurrency, base, date);
+    const r = await getRate(companyId, bankCurrency, base, date, { tx });
     return r.rateText;
   } catch (err) {
     if (err instanceof DomainError && err.code === "NO_EXCHANGE_RATE") {
@@ -88,7 +90,10 @@ export async function cashLegFor(args: {
   docCurrency: string;
   docAmountFils: number;
   docRate: string;
+  /** Use an exact conversion with the stored denominator for a derived inverse rate. */
+  docBaseFils?: number;
   date: string;
+  tx?: LedgerTx;
   /** Amount the bank actually moved, in the bank currency (fils); third-currency only. */
   bankAmountFils?: number | null;
   /** Bank currency -> base rate on the payment date; default fx.getRate. */
@@ -97,7 +102,9 @@ export async function cashLegFor(args: {
   const base = args.base.toUpperCase();
   const doc = args.docCurrency.toUpperCase();
   const bank = (args.bankCurrency ?? base).toUpperCase();
-  const docBase = doc === base ? args.docAmountFils : mulRate(args.docAmountFils, args.docRate);
+  const docBase =
+    args.docBaseFils ??
+    (doc === base ? args.docAmountFils : mulRate(args.docAmountFils, args.docRate));
   if (bank === base) {
     return { cashBaseFils: docBase, bankCurrency: bank, tag: null };
   }
@@ -112,7 +119,8 @@ export async function cashLegFor(args: {
       },
     };
   }
-  const rate = args.bankRate || (await bankRateOn(args.companyId, bank, base, args.date, doc));
+  const rate =
+    args.bankRate || (await bankRateOn(args.companyId, bank, base, args.date, doc, args.tx));
   let bankFils: number;
   let cashBaseFils: number;
   if (args.bankAmountFils && args.bankAmountFils > 0) {

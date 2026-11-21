@@ -24,20 +24,28 @@ merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived o
 
 ## 2. Migration rehearsal on a restored production snapshot
 
-Restore the dump from section 1 (or a Railway snapshot) into a scratch database, never production:
+Restore the dump from section 1 (or a Railway snapshot) into a scratch database, never production.
+Use the release environment with `DATABASE_URL` pointed at that restored copy.
 
 ```
 export DATABASE_URL=postgres://.../rehearsal   # the restored copy
-\timing on                                     # in psql; or time the command below
-time npm run db:migrate                         # applies 0089-0137; record total and slowest file
-npm run build && PORT=<free port> npm start     # boot check: /health/ready 200, /api/version
+npm run build
+time node dist/migrate.js                       # applies migrations and runs the release schema guard
+PORT=<free port> npm start                      # boot check: /health/ready 200, /api/version
 ```
 
 Record timings per migration (the migrate log) and fail the rehearsal on any error or boot failure.
+Use a direct PostgreSQL connection for the release runner. The release schema guard builds the VAT-group audit membership index concurrently. Its dedicated session gives each statement at least five minutes and holds an advisory lock to serialize retries. Check the release log for failures and use the query below to verify the index.
+
+```sql
+SELECT indisvalid
+  FROM pg_index
+ WHERE indexrelid = to_regclass('public.idx_audit_logs_vat_group_member_ids');
+```
 
 ### 2a. Capture BEFORE migrating (pre-state counts)
 
-Run on the restored snapshot before `db:migrate`:
+Run these checks on the restored snapshot before the release migration.
 
 ```sql
 -- 0092: placeholder users that become pending invitations / are deleted
@@ -245,7 +253,7 @@ every pre-existing rule, 0109 time per audit row), is in [MIGRATION-REHEARSAL.md
 | `JWT_SECRET`, `SESSION_SECRET`, `DATABASE_URL` | Already required. `JWT_SECRET_ROTATED_AFTER_BACKDOOR=true` only after rotation.                                                                                                                                                                                                                                                                                                                                      |
 | `AUTH_PUBLIC_URL`                              | Public base URL used in emails and webhooks.                                                                                                                                                                                                                                                                                                                                                                         |
 | `FRONTEND_URL`                                 | The public origin of the app (for example `https://app.example.com`), comma-separated extras in `CORS_ORIGIN`. In production the server refuses any request whose `Origin` is not listed (403 `ORIGIN_NOT_ALLOWED`), and browsers send `Origin` for module scripts, so **unset means every page loads blank** (all JS/CSS assets 403). `curl`-based checks do not catch it; open the site in a browser after deploy. |
-| `AUTO_MIGRATE_ON_BOOT`                         | Leave `false`; migrate in the release phase (`npm run db:migrate`).                                                                                                                                                                                                                                                                                                                                                  |
+| `AUTO_MIGRATE_ON_BOOT`                         | Keep `false` and run `node dist/migrate.js` in the release phase.                                                                                                                                                                                                                                                                                                                                                    |
 | Commit SHA on `/api/version`                   | See below.                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 **Time zone.** The server process always runs in `TZ=UTC` (the Dockerfile and both compose files set
@@ -269,7 +277,7 @@ nothing reads them any more.
 1. Green CI on the PR (check, lint, coverage ratchet, audit gate, Railway install path, strict API
    coverage, build, bundle budget, `test:db`, boot gate, perf budget).
 2. Take the verified backup (section 1) immediately before.
-3. Merge to `main` (Railway deploys from `origin/main`). Run `npm run db:migrate` in the release phase.
+3. Merge to `main` (Railway deploys from `origin/main`). Railway runs `node dist/migrate.js` in the release phase.
 4. Watch the deploy log for migration errors; `/health/live` then `/health/ready` must be 200.
 
 ## 5. Post-deploy checks

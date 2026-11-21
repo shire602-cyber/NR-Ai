@@ -27,7 +27,7 @@ import {
 import { allocateEntryNumber, lockIdempotencyKey } from "./numbering";
 import { journalMemo } from "@shared/journal-memo";
 import { journalMachine, transitionRow } from "./state-machines";
-import { assertVatPeriodOpen } from "./vat-lock";
+import { assertVatPeriodOpen, isVat201JournalTreatment, lockVatReturns } from "./vat-lock";
 import { assertKernelControlPosting, stampControlAdjustment } from "./control-accounts";
 import { findPgError, rowsOf, withLedgerTx } from "./tx";
 import type {
@@ -46,9 +46,13 @@ import type {
 
 // Period-lock service is loaded lazily: it imports month-end.service, which
 // imports storage, which delegates createJournalEntry to this module.
-export async function assertPeriodNotLocked(companyId: string, date: Date | string): Promise<void> {
+export async function assertPeriodNotLocked(
+  companyId: string,
+  date: Date | string,
+  tx?: LedgerTx
+): Promise<void> {
   const mod = await import("../services/period-lock.service");
-  await mod.assertPeriodNotLocked(companyId, date);
+  await mod.assertPeriodNotLocked(companyId, date, tx);
 }
 
 async function isPeriodLocked(companyId: string, isoDate: string): Promise<boolean> {
@@ -271,6 +275,8 @@ export async function insertNormalizedEntry(
   internal: InternalPostOptions = {}
 ): Promise<PostJournalResult> {
   const actorId = actorOf(ctx);
+  // Use the same lock order for every entry that allocates a journal number.
+  await lockVatReturns(tx, n.companyId, "shared");
   if (n.idempotencyKey) {
     await lockIdempotencyKey(tx, n.companyId, n.idempotencyKey);
     const replay = await findByIdempotencyKey(tx, n.companyId, n.idempotencyKey);
@@ -294,11 +300,13 @@ export async function insertNormalizedEntry(
   if (isPosted) {
     await assertVatPeriodOpen(tx, {
       companyId: n.companyId,
-      dateIso: n.dateIso,
+      date: n.dateAt,
       source: n.source,
       accountIds: n.lines.map((l) => l.accountId),
       reversedEntryId: internal.reversedEntryId ?? null,
-      reportsVat: n.reportsVat === true,
+      reportsVat:
+        n.reportsVat === true ||
+        n.lines.some((line) => isVat201JournalTreatment(line.attributes?.vatTreatment)),
     });
   }
   const values = {
@@ -407,7 +415,7 @@ export async function postNormalized(
   internal: InternalPostOptions = {}
 ): Promise<PostJournalResult> {
   actorOf(ctx);
-  await assertPeriodNotLocked(n.companyId, n.dateAt);
+  await assertPeriodNotLocked(n.companyId, n.dateAt, ctx.tx);
   return withLedgerTx((tx) => insertNormalizedEntry(tx, n, ctx, internal), ctx.tx);
 }
 
@@ -508,20 +516,25 @@ export async function postDraft(
   opts: PostDraftOptions = {}
 ): Promise<PostJournalResult> {
   const actorId = actorOf(ctx);
-  const pre = await loadEntry(ctx.tx ?? db, entryId, ctx.companyId);
-  if (!pre) throw notFound(entryId);
-  if (pre.status !== "draft") {
-    throw new DomainError(
-      "ENTRY_NOT_DRAFT",
-      409,
-      { status: pre.status },
-      "Only draft entries can be posted"
-    );
-  }
-  await assertPeriodNotLocked(pre.companyId, pre.date);
-  assertNotFuture(entryIso(pre));
+  const located = await loadEntry(ctx.tx ?? db, entryId, ctx.companyId);
+  if (!located) throw notFound(entryId);
 
   return withLedgerTx(async (tx) => {
+    await lockVatReturns(tx, located.companyId, "shared");
+    // Draft edits replace the header and lines in one transaction. Check the version we post.
+    const pre = await loadEntry(tx, entryId, located.companyId, true);
+    if (!pre) throw notFound(entryId);
+    if (pre.status !== "draft") {
+      throw new DomainError(
+        "ENTRY_NOT_DRAFT",
+        409,
+        { status: pre.status },
+        "Only draft entries can be posted"
+      );
+    }
+    await assertPeriodNotLocked(pre.companyId, pre.date, tx);
+    assertNotFuture(entryIso(pre));
+
     const raw = await loadLinesFils(tx, entryId);
     const lines = raw.filter((l) => l.debitFils !== 0 || l.creditFils !== 0);
     lines.forEach((l, i) => {
@@ -537,10 +550,13 @@ export async function postDraft(
     await assertAccountsUsable(tx, pre.companyId, normalized, false);
     await assertVatPeriodOpen(tx, {
       companyId: pre.companyId,
-      dateIso: entryIso(pre),
+      date: pre.date,
       source: pre.source ?? null,
       accountIds: normalized.map((l) => l.accountId),
       entryId,
+      reportsVat: normalized.some((line) =>
+        isVat201JournalTreatment(line.attributes?.vatTreatment)
+      ),
     });
 
     const patch: Record<string, unknown> = {
@@ -604,11 +620,12 @@ type ReversalMode = "reversed" | "voided";
 async function resolveReversalDate(
   original: JournalEntry,
   opts: ReverseOptions,
-  mode: ReversalMode
+  mode: ReversalMode,
+  tx?: LedgerTx
 ): Promise<Date> {
   const origIso = entryIso(original);
   if (mode === "voided") {
-    await assertPeriodNotLocked(original.companyId, original.date);
+    await assertPeriodNotLocked(original.companyId, original.date, tx);
     return new Date(original.date);
   }
   if (opts.date) {
@@ -622,13 +639,13 @@ async function resolveReversalDate(
       );
     }
     if (!opts.allowFutureDate) assertNotFuture(iso);
-    await assertPeriodNotLocked(original.companyId, at);
+    await assertPeriodNotLocked(original.companyId, at, tx);
     return iso === origIso ? new Date(original.date) : at;
   }
   if (!(await isPeriodLocked(original.companyId, origIso))) return new Date(original.date);
   const today = todayIso();
   const at = new Date(`${today}T00:00:00.000Z`);
-  await assertPeriodNotLocked(original.companyId, at);
+  await assertPeriodNotLocked(original.companyId, at, tx);
   return at;
 }
 
@@ -765,7 +782,7 @@ async function reverseOrVoid(
   const pre = await loadEntry(ctx.tx ?? db, entryId, ctx.companyId);
   if (!pre) throw notFound(entryId);
   assertReversible(pre);
-  const date = await resolveReversalDate(pre, opts, mode);
+  const date = await resolveReversalDate(pre, opts, mode, ctx.tx);
   return withLedgerTx((tx) => reverseInTx(tx, entryId, date, opts, mode, ctx), ctx.tx);
 }
 
@@ -820,7 +837,8 @@ export async function reverseBySource(
     );
   if (candidates.length === 0) return [];
   const dates = new Map<string, Date>();
-  for (const c of candidates) dates.set(c.id, await resolveReversalDate(c, opts ?? {}, mode));
+  for (const c of candidates)
+    dates.set(c.id, await resolveReversalDate(c, opts ?? {}, mode, ctx.tx));
   const scoped: LedgerContext = { ...ctx, companyId };
   return withLedgerTx(async (tx) => {
     const out: ReverseResult[] = [];
