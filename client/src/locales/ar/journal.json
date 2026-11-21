@@ -259,6 +259,7 @@
   "journal.memo.deferredTaxNote": "تعديل الضريبة المؤجلة في {date} - {note}",
   "journal.memo.vatReturnPayment": "إقرار ضريبة القيمة المضافة من {from} إلى {to} - سداد الضريبة",
   "journal.memo.vatReturnRefund": "إقرار ضريبة القيمة المضافة من {from} إلى {to} - استرداد الضريبة",
+  "journal.memo.vatReturnControlSettlement": "إقرار ضريبة القيمة المضافة من {from} إلى {to} - تسوية حسابات مراقبة الضريبة",
   "journal.memo.vatAmendedReturnPayment": "إقرار ضريبة القيمة المضافة المعدّل من {from} إلى {to} - سداد الضريبة",
   "journal.memo.vatAmendedReturnRefund": "إقرار ضريبة القيمة المضافة المعدّل من {from} إلى {to} - استرداد الضريبة",
   "journal.memo.badDebtRelief": "إعفاء الديون المعدومة (المادة 64) - الفاتورة {ref}",

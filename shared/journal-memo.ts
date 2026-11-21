@@ -95,6 +95,7 @@ export const JOURNAL_MEMO_TEMPLATES = {
   deferredTaxNote: "Deferred tax adjustment at {date} - {note}",
   vatReturnPayment: "VAT return {from} to {to} - VAT payment",
   vatReturnRefund: "VAT return {from} to {to} - VAT refund",
+  vatReturnControlSettlement: "VAT return {from} to {to} - VAT control account settlement",
   vatAmendedReturnPayment: "Amended VAT return {from} to {to} - VAT payment",
   vatAmendedReturnRefund: "Amended VAT return {from} to {to} - VAT refund",
   badDebtRelief: "Bad-debt relief (Art. 64) - Invoice {ref}",

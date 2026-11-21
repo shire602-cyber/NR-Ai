@@ -210,15 +210,31 @@ async function buildSettlementLines(
   const { companyId, paymentAccountId, date } = input;
   const base = await loadBaseCurrency(companyId, tx);
   const carrying = base === VAT_FILING_CURRENCY ? null : bookVatAmounts(ret);
+  const bookDeltas = carrying && {
+    output: carrying.output - prior.outputBaseFils,
+    input: carrying.input - prior.inputBaseFils,
+  };
+  if (outputFils === 0 && inputFils === 0 && !bookDeltas?.output && !bookDeltas?.input) {
+    throw new DomainError(
+      prior.returnIds.length ? "VAT_AMENDMENT_NOTHING_TO_SETTLE" : "VAT_RETURN_NOTHING_TO_SETTLE",
+      422,
+      prior.returnIds.length ? { alreadySettledOn: prior.returnIds } : undefined,
+      prior.returnIds.length
+        ? "The amended return changes no VAT already settled for this period"
+        : undefined
+    );
+  }
   const netFils = outputFils - inputFils;
   const rate =
-    netFils || !carrying ? await getRate(companyId, VAT_FILING_CURRENCY, base, date, { tx }) : null;
+    netFils || !bookDeltas
+      ? await getRate(companyId, VAT_FILING_CURRENCY, base, date, { tx })
+      : null;
   const toBase = (fils: number) => (rate ? convertFilsAtRate(fils, rate) : fils);
   // Group returns and older returns without book amounts use the payment-date rate on the
   // outstanding AED amounts. For standalone returns subtract the controls actually posted
   // on the amendment chain from the return's recorded functional-currency amounts.
-  const outputBaseFils = carrying ? carrying.output - prior.outputBaseFils : toBase(outputFils);
-  const inputBaseFils = carrying ? carrying.input - prior.inputBaseFils : toBase(inputFils);
+  const outputBaseFils = bookDeltas?.output ?? toBase(outputFils);
+  const inputBaseFils = bookDeltas?.input ?? toBase(inputFils);
   const amended = prior.returnIds.length > 0;
   const params = { from: ret.period_start, to: ret.period_end };
   const side = (fils: number) => (fils > 0 ? { debitFils: fils } : { creditFils: -fils });
@@ -415,16 +431,6 @@ export async function settleVatReturn(input: {
     const outputFils = toFils(ret.box12, { rounding: "halfUp" }) - prior.outputFils;
     const inputFils = toFils(ret.box13, { rounding: "halfUp" }) - prior.inputFils;
     const netFils = outputFils - inputFils;
-    if (outputFils === 0 && inputFils === 0) {
-      throw new DomainError(
-        prior.returnIds.length ? "VAT_AMENDMENT_NOTHING_TO_SETTLE" : "VAT_RETURN_NOTHING_TO_SETTLE",
-        422,
-        prior.returnIds.length ? { alreadySettledOn: prior.returnIds } : undefined,
-        prior.returnIds.length
-          ? "The amended return changes no VAT already settled for this period"
-          : undefined
-      );
-    }
     const lines = await buildSettlementLines(
       tx,
       ret,
@@ -447,13 +453,15 @@ export async function settleVatReturn(input: {
         companyId: input.companyId,
         date: input.date,
         ...journalMemo(
-          prior.returnIds.length
-            ? netFils >= 0
-              ? "vatAmendedReturnPayment"
-              : "vatAmendedReturnRefund"
-            : netFils >= 0
-              ? "vatReturnPayment"
-              : "vatReturnRefund",
+          netFils === 0
+            ? "vatReturnControlSettlement"
+            : prior.returnIds.length
+              ? netFils > 0
+                ? "vatAmendedReturnPayment"
+                : "vatAmendedReturnRefund"
+              : netFils > 0
+                ? "vatReturnPayment"
+                : "vatReturnRefund",
           {
             from: ret.period_start,
             to: ret.period_end,

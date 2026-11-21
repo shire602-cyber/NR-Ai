@@ -259,6 +259,7 @@
   "journal.memo.deferredTaxNote": "Deferred tax adjustment at {date} - {note}",
   "journal.memo.vatReturnPayment": "VAT return {from} to {to} - VAT payment",
   "journal.memo.vatReturnRefund": "VAT return {from} to {to} - VAT refund",
+  "journal.memo.vatReturnControlSettlement": "VAT return {from} to {to} - VAT control account settlement",
   "journal.memo.vatAmendedReturnPayment": "Amended VAT return {from} to {to} - VAT payment",
   "journal.memo.vatAmendedReturnRefund": "Amended VAT return {from} to {to} - VAT refund",
   "journal.memo.badDebtRelief": "Bad-debt relief (Art. 64) - Invoice {ref}",
