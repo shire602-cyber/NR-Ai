@@ -200,6 +200,55 @@ describe("outbound webhook delivery safety", () => {
     }
   );
 
+  it.each([
+    { status: 200, outcome: "delivered", replayEligible: true },
+    { status: 503, outcome: "retrying", replayEligible: false },
+  ])(
+    "records HTTP $status when a real receiver returns a binary response preview",
+    async ({ status, outcome, replayEligible }) => {
+      const svc = await components();
+      const { t, endpointId } = await endpoint();
+      const { __setOutboundGuardForTests } = await import("../../server/services/url-guard");
+      __setOutboundGuardForTests({ isBlocked: (ip) => ip !== "127.0.0.1" });
+      const responseStart = "تم\0 result".padEnd(1999, "x");
+      const response = Buffer.from(`${responseStart}🌙 omitted`, "utf8");
+      const receiver = http.createServer((_req, res) => {
+        res.writeHead(status, { "Content-Type": "application/octet-stream" });
+        res.end(response);
+      });
+      await new Promise<void>((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+      try {
+        const port = (receiver.address() as AddressInfo).port;
+        await h.sql("UPDATE webhook_endpoints SET url = $2 WHERE id = $1", [
+          endpointId,
+          `http://127.0.0.1:${port}/receiver`,
+        ]);
+        const [id] = await svc.enqueueWebhookEvent(t.company.id, "bill.approved", {});
+        const preview = "تم� result".padEnd(1999, "x") + "�";
+        expect((await deliveries(endpointId))[0]).toMatchObject({
+          id,
+          status: outcome,
+          response_status: status,
+          response_body: preview,
+          last_error: replayEligible ? null : `HTTP ${status}`,
+          attempt_number: 1,
+        });
+        const history = await t.as.get(`/api/webhooks/${endpointId}/deliveries`);
+        expect(history.status).toBe(200);
+        expect(history.body[0]).toMatchObject({ id, replayEligible, responseStatus: status });
+        if (outcome === "retrying") {
+          await h.sql(
+            "UPDATE webhook_deliveries SET next_attempt_at = now() + interval '1 day' WHERE id = $1",
+            [id]
+          );
+        }
+      } finally {
+        receiver.closeAllConnections();
+        await new Promise<void>((resolve) => receiver.close(() => resolve()));
+      }
+    }
+  );
+
   it("preserves the real response status if the caller aborts after headers", async () => {
     const svc = await components();
     const { t, endpointId } = await endpoint();

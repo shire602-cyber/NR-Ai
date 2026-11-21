@@ -479,20 +479,28 @@ export function registerMonthEndRoutes(app: Express) {
         allowSingleOwner: single || isFirmOrAdmin(actor),
       });
       const note = (req.body.note as string | undefined) ?? null;
-      const decided = await decideReopenRequest(
-        companyId,
-        requestId,
-        decision === "approve" ? "approved" : "rejected",
-        req.user!.id,
-        note
-      );
+      const { decided, unlocked } = await withLedgerTx(async (tx) => {
+        const decided = await decideReopenRequest(
+          companyId,
+          requestId,
+          decision === "approve" ? "approved" : "rejected",
+          req.user!.id,
+          note,
+          ledgerQueryable(tx)
+        );
+        const unlocked =
+          decided.status === "approved"
+            ? await unlockPeriod(
+                companyId,
+                decided.periodEnd,
+                { userId: req.user!.id, reason: `Reopen approved: ${decided.reason}` },
+                tx
+              )
+            : null;
+        return { decided, unlocked };
+      });
       const { recordAudit } = await import("../services/audit.service");
-      let unlocked = null;
       if (decided.status === "approved") {
-        unlocked = await unlockPeriod(companyId, decided.periodEnd, {
-          userId: req.user!.id,
-          reason: `Reopen approved: ${decided.reason}`,
-        });
         await recordAudit({
           userId: req.user!.id,
           companyId,
@@ -699,7 +707,9 @@ export function registerMonthEndRoutes(app: Express) {
       const fye = parseReportDate(body.fiscalYearEnd, "fiscalYearEnd");
       if (!fye) throw new DomainError("FISCAL_YEAR_END_REQUIRED", 400);
       const actor = await authorizeUnlock(req, companyId, fye, body.reason);
-      const record = await reopenFiscalYear(companyId, fye, req.user!.id, body.reason);
+      const record = await reopenFiscalYear(companyId, fye, req.user!.id, body.reason, {
+        canReopenHardClose: isFirmOrAdmin(actor),
+      });
       const { recordAudit } = await import("../services/audit.service");
       await recordAudit({
         userId: req.user!.id,

@@ -16,7 +16,7 @@
  * created by other code paths keep working). A revoked link, or a link to
  * another firm, always removes the company from NR's set.
  */
-import { and, eq, inArray, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, not, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../../db";
 import {
   companies,
@@ -291,6 +291,35 @@ export async function finalizeRunningFirmTimers(
     .where(and(scope, eq(firmTimeEntries.status, "running")));
 }
 
+/** Release a timer whose authorized end time is unknown without adding billable time. */
+export async function writeOffRunningFirmTimers(
+  exec: Pick<Executor, "update">,
+  scope: SQL | undefined,
+  endedAt: Date
+) {
+  if (!scope) throw new Error("A firm timer scope is required");
+  await exec
+    .update(firmTimeEntries)
+    .set({
+      status: "written_off",
+      minutes: 0,
+      billable: false,
+      stoppedAt: endedAt,
+      updatedAt: endedAt,
+    })
+    .where(and(scope, eq(firmTimeEntries.status, "running")));
+}
+
+export async function settleFirmTimersAtAccessLoss(
+  exec: Pick<Executor, "update">,
+  scope: SQL,
+  authorizedBefore: SQL,
+  endedAt: Date
+) {
+  await finalizeRunningFirmTimers(exec, and(scope, authorizedBefore), endedAt);
+  await writeOffRunningFirmTimers(exec, and(scope, not(authorizedBefore)), endedAt);
+}
+
 /**
  * Give a firm member a company_users row in a client's books (the core company
  * RBAC then governs what they may do there). Records whether the row was
@@ -300,32 +329,30 @@ export async function grantCompanyAccess(
   input: { firmId: string; userId: string; companyId: string; role: FirmRole },
   exec: Executor = db
 ): Promise<void> {
-  const [existing] = await exec
-    .select({ id: companyUsers.id })
-    .from(companyUsers)
-    .where(and(eq(companyUsers.companyId, input.companyId), eq(companyUsers.userId, input.userId)))
-    .limit(1);
-  let created = false;
-  if (!existing) {
-    await exec
-      .insert(companyUsers)
-      .values({
-        companyId: input.companyId,
-        userId: input.userId,
-        role: FIRM_ROLE_COMPANY_ROLE[input.role],
-      })
-      .onConflictDoNothing();
-    created = true;
-  }
+  const [created] = await exec
+    .insert(companyUsers)
+    .values({
+      companyId: input.companyId,
+      userId: input.userId,
+      role: FIRM_ROLE_COMPANY_ROLE[input.role],
+    })
+    .onConflictDoNothing()
+    .returning({ id: companyUsers.id });
   await exec
     .insert(firmCompanyGrants)
     .values({
       firmId: input.firmId,
       userId: input.userId,
       companyId: input.companyId,
-      createdMembership: created,
+      createdMembership: !!created,
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: [firmCompanyGrants.firmId, firmCompanyGrants.userId, firmCompanyGrants.companyId],
+      // A later assignment may create a membership after a previously independent one was removed.
+      set: {
+        createdMembership: sql`${firmCompanyGrants.createdMembership} OR excluded.created_membership`,
+      },
+    });
 }
 
 /**
@@ -334,12 +361,10 @@ export async function grantCompanyAccess(
  * that member. A company_users row that predates the firm grant is kept.
  */
 export async function revokeCompanyAccess(
-  input: { firmId: string; isNr: boolean; companyId: string; userId?: string; endedAt?: Date },
-  exec?: Executor
+  input: { firmId: string; isNr: boolean; companyId: string; userId?: string },
+  exec: Executor
 ): Promise<{ removedMemberships: number }> {
-  if (!exec) return db.transaction((tx) => revokeCompanyAccess(input, tx));
   await lockFirmClientAccess(exec, input.companyId);
-  const endedAt = input.endedAt ?? new Date();
   const grantWhere = and(
     eq(firmCompanyGrants.firmId, input.firmId),
     eq(firmCompanyGrants.companyId, input.companyId),
@@ -351,19 +376,19 @@ export async function revokeCompanyAccess(
     .where(grantWhere)) as Array<{ userId: string; created: boolean }>;
   const memberIds = input.userId
     ? [input.userId]
-    : await listFirmMemberIds(input.firmId, input.isNr, exec);
-  const grantedUsers = new Set(grants.map((g) => g.userId));
-  const toRemove = new Set(grants.filter((g) => g.created).map((g) => g.userId));
-  // Legacy rows (no grant record) of firm staff on this client: the firm added them.
-  for (const id of memberIds) if (!grantedUsers.has(id)) toRemove.add(id);
+    : [
+        ...(await listFirmMemberIds(input.firmId, input.isNr, exec)),
+        ...grants.map((g) => g.userId),
+      ];
+  const toRemove = grants.filter((g) => g.created).map((g) => g.userId);
   let removed = 0;
-  if (toRemove.size > 0) {
+  if (toRemove.length > 0) {
     const del = (await exec
       .delete(companyUsers)
       .where(
         and(
           eq(companyUsers.companyId, input.companyId),
-          inArray(companyUsers.userId, [...toRemove]),
+          inArray(companyUsers.userId, toRemove),
           sql`${companyUsers.role} <> 'owner'`
         )
       )
@@ -381,20 +406,6 @@ export async function revokeCompanyAccess(
         )
       );
   }
-  // An unassignment can leave an independent membership (or all-client firm role) intact.
-  const staff = input.userId ? await resolveFirmContext({ id: input.userId }, exec) : null;
-  await finalizeRunningFirmTimers(
-    exec,
-    and(
-      eq(firmTimeEntries.firmId, input.firmId),
-      eq(firmTimeEntries.companyId, input.companyId),
-      input.userId ? eq(firmTimeEntries.userId, input.userId) : undefined,
-      staff?.firmId === input.firmId
-        ? notInArray(firmTimeEntries.companyId, accessibleClientsQuery(staff))
-        : undefined
-    ),
-    endedAt
-  );
   return { removedMemberships: removed };
 }
 
@@ -411,7 +422,7 @@ export async function activeLinkForCompany(companyId: string) {
 /** Link a company to a firm as an active client (used for firm-created clients). */
 export async function activateClientLink(
   input: { firmId: string; isNr: boolean; companyId: string; actorId: string },
-  exec: Executor = db
+  exec: Executor
 ): Promise<void> {
   await exec.insert(firmClientLinks).values({
     firmId: input.firmId,
@@ -423,7 +434,7 @@ export async function activateClientLink(
   });
   if (!input.isNr) {
     // Non-NR owners have no legacy bypass: give each a membership in the books.
-    const owners = (await listFirmMembers(input.firmId, false)).filter(
+    const owners = (await listFirmMembers(input.firmId, false, exec)).filter(
       (m) => m.role === "firm_owner"
     );
     for (const o of owners) {

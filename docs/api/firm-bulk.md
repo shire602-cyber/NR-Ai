@@ -52,7 +52,8 @@ description [memo], debit, credit
 
 - `company` is the client UUID or a unique exact client name within your firm. Use a
   UUID when two clients share a name. Both preview and import reject ambiguous names.
-- Lines sharing `company` + `entry_ref` form one entry; they must share one date
+- Lines referring to the same client and sharing `entry_ref` form one entry,
+  even when some lines use the UUID and others use the exact name. They must share one date
   (`YYYY-MM-DD`), each line has exactly one of debit/credit (≤ 2 decimals), the entry has at
   least two lines and balances to the fils, and every account code exists in that client.
 - Valid entries are posted through the ledger kernel (`postJournal`, source

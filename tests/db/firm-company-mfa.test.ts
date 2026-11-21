@@ -256,6 +256,71 @@ describe("Company MFA on firm client actions", () => {
     }
   });
 
+  it("requires MFA for authorized banking and health reads even when a dashboard is cached", async () => {
+    const { owner, protectedId, openId, setCompanyMfaPolicy } = await createMfaClients("Health");
+    const actor = await h.createTenant({ name: "MFA Health Firm Admin", firmRole: "firm_admin" });
+    await assignClient(owner, actor, openId);
+    await assignClient(owner, actor, protectedId);
+    const dashboard = "/api/firm/command-center/dashboard";
+    const health = "/api/firm/command-center/clients";
+    const bank = "/api/firm/bulk/bank-import-status";
+    const warmed = await actor.as.get(dashboard);
+    expect(warmed.status, warmed.text).toBe(200);
+    expect(warmed.body.summary.totalClients).toBe(2);
+
+    await setCompanyMfaPolicy(protectedId, "all", owner.user.id);
+    const protectedPaths = [
+      bank,
+      `${health}/health`,
+      `${health}/${protectedId}/health`,
+      dashboard,
+      `${dashboard}?skipCache=true`,
+    ];
+    const gated = await Promise.all(protectedPaths.map((path) => actor.as.get(path)));
+    expect(gated.map(({ status, body }) => [status, body.code, body.details?.companyId])).toEqual(
+      protectedPaths.map(() => [403, "MFA_ENROLLMENT_REQUIRED", protectedId])
+    );
+    const heads = await Promise.all(protectedPaths.map((path) => actor.as.request("HEAD", path)));
+    expect(heads.map(({ status }) => status)).toEqual(protectedPaths.map(() => 403));
+    const open = await actor.as.get(`${health}/${openId}/health`);
+    expect(open.status, open.text).toBe(200);
+    expect(open.body.snapshot.companyId).toBe(openId);
+  });
+
+  it("refreshes a cached dashboard after assignment loss and scopes its alert counts", async () => {
+    const { owner, protectedId, openId, setCompanyMfaPolicy } = await createMfaClients("Cached");
+    const actor = await h.createTenant({ name: "MFA Cache Firm Admin", firmRole: "firm_admin" });
+    await assignClient(owner, actor, protectedId);
+    await assignClient(owner, actor, openId);
+    await h.sql(
+      `INSERT INTO firm_alerts (firm_id, company_id, alert_type, severity, message)
+       VALUES ($1, $2, 'overdue_balance', 'critical', 'Client balance alert')`,
+      [actor.user.id, protectedId]
+    );
+    const path = "/api/firm/command-center/dashboard";
+    const warmed = await actor.as.get(path);
+    expect(warmed.status, warmed.text).toBe(200);
+    expect(warmed.body.summary).toMatchObject({ totalClients: 2, criticalAlertCount: 1 });
+
+    const removed = await owner.as.post(`/api/firm/clients/${protectedId}/assign-staff`, {
+      staffUserId: actor.user.id,
+      action: "unassign",
+    });
+    expect(removed.status, removed.text).toBe(200);
+    await setCompanyMfaPolicy(protectedId, "all", owner.user.id);
+
+    const result = await actor.as.get(path);
+    expect(result.status, result.text).toBe(200);
+    expect(result.body.summary).toMatchObject({ totalClients: 1, criticalAlertCount: 0 });
+    expect(result.body.healthScores).toMatchObject([{ companyId: openId }]);
+    const bank = await actor.as.get("/api/firm/bulk/bank-import-status");
+    expect(bank.status, bank.text).toBe(200);
+    expect(bank.body).toMatchObject([{ companyId: openId }]);
+    const health = await actor.as.get("/api/firm/command-center/clients/health");
+    expect(health.status, health.text).toBe(200);
+    expect(health.body).toMatchObject([{ companyId: openId }]);
+  });
+
   it("checks the assigned companies in value operations summaries", async () => {
     const { owner, protectedId, openId, setCompanyMfaPolicy } = await createMfaClients("Summary");
     const actor = await h.createTenant({ name: "MFA Summary Firm Admin", firmRole: "firm_admin" });

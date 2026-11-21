@@ -299,28 +299,29 @@ export async function prepareJournalImport(
     byName.set(name, byName.has(name) ? null : client);
   }
 
-  const byEntry = new Map<string, ParsedLine[]>();
-  for (const l of lines) {
-    const key = `${l.company.toLowerCase()}\u0000${l.entry}`;
-    const g = byEntry.get(key) ?? [];
-    g.push(l);
-    byEntry.set(key, g);
-  }
-  const groups = Array.from(byEntry.values(), (lines): JournalImportGroup => {
-    const reference = lines[0].company.toLowerCase();
+  const byEntry = new Map<string, JournalImportGroup>();
+  for (const line of lines) {
+    const reference = line.company.toLowerCase();
     const uuid = zUuid.safeParse(reference);
     // A UUID can identify only that company, even if another client uses it as a name.
     const company = uuid.success ? byId.get(uuid.data) : byName.get(reference);
-    if (company) return { lines, company };
-    return {
-      lines,
-      company: null,
-      companyError:
-        company === null
+    const key = JSON.stringify([company?.id ?? null, company ? null : reference, line.entry]);
+    const existing = byEntry.get(key);
+    if (existing) {
+      existing.lines.push(line);
+      continue;
+    }
+    byEntry.set(key, {
+      lines: [line],
+      company: company ?? null,
+      companyError: company
+        ? undefined
+        : company === null
           ? "More than one client has this name. Use the company UUID."
           : "Client not found in your firm",
-    };
-  });
+    });
+  }
+  const groups = [...byEntry.values()];
   const companyIds = [...new Set(groups.flatMap(({ company }) => (company ? [company.id] : [])))];
   return { groups, companyIds, rowErrors };
 }

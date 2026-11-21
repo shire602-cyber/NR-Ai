@@ -8,28 +8,37 @@
  * POST /firm/command-center/staff/assign, GET /firm/command-center/staff/workload)
  * goes through this module.
  */
-import { and, eq, inArray, notInArray } from "drizzle-orm";
+import { and, eq, inArray, ne, notInArray } from "drizzle-orm";
 import { db } from "../../db";
 import { DomainError } from "../../errors";
 import {
   companies,
   companyUsers,
+  firmCompanyGrants,
   firmMembers,
   firmStaffAssignments,
   firmTimeEntries,
   users,
 } from "../../../shared/schema";
-import { firmRoleHasPermission, isFirmRole, type FirmRole } from "../../../shared/access";
+import {
+  FIRM_ROLE_COMPANY_ROLE,
+  firmRoleHasPermission,
+  firmRoleSeesAllClients,
+  isFirmRole,
+  type FirmRole,
+} from "../../../shared/access";
 import {
   accessibleClientCondition,
   accessibleClientsQuery,
-  finalizeRunningFirmTimers,
+  canAccessFirmClient,
   grantCompanyAccess,
   isFirmClient,
   listFirmMembers,
+  lockFirmClientAccess,
   lockFirmTimerUser,
   resolveFirmContext,
   revokeCompanyAccess,
+  settleFirmTimersAtAccessLoss,
   type FirmContext,
 } from "./scope";
 
@@ -139,55 +148,106 @@ export async function assignStaff(
   if (!ctx.platformAdmin && !firmRoleHasPermission(ctx.role, "firm.staff.manage")) {
     throw new DomainError("FIRM_PERMISSION_DENIED", 403, { permission: "firm.staff.manage" });
   }
-  const [company] = await db
-    .select({ id: companies.id, name: companies.name })
-    .from(companies)
-    .where(eq(companies.id, input.companyId))
-    .limit(1);
-  if (!company || !(await isFirmClient(ctx, input.companyId))) {
-    throw new DomainError("CLIENT_NOT_FOUND", 404);
-  }
-  const [staffUser] = await db
-    .select({ id: users.id, firmRole: users.firmRole, isAdmin: users.isAdmin })
-    .from(users)
-    .where(eq(users.id, input.staffUserId))
-    .limit(1);
-  if (!staffUser) throw new DomainError("STAFF_NOT_FOUND", 404);
-  const staffCtx = await resolveFirmContext({
-    id: staffUser.id,
-    firmRole: staffUser.firmRole,
-    isAdmin: false,
-  });
-  if (!staffCtx || staffCtx.firmId !== ctx.firmId) {
-    throw new DomainError("NOT_FIRM_STAFF", 400, undefined, "User is not a firm staff member");
-  }
+  const { staffUserId, companyId, action } = input;
   const role = input.role ?? "accountant";
-  if (input.action === "assign") {
-    await db
-      .insert(firmStaffAssignments)
-      .values({ userId: staffUser.id, companyId: input.companyId, role })
-      .onConflictDoUpdate({
-        target: [firmStaffAssignments.userId, firmStaffAssignments.companyId],
-        set: { role },
-      });
-    await grantCompanyAccess({
-      firmId: ctx.firmId,
-      userId: staffUser.id,
-      companyId: input.companyId,
-      role: staffCtx.role,
-    });
-  } else {
-    await revokeCompanyAccess({
-      firmId: ctx.firmId,
-      isNr: ctx.isNr,
-      companyId: input.companyId,
-      userId: staffUser.id,
-    });
-  }
-  return { action: input.action, companyId: input.companyId, staffUserId: staffUser.id, role };
+  await db.transaction(async (tx) => {
+    await lockFirmTimerUser(tx, staffUserId);
+    await lockFirmClientAccess(tx, companyId);
+    if (!(await isFirmClient(ctx, companyId, tx))) throw new DomainError("CLIENT_NOT_FOUND", 404);
+    const [staffUser] = await tx
+      .select({ firmRole: users.firmRole })
+      .from(users)
+      .where(eq(users.id, staffUserId));
+    if (!staffUser) throw new DomainError("STAFF_NOT_FOUND", 404);
+    const staff = await resolveFirmContext(
+      { id: staffUserId, firmRole: staffUser.firmRole, isAdmin: false },
+      tx
+    );
+    if (!staff || staff.firmId !== ctx.firmId) {
+      throw new DomainError("NOT_FIRM_STAFF", 400, undefined, "User is not a firm staff member");
+    }
+
+    if (action === "assign") {
+      await tx
+        .insert(firmStaffAssignments)
+        .values({ userId: staffUserId, companyId, role })
+        .onConflictDoUpdate({
+          target: [firmStaffAssignments.userId, firmStaffAssignments.companyId],
+          set: { role },
+        });
+      await grantCompanyAccess(
+        { firmId: ctx.firmId, userId: staffUserId, companyId, role: staff.role },
+        tx
+      );
+      return;
+    }
+
+    const tracking = firmRoleHasPermission(staff.role, "firm.time.track");
+    const authorized = tracking && (await canAccessFirmClient(staff, companyId, tx));
+    const endedAt = new Date();
+    await revokeCompanyAccess(
+      { firmId: ctx.firmId, isNr: ctx.isNr, companyId, userId: staffUserId },
+      tx
+    );
+    // Unassignment can leave an independent membership or an all-client role intact.
+    if (tracking && (await canAccessFirmClient(staff, companyId, tx))) return;
+    await settleFirmTimersAtAccessLoss(
+      tx,
+      and(memberTimerScope(ctx, staffUserId), eq(firmTimeEntries.companyId, companyId))!,
+      inArray(firmTimeEntries.companyId, authorized ? [companyId] : []),
+      endedAt
+    );
+  });
+  return { action, companyId, staffUserId, role };
 }
 
 // ─── Firm members ────────────────────────────────────────────────────────────
+
+type FirmTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+function memberTimerScope(ctx: FirmContext, userId: string) {
+  return and(eq(firmTimeEntries.firmId, ctx.firmId), eq(firmTimeEntries.userId, userId))!;
+}
+
+async function lockMemberClients(tx: FirmTransaction, ctx: FirmContext, userId: string) {
+  const grants = await tx
+    .select({
+      companyId: firmCompanyGrants.companyId,
+      created: firmCompanyGrants.createdMembership,
+    })
+    .from(firmCompanyGrants)
+    .where(and(eq(firmCompanyGrants.firmId, ctx.firmId), eq(firmCompanyGrants.userId, userId)));
+  const assignments = await tx
+    .select({ companyId: firmStaffAssignments.companyId })
+    .from(firmStaffAssignments)
+    .where(eq(firmStaffAssignments.userId, userId));
+  const [timer] = await tx
+    .select({ companyId: firmTimeEntries.companyId })
+    .from(firmTimeEntries)
+    .where(and(memberTimerScope(ctx, userId), eq(firmTimeEntries.status, "running")))
+    .limit(1);
+  const ids = [
+    ...new Set(
+      [...grants, ...assignments, ...(timer ? [timer] : [])].map(({ companyId }) => companyId)
+    ),
+  ].sort();
+  for (const id of ids) await lockFirmClientAccess(tx, id);
+  return { grants, assignments, timerCompanyId: timer?.companyId };
+}
+
+/** Only the existing running timer can accrue time at the role or access change. */
+async function authorizedTimerClients(
+  tx: FirmTransaction,
+  member: FirmContext | null,
+  companyId?: string
+) {
+  return companyId &&
+    member &&
+    firmRoleHasPermission(member.role, "firm.time.track") &&
+    (await canAccessFirmClient(member, companyId, tx))
+    ? [companyId]
+    : [];
+}
 
 /** Add an existing user to the caller's firm (firm.staff.manage). */
 export async function addFirmMember(
@@ -198,28 +258,36 @@ export async function addFirmMember(
     throw new DomainError("FIRM_PERMISSION_DENIED", 403, { permission: "firm.staff.manage" });
   }
   const [u] = await db
-    .select({ id: users.id, firmRole: users.firmRole, isAdmin: users.isAdmin })
+    .select({ id: users.id })
     .from(users)
     .where(eq(users.email, input.email.trim().toLowerCase()))
     .limit(1);
   if (!u) throw new DomainError("USER_NOT_FOUND", 404);
-  const existing = await resolveFirmContext({ id: u.id, firmRole: u.firmRole, isAdmin: false });
-  if (existing && existing.firmId !== ctx.firmId) {
-    throw new DomainError("USER_IN_OTHER_FIRM", 409);
-  }
   await setFirmMemberRole(ctx, u.id, input.role);
   return { userId: u.id, role: input.role };
 }
 
-export async function setFirmMemberRole(
+async function setFirmMemberRole(
   ctx: FirmContext,
   userId: string,
-  role: FirmRole
+  role: FirmRole,
+  existingOnly = false
 ): Promise<void> {
   if (!isFirmRole(role)) throw new DomainError("INVALID_FIRM_ROLE", 400);
   await db.transaction(async (tx) => {
     await lockFirmTimerUser(tx, userId);
-    const previous = await resolveFirmContext({ id: userId }, tx);
+    const previous = await resolveFirmContext({ id: userId, isAdmin: false }, tx);
+    if (existingOnly && previous?.firmId !== ctx.firmId)
+      throw new DomainError("STAFF_NOT_FOUND", 404);
+    if (previous && previous.firmId !== ctx.firmId)
+      throw new DomainError("USER_IN_OTHER_FIRM", 409);
+    if (previous?.role === "firm_owner" && role !== "firm_owner") {
+      const members = await listFirmMembers(ctx.firmId, ctx.isNr, tx);
+      if (members.filter((m) => m.role === "firm_owner").length <= 1)
+        throw new DomainError("LAST_FIRM_OWNER", 409);
+    }
+    const { grants, assignments, timerCompanyId } = await lockMemberClients(tx, ctx, userId);
+    const authorized = await authorizedTimerClients(tx, previous, timerCompanyId);
     const changedAt = new Date();
     await tx
       .insert(firmMembers)
@@ -231,13 +299,42 @@ export async function setFirmMemberRole(
     // NR keeps users.firm_role as the legacy source of truth.
     if (ctx.isNr) await tx.update(users).set({ firmRole: role }).where(eq(users.id, userId));
 
-    if (
-      previous?.firmId !== ctx.firmId ||
-      previous.role === role ||
-      !firmRoleHasPermission(previous.role, "firm.time.track")
-    ) {
-      return;
+    const explicitAssignments = new Set(assignments.map(({ companyId }) => companyId));
+    const createdMemberships = tx
+      .select({ companyId: firmCompanyGrants.companyId })
+      .from(firmCompanyGrants)
+      .where(
+        and(
+          eq(firmCompanyGrants.firmId, ctx.firmId),
+          eq(firmCompanyGrants.userId, userId),
+          eq(firmCompanyGrants.createdMembership, true)
+        )
+      );
+    for (const { companyId, created } of grants) {
+      if (!created) continue;
+      const implicitOwnerGrant =
+        previous &&
+        firmRoleSeesAllClients(previous.role) &&
+        !firmRoleSeesAllClients(role) &&
+        !explicitAssignments.has(companyId);
+      if (implicitOwnerGrant || !(await isFirmClient(ctx, companyId, tx))) {
+        await revokeCompanyAccess({ firmId: ctx.firmId, isNr: ctx.isNr, companyId, userId }, tx);
+        continue;
+      }
+      await tx
+        .update(companyUsers)
+        .set({ role: FIRM_ROLE_COMPANY_ROLE[role] })
+        .where(
+          and(
+            eq(companyUsers.companyId, companyId),
+            eq(companyUsers.userId, userId),
+            ne(companyUsers.role, "owner"),
+            inArray(companyUsers.companyId, createdMemberships)
+          )
+        );
     }
+
+    if (!previous || previous.role === role) return;
     const next: FirmContext = {
       firmId: ctx.firmId,
       isNr: ctx.isNr,
@@ -245,18 +342,16 @@ export async function setFirmMemberRole(
       userId,
       platformAdmin: false,
     };
-    // Keep only the time that was authorized before this change. An already inaccessible
-    // legacy timer has no trustworthy cutoff and is recovered separately without billing.
-    await finalizeRunningFirmTimers(
+    const changedScope = and(
+      memberTimerScope(ctx, userId),
+      firmRoleHasPermission(role, "firm.time.track")
+        ? notInArray(firmTimeEntries.companyId, accessibleClientsQuery(next))
+        : undefined
+    )!;
+    await settleFirmTimersAtAccessLoss(
       tx,
-      and(
-        eq(firmTimeEntries.firmId, ctx.firmId),
-        eq(firmTimeEntries.userId, userId),
-        inArray(firmTimeEntries.companyId, accessibleClientsQuery(previous)),
-        firmRoleHasPermission(role, "firm.time.track")
-          ? notInArray(firmTimeEntries.companyId, accessibleClientsQuery(next))
-          : undefined
-      ),
+      changedScope,
+      inArray(firmTimeEntries.companyId, authorized),
       changedAt
     );
   });
@@ -270,52 +365,43 @@ export async function updateFirmMember(
   if (!ctx.platformAdmin && !firmRoleHasPermission(ctx.role, "firm.staff.manage")) {
     throw new DomainError("FIRM_PERMISSION_DENIED", 403, { permission: "firm.staff.manage" });
   }
-  const members = await listFirmMembers(ctx.firmId, ctx.isNr);
-  if (!members.some((m) => m.userId === userId)) throw new DomainError("STAFF_NOT_FOUND", 404);
-  if (userId === ctx.userId && role !== "firm_owner" && ctx.role === "firm_owner") {
-    const owners = members.filter((m) => m.role === "firm_owner");
-    if (owners.length <= 1) throw new DomainError("LAST_FIRM_OWNER", 409);
-  }
-  await setFirmMemberRole(ctx, userId, role);
+  await setFirmMemberRole(ctx, userId, role, true);
 }
 
 export async function removeFirmMember(ctx: FirmContext, userId: string): Promise<void> {
   if (!ctx.platformAdmin && !firmRoleHasPermission(ctx.role, "firm.staff.manage")) {
     throw new DomainError("FIRM_PERMISSION_DENIED", 403, { permission: "firm.staff.manage" });
   }
-  const members = await listFirmMembers(ctx.firmId, ctx.isNr);
-  const target = members.find((m) => m.userId === userId);
-  if (!target) throw new DomainError("STAFF_NOT_FOUND", 404);
-  if (target.role === "firm_owner" && members.filter((m) => m.role === "firm_owner").length <= 1) {
-    throw new DomainError("LAST_FIRM_OWNER", 409);
-  }
   await db.transaction(async (tx) => {
     await lockFirmTimerUser(tx, userId);
+    const target = await resolveFirmContext({ id: userId, isAdmin: false }, tx);
+    if (target?.firmId !== ctx.firmId) throw new DomainError("STAFF_NOT_FOUND", 404);
+    if (target.role === "firm_owner") {
+      const members = await listFirmMembers(ctx.firmId, ctx.isNr, tx);
+      if (members.filter((m) => m.role === "firm_owner").length <= 1)
+        throw new DomainError("LAST_FIRM_OWNER", 409);
+    }
+    const { grants, assignments, timerCompanyId } = await lockMemberClients(tx, ctx, userId);
+    const authorized = await authorizedTimerClients(tx, target, timerCompanyId);
     const endedAt = new Date();
-    const assigned = await tx
-      .select({ companyId: firmStaffAssignments.companyId })
-      .from(firmStaffAssignments)
-      .where(eq(firmStaffAssignments.userId, userId));
-    const granted = await tx
-      .select({ companyId: companyUsers.companyId })
-      .from(companyUsers)
-      .where(eq(companyUsers.userId, userId));
-    const companyIds = [...new Set([...assigned, ...granted].map((r) => r.companyId))].sort();
+    const previouslyGranted = new Set(grants.map(({ companyId }) => companyId));
+    const companyIds = new Set([
+      ...previouslyGranted,
+      ...assignments.map(({ companyId }) => companyId),
+    ]);
     for (const companyId of companyIds) {
-      if (await isFirmClient(ctx, companyId, tx)) {
-        await revokeCompanyAccess(
-          { firmId: ctx.firmId, isNr: ctx.isNr, companyId, userId, endedAt },
-          tx
-        );
+      if (previouslyGranted.has(companyId) || (await isFirmClient(ctx, companyId, tx))) {
+        await revokeCompanyAccess({ firmId: ctx.firmId, isNr: ctx.isNr, companyId, userId }, tx);
       }
     }
     await tx
       .delete(firmMembers)
       .where(and(eq(firmMembers.userId, userId), eq(firmMembers.firmId, ctx.firmId)));
     if (ctx.isNr) await tx.update(users).set({ firmRole: null }).where(eq(users.id, userId));
-    await finalizeRunningFirmTimers(
+    await settleFirmTimersAtAccessLoss(
       tx,
-      and(eq(firmTimeEntries.firmId, ctx.firmId), eq(firmTimeEntries.userId, userId)),
+      memberTimerScope(ctx, userId),
+      inArray(firmTimeEntries.companyId, authorized),
       endedAt
     );
   });

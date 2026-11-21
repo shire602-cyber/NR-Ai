@@ -1217,6 +1217,44 @@ describe("W5-D firm practice management", () => {
     expect(await ledgerTotals(foreign.company.id)).toEqual({ debit: 0, credit: 0 });
   });
 
+  it("[R15-16] groups CSV lines by resolved client UUID and replays the complete entry", async () => {
+    const owner = await nrOwner();
+    const a = await createClient(owner, "Mixed Journal Client");
+    const b = await createClient(owner, "Other Journal Client");
+    const path = "/api/firm/bulk/journal-import";
+    const csv = [
+      "company,entry_ref,date,account_code,debit,credit",
+      `${a.name},MIXED-1,2026-10-01,1020,75,`,
+      `${a.id.toUpperCase()},MIXED-1,2026-10-01,1020,25,`,
+      `${b.id},MIXED-1,2026-10-01,1020,50,`,
+      `${a.id},MIXED-1,2026-10-01,3010,,25`,
+      `${b.id},MIXED-1,2026-10-01,3010,,50`,
+      `${a.name.toLowerCase()},MIXED-1,2026-10-01,3010,,75`,
+    ].join("\n");
+    const preview = await owner.as.post(path, { csv, dryRun: true });
+    expect(preview.status, preview.text).toBe(200);
+    expect(preview.body.summary).toMatchObject({ entries: 2, invalid: 0, posted: 0 });
+    expect(preview.body.entries).toMatchObject([
+      { companyId: a.id, rows: [2, 3, 5, 7], status: "validated" },
+      { companyId: b.id, rows: [4, 6], status: "validated" },
+    ]);
+    expect(await ledgerTotals(a.id)).toEqual({ debit: 0, credit: 0 });
+
+    const posted = await owner.as.post(path, { csv });
+    expect(posted.status, posted.text).toBe(200);
+    expect(posted.body.summary).toMatchObject({ entries: 2, posted: 2, replayed: 0 });
+    expect(await ledgerTotals(a.id)).toEqual({ debit: 100, credit: 100 });
+    expect(await ledgerTotals(b.id)).toEqual({ debit: 50, credit: 50 });
+
+    const replay = await owner.as.post(path, { csv });
+    expect(replay.status, replay.text).toBe(200);
+    expect(replay.body.summary).toMatchObject({ entries: 2, posted: 0, replayed: 2 });
+    expect(replay.body.entries.map((entry: { entryId: string }) => entry.entryId)).toEqual(
+      posted.body.entries.map((entry: { entryId: string }) => entry.entryId)
+    );
+    expect(await ledgerTotals(a.id)).toEqual({ debit: 100, credit: 100 });
+  });
+
   it("[R15-16] bulk journal import posts balanced entries per client through the ledger and reports row errors", async () => {
     const owner = await nrOwner();
     const a = await createClient(owner, "Bulk Journal Alpha LLC");

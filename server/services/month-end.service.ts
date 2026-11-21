@@ -9,6 +9,7 @@ import { describeMonthEndText, type CopyDescriptor } from "@shared/server-copy";
 import { detectAnomalies } from "./anomaly-detection.service";
 import { AI_QUEUE_STILL_OPEN_SQL } from "./ai-gl-queue-sql";
 import {
+  assertNotInHardClosedYear,
   getEffectiveLock,
   lockPeriodPolicy,
   type LockScope,
@@ -757,7 +758,20 @@ export async function lockPeriod(
   }
   return withLedgerTx(async (tx) => {
     await lockPeriodPolicy(tx, companyId, "exclusive");
-    const result = await tx.execute(sql`
+    await assertNotInHardClosedYear(companyId, end, tx, { exactYearEnd: true });
+    return writePeriodLock(tx, companyId, end, userId, opts);
+  }, outer);
+}
+
+/** Used by the fiscal close after it acquires the exclusive lock and writes its fiscal record. */
+async function writePeriodLock(
+  tx: LedgerTx,
+  companyId: string,
+  end: string,
+  userId: string,
+  opts: LockOptions
+): Promise<MonthEndCloseRecord> {
+  const result = await tx.execute(sql`
      INSERT INTO month_end_close
        (company_id, period_start, period_end, status, closed_by, closed_at, closing_entry_id,
         lock_type, lock_scope, lock_reason, checklist_override, checklist_snapshot)
@@ -778,8 +792,7 @@ export async function lockPeriod(
        checklist_snapshot = EXCLUDED.checklist_snapshot,
        updated_at = now()
      RETURNING *`);
-    return formatCloseRecord(rowsOf<QueryResultRow>(result)[0]);
-  }, outer);
+  return formatCloseRecord(rowsOf<QueryResultRow>(result)[0]);
 }
 
 /**
@@ -805,6 +818,7 @@ export async function unlockPeriod(
   if (!end) throw new DomainError("PERIOD_REQUIRED", 400);
   return withLedgerTx(async (tx) => {
     await lockPeriodPolicy(tx, companyId, "exclusive");
+    await assertNotInHardClosedYear(companyId, end, tx, { exactYearEnd: true });
     const result = await tx.execute(sql`
       UPDATE month_end_close
          SET status = 'open', updated_at = now(), unlocked_by = ${opts.userId ?? null},
@@ -1087,20 +1101,14 @@ export async function closeFiscalYear(
     if (!r.rows[0]) {
       throw new DomainError("FISCAL_YEAR_ALREADY_CLOSED", 409, { fiscalYearEnd: fye });
     }
-    const lock = await lockPeriod(
-      companyId,
-      fye,
-      userId,
-      {
-        lockType: opts.hardClose ? "hard" : "soft",
-        lockScope: "through",
-        reason: opts.reason ?? `Year-end close ${fye}`,
-        checklistOverride: opts.checklistOverride,
-        checklistSnapshot: opts.checklistSnapshot,
-        closingEntryId,
-      },
-      tx
-    );
+    const lock = await writePeriodLock(tx, companyId, fye, userId, {
+      lockType: opts.hardClose ? "hard" : "soft",
+      lockScope: "through",
+      reason: opts.reason ?? `Year-end close ${fye}`,
+      checklistOverride: opts.checklistOverride,
+      checklistSnapshot: opts.checklistSnapshot,
+      closingEntryId,
+    });
     return {
       record: formatYearClose(r.rows[0]),
       summary: {
@@ -1127,7 +1135,8 @@ export async function reopenFiscalYear(
   companyId: string,
   fiscalYearEndRaw: unknown,
   userId: string,
-  reason: string
+  reason: string,
+  options: { canReopenHardClose?: boolean } = {}
 ): Promise<FiscalYearCloseRecord> {
   const fye = parseReportDate(fiscalYearEndRaw, "fiscalYearEnd");
   if (!fye) throw new DomainError("FISCAL_YEAR_END_REQUIRED", 400);
@@ -1141,8 +1150,19 @@ export async function reopenFiscalYear(
     );
     const row = existing.rows[0];
     if (!row || row.status !== "closed") throw new DomainError("FISCAL_YEAR_NOT_CLOSED", 404);
-    // The reversal can see the reopened period in this transaction. Other
-    // writers must wait until both changes commit.
+    if (row.hard_closed === true && !options.canReopenHardClose) {
+      await assertNotInHardClosedYear(companyId, fye, tx, { exactYearEnd: true });
+    }
+    // Mark both records reopened inside the exclusive transaction before the ledger reversal.
+    // If the reversal fails, both records are restored by rollback.
+    const r = await q.query(
+      `UPDATE fiscal_year_closes
+        SET status = 'reopened', reopened_by = $3, reopened_at = now(), reopen_reason = $4,
+            closing_entry_id = NULL
+      WHERE company_id = $1 AND fiscal_year_end = $2::date
+      RETURNING ${YEAR_CLOSE_COLUMNS}`,
+      [companyId, fye, userId, reason]
+    );
     await unlockPeriod(companyId, fye, { userId, reason }, tx);
     if (row.closing_entry_id) {
       const lines = await q.query(
@@ -1177,14 +1197,6 @@ export async function reopenFiscalYear(
         );
       }
     }
-    const r = await q.query(
-      `UPDATE fiscal_year_closes
-        SET status = 'reopened', reopened_by = $3, reopened_at = now(), reopen_reason = $4,
-            closing_entry_id = NULL
-      WHERE company_id = $1 AND fiscal_year_end = $2::date
-      RETURNING ${YEAR_CLOSE_COLUMNS}`,
-      [companyId, fye, userId, reason]
-    );
     return formatYearClose(r.rows[0]);
   });
 }
@@ -1497,16 +1509,17 @@ export async function decideReopenRequest(
   id: string,
   decision: "approved" | "rejected",
   userId: string,
-  note: string | null
+  note: string | null,
+  q: Queryable = pool
 ): Promise<ReopenRequest> {
-  const r = await pool.query(
+  const r = await q.query(
     `UPDATE month_end_reopen_requests
         SET status = $3, decided_by = $4, decided_at = now(), decision_note = $5
       WHERE company_id = $1 AND id = $2 AND status = 'pending'
       RETURNING *`,
     [companyId, id, decision, userId, note]
   );
-  if (r.rowCount === 0) {
+  if (!r.rows[0]) {
     throw new DomainError("REOPEN_REQUEST_NOT_PENDING", 409, undefined, "Request is not pending");
   }
   return formatReopen(r.rows[0]);

@@ -109,7 +109,8 @@ function pathId(segment: string): string | undefined {
 
 /**
  * Resolve the company the firm route can act on, independently of the company RBAC exemption.
- * Report packs and journal imports check enrollment after resolving their validated targets.
+ * Report packs, journal imports, bank status and command-center health check enrollment in
+ * their handlers using the same authorized targets as their reads or writes.
  */
 export async function firmMfaTargetCompanies(req: Request, user: Express.User): Promise<string[]> {
   const path = req.path.toLowerCase().split("/").filter(Boolean).join("/");

@@ -339,6 +339,48 @@ export async function prepareNewDocument(
   return { header, rows, totals, currency, rate };
 }
 
+/** Allocate a draft number and store its header and lines under the company period policy. */
+export async function createInvoiceDraft(companyId: string, body: CreateInvoiceInput) {
+  const doc = await prepareNewDocument(companyId, body);
+  const date = toDate(body.date);
+  const invoice = await db.transaction(async (tx: LedgerTx) => {
+    await lockPeriodPolicy(tx, companyId, "shared");
+    await assertPeriodNotLocked(companyId, date, tx);
+    const number = await allocateInvoiceNumber(companyId, "invoice", date, tx);
+    const [inserted] = await tx
+      .insert(invoicesTable)
+      .values({
+        companyId,
+        number,
+        ...doc.header,
+        dueDate: doc.header.dueDate ? toDate(doc.header.dueDate) : null,
+        date,
+        supplyDate: body.supplyDate ? toDate(body.supplyDate) : null,
+        currency: doc.currency,
+        exchangeRate: doc.rate,
+        baseCurrencyAmount: Number(fromFils(mulRate(doc.totals.totalFils || 0, doc.rate) || 0)),
+        subtotal: Number(fromFils(doc.totals.subtotalFils)),
+        vatAmount: Number(fromFils(doc.totals.vatFils)),
+        total: Number(fromFils(doc.totals.totalFils)),
+        discountType: body.discountType ?? null,
+        discountValue: body.discountValue ?? null,
+        discountAmount: Number(fromFils(doc.totals.discountFils)),
+        reverseCharge: body.reverseCharge ?? false,
+        notes: body.notes ?? null,
+        templateId: body.templateId ?? null,
+        documentLanguage: body.documentLanguage ?? null,
+        source: "app",
+        status: "draft",
+        invoiceType: "invoice",
+      })
+      .returning();
+    for (const row of doc.rows)
+      await tx.insert(invoiceLinesTable).values(lineRow(inserted.id, row));
+    return inserted;
+  });
+  return { invoice, totalFils: doc.totals.totalFils };
+}
+
 const NO_BALANCE: InvoiceBalanceFields = {
   amountPaid: 0,
   amountCredited: 0,
@@ -492,45 +534,7 @@ export function registerInvoiceRoutes(app: Express) {
       const userId = userOf(req);
       await assertCompanyAccess(req, companyId);
       const body = validated<CreateInvoiceInput>(req);
-      const doc = await prepareNewDocument(companyId, body);
-      const invoiceDate = toDate(body.date);
-
-      // Number allocation and insert in ONE transaction (FTA gap-free numbering).
-      const invoice = await db.transaction(async (tx: typeof db) => {
-        await lockPeriodPolicy(tx, companyId, "shared");
-        await assertPeriodNotLocked(companyId, invoiceDate, tx);
-        const number = await allocateInvoiceNumber(companyId, "invoice", invoiceDate, tx);
-        const [inserted] = await tx
-          .insert(invoicesTable)
-          .values({
-            companyId,
-            number,
-            ...doc.header,
-            dueDate: doc.header.dueDate ? toDate(doc.header.dueDate) : null,
-            date: invoiceDate,
-            supplyDate: body.supplyDate ? toDate(body.supplyDate) : null,
-            currency: doc.currency,
-            exchangeRate: doc.rate,
-            baseCurrencyAmount: Number(fromFils(mulRate(doc.totals.totalFils || 0, doc.rate) || 0)),
-            subtotal: Number(fromFils(doc.totals.subtotalFils)),
-            vatAmount: Number(fromFils(doc.totals.vatFils)),
-            total: Number(fromFils(doc.totals.totalFils)),
-            discountType: body.discountType ?? null,
-            discountValue: body.discountValue ?? null,
-            discountAmount: Number(fromFils(doc.totals.discountFils)),
-            reverseCharge: body.reverseCharge ?? false,
-            notes: body.notes ?? null,
-            templateId: body.templateId ?? null,
-            documentLanguage: body.documentLanguage ?? null,
-            source: "app",
-            status: "draft",
-            invoiceType: "invoice",
-          })
-          .returning();
-        for (const r of doc.rows)
-          await tx.insert(invoiceLinesTable).values(lineRow(inserted.id, r));
-        return inserted;
-      });
+      const { invoice, totalFils } = await createInvoiceDraft(companyId, body);
 
       await recordAudit({
         userId,
@@ -552,7 +556,7 @@ export function registerInvoiceRoutes(app: Express) {
         companyId,
         entityId: invoice.id,
         number: invoice.number,
-        totalFils: doc.totals.totalFils,
+        totalFils,
         actorUserId: userId,
       });
       createAndEmitNotification({

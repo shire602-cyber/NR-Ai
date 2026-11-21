@@ -360,7 +360,10 @@ export async function attemptWebhookDelivery(
       opts.signal
     );
     status = res.status;
-    responseBody = (res.bodyText || "").slice(0, 2000) || null;
+    // PostgreSQL text rejects NUL. UTF-8 encoding also replaces any surrogate
+    // split by truncation, so an arbitrary body preview cannot block completion.
+    const preview = (res.bodyText || "").slice(0, 2_000).replaceAll("\0", "\uFFFD");
+    responseBody = Buffer.from(preview, "utf8").toString("utf8") || null;
     ok = res.status >= 200 && res.status < 300;
     retryable = !ok;
     if (!ok) error = `HTTP ${res.status}`;

@@ -38,6 +38,7 @@ import {
   lockFirmClientAccess,
   lockFirmTimerUser,
   resolveFirmContext,
+  writeOffRunningFirmTimers,
   type FirmContext,
 } from "./scope";
 
@@ -470,18 +471,17 @@ export async function startTimer(
     const accessible = accessibleClientsQuery(current);
     // An older stranded timer lacks a trustworthy access-loss timestamp. Release the slot
     // without inventing work hours or disclosing the previous client to the caller.
-    await tx
-      .update(firmTimeEntries)
-      .set({ status: "written_off", minutes: 0, billable: false, stoppedAt: now, updatedAt: now })
-      .where(
-        and(
-          ownRunning,
-          or(
-            ne(firmTimeEntries.firmId, current.firmId),
-            notInArray(firmTimeEntries.companyId, accessible)
-          )
+    await writeOffRunningFirmTimers(
+      tx,
+      and(
+        ownRunning,
+        or(
+          ne(firmTimeEntries.firmId, current.firmId),
+          notInArray(firmTimeEntries.companyId, accessible)
         )
-      );
+      ),
+      now
+    );
     const [running] = await tx
       .select({ id: firmTimeEntries.id })
       .from(firmTimeEntries)

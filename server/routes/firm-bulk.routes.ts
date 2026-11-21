@@ -5,12 +5,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth";
-import {
-  firmContextOf,
-  getAccessibleCompanyIds,
-  requireFirmAccess,
-  requireFirmPermission,
-} from "../middleware/rbac";
+import { firmContextOf, requireFirmAccess, requireFirmPermission } from "../middleware/rbac";
 import { strictBody } from "../http/strict-body";
 import {
   buildReportPack,
@@ -36,7 +31,10 @@ import {
   formatProviderFailures,
   summarizeOcrProviderError,
 } from "../services/ocr-provider-clients";
-import { errorMessage } from "../errors";
+import { AppError, errorMessage } from "../errors";
+import { zPositiveFils } from "../../shared/validators/invoices";
+import { createInvoiceDraft } from "./invoices.routes";
+import { todayIso } from "../ledger/normalize";
 
 const router = Router();
 router.use(authMiddleware);
@@ -378,7 +376,12 @@ const bulkInvoicesSchema = z.object({
   companyIds: zBulkCompanyIds,
   period: zBulkPeriod.optional(),
   serviceDescription: z.string().min(1).max(500),
-  amount: z.number().positive(),
+  amount: z.number().transform((amount, ctx) => {
+    const result = zPositiveFils.safeParse(amount);
+    if (result.success) return result.data;
+    for (const issue of result.error.issues) ctx.addIssue(issue);
+    return z.NEVER;
+  }),
   vatRate: z
     .number()
     .refine(isUaeVatRateFraction, "VAT rate must be 0% or 5%")
@@ -401,9 +404,7 @@ router.post(
       .from(companies)
       .where(inArray(companies.id, companyIds));
 
-    const vatAmount = parseFloat((amount * vatRate).toFixed(2));
-    const total = parseFloat((amount + vatAmount).toFixed(2));
-    const dateStr = new Date().toISOString().split("T")[0];
+    const date = todayIso();
 
     const results: Array<{
       companyId: string;
@@ -412,35 +413,25 @@ router.post(
       invoiceId?: string;
       invoiceNumber?: string;
       error?: string;
+      code?: string;
     }> = [];
 
-    for (let i = 0; i < targetCompanies.length; i++) {
-      const company = targetCompanies[i];
+    for (const company of targetCompanies) {
       try {
-        const invoiceNumber = `NRA-${dateStr.replace(/-/g, "")}-${String(i + 1).padStart(3, "0")}`;
-        const invoice = await storage.createInvoice({
-          companyId: company.id,
-          number: invoiceNumber,
+        const { invoice } = await createInvoiceDraft(company.id, {
           customerName: company.name,
-          date: new Date(),
+          customerTrn: undefined,
+          date,
           currency: DEFAULT_CURRENCY,
-          exchangeRate: 1,
-          baseCurrencyAmount: total,
-          subtotal: amount,
-          vatAmount,
-          total,
-          status: "draft",
-          invoiceType: "invoice",
-          isRecurring: false,
-        });
-
-        await storage.createInvoiceLine({
-          invoiceId: invoice.id,
-          description: serviceDescription,
-          quantity: 1,
-          unitPrice: amount,
-          vatRate,
-          vatSupplyType: "standard_rated",
+          lines: [
+            {
+              description: serviceDescription,
+              quantity: 1,
+              unitPrice: amount,
+              vatRate,
+              vatSupplyType: vatRate === 0 ? "out_of_scope" : "standard_rated",
+            },
+          ],
         });
 
         results.push({
@@ -448,14 +439,15 @@ router.post(
           companyName: company.name,
           success: true,
           invoiceId: invoice.id,
-          invoiceNumber,
+          invoiceNumber: invoice.number,
         });
       } catch (err: unknown) {
         results.push({
           companyId: company.id,
           companyName: company.name,
           success: false,
-          error: errorMessage(err) || "Invoice creation failed",
+          error: err instanceof AppError ? err.message : "Invoice creation failed",
+          code: err instanceof AppError ? err.code : undefined,
         });
       }
     }
@@ -557,28 +549,13 @@ router.post(
 router.get(
   "/bulk/bank-import-status",
   asyncHandler(async (req: Request, res: Response) => {
-    const { id: userId, firmRole } = req.user!;
-    const accessibleIds = await getAccessibleCompanyIds(
-      userId,
-      firmRole ?? "",
-      req.user?.isAdmin === true
-    );
-
-    let clientCompanies: (typeof companies.$inferSelect)[];
-
-    if (accessibleIds === null) {
-      clientCompanies = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.companyType, "client"));
-    } else if (accessibleIds.length === 0) {
-      clientCompanies = [];
-    } else {
-      clientCompanies = await db
-        .select()
-        .from(companies)
-        .where(inArray(companies.id, accessibleIds));
-    }
+    const companyIds = await resolveBulkTargets(firmContextOf(res), undefined);
+    if (!(await requireFirmCompanyMfa(req.user!, res, companyIds))) return;
+    if (!companyIds.length) return res.json([]);
+    const clientCompanies = await db
+      .select({ id: companies.id, name: companies.name })
+      .from(companies)
+      .where(inArray(companies.id, companyIds));
 
     const statuses = await Promise.all(
       clientCompanies.map(async (company) => {

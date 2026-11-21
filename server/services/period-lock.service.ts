@@ -70,18 +70,26 @@ export async function getEffectiveLock(
   tx: LedgerTx = db
 ): Promise<EffectiveLock | null> {
   const result = await tx.execute(sql`
-    SELECT period_end::date::text AS period_end, lock_type, lock_scope
-       FROM month_end_close
-      WHERE company_id = ${companyId}
-        AND status = 'locked'
-        AND (
-          (COALESCE(lock_scope, 'month') = 'through' AND ${isoDate}::date <= period_end::date)
-          OR (COALESCE(lock_scope, 'month') = 'month'
-              AND ${isoDate}::date >= date_trunc('month', period_end)::date
-              AND ${isoDate}::date <= period_end::date)
-        )
-      ORDER BY CASE WHEN lock_type = 'hard' THEN 0 ELSE 1 END, period_end DESC
-      LIMIT 1`);
+    SELECT period_end::text AS period_end, lock_type, lock_scope
+      FROM (
+        SELECT period_end::date AS period_end, lock_type, lock_scope
+          FROM month_end_close
+         WHERE company_id = ${companyId} AND status = 'locked'
+           AND (
+             (COALESCE(lock_scope, 'month') = 'through' AND ${isoDate}::date <= period_end::date)
+             OR (COALESCE(lock_scope, 'month') = 'month'
+                 AND ${isoDate}::date >= date_trunc('month', period_end)::date
+                 AND ${isoDate}::date <= period_end::date)
+           )
+        UNION ALL
+        SELECT fiscal_year_end, 'hard', 'through'
+          FROM fiscal_year_closes
+         WHERE company_id = ${companyId} AND status = 'closed' AND hard_closed = true
+           AND ${isoDate}::date <= fiscal_year_end
+      ) AS locks
+     ORDER BY CASE WHEN lock_type = 'hard' THEN 0 ELSE 1 END, locks.period_end DESC,
+              CASE WHEN lock_scope = 'through' THEN 0 ELSE 1 END
+     LIMIT 1`);
   const [row] = rowsOf<{ period_end: string; lock_type: string; lock_scope: string }>(result);
   if (!row) return null;
   return {
@@ -112,8 +120,13 @@ export async function isPeriodLocked(companyId: string, date: string): Promise<b
 /** The latest lock-through date for the company (null when none). */
 export async function getLockThroughDate(companyId: string): Promise<string | null> {
   const r = await pool.query(
-    `SELECT MAX(period_end)::date::text AS d FROM month_end_close
-      WHERE company_id = $1 AND status = 'locked' AND lock_scope = 'through'`,
+    `SELECT MAX(period_end)::text AS d FROM (
+       SELECT period_end::date AS period_end FROM month_end_close
+        WHERE company_id = $1 AND status = 'locked' AND lock_scope = 'through'
+       UNION ALL
+       SELECT fiscal_year_end FROM fiscal_year_closes
+        WHERE company_id = $1 AND status = 'closed' AND hard_closed = true
+     ) AS locks`,
     [companyId]
   );
   return r.rows[0]?.d ?? null;
@@ -244,20 +257,27 @@ export function decodeLockReason(raw: unknown): string {
   return text.trim().slice(0, 500);
 }
 
-/** Throw 403 FISCAL_YEAR_HARD_CLOSED when `isoDate` sits in a hard-closed fiscal year. */
-export async function assertNotInHardClosedYear(companyId: string, isoDate: string): Promise<void> {
-  const r = await pool.query(
-    `SELECT fiscal_year_end::text AS fye FROM fiscal_year_closes
-      WHERE company_id = $1 AND status = 'closed' AND hard_closed = true
-        AND $2::date BETWEEN fiscal_year_start AND fiscal_year_end
-      LIMIT 1`,
-    [companyId, isoDate]
-  );
-  if (r.rows[0]) {
+/** Throw 403 when the date belongs to a hard fiscal close, or identifies its lock row. */
+export async function assertNotInHardClosedYear(
+  companyId: string,
+  isoDate: string,
+  tx: LedgerTx = db,
+  options: { exactYearEnd?: boolean } = {}
+): Promise<void> {
+  const dateCondition = options.exactYearEnd
+    ? sql`fiscal_year_end = ${isoDate}::date`
+    : sql`${isoDate}::date BETWEEN fiscal_year_start AND fiscal_year_end`;
+  const result = await tx.execute(sql`
+    SELECT fiscal_year_end::text AS fye FROM fiscal_year_closes
+      WHERE company_id = ${companyId} AND status = 'closed' AND hard_closed = true
+        AND ${dateCondition}
+      LIMIT 1`);
+  const [row] = rowsOf<{ fye: string }>(result);
+  if (row) {
     throw new DomainError(
       "FISCAL_YEAR_HARD_CLOSED",
       403,
-      { fiscalYearEnd: r.rows[0].fye },
+      { fiscalYearEnd: row.fye },
       "This fiscal year is hard-closed. Only firm staff or an administrator can reopen it."
     );
   }
