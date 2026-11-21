@@ -105,6 +105,7 @@ async function foreignSale(t: Tenant, currency: string, amount: number, date = "
   expect(invoice.status, invoice.text).toBe(200);
   const issued = await t.as.patch(`/api/invoices/${invoice.body.id}/status`, { status: "sent" });
   expect(issued.status, issued.text).toBe(200);
+  return invoice.body.id as string;
 }
 
 async function getSettledReturn(t: Tenant, id: string) {
@@ -170,6 +171,62 @@ describe("VAT return settlement", () => {
       "4090": [0, 2],
     });
     expect(await glBalance(t, "2020")).toBe(0);
+  });
+
+  it("settles and reverses a USD carrying-value change with unchanged AED VAT and no cash", async () => {
+    const t = await vatTenant("USD");
+    const bank = await accountByCode(t, "1020");
+    await setAedRate(t, "USD", 0.25);
+    const originalInvoice = await foreignSale(t, "USD", 1000);
+    const ret = await generate(t, "2026-01-01", "2026-03-31");
+    await submit(ret.id, t);
+    const payment = { date: "2026-04-20", paymentAccountId: bank.id };
+    const paid = await t.as.post(`/api/vat-returns/${ret.id}/settlement`, payment);
+    expect(paid.status, paid.text).toBe(201);
+    expect(paid.body.netPayable).toBe(200);
+
+    const amendment = await t.as.post(`/api/vat-returns/${ret.id}/amend`, {
+      reason: "Replace the original invoice with the corrected sale",
+    });
+    expect(amendment.status, amendment.text).toBe(201);
+    const voided = await t.as.patch(`/api/invoices/${originalInvoice}/status`, { status: "void" });
+    expect(voided.status, voided.text).toBe(200);
+    await setAedRate(t, "USD", 0.2, "2026-03-01");
+    await foreignSale(t, "USD", 800, "2026-03-01");
+    const id = amendment.body.id as string;
+    expect(await generate(t, "2026-01-01", "2026-03-31")).toMatchObject({ id });
+    await submit(id, t);
+    expect(await glBalance(t, "2020")).toBe(10);
+
+    const url = `/api/vat-returns/${id}/settlement`;
+    const correction = { ...payment, date: "2026-04-21" };
+    const settled = await t.as.post(url, correction);
+    expect(settled.status, settled.text).toBe(201);
+    expect(settled.body).toMatchObject({
+      outputVat: 0,
+      inputVat: 0,
+      netPayable: 0,
+      previouslySettled: { returnIds: [ret.id], outputVat: 200, netPaid: 200 },
+    });
+    expect(await linesOf(settled.body.journalEntryId)).toEqual({
+      "2020": [0, 10],
+      "5140": [10, 0],
+    });
+    expect(await glBalance(t, "2020")).toBe(0);
+    expect((await t.as.get(url)).body.settlement).toMatchObject({ kind: "none", netPayable: 0 });
+    expect(Number((await getSettledReturn(t, id)).paymentAmount)).toBe(0);
+    const replay = await t.as.post(url, correction);
+    expect(replay.status, replay.text).toBe(201);
+    expect(replay.body).toEqual(settled.body);
+
+    const reverse = await t.as.post(`${url}/reverse`, {
+      date: "2026-04-22",
+      reason: "Undo the adjustment",
+    });
+    expect(reverse.status, reverse.text).toBe(200);
+    expect(await glBalance(t, "2020")).toBe(10);
+    expect((await t.as.get(url)).body.settlement).toBeNull();
+    expect((await getSettledReturn(t, id)).paymentAmount).toBeNull();
   });
 
   it("refunds at the dated rate, clears the USD carrying amount, and reverses both currencies", async () => {

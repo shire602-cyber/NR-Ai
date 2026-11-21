@@ -152,8 +152,10 @@ export async function findFiledVatPeriod(
   to = from
 ): Promise<VatPeriodClosure | null> {
   const memberId = companyId.toLowerCase();
-  // Start at the relatively small group table. OFFSET 0 retains the per-representative
-  // LATERAL lookup, which can use the company/status/period index before checking member IDs.
+  const withMember = sql`jsonb_build_array(${memberId}::text, g.representative_company_id::text)`;
+  const auditMembers = sql`jsonb_build_array(${memberId}::text, a.company_id::text)`;
+  // Find evidence linking this company to a group before resolving any of its filings.
+  // Dated snapshot evidence includes amended ancestors, which keep the original period.
   const res = await tx.execute(sql`
     WITH own_return AS (
       SELECT * FROM vat_returns
@@ -162,6 +164,46 @@ export async function findFiledVatPeriod(
          AND period_end >= ${from}::date
          AND period_start < ${to}::date + interval '1 day'
        ORDER BY period_end DESC LIMIT 1
+    ),
+    group_audits AS MATERIALIZED (
+      SELECT company_id, resource_id, details
+        FROM audit_logs
+       WHERE resource_type = 'vat_group' AND action = 'vat.group.upsert'
+    ),
+    linked_audits AS MATERIALIZED (
+      SELECT DISTINCT a.company_id, a.resource_id
+        FROM group_audits a
+       WHERE a.details ILIKE ${`%${memberId}%`}
+         AND CASE WHEN pg_input_is_valid(a.details, 'jsonb')
+                  THEN lower((a.details::jsonb #> '{before,members}')::text)::jsonb @> ${auditMembers}
+                    OR lower((a.details::jsonb #> '{after,members}')::text)::jsonb @> ${auditMembers}
+                  ELSE false END
+    ),
+    linked_groups AS MATERIALIZED (
+      SELECT g.id, g.representative_company_id
+        FROM vat_groups g
+       WHERE NOT EXISTS (SELECT 1 FROM own_return)
+         AND g.representative_company_id <> ${companyId}
+         AND (
+           EXISTS (
+             SELECT 1 FROM vat_group_members m
+              WHERE m.company_id = ${companyId} AND m.group_id = g.id
+           )
+           OR EXISTS (
+             SELECT 1 FROM vat_returns h
+              WHERE h.company_id = g.representative_company_id
+                AND h.status IN ('submitted', 'filed', 'amended')
+                AND h.period_end >= ${from}::date
+                AND h.period_start < ${to}::date + interval '1 day'
+                AND lower(h.reconciliation_snapshot #>> '{filingVatGroup,groupId}') = g.id::text
+                AND lower((h.reconciliation_snapshot #> '{filingVatGroup,memberIds}')::text)::jsonb
+                    @> ${withMember}
+           )
+           OR EXISTS (
+             SELECT 1 FROM linked_audits a
+              WHERE a.company_id = g.representative_company_id AND a.resource_id = g.id::text
+           )
+         )
     )
     SELECT id, status, company_id AS "companyId", amends_return_id AS "amendsReturnId",
            vat_group_id AS "vatGroupId",
@@ -174,7 +216,7 @@ export async function findFiledVatPeriod(
         UNION ALL
         SELECT r.id, r.status, r.company_id, r.amends_return_id, r.vat_group_id,
                r.reconciliation_snapshot, r.period_start, r.period_end
-          FROM vat_groups g
+          FROM linked_groups g
           CROSS JOIN LATERAL (
             SELECT * FROM vat_returns r
              WHERE r.company_id = g.representative_company_id
@@ -184,7 +226,6 @@ export async function findFiledVatPeriod(
                AND r.period_start < ${to}::date + interval '1 day'
              OFFSET 0
           ) r
-         WHERE NOT EXISTS (SELECT 1 FROM own_return) AND g.representative_company_id <> ${companyId}
       ) candidate
      ORDER BY period_end DESC
   `);
@@ -215,8 +256,8 @@ export async function findFiledVatPeriod(
       };
     }
   }
-  // Without historical evidence any company could have been a member. Block VAT
-  // changes only for the overlapping period so old books cannot drift in the meantime.
+  // These candidates already have a membership link. An unresolved candidate requires
+  // verification, while a verified snapshot decides membership by itself.
   return unresolved ? UNVERIFIED_VAT_GROUP : null;
 }
 

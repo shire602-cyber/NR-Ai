@@ -624,6 +624,7 @@ export async function upsertVatGroup(input: {
       action: "vat.group.upsert",
       entityType: "vat_group",
       entityId: groupId,
+      before: existing ? { members: existing.memberIds } : undefined,
       after: { name: input.name, groupTrn: trn.trn, members: [...members] },
       req: input.req,
       tx,
