@@ -5,6 +5,14 @@ import { QueryClient, QueryClientProvider, type QueryFunctionContext } from "@ta
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import BankFeeds from "../../client/src/pages/BankFeeds";
 import { loadLocale, useI18n } from "../../client/src/lib/i18n";
+import { reportAutomationStarters } from "../../client/src/lib/reportCatalog";
+import arReports from "../../client/src/locales/ar-catalog/reportCatalog.json";
+import arMarketing from "../../client/src/locales/ar/marketing.json";
+import arOnboarding from "../../client/src/locales/ar/onboarding.json";
+import arErrors from "../../client/src/locales/ar/serverErrors.json";
+import enMarketing from "../../client/src/locales/en/marketing.json";
+import enOnboarding from "../../client/src/locales/en/onboarding.json";
+import enErrors from "../../client/src/locales/en/serverErrors.json";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -82,4 +90,39 @@ describe.each(localeCases)("signed-in bank page ($locale)", (copy) => {
       });
     }
   );
+});
+
+describe("statement-only banking guidance", () => {
+  it.each([
+    { locale: "en", marketing: enMarketing, onboarding: enOnboarding, errors: enErrors },
+    { locale: "ar", marketing: arMarketing, onboarding: arOnboarding, errors: arErrors },
+  ])("directs $locale users to CSV from onboarding, help and older bank links", (copy) => {
+    expect(copy.onboarding["onboarding.bankCardDesc"]).toContain("CSV");
+    expect(copy.onboarding["onboarding.bankConnectedDescription"]).toContain("CSV");
+    expect(copy.onboarding["onboarding.bankAddDescription"]).toContain("CSV");
+    expect(copy.marketing["marketing.faq3Q"]).toMatch(/bank statement|كشف حساب/i);
+    expect(copy.marketing["marketing.faq3A"]).toContain("CSV");
+    for (const key of [
+      "serverErrors.BANK_CONNECTION_NOT_FOUND",
+      "serverErrors.BANK_FEED_ACCOUNT_NOT_LINKED",
+      "serverErrors.BANK_FEED_NOT_CONFIGURED",
+      "serverErrors.BANK_FEED_NOT_SUPPORTED",
+      "serverErrors.BANK_FEED_NO_ACCOUNTS",
+      "serverErrors.BANK_FEED_PROVIDER_ERROR",
+      "serverErrors.BANK_FEED_RECONNECT_REQUIRED",
+      "serverErrors.BANK_FEED_UNKNOWN_PROVIDER",
+      "serverErrors.INVALID_OAUTH_STATE",
+      "serverErrors.REDIRECT_URI_NOT_ALLOWED",
+    ] as const) {
+      expect(copy.errors[key], key).toContain("CSV");
+    }
+  });
+
+  it("uses imported bank statements for the cash report in both languages", () => {
+    const starter = reportAutomationStarters.find(({ id }) => id === "owner-cash-control-autopilot");
+    expect(starter?.setupSteps[0]).toContain("CSV");
+    expect(arReports["reportCatalog.starter.owner-cash-control-autopilot.setupSteps.0"]).toContain(
+      "CSV"
+    );
+  });
 });

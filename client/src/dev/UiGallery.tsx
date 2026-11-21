@@ -291,13 +291,13 @@ export default function UiGallery() {
           className="mt-4"
           size="lg"
           icon={Landmark}
-          title={L("Connect your bank to start reconciling", "اربط حسابك البنكي لتبدأ التسوية")}
+          title={L("Import a bank statement", "استورد كشف حساب بنكي")}
           description={L(
-            "Import a statement or add an account. Matches appear here as soon as transactions arrive.",
-            "استورد كشف حساب أو أضف حسابًا. تظهر المطابقات هنا فور وصول الحركات."
+            "Upload a CSV statement to review suggested matches and reconcile transactions.",
+            "ارفع كشف حساب بصيغة CSV لمراجعة المطابقات المقترحة وتسوية الحركات."
           )}
           action={{ label: L("Add bank account", "إضافة حساب بنكي"), onClick: () => {} }}
-          secondaryAction={{ label: L("Import statement", "استيراد كشف"), onClick: () => {} }}
+          secondaryAction={{ label: L("Upload CSV", "رفع ملف CSV"), onClick: () => {} }}
         />
       </Section>
 
