@@ -148,3 +148,96 @@ it("rounds the original legacy FX decimal exactly before storing it", async () =
     )
   ).toEqual([{ exchange_rate: "999999999.000000" }]);
 });
+
+it("reverses signed historical journal amounts as nonnegative base and FX legs", async () => {
+  const owner = await h.createTenant();
+  const [cash, capital] = await Promise.all([
+    accountByCode(owner, "1010"),
+    accountByCode(owner, "3010"),
+  ]);
+  const [entry] = await h.sql<{ id: string }>(
+    `INSERT INTO journal_entries (company_id, entry_number, date, source, status, created_by)
+     VALUES ($1, 'JE-SIGNED-IMPORT', '2024-01-01', 'manual', 'posted', $2) RETURNING id`,
+    [owner.company.id, owner.user.id]
+  );
+  await h.sql(
+    `INSERT INTO journal_lines
+       (entry_id, account_id, debit, credit, foreign_debit, foreign_credit, foreign_currency,
+        exchange_rate, description, line_key, line_params)
+     VALUES
+       ($1, $2, -75.01, 24.99, -37.50, 12.50, 'USD', 2, 'Legacy cash', 'legacy', '{"ref":"S-1"}'),
+       ($1, $3, 39.00, -60.00, null, null, null, null, 'Legacy capital', null, null),
+       ($1, $2, 1.00, 0, -0.50, 0, 'USD', 2, 'Legacy FX correction', null, null)`,
+    [entry.id, cash.id, capital.id]
+  );
+  const reversed = await owner.as.post(`/api/journal/${entry.id}/reverse`, {});
+  expect(reversed.status, reversed.text).toBe(200);
+  const rows = await h.sql(
+    `SELECT account_id, debit::text, credit::text, foreign_debit::text, foreign_credit::text,
+            foreign_currency, exchange_rate::text, description, line_key, line_params
+       FROM journal_lines WHERE entry_id = $1 ORDER BY debit DESC, credit DESC`,
+    [reversed.body.reversalId]
+  );
+  const cashMetadata = {
+    account_id: cash.id,
+    foreign_currency: "USD",
+    exchange_rate: "2.000000",
+    description: "Legacy cash",
+    line_key: "legacy",
+    line_params: { ref: "S-1" },
+  };
+  const capitalMetadata = {
+    account_id: capital.id,
+    foreign_currency: null,
+    foreign_debit: "0.00",
+    foreign_credit: "0.00",
+    description: "Legacy capital",
+  };
+  expect(rows).toMatchObject([
+    {
+      ...cashMetadata,
+      debit: "75.01",
+      credit: "0.00",
+      foreign_debit: "37.50",
+      foreign_credit: "0.00",
+    },
+    {
+      ...cashMetadata,
+      debit: "24.99",
+      credit: "0.00",
+      foreign_debit: "12.50",
+      foreign_credit: "0.00",
+    },
+    { ...capitalMetadata, debit: "0.00", credit: "60.00" },
+    { ...capitalMetadata, debit: "0.00", credit: "39.00" },
+    {
+      account_id: cash.id,
+      debit: "0.00",
+      credit: "1.00",
+      foreign_debit: "0.00",
+      foreign_credit: "0.00",
+      foreign_currency: "USD",
+      description: "Legacy FX correction",
+    },
+    {
+      account_id: cash.id,
+      debit: "0.00",
+      credit: "0.00",
+      foreign_debit: "0.50",
+      foreign_credit: "0.00",
+      foreign_currency: "USD",
+      description: "Legacy FX correction",
+    },
+  ]);
+  const net = await h.sql(
+    `SELECT account_id, SUM(debit - credit)::text AS base_net,
+                   SUM(COALESCE(foreign_debit, 0) - COALESCE(foreign_credit, 0))::text AS foreign_net
+       FROM journal_lines WHERE entry_id = ANY($1::uuid[]) GROUP BY account_id`,
+    [[entry.id, reversed.body.reversalId]]
+  );
+  expect(net).toHaveLength(2);
+  expect(net).toMatchObject([
+    { base_net: "0.00", foreign_net: "0.00" },
+    { base_net: "0.00", foreign_net: "0.00" },
+  ]);
+});

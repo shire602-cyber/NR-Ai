@@ -378,24 +378,27 @@ describe("F8 durable domain events", () => {
     const hung = new Promise<void>((resolve) => {
       releaseHung = resolve;
     });
+    let expireHandler: (() => void) | undefined;
     const handler = vi.fn(
       async (event: { payload: { eventId?: string } }, signal?: AbortSignal) => {
         if (event.payload.eventId === staleId) {
           // Deliberately ignore abort so the test can exercise late completion.
           expect(signal?.aborted).toBe(false);
+          expireHandler?.();
           await hung;
         }
       }
     );
     offs.push(p.onDomainEvent("task.due", handler, { name: "f8.test.hung" }));
 
-    // Shorten only the production handler timeout. Keep DB and watchdog timers real.
+    // Fire only the hung handler's deadline. Preserve timing for DB-backed handlers.
     const realTimeout = globalThis.setTimeout;
     const timers = vi
       .spyOn(globalThis, "setTimeout")
-      .mockImplementation((callback, delay, ...args) =>
-        realTimeout(callback, delay === 60_000 ? 20 : delay, ...args)
-      );
+      .mockImplementation((callback, delay, ...args) => {
+        if (delay === 60_000) expireHandler = () => callback(...args);
+        return realTimeout(callback, delay, ...args);
+      });
     let watchdog: ReturnType<typeof setTimeout> | undefined;
     p.registerEventOutboxJob();
     const sweep = runJob(p.EVENT_OUTBOX_JOB);
@@ -405,7 +408,7 @@ describe("F8 durable domain events", () => {
         new Promise((_, reject) => {
           watchdog = realTimeout(
             () => reject(new Error("Dispatch job stalled on a handler")),
-            1500
+            5000
           );
         }),
       ]);

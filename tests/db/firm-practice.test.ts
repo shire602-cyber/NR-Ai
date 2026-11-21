@@ -403,6 +403,136 @@ describe("W5-D firm practice management", () => {
     ).toBe(403);
   });
 
+  it.each([
+    { via: "role update", assigned: true, role: "viewer" },
+    { via: "member upsert", assigned: true, role: "viewer" },
+    { via: "role update", assigned: false, role: "preparer" },
+    { via: "member upsert", assigned: false, role: "preparer" },
+  ])(
+    "finalizes timers on $via to $role when authorized access ends",
+    async ({ via, assigned, role }) => {
+      const owner = await nrOwner();
+      const staff = assigned ? await nrStaff("preparer", "ExistingTimerStaff") : await nrOwner();
+      const client = await createClient(owner, `Timer Downgrade ${via} ${role}`);
+      if (assigned) {
+        const assignment = await owner.as.post(`/api/firm/clients/${client.id}/assign-staff`, {
+          staffUserId: staff.user.id,
+          action: "assign",
+        });
+        expect(assignment.status, assignment.text).toBe(200);
+      }
+      const started = await staff.as.post("/api/firm/time-entries/start", {
+        companyId: client.id,
+        hourlyRate: 75,
+      });
+      expect(started.status, started.text).toBe(201);
+      const timerId = started.body.entry.id as string;
+      const cutoff = new Date();
+      const startedAt = new Date(cutoff.getTime() - 18 * 60_000);
+      await h.sql("UPDATE firm_time_entries SET started_at = $1 WHERE id = $2", [
+        startedAt.toISOString(),
+        timerId,
+      ]);
+      const restore = freezeTime(cutoff);
+      let changed;
+      try {
+        changed =
+          via === "role update"
+            ? await owner.as.patch(`/api/firm/members/${staff.user.id}`, { role })
+            : await owner.as.post("/api/firm/members", { email: staff.email, role });
+      } finally {
+        restore();
+      }
+      expect(changed.status, changed.text).toBe(via === "role update" ? 200 : 201);
+      expect(
+        await h.sql(
+          `SELECT status, minutes, billable, hourly_rate::text, stopped_at = $2::timestamp AS stopped_at_cutoff
+         FROM firm_time_entries WHERE id = $1`,
+          [timerId, cutoff.toISOString()]
+        )
+      ).toEqual([
+        {
+          status: "logged",
+          minutes: 18,
+          billable: true,
+          hourly_rate: "75.00",
+          stopped_at_cutoff: true,
+        },
+      ]);
+      const denied = await staff.as.post("/api/firm/time-entries/start", { companyId: client.id });
+      expect(denied.status).toBe(assigned ? 403 : 404);
+    }
+  );
+
+  it("preserves a running timer when a downgraded member retains tracking and client access", async () => {
+    const owner = await nrOwner();
+    const staff = await nrOwner();
+    const client = await createClient(owner, "Preserved Timer Client");
+    const assigned = await owner.as.post(`/api/firm/clients/${client.id}/assign-staff`, {
+      staffUserId: staff.user.id,
+      action: "assign",
+    });
+    expect(assigned.status, assigned.text).toBe(200);
+    const started = await staff.as.post("/api/firm/time-entries/start", { companyId: client.id });
+    expect(started.status, started.text).toBe(201);
+    const updated = await owner.as.patch(`/api/firm/members/${staff.user.id}`, {
+      role: "preparer",
+    });
+    expect(updated.status, updated.text).toBe(200);
+    const stop = await staff.as.post(`/api/firm/time-entries/${started.body.entry.id}/stop`);
+    expect(stop.status, stop.text).toBe(200);
+  });
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "serializes a timer start and role downgrade under their shared user lock",
+    async () => {
+      const owner = await nrOwner();
+      const staff = await nrStaff("preparer", "ConcurrentTimerStaff");
+      const client = await createClient(owner, "Concurrent Timer Downgrade Client");
+      const assigned = await owner.as.post(`/api/firm/clients/${client.id}/assign-staff`, {
+        staffUserId: staff.user.id,
+        action: "assign",
+      });
+      expect(assigned.status, assigned.text).toBe(200);
+      const { pool } = await import("../../server/db");
+      const blocker = await pool.connect();
+      const calls: Array<ReturnType<Tenant["as"]["post"]>> = [];
+      const waitForBlocked = (count: number) =>
+        vi.waitFor(
+          async () => {
+            const [row] = await h.sql<{ waiting: number }>(`
+            SELECT count(*)::integer AS waiting FROM pg_locks
+             WHERE database = (SELECT oid FROM pg_database WHERE datname = current_database())
+               AND locktype = 'advisory' AND NOT granted
+          `);
+            expect(row.waiting).toBe(count);
+          },
+          { timeout: 5000 }
+        );
+      try {
+        await blocker.query("BEGIN");
+        await blocker.query(
+          "SELECT pg_advisory_xact_lock(hashtext('firm_timer_user'), hashtext($1))",
+          [staff.user.id]
+        );
+        calls.push(staff.as.post("/api/firm/time-entries/start", { companyId: client.id }));
+        await waitForBlocked(1);
+        calls.push(owner.as.patch(`/api/firm/members/${staff.user.id}`, { role: "viewer" }));
+        await waitForBlocked(2);
+      } finally {
+        await blocker.query("ROLLBACK");
+        blocker.release();
+        await Promise.allSettled(calls);
+      }
+      const [start, downgrade] = await Promise.all(calls);
+      expect(start.status, start.text).toBe(201);
+      expect(downgrade.status, downgrade.text).toBe(200);
+      expect(
+        await h.sql("SELECT status FROM firm_time_entries WHERE id = $1", [start.body.entry.id])
+      ).toEqual([{ status: "logged" }]);
+    }
+  );
+
   it.skipIf(process.env.HARNESS_MODE !== "postgres")(
     "a withdrawn letter cannot be accepted by an already waiting client",
     async () => {
@@ -931,6 +1061,7 @@ describe("W5-D firm practice management", () => {
     expect(rec.engagement_id).toBeTruthy();
 
     const recurring = await b.as.post("/api/firm/billing/run-recurring", {});
+    expect(recurring.status, recurring.text).toBe(200);
     expect(recurring.body.created).toBe(1);
     expect(Number(recurring.body.invoices[0].total)).toBe(1575);
     expect((await b.as.post("/api/firm/billing/run-recurring", {})).body.created).toBe(0);

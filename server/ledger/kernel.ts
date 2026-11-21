@@ -651,41 +651,53 @@ async function reverseInTx(
   assertReversible(original);
   const date = await resolveReversalDate(tx, original, opts, mode);
   const lines = await loadLinesFils(tx, entryId);
-  const mirrored: NormalizedLine[] = lines
-    .filter((l) => l.debitFils !== 0 || l.creditFils !== 0)
-    .flatMap((l) => {
-      const line: NormalizedLine = {
-        accountId: l.accountId,
-        debitFils: l.creditFils,
-        creditFils: l.debitFils,
-        description: l.description,
-        ...(l.lineKey ? { lineKey: l.lineKey, lineParams: l.lineParams } : {}),
-        costCenterId: l.costCenterId,
-        foreignCurrency: l.foreignCurrency,
-        foreignDebitFils: l.foreignCreditFils,
-        foreignCreditFils: l.foreignDebitFils,
-        exchangeRate: l.exchangeRate,
-        // WQ3: the reversal carries the same VAT-leg flag and CT treatment, so the CT workpaper
-        // and the VAT engine net the reversed line to zero.
-        ...(l.systemVat ? { systemVat: true } : {}),
-        ...(Object.keys(l.attributes).length ? { attributes: l.attributes } : {}),
-      };
-      if (line.debitFils > 0 && line.creditFils > 0) {
-        // Split the two sides of a historical line, preserving its gross movement.
-        return [
-          { ...line, creditFils: 0, foreignCreditFils: 0 },
-          { ...line, debitFils: 0, foreignDebitFils: 0 },
-        ];
-      }
-      return [line];
-    });
-  if (mirrored.length === 0) {
+  if (!lines.some((l) => l.debitFils !== 0 || l.creditFils !== 0)) {
     throw new DomainError(
       "ENTRY_HAS_NO_LINES",
       422,
       undefined,
       "Cannot reverse an entry with no lines"
     );
+  }
+  const mirrored: NormalizedLine[] = [];
+  for (const l of lines) {
+    const metadata = {
+      accountId: l.accountId,
+      description: l.description,
+      ...(l.lineKey ? { lineKey: l.lineKey, lineParams: l.lineParams } : {}),
+      costCenterId: l.costCenterId,
+      foreignCurrency: l.foreignCurrency,
+      exchangeRate: l.exchangeRate,
+      // VAT and CT treatment must follow each leg so it nets with the stored original.
+      ...(l.systemVat ? { systemVat: true } : {}),
+      ...(Object.keys(l.attributes).length ? { attributes: l.attributes } : {}),
+    };
+    // Reverse each stored column separately to preserve gross movement. A negative
+    // amount changes sides. Legacy foreign amounts can require a separate leg when
+    // their sign differs from the corresponding base amount.
+    for (const [base, foreign] of [
+      [l.creditFils, l.foreignCreditFils],
+      [-l.debitFils, -l.foreignDebitFils],
+    ]) {
+      if (base > 0 || foreign > 0) {
+        mirrored.push({
+          ...metadata,
+          debitFils: Math.max(base, 0),
+          creditFils: 0,
+          foreignDebitFils: Math.max(foreign, 0),
+          foreignCreditFils: 0,
+        });
+      }
+      if (base < 0 || foreign < 0) {
+        mirrored.push({
+          ...metadata,
+          debitFils: 0,
+          creditFils: Math.max(-base, 0),
+          foreignDebitFils: 0,
+          foreignCreditFils: Math.max(-foreign, 0),
+        });
+      }
+    }
   }
   const { debitFils, creditFils } = assertLinesBalanced(mirrored, { allowSameAccount: true });
   const reason = opts.reason ? String(opts.reason).slice(0, 1000) : null;

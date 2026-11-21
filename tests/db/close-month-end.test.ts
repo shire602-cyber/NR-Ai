@@ -261,6 +261,103 @@ describe("lock policy", () => {
   });
 });
 
+describe.skipIf(process.env.HARNESS_MODE !== "postgres")("hard-close checklist concurrency", () => {
+  it.each([
+    ["month", "lock-period", { periodEnd: "2025-12-31", lockType: "hard" }],
+    ["year", "year-end-close", { fiscalYearEnd: "2025-12-31", hardClose: true }],
+  ])("rechecks %s eligibility after a pending expense commits", async (_, endpoint, body) => {
+    const tenant = await h.createTenant({
+      name: `Checklist-${endpoint}`,
+      vatRegistered: false,
+      companyColumns: { tax_registration_type: "Non-registered" },
+    });
+    const companyId = tenant.company.id;
+    const { postJournal, withLedgerTx } = await import("../../server/ledger");
+    const [bank, expense] = await Promise.all([
+      accountByCode(tenant, "1020"),
+      accountByCode(tenant, "5010"),
+    ]);
+    const ready = await tenant.as.get(
+      `/api/companies/${companyId}/month-end/checklist?period=2025-12`
+    );
+    expect(ready.status, ready.text).toBe(200);
+    expect(
+      ready.body.checklist.filter(
+        (step: { effectiveStatus: string }) => step.effectiveStatus !== "complete"
+      )
+    ).toEqual([]);
+    let signalInserted = () => {};
+    const inserted = new Promise<void>((resolve) => {
+      signalInserted = resolve;
+    });
+    let releasePosting = () => {};
+    const released = new Promise<void>((resolve) => {
+      releasePosting = resolve;
+    });
+    const posting = withLedgerTx(async (tx) => {
+      await postJournal(
+        {
+          companyId,
+          date: "2025-12-15",
+          status: "posted",
+          lines: [
+            { accountId: expense.id, debit: 100 },
+            { accountId: bank.id, credit: 100 },
+          ],
+        },
+        { actorId: tenant.user.id, tx }
+      );
+      signalInserted();
+      await released;
+    });
+    await Promise.race([inserted, posting]);
+    const url = `/api/companies/${companyId}/month-end/${endpoint}`;
+    const closing = tenant.as.post(url, body);
+    try {
+      await vi.waitFor(
+        async () => {
+          const [waiting] = await h.sql<{ waiting: boolean }>(
+            `SELECT EXISTS (
+             SELECT 1 FROM pg_locks
+              WHERE locktype = 'advisory' AND mode = 'ExclusiveLock' AND NOT granted
+                AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+           ) AS waiting`
+          );
+          expect(waiting.waiting).toBe(true);
+        },
+        { timeout: 6000 }
+      );
+    } finally {
+      releasePosting();
+      await Promise.all([posting, closing]);
+    }
+    const close = await closing;
+    expect(close.status, close.text).toBe(422);
+    expect(close.body.code).toBe("CLOSE_CHECKLIST_INCOMPLETE");
+    expect(close.body.details.incomplete).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 8 })])
+    );
+    const rows = await h.sql("SELECT 1 FROM month_end_close WHERE company_id = $1", [companyId]);
+    expect(rows).toHaveLength(0);
+
+    const override = await tenant.as.post(url, {
+      ...body,
+      overrideChecklist: true,
+      reason: "Auditor confirmed no accrual required",
+    });
+    expect(override.status, override.text).toBe(endpoint === "lock-period" ? 200 : 201);
+    const record = endpoint === "lock-period" ? override.body : override.body.lock;
+    expect(record.checklistOverride).toBe(true);
+    const [saved] = await h.sql<{ checklist_snapshot: unknown }>(
+      "SELECT checklist_snapshot FROM month_end_close WHERE id = $1 AND company_id = $2",
+      [record.id, companyId]
+    );
+    expect(saved.checklist_snapshot).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 8, status: "incomplete" })])
+    );
+  });
+});
+
 describe("year-end close", () => {
   it.skipIf(process.env.HARNESS_MODE !== "postgres")(
     "includes an AED 100 journal that commits while the year-end close waits for the period lock",

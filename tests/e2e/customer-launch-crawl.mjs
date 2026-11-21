@@ -25,6 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, request } from "playwright-core";
+import { findUnsupportedBankFeedClaim } from "./lib/bank-feed-claims.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 const PUBLIC_ONLY = process.env.CUSTOMER_E2E_PUBLIC_ONLY === "true";
@@ -58,6 +59,8 @@ const PUBLIC_ROUTES = [
   "/privacy",
   "/terms",
   "/cookies",
+  "/en/product/bank-reconciliation",
+  "/ar/product/bank-reconciliation",
 ];
 
 const CUSTOMER_ROUTES = [
@@ -100,7 +103,7 @@ const FORBIDDEN_API_STATUS_PATHS = [
 const FAIL_TEXT = /something went wrong|an error occurred|failed to load|unexpected error/i;
 const PRIVATE_TEXT = /WhatsApp|Document Chasing|Firm Command|NR Accountant|Value Ops/i;
 const PUBLIC_UNSUPPORTED_CLAIMS =
-  /SOC 2 Type II|FTA[-\s]?registered|FTA[-\s]?native|FTA Accredited|FTA VAT 201 filing|VAT 201 filing|Pre-filed|FTA · Live|bank-grade|bank-level|direct EmaraTax|VAT-compliant|UAE-compliant|No manual entry|Let AI Do the Rest|all data automatically|reports generated automatically|Untouched|Connect Your Bank|Securely link your.*bank account|via encrypted feeds|UAE bank feeds|Photo, email forward, or bank feed|sync a bank line|Trusted by 500\+ UAE businesses|Join 500\+ UAE businesses|500\+ UAE businesses|hundreds of UAE businesses|UAE businesses on Muhasib|In VAT filed last quarter|AI categorisation accuracy|AI categorization accuracy|99(?:\.8)?%|99%\+|95%\+|50,000\+|25\+\s*hours|20\+\s*hours|filings meet every regulatory requirement/i;
+  /SOC 2 Type II|FTA[-\s]?registered|FTA[-\s]?native|FTA Accredited|FTA VAT 201 filing|VAT 201 filing|Pre-filed|FTA · Live|bank-grade|bank-level|direct EmaraTax|VAT-compliant|UAE-compliant|No manual entry|Let AI Do the Rest|all data automatically|reports generated automatically|Untouched|Trusted by 500\+ UAE businesses|Join 500\+ UAE businesses|500\+ UAE businesses|hundreds of UAE businesses|UAE businesses on Muhasib|In VAT filed last quarter|AI categorisation accuracy|AI categorization accuracy|99(?:\.8)?%|99%\+|95%\+|50,000\+|25\+\s*hours|20\+\s*hours|filings meet every regulatory requirement/i;
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 async function resolveExecutablePath() {
@@ -390,9 +393,43 @@ async function main() {
         await fail(`localized homepage ${route}`, { expected: homepage, actual });
       }
     }
-    const unsupportedClaim = bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ?? null;
+    const unsupportedClaim =
+      bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ??
+      findUnsupportedBankFeedClaim(bodyText, {
+        allowDelegatedRoadmapCopy: [
+          "/",
+          "/en",
+          "/ar",
+          "/en/product/bank-reconciliation",
+          "/ar/product/bank-reconciliation",
+        ].includes(route),
+      });
     if (unsupportedClaim) {
       await fail(`public claim ${route}`, { unsupportedClaim });
+    }
+
+    // The Banking panel is hidden on first load. Exercise the sample workflow
+    // without coupling the crawl to the copy used to describe it.
+    if (route === "/demo") {
+      try {
+        const label = /^(Banking|الخدمات البنكية)$/;
+        await page.getByRole("tab", { name: label }).click();
+        const banking = page.getByRole("tabpanel", { name: label });
+        await banking.getByText("ADCB BANK CHARGE", { exact: true }).waitFor();
+        const copy = await banking.innerText();
+        const unsupportedClaim = findUnsupportedBankFeedClaim(copy);
+        const csvOnly = /\bCSV\b/i.test(copy);
+        if (!csvOnly || unsupportedClaim || routeErrors.length || apiFailures.length) {
+          await fail("public demo banking", {
+            csvOnly,
+            unsupportedClaim,
+            js: routeErrors,
+            api: apiFailures,
+          });
+        }
+      } catch (error) {
+        await fail("public demo banking", { detail: String(error) });
+      }
     }
   }
 

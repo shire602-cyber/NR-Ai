@@ -8,7 +8,7 @@
  * POST /firm/command-center/staff/assign, GET /firm/command-center/staff/workload)
  * goes through this module.
  */
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { db } from "../../db";
 import { DomainError } from "../../errors";
 import {
@@ -22,6 +22,7 @@ import {
 import { firmRoleHasPermission, isFirmRole, type FirmRole } from "../../../shared/access";
 import {
   accessibleClientCondition,
+  accessibleClientsQuery,
   finalizeRunningFirmTimers,
   grantCompanyAccess,
   isFirmClient,
@@ -216,15 +217,49 @@ export async function setFirmMemberRole(
   role: FirmRole
 ): Promise<void> {
   if (!isFirmRole(role)) throw new DomainError("INVALID_FIRM_ROLE", 400);
-  await db
-    .insert(firmMembers)
-    .values({ firmId: ctx.firmId, userId, role, invitedBy: ctx.userId })
-    .onConflictDoUpdate({
-      target: firmMembers.userId,
-      set: { role, firmId: ctx.firmId, updatedAt: new Date() },
-    });
-  // NR keeps users.firm_role as the legacy source of truth.
-  if (ctx.isNr) await db.update(users).set({ firmRole: role }).where(eq(users.id, userId));
+  await db.transaction(async (tx) => {
+    await lockFirmTimerUser(tx, userId);
+    const previous = await resolveFirmContext({ id: userId }, tx);
+    const changedAt = new Date();
+    await tx
+      .insert(firmMembers)
+      .values({ firmId: ctx.firmId, userId, role, invitedBy: ctx.userId })
+      .onConflictDoUpdate({
+        target: firmMembers.userId,
+        set: { role, firmId: ctx.firmId, updatedAt: changedAt },
+      });
+    // NR keeps users.firm_role as the legacy source of truth.
+    if (ctx.isNr) await tx.update(users).set({ firmRole: role }).where(eq(users.id, userId));
+
+    if (
+      previous?.firmId !== ctx.firmId ||
+      previous.role === role ||
+      !firmRoleHasPermission(previous.role, "firm.time.track")
+    ) {
+      return;
+    }
+    const next: FirmContext = {
+      firmId: ctx.firmId,
+      isNr: ctx.isNr,
+      role,
+      userId,
+      platformAdmin: false,
+    };
+    // Keep only the time that was authorized before this change. An already inaccessible
+    // legacy timer has no trustworthy cutoff and is recovered separately without billing.
+    await finalizeRunningFirmTimers(
+      tx,
+      and(
+        eq(firmTimeEntries.firmId, ctx.firmId),
+        eq(firmTimeEntries.userId, userId),
+        inArray(firmTimeEntries.companyId, accessibleClientsQuery(previous)),
+        firmRoleHasPermission(role, "firm.time.track")
+          ? notInArray(firmTimeEntries.companyId, accessibleClientsQuery(next))
+          : undefined
+      ),
+      changedAt
+    );
+  });
 }
 
 export async function updateFirmMember(

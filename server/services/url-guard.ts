@@ -230,7 +230,8 @@ function requestPinned(
   headers: Record<string, string>,
   body: Buffer | null,
   timeoutMs: number,
-  maxBodyBytes: number
+  maxBodyBytes: number,
+  signal?: AbortSignal
 ): Promise<HopResult> {
   const isHttps = url.protocol === "https:";
   const lib = isHttps ? https : http;
@@ -249,6 +250,7 @@ function requestPinned(
         ...(isHttps && !net.isIP(hostname) ? { servername: hostname } : {}),
         agent: false,
         timeout: timeoutMs,
+        signal,
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -315,8 +317,12 @@ export async function safeOutboundFetch(
   let body = bodyToBuffer(init.body);
   let current = rawUrl;
 
+  const signal = init.signal ?? undefined;
   for (let hop = 0; ; hop++) {
+    signal?.throwIfAborted();
     const verdict = await validateOutboundUrl(current);
+    // DNS may finish after the caller stopped waiting. Do not start a request after abort.
+    signal?.throwIfAborted();
     if (!verdict.ok) throw new OutboundUrlBlockedError(verdict.reason);
     const result = await requestPinned(
       verdict.url,
@@ -325,7 +331,8 @@ export async function safeOutboundFetch(
       headers,
       body,
       timeoutMs,
-      maxBodyBytes
+      maxBodyBytes,
+      signal
     );
     const location = result.headers.location;
     const isRedirect = result.status >= 300 && result.status < 400 && !!location;

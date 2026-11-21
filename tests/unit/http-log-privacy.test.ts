@@ -40,9 +40,11 @@ describe("HTTP log privacy", () => {
       id: "trace-id",
       body: {
         "csp-report": {
-          "effective-directive": "script-src-elem",
+          "effective-directive": "style-src-elem",
           "document-uri": "https://example.test/share/sample-link",
           "blocked-uri": "https://example.test/path?email=sample@example.test",
+          "source-file": "https://example.test/sample.js",
+          "line-number": 12,
         },
       },
     } as Request;
@@ -50,7 +52,7 @@ describe("HTTP log privacy", () => {
     cspReportHandler(req, res);
     expect(res.status).toHaveBeenCalledWith(204);
     expect(log.warn).toHaveBeenCalledWith(
-      { requestId: "trace-id", directive: "script-src-elem" },
+      { requestId: "trace-id", directive: "style-src-elem" },
       "CSP violation reported"
     );
 

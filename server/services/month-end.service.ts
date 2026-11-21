@@ -135,12 +135,14 @@ export interface MonthEndCloseRecord {
 export async function getCloseChecklist(
   companyId: string,
   periodStart: string,
-  periodEnd: string
+  periodEnd: string,
+  tx?: LedgerTx
 ): Promise<ChecklistItem[]> {
+  const q = tx ? ledgerQueryable(tx) : pool;
   const checklist: ChecklistItem[] = [];
 
   // 1. Bank reconciliation complete
-  const bankResult = await pool.query(
+  const bankResult = await q.query(
     `SELECT
        COUNT(*) AS total,
        COUNT(*) FILTER (WHERE is_reconciled = true) AS reconciled
@@ -165,7 +167,7 @@ export async function getCloseChecklist(
   });
 
   // 2. All invoices posted (non-draft)
-  const invoiceResult = await pool.query(
+  const invoiceResult = await q.query(
     `SELECT
        COUNT(*) AS total,
        COUNT(*) FILTER (WHERE status != 'draft') AS posted
@@ -190,7 +192,7 @@ export async function getCloseChecklist(
   });
 
   // 3. All receipts categorized
-  const receiptResult = await pool.query(
+  const receiptResult = await q.query(
     `SELECT
        COUNT(*) AS total,
        COUNT(*) FILTER (WHERE account_id IS NOT NULL) AS categorized
@@ -216,7 +218,9 @@ export async function getCloseChecklist(
 
   // 4. Anomaly scan clean
   try {
-    const anomalyResult = await detectAnomalies(companyId);
+    const anomalyResult = tx
+      ? await tx.transaction((savepoint) => detectAnomalies(companyId, ledgerQueryable(savepoint)))
+      : await detectAnomalies(companyId);
     const criticalCount = anomalyResult.summary.critical;
     checklist.push({
       id: 4,
@@ -240,14 +244,14 @@ export async function getCloseChecklist(
 
   // 5. AI inbox clear (check transaction_classifications pending review)
   // Since ai_gl_queue may not exist, check transaction_classifications with no feedback
-  const tableCheck = await pool.query(
+  const tableCheck = await q.query(
     `SELECT EXISTS (
        SELECT FROM information_schema.tables WHERE table_name = 'ai_gl_queue'
      ) AS exists`
   );
 
   if (tableCheck.rows[0].exists) {
-    const queueResult = await pool.query(
+    const queueResult = await q.query(
       // X5 (J1 D6): only suggestions still open (bank line not reconciled / excluded) for
       // transactions dated in the period count as pending.
       `SELECT COUNT(*) AS pending
@@ -272,7 +276,7 @@ export async function getCloseChecklist(
     });
   } else {
     // Fallback: check unreviewed classifications
-    const classResult = await pool.query(
+    const classResult = await q.query(
       `SELECT COUNT(*) AS pending
        FROM transaction_classifications
        WHERE company_id = $1
@@ -295,7 +299,7 @@ export async function getCloseChecklist(
   }
 
   // 6. Depreciation entries posted (if fixed_assets table exists)
-  const fixedAssetsCheck = await pool.query(
+  const fixedAssetsCheck = await q.query(
     `SELECT EXISTS (
        SELECT FROM information_schema.tables WHERE table_name = 'fixed_assets'
      ) AS exists`
@@ -306,7 +310,7 @@ export async function getCloseChecklist(
     // depreciation_schedules row per asset and month, written with its journal entry), not a
     // status flag. An active depreciable asset is done when every month of the period it owned
     // the asset has a schedule row, or when it is fully depreciated.
-    const depResult = await pool.query(
+    const depResult = await q.query(
       `WITH a AS (
          SELECT fa.id, fa.status, fa.net_book_value, fa.salvage_value,
                 date_trunc('month', GREATEST(fa.purchase_date::date, $2::date))::date AS from_month,
@@ -358,10 +362,10 @@ export async function getCloseChecklist(
   //    ends needs a return (a month inside an open quarter has none to prepare yet), and a
   //    company that is not VAT registered files none. The return counted is the one whose period
   //    ENDS in this month (period_end is stored as the last instant of the day, so compare dates).
-  const vatStep = await vatReturnStepScope(companyId, periodEnd);
+  const vatStep = await vatReturnStepScope(companyId, periodEnd, q);
   let vatCount = 0;
   if (vatStep.kind === "due") {
-    const vatResult = await pool.query(
+    const vatResult = await q.query(
       `SELECT COUNT(*) AS total
        FROM vat_returns
        WHERE company_id = $1
@@ -390,7 +394,7 @@ export async function getCloseChecklist(
   // 8. Accruals recorded: expense activity in the period should be matched by
   //    accrual entries (auto-reversing journals or Accrued Expenses 2040)
   //    unless the preparer signs the step off as not required.
-  const accrualResult = await pool.query(
+  const accrualResult = await q.query(
     `SELECT
        (SELECT COUNT(*) FROM journal_entries je
          WHERE je.company_id = $1 AND je.status = 'posted'
@@ -424,7 +428,7 @@ export async function getCloseChecklist(
   });
 
   // 9. Prepayments amortised: a prepaid balance (1060) needs release activity.
-  const prepaid = await pool.query(
+  const prepaid = await q.query(
     `SELECT
        COALESCE(SUM(CASE WHEN ((je.date + interval '4 hours')::date) <= $3::date
                          THEN ROUND(jl.debit * 100) - ROUND(jl.credit * 100) END), 0)::bigint AS balance,
@@ -457,7 +461,7 @@ export async function getCloseChecklist(
   // 10. FX revaluation: OPEN foreign-currency balances need a revaluation at period end. E1 (J1-r2):
   //     counted from the exposure engine (the FX page's own figure), so settled foreign documents
   //     no longer keep the step open just because their accounts once carried a foreign tag.
-  const fx = await pool.query(
+  const fx = await q.query(
     `SELECT
        (SELECT COUNT(*) FROM journal_entries je
          WHERE je.company_id = $1 AND je.status = 'posted'
@@ -465,7 +469,7 @@ export async function getCloseChecklist(
            AND ((je.date + interval '4 hours')::date) BETWEEN $2::date AND $3::date) AS revaluations`,
     [companyId, periodStart, periodEnd]
   );
-  const exposure = await computeFxExposure(companyId, periodEnd);
+  const exposure = await computeFxExposure(companyId, periodEnd, {}, tx);
   const fxAccounts = exposure.items.length + exposure.missingRates.length;
   const revaluations = parseInt(fx.rows[0]?.revaluations || "0");
   checklist.push({
@@ -488,7 +492,7 @@ export async function getCloseChecklist(
   // 11. A4 (M12): control accounts tie to their sub-ledgers at period end (AR 1040, AP 2010,
   //     inventory 1070 (B1: NM5), VAT, pension 2032, gratuity 2036, salaries 2030). A difference
   //     keeps the step open.
-  const ties = await controlAccountTies(companyId, periodStart, periodEnd);
+  const ties = await controlAccountTies(companyId, periodStart, periodEnd, tx);
   const applicable = ties.filter((t) => t.applicable);
   const broken = applicable.filter((t) => !t.reconciled);
   const list = broken
@@ -514,7 +518,7 @@ export async function getCloseChecklist(
   // 12. D1 (N14): a documents-mode opening trial balance moved A/R and A/P to Opening Balance
   //     Equity 3040 for the open invoices and bills; until they are imported the receivable /
   //     payable is missing from the balance sheet (and its 3040 offset sits in equity).
-  const pending = await pendingOpeningDocuments(companyId);
+  const pending = await pendingOpeningDocuments(companyId, q);
   if (pending && pending.cutOver <= periodEnd) {
     const open = pending.receivablesFils !== 0 || pending.payablesFils !== 0;
     checklist.push({
@@ -998,7 +1002,8 @@ export async function closeFiscalYear(
     reason?: string | null;
     checklistOverride?: boolean;
     checklistSnapshot?: unknown;
-  } = {}
+  } = {},
+  outer?: LedgerTx
 ): Promise<YearEndCloseResult> {
   const fye = parseReportDate(fiscalYearEndRaw, "fiscalYearEnd");
   if (!fye) throw new DomainError("FISCAL_YEAR_END_REQUIRED", 400);
@@ -1108,7 +1113,7 @@ export async function closeFiscalYear(
       entryNumber,
       lock,
     };
-  });
+  }, outer);
 }
 
 /**
@@ -1269,11 +1274,12 @@ export type CloseStepKey = (typeof CLOSE_STEP_KEYS)[number];
  */
 export async function vatReturnStepScope(
   companyId: string,
-  periodEnd: string
+  periodEnd: string,
+  q: Queryable = pool
 ): Promise<
   { kind: "due" } | { kind: "not_registered" } | { kind: "not_return_month"; periodEnd: string }
 > {
-  const r = await pool.query(
+  const r = await q.query(
     `SELECT tax_registration_type, trn_vat_number, vat_filing_frequency, vat_period_start_month
        FROM companies WHERE id = $1`,
     [companyId]
@@ -1308,9 +1314,10 @@ export interface StepSignOff {
 
 export async function listStepSignOffs(
   companyId: string,
-  periodEnd: string
+  periodEnd: string,
+  q: Queryable = pool
 ): Promise<StepSignOff[]> {
-  const r = await pool.query(
+  const r = await q.query(
     `SELECT s.step_key, s.signed_off_by, u.email, s.signed_off_at, s.note
        FROM month_end_step_signoffs s
        LEFT JOIN users u ON u.id = s.signed_off_by
@@ -1331,11 +1338,12 @@ export async function listStepSignOffs(
 export async function getChecklistWithSignOffs(
   companyId: string,
   periodStart: string,
-  periodEnd: string
+  periodEnd: string,
+  tx?: LedgerTx
 ): Promise<ChecklistItem[]> {
   const [checklist, signoffs] = await Promise.all([
-    getCloseChecklist(companyId, periodStart, periodEnd),
-    listStepSignOffs(companyId, periodEnd),
+    getCloseChecklist(companyId, periodStart, periodEnd, tx),
+    listStepSignOffs(companyId, periodEnd, tx && ledgerQueryable(tx)),
   ]);
   const byKey = new Map(signoffs.map((s) => [s.stepKey, s]));
   return checklist.map((item) => {

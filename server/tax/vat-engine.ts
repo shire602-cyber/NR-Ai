@@ -24,7 +24,9 @@ import { invoiceLines, invoices, type Invoice, type InvoiceLine } from "../../sh
 import { toFils } from "../../shared/money";
 import { classifySupply, type Vat201Family } from "../../shared/vat-classification";
 import { totalsForStoredDocument } from "../services/invoice-posting.service";
-import { ledgerLines } from "../reporting";
+import { ledgerLines, type Queryable } from "../reporting";
+import { ledgerQueryable } from "../ledger/tx";
+import type { LedgerTx } from "../ledger/types";
 import { loadBaseCurrency } from "../ledger";
 import { has, resolve } from "../platform/service-registry";
 import type { FxToVatFilingCurrency } from "../services/fx";
@@ -194,10 +196,21 @@ export interface ComputeVatInput {
   includeGroup?: boolean;
 }
 
+interface VatReadContext {
+  q: Queryable;
+  tx?: LedgerTx;
+}
+function defaultReads(): VatReadContext {
+  return { q: pool };
+}
+
 // ─── Company config ──────────────────────────────────────────────────────
 
-export async function loadVatCompany(companyId: string): Promise<VatCompanyConfig> {
-  const { rows } = await pool.query(
+export async function loadVatCompany(
+  companyId: string,
+  reads: VatReadContext = defaultReads()
+): Promise<VatCompanyConfig> {
+  const { rows } = await reads.q.query(
     `SELECT id, name, emirate, trn_vat_number, vat_filing_frequency,
             COALESCE(vat_period_start_month, 1) AS start_month,
             COALESCE(exempt_supply_ratio, 0) AS exempt_ratio, company_type,
@@ -267,13 +280,17 @@ const DOC_SOURCES = new Set([
 
 // ─── main ────────────────────────────────────────────────────────────────
 
-export async function computeVat201(input: ComputeVatInput): Promise<VatComputation> {
-  const company = await loadVatCompany(input.companyId);
-  const group = await loadVatGroupForRepresentative(input.companyId);
+export async function computeVat201(
+  input: ComputeVatInput,
+  tx?: LedgerTx
+): Promise<VatComputation> {
+  const reads = tx ? { q: ledgerQueryable(tx), tx } : defaultReads();
+  const company = await loadVatCompany(input.companyId, reads);
+  const group = await loadVatGroupForRepresentative(input.companyId, reads);
   if (group && input.includeGroup !== false) {
-    return computeGroup(input, company, group);
+    return computeGroup(input, company, group, reads);
   }
-  const single = await computeSingle(input, company, new Set());
+  const single = await computeSingle(input, company, new Set(), reads);
   if (!input.allowIncomplete && blockingIssues(single.issues).length > 0)
     throwBlocking(blockingIssues(single.issues));
   return single;
@@ -339,7 +356,8 @@ function throwBlocking(issues: VatIssue[]): never {
 async function computeSingle(
   input: ComputeVatInput,
   company: VatCompanyConfig,
-  eliminateTrns: Set<string>
+  eliminateTrns: Set<string>,
+  reads: VatReadContext
 ): Promise<VatComputation> {
   const { companyId, from, to } = input;
   const boxes = emptyBoxes();
@@ -367,15 +385,15 @@ async function computeSingle(
     addDelta(boxes, c.boxes);
   };
 
-  await collectInvoices(companyId, from, to, eliminateTrns, push, issues, excluded, counts);
-  await collectBills(companyId, from, to, eliminateTrns, push, excluded, counts);
-  await collectVendorDebitNotes(companyId, from, to, push, counts);
-  await collectReceipts(companyId, from, to, eliminateTrns, push, counts);
-  await collectFixedAssetDisposals(companyId, from, to, company, push, issues, counts);
-  await collectFixedAssetAcquisitions(companyId, from, to, push, counts);
-  await collectBadDebtRelief(companyId, from, to, push, counts);
-  await collectCustomerDeposits(companyId, from, to, push, counts);
-  await collectReturnAdjustments(companyId, from, to, company, push, issues, counts);
+  await collectInvoices(companyId, from, to, eliminateTrns, push, issues, excluded, counts, reads);
+  await collectBills(companyId, from, to, eliminateTrns, push, excluded, counts, reads);
+  await collectVendorDebitNotes(companyId, from, to, push, counts, reads);
+  await collectReceipts(companyId, from, to, eliminateTrns, push, counts, reads);
+  await collectFixedAssetDisposals(companyId, from, to, company, push, issues, counts, reads);
+  await collectFixedAssetAcquisitions(companyId, from, to, push, counts, reads);
+  await collectBadDebtRelief(companyId, from, to, push, counts, reads);
+  await collectCustomerDeposits(companyId, from, to, push, counts, reads);
+  await collectReturnAdjustments(companyId, from, to, company, push, issues, counts, reads);
   const bankEntries = await collectBankLineEntries(
     companyId,
     from,
@@ -383,9 +401,10 @@ async function computeSingle(
     company,
     push,
     issues,
-    counts
+    counts,
+    reads
   );
-  const vatAccounts = await loadVatAccounts(companyId);
+  const vatAccounts = await loadVatAccounts(companyId, reads);
   // WQ3 (9.4): manual journal lines with a VAT treatment are ordinary supplies / purchases.
   const journalVatEntries = await collectJournalLineVat(
     companyId,
@@ -395,14 +414,16 @@ async function computeSingle(
     vatAccounts,
     push,
     issues,
-    counts
+    counts,
+    reads
   );
   const gl = await collectLedger(
     companyId,
     from,
     to,
     vatAccounts,
-    new Set([...bankEntries, ...journalVatEntries])
+    new Set([...bankEntries, ...journalVatEntries]),
+    reads
   );
   for (const j of gl.manual) {
     const delta: BoxDelta = {};
@@ -476,7 +497,7 @@ async function computeSingle(
     hasVatAccounts: vatAccounts.length > 0,
   });
   // S1 (W5-C, R14-19): the return is filed in AED whatever the functional currency.
-  const currency = await convertToFilingCurrency(companyId, company, contributions, issues);
+  const currency = await convertToFilingCurrency(companyId, company, contributions, issues, reads);
   const filed = emptyBoxes();
   for (const c of contributions) addDelta(filed, c.boxes);
   const boxesFils = deriveTotals(currency.converted ? filed : boxes);
@@ -535,7 +556,8 @@ async function convertToFilingCurrency(
   companyId: string,
   company: VatCompanyConfig,
   contributions: VatContribution[],
-  issues: VatIssue[]
+  issues: VatIssue[],
+  reads: VatReadContext
 ): Promise<VatFilingCurrency> {
   const out: VatFilingCurrency = {
     baseCurrency: company.baseCurrency,
@@ -553,7 +575,7 @@ async function convertToFilingCurrency(
     try {
       for (const [key, value] of Object.entries(c.boxes) as Array<[Vat201Key, number]>) {
         if (!value) continue;
-        const r = await toAed(companyId, value, c.date);
+        const r = await toAed(companyId, value, c.date, reads.tx);
         converted[key] = r.fils;
         rates.set(c.date, r.rate);
       }
@@ -591,10 +613,12 @@ async function collectInvoices(
   push: (c: VatContribution) => void,
   issues: VatIssue[],
   excluded: VatComputation["excluded"],
-  counts: Record<string, number>
+  counts: Record<string, number>,
+  reads: VatReadContext
 ) {
-  const baseCurrency = await loadBaseCurrency(companyId);
-  const docs: Invoice[] = await db
+  const baseCurrency = await loadBaseCurrency(companyId, reads.tx);
+  const query = reads.tx ?? db;
+  const docs: Invoice[] = await query
     .select()
     .from(invoices)
     .where(
@@ -606,7 +630,7 @@ async function collectInvoices(
       )
     );
   if (docs.length === 0) return;
-  const lines: InvoiceLine[] = await db
+  const lines: InvoiceLine[] = await query
     .select()
     .from(invoiceLines)
     .where(
@@ -719,8 +743,8 @@ async function collectInvoices(
 
 // ─── Purchases: bills, vendor debit notes ────────────────────────────────
 
-async function tableExists(name: string): Promise<boolean> {
-  const { rows } = await pool.query(`SELECT to_regclass($1) AS t`, [`public.${name}`]);
+async function tableExists(name: string, reads: VatReadContext): Promise<boolean> {
+  const { rows } = await reads.q.query(`SELECT to_regclass($1) AS t`, [`public.${name}`]);
   return !!rows[0]?.t;
 }
 
@@ -744,8 +768,12 @@ function importValueFils(
   return subtotalBase;
 }
 
-async function columnExists(table: string, column: string): Promise<boolean> {
-  const { rows } = await pool.query(
+async function columnExists(
+  table: string,
+  column: string,
+  reads: VatReadContext
+): Promise<boolean> {
+  const { rows } = await reads.q.query(
     `SELECT 1 FROM information_schema.columns
       WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
     [table, column]
@@ -760,14 +788,15 @@ async function collectBills(
   eliminateTrns: Set<string>,
   push: (c: VatContribution) => void,
   excluded: VatComputation["excluded"],
-  counts: Record<string, number>
+  counts: Record<string, number>,
+  reads: VatReadContext
 ) {
-  const baseCurrency = await loadBaseCurrency(companyId);
-  if (!(await tableExists("vendor_bills"))) return;
-  const a1Columns = (await columnExists("vendor_bills", "customs_value"))
+  const baseCurrency = await loadBaseCurrency(companyId, reads.tx);
+  if (!(await tableExists("vendor_bills", reads))) return;
+  const a1Columns = (await columnExists("vendor_bills", "customs_value", reads))
     ? ", customs_value, customs_duty_amount, input_vat_attribution"
     : "";
-  const { rows: bills } = await pool.query(
+  const { rows: bills } = await reads.q.query(
     `SELECT id, vendor_name, vendor_trn, bill_number, bill_date, currency, exchange_rate,
             subtotal, vat_amount, reverse_charge, COALESCE(is_import, false) AS is_import,
             COALESCE(designated_zone, false) AS designated_zone,
@@ -780,12 +809,12 @@ async function collectBills(
     [companyId, from, to]
   );
   if (bills.length === 0) return;
-  const { rows: lines } = await pool.query(
+  const { rows: lines } = await reads.q.query(
     `SELECT bill_id, amount, COALESCE(vat_amount, 0) AS vat_amount,
             COALESCE(vat_supply_type, 'standard_rated') AS vat_supply_type,
             COALESCE(reverse_charge, false) AS reverse_charge
        FROM bill_line_items WHERE bill_id = ANY($1::uuid[])`,
-    [bills.map((b: { id: string }) => b.id)]
+    [bills.map((b) => String(b.id))]
   );
   const byBill = new Map<string, typeof lines>();
   for (const l of lines) {
@@ -854,10 +883,7 @@ async function collectBills(
       continue;
     }
     const billLines = byBill.get(b.id) ?? [];
-    const lineVatSum = billLines.reduce(
-      (s: number, l: { vat_amount: unknown }) => s + fils(l.vat_amount),
-      0
-    );
+    const lineVatSum = billLines.reduce((sum, line) => sum + fils(line.vat_amount), 0);
     if (billLines.length === 0 || (lineVatSum === 0 && vatDoc > 0)) {
       // Legacy bill with no line-level VAT: the whole subtotal carries the bill VAT.
       const kind = purchaseKindFor({ vatFils: vatDoc, designatedZone: b.designated_zone });
@@ -914,12 +940,13 @@ async function collectVendorDebitNotes(
   from: string,
   to: string,
   push: (c: VatContribution) => void,
-  counts: Record<string, number>
+  counts: Record<string, number>,
+  reads: VatReadContext
 ) {
-  const baseCurrency = await loadBaseCurrency(companyId);
-  if (!(await tableExists("vendor_debit_notes"))) return;
-  const hasTreatment = await columnExists("vendor_debit_notes", "vat_treatment");
-  const { rows } = await pool.query(
+  const baseCurrency = await loadBaseCurrency(companyId, reads.tx);
+  if (!(await tableExists("vendor_debit_notes", reads))) return;
+  const hasTreatment = await columnExists("vendor_debit_notes", "vat_treatment", reads);
+  const { rows } = await reads.q.query(
     `SELECT n.id, n.vendor_name, n.debit_note_number, n.note_date, n.currency, n.exchange_rate,
             n.subtotal, n.vat_amount
             ${hasTreatment ? ", n.vat_treatment, n.recoverable_vat_amount, b.input_vat_attribution" : ""}
@@ -968,11 +995,12 @@ async function collectReceipts(
   to: string,
   eliminateTrns: Set<string>,
   push: (c: VatContribution) => void,
-  counts: Record<string, number>
+  counts: Record<string, number>,
+  reads: VatReadContext
 ) {
-  const baseCurrency = await loadBaseCurrency(companyId);
-  const hasTreatments = await tableExists("receipt_vat_treatments");
-  const { rows } = await pool.query(
+  const baseCurrency = await loadBaseCurrency(companyId, reads.tx);
+  const hasTreatments = await tableExists("receipt_vat_treatments", reads);
+  const { rows } = await reads.q.query(
     `SELECT r.id, r.merchant, r.supplier_trn, COALESCE(r.date, r.created_at) AS d, r.amount,
             r.vat_amount, r.currency, r.exchange_rate, r.reverse_charge, r.lines
             ${hasTreatments ? ", t.supply_type AS t_supply, t.vat_base AS t_vat, t.recoverable_vat AS t_rec, t.net_base AS t_net, t.receipt_id AS t_id" : ""}
@@ -1045,9 +1073,10 @@ async function collectFixedAssetDisposals(
   company: VatCompanyConfig,
   push: (c: VatContribution) => void,
   issues: VatIssue[],
-  counts: Record<string, number>
+  counts: Record<string, number>,
+  reads: VatReadContext
 ) {
-  const { rows } = await pool.query(
+  const { rows } = await reads.q.query(
     `SELECT fa.id, fa.asset_name, fa.asset_number, fa.buyer_name,
             to_char(fa.disposal_date, 'YYYY-MM-DD') AS d, fa.disposal_amount, fa.disposal_vat,
             fa.disposal_vat_treatment, fa.disposal_entry_id
@@ -1113,9 +1142,10 @@ async function collectFixedAssetAcquisitions(
   from: string,
   to: string,
   push: (c: VatContribution) => void,
-  counts: Record<string, number>
+  counts: Record<string, number>,
+  reads: VatReadContext
 ) {
-  const { rows } = await pool.query(
+  const { rows } = await reads.q.query(
     `SELECT fa.id, fa.asset_name, fa.asset_number, fa.purchase_cost, fa.acquisition_vat,
             to_char(je.date, 'YYYY-MM-DD') AS d
        FROM fixed_assets fa
@@ -1160,9 +1190,10 @@ async function collectCustomerDeposits(
   from: string,
   to: string,
   push: (c: VatContribution) => void,
-  counts: Record<string, number>
+  counts: Record<string, number>,
+  reads: VatReadContext
 ) {
-  if (!(await tableExists("customer_deposits"))) return;
+  if (!(await tableExists("customer_deposits", reads))) return;
   const familyOf = (t: string): Vat201Family | null =>
     t === "standard"
       ? "standard"
@@ -1171,7 +1202,7 @@ async function collectCustomerDeposits(
         : t === "exempt"
           ? "exempt"
           : null;
-  const received = await pool.query(
+  const received = await reads.q.query(
     `SELECT d.id, d.number, d.customer_name, d.customer_trn, d.emirate, d.vat_treatment,
             d.net_amount, d.vat_amount, d.date::text AS d
        FROM customer_deposits d
@@ -1200,7 +1231,7 @@ async function collectCustomerDeposits(
       ledgerSource: "customer_deposit",
     });
   }
-  const consumed = await pool.query(
+  const consumed = await reads.q.query(
     `SELECT a.id, a.kind, a.amount, a.vat_amount, to_char(a.date, 'YYYY-MM-DD') AS d,
             d.number, d.customer_name, d.customer_trn, d.emirate, d.vat_treatment
        FROM customer_credit_allocations a
@@ -1244,10 +1275,11 @@ async function collectBadDebtRelief(
   from: string,
   to: string,
   push: (c: VatContribution) => void,
-  counts: Record<string, number>
+  counts: Record<string, number>,
+  reads: VatReadContext
 ) {
-  if (!(await tableExists("bad_debt_relief_claims"))) return;
-  const { rows } = await pool.query(
+  if (!(await tableExists("bad_debt_relief_claims", reads))) return;
+  const { rows } = await reads.q.query(
     `SELECT c.id, c.invoice_id, c.claim_date::text AS claim_date, c.reversed_at::text AS reversed_at,
             c.emirate, c.vat_amount, c.taxable_amount, c.status, i.number, i.customer_name, i.customer_trn
        FROM bad_debt_relief_claims c JOIN invoices i ON i.id = c.invoice_id
@@ -1342,10 +1374,11 @@ async function collectReturnAdjustments(
   company: VatCompanyConfig,
   push: (c: VatContribution) => void,
   issues: VatIssue[],
-  counts: Record<string, number>
+  counts: Record<string, number>,
+  reads: VatReadContext
 ) {
-  if (!(await tableExists("vat_return_adjustments"))) return;
-  const { rows } = await pool.query(
+  if (!(await tableExists("vat_return_adjustments", reads))) return;
+  const { rows } = await reads.q.query(
     `SELECT id, kind, emirate, amount, vat_amount, reason, reference, period_end::text AS period_end
        FROM vat_return_adjustments
       WHERE company_id = $1 AND period_start = $2::date AND period_end = $3::date
@@ -1402,11 +1435,12 @@ async function collectBankLineEntries(
   company: VatCompanyConfig,
   push: (c: VatContribution) => void,
   issues: VatIssue[],
-  counts: Record<string, number>
+  counts: Record<string, number>,
+  reads: VatReadContext
 ): Promise<Set<string>> {
   const reported = new Set<string>();
-  if (!(await columnExists("bank_transaction_matches", "vat_treatment"))) return reported;
-  const { rows } = await pool.query(
+  if (!(await columnExists("bank_transaction_matches", "vat_treatment", reads))) return reported;
+  const { rows } = await reads.q.query(
     `SELECT m.journal_entry_id, m.vat_treatment, m.vat_net_amount, m.vat_amount,
             to_char(je.date, 'YYYY-MM-DD') AS d, je.entry_number, je.memo, bt.description
        FROM bank_transaction_matches m
@@ -1492,10 +1526,11 @@ async function collectJournalLineVat(
   vatAccounts: VatAccount[],
   push: (c: VatContribution) => void,
   issues: VatIssue[],
-  counts: Record<string, number>
+  counts: Record<string, number>,
+  reads: VatReadContext
 ): Promise<Set<string>> {
   const reported = new Set<string>();
-  if (!(await columnExists("journal_lines", "vat_treatment"))) return reported;
+  if (!(await columnExists("journal_lines", "vat_treatment", reads))) return reported;
   const inputIds = vatAccounts.filter((a) => a.vatType === "input").map((a) => a.id);
   const outputIds = vatAccounts.filter((a) => a.vatType === "output").map((a) => a.id);
   const signed = (cond: string, sign: "dr" | "cr") =>
@@ -1504,7 +1539,7 @@ async function collectJournalLineVat(
         ? "ROUND(jl.debit * 100) - ROUND(jl.credit * 100)"
         : "ROUND(jl.credit * 100) - ROUND(jl.debit * 100)"
     } ELSE 0 END), 0)::bigint`;
-  const { rows } = await pool.query(
+  const { rows } = await reads.q.query(
     `SELECT jl.entry_id, je.entry_number, je.memo, je.source,
             to_char((je.date + interval '4 hours')::date, 'YYYY-MM-DD') AS d,
             ${signed("jl.vat_treatment = 'standard' AND a.type = 'income'", "cr")} AS std_sales,
@@ -1603,14 +1638,17 @@ export interface VatAccount {
   vatType: "input" | "output";
 }
 
-export async function loadVatAccounts(companyId: string): Promise<VatAccount[]> {
-  const { rows } = await pool.query(
+export async function loadVatAccounts(
+  companyId: string,
+  reads: VatReadContext = defaultReads()
+): Promise<VatAccount[]> {
+  const { rows } = await reads.q.query(
     `SELECT id, code, vat_type FROM accounts
       WHERE company_id = $1
         AND ((is_vat_account = true AND vat_type IN ('input','output')) OR code IN ('1050','2020'))`,
     [companyId]
   );
-  return rows.map((r: { id: string; code: string; vat_type: string | null }) => ({
+  return rows.map((r) => ({
     id: r.id,
     code: r.code,
     vatType: (r.vat_type === "input" || r.vat_type === "output"
@@ -1637,7 +1675,8 @@ async function collectLedger(
   to: string,
   vatAccounts: VatAccount[],
   /** Entries already reported from their document (bank-line entries with a VAT treatment). */
-  documentEntries: ReadonlySet<string> = new Set()
+  documentEntries: ReadonlySet<string> = new Set(),
+  reads: VatReadContext = defaultReads()
 ): Promise<LedgerVat> {
   const byCategory = new Map<ReconCategory, { output: number; input: number }>();
   const byCategoryDate: LedgerVat["byCategoryDate"] = [];
@@ -1645,18 +1684,22 @@ async function collectLedger(
   const manual = new Map<string, ManualJournal>();
   if (vatAccounts.length === 0) return { byCategory, byCategoryDate, manual: [] };
   const typeOf = new Map(vatAccounts.map((a) => [a.id, a.vatType]));
-  const lines = await ledgerLines(companyId, {
-    from,
-    to,
-    accountIds: vatAccounts.map((a) => a.id),
-  });
+  const lines = await ledgerLines(
+    companyId,
+    {
+      from,
+      to,
+      accountIds: vatAccounts.map((a) => a.id),
+    },
+    reads.q
+  );
   // Reversal entries carry the original entry id: resolve them to the original's source.
   const reversalIds = [
     ...new Set(lines.filter((l) => l.source === "reversal" && l.sourceId).map((l) => l.sourceId!)),
   ];
   const originalSource = new Map<string, string>();
   if (reversalIds.length) {
-    const { rows } = await pool.query(
+    const { rows } = await reads.q.query(
       `SELECT id, source FROM journal_entries WHERE company_id = $1 AND id = ANY($2::uuid[])`,
       [companyId, reversalIds]
     );
@@ -1666,7 +1709,7 @@ async function collectLedger(
   const entryIds = [...new Set(lines.map((l) => l.entryId))];
   const receiptEntries = new Set<string>();
   if (entryIds.length) {
-    const { rows } = await pool.query(
+    const { rows } = await reads.q.query(
       `SELECT journal_entry_id FROM receipts WHERE company_id = $1 AND journal_entry_id = ANY($2::uuid[])`,
       [companyId, entryIds]
     );
@@ -1732,10 +1775,11 @@ interface VatGroupInfo {
 }
 
 export async function loadVatGroupForRepresentative(
-  companyId: string
+  companyId: string,
+  reads: VatReadContext = defaultReads()
 ): Promise<VatGroupInfo | null> {
-  if (!(await tableExists("vat_groups"))) return null;
-  const { rows } = await pool.query(
+  if (!(await tableExists("vat_groups", reads))) return null;
+  const { rows } = await reads.q.query(
     `SELECT g.id, g.name, g.group_trn,
             COALESCE(array_agg(m.company_id) FILTER (WHERE m.company_id IS NOT NULL), '{}') AS members
        FROM vat_groups g LEFT JOIN vat_group_members m ON m.group_id = g.id
@@ -1757,9 +1801,10 @@ export async function loadVatGroupForRepresentative(
 async function computeGroup(
   input: ComputeVatInput,
   company: VatCompanyConfig,
-  group: VatGroupInfo
+  group: VatGroupInfo,
+  reads: VatReadContext
 ): Promise<VatComputation> {
-  const { rows } = await pool.query(
+  const { rows } = await reads.q.query(
     `SELECT id, trn_vat_number FROM companies WHERE id = ANY($1::uuid[])`,
     [group.memberIds]
   );
@@ -1768,8 +1813,8 @@ async function computeGroup(
     if (r.trn_vat_number) trns.add(String(r.trn_vat_number).trim());
   const parts: VatComputation[] = [];
   for (const memberId of group.memberIds) {
-    const memberCompany = memberId === company.id ? company : await loadVatCompany(memberId);
-    parts.push(await computeSingle({ ...input, companyId: memberId }, memberCompany, trns));
+    const memberCompany = memberId === company.id ? company : await loadVatCompany(memberId, reads);
+    parts.push(await computeSingle({ ...input, companyId: memberId }, memberCompany, trns, reads));
   }
   const boxes = emptyBoxes();
   const contributions: VatContribution[] = [];
@@ -1794,7 +1839,7 @@ async function computeGroup(
   // S8: member boxes are filed in AED, so a non-AED member's VAT GL balances are converted to
   // AED the same way (fx.toVatFilingCurrency at the entry date) before the group reconciliation.
   const ledgers: Array<Map<ReconCategory, { output: number; input: number }>> = [];
-  for (const p of parts) ledgers.push(await groupMemberLedgerInAed(p, issues));
+  for (const p of parts) ledgers.push(await groupMemberLedgerInAed(p, issues, reads));
   if (!input.allowIncomplete && blockingIssues(issues).length > 0)
     throwBlocking(blockingIssues(issues));
   const boxesFils = deriveTotals(boxes);
@@ -1829,7 +1874,8 @@ async function computeGroup(
 /** A member's VAT GL balances by category, in its functional currency (AED members) or AED. */
 async function groupMemberLedgerInAed(
   part: VatComputation,
-  issues: VatIssue[]
+  issues: VatIssue[],
+  reads: VatReadContext
 ): Promise<Map<ReconCategory, { output: number; input: number }>> {
   const m = new Map<ReconCategory, { output: number; input: number }>();
   if (part.company.baseCurrency === VAT_FILING_CURRENCY) {
@@ -1843,8 +1889,12 @@ async function groupMemberLedgerInAed(
   for (const row of ledgerByDate.get(part) ?? []) {
     if (missing.has(row.date)) continue;
     try {
-      const output = row.output ? (await toAed(part.companyId, row.output, row.date)).fils : 0;
-      const input = row.input ? (await toAed(part.companyId, row.input, row.date)).fils : 0;
+      const output = row.output
+        ? (await toAed(part.companyId, row.output, row.date, reads.tx)).fils
+        : 0;
+      const input = row.input
+        ? (await toAed(part.companyId, row.input, row.date, reads.tx)).fils
+        : 0;
       const agg = m.get(row.category) ?? { output: 0, input: 0 };
       agg.output += output;
       agg.input += input;

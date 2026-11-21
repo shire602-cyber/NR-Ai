@@ -104,6 +104,31 @@ describe("R17-15 DNS pinning", () => {
     expect(verdict.ok).toBe(false);
   });
 
+  it("does not send a request when DNS resolves after cancellation", async () => {
+    let finishLookup!: () => void;
+    const lookup = new Promise<void>((resolve) => {
+      finishLookup = resolve;
+    });
+    __setOutboundGuardForTests({
+      isBlocked,
+      resolve: async () => {
+        await lookup;
+        return [{ address: "127.0.0.1", family: 4 }];
+      },
+    });
+    const controller = new AbortController();
+    const pending = safeOutboundFetch(`http://public.test:${port}/hook`, {
+      method: "POST",
+      body: "webhook",
+      signal: controller.signal,
+    });
+    controller.abort();
+    finishLookup();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(seen).toHaveLength(0);
+  });
+
   it("[R17-15] redirects are returned as-is by default and re-validated hop by hop when followed", async () => {
     __setOutboundGuardForTests({
       isBlocked,

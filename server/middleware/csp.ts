@@ -77,14 +77,13 @@ export function buildCspDirectives() {
  * Browsers evaluate it, block nothing, and POST any violation to
  * /api/csp-report.
  *
- * How to finish the job:
- *   1. Deploy. Exercise the app normally for a week.
- *   2. Grep the logs for "CSP violation reported" with
- *      effectiveDirective "style-src-elem" / "style-src-attr".
- *   3. Zero violations  -> promote these directives into buildCspDirectives()
- *                          and delete the report-only policy.
- *      Some violations  -> they name the exact file and line injecting the
- *                          style; nonce or remove those, then re-check.
+ * Exercise representative flows with the report-only header and confirm the
+ * report endpoint receives browser reports. Filter "CSP violation reported"
+ * log records by the `directive` field for `style-src-elem`, `style-src-attr`
+ * or the `style-src` fallback. The accompanying request ID identifies the
+ * report POST. Reproduce violations in browser DevTools to locate the
+ * injection site. Promote the policy only after verifying the reporting path
+ * and exercising the relevant flows without violations.
  *
  * `styleSrcAttr` deliberately keeps 'unsafe-inline': React's `style={{…}}`
  * needs it and removing it would require rewriting 219 call sites. The value
@@ -154,9 +153,8 @@ const cspReportDirectives = new Set([
 ]);
 
 /**
- * CSP violation report endpoint. The browser POSTs JSON describing the
- * blocked resource. We log a structured warning so it shows up in pino output
- * and any downstream log aggregator without spamming at error level.
+ * CSP violation report endpoint. Reports log the recognized directive and
+ * the report request ID. Use browser diagnostics for source URLs and lines.
  */
 export function cspReportHandler(req: Request, res: Response): void {
   // CSP reports may include full URLs and are also accepted from unauthenticated clients.

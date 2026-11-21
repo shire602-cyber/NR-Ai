@@ -757,11 +757,13 @@ function advance(dateIso: string, cycle: string | null): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Invoice every active engagement of the firm whose next billing date is due. */
+/** Invoice due active engagements for the caller's authorized set of clients. */
 export async function runRecurringBilling(
   ctx: Pick<FirmContext, "firmId"> & { userId?: string | null },
+  companyIds: string[],
   asOf: Date = new Date()
 ) {
+  if (!companyIds.length) return { created: 0, invoices: [] };
   const today = asOf.toISOString().slice(0, 10);
   const due = await db
     .select()
@@ -769,6 +771,7 @@ export async function runRecurringBilling(
     .where(
       and(
         eq(engagements.firmId, ctx.firmId),
+        inArray(engagements.companyId, companyIds),
         eq(engagements.status, "active"),
         lte(engagements.nextBillingDate, today)
       )

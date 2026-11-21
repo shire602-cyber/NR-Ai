@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { findUnsupportedBankFeedClaim } from "../e2e/lib/bank-feed-claims.mjs";
 
 const repoRoot = process.cwd();
 
@@ -43,6 +44,13 @@ const publicLaunchFiles = [
   "client/src/locales/ar/marketing.json",
 ];
 
+const delegatedBankCopyFiles = new Set([
+  "client/src/components/marketing/phase/PhaseSite.tsx",
+  "client/src/components/marketing/phase/content.ts",
+  "client/src/locales/en/marketing.json",
+  "client/src/locales/ar/marketing.json",
+]);
+
 const bannedLaunchClaims = [
   /FTA-compliant/i,
   /FTA Compliant/i,
@@ -69,12 +77,6 @@ const bannedLaunchClaims = [
   /all data automatically/i,
   /reports generated automatically/i,
   /Untouched/i,
-  /Connect Your Bank/i,
-  /Securely link your.*bank account/i,
-  /via encrypted feeds/i,
-  /UAE bank feeds/i,
-  /Photo, email forward, or bank feed/i,
-  /sync a bank line/i,
   /compliant with FTA/i,
   /SOC 2 Type II/i,
   /Trusted by 500\+ UAE businesses/i,
@@ -139,6 +141,12 @@ describe("Public SaaS launch surface", () => {
       for (const bannedClaim of bannedLaunchClaims) {
         expect(source, `${file} contains ${bannedClaim}`).not.toMatch(bannedClaim);
       }
+      expect(
+        findUnsupportedBankFeedClaim(source, {
+          allowDelegatedRoadmapCopy: delegatedBankCopyFiles.has(file),
+        }),
+        `${file} contains an unsupported bank feed claim`
+      ).toBeNull();
     }
   });
 
@@ -170,6 +178,10 @@ describe("Public SaaS launch surface", () => {
       for (const bannedClaim of bannedLaunchClaims) {
         expect(source, `${file} contains ${bannedClaim}`).not.toMatch(bannedClaim);
       }
+      expect(
+        findUnsupportedBankFeedClaim(source),
+        `${file} contains an unsupported bank feed claim`
+      ).toBeNull();
     }
   });
 
@@ -310,11 +322,55 @@ describe("Public SaaS launch surface", () => {
     for (const expectedDemoSignal of [
       "Sample company workspace",
       "Pearl Trading LLC",
-      "CSV statement import, no live feed needed",
       "Export VAT 201 workbook",
     ]) {
       expect(demoSource).toContain(expectedDemoSignal);
     }
+  });
+
+  it.each([
+    "Connect your bank in seconds",
+    "Review transactions via encrypted feeds",
+    "Live bank feeds are available now.",
+    "Bank feeds are coming soon.",
+    "We will support live bank feeds.",
+    "اربط حسابك البنكي واستورد المعاملات.",
+    "يمكنك ربط حسابك البنكي مباشرة.",
+    "زامن معاملاتك البنكية تلقائيًا.",
+    "الربط البنكي المباشر متاح الآن.",
+    "سيتوفر الربط البنكي المباشر لاحقًا.",
+  ])("flags an unsupported bank feed claim: %s", (copy) => {
+    expect(findUnsupportedBankFeedClaim(copy)).not.toBeNull();
+  });
+
+  it.each([
+    "CSV statement import, no live feed needed",
+    "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.",
+    "Live bank feeds are not supported.",
+    "UAE bank feeds are not supported.",
+    "We don't support UAE bank feeds.",
+    "Do not connect your bank; upload a CSV statement.",
+    "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك.",
+    "الربط البنكي المباشر غير متاح.",
+    "لا يمكنك ربط حسابك البنكي مباشرة.",
+  ])("accepts manual CSV or an honest negation: %s", (copy) => {
+    expect(findUnsupportedBankFeedClaim(copy)).toBeNull();
+  });
+
+  it("does not let an honest negation mask a later positive claim", () => {
+    const copy = "UAE bank feeds are not supported. Securely link your bank account today.";
+    expect(findUnsupportedBankFeedClaim(copy)).toBe("Securely link your bank account");
+  });
+
+  it("limits the parallel copy exemption to the existing roadmap sentences", () => {
+    const copy = "Live bank feeds are coming later. سيتوفر الربط البنكي المباشر لاحقًا.";
+    expect(findUnsupportedBankFeedClaim(copy)).not.toBeNull();
+    expect(findUnsupportedBankFeedClaim(copy, { allowDelegatedRoadmapCopy: true })).toBeNull();
+    expect(
+      findUnsupportedBankFeedClaim(`${copy} Connect your bank today.`, {
+        allowDelegatedRoadmapCopy: true,
+      })
+    ).toBe("Connect your bank");
   });
 
   // X6b: the old test here compared advertised free-plan limits with source text. Pricing, the

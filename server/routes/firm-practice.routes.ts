@@ -817,7 +817,7 @@ export function registerFirmPracticeRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const ctx = firmContextOf(res);
       const { asOf } = parsedBody<z.output<typeof recurringSchema>>(req);
-      res.json(await runRecurringBilling(ctx, dateOf(asOf)));
+      res.json(await runRecurringBilling(ctx, await listAccessibleClientIds(ctx), dateOf(asOf)));
     })
   );
 

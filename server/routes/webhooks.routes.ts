@@ -265,6 +265,14 @@ export function registerWebhookRoutes(app: Express) {
       );
       if (!rows[0]) throw new DomainError("NOT_FOUND", 404, undefined, "Delivery not found");
       const replayId = await replayWebhookDelivery(rows[0].id);
+      if (!replayId) {
+        throw new DomainError(
+          "INVALID_STATUS",
+          409,
+          undefined,
+          "Replay requires a completed delivery with a known outcome"
+        );
+      }
       const { rows: d } = await pool.query(
         `SELECT id, status, attempt_number AS "attemptNumber", response_status AS "responseStatus"
            FROM webhook_deliveries WHERE id = $1`,

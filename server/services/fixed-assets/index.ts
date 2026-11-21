@@ -32,6 +32,7 @@ import { journalLine, journalMemo } from "@shared/journal-memo";
 import { sql } from "drizzle-orm";
 import { db, pool } from "../../db";
 import { DomainError } from "../../errors";
+import type { Queryable } from "../../reporting";
 import { createLogger } from "../../config/logger";
 import { fromFils, toFils } from "../../../shared/money";
 import { isNonDepreciableCategory } from "../../../shared/validators/fixed-assets";
@@ -398,7 +399,11 @@ export async function capitalizeAsset(
     key: `${FA_SOURCE}:${a.id}:capitalize`,
     ...(args.openingBalance ? { kind: "opening" as const } : {}),
     lines: [
-      { accountId: acc.cost, debitFils: costFils, ...journalLine("assetCapitalize", { asset: a.asset_name }) },
+      {
+        accountId: acc.cost,
+        debitFils: costFils,
+        ...journalLine("assetCapitalize", { asset: a.asset_name }),
+      },
       ...(vatAccount
         ? [
             {
@@ -1573,8 +1578,8 @@ async function invoiceSalesLines(
  *    gross revaluation adjustment on the cost account.
  * Assets bought after asOf are not on the register at asOf.
  */
-export async function assetRegister(companyId: string, asOf: string) {
-  const { rows } = await pool.query(
+export async function assetRegister(companyId: string, asOf: string, q: Queryable = pool) {
+  const { rows } = await q.query(
     `SELECT fa.*, to_char(fa.purchase_date, 'YYYY-MM-DD') AS purchase_iso,
             to_char(fa.disposal_date, 'YYYY-MM-DD') AS disposal_iso, c.code AS class_code, cc.code AS cost_center_code
        FROM fixed_assets fa
@@ -1584,14 +1589,14 @@ export async function assetRegister(companyId: string, asOf: string) {
       ORDER BY fa.purchase_date, fa.asset_name`,
     [companyId, asOf]
   );
-  const defaults = await pool.query(
+  const defaults = await q.query(
     `SELECT code, id FROM accounts WHERE company_id = $1 AND code IN ($2, $3, $4)`,
     [companyId, FA_CODES.COST, FA_CODES.ACCUMULATED, FA_CODES.REVALUATION]
   );
   const byCode = new Map(defaults.rows.map((r) => [r.code as string, r.id as string]));
   const LOCAL = `((je.date + interval '4 hours')::date)`;
   const [after, deps, reserve, recost] = await Promise.all([
-    pool.query(
+    q.query(
       `SELECT je.source_id AS asset_id, jl.account_id,
               SUM(ROUND(jl.debit * 100) - ROUND(jl.credit * 100))::bigint AS f
          FROM journal_entries je JOIN journal_lines jl ON jl.entry_id = je.id
@@ -1600,7 +1605,7 @@ export async function assetRegister(companyId: string, asOf: string) {
         GROUP BY 1, 2`,
       [companyId, asOf, FA_SOURCE]
     ),
-    pool.query(
+    q.query(
       `WITH r AS (
          SELECT je.source_id AS asset_id, MAX(je.created_at) AS at
            FROM journal_entries je
@@ -1619,7 +1624,7 @@ export async function assetRegister(companyId: string, asOf: string) {
         GROUP BY 1, 2`,
       [companyId, asOf, FA_SOURCE]
     ),
-    pool.query(
+    q.query(
       `SELECT je.source_id AS asset_id,
               SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100))::bigint AS f
          FROM journal_entries je JOIN journal_lines jl ON jl.entry_id = je.id
@@ -1628,7 +1633,7 @@ export async function assetRegister(companyId: string, asOf: string) {
         GROUP BY 1`,
       [companyId, asOf, FA_SOURCE, byCode.get(FA_CODES.REVALUATION) ?? null]
     ),
-    pool.query(
+    q.query(
       `SELECT asset_id, COALESCE(SUM(ROUND(amount * 100)), 0)::bigint AS f
          FROM fixed_asset_events
         WHERE company_id = $1 AND event_type = 'recosted' AND event_date > $2::date
