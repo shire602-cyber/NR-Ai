@@ -39,6 +39,7 @@ beforeEach(() => {
     vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : String(input);
       if (url.includes("/api/csrf-token")) return json({ csrfToken: "x" });
+      if (url.endsWith("/bank/providers")) return json({ isConfigured: false, statuses: [] });
       if (/\/api\/companies$/.test(url)) return json([{ id: "c-1", name: "شركة الواحة" }]);
       if (url.endsWith("/bank-accounts"))
         return json([
@@ -70,20 +71,23 @@ afterEach(async () => {
   useI18n.getState().setLocale("en");
 });
 
-async function mountPage(locale: "en" | "ar") {
+async function mountPage(locale: "en" | "ar", page: "reconciliation" | "feeds" = "reconciliation") {
   const i18n = await import("../../client/src/lib/i18n");
   await act(async () => i18n.useI18n.getState().setLocale(locale));
   const { queryClient } = await import("../../client/src/lib/queryClient");
   queryClient.clear();
   const { ActiveCompanyProvider } =
     await import("../../client/src/components/ActiveCompanyProvider");
-  const { default: BankReconciliation } = await import("../../client/src/pages/BankReconciliation");
+  const { default: Page } =
+    page === "feeds"
+      ? await import("../../client/src/pages/BankFeeds")
+      : await import("../../client/src/pages/BankReconciliation");
   await act(async () => {
     root.render(
       createElement(
         QueryClientProvider,
         { client: queryClient },
-        createElement(ActiveCompanyProvider, null, createElement(BankReconciliation))
+        createElement(ActiveCompanyProvider, null, createElement(Page))
       )
     );
   });
@@ -91,6 +95,38 @@ async function mountPage(locale: "en" | "ar") {
 }
 
 const dialog = () => document.querySelector('[role="dialog"]') as HTMLElement | null;
+
+describe("bank statements without a feed provider", () => {
+  it.each([
+    {
+      locale: "en" as const,
+      title: "Import a CSV bank statement",
+      workflow:
+        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
+    },
+    {
+      locale: "ar" as const,
+      title: "استورد كشف حساب بنكي بصيغة CSV",
+      workflow: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
+    },
+  ])(
+    "points to the CSV import and localizes the provider error in $locale",
+    async ({ locale, title, workflow }) => {
+      window.history.replaceState(null, "", "/bank-feeds");
+      await mountPage(locale, "feeds");
+      expect(container.textContent).toContain(title);
+      expect(container.textContent).toContain(workflow);
+      expect(
+        container
+          .querySelector('[data-testid="button-feeds-import-statement"]')
+          ?.getAttribute("href")
+      ).toBe("/bank-reconciliation?import=1");
+
+      const { serverErrorCopy } = await import("../../client/src/lib/validation-messages");
+      expect(serverErrorCopy(locale, "BANK_FEED_NOT_CONFIGURED")).toBe(`${workflow}.`);
+    }
+  );
+});
 
 describe("bank statement import dialog", () => {
   it("in Arabic: every line is Arabic, including the supported formats and the Import button", async () => {

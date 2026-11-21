@@ -196,6 +196,14 @@ export async function runMigrations(migrationsFolder: string): Promise<void> {
   }
 }
 
+// Use the same expressions for DDL and comparison with PostgreSQL's catalog deparser.
+const vatGroupAuditMembershipExpression = `CASE
+    WHEN octet_length(details) <= 2048 THEN string_to_array(lower(details), '"'::text)
+    ELSE regexp_split_to_array(lower(details), '"|[^"]{37,}'::text)
+END`;
+const vatGroupAuditMembershipPredicate =
+  "resource_type = 'vat_group'::text AND action = 'vat.group.upsert'::text";
+
 async function ensureVatGroupAuditMembershipIndex(): Promise<void> {
   const client = await pool.connect();
   try {
@@ -212,16 +220,29 @@ async function ensureVatGroupAuditMembershipIndex(): Promise<void> {
     } = await client.query<{
       indisvalid: boolean;
       on_audit_logs: boolean;
-      method: string;
+      expected_key_type: boolean;
+      expression: string | null;
+      predicate: string | null;
     }>(
       `SELECT i.indisvalid, i.indrelid = 'public.audit_logs'::regclass AS on_audit_logs,
-              am.amname AS method
+              (am.amname = 'gin' AND i.indnkeyatts = 1 AND i.indnatts = 1
+                AND i.indcollation[0] = 'pg_catalog."default"'::regcollation
+                AND opc.opcnamespace = 'pg_catalog'::regnamespace
+                AND opc.opcname = 'array_ops') AS expected_key_type,
+              pg_get_expr(i.indexprs, i.indrelid, true) AS expression,
+              pg_get_expr(i.indpred, i.indrelid, true) AS predicate
          FROM pg_index i
          JOIN pg_class c ON c.oid = i.indexrelid
          JOIN pg_am am ON am.oid = c.relam
+         JOIN pg_opclass opc ON opc.oid = i.indclass[0]
         WHERE i.indexrelid = to_regclass('public.idx_audit_logs_vat_group_member_ids')`
     );
-    if (index && (!index.on_audit_logs || (index.indisvalid && index.method !== "gin"))) {
+    const normalize = (value: string | null) => value?.replace(/\s+/g, " ").trim();
+    const definitionMatches =
+      index?.expected_key_type &&
+      normalize(index.expression) === normalize(vatGroupAuditMembershipExpression) &&
+      normalize(index.predicate) === vatGroupAuditMembershipPredicate;
+    if (index && (!index.on_audit_logs || (index.indisvalid && !definitionMatches))) {
       throw new Error("Unexpected index definition for idx_audit_logs_vat_group_member_ids");
     }
     if (index?.indisvalid) return;
@@ -231,13 +252,8 @@ async function ensureVatGroupAuditMembershipIndex(): Promise<void> {
     // Limit index keys for oversized payloads, including malformed legacy audit text.
     await client.query(`
       CREATE INDEX CONCURRENTLY idx_audit_logs_vat_group_member_ids
-        ON public.audit_logs USING gin ((
-          CASE WHEN octet_length(details) <= 2048
-               THEN string_to_array(lower(details), '"')
-               ELSE regexp_split_to_array(lower(details), '"|[^"]{37,}')
-          END
-        ))
-        WHERE resource_type = 'vat_group' AND action = 'vat.group.upsert'
+        ON public.audit_logs USING gin ((${vatGroupAuditMembershipExpression}))
+        WHERE ${vatGroupAuditMembershipPredicate}
     `);
   } finally {
     // Closing the dedicated connection releases the session lock even if the build fails.

@@ -134,6 +134,52 @@ describe("migrations", () => {
   );
 
   it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "rejects an audit membership GIN index with the wrong expression or predicate",
+    async () => {
+      const name = "idx_audit_logs_vat_group_member_ids";
+      const { ensureCriticalSchema } = await import("../../server/db");
+      const release = () => ensureCriticalSchema({ requireVatGroupAuditMembershipIndex: true });
+      const indexDefinition = async () => {
+        const [row] = await h.sql<{ definition: string }>(
+          `SELECT pg_get_indexdef(to_regclass('public.${name}')) AS definition`
+        );
+        return row.definition;
+      };
+      const expected = await indexDefinition();
+      const replacements = [
+        `CREATE INDEX ${name} ON audit_logs USING gin (to_tsvector('simple', details))
+           WHERE resource_type = 'vat_group' AND action = 'vat.group.upsert'`,
+        `CREATE INDEX ${name} ON audit_logs USING gin (string_to_array(lower(details), '"'))
+           WHERE resource_type = 'vat_group' AND action = 'vat.group.upsert'`,
+        expected.replace(/ WHERE .*$/s, ""),
+        expected.replace(/\) WHERE /, ' COLLATE "C") WHERE '),
+      ];
+      await h.sql(`DROP INDEX public.${name}`);
+      try {
+        for (const ddl of replacements) {
+          await h.sql(ddl);
+          try {
+            const unexpected = await indexDefinition();
+            expect(unexpected).not.toBe(expected);
+            await expect(ensureCriticalSchema()).resolves.toBeUndefined();
+            await expect(release()).rejects.toThrow(
+              "Unexpected index definition for idx_audit_logs_vat_group_member_ids"
+            );
+            expect(await indexDefinition()).toBe(unexpected);
+          } finally {
+            await h.sql(`DROP INDEX public.${name}`);
+          }
+        }
+      } finally {
+        await release();
+      }
+      expect(await indexDefinition()).toBe(expected);
+      await expect(release()).resolves.toBeUndefined();
+    },
+    60_000
+  );
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
     "repairs an interrupted VAT audit membership index build on the release schema path",
     async () => {
       const indexState = () =>

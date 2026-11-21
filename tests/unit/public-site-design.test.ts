@@ -193,6 +193,45 @@ it.each([
 });
 
 describe("D1 public site", () => {
+  it.each([
+    [
+      "en",
+      "How do I reconcile my bank account?",
+      "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
+    ],
+    [
+      "ar",
+      "كيف أطابق حسابي البنكي؟",
+      "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
+    ],
+  ])(
+    "describes bank reconciliation as CSV import on the %s public site",
+    async (locale, question, workflow) => {
+      const { default: PhaseRoot } =
+        await import("../../client/src/components/marketing/phase/PhaseRoot");
+      const previousUrl = window.location.href;
+      try {
+        window.history.replaceState(null, "", `/${locale}`);
+        await act(async () => root.render(createElement(PhaseRoot)));
+        const faq = Array.from(container.querySelectorAll("details")).find((entry) =>
+          entry.querySelector("summary")?.textContent?.includes(question)
+        );
+        expect(faq?.querySelector("p")?.textContent).toBe(`${workflow}.`);
+
+        await act(async () => root.unmount());
+        root = createRoot(container);
+        window.history.replaceState(null, "", `/${locale}/product/bank-reconciliation`);
+        await act(async () => root.render(createElement(PhaseRoot)));
+        expect(container.querySelector("main")?.textContent).toContain(workflow);
+        expect(container.querySelector("main")?.textContent).not.toMatch(
+          /live bank feeds|الربط البنكي المباشر/i
+        );
+      } finally {
+        window.history.replaceState(null, "", previousUrl);
+      }
+    }
+  );
+
   it("[D1] the landing page leads with an honest value proposition and sets its SEO meta", async () => {
     const { default: PhaseSite } =
       await import("../../client/src/components/marketing/phase/PhaseSite");
@@ -200,9 +239,9 @@ describe("D1 public site", () => {
     const h1 = container.querySelector("h1");
     expect(h1?.textContent).toBe("Accounting and VAT for UAE businesses");
     expect(document.title).toContain(h1?.textContent);
-    expect(document.head.querySelector('meta[name="description"]')?.getAttribute("content")).toContain(
-      "Send bilingual invoices"
-    );
+    expect(
+      document.head.querySelector('meta[name="description"]')?.getAttribute("content")
+    ).toContain("Send bilingual invoices");
     // Primary CTAs keep their routes.
     const register = container.querySelector('[data-testid="button-hero-start"]');
     expect(register?.getAttribute("href")).toBe("/register");
