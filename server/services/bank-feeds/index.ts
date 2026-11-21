@@ -4,8 +4,7 @@
  *  - connect refuses with 503 BANK_FEED_NOT_CONFIGURED when the provider has no credentials
  *  - the OAuth state is random, stored as a SHA-256 hash, single-use, 10-minute expiry, bound to
  *    company + user + provider, and verified on callback (400 INVALID_OAUTH_STATE otherwise)
- *  - the redirect URI must be on an allow-list (BANK_FEED_REDIRECT_URIS, else FRONTEND_URL /
- *    AUTH_PUBLIC_URL + /bank-feeds/callback)
+ *  - the redirect URI must be on the explicit BANK_FEED_REDIRECT_URIS allow-list
  *  - tokens are stored only through storage.createBankConnection / updateBankConnectionTokens,
  *    which encrypt with server/services/secret-vault.ts; API responses never include them
  *  - scheduled sync (job "bankFeeds.sync") dedupes by provider transaction id and emits
@@ -18,6 +17,7 @@ import { DomainError } from "../../errors";
 import { storage } from "../../storage";
 import { createLogger } from "../../config/logger";
 import { getCapability, type CapabilityStatus } from "../../../shared/capabilities";
+import { BANK_STATEMENT_UPDATE_FAILURE } from "../../../shared/server-copy";
 import { fromFils } from "../../../shared/money";
 import {
   bankAccounts,
@@ -42,7 +42,14 @@ const STATE_TTL_MS = 10 * 60 * 1000;
 
 export function getAdapter(provider: string): BankFeedAdapter {
   const adapter = BANK_FEED_ADAPTERS[provider];
-  if (!adapter) throw new DomainError("BANK_FEED_UNKNOWN_PROVIDER", 400);
+  if (!adapter) {
+    throw new DomainError(
+      "BANK_FEED_UNKNOWN_PROVIDER",
+      400,
+      undefined,
+      "Upload a CSV exported from your bank to continue."
+    );
+  }
   return adapter;
 }
 
@@ -52,18 +59,15 @@ function assertConfigured(adapter: BankFeedAdapter): void {
       "BANK_FEED_NOT_CONFIGURED",
       503,
       { provider: adapter.id, capability: adapter.capability },
-      `${adapter.label} is not connected — it requires a provider contract and credentials`
+      "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books."
     );
   }
 }
 
 export interface ProviderStatus {
   id: BankFeedProviderId;
-  label: string;
   configured: boolean;
   status: CapabilityStatus;
-  message: { en: string; ar: string };
-  externalAction: { en: string; ar: string };
 }
 
 /** Honest status per provider, from shared/capabilities.ts. */
@@ -73,42 +77,26 @@ export function providerStatuses(): ProviderStatus[] {
     const configured = a.isConfigured();
     return {
       id: a.id,
-      label: a.label,
       configured,
       status: configured ? cap.status : "requires_external",
-      message: configured
-        ? cap.status === "sandbox"
-          ? {
-              en: "Sandbox credentials — test data only",
-              ar: "بيانات اعتماد تجريبية — بيانات اختبار فقط",
-            }
-          : { en: "Configured", ar: "مُعد" }
-        : {
-            en: "Not connected — requires provider contract",
-            ar: "غير متصل — يتطلب عقداً مع مزود الخدمة",
-          },
-      externalAction: cap.externalAction,
     };
   });
 }
 
 /** Exact redirect URIs the connect flow may send the user back to. */
 export function allowedRedirectUris(): string[] {
-  const explicit = (process.env.BANK_FEED_REDIRECT_URIS ?? "")
+  return (process.env.BANK_FEED_REDIRECT_URIS ?? "")
     .split(",")
     .map((s) => s.trim())
-    .filter(Boolean);
-  if (explicit.length) return explicit;
-  const out: string[] = [];
-  for (const base of [process.env.FRONTEND_URL, process.env.AUTH_PUBLIC_URL]) {
-    if (!base) continue;
-    try {
-      out.push(new URL("/bank-feeds/callback", base).toString());
-    } catch {
-      /* ignore malformed env */
-    }
-  }
-  return out;
+    .filter((uri) => {
+      try {
+        const path = decodeURIComponent(new URL(uri).pathname);
+        // The retired customer callback navigates to the CSV screen without processing OAuth.
+        return !/^\/bank-feeds\/callback\/*$/i.test(path);
+      } catch {
+        return false;
+      }
+    });
 }
 
 function assertAllowedRedirect(uri: string): void {
@@ -118,7 +106,7 @@ function assertAllowedRedirect(uri: string): void {
       "REDIRECT_URI_NOT_ALLOWED",
       400,
       { allowed },
-      "The redirect URI is not on the bank-feed allow-list"
+      "The redirect address is not allowed. Upload a CSV exported from your bank to continue."
     );
   }
 }
@@ -163,7 +151,11 @@ export function sanitizeConnection(c: BankConnection) {
   const { accessToken: _a, refreshToken: _r, ...rest } = c;
   void _a;
   void _r;
-  return { ...rest, hasToken: Boolean(c.accessToken) };
+  return {
+    ...rest,
+    lastError: c.lastError ? BANK_STATEMENT_UPDATE_FAILURE.message : null,
+    hasToken: Boolean(c.accessToken),
+  };
 }
 
 export async function completeCallback(input: {
@@ -194,7 +186,7 @@ export async function completeCallback(input: {
       "INVALID_OAUTH_STATE",
       400,
       undefined,
-      "The bank connection request expired or did not start here. Start again."
+      "This request expired or wasn't recognized. Upload a CSV statement to continue."
     );
   }
   assertConfigured(adapter);
@@ -206,7 +198,14 @@ export async function completeCallback(input: {
   } catch (err) {
     throw providerFailure(adapter, err);
   }
-  if (accounts.length === 0) throw new DomainError("BANK_FEED_NO_ACCOUNTS", 422);
+  if (accounts.length === 0) {
+    throw new DomainError(
+      "BANK_FEED_NO_ACCOUNTS",
+      422,
+      undefined,
+      "Choose a bank account in Bank reconciliation and upload a CSV statement."
+    );
+  }
   const out = [];
   for (const account of accounts) {
     const connection = await storage.createBankConnection({
@@ -235,13 +234,13 @@ function providerFailure(adapter: BankFeedAdapter, err: unknown): DomainError {
   const status = err instanceof BankFeedProviderError ? err.status : 0;
   log.warn(
     { provider: adapter.id, status, err: (err as Error).message },
-    "Bank feed provider call failed"
+    "Banking provider request failed"
   );
   return new DomainError(
     "BANK_FEED_PROVIDER_ERROR",
     502,
     { provider: adapter.id, providerStatus: status },
-    `${adapter.label} did not respond as expected`
+    BANK_STATEMENT_UPDATE_FAILURE.message
   );
 }
 
@@ -270,13 +269,18 @@ export async function syncConnection(
       "BANK_FEED_ACCOUNT_NOT_LINKED",
       409,
       undefined,
-      "Link this feed to a bank account before syncing"
+      "Choose a bank account in Bank reconciliation and upload a CSV statement."
     );
   }
   const ba = await storage.getBankAccountById(connection.bankAccountId, connection.companyId);
   if (!ba) throw new DomainError("BANK_ACCOUNT_NOT_FOUND", 404);
   if (!connection.accessToken || !connection.externalAccountId) {
-    throw new DomainError("BANK_FEED_RECONNECT_REQUIRED", 409);
+    throw new DomainError(
+      "BANK_FEED_RECONNECT_REQUIRED",
+      409,
+      undefined,
+      "Upload a CSV exported from your bank to continue."
+    );
   }
   let tokens: FeedTokens = {
     accessToken: connection.accessToken,
@@ -408,7 +412,7 @@ export async function runScheduledBankFeedSync(): Promise<{ synced: number; fail
       failed++;
       log.warn(
         { connectionId: raw.id, err: (err as Error).message },
-        "Scheduled bank feed sync failed"
+        "Scheduled bank transaction update failed"
       );
     }
   }
@@ -420,7 +424,7 @@ export function registerBankFeedJobs(): void {
   registerJob({
     name: "bankFeeds.sync",
     cron: "41 */6 * * *",
-    description: "Sync configured open-banking feeds (dedupe by provider transaction id)",
+    description: "Refresh configured provider transactions with duplicate detection",
     run: async () => {
       await runScheduledBankFeedSync();
     },
@@ -439,6 +443,13 @@ export async function linkConnection(
     .where(and(eq(bankAccounts.id, bankAccountId), eq(bankAccounts.companyId, companyId)));
   if (!ba) throw new DomainError("BANK_ACCOUNT_NOT_FOUND", 404);
   const updated = await storage.updateBankConnection(connectionId, { bankAccountId });
-  if (!updated) throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404);
+  if (!updated) {
+    throw new DomainError(
+      "BANK_CONNECTION_NOT_FOUND",
+      404,
+      undefined,
+      "Banking record not found. Upload a CSV statement to continue."
+    );
+  }
   return updated;
 }

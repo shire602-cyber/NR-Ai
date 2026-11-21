@@ -132,7 +132,7 @@ describe("migrations", () => {
         expect(r.is_admin).toBe(false);
         expect(r.memberships).toBe(0);
       }
-      return rows.length;
+      return rows.map((r) => r.password_hash);
     };
     await check();
     await h.createTenant({ name: "Cred" });
@@ -155,7 +155,10 @@ describe("migrations", () => {
     );
     expect(replayed[0].password_hash).toMatch(/^\$2[aby]\$/);
     await h.sql(sqlFile("0089_platform_foundation"));
-    expect(await check()).toBe(1);
+    const revoked = await check();
+    expect(revoked).toHaveLength(1);
+    await h.sql(sqlFile("0089_platform_foundation"));
+    expect(await check()).toEqual(revoked);
     const login = await h.anon.post("/api/auth/login", {
       email: "test_firm_owner@nra.ae",
       password: "TestFirmOwner123!",

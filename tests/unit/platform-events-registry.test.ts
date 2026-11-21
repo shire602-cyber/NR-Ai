@@ -197,11 +197,16 @@ describe("capability registry", () => {
   it("covers every integration with en+ar copy and an external action", () => {
     const caps = computeCapabilities({});
     expect(caps.map((c) => c.id)).toEqual(CAPABILITY_IDS);
-    expect(CAPABILITY_IDS.length).toBe(20);
+    expect(CAPABILITY_IDS.length).toBe(21);
     for (const c of caps) {
       expect(c.label.en && c.label.ar && c.externalAction.en && c.externalAction.ar).toBeTruthy();
       expect(/[؀-ۿ]/.test(c.label.ar)).toBe(true);
-      expect(["disabled", "requires_external"]).toContain(c.status);
+      if (c.id === "bank_statement_csv") {
+        expect(c.status).toBe("live");
+        expect(c.envVars).toEqual([]);
+      } else {
+        expect(["disabled", "requires_external"]).toContain(c.status);
+      }
     }
   });
 
@@ -234,6 +239,8 @@ describe("capability registry", () => {
     expect(status({ SMTP_HOST: "  " }, "email")).toBe("disabled");
     expect(isCapabilityLive("ai", { OPENAI_API_KEY: "sk" })).toBe(true);
     expect(isCapabilityLive("ai", {})).toBe(false);
+    expect(isCapabilityLive("bank_statement_csv", {})).toBe(true);
+    expect(isCapabilityLive("bank_statement_csv", { LEAN_APP_TOKEN: "sandbox" })).toBe(true);
   });
 
   it("[S5] news_feed is registered and push needs external VAPID keys (requires_external)", () => {

@@ -26,7 +26,12 @@ import { onDomainEvent, type DomainEvent } from "../platform/domain-events";
 import { listJobs, registerJob } from "../platform/job-registry";
 import { escapeHtml, renderBilingualEmail, sendEmail } from "./email.service";
 import { isCapabilityLive } from "../../shared/capabilities";
-import { notificationCopy, renderServerCopy } from "../../shared/server-copy";
+import {
+  BANK_STATEMENT_UPDATE_FAILURE,
+  bankStatementUpdateFailureCopy,
+  notificationCopy,
+  renderServerCopy,
+} from "../../shared/server-copy";
 
 const log = createLogger("notification-engine");
 
@@ -383,14 +388,9 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
       return {
         ...base,
         type: "bank.sync_failed",
-        ...notificationCopy(
-          "notification.bankSyncFailed.title",
-          "notification.bankSyncFailed.message",
-          { provider: p.provider as string | undefined, reason: p.reason as string | undefined }
-        ),
+        ...BANK_STATEMENT_UPDATE_FAILURE,
         priority: "high",
         relatedEntityType: "bank_connection",
-        actionUrl: "/bank-feeds",
         // One notification per failure day, not per retry.
         eventKey: `${p.entityId}:${String(p.occurredAt).slice(0, 10)}`,
       };
@@ -571,10 +571,10 @@ export async function sendDailyDigests(now: Date = new Date()): Promise<number> 
       .limit(100);
     if (!rows.length || !u.email) continue;
     const day = now.toISOString().slice(0, 10);
-    const items = rows.map(
-      (r: typeof notifications.$inferSelect) =>
-        `<strong>${escapeHtml(r.title)}</strong> — ${escapeHtml(r.message)}`
-    );
+    const items = rows.map((r: typeof notifications.$inferSelect) => {
+      const copy = bankStatementUpdateFailureCopy(r) ?? r;
+      return `<strong>${escapeHtml(copy.title)}</strong> — ${escapeHtml(copy.message)}`;
+    });
     const html = renderBilingualEmail(
       {
         brandName: "Muhasib.ai",

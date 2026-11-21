@@ -48,7 +48,7 @@ Detailed analysis of navigation structures across 6 major accounting platforms, 
 | 6 | **Customers** | Customer Center, Create Estimates, Create Invoices, Create Sales Receipts, Enter Statement Charges, Receive Payments, Create Credit Memos/Refunds |
 | 7 | **Vendors** | Vendor Center, Enter Bills, Pay Bills, Create Purchase Orders, Manage Sales Tax, Print 1099s/1096s |
 | 8 | **Employees** | Employee Center, Payroll Center, Enter Time (single/weekly), Pay Employees, Payroll Tax Forms & W-2s |
-| 9 | **Banking** | Write Checks, Make Deposits, Transfer Funds, Reconcile, Enter Credit Card Charges, Online Banking, Bank Feeds |
+| 9 | **Banking** | Write Checks, Make Deposits, Transfer Funds, Reconcile, Enter Credit Card Charges, Online Banking, Automated Bank Transaction Imports |
 | 10 | **Reports** | Report Center, Memorized Reports, Company & Financial, Customers & Receivables, Vendors & Payables, Banking, Budgets & Forecasts |
 | 11 | **Help** | QuickBooks Help, QuickBooks Desktop Help, Learning Center, Support, About QuickBooks |
 

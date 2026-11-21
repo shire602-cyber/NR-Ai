@@ -21,7 +21,11 @@ The snapshot is the JSON rendering of each row (`to_jsonb`), gzip-compressed and
 AES-256-GCM through the secret vault (key from `TOKEN_ENCRYPTION_KEY`, else derived from
 `SESSION_SECRET`). A SHA-256 checksum of the plaintext is stored and verified before every restore.
 `GET /api/backups/{id}/download` returns the decrypted JSON export (full-company data portability);
-`?format=encrypted` returns the sealed file.
+`?format=encrypted` returns a sealed file, including for legacy snapshots stored as plaintext.
+Downloads of older snapshots omit operator-only
+bank migration findings if present. A filtered JSON download includes a `Content-Digest` header
+with the Base64-encoded SHA-256 of the response body. The stored checksum continues to verify the
+original archived snapshot.
 
 ## Restore
 

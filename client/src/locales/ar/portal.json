@@ -35,7 +35,7 @@
   "portal.eventType.bill.approved": "اعتماد فاتورة مورد",
   "portal.eventType.bill.paid": "سداد فاتورة مورد",
   "portal.eventType.payroll.approved": "اعتماد الرواتب",
-  "portal.eventType.bank.sync_failed": "فشل مزامنة الحساب البنكي",
+  "portal.eventType.bank.sync_failed": "تعذّر تحديث الحركات البنكية",
   "portal.eventType.compliance.deadline_due": "اقتراب موعد امتثال",
   "portal.eventType.task.due": "مهمة مستحقة",
   "portal.inAppNotifications": "إشعارات داخل التطبيق",

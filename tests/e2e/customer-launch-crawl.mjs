@@ -25,6 +25,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, request } from "playwright-core";
+import {
+  bankingDescriptionSelectors,
+  publicBankFeedMentions,
+  publicBankingCopy,
+} from "./lib/public-banking-copy.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 const PUBLIC_ONLY = process.env.CUSTOMER_E2E_PUBLIC_ONLY === "true";
@@ -46,6 +51,8 @@ const LOCALIZED_HOMEPAGES = {
 const PUBLIC_ROUTES = [
   "/",
   ...Object.keys(LOCALIZED_HOMEPAGES),
+  "/en/product/bank-reconciliation",
+  "/ar/product/bank-reconciliation",
   "/register",
   "/login",
   "/forgot-password",
@@ -332,7 +339,7 @@ async function main() {
 
   // Public launch surface: these are the routes ads and prospects will hit first.
   for (const route of PUBLIC_ROUTES) {
-    const bodyText = await crawlRoute(route);
+    let bodyText = await crawlRoute(route);
     const homepage = LOCALIZED_HOMEPAGES[route];
     if (homepage) {
       const actual = await page.locator("html").evaluate((html) => ({
@@ -347,10 +354,49 @@ async function main() {
       ) {
         await fail(`localized homepage ${route}`, { expected: homepage, actual });
       }
+      const { question, answer } = publicBankingCopy[homepage.lang];
+      const summary = page.locator("summary").filter({ hasText: question });
+      try {
+        await summary.click();
+        const actual = await page
+          .locator("details[open]")
+          .filter({ has: summary })
+          .locator("p")
+          .innerText();
+        if (actual !== answer) await fail(`public bank FAQ ${route}`, { expected: answer, actual });
+        bodyText += "\n" + actual;
+      } catch (error) {
+        await fail(`public bank FAQ ${route}`, { detail: String(error) });
+      }
     }
-    const unsupportedClaim = bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ?? null;
+    const descriptions = await page
+      .locator("head")
+      .evaluate(
+        (head, selectors) =>
+          selectors.map((selector) => head.querySelector(selector)?.getAttribute("content")),
+        bankingDescriptionSelectors
+      );
+    const bankProduct = /^\/(en|ar)\/product\/bank-reconciliation$/.exec(route);
+    if (bankProduct) {
+      const expected = publicBankingCopy[bankProduct[1]].answer;
+      const lead = await page
+        .locator(".phase-lead")
+        .textContent()
+        .catch(() => null);
+      if (lead !== expected || descriptions.some((content) => content !== expected)) {
+        await fail(`public bank product ${route}`, { expected, lead, descriptions });
+      }
+    }
+    const unsupportedClaim = bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0];
     if (unsupportedClaim) {
       await fail(`public claim ${route}`, { unsupportedClaim });
+    }
+    const publicCopy = [bodyText, ...descriptions].join("\n");
+    for (const pattern of publicBankFeedMentions) {
+      const mention = publicCopy.match(pattern)?.[0];
+      if (mention || (await page.getByText(pattern).filter({ visible: true }).count())) {
+        await fail(`public bank wording ${route}`, { mention, pattern: pattern.source });
+      }
     }
   }
 

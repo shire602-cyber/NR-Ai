@@ -960,6 +960,27 @@
    "when": 1781430520000,
    "tag": "0137_combine_portal_invitations_and_settlement_indexes",
    "breakpoints": false
+  },
+  {
+   "idx": 137,
+   "version": "7",
+   "when": 1781430530000,
+   "tag": "0138_repair_bank_gl_links",
+   "breakpoints": false
+  },
+  {
+   "idx": 138,
+   "version": "7",
+   "when": 1781430540000,
+   "tag": "0139_audit_bank_match_links",
+   "breakpoints": false
+  },
+  {
+   "idx": 139,
+   "version": "7",
+   "when": 1781430550000,
+   "tag": "0140_repair_bank_receipt_provenance",
+   "breakpoints": false
   }
  ]
 }

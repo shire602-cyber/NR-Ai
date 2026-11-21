@@ -84,14 +84,14 @@ intake documents just point at the receipt they produced.
 - **Routing.** `sender_email → company_id` via `client_email_sources`. Unmatched
   senders are logged and skipped (never auto-created — prevents poisoning a ledger).
 - **De-dup.** SHA-256 of each attachment; a repeat hash for the same company is
-  flagged `is_duplicate` and skipped, not posted. Guards against the client
-  emailing the same invoice twice, or an invoice arriving by email *and* bank feed.
+  flagged `is_duplicate` and skipped. This prevents a resent invoice attachment
+  from being posted twice.
 - **Completeness — the most important control.** OCR can't flag a document that
   never arrived, and a VAT return is only correct if *all* sales and purchases are
-  captured. So intake is paired with the existing **bank-feed reconciliation**:
-  unmatched bank lines = "evidence we expect but haven't received", which drives
-  the existing **document-chasing** nudges to the client. The accountant sees a
-  reconciliation gap before approving, not after filing.
+  captured. Import a CSV exported from the bank, review suggested matches, and
+  reconcile against the books. Unmatched statement lines help identify missing
+  evidence and drive **document-chasing** nudges to the client before the
+  accountant approves the return.
 - **Tax-point / period mapping.** Each receipt's date determines its VAT period;
   documents landing after a period is locked surface as a late-document exception
   (reuse `period-lock.service`), not a silent post into the wrong return.
