@@ -92,6 +92,7 @@ export interface EInvoiceStatusView {
       status: ReportingStatus;
       at: string | null;
       required: boolean;
+      obligationKnown?: boolean;
       confirmationUnavailable?: boolean;
       mandateApplies?: boolean;
       reportBy: string | null;
@@ -143,6 +144,7 @@ export interface EInvoiceDocumentRow {
   providerMessageId: string | null;
   deliveryStatus: DeliveryStatus | null;
   reportingStatus: ReportingStatus | null;
+  reportingObligationKnown?: boolean;
   reportBy: string | null;
 }
 
@@ -152,6 +154,7 @@ export interface EInvoiceCompliancePill {
   reportBy: string | null;
   overdue: boolean;
   reportingRequired: boolean;
+  reportingObligationKnown?: boolean;
   delivery: DeliveryStatus;
   reporting: ReportingStatus;
 }
@@ -239,8 +242,19 @@ export function recipientAcknowledgement(
   }
   return null;
 }
-export const reportingLabelKey = (s: ReportingStatus, confirmationUnavailable = false) =>
-  confirmationUnavailable ? "einvoicing.reportingUnconfirmed" : `einvoicing.reporting_${s}`;
+export const reportingObligationUnknown = (status: ReportingStatus, known?: boolean) =>
+  known === false && status !== "reported" && status !== "report_failed";
+
+export const reportingLabelKey = (
+  status: ReportingStatus,
+  confirmationUnavailable = false,
+  obligationKnown?: boolean
+) =>
+  reportingObligationUnknown(status, obligationKnown)
+    ? "einvoicing.reportingObligationUnknown"
+    : confirmationUnavailable
+      ? "einvoicing.reportingUnconfirmed"
+      : `einvoicing.reporting_${status}`;
 
 export function trackOutcomeLabel(
   t: Record<string, string>,

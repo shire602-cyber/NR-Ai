@@ -184,7 +184,7 @@
   "banking.recon.report": "تقرير التسوية",
   "banking.recon.moreActions": "إجراءات أخرى",
   "banking.feeds.statementImportTitle": "استيراد كشوف الحسابات البنكية",
-  "banking.feeds.manualImportBody": "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك.",
+  "banking.feeds.manualImportBody": "ارفع كشف حساب بنكيًا لمراجعة الحركات وتسويتها.",
   "banking.feeds.importStatement": "استيراد كشف",
   "banking.feeds.accountsTitle": "حساباتك البنكية",
   "banking.feeds.accountsBody": "راجع اتصالات مزوّدي الخدمة بحساباتك.",

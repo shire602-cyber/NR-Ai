@@ -1300,6 +1300,50 @@ describe("E2 + F16: no FTA reporting before the mandate applies", () => {
     );
     expect((await poll()).refreshed).toBe(0);
   });
+
+  it("keeps polling a legacy document with unknown filing obligation without inventing its report-by date", async () => {
+    const t = await readyTenant();
+    const inv = await issuedInvoice(t);
+    expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const held = docOf(t, inv.number)!;
+    held.state = "final_valid";
+    held.isTerminal = true;
+    held.ftaApproval = "PENDING";
+    await h.sql(
+      "UPDATE invoices SET date = '2026-02-03', einvoice_status = 'accepted' WHERE id = $1",
+      [inv.id]
+    );
+    await h.sql(
+      `UPDATE einvoice_documents SET status = 'accepted', delivery_status = 'delivered', provider_status = 'final_valid',
+        reporting_status = NULL, report_by = NULL, validation = validation #- '{submission,reportingRequired}' WHERE invoice_id = $1`,
+      [inv.id]
+    );
+    expect((await poll()).refreshed).toBe(1);
+    expect((await statusOf(t, inv.id)).tracks.reporting).toMatchObject({
+      required: false,
+      obligationKnown: false,
+      status: "pending",
+      reportBy: null,
+      overdue: false,
+    });
+    const [stored] = await h.sql(
+      "SELECT report_by, validation->'submission'->>'reportingRequired' AS required FROM einvoice_documents WHERE invoice_id = $1",
+      [inv.id]
+    );
+    expect(stored).toMatchObject({ report_by: null, required: null });
+
+    held.ftaApproval = "APPROVED";
+    expect((await poll()).refreshed).toBe(1);
+    expect((await statusOf(t, inv.id)).tracks.reporting).toMatchObject({
+      required: false,
+      obligationKnown: false,
+      status: "reported",
+      reportBy: null,
+      overdue: false,
+    });
+    expect(fake.posts).toBe(1);
+  });
 });
 
 describe("Legacy Complyance environment verification", () => {

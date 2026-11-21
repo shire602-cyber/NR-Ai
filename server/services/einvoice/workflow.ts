@@ -61,7 +61,7 @@ import { invoiceReportingDeadline, invoiceReportingRequired } from "./reporting"
 import { frozenEInvoiceDispatchIssue } from "../einvoice.service";
 import {
   archiveEInvoiceXml,
-  documentReportingRequired,
+  recordedReportingRequired,
   documentSubmissionMetadata,
   documentValidation,
   dueEInvoiceRetries,
@@ -443,10 +443,9 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
       )
         return retryProviderChanged();
     }
-    const originalDate = fresh.einvoiceSubmittedAt ?? existing?.submittedAt ?? now;
     const keepOriginalReporting = triedProvider && !definitiveAcubeRefusal;
     const required = keepOriginalReporting
-      ? documentReportingRequired(existing, invoiceReportingRequired(fresh, company, originalDate))
+      ? recordedReportingRequired(existing)
       : currentRequirement;
     await updateInvoiceInTransaction(tx, invoice, {
       einvoiceUuid: built.uuid,
@@ -464,13 +463,14 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
       invoice.id,
       {
         delivery: "queued",
-        reporting: required ? "pending" : "not_required",
+        reporting: required === false ? "not_required" : "pending",
         providerStatus: null,
         errorCode: null,
-        reportBy: required
-          ? ((keepOriginalReporting ? existing?.reportBy : null) ??
-            invoiceReportingDeadline(keepOriginalReporting ? fresh : generated))
-          : null,
+        reportBy: keepOriginalReporting
+          ? (existing?.reportBy ?? null)
+          : required
+            ? invoiceReportingDeadline(generated)
+            : null,
       },
       {
         source,
@@ -505,7 +505,7 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
               scope,
               actorId: args.actorId ?? null,
               providerAttempted: triedProvider,
-              reportingRequired: required,
+              ...(required === null ? {} : { reportingRequired: required }),
               correctionOf,
               verifiedEmailRequired,
               correctionOriginalHash: originalXml?.hash ?? null,
@@ -963,14 +963,11 @@ async function persistSubmissionOutcome(args: {
         errorCode: dispatch.result.errorCode,
       }
     : dispatch.result;
-  const required = documentReportingRequired(
-    current,
-    current.reportingStatus === "pending" || current.reportingStatus === "reported"
-  );
+  const required = recordedReportingRequired(current);
   const delivery: DeliveryStatus = r.delivery ?? deliveryFromLegacy(r.status);
   const reporting = reportingForResult(
     provider.name,
-    required,
+    required !== false,
     r,
     storedReportingEvidence(current)
   );
@@ -1007,7 +1004,7 @@ async function persistSubmissionOutcome(args: {
           ...metadata,
           providerAttempted:
             dispatch.providerAttempted || submissionTriedProvider(current) || result.handedOver,
-          reportingRequired: required,
+          ...(required === null ? {} : { reportingRequired: required }),
           correctableRejection: r.correctableRejection === true,
           correctionBlocked: r.errorCode === "COMPLYANCE_XML_FAILED",
           correctionOf: null,
@@ -1483,21 +1480,19 @@ export async function refreshAndPersist(args: {
     ref,
   });
   if (!result.ok) return result;
-  const required = documentReportingRequired(
-    existing,
-    invoiceReportingRequired(
-      invoice,
-      company,
-      invoice.einvoiceSubmittedAt ?? existing?.submittedAt ?? now
-    )
-  );
+  const required = recordedReportingRequired(existing);
   const r = result.result;
   const delivery: DeliveryStatus = r.delivery ?? deliveryFromLegacy(r.status);
-  let reporting = reportingForResult(provider.name, required, r, storedReportingEvidence(existing));
+  let reporting = reportingForResult(
+    provider.name,
+    required !== false,
+    r,
+    storedReportingEvidence(existing)
+  );
   let observedReporting =
     provider.name === "complyance" && isReportingObservation(r.reporting) ? r.reporting : null;
   if (
-    required &&
+    required !== false &&
     delivery === "delivered" &&
     reporting === "pending" &&
     provider.getReportingStatus &&
@@ -1505,7 +1500,7 @@ export async function refreshAndPersist(args: {
   ) {
     try {
       const observed = await provider.getReportingStatus(invoice.einvoiceProviderMessageId, ref);
-      reporting = reportingFromEvidence(provider.name, required, observed.reporting, reporting);
+      reporting = reportingFromEvidence(provider.name, true, observed.reporting, reporting);
       if (provider.name === "complyance" && isReportingObservation(observed.reporting))
         observedReporting = observed.reporting;
     } catch {
@@ -1554,7 +1549,6 @@ export async function refreshAndPersist(args: {
         delivery,
         reporting,
         providerStatus: r.providerStatus ?? null,
-        reportBy: required ? (current?.reportBy ?? invoiceReportingDeadline(fresh)) : null,
         errorCode: failed ? (r.errorCode ?? "EINVOICE_DELIVERY_FAILED") : null,
         errorMessage: failed ? (r.detail ?? null) : null,
       },

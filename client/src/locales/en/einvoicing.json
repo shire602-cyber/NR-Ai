@@ -21,6 +21,7 @@
   "einvoicing.reporting_not_required": "Not required",
   "einvoicing.reporting_pending": "Pending",
   "einvoicing.reportingUnconfirmed": "Confirmation unavailable",
+  "einvoicing.reportingObligationUnknown": "Reporting requirement unknown",
   "einvoicing.reportingUnconfirmedHint": "This provider has not supplied authoritative confirmation of FTA reporting.",
   "einvoicing.reporting_reported": "Reported",
   "einvoicing.reporting_report_failed": "Report failed",

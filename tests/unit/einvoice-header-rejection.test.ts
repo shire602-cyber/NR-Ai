@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { loadNamespace } from "../../client/src/lib/i18n";
 import { EInvoiceHeaderStrip } from "../../client/src/components/einvoice/EInvoiceHeaderStrip";
+import { EInvoiceTrackBadges } from "../../client/src/components/einvoice/EInvoiceStatus";
 import {
   deliveryFromLegacyStatus,
   isReportingOnlyFailure,
@@ -15,6 +16,63 @@ import { einvoiceStatusKey } from "../../client/src/components/einvoice/use-einv
 
 // F15 N2/N3: the invoice header strip shows the rejection reason and the FTA chip label.
 describe("e-invoice header strip", () => {
+  it.each([
+    ["sandbox", "FTA: reported · Sandbox"],
+    [null, "FTA: reported · Environment unverified"],
+    ["production", "FTA: reported"],
+  ])("shows the visible reporting label for environment %s", async (environment, label) => {
+    await loadNamespace("en", "einvoicing");
+    const html = renderToStaticMarkup(
+      createElement(EInvoiceTrackBadges, {
+        delivery: "delivered",
+        reporting: "reported",
+        environment,
+        showReportingLabel: true,
+      })
+    );
+    const badge = html.split('data-testid="einvoice-fta-chip"')[1];
+    expect(badge?.match(/<span>([^<]+)<\/span>/)?.[1]).toBe(label);
+  });
+  it("shows a known deadline even while confirmation is unavailable", async () => {
+    await loadNamespace("en", "einvoicing");
+    const invoiceId = "fixture-invoice";
+    const client = new QueryClient();
+    client.setQueryData(einvoiceStatusKey(invoiceId), {
+      tracks: {
+        delivery: { status: "delivered" },
+        reporting: {
+          status: "pending",
+          required: true,
+          confirmationUnavailable: true,
+          reportBy: "2026-12-01",
+        },
+      },
+      transmission: { environment: "sandbox" },
+      issues: [],
+      rejection: null,
+    });
+    const html = renderToStaticMarkup(
+      createElement(QueryClientProvider, {
+        client,
+        children: createElement(EInvoiceHeaderStrip, { invoiceId }),
+      })
+    );
+    expect(html).toContain('data-testid="einvoice-header-reportby"');
+    expect(html).toContain("Confirmation unavailable");
+    client.clear();
+  });
+  it("renders an unknown reporting requirement on the compact badge", async () => {
+    await loadNamespace("en", "einvoicing");
+    const html = renderToStaticMarkup(
+      createElement(EInvoiceTrackBadges, {
+        delivery: "delivered",
+        reporting: "not_required",
+        obligationKnown: false,
+      })
+    );
+    expect(html).toContain("<span>Reporting requirement unknown</span>");
+    expect(html).not.toContain("Not required");
+  });
   it("maps stored rejected documents to the rejected delivery state", () => {
     expect(deliveryFromLegacyStatus("rejected")).toBe("rejected");
   });

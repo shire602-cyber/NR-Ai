@@ -63,6 +63,7 @@ import {
   issueTextKey,
   isReportingOnlyFailure,
   reportingLabelKey,
+  reportingObligationUnknown,
   trackOutcomeLabel,
   type ChecklistState,
   type DeliveryStatus,
@@ -87,6 +88,7 @@ export function EInvoiceTrackBadges({
   queuedForSubmission = false,
   acknowledgement = null,
   confirmationUnavailable = false,
+  obligationKnown,
   environment,
 }: {
   delivery: DeliveryStatus;
@@ -96,6 +98,7 @@ export function EInvoiceTrackBadges({
   queuedForSubmission?: boolean;
   acknowledgement?: RecipientAcknowledgement;
   confirmationUnavailable?: boolean;
+  obligationKnown?: boolean;
   environment?: string | null;
   /** Spell the FTA reporting state out ("FTA: Pending") instead of the icon-only mark. */
   showReportingLabel?: boolean;
@@ -111,12 +114,19 @@ export function EInvoiceTrackBadges({
           delivery === "delivered",
           environment
         );
-  const reportingText = trackOutcomeLabel(
-    t,
-    reportingLabelKey(reporting, confirmationUnavailable),
-    reporting === "reported" && !confirmationUnavailable,
-    environment
-  );
+  const reportingConfirmed = reporting === "reported" && !confirmationUnavailable;
+  const obligationUnknown = reportingObligationUnknown(reporting, obligationKnown);
+  const reportingKey = reportingLabelKey(reporting, confirmationUnavailable, obligationKnown);
+  const reportingText = trackOutcomeLabel(t, reportingKey, reportingConfirmed, environment);
+  const reportingChipKey =
+    obligationUnknown || confirmationUnavailable
+      ? reportingKey
+      : reporting === "pending" &&
+          (delivery === "draft" || delivery === "validated" || queuedForSubmission)
+        ? "einvoicing.ftaChip_not_sent"
+        : `einvoicing.ftaChip_${reporting}`;
+  const showReportingText =
+    showReportingLabel || obligationUnknown || (reportingConfirmed && environment !== "production");
   return (
     <span
       className={cn("inline-flex flex-wrap items-center gap-1", className)}
@@ -129,29 +139,17 @@ export function EInvoiceTrackBadges({
         <span className="sr-only">{t["einvoicing.trackDelivery"]}: </span>
         {deliveryText}
       </StatusBadge>
-      {reporting !== "not_required" && (
+      {(reporting !== "not_required" || obligationUnknown) && (
         <StatusBadge
-          tone={REPORTING_TONE[reporting]}
+          tone={obligationUnknown ? "neutral" : REPORTING_TONE[reporting]}
           title={`${t["einvoicing.trackReporting"]}: ${reportingText}`}
-          className={showReportingLabel ? undefined : "px-1.5"}
+          className={showReportingText ? undefined : "px-1.5"}
           data-testid={showReportingLabel ? "einvoice-fta-chip" : undefined}
         >
-          {/* Compact: an FTA mark coloured by the reporting state; the text is for screen readers
-              and the tooltip, so the list row keeps its height. The header strip spells it out. */}
+          {/* Always keep a test environment or unknown obligation visible on the badge. */}
           <Landmark aria-hidden className="h-3 w-3" />
-          {showReportingLabel ? (
-            <span>
-              {
-                t[
-                  reporting === "pending" &&
-                  (delivery === "draft" || delivery === "validated" || queuedForSubmission)
-                    ? "einvoicing.ftaChip_not_sent"
-                    : confirmationUnavailable
-                      ? "einvoicing.reportingUnconfirmed"
-                      : `einvoicing.ftaChip_${reporting}`
-                ]
-              }
-            </span>
+          {showReportingText ? (
+            <span>{trackOutcomeLabel(t, reportingChipKey, reportingConfirmed, environment)}</span>
           ) : (
             <span className="sr-only">
               {t["einvoicing.trackReporting"]}: {reportingText}
@@ -187,7 +185,14 @@ export function FinalizeChecklist({ view }: { view: EInvoiceStatusView }) {
   return (
     <ol className="space-y-2.5" data-testid="einvoice-checklist">
       {view.checklist.map((item) => {
-        const Icon = STATE_ICON[item.state];
+        const obligationUnknown =
+          item.key === "reported" &&
+          reportingObligationUnknown(
+            view.tracks.reporting.status,
+            view.tracks.reporting.obligationKnown
+          );
+        const state = obligationUnknown ? "not_applicable" : item.state;
+        const Icon = STATE_ICON[state];
         const reason =
           item.state === "blocked" && view.transmission.block
             ? t[blockKey(view.transmission.block)]
@@ -205,25 +210,36 @@ export function FinalizeChecklist({ view }: { view: EInvoiceStatusView }) {
               aria-hidden
               className={cn(
                 "mt-0.5 h-4 w-4 shrink-0",
-                STATE_CLASS[item.state],
-                item.state === "in_progress" && "motion-safe:animate-spin"
+                STATE_CLASS[state],
+                state === "in_progress" && "motion-safe:animate-spin"
               )}
             />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                 <span
                   className={`text-small font-medium ${
-                    item.state === "not_applicable" ? "text-muted-foreground" : ""
+                    state === "not_applicable" ? "text-muted-foreground" : ""
                   }`}
                 >
-                  {t[checklistLabelKey(item.key)]}
+                  {obligationUnknown
+                    ? t["einvoicing.reportingObligationUnknown"]
+                    : trackOutcomeLabel(
+                        t,
+                        checklistLabelKey(item.key),
+                        item.state === "done" && (item.key === "sent" || item.key === "reported"),
+                        view.transmission.environment
+                      )}
                 </span>
-                <span className="text-caption text-muted-foreground">
-                  {t[checklistStateKey(item.state)]}
-                  {item.at && item.state === "done" ? ` · ${formatDate(item.at, locale)}` : ""}
-                </span>
+                {!obligationUnknown && (
+                  <span className="text-caption text-muted-foreground">
+                    {t[checklistStateKey(item.state)]}
+                    {item.at && item.state === "done" ? ` · ${formatDate(item.at, locale)}` : ""}
+                  </span>
+                )}
               </div>
-              {reason && <p className="mt-0.5 text-caption text-muted-foreground">{reason}</p>}
+              {reason && !obligationUnknown && (
+                <p className="mt-0.5 text-caption text-muted-foreground">{reason}</p>
+              )}
             </div>
           </li>
         );
@@ -392,18 +408,21 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
       : handedOver
         ? formatMessage(t["einvoicing.viaProvider"], { provider: providerName })
         : t["einvoicing.notSentYet"];
-  const reportingMeta = !reporting.required
-    ? t["einvoicing.reportingNotRequiredHint"]
-    : reporting.confirmationUnavailable
-      ? t["einvoicing.reportingUnconfirmedHint"]
-      : reporting.status === "reported" && reporting.at
-        ? formatMessage(t["einvoicing.reportedOn"], { date: formatDate(reporting.at, locale) })
-        : reporting.reportBy
-          ? formatMessage(
-              reporting.overdue ? t["einvoicing.reportByPassed"] : t["einvoicing.reportBy"],
-              { date: formatDate(reporting.reportBy, locale) }
-            )
-          : null;
+  const reportingDeadline =
+    reporting.required && reporting.status !== "reported" && reporting.reportBy
+      ? formatMessage(
+          reporting.overdue ? t["einvoicing.reportByPassed"] : t["einvoicing.reportBy"],
+          {
+            date: formatDate(reporting.reportBy, locale),
+          }
+        )
+      : null;
+  const reportingMeta =
+    reporting.status === "reported" && reporting.at
+      ? formatMessage(t["einvoicing.reportedOn"], { date: formatDate(reporting.at, locale) })
+      : reporting.confirmationUnavailable
+        ? [reportingDeadline, t["einvoicing.reportingUnconfirmedHint"]].filter(Boolean).join(" · ")
+        : reportingDeadline;
 
   return (
     <div className={cn("space-y-5", className)} data-testid="einvoice-panel">
@@ -433,11 +452,21 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
           meta={reportingMeta}
           metaTone={reporting.overdue ? "warning" : undefined}
           badge={
-            <StatusBadge tone={REPORTING_TONE[reporting.status]}>
+            <StatusBadge
+              tone={
+                reportingObligationUnknown(reporting.status, reporting.obligationKnown)
+                  ? "neutral"
+                  : REPORTING_TONE[reporting.status]
+              }
+            >
               {trackOutcomeLabel(
                 t,
-                reportingLabelKey(reporting.status, reporting.confirmationUnavailable),
-                reporting.status === "reported",
+                reportingLabelKey(
+                  reporting.status,
+                  reporting.confirmationUnavailable,
+                  reporting.obligationKnown
+                ),
+                reporting.status === "reported" && !reporting.confirmationUnavailable,
                 transmission.environment
               )}
             </StatusBadge>

@@ -61,6 +61,9 @@ const copies = {
     sent: "Sending",
     recipientReceived: "Received by the buyer’s provider",
     accepted: "Accepted by the buyer’s provider",
+    reporting: "FTA reporting",
+    reported: "Reported",
+    reportedChip: "FTA: reported",
     bankStatementImport: "Import bank statements",
     verifyTracking: "Verify and save",
     trackingVerified: "Tracking environment verified",
@@ -79,6 +82,9 @@ const copies = {
     sent: "لدى مزود الخدمة",
     recipientReceived: "استلمها مزود خدمة المشتري",
     accepted: "قبلها مزود خدمة المشتري",
+    reporting: "الإبلاغ إلى الهيئة الاتحادية للضرائب",
+    reported: "تم الإبلاغ",
+    reportedChip: "الهيئة: تم الإبلاغ",
     bankStatementImport: "استيراد كشوف الحسابات البنكية",
     verifyTracking: "تحقّق واحفظ",
     trackingVerified: "تم التحقق من بيئة المتابعة",
@@ -312,12 +318,10 @@ async function seed(fixture) {
 async function seedOutbound(persona, existingContactId) {
   const companyId = persona.clients[0].id;
   const clientPath = `/api/companies/${companyId}`;
-  if (persona.providers[0] === "complyance") {
-    // Opt in this fixture early so reporting is required regardless of the run date.
-    await db.query("UPDATE companies SET einvoice_go_live_date = CURRENT_DATE - 7 WHERE id = $1", [
-      companyId,
-    ]);
-  }
+  // Opt in so the reporting deadline and status are testable independently, even before the mandate.
+  await db.query("UPDATE companies SET einvoice_go_live_date = CURRENT_DATE - 7 WHERE id = $1", [
+    companyId,
+  ]);
   const contactId =
     existingContactId ??
     (
@@ -482,11 +486,11 @@ async function inBrowser(browser, { email, lang, width }, flow) {
     await page.waitForURL((url) => url.pathname !== "/login");
     await page.waitForLoadState("networkidle");
     monitorBrowserFailures(page, failures);
-    await flow(page, async (path) => {
+    await flow(page, async (path, destination = path) => {
       await settleApi();
       // Use the app's router after login so the previous document's API requests can finish.
       await page.evaluate((href) => window.history.pushState(null, "", href), path);
-      await page.waitForURL(new URL(path, base).href);
+      await page.waitForURL(new URL(destination, base).href);
     });
     await settleApi();
     assert.deepEqual(failures, [], `${lang} browser and API errors`);
@@ -591,12 +595,18 @@ async function selectProviders(browser, persona) {
       `einvoice-partner-option-${providers[0]}`
     );
     await navigate("/bank-feeds");
-    await page.getByText(copies[lang].bankStatementImport, { exact: true }).waitFor();
+    const importTitle = copies[lang].bankStatementImport;
+    const importHeading = page.getByRole("heading", { name: importTitle, level: 1, exact: true });
+    await importHeading.waitFor();
+    await page.waitForFunction((title) => document.title === title, importTitle);
     assert.doesNotMatch(
       await page.locator("main").innerText(),
       /\bbank\s+feeds?\b|الربط\s+البنكي\s+المباشر|الخلاصة\s+البنكية/i
     );
     await expectFrame(page, lang);
+    await navigate("/banking", "/bank-feeds");
+    await importHeading.waitFor();
+    await page.waitForFunction((title) => document.title === title, importTitle);
     const importStatement = page.getByTestId("button-feeds-import-statement");
     assert.equal(await importStatement.getAttribute("href"), "/bank-reconciliation?import=1");
     await importStatement.click();
@@ -753,11 +763,21 @@ async function sendInvoice(browser, persona) {
     await delivery.getByText(acceptedInSandbox, { exact: true }).waitFor();
     const result = await request(token, "GET", statusPath);
     assert.equal(result.submissionState, "accepted");
+    const reporting = sheet.getByTestId("einvoice-track-reporting");
+    const reportedInSandbox = `${copies[lang].reported} · ${copies[lang].sandbox}`;
     if (originalProvider === "acube") {
       assert.equal(result.transmission.providerDocumentId, acubeInvoiceUuid);
+      assert.ok(result.tracks.reporting.reportBy);
+      await reporting.getByText(/Report by|Report-by date/).waitFor();
+      await reporting.getByText("Confirmation unavailable", { exact: true }).waitFor();
     } else {
       assert.equal(receipt.tracks.reporting.status, "pending");
       assert.equal(result.tracks.reporting.status, "reported");
+      await reporting.getByText(reportedInSandbox, { exact: true }).waitFor();
+      await sheet
+        .getByTestId("einvoice-check-reported")
+        .getByText(copies[lang].sandbox, { exact: false })
+        .waitFor();
     }
     await sheet.getByTestId("einvoice-history-open").click();
     const history = page.getByTestId("einvoice-history");
@@ -767,6 +787,34 @@ async function sendInvoice(browser, persona) {
     await history.getByText(`${deliveryLabel}: ${acceptedInSandbox}`, { exact: true }).waitFor();
     if (originalProvider === "acube") {
       await history.getByText("FTA reporting: Confirmation unavailable", { exact: true }).waitFor();
+    } else {
+      await history
+        .getByText(`${copies[lang].reporting}: ${reportedInSandbox}`, { exact: true })
+        .waitFor();
+    }
+    await page.keyboard.press("Escape");
+    await history.waitFor({ state: "hidden" });
+    await page.keyboard.press("Escape");
+    await sheet.waitFor({ state: "hidden" });
+    const listReporting = page
+      .getByTestId(`einvoice-reportby-${invoiceId}`)
+      .filter({ visible: true });
+    await listReporting
+      .and(
+        page.getByText(
+          originalProvider === "acube" ? /Report by|Report overdue/ : reportedInSandbox
+        )
+      )
+      .waitFor();
+    await navigate(`/invoices/${invoiceId}/edit`);
+    const headerChip = page.getByTestId("einvoice-fta-chip");
+    if (originalProvider === "acube") {
+      await headerChip.getByText("Confirmation unavailable", { exact: true }).waitFor();
+      await page.getByTestId("einvoice-header-reportby").waitFor();
+    } else {
+      await headerChip
+        .getByText(`${copies[lang].reportedChip} · ${copies[lang].sandbox}`, { exact: true })
+        .waitFor();
     }
   });
   console.log(`${lang}: queued, sent and accepted invoice status through the loopback provider`);
@@ -810,9 +858,49 @@ async function verifyLegacyRefusal(browser, persona, invoiceId, lang) {
   console.log(`${lang}: verified legacy refusal eligibility without re-sending`);
 }
 
+async function assertUnclippedOutcome(label, surface) {
+  await label.waitFor();
+  const geometry = await label.evaluate((node) => {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const viewport = document.documentElement.clientWidth;
+    let minLeft = 0;
+    let maxRight = viewport;
+    for (let parent = node; parent; parent = parent.parentElement) {
+      if (!/^(hidden|clip|auto|scroll)$/.test(getComputedStyle(parent).overflowX)) continue;
+      const left = parent.getBoundingClientRect().left + parent.clientLeft;
+      minLeft = Math.max(minLeft, left);
+      maxRight = Math.min(maxRight, left + parent.clientWidth);
+    }
+    return {
+      clipped: [...range.getClientRects()].some(
+        (rect) => rect.left < minLeft - 1 || rect.right > maxRight + 1
+      ),
+      overflow: document.documentElement.scrollWidth > viewport,
+    };
+  });
+  assert.deepEqual(geometry, { clipped: false, overflow: false }, `${surface} e-invoice outcome`);
+}
+
 async function verifyPublicOutcome(browser, persona) {
-  const { invoiceId, contactId, lang, width } = persona;
+  const { invoiceId, contactId, lang } = persona;
   const token = randomBytes(16).toString("hex");
+  const email = `einvoice-buyer-${lang}-${runTag}@example.test`;
+  await request("", "POST", "/api/auth/register", {
+    email,
+    password: PASSWORD,
+    name: "Fixture portal customer",
+    companyName: "Fixture portal onboarding",
+  });
+  const binding = await db.query(
+    `WITH portal_user AS (
+       UPDATE users SET user_type = 'client_portal', email_verified = TRUE WHERE email = $1 RETURNING id
+     )
+     INSERT INTO customer_portal_accounts (company_id, contact_id, user_id)
+     SELECT $2, $3, id FROM portal_user`,
+    [email, persona.clients[0].id, contactId]
+  );
+  assert.equal(binding.rowCount, 1);
   const { portalUrl } = await request(persona.token, "POST", "/api/portal/generate-access", {
     contactId,
   });
@@ -826,7 +914,7 @@ async function verifyPublicOutcome(browser, persona) {
   ]);
   const context = await browser.newContext({
     locale: lang === "ar" ? "ar-AE" : "en-AE",
-    viewport: { width, height: 900 },
+    viewport: { width: 360, height: 900 },
   });
   const failures = [];
   try {
@@ -843,13 +931,24 @@ async function verifyPublicOutcome(browser, persona) {
       const text = await acceptance.textContent();
       // Staff and customer catalogs use their own localized spelling.
       assert.ok(text.includes(acceptanceText));
+      await assertUnclippedOutcome(acceptance, `${lang} shared invoice at 360px`);
       await page.waitForLoadState("networkidle");
       await open(page, portalUrl);
-      await page
+      const portalLabel = page
         .getByRole("row")
         .getByText(`${acceptanceText} · ${qualifier}`, { exact: false })
-        .waitFor();
+        .filter({ visible: true });
+      await assertUnclippedOutcome(portalLabel, `${lang} token portal at 360px`);
       await page.waitForLoadState("networkidle");
+      await inBrowser(browser, { ...persona, email, width: 360 }, async (signedIn, navigate) => {
+        await navigate("/client-portal/invoices");
+        const label = signedIn
+          .getByTestId(`portal-invoice-row-${invoiceId}`)
+          .getByText(`${acceptanceText} · ${qualifier}`, { exact: false })
+          .filter({ visible: true });
+        await assertUnclippedOutcome(label, `${lang} authenticated portal at 360px`);
+        await expectFrame(signedIn, lang);
+      });
     };
     await check(copies[lang].sandbox);
     await db.query(
@@ -859,7 +958,7 @@ async function verifyPublicOutcome(browser, persona) {
     await check(copies[lang].environmentUnknown);
     assert.deepEqual(failures, [], `${lang} public e-invoice browser and API errors`);
     console.log(
-      `${lang}: public invoice and customer portal qualify sandbox and legacy acceptance`
+      `${lang}: public invoice and both customer portals show complete outcome labels at 360px`
     );
   } finally {
     await context.close();

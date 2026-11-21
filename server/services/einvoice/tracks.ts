@@ -166,7 +166,6 @@ export function projectEInvoiceLegacyStatus<T extends string>(
  * per-invoice status view and the invoice-list compliance pills so both always agree (X6d).
  */
 export function deriveInvoiceTracks(args: {
-  invoiceDate: Date | string | null | undefined;
   invoiceStatus: string | null | undefined;
   legacyStatus: string | null | undefined;
   provider?: string | null;
@@ -176,25 +175,25 @@ export function deriveInvoiceTracks(args: {
     deliveryStatus?: string | null;
     reportingStatus?: string | null;
     validation?: unknown;
-    reportBy?: string | null;
   } | null;
-  required: boolean;
+  obligation: { required: boolean; known: boolean; reportBy: string | null };
   now?: Date;
 }): {
   delivery: DeliveryStatus;
   reporting: ReportingStatus;
   reportingRequired: boolean;
+  reportingObligationKnown: boolean;
   isDraft: boolean;
   reportBy: string | null;
   overdue: boolean;
 } {
   const now = args.now ?? new Date();
-  const { doc, required } = args;
+  const { doc, obligation } = args;
   const provider = doc?.provider ?? args.provider;
   const providerStatus = doc?.providerStatus?.trim().toLowerCase();
   const reporting = reportingFromEvidence(
     provider,
-    required,
+    obligation.required || !obligation.known,
     storedReportingEvidence(doc, provider)
   );
   const legacy = projectEInvoiceLegacyStatus(
@@ -210,17 +209,19 @@ export function deriveInvoiceTracks(args: {
     if (providerStatus === "processed") delivery = "sending";
     else if (providerStatus !== "accepted" && providerStatus !== "delivered") delivery = "queued";
   }
-  const isDraft = String(args.invoiceStatus ?? "").toLowerCase() === "draft";
-  // No deadline unless the mandate applies to this company; a draft has no deadline either.
-  const reportBy = required && !isDraft ? (doc?.reportBy ?? reportByDate(args.invoiceDate)) : null;
+  const invoiceStatus = String(args.invoiceStatus ?? "").toLowerCase();
+  const isDraft = invoiceStatus === "draft";
+  const inactive = isDraft || invoiceStatus === "void" || invoiceStatus === "cancelled";
+  const reportBy = obligation.required && !inactive ? obligation.reportBy : null;
   const today = now.toISOString().slice(0, 10);
   return {
     delivery,
     reporting,
-    reportingRequired: required,
+    reportingRequired: obligation.required,
+    reportingObligationKnown: obligation.known,
     isDraft,
     reportBy,
-    overdue: !isDraft && !!reportBy && reporting === "pending" && reportBy < today,
+    overdue: !!reportBy && reporting === "pending" && reportBy < today,
   };
 }
 

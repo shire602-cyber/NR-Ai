@@ -554,6 +554,7 @@
 /* Below 768px a <Table className="row-cards"> renders each row as a two-line card
    (CTO D3 rule): line 1 = [data-cell="title"] + [data-cell="amount"] + [data-cell="actions"],
    line 2 = [data-cell="meta"] cells joined by "·", then [data-cell="status"] at the end.
+   An optional [data-cell="detail"] wraps on its own full-width line below the status.
    Cells without data-cell are hidden on phones (the ⋯ menu or detail view carries them);
    colSpan rows (empty/loading states) span the whole card. */
 @media (max-width: 767px) {
@@ -665,6 +666,13 @@
   }
   table.row-cards td[data-cell="status"] ~ td[data-cell="status"] {
     margin-inline-start: 0;
+  }
+  table.row-cards td[data-cell="detail"] {
+    display: block;
+    order: 5;
+    flex: 0 0 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 }
 

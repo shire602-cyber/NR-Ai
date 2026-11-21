@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Landmark, Loader2, PlugZap, RefreshCw, Upload } from "lucide-react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useDocumentTitle } from "@/lib/customer-link";
 import { formatDate } from "@/lib/format-date";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
@@ -59,11 +60,8 @@ const CONNECTION_TONE: Record<string, StatusTone> = {
 };
 
 /**
- * Bank feeds (spec 3.9). Customers see only what they can use: when no licensed provider is
- * available to them the page is one empty state pointing to statement import (the nav item is
- * hidden by the shell); when one is, a list of their bank accounts with Connect and the state of
- * each connection. The OAuth return (`/bank-feeds/callback`) shows a progress state and comes
- * back here. Nothing claims a connection or sync that did not happen.
+ * Start with statement import and switch to the connection controls when a provider is available.
+ * The OAuth callback shows progress before returning to the connection list.
  */
 export default function BankFeeds() {
   const { t, locale } = useTranslation();
@@ -75,13 +73,18 @@ export default function BankFeeds() {
   const { data: providers, isLoading: providersLoading } = useQuery<ProvidersResponse>({
     queryKey: ["/api/bank/providers"],
   });
-  const { data: connections } = useQuery<Connection[]>({
+  const available = useMemo(
+    () => (providers?.statuses ?? []).filter((p) => p.configured),
+    [providers?.statuses]
+  );
+  const canConnect = available.length > 0;
+  const { data: connections, isLoading: connectionsLoading } = useQuery<Connection[]>({
     queryKey: ["/api/companies", companyId, "bank-connections"],
-    enabled: !!companyId,
+    enabled: canConnect && !!companyId,
   });
   const { data: accounts, isLoading: accountsLoading } = useQuery<BankAccount[]>({
     queryKey: ["/api/companies", companyId, "bank-accounts"],
-    enabled: !!companyId,
+    enabled: canConnect && !!companyId,
   });
   const onError = (err: Error) =>
     toast({ variant: "destructive", title: tt["banking.common.error"], description: err?.message });
@@ -92,6 +95,12 @@ export default function BankFeeds() {
     const q = new URLSearchParams(window.location.search);
     return Boolean((q.get("code") ?? q.get("entity_id")) && q.get("state"));
   });
+  const title = returning
+    ? tt["banking.feeds.connecting"]
+    : canConnect
+      ? tt["banking.feeds.title"]
+      : tt["banking.feeds.statementImportTitle"];
+  useDocumentTitle(title);
   const callbackMutation = useMutation({
     mutationFn: (p: { provider: string; code: string; state: string }) =>
       apiRequest("POST", `/api/companies/${companyId}/bank-connections/callback`, p),
@@ -145,19 +154,10 @@ export default function BankFeeds() {
     onError,
   });
 
-  const available = useMemo(
-    () => (providers?.statuses ?? []).filter((p) => p.configured),
-    [providers?.statuses]
-  );
   const connectionFor = (accountId: string) =>
     (connections ?? []).find((c) => c.provider !== "manual" && c.bankAccountId === accountId);
 
-  const header = (
-    <PageHeader
-      eyebrow={tt["shell.nav.banking"]}
-      title={tt["banking.feeds.title"]}
-    />
-  );
+  const header = <PageHeader eyebrow={tt["shell.nav.banking"]} title={title} />;
 
   if (returning) {
     return (
@@ -166,13 +166,13 @@ export default function BankFeeds() {
         role="status"
       >
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden />
-        <h1 className="text-h2 text-foreground">{tt["banking.feeds.connecting"]}</h1>
+        <h1 className="text-h2 text-foreground">{title}</h1>
         <p className="text-small text-muted-foreground">{tt["banking.feeds.connectingBody"]}</p>
       </div>
     );
   }
 
-  if (providersLoading || accountsLoading) {
+  if (providersLoading || accountsLoading || connectionsLoading) {
     return (
       <div className="space-y-6">
         {header}
@@ -181,25 +181,21 @@ export default function BankFeeds() {
     );
   }
 
-  if (available.length === 0) {
+  if (!canConnect) {
     return (
-      <div className="space-y-6">
-        {header}
-        <Card>
-          <EmptyState
-            size="md"
-            icon={Landmark}
-            title={tt["banking.feeds.statementImportTitle"]}
-            description={tt["banking.feeds.manualImportBody"]}
-            action={{
-              label: tt["banking.feeds.importStatement"],
-              href: "/bank-reconciliation?import=1",
-              icon: Upload,
-              testId: "button-feeds-import-statement",
-            }}
-          />
-        </Card>
-      </div>
+      <PageHeader
+        eyebrow={tt["shell.nav.banking"]}
+        title={title}
+        description={tt["banking.feeds.manualImportBody"]}
+        primaryAction={
+          <Button asChild>
+            <Link href="/bank-reconciliation?import=1" data-testid="button-feeds-import-statement">
+              <Upload aria-hidden />
+              {tt["banking.feeds.importStatement"]}
+            </Link>
+          </Button>
+        }
+      />
     );
   }
 

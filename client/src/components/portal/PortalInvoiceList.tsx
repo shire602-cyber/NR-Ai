@@ -231,18 +231,27 @@ export function PortalInvoiceList({
                 {rows.map((inv) => {
                   const isCredit = inv.paymentStatus === "credit";
                   const canPay = onlinePayment && !isCredit && inv.amountDue > 0;
+                  const einvoiceLabel = inv.einvoice && customerEInvoiceLabel(inv.einvoice, t);
                   return (
                     <TableRow key={inv.id} data-testid={`portal-invoice-row-${inv.id}`}>
                       <TableCell data-cell="title" className="font-medium text-foreground">
                         <span translate="no">
                           <MiddleTruncate text={String(inv.number ?? "")} />
                         </span>
-                        {inv.einvoice && (
-                          <span className="mt-1 block text-caption text-muted-foreground">
-                            {customerEInvoiceLabel(inv.einvoice, t)}
+                        {einvoiceLabel && (
+                          <span className="mt-1 hidden text-caption text-muted-foreground md:block">
+                            {einvoiceLabel}
                           </span>
                         )}
                       </TableCell>
+                      {einvoiceLabel && (
+                        <TableCell
+                          data-cell="detail"
+                          className="text-caption text-muted-foreground md:hidden"
+                        >
+                          {einvoiceLabel}
+                        </TableCell>
+                      )}
                       <TableCell
                         data-nowrap=""
                         data-cell="meta"

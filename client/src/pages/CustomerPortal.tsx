@@ -654,16 +654,26 @@ function PortalHome({ token }: { token: string | null }) {
                         const late =
                           invoice.paymentStatus === "overdue" ? daysOverdue(invoice.dueDate) : 0;
                         const paying = payingId === invoice.id;
+                        const einvoiceLabel =
+                          invoice.einvoice && customerEInvoiceLabel(invoice.einvoice, t);
                         return (
                           <TableRow key={invoice.id}>
                             <TableCell data-cell="title" className="font-medium">
                               <bdi>{invoice.number}</bdi>
-                              {invoice.einvoice && (
-                                <span className="ms-2 text-caption text-muted-foreground">
-                                  {customerEInvoiceLabel(invoice.einvoice, t)}
+                              {einvoiceLabel && (
+                                <span className="ms-2 hidden text-caption text-muted-foreground md:inline">
+                                  {einvoiceLabel}
                                 </span>
                               )}
                             </TableCell>
+                            {einvoiceLabel && (
+                              <TableCell
+                                data-cell="detail"
+                                className="text-caption text-muted-foreground md:hidden"
+                              >
+                                {einvoiceLabel}
+                              </TableCell>
+                            )}
                             <TableCell
                               data-cell="meta"
                               data-nowrap=""

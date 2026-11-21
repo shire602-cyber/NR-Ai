@@ -47,10 +47,7 @@ export function EInvoiceHeaderStrip({
   const firstLabelKey = first ? fieldLabelKey(first.field) : null;
   const firstLabel = first ? (firstLabelKey ? t[firstLabelKey] : first.field) : "";
   const reportMeta =
-    reporting.required &&
-    !reporting.confirmationUnavailable &&
-    reporting.status !== "reported" &&
-    reporting.reportBy
+    reporting.required && reporting.status !== "reported" && reporting.reportBy
       ? formatMessage(
           reporting.overdue ? t["einvoicing.reportByPassed"] : t["einvoicing.reportBy"],
           {
@@ -92,6 +89,7 @@ export function EInvoiceHeaderStrip({
           queuedForSubmission={view.submissionState === "queued"}
           acknowledgement={view.transmission.recipientAcknowledgement}
           confirmationUnavailable={reporting.confirmationUnavailable}
+          obligationKnown={reporting.obligationKnown}
           environment={view.transmission.environment}
           showReportingLabel
         />

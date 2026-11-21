@@ -1,7 +1,17 @@
-import type { Company, Invoice } from "../../../shared/schema";
+import {
+  invoices,
+  type Company,
+  type EInvoiceDocument,
+  type Invoice,
+} from "../../../shared/schema";
 import { first, parseXml, partyVatTrn, textAt } from "./dom";
 import { einvoiceMandateApplies } from "./scope";
-import { reportByDate, reportingRequired } from "./tracks";
+import { deriveInvoiceTracks, reportByDate, reportingRequired } from "./tracks";
+import {
+  documentSubmissionSnapshot,
+  recordedReportingRequired,
+  submissionProviderPin,
+} from "./store";
 
 type InvoiceBuyer = Pick<Invoice, "customerTrn"> & Partial<Pick<Invoice, "einvoiceXml">>;
 
@@ -35,4 +45,72 @@ export function invoiceReportingRequired(
 
 export function invoiceReportingDeadline(invoice: Pick<Invoice, "einvoiceXml" | "date">) {
   return reportByDate(readReportingSource(invoice.einvoiceXml)?.issueDate ?? invoice.date);
+}
+
+export const reportingInvoiceColumns = {
+  id: invoices.id,
+  date: invoices.date,
+  status: invoices.status,
+  customerTrn: invoices.customerTrn,
+  einvoiceStatus: invoices.einvoiceStatus,
+  einvoiceProvider: invoices.einvoiceProvider,
+  einvoiceSubmittedAt: invoices.einvoiceSubmittedAt,
+  einvoiceProviderMessageId: invoices.einvoiceProviderMessageId,
+};
+
+type ReportingInvoice = Pick<Invoice, keyof typeof reportingInvoiceColumns>;
+
+const historicalStatuses = new Set([
+  "queued",
+  "submitted",
+  "accepted",
+  "cleared",
+  "rejected",
+  "failed",
+  "cancelled",
+]);
+
+/** Only work that has not entered the submission workflow can use the live filing preview. */
+export function projectReportingObligation(
+  invoice: ReportingInvoice | null | undefined,
+  doc: EInvoiceDocument | null | undefined,
+  company: Company,
+  now: Date,
+  resolvedBuyerTrn: string | null | undefined = invoice?.customerTrn
+) {
+  const attempted =
+    !invoice ||
+    !!invoice.einvoiceSubmittedAt ||
+    submissionProviderPin(invoice, doc ?? undefined) !== undefined ||
+    !!doc?.submittedAt ||
+    !!documentSubmissionSnapshot(doc)?.operationId ||
+    historicalStatuses.has(invoice.einvoiceStatus ?? "") ||
+    historicalStatuses.has(doc?.status ?? "");
+  if (attempted) {
+    const recorded = recordedReportingRequired(doc);
+    return {
+      required: recorded === true,
+      known: recorded !== null,
+      reportBy: doc?.reportBy ?? null,
+    };
+  }
+  const required = invoiceReportingRequired(invoice, company, now, resolvedBuyerTrn);
+  return { required, known: true, reportBy: required ? reportByDate(invoice.date) : null };
+}
+
+export function projectInvoiceTracks(
+  invoice: ReportingInvoice | null | undefined,
+  doc: EInvoiceDocument | null | undefined,
+  company: Company,
+  now: Date,
+  resolvedBuyerTrn: string | null | undefined = invoice?.customerTrn
+) {
+  return deriveInvoiceTracks({
+    invoiceStatus: invoice?.status,
+    legacyStatus: invoice?.einvoiceStatus ?? doc?.status,
+    provider: invoice?.einvoiceProvider,
+    doc: doc ?? null,
+    obligation: projectReportingObligation(invoice, doc, company, now, resolvedBuyerTrn),
+    now,
+  });
 }

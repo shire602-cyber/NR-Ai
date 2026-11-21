@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { Company } from "../../shared/schema";
+import type { Company, EInvoiceDocument } from "../../shared/schema";
 import {
   invoiceReportingDeadline,
   invoiceReportingRequired,
+  projectReportingObligation,
 } from "../../server/services/einvoice/reporting";
 
 const TRN = "100765432100003";
@@ -55,5 +56,79 @@ describe("reporting obligation of the frozen buyer", () => {
     expect(invoiceReportingDeadline({ einvoiceXml: "not an XML document", date })).toBe(
       "2026-11-28"
     );
+  });
+});
+
+describe("FTA reporting deadline projection", () => {
+  const issued = {
+    id: "issued-invoice",
+    customerTrn: TRN,
+    date: new Date("2026-03-01T00:00:00Z"),
+    status: "sent",
+    einvoiceStatus: "generated",
+    einvoiceProvider: null,
+    einvoiceSubmittedAt: null,
+    einvoiceProviderMessageId: null,
+  };
+  const document = (changes: Partial<EInvoiceDocument>) =>
+    ({ status: "generated", ...changes }) as EInvoiceDocument;
+
+  it("re-evaluates a generated-only deadline until transmission work is queued", () => {
+    const preview = document({
+      reportBy: "2026-08-01",
+      validation: { submission: { reportingRequired: true } },
+    });
+    expect(projectReportingObligation(issued, preview, company, now, null)).toEqual({
+      required: false,
+      known: true,
+      reportBy: null,
+    });
+    expect(projectReportingObligation(issued, preview, company, now)).toEqual({
+      required: true,
+      known: true,
+      reportBy: "2026-03-15",
+    });
+    const queued = document({
+      ...preview,
+      validation: { submission: { operationId: "sealed-operation", reportingRequired: true } },
+    });
+    expect(projectReportingObligation(issued, queued, company, now, null)).toEqual({
+      required: true,
+      known: true,
+      reportBy: "2026-08-01",
+    });
+  });
+
+  it("keeps a recorded due date over a conflicting flag and keeps a missing historical deadline unknown", () => {
+    const historical = {
+      ...issued,
+      einvoiceStatus: "submitted",
+      einvoiceProviderMessageId: "original-reference",
+    };
+    const snapshot = { submission: { reportingRequired: false } };
+    expect(
+      projectReportingObligation(
+        historical,
+        document({ validation: snapshot, reportBy: "2026-02-07" }),
+        company,
+        now
+      )
+    ).toEqual({ required: true, known: true, reportBy: "2026-02-07" });
+    expect(
+      projectReportingObligation(historical, document({ validation: snapshot }), company, now)
+    ).toEqual({ required: false, known: true, reportBy: null });
+    expect(
+      projectReportingObligation(
+        historical,
+        document({ validation: { submission: { reportingRequired: true } } }),
+        company,
+        now
+      )
+    ).toEqual({ required: true, known: true, reportBy: null });
+    expect(projectReportingObligation(historical, undefined, company, now)).toEqual({
+      required: false,
+      known: false,
+      reportBy: null,
+    });
   });
 });

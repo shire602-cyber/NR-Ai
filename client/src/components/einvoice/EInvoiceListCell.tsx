@@ -53,6 +53,8 @@ export function EInvoiceListCell({
     !!doc.providerMessageId &&
     (storedReporting === "pending" || storedReporting === "reported");
   const reporting = confirmationUnavailable ? "pending" : storedReporting;
+  const obligationKnown = pill?.reportingObligationKnown ?? doc?.reportingObligationKnown;
+  const deadline = reporting === "pending" ? pill?.reportBy : null;
   return (
     <>
       <button
@@ -68,23 +70,24 @@ export function EInvoiceListCell({
             data-testid={`einvoice-compliance-${invoice.id}`}
           >
             <StatusBadge
-              tone={pill.overdue && !confirmationUnavailable ? "danger" : REPORTING_TONE[reporting]}
+              tone={pill.overdue && deadline ? "danger" : REPORTING_TONE[reporting]}
               data-testid={`einvoice-reportby-${invoice.id}`}
             >
-              {confirmationUnavailable || reporting === "reported" || reporting === "report_failed"
-                ? trackOutcomeLabel(
+              {deadline
+                ? formatMessage(
+                    pill.overdue ? t["launchProof.reportOverdueShort"] : t["einvoicing.reportBy"],
+                    { date: formatDate(deadline, locale) }
+                  )
+                : trackOutcomeLabel(
                     t,
-                    reportingLabelKey(reporting, confirmationUnavailable),
+                    reportingLabelKey(reporting, confirmationUnavailable, obligationKnown),
                     reporting === "reported",
                     doc?.environment
-                  )
-                : pill.reportBy
-                  ? formatMessage(
-                      pill.overdue ? t["launchProof.reportOverdueShort"] : t["einvoicing.reportBy"],
-                      { date: formatDate(pill.reportBy, locale) }
-                    )
-                  : t[reportingLabelKey(reporting)]}
+                  )}
             </StatusBadge>
+            {deadline && confirmationUnavailable && (
+              <StatusBadge tone="neutral">{t["einvoicing.reportingUnconfirmed"]}</StatusBadge>
+            )}
             <StatusBadge
               tone={acknowledgement === "received" ? "info" : DELIVERY_TONE[delivery]}
               data-testid={`einvoice-delivery-${invoice.id}`}
@@ -106,6 +109,7 @@ export function EInvoiceListCell({
             queuedForSubmission={queuedForSubmission}
             acknowledgement={acknowledgement}
             confirmationUnavailable={confirmationUnavailable}
+            obligationKnown={obligationKnown}
             environment={doc?.environment}
           />
         )}

@@ -21,6 +21,7 @@
   "einvoicing.reporting_not_required": "غير مطلوب",
   "einvoicing.reporting_pending": "قيد الانتظار",
   "einvoicing.reportingUnconfirmed": "التأكيد غير متاح",
+  "einvoicing.reportingObligationUnknown": "متطلبات الإبلاغ غير معروفة",
   "einvoicing.reportingUnconfirmedHint": "لم يقدّم مزوّد الخدمة تأكيدًا معتمدًا لإبلاغ الهيئة الاتحادية للضرائب.",
   "einvoicing.reporting_reported": "تم الإبلاغ",
   "einvoicing.reporting_report_failed": "تعذّر الإبلاغ",

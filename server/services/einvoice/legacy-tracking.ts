@@ -29,11 +29,10 @@ import { companyProviderConfiguration } from "./providers/company-provider";
 import { ComplyanceEInvoiceProvider } from "./providers/complyance";
 import type { ProviderEnvironment } from "./providers/types";
 import { applyTracks } from "./history";
-import { invoiceReportingDeadline, invoiceReportingRequired } from "./reporting";
 import {
   archiveEInvoiceXml,
   documentProviderEnvironment,
-  documentReportingRequired,
+  recordedReportingRequired,
   documentSubmissionMetadata,
   documentSubmissionSnapshot,
   getEInvoiceDocument,
@@ -461,7 +460,6 @@ async function legacyRefusalProof(
       id: auditLogs.id,
       action: auditLogs.action,
       details: auditLogs.details,
-      createdAt: auditLogs.createdAt,
     })
     .from(auditLogs)
     .where(
@@ -535,7 +533,7 @@ async function legacyRefusalProof(
     (snapshot?.environment && snapshot.environment !== environment)
   )
     return null;
-  return { auditId: audit.id, environment, attemptedAt: audit.createdAt };
+  return { auditId: audit.id, environment };
 }
 
 async function confirmLegacyRefusal(args: {
@@ -584,15 +582,11 @@ async function confirmLegacyRefusal(args: {
       throw mismatch();
     const scope = await new AcubeEInvoiceProvider(config.env).getSubmissionScope(company.id);
     const now = new Date();
-    const required = documentReportingRequired(
-      doc,
-      invoiceReportingRequired(current, company, proof.attemptedAt)
-    );
+    const required = recordedReportingRequired(doc);
     await upsertEInvoiceDocument(
       company.id,
       invoice.id,
       {
-        reportBy: required ? (doc?.reportBy ?? invoiceReportingDeadline(current)) : null,
         validation: {
           ...(doc?.validation as Record<string, unknown>),
           submission: {
@@ -604,7 +598,7 @@ async function confirmLegacyRefusal(args: {
             supplierTrn: source.supplierTrn,
             legalEntityId: entity.legalEntityId,
             providerAttempted: true,
-            reportingRequired: required,
+            ...(required === null ? {} : { reportingRequired: required }),
             legacyRefusalAuditId: proof.auditId,
             environmentVerifiedAt: now.toISOString(),
           },
@@ -714,7 +708,7 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
     const current = await lockEInvoiceInvoice(company.id, invoice.id, tx);
     if (!current) throw new DomainError("INVOICE_NOT_FOUND", 404);
     const [currentCompany] = await tx
-      .select()
+      .select({ deletedAt: companies.deletedAt })
       .from(companies)
       .where(eq(companies.id, company.id))
       .for("share");
@@ -762,15 +756,7 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
       throw mismatch();
 
     const now = new Date();
-    const original = { ...current, einvoiceXml: source.xml };
-    const required = documentReportingRequired(
-      stored,
-      invoiceReportingRequired(
-        original,
-        currentCompany,
-        current.einvoiceSubmittedAt ?? stored?.submittedAt ?? stored?.createdAt ?? now
-      )
-    );
+    const required = recordedReportingRequired(stored);
     const validation =
       stored?.validation &&
       typeof stored.validation === "object" &&
@@ -791,7 +777,6 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
       documentType: source.documentType,
       xmlHash: source.hash,
       uuid: source.uuid,
-      reportBy: required ? (stored?.reportBy ?? invoiceReportingDeadline(original)) : null,
       validation: {
         ...validation,
         submission: {
@@ -801,7 +786,7 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
           environment,
           environmentVerifiedAt: now.toISOString(),
           providerAttempted: true,
-          reportingRequired: required,
+          ...(required === null ? {} : { reportingRequired: required }),
           ...(stored?.lastErrorCode === "COMPLYANCE_XML_FAILED" ? { correctionBlocked: true } : {}),
         },
       },

@@ -17,7 +17,6 @@ import { validateForEInvoicing } from "../einvoice.service";
 import { loadEInvoiceContext } from "./context";
 import {
   documentProviderEnvironment,
-  documentReportingRequired,
   documentValidation,
   getEInvoiceDocument,
   isQueuedEInvoiceDocument,
@@ -43,7 +42,7 @@ import {
 } from "./tracks";
 import { einvoiceMandateApplies } from "./scope";
 import { canRecoverAcubeSubmission } from "./workflow";
-import { invoiceReportingRequired } from "./reporting";
+import { projectInvoiceTracks } from "./reporting";
 import { companyProviderConfiguration } from "./providers/company-provider";
 import { providerModule } from "./providers/registry";
 
@@ -91,6 +90,7 @@ export function projectEInvoiceDocument(
     deliveryStatusAt: tracks.delivery === doc.deliveryStatus ? doc.deliveryStatusAt : null,
     reportingStatus: tracks.reporting,
     reportingRequired: tracks.reportingRequired,
+    reportingObligationKnown: tracks.reportingObligationKnown,
     reportingStatusAt: tracks.reporting === doc.reportingStatus ? doc.reportingStatusAt : null,
     clearedAt: status === "cleared" && tracks.reporting === "reported" ? doc.clearedAt : null,
     reportedAt: tracks.reporting === "reported" ? doc.reportedAt : null,
@@ -105,15 +105,6 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
   const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
   const ctx = await loadEInvoiceContext(invoice, company, lines);
   const issues = validateForEInvoicing(invoice, lines, company, ctx);
-  const required = documentReportingRequired(
-    doc,
-    invoiceReportingRequired(
-      invoice,
-      company,
-      invoice.einvoiceSubmittedAt ?? doc?.submittedAt ?? now,
-      ctx.customer?.trn
-    )
-  );
   const providerDocumentId =
     invoice.einvoiceProviderMessageId ?? legacyTrackingReference(invoice, doc)?.messageId ?? null;
   const handedOver = !!providerDocumentId;
@@ -134,16 +125,15 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     : null;
   const isAcube = providerId === "acube";
   const providerStatus = doc?.providerStatus?.trim().toLowerCase();
-  const tracks = deriveInvoiceTracks({
-    invoiceDate: invoice.date,
-    invoiceStatus: invoice.status,
-    legacyStatus: invoice.einvoiceStatus,
-    provider: providerId,
-    doc: doc ?? null,
-    required,
-    now,
-  });
-  const { delivery, reporting, reportBy, overdue } = tracks;
+  const tracks = projectInvoiceTracks(invoice, doc, company, now, ctx.customer?.trn);
+  const {
+    delivery,
+    reporting,
+    reportBy,
+    overdue,
+    reportingRequired: required,
+    reportingObligationKnown,
+  } = tracks;
   const legacy = projectEInvoiceLegacyStatus(
     providerId,
     providerStatus,
@@ -280,6 +270,7 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
         status: reporting,
         at: reporting === doc?.reportingStatus ? iso(doc.reportingStatusAt) : null,
         required,
+        obligationKnown: reportingObligationKnown,
         confirmationUnavailable: handedOver && isAcube && reporting === "pending",
         reportBy,
         overdue,

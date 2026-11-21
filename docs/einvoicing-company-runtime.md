@@ -68,6 +68,12 @@ Successful verification saves the environment, records an audit entry, and lets 
 and polling continue. If the provider environment has moved, an operator must restore the
 original environment setting before verifying the document.
 
+The invoice status and list show the report-by date recorded when submission was queued. A saved
+deadline remains visible after a contact or mandate change. When older submitted records lack
+the original obligation or deadline, those missing facts remain unavailable. Before submission,
+the preview uses the current buyer and company settings. Provider reporting observations remain
+visible even when the local obligation is unknown.
+
 An older A-Cube validation refusal can also be verified when the invoice has one direct attempt
 and the original audit records its environment. The saved XML, refusal history and seller must
 agree with that record and the company's active A-Cube connection. Verification records the

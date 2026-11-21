@@ -1,6 +1,6 @@
 import express, { type Express, type Request, type Response } from "express";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { storage } from "../storage";
 import { db } from "../db";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
@@ -11,7 +11,14 @@ import {
 } from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
 import { DomainError } from "../errors";
-import { companies, invoiceLines, invoices, type Company, type Invoice } from "../../shared/schema";
+import {
+  companies,
+  customerContacts,
+  invoiceLines,
+  invoices,
+  type Company,
+  type Invoice,
+} from "../../shared/schema";
 import { getCapability } from "../../shared/capabilities";
 import { zDate, zIbanAE, zText, zUuid } from "../../shared/validators/primitives";
 import { preflightEInvoice } from "../services/einvoice-submit.service";
@@ -35,7 +42,6 @@ import {
   getArchiveEntry,
   getEInvoiceDocument,
   documentProviderEnvironment,
-  documentReportingRequired,
   listArchive,
   listEInvoiceDocuments,
   listInboundDocuments,
@@ -69,10 +75,15 @@ import {
   runEInvoiceRetries,
   enqueueEInvoiceSubmission,
 } from "../services/einvoice/workflow";
-import { invoiceReportingDeadline, invoiceReportingRequired } from "../services/einvoice/reporting";
+import {
+  invoiceReportingDeadline,
+  invoiceReportingRequired,
+  projectInvoiceTracks,
+  reportingInvoiceColumns,
+} from "../services/einvoice/reporting";
 import { einvoiceStatusView, projectEInvoiceDocument } from "../services/einvoice/status-view";
 import { applyTracks, recordValidationEvent } from "../services/einvoice/history";
-import { deriveInvoiceTracks, NEW_DOCUMENT_REQUIRED_CODES } from "../services/einvoice/tracks";
+import { NEW_DOCUMENT_REQUIRED_CODES } from "../services/einvoice/tracks";
 import { runProviderEvents, runProviderPoll } from "../services/einvoice/provider-events";
 import {
   LEGAL_ID_TYPES,
@@ -759,25 +770,46 @@ export function registerEInvoiceRoutes(app: Express) {
         listEInvoiceDocuments(companyId),
       ]);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
-      const invoices = await Promise.all(
-        rows.map((row) => storage.getInvoice(row.invoiceId, companyId))
-      );
+      if (!rows.length) return res.json({ items: [] });
+      const source = await db
+        .select({
+          invoice: {
+            ...reportingInvoiceColumns,
+            number: invoices.number,
+            customerName: invoices.customerName,
+          },
+          linkedBuyerTrn: customerContacts.trnNumber,
+        })
+        .from(invoices)
+        .leftJoin(
+          customerContacts,
+          and(
+            eq(customerContacts.id, invoices.contactId),
+            eq(customerContacts.companyId, invoices.companyId)
+          )
+        )
+        .where(
+          and(
+            eq(invoices.companyId, companyId),
+            inArray(
+              invoices.id,
+              rows.map((row) => row.invoiceId)
+            )
+          )
+        );
+      const byInvoice = new Map(source.map((row) => [row.invoice.id, row]));
       const now = new Date();
       res.json({
-        items: rows.map((doc, i) => {
-          const invoice = invoices[i];
-          const tracks = deriveInvoiceTracks({
-            invoiceDate: invoice?.date,
-            invoiceStatus: invoice?.status,
-            legacyStatus: invoice?.einvoiceStatus ?? doc.status,
-            provider: invoice?.einvoiceProvider,
+        items: rows.map((doc) => {
+          const source = byInvoice.get(doc.invoiceId);
+          const invoice = source?.invoice;
+          const tracks = projectInvoiceTracks(
+            invoice,
             doc,
-            required: documentReportingRequired(
-              doc,
-              invoice ? invoiceReportingRequired(invoice, company, now) : false
-            ),
+            company,
             now,
-          });
+            invoice?.customerTrn || source?.linkedBuyerTrn
+          );
           return {
             ...projectEInvoiceDocument(doc, tracks),
             invoiceNumber: invoice?.number ?? null,

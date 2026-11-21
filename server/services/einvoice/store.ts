@@ -99,27 +99,26 @@ export function documentSubmissionMetadata(
   };
 }
 
-/** Keep the obligation assessed when the document entered the queue. */
-export function documentReportingRequired(
+/** A recorded due date is evidence of an obligation even on older, inconsistent rows. */
+export function recordedReportingRequired(
   doc:
     | Pick<EInvoiceDocument, "validation" | "reportBy" | "reportingStatus" | "providerMessageId">
     | null
-    | undefined,
-  fallback: boolean
-): boolean {
+    | undefined
+): boolean | null {
+  if (doc?.reportBy) return true;
   const metadata = documentSubmissionSnapshot(doc);
   if (typeof metadata?.reportingRequired === "boolean") return metadata.reportingRequired;
   // Older queued documents recorded a deadline for required filings and not_required otherwise.
-  if (doc?.reportBy) return true;
   if (doc?.reportingStatus === "not_required" && (metadata?.operationId || doc.providerMessageId))
     return false;
-  return fallback;
+  return null;
 }
 
 /** Retain a legacy document's obligation before its next provider observation replaces the old track. */
 export function pinDocumentReporting(
   doc: Pick<EInvoiceDocument, "validation"> | null | undefined,
-  required: boolean,
+  required: boolean | null,
   observed: ReportingObservation | null,
   now: Date
 ) {
@@ -139,7 +138,7 @@ export function pinDocumentReporting(
       : {}),
     submission: {
       ...snapshot,
-      reportingRequired: required,
+      ...(required == null ? {} : { reportingRequired: required }),
       ...(reportingEvidence ? { reportingEvidence } : {}),
     },
   };

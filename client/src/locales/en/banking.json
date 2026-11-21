@@ -184,7 +184,7 @@
   "banking.recon.report": "Reconciliation report",
   "banking.recon.moreActions": "More actions",
   "banking.feeds.statementImportTitle": "Import bank statements",
-  "banking.feeds.manualImportBody": "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.",
+  "banking.feeds.manualImportBody": "Upload a bank statement to review and reconcile transactions.",
   "banking.feeds.importStatement": "Import a statement",
   "banking.feeds.accountsTitle": "Your bank accounts",
   "banking.feeds.accountsBody": "Review provider connections for your accounts.",

@@ -12,22 +12,17 @@ import {
   type Company,
 } from "../../../shared/schema";
 import { db } from "../../db";
-import { documentReportingRequired } from "./store";
 import { projectEInvoiceDocument } from "./status-view";
 import { einvoiceMandateApplies } from "./scope";
-import {
-  deriveInvoiceTracks,
-  isReportingObservation,
-  type DeliveryStatus,
-  type ReportingStatus,
-} from "./tracks";
-import { invoiceReportingRequired } from "./reporting";
+import { isReportingObservation, type DeliveryStatus, type ReportingStatus } from "./tracks";
+import { projectInvoiceTracks, reportingInvoiceColumns } from "./reporting";
 
 export interface CompliancePill {
   invoiceId: string;
   reportBy: string | null;
   overdue: boolean;
   reportingRequired: boolean;
+  reportingObligationKnown: boolean;
   delivery: DeliveryStatus;
   reporting: ReportingStatus;
 }
@@ -42,6 +37,8 @@ type DocumentEvidence = Pick<
   | "providerMessageId"
   | "deliveryStatus"
   | "reportingStatus"
+  | "reportingRequired"
+  | "reportingObligationKnown"
   | "reportBy"
 >;
 
@@ -53,14 +50,7 @@ export async function listCompliancePills(
   const mandateApplies = einvoiceMandateApplies(company, now);
   const rows = await db
     .select({
-      invoice: {
-        id: invoices.id,
-        date: invoices.date,
-        status: invoices.status,
-        customerTrn: invoices.customerTrn,
-        einvoiceStatus: invoices.einvoiceStatus,
-        einvoiceProvider: invoices.einvoiceProvider,
-      },
+      invoice: reportingInvoiceColumns,
       doc: einvoiceDocuments,
       linkedBuyerTrn: customerContacts.trnNumber,
     })
@@ -90,24 +80,13 @@ export async function listCompliancePills(
   const documents: DocumentEvidence[] = [];
   for (const { invoice, doc, linkedBuyerTrn } of rows) {
     const status = String(invoice.status ?? "").toLowerCase();
-    const required = documentReportingRequired(
+    const t = projectInvoiceTracks(
+      invoice,
       doc,
-      invoiceReportingRequired(
-        invoice,
-        company,
-        doc?.submittedAt ?? now,
-        invoice.customerTrn || linkedBuyerTrn
-      )
-    );
-    const t = deriveInvoiceTracks({
-      invoiceDate: invoice.date,
-      invoiceStatus: invoice.status,
-      legacyStatus: invoice.einvoiceStatus,
-      provider: invoice.einvoiceProvider,
-      doc,
-      required,
+      company,
       now,
-    });
+      invoice.customerTrn || linkedBuyerTrn
+    );
     if (invoiceIds && doc) {
       const {
         invoiceId,
@@ -118,6 +97,8 @@ export async function listCompliancePills(
         providerMessageId,
         deliveryStatus,
         reportingStatus,
+        reportingRequired,
+        reportingObligationKnown,
         reportBy,
       } = projectEInvoiceDocument(doc, t);
       documents.push({
@@ -129,16 +110,25 @@ export async function listCompliancePills(
         providerMessageId,
         deliveryStatus,
         reportingStatus,
+        reportingRequired,
+        reportingObligationKnown,
         reportBy,
       });
     }
     if (status === "draft" || status === "void" || status === "cancelled") continue;
-    if (!mandateApplies && !required && !isReportingObservation(t.reporting)) continue;
+    if (
+      !mandateApplies &&
+      t.reportingObligationKnown &&
+      !t.reportingRequired &&
+      !isReportingObservation(t.reporting)
+    )
+      continue;
     items.push({
       invoiceId: invoice.id,
       reportBy: t.reportBy,
       overdue: t.overdue,
       reportingRequired: t.reportingRequired,
+      reportingObligationKnown: t.reportingObligationKnown,
       delivery: t.delivery,
       reporting: t.reporting,
     });

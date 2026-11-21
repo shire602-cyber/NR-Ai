@@ -638,6 +638,10 @@ export async function runProviderPoll(
              OR (${einvoiceDocuments.status} IN ('accepted', 'cleared')
                  AND lower(btrim(${einvoiceDocuments.providerStatus})) IS DISTINCT FROM 'accepted'))`
       : sql`(${einvoiceDocuments.reportingStatus} = 'pending'
+             OR (${einvoiceDocuments.reportingStatus} IS NULL
+                 AND ${einvoiceDocuments.validation}->'submission'->>'reportingRequired' IS DISTINCT FROM 'false')
+             OR (${einvoiceDocuments.reportingStatus} = 'not_required'
+                 AND ${einvoiceDocuments.reportBy} IS NOT NULL)
              OR lower(btrim(${einvoiceDocuments.providerStatus})) = 'delivery_success')`;
   const retryableDeliveryFailure =
     providerName === "acube"
