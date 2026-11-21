@@ -46,6 +46,7 @@ import {
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { isolateLtrText } from "@/lib/format-bidi";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
@@ -364,7 +365,9 @@ export default function CreditNotes() {
       title={t["screens.newCreditNote"]}
       description={
         prefilledFrom
-          ? formatMessage(t["invoices.creditFrom"], { number: prefilledFrom })
+          ? formatMessage(t["invoices.creditFrom"], {
+              number: locale === "ar" ? isolateLtrText(prefilledFrom) : prefilledFrom,
+            })
           : t["forms.creditNote.newDesc"]
       }
       footerSummary={
@@ -481,7 +484,7 @@ export default function CreditNotes() {
                     <T k="pages.customerTrn" />
                   </FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder={t["screens.optional"]} />
+                    <Input {...field} ltr inputMode="numeric" placeholder={t["screens.optional"]} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

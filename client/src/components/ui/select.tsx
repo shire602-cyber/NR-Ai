@@ -4,9 +4,13 @@ import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
 
+import { useTranslation } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-const Select = SelectPrimitive.Root;
+function Select({ dir, ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {
+  const { locale } = useTranslation();
+  return <SelectPrimitive.Root dir={dir ?? (locale === "ar" ? "rtl" : "ltr")} {...props} />;
+}
 
 const SelectGroup = SelectPrimitive.Group;
 
@@ -19,14 +23,14 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-start text-sm text-foreground shadow-xs transition-[box-shadow,border-color] duration-fast hover:border-border-strong data-[placeholder]:text-muted-foreground focus:outline-none focus:border-ring focus:ring-[3px] focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
+      "flex h-9 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-start text-sm text-foreground shadow-xs transition-[box-shadow,border-color] duration-fast hover:border-border-strong data-[placeholder]:text-muted-foreground focus:outline-none focus:border-ring focus:ring-[3px] focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:min-w-0 [&>span]:truncate",
       className
     )}
     {...props}
   >
     {children}
     <SelectPrimitive.Icon asChild>
-      <ChevronDown className="h-4 w-4 opacity-50" />
+      <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ));

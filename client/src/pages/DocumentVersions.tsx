@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { ChevronsUpDown } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -10,7 +10,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { History, FileText, Search, ChevronDown, ChevronRight, Clock, User } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/table";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiUrl } from "@/lib/api";
-import { format } from "date-fns";
+import { formatDateTime } from "@/lib/format-date";
 import type { DocumentVersion } from "@shared/schema";
 import { T } from "@/components/layout/T";
 
@@ -70,8 +70,12 @@ function documentLabel(doc: PickableDocument): string {
   return doc.number || doc.invoiceNumber || doc.receiptNumber || doc.merchant || "—";
 }
 
+function documentLabelDirection(doc: PickableDocument): "ltr" | "auto" {
+  return doc.number || doc.invoiceNumber || doc.receiptNumber ? "ltr" : "auto";
+}
+
 export default function DocumentVersions() {
-  const { t } = useTranslation();
+  const { locale, t } = useTranslation();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const initial = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
   const [documentType, setDocumentType] = useState<string>(initial.get("type") ?? "");
@@ -91,6 +95,7 @@ export default function DocumentVersions() {
     ? documentsRaw
     : (documentsRaw?.items ?? documentsRaw?.data ?? []);
   const pickedDocument = documents.find((d) => d.id === documentId);
+  const pickedType = DOCUMENT_TYPES.find((type) => type.value === documentType);
   const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
 
   const canSearch = !!selectedCompanyId && !!documentType && !!documentId.trim();
@@ -126,7 +131,7 @@ export default function DocumentVersions() {
   };
 
   const formatSnapshotData = (data: string | null): string => {
-    if (!data) return "No snapshot data";
+    if (!data) return "";
     try {
       return JSON.stringify(JSON.parse(data), null, 2);
     } catch {
@@ -152,8 +157,8 @@ export default function DocumentVersions() {
           <CardDescription>{t["documentVersions.selectADocumentTypeAnd"]}</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col sm:flex-row gap-4 items-end">
-            <div className="flex-1 space-y-2">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div className="min-w-0 flex-1 space-y-2">
               <Label htmlFor="documentType">
                 <T k="pageLabels.documentType" />
               </Label>
@@ -178,7 +183,7 @@ export default function DocumentVersions() {
               </Select>
             </div>
 
-            <div className="flex-1 space-y-2">
+            <div className="min-w-0 flex-1 space-y-2">
               <Label htmlFor="documentId">{t["documentVersions.document"]}</Label>
               <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
                 <PopoverTrigger asChild>
@@ -192,11 +197,17 @@ export default function DocumentVersions() {
                     className="w-full justify-between font-normal"
                     data-testid="button-pick-document"
                   >
-                    <span className="truncate">
-                      {pickedDocument
-                        ? documentLabel(pickedDocument)
-                        : t["documentVersions.searchByNumber"]}
-                    </span>
+                    {pickedDocument ? (
+                      <bdi
+                        className="truncate"
+                        dir={documentLabelDirection(pickedDocument)}
+                        translate="no"
+                      >
+                        {documentLabel(pickedDocument)}
+                      </bdi>
+                    ) : (
+                      <span className="truncate">{t["documentVersions.searchByNumber"]}</span>
+                    )}
                     <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" aria-hidden />
                   </Button>
                 </PopoverTrigger>
@@ -220,10 +231,16 @@ export default function DocumentVersions() {
                               setSearchTriggered(true);
                             }}
                           >
-                            <span className="font-medium tabular-nums">{documentLabel(doc)}</span>
-                            <span className="ms-2 truncate text-muted-foreground">
+                            <bdi
+                              className="min-w-0 truncate font-medium"
+                              dir={documentLabelDirection(doc)}
+                              translate="no"
+                            >
+                              {documentLabel(doc)}
+                            </bdi>
+                            <bdi className="min-w-0 truncate text-muted-foreground" translate="no">
                               {doc.customerName ?? doc.vendorName ?? ""}
-                            </span>
+                            </bdi>
                           </CommandItem>
                         ))}
                       </CommandGroup>
@@ -245,24 +262,29 @@ export default function DocumentVersions() {
       {searchTriggered && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex flex-wrap items-center gap-2">
               <FileText className="h-5 w-5" />
               {t["documentVersions.versionHistory"]}
               {versions.length > 0 && (
-                <Badge variant="secondary" className="ml-2">
-                  {versions.length} version{versions.length !== 1 ? "s" : ""}
+                <Badge variant="secondary">
+                  {formatMessage(t["documentVersions.versionCount"], { count: versions.length })}
                 </Badge>
               )}
             </CardTitle>
-            <CardDescription>
-              {documentType && <span className="capitalize">{documentType.replace("_", " ")}</span>}{" "}
-              &mdash; {documentId}
+            <CardDescription className="break-words">
+              {pickedType ? t[pickedType.labelKey] : ""} &mdash;{" "}
+              <bdi
+                dir={pickedDocument ? documentLabelDirection(pickedDocument) : "ltr"}
+                translate="no"
+              >
+                {pickedDocument ? documentLabel(pickedDocument) : documentId}
+              </bdi>
             </CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <div className="flex items-center justify-center py-12 text-muted-foreground">
-                <Clock className="h-5 w-5 mr-2 animate-spin" />
+                <Clock className="me-2 h-5 w-5 animate-spin" aria-hidden />
                 <T k="pageLabels.loadingVersionHistory" />
               </div>
             ) : isError ? (
@@ -292,7 +314,7 @@ export default function DocumentVersions() {
                     <TableHead className="w-[160px]">
                       <T k="pageLabels.changedBy" />
                     </TableHead>
-                    <TableHead className="w-[180px]">Date</TableHead>
+                    <TableHead className="w-[180px]">{t.date}</TableHead>
                     <TableHead className="w-[100px]">
                       <T k="pageLabels.snapshot" />
                     </TableHead>
@@ -302,15 +324,19 @@ export default function DocumentVersions() {
                   {versions.map((version) => {
                     const isExpanded = expandedVersionId === version.id;
                     return (
-                      <>
-                        <TableRow key={version.id} className="hover:bg-muted/50">
+                      <Fragment key={version.id}>
+                        <TableRow className="hover:bg-muted/50">
                           <TableCell>
-                            <Badge variant="outline" className="font-mono">
-                              v{version.version}
+                            <Badge variant="outline" dir="ltr" className="tabular-nums">
+                              {version.version}
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            {version.changeDescription || (
+                            {version.changeDescription ? (
+                              <bdi className="break-words" translate="no">
+                                {version.changeDescription}
+                              </bdi>
+                            ) : (
                               <span className="text-muted-foreground italic">
                                 <T k="pageLabels.noDescription" />
                               </span>
@@ -318,47 +344,65 @@ export default function DocumentVersions() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1.5">
-                              <User className="h-3.5 w-3.5 text-muted-foreground" />
-                              <span className="text-sm truncate max-w-[120px]">
-                                {version.changedBy || "System"}
-                              </span>
+                              <User
+                                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                                aria-hidden
+                              />
+                              {version.changedBy ? (
+                                <bdi className="max-w-[120px] truncate text-sm" translate="no">
+                                  {version.changedBy}
+                                </bdi>
+                              ) : (
+                                <span className="text-sm">{t["documentVersions.system"]}</span>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>
-                            <span className="text-sm">
-                              {format(new Date(version.createdAt), "MMM d, yyyy HH:mm")}
+                            <span className="whitespace-nowrap text-sm">
+                              {formatDateTime(version.createdAt, locale)}
                             </span>
                           </TableCell>
                           <TableCell>
                             <Button
                               variant="ghost"
                               size="sm"
+                              aria-expanded={isExpanded}
                               onClick={() => toggleExpand(version.id)}
                             >
                               {isExpanded ? (
-                                <ChevronDown className="h-4 w-4 mr-1" />
+                                <ChevronDown className="h-4 w-4" aria-hidden />
                               ) : (
-                                <ChevronRight className="h-4 w-4 mr-1" />
+                                <ChevronRight className="h-4 w-4 rtl:-scale-x-100" aria-hidden />
                               )}
-                              View
+                              {t[isExpanded ? "documentVersions.hide" : "documentVersions.view"]}
                             </Button>
                           </TableCell>
                         </TableRow>
                         {isExpanded && (
-                          <TableRow key={`${version.id}-snapshot`}>
+                          <TableRow>
                             <TableCell colSpan={5} className="p-0">
                               <div className="bg-muted/30 border-t px-6 py-4">
                                 <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">
                                   <T k="pageLabels.snapshotData" />
                                 </Label>
-                                <pre className="text-xs font-mono bg-background rounded-md border p-4 overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre-wrap">
-                                  {formatSnapshotData(version.snapshotData)}
-                                </pre>
+                                {version.snapshotData ? (
+                                  <pre
+                                    dir="ltr"
+                                    translate="no"
+                                    className="max-h-[400px] overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-4 font-mono text-xs"
+                                  >
+                                    {formatSnapshotData(version.snapshotData)}
+                                  </pre>
+                                ) : (
+                                  <p className="text-sm text-muted-foreground">
+                                    {t["documentVersions.noSnapshot"]}
+                                  </p>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })}
                 </TableBody>

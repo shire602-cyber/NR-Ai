@@ -83,6 +83,7 @@ import { invoiceStatusTargets } from "@/lib/invoice-status";
 import { invoiceDisplayStatus } from "@shared/invoice-balance";
 import { statusLabelKey } from "@/components/ui/status-meta";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { isolateLtrText } from "@/lib/format-bidi";
 import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import {
   einvoiceFieldHint,
@@ -1539,7 +1540,10 @@ export default function Invoices() {
       title={
         editingInvoice
           ? isIssued
-            ? formatMessage(t["forms.invoice.viewTitle"], { number: editingInvoice.number })
+            ? formatMessage(t["forms.invoice.viewTitle"], {
+                number:
+                  locale === "ar" ? isolateLtrText(editingInvoice.number) : editingInvoice.number,
+              })
             : t["forms.invoice.editTitle"]
           : t.newInvoice
       }
@@ -2462,7 +2466,12 @@ export default function Invoices() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t["invoices.nudgeTitle"]}</AlertDialogTitle>
             <AlertDialogDescription>
-              {formatMessage(t["invoices.nudgeBody"], { number: draftNudge?.number ?? "" })}
+              {formatMessage(t["invoices.nudgeBody"], {
+                number:
+                  locale === "ar"
+                    ? isolateLtrText(draftNudge?.number ?? "")
+                    : (draftNudge?.number ?? ""),
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -3027,21 +3036,27 @@ export default function Invoices() {
           <div className="space-y-4">
             <div className="max-h-[300px] overflow-y-auto space-y-2">
               {similarInvoices.map((invoice, idx) => (
-                <div key={idx} className="p-3 border rounded-md bg-muted/50">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-medium">{invoice.number}</p>
-                      <p className="text-sm">{invoice.customerName}</p>
+                <div key={idx} className="rounded-md border bg-muted/50 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="break-words font-medium">
+                        <bdi dir="ltr" translate="no">
+                          {invoice.number}
+                        </bdi>
+                      </p>
+                      <p className="break-words text-sm">
+                        <bdi translate="no">{invoice.customerName}</bdi>
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         {formatDate(invoice.date, locale)}
                       </p>
-                      <Badge variant="outline" className="mt-1">
-                        {invoice.status}
-                      </Badge>
+                      <InvoiceStatusBadge className="mt-1" status={invoice.status} />
                     </div>
-                    <p className="font-semibold">
-                      {formatCurrency(invoice.total || 0, "AED", locale)}
-                    </p>
+                    <Money
+                      amount={Number(invoice.total || 0)}
+                      currency={invoice.currency || "AED"}
+                      className="font-semibold"
+                    />
                   </div>
                 </div>
               ))}

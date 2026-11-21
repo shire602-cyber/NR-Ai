@@ -270,6 +270,28 @@ for (const locale of ["en", "ar"] as const) {
       expect(byId("join-sign-out-continue")).toBeTruthy();
     });
 
+    it("isolates both addresses and the supplier in the translated invitation", async () => {
+      const supplier = "Desert Rose Trading";
+      const email = "invoice-team+uae@example.test";
+      const current = "accounts+portal@example.test";
+      respondWith(() =>
+        invite({
+          account: "signed_in_other",
+          language: locale,
+          supplier: { name: supplier, logoUrl: null },
+          email,
+          signedInAs: current,
+        })
+      );
+      await mount();
+      expect(container.querySelector("h1 bdi[translate=no]")?.textContent).toBe(supplier);
+      expect(
+        Array.from(byId("join-other")!.querySelectorAll('bdi[dir="ltr"][translate=no]')).map(
+          (node) => node.textContent
+        )
+      ).toEqual([email, current]);
+    });
+
     it(locale === "ar" ? "has no English text nodes" : "reads in English", async () => {
       respondWith(() => invite({ language: locale }));
       await mount();
