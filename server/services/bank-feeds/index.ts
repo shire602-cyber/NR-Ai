@@ -4,8 +4,7 @@
  *  - connect refuses with 503 BANK_FEED_NOT_CONFIGURED when the provider has no credentials
  *  - the OAuth state is random, stored as a SHA-256 hash, single-use, 10-minute expiry, bound to
  *    company + user + provider, and verified on callback (400 INVALID_OAUTH_STATE otherwise)
- *  - the redirect URI must be on an allow-list (BANK_FEED_REDIRECT_URIS, else FRONTEND_URL /
- *    AUTH_PUBLIC_URL + /bank-feeds/callback)
+ *  - the redirect URI must be on the explicit BANK_FEED_REDIRECT_URIS allow-list
  *  - tokens are stored only through storage.createBankConnection / updateBankConnectionTokens,
  *    which encrypt with server/services/secret-vault.ts; API responses never include them
  *  - scheduled sync (job "bankFeeds.sync") dedupes by provider transaction id and emits
@@ -86,21 +85,18 @@ export function providerStatuses(): ProviderStatus[] {
 
 /** Exact redirect URIs the connect flow may send the user back to. */
 export function allowedRedirectUris(): string[] {
-  const explicit = (process.env.BANK_FEED_REDIRECT_URIS ?? "")
+  return (process.env.BANK_FEED_REDIRECT_URIS ?? "")
     .split(",")
     .map((s) => s.trim())
-    .filter(Boolean);
-  if (explicit.length) return explicit;
-  const out: string[] = [];
-  for (const base of [process.env.FRONTEND_URL, process.env.AUTH_PUBLIC_URL]) {
-    if (!base) continue;
-    try {
-      out.push(new URL("/bank-feeds/callback", base).toString());
-    } catch {
-      /* ignore malformed env */
-    }
-  }
-  return out;
+    .filter((uri) => {
+      try {
+        const path = decodeURIComponent(new URL(uri).pathname);
+        // The retired customer callback navigates to the CSV screen without processing OAuth.
+        return !/^\/bank-feeds\/callback\/*$/i.test(path);
+      } catch {
+        return false;
+      }
+    });
 }
 
 function assertAllowedRedirect(uri: string): void {
@@ -238,7 +234,7 @@ function providerFailure(adapter: BankFeedAdapter, err: unknown): DomainError {
   const status = err instanceof BankFeedProviderError ? err.status : 0;
   log.warn(
     { provider: adapter.id, status, err: (err as Error).message },
-    "Bank feed provider call failed"
+    "Banking provider request failed"
   );
   return new DomainError(
     "BANK_FEED_PROVIDER_ERROR",
@@ -416,7 +412,7 @@ export async function runScheduledBankFeedSync(): Promise<{ synced: number; fail
       failed++;
       log.warn(
         { connectionId: raw.id, err: (err as Error).message },
-        "Scheduled bank feed sync failed"
+        "Scheduled bank transaction update failed"
       );
     }
   }
@@ -428,7 +424,7 @@ export function registerBankFeedJobs(): void {
   registerJob({
     name: "bankFeeds.sync",
     cron: "41 */6 * * *",
-    description: "Sync configured open-banking feeds (dedupe by provider transaction id)",
+    description: "Refresh configured provider transactions with duplicate detection",
     run: async () => {
       await runScheduledBankFeedSync();
     },

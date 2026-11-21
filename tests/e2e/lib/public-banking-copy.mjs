@@ -13,8 +13,9 @@ export const publicBankingCopy = {
 
 // Match prose in labels, descriptions and denials. Keep technical URLs and IDs out of the match.
 export const publicBankFeedMentions = [
-  /(?<![\w/])bank(?:ing)?(?:\s+|[\u2010-\u2015-])feeds?(?![\w/])/iu,
-  /(?<![\p{L}\p{N}_])(?:[وفب])?(?:ال|لل)?(?:ربط|تغذي(?:ة|ات)|خلاص(?:ة|ات)|موجز|مزامنة\s+(?:ال)?(?:حساب(?:ات)?|معاملات))\s+(?:ال)?(?:بنكي|مصرفي)ة?(?![\p{L}\p{N}_])/u,
+  /(?<![\w/])(?:(?:bank(?:ing)?|live)(?:\s+|[\u2010-\u2015-])feeds?|open(?:\s+|[\u2010-\u2015-])banking)(?![\w/])/iu,
+  /(?<![\p{L}\p{N}_])(?:[وفب])?(?:ال|لل)?(?:(?:ربط|تغذي(?:ة|ات)|خلاص(?:ة|ات)|موجز|مزامنة\s+(?:ال)?(?:حساب(?:ات)?|معاملات))\s+(?:ال)?(?:بنكي|مصرفي)ة?|خدمات\s+(?:ال)?مصرفية\s+(?:ال)?مفتوحة)(?![\p{L}\p{N}_])/u,
+  /\bCSV\b[^.!?؟\n]{0,80}(?:ال)?ربط\s+(?:ال)?مباشر/iu,
 ];
 
 export const bankingDescriptionSelectors = [

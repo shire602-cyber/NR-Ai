@@ -15,10 +15,12 @@
 // write and no journal. Online payment, when built, must call this service.
 
 import { journalLine, journalMemo } from "@shared/journal-memo";
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   accounts,
+  bankTransactionMatches,
+  bankTransactions,
   customerCreditAllocations,
   customerCredits,
   invoicePayments,
@@ -358,7 +360,12 @@ export interface ReverseInvoicePaymentInput {
   /** Run inside the caller's ledger transaction (bank unmatch, compensation). */
   tx?: LedgerTx;
   /** Validate a stored bank allocation again after obtaining the payment lock. */
-  expectedAllocation?: { invoiceId: string; journalEntryId: string };
+  expectedAllocation?: {
+    matchId: string;
+    bankTransactionId: string;
+    invoiceId: string;
+    journalEntryId: string;
+  };
 }
 
 function reversalReviewRequired(): DomainError {
@@ -402,6 +409,51 @@ export async function reverseInvoicePayment(
       throw reversalReviewRequired();
     }
     if (!payment) return { reversed: false, invoice: null };
+
+    // Check globally unique IDs without a tenant filter so corrupted links cannot hide a claim.
+    // A legacy allocation can claim the exact invoice/journal even with a missing or wrong payment ID.
+    const claims = await tx
+      .select({
+        match: bankTransactionMatches,
+        bankCompanyId: bankTransactions.companyId,
+      })
+      .from(bankTransactionMatches)
+      .leftJoin(bankTransactions, eq(bankTransactions.id, bankTransactionMatches.bankTransactionId))
+      .where(
+        and(
+          inArray(bankTransactionMatches.status, ["active", "pending"]),
+          or(
+            eq(bankTransactionMatches.paymentId, payment.id),
+            payment.journalEntryId
+              ? and(
+                  eq(bankTransactionMatches.targetType, "invoice"),
+                  eq(bankTransactionMatches.targetId, payment.invoiceId),
+                  eq(bankTransactionMatches.journalEntryId, payment.journalEntryId)
+                )
+              : undefined
+          )
+        )
+      )
+      .limit(2);
+    const [claim] = claims;
+    if (
+      expected
+        ? claims.length !== 1 ||
+          claim.bankCompanyId !== input.companyId ||
+          claim.match.companyId !== input.companyId ||
+          claim.match.id !== expected.matchId ||
+          claim.match.bankTransactionId !== expected.bankTransactionId ||
+          claim.match.status !== "active" ||
+          claim.match.targetType !== "invoice" ||
+          claim.match.paymentId !== payment.id ||
+          claim.match.targetId !== payment.invoiceId ||
+          claim.match.journalEntryId !== payment.journalEntryId ||
+          claim.match.createdJournal
+        : claims.length !== 0
+    ) {
+      throw reversalReviewRequired();
+    }
+
     if (payment.journalEntryId) {
       const [je] = await tx
         .select({ reversedBy: journalEntries.reversedByEntryId, status: journalEntries.status })

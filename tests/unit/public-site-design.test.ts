@@ -106,12 +106,17 @@ describe("public bank wording gate", () => {
     "Bank-feed-based reconciliation is unavailable.",
     "Bank feeds—coming soon.",
     "Banking feeds",
+    "CSV statement import, no live feed needed",
+    "Live feeds",
+    "Open banking is coming soon.",
     "الربط البنكي",
     "الربط البنكي المباشر غير متاح.",
     "سيتوفر الربط البنكي لاحقًا.",
     "لا ندعم التغذية المصرفية.",
     "الخلاصة البنكية غير متاحة.",
     "مزامنة الحسابات البنكية",
+    "الخدمات المصرفية المفتوحة غير متاحة.",
+    "استيراد كشف CSV دون الحاجة إلى ربط مباشر",
     "عنوان إعادة التوجيه غير مسموح به للربط البنكي.",
   ])("rejects bank-feed prose in a label, claim, or denial: %s", (text) => {
     expect(publicBankFeedMentions.some((pattern) => pattern.test(text))).toBe(true);
@@ -120,7 +125,7 @@ describe("public bank wording gate", () => {
   it.each([
     publicBankingCopy.en.answer,
     publicBankingCopy.ar.answer,
-    "Browse social feeds and exchange rate feeds.",
+    "Browse live social feeds and exchange rate feeds.",
     "اربط حساب البنك بدليل الحسابات أو استورد كشفًا بصيغة CSV.",
     "/bank-feeds/callback",
     "BANK_FEED_NOT_CONFIGURED",
@@ -148,6 +153,7 @@ describe("D1 public site", () => {
         expect(faq?.querySelector("p")?.textContent).toBe(answer);
         const { t } = await import("../../client/src/lib/i18n");
         expect(t[locale]["marketing.faq3A"]).toBe(answer);
+        expect(t[locale]["pageLabels.cSVStatementImportNoLiveFeedNeeded"]).toBe(answer);
         expect(t[locale]["banking.feeds.unavailableBody"]).toBe(answer);
         expect(t[locale]["serverErrors.BANK_FEED_NOT_CONFIGURED"]).toBe(answer);
         const redirectHint = t[locale]["serverErrors.REDIRECT_URI_NOT_ALLOWED"];

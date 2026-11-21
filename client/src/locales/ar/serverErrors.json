@@ -63,6 +63,7 @@
   "serverErrors.BAD_DEBT_NOT_WRITTEN_OFF": "اشطب الدين في الحسابات أولًا ثم اطلب الإعفاء.",
   "serverErrors.BAD_DEBT_TOO_EARLY": "يتطلب إعفاء الديون المعدومة مرور أكثر من ستة أشهر على تاريخ التوريد وشطب الدين.",
   "serverErrors.BAD_REQUEST": "تعذّر فهم الطلب. أعد تحميل الصفحة وحاول مرة أخرى.",
+  "serverErrors.BANK_MATCH_REVIEW_REQUIRED": "راجع ارتباطات المطابقة البنكية قبل إلغاء مطابقة هذه المعاملة.",
   "serverErrors.BANK_ACCOUNT_MISSING": "حساب بنكي مطلوب لهذه الخطوة غير موجود. أضفه من صفحة البنوك ثم حاول مرة أخرى.",
   "serverErrors.BANK_ACCOUNT_NOT_FOUND": "تعذّر العثور على الحساب البنكي.",
   "serverErrors.BANK_ACCOUNT_NOT_LINKED": "ليس لهذا الحساب البنكي حساب في الدليل. اربط حسابًا من صفحة البنوك أولًا.",

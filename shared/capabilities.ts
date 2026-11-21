@@ -215,8 +215,8 @@ const DEFS: readonly CapabilityDef[] = [
     id: "bank_feed_wio",
     label: { en: "Wio adapter", ar: "موصل Wio" },
     externalAction: {
-      en: "Register with Wio Business open-banking and obtain production client credentials.",
-      ar: "سجّل في الخدمات المصرفية المفتوحة لدى Wio Business واحصل على بيانات اعتماد إنتاجية.",
+      en: "Obtain production client credentials from Wio Business.",
+      ar: "احصل على بيانات اعتماد العميل للإنتاج من Wio Business.",
     },
     envVars: ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET", "WIO_API_BASE_URL"],
     whenUnconfigured: "requires_external",

@@ -63,6 +63,7 @@
   "serverErrors.BAD_DEBT_NOT_WRITTEN_OFF": "Write the debt off in the accounts first, then claim relief.",
   "serverErrors.BAD_DEBT_TOO_EARLY": "Bad-debt relief needs more than six months after the date of supply and the debt to be written off.",
   "serverErrors.BAD_REQUEST": "The request could not be understood. Reload the page and try again.",
+  "serverErrors.BANK_MATCH_REVIEW_REQUIRED": "Review the bank match links before unmatching this transaction.",
   "serverErrors.BANK_ACCOUNT_MISSING": "A bank account needed for this step is missing. Add it on the Banking page, then try again.",
   "serverErrors.BANK_ACCOUNT_NOT_FOUND": "The bank account could not be found.",
   "serverErrors.BANK_ACCOUNT_NOT_LINKED": "This bank account has no ledger account. Link one on the Banking page first.",

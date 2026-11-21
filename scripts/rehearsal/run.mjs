@@ -21,7 +21,7 @@ const baseline = "0088_emirate_no_default";
 const banking = "0097_w3c_banking";
 const historicalTail = "0137_combine_portal_invitations_and_settlement_indexes";
 const previousBankRepair = "0138_repair_bank_gl_links";
-const previousBankRepairHash = "424c89e89986386c3e2891cf9bc9c3b28e718bb006bd0434b0991e63bd90400d";
+const previousBankAudit = "0139_audit_bank_match_links";
 // Preserve the exact versions from a5e75c2104c846ed5eae71dd0b247161413057b7 so an
 // already-applied database carries the original hashes even in a shallow checkout.
 const historicalHashes = {
@@ -34,6 +34,34 @@ const bankingCount = journal.entries.findIndex(({ tag }) => tag === banking) + 1
 const historicalCount = journal.entries.findIndex(({ tag }) => tag === historicalTail) + 1;
 const previousBankRepairCount =
   journal.entries.findIndex(({ tag }) => tag === previousBankRepair) + 1;
+const previousBankAuditCount =
+  journal.entries.findIndex(({ tag }) => tag === previousBankAudit) + 1;
+// Digest each published journal prefix as timestamp:file hash lines. The listed
+// overrides replace edited SQL and the digest verifies every reused file.
+const recordedBankHeads = [
+  {
+    ref: "1c266ae5",
+    count: previousBankRepairCount,
+    digest: "700535bbb001a66ba8b0f7b3bc2940c1b8dc8d948c045dc4b37caadd2267ba5c",
+    historical: {
+      [banking]: "1c266ae5/" + banking,
+      [previousBankRepair]: previousBankRepair,
+    },
+    priorReceiptFlags: [true, false, true],
+    currentReceiptFlags: [true, false, true],
+  },
+  {
+    ref: "29e9a1fa",
+    count: previousBankAuditCount,
+    digest: "9351fff057d35a11459c280c6c7ccdc076e805ebe0ae0f70375f00babe6cd8ed",
+    historical: {
+      [banking]: "29e9a1fa/" + banking,
+      [previousBankAudit]: "29e9a1fa/" + previousBankAudit,
+    },
+    priorReceiptFlags: [false, false, false],
+    currentReceiptFlags: [true, false, false],
+  },
+];
 const files = readMigrationFiles({ migrationsFolder });
 const image = "postgres:16-bookworm";
 const name = "nr-migration-rehearsal-" + randomBytes(8).toString("hex");
@@ -219,7 +247,7 @@ function qualifiedName(namespace, object) {
   return [namespace, object].map((part) => '"' + part.replaceAll('"', '""') + '"').join(".");
 }
 
-async function databaseState(database) {
+async function databaseState(database, normalizeRepairedReceiptFlag = false) {
   const schemaHash = createHash("sha256").update(schema(database)).digest("hex");
   return withClient(database, async (client) => {
     const data = {};
@@ -228,9 +256,17 @@ async function databaseState(database) {
     );
     for (const { schemaname, tablename } of tables) {
       const name = qualifiedName(schemaname, tablename);
+      // The historical upgrade asserts the expected flag separately and
+      // fingerprints every other field, including all other allocation flags.
+      const row =
+        normalizeRepairedReceiptFlag && name === qualifiedName("public", "bank_transaction_matches")
+          ? "CASE WHEN row_data.bank_transaction_id = md5('nr-rehearsal:receipt-provenance:transaction:bank-created')::uuid THEN to_jsonb(row_data) - 'created_journal' ELSE to_jsonb(row_data) END"
+          : "to_jsonb(row_data)";
       const { rows } = await client.query(
         "SELECT count(*)::int AS count, md5(COALESCE(string_agg(body, E'\\n' ORDER BY body COLLATE \"C\"), '')) AS hash " +
-          "FROM (SELECT to_jsonb(row_data)::text AS body FROM " +
+          "FROM (SELECT (" +
+          row +
+          ")::text AS body FROM " +
           name +
           " row_data) ordered"
       );
@@ -257,7 +293,7 @@ function verifyState(actual, expected, label) {
   assert.deepEqual(changed, [], label + " changed these tables or sequences");
 }
 
-function stageMigrations(name, count, historical = {}) {
+function stageMigrations(name, count, historical = {}, knownHashes = {}) {
   const folder = path.join(scratch, name);
   mkdirSync(path.join(folder, "meta"), { recursive: true });
   const entries = journal.entries.slice(0, count);
@@ -266,15 +302,17 @@ function stageMigrations(name, count, historical = {}) {
     const file = tag + ".sql";
     const destination = path.join(folder, file);
     if (historical[tag]) {
-      const sql = readFileSync(path.join(here, "historical", file), "utf8").replaceAll(
-        "\r\n",
-        "\n"
-      );
-      assert.equal(
-        createHash("sha256").update(sql).digest("hex"),
-        historical[tag],
-        "Historical SQL hash changed for " + tag
-      );
+      const sql = readFileSync(
+        path.join(here, "historical", historical[tag] + ".sql"),
+        "utf8"
+      ).replaceAll("\r\n", "\n");
+      if (knownHashes[tag]) {
+        assert.equal(
+          createHash("sha256").update(sql).digest("hex"),
+          knownHashes[tag],
+          "Historical SQL hash changed for " + tag
+        );
+      }
       writeFileSync(destination, sql);
     } else {
       copyFileSync(path.join(migrationsFolder, file), destination);
@@ -391,6 +429,8 @@ async function checkBankingGuards() {
   createDatabase(database, "upgrade");
   fixture(database, "seed-bank-payment-links.sql");
   fixture(database, "seed-bank-gl-edges.sql");
+  fixture(database, "seed-bank-receipt-provenance.sql");
+  fixture(database, "seed-bank-duplicate-legacy-claims.sql");
   const folder = stageMigrations("banking-guard", bankingCount);
   await timed("Banking migration through " + banking, () =>
     applyStagedMigrations(database, folder)
@@ -399,13 +439,22 @@ async function checkBankingGuards() {
   fixture(database, "assert-0097.sql");
   fixture(database, "assert-bank-payment-links.sql");
   fixture(database, "assert-bank-gl-edges.sql");
+  fixture(database, "assert-bank-duplicate-legacy-claims.sql");
+  assert.deepEqual(JSON.parse(fixture(database, "bank-receipt-provenance.sql")), [
+    true,
+    false,
+    false,
+  ]);
+  fixture(database, "seed-bank-competing-claims.sql");
   console.log("0097 tenant guards verified before forward repair");
   console.log("Shared posting links and ambiguous payment candidate verified");
+  console.log("0097 competing unallocated legacy lines retain NULL payment IDs");
 
   await applyRelease(database);
   await verifyLedger(database);
   fixture(database, "assert-bank-payment-findings.sql");
   fixture(database, "assert-bank-gl-eligibility-findings.sql");
+  fixture(database, "assert-bank-competing-claims.sql");
   const before = await databaseState(database);
   await timed("Ordered SQL replay with banking edge cases", () =>
     replaySql(database, baselineCount)
@@ -413,19 +462,38 @@ async function checkBankingGuards() {
   verifyState(await databaseState(database), before, "Ordered SQL replay with banking edge cases");
 }
 
-async function checkRecordedBankAudit() {
-  const database = "recorded_bank_audit";
+async function checkRecordedBankAudit({
+  ref,
+  count,
+  digest,
+  historical,
+  priorReceiptFlags,
+  currentReceiptFlags,
+}) {
+  const database = "recorded_bank_" + ref;
   await restore(database);
   fixture(database, "seed-bank-payment-links.sql");
-  const folder = stageMigrations("historical-bank-repair", previousBankRepairCount, {
-    ...historicalHashes,
-    [previousBankRepair]: previousBankRepairHash,
-  });
-  await timed("Apply original banking migrations through 0138", () =>
-    applyStagedMigrations(database, folder)
-  );
+  fixture(database, "seed-bank-receipt-provenance.sql");
+  const folder = stageMigrations(database, count, historical);
   const originalFiles = readMigrationFiles({ migrationsFolder: folder });
+  const hash = createHash("sha256");
+  for (const { folderMillis, hash: fileHash } of originalFiles) {
+    hash.update(folderMillis + ":" + fileHash + "\n");
+  }
+  assert.equal(hash.digest("hex"), digest, ref + " historical migration ledger fingerprint");
+  await timed("Apply exact migrations from " + ref, () => applyStagedMigrations(database, folder));
   await verifyLedger(database, originalFiles);
+  console.log("Exact " + ref + " ledger verified (" + count + " entries)");
+  assert.deepEqual(JSON.parse(fixture(database, "bank-receipt-provenance.sql")), priorReceiptFlags);
+  fixture(database, "seed-bank-competing-claims.sql");
+  assert.equal(
+    psql(
+      database,
+      "SELECT count(*) FROM bank_transaction_matches WHERE id = md5('nr-rehearsal:bank-competing-claim:pending-match')::uuid AND payment_id IS NULL"
+    ),
+    "1",
+    "The recorded competing claim must have a NULL payment ID before forward repair"
+  );
 
   const mismatchedLinks = Number(
     psql(
@@ -438,17 +506,25 @@ async function checkRecordedBankAudit() {
       ].join(" ")
     )
   );
-  assert.ok(
-    mismatchedLinks > 0,
-    "Expected the historical lookup to mislink a shared-journal payment"
+  assert.equal(
+    mismatchedLinks,
+    ref === "1c266ae5" ? 1 : 0,
+    "Historical shared-journal payment link count"
   );
 
-  const before = await databaseState(database);
-  await timed("Audit recorded bank payment links", () =>
+  const repairedReceipt = priorReceiptFlags[0] !== currentReceiptFlags[0];
+  const before = await databaseState(database, repairedReceipt);
+  await timed("Apply forward bank migrations from " + ref, () =>
     applyStagedMigrations(database, migrationsFolder)
   );
-  await verifyLedger(database, [...originalFiles, ...files.slice(previousBankRepairCount)]);
+  const expectedFiles = [...originalFiles, ...files.slice(count)];
+  await verifyLedger(database, expectedFiles);
   fixture(database, "assert-bank-payment-findings.sql");
+  fixture(database, "assert-bank-competing-claims.sql");
+  assert.deepEqual(
+    JSON.parse(fixture(database, "bank-receipt-provenance.sql")),
+    currentReceiptFlags
+  );
   assert.equal(
     Number(
       psql(
@@ -457,6 +533,8 @@ async function checkRecordedBankAudit() {
           "SELECT count(*) FROM bank_gl_migration_findings f",
           "CROSS JOIN LATERAL jsonb_array_elements(f.details->'allocations') a(data)",
           "WHERE f.kind = 'invoice_payment_link_review' AND (a.data->'problems') ? 'payment_link_mismatch'",
+          "AND f.bank_transaction_id IN (md5('nr-rehearsal:bank-payment:line:shared-a')::uuid,",
+          "md5('nr-rehearsal:bank-payment:line:shared-b')::uuid)",
         ].join(" ")
       )
     ),
@@ -464,7 +542,7 @@ async function checkRecordedBankAudit() {
     "Record every historically mislinked payment"
   );
 
-  const after = await databaseState(database);
+  const after = await databaseState(database, repairedReceipt);
   const auditChanges = [
     qualifiedName("public", "bank_gl_migration_findings"),
     qualifiedName("drizzle", "__drizzle_migrations"),
@@ -482,19 +560,25 @@ async function checkRecordedBankAudit() {
     delete unchangedAfter.data[key];
   }
   verifyState(unchangedAfter, unchangedBefore, "Audit of recorded bank matches");
-  await timed("Replay recorded bank payment audit", () =>
-    replaySql(database, previousBankRepairCount)
+  const migrated = await databaseState(database);
+  await timed("Replay forward bank migrations from " + ref, () => replaySql(database, count));
+  verifyState(
+    await databaseState(database),
+    migrated,
+    "Replay forward bank migrations from " + ref
   );
-  verifyState(await databaseState(database), after, "Replay of recorded bank payment audit");
-  console.log(
-    "0139 recorded historical payment risks without changing persisted allocations or journals"
-  );
+  console.log("Forward bank provenance and competing-claim findings verified from " + ref);
 }
 
 async function checkHistoricalUpgrade() {
   const database = "historical_upgrade";
   await restore(database);
-  const folder = stageMigrations("historical", historicalCount, historicalHashes);
+  const folder = stageMigrations(
+    "historical",
+    historicalCount,
+    Object.fromEntries(Object.keys(historicalHashes).map((tag) => [tag, tag])),
+    historicalHashes
+  );
   await timed("Apply original base through " + historicalTail, () =>
     applyStagedMigrations(database, folder)
   );
@@ -586,7 +670,8 @@ async function rehearse() {
       baselineCount < bankingCount &&
       bankingCount < historicalCount &&
       historicalCount < previousBankRepairCount &&
-      previousBankRepairCount < files.length,
+      previousBankRepairCount < previousBankAuditCount &&
+      previousBankAuditCount < files.length,
     "Expected ordered baseline, banking, and historical release entries in the journal"
   );
   output(
@@ -668,7 +753,9 @@ async function rehearse() {
   await checkTrackedReplay("upgrade");
   await checkRawReplay();
   await checkHistoricalUpgrade();
-  await checkRecordedBankAudit();
+  for (const head of recordedBankHeads) {
+    await checkRecordedBankAudit(head);
+  }
   console.log("Migration rehearsal passed");
 }
 

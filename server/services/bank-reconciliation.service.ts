@@ -53,6 +53,7 @@ import {
   invoices,
   journalEntries,
   journalLines,
+  receipts,
   reconciliationRules,
   type Account,
   type BankAccount,
@@ -61,6 +62,7 @@ import {
   type ReconciliationRule,
 } from "../../shared/schema";
 import type { VatTreatment } from "../../shared/validators/banking";
+import type { ReverseInvoicePaymentInput } from "./invoice-payment.service";
 
 const log = createLogger("bank-reconciliation");
 
@@ -507,7 +509,7 @@ type ReverseInvoicePayment = (input: {
   actorId: string;
   reason: string;
   tx?: LedgerTx;
-  expectedAllocation?: { invoiceId: string; journalEntryId: string };
+  expectedAllocation?: ReverseInvoicePaymentInput["expectedAllocation"];
 }) => Promise<unknown>;
 
 async function recordInvoicePaymentFor(
@@ -582,7 +584,7 @@ async function reverseInvoicePayment(
   paymentId: string,
   actorId: string,
   reason: string,
-  expectedAllocation?: { invoiceId: string; journalEntryId: string }
+  expectedAllocation?: ReverseInvoicePaymentInput["expectedAllocation"]
 ): Promise<void> {
   await resolve<ReverseInvoicePayment>("invoices.reversePayment")({
     companyId,
@@ -1549,6 +1551,99 @@ async function validateInvoiceReversal(
   return { paymentId, invoiceId: targetId, journalEntryId };
 }
 
+const LIVE_MATCH_STATUSES = ["pending", "active"] as const;
+
+function matchReviewRequired(): DomainError {
+  return new DomainError(
+    "BANK_MATCH_REVIEW_REQUIRED",
+    409,
+    undefined,
+    "Review the bank match links before unmatching this transaction."
+  );
+}
+
+function readUnmatchGroup(tx: LedgerTx | typeof db, transactionId: string) {
+  const liveGroups = tx
+    .select({ id: bankTransactionMatches.matchGroupId })
+    .from(bankTransactionMatches)
+    .where(
+      and(
+        eq(bankTransactionMatches.bankTransactionId, transactionId),
+        inArray(bankTransactionMatches.status, LIVE_MATCH_STATUSES)
+      )
+    );
+  return tx
+    .select()
+    .from(bankTransactionMatches)
+    .where(
+      and(
+        inArray(bankTransactionMatches.matchGroupId, liveGroups),
+        inArray(bankTransactionMatches.status, LIVE_MATCH_STATUSES)
+      )
+    )
+    .orderBy(bankTransactionMatches.id);
+}
+
+async function lockUnmatchGroup(
+  tx: LedgerTx,
+  companyId: string,
+  transactionId: string,
+  observed: BankTransactionMatch[],
+  dates: Map<string, string>,
+  txnIds: string[]
+) {
+  const locked = await tx
+    .select()
+    .from(bankTransactions)
+    .where(and(eq(bankTransactions.companyId, companyId), inArray(bankTransactions.id, txnIds)))
+    .orderBy(bankTransactions.id)
+    .for("update");
+  const txn = locked.find((line) => line.id === transactionId);
+  if (!txn || txn.deletedAt) {
+    throw notFound("BANK_TRANSACTION_NOT_FOUND", "Bank transaction not found");
+  }
+
+  const group = await readUnmatchGroup(tx, transactionId);
+  const physical = await tx
+    .select({ id: bankTransactionMatches.id })
+    .from(bankTransactionMatches)
+    .where(
+      and(
+        inArray(bankTransactionMatches.bankTransactionId, txnIds),
+        inArray(bankTransactionMatches.status, LIVE_MATCH_STATUSES)
+      )
+    );
+  const observedById = new Map(observed.map((m) => [m.id, m]));
+  const groupIds = new Set(group.map((m) => m.id));
+  const lockedIds = new Set(locked.filter((line) => !line.deletedAt).map((line) => line.id));
+  if (
+    lockedIds.size !== txnIds.length ||
+    group.length !== observed.length ||
+    group.some((m) => {
+      const previous = observedById.get(m.id);
+      return (
+        m.companyId !== companyId ||
+        !lockedIds.has(m.bankTransactionId) ||
+        previous?.companyId !== m.companyId ||
+        previous.bankTransactionId !== m.bankTransactionId ||
+        previous.matchGroupId !== m.matchGroupId ||
+        previous.status !== m.status
+      );
+    }) ||
+    physical.some((m) => !groupIds.has(m.id)) ||
+    locked.some(
+      (line) =>
+        line.matchedType === "processing" || dates.get(line.id) !== isoDate(line.transactionDate)
+    )
+  ) {
+    throw matchReviewRequired();
+  }
+  if (!txn.isReconciled && group.length === 0 && txn.matchStatus !== "suggested") {
+    throw new DomainError("NOT_MATCHED", 409, undefined, "This bank line is not matched");
+  }
+  return { txn, group };
+}
+
 export async function unmatchTransaction(input: {
   companyId: string;
   transactionId: string;
@@ -1558,39 +1653,32 @@ export async function unmatchTransaction(input: {
 }): Promise<UnmatchResult> {
   const { companyId, transactionId, actorId } = input;
   const reason = input.reason || "Bank line unmatched";
-  const txn = await loadTxn(companyId, transactionId);
-  const mine = await getMatches(companyId, transactionId);
-  if (!txn.isReconciled && mine.length === 0 && txn.matchStatus !== "suggested") {
+  const first = await loadTxn(companyId, transactionId);
+  const observed = await readUnmatchGroup(db, transactionId);
+  const txnIds = [...new Set([transactionId, ...observed.map((m) => m.bankTransactionId)])];
+  const owned = await db
+    .select({ id: bankTransactions.id, date: bankTransactions.transactionDate })
+    .from(bankTransactions)
+    .where(and(eq(bankTransactions.companyId, companyId), inArray(bankTransactions.id, txnIds)));
+  const dates = new Map(owned.map(({ id, date }) => [id, isoDate(date)]));
+  if (!first.isReconciled && observed.length === 0 && first.matchStatus !== "suggested") {
     throw new DomainError("NOT_MATCHED", 409, undefined, "This bank line is not matched");
   }
-  await assertPeriodNotLocked(companyId, txn.transactionDate);
-
-  // Whole groups go back together (a transfer also clears its counterpart line).
-  const groupIds = [...new Set(mine.map((m) => m.matchGroupId))];
-  const group: BankTransactionMatch[] =
-    groupIds.length > 0
-      ? await db
-          .select()
-          .from(bankTransactionMatches)
-          .where(
-            and(
-              eq(bankTransactionMatches.companyId, companyId),
-              inArray(bankTransactionMatches.matchGroupId, groupIds),
-              inArray(bankTransactionMatches.status, ["pending", "active"])
-            )
-          )
-      : [];
-  const txnIds = [...new Set([transactionId, ...group.map((m) => m.bankTransactionId)])];
-  for (const id of txnIds) {
-    if (id === transactionId) continue;
-    const other = await loadTxn(companyId, id);
-    await assertPeriodNotLocked(companyId, other.transactionDate);
-  }
+  // The period guard borrows a connection. Run it before the bank lock transaction
+  // and verify that each bank date still agrees once the rows are locked.
+  for (const date of dates.values()) await assertPeriodNotLocked(companyId, date);
 
   const reversedEntryIds: string[] = [];
   const reversedPayments: string[] = [];
   const result = await withLedgerTx(async (tx) => {
-    for (const id of txnIds) await lockTxn(tx, companyId, id);
+    const { txn, group } = await lockUnmatchGroup(
+      tx,
+      companyId,
+      transactionId,
+      observed,
+      dates,
+      txnIds
+    );
     const invoiceReversals = new Map<string, Awaited<ReturnType<typeof validateInvoiceReversal>>>();
     for (const m of group) {
       if (m.targetType === "invoice")
@@ -1616,11 +1704,49 @@ export async function unmatchTransaction(input: {
       if (invoiceReversal) {
         const { paymentId, invoiceId, journalEntryId } = invoiceReversal;
         await reverseInvoicePayment(tx, companyId, paymentId, actorId, reason, {
+          matchId: m.id,
+          bankTransactionId: m.bankTransactionId,
           invoiceId,
           journalEntryId,
         });
         reversedPayments.push(paymentId);
         reversedEntryIds.push(journalEntryId);
+      } else if (m.targetType === "receipt") {
+        // Receipt matches usually link a journal owned by the receipt. Reverse a bank-created
+        // journal only when this exact entry proves it was posted for the matched bank line.
+        if (m.createdJournal) {
+          if (!m.journalEntryId || !m.targetId) throw matchReviewRequired();
+          const [receipt] = await tx
+            .select({ id: receipts.id })
+            .from(receipts)
+            .where(and(eq(receipts.id, m.targetId), eq(receipts.companyId, companyId)));
+          if (!receipt) throw matchReviewRequired();
+          const [entry] = await tx
+            .select({
+              id: journalEntries.id,
+              source: journalEntries.source,
+              sourceId: journalEntries.sourceId,
+              status: journalEntries.status,
+              reversedBy: journalEntries.reversedByEntryId,
+            })
+            .from(journalEntries)
+            .where(
+              and(eq(journalEntries.id, m.journalEntryId), eq(journalEntries.companyId, companyId))
+            )
+            .for("update");
+          if (!entry) throw matchReviewRequired();
+          const receiptOwned = entry.source === "receipt" && entry.sourceId === receipt.id;
+          if (!entry.reversedBy && !receiptOwned) {
+            if (
+              entry.source !== "bank_reconciliation" ||
+              entry.sourceId !== m.bankTransactionId ||
+              entry.status !== "posted"
+            )
+              throw matchReviewRequired();
+            await reverseEntry(entry.id, { reason }, { actorId, tx, companyId, req: input.req });
+            reversedEntryIds.push(entry.id);
+          }
+        }
       } else if (m.status === "pending" && m.journalEntryId) {
         // A draft created for review has no ledger effect: remove it so it cannot be posted later.
         // A draft someone has since posted is reversed instead.
@@ -1669,14 +1795,18 @@ export async function unmatchTransaction(input: {
         .set({ status: "reversed", reversedAt: new Date(), reversedBy: actorId })
         .where(eq(bankTransactionMatches.id, m.id));
     }
-    return rows.find((r) => r.id === transactionId) as BankTransaction;
+    return {
+      txn,
+      group,
+      transaction: rows.find((r) => r.id === transactionId) as BankTransaction,
+    };
   });
   await audit(input, "bank.unmatch", {
-    before: { matchStatus: txn.matchStatus, matches: group.map((m) => m.id) },
+    before: { matchStatus: result.txn.matchStatus, matches: result.group.map((m) => m.id) },
     after: { reversedEntryIds, reversedPayments },
   });
   return {
-    transaction: result,
+    transaction: result.transaction,
     reversedEntryIds,
     reversedPayments,
     unmatchedTransactionIds: txnIds,

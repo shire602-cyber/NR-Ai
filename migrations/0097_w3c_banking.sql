@@ -206,32 +206,17 @@ CREATE INDEX IF NOT EXISTS "idx_bank_import_batches_company" ON "bank_import_bat
 
 -- Existing reconciled rows get the allocation unmatch needs (created entry vs linked document).
 -- Set matched_type only for allocations created here, never for a live match on replay.
-WITH inserted AS (
-  INSERT INTO "bank_transaction_matches"
-    ("company_id", "bank_transaction_id", "match_group_id", "target_type", "target_id", "amount",
-     "journal_entry_id", "payment_id", "created_journal", "status", "created_at")
-  SELECT bt."company_id", bt."id", gen_random_uuid(),
-         CASE
-           WHEN bt."matched_invoice_id" IS NOT NULL THEN 'invoice'
-           WHEN bt."matched_receipt_id" IS NOT NULL THEN 'receipt'
-           WHEN je."source" = 'bank_reconciliation' AND je."source_id" = bt."id" THEN 'entry'
-           ELSE 'journal'
-         END,
-         COALESCE(bt."matched_invoice_id", bt."matched_receipt_id", bt."matched_journal_entry_id"),
-         abs(bt."amount"),
-         bt."matched_journal_entry_id",
-         ip."id",
-         bt."matched_invoice_id" IS NULL AND bt."matched_receipt_id" IS NULL
-           AND COALESCE(je."source" = 'bank_reconciliation' AND je."source_id" = bt."id", false),
-         'active',
-         bt."created_at"
+WITH legacy_matches AS (
+  SELECT bt."id", bt."company_id", bt."amount", bt."created_at",
+         bt."matched_invoice_id", bt."matched_receipt_id", bt."matched_journal_entry_id",
+         je."source", je."source_id", r."id" AS owned_receipt_id, ip."id" AS candidate_payment_id
     FROM "bank_transactions" bt
     LEFT JOIN "journal_entries" je
       ON je."id" = bt."matched_journal_entry_id" AND je."company_id" = bt."company_id"
     LEFT JOIN "invoices" inv
       ON inv."id" = bt."matched_invoice_id" AND inv."company_id" = bt."company_id"
-    -- A journal can be shared. Only an unambiguous owned invoice/payment/journal triple
-    -- supplies a payment ID. Migration 0139 records ambiguous and unsafe associations.
+    LEFT JOIN "receipts" r
+      ON r."id" = bt."matched_receipt_id" AND r."company_id" = bt."company_id"
     LEFT JOIN LATERAL (
       SELECT (array_agg(p."id"))[1] AS id
         FROM "invoice_payments" p
@@ -243,6 +228,49 @@ WITH inserted AS (
    WHERE bt."is_reconciled" = true
      AND NOT EXISTS (
        SELECT 1 FROM "bank_transaction_matches" m WHERE m."bank_transaction_id" = bt."id"
+     )
+), unique_legacy_claims AS (
+  SELECT candidate_payment_id
+    FROM legacy_matches WHERE candidate_payment_id IS NOT NULL
+   GROUP BY candidate_payment_id HAVING count(*) = 1
+), recorded_claims AS (
+  SELECT m."payment_id" AS payment_id
+    FROM "bank_transaction_matches" m
+   WHERE m."status" IN ('active', 'pending') AND m."payment_id" IS NOT NULL
+  UNION
+  SELECT legacy.candidate_payment_id
+    FROM legacy_matches legacy
+    JOIN "bank_transaction_matches" m ON m."target_id" = legacy."matched_invoice_id"
+     AND m."journal_entry_id" = legacy."matched_journal_entry_id"
+   WHERE legacy.candidate_payment_id IS NOT NULL
+     AND m."target_type" = 'invoice' AND m."status" IN ('active', 'pending')
+), inserted AS (
+  INSERT INTO "bank_transaction_matches"
+    ("company_id", "bank_transaction_id", "match_group_id", "target_type", "target_id", "amount",
+     "journal_entry_id", "payment_id", "created_journal", "status", "created_at")
+  SELECT legacy."company_id", legacy."id", gen_random_uuid(),
+         CASE
+           WHEN legacy."matched_invoice_id" IS NOT NULL THEN 'invoice'
+           WHEN legacy."matched_receipt_id" IS NOT NULL THEN 'receipt'
+           WHEN legacy."source" = 'bank_reconciliation' AND legacy."source_id" = legacy."id" THEN 'entry'
+           ELSE 'journal'
+         END,
+         COALESCE(legacy."matched_invoice_id", legacy."matched_receipt_id", legacy."matched_journal_entry_id"),
+         abs(legacy."amount"),
+         legacy."matched_journal_entry_id",
+         unclaimed.candidate_payment_id,
+         legacy."matched_invoice_id" IS NULL
+           AND (legacy."matched_receipt_id" IS NULL OR legacy.owned_receipt_id IS NOT NULL)
+           AND COALESCE(legacy."source" = 'bank_reconciliation' AND legacy."source_id" = legacy."id", false),
+         'active',
+         legacy."created_at"
+    FROM legacy_matches legacy
+    -- A single candidate can still be claimed by multiple bank lines. Keep
+    -- the match but leave the unsafe payment pointer empty for operator review.
+    LEFT JOIN unique_legacy_claims unclaimed
+      ON unclaimed.candidate_payment_id = legacy.candidate_payment_id
+     AND NOT EXISTS (
+       SELECT 1 FROM recorded_claims c WHERE c.payment_id = unclaimed.candidate_payment_id
      )
    RETURNING "bank_transaction_id", "target_type"
 )

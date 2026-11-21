@@ -261,7 +261,10 @@ export function registerBankRoutes(app: Express) {
         code: body.code,
         state: body.state,
       });
-      logger.info({ companyId, count: result.connections.length }, "Bank feed connected");
+      logger.info(
+        { companyId, count: result.connections.length },
+        "Banking provider accounts linked"
+      );
       res.status(201).json(result);
     })
   );

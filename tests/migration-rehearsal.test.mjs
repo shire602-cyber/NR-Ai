@@ -37,6 +37,7 @@ test("rehearses the journal and rollback entirely on disposable PostgreSQL", () 
   assert.match(result.stdout, /Backup restore verified/);
   assert.match(result.stdout, /0097 tenant guards verified before forward repair/);
   assert.match(result.stdout, /Shared posting links and ambiguous payment candidate verified/);
+  assert.match(result.stdout, /0097 competing unallocated legacy lines retain NULL payment IDs/);
   assert.match(result.stdout, /Ordered SQL replay with banking edge cases \d+ ms/);
   assert.match(result.stdout, /Timing pass and Drizzle Kit schemas match/);
   assert.match(result.stdout, /Transaction rollback verified at 0134/);
@@ -46,16 +47,22 @@ test("rehearses the journal and rollback entirely on disposable PostgreSQL", () 
   assert.match(result.stdout, /Original 0097 hash and incorrect legacy GL link verified/);
   assert.match(
     result.stdout,
-    /Base-to-head ledger added 0138_repair_bank_gl_links, 0139_audit_bank_match_links/
+    /Base-to-head ledger added 0138_repair_bank_gl_links, 0139_audit_bank_match_links, 0140_repair_bank_receipt_provenance/
   );
   assert.match(result.stdout, /Forward GL repair and tenant mismatch findings verified/);
   assert.match(result.stdout, /Tracked rerun historical_upgrade \d+ ms/);
   assert.match(result.stdout, /Base-to-head direct SQL replay \d+ ms/);
   assert.match(result.stdout, /Ordered SQL replay with live allocations \d+ ms/);
   assert.match(result.stdout, /Live allocation state and GL links preserved/);
+  assert.match(result.stdout, /Exact 1c266ae5 ledger verified \(138 entries\)/);
+  assert.match(result.stdout, /Exact 29e9a1fa ledger verified \(139 entries\)/);
   assert.match(
     result.stdout,
-    /0139 recorded historical payment risks without changing persisted allocations or journals/
+    /Forward bank provenance and competing-claim findings verified from 1c266ae5/
+  );
+  assert.match(
+    result.stdout,
+    /Forward bank provenance and competing-claim findings verified from 29e9a1fa/
   );
   assert.match(result.stdout, /Migration rehearsal passed/);
 });

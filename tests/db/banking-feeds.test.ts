@@ -4,12 +4,13 @@
  * allow-listed, tokens are encrypted at rest and never returned, sync dedupes by provider id.
  * Provider HTTP is a recorded sandbox-shaped fixture; nothing calls a real bank.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import type { FetchLike } from "../../server/services/bank-feeds/types";
 
 const h = useHarness();
-const REDIRECT = "https://app.example.test/bank-feeds/callback";
+const REDIRECT = "https://integration.example.test/banking/return";
+const RETIRED_REDIRECT = "https://app.example.test/bank-feeds/callback";
 const ENTITY_SECRET = "lean-entity-7f1c2d9e-secret";
 
 function leanFixture(calls: string[]): FetchLike {
@@ -79,7 +80,10 @@ async function clearEnv() {
   await setBankFeedFetch(null);
 }
 
-afterEach(clearEnv);
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  await clearEnv();
+});
 
 async function tenant(): Promise<Tenant> {
   return h.createTenant({ name: "Feeds" });
@@ -174,6 +178,52 @@ describe("W3-C bank feeds", () => {
       }
     );
     expect(stolen.status).toBe(400);
+  });
+
+  it("omits retired redirects and rejects them before starting authorization", async () => {
+    vi.stubEnv("FRONTEND_URL", "https://app.example.test");
+    vi.stubEnv("AUTH_PUBLIC_URL", "https://auth.example.test");
+    process.env.LEAN_APP_TOKEN = "sandbox-app-token";
+    const calls: string[] = [];
+    await setBankFeedFetch(leanFixture(calls));
+    const t = await tenant();
+    const connect = (redirectUrl: string) =>
+      t.as.post(`/api/companies/${t.company.id}/bank-connections/connect`, {
+        provider: "lean",
+        redirectUrl,
+      });
+    const defaults = await t.as.get("/api/bank/providers");
+    expect(defaults.status).toBe(200);
+    expect(defaults.body.redirectUris).toEqual([]);
+    const defaultAttempt = await connect(RETIRED_REDIRECT);
+    expect(defaultAttempt.status).toBe(400);
+    expect(defaultAttempt.body.code).toBe("REDIRECT_URI_NOT_ALLOWED");
+
+    const retired = [
+      RETIRED_REDIRECT,
+      `${RETIRED_REDIRECT}/?from=integration`,
+      "https://auth.example.test/BANK-FEEDS/CALLBACK",
+      "https://app.example.test/bank-feeds/%63allback",
+    ];
+    process.env.BANK_FEED_REDIRECT_URIS = [...retired, REDIRECT].join(",");
+    const explicit = await t.as.get("/api/bank/providers");
+    expect(explicit.status).toBe(200);
+    expect(explicit.body.redirectUris).toEqual([REDIRECT]);
+    for (const redirectUri of retired) {
+      const attempt = await connect(redirectUri);
+      expect(attempt.status).toBe(400);
+      expect(attempt.body).toMatchObject({
+        code: "REDIRECT_URI_NOT_ALLOWED",
+        details: { allowed: [REDIRECT] },
+      });
+      expect(attempt.body).not.toHaveProperty("authUrl");
+    }
+
+    const states = await h.sql(`SELECT id FROM bank_feed_oauth_states WHERE company_id = $1`, [
+      t.company.id,
+    ]);
+    expect(states).toEqual([]);
+    expect(calls).toEqual([]);
   });
 
   it("[R06-14] tokens are encrypted at rest, never returned, and sync dedupes by provider id [R06-19]", async () => {
