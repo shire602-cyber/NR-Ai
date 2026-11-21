@@ -74,9 +74,15 @@ function stub() {
   );
 }
 
-async function settle(rounds = 8) {
-  for (let i = 0; i < rounds; i++)
-    await act(async () => await new Promise((r) => setTimeout(r, 25)));
+async function waitForRender(check: () => void) {
+  // Lazy routes and query notifications commit independently of the initial mount.
+  await vi.waitFor(
+    async () => {
+      await act(async () => {});
+      check();
+    },
+    { timeout: 4000 }
+  );
 }
 
 async function mountAt(path: string) {
@@ -85,7 +91,6 @@ async function mountAt(path: string) {
   await act(async () => {
     root.render(createElement(PortalApp));
   });
-  await settle();
 }
 
 const text = () => container.textContent ?? "";
@@ -120,36 +125,36 @@ afterEach(() => {
 describe("client portal light root", () => {
   it("renders the dashboard with exactly one h1 and the stacked-card table", async () => {
     await mountAt("/client-portal/dashboard");
-    await vi.waitFor(
-      async () => {
-        await act(async () => {});
-        expect(container.querySelector("h1")).not.toBeNull();
-      },
-      { timeout: 10000 }
-    );
-    expect(container.querySelectorAll("h1")).toHaveLength(1);
-    expect(container.querySelector("h1")!.textContent).toBe("Overview");
-    expect(text()).toContain("INV-2026-00001");
-    expect(container.querySelector("table.row-cards")).not.toBeNull();
-    // The tab is named after the page and the company, not the marketing default.
-    expect(document.title).toBe("Dashboard · Al Noor Trading LLC");
-    expect(container.querySelector('[data-testid="full-app"]')).toBeNull();
+    await waitForRender(() => {
+      expect(container.querySelectorAll("h1")).toHaveLength(1);
+      expect(container.querySelector("h1")!.textContent).toBe("Overview");
+      expect(text()).toContain("INV-2026-00001");
+      expect(container.querySelector("table.row-cards")).not.toBeNull();
+      expect(document.title).toBe("Dashboard · Al Noor Trading LLC");
+      expect(container.querySelector('[data-testid="full-app"]')).toBeNull();
+    });
   });
 
   it("empty pages put their title under the page h1 as an h2 (no skipped level)", async () => {
     await mountAt("/client-portal/documents");
-    expect(container.querySelectorAll("h1")).toHaveLength(1);
-    expect(container.querySelector("h3")).toBeNull();
-    expect(container.querySelector("h2")!.textContent).toMatch(/No documents/i);
+    await waitForRender(() => {
+      expect(container.querySelector("h2")?.textContent).toMatch(/No documents/i);
+      expect(container.querySelectorAll("h1")).toHaveLength(1);
+      expect(container.querySelector("h3")).toBeNull();
+    });
   });
 
   it("mirrors in Arabic and keeps Arabic copy", async () => {
     const { useI18n } = await import("../../client/src/lib/i18n");
     act(() => useI18n.getState().setLocale("ar"));
     await mountAt("/client-portal/invoices");
-    expect(document.documentElement.dir).toBe("rtl");
-    expect(text()).toContain("د.إ");
-    expect(text()).not.toMatch(/Invoice number|Download PDF/);
+    await waitForRender(() => {
+      const row = container.querySelector('[data-testid="portal-invoice-row-i1"]');
+      expect(row?.textContent).toContain("INV-2026-00001");
+      expect(row?.textContent).toContain("د.إ");
+      expect(document.documentElement.dir).toBe("rtl");
+      expect(text()).not.toMatch(/Invoice number|Download PDF/);
+    });
   });
 
   it("a failed PDF download is a localized toast, not silence", async () => {
@@ -157,26 +162,32 @@ describe("client portal light root", () => {
     const { useI18n } = await import("../../client/src/lib/i18n");
     act(() => useI18n.getState().setLocale("ar"));
     await mountAt("/client-portal/invoices");
+    await waitForRender(() =>
+      expect(container.querySelector('[data-testid="portal-invoice-row-i1"]')).not.toBeNull()
+    );
     const buttons = [...container.querySelectorAll<HTMLButtonElement>("button")];
     const dl = buttons.find((b) => /PDF/.test(b.getAttribute("aria-label") ?? b.textContent ?? ""));
     expect(dl).toBeTruthy();
     await act(async () => dl!.click());
-    await settle();
-    expect(document.body.textContent).toContain("تعذّر تنزيل ملف PDF");
+    await waitForRender(() => expect(document.body.textContent).toContain("تعذّر تنزيل ملف PDF"));
   });
 
   it("hands the page to the full app for a signed-out visitor and for staff", async () => {
     me = { status: 401, body: {} };
     // refresh endpoint also refuses
     await mountAt("/client-portal/dashboard");
-    expect(container.querySelector('[data-testid="full-app"]')).not.toBeNull();
+    await waitForRender(() =>
+      expect(container.querySelector('[data-testid="full-app"]')).not.toBeNull()
+    );
     act(() => root.unmount());
     root = createRoot(container);
     me = { status: 200, body: { id: "u2", userType: "customer", isAdmin: false } };
     const { queryClient } = await import("../../client/src/lib/queryClient");
     queryClient.clear();
     await mountAt("/client-portal/dashboard");
-    expect(container.querySelector('[data-testid="full-app"]')).not.toBeNull();
+    await waitForRender(() =>
+      expect(container.querySelector('[data-testid="full-app"]')).not.toBeNull()
+    );
   });
 });
 

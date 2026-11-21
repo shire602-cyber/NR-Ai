@@ -1,9 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { NextFunction, Request, Response } from "express";
-import { pool } from "../db";
+import { sql } from "drizzle-orm";
+import { db, pool } from "../db";
 import { AppError } from "../middleware/errorHandler";
 import { DomainError } from "../errors";
 import { todayIso } from "../ledger/normalize";
+import { rowsOf } from "../ledger/tx";
+import type { LedgerTx } from "../ledger/types";
 
 /**
  * Period lock policy (W2-B: R08-05, R02-11, R02-19).
@@ -63,30 +66,51 @@ function toIsoDate(date: Date | string): string | null {
 /** The strongest lock covering `isoDate` (hard beats soft), or null. */
 export async function getEffectiveLock(
   companyId: string,
-  isoDate: string
+  isoDate: string,
+  tx: LedgerTx = db
 ): Promise<EffectiveLock | null> {
-  const result = await pool.query(
-    `SELECT period_end::date::text AS period_end, lock_type, lock_scope
-       FROM month_end_close
-      WHERE company_id = $1
-        AND status = 'locked'
-        AND (
-          (COALESCE(lock_scope, 'month') = 'through' AND $2::date <= period_end::date)
-          OR (COALESCE(lock_scope, 'month') = 'month'
-              AND $2::date >= date_trunc('month', period_end)::date
-              AND $2::date <= period_end::date)
-        )
-      ORDER BY CASE WHEN lock_type = 'hard' THEN 0 ELSE 1 END, period_end DESC
-      LIMIT 1`,
-    [companyId, isoDate]
-  );
-  const row = result.rows[0];
+  const result = await tx.execute(sql`
+    SELECT period_end::text AS period_end, lock_type, lock_scope
+      FROM (
+        SELECT period_end::date AS period_end, lock_type, lock_scope
+          FROM month_end_close
+         WHERE company_id = ${companyId} AND status = 'locked'
+           AND (
+             (COALESCE(lock_scope, 'month') = 'through' AND ${isoDate}::date <= period_end::date)
+             OR (COALESCE(lock_scope, 'month') = 'month'
+                 AND ${isoDate}::date >= date_trunc('month', period_end)::date
+                 AND ${isoDate}::date <= period_end::date)
+           )
+        UNION ALL
+        SELECT fiscal_year_end, 'hard', 'through'
+          FROM fiscal_year_closes
+         WHERE company_id = ${companyId} AND status = 'closed' AND hard_closed = true
+           AND ${isoDate}::date <= fiscal_year_end
+      ) AS locks
+     ORDER BY CASE WHEN lock_type = 'hard' THEN 0 ELSE 1 END, locks.period_end DESC,
+              CASE WHEN lock_scope = 'through' THEN 0 ELSE 1 END
+     LIMIT 1`);
+  const [row] = rowsOf<{ period_end: string; lock_type: string; lock_scope: string }>(result);
   if (!row) return null;
   return {
     periodEnd: row.period_end,
     lockType: row.lock_type === "soft" ? "soft" : "hard",
     lockScope: row.lock_scope === "through" ? "through" : "month",
   };
+}
+
+/** Postings share this transaction lock. Publishing or reopening a period takes it exclusively. */
+export async function lockPeriodPolicy(
+  tx: LedgerTx,
+  companyId: string,
+  mode: "shared" | "exclusive"
+): Promise<void> {
+  const key = sql`hashtextextended('ledger-period:' || ${companyId.toLowerCase()}, 0)`;
+  await tx.execute(
+    mode === "shared"
+      ? sql`SELECT pg_advisory_xact_lock_shared(${key})`
+      : sql`SELECT pg_advisory_xact_lock(${key})`
+  );
 }
 
 export async function isPeriodLocked(companyId: string, date: string): Promise<boolean> {
@@ -96,8 +120,13 @@ export async function isPeriodLocked(companyId: string, date: string): Promise<b
 /** The latest lock-through date for the company (null when none). */
 export async function getLockThroughDate(companyId: string): Promise<string | null> {
   const r = await pool.query(
-    `SELECT MAX(period_end)::date::text AS d FROM month_end_close
-      WHERE company_id = $1 AND status = 'locked' AND lock_scope = 'through'`,
+    `SELECT MAX(period_end)::text AS d FROM (
+       SELECT period_end::date AS period_end FROM month_end_close
+        WHERE company_id = $1 AND status = 'locked' AND lock_scope = 'through'
+       UNION ALL
+       SELECT fiscal_year_end FROM fiscal_year_closes
+        WHERE company_id = $1 AND status = 'closed' AND hard_closed = true
+     ) AS locks`,
     [companyId]
   );
   return r.rows[0]?.d ?? null;
@@ -111,13 +140,15 @@ export type CloseActor =
 
 export async function resolveCloseActor(
   companyId: string,
-  user: { id: string; isAdmin?: boolean; firmRole?: string | null }
+  user: { id: string; isAdmin?: boolean; firmRole?: string | null },
+  tx: LedgerTx = db
 ): Promise<CloseActor> {
-  const r = await pool.query(
-    `SELECT role FROM company_users WHERE company_id = $1 AND user_id = $2 LIMIT 1`,
-    [companyId, user.id]
+  const [membership] = rowsOf<{ role: string }>(
+    await tx.execute(sql`
+      SELECT role FROM company_users WHERE company_id = ${companyId} AND user_id = ${user.id}
+      LIMIT 1`)
   );
-  const companyRole: string | null = r.rows[0]?.role ?? null;
+  const companyRole = membership?.role ?? null;
   if (user.isAdmin) return { kind: "platform_admin", companyRole };
   if (user.firmRole === "firm_owner") return { kind: "firm_owner", companyRole };
   if (user.firmRole === "firm_admin") return { kind: "firm_admin", companyRole };
@@ -135,7 +166,8 @@ export function canManageClose(actor: CloseActor): boolean {
 // ─── Guard ──────────────────────────────────────────────────────────────────
 
 /**
- * Period lock guard for financial write paths.
+ * Period lock guard for financial write paths. A transaction caller must
+ * hold the company period policy lock while it validates and writes.
  *
  * Throws 403 PERIOD_LOCKED inside a hard lock, and 403 PERIOD_SOFT_LOCKED
  * inside a soft lock unless the current request is from an owner / admin /
@@ -143,14 +175,15 @@ export function canManageClose(actor: CloseActor): boolean {
  */
 export async function assertPeriodNotLocked(
   companyId: string,
-  date: Date | string | null | undefined
+  date: Date | string | null | undefined,
+  tx?: LedgerTx
 ): Promise<void> {
   if (!companyId) return;
   if (!date) return;
   const isoDate = toIsoDate(date);
   if (!isoDate) return;
 
-  const lock = await getEffectiveLock(companyId, isoDate);
+  const lock = await getEffectiveLock(companyId, isoDate, tx);
   if (!lock) return;
 
   const label = `${isoDate.slice(5, 7)}/${isoDate.slice(0, 4)}`;
@@ -174,7 +207,7 @@ export async function assertPeriodNotLocked(
   const user = req?.user;
   // X5 (J1 D3): the refusal tells the client whether this user may override with a reason,
   // so the UI asks for one (and retries) only when it would be accepted.
-  const actor = user ? await resolveCloseActor(companyId, user) : null;
+  const actor = user ? await resolveCloseActor(companyId, user, tx) : null;
   const canOverride = !!actor && canManageClose(actor);
   if (user && reason.length >= 3) {
     if (canOverride) {
@@ -188,6 +221,7 @@ export async function assertPeriodNotLocked(
         before: null,
         after: { postingDate: isoDate, lockedThrough: lock.periodEnd, reason },
         req,
+        tx,
       });
       return;
     }
@@ -223,20 +257,27 @@ export function decodeLockReason(raw: unknown): string {
   return text.trim().slice(0, 500);
 }
 
-/** Throw 403 FISCAL_YEAR_HARD_CLOSED when `isoDate` sits in a hard-closed fiscal year. */
-export async function assertNotInHardClosedYear(companyId: string, isoDate: string): Promise<void> {
-  const r = await pool.query(
-    `SELECT fiscal_year_end::text AS fye FROM fiscal_year_closes
-      WHERE company_id = $1 AND status = 'closed' AND hard_closed = true
-        AND $2::date BETWEEN fiscal_year_start AND fiscal_year_end
-      LIMIT 1`,
-    [companyId, isoDate]
-  );
-  if (r.rows[0]) {
+/** Throw 403 when the date belongs to a hard fiscal close, or identifies its lock row. */
+export async function assertNotInHardClosedYear(
+  companyId: string,
+  isoDate: string,
+  tx: LedgerTx = db,
+  options: { exactYearEnd?: boolean } = {}
+): Promise<void> {
+  const dateCondition = options.exactYearEnd
+    ? sql`fiscal_year_end = ${isoDate}::date`
+    : sql`${isoDate}::date BETWEEN fiscal_year_start AND fiscal_year_end`;
+  const result = await tx.execute(sql`
+    SELECT fiscal_year_end::text AS fye FROM fiscal_year_closes
+      WHERE company_id = ${companyId} AND status = 'closed' AND hard_closed = true
+        AND ${dateCondition}
+      LIMIT 1`);
+  const [row] = rowsOf<{ fye: string }>(result);
+  if (row) {
     throw new DomainError(
       "FISCAL_YEAR_HARD_CLOSED",
       403,
-      { fiscalYearEnd: r.rows[0].fye },
+      { fiscalYearEnd: row.fye },
       "This fiscal year is hard-closed. Only firm staff or an administrator can reopen it."
     );
   }

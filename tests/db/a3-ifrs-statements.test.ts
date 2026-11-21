@@ -362,6 +362,42 @@ describe("A3 S3 foreign currency: aging after revaluation and FX effect on cash"
 });
 
 describe("A3 S1 bad debts: write-off, VAT relief and the allowance", () => {
+  it("[H1] prorates bad-debt relief to the exact fil below a half-fil boundary", async () => {
+    const t = await tenant("A3ExactBadDebt");
+    const cid = t.company.id;
+    const bank = await accountByCode(t, "1020");
+    const inv = await issuedInvoice(t, {
+      date: "2026-03-01",
+      dueDate: "2026-03-31",
+      lines: [
+        { description: "Consulting", quantity: 1, unitPrice: 1_000_000_000_000.01, vatRate: 5 },
+      ],
+    });
+    const part = await t.as.post(`/api/companies/${cid}/invoices/${inv.id}/payments`, {
+      amount: 524_999_999_998.85,
+      date: "2026-04-01",
+      paymentAccountId: bank.id,
+    });
+    expect(part.status, part.text).toBe(201);
+    const writtenOff = await t.as.post(`/api/companies/${cid}/invoices/${inv.id}/write-off`, {
+      date: "2026-10-15",
+      reason: "Customer in liquidation",
+    });
+    expect(writtenOff.status, writtenOff.text).toBe(201);
+    const claim = await t.as.post(`/api/companies/${cid}/vat/bad-debt-relief`, {
+      invoiceId: inv.id,
+      claimDate: "2026-10-20",
+      writtenOff: true,
+      customerNotified: true,
+    });
+    expect(claim.status, claim.text).toBe(201);
+    expect(Number(claim.body.vatAmount)).toBe(25_000_000_000.05);
+    expect(await linesOf(claim.body.journalEntryId)).toEqual({
+      "2020": [25_000_000_000.05, 0],
+      "5120": [0, 25_000_000_000.05],
+    });
+  });
+
   it("[H1][M5] write-off settles the invoice, Art. 64 relief on the written-off amount, allowance reconciles", async () => {
     const t = await tenant("A3S1");
     const cid = t.company.id;

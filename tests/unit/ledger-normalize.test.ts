@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MAX_FILS } from "../../shared/money";
 import { normalizeEntry, parseLedgerDate } from "../../server/ledger/normalize";
 import { legacyLinesToInput } from "../../server/ledger/legacy";
 import type { PostJournalInput } from "../../server/ledger";
@@ -136,6 +137,37 @@ describe("ledger normalisation (W2-A)", () => {
       expect(codeOf(() => normalizeEntry(input(lines)))).toBe(code);
   });
 
+  it("R02-18: a combined line amount must still fit the database column", () => {
+    const lines = [
+      { accountId: A, debit: "0.01", debitFils: MAX_FILS },
+      { accountId: B, credit: "0.01", creditFils: MAX_FILS },
+    ];
+    expect(() => normalizeEntry(input(lines))).toThrow(
+      expect.objectContaining({
+        code: "INVALID_AMOUNT",
+        details: { field: "lines[0].debit", reason: "MONEY_OUT_OF_RANGE" },
+      })
+    );
+  });
+
+  it("R02-18: unsafe aggregate fils cannot hide a one-fil imbalance", () => {
+    const lines = Array.from({ length: 9 }, () => [
+      { accountId: A, debitFils: MAX_FILS },
+      { accountId: B, creditFils: MAX_FILS },
+    ]).flat();
+    lines.push(
+      { accountId: A, debitFils: MAX_FILS - 2 },
+      { accountId: B, creditFils: MAX_FILS - 2 },
+      { accountId: B, creditFils: 1 }
+    );
+    expect(() => normalizeEntry(input(lines))).toThrow(
+      expect.objectContaining({
+        code: "INVALID_AMOUNT",
+        details: { reason: "MONEY_OUT_OF_RANGE" },
+      })
+    );
+  });
+
   it("R02-12: same-account net-zero entries are rejected unless explicitly allowed", () => {
     const lines = [
       { accountId: A, debit: 10 },
@@ -199,5 +231,18 @@ describe("ledger normalisation (W2-A)", () => {
       [0, 500],
       [500, 0],
     ]);
+  });
+
+  it("R02-18: legacy exchange rates round exact decimal half ties to six places", () => {
+    const n = normalizeEntry(
+      input(
+        [
+          { accountId: A, debit: 10, exchangeRate: "1.0000015" },
+          { accountId: B, credit: 10 },
+        ],
+        { amountRounding: "halfUp" }
+      )
+    );
+    expect(n.lines[0].exchangeRate).toBe("1.000002");
   });
 });

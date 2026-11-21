@@ -59,11 +59,9 @@ const CONNECTION_TONE: Record<string, StatusTone> = {
 };
 
 /**
- * Bank feeds (spec 3.9). Customers see only what they can use: when no licensed provider is
- * available to them the page is one empty state pointing to statement import (the nav item is
- * hidden by the shell); when one is, a list of their bank accounts with Connect and the state of
- * each connection. The OAuth return (`/bank-feeds/callback`) shows a progress state and comes
- * back here. Nothing claims a connection or sync that did not happen.
+ * Statement import is the default banking workflow. A workspace with a configured provider can
+ * also authorize account access and retrieve transactions. The existing callback URL is retained
+ * for those providers.
  */
 export default function BankFeeds() {
   const { t, locale } = useTranslation();
@@ -152,12 +150,7 @@ export default function BankFeeds() {
   const connectionFor = (accountId: string) =>
     (connections ?? []).find((c) => c.provider !== "manual" && c.bankAccountId === accountId);
 
-  const header = (
-    <PageHeader
-      eyebrow={tt["shell.nav.banking"]}
-      title={tt["banking.feeds.title"]}
-    />
-  );
+  const header = <PageHeader eyebrow={tt["shell.nav.banking"]} title={tt["banking.feeds.title"]} />;
 
   if (returning) {
     return (

@@ -2,7 +2,7 @@ import type { RequestHandler } from "express";
 import { storage } from "../storage";
 import { DomainError } from "../errors";
 import { authenticateRequest } from "./auth";
-import { resolveRequestCompany } from "./companyRolePolicy";
+import { isSignedProviderCallback, resolveRequestCompany } from "./companyRolePolicy";
 import {
   billingEnforced,
   companyEntitlement,
@@ -26,7 +26,7 @@ export async function assertTrialAccess(companyId: string, user: Express.User): 
 
 /** Billing recovers the workspace. Identity and separately authorised public links stay usable. */
 function isTrialRecoveryRequest(method: string, path: string): boolean {
-  if (method === "OPTIONS") return true;
+  if (method === "OPTIONS" || isSignedProviderCallback(method, path)) return true;
   const reads = method === "GET" || method === "HEAD";
   if (path === "/companies" && reads) return true;
   if (/^\/companies\/[^/]+\/billing(?:\/|$)/i.test(path)) return true;

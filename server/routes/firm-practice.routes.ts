@@ -20,10 +20,11 @@ import { recordAudit } from "../services/audit.service";
 import { zDate } from "../../shared/validators/primitives";
 import { FIRM_ROLES, firmRoleHasPermission } from "../../shared/access";
 import { db } from "../db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { firmTaskTemplates, firmTasks } from "../../shared/schema";
 import { zOptionalClientTrn } from "../services/firm-clients.service";
 import {
+  accessibleClientsQuery,
   canAccessFirmClient,
   listAccessibleClientIds,
   type FirmContext,
@@ -51,7 +52,6 @@ import {
 import {
   ensureDefaultTemplates,
   generateRecurringTasks,
-  getFirmTask,
   listFirmTasks,
 } from "../services/firm/workflow.service";
 import {
@@ -154,8 +154,21 @@ const taskCreateSchema = z.object({
   dueDate: zDate,
   assigneeUserId: zId.optional(),
 });
+const taskStatus = z.enum(["open", "in_progress", "review", "done", "cancelled"]);
+const taskListQuery = z
+  .strictObject({
+    companyId: zId.optional(),
+    from: zDate.optional(),
+    to: zDate.optional(),
+    status: taskStatus.optional(),
+  })
+  .refine(({ from, to }) => !from || !to || from <= to, {
+    path: ["to"],
+    message: "End date must be on or after the start date",
+  });
+const timeListQuery = z.strictObject({ companyId: zId.optional() });
 const taskPatchSchema = z.object({
-  status: z.enum(["open", "in_progress", "review", "done", "cancelled"]).optional(),
+  status: taskStatus.optional(),
   assigneeUserId: zId.nullable().optional(),
   dueDate: zDate.optional(),
 });
@@ -557,14 +570,12 @@ export function registerFirmPracticeRoutes(app: Express): void {
     "/firm/tasks",
     asyncHandler(async (req: Request, res: Response) => {
       const ctx = firmContextOf(res);
-      const q = req.query as Record<string, string | undefined>;
+      const { companyId, ...filters } = taskListQuery.parse(req.query);
       const accessible = await listAccessibleClientIds(ctx);
-      const ids = q.companyId ? accessible.filter((id) => id === q.companyId) : accessible;
-      const rows = await listFirmTasks(ctx, ids, {
-        from: q.from && zDate.safeParse(q.from).success ? q.from : undefined,
-        to: q.to && zDate.safeParse(q.to).success ? q.to : undefined,
-        status: q.status,
-      });
+      const ids = companyId
+        ? accessible.filter((id) => id === companyId.toLowerCase())
+        : accessible;
+      const rows = await listFirmTasks(ctx, ids, filters);
       res.json({
         tasks: rows.map((r: { task: Record<string, unknown>; companyName: string }) => ({
           ...r.task,
@@ -609,8 +620,7 @@ export function registerFirmPracticeRoutes(app: Express): void {
       ) {
         throw new DomainError("FIRM_PERMISSION_DENIED", 403);
       }
-      const task = await getFirmTask(ctx, param(req, "taskId"));
-      await requireClient(res, task.companyId);
+      const taskId = param(req, "taskId");
       const body = parsedBody<z.output<typeof taskPatchSchema>>(req);
       const [row] = await db
         .update(firmTasks)
@@ -621,8 +631,15 @@ export function registerFirmPracticeRoutes(app: Express): void {
           ...(body.dueDate ? { dueDate: body.dueDate } : {}),
           updatedAt: new Date(),
         })
-        .where(eq(firmTasks.id, task.id))
+        .where(
+          and(
+            eq(firmTasks.id, taskId),
+            eq(firmTasks.firmId, ctx.firmId),
+            inArray(firmTasks.companyId, accessibleClientsQuery(ctx))
+          )
+        )
         .returning();
+      if (!row) throw new DomainError("TASK_NOT_FOUND", 404);
       res.json({ task: row });
     })
   );
@@ -658,13 +675,12 @@ export function registerFirmPracticeRoutes(app: Express): void {
     strictBody(requestReviewSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const ctx = firmContextOf(res);
-      const out = await reviewRequest(
+      const request = await reviewRequest(
         ctx,
         param(req, "requestId"),
         parsedBody<z.output<typeof requestReviewSchema>>(req)
       );
-      await requireClient(res, out.companyId);
-      res.json({ request: out.request });
+      res.json({ request });
     })
   );
 
@@ -735,9 +751,11 @@ export function registerFirmPracticeRoutes(app: Express): void {
     "/firm/time-entries",
     asyncHandler(async (req: Request, res: Response) => {
       const ctx = firmContextOf(res);
+      const { companyId } = timeListQuery.parse(req.query);
       const accessible = await listAccessibleClientIds(ctx);
-      const companyId = typeof req.query.companyId === "string" ? req.query.companyId : undefined;
-      const ids = companyId ? accessible.filter((id) => id === companyId) : accessible;
+      const ids = companyId
+        ? accessible.filter((id) => id === companyId.toLowerCase())
+        : accessible;
       res.json({ entries: await listTimeEntries(ctx, ids) });
     })
   );
@@ -799,7 +817,7 @@ export function registerFirmPracticeRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const ctx = firmContextOf(res);
       const { asOf } = parsedBody<z.output<typeof recurringSchema>>(req);
-      res.json(await runRecurringBilling(ctx, dateOf(asOf)));
+      res.json(await runRecurringBilling(ctx, await listAccessibleClientIds(ctx), dateOf(asOf)));
     })
   );
 

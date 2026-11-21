@@ -39,6 +39,10 @@ export type { BankFeedAdapter, FeedTokens, FeedTransaction, FeedAccount } from "
 
 const log = createLogger("bank-feeds");
 const STATE_TTL_MS = 10 * 60 * 1000;
+const STATEMENT_IMPORT_GUIDANCE = {
+  en: "Import a CSV statement from your bank on the Bank reconciliation page.",
+  ar: "استورد كشف حسابك البنكي بصيغة CSV من صفحة التسوية البنكية.",
+};
 
 export function getAdapter(provider: string): BankFeedAdapter {
   const adapter = BANK_FEED_ADAPTERS[provider];
@@ -52,7 +56,7 @@ function assertConfigured(adapter: BankFeedAdapter): void {
       "BANK_FEED_NOT_CONFIGURED",
       503,
       { provider: adapter.id, capability: adapter.capability },
-      `${adapter.label} is not connected — it requires a provider contract and credentials`
+      STATEMENT_IMPORT_GUIDANCE.en
     );
   }
 }
@@ -83,10 +87,7 @@ export function providerStatuses(): ProviderStatus[] {
               ar: "بيانات اعتماد تجريبية — بيانات اختبار فقط",
             }
           : { en: "Configured", ar: "مُعد" }
-        : {
-            en: "Not connected — requires provider contract",
-            ar: "غير متصل — يتطلب عقداً مع مزود الخدمة",
-          },
+        : STATEMENT_IMPORT_GUIDANCE,
       externalAction: cap.externalAction,
     };
   });
@@ -118,7 +119,7 @@ function assertAllowedRedirect(uri: string): void {
       "REDIRECT_URI_NOT_ALLOWED",
       400,
       { allowed },
-      "The redirect URI is not on the bank-feed allow-list"
+      "The return address is not allowed for this bank authorization."
     );
   }
 }
@@ -270,7 +271,7 @@ export async function syncConnection(
       "BANK_FEED_ACCOUNT_NOT_LINKED",
       409,
       undefined,
-      "Link this feed to a bank account before syncing"
+      "Choose a bank account before importing transactions."
     );
   }
   const ba = await storage.getBankAccountById(connection.bankAccountId, connection.companyId);

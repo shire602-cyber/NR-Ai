@@ -14,6 +14,7 @@ import {
   notificationCopy,
   renderDescriptor,
 } from "../../shared/server-copy";
+import { findBankFeedMention } from "../e2e/lib/bank-feed-claims.mjs";
 
 const ar = arComponents as Record<string, string>;
 const en = enComponents as Record<string, string>;
@@ -116,5 +117,31 @@ describe("bank statement import toasts", () => {
     expect(toast(t, "toasts.importedNothingNew", { skipped: 1 })).toBe(
       "No new transactions: 1 was already imported."
     );
+  });
+});
+
+describe("bank transaction retrieval notifications", () => {
+  const titleKey = "notification.bankSyncFailed.title";
+  const messageKey = "notification.bankSyncFailed.message";
+  const params = { provider: "Example Bank", reason: "Service unavailable" };
+
+  it("points current notifications and the stored legacy copy to CSV in both languages", () => {
+    const current = notificationCopy(titleKey, messageKey, params);
+    const legacy = {
+      title: "Bank feed sync failed",
+      message:
+        "The bank feed (Example Bank) could not sync: Service unavailable. Reconnect it under Banking.",
+    };
+    const descriptor = { titleKey, titleParams: {}, messageKey, messageParams: params };
+    expect(findBankFeedMention(current.title + " " + current.message)).toBeNull();
+    expect(describeNotificationCopy(current)).toEqual(descriptor);
+    expect(describeNotificationCopy(legacy)).toEqual(descriptor);
+    for (const catalog of [en, ar]) {
+      const title = renderDescriptor(titleKey, {}, legacy.title, catalog);
+      const message = renderDescriptor(messageKey, params, legacy.message, catalog);
+      expect(findBankFeedMention(title + " " + message)).toBeNull();
+      expect(message).toContain("CSV");
+      expect(message).toContain(params.reason);
+    }
   });
 });

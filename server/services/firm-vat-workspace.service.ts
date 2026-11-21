@@ -488,21 +488,41 @@ export function validateVatWorkpaperRow(
   }
 }
 
+function scopeWorkpaperCompanyIds(companyIds: string[], companyId?: string): string[] {
+  if (companyIds.length === 0) return [];
+  if (companyId && !companyIds.includes(companyId)) {
+    throw new NotFoundError("VAT workpaper");
+  }
+  return companyId ? [companyId] : companyIds;
+}
+
+const firmClientWorkpaperCompany = eq(companies.companyType, "client");
+
+/** Resolve the firm's client-only list before loading workpaper totals or notes. */
+export async function resolveFirmVatWorkpaperListCompanies(
+  companyIds: string[],
+  companyId?: string
+) {
+  const scopedCompanyIds = scopeWorkpaperCompanyIds(companyIds, companyId);
+  if (scopedCompanyIds.length === 0) return [];
+  const rows = await db
+    .select({ id: companies.id })
+    .from(companies)
+    .where(and(inArray(companies.id, scopedCompanyIds), firmClientWorkpaperCompany));
+  return rows.map(({ id }) => id);
+}
+
 export async function listVatWorkpapers(
   companyIds: string[],
   companyId?: string,
   options: { clientOnly?: boolean } = {}
 ) {
-  if (companyIds.length === 0) return [];
-  if (companyId && !companyIds.includes(companyId)) {
-    throw new NotFoundError("VAT workpaper");
-  }
-
-  const scopedCompanyIds = companyId ? [companyId] : companyIds;
+  const scopedCompanyIds = scopeWorkpaperCompanyIds(companyIds, companyId);
+  if (scopedCompanyIds.length === 0) return [];
   const clientOnly = options.clientOnly ?? true;
   const conditions = [
     inArray(vatWorkpapers.companyId, scopedCompanyIds),
-    ...(clientOnly ? [eq(companies.companyType, "client")] : []),
+    ...(clientOnly ? [firmClientWorkpaperCompany] : []),
   ];
   const rows = await db
     .select({

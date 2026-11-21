@@ -368,7 +368,7 @@ function clientWhyNow(client: ValueOpsClient): string {
     signals.push(`${client.workload.reviewerQueueItems} review items`);
   if (client.workload.missingDocuments > 0)
     signals.push(`${client.workload.missingDocuments} missing documents`);
-  if (!client.status.hasBankFeedData) signals.push("no bank feed evidence");
+  if (!client.status.hasBankFeedData) signals.push("no imported bank transactions");
   return signals.slice(0, 4).join(" · ") || "ready for proactive advisory touchpoint";
 }
 
@@ -978,7 +978,7 @@ export async function buildFirmValueOps(
     },
     {
       lane: "bank_close",
-      title: "Bank-feed close autopilot",
+      title: "Bank reconciliation for period close",
       valueMetric: `${clients.filter((c) => c.scores.closeReadiness >= 80).length} close-ready`,
       count: clients.filter((c) => c.scores.closeReadiness < 80).length,
       impactAed: 0,

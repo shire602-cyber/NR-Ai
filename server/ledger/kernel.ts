@@ -17,6 +17,11 @@ import { filsToNumber, toFils } from "../../shared/money";
 import { db } from "../db";
 import { DomainError } from "../errors";
 import {
+  assertPeriodNotLocked,
+  getEffectiveLock,
+  lockPeriodPolicy,
+} from "../services/period-lock.service";
+import {
   assertLinesBalanced,
   assertNotFuture,
   isUuid,
@@ -44,24 +49,10 @@ import type {
   ReverseResult,
 } from "./types";
 
-// Period-lock service is loaded lazily: it imports month-end.service, which
-// imports storage, which delegates createJournalEntry to this module.
-export async function assertPeriodNotLocked(companyId: string, date: Date | string): Promise<void> {
-  const mod = await import("../services/period-lock.service");
-  await mod.assertPeriodNotLocked(companyId, date);
-}
-
-async function isPeriodLocked(companyId: string, isoDate: string): Promise<boolean> {
-  const mod = await import("../services/month-end.service");
-  return mod.isPeriodLocked(companyId, isoDate);
-}
-
 /** Options only the kernel's own flows (reversal, legacy adapter) may set. */
 export interface InternalPostOptions {
   /** Skip the active/archived check (reversals must be able to undo old postings). */
   allowInactiveAccounts?: boolean;
-  /** Skip the exact-balance check (only for mirroring a pre-kernel unbalanced entry). */
-  skipBalanceCheck?: boolean;
   reversedEntryId?: string | null;
   reversalReason?: string | null;
   /** Mark this original as reversed by the new entry (same transaction). */
@@ -271,12 +262,15 @@ export async function insertNormalizedEntry(
   internal: InternalPostOptions = {}
 ): Promise<PostJournalResult> {
   const actorId = actorOf(ctx);
+  // Year-end close/reopen takes this lock exclusively before posting a journal.
+  await lockPeriodPolicy(tx, n.companyId, "shared");
   if (n.idempotencyKey) {
     await lockIdempotencyKey(tx, n.companyId, n.idempotencyKey);
     const replay = await findByIdempotencyKey(tx, n.companyId, n.idempotencyKey);
     if (replay) return replay;
   }
-  if (!internal.skipBalanceCheck) assertLinesBalanced(n.lines, { allowSameAccount: true });
+  await assertPeriodNotLocked(n.companyId, n.dateAt, tx);
+  assertLinesBalanced(n.lines, { allowSameAccount: true });
   await assertAccountsUsable(tx, n.companyId, n.lines, !!internal.allowInactiveAccounts);
   // B1 (NC1): control accounts take lines only from their sub-ledger, or as a reasoned
   // adjustment. A reversal mirrors an entry that already passed this gate.
@@ -407,7 +401,6 @@ export async function postNormalized(
   internal: InternalPostOptions = {}
 ): Promise<PostJournalResult> {
   actorOf(ctx);
-  await assertPeriodNotLocked(n.companyId, n.dateAt);
   return withLedgerTx((tx) => insertNormalizedEntry(tx, n, ctx, internal), ctx.tx);
 }
 
@@ -508,30 +501,22 @@ export async function postDraft(
   opts: PostDraftOptions = {}
 ): Promise<PostJournalResult> {
   const actorId = actorOf(ctx);
-  const pre = await loadEntry(ctx.tx ?? db, entryId, ctx.companyId);
-  if (!pre) throw notFound(entryId);
-  if (pre.status !== "draft") {
-    throw new DomainError(
-      "ENTRY_NOT_DRAFT",
-      409,
-      { status: pre.status },
-      "Only draft entries can be posted"
-    );
-  }
-  await assertPeriodNotLocked(pre.companyId, pre.date);
-  assertNotFuture(entryIso(pre));
-
   return withLedgerTx(async (tx) => {
+    const pre = await loadEntry(tx, entryId, ctx.companyId, true);
+    if (!pre) throw notFound(entryId);
+    if (pre.status !== "draft") {
+      throw new DomainError(
+        "ENTRY_NOT_DRAFT",
+        409,
+        { status: pre.status },
+        "Only draft entries can be posted"
+      );
+    }
+    await lockPeriodPolicy(tx, pre.companyId, "shared");
+    await assertPeriodNotLocked(pre.companyId, pre.date, tx);
+    assertNotFuture(entryIso(pre));
     const raw = await loadLinesFils(tx, entryId);
     const lines = raw.filter((l) => l.debitFils !== 0 || l.creditFils !== 0);
-    lines.forEach((l, i) => {
-      if (l.debitFils < 0 || l.creditFils < 0) {
-        throw new DomainError("NEGATIVE_JOURNAL_AMOUNT", 422, { line: i });
-      }
-      if (l.debitFils > 0 && l.creditFils > 0) {
-        throw new DomainError("LINE_HAS_BOTH_SIDES", 422, { line: i });
-      }
-    });
     const normalized: NormalizedLine[] = lines.map((l) => ({ ...l }));
     const totals = assertLinesBalanced(normalized, { allowSameAccount: true });
     await assertAccountsUsable(tx, pre.companyId, normalized, false);
@@ -602,15 +587,13 @@ export async function postDraft(
 type ReversalMode = "reversed" | "voided";
 
 async function resolveReversalDate(
+  tx: LedgerTx,
   original: JournalEntry,
   opts: ReverseOptions,
   mode: ReversalMode
 ): Promise<Date> {
   const origIso = entryIso(original);
-  if (mode === "voided") {
-    await assertPeriodNotLocked(original.companyId, original.date);
-    return new Date(original.date);
-  }
+  if (mode === "voided") return new Date(original.date);
   if (opts.date) {
     const { iso, at } = parseLedgerDate(opts.date);
     if (iso < origIso) {
@@ -622,14 +605,11 @@ async function resolveReversalDate(
       );
     }
     if (!opts.allowFutureDate) assertNotFuture(iso);
-    await assertPeriodNotLocked(original.companyId, at);
     return iso === origIso ? new Date(original.date) : at;
   }
-  if (!(await isPeriodLocked(original.companyId, origIso))) return new Date(original.date);
-  const today = todayIso();
-  const at = new Date(`${today}T00:00:00.000Z`);
-  await assertPeriodNotLocked(original.companyId, at);
-  return at;
+  await lockPeriodPolicy(tx, original.companyId, "shared");
+  if (!(await getEffectiveLock(original.companyId, origIso, tx))) return new Date(original.date);
+  return new Date(`${todayIso()}T00:00:00.000Z`);
 }
 
 function assertReversible(entry: JournalEntry): void {
@@ -662,7 +642,6 @@ function assertReversible(entry: JournalEntry): void {
 async function reverseInTx(
   tx: LedgerTx,
   entryId: string,
-  date: Date,
   opts: ReverseOptions,
   mode: ReversalMode,
   ctx: LedgerContext
@@ -670,26 +649,9 @@ async function reverseInTx(
   const original = await loadEntry(tx, entryId, ctx.companyId, true);
   if (!original) throw notFound(entryId);
   assertReversible(original);
+  const date = await resolveReversalDate(tx, original, opts, mode);
   const lines = await loadLinesFils(tx, entryId);
-  const mirrored: NormalizedLine[] = lines
-    .filter((l) => l.debitFils !== 0 || l.creditFils !== 0)
-    .map((l) => ({
-      accountId: l.accountId,
-      debitFils: l.creditFils,
-      creditFils: l.debitFils,
-      description: l.description,
-      ...(l.lineKey ? { lineKey: l.lineKey, lineParams: l.lineParams } : {}),
-      costCenterId: l.costCenterId,
-      foreignCurrency: l.foreignCurrency,
-      foreignDebitFils: l.foreignCreditFils,
-      foreignCreditFils: l.foreignDebitFils,
-      exchangeRate: l.exchangeRate,
-      // WQ3: the reversal carries the same VAT-leg flag and CT treatment, so the CT workpaper
-      // and the VAT engine net the reversed line to zero.
-      ...(l.systemVat ? { systemVat: true } : {}),
-      ...(Object.keys(l.attributes).length ? { attributes: l.attributes } : {}),
-    }));
-  if (mirrored.length === 0) {
+  if (!lines.some((l) => l.debitFils !== 0 || l.creditFils !== 0)) {
     throw new DomainError(
       "ENTRY_HAS_NO_LINES",
       422,
@@ -697,12 +659,47 @@ async function reverseInTx(
       "Cannot reverse an entry with no lines"
     );
   }
-  let debit = 0;
-  let credit = 0;
-  for (const l of mirrored) {
-    debit += l.debitFils;
-    credit += l.creditFils;
+  const mirrored: NormalizedLine[] = [];
+  for (const l of lines) {
+    const metadata = {
+      accountId: l.accountId,
+      description: l.description,
+      ...(l.lineKey ? { lineKey: l.lineKey, lineParams: l.lineParams } : {}),
+      costCenterId: l.costCenterId,
+      foreignCurrency: l.foreignCurrency,
+      exchangeRate: l.exchangeRate,
+      // VAT and CT treatment must follow each leg so it nets with the stored original.
+      ...(l.systemVat ? { systemVat: true } : {}),
+      ...(Object.keys(l.attributes).length ? { attributes: l.attributes } : {}),
+    };
+    // Reverse each stored column separately to preserve gross movement. A negative
+    // amount changes sides. Legacy foreign amounts can require a separate leg when
+    // their sign differs from the corresponding base amount.
+    for (const [base, foreign] of [
+      [l.creditFils, l.foreignCreditFils],
+      [-l.debitFils, -l.foreignDebitFils],
+    ]) {
+      if (base > 0 || foreign > 0) {
+        mirrored.push({
+          ...metadata,
+          debitFils: Math.max(base, 0),
+          creditFils: 0,
+          foreignDebitFils: Math.max(foreign, 0),
+          foreignCreditFils: 0,
+        });
+      }
+      if (base < 0 || foreign < 0) {
+        mirrored.push({
+          ...metadata,
+          debitFils: 0,
+          creditFils: Math.max(-base, 0),
+          foreignDebitFils: 0,
+          foreignCreditFils: Math.max(-foreign, 0),
+        });
+      }
+    }
   }
+  const { debitFils, creditFils } = assertLinesBalanced(mirrored, { allowSameAccount: true });
   const reason = opts.reason ? String(opts.reason).slice(0, 1000) : null;
   const n: NormalizedEntry = {
     companyId: original.companyId,
@@ -737,14 +734,12 @@ async function reverseInTx(
     kind: "reversal" satisfies EntryKind,
     autoReverseOn: null,
     lines: mirrored,
-    totalDebitFils: debit,
-    totalCreditFils: credit,
+    totalDebitFils: debitFils,
+    totalCreditFils: creditFils,
   };
   const res = await insertNormalizedEntry(tx, n, ctx, {
-    // A reversal mirrors the original exactly: it must work even if an account
-    // was archived since, and it nets a pre-kernel unbalanced entry to zero.
+    // A reversal mirrors the original exactly, including accounts archived since posting.
     allowInactiveAccounts: true,
-    skipBalanceCheck: true,
     reversedEntryId: original.id,
     reversalReason: reason,
     reversalOf: { entryId: original.id, kind: mode },
@@ -762,11 +757,7 @@ async function reverseOrVoid(
   ctx: LedgerContext
 ): Promise<ReverseResult> {
   actorOf(ctx);
-  const pre = await loadEntry(ctx.tx ?? db, entryId, ctx.companyId);
-  if (!pre) throw notFound(entryId);
-  assertReversible(pre);
-  const date = await resolveReversalDate(pre, opts, mode);
-  return withLedgerTx((tx) => reverseInTx(tx, entryId, date, opts, mode, ctx), ctx.tx);
+  return withLedgerTx((tx) => reverseInTx(tx, entryId, opts, mode, ctx), ctx.tx);
 }
 
 /**
@@ -819,13 +810,11 @@ export async function reverseBySource(
       )
     );
   if (candidates.length === 0) return [];
-  const dates = new Map<string, Date>();
-  for (const c of candidates) dates.set(c.id, await resolveReversalDate(c, opts ?? {}, mode));
   const scoped: LedgerContext = { ...ctx, companyId };
   return withLedgerTx(async (tx) => {
     const out: ReverseResult[] = [];
     for (const c of candidates) {
-      out.push(await reverseInTx(tx, c.id, dates.get(c.id)!, opts ?? {}, mode, scoped));
+      out.push(await reverseInTx(tx, c.id, opts ?? {}, mode, scoped));
     }
     return out;
   }, ctx.tx);
@@ -861,25 +850,26 @@ export async function updateDraftEntry(
   ctx: LedgerContext
 ): Promise<PostJournalResult> {
   const actorId = actorOf(ctx);
-  const pre = await loadEntry(ctx.tx ?? db, entryId, ctx.companyId);
-  if (!pre) throw notFound(entryId);
-  if (pre.status !== "draft") {
-    throw new DomainError(
-      "ENTRY_NOT_DRAFT",
-      409,
-      { status: pre.status },
-      "Only draft entries can be edited"
-    );
-  }
-  const n = normalizeEntry({
-    ...input,
-    companyId: pre.companyId,
-    status: "draft",
-    source: pre.source,
-  });
-  await assertPeriodNotLocked(pre.companyId, pre.date);
-  await assertPeriodNotLocked(pre.companyId, n.dateAt);
   return withLedgerTx(async (tx) => {
+    const pre = await loadEntry(tx, entryId, ctx.companyId, true);
+    if (!pre) throw notFound(entryId);
+    if (pre.status !== "draft") {
+      throw new DomainError(
+        "ENTRY_NOT_DRAFT",
+        409,
+        { status: pre.status },
+        "Only draft entries can be edited"
+      );
+    }
+    const n = normalizeEntry({
+      ...input,
+      companyId: pre.companyId,
+      status: "draft",
+      source: pre.source,
+    });
+    await lockPeriodPolicy(tx, pre.companyId, "shared");
+    await assertPeriodNotLocked(pre.companyId, pre.date, tx);
+    if (entryIso(pre) !== n.dateIso) await assertPeriodNotLocked(pre.companyId, n.dateAt, tx);
     await assertAccountsUsable(tx, pre.companyId, n.lines, false);
     // B1 (NC1) / C1: an edited draft is held to the control-account rule like a new entry,
     // whatever its source: the edited lines are the user's, never a service's derived legs.

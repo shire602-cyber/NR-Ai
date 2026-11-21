@@ -85,10 +85,11 @@ intake documents just point at the receipt they produced.
   senders are logged and skipped (never auto-created — prevents poisoning a ledger).
 - **De-dup.** SHA-256 of each attachment; a repeat hash for the same company is
   flagged `is_duplicate` and skipped, not posted. Guards against the client
-  emailing the same invoice twice, or an invoice arriving by email *and* bank feed.
+  emailing the same invoice twice. Reconcile the invoice to its payment on an
+  imported bank statement.
 - **Completeness — the most important control.** OCR can't flag a document that
   never arrived, and a VAT return is only correct if *all* sales and purchases are
-  captured. So intake is paired with the existing **bank-feed reconciliation**:
+  captured. Intake is paired with **reconciliation of imported bank statements**:
   unmatched bank lines = "evidence we expect but haven't received", which drives
   the existing **document-chasing** nudges to the client. The accountant sees a
   reconciliation gap before approving, not after filing.

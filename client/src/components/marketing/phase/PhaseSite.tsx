@@ -87,6 +87,8 @@ function Picture({
   alt: string;
   high?: boolean;
 }) {
+  // React 18 forwards lowercase DOM attributes without a development warning.
+  const imagePriority = high ? { fetchpriority: "high" } : {};
   return (
     <img
       className="phase-shot"
@@ -101,7 +103,7 @@ function Picture({
       width={1280}
       height={800}
       loading={high ? "eager" : "lazy"}
-      fetchPriority={high ? "high" : undefined}
+      {...imagePriority}
     />
   );
 }
@@ -447,10 +449,7 @@ const homeLead = [
 const faqs: readonly [Bilingual, Bilingual][] = [
   [
     ["How do I reconcile my bank account?", "كيف أطابق حسابي البنكي؟"],
-    [
-      `${bankCopy[0]}. Live bank feeds are coming later.`,
-      `${bankCopy[1]}. سيتوفر الربط البنكي المباشر لاحقًا.`,
-    ],
+    [`${bankCopy[0]}.`, `${bankCopy[1]}.`],
   ],
   [["How do I file my VAT return?", "كيف أقدّم إقرار ضريبة القيمة المضافة؟"], vatCopy],
   [

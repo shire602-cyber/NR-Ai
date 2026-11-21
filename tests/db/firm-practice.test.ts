@@ -7,8 +7,8 @@
  */
 import { randomUUID } from "node:crypto";
 import { unzipSync, strFromU8 } from "fflate";
-import { describe, expect, it } from "vitest";
-import { ledgerTotals, useHarness, type Tenant } from "./harness";
+import { describe, expect, it, vi } from "vitest";
+import { freezeTime, ledgerTotals, useHarness, type Tenant } from "./harness";
 
 // X6b: firm sign-up is closed by default (NR-internal); these tests onboard a second firm on purpose.
 process.env.FIRM_SELF_SIGNUP = "true";
@@ -30,6 +30,54 @@ async function nrStaff(role: "firm_admin" | "preparer" | "reviewer" | "viewer", 
   const t = await h.createTenant({ name });
   await h.sql(`UPDATE users SET firm_role = $2 WHERE id = $1`, [t.user.id, role]);
   return t;
+}
+
+async function linkClient(owner: Tenant, client: Tenant) {
+  const invite = await owner.as.post("/api/firm/client-links", { inviteeEmail: client.email });
+  expect(invite.status, invite.text).toBe(201);
+  const linkId = invite.body.link.id as string;
+  const joined = await client.as.post(`/api/firm-invitations/${linkId}/accept`, {
+    companyId: client.company.id,
+  });
+  expect(joined.status, joined.text).toBe(200);
+  return linkId;
+}
+
+async function queueAgainstLockedRow<T>(
+  table: "firm_engagement_letters" | "firm_document_requests",
+  id: string,
+  first: () => Promise<T>,
+  second: () => Promise<T>
+): Promise<T[]> {
+  const { pool } = await import("../../server/db");
+  const blocker = await pool.connect();
+  const waitForBlocked = (count: number) =>
+    vi.waitFor(
+      async () => {
+        const [row] = await h.sql<{ waiting: number }>(
+          `SELECT count(*)::integer AS waiting FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE $1`,
+          [`%"${table}"%`]
+        );
+        expect(row.waiting).toBe(count);
+      },
+      { timeout: 5000 }
+    );
+  const work: Promise<T>[] = [];
+  try {
+    await blocker.query("BEGIN");
+    await blocker.query(`SELECT id FROM ${table} WHERE id = $1 FOR UPDATE`, [id]);
+    // Queue the firm decision first, then let the client request read the old committed row.
+    work.push(first());
+    await waitForBlocked(1);
+    work.push(second());
+    await waitForBlocked(2);
+  } finally {
+    await blocker.query("ROLLBACK");
+    blocker.release();
+    await Promise.allSettled(work);
+  }
+  return Promise.all(work);
 }
 
 /** A second, non-NR accounting firm approved by a platform admin. */
@@ -99,6 +147,466 @@ describe("W5-D firm practice management", () => {
     });
     expect(denied.status).toBe(403);
   });
+
+  it("scopes request reviews and engagement actions to a staff member's assigned clients", async () => {
+    const owner = await nrOwner();
+    const staff = await nrStaff("firm_admin", "ScopedAdmin");
+    const assigned = await createClient(owner, "Assigned Review Client");
+    const other = await createClient(owner, "Unassigned Review Client");
+    expect(
+      (
+        await owner.as.post(`/api/firm/clients/${assigned.id}/assign-staff`, {
+          staffUserId: staff.user.id,
+          action: "assign",
+        })
+      ).status
+    ).toBe(200);
+
+    const colleague = await nrStaff("viewer", "ScopedColleague");
+    expect(
+      (
+        await owner.as.post(`/api/firm/clients/${other.id}/assign-staff`, {
+          staffUserId: colleague.user.id,
+          action: "assign",
+        })
+      ).status
+    ).toBe(200);
+
+    const roster = await staff.as.get("/api/firm/staff");
+    expect(roster.status).toBe(200);
+    expect(roster.body.find((member: { id: string }) => member.id === staff.user.id)).toMatchObject(
+      { assignedClients: [{ companyId: assigned.id }] }
+    );
+    expect(
+      roster.body.find((member: { id: string }) => member.id === colleague.user.id)
+    ).toMatchObject({ assignedClients: [], assignedClientCount: 0 });
+    expect(roster.text).not.toContain(other.id);
+
+    for (const [client, allowed] of [
+      [assigned, true],
+      [other, false],
+    ] as const) {
+      const requests = await owner.as.post(`/api/firm/clients/${client.id}/requests`, {
+        items: [{ title: "Bank statements" }],
+      });
+      const letters = await owner.as.post(`/api/firm/clients/${client.id}/engagement-letters`, {
+        title: "Engagement",
+      });
+      expect(requests.status).toBe(201);
+      expect(letters.status).toBe(201);
+      const task = await owner.as.post("/api/firm/tasks", {
+        companyId: client.id,
+        title: "Review bank statements",
+        dueDate: "2026-11-20",
+      });
+      expect(task.status).toBe(201);
+      const taskId = task.body.task.id;
+      expect((await staff.as.patch(`/api/firm/tasks/${taskId}`, { status: "done" })).status).toBe(
+        allowed ? 200 : 404
+      );
+      expect(await h.sql("SELECT status FROM firm_tasks WHERE id = $1", [taskId])).toEqual([
+        { status: allowed ? "done" : "open" },
+      ]);
+      const requestId = requests.body.requests[0].id;
+      const letterId = letters.body.letter.id;
+      expect(
+        (
+          await staff.as.post(`/api/firm/requests/${requestId}/review`, {
+            decision: "cancel",
+          })
+        ).status
+      ).toBe(allowed ? 200 : 404);
+      const url = `/api/firm/engagement-letters/${letterId}`;
+      expect((await staff.as.post(`${url}/send`)).status).toBe(allowed ? 200 : 404);
+      expect((await staff.as.post(`${url}/withdraw`)).status).toBe(allowed ? 200 : 404);
+      expect(
+        await h.sql("SELECT status FROM firm_document_requests WHERE id = $1", [requestId])
+      ).toEqual([{ status: allowed ? "cancelled" : "requested" }]);
+      expect(
+        await h.sql("SELECT status FROM firm_engagement_letters WHERE id = $1", [letterId])
+      ).toEqual([{ status: allowed ? "withdrawn" : "draft" }]);
+    }
+  });
+
+  it("validates firm task and timer scopes before reading or writing", async () => {
+    const owner = await nrOwner();
+    const first = await createClient(owner, "Timer Scope One");
+    const second = await createClient(owner, "Timer Scope Two");
+    const date = "2026-11-20";
+    const task = await owner.as.post("/api/firm/tasks", {
+      companyId: first.id,
+      title: "Review task",
+      dueDate: date,
+    });
+    expect(task.status).toBe(201);
+    const taskId = task.body.task.id;
+
+    for (const url of [
+      "/api/firm/tasks?from=2026-02-30",
+      "/api/firm/tasks?from=2026-11-20&to=2026-11-19",
+      "/api/firm/tasks?status=unknown",
+      `/api/firm/time-entries?companyId=${first.id}&companyId=${second.id}`,
+    ]) {
+      const result = await owner.as.get(url);
+      expect(result.status).toBe(400);
+      expect(result.body.code).toBe("VALIDATION_ERROR");
+    }
+
+    const log = { taskId, companyId: second.id, entryDate: date, minutes: 15 };
+    expect((await owner.as.post("/api/firm/time-entries", log)).status).toBe(404);
+    expect(
+      (
+        await owner.as.post("/api/firm/time-entries/start", {
+          taskId,
+          companyId: second.id,
+        })
+      ).status
+    ).toBe(404);
+    expect(
+      await h.sql("SELECT id FROM firm_time_entries WHERE company_id = $1", [second.id])
+    ).toEqual([]);
+    expect(
+      (await owner.as.post("/api/firm/time-entries", { ...log, companyId: first.id })).status
+    ).toBe(201);
+
+    const staff = await nrStaff("preparer", "ScopedPreparer");
+    const { resolveFirmContext } = await import("../../server/services/firm/scope");
+    const { logTime, startTimer } = await import("../../server/services/firm/billing.service");
+    const ctx = await resolveFirmContext({ id: staff.user.id });
+    expect(ctx).not.toBeNull();
+    const assignments = `/api/firm/clients/${first.id}/assign-staff`;
+    const assignment = { staffUserId: staff.user.id, action: "assign" };
+    expect((await owner.as.post(assignments, assignment)).status).toBe(200);
+    expect(
+      (await owner.as.post(`/api/firm/clients/${second.id}/assign-staff`, assignment)).status
+    ).toBe(200);
+    const starts = await Promise.all(
+      Array.from({ length: 2 }, () =>
+        staff.as.post("/api/firm/time-entries/start", { companyId: first.id, taskId })
+      )
+    );
+    expect(starts.map(({ status }) => status).sort()).toEqual([201, 409]);
+    const timer = starts.find(({ status }) => status === 201)!;
+    expect(starts.find(({ status }) => status === 409)?.body.details).toEqual({
+      entryId: timer.body.entry.id,
+    });
+    const cutoff = new Date();
+    const startedAt = new Date(cutoff.getTime() - 17 * 60_000);
+    await h.sql("UPDATE firm_time_entries SET started_at = $1 WHERE id = $2", [
+      startedAt.toISOString(),
+      timer.body.entry.id,
+    ]);
+    const restore = freezeTime(cutoff);
+    try {
+      expect((await owner.as.post(assignments, { ...assignment, action: "unassign" })).status).toBe(
+        200
+      );
+    } finally {
+      restore();
+    }
+    // The write must recheck access even if the service has a previously resolved firm context.
+    await expect(logTime(ctx!, { ...log, companyId: first.id })).rejects.toMatchObject({
+      code: "CLIENT_NOT_FOUND",
+    });
+    await expect(startTimer(ctx!, { companyId: first.id, taskId })).rejects.toMatchObject({
+      code: "CLIENT_NOT_FOUND",
+    });
+    const stop = `/api/firm/time-entries/${timer.body.entry.id}/stop`;
+    expect((await staff.as.post(stop)).status).toBe(404);
+    expect(
+      await h.sql(
+        "SELECT status, minutes, stopped_at = $2::timestamp AS stopped_at_cutoff FROM firm_time_entries WHERE id = $1",
+        [timer.body.entry.id, cutoff.toISOString()]
+      )
+    ).toEqual([{ status: "logged", minutes: 17, stopped_at_cutoff: true }]);
+    const next = await staff.as.post("/api/firm/time-entries/start", { companyId: second.id });
+    expect(next.status, next.text).toBe(201);
+    expect(next.body.entry).toMatchObject({ companyId: second.id, status: "running" });
+    expect((await owner.as.post(assignments, assignment)).status).toBe(200);
+    const alreadyStopped = await staff.as.post(stop);
+    expect(alreadyStopped.status).toBe(409);
+    expect(alreadyStopped.body.code).toBe("TIMER_NOT_RUNNING");
+    expect((await staff.as.post(`/api/firm/time-entries/${next.body.entry.id}/stop`)).status).toBe(
+      200
+    );
+  });
+
+  it("recovers an inaccessible legacy timer without charging time or exposing its client", async () => {
+    const owner = await nrOwner();
+    const staff = await nrStaff("preparer", "TimerRecovery");
+    const old = await createClient(owner, "Previous Timer Client");
+    const available = await createClient(owner, "Next Timer Client");
+    const assign = { staffUserId: staff.user.id, action: "assign" };
+    for (const company of [old, available]) {
+      expect(
+        (await owner.as.post(`/api/firm/clients/${company.id}/assign-staff`, assign)).status
+      ).toBe(200);
+    }
+    const entry = await staff.as.post("/api/firm/time-entries/start", { companyId: old.id });
+    expect(entry.status, entry.text).toBe(201);
+    const id = entry.body.entry.id;
+    // Simulate a revocation from before timers were finalized by the access service.
+    await h.sql("DELETE FROM firm_staff_assignments WHERE company_id = $1 AND user_id = $2", [
+      old.id,
+      staff.user.id,
+    ]);
+    await h.sql("DELETE FROM company_users WHERE company_id = $1 AND user_id = $2", [
+      old.id,
+      staff.user.id,
+    ]);
+    await h.sql(
+      "UPDATE firm_time_entries SET started_at = now() - interval '2 days' WHERE id = $1",
+      [id]
+    );
+    const next = await staff.as.post("/api/firm/time-entries/start", { companyId: available.id });
+    expect(next.status, next.text).toBe(201);
+    expect(next.body.entry).toMatchObject({ companyId: available.id, status: "running" });
+    expect(next.text).not.toContain(id);
+    expect(next.text).not.toContain(old.id);
+    expect(
+      await h.sql("SELECT status, minutes, billable FROM firm_time_entries WHERE id = $1", [id])
+    ).toEqual([{ status: "written_off", minutes: 0, billable: false }]);
+  });
+
+  it("client unlink finalizes firm timers at the recorded revocation instant", async () => {
+    const owner = await nrOwner();
+    const client = await h.createTenant({ name: "TimerUnlinkClient" });
+    const cid = client.company.id;
+    const linkId = await linkClient(owner, client);
+    const timer = await owner.as.post("/api/firm/time-entries/start", { companyId: cid });
+    expect(timer.status, timer.text).toBe(201);
+    const revoke = await client.as.post(`/api/companies/${cid}/firm-links/${linkId}/revoke`, {});
+    expect(revoke.status, revoke.text).toBe(200);
+    expect(
+      await h.sql(
+        `SELECT t.status, t.stopped_at = l.revoked_at AS stopped_at_revocation
+         FROM firm_time_entries t JOIN firm_client_links l ON l.id = $2
+        WHERE t.id = $1`,
+        [timer.body.entry.id, linkId]
+      )
+    ).toEqual([{ status: "logged", stopped_at_revocation: true }]);
+  });
+
+  it("removing an all-client firm member finalizes their timer without an assignment", async () => {
+    const owner = await nrOwner();
+    const colleague = await nrOwner();
+    const client = await createClient(owner, "Timer Member Removal Client");
+    const timer = await colleague.as.post("/api/firm/time-entries/start", { companyId: client.id });
+    expect(timer.status, timer.text).toBe(201);
+    const removed = await owner.as.delete(`/api/firm/members/${colleague.user.id}`);
+    expect(removed.status, removed.text).toBe(200);
+    expect(
+      await h.sql("SELECT status FROM firm_time_entries WHERE id = $1", [timer.body.entry.id])
+    ).toEqual([{ status: "logged" }]);
+    expect(
+      (await colleague.as.post("/api/firm/time-entries/start", { companyId: client.id })).status
+    ).toBe(403);
+  });
+
+  it.each([
+    { via: "role update", assigned: true, role: "viewer" },
+    { via: "member upsert", assigned: true, role: "viewer" },
+    { via: "role update", assigned: false, role: "preparer" },
+    { via: "member upsert", assigned: false, role: "preparer" },
+  ])(
+    "finalizes timers on $via to $role when authorized access ends",
+    async ({ via, assigned, role }) => {
+      const owner = await nrOwner();
+      const staff = assigned ? await nrStaff("preparer", "ExistingTimerStaff") : await nrOwner();
+      const client = await createClient(owner, `Timer Downgrade ${via} ${role}`);
+      if (assigned) {
+        const assignment = await owner.as.post(`/api/firm/clients/${client.id}/assign-staff`, {
+          staffUserId: staff.user.id,
+          action: "assign",
+        });
+        expect(assignment.status, assignment.text).toBe(200);
+      }
+      const started = await staff.as.post("/api/firm/time-entries/start", {
+        companyId: client.id,
+        hourlyRate: 75,
+      });
+      expect(started.status, started.text).toBe(201);
+      const timerId = started.body.entry.id as string;
+      const cutoff = new Date();
+      const startedAt = new Date(cutoff.getTime() - 18 * 60_000);
+      await h.sql("UPDATE firm_time_entries SET started_at = $1 WHERE id = $2", [
+        startedAt.toISOString(),
+        timerId,
+      ]);
+      const restore = freezeTime(cutoff);
+      let changed;
+      try {
+        changed =
+          via === "role update"
+            ? await owner.as.patch(`/api/firm/members/${staff.user.id}`, { role })
+            : await owner.as.post("/api/firm/members", { email: staff.email, role });
+      } finally {
+        restore();
+      }
+      expect(changed.status, changed.text).toBe(via === "role update" ? 200 : 201);
+      expect(
+        await h.sql(
+          `SELECT status, minutes, billable, hourly_rate::text, stopped_at = $2::timestamp AS stopped_at_cutoff
+         FROM firm_time_entries WHERE id = $1`,
+          [timerId, cutoff.toISOString()]
+        )
+      ).toEqual([
+        {
+          status: "logged",
+          minutes: 18,
+          billable: true,
+          hourly_rate: "75.00",
+          stopped_at_cutoff: true,
+        },
+      ]);
+      const denied = await staff.as.post("/api/firm/time-entries/start", { companyId: client.id });
+      expect(denied.status).toBe(assigned ? 403 : 404);
+    }
+  );
+
+  it("preserves a running timer when a downgraded member retains tracking and client access", async () => {
+    const owner = await nrOwner();
+    const staff = await nrOwner();
+    const client = await createClient(owner, "Preserved Timer Client");
+    const assigned = await owner.as.post(`/api/firm/clients/${client.id}/assign-staff`, {
+      staffUserId: staff.user.id,
+      action: "assign",
+    });
+    expect(assigned.status, assigned.text).toBe(200);
+    const started = await staff.as.post("/api/firm/time-entries/start", { companyId: client.id });
+    expect(started.status, started.text).toBe(201);
+    const updated = await owner.as.patch(`/api/firm/members/${staff.user.id}`, {
+      role: "preparer",
+    });
+    expect(updated.status, updated.text).toBe(200);
+    const stop = await staff.as.post(`/api/firm/time-entries/${started.body.entry.id}/stop`);
+    expect(stop.status, stop.text).toBe(200);
+  });
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "serializes a timer start and role downgrade under their shared user lock",
+    async () => {
+      const owner = await nrOwner();
+      const staff = await nrStaff("preparer", "ConcurrentTimerStaff");
+      const client = await createClient(owner, "Concurrent Timer Downgrade Client");
+      const assigned = await owner.as.post(`/api/firm/clients/${client.id}/assign-staff`, {
+        staffUserId: staff.user.id,
+        action: "assign",
+      });
+      expect(assigned.status, assigned.text).toBe(200);
+      const { pool } = await import("../../server/db");
+      const blocker = await pool.connect();
+      const calls: Array<ReturnType<Tenant["as"]["post"]>> = [];
+      const waitForBlocked = (count: number) =>
+        vi.waitFor(
+          async () => {
+            const [row] = await h.sql<{ waiting: number }>(`
+            SELECT count(*)::integer AS waiting FROM pg_locks
+             WHERE database = (SELECT oid FROM pg_database WHERE datname = current_database())
+               AND locktype = 'advisory' AND NOT granted
+          `);
+            expect(row.waiting).toBe(count);
+          },
+          { timeout: 5000 }
+        );
+      try {
+        await blocker.query("BEGIN");
+        await blocker.query(
+          "SELECT pg_advisory_xact_lock(hashtext('firm_timer_user'), hashtext($1))",
+          [staff.user.id]
+        );
+        calls.push(staff.as.post("/api/firm/time-entries/start", { companyId: client.id }));
+        await waitForBlocked(1);
+        calls.push(owner.as.patch(`/api/firm/members/${staff.user.id}`, { role: "viewer" }));
+        await waitForBlocked(2);
+      } finally {
+        await blocker.query("ROLLBACK");
+        blocker.release();
+        await Promise.allSettled(calls);
+      }
+      const [start, downgrade] = await Promise.all(calls);
+      expect(start.status, start.text).toBe(201);
+      expect(downgrade.status, downgrade.text).toBe(200);
+      expect(
+        await h.sql("SELECT status FROM firm_time_entries WHERE id = $1", [start.body.entry.id])
+      ).toEqual([{ status: "logged" }]);
+    }
+  );
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "a withdrawn letter cannot be accepted by an already waiting client",
+    async () => {
+      const owner = await nrOwner();
+      const client = await h.createTenant({ name: "LetterRaceClient" });
+      const cid = client.company.id;
+      await linkClient(owner, client);
+      const letter = await owner.as.post(`/api/firm/clients/${cid}/engagement-letters`, {
+        title: "Letter race",
+        feeAmount: 100,
+      });
+      expect(letter.status, letter.text).toBe(201);
+      const id = letter.body.letter.id;
+      expect((await owner.as.post(`/api/firm/engagement-letters/${id}/send`)).status).toBe(200);
+      const [withdraw, accept] = await queueAgainstLockedRow(
+        "firm_engagement_letters",
+        id,
+        () => owner.as.post(`/api/firm/engagement-letters/${id}/withdraw`),
+        () =>
+          client.as.post(`/api/companies/${cid}/engagement-letters/${id}/respond`, {
+            decision: "accept",
+            typedName: "Client Owner",
+          })
+      );
+      expect(withdraw.status, withdraw.text).toBe(200);
+      expect(accept.status, accept.text).toBe(409);
+      expect(accept.body.code).toBe("TRANSACTION_CONFLICT");
+      const [saved] = await h.sql(
+        "SELECT status, accepted_by_user_id, engagement_id FROM firm_engagement_letters WHERE id = $1",
+        [id]
+      );
+      expect(saved).toEqual({
+        status: "withdrawn",
+        accepted_by_user_id: null,
+        engagement_id: null,
+      });
+      expect(await h.sql("SELECT id FROM engagements WHERE company_id = $1", [cid])).toEqual([]);
+    }
+  );
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "a cancelled document request cannot be fulfilled by an already waiting client",
+    async () => {
+      const owner = await nrOwner();
+      const client = await h.createTenant({ name: "RequestRaceClient" });
+      const cid = client.company.id;
+      await linkClient(owner, client);
+      const request = await owner.as.post(`/api/firm/clients/${cid}/requests`, {
+        items: [{ title: "Request race" }],
+      });
+      expect(request.status, request.text).toBe(201);
+      const id = request.body.requests[0].id;
+      const [doc] = await h.sql(
+        `INSERT INTO documents (company_id, name, category, file_url, file_name, uploaded_by)
+         VALUES ($1, 'statement.pdf', 'bank_statement', '/uploads/x.pdf', 'statement.pdf', $2) RETURNING id`,
+        [cid, client.user.id]
+      );
+      const [cancel, upload] = await queueAgainstLockedRow(
+        "firm_document_requests",
+        id,
+        () => owner.as.post(`/api/firm/requests/${id}/review`, { decision: "cancel" }),
+        () =>
+          client.as.post(`/api/companies/${cid}/firm-requests/${id}/fulfil`, {
+            documentId: doc.id,
+          })
+      );
+      expect(cancel.status, cancel.text).toBe(200);
+      expect(upload.status, upload.text).toBe(409);
+      expect(upload.body.code).toBe("TRANSACTION_CONFLICT");
+      expect(
+        await h.sql("SELECT status, document_id FROM firm_document_requests WHERE id = $1", [id])
+      ).toEqual([{ status: "cancelled", document_id: null }]);
+    }
+  );
 
   it("[R15-04] a duplicate client differing only by case or spacing is 409", async () => {
     const owner = await nrOwner();
@@ -553,6 +1061,7 @@ describe("W5-D firm practice management", () => {
     expect(rec.engagement_id).toBeTruthy();
 
     const recurring = await b.as.post("/api/firm/billing/run-recurring", {});
+    expect(recurring.status, recurring.text).toBe(200);
     expect(recurring.body.created).toBe(1);
     expect(Number(recurring.body.invoices[0].total)).toBe(1575);
     expect((await b.as.post("/api/firm/billing/run-recurring", {})).body.created).toBe(0);
@@ -639,6 +1148,111 @@ describe("W5-D firm practice management", () => {
     expect(rev.body.request.status).toBe("accepted");
     const other = await h.createTenant({ name: "OtherClient" });
     expect((await other.as.get(`/api/companies/${cid}/firm-requests`)).status).toBe(403);
+  });
+
+  it("[R15-16] rejects ambiguous journal client names until the CSV supplies a company UUID", async () => {
+    const owner = await nrOwner();
+    const first = await createClient(owner, "Duplicate Journal Client LLC");
+    const second = await createClient(owner, "Older Duplicate Journal Client LLC");
+    // Simulate existing duplicates from before firm client creation checked names.
+    await h.sql(`UPDATE companies SET name = $2 WHERE id = $1`, [
+      second.id,
+      "DUPLICATE JOURNAL CLIENT LLC",
+    ]);
+    const csv = (client: string) =>
+      [
+        "company,entry_ref,date,account_code,description,debit,credit",
+        `${client},AMBIGUOUS-1,2026-10-01,1020,Opening cash,75,`,
+        `${client},AMBIGUOUS-1,2026-10-01,3010,Opening capital,,75`,
+      ].join("\n");
+    const path = "/api/firm/bulk/journal-import";
+    for (const dryRun of [true, false]) {
+      const ambiguous = await owner.as.post(path, {
+        csv: csv("duplicate journal client llc"),
+        dryRun,
+      });
+      expect(ambiguous.status, ambiguous.text).toBe(dryRun ? 200 : 422);
+      expect(ambiguous.body.summary).toMatchObject({ posted: 0, invalid: 1 });
+      expect(ambiguous.body.entries).toMatchObject([
+        {
+          companyId: null,
+          status: "invalid",
+          errors: [{ row: 2, field: "company", message: expect.stringMatching(/company UUID/i) }],
+        },
+      ]);
+    }
+    expect(await ledgerTotals(first.id)).toEqual({ debit: 0, credit: 0 });
+    expect(await ledgerTotals(second.id)).toEqual({ debit: 0, credit: 0 });
+
+    const selected = csv(second.id.toUpperCase());
+    const preview = await owner.as.post(path, { csv: selected, dryRun: true });
+    expect(preview.status, preview.text).toBe(200);
+    expect(preview.body.entries).toMatchObject([{ companyId: second.id, status: "validated" }]);
+    const posted = await owner.as.post(path, { csv: selected });
+    expect(posted.status, posted.text).toBe(200);
+    expect(posted.body.entries).toMatchObject([{ companyId: second.id, status: "posted" }]);
+    expect(await ledgerTotals(first.id)).toEqual({ debit: 0, credit: 0 });
+    expect(await ledgerTotals(second.id)).toEqual({ debit: 75, credit: 75 });
+  });
+
+  it("[R15-16] never treats an out-of-scope company UUID as a journal client name", async () => {
+    const owner = await nrOwner();
+    const foreign = await h.createTenant({ name: "Out-of-scope Journal Company" });
+    const alias = await createClient(owner, foreign.company.id);
+    const csv = [
+      "company,entry_ref,date,account_code,debit,credit",
+      `${foreign.company.id},UUID-1,2026-10-01,1020,75,`,
+      `${foreign.company.id},UUID-1,2026-10-01,3010,,75`,
+    ].join("\n");
+    const result = await owner.as.post("/api/firm/bulk/journal-import", { csv });
+    expect(result.status, result.text).toBe(422);
+    expect(result.body.entries).toMatchObject([
+      {
+        companyId: null,
+        status: "invalid",
+        errors: [{ row: 2, field: "company", message: "Client not found in your firm" }],
+      },
+    ]);
+    expect(await ledgerTotals(alias.id)).toEqual({ debit: 0, credit: 0 });
+    expect(await ledgerTotals(foreign.company.id)).toEqual({ debit: 0, credit: 0 });
+  });
+
+  it("[R15-16] groups CSV lines by resolved client UUID and replays the complete entry", async () => {
+    const owner = await nrOwner();
+    const a = await createClient(owner, "Mixed Journal Client");
+    const b = await createClient(owner, "Other Journal Client");
+    const path = "/api/firm/bulk/journal-import";
+    const csv = [
+      "company,entry_ref,date,account_code,debit,credit",
+      `${a.name},MIXED-1,2026-10-01,1020,75,`,
+      `${a.id.toUpperCase()},MIXED-1,2026-10-01,1020,25,`,
+      `${b.id},MIXED-1,2026-10-01,1020,50,`,
+      `${a.id},MIXED-1,2026-10-01,3010,,25`,
+      `${b.id},MIXED-1,2026-10-01,3010,,50`,
+      `${a.name.toLowerCase()},MIXED-1,2026-10-01,3010,,75`,
+    ].join("\n");
+    const preview = await owner.as.post(path, { csv, dryRun: true });
+    expect(preview.status, preview.text).toBe(200);
+    expect(preview.body.summary).toMatchObject({ entries: 2, invalid: 0, posted: 0 });
+    expect(preview.body.entries).toMatchObject([
+      { companyId: a.id, rows: [2, 3, 5, 7], status: "validated" },
+      { companyId: b.id, rows: [4, 6], status: "validated" },
+    ]);
+    expect(await ledgerTotals(a.id)).toEqual({ debit: 0, credit: 0 });
+
+    const posted = await owner.as.post(path, { csv });
+    expect(posted.status, posted.text).toBe(200);
+    expect(posted.body.summary).toMatchObject({ entries: 2, posted: 2, replayed: 0 });
+    expect(await ledgerTotals(a.id)).toEqual({ debit: 100, credit: 100 });
+    expect(await ledgerTotals(b.id)).toEqual({ debit: 50, credit: 50 });
+
+    const replay = await owner.as.post(path, { csv });
+    expect(replay.status, replay.text).toBe(200);
+    expect(replay.body.summary).toMatchObject({ entries: 2, posted: 0, replayed: 2 });
+    expect(replay.body.entries.map((entry: { entryId: string }) => entry.entryId)).toEqual(
+      posted.body.entries.map((entry: { entryId: string }) => entry.entryId)
+    );
+    expect(await ledgerTotals(a.id)).toEqual({ debit: 100, credit: 100 });
   });
 
   it("[R15-16] bulk journal import posts balanced entries per client through the ledger and reports row errors", async () => {

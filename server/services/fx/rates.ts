@@ -18,6 +18,7 @@ import { EXCHANGE_RATE_TYPES } from "../../../shared/schema";
 import { ISO_4217_CODES, parseIsoDate } from "../../../shared/validators/primitives";
 import { mulRate, RATE_DECIMALS } from "../../../shared/money";
 import { DomainError } from "../../errors";
+import type { LedgerTx } from "../../ledger/types";
 import { VAT_FILING_CURRENCY, baseCurrencyOf } from "../../ledger/currency";
 
 const D = Decimal.clone({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
@@ -129,8 +130,11 @@ export function invertRate(rate: Decimal.Value): Decimal {
 
 // ─── Lookup ───────────────────────────────────────────────────────────────
 
-export async function getCompanyBaseCurrency(companyId: string): Promise<string> {
-  const [row] = await db
+export async function getCompanyBaseCurrency(
+  companyId: string,
+  tx: LedgerTx = db
+): Promise<string> {
+  const [row] = await tx
     .select({ baseCurrency: companies.baseCurrency })
     .from(companies)
     .where(eq(companies.id, companyId))
@@ -151,13 +155,14 @@ async function findRow(
   from: string,
   to: string,
   asOfIso: string,
-  rateType: ExchangeRateType
+  rateType: ExchangeRateType,
+  tx: LedgerTx
 ): Promise<ExchangeRate | null> {
   const end = isoToDate(addDaysIso(asOfIso, 1));
   const scope = companyId
     ? or(eq(exchangeRates.companyId, companyId), isNull(exchangeRates.companyId))
     : isNull(exchangeRates.companyId);
-  const rows = await db
+  const rows = await tx
     .select()
     .from(exchangeRates)
     .where(
@@ -258,7 +263,8 @@ async function lookup(
   fromRaw: string,
   toRaw: string,
   dateInput: Date | string | undefined,
-  opts: GetRateOptions
+  opts: GetRateOptions,
+  tx: LedgerTx = db
 ): Promise<RateResult> {
   const from = normalizeCurrency(fromRaw, "from");
   const to = normalizeCurrency(toRaw, "to");
@@ -285,11 +291,11 @@ async function lookup(
     };
   }
 
-  const row = await findRow(companyId, from, to, asOfIso, rateType);
+  const row = await findRow(companyId, from, to, asOfIso, rateType, tx);
   if (row) return buildResult(row, from, asOfIso, maxAgeDays);
 
   if (rateType !== "spot" && opts.fallbackToSpot !== false) {
-    const spot = await findRow(companyId, from, to, asOfIso, "spot");
+    const spot = await findRow(companyId, from, to, asOfIso, "spot", tx);
     if (spot) {
       return buildResult(
         spot,
@@ -325,10 +331,11 @@ export function getRate(
   from: string,
   to: string,
   date?: Date | string,
-  opts: GetRateOptions = {}
+  opts: GetRateOptions = {},
+  tx?: LedgerTx
 ): Promise<RateResult> {
   if (!companyId) throw new DomainError("COMPANY_REQUIRED", 400);
-  return lookup(companyId, from, to, date, opts);
+  return lookup(companyId, from, to, date, opts, tx);
 }
 
 /** System rows only (company_id IS NULL). For callers that have no company context. */
@@ -354,12 +361,13 @@ export async function convert(
   from: string,
   to: string,
   date?: Date | string,
-  opts: GetRateOptions = {}
+  opts: GetRateOptions = {},
+  tx?: LedgerTx
 ): Promise<ConvertResult> {
   if (!Number.isSafeInteger(amountFils)) {
     throw new DomainError("INVALID_AMOUNT", 400, { amountFils });
   }
-  const r = await getRate(companyId, from, to, date, opts);
+  const r = await getRate(companyId, from, to, date, opts, tx);
   // Divide by the stored rate for inverse pairs instead of multiplying by a
   // rounded reciprocal, so AED→USD with (USD, AED, 3.6725) stays exact.
   const convertedFils = r.inverse
@@ -614,13 +622,22 @@ export async function deleteCompanyRate(companyId: string, rateId: string): Prom
 export async function toVatFilingCurrency(
   companyId: string,
   baseFils: number,
-  documentDate: Date | string
+  documentDate: Date | string,
+  tx?: LedgerTx
 ): Promise<{ filingCurrency: string; fils: number; rate: string; baseCurrency: string }> {
-  const baseCurrency = await getCompanyBaseCurrency(companyId);
+  const baseCurrency = await getCompanyBaseCurrency(companyId, tx);
   if (baseCurrency === VAT_FILING_CURRENCY) {
     return { filingCurrency: VAT_FILING_CURRENCY, fils: baseFils, rate: "1.000000", baseCurrency };
   }
-  const c = await convert(companyId, baseFils, baseCurrency, VAT_FILING_CURRENCY, documentDate);
+  const c = await convert(
+    companyId,
+    baseFils,
+    baseCurrency,
+    VAT_FILING_CURRENCY,
+    documentDate,
+    {},
+    tx
+  );
   return {
     filingCurrency: VAT_FILING_CURRENCY,
     fils: c.convertedFils,

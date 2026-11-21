@@ -52,7 +52,10 @@ export interface ValidationErrorBody {
 const ROOT_KEY = "_root";
 
 function addField(fields: FieldErrors, key: string, message: string): void {
-  (fields[key] ??= []).push(message);
+  if (!Object.hasOwn(fields, key)) {
+    Object.defineProperty(fields, key, { value: [], enumerable: true });
+  }
+  fields[key].push(message);
 }
 
 /**
@@ -76,7 +79,13 @@ export function flattenIssues(err: ZodError): {
   formErrors: string[];
   fieldErrors: Record<string, string[] | undefined>;
 } {
-  return new ZodError(reportedIssues(err)).flatten();
+  const fieldErrors: FieldErrors = {};
+  const formErrors: string[] = [];
+  for (const issue of reportedIssues(err)) {
+    if (issue.path.length) addField(fieldErrors, String(issue.path[0]), issue.message);
+    else formErrors.push(issue.message);
+  }
+  return { formErrors, fieldErrors };
 }
 
 /** Flatten a ZodError into dotted-path field errors ("lines.0.amount"). */
@@ -221,7 +230,7 @@ export function strictBody<S extends StrictBodySchema>(
 export function parseStrict<S extends StrictBodySchema>(schema: S, body: unknown): z.output<S> {
   const shape = objectShapeOf(schema);
   if (shape && body && typeof body === "object" && !Array.isArray(body)) {
-    const unknownKeys = Object.keys(body).filter((k) => !(k in shape));
+    const unknownKeys = Object.keys(body).filter((k) => !Object.hasOwn(shape, k));
     if (unknownKeys.length) {
       throw new ZodError([
         {

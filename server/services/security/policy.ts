@@ -14,16 +14,22 @@
  *      accounts cannot issue documents or invite users (403 EMAIL_VERIFICATION_REQUIRED).
  *      Only active while EMAIL_VERIFICATION_ENFORCE is on AND an email provider exists.
  *
- * Platform admins and NR firm staff bypass the company MFA policy (they are not company
- * members in the RBAC sense) but are still subject to step-up when they have MFA.
+ * Platform admins retain the support exemption. The company MFA policy covers NR staff
+ * acting through authorized client access, including staff without a company membership.
  */
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { sql } from "./sql";
 import { createLogger } from "../../config/logger";
 import { authenticateRequest } from "../../middleware/auth";
-import { getCompanyRole, resolveRequestCompany } from "../../middleware/companyRolePolicy";
-import { isNraFirmRole } from "../../../shared/access";
-import type { CompanyRole } from "../../../shared/permissions";
+import {
+  getCompanyRole,
+  isSignedProviderCallback,
+  resolveRequestCompany,
+} from "../../middleware/companyRolePolicy";
+import { isFirmRole } from "../../../shared/access";
+import { canAccessFirmClient, resolveFirmContext } from "../firm/scope";
+import { firmMfaTargetCompanies } from "./firm-mfa-targets";
+import { normalizeCompanyRole, type CompanyRole } from "../../../shared/permissions";
 import { COMPANY_MFA_POLICIES, type CompanyMfaPolicy } from "../../../shared/schema";
 import { emailVerificationConfig, mfaStepUpWindowMs } from "./config";
 
@@ -143,6 +149,71 @@ export function policyCoversRole(policy: CompanyMfaPolicy, role: CompanyRole | n
   return role === "owner" || role === "admin";
 }
 
+async function firmMfaRequirement(companyIds: string[], userId: string) {
+  if (!companyIds.length) return undefined;
+  const { rows } = await sql<{
+    company_id: string;
+    require_mfa: string;
+    role: string | null;
+  }>(
+    `SELECT p.company_id, p.require_mfa, u.role
+       FROM company_security_policies p
+       LEFT JOIN company_users u ON u.company_id = p.company_id AND u.user_id = $1
+      WHERE p.company_id = ANY($2::uuid[]) AND p.require_mfa <> 'none'
+      ORDER BY p.company_id`,
+    [userId, companyIds]
+  );
+  const matched = rows.find(
+    ({ require_mfa: policy, role }) =>
+      policy === "all" ||
+      (isCompanyMfaPolicy(policy) &&
+        policyCoversRole(policy, role ? normalizeCompanyRole(role) : null))
+  );
+  return matched && { companyId: matched.company_id, policy: matched.require_mfa };
+}
+
+function sendMfaEnrollmentRequired(
+  res: Response,
+  requirement: { companyId: string; policy: string }
+) {
+  res.status(403).json({
+    message: "This company requires two-factor authentication. Set it up in Security settings.",
+    code: "MFA_ENROLLMENT_REQUIRED",
+    details: { ...requirement, setupUrl: "/settings/security" },
+  });
+}
+
+/** Check enrollment against the same authorized targets a firm handler will act on. */
+export async function requireFirmCompanyMfa(
+  user: Express.User,
+  res: Response,
+  companyIds: string[]
+): Promise<boolean> {
+  if (user.isAdmin === true || companyIds.length === 0) return true;
+  const sec = await loadUserSecurity(user.id);
+  if (!sec || sec.mfa_enabled) return true;
+  const requirement = await firmMfaRequirement(companyIds, user.id);
+  if (!requirement) return true;
+  sendMfaEnrollmentRequired(res, requirement);
+  return false;
+}
+
+async function companyMfaRequirement(req: Request, user: Express.User) {
+  if (segs(req.path)[0]?.toLowerCase() === "firm") {
+    return firmMfaRequirement(await firmMfaTargetCompanies(req, user), user.id);
+  }
+  const companyId = await resolveRequestCompany(req, req.path);
+  if (!companyId) return undefined;
+  const policy = await getCompanyMfaPolicy(companyId);
+  if (policy === "none") return undefined;
+  const membership = await getCompanyRole(user.id, companyId);
+  if (policyCoversRole(policy, membership)) return { companyId, policy };
+  if (policy === "all" && !membership && isFirmRole(user.firmRole)) {
+    const ctx = await resolveFirmContext(user);
+    if (ctx && (await canAccessFirmClient(ctx, companyId))) return { companyId, policy };
+  }
+}
+
 // ─── Per-user state ────────────────────────────────────────────────────────
 
 interface UserSecurityRow {
@@ -244,7 +315,12 @@ export async function securityPolicyMiddleware(
   try {
     const path = req.path;
     const s = segs(path);
-    if (s.length === 0 || MFA_POLICY_EXEMPT_PREFIXES.includes(s[0])) return next();
+    if (
+      s.length === 0 ||
+      MFA_POLICY_EXEMPT_PREFIXES.includes(s[0]) ||
+      isSignedProviderCallback(req.method, path)
+    )
+      return next();
 
     const stepUp = matchRule(STEP_UP_RULES, req, path);
     const verifiedEmail = matchRule(VERIFIED_EMAIL_RULES, req, path);
@@ -259,22 +335,11 @@ export async function securityPolicyMiddleware(
     if (!sec) return next();
 
     // 1. Company MFA policy.
-    if (!sec.mfa_enabled && user.isAdmin !== true && !isNraFirmRole(user.firmRole)) {
-      const companyId = await resolveRequestCompany(req, path).catch(() => null);
-      if (companyId) {
-        const policy = await getCompanyMfaPolicy(companyId);
-        if (policy !== "none") {
-          const role = await getCompanyRole(user.id, companyId);
-          if (policyCoversRole(policy, role)) {
-            res.status(403).json({
-              message:
-                "This company requires two-factor authentication. Set it up in Security settings.",
-              code: "MFA_ENROLLMENT_REQUIRED",
-              details: { companyId, policy, setupUrl: "/settings/security" },
-            });
-            return;
-          }
-        }
+    if (!sec.mfa_enabled && user.isAdmin !== true) {
+      const requirement = await companyMfaRequirement(req, user);
+      if (requirement) {
+        sendMfaEnrollmentRequired(res, requirement);
+        return;
       }
     }
 
@@ -299,7 +364,7 @@ export async function securityPolicyMiddleware(
     }
     next();
   } catch (err) {
-    log.error({ err }, "security policy check failed");
+    log.error({ requestId: req.id }, "security policy check failed");
     next(err);
   }
 }

@@ -40,7 +40,8 @@ vi.mock("../../server/middleware/auth", () => ({
   authenticateRequest: vi.fn(async () => h.auth),
 }));
 
-vi.mock("../../server/middleware/companyRolePolicy", () => ({
+vi.mock("../../server/middleware/companyRolePolicy", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../server/middleware/companyRolePolicy")>()),
   resolveRequestCompany: vi.fn(async () => h.company),
   getCompanyRole: vi.fn(async () => h.role),
 }));
@@ -323,6 +324,16 @@ describe("securityPolicyMiddleware", () => {
     expect((await run(mockReq("GET", "/companies/c1/invoices"))).passed).toBe(true);
     h.auth = { user: user() };
     expect((await run(mockReq("GET", "/companies/c1/invoices"))).passed).toBe(true);
+  });
+
+  it("leaves signed callbacks to their provider authentication", async () => {
+    h.auth = { user: user() };
+    h.users.set("u1", { mfa_enabled: false, email_verified: true, created_at: new Date() });
+    h.company = "c-callback";
+    h.role = "owner";
+    await setCompanyMfaPolicy("c-callback", "all", "u1");
+
+    expect((await run(mockReq("POST", "/webhooks/email-events/resend"))).passed).toBe(true);
   });
 
   it("requires enrolment when the company policy covers the role", async () => {

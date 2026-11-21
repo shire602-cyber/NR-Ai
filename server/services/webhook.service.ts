@@ -3,10 +3,10 @@
  *
  * Domain events (server/platform/domain-events.ts) are subscribed once at
  * startup. Every event a company's active endpoint subscribes to becomes a
- * durable `webhook_deliveries` row (status pending), unique per
- * (endpoint, event id), and is attempted straight away. Failures are retried
- * with exponential backoff by the `webhooks.deliveryRetry` job; after
- * `max_attempts` the row is dead-lettered. Any delivery can be replayed.
+ * durable `webhook_deliveries` row (status pending), unique per (endpoint,
+ * event id), and is attempted straight away. Confirmed HTTP failures and
+ * failures before sending are retried with backoff by `webhooks.deliveryRetry`.
+ * An unknown send outcome is dead-lettered without replay.
  *
  * Signature (documented in docs/api/webhooks.md):
  *   X-Muhasib-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<body>")>
@@ -20,7 +20,11 @@ import crypto from "node:crypto";
 import { pool } from "../db";
 import { pq } from "./connectors/pq";
 import { createLogger } from "../config/logger";
-import { safeOutboundFetch, OutboundUrlBlockedError } from "./url-guard";
+import {
+  safeOutboundFetch,
+  OutboundUrlBlockedError,
+  OUTBOUND_RESPONSE_BODY_TIMEOUT_MS,
+} from "./url-guard";
 import { decryptSecret } from "./secret-vault";
 import { onDomainEvent, type DomainEvent, type DomainEventType } from "../platform/domain-events";
 import { listJobs, registerJob } from "../platform/job-registry";
@@ -71,19 +75,86 @@ export interface WebhookTransportResult {
   ok: boolean;
   bodyText: string;
 }
+export interface WebhookTransportRequest {
+  method: "POST";
+  headers: Record<string, string>;
+  body: string;
+  signal: AbortSignal;
+  /** Await before sending HTTP bytes, then call the returned function at the write. */
+  prepareTransmission: () => Promise<() => void>;
+  onResponseHeaders: (status: number) => void;
+}
 export type WebhookTransport = (
   url: string,
-  init: { method: "POST"; headers: Record<string, string>; body: string }
+  init: WebhookTransportRequest
 ) => Promise<WebhookTransportResult>;
 
-const defaultTransport: WebhookTransport = (url, init) =>
-  safeOutboundFetch(url, init, { timeoutMs: 15_000 });
+const WEBHOOK_TIMEOUT_MS = 15_000;
+const UNKNOWN_OUTCOME = "Webhook delivery outcome unknown";
+const SIGNING_FAILED = "Webhook signing failed before sending";
+const CLAIMED_BEFORE_SEND = "Webhook delivery claimed before sending";
+const PRE_SEND_FAILURE = "Webhook delivery failed before sending";
+const REPLAYABLE_PRE_SEND_ERRORS = [SIGNING_FAILED, PRE_SEND_FAILURE];
+
+const defaultTransport: WebhookTransport = (
+  url,
+  { prepareTransmission, onResponseHeaders, ...init }
+) =>
+  safeOutboundFetch(url, init, {
+    timeoutMs: WEBHOOK_TIMEOUT_MS,
+    prepareTransmission,
+    onResponseHeaders,
+  });
 
 let transport: WebhookTransport = defaultTransport;
 
 /** Tests: route deliveries to a mock endpoint. Pass null to restore. */
 export function setWebhookTransport(t: WebhookTransport | null): void {
   transport = t ?? defaultTransport;
+}
+
+async function postWebhook(
+  url: string,
+  init: Omit<WebhookTransportRequest, "signal" | "prepareTransmission" | "onResponseHeaders">,
+  prepareTransmission: (signal: AbortSignal) => Promise<() => void>,
+  parentSignal?: AbortSignal
+): Promise<WebhookTransportResult> {
+  const controller = new AbortController();
+  const signal = parentSignal
+    ? AbortSignal.any([parentSignal, controller.signal])
+    : controller.signal;
+  signal.throwIfAborted();
+  const abort = () => controller.abort();
+  let timer = setTimeout(abort, WEBHOOK_TIMEOUT_MS);
+  let observedResponse: WebhookTransportResult | undefined;
+  let onAbort!: () => void;
+  try {
+    const aborted = new Promise<WebhookTransportResult>((resolve, reject) => {
+      // An observed status is authoritative even if a caller cancels while the body is open.
+      onAbort = () => (observedResponse ? resolve(observedResponse) : reject(signal.reason));
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+    return await Promise.race([
+      transport(url, {
+        ...init,
+        signal,
+        prepareTransmission: () => prepareTransmission(signal),
+        onResponseHeaders: (status) => {
+          if (signal.aborted || observedResponse) return;
+          observedResponse = { status, ok: status >= 200 && status < 300, bodyText: "" };
+          clearTimeout(timer);
+          timer = setTimeout(abort, OUTBOUND_RESPONSE_BODY_TIMEOUT_MS);
+        },
+      }),
+      aborted,
+    ]);
+  } catch (err) {
+    if (observedResponse) return observedResponse;
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", onAbort);
+  }
 }
 
 // ─── Signing ─────────────────────────────────────────────────────────────────
@@ -151,7 +222,8 @@ export async function enqueueWebhookEvent(
   companyId: string,
   type: string,
   data: Record<string, unknown>,
-  eventId: string = crypto.randomUUID()
+  eventId: string = crypto.randomUUID(),
+  opts: { durable?: boolean; signal?: AbortSignal } = {}
 ): Promise<string[]> {
   const { rows: endpoints } = await pq<EndpointRow>(
     `SELECT id, company_id, url, secret, events, is_active
@@ -173,18 +245,31 @@ export async function enqueueWebhookEvent(
   });
   const ids: string[] = [];
   for (const ep of targets) {
+    // Historical deliveries stored the outbox ID only in their envelope. On outbox
+    // redelivery, reuse that record and its original ID instead of posting again.
     const { rows } = await pq<{ id: string }>(
       `INSERT INTO webhook_deliveries
          (webhook_endpoint_id, company_id, event, event_id, payload, status, attempt_number,
           max_attempts, next_attempt_at, success, updated_at)
-       VALUES ($1, $2, $3, $4, $5, 'pending', 0, $6, now(), false, now())
+       SELECT $1, $2, $3, $4, $5, 'pending', 0, $6, now(), false, now()
+       WHERE NOT EXISTS (
+         SELECT 1
+           FROM domain_event_outbox source
+           JOIN webhook_deliveries previous
+             ON previous.webhook_endpoint_id = $1
+            AND previous.company_id = $2
+            AND previous.event = $3
+          WHERE source.id = $7::uuid AND source.attempts > 1
+            AND CASE WHEN pg_input_is_valid(previous.payload, 'jsonb')
+                     THEN previous.payload::jsonb #>> '{data,eventId}' END = $4
+       )
        ON CONFLICT (webhook_endpoint_id, event_id) WHERE event_id IS NOT NULL DO NOTHING
        RETURNING id`,
-      [ep.id, companyId, type, eventId, body, DEFAULT_MAX_ATTEMPTS]
+      [ep.id, companyId, type, eventId, body, DEFAULT_MAX_ATTEMPTS, opts.durable ? eventId : null]
     );
     if (rows[0]) ids.push(rows[0].id);
   }
-  for (const id of ids) await attemptWebhookDelivery(id);
+  for (const id of ids) await attemptWebhookDelivery(id, { signal: opts.signal });
   return ids;
 }
 
@@ -207,70 +292,114 @@ interface ClaimedDelivery {
  */
 export async function attemptWebhookDelivery(
   deliveryId: string,
-  opts: { force?: boolean } = {}
+  opts: { force?: boolean; signal?: AbortSignal } = {}
 ): Promise<"delivered" | "retrying" | "dead" | "skipped"> {
+  if (opts.signal?.aborted) return "skipped";
   const { rows } = await pq<ClaimedDelivery>(
     `UPDATE webhook_deliveries d
-        SET status = 'in_flight', updated_at = now()
+        SET status = 'in_flight', attempt_number = d.attempt_number + 1,
+            last_error = $3, updated_at = now()
        FROM webhook_endpoints e
-      WHERE d.id = $1 AND e.id = d.webhook_endpoint_id
-        AND d.status IN ('pending', 'retrying')
+      WHERE d.id = $1 AND e.id = d.webhook_endpoint_id AND e.is_active
+        AND (d.status = 'pending' OR (d.status = 'retrying'
+          AND (d.response_status IS NOT NULL OR d.last_error LIKE 'Blocked: %' OR d.last_error = $4)))
+        AND d.attempt_number < d.max_attempts
         AND ($2::boolean OR d.next_attempt_at IS NULL OR d.next_attempt_at <= now())
       RETURNING d.id, d.webhook_endpoint_id, d.event, d.event_id, d.payload, d.attempt_number,
                 d.max_attempts, e.url, e.secret`,
-    [deliveryId, opts.force === true]
+    [deliveryId, opts.force === true, CLAIMED_BEFORE_SEND, PRE_SEND_FAILURE]
   );
   const row = rows[0];
   if (!row) return "skipped";
 
-  const attempt = row.attempt_number + 1;
+  const attempt = row.attempt_number;
   let status: number | null = null;
   let responseBody: string | null = null;
   let ok = false;
   let error: string | null = null;
   let signatureHeader = "";
+  let sendStarted = false;
+  let retryable = false;
   try {
     const secret = decryptSecret(row.secret) ?? "";
     const sig = signWebhookPayload(secret, row.payload, Math.floor(Date.now() / 1000));
     signatureHeader = sig.header;
-    const res = await transport(row.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "Muhasib-Webhooks/1.0",
-        "X-Muhasib-Signature": sig.header,
-        "X-Webhook-Signature": sig.legacy,
-        "X-Webhook-Event": row.event,
-        "X-Webhook-Id": row.event_id ?? row.id,
-        "X-Webhook-Delivery": row.id,
-        "X-Webhook-Attempt": String(attempt),
+    const res = await postWebhook(
+      row.url,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "Muhasib-Webhooks/1.0",
+          "X-Muhasib-Signature": sig.header,
+          "X-Webhook-Signature": sig.legacy,
+          "X-Webhook-Event": row.event,
+          "X-Webhook-Id": row.event_id?.split("#replay-", 1)[0] ?? row.id,
+          "X-Webhook-Delivery": row.id,
+          "X-Webhook-Attempt": String(attempt),
+        },
+        body: row.payload,
       },
-      body: row.payload,
-    });
+      async (signal) => {
+        signal.throwIfAborted();
+        // Fence a stale worker before it can write. Clearing the pre-send marker
+        // here also makes an interrupted send conservative across worker restarts.
+        const started = await pool.query(
+          `UPDATE webhook_deliveries d SET last_error = NULL, updated_at = now()
+             FROM webhook_endpoints e
+            WHERE d.id = $1 AND d.status = 'in_flight' AND d.attempt_number = $2 AND d.last_error = $3
+              AND e.id = d.webhook_endpoint_id AND e.is_active`,
+          [row.id, attempt, CLAIMED_BEFORE_SEND]
+        );
+        if (!started.rowCount) throw new Error("Webhook delivery is no longer eligible to send");
+        return () => {
+          signal.throwIfAborted();
+          sendStarted = true;
+        };
+      },
+      opts.signal
+    );
     status = res.status;
-    responseBody = (res.bodyText || "").slice(0, 2000) || null;
+    // PostgreSQL text rejects NUL. UTF-8 encoding also replaces any surrogate
+    // split by truncation, so an arbitrary body preview cannot block completion.
+    const preview = (res.bodyText || "").slice(0, 2_000).replaceAll("\0", "\uFFFD");
+    responseBody = Buffer.from(preview, "utf8").toString("utf8") || null;
     ok = res.status >= 200 && res.status < 300;
+    retryable = !ok;
     if (!ok) error = `HTTP ${res.status}`;
   } catch (err) {
-    error =
-      err instanceof OutboundUrlBlockedError
-        ? `Blocked: ${err.message}`
-        : (err as Error).message || "Network error";
+    if (sendStarted) {
+      // A timeout or lost connection can hide a successful receiver-side commit.
+      error = `${UNKNOWN_OUTCOME} after transport failure`;
+    } else if (err instanceof OutboundUrlBlockedError) {
+      // The URL guard rejected the destination before opening a connection.
+      error = `Blocked: ${err.message}`;
+      retryable = true;
+    } else if (signatureHeader) {
+      error = PRE_SEND_FAILURE;
+      retryable = true;
+    } else {
+      error = SIGNING_FAILED;
+    }
   }
 
-  let outcome: "delivered" | "retrying" | "dead";
-  if (ok) outcome = "delivered";
-  else if (attempt >= row.max_attempts) outcome = "dead";
-  else outcome = "retrying";
-
-  await pool.query(
-    `UPDATE webhook_deliveries
-        SET status = $2, attempt_number = $3, response_status = $4, response_body = $5,
-            success = $6, last_error = $7, signature = $8,
-            delivered_at = CASE WHEN $6 THEN now() ELSE delivered_at END,
-            next_attempt_at = CASE WHEN $2 = 'retrying' THEN now() + ($9::text || ' milliseconds')::interval ELSE NULL END,
-            updated_at = now()
-      WHERE id = $1`,
+  const outcome = ok ? "delivered" : retryable && attempt < row.max_attempts ? "retrying" : "dead";
+  const completed = await pool.query(
+    `WITH completed AS (
+       UPDATE webhook_deliveries
+          SET status = $2, response_status = $4, response_body = $5,
+              success = $6, last_error = $7, signature = $8,
+              delivered_at = CASE WHEN $6 THEN now() ELSE delivered_at END,
+              next_attempt_at = CASE WHEN $2 = 'retrying' THEN now() + ($9::text || ' milliseconds')::interval ELSE NULL END,
+              updated_at = now()
+        WHERE id = $1 AND status = 'in_flight' AND attempt_number = $3
+        RETURNING webhook_endpoint_id
+     )
+     UPDATE webhook_endpoints e
+        SET last_triggered_at = now(),
+            failure_count = CASE WHEN $6 THEN 0 ELSE e.failure_count + 1 END
+       FROM completed
+      WHERE e.id = completed.webhook_endpoint_id`,
     [
       row.id,
       outcome,
@@ -283,52 +412,148 @@ export async function attemptWebhookDelivery(
       String(webhookBackoffMs(attempt)),
     ]
   );
-  await pool.query(
-    `UPDATE webhook_endpoints
-        SET last_triggered_at = now(),
-            failure_count = CASE WHEN $2 THEN 0 ELSE failure_count + 1 END
-      WHERE id = $1`,
-    [row.webhook_endpoint_id, ok]
-  );
+  if (!completed.rowCount) return "skipped";
   log.info({ deliveryId: row.id, event: row.event, attempt, outcome, status }, "Webhook attempt");
   return outcome;
 }
 
 /** Attempt every due delivery (retry job). */
 export async function processDueWebhookDeliveries(limit = 100): Promise<Record<string, number>> {
+  // A pre-send claim can be recovered. After the write boundary (or with no
+  // marker from an older worker), retrying could deliver an event twice.
+  const {
+    rows: [{ dead }],
+  } = await pq<{ dead: number }>(
+    `WITH recovered AS (
+       UPDATE webhook_deliveries
+          SET status = CASE
+                WHEN status = 'in_flight' AND last_error = $3 AND attempt_number < max_attempts
+                THEN 'retrying' ELSE 'dead' END,
+              next_attempt_at = CASE
+                WHEN status = 'in_flight' AND last_error = $3 AND attempt_number < max_attempts
+                THEN now() ELSE NULL END,
+              response_status = NULL, response_body = NULL,
+              last_error = CASE
+                WHEN status = 'in_flight' AND last_error = $3 THEN $4
+                WHEN status = 'in_flight' THEN $1 ELSE $2 END,
+              updated_at = now()
+        WHERE (status = 'in_flight' AND updated_at < now() - interval '10 minutes')
+           OR (status = 'retrying' AND response_status IS NULL
+            AND (last_error LIKE 'Blocked: %' OR last_error = $4) IS NOT TRUE)
+        RETURNING status
+     )
+     SELECT count(*) FILTER (WHERE status = 'dead')::integer AS dead FROM recovered`,
+    [
+      `${UNKNOWN_OUTCOME} after worker interruption`,
+      `${UNKNOWN_OUTCOME} from a previous attempt`,
+      CLAIMED_BEFORE_SEND,
+      PRE_SEND_FAILURE,
+    ]
+  );
   const { rows } = await pq<{ id: string }>(
-    `SELECT id FROM webhook_deliveries
-      WHERE status IN ('pending', 'retrying') AND (next_attempt_at IS NULL OR next_attempt_at <= now())
-      ORDER BY next_attempt_at NULLS FIRST LIMIT $1`,
+    `SELECT d.id FROM webhook_deliveries d
+       JOIN webhook_endpoints e ON e.id = d.webhook_endpoint_id AND e.is_active
+      WHERE d.status IN ('pending', 'retrying') AND d.attempt_number < d.max_attempts
+        AND (d.next_attempt_at IS NULL OR d.next_attempt_at <= now())
+      ORDER BY d.next_attempt_at NULLS FIRST LIMIT $1`,
     [limit]
   );
-  const counts: Record<string, number> = { delivered: 0, retrying: 0, dead: 0, skipped: 0 };
+  const counts = { delivered: 0, retrying: 0, dead, skipped: 0 };
   for (const { id } of rows) counts[await attemptWebhookDelivery(id)] += 1;
-  // Rows stuck in_flight (process died mid-attempt) go back to retrying after 10 minutes.
-  await pool.query(
-    `UPDATE webhook_deliveries SET status = 'retrying', next_attempt_at = now()
-      WHERE status = 'in_flight' AND updated_at < now() - interval '10 minutes'`
-  );
   return counts;
 }
 
+// Use the same family-wide replay rules for the listing and the insert under
+// the advisory lock. An uncertain delivery blocks replay of all of its siblings.
+const SOURCE_EVENT_ROOT = `split_part(COALESCE(source.event_id, source.id::text), '#replay-', 1)`;
+const SIBLING_EVENT_ROOT = `split_part(COALESCE(sibling.event_id, sibling.id::text), '#replay-', 1)`;
+const REPLAY_REASON = `CASE
+    WHEN bool_or(sibling.status = 'dead' AND sibling.response_status IS NULL
+      AND (sibling.last_error = ANY($2::text[]) OR sibling.last_error LIKE 'Blocked: %') IS NOT TRUE)
+      THEN 'delivery_uncertain'
+    WHEN bool_or(sibling.status NOT IN ('delivered', 'dead')) THEN 'delivery_pending'
+  END`;
+
+export async function listWebhookDeliveries(endpointId: string) {
+  const { rows } = await pool.query(
+    `WITH recent AS (
+       SELECT source.id, ${SOURCE_EVENT_ROOT} AS event_root
+         FROM webhook_deliveries source WHERE source.webhook_endpoint_id = $1
+        ORDER BY source.created_at DESC LIMIT 100
+     ), eligibility AS (
+       SELECT roots.event_root, ${REPLAY_REASON} AS reason
+         FROM webhook_deliveries sibling
+         JOIN (SELECT DISTINCT event_root FROM recent) roots ON roots.event_root = ${SIBLING_EVENT_ROOT}
+        WHERE sibling.webhook_endpoint_id = $1 AND sibling.status <> 'delivered'
+        GROUP BY roots.event_root
+     )
+     SELECT source.id, source.event, source.event_id AS "eventId", source.status,
+            source.attempt_number AS "attemptNumber", source.max_attempts AS "maxAttempts",
+            source.response_status AS "responseStatus", source.response_body AS "responseBody",
+            source.success, source.last_error AS "lastError", source.next_attempt_at AS "nextAttemptAt",
+            source.delivered_at AS "deliveredAt", source.created_at AS "createdAt", source.payload,
+            e.is_active AND eligibility.reason IS NULL AS "replayEligible",
+            CASE WHEN e.is_active THEN eligibility.reason ELSE 'endpoint_disabled' END AS "replayUnavailableReason"
+       FROM recent
+       JOIN webhook_deliveries source ON source.id = recent.id
+       JOIN webhook_endpoints e ON e.id = source.webhook_endpoint_id
+       LEFT JOIN eligibility ON eligibility.event_root = recent.event_root
+      ORDER BY source.created_at DESC`,
+    [endpointId, REPLAYABLE_PRE_SEND_ERRORS]
+  );
+  return rows;
+}
+
 /**
- * Replay a delivery (any status): a new delivery row with the same event id
- * and body (receivers dedupe on X-Webhook-Id), attempted immediately.
+ * Replay a settled delivery with a known outcome. The receiver sees the original
+ * event id and body, with a new delivery id and signature.
  */
 export async function replayWebhookDelivery(deliveryId: string): Promise<string | null> {
-  const { rows } = await pq<{ id: string }>(
-    `INSERT INTO webhook_deliveries
-       (webhook_endpoint_id, company_id, event, event_id, payload, status, attempt_number,
-        max_attempts, next_attempt_at, success, updated_at)
-     SELECT webhook_endpoint_id, company_id, event,
-            COALESCE(event_id, id::text) || '#replay-' || floor(extract(epoch from clock_timestamp()) * 1000)::text,
-            payload, 'pending', 0, max_attempts, now(), false, now()
-       FROM webhook_deliveries WHERE id = $1
-     RETURNING id`,
-    [deliveryId]
-  );
-  const id = rows[0]?.id ?? null;
+  const client = await pool.connect();
+  let id: string | null = null;
+  try {
+    await client.query("BEGIN");
+    const { rows: references } = await pq<{ endpoint_id: string; event_id: string }>(
+      `SELECT webhook_endpoint_id AS endpoint_id, ${SOURCE_EVENT_ROOT} AS event_id
+         FROM webhook_deliveries source WHERE id = $1`,
+      [deliveryId],
+      client
+    );
+    const original = references[0];
+    if (original) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+        `webhook-replay:${original.endpoint_id}:${original.event_id}`,
+      ]);
+      const { rows } = await pq<{ id: string }>(
+        `INSERT INTO webhook_deliveries
+           (webhook_endpoint_id, company_id, event, event_id, payload, status, attempt_number,
+            max_attempts, next_attempt_at, success, updated_at)
+         SELECT source.webhook_endpoint_id, source.company_id, source.event,
+                $3 || '#replay-' || gen_random_uuid()::text,
+                source.payload, 'pending', 0, source.max_attempts, now(), false, now()
+           FROM webhook_deliveries source
+           JOIN webhook_endpoints e ON e.id = source.webhook_endpoint_id AND e.is_active
+          WHERE source.id = $1 AND source.status IN ('delivered', 'dead')
+            AND (
+              SELECT ${REPLAY_REASON} FROM webhook_deliveries sibling
+               WHERE sibling.webhook_endpoint_id = source.webhook_endpoint_id
+                 AND sibling.status <> 'delivered'
+                 AND ${SIBLING_EVENT_ROOT} = ${SOURCE_EVENT_ROOT}
+            ) IS NULL
+         FOR SHARE OF e
+         RETURNING id`,
+        [deliveryId, REPLAYABLE_PRE_SEND_ERRORS, original.event_id],
+        client
+      );
+      id = rows[0]?.id ?? null;
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
   if (id) await attemptWebhookDelivery(id, { force: true });
   return id;
 }
@@ -351,11 +576,17 @@ export function registerWebhookDispatch(): void {
   if (!subscribed) {
     subscribed = true;
     for (const info of WEBHOOK_EVENTS) {
-      onDomainEvent(info.type, async (event: DomainEvent) => {
+      onDomainEvent(info.type, async (event: DomainEvent, signal) => {
         const { companyId, ...data } = event.payload as unknown as Record<string, unknown> & {
           companyId: string;
         };
-        await enqueueWebhookEvent(companyId, event.type, { companyId, ...data });
+        await enqueueWebhookEvent(
+          companyId,
+          event.type,
+          { companyId, ...data },
+          event.payload.eventId,
+          { durable: Boolean(event.payload.eventId), signal }
+        );
       });
     }
   }

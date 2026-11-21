@@ -21,6 +21,7 @@ import {
   firmMembers,
   firms,
   firmStaffAssignments,
+  firmTimeEntries,
   type FirmClientLink,
 } from "../../../shared/schema";
 import { normalizeCompanyRole } from "../../../shared/permissions";
@@ -33,12 +34,16 @@ import { clientNameKey } from "../firm-clients.service";
 import {
   activateClientLink,
   activeLinkForCompany,
+  canAccessFirmClient,
   firmClientCondition,
   grantCompanyAccess,
   listAccessibleClientIds,
   listFirmMembers,
+  lockFirmClientAccess,
+  lockFirmTimerUser,
   resolveFirmContext,
   revokeCompanyAccess,
+  settleFirmTimersAtAccessLoss,
   type FirmActor,
   type FirmContext,
 } from "./scope";
@@ -69,50 +74,93 @@ export async function findDuplicateClient(
  * non-owner creator (firm_admin) is assigned to it, as before W5-D.
  */
 export async function linkNewClientToFirm(ctx: FirmContext, companyId: string): Promise<void> {
-  await activateClientLink({
-    firmId: ctx.firmId,
-    isNr: ctx.isNr,
-    companyId,
-    actorId: ctx.userId,
-  });
-  if (!ctx.platformAdmin && !firmRoleSeesAllClients(ctx.role)) {
-    await db
+  await db.transaction(async (tx) => {
+    await lockFirmTimerUser(tx, ctx.userId);
+    await lockFirmClientAccess(tx, companyId);
+    const current = await resolveFirmContext({ id: ctx.userId }, tx);
+    if (
+      current?.firmId !== ctx.firmId ||
+      !firmRoleHasPermission(current.role, "firm.clients.create")
+    ) {
+      throw new DomainError("FIRM_PERMISSION_DENIED", 403);
+    }
+    await activateClientLink(
+      {
+        firmId: ctx.firmId,
+        isNr: ctx.isNr,
+        companyId,
+        actorId: ctx.userId,
+      },
+      tx
+    );
+    if (current.platformAdmin || firmRoleSeesAllClients(current.role)) return;
+    await tx
       .insert(firmStaffAssignments)
       .values({ userId: ctx.userId, companyId, role: "accountant" })
       .onConflictDoNothing();
-    await grantCompanyAccess({
-      firmId: ctx.firmId,
-      userId: ctx.userId,
-      companyId,
-      role: ctx.role,
-    });
-  }
+    await grantCompanyAccess(
+      { firmId: ctx.firmId, userId: ctx.userId, companyId, role: current.role },
+      tx
+    );
+  });
 }
 
 /** Firm side: end the firm's active link to a company. */
 export async function endClientLink(
-  ctx: FirmContext,
+  ctx: Pick<FirmContext, "firmId" | "isNr">,
   companyId: string,
   actorId: string,
-  reason: string | null
+  reason: string | null,
+  linkId?: string
 ): Promise<void> {
-  await db
-    .update(firmClientLinks)
-    .set({
-      status: "revoked",
-      revokedBy: actorId,
-      revokedAt: new Date(),
-      revokeReason: reason,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(firmClientLinks.firmId, ctx.firmId),
-        eq(firmClientLinks.companyId, companyId),
-        eq(firmClientLinks.status, "active")
+  await db.transaction(async (tx) => {
+    await lockFirmClientAccess(tx, companyId);
+    const timerScope = and(
+      eq(firmTimeEntries.firmId, ctx.firmId),
+      eq(firmTimeEntries.companyId, companyId)
+    )!;
+    const running = await tx
+      .select({ id: firmTimeEntries.id, userId: firmTimeEntries.userId })
+      .from(firmTimeEntries)
+      .where(and(timerScope, eq(firmTimeEntries.status, "running")));
+    const authorized = [];
+    for (const timer of running) {
+      const member = await resolveFirmContext({ id: timer.userId }, tx);
+      if (
+        member?.firmId === ctx.firmId &&
+        firmRoleHasPermission(member.role, "firm.time.track") &&
+        (await canAccessFirmClient(member, companyId, tx))
       )
+        authorized.push(timer.id);
+    }
+    const endedAt = new Date();
+    const [revoked] = await tx
+      .update(firmClientLinks)
+      .set({
+        status: "revoked",
+        revokedBy: actorId,
+        revokedAt: endedAt,
+        revokeReason: reason,
+        updatedAt: endedAt,
+      })
+      .where(
+        and(
+          eq(firmClientLinks.firmId, ctx.firmId),
+          eq(firmClientLinks.companyId, companyId),
+          eq(firmClientLinks.status, "active"),
+          linkId ? eq(firmClientLinks.id, linkId) : undefined
+        )
+      )
+      .returning({ id: firmClientLinks.id });
+    if (linkId && !revoked) throw new DomainError("TRANSACTION_CONFLICT", 409);
+    await revokeCompanyAccess({ firmId: ctx.firmId, isNr: ctx.isNr, companyId }, tx);
+    await settleFirmTimersAtAccessLoss(
+      tx,
+      timerScope,
+      inArray(firmTimeEntries.id, authorized),
+      endedAt
     );
-  await revokeCompanyAccess({ firmId: ctx.firmId, isNr: ctx.isNr, companyId });
+  });
 }
 
 // ─── Invitations (firm side) ─────────────────────────────────────────────────
@@ -188,7 +236,7 @@ export async function withdrawFirmLink(ctx: FirmContext, linkId: string): Promis
     .limit(1);
   if (!link) throw new DomainError("LINK_NOT_FOUND", 404);
   if (link.status === "active" && link.companyId) {
-    await endClientLink(ctx, link.companyId, ctx.userId, "Ended by firm");
+    await endClientLink(ctx, link.companyId, ctx.userId, "Ended by firm", link.id);
     return;
   }
   if (link.status === "invited") {
@@ -356,17 +404,13 @@ export async function revokeLinkByClient(
     .where(and(eq(firmClientLinks.id, linkId), eq(firmClientLinks.companyId, companyId)))
     .limit(1);
   if (!link || link.link.status !== "active") throw new DomainError("LINK_NOT_FOUND", 404);
-  await db
-    .update(firmClientLinks)
-    .set({
-      status: "revoked",
-      revokedBy: userId,
-      revokedAt: new Date(),
-      revokeReason: reason,
-      updatedAt: new Date(),
-    })
-    .where(eq(firmClientLinks.id, linkId));
-  await revokeCompanyAccess({ firmId: link.link.firmId, isNr: link.isNr, companyId });
+  await endClientLink(
+    { firmId: link.link.firmId, isNr: link.isNr },
+    companyId,
+    userId,
+    reason,
+    linkId
+  );
 }
 
 // ─── Firm onboarding ─────────────────────────────────────────────────────────

@@ -333,7 +333,7 @@ export async function invoiceSettlement(
     SELECT ${sql.raw(parts.paid)}::text AS paid,
            ${sql.raw(parts.credited)}::text AS credited,
            ${sql.raw(parts.applied)}::text AS applied
-      FROM (SELECT ${invoiceId}::uuid AS id) si
+      FROM invoices si WHERE si.id = ${invoiceId}
   `);
   const row = (((res as { rows?: unknown[] }).rows ?? res) as Array<Record<string, string>>)[0];
   return {
@@ -1243,7 +1243,7 @@ export async function insertCreditNoteDocument(
       const orig = totalsForStoredDocument(original, originalLines);
       const remainingSub =
         toFils(original.subtotal, { rounding: "halfUp" }) -
-        (await loadPriorCreditedSubtotal(tx, original.id));
+        (await loadPriorCreditedSubtotal(tx, original));
       const remainingTotal = totalFils - s.creditedFils;
       const remainingVat = remainingTotal - remainingSub;
       docLines = [
@@ -1318,10 +1318,14 @@ export async function insertCreditNoteDocument(
   return { creditNote, mode };
 }
 
-async function loadPriorCreditedSubtotal(tx: LedgerTx, invoiceId: string): Promise<number> {
+async function loadPriorCreditedSubtotal(
+  tx: LedgerTx,
+  invoice: Pick<Invoice, "id" | "companyId">
+): Promise<number> {
   const res = await tx.execute(sql`
     SELECT COALESCE(SUM(-subtotal), 0)::text AS sub FROM invoices
-     WHERE original_invoice_id = ${invoiceId} AND invoice_type = 'credit_note'
+     WHERE original_invoice_id = ${invoice.id} AND company_id = ${invoice.companyId}
+       AND invoice_type = 'credit_note'
        AND status NOT IN ('void', 'cancelled', 'draft')`);
   const row = (((res as { rows?: unknown[] }).rows ?? res) as Array<Record<string, string>>)[0];
   return toFils(row?.sub ?? "0", { rounding: "halfUp" });
@@ -1619,11 +1623,12 @@ export async function resolveCustomerHeader(
   helpers: {
     dueDateFromTerms: (d: string, t: string | null | undefined) => string | null;
     termsFromDays: (n: number | null | undefined) => string | null;
-  }
+  },
+  q: LedgerTx = db
 ): Promise<CustomerHeader> {
   let contact: typeof customerContacts.$inferSelect | undefined;
   if (input.contactId) {
-    [contact] = await db
+    [contact] = await q
       .select()
       .from(customerContacts)
       .where(
@@ -1651,7 +1656,7 @@ export async function resolveCustomerHeader(
     input.paymentTerms ?? (contact ? helpers.termsFromDays(contact.paymentTerms) : null) ?? "net30";
   let emirate = input.placeOfSupplyEmirate ?? contact?.emirate ?? null;
   if (!emirate) {
-    const [co] = await db
+    const [co] = await q
       .select({ emirate: companies.emirate })
       .from(companies)
       .where(eq(companies.id, companyId));
@@ -1672,10 +1677,11 @@ export async function resolveCustomerHeader(
 export async function assertPlaceOfSupply(
   companyId: string,
   emirate: string | null,
-  supplyTypes: string[]
+  supplyTypes: string[],
+  q: LedgerTx = db
 ): Promise<void> {
   if (emirate || !supplyTypes.includes("standard_rated")) return;
-  const [co] = await db
+  const [co] = await q
     .select({ trn: companies.trnVatNumber })
     .from(companies)
     .where(eq(companies.id, companyId));

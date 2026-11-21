@@ -273,7 +273,7 @@ export default function DemoWorkspace() {
                   <div className="flex items-center gap-2">
                     <Sparkles className="h-4 w-4" aria-hidden="true" />
                     <p className="text-sm font-medium">
-                      <T k="pageLabels.cSVStatementImportNoLiveFeedNeeded" />
+                      <T k="marketing.demoBankTitle" />
                     </p>
                   </div>
                   <p className="mt-1 text-sm">{t["marketing.demoBankBody"]}</p>
