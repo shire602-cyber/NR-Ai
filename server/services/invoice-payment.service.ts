@@ -15,7 +15,7 @@
 // write and no journal. Online payment, when built, must call this service.
 
 import { journalLine, journalMemo } from "@shared/journal-memo";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   accounts,
@@ -357,6 +357,17 @@ export interface ReverseInvoicePaymentInput {
   date?: string | null;
   /** Run inside the caller's ledger transaction (bank unmatch, compensation). */
   tx?: LedgerTx;
+  /** Validate a stored bank allocation again after obtaining the payment lock. */
+  expectedAllocation?: { invoiceId: string; journalEntryId: string };
+}
+
+function reversalReviewRequired(): DomainError {
+  return new DomainError(
+    "PAYMENT_REVERSAL_REVIEW_REQUIRED",
+    409,
+    undefined,
+    "Review the payment and journal links before reversing this transaction."
+  );
 }
 
 /**
@@ -377,10 +388,19 @@ export async function reverseInvoicePayment(
       .select({ invoiceId: invoicePayments.invoiceId })
       .from(invoicePayments)
       .where(where);
+    const expected = input.expectedAllocation;
+    if (expected && peek?.invoiceId !== expected.invoiceId) throw reversalReviewRequired();
     if (!peek) return { reversed: false, invoice: null };
     // Same lock order as recordInvoicePayment: invoice first, then the payment row.
     const invoice = await lockInvoice(tx, peek.invoiceId, input.companyId);
     const [payment] = await tx.select().from(invoicePayments).where(where).for("update");
+    if (
+      expected &&
+      (payment?.invoiceId !== expected.invoiceId ||
+        payment.journalEntryId !== expected.journalEntryId)
+    ) {
+      throw reversalReviewRequired();
+    }
     if (!payment) return { reversed: false, invoice: null };
     if (payment.journalEntryId) {
       const [je] = await tx
@@ -391,8 +411,25 @@ export async function reverseInvoicePayment(
             eq(journalEntries.id, payment.journalEntryId),
             eq(journalEntries.companyId, input.companyId)
           )
-        );
-      if (je && je.status === "posted" && !je.reversedBy) {
+        )
+        .for("update");
+      if (!je || (expected && (je.status !== "posted" || je.reversedBy))) {
+        throw reversalReviewRequired();
+      }
+      if (je.status === "posted" && !je.reversedBy) {
+        // The ledger kernel reverses the whole entry. That would also undo the
+        // cash/receivable effect of every sibling payment on a shared journal.
+        const [sibling] = await tx
+          .select({ id: invoicePayments.id })
+          .from(invoicePayments)
+          .where(
+            and(
+              eq(invoicePayments.journalEntryId, payment.journalEntryId),
+              ne(invoicePayments.id, payment.id)
+            )
+          )
+          .limit(1);
+        if (sibling) throw reversalReviewRequired();
         await reverseEntry(
           payment.journalEntryId,
           {

@@ -27,9 +27,8 @@ import { fileURLToPath } from "node:url";
 import { chromium, request } from "playwright-core";
 import {
   bankingDescriptionSelectors,
-  publicBankFeedPromises,
+  publicBankFeedMentions,
   publicBankingCopy,
-  standaloneBankFeedLabels,
 } from "./lib/public-banking-copy.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
@@ -370,6 +369,13 @@ async function main() {
         await fail(`public bank FAQ ${route}`, { detail: String(error) });
       }
     }
+    const descriptions = await page
+      .locator("head")
+      .evaluate(
+        (head, selectors) =>
+          selectors.map((selector) => head.querySelector(selector)?.getAttribute("content")),
+        bankingDescriptionSelectors
+      );
     const bankProduct = /^\/(en|ar)\/product\/bank-reconciliation$/.exec(route);
     if (bankProduct) {
       const expected = publicBankingCopy[bankProduct[1]].answer;
@@ -377,27 +383,19 @@ async function main() {
         .locator(".phase-lead")
         .textContent()
         .catch(() => null);
-      const descriptions = await Promise.all(
-        bankingDescriptionSelectors.map((selector) =>
-          page
-            .locator(selector)
-            .getAttribute("content")
-            .catch(() => null)
-        )
-      );
       if (lead !== expected || descriptions.some((content) => content !== expected)) {
         await fail(`public bank product ${route}`, { expected, lead, descriptions });
       }
     }
-    const unsupportedClaim = [PUBLIC_UNSUPPORTED_CLAIMS, ...publicBankFeedPromises]
-      .map((pattern) => bodyText.match(pattern)?.[0])
-      .find(Boolean);
+    const unsupportedClaim = bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0];
     if (unsupportedClaim) {
       await fail(`public claim ${route}`, { unsupportedClaim });
     }
-    for (const label of standaloneBankFeedLabels) {
-      if (await page.getByText(label).filter({ visible: true }).count()) {
-        await fail(`public bank label ${route}`, { label: label.source });
+    const publicCopy = [bodyText, ...descriptions].join("\n");
+    for (const pattern of publicBankFeedMentions) {
+      const mention = publicCopy.match(pattern)?.[0];
+      if (mention || (await page.getByText(pattern).filter({ visible: true }).count())) {
+        await fail(`public bank wording ${route}`, { mention, pattern: pattern.source });
       }
     }
   }

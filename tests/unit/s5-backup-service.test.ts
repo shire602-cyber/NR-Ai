@@ -227,7 +227,10 @@ describe("S5 backup manifest + snapshot (unit)", () => {
     const legacy = s.openSnapshot(legacyJson, null);
     expect((legacy.snapshot as { data: unknown }).data).toEqual({});
     expect(s.exportSnapshot(legacyJson, null, false)).toEqual({ body: legacyJson });
-    expect(s.exportSnapshot(legacyJson, null, true)).toEqual({ body: legacyJson });
+    const legacyEncrypted = s.exportSnapshot(legacyJson, null, true);
+    expect(legacyEncrypted.body).toMatch(/^enc:v1:/);
+    expect(legacyEncrypted.contentDigest).toBeUndefined();
+    expect(s.openSnapshot(legacyEncrypted.body, null).json).toBe(legacyJson);
   });
 });
 

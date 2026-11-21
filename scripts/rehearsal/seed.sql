@@ -63,8 +63,9 @@ SELECT contact_id, id, 'Customer ' || n, 'customer' || n || '@buyer.example.test
        CASE WHEN n = 1 THEN '2099-01-01'::timestamp END, '2025-12-01'
 FROM rehearsal_companies;
 
-INSERT INTO accounts (id, company_id, code, name_en, type, created_at)
-SELECT md5('nr-rehearsal:account:' || c.id || ':' || a.code)::uuid, c.id, a.code, a.name, a.type, '2025-12-01'
+INSERT INTO accounts (id, company_id, code, name_en, type, sub_type, is_active, is_archived, created_at)
+SELECT md5('nr-rehearsal:account:' || c.id || ':' || a.code)::uuid, c.id, a.code, a.name, a.type,
+       CASE WHEN a.code = '1020' THEN 'bank' END, true, false, '2025-12-01'
 FROM rehearsal_companies c
 CROSS JOIN (VALUES ('1020', 'Bank Accounts', 'asset'), ('1040', 'Accounts Receivable', 'asset'),
                    ('1200', 'Input VAT', 'asset'), ('2010', 'Accounts Payable', 'liability'),

@@ -11,9 +11,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
 import {
   bankingDescriptionSelectors,
-  publicBankFeedPromises,
+  publicBankFeedMentions,
   publicBankingCopy,
-  standaloneBankFeedLabels,
 } from "../e2e/lib/public-banking-copy.mjs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -80,8 +79,7 @@ function arabicModeEnglishLines(): string[] {
 const UNSUPPORTED_CLAIMS = [
   /FTA[-\s]?(accredited|compliant|registered|approved)/i,
   /submits? (your|the) (VAT )?return(s)? (to|with) the FTA automatically/i,
-  /(?:connect to|sync from) (?:a |your )?(?:live )?bank feeds?/i,
-  ...publicBankFeedPromises,
+  ...publicBankFeedMentions,
   /money-back/i,
   /UAE-hosted/i,
   // "Most popular" is a plan-card highlight the owner asked for (X6b); it states no user count.
@@ -89,12 +87,49 @@ const UNSUPPORTED_CLAIMS = [
   /SOC 2 (Type II )?(certified|compliant)/i,
 ];
 
-function expectNoStandaloneBankFeedLabel() {
-  const labels = [...container.querySelectorAll("*")].map((node) => node.textContent?.trim() ?? "");
-  for (const label of standaloneBankFeedLabels) {
-    expect(labels.find((text) => label.test(text))).toBeUndefined();
+function expectNoBankFeedMention() {
+  const copy = [...container.querySelectorAll("*")].map((node) => node.textContent ?? "");
+  for (const selector of bankingDescriptionSelectors) {
+    copy.push(document.head.querySelector(selector)?.getAttribute("content") ?? "");
+  }
+  for (const pattern of publicBankFeedMentions) {
+    expect(copy.find((text) => pattern.test(text))).toBeUndefined();
   }
 }
+
+describe("public bank wording gate", () => {
+  it.each([
+    "Bank feeds",
+    "We do not support live bank feeds.",
+    "Bank-feed support is coming later.",
+    "Keep your books up to date with bank feeds.",
+    "Bank-feed-based reconciliation is unavailable.",
+    "Bank feeds—coming soon.",
+    "Banking feeds",
+    "الربط البنكي",
+    "الربط البنكي المباشر غير متاح.",
+    "سيتوفر الربط البنكي لاحقًا.",
+    "لا ندعم التغذية المصرفية.",
+    "الخلاصة البنكية غير متاحة.",
+    "مزامنة الحسابات البنكية",
+    "عنوان إعادة التوجيه غير مسموح به للربط البنكي.",
+  ])("rejects bank-feed prose in a label, claim, or denial: %s", (text) => {
+    expect(publicBankFeedMentions.some((pattern) => pattern.test(text))).toBe(true);
+  });
+
+  it.each([
+    publicBankingCopy.en.answer,
+    publicBankingCopy.ar.answer,
+    "Browse social feeds and exchange rate feeds.",
+    "اربط حساب البنك بدليل الحسابات أو استورد كشفًا بصيغة CSV.",
+    "/bank-feeds/callback",
+    "BANK_FEED_NOT_CONFIGURED",
+    "bank_feed_wio",
+    "bankFeeds.sync",
+  ])("accepts CSV guidance, unrelated feeds and technical identifiers: %s", (text) => {
+    expect(publicBankFeedMentions.some((pattern) => pattern.test(text))).toBe(false);
+  });
+});
 
 describe("D1 public site", () => {
   it.each(["en", "ar"] as const)(
@@ -115,10 +150,12 @@ describe("D1 public site", () => {
         expect(t[locale]["marketing.faq3A"]).toBe(answer);
         expect(t[locale]["banking.feeds.unavailableBody"]).toBe(answer);
         expect(t[locale]["serverErrors.BANK_FEED_NOT_CONFIGURED"]).toBe(answer);
-        for (const promise of publicBankFeedPromises) {
-          expect(container.textContent ?? "").not.toMatch(promise);
+        const redirectHint = t[locale]["serverErrors.REDIRECT_URI_NOT_ALLOWED"];
+        expect(redirectHint).toContain("CSV");
+        for (const mention of publicBankFeedMentions) {
+          expect(redirectHint).not.toMatch(mention);
         }
-        expectNoStandaloneBankFeedLabel();
+        expectNoBankFeedMention();
 
         await act(async () =>
           window.history.pushState(null, "", `/${locale}/product/bank-reconciliation`)
@@ -127,10 +164,7 @@ describe("D1 public site", () => {
         for (const selector of bankingDescriptionSelectors) {
           expect(document.head.querySelector(selector)?.getAttribute("content")).toBe(answer);
         }
-        for (const promise of publicBankFeedPromises) {
-          expect(container.textContent ?? "").not.toMatch(promise);
-        }
-        expectNoStandaloneBankFeedLabel();
+        expectNoBankFeedMention();
       } finally {
         window.history.replaceState(null, "", previousUrl);
       }

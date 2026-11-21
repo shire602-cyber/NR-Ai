@@ -11,12 +11,11 @@ export const publicBankingCopy = {
   },
 };
 
-export const publicBankFeedPromises = [
-  /\bbank feeds?\b[^.!?\n]{0,60}\b(?:coming|soon|later|future|roadmap)\b/i,
-  /(?:(?:سيتوفر|سيتاح|سيُتاح)\s+الربط البنكي|الربط البنكي[^.؟\n]{0,60}(?:لاحق|قريب|مستقبل))/u,
+// Match prose in labels, descriptions and denials. Keep technical URLs and IDs out of the match.
+export const publicBankFeedMentions = [
+  /(?<![\w/])bank(?:ing)?(?:\s+|[\u2010-\u2015-])feeds?(?![\w/])/iu,
+  /(?<![\p{L}\p{N}_])(?:[وفب])?(?:ال|لل)?(?:ربط|تغذي(?:ة|ات)|خلاص(?:ة|ات)|موجز|مزامنة\s+(?:ال)?(?:حساب(?:ات)?|معاملات))\s+(?:ال)?(?:بنكي|مصرفي)ة?(?![\p{L}\p{N}_])/u,
 ];
-
-export const standaloneBankFeedLabels = [/^Bank feeds?$/i, /^الربط البنكي$/u];
 
 export const bankingDescriptionSelectors = [
   'meta[name="description"]',

@@ -1,8 +1,8 @@
-# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0138)
+# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0139)
 
 Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
 
-Owner-run. The first deploy of this branch applies 50 migrations (0089-0138) that rewrite some production data
+Owner-run. The first deploy of this branch applies 51 migrations (0089-0139) that rewrite some production data
 (users, roles, FX rates, bank GL links and reconciliation rules, portal tokens, audit chain, subscriptions). Do not
 merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived or external items
 (A-Cube, email, Stripe, WPS, GPSSA, FAF) are listed in section 9 and stay off until proven.
@@ -29,7 +29,7 @@ Restore the dump from section 1 (or a Railway snapshot) into a scratch database,
 ```
 export DATABASE_URL=postgres://.../rehearsal   # the restored copy
 \timing on                                     # in psql; or time the command below
-time npm run db:migrate                         # applies 0089-0138; record total and slowest file
+time npm run db:migrate                         # applies 0089-0139; record total and slowest file
 npm run build && PORT=<free port> npm start     # boot check: /health/ready 200, /api/version
 ```
 
@@ -189,10 +189,12 @@ SELECT cu.company_id, u.email FROM company_users cu JOIN users u ON u.id = cu.us
  WHERE u.user_type = 'client_portal';
 ```
 
-#### Bank GL links (0138)
+#### Bank GL and invoice payment links (0138–0139)
 
 Migration `0138` repairs eligible bank GL links, including on databases that already recorded
-`0097`. Review ownership findings for statement and GL account references after migration.
+`0097`. Migration `0139` reports invalid GL references and unsafe invoice payment links, including
+on databases that already recorded `0138`. Review the linked journals before resolving shared,
+ambiguous, or mismatched payments. The audit preserves the recorded postings.
 [Bank GL findings query](../migration-rehearsal.md#review-bank-gl-findings)
 
 #### Skipped `uq_employees_*` unique indexes (0118)
@@ -337,7 +339,7 @@ and FTA. The PR description must say so, so "394 fixed" is not read as "certifie
 Migration `0117_e2_einvoice_complyance.sql` (journal idx 116) adds the nullable column
 `einvoice_legal_entities.provider_details jsonb`. It is additive and idempotent (`IF NOT EXISTS`);
 safe to re-run, no data rewrite, no lock beyond a brief catalog change. Rehearse it with the rest of
-0089-0138, then run it a second time to confirm it is a no-op.
+0089-0139, then run it a second time to confirm it is a no-op.
 
 One provider is active at a time, selected by `EINVOICE_PROVIDER` (unset = e-invoicing off; a
 provider that is selected but not fully configured stays hidden/"Not connected"):

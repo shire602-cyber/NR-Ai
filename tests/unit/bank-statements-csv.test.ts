@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { ActiveCompanyProvider } from "../../client/src/components/ActiveCompanyProvider";
 import { loadLocale, useI18n, t } from "../../client/src/lib/i18n";
 import BankFeeds from "../../client/src/pages/BankFeeds";
-import { publicBankingCopy, standaloneBankFeedLabels } from "../e2e/lib/public-banking-copy.mjs";
+import { publicBankingCopy, publicBankFeedMentions } from "../e2e/lib/public-banking-copy.mjs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -65,8 +65,8 @@ describe("signed-in bank statement entry point", () => {
         );
         const navigationLabel = t[locale]["shell.nav.bankFeeds"];
         expect(navigationLabel).toBe(expected.title);
-        for (const label of standaloneBankFeedLabels) {
-          expect([...texts, navigationLabel].find((text) => label.test(text))).toBeUndefined();
+        for (const mention of publicBankFeedMentions) {
+          expect([...texts, navigationLabel].find((text) => mention.test(text))).toBeUndefined();
         }
       }
 

@@ -311,6 +311,11 @@ export async function captureSnapshot(
   return { version: BACKUP_FORMAT_VERSION, createdAt: new Date().toISOString(), companyId, tables };
 }
 
+function sealSnapshotJson(json: string): string {
+  const gz = zlib.gzipSync(Buffer.from(json, "utf8")).toString("base64");
+  return encryptSecret(`gz1:${gz}`)!;
+}
+
 export function sealSnapshot(snapshot: CompanySnapshot): {
   sealed: string;
   checksum: string;
@@ -319,8 +324,7 @@ export function sealSnapshot(snapshot: CompanySnapshot): {
 } {
   const json = JSON.stringify(snapshot);
   const checksum = crypto.createHash("sha256").update(json).digest("hex");
-  const gz = zlib.gzipSync(Buffer.from(json, "utf8")).toString("base64");
-  const sealed = encryptSecret(`gz1:${gz}`)!;
+  const sealed = sealSnapshotJson(json);
   const counts = Object.fromEntries(Object.entries(snapshot.tables).map(([k, v]) => [k, v.length]));
   return { sealed, checksum, sizeBytes: Buffer.byteLength(sealed, "utf8"), counts };
 }
@@ -353,21 +357,21 @@ export function openSnapshot(
   return { json, snapshot: JSON.parse(json) };
 }
 
-/** Older v2 snapshots can contain migration diagnostics that current backups exclude. */
+/** Export legacy plaintext as sealed JSON whenever encryption is requested. */
 export function exportSnapshot(
   stored: string,
   checksum: string | null,
   encrypted: boolean
 ): { body: string; contentDigest?: string } {
   const { json, snapshot } = openSnapshot(stored, checksum);
-  if (!("tables" in snapshot) || !Object.hasOwn(snapshot.tables, BANK_GL_MIGRATION_FINDINGS)) {
-    return { body: encrypted ? stored : json };
+  const tables = "tables" in snapshot ? snapshot.tables : snapshot.data;
+  const filtered = tables && Object.hasOwn(tables, BANK_GL_MIGRATION_FINDINGS);
+  if (filtered) delete tables[BANK_GL_MIGRATION_FINDINGS];
+  const body = filtered ? JSON.stringify(snapshot) : json;
+  if (encrypted) {
+    return { body: !filtered && isEncryptedSecret(stored) ? stored : sealSnapshotJson(body) };
   }
-  delete snapshot.tables[BANK_GL_MIGRATION_FINDINGS];
-  if (encrypted && isEncryptedSecret(stored)) {
-    return { body: sealSnapshot(snapshot).sealed };
-  }
-  const body = JSON.stringify(snapshot);
+  if (!filtered) return { body };
   const digest = crypto.createHash("sha256").update(body).digest("base64");
   return { body, contentDigest: `sha-256=:${digest}:` };
 }

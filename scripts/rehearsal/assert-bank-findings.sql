@@ -23,7 +23,8 @@ BEGIN
       ) defects(id, kind, statement_account_id, statement_company_id)
     ), actual AS (
       SELECT bank_transaction_id, company_id, kind, details FROM bank_gl_migration_findings
-      WHERE company_id = local_company OR bank_transaction_id IN (foreign_statement, foreign_target)
+      WHERE (company_id = local_company OR bank_transaction_id IN (foreign_statement, foreign_target))
+        AND kind IN ('statement_company_mismatch', 'target_gl_company_mismatch')
     )
     (SELECT * FROM expected EXCEPT ALL SELECT * FROM actual)
     UNION ALL

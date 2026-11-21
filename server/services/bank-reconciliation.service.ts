@@ -49,6 +49,8 @@ import {
   bankImportBatches,
   bankTransactionMatches,
   bankTransactions,
+  invoicePayments,
+  invoices,
   journalEntries,
   journalLines,
   reconciliationRules,
@@ -505,6 +507,7 @@ type ReverseInvoicePayment = (input: {
   actorId: string;
   reason: string;
   tx?: LedgerTx;
+  expectedAllocation?: { invoiceId: string; journalEntryId: string };
 }) => Promise<unknown>;
 
 async function recordInvoicePaymentFor(
@@ -578,7 +581,8 @@ async function reverseInvoicePayment(
   companyId: string,
   paymentId: string,
   actorId: string,
-  reason: string
+  reason: string,
+  expectedAllocation?: { invoiceId: string; journalEntryId: string }
 ): Promise<void> {
   await resolve<ReverseInvoicePayment>("invoices.reversePayment")({
     companyId,
@@ -586,6 +590,7 @@ async function reverseInvoicePayment(
     actorId,
     reason,
     tx,
+    expectedAllocation,
   });
 }
 
@@ -1149,7 +1154,11 @@ export async function applyMatch(input: ApplyMatchInput): Promise<ApplyMatchResu
     const draft = target.postingMode === "draft";
     let memo = target.memo || txn.description;
     let memoKey = target.memoKey ?? null;
-    if (target.vatTreatment && target.vatTreatment !== "none" && target.vatTreatment !== "standard") {
+    if (
+      target.vatTreatment &&
+      target.vatTreatment !== "none" &&
+      target.vatTreatment !== "standard"
+    ) {
       memo = `${memo} (VAT: ${target.vatTreatment})`;
       memoKey = null; // the English VAT suffix is not part of the key's template
     }
@@ -1495,6 +1504,51 @@ export interface UnmatchResult {
   unmatchedTransactionIds: string[];
 }
 
+/** A historical link can preserve an invoice match while its payment still needs review. */
+async function validateInvoiceReversal(
+  tx: LedgerTx,
+  companyId: string,
+  match: BankTransactionMatch
+) {
+  const reviewRequired = new DomainError(
+    "PAYMENT_REVERSAL_REVIEW_REQUIRED",
+    409,
+    undefined,
+    "Review the payment and journal links before reversing this transaction."
+  );
+  const { paymentId, targetId, journalEntryId } = match;
+  if (
+    !paymentId ||
+    !targetId ||
+    !journalEntryId ||
+    match.createdJournal ||
+    match.status !== "active"
+  ) {
+    throw reviewRequired;
+  }
+  const [payment] = await tx
+    .select({ id: invoicePayments.id })
+    .from(invoicePayments)
+    .innerJoin(invoices, eq(invoices.id, invoicePayments.invoiceId))
+    .innerJoin(journalEntries, eq(journalEntries.id, invoicePayments.journalEntryId))
+    .where(
+      and(
+        eq(invoicePayments.id, paymentId),
+        eq(invoicePayments.companyId, companyId),
+        eq(invoices.id, targetId),
+        eq(invoices.companyId, companyId),
+        eq(journalEntries.id, journalEntryId),
+        eq(journalEntries.companyId, companyId),
+        eq(journalEntries.status, "posted"),
+        isNull(journalEntries.reversedByEntryId),
+        sql`NOT EXISTS (SELECT 1 FROM invoice_payments sibling
+          WHERE sibling.journal_entry_id = ${journalEntryId} AND sibling.id <> ${paymentId})`
+      )
+    );
+  if (!payment) throw reviewRequired;
+  return { paymentId, invoiceId: targetId, journalEntryId };
+}
+
 export async function unmatchTransaction(input: {
   companyId: string;
   transactionId: string;
@@ -1537,6 +1591,11 @@ export async function unmatchTransaction(input: {
   const reversedPayments: string[] = [];
   const result = await withLedgerTx(async (tx) => {
     for (const id of txnIds) await lockTxn(tx, companyId, id);
+    const invoiceReversals = new Map<string, Awaited<ReturnType<typeof validateInvoiceReversal>>>();
+    for (const m of group) {
+      if (m.targetType === "invoice")
+        invoiceReversals.set(m.id, await validateInvoiceReversal(tx, companyId, m));
+    }
     // Clear the line first: it references the entries removed or reversed below.
     const rows: BankTransaction[] = await tx
       .update(bankTransactions)
@@ -1553,7 +1612,16 @@ export async function unmatchTransaction(input: {
       .returning();
     const reversedSources = new Set<string>();
     for (const m of group) {
-      if (m.status === "pending" && m.journalEntryId) {
+      const invoiceReversal = invoiceReversals.get(m.id);
+      if (invoiceReversal) {
+        const { paymentId, invoiceId, journalEntryId } = invoiceReversal;
+        await reverseInvoicePayment(tx, companyId, paymentId, actorId, reason, {
+          invoiceId,
+          journalEntryId,
+        });
+        reversedPayments.push(paymentId);
+        reversedEntryIds.push(journalEntryId);
+      } else if (m.status === "pending" && m.journalEntryId) {
         // A draft created for review has no ledger effect: remove it so it cannot be posted later.
         // A draft someone has since posted is reversed instead.
         const [je] = await tx
@@ -1576,7 +1644,9 @@ export async function unmatchTransaction(input: {
         const [je] = await tx
           .select({ source: journalEntries.source, sourceId: journalEntries.sourceId })
           .from(journalEntries)
-          .where(eq(journalEntries.id, m.journalEntryId));
+          .where(
+            and(eq(journalEntries.id, m.journalEntryId), eq(journalEntries.companyId, companyId))
+          );
         const key = `${je?.source}:${je?.sourceId}`;
         if (je?.sourceId && !reversedSources.has(key)) {
           reversedSources.add(key);
@@ -1589,10 +1659,6 @@ export async function unmatchTransaction(input: {
           );
           for (const r of rev) reversedEntryIds.push(r.original.id);
         }
-      } else if (m.targetType === "invoice" && m.paymentId) {
-        await reverseInvoicePayment(tx, companyId, m.paymentId, actorId, reason);
-        reversedPayments.push(m.paymentId);
-        if (m.journalEntryId) reversedEntryIds.push(m.journalEntryId);
       } else if (m.targetType === "bill" && m.paymentId) {
         await reverseBillPayment(tx, companyId, m.paymentId, m.targetId, actorId, reason);
         reversedPayments.push(m.paymentId);

@@ -110,7 +110,7 @@ function assertAllowedRedirect(uri: string): void {
       "REDIRECT_URI_NOT_ALLOWED",
       400,
       { allowed },
-      "The redirect URI is not on the bank-feed allow-list"
+      "The redirect address is not allowed. Upload a CSV exported from your bank to continue."
     );
   }
 }

@@ -135,7 +135,12 @@ describe("W3-C bank feeds", () => {
       redirectUrl: "http://x",
     });
     expect(evil.status).toBe(400);
-    expect(evil.body.code).toBe("REDIRECT_URI_NOT_ALLOWED");
+    expect(evil.body).toMatchObject({
+      code: "REDIRECT_URI_NOT_ALLOWED",
+      message:
+        "The redirect address is not allowed. Upload a CSV exported from your bank to continue.",
+      details: { allowed: [REDIRECT] },
+    });
 
     const ok = await t.as.post(`/api/companies/${t.company.id}/bank-connections/connect`, {
       provider: "lean",

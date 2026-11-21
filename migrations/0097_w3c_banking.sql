@@ -105,15 +105,45 @@ UPDATE "bank_transactions" SET "match_status" = 'suggested'
 -- ── R06-01: GL link comes from the managed bank account ───────────────────────
 -- Clear stale matches above so their GL links are repaired on the first pass.
 -- A UUID foreign key alone does not guarantee company ownership.
--- Preserve the cached GL on already allocated lines when replaying this migration.
+-- Preserve allocations and legacy match references. The historical reconciled NULL cache
+-- backfill still applies before allocations are created.
+-- The JSON lookup handles inventory_account_id, which first exists at 0101 on a fresh install.
+WITH RECURSIVE target_chain AS (
+  SELECT a."id" AS target_id, a."company_id", a."code", a."parent_id",
+         a."is_vat_account" AND a."vat_type" IN ('input', 'output') AS is_vat_control,
+         0 AS depth
+    FROM "accounts" a
+   WHERE EXISTS (SELECT 1 FROM "bank_accounts" b WHERE b."gl_account_id" = a."id")
+  UNION ALL
+  SELECT c.target_id, c."company_id", p."code", p."parent_id",
+         p."is_vat_account" AND p."vat_type" IN ('input', 'output'), c.depth + 1
+    FROM target_chain c
+    JOIN "accounts" p ON p."id" = c."parent_id" AND p."company_id" = c."company_id"
+   WHERE c.depth < 8
+)
 UPDATE "bank_transactions" bt
    SET "bank_account_id" = gl."id"
   FROM "bank_accounts" ba
   JOIN "accounts" gl ON gl."id" = ba."gl_account_id" AND gl."company_id" = ba."company_id"
  WHERE bt."bank_statement_account_id" = ba."id"
    AND bt."company_id" = ba."company_id"
+   AND gl."is_active" = true AND gl."is_archived" = false
+   AND gl."type" = 'asset' AND gl."sub_type" IN ('bank', 'cash')
+   AND NOT EXISTS (
+     SELECT 1 FROM target_chain c WHERE c.target_id = gl."id"
+       AND (c."code" IN ('1040', '2010', '1070', '1050', '2020', '2015', '2030', '2032', '2034', '2036')
+         OR c.is_vat_control)
+   )
+   AND NOT EXISTS (
+     SELECT 1 FROM "products" p
+      WHERE p."company_id" = gl."company_id" AND to_jsonb(p)->>'inventory_account_id' = gl."id"::text
+   )
    AND bt."bank_account_id" IS DISTINCT FROM gl."id"
-   AND (bt."bank_account_id" IS NULL OR bt."is_reconciled" = false)
+   AND (
+     (bt."is_reconciled" = true AND bt."bank_account_id" IS NULL)
+     OR (bt."is_reconciled" = false AND bt."matched_journal_entry_id" IS NULL
+         AND bt."matched_invoice_id" IS NULL AND bt."matched_receipt_id" IS NULL)
+   )
    AND NOT EXISTS (
      SELECT 1 FROM "bank_transaction_matches" m
       WHERE m."bank_transaction_id" = bt."id" AND m."status" IN ('active', 'pending')
@@ -191,16 +221,24 @@ WITH inserted AS (
          abs(bt."amount"),
          bt."matched_journal_entry_id",
          ip."id",
-         COALESCE(je."source" = 'bank_reconciliation' AND je."source_id" = bt."id", false),
+         bt."matched_invoice_id" IS NULL AND bt."matched_receipt_id" IS NULL
+           AND COALESCE(je."source" = 'bank_reconciliation' AND je."source_id" = bt."id", false),
          'active',
          bt."created_at"
     FROM "bank_transactions" bt
-    LEFT JOIN "journal_entries" je ON je."id" = bt."matched_journal_entry_id"
+    LEFT JOIN "journal_entries" je
+      ON je."id" = bt."matched_journal_entry_id" AND je."company_id" = bt."company_id"
+    LEFT JOIN "invoices" inv
+      ON inv."id" = bt."matched_invoice_id" AND inv."company_id" = bt."company_id"
+    -- A journal can be shared. Only an unambiguous owned invoice/payment/journal triple
+    -- supplies a payment ID. Migration 0139 records ambiguous and unsafe associations.
     LEFT JOIN LATERAL (
-      SELECT p."id" FROM "invoice_payments" p
-       WHERE p."journal_entry_id" = bt."matched_journal_entry_id"
-         AND bt."matched_invoice_id" IS NOT NULL
-       LIMIT 1
+      SELECT (array_agg(p."id"))[1] AS id
+        FROM "invoice_payments" p
+       WHERE p."company_id" = bt."company_id"
+         AND p."journal_entry_id" = je."id"
+         AND p."invoice_id" = inv."id"
+      HAVING count(*) = 1
     ) ip ON true
    WHERE bt."is_reconciled" = true
      AND NOT EXISTS (

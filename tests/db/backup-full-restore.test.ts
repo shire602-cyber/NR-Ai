@@ -119,6 +119,75 @@ describe("W5-B backups", () => {
     expect(dl.text).toBe(openSnapshot(row.data_snapshot, row.checksum).json);
   });
 
+  it.each([
+    { version: "1.0", hasFindings: false },
+    { version: "1.0", hasFindings: true },
+    { version: "2.0", hasFindings: false },
+    { version: "2.0", hasFindings: true },
+  ])(
+    "seals plaintext v$version downloads on request (findings: $hasFindings)",
+    async ({ version, hasFindings }) => {
+      const owner = await h.createTenant();
+      const b = await backup(owner);
+      const dataKey = version === "1.0" ? "data" : "tables";
+      const tables = { invoices: [{ customer_name: "Archived customer عميل" }] };
+      const snapshot = { version, companyId: owner.company.id, [dataKey]: tables };
+      const archived = JSON.stringify(
+        hasFindings
+          ? {
+              ...snapshot,
+              [dataKey]: {
+                ...tables,
+                bank_gl_migration_findings: [{ details: { statement_company_id: randomUUID() } }],
+              },
+            }
+          : snapshot,
+        null,
+        2
+      );
+      const checksum = createHash("sha256").update(archived).digest("hex");
+      await h.sql(
+        `UPDATE backups SET data_snapshot = $2, checksum = $3, encrypted = false, format_version = $4
+       WHERE id = $1`,
+        [b.id, archived, checksum, version]
+      );
+
+      const json = await owner.as.get(`/api/backups/${b.id}/download`);
+      expect(json.status, json.text).toBe(200);
+      expect(json.text).toBe(hasFindings ? JSON.stringify(snapshot) : archived);
+      const digest = createHash("sha256").update(json.text).digest("base64");
+      expect(json.headers.get("Content-Digest")).toBe(hasFindings ? `sha-256=:${digest}:` : null);
+      const encrypted = await owner.as.get(`/api/backups/${b.id}/download?format=encrypted`);
+      expect(encrypted.status, encrypted.text).toBe(200);
+      expect(encrypted.headers.get("Content-Type")).toContain("application/octet-stream");
+      expect(encrypted.headers.get("Content-Disposition")).toMatch(/\.muhbak"$/);
+      expect(encrypted.headers.get("Content-Digest")).toBeNull();
+      expect(encrypted.text).toMatch(/^enc:v1:/);
+      expect(encrypted.text).not.toContain("Archived customer");
+      const { openSnapshot } = await import("../../server/services/backup.service");
+      const exportedChecksum = createHash("sha256").update(json.text).digest("hex");
+      expect(openSnapshot(encrypted.text, exportedChecksum).json).toBe(json.text);
+
+      const [record] = await h.sql(
+        `SELECT data_snapshot, checksum, encrypted, format_version FROM backups WHERE id = $1`,
+        [b.id]
+      );
+      expect(record).toEqual({
+        data_snapshot: archived,
+        checksum,
+        encrypted: false,
+        format_version: version,
+      });
+      const [audit] = await h.sql(
+        `SELECT count(*)::int AS count FROM activity_logs
+       WHERE company_id = $1 AND entity_type = 'backup' AND entity_id = $2
+         AND description = $3`,
+        [owner.company.id, b.id, `Downloaded backup (encrypted): ${b.name}`]
+      );
+      expect(audit.count).toBe(1);
+    }
+  );
+
   it("excludes operator bank migration findings from tenant exports", async () => {
     const owner = await h.createTenant();
     const other = await h.createSecondTenant();

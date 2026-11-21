@@ -222,6 +222,96 @@ describe("W3-C banking: match and unmatch integrity", () => {
     expect(await liveEntries(t.company.id, "payment")).toHaveLength(1);
   });
 
+  it.each(["wrong invoice payment", "shared payment journal"])(
+    "requires review before unmatching an invoice allocation with a %s",
+    async (problem) => {
+      const t = await vatTenant();
+      const ba = await bankAccount(t);
+      const first = await invoice(t, 1000);
+      const second = await invoice(t, 2000);
+      await importCsv(t, ba.id, [
+        ["2026-10-06", "First customer payment", "", "1050.00"],
+        ["2026-10-07", "Second customer payment", "", "2100.00"],
+      ]);
+      const firstLine = await line(t, ba.id, "First customer payment");
+      const secondLine = await line(t, ba.id, "Second customer payment");
+      for (const [txn, inv] of [
+        [firstLine, first],
+        [secondLine, second],
+      ] as const) {
+        const result = await t.as.post(`${base(t)}/bank-statements/${txn.id}/match`, {
+          matchedType: "invoice",
+          matchedId: inv.id,
+        });
+        expect(result.status, result.text).toBe(201);
+      }
+      const [firstMatch, secondMatch] = await h.sql<{
+        id: string;
+        payment_id: string;
+        journal_entry_id: string;
+      }>(
+        `SELECT id, payment_id, journal_entry_id FROM bank_transaction_matches
+         WHERE bank_transaction_id IN ($1, $2) ORDER BY (bank_transaction_id = $1) DESC`,
+        [firstLine.id, secondLine.id]
+      );
+      if (problem === "wrong invoice payment") {
+        await h.sql(`UPDATE bank_transaction_matches SET payment_id = $1 WHERE id = $2`, [
+          secondMatch.payment_id,
+          firstMatch.id,
+        ]);
+      } else {
+        // Both allocations still identify their exact invoice/payment/journal triple.
+        await h.sql(`UPDATE invoice_payments SET journal_entry_id = $1 WHERE id = $2`, [
+          firstMatch.journal_entry_id,
+          secondMatch.payment_id,
+        ]);
+        await h.sql(`UPDATE bank_transaction_matches SET journal_entry_id = $1 WHERE id = $2`, [
+          firstMatch.journal_entry_id,
+          secondMatch.id,
+        ]);
+        await h.sql(`UPDATE bank_transactions SET matched_journal_entry_id = $1 WHERE id = $2`, [
+          firstMatch.journal_entry_id,
+          secondLine.id,
+        ]);
+        const { reverseInvoicePayment } =
+          await import("../../server/services/invoice-payment.service");
+        await expect(
+          reverseInvoicePayment({
+            companyId: t.company.id,
+            paymentId: firstMatch.payment_id,
+            actorId: t.user.id,
+            reason: "Shared journal rehearsal",
+          })
+        ).rejects.toMatchObject({ code: "PAYMENT_REVERSAL_REVIEW_REQUIRED" });
+        const secondUnmatch = await t.as.delete(
+          `${base(t)}/bank-statements/${secondLine.id}/match`
+        );
+        expect(secondUnmatch.status, secondUnmatch.text).toBe(409);
+        expect(secondUnmatch.body.code).toBe("PAYMENT_REVERSAL_REVIEW_REQUIRED");
+      }
+
+      const result = await t.as.delete(`${base(t)}/bank-statements/${firstLine.id}/match`);
+      expect(result.status, result.text).toBe(409);
+      expect(result.body.code).toBe("PAYMENT_REVERSAL_REVIEW_REQUIRED");
+      expect((await lines(t, ba.id)).every((txn) => txn.isReconciled)).toBe(true);
+      expect(await invoiceStatus(first.id)).toBe("paid");
+      expect(await invoiceStatus(second.id)).toBe("paid");
+      expect(await glBalance(t.company.id, ba.glAccountId)).toBe(3150);
+      expect(
+        await h.sql(`SELECT id FROM invoice_payments WHERE id IN ($1, $2)`, [
+          firstMatch.payment_id,
+          secondMatch.payment_id,
+        ])
+      ).toHaveLength(2);
+      expect(
+        await h.sql(`SELECT id FROM journal_entries WHERE reversed_entry_id IN ($1, $2)`, [
+          firstMatch.journal_entry_id,
+          secondMatch.journal_entry_id,
+        ])
+      ).toEqual([]);
+    }
+  );
+
   it("[R06-03] an inward transfer matching a sent invoice pays it, debits the bank GL and never links the revenue entry", async () => {
     const t = await vatTenant();
     const ba = await bankAccount(t);

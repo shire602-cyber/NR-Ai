@@ -20,6 +20,8 @@ const journal = JSON.parse(readFileSync(path.join(migrationsFolder, "meta/_journ
 const baseline = "0088_emirate_no_default";
 const banking = "0097_w3c_banking";
 const historicalTail = "0137_combine_portal_invitations_and_settlement_indexes";
+const previousBankRepair = "0138_repair_bank_gl_links";
+const previousBankRepairHash = "424c89e89986386c3e2891cf9bc9c3b28e718bb006bd0434b0991e63bd90400d";
 // Preserve the exact versions from a5e75c2104c846ed5eae71dd0b247161413057b7 so an
 // already-applied database carries the original hashes even in a shallow checkout.
 const historicalHashes = {
@@ -30,6 +32,8 @@ const historicalHashes = {
 const baselineCount = journal.entries.findIndex(({ tag }) => tag === baseline) + 1;
 const bankingCount = journal.entries.findIndex(({ tag }) => tag === banking) + 1;
 const historicalCount = journal.entries.findIndex(({ tag }) => tag === historicalTail) + 1;
+const previousBankRepairCount =
+  journal.entries.findIndex(({ tag }) => tag === previousBankRepair) + 1;
 const files = readMigrationFiles({ migrationsFolder });
 const image = "postgres:16-bookworm";
 const name = "nr-migration-rehearsal-" + randomBytes(8).toString("hex");
@@ -383,14 +387,108 @@ async function timePendingFiles(expectedFixture) {
 }
 
 async function checkBankingGuards() {
-  createDatabase("banking_guard", "upgrade");
+  const database = "banking_guard";
+  createDatabase(database, "upgrade");
+  fixture(database, "seed-bank-payment-links.sql");
+  fixture(database, "seed-bank-gl-edges.sql");
   const folder = stageMigrations("banking-guard", bankingCount);
   await timed("Banking migration through " + banking, () =>
-    applyStagedMigrations("banking_guard", folder)
+    applyStagedMigrations(database, folder)
   );
-  await verifyLedger("banking_guard", files.slice(0, bankingCount));
-  fixture("banking_guard", "assert-0097.sql");
+  await verifyLedger(database, files.slice(0, bankingCount));
+  fixture(database, "assert-0097.sql");
+  fixture(database, "assert-bank-payment-links.sql");
+  fixture(database, "assert-bank-gl-edges.sql");
   console.log("0097 tenant guards verified before forward repair");
+  console.log("Shared posting links and ambiguous payment candidate verified");
+
+  await applyRelease(database);
+  await verifyLedger(database);
+  fixture(database, "assert-bank-payment-findings.sql");
+  fixture(database, "assert-bank-gl-eligibility-findings.sql");
+  const before = await databaseState(database);
+  await timed("Ordered SQL replay with banking edge cases", () =>
+    replaySql(database, baselineCount)
+  );
+  verifyState(await databaseState(database), before, "Ordered SQL replay with banking edge cases");
+}
+
+async function checkRecordedBankAudit() {
+  const database = "recorded_bank_audit";
+  await restore(database);
+  fixture(database, "seed-bank-payment-links.sql");
+  const folder = stageMigrations("historical-bank-repair", previousBankRepairCount, {
+    ...historicalHashes,
+    [previousBankRepair]: previousBankRepairHash,
+  });
+  await timed("Apply original banking migrations through 0138", () =>
+    applyStagedMigrations(database, folder)
+  );
+  const originalFiles = readMigrationFiles({ migrationsFolder: folder });
+  await verifyLedger(database, originalFiles);
+
+  const mismatchedLinks = Number(
+    psql(
+      database,
+      [
+        "SELECT count(*) FROM bank_transaction_matches m",
+        "JOIN invoice_payments p ON p.id = m.payment_id",
+        "WHERE m.bank_transaction_id IN (md5('nr-rehearsal:bank-payment:line:shared-a')::uuid,",
+        "md5('nr-rehearsal:bank-payment:line:shared-b')::uuid) AND p.invoice_id <> m.target_id",
+      ].join(" ")
+    )
+  );
+  assert.ok(
+    mismatchedLinks > 0,
+    "Expected the historical lookup to mislink a shared-journal payment"
+  );
+
+  const before = await databaseState(database);
+  await timed("Audit recorded bank payment links", () =>
+    applyStagedMigrations(database, migrationsFolder)
+  );
+  await verifyLedger(database, [...originalFiles, ...files.slice(previousBankRepairCount)]);
+  fixture(database, "assert-bank-payment-findings.sql");
+  assert.equal(
+    Number(
+      psql(
+        database,
+        [
+          "SELECT count(*) FROM bank_gl_migration_findings f",
+          "CROSS JOIN LATERAL jsonb_array_elements(f.details->'allocations') a(data)",
+          "WHERE f.kind = 'invoice_payment_link_review' AND (a.data->'problems') ? 'payment_link_mismatch'",
+        ].join(" ")
+      )
+    ),
+    mismatchedLinks,
+    "Record every historically mislinked payment"
+  );
+
+  const after = await databaseState(database);
+  const auditChanges = [
+    qualifiedName("public", "bank_gl_migration_findings"),
+    qualifiedName("drizzle", "__drizzle_migrations"),
+    ledgerSequence,
+  ];
+  const unchangedBefore = { ...before, data: { ...before.data } };
+  const unchangedAfter = { ...after, data: { ...after.data } };
+  for (const key of auditChanges) {
+    assert.notDeepEqual(
+      unchangedBefore.data[key],
+      unchangedAfter.data[key],
+      "Audit must change " + key
+    );
+    delete unchangedBefore.data[key];
+    delete unchangedAfter.data[key];
+  }
+  verifyState(unchangedAfter, unchangedBefore, "Audit of recorded bank matches");
+  await timed("Replay recorded bank payment audit", () =>
+    replaySql(database, previousBankRepairCount)
+  );
+  verifyState(await databaseState(database), after, "Replay of recorded bank payment audit");
+  console.log(
+    "0139 recorded historical payment risks without changing persisted allocations or journals"
+  );
 }
 
 async function checkHistoricalUpgrade() {
@@ -406,6 +504,7 @@ async function checkHistoricalUpgrade() {
   fixture(database, "assert-historical-bank.sql");
   console.log("Original 0097 hash and incorrect legacy GL link verified");
   fixture(database, "seed-forward-bank.sql");
+  fixture(database, "seed-bank-gl-edges.sql");
   const preserved = fixture(database, "snapshot.sql");
 
   await timed("Base-to-head release migration", () => applyRelease(database));
@@ -420,6 +519,8 @@ async function checkHistoricalUpgrade() {
   fixture(database, "assert-0097.sql");
   fixture(database, "assert-bank-findings.sql");
   fixture(database, "assert-forward-bank.sql");
+  fixture(database, "assert-bank-gl-edges.sql");
+  fixture(database, "assert-bank-gl-eligibility-findings.sql");
   console.log(
     "Base-to-head ledger added " +
       journal.entries
@@ -435,6 +536,7 @@ async function checkHistoricalUpgrade() {
   await timed("Ordered SQL replay with live allocations", () => replaySql(database, baselineCount));
   verifyState(await databaseState(database), before, "Ordered SQL replay with live allocations");
   fixture(database, "assert-forward-bank.sql");
+  fixture(database, "assert-bank-gl-edges.sql");
   console.log("Live allocation state and GL links preserved");
 }
 
@@ -483,7 +585,8 @@ async function rehearse() {
     baselineCount > 0 &&
       baselineCount < bankingCount &&
       bankingCount < historicalCount &&
-      historicalCount < files.length,
+      historicalCount < previousBankRepairCount &&
+      previousBankRepairCount < files.length,
     "Expected ordered baseline, banking, and historical release entries in the journal"
   );
   output(
@@ -565,6 +668,7 @@ async function rehearse() {
   await checkTrackedReplay("upgrade");
   await checkRawReplay();
   await checkHistoricalUpgrade();
+  await checkRecordedBankAudit();
   console.log("Migration rehearsal passed");
 }
 

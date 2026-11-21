@@ -101,7 +101,8 @@ WITH fixture AS (
     SELECT b.id, b.company_id, b.bank_statement_account_id, b.transaction_date, b.description,
            b.amount, b.balance, b.reference, b.import_source, b.matched_invoice_id, b.matched_journal_entry_id,
            CASE WHEN b.id NOT IN (f.legacy_fee_id, md5('nr-rehearsal:bank-line:4:1')::uuid,
-                                  md5('nr-rehearsal:bank-line:1:3')::uuid)
+                                  md5('nr-rehearsal:bank-line:1:3')::uuid,
+                                  md5('nr-rehearsal:bank-edge:line:active-cash')::uuid)
                 THEN b.bank_account_id END AS bank_account_id,
            CASE WHEN NOT repair.stale_match THEN b.is_reconciled END AS is_reconciled,
            CASE WHEN NOT repair.stale_match THEN b.match_status END AS match_status

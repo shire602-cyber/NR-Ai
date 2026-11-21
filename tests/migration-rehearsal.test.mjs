@@ -36,17 +36,26 @@ test("rehearses the journal and rollback entirely on disposable PostgreSQL", () 
   assert.match(result.stdout, /Clean ledger \d+ files in journal order/);
   assert.match(result.stdout, /Backup restore verified/);
   assert.match(result.stdout, /0097 tenant guards verified before forward repair/);
+  assert.match(result.stdout, /Shared posting links and ambiguous payment candidate verified/);
+  assert.match(result.stdout, /Ordered SQL replay with banking edge cases \d+ ms/);
   assert.match(result.stdout, /Timing pass and Drizzle Kit schemas match/);
   assert.match(result.stdout, /Transaction rollback verified at 0134/);
   assert.match(result.stdout, /Rollback restore verified/);
   assert.match(result.stdout, /Seeded preservation and backfills verified/);
   assert.match(result.stdout, /Ordered SQL replay \d+ files \d+ ms/);
   assert.match(result.stdout, /Original 0097 hash and incorrect legacy GL link verified/);
-  assert.match(result.stdout, /Base-to-head ledger added 0138_repair_bank_gl_links/);
+  assert.match(
+    result.stdout,
+    /Base-to-head ledger added 0138_repair_bank_gl_links, 0139_audit_bank_match_links/
+  );
   assert.match(result.stdout, /Forward GL repair and tenant mismatch findings verified/);
   assert.match(result.stdout, /Tracked rerun historical_upgrade \d+ ms/);
   assert.match(result.stdout, /Base-to-head direct SQL replay \d+ ms/);
   assert.match(result.stdout, /Ordered SQL replay with live allocations \d+ ms/);
   assert.match(result.stdout, /Live allocation state and GL links preserved/);
+  assert.match(
+    result.stdout,
+    /0139 recorded historical payment risks without changing persisted allocations or journals/
+  );
   assert.match(result.stdout, /Migration rehearsal passed/);
 });
