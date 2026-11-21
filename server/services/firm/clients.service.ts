@@ -37,6 +37,7 @@ import {
   grantCompanyAccess,
   listAccessibleClientIds,
   listFirmMembers,
+  lockFirmClientAccess,
   resolveFirmContext,
   revokeCompanyAccess,
   type FirmActor,
@@ -91,28 +92,36 @@ export async function linkNewClientToFirm(ctx: FirmContext, companyId: string): 
 
 /** Firm side: end the firm's active link to a company. */
 export async function endClientLink(
-  ctx: FirmContext,
+  ctx: Pick<FirmContext, "firmId" | "isNr">,
   companyId: string,
   actorId: string,
-  reason: string | null
+  reason: string | null,
+  linkId?: string
 ): Promise<void> {
-  await db
-    .update(firmClientLinks)
-    .set({
-      status: "revoked",
-      revokedBy: actorId,
-      revokedAt: new Date(),
-      revokeReason: reason,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(firmClientLinks.firmId, ctx.firmId),
-        eq(firmClientLinks.companyId, companyId),
-        eq(firmClientLinks.status, "active")
+  await db.transaction(async (tx) => {
+    await lockFirmClientAccess(tx, companyId);
+    const endedAt = new Date();
+    const [revoked] = await tx
+      .update(firmClientLinks)
+      .set({
+        status: "revoked",
+        revokedBy: actorId,
+        revokedAt: endedAt,
+        revokeReason: reason,
+        updatedAt: endedAt,
+      })
+      .where(
+        and(
+          eq(firmClientLinks.firmId, ctx.firmId),
+          eq(firmClientLinks.companyId, companyId),
+          eq(firmClientLinks.status, "active"),
+          linkId ? eq(firmClientLinks.id, linkId) : undefined
+        )
       )
-    );
-  await revokeCompanyAccess({ firmId: ctx.firmId, isNr: ctx.isNr, companyId });
+      .returning({ id: firmClientLinks.id });
+    if (linkId && !revoked) throw new DomainError("TRANSACTION_CONFLICT", 409);
+    await revokeCompanyAccess({ firmId: ctx.firmId, isNr: ctx.isNr, companyId, endedAt }, tx);
+  });
 }
 
 // ─── Invitations (firm side) ─────────────────────────────────────────────────
@@ -188,7 +197,7 @@ export async function withdrawFirmLink(ctx: FirmContext, linkId: string): Promis
     .limit(1);
   if (!link) throw new DomainError("LINK_NOT_FOUND", 404);
   if (link.status === "active" && link.companyId) {
-    await endClientLink(ctx, link.companyId, ctx.userId, "Ended by firm");
+    await endClientLink(ctx, link.companyId, ctx.userId, "Ended by firm", link.id);
     return;
   }
   if (link.status === "invited") {
@@ -356,17 +365,13 @@ export async function revokeLinkByClient(
     .where(and(eq(firmClientLinks.id, linkId), eq(firmClientLinks.companyId, companyId)))
     .limit(1);
   if (!link || link.link.status !== "active") throw new DomainError("LINK_NOT_FOUND", 404);
-  await db
-    .update(firmClientLinks)
-    .set({
-      status: "revoked",
-      revokedBy: userId,
-      revokedAt: new Date(),
-      revokeReason: reason,
-      updatedAt: new Date(),
-    })
-    .where(eq(firmClientLinks.id, linkId));
-  await revokeCompanyAccess({ firmId: link.link.firmId, isNr: link.isNr, companyId });
+  await endClientLink(
+    { firmId: link.link.firmId, isNr: link.isNr },
+    companyId,
+    userId,
+    reason,
+    linkId
+  );
 }
 
 // ─── Firm onboarding ─────────────────────────────────────────────────────────

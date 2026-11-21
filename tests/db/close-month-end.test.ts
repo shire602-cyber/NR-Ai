@@ -5,8 +5,8 @@
  */
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
-import { postJournalEntry, useHarness, type Tenant } from "./harness";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { accountByCode, postJournalEntry, useHarness, type Tenant } from "./harness";
 import { repoRoot } from "./pg-admin";
 
 const h = useHarness();
@@ -262,6 +262,159 @@ describe("lock policy", () => {
 });
 
 describe("year-end close", () => {
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "includes an AED 100 journal that commits while the year-end close waits for the period lock",
+    async () => {
+      const tenant = await h.createTenant({ name: "CloseConcurrentProfit" });
+      const companyId = tenant.company.id;
+      const actorId = tenant.user.id;
+      const url = `/api/companies/${companyId}/month-end`;
+      const settings = await tenant.as.put(`${url}/settings`, {
+        postYearEndClosingEntry: true,
+        requireChecklistToLock: false,
+      });
+      expect(settings.status, settings.text).toBe(200);
+      const [bank, income] = await Promise.all([
+        accountByCode(tenant, "1020"),
+        accountByCode(tenant, "4020"),
+      ]);
+      const { postJournal } = await import("../../server/ledger");
+      const { withLedgerTx } = await import("../../server/ledger/tx");
+      const journal = (amount: number) => ({
+        companyId,
+        date: "2025-06-01",
+        status: "posted" as const,
+        lines: [
+          { accountId: bank.id, debit: amount },
+          { accountId: income.id, credit: amount },
+        ],
+      });
+      await postJournal(journal(200), { actorId });
+      let signalInserted = () => {};
+      const inserted = new Promise<void>((resolve) => {
+        signalInserted = resolve;
+      });
+      let releasePosting = () => {};
+      const release = new Promise<void>((resolve) => {
+        releasePosting = resolve;
+      });
+      const posting = withLedgerTx(async (tx) => {
+        await postJournal(journal(100), { actorId, tx });
+        signalInserted();
+        await release;
+      });
+      await Promise.race([inserted, posting]);
+      const closing = tenant.as.post(`${url}/year-end-close`, {
+        fiscalYearEnd: "2025-12-31",
+        hardClose: true,
+      });
+      try {
+        await vi.waitFor(
+          async () => {
+            const [waiting] = await h.sql<{ waiting: boolean }>(
+              `SELECT EXISTS (
+               SELECT 1 FROM pg_locks
+                WHERE locktype = 'advisory' AND mode = 'ExclusiveLock' AND NOT granted
+                  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+             ) AS waiting`
+            );
+            expect(waiting.waiting).toBe(true);
+          },
+          { timeout: 6000 }
+        );
+      } finally {
+        releasePosting();
+        await Promise.all([posting, closing]);
+      }
+      const close = await closing;
+      expect(close.status, close.text).toBe(201);
+      expect(close.body.summary.netIncome).toBe(300);
+      expect(close.body.record.netIncome).toBe(300);
+      const [retainedEarnings] = await h.sql<{ credit: string }>(
+        `SELECT jl.credit::text AS credit
+           FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+          WHERE jl.entry_id = $1 AND a.code = '3020'`,
+        [close.body.closingEntryId]
+      );
+      expect(Number(retainedEarnings.credit)).toBe(300);
+      await expect(postJournal(journal(100), { actorId })).rejects.toMatchObject({
+        code: "PERIOD_LOCKED",
+      });
+    }
+  );
+
+  it("rolls back failed year-end closes and reopens and lets each operation retry cleanly", async () => {
+    const tenant = await h.createTenant({ name: "CloseAtomicRollback" });
+    const companyId = tenant.company.id;
+    const { closeFiscalYear, reopenFiscalYear, updateCloseSettings } =
+      await import("../../server/services/month-end.service");
+    await updateCloseSettings(companyId, { postYearEndClosingEntry: true }, tenant.user.id);
+    await postJournalEntry(tenant, {
+      date: "2025-06-01",
+      description: "June revenue",
+      lines: [
+        { code: "1020", debit: 200 },
+        { code: "4020", credit: 200 },
+      ],
+    });
+
+    // Fail the last write after the closing journal and fiscal-year record have been attempted.
+    await h.sql(`ALTER TABLE month_end_close ADD CONSTRAINT test_year_close_lock_write
+                 CHECK (status <> 'locked') NOT VALID`);
+    try {
+      await expect(closeFiscalYear(companyId, "2025-12-31", tenant.user.id)).rejects.toMatchObject({
+        cause: { code: "23514", constraint: "test_year_close_lock_write" },
+      });
+      const [state] = await h.sql<{ journals: number; closes: number; locks: number }>(
+        `SELECT
+           (SELECT COUNT(*)::int FROM journal_entries WHERE company_id = $1 AND source = 'year_end_close') AS journals,
+           (SELECT COUNT(*)::int FROM fiscal_year_closes WHERE company_id = $1) AS closes,
+           (SELECT COUNT(*)::int FROM month_end_close WHERE company_id = $1) AS locks`,
+        [companyId]
+      );
+      expect(state).toEqual({ journals: 0, closes: 0, locks: 0 });
+    } finally {
+      await h.sql("ALTER TABLE month_end_close DROP CONSTRAINT test_year_close_lock_write");
+    }
+
+    const retry = await closeFiscalYear(companyId, "2025-12-31", tenant.user.id);
+    expect(retry.record.netIncome).toBe(200);
+    expect(retry.posted).toBe(true);
+    expect(retry.lock.status).toBe("locked");
+
+    await h.sql(`ALTER TABLE fiscal_year_closes ADD CONSTRAINT test_year_reopen_record_write
+                 CHECK (status <> 'reopened') NOT VALID`);
+    try {
+      await expect(
+        reopenFiscalYear(companyId, "2025-12-31", tenant.user.id, "Auditor adjustment")
+      ).rejects.toMatchObject({
+        cause: { code: "23514", constraint: "test_year_reopen_record_write" },
+      });
+      const [state] = await h.sql<{ reversals: number; close: string; period: string }>(
+        `SELECT
+           (SELECT COUNT(*)::int FROM journal_entries WHERE company_id = $1 AND source_id = $2) AS reversals,
+           (SELECT status FROM fiscal_year_closes WHERE company_id = $1) AS close,
+           (SELECT status FROM month_end_close WHERE company_id = $1) AS period`,
+        [companyId, retry.closingEntryId]
+      );
+      expect(state).toEqual({ reversals: 0, close: "closed", period: "locked" });
+    } finally {
+      await h.sql("ALTER TABLE fiscal_year_closes DROP CONSTRAINT test_year_reopen_record_write");
+    }
+    const reopened = await reopenFiscalYear(
+      companyId,
+      "2025-12-31",
+      tenant.user.id,
+      "Auditor adjustment"
+    );
+    expect(reopened.status).toBe("reopened");
+    const [reversal] = await h.sql<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM journal_entries WHERE company_id = $1 AND source_id = $2`,
+      [companyId, retry.closingEntryId]
+    );
+    expect(reversal.n).toBe(1);
+  });
+
   it("[R08-02][R11-14] posted year-end close keeps CT at 20,250 and the roll-forward does not double count", async () => {
     expect(await ctTax()).toBe(20_250);
     const settings = await t.as.put(`${base}/month-end/settings`, {

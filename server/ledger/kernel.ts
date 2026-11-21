@@ -17,6 +17,11 @@ import { filsToNumber, toFils } from "../../shared/money";
 import { db } from "../db";
 import { DomainError } from "../errors";
 import {
+  assertPeriodNotLocked,
+  getEffectiveLock,
+  lockPeriodPolicy,
+} from "../services/period-lock.service";
+import {
   assertLinesBalanced,
   assertNotFuture,
   isUuid,
@@ -43,17 +48,6 @@ import type {
   ReverseOptions,
   ReverseResult,
 } from "./types";
-
-// Period-lock service is loaded lazily: it imports month-end.service, which
-// imports storage, which delegates createJournalEntry to this module.
-export async function assertPeriodNotLocked(
-  companyId: string,
-  date: Date | string,
-  tx?: LedgerTx
-): Promise<void> {
-  const mod = await import("../services/period-lock.service");
-  await mod.assertPeriodNotLocked(companyId, date, tx);
-}
 
 /** Options only the kernel's own flows (reversal, legacy adapter) may set. */
 export interface InternalPostOptions {
@@ -268,6 +262,8 @@ export async function insertNormalizedEntry(
   internal: InternalPostOptions = {}
 ): Promise<PostJournalResult> {
   const actorId = actorOf(ctx);
+  // Year-end close/reopen takes this lock exclusively before posting a journal.
+  await lockPeriodPolicy(tx, n.companyId, "shared");
   if (n.idempotencyKey) {
     await lockIdempotencyKey(tx, n.companyId, n.idempotencyKey);
     const replay = await findByIdempotencyKey(tx, n.companyId, n.idempotencyKey);
@@ -516,6 +512,7 @@ export async function postDraft(
         "Only draft entries can be posted"
       );
     }
+    await lockPeriodPolicy(tx, pre.companyId, "shared");
     await assertPeriodNotLocked(pre.companyId, pre.date, tx);
     assertNotFuture(entryIso(pre));
     const raw = await loadLinesFils(tx, entryId);
@@ -610,7 +607,6 @@ async function resolveReversalDate(
     if (!opts.allowFutureDate) assertNotFuture(iso);
     return iso === origIso ? new Date(original.date) : at;
   }
-  const { getEffectiveLock, lockPeriodPolicy } = await import("../services/period-lock.service");
   await lockPeriodPolicy(tx, original.companyId, "shared");
   if (!(await getEffectiveLock(original.companyId, origIso, tx))) return new Date(original.date);
   return new Date(`${todayIso()}T00:00:00.000Z`);
@@ -657,22 +653,32 @@ async function reverseInTx(
   const lines = await loadLinesFils(tx, entryId);
   const mirrored: NormalizedLine[] = lines
     .filter((l) => l.debitFils !== 0 || l.creditFils !== 0)
-    .map((l) => ({
-      accountId: l.accountId,
-      debitFils: l.creditFils,
-      creditFils: l.debitFils,
-      description: l.description,
-      ...(l.lineKey ? { lineKey: l.lineKey, lineParams: l.lineParams } : {}),
-      costCenterId: l.costCenterId,
-      foreignCurrency: l.foreignCurrency,
-      foreignDebitFils: l.foreignCreditFils,
-      foreignCreditFils: l.foreignDebitFils,
-      exchangeRate: l.exchangeRate,
-      // WQ3: the reversal carries the same VAT-leg flag and CT treatment, so the CT workpaper
-      // and the VAT engine net the reversed line to zero.
-      ...(l.systemVat ? { systemVat: true } : {}),
-      ...(Object.keys(l.attributes).length ? { attributes: l.attributes } : {}),
-    }));
+    .flatMap((l) => {
+      const line: NormalizedLine = {
+        accountId: l.accountId,
+        debitFils: l.creditFils,
+        creditFils: l.debitFils,
+        description: l.description,
+        ...(l.lineKey ? { lineKey: l.lineKey, lineParams: l.lineParams } : {}),
+        costCenterId: l.costCenterId,
+        foreignCurrency: l.foreignCurrency,
+        foreignDebitFils: l.foreignCreditFils,
+        foreignCreditFils: l.foreignDebitFils,
+        exchangeRate: l.exchangeRate,
+        // WQ3: the reversal carries the same VAT-leg flag and CT treatment, so the CT workpaper
+        // and the VAT engine net the reversed line to zero.
+        ...(l.systemVat ? { systemVat: true } : {}),
+        ...(Object.keys(l.attributes).length ? { attributes: l.attributes } : {}),
+      };
+      if (line.debitFils > 0 && line.creditFils > 0) {
+        // Split the two sides of a historical line, preserving its gross movement.
+        return [
+          { ...line, creditFils: 0, foreignCreditFils: 0 },
+          { ...line, debitFils: 0, foreignDebitFils: 0 },
+        ];
+      }
+      return [line];
+    });
   if (mirrored.length === 0) {
     throw new DomainError(
       "ENTRY_HAS_NO_LINES",
@@ -849,6 +855,7 @@ export async function updateDraftEntry(
       status: "draft",
       source: pre.source,
     });
+    await lockPeriodPolicy(tx, pre.companyId, "shared");
     await assertPeriodNotLocked(pre.companyId, pre.date, tx);
     if (entryIso(pre) !== n.dateIso) await assertPeriodNotLocked(pre.companyId, n.dateAt, tx);
     await assertAccountsUsable(tx, pre.companyId, n.lines, false);

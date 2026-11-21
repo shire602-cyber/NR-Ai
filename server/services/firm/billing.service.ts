@@ -10,7 +10,7 @@
  * - Time entries (timer or manual) roll into WIP per client; billing WIP or a
  *   recurring engagement fee produces a service invoice (fils-exact, 5% VAT).
  */
-import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { DomainError } from "../../errors";
 import { fromFils, mulRate, sumFils, toFils } from "../../../shared/money";
@@ -30,10 +30,14 @@ import {
   type ServiceInvoice,
 } from "../../../shared/schema";
 import { normalizeCompanyRole } from "../../../shared/permissions";
+import { firmRoleHasPermission } from "../../../shared/access";
 import {
   accessibleClientCondition,
   accessibleClientsQuery,
   canAccessFirmClient,
+  lockFirmClientAccess,
+  lockFirmTimerUser,
+  resolveFirmContext,
   type FirmContext,
 } from "./scope";
 
@@ -209,7 +213,7 @@ export async function withdrawLetter(ctx: FirmContext, letterId: string) {
     .set({ status: "withdrawn", updatedAt: new Date() })
     .where(and(firmLetterScope(ctx, letterId), eq(firmEngagementLetters.status, letter.status)))
     .returning();
-  if (!row) throw new DomainError("LETTER_STATE_CHANGED", 409);
+  if (!row) throw new DomainError("TRANSACTION_CONFLICT", 409);
   return row;
 }
 
@@ -271,46 +275,53 @@ export async function respondToLetter(
   input: { decision: "accept" | "decline"; typedName?: string; ip?: string; userAgent?: string }
 ) {
   await assertClientSigner(user.id, companyId);
-  const [letter] = await db
-    .select()
-    .from(firmEngagementLetters)
-    .where(
-      and(eq(firmEngagementLetters.id, letterId), eq(firmEngagementLetters.companyId, companyId))
-    )
-    .limit(1);
+  const scope = and(
+    eq(firmEngagementLetters.id, letterId),
+    eq(firmEngagementLetters.companyId, companyId)
+  );
+  const [letter] = await db.select().from(firmEngagementLetters).where(scope).limit(1);
   if (!letter || letter.status === "draft" || letter.status === "withdrawn") {
     throw new DomainError("LETTER_NOT_FOUND", 404);
   }
   if (letter.status !== "sent") throw new DomainError("LETTER_ALREADY_DECIDED", 409);
-  if (input.decision === "decline") {
-    const [row] = await db
-      .update(firmEngagementLetters)
-      .set({ status: "declined", respondedAt: new Date(), updatedAt: new Date() })
-      .where(eq(firmEngagementLetters.id, letterId))
-      .returning();
-    return row;
-  }
   const typedName = (input.typedName ?? "").trim();
-  if (typedName.length < 2) throw new DomainError("TYPED_NAME_REQUIRED", 400);
+  if (input.decision === "accept" && typedName.length < 2) {
+    throw new DomainError("TYPED_NAME_REQUIRED", 400);
+  }
   return db.transaction(async (tx: typeof db) => {
-    let engagementId = letter.engagementId;
-    if (letter.feeAmount != null && Number(letter.feeAmount) > 0) {
+    const [sent] = await tx
+      .select()
+      .from(firmEngagementLetters)
+      .where(and(scope, eq(firmEngagementLetters.status, "sent")))
+      .for("update");
+    if (!sent) throw new DomainError("TRANSACTION_CONFLICT", 409);
+    const now = new Date();
+    if (input.decision === "decline") {
+      const [row] = await tx
+        .update(firmEngagementLetters)
+        .set({ status: "declined", respondedAt: now, updatedAt: now })
+        .where(scope)
+        .returning();
+      return row;
+    }
+    let engagementId = sent.engagementId;
+    if (sent.feeAmount != null && Number(sent.feeAmount) > 0) {
       const [existing] = await tx
         .select({ id: engagements.id })
         .from(engagements)
         .where(
           and(
             eq(engagements.companyId, companyId),
-            eq(engagements.firmId, letter.firmId),
+            eq(engagements.firmId, sent.firmId),
             eq(engagements.status, "active")
           )
         )
         .limit(1);
       const values = {
-        monthlyFee: Number(letter.feeAmount),
-        billingCycle: letter.billingCycle ?? "monthly",
-        nextBillingDate: new Date().toISOString().slice(0, 10),
-        updatedAt: new Date(),
+        monthlyFee: Number(sent.feeAmount),
+        billingCycle: sent.billingCycle ?? "monthly",
+        nextBillingDate: now.toISOString().slice(0, 10),
+        updatedAt: now,
       };
       if (existing) {
         await tx.update(engagements).set(values).where(eq(engagements.id, existing.id));
@@ -320,10 +331,10 @@ export async function respondToLetter(
           .insert(engagements)
           .values({
             companyId,
-            firmId: letter.firmId,
+            firmId: sent.firmId,
             engagementType: "full_service",
             status: "active",
-            startDate: new Date(),
+            startDate: now,
             ...values,
           })
           .returning({ id: engagements.id });
@@ -334,15 +345,15 @@ export async function respondToLetter(
       .update(firmEngagementLetters)
       .set({
         status: "accepted",
-        respondedAt: new Date(),
+        respondedAt: now,
         acceptedByUserId: user.id,
         acceptedName: typedName,
         acceptedIp: input.ip ?? null,
         acceptedUserAgent: input.userAgent?.slice(0, 500) ?? null,
         engagementId,
-        updatedAt: new Date(),
+        updatedAt: now,
       })
-      .where(eq(firmEngagementLetters.id, letterId))
+      .where(scope)
       .returning();
     return row;
   });
@@ -369,21 +380,21 @@ function timeEntryTaskScope(ctx: FirmContext, companyId: string, taskId: string)
 }
 
 async function insertScopedTimeEntry(
+  tx: Pick<typeof db, "execute" | "select">,
   ctx: FirmContext,
   input: TimeEntryInput,
   startedAt: Date | null
 ): Promise<FirmTimeEntry | undefined> {
   const status = startedAt ? "running" : "logged";
-  return db.transaction(async (tx) => {
-    // Resolve client and task access in the write statement's snapshot. The task lock keeps
-    // a concurrent deletion from invalidating the foreign key before the insert.
-    const taskScope = input.taskId
-      ? sql`AND EXISTS (
+  // Resolve client and task access in the write statement's snapshot. The task lock keeps
+  // a concurrent deletion from invalidating the foreign key before the insert.
+  const taskScope = input.taskId
+    ? sql`AND EXISTS (
           SELECT 1 FROM ${firmTasks}
            WHERE ${timeEntryTaskScope(ctx, input.companyId, input.taskId)} FOR KEY SHARE
         )`
-      : sql``;
-    const { rows } = await tx.execute<{ id: string }>(sql`
+    : sql``;
+  const { rows } = await tx.execute<{ id: string }>(sql`
       INSERT INTO firm_time_entries
         (firm_id, company_id, task_id, user_id, entry_date, minutes, description,
          billable, hourly_rate, status, started_at)
@@ -402,21 +413,21 @@ async function insertScopedTimeEntry(
       ON CONFLICT (user_id) WHERE status = 'running' DO NOTHING
       RETURNING id
     `);
-    if (!rows[0]) return undefined;
-    const [entry] = await tx
-      .select()
-      .from(firmTimeEntries)
-      .where(eq(firmTimeEntries.id, rows[0].id));
-    return entry;
-  });
+  if (!rows[0]) return undefined;
+  const [entry] = await tx.select().from(firmTimeEntries).where(eq(firmTimeEntries.id, rows[0].id));
+  return entry;
 }
 
-async function throwIfTimeEntryTargetUnavailable(ctx: FirmContext, input: TimeEntryInput) {
-  if (!(await canAccessFirmClient(ctx, input.companyId))) {
+async function throwIfTimeEntryTargetUnavailable(
+  ctx: FirmContext,
+  input: TimeEntryInput,
+  exec: Pick<typeof db, "select"> = db
+) {
+  if (!(await canAccessFirmClient(ctx, input.companyId, exec))) {
     throw new DomainError("CLIENT_NOT_FOUND", 404);
   }
   if (!input.taskId) return;
-  const [task] = await db
+  const [task] = await exec
     .select({ id: firmTasks.id })
     .from(firmTasks)
     .where(timeEntryTaskScope(ctx, input.companyId, input.taskId))
@@ -425,7 +436,7 @@ async function throwIfTimeEntryTargetUnavailable(ctx: FirmContext, input: TimeEn
 }
 
 export async function logTime(ctx: FirmContext, input: TimeEntryInput) {
-  const entry = await insertScopedTimeEntry(ctx, input, null);
+  const entry = await db.transaction((tx) => insertScopedTimeEntry(tx, ctx, input, null));
   if (entry) return entry;
   await throwIfTimeEntryTargetUnavailable(ctx, input);
   throw new DomainError("CONFLICT", 409);
@@ -435,25 +446,59 @@ export async function startTimer(
   ctx: FirmContext,
   input: { companyId: string; taskId?: string; description?: string; hourlyRate?: number }
 ) {
-  const now = new Date();
-  const entry = { ...input, entryDate: now.toISOString().slice(0, 10), minutes: 0 };
-  const row = await insertScopedTimeEntry(ctx, entry, now);
-  if (row) return row;
+  return db.transaction(async (tx) => {
+    await lockFirmTimerUser(tx, ctx.userId);
+    await lockFirmClientAccess(tx, input.companyId);
+    const current = await resolveFirmContext({ id: ctx.userId }, tx);
+    if (
+      !current ||
+      current.firmId !== ctx.firmId ||
+      (!current.platformAdmin && !firmRoleHasPermission(current.role, "firm.time.track"))
+    ) {
+      throw new DomainError("FIRM_PERMISSION_DENIED", 403);
+    }
+    const now = new Date();
+    const entry = { ...input, entryDate: now.toISOString().slice(0, 10), minutes: 0 };
+    const row = await insertScopedTimeEntry(tx, current, entry, now);
+    if (row) return row;
 
-  await throwIfTimeEntryTargetUnavailable(ctx, entry);
-  const [running] = await db
-    .select({ id: firmTimeEntries.id })
-    .from(firmTimeEntries)
-    .where(
-      and(
-        eq(firmTimeEntries.userId, ctx.userId),
-        eq(firmTimeEntries.firmId, ctx.firmId),
-        inArray(firmTimeEntries.companyId, accessibleClientsQuery(ctx)),
-        eq(firmTimeEntries.status, "running")
+    await throwIfTimeEntryTargetUnavailable(current, entry, tx);
+    const ownRunning = and(
+      eq(firmTimeEntries.userId, ctx.userId),
+      eq(firmTimeEntries.status, "running")
+    );
+    const accessible = accessibleClientsQuery(current);
+    // An older stranded timer lacks a trustworthy access-loss timestamp. Release the slot
+    // without inventing work hours or disclosing the previous client to the caller.
+    await tx
+      .update(firmTimeEntries)
+      .set({ status: "written_off", minutes: 0, billable: false, stoppedAt: now, updatedAt: now })
+      .where(
+        and(
+          ownRunning,
+          or(
+            ne(firmTimeEntries.firmId, current.firmId),
+            notInArray(firmTimeEntries.companyId, accessible)
+          )
+        )
+      );
+    const [running] = await tx
+      .select({ id: firmTimeEntries.id })
+      .from(firmTimeEntries)
+      .where(
+        and(
+          ownRunning,
+          eq(firmTimeEntries.firmId, current.firmId),
+          inArray(firmTimeEntries.companyId, accessible)
+        )
       )
-    )
-    .limit(1);
-  throw new DomainError("TIMER_ALREADY_RUNNING", 409, running && { entryId: running.id });
+      .limit(1);
+    if (running) throw new DomainError("TIMER_ALREADY_RUNNING", 409, { entryId: running.id });
+    // Recovery or a concurrent stop can free the slot after the initial insert attempt.
+    const started = await insertScopedTimeEntry(tx, current, entry, now);
+    if (started) return started;
+    throw new DomainError("TRANSACTION_CONFLICT", 409);
+  });
 }
 
 export async function stopTimer(ctx: FirmContext, entryId: string, now: Date = new Date()) {

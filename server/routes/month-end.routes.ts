@@ -686,7 +686,7 @@ export function registerMonthEndRoutes(app: Express) {
     authMiddleware,
     strictBody(unlockBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
+      const companyId = zUuid.parse(req.params.companyId);
       const periodEnd = resolveUnlockPeriodEnd(req.body);
       await doUnlock(req, res, companyId, periodEnd, req.body.reason);
     })
@@ -697,7 +697,7 @@ export function registerMonthEndRoutes(app: Express) {
     "/api/companies/:companyId/period-lock",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
+      const companyId = zUuid.parse(req.params.companyId);
       await requireAccess(req, companyId);
       const company = await loadCompany(companyId);
       const [lockThroughDate, locks, fiscalYears] = await Promise.all([
@@ -742,8 +742,8 @@ export function registerMonthEndRoutes(app: Express) {
     "/api/period-lock/list",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const companyId = req.query.companyId;
-      if (typeof companyId !== "string" || !/^[0-9a-f-]{36}$/i.test(companyId)) {
+      const company = zUuid.safeParse(req.query.companyId);
+      if (!company.success) {
         throw new DomainError(
           "COMPANY_ID_REQUIRED",
           400,
@@ -751,8 +751,8 @@ export function registerMonthEndRoutes(app: Express) {
           "companyId query parameter is required"
         );
       }
-      await requireAccess(req, companyId);
-      res.json(await listLockedPeriods(companyId));
+      await requireAccess(req, company.data);
+      res.json(await listLockedPeriods(company.data));
     })
   );
 }

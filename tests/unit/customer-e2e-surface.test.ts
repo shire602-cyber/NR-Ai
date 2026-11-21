@@ -68,7 +68,8 @@ describe("customer launch E2E surface", () => {
     expect(scriptSource).toContain("function isExpectedAnonymousAuthFailure(response)");
     expect(scriptSource).toContain('response.url().includes("/api/auth/refresh")');
     expect(scriptSource).toContain("status === 400 || status === 401");
-    expect(scriptSource).toContain("if (isExpectedAnonymousAuthFailure(r)) return;");
+    expect(scriptSource).toContain("if (!signedIn && isExpectedAnonymousAuthFailure(r)) return;");
+    expect(scriptSource).not.toContain("|| r.status() === 401");
   });
 
   it("fails before browser launch when full mode points at a remote URL without approval", () => {

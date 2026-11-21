@@ -97,7 +97,7 @@ export async function reviewRequest(
     })
     .where(and(scope, eq(firmDocumentRequests.status, row.status)))
     .returning();
-  if (!updated) throw new DomainError("REQUEST_STATE_CHANGED", 409);
+  if (!updated) throw new DomainError("TRANSACTION_CONFLICT", 409);
   return updated;
 }
 
@@ -139,13 +139,11 @@ export async function fulfilRequest(
   documentId: string
 ) {
   await assertMember(userId, companyId);
-  const [req] = await db
-    .select()
-    .from(firmDocumentRequests)
-    .where(
-      and(eq(firmDocumentRequests.id, requestId), eq(firmDocumentRequests.companyId, companyId))
-    )
-    .limit(1);
+  const scope = and(
+    eq(firmDocumentRequests.id, requestId),
+    eq(firmDocumentRequests.companyId, companyId)
+  );
+  const [req] = await db.select().from(firmDocumentRequests).where(scope).limit(1);
   if (!req) throw new DomainError("REQUEST_NOT_FOUND", 404);
   if (req.status !== "requested" && req.status !== "rejected") {
     throw new DomainError("REQUEST_NOT_OPEN", 409);
@@ -165,8 +163,9 @@ export async function fulfilRequest(
       uploadedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(firmDocumentRequests.id, requestId))
+    .where(and(scope, eq(firmDocumentRequests.status, req.status)))
     .returning();
+  if (!updated) throw new DomainError("TRANSACTION_CONFLICT", 409);
   return updated;
 }
 

@@ -16,14 +16,17 @@ import {
   companyUsers,
   firmMembers,
   firmStaffAssignments,
+  firmTimeEntries,
   users,
 } from "../../../shared/schema";
 import { firmRoleHasPermission, isFirmRole, type FirmRole } from "../../../shared/access";
 import {
   accessibleClientCondition,
+  finalizeRunningFirmTimers,
   grantCompanyAccess,
   isFirmClient,
   listFirmMembers,
+  lockFirmTimerUser,
   resolveFirmContext,
   revokeCompanyAccess,
   type FirmContext,
@@ -251,22 +254,34 @@ export async function removeFirmMember(ctx: FirmContext, userId: string): Promis
   if (target.role === "firm_owner" && members.filter((m) => m.role === "firm_owner").length <= 1) {
     throw new DomainError("LAST_FIRM_OWNER", 409);
   }
-  // Remove every client grant the firm gave this member.
-  const assigned = (await db
-    .select({ companyId: firmStaffAssignments.companyId })
-    .from(firmStaffAssignments)
-    .where(eq(firmStaffAssignments.userId, userId))) as Array<{ companyId: string }>;
-  const granted = (await db
-    .select({ companyId: companyUsers.companyId })
-    .from(companyUsers)
-    .where(eq(companyUsers.userId, userId))) as Array<{ companyId: string }>;
-  for (const companyId of new Set([...assigned, ...granted].map((r) => r.companyId))) {
-    if (await isFirmClient(ctx, companyId)) {
-      await revokeCompanyAccess({ firmId: ctx.firmId, isNr: ctx.isNr, companyId, userId });
+  await db.transaction(async (tx) => {
+    await lockFirmTimerUser(tx, userId);
+    const endedAt = new Date();
+    const assigned = await tx
+      .select({ companyId: firmStaffAssignments.companyId })
+      .from(firmStaffAssignments)
+      .where(eq(firmStaffAssignments.userId, userId));
+    const granted = await tx
+      .select({ companyId: companyUsers.companyId })
+      .from(companyUsers)
+      .where(eq(companyUsers.userId, userId));
+    const companyIds = [...new Set([...assigned, ...granted].map((r) => r.companyId))].sort();
+    for (const companyId of companyIds) {
+      if (await isFirmClient(ctx, companyId, tx)) {
+        await revokeCompanyAccess(
+          { firmId: ctx.firmId, isNr: ctx.isNr, companyId, userId, endedAt },
+          tx
+        );
+      }
     }
-  }
-  await db
-    .delete(firmMembers)
-    .where(and(eq(firmMembers.userId, userId), eq(firmMembers.firmId, ctx.firmId)));
-  if (ctx.isNr) await db.update(users).set({ firmRole: null }).where(eq(users.id, userId));
+    await tx
+      .delete(firmMembers)
+      .where(and(eq(firmMembers.userId, userId), eq(firmMembers.firmId, ctx.firmId)));
+    if (ctx.isNr) await tx.update(users).set({ firmRole: null }).where(eq(users.id, userId));
+    await finalizeRunningFirmTimers(
+      tx,
+      and(eq(firmTimeEntries.firmId, ctx.firmId), eq(firmTimeEntries.userId, userId)),
+      endedAt
+    );
+  });
 }

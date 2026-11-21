@@ -18,6 +18,8 @@
  * `tx` itself; pass `tx` down (e.g. `inventory.onGoodsReceived(event, tx)`,
  * `recordAudit({ ..., tx })`).
  */
+import { sql, type SQL } from "drizzle-orm";
+import type { QueryResultRow } from "pg";
 import { db } from "../db";
 import { createLogger } from "../config/logger";
 import type { LedgerTx } from "./types";
@@ -82,4 +84,28 @@ export function rowsOf<T>(result: unknown): T[] {
   if (Array.isArray(result)) return result as T[];
   const rows = (result as { rows?: unknown })?.rows;
   return Array.isArray(rows) ? (rows as T[]) : [];
+}
+
+/** Run a static SQL statement with bound Postgres parameters on the caller's transaction. */
+export function ledgerQueryable(tx: LedgerTx) {
+  return {
+    async query(text: string, params: unknown[] = []) {
+      const parts = text.split(/\$(\d+)/);
+      const chunks: SQL[] = [];
+      for (let i = 0; i < parts.length; i++) {
+        if (i % 2 === 0) {
+          if (parts[i]) chunks.push(sql.raw(parts[i]));
+        } else {
+          const index = Number(parts[i]) - 1;
+          if (index < 0 || index >= params.length) {
+            throw new Error(`Missing SQL parameter $${parts[i]}`);
+          }
+          // Bind one parameter even when it is an array.
+          chunks.push(sql`${sql.param(params[index])}`);
+        }
+      }
+      const result = await tx.execute(sql.join(chunks, sql.raw("")));
+      return { rows: rowsOf<QueryResultRow>(result) };
+    },
+  };
 }

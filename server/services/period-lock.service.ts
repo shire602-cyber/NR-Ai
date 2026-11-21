@@ -153,7 +153,8 @@ export function canManageClose(actor: CloseActor): boolean {
 // ─── Guard ──────────────────────────────────────────────────────────────────
 
 /**
- * Period lock guard for financial write paths.
+ * Period lock guard for financial write paths. A transaction caller must
+ * hold the company period policy lock while it validates and writes.
  *
  * Throws 403 PERIOD_LOCKED inside a hard lock, and 403 PERIOD_SOFT_LOCKED
  * inside a soft lock unless the current request is from an owner / admin /
@@ -169,7 +170,6 @@ export async function assertPeriodNotLocked(
   const isoDate = toIsoDate(date);
   if (!isoDate) return;
 
-  if (tx) await lockPeriodPolicy(tx, companyId, "shared");
   const lock = await getEffectiveLock(companyId, isoDate, tx);
   if (!lock) return;
 

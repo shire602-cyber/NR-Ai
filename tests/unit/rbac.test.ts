@@ -37,6 +37,7 @@ import {
   rbacMode,
   resolvePermission,
   resolveRequestCompany,
+  resolveRequestCompanyWithSource,
 } from "../../server/middleware/companyRolePolicy";
 
 function makeRes(): Response {
@@ -289,4 +290,78 @@ it("applies the same permissions to mixed-case literals and canonicalizes compan
   const path = "/Companies/%411111111-1111-4111-8111-111111111111/BACKUPS";
   expect(resolvePermission("GET", path)).toEqual(["backups.manage"]);
   await expect(resolveRequestCompany({} as Request, path)).resolves.toBe(companyId);
+});
+
+describe("tenant resolution at the company policy boundary", () => {
+  const companyId = "a1111111-1111-4111-8111-111111111111";
+  const otherCompanyId = "b1111111-1111-4111-8111-111111111111";
+
+  it("uses the handler's UUID normalization for named company IDs", async () => {
+    await expect(
+      resolveRequestCompany(
+        { body: { companyId: ` ${companyId.toUpperCase()}  ` } } as Request,
+        "/period-lock/unlock"
+      )
+    ).resolves.toBe(companyId);
+  });
+
+  it("rejects unparseable and ambiguous tenant identifiers without falling back", async () => {
+    await expect(
+      resolveRequestCompanyWithSource(
+        { query: { companyId } } as unknown as Request,
+        "/invoices/invalid"
+      )
+    ).rejects.toMatchObject({ statusCode: 400 });
+    await expect(
+      resolveRequestCompanyWithSource(
+        { body: { companyId }, query: { companyId: otherCompanyId } } as unknown as Request,
+        "/period-lock/unlock"
+      )
+    ).rejects.toMatchObject({ statusCode: 400 });
+    await expect(
+      resolveRequestCompanyWithSource(
+        { query: { companyId: [companyId, companyId] } } as unknown as Request,
+        "/period-lock/list"
+      )
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("distinguishes an unresolved row from a non-company endpoint", async () => {
+    await expect(
+      resolveRequestCompanyWithSource({} as Request, `/invoices/${companyId}`)
+    ).rejects.toMatchObject({ statusCode: 404, code: "NOT_FOUND" });
+    for (const path of [
+      "/reports/catalog",
+      "/api-keys/scopes",
+      "/corporate-tax/returns/template",
+      "/webhooks/events",
+      "/export/excel",
+      "/companies",
+    ]) {
+      await expect(resolveRequestCompany({} as Request, path)).resolves.toBeNull();
+    }
+    await expect(
+      resolveRequestCompany({} as Request, `/invoices/${companyId}`)
+    ).resolves.toBeNull();
+    for (const path of [
+      "/webhooks/email-events/resend",
+      "/webhooks/email-events/smtp-dsn",
+      `/webhooks/einvoice/${companyId}/inbound`,
+      "/webhooks/invoice-payments/stripe",
+    ]) {
+      expect(resolvePermission("POST", path)).toBeNull();
+      await expect(
+        resolveRequestCompanyWithSource(
+          { method: "POST", query: { companyId } } as unknown as Request,
+          path
+        )
+      ).resolves.toBeNull();
+    }
+    await expect(
+      resolveRequestCompany(
+        { query: { companyId } } as unknown as Request,
+        "/integrations/ecommerce/transactions"
+      )
+    ).resolves.toBe(companyId);
+  });
 });

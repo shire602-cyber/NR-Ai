@@ -152,7 +152,7 @@ export async function createBadDebtReliefClaim(input: {
     // A3 (H1): Art. 64(1)(b) needs an actual write-off in the accounts, not a self-attestation.
     // The write-off settles the invoice (method 'write_off'), so the unpaid consideration is
     // what was neither received nor credited, and relief is limited to what was written off.
-    const writtenOffDoc = await invoiceWrittenOffFils(tx, inv.id);
+    const writtenOffDoc = await invoiceWrittenOffFils(tx, input.companyId, inv.id);
     if (writtenOffDoc <= 0) {
       throw new DomainError(
         "BAD_DEBT_NOT_WRITTEN_OFF",

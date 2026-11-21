@@ -12,12 +12,14 @@
  * hook) is picked up by the "events.outboxDispatch" job every minute.
  *
  * Delivery rules:
- *   - a row is claimed with FOR UPDATE SKIP LOCKED and a renewable lease; the attempt number
- *     fences writes from workers that lose their lease;
+ *   - a row is claimed with FOR UPDATE SKIP LOCKED and a lease; the attempt number
+ *     fences writes from workers that lose their lease. Each handler has a deadline shorter
+ *     than the lease and can observe its abort signal;
  *   - each (event id, handler key) that succeeds is recorded in domain_event_deliveries and
  *     never run again, so a retried or duplicate dispatch delivers once per handler;
  *   - a failing handler leaves the row `pending` with exponential backoff; after max_attempts
- *     it is dead-lettered (`dead`, last_error kept) for an operator to inspect.
+ *     it is dead-lettered (`dead`, last_error kept) for an operator to inspect. An expired
+ *     final attempt with receipts for every registered handler is reconciled as dispatched.
  * Handlers receive the same DomainEvent shape as an in-memory emit plus `payload.eventId`.
  * A crash between a handler's side effect and its delivery record can redeliver that one
  * handler (at-least-once); handlers with external effects can dedupe on `eventId`.
@@ -35,8 +37,10 @@ import type { LedgerTx } from "../ledger/types";
 import { rowsOf, withLedgerTx } from "../ledger/tx";
 import {
   buildDomainEvent,
+  DOMAIN_EVENT_TYPES,
   domainEventHandlersFor,
   trackDomainEventWork,
+  type DomainEvent,
   type DomainEventInput,
   type DomainEventType,
 } from "./domain-events";
@@ -49,6 +53,7 @@ export const DEFAULT_EVENT_MAX_ATTEMPTS = 8;
 const BASE_BACKOFF_MS = 30_000; // 30 s, 1, 2, 4, 8 min ...
 const MAX_BACKOFF_MS = 60 * 60 * 1000;
 const LEASE_MS = 5 * 60 * 1000;
+const HANDLER_TIMEOUT_MS = 60_000;
 const RETENTION_DAYS = 30;
 
 export function eventBackoffMs(attempts: number): number {
@@ -110,34 +115,72 @@ function isUuid(v: unknown): boolean {
   );
 }
 
-/** Claim a due row (or one row by id). An expired final attempt becomes terminal. */
-async function claim(id?: string): Promise<DomainEventOutboxRow | undefined> {
-  const res = await db.execute(sql`
-    UPDATE domain_event_outbox o
-       SET status = CASE WHEN attempts < max_attempts THEN 'dispatching' ELSE 'dead' END,
-           attempts = CASE WHEN attempts < max_attempts THEN attempts + 1 ELSE attempts END,
-           locked_until = CASE WHEN attempts < max_attempts
-             THEN now() + (${LEASE_MS}::int * interval '1 millisecond') END,
-           dead_at = CASE WHEN attempts >= max_attempts THEN now() END,
-           last_error = CASE WHEN attempts >= max_attempts
-             THEN 'Final delivery attempt expired' ELSE last_error END,
-           updated_at = now()
-     WHERE o.id = (
-       SELECT id FROM domain_event_outbox
-        WHERE ((status = 'pending' AND next_attempt_at <= now())
-               OR (status = 'dispatching' AND locked_until <= now()))
-          ${id ? sql`AND id = ${id}` : sql``}
-        ORDER BY created_at, id
-        LIMIT 1
-        FOR UPDATE SKIP LOCKED)
-    RETURNING o.id, o.event_type AS "eventType", o.payload, o.status, o.attempts,
-              o.max_attempts AS "maxAttempts"`);
-  return rowsOf<DomainEventOutboxRow>(res)[0];
+type ClaimedEvent = Pick<
+  DomainEventOutboxRow,
+  "id" | "eventType" | "payload" | "status" | "attempts" | "maxAttempts"
+>;
+
+async function receiptKeys(
+  id: string,
+  store: Pick<typeof db, "select"> = db
+): Promise<Set<string>> {
+  const receipts = await store
+    .select({ handler: domainEventDeliveries.handler })
+    .from(domainEventDeliveries)
+    .where(eq(domainEventDeliveries.eventId, id));
+  return new Set(receipts.map((receipt) => receipt.handler));
+}
+
+/** Claim a due row, or reconcile an expired final attempt while holding the same row lock. */
+async function claim(id?: string): Promise<ClaimedEvent | undefined> {
+  return db.transaction(async (tx) => {
+    const result = await tx.execute(sql`
+      SELECT id, event_type AS "eventType", payload, status, attempts, max_attempts AS "maxAttempts"
+        FROM domain_event_outbox
+       WHERE ((status = 'pending' AND next_attempt_at <= now())
+           OR (status = 'dispatching' AND locked_until <= now()))
+         ${id ? sql`AND id = ${id}` : sql``}
+       ORDER BY created_at, id
+       LIMIT 1
+       FOR UPDATE SKIP LOCKED`);
+    const [row] = rowsOf<ClaimedEvent>(result);
+    if (!row) return undefined;
+
+    let changes: PgUpdateSetSource<typeof domainEventOutbox>;
+    if (row.attempts < row.maxAttempts) {
+      row.attempts++;
+      row.status = "dispatching";
+      changes = {
+        status: row.status,
+        attempts: row.attempts,
+        lockedUntil: sql`now() + (${LEASE_MS}::int * interval '1 millisecond')`,
+      };
+    } else {
+      const type = DOMAIN_EVENT_TYPES.find((candidate) => candidate === row.eventType);
+      const done =
+        type && row.status === "dispatching" ? await receiptKeys(row.id, tx) : new Set<string>();
+      const hasAllReceipts =
+        type && done.size > 0 && domainEventHandlersFor(type).every(({ key }) => done.has(key));
+      row.status = hasAllReceipts ? "dispatched" : "dead";
+      changes = {
+        status: row.status,
+        lockedUntil: null,
+        dispatchedAt: hasAllReceipts ? sql`now()` : null,
+        deadAt: hasAllReceipts ? null : sql`now()`,
+        lastError: hasAllReceipts ? null : "Final delivery attempt expired",
+      };
+    }
+    await tx
+      .update(domainEventOutbox)
+      .set({ ...changes, updatedAt: sql`now()` })
+      .where(eq(domainEventOutbox.id, row.id));
+    return row;
+  });
 }
 
 export type DispatchOutcome = "dispatched" | "retrying" | "dead";
 
-function activeClaim(row: DomainEventOutboxRow) {
+function activeClaim(row: ClaimedEvent) {
   return and(
     eq(domainEventOutbox.id, row.id),
     eq(domainEventOutbox.status, "dispatching"),
@@ -146,7 +189,7 @@ function activeClaim(row: DomainEventOutboxRow) {
   );
 }
 
-async function renewClaim(row: DomainEventOutboxRow, store: Pick<typeof db, "update"> = db) {
+async function renewClaim(row: ClaimedEvent, store: Pick<typeof db, "update"> = db) {
   const [renewed] = await store
     .update(domainEventOutbox)
     .set({ lockedUntil: sql`now() + (${LEASE_MS}::int * interval '1 millisecond')` })
@@ -155,40 +198,57 @@ async function renewClaim(row: DomainEventOutboxRow, store: Pick<typeof db, "upd
   return Boolean(renewed);
 }
 
-async function deliver(row: DomainEventOutboxRow): Promise<DispatchOutcome | null> {
+async function runHandler(
+  handler: ReturnType<typeof domainEventHandlersFor>[number]["handler"],
+  event: DomainEvent
+): Promise<"succeeded" | "failed" | "timed_out"> {
+  const abort = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const deadline = new Promise<"timed_out">((resolve) => {
+      timer = setTimeout(() => {
+        resolve("timed_out");
+        abort.abort();
+      }, HANDLER_TIMEOUT_MS);
+    });
+    const completion = Promise.resolve()
+      .then(() => handler(event, abort.signal))
+      .then(
+        () => "succeeded" as const,
+        () => "failed" as const
+      );
+    return await Promise.race([deadline, completion]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function deliver(row: ClaimedEvent): Promise<DispatchOutcome | null> {
   if (row.status === "dead") {
     log.error({ eventId: row.id, eventType: row.eventType }, "Final domain event attempt expired");
     return "dead";
   }
+  if (row.status === "dispatched") return "dispatched";
+
   const type = row.eventType as DomainEventType;
   const payload = { ...(row.payload as Record<string, unknown>), eventId: row.id };
   const event = buildDomainEvent(type, payload as unknown as DomainEventInput<typeof type>);
-  const done = new Set(
-    (
-      await db
-        .select({ handler: domainEventDeliveries.handler })
-        .from(domainEventDeliveries)
-        .where(eq(domainEventDeliveries.eventId, row.id))
-    ).map((r) => r.handler)
-  );
-  const errors: string[] = [];
+  const done = await receiptKeys(row.id);
+  const failed: string[] = [];
+  const timedOut: string[] = [];
   for (const { key, handler } of domainEventHandlersFor(type)) {
     if (done.has(key)) continue;
     if (!(await renewClaim(row))) return null;
 
-    const heartbeat = setInterval(() => {
-      void renewClaim(row).catch(() =>
-        log.warn({ eventId: row.id, eventType: type }, "Could not renew domain event lease")
-      );
-    }, LEASE_MS / 3);
-    heartbeat.unref();
-    try {
-      await handler(event);
-    } catch {
-      errors.push(key);
+    // The deadline fits within the renewed lease. A late result has no route to the receipt write.
+    const result = await runHandler(handler, event);
+    if (result === "timed_out") {
+      timedOut.push(key);
       continue;
-    } finally {
-      clearInterval(heartbeat);
+    }
+    if (result === "failed") {
+      failed.push(key);
+      continue;
     }
     const recorded = await db.transaction(async (tx) => {
       if (!(await renewClaim(row, tx))) return false;
@@ -207,8 +267,11 @@ async function deliver(row: DomainEventOutboxRow): Promise<DispatchOutcome | nul
     dispatchedAt: sql`now()`,
     lastError: null,
   };
-  if (errors.length) {
-    const lastError = `Handler failed: ${errors.join(", ")}`.slice(0, 2000);
+  if (failed.length || timedOut.length) {
+    const messages = [];
+    if (failed.length) messages.push(`Handler failed: ${failed.join(", ")}`);
+    if (timedOut.length) messages.push(`Handler timed out: ${timedOut.join(", ")}`);
+    const lastError = messages.join(". ").slice(0, 2000);
     if (row.attempts >= row.maxAttempts) {
       outcome = "dead";
       changes = { status: "dead", deadAt: sql`now()`, lastError };

@@ -7,8 +7,8 @@
  */
 import { randomUUID } from "node:crypto";
 import { unzipSync, strFromU8 } from "fflate";
-import { describe, expect, it } from "vitest";
-import { ledgerTotals, useHarness, type Tenant } from "./harness";
+import { describe, expect, it, vi } from "vitest";
+import { freezeTime, ledgerTotals, useHarness, type Tenant } from "./harness";
 
 // X6b: firm sign-up is closed by default (NR-internal); these tests onboard a second firm on purpose.
 process.env.FIRM_SELF_SIGNUP = "true";
@@ -30,6 +30,54 @@ async function nrStaff(role: "firm_admin" | "preparer" | "reviewer" | "viewer", 
   const t = await h.createTenant({ name });
   await h.sql(`UPDATE users SET firm_role = $2 WHERE id = $1`, [t.user.id, role]);
   return t;
+}
+
+async function linkClient(owner: Tenant, client: Tenant) {
+  const invite = await owner.as.post("/api/firm/client-links", { inviteeEmail: client.email });
+  expect(invite.status, invite.text).toBe(201);
+  const linkId = invite.body.link.id as string;
+  const joined = await client.as.post(`/api/firm-invitations/${linkId}/accept`, {
+    companyId: client.company.id,
+  });
+  expect(joined.status, joined.text).toBe(200);
+  return linkId;
+}
+
+async function queueAgainstLockedRow<T>(
+  table: "firm_engagement_letters" | "firm_document_requests",
+  id: string,
+  first: () => Promise<T>,
+  second: () => Promise<T>
+): Promise<T[]> {
+  const { pool } = await import("../../server/db");
+  const blocker = await pool.connect();
+  const waitForBlocked = (count: number) =>
+    vi.waitFor(
+      async () => {
+        const [row] = await h.sql<{ waiting: number }>(
+          `SELECT count(*)::integer AS waiting FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE $1`,
+          [`%"${table}"%`]
+        );
+        expect(row.waiting).toBe(count);
+      },
+      { timeout: 5000 }
+    );
+  const work: Promise<T>[] = [];
+  try {
+    await blocker.query("BEGIN");
+    await blocker.query(`SELECT id FROM ${table} WHERE id = $1 FOR UPDATE`, [id]);
+    // Queue the firm decision first, then let the client request read the old committed row.
+    work.push(first());
+    await waitForBlocked(1);
+    work.push(second());
+    await waitForBlocked(2);
+  } finally {
+    await blocker.query("ROLLBACK");
+    blocker.release();
+    await Promise.allSettled(work);
+  }
+  return Promise.all(work);
 }
 
 /** A second, non-NR accounting firm approved by a platform admin. */
@@ -229,6 +277,9 @@ describe("W5-D firm practice management", () => {
     const assignments = `/api/firm/clients/${first.id}/assign-staff`;
     const assignment = { staffUserId: staff.user.id, action: "assign" };
     expect((await owner.as.post(assignments, assignment)).status).toBe(200);
+    expect(
+      (await owner.as.post(`/api/firm/clients/${second.id}/assign-staff`, assignment)).status
+    ).toBe(200);
     const starts = await Promise.all(
       Array.from({ length: 2 }, () =>
         staff.as.post("/api/firm/time-entries/start", { companyId: first.id, taskId })
@@ -239,9 +290,20 @@ describe("W5-D firm practice management", () => {
     expect(starts.find(({ status }) => status === 409)?.body.details).toEqual({
       entryId: timer.body.entry.id,
     });
-    expect((await owner.as.post(assignments, { ...assignment, action: "unassign" })).status).toBe(
-      200
-    );
+    const cutoff = new Date();
+    const startedAt = new Date(cutoff.getTime() - 17 * 60_000);
+    await h.sql("UPDATE firm_time_entries SET started_at = $1 WHERE id = $2", [
+      startedAt.toISOString(),
+      timer.body.entry.id,
+    ]);
+    const restore = freezeTime(cutoff);
+    try {
+      expect((await owner.as.post(assignments, { ...assignment, action: "unassign" })).status).toBe(
+        200
+      );
+    } finally {
+      restore();
+    }
     // The write must recheck access even if the service has a previously resolved firm context.
     await expect(logTime(ctx!, { ...log, companyId: first.id })).rejects.toMatchObject({
       code: "CLIENT_NOT_FOUND",
@@ -252,11 +314,169 @@ describe("W5-D firm practice management", () => {
     const stop = `/api/firm/time-entries/${timer.body.entry.id}/stop`;
     expect((await staff.as.post(stop)).status).toBe(404);
     expect(
-      await h.sql("SELECT status FROM firm_time_entries WHERE id = $1", [timer.body.entry.id])
-    ).toEqual([{ status: "running" }]);
+      await h.sql(
+        "SELECT status, minutes, stopped_at = $2::timestamp AS stopped_at_cutoff FROM firm_time_entries WHERE id = $1",
+        [timer.body.entry.id, cutoff.toISOString()]
+      )
+    ).toEqual([{ status: "logged", minutes: 17, stopped_at_cutoff: true }]);
+    const next = await staff.as.post("/api/firm/time-entries/start", { companyId: second.id });
+    expect(next.status, next.text).toBe(201);
+    expect(next.body.entry).toMatchObject({ companyId: second.id, status: "running" });
     expect((await owner.as.post(assignments, assignment)).status).toBe(200);
-    expect((await staff.as.post(stop)).status).toBe(200);
+    const alreadyStopped = await staff.as.post(stop);
+    expect(alreadyStopped.status).toBe(409);
+    expect(alreadyStopped.body.code).toBe("TIMER_NOT_RUNNING");
+    expect((await staff.as.post(`/api/firm/time-entries/${next.body.entry.id}/stop`)).status).toBe(
+      200
+    );
   });
+
+  it("recovers an inaccessible legacy timer without charging time or exposing its client", async () => {
+    const owner = await nrOwner();
+    const staff = await nrStaff("preparer", "TimerRecovery");
+    const old = await createClient(owner, "Previous Timer Client");
+    const available = await createClient(owner, "Next Timer Client");
+    const assign = { staffUserId: staff.user.id, action: "assign" };
+    for (const company of [old, available]) {
+      expect(
+        (await owner.as.post(`/api/firm/clients/${company.id}/assign-staff`, assign)).status
+      ).toBe(200);
+    }
+    const entry = await staff.as.post("/api/firm/time-entries/start", { companyId: old.id });
+    expect(entry.status, entry.text).toBe(201);
+    const id = entry.body.entry.id;
+    // Simulate a revocation from before timers were finalized by the access service.
+    await h.sql("DELETE FROM firm_staff_assignments WHERE company_id = $1 AND user_id = $2", [
+      old.id,
+      staff.user.id,
+    ]);
+    await h.sql("DELETE FROM company_users WHERE company_id = $1 AND user_id = $2", [
+      old.id,
+      staff.user.id,
+    ]);
+    await h.sql(
+      "UPDATE firm_time_entries SET started_at = now() - interval '2 days' WHERE id = $1",
+      [id]
+    );
+    const next = await staff.as.post("/api/firm/time-entries/start", { companyId: available.id });
+    expect(next.status, next.text).toBe(201);
+    expect(next.body.entry).toMatchObject({ companyId: available.id, status: "running" });
+    expect(next.text).not.toContain(id);
+    expect(next.text).not.toContain(old.id);
+    expect(
+      await h.sql("SELECT status, minutes, billable FROM firm_time_entries WHERE id = $1", [id])
+    ).toEqual([{ status: "written_off", minutes: 0, billable: false }]);
+  });
+
+  it("client unlink finalizes firm timers at the recorded revocation instant", async () => {
+    const owner = await nrOwner();
+    const client = await h.createTenant({ name: "TimerUnlinkClient" });
+    const cid = client.company.id;
+    const linkId = await linkClient(owner, client);
+    const timer = await owner.as.post("/api/firm/time-entries/start", { companyId: cid });
+    expect(timer.status, timer.text).toBe(201);
+    const revoke = await client.as.post(`/api/companies/${cid}/firm-links/${linkId}/revoke`, {});
+    expect(revoke.status, revoke.text).toBe(200);
+    expect(
+      await h.sql(
+        `SELECT t.status, t.stopped_at = l.revoked_at AS stopped_at_revocation
+         FROM firm_time_entries t JOIN firm_client_links l ON l.id = $2
+        WHERE t.id = $1`,
+        [timer.body.entry.id, linkId]
+      )
+    ).toEqual([{ status: "logged", stopped_at_revocation: true }]);
+  });
+
+  it("removing an all-client firm member finalizes their timer without an assignment", async () => {
+    const owner = await nrOwner();
+    const colleague = await nrOwner();
+    const client = await createClient(owner, "Timer Member Removal Client");
+    const timer = await colleague.as.post("/api/firm/time-entries/start", { companyId: client.id });
+    expect(timer.status, timer.text).toBe(201);
+    const removed = await owner.as.delete(`/api/firm/members/${colleague.user.id}`);
+    expect(removed.status, removed.text).toBe(200);
+    expect(
+      await h.sql("SELECT status FROM firm_time_entries WHERE id = $1", [timer.body.entry.id])
+    ).toEqual([{ status: "logged" }]);
+    expect(
+      (await colleague.as.post("/api/firm/time-entries/start", { companyId: client.id })).status
+    ).toBe(403);
+  });
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "a withdrawn letter cannot be accepted by an already waiting client",
+    async () => {
+      const owner = await nrOwner();
+      const client = await h.createTenant({ name: "LetterRaceClient" });
+      const cid = client.company.id;
+      await linkClient(owner, client);
+      const letter = await owner.as.post(`/api/firm/clients/${cid}/engagement-letters`, {
+        title: "Letter race",
+        feeAmount: 100,
+      });
+      expect(letter.status, letter.text).toBe(201);
+      const id = letter.body.letter.id;
+      expect((await owner.as.post(`/api/firm/engagement-letters/${id}/send`)).status).toBe(200);
+      const [withdraw, accept] = await queueAgainstLockedRow(
+        "firm_engagement_letters",
+        id,
+        () => owner.as.post(`/api/firm/engagement-letters/${id}/withdraw`),
+        () =>
+          client.as.post(`/api/companies/${cid}/engagement-letters/${id}/respond`, {
+            decision: "accept",
+            typedName: "Client Owner",
+          })
+      );
+      expect(withdraw.status, withdraw.text).toBe(200);
+      expect(accept.status, accept.text).toBe(409);
+      expect(accept.body.code).toBe("TRANSACTION_CONFLICT");
+      const [saved] = await h.sql(
+        "SELECT status, accepted_by_user_id, engagement_id FROM firm_engagement_letters WHERE id = $1",
+        [id]
+      );
+      expect(saved).toEqual({
+        status: "withdrawn",
+        accepted_by_user_id: null,
+        engagement_id: null,
+      });
+      expect(await h.sql("SELECT id FROM engagements WHERE company_id = $1", [cid])).toEqual([]);
+    }
+  );
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "a cancelled document request cannot be fulfilled by an already waiting client",
+    async () => {
+      const owner = await nrOwner();
+      const client = await h.createTenant({ name: "RequestRaceClient" });
+      const cid = client.company.id;
+      await linkClient(owner, client);
+      const request = await owner.as.post(`/api/firm/clients/${cid}/requests`, {
+        items: [{ title: "Request race" }],
+      });
+      expect(request.status, request.text).toBe(201);
+      const id = request.body.requests[0].id;
+      const [doc] = await h.sql(
+        `INSERT INTO documents (company_id, name, category, file_url, file_name, uploaded_by)
+         VALUES ($1, 'statement.pdf', 'bank_statement', '/uploads/x.pdf', 'statement.pdf', $2) RETURNING id`,
+        [cid, client.user.id]
+      );
+      const [cancel, upload] = await queueAgainstLockedRow(
+        "firm_document_requests",
+        id,
+        () => owner.as.post(`/api/firm/requests/${id}/review`, { decision: "cancel" }),
+        () =>
+          client.as.post(`/api/companies/${cid}/firm-requests/${id}/fulfil`, {
+            documentId: doc.id,
+          })
+      );
+      expect(cancel.status, cancel.text).toBe(200);
+      expect(upload.status, upload.text).toBe(409);
+      expect(upload.body.code).toBe("TRANSACTION_CONFLICT");
+      expect(
+        await h.sql("SELECT status, document_id FROM firm_document_requests WHERE id = $1", [id])
+      ).toEqual([{ status: "cancelled", document_id: null }]);
+    }
+  );
 
   it("[R15-04] a duplicate client differing only by case or spacing is 409", async () => {
     const owner = await nrOwner();

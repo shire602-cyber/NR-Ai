@@ -3,7 +3,7 @@
  * (R01-01, R01-02, R01-03, R01-14).
  */
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import { insertRow } from "./row-factory";
 
@@ -98,6 +98,81 @@ describe("R01-03 role enum", () => {
 });
 
 describe("R01-02 central permission policy", () => {
+  it("checks legacy and canonical company identifiers at the authorization boundary", async () => {
+    const owner = await h.createTenant({ name: "CanonicalCompany" });
+    const viewer = await memberOf(owner, "viewer", "spaced");
+    const legacy = await viewer.as.post("/api/period-lock/unlock", {
+      companyId: ` ${owner.company.id.toUpperCase()} `,
+      period: "2025-08",
+      reason: "Validation regression test",
+    });
+    expect(legacy.status).toBe(403);
+    expect(legacy.body.code).toBe("PERMISSION_DENIED");
+
+    const invalid = await owner.as.get(`/api/invoices/invalid?companyId=${owner.company.id}`);
+    expect(invalid.status).toBe(400);
+    expect(invalid.body.code).toBe("INVALID_ID");
+    const other = await h.createSecondTenant();
+    const foreignId = await insertRow(h.sql, "invoices", {
+      companyId: other.company.id,
+      userId: other.user.id,
+    });
+    for (const id of [randomUUID(), foreignId]) {
+      const result = await owner.as.get(`/api/invoices/${id}`);
+      expect(result.status).toBe(404);
+      expect(result.body).toEqual({
+        code: "NOT_FOUND",
+        message: "Not found",
+        requestId: expect.any(String),
+      });
+    }
+    const missingBodyId = await owner.as.post(
+      `/api/period-lock/unlock?companyId=${owner.company.id}`,
+      { period: "2025-08", reason: "Validation regression test" }
+    );
+    expect(missingBodyId.status).toBe(400);
+    expect(missingBodyId.body.code).toBe("INVALID_ID");
+
+    const encoded = encodeURIComponent(` ${owner.company.id.toUpperCase()} `);
+    for (const path of [
+      `/api/companies/${encoded}/period-lock`,
+      `/api/period-lock/list?companyId=${encoded}`,
+      `/api/vat/autopilot/periods/${encoded}`,
+      `/api/integrations/ecommerce/transactions?companyId=${encoded}`,
+    ]) {
+      expect((await owner.as.get(path)).status, path).toBe(200);
+    }
+
+    for (const path of ["/api/reports/catalog", "/api/api-keys/scopes", "/api/webhooks/events"]) {
+      expect((await owner.as.get(path)).status, path).toBe(200);
+    }
+  });
+
+  it("leaves email delivery callbacks at their signed boundary after a customer trial expires", async () => {
+    const owner = await h.createTenant({ name: "ExpiredCallback" });
+    await h.sql(
+      `UPDATE subscriptions SET created_at = now() - interval '30 days', trial_ends_at = NULL
+       WHERE company_id = $1`,
+      [owner.company.id]
+    );
+    await h.sql("UPDATE companies SET created_at = now() - interval '30 days' WHERE id = $1", [
+      owner.company.id,
+    ]);
+    vi.stubEnv("BILLING_ENFORCEMENT", "true");
+    vi.stubEnv("RESEND_WEBHOOK_SECRET", undefined);
+    vi.stubEnv("EMAIL_DSN_WEBHOOK_SECRET", undefined);
+    try {
+      expect((await owner.as.get(`/api/companies/${owner.company.id}/accounts`)).status).toBe(402);
+      for (const provider of ["resend", "smtp-dsn"]) {
+        const result = await owner.as.post(`/api/webhooks/email-events/${provider}`, {});
+        expect(result.status).toBe(503);
+        expect(result.body.code).toBe("WEBHOOK_NOT_CONFIGURED");
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("R01-02: an employee cannot rename the company; the owner can", async () => {
     const a = await h.createTenant({ name: "PolicyOwner" });
     const emp = await memberOf(a, "employee", "emp");

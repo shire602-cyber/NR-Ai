@@ -12,7 +12,8 @@
  *   - dates must be real calendar dates in 1900..9999 and, unless allowed,
  *     not after today (UTC).
  */
-import { MAX_FILS, MoneyError, roundHalfUp, toFils, type Rounding } from "../../shared/money";
+import Decimal from "decimal.js";
+import { MAX_FILS, MoneyError, RATE_DECIMALS, toFils, type Rounding } from "../../shared/money";
 import { DomainError } from "../errors";
 import type {
   EntryKind,
@@ -137,12 +138,13 @@ export function normalizeRate(
 }
 
 /** Legacy rates (floats) are rounded half-up to 6dp, as numeric(15,6) did. */
-function legacyRate(value: unknown): string | null {
+function legacyRate(value: LedgerAmount | null | undefined): string | null {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
-  const s = roundHalfUp(n, 6).replace(/\.?0+$/, "");
-  return Number(s) > 0 ? s : null;
+  const rate = new Decimal(typeof value === "string" ? value.trim() : value);
+  const rounded = rate.toFixed(RATE_DECIMALS, Decimal.ROUND_HALF_UP).replace(/\.?0+$/, "");
+  return rounded === "0" ? null : rounded;
 }
 
 export function normalizeLine(

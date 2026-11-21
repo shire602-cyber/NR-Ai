@@ -16,7 +16,7 @@
  * created by other code paths keep working). A revoked link, or a link to
  * another firm, always removes the company from NR's set.
  */
-import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../../db";
 import {
   companies,
@@ -25,6 +25,7 @@ import {
   firmCompanyGrants,
   firmMembers,
   firmStaffAssignments,
+  firmTimeEntries,
   firms,
   users,
 } from "../../../shared/schema";
@@ -58,12 +59,13 @@ type Executor = Pick<typeof db, "select" | "insert" | "update" | "delete" | "exe
 
 /** Resolve the firm the user acts for, or null when they are not firm staff. */
 export async function resolveFirmContext(
-  actor: FirmActor | null | undefined
+  actor: FirmActor | null | undefined,
+  exec: Pick<Executor, "select"> = db
 ): Promise<FirmContext | null> {
   if (!actor?.id) return null;
   let firmRole = actor.firmRole;
   if (firmRole === undefined) {
-    const [u] = await db
+    const [u] = await exec
       .select({ firmRole: users.firmRole, isAdmin: users.isAdmin })
       .from(users)
       .where(eq(users.id, actor.id))
@@ -89,7 +91,7 @@ export async function resolveFirmContext(
       platformAdmin: true,
     };
   }
-  const [row] = await db
+  const [row] = await exec
     .select({
       firmId: firmMembers.firmId,
       role: firmMembers.role,
@@ -156,9 +158,13 @@ export async function listAccessibleClientIds(ctx: FirmContext): Promise<string[
   return rows.map((r) => r.id);
 }
 
-export async function canAccessFirmClient(ctx: FirmContext, companyId: string): Promise<boolean> {
+export async function canAccessFirmClient(
+  ctx: FirmContext,
+  companyId: string,
+  exec: Pick<Executor, "select"> = db
+): Promise<boolean> {
   if (!isUuid(companyId)) return false;
-  const [row] = await db
+  const [row] = await exec
     .select({ id: companies.id })
     .from(companies)
     .where(and(eq(companies.id, companyId), accessibleClientCondition(ctx)))
@@ -169,10 +175,11 @@ export async function canAccessFirmClient(ctx: FirmContext, companyId: string): 
 /** Is the company in the firm's client set at all (regardless of assignment)? */
 export async function isFirmClient(
   ctx: Pick<FirmContext, "firmId" | "isNr">,
-  companyId: string
+  companyId: string,
+  exec: Pick<Executor, "select"> = db
 ): Promise<boolean> {
   if (!isUuid(companyId)) return false;
-  const [row] = await db
+  const [row] = await exec
     .select({ id: companies.id })
     .from(companies)
     .where(and(eq(companies.id, companyId), firmClientCondition(ctx.firmId, ctx.isNr)))
@@ -198,8 +205,12 @@ export interface FirmMemberRow {
  * The firm's staff (R15-03): every user with a firm role in this firm. For NR
  * that is users.firm_role (legacy) plus any NR firm_members rows.
  */
-export async function listFirmMembers(firmId: string, isNr: boolean): Promise<FirmMemberRow[]> {
-  const byMembership = (await db
+export async function listFirmMembers(
+  firmId: string,
+  isNr: boolean,
+  exec: Pick<Executor, "select"> = db
+): Promise<FirmMemberRow[]> {
+  const byMembership = (await exec
     .select({ userId: users.id, name: users.name, email: users.email, role: firmMembers.role })
     .from(firmMembers)
     .innerJoin(users, eq(users.id, firmMembers.userId))
@@ -211,7 +222,7 @@ export async function listFirmMembers(firmId: string, isNr: boolean): Promise<Fi
   }>;
   const out = new Map<string, FirmMemberRow>();
   if (isNr) {
-    const legacy = (await db
+    const legacy = (await exec
       .select({ userId: users.id, name: users.name, email: users.email, role: users.firmRole })
       .from(users)
       .where(inArray(users.firmRole, [...FIRM_ROLES]))) as Array<{
@@ -231,8 +242,12 @@ export async function listFirmMembers(firmId: string, isNr: boolean): Promise<Fi
   return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function listFirmMemberIds(firmId: string, isNr: boolean): Promise<string[]> {
-  return (await listFirmMembers(firmId, isNr)).map((m) => m.userId);
+export async function listFirmMemberIds(
+  firmId: string,
+  isNr: boolean,
+  exec: Pick<Executor, "select"> = db
+): Promise<string[]> {
+  return (await listFirmMembers(firmId, isNr, exec)).map((m) => m.userId);
 }
 
 /** The firm role a user holds in `firmId`, or null when not a member there. */
@@ -243,6 +258,38 @@ export async function firmRoleOf(userId: string, firmId: string): Promise<FirmRo
 }
 
 // ─── Company access grants ───────────────────────────────────────────────────
+
+/** Serialize starting a timer against changes that remove access to its client or firm. */
+export async function lockFirmClientAccess(exec: Pick<Executor, "execute">, companyId: string) {
+  await exec.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtext('firm_client_access'), hashtext(${companyId.toLowerCase()}))`
+  );
+}
+
+export async function lockFirmTimerUser(exec: Pick<Executor, "execute">, userId: string) {
+  await exec.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtext('firm_timer_user'), hashtext(${userId.toLowerCase()}))`
+  );
+}
+
+/** Keep tracked time up to the access change, using the same daily cap as a manual stop. */
+export async function finalizeRunningFirmTimers(
+  exec: Pick<Executor, "update">,
+  scope: SQL | undefined,
+  endedAt: Date
+) {
+  if (!scope) throw new Error("A firm timer scope is required");
+  await exec
+    .update(firmTimeEntries)
+    .set({
+      status: "logged",
+      stoppedAt: endedAt,
+      updatedAt: endedAt,
+      minutes: sql`LEAST(1440, GREATEST(0, CEIL(EXTRACT(EPOCH FROM
+        (${endedAt.toISOString()}::timestamp - ${firmTimeEntries.startedAt})) / 60)))::integer`,
+    })
+    .where(and(scope, eq(firmTimeEntries.status, "running")));
+}
 
 /**
  * Give a firm member a company_users row in a client's books (the core company
@@ -287,9 +334,12 @@ export async function grantCompanyAccess(
  * that member. A company_users row that predates the firm grant is kept.
  */
 export async function revokeCompanyAccess(
-  input: { firmId: string; isNr: boolean; companyId: string; userId?: string },
-  exec: Executor = db
+  input: { firmId: string; isNr: boolean; companyId: string; userId?: string; endedAt?: Date },
+  exec?: Executor
 ): Promise<{ removedMemberships: number }> {
+  if (!exec) return db.transaction((tx) => revokeCompanyAccess(input, tx));
+  await lockFirmClientAccess(exec, input.companyId);
+  const endedAt = input.endedAt ?? new Date();
   const grantWhere = and(
     eq(firmCompanyGrants.firmId, input.firmId),
     eq(firmCompanyGrants.companyId, input.companyId),
@@ -301,7 +351,7 @@ export async function revokeCompanyAccess(
     .where(grantWhere)) as Array<{ userId: string; created: boolean }>;
   const memberIds = input.userId
     ? [input.userId]
-    : await listFirmMemberIds(input.firmId, input.isNr);
+    : await listFirmMemberIds(input.firmId, input.isNr, exec);
   const grantedUsers = new Set(grants.map((g) => g.userId));
   const toRemove = new Set(grants.filter((g) => g.created).map((g) => g.userId));
   // Legacy rows (no grant record) of firm staff on this client: the firm added them.
@@ -331,6 +381,20 @@ export async function revokeCompanyAccess(
         )
       );
   }
+  // An unassignment can leave an independent membership (or all-client firm role) intact.
+  const staff = input.userId ? await resolveFirmContext({ id: input.userId }, exec) : null;
+  await finalizeRunningFirmTimers(
+    exec,
+    and(
+      eq(firmTimeEntries.firmId, input.firmId),
+      eq(firmTimeEntries.companyId, input.companyId),
+      input.userId ? eq(firmTimeEntries.userId, input.userId) : undefined,
+      staff?.firmId === input.firmId
+        ? notInArray(firmTimeEntries.companyId, accessibleClientsQuery(staff))
+        : undefined
+    ),
+    endedAt
+  );
   return { removedMemberships: removed };
 }
 
