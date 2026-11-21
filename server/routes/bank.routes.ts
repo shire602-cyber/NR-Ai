@@ -3,11 +3,12 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
 import { requirePermission } from "../middleware/companyRolePolicy";
+import { assertTrialAccess } from "../middleware/trialAccessPolicy";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
-import { getCapabilitySnapshot } from "../../shared/capabilities";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import {
   bankFeedCallbackBody,
   bankFeedConnectBody,
@@ -20,6 +21,7 @@ import {
   linkConnection,
   providerStatuses,
   registerBankFeedJobs,
+  resolveCallbackCompany,
   sanitizeConnection,
   startConnect,
   syncConnection,
@@ -47,9 +49,9 @@ async function assertAccess(req: Request, companyId: string): Promise<void> {
 async function ownedConnection(req: Request, id: string, companyId?: string) {
   const connection = await storage.getBankConnection(id);
   if (!connection || (companyId && connection.companyId !== companyId))
-    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, "Bank connection not found");
+    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, bankStatementCopy.en);
   if (!(await storage.hasCompanyAccess(userId(req), connection.companyId)))
-    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, "Bank connection not found");
+    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, bankStatementCopy.en);
   return connection;
 }
 
@@ -102,7 +104,7 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
-  // Manual (statement-only) connection record. Open-banking connections come only from callback.
+  // Manual statement association. External authorizations are recorded by the callback.
   app.post(
     "/api/companies/:companyId/bank-connections",
     authMiddleware,
@@ -193,20 +195,19 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
-  // ─── Open banking (to the external boundary) ────────────────────────────
+  // ─── Financial-data authorization and processing ────────────────────────
 
   app.get(
     "/api/bank/providers",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (_req: Request, res: Response) => {
-      const snapshot = getCapabilitySnapshot();
       res.json({
         providers: getAvailableProviders(),
         isConfigured: isOpenBankingConfigured(),
         statuses: providerStatuses(),
+        csvImport: { available: true, message: bankStatementCopy },
         redirectUris: allowedRedirectUris(),
-        capabilities: snapshot.capabilities.filter((c) => c.id.startsWith("bank_feed_")),
       });
     })
   );
@@ -233,6 +234,38 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
+  const finishAuthorization = asyncHandler(async (req, res) => {
+    const { companyId } = req.params;
+    await assertAccess(req, companyId);
+    const body = parsedBody<z.output<typeof bankFeedCallbackBody>>(req);
+    const result = await completeCallback({
+      ...body,
+      companyId,
+      userId: userId(req),
+    });
+    logger.info({ companyId, count: result.connections.length }, "Authorization return processed");
+    res.status(201).json(result);
+  });
+
+  app.post(
+    "/api/bank-connections/callback",
+    authMiddleware,
+    requireCustomer,
+    strictBody(bankFeedCallbackBody),
+    asyncHandler(async (req, _res, next) => {
+      const body = parsedBody<z.output<typeof bankFeedCallbackBody>>(req);
+      const companyId = await resolveCallbackCompany({ ...body, userId: userId(req) });
+      // Apply the same workspace guards using the company bound to the authenticated user's state.
+      await assertAccess(req, companyId);
+      await assertTrialAccess(companyId, req.user!);
+      req.params.companyId = companyId;
+      next();
+    }),
+    requireFeature("bankImport"),
+    requirePermission("settings.company"),
+    finishAuthorization
+  );
+
   app.post(
     "/api/companies/:companyId/bank-connections/callback",
     authMiddleware,
@@ -240,20 +273,7 @@ export function registerBankRoutes(app: Express) {
     requireFeature("bankImport"),
     requirePermission("settings.company"),
     strictBody(bankFeedCallbackBody),
-    asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
-      await assertAccess(req, companyId);
-      const body = parsedBody<z.output<typeof bankFeedCallbackBody>>(req);
-      const result = await completeCallback({
-        companyId,
-        userId: userId(req),
-        provider: body.provider,
-        code: body.code,
-        state: body.state,
-      });
-      logger.info({ companyId, count: result.connections.length }, "Bank feed connected");
-      res.status(201).json(result);
-    })
+    finishAuthorization
   );
 
   app.post(
@@ -265,12 +285,7 @@ export function registerBankRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const connection = await ownedConnection(req, req.params.id);
       if (connection.provider === "manual")
-        throw new DomainError(
-          "BANK_FEED_NOT_SUPPORTED",
-          400,
-          undefined,
-          "This connection is statement-only"
-        );
+        throw new DomainError("BANK_FEED_NOT_SUPPORTED", 400, undefined, bankStatementCopy.en);
       const result = await syncConnection(connection, {
         from: req.body.fromDate,
         to: req.body.toDate,
@@ -287,12 +302,7 @@ export function registerBankRoutes(app: Express) {
     requireFeature("bankImport"),
     asyncHandler(async (req: Request, _res: Response) => {
       await ownedConnection(req, req.params.id);
-      throw new DomainError(
-        "BANK_FEED_BALANCE_UNAVAILABLE",
-        503,
-        undefined,
-        "Live balances need a configured bank feed; use the reconciliation statement instead"
-      );
+      throw new DomainError("BANK_FEED_BALANCE_UNAVAILABLE", 503, undefined, bankStatementCopy.en);
     })
   );
 }

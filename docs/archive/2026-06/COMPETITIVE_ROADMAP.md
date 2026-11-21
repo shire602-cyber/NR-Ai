@@ -47,6 +47,10 @@ sold to serious UAE businesses by 2027.** This is the highest-leverage investmen
 - **Price + unlimited users** — match Wafeq's unlimited-users model, undercut Zoho's
   per-user creep.
 
+## Statement reconciliation
+
+Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
+
 ## Phased roadmap
 
 ### P0 — Stop the bleeding (correctness & security) — weeks 0–6
@@ -66,7 +70,6 @@ Ready before rivals' SMEs migrate.
 
 ### P2 — Competitive parity — months 3–6
 Feature parity with Wafeq / Zoho.
-- Bank feeds / open banking (Lean, Tarabut) for auto-reconciliation.
 - Correct multi-currency + realised/unrealised FX; inventory with COGS.
 - Payroll + WPS/SIF end-to-end; 30+ report parity; period close + RE roll-forward; Arabic/RTL polish.
 

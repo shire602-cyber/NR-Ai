@@ -15,6 +15,11 @@ export function RedirectTo({ to }: RedirectToProps) {
   return <Redirect to={mergeLegacySearch(to, safeSearch())} replace />;
 }
 
+/** Forward an authorization return to a path-only destination without reserializing its query. */
+export function RawQueryRedirect({ to }: RedirectToProps) {
+  return <Redirect to={`${to}${safeSearch()}`} replace />;
+}
+
 function safeSearch(): string {
   return typeof window === "undefined" ? "" : window.location.search;
 }

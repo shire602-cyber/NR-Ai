@@ -21,6 +21,8 @@ afterEach(async () => {
   delete process.env.STRIPE_INVOICE_WEBHOOK_SECRET;
   const { setStripeFetch } = await import("../../server/services/payments");
   setStripeFetch(null);
+  const { setEmailTransportOverride } = await import("../../server/outbox");
+  setEmailTransportOverride(null);
 });
 
 const calls: Array<{ url: string; body?: string }> = [];
@@ -124,8 +126,26 @@ describe("W4-D online invoice payment", () => {
   it("[R16-14] a webhook delivered twice posts one payment through the ledger and the invoice is paid; fee goes to 5110", async () => {
     enableStripe();
     await mockStripe(320);
-    const t = await h.createTenant();
+    const t = await h.createTenant({ companyColumns: { locale: "ar" } });
     const inv = await issuedInvoice(t);
+    const emailPath = `/api/companies/${t.company.id}/invoices/${inv.id}/send-email`;
+    const pendingEmail = await t.as.post(emailPath, { to: "open@card.example" });
+    expect(pendingEmail.status, pendingEmail.text).toBe(202);
+    const [pending] = await h.sql("SELECT html FROM email_outbox WHERE id = $1", [
+      pendingEmail.body.outboxId,
+    ]);
+    expect(pending.html).toContain(">Pay now</a>");
+    expect(pending.html).toContain(">ادفع الآن</a>");
+    const { setEmailTransportOverride } = await import("../../server/outbox");
+    const sentReceipts: string[] = [];
+    setEmailTransportOverride({
+      name: "test",
+      send: async (message) => {
+        expect(message.to).toBe("payer@card.example");
+        sentReceipts.push(message.outboxId);
+        return { providerMessageId: "mock-receipt" };
+      },
+    });
     const share = await t.as.post(`/api/invoices/${inv.id}/share`);
     const view = await h.anon.get(`/api/public/invoices/${share.body.token}`);
     expect(view.body.onlinePayment.available).toBe(true);
@@ -186,10 +206,30 @@ describe("W4-D online invoice payment", () => {
     expect(net["1025"]).toBe(1046.8); // 1050 collected − 3.20 fee
     expect(net["5110"]).toBe(3.2);
     const receipt = await h.sql(
-      `SELECT status FROM email_outbox WHERE category = 'payment_receipt' AND related_entity_id = $1`,
+      `SELECT id, status, subject, html, text_body FROM email_outbox
+        WHERE category = 'payment_receipt' AND related_entity_id = $1`,
       [inv.id]
     );
     expect(receipt.length).toBe(1);
+    expect(sentReceipts).toEqual([receipt[0].id]);
+    expect(receipt[0].status).toBe("sent");
+    expect(receipt[0].subject).toMatch(/^Payment receipt: .* \| إيصال دفع:/);
+    expect(receipt[0].html).toContain('<div dir="ltr" lang="en"');
+    expect(receipt[0].html).toContain('<div dir="rtl" lang="ar"');
+    expect(receipt[0].text_body).toContain("Amount paid: AED 1,050.00");
+    expect(receipt[0].text_body).toContain("المبلغ المدفوع: 1,050.00 د.إ");
+    expect(receipt[0].text_body).not.toContain("pi_test_123");
+    const settledView = await h.anon.get(`/api/public/invoices/${share.body.token}`);
+    expect(settledView.status).toBe(200);
+    expect(settledView.body.onlinePayment.available).toBe(false);
+    const settledEmail = await t.as.post(emailPath, { to: "payer@card.example" });
+    expect(settledEmail.status, settledEmail.text).toBe(200);
+    const [settled] = await h.sql("SELECT html, text_body FROM email_outbox WHERE id = $1", [
+      settledEmail.body.outboxId,
+    ]);
+    expect(settled.html).toContain(">View invoice</a>");
+    expect(settled.html).toContain(">عرض الفاتورة</a>");
+    expect(settled.text_body).not.toMatch(/Pay now|ادفع الآن/);
     const notified = await h.sql(
       `SELECT 1 FROM notifications WHERE user_id = $1 AND event_key LIKE 'payment.received:%'`,
       [t.user.id]

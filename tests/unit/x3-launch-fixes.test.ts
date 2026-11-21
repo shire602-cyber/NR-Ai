@@ -165,26 +165,29 @@ describe("X3 invoice share / send by email", () => {
     );
   });
 
-  it("says sent only when the server says it was sent, and is Arabic in Arabic mode", async () => {
-    await setLocale("ar");
-    api.apiRequest
-      .mockResolvedValueOnce({ shareUrl: "/view/invoice/tok", token: "tok" })
-      .mockResolvedValueOnce({ sent: true, queued: false, emailConfigured: true });
-    await renderDialog();
-    typeEmail("buyer@example.com");
-    await act(async () => {
-      (q("button-send-invoice-email") as HTMLButtonElement).click();
-    });
-    expect(api.apiRequest).toHaveBeenLastCalledWith(
-      "POST",
-      "/api/companies/co-1/invoices/inv-1/send-email",
-      { to: "buyer@example.com", language: "ar" }
-    );
-    const { t } = await import("../../client/src/lib/i18n");
-    expect(q("invoice-share-email-sent")!.textContent).toBe(
-      t.ar["invoices.shareEmailSent"].replace("{to}", "buyer@example.com")
-    );
-  });
+  it.each(["en", "ar"] as const)(
+    "lets the server choose the email language from the %s dialog",
+    async (locale) => {
+      await setLocale(locale);
+      api.apiRequest
+        .mockResolvedValueOnce({ shareUrl: "/view/invoice/tok", token: "tok" })
+        .mockResolvedValueOnce({ sent: true, queued: false, emailConfigured: true });
+      await renderDialog();
+      typeEmail("buyer@example.com");
+      await act(async () => {
+        (q("button-send-invoice-email") as HTMLButtonElement).click();
+      });
+      expect(api.apiRequest).toHaveBeenLastCalledWith(
+        "POST",
+        "/api/companies/co-1/invoices/inv-1/send-email",
+        { to: "buyer@example.com" }
+      );
+      const { t } = await import("../../client/src/lib/i18n");
+      expect(q("invoice-share-email-sent")!.textContent).toBe(
+        t[locale]["invoices.shareEmailSent"].replace("{to}", "buyer@example.com")
+      );
+    }
+  );
 });
 
 describe("X3 Arabic legal pages", () => {

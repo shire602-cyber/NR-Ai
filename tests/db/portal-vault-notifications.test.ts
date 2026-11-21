@@ -4,6 +4,7 @@
  */
 import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import { useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -368,6 +369,15 @@ describe("W4-D notification engine", () => {
     const d = await h.createSecondTenant();
     await d.as.put("/api/notification-preferences", { digestFrequency: "daily" });
     await emit("bank.sync_failed", { companyId: d.company.id, entityId: crypto.randomUUID() });
+    await h.sql(
+      `UPDATE notifications SET title = $2, message = $3
+       WHERE user_id = $1 AND event_key LIKE 'bank.sync_failed:%'`,
+      [
+        d.user.id,
+        "Bank feed sync failed",
+        "The bank feed (lean) could not sync. Reconnect it under Banking.",
+      ]
+    );
     await emit("task.due", {
       companyId: d.company.id,
       entityId: crypto.randomUUID(),
@@ -382,10 +392,13 @@ describe("W4-D notification engine", () => {
     await sendDailyDigests();
     await sendDailyDigests();
     const digest = await h.sql(
-      `SELECT subject FROM email_outbox WHERE category = 'digest' AND to_address = $1`,
+      `SELECT subject, html FROM email_outbox WHERE category = 'digest' AND to_address = $1`,
       [d.email.toLowerCase()]
     );
     expect(digest.length).toBe(1);
+    expect(digest[0].html).toContain(bankStatementCopy.en);
+    expect(digest[0].html).toContain("Task due");
+    expect(digest[0].html).not.toMatch(/bank feed|reconnect/i);
     expect(digest[0].subject).toContain("2 update(s)");
     expect(
       (await t.as.put("/api/notification-preferences", { digestFrequency: "hourly" })).status

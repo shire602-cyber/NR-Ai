@@ -24,9 +24,15 @@ import {
 import { createLogger } from "../config/logger";
 import { onDomainEvent, type DomainEvent } from "../platform/domain-events";
 import { listJobs, registerJob } from "../platform/job-registry";
-import { escapeHtml, renderBilingualEmail, sendEmail } from "./email.service";
+import { renderBilingualEmail, sendEmail } from "./email.service";
+import { renderDigestItem, renderNotificationEmail } from "./notification-email-copy";
+import { marketingBrand } from "../../shared/marketing-brand";
 import { isCapabilityLive } from "../../shared/capabilities";
-import { notificationCopy, renderServerCopy } from "../../shared/server-copy";
+import {
+  normalizeNotificationCopy,
+  notificationCopy,
+  renderServerCopy,
+} from "../../shared/server-copy";
 
 const log = createLogger("notification-engine");
 
@@ -237,17 +243,9 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
       }
     }
     if (ch.email && user.email) {
-      const html = renderBilingualEmail(
-        {
-          brandName: "Muhasib.ai",
-          heading: { en: input.title, ar: input.title },
-          paragraphs: { en: [escapeHtml(input.message)], ar: [] },
-          footer: "Muhasib.ai notifications — manage them under Settings → Notifications",
-        },
-        "en"
-      );
-      const r = await sendEmail(user.email, input.title, input.message, {
-        html,
+      const { title, message } = normalizeNotificationCopy({ ...input, eventKey: key });
+      const r = await sendEmail(user.email, title, message, {
+        html: renderNotificationEmail(title, message),
         companyId: input.companyId,
         category: "notification",
         relatedEntityType: input.relatedEntityType ?? null,
@@ -385,12 +383,11 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
         type: "bank.sync_failed",
         ...notificationCopy(
           "notification.bankSyncFailed.title",
-          "notification.bankSyncFailed.message",
-          { provider: p.provider as string | undefined, reason: p.reason as string | undefined }
+          "notification.bankSyncFailed.message"
         ),
         priority: "high",
         relatedEntityType: "bank_connection",
-        actionUrl: "/bank-feeds",
+        actionUrl: "/bank-reconciliation?import=1",
         // One notification per failure day, not per retry.
         eventKey: `${p.entityId}:${String(p.occurredAt).slice(0, 10)}`,
       };
@@ -571,23 +568,27 @@ export async function sendDailyDigests(now: Date = new Date()): Promise<number> 
       .limit(100);
     if (!rows.length || !u.email) continue;
     const day = now.toISOString().slice(0, 10);
-    const items = rows.map(
-      (r: typeof notifications.$inferSelect) =>
-        `<strong>${escapeHtml(r.title)}</strong> — ${escapeHtml(r.message)}`
+    const items = rows.map((r: typeof notifications.$inferSelect) =>
+      renderDigestItem(normalizeNotificationCopy(r))
     );
     const html = renderBilingualEmail(
       {
-        brandName: "Muhasib.ai",
+        brandName: marketingBrand,
         heading: { en: `Your daily summary (${day})`, ar: `ملخصك اليومي (${day})` },
         paragraphs: { en: items, ar: [`لديك ${rows.length} إشعارات جديدة.`] },
       },
       "bilingual"
     );
-    const r = await sendEmail(u.email, `Muhasib.ai daily summary — ${rows.length} update(s)`, "", {
-      html,
-      category: "digest",
-      idempotencyKey: `digest:${u.userId}:${day}`,
-    });
+    const r = await sendEmail(
+      u.email,
+      `${marketingBrand} daily summary — ${rows.length} update(s)`,
+      "",
+      {
+        html,
+        category: "digest",
+        idempotencyKey: `digest:${u.userId}:${day}`,
+      }
+    );
     if (r.queued) {
       await db
         .update(notifications)

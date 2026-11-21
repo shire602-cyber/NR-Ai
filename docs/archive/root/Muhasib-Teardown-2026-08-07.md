@@ -348,7 +348,7 @@ Muhasib scored on what I could make it do today, not what it intends to do.
 | VAT figures internally consistent | ❌ **two engines, 75 vs 50** | ✅ | ✅ | ✅ | ✅ | n/a |
 | Corporate Tax | ⚠️ workpaper export only | taxable income only | tracking + humans file | ❌ none | ✅ module (Professional+) | ❌ |
 | Arabic + RTL | ⚠️ **382 keys / 1,004 hardcoded strings** | ✅ strong, Arabic-default | ✅ full | ❌ **none** | ⚠️ UI yes, **no Arabic CoA** | ❌ none |
-| UAE bank feeds | ❌ **none — CSV only** | Wio only | ❌ CSV only | ✅ **ADCB, DIB, ENBD, FAB, RAKBANK** | Yodlee + Wio | ❌ no UAE |
+| Bank reconciliation | CSV statement import | — | CSV statement import | — | — | — |
 | WPS SIF payroll | ✅ **generator present** | ❌ | ❌ (Bayzat partner) | ❌ | ✅ (separate paid product) | ❌ |
 | Period lock / month-end | ❌ **500, broken** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Money stored as decimal | ⚠️ **ledger yes, VAT return no** | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -365,15 +365,15 @@ Muhasib scored on what I could make it do today, not what it intends to do.
 
 **Wafeq is the one you can beat, and the mechanism is the emirate split.** Wafeq has no emirate concept anywhere in its data model — one mention of "emirate" across 1,013 help articles, no field on contacts or branches. Its custom tax rates *"cannot be included in VAT reports at all"*, which makes reverse-charge and Designated Zone treatment unworkable. Its TASR entry expires this month. Its 18,000-customer claim rests on 4 incentivised Capterra reviews and 0 on G2, and ~90% of its volume is Saudi. **You have the emirate boxes modelled and Wafeq doesn't — that is a real wedge, and it is currently sabotaged by defaulting to Dubai and by a VAT report that disagrees with your own ledger.**
 
-**QuickBooks is beatable on localisation and nothing else.** No Arabic. No RTL. No corporate tax. Intuit stated on the record in December 2025 and again in April 2026 that UAE e-invoicing is unsupported with no roadmap. Its UAE VAT marketing page is **recycled Malaysian GST content**; its FAQ still references Windows XP and Internet Explorer; zero UAE testimonials. But it has the best UAE bank feed coverage in the market (ADCB, DIB, ENBD, FAB, RAKBANK) and that alone keeps accountants on it.
+**QuickBooks is beatable on localisation and nothing else.** No Arabic. No RTL. No corporate tax. Intuit stated on the record in December 2025 and again in April 2026 that UAE e-invoicing is unsupported with no roadmap. Its UAE VAT marketing page is **recycled Malaysian GST content**; its FAQ still references Windows XP and Internet Explorer; zero UAE testimonials.
 
-**mazeed is your closest structural analogue** — Dubai, founded 2018 (formerly McLedger), 4,000+ businesses, full Arabic, AED 170/month unlimited users, and channel distribution through Dubai SME, Sharjah, Hub71, Meydan and e& that you cannot match. It is software *plus* an outsourced accounting service in one app. Its weakness is that its own e-invoicing page still says "Phase 1 — Q2 2026" against the real 30 Oct 2026 dates — stale compliance content from a compliance vendor. It has no live bank feeds either.
+**mazeed is your closest structural analogue** — Dubai, founded 2018 (formerly McLedger), 4,000+ businesses, full Arabic, AED 170/month unlimited users, and channel distribution through Dubai SME, Sharjah, Hub71, Meydan and e& that you cannot match. It is software *plus* an outsourced accounting service in one app. Its weakness is that its own e-invoicing page still says "Phase 1 — Q2 2026" against the real 30 Oct 2026 dates — stale compliance content from a compliance vendor.
 
 **FreshBooks is not a competitor in the UAE.** No VAT 201 (UK/HMRC only), no Arabic, no AED storefront, doesn't even label invoices "Tax Invoice" for the UAE. Remove it from your comparisons; naming it makes you look like you're padding the list.
 
 **The one you left out is the one that should worry you: Tally.** Accredited ASP #35, fully accredited 27 July 2026, native PINT AE XML, emirate field in party ledger masters, direct EmaraTax filing, full Arabic and bilingual invoices — and it **bundles unlimited e-invoices into the annual subscription while everyone else will meter per document**. ~AED 2,340 perpetual, ~AED 4,200 five-year TCO, 65,000+ UAE businesses. When the mandate lands, Tally is the safe answer, and "safe" is what a compliance purchase optimises for.
 
-**And the bank-feed problem is structural, not a backlog item.** CBUAE Open Finance (Circular 7/2023, in force 10 July 2025) **bans screen-scraping** and routes everything through one licensed central API Hub with **usage fees**. Bank data in the UAE is a cost of goods sold, not a free PSD2-style API. Only 7 of 267 UAE banks are reachable through any aggregator; Plaid has zero UAE coverage; DIFC and ADGM are excluded entirely. "We'll add bank feeds later" is a licensing and P&L decision, not a sprint.
+**UAE financial-data regulation.** CBUAE Open Finance (Circular 7/2023, in force 10 July 2025) **bans screen-scraping** and routes everything through one licensed central API Hub with **usage fees**. DIFC and ADGM are excluded. [Historical comparison excerpt redacted.]
 
 ---
 

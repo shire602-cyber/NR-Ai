@@ -38,13 +38,15 @@ describe("broken-path sweep text rules", () => {
   });
 });
 
-describe("sweep: bank import notification names the format, not its id", () => {
-  it("maps generic to CSV and bank ids to their names", async () => {
-    const { importFormatLabel } =
-      await import("../../server/services/bank-statement-parser.service");
-    expect(importFormatLabel("generic")).toBe("CSV");
-    expect(importFormatLabel("emiratesnbd")).toBe("Emirates NBD");
-    expect(importFormatLabel("camt053")).toBe("CAMT.053");
+describe("sweep: bank import notifications keep the bank name and counts", () => {
+  it("clears parser format labels from historical messages", async () => {
+    const { withNotificationCopy } = await import("../../shared/server-copy");
+    const notice = withNotificationCopy({
+      title: "Bank statement imported",
+      message: "6 transaction(s) imported from Emirates NBD (CAMT.053 format)",
+    });
+    expect(notice.message).toBe("6 transaction(s) imported from Emirates NBD");
+    expect(notice.copy.messageParams).toEqual({ bank: "Emirates NBD", count: "6" });
   });
 });
 

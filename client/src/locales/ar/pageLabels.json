@@ -140,7 +140,7 @@
   "pageLabels.businessQuestions": "أسئلة الأعمال",
   "pageLabels.byEscalationLevel": "حسب مستوى التصعيد",
   "pageLabels.cRMAndECommerceIntegrations": "تكاملات إدارة العملاء والتجارة الإلكترونية",
-  "pageLabels.cSVStatementImportNoLiveFeedNeeded": "استيراد كشف CSV دون الحاجة إلى ربط مباشر",
+  "pageLabels.csvStatementImport": "استيراد كشف بصيغة CSV",
   "pageLabels.calculateSelectedPeriod": "احسب الفترة المحددة",
   "pageLabels.calculating": "جارٍ الحساب...",
   "pageLabels.cashFlowPrediction": "توقع التدفق النقدي",

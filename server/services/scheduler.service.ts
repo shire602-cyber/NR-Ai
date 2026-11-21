@@ -7,6 +7,7 @@ import {
   invoiceLines as invoiceLinesTable,
   recurringInvoices as recurringInvoicesTable,
   type Company,
+  type Invoice,
   type ReminderSetting,
 } from "../../shared/schema";
 import { createLogger } from "../config/logger";
@@ -20,12 +21,7 @@ import { fromFils, mulRate } from "../../shared/money";
 import { isCapabilityLive } from "../../shared/capabilities";
 import { generateInvoicePDF } from "./pdf-invoice.service";
 import { resolveEmailLanguage } from "./email-layout";
-import {
-  buildReminderEmail,
-  sendEmail,
-  sendInvoiceEmail,
-  type EmailLanguage,
-} from "./email.service";
+import { buildReminderEmail, sendEmail, sendInvoiceEmail } from "./email.service";
 import { registerOutboxJob, type OutgoingAttachment } from "../outbox";
 import { registerEventOutboxJob } from "../platform/event-outbox";
 import { registerObjectDeletionJob } from "./object-deletion-queue";
@@ -243,20 +239,8 @@ async function settleLog(
 }
 
 /** A view/pay link for the customer: the invoice share link (it shows Pay now when live). */
-async function customerInvoiceLink(invoice: {
-  id: string;
-  shareToken: string | null;
-  shareTokenExpiresAt: Date | null;
-}) {
-  let token = invoice.shareToken;
-  if (
-    !token ||
-    (invoice.shareTokenExpiresAt && new Date(invoice.shareTokenExpiresAt) < new Date())
-  ) {
-    const crypto = await import("crypto");
-    token = crypto.randomBytes(16).toString("hex");
-    await storage.setInvoiceShareToken(invoice.id, token, new Date(Date.now() + 90 * DAY_MS));
-  }
+async function customerInvoiceLink(invoice: Invoice) {
+  const token = await storage.ensureInvoiceShareToken(invoice);
   const { publicBaseUrl } = await import("./payments");
   return `${publicBaseUrl()}/view/invoice/${token}`;
 }
@@ -401,21 +385,21 @@ async function dunOne(args: {
       summary.failed++;
       return;
     }
-    const lang =
-      setting.language === "bilingual"
-        ? resolveEmailLanguage(null, contact.preferredLanguage)
-        : (setting.language as EmailLanguage);
+    const language = resolveEmailLanguage(setting.language, contact.preferredLanguage);
+    const { sharedInvoicePayment } = await import("./payments");
+    const openFils = Number(inv.open_fils);
     const { subject, html, text } = buildReminderEmail({
       invoice,
       company,
       customerName: contact.name,
       customerNameAr: contact.nameAr ?? null,
-      openFils: Number(inv.open_fils),
+      openFils,
       level,
       daysOverdue,
-      payUrl: setting.includePayLink ? link : null,
+      payUrl:
+        setting.includePayLink && sharedInvoicePayment(invoice, openFils).available ? link : null,
       portalUrl: link,
-      language: lang,
+      language,
       customSubject: setting.emailSubject,
       customTemplate: setting.emailTemplate,
     });
@@ -963,6 +947,7 @@ async function finishGeneratedInvoice(
       undefined,
       {
         throwOnFailure: false,
+        language: resolveEmailLanguage(null, contact?.preferredLanguage),
         customerNameAr: contact?.nameAr ?? null,
       }
     );

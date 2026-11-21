@@ -22,6 +22,10 @@ import {
 } from "../../shared/schema";
 import { createLogger } from "../config/logger";
 import {
+  displayedOutboxSubject,
+  refreshQueuedNotificationEmail,
+} from "../services/notification-email-copy";
+import {
   EmailTransportError,
   activeProviderName,
   resolveTransport,
@@ -218,15 +222,20 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     .where(eq(emailOutboxAttachments.outboxId, row.id));
   const attempts = row.attempts + 1;
   try {
+    const refreshed = refreshQueuedNotificationEmail(row);
+    if (refreshed) {
+      await db.update(emailOutbox).set(refreshed).where(eq(emailOutbox.id, row.id));
+    }
+    const content = refreshed ?? row;
     const { providerMessageId } = await transport.send({
       outboxId: row.id,
       to: row.toAddress,
       cc: row.cc,
       replyTo: row.replyTo,
       fromName: row.fromName,
-      subject: row.subject,
-      html: row.html ?? "",
-      text: row.textBody,
+      subject: content.subject,
+      html: content.html ?? "",
+      text: content.textBody,
       attachments: attachments.map((a: typeof emailOutboxAttachments.$inferSelect) => ({
         filename: a.filename,
         contentType: a.contentType,
@@ -345,11 +354,12 @@ export async function listOutboxForCompany(
 ) {
   const conds = [eq(emailOutbox.companyId, companyId)];
   if (opts.relatedEntityId) conds.push(eq(emailOutbox.relatedEntityId, opts.relatedEntityId));
-  return db
+  const rows = await db
     .select({
       id: emailOutbox.id,
       toAddress: emailOutbox.toAddress,
       subject: emailOutbox.subject,
+      idempotencyKey: emailOutbox.idempotencyKey,
       category: emailOutbox.category,
       relatedEntityType: emailOutbox.relatedEntityType,
       relatedEntityId: emailOutbox.relatedEntityId,
@@ -367,6 +377,10 @@ export async function listOutboxForCompany(
     .where(and(...conds))
     .orderBy(desc(emailOutbox.createdAt))
     .limit(Math.min(opts.limit ?? 100, 500));
+  return rows.map(({ idempotencyKey, ...row }: (typeof rows)[number]) => ({
+    ...row,
+    subject: displayedOutboxSubject({ ...row, idempotencyKey }),
+  }));
 }
 
 export type ProviderEventType = "delivered" | "bounced" | "complained" | "opened" | "failed";

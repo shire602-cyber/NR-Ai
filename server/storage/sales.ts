@@ -2,6 +2,7 @@
 // Domain classes are chained with `extends` and composed into DatabaseStorage in
 // server/storage.ts (R20-09); import `storage` from "./storage", not these classes.
 
+import { randomBytes } from "node:crypto";
 import { journalMemo } from "@shared/journal-memo";
 import {
   accounts,
@@ -34,7 +35,7 @@ import {
   type RecurringInvoice,
 } from "@shared/schema";
 import { db, rowsFromResult } from "../db";
-import { and, desc, eq, getTableColumns, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { DomainError } from "../errors";
 import Decimal from "decimal.js";
 import {
@@ -245,11 +246,30 @@ export class SalesStorage extends LedgerStorage {
     return invoice || undefined;
   }
 
-  async setInvoiceShareToken(id: string, token: string, expiresAt: Date): Promise<void> {
-    await db
+  async ensureInvoiceShareToken(
+    invoice: Pick<Invoice, "id" | "companyId" | "shareToken" | "shareTokenExpiresAt">
+  ): Promise<string> {
+    const now = new Date();
+    if (
+      invoice.shareToken &&
+      (!invoice.shareTokenExpiresAt || new Date(invoice.shareTokenExpiresAt) > now)
+    ) {
+      return invoice.shareToken;
+    }
+
+    const scope = and(eq(invoices.id, invoice.id), eq(invoices.companyId, invoice.companyId));
+    const token = randomBytes(16).toString("hex");
+    const expiresAt = new Date(now.getTime() + 90 * 86_400_000);
+    // Update only an expired or empty link. Concurrent callers use the winning token.
+    const [updated] = await db
       .update(invoices)
       .set({ shareToken: token, shareTokenExpiresAt: expiresAt })
-      .where(eq(invoices.id, id));
+      .where(and(scope, or(isNull(invoices.shareToken), lte(invoices.shareTokenExpiresAt, now))))
+      .returning({ token: invoices.shareToken });
+    if (updated?.token) return updated.token;
+    const [stored] = await db.select({ token: invoices.shareToken }).from(invoices).where(scope);
+    if (!stored?.token) throw new DomainError("INVOICE_NOT_FOUND", 404);
+    return stored.token;
   }
 
   // Invoice Lines

@@ -124,7 +124,8 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
   /** Extra request headers, e.g. `X-Period-Lock-Reason` for an audited soft-lock override. */
-  extraHeaders?: Record<string, string>
+  extraHeaders?: Record<string, string>,
+  options?: { queueWhenOffline?: boolean }
 ): Promise<any> {
   const withExtra = (h: Record<string, string>) => (extraHeaders ? { ...h, ...extraHeaders } : h);
   let headers = withExtra(await buildRequestHeaders(method, data));
@@ -137,6 +138,7 @@ export async function apiRequest(
   // to replay once connectivity returns. Reads are not queued — they should
   // surface a clear error so the UI can render its offline state.
   if (!isOnline() && MUTATING_METHODS.has(upperMethod)) {
+    if (options?.queueWhenOffline === false) throw new ApiError("You are offline.", 0);
     await queueForSync({ url: fullUrl, method: upperMethod, headers, body });
     throw new ApiError("You are offline. This change will sync when you reconnect.", 0);
   }

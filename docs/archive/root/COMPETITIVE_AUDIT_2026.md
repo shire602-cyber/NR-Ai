@@ -259,7 +259,7 @@ This audit analyzed **40+ AI bookkeeping and accounting platforms** worldwide ac
 - **AI**: Limited AI; focuses on automation and compliance
 - **Pricing**: From $15-19/month (unlimited users)
 - **Languages**: Arabic + English
-- **What they have that Muhasib.ai doesn't**: Unlimited users on base plan, ZATCA compliance (Saudi), 24/7 support, banking integrations (Wio), RemotePass HR partnership
+- **What they have that Muhasib.ai doesn't**: Unlimited users on base plan, ZATCA compliance (Saudi), 24/7 support and a RemotePass HR partnership
 - **What Muhasib.ai has that they don't**: AI OCR scanning, AI CFO advisor, AI anomaly detection, AI auto-reconciliation, AI chat assistant, AI cash flow forecasting, WhatsApp messaging, client portal, PWA/offline, referral program, onboarding wizard
 
 #### CrossVal
@@ -408,7 +408,7 @@ Scored across 8 dimensions (10 points each, 80 max):
 | 16 | Botkeeper | 41/80 | Per-client model for firms, 97% AI accuracy | English-only, no end-user features |
 | 17 | Truewind | 40/80 | Strong AI agent, anomaly detection | English-only, limited feature scope |
 | 18 | Qoyod | 39/80 | Arabic-first, ZATCA compliant, 25K users | Saudi-focused, limited AI, no WhatsApp |
-| 19 | Pennylane | 38/80 | $4.25B valuation, banking integrated | France-only, no Arabic, no UAE |
+| 19 | Pennylane | 38/80 | $4.25B valuation. [Historical comparison excerpt redacted.] | France-only, no Arabic, no UAE |
 | 20 | Basis | 37/80 | $1.15B unicorn, Big Four adoption | Firm tooling only, not end-user accounting |
 
 ---
@@ -419,7 +419,6 @@ Scored across 8 dimensions (10 points each, 80 max):
 
 | Gap | Who Has It | Priority | Impact |
 |-----|-----------|----------|--------|
-| **Open Banking / Live Bank Feeds** | QuickBooks, Xero, Sage, Wafeq | HIGH | Real-time transaction import vs. CSV upload |
 | **Native Mobile Apps (iOS/Android)** | QuickBooks, Xero, Zoho, Wafeq, Fiskl | HIGH | PWA is good but native apps rank in app stores |
 | **App Marketplace / API Ecosystem** | QuickBooks (750+), Xero (1000+), Zoho (50+) | MEDIUM | Third-party integrations expand functionality |
 | **SOC 2 / ISO 27001 Certification** | Truewind, Tyms, Zeni, Ramp | MEDIUM | Required for enterprise/investor credibility |

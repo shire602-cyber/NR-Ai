@@ -19,6 +19,7 @@ import {
   YAxis,
 } from "recharts";
 import { Download, FileText, Landmark, Pencil, Send, Trash2 } from "lucide-react";
+import { bankStatementCopy } from "@shared/bank-statement-copy";
 
 import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -291,11 +292,8 @@ export default function UiGallery() {
           className="mt-4"
           size="lg"
           icon={Landmark}
-          title={L("Connect your bank to start reconciling", "اربط حسابك البنكي لتبدأ التسوية")}
-          description={L(
-            "Import a statement or add an account. Matches appear here as soon as transactions arrive.",
-            "استورد كشف حساب أو أضف حسابًا. تظهر المطابقات هنا فور وصول الحركات."
-          )}
+          title={L("Import a CSV statement", "استيراد كشف بصيغة CSV")}
+          description={L(bankStatementCopy.en, bankStatementCopy.ar)}
           action={{ label: L("Add bank account", "إضافة حساب بنكي"), onClick: () => {} }}
           secondaryAction={{ label: L("Import statement", "استيراد كشف"), onClick: () => {} }}
         />
