@@ -29,7 +29,7 @@ export function findUnsupportedBankFeedClaim(text, { allowDelegatedRoadmapCopy =
       source = source.replaceAll(sentence, " ");
     }
   }
-  source = source.replace(/[\u0640\u064b-\u065f\u0670]/gu, "").replace(/\s+/gu, " ");
+  source = source.replace(/\u0640|[\u064b-\u065f]|\u0670/gu, "").replace(/\s+/gu, " ");
   for (const pattern of CLAIMS) {
     for (const match of source.matchAll(pattern)) {
       const before = source.slice(0, match.index);
