@@ -1,6 +1,7 @@
 import { and, eq, or, sql } from "drizzle-orm";
 import { vatReturns, type VatReturn } from "../../shared/schema";
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
+import { roleHasPermission } from "../../shared/permissions";
 import { DomainError } from "../errors";
 import { isUuid } from "./normalize";
 import { ledgerQueryable, rowsOf } from "./tx";
@@ -11,6 +12,7 @@ export interface VatGroupInfo {
   name: string;
   groupTrn: string;
   memberIds: string[];
+  memberAuthority?: "settings.company";
 }
 
 export interface VerifiedVatGroup extends VatGroupInfo {
@@ -66,6 +68,9 @@ export function getFilingVatGroup(snapshot: unknown): VerifiedVatGroup | undefin
       groupTrn: group.groupTrn,
       memberIds: members,
       provenance: group.provenance,
+      ...(group.memberAuthority === "settings.company" && {
+        memberAuthority: group.memberAuthority,
+      }),
     };
   }
 }
@@ -89,17 +94,76 @@ export async function loadVatGroupForRepresentative(
   } = await q.query(
     `SELECT g.id, g.name, g.group_trn, ARRAY(
          SELECT m.company_id FROM vat_group_members m WHERE m.group_id = g.id
-       ) AS members
+       ) AS members, (
+         SELECT a.details FROM audit_logs a WHERE a.company_id = g.representative_company_id
+            AND a.resource_type = 'vat_group' AND a.resource_id = g.id::text
+            AND a.action = 'vat.group.upsert'
+          ORDER BY a.seq DESC NULLS LAST, a.created_at DESC LIMIT 1
+       ) AS audit_details
        FROM vat_groups g WHERE g.representative_company_id = $1`,
     [companyId]
   );
   if (!group) return null;
+  const members = [...new Set<string>([companyId.toLowerCase(), ...group.members])].sort();
+  const audit = parseMembershipAudit(group.audit_details);
+  const authorized =
+    audit?.memberAuthority === "settings.company" &&
+    JSON.stringify(memberIds(audit?.members)) === JSON.stringify(members);
   return {
     groupId: group.id,
     name: group.name,
     groupTrn: group.group_trn,
-    memberIds: [...new Set<string>([companyId.toLowerCase(), ...group.members])].sort(),
+    memberIds: members,
+    ...(authorized && { memberAuthority: "settings.company" as const }),
   };
+}
+
+function parseMembershipAudit(details: string | null) {
+  try {
+    return (
+      JSON.parse(details ?? "null") as {
+        after?: {
+          name?: unknown;
+          groupTrn?: unknown;
+          members?: unknown;
+          memberAuthority?: unknown;
+        };
+      } | null
+    )?.after;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function assertVatGroupManagers(tx: LedgerTx, userId: string, companyIds: string[]) {
+  const ids = [...new Set(companyIds.map((id) => id.toLowerCase()))];
+  const { rows } = await ledgerQueryable(tx).query(
+    `SELECT company_id, role FROM company_users
+      WHERE user_id = $1 AND company_id = ANY($2::uuid[]) ORDER BY company_id FOR SHARE`,
+    [userId, ids]
+  );
+  if (
+    rows.length !== ids.length ||
+    rows.some((row) => !roleHasPermission(row.role, "settings.company"))
+  ) {
+    throw new DomainError(
+      "VAT_GROUP_MEMBER_AUTHORIZATION_REQUIRED",
+      403,
+      undefined,
+      "A company owner or administrator must authorize VAT group membership for each member."
+    );
+  }
+}
+
+export async function authorizeVatFilingGroup(
+  tx: LedgerTx,
+  group: VerifiedVatGroup | null,
+  userId: string
+) {
+  if (!group || group.memberAuthority === "settings.company") return group;
+  // An owner or administrator can confirm an older link when acting on the group return.
+  await assertVatGroupManagers(tx, userId, group.memberIds);
+  return { ...group, memberAuthority: "settings.company" as const };
 }
 
 /** Use the recorded transition time, which is independent of the user's FTA filing date. */
@@ -159,9 +223,7 @@ async function recoverFilingVatGroup(
           return UNVERIFIED_VAT_GROUP;
         }
       }
-      const { after } = JSON.parse(event.membershipDetails) as {
-        after?: { name?: unknown; groupTrn?: unknown; members?: unknown };
-      };
+      const after = parseMembershipAudit(event.membershipDetails);
       const members = memberIds(after?.members);
       if (
         members?.includes(vatReturn.companyId) &&
@@ -175,6 +237,9 @@ async function recoverFilingVatGroup(
           groupTrn: after.groupTrn,
           memberIds: members,
           provenance: "audit",
+          ...(after.memberAuthority === "settings.company" && {
+            memberAuthority: after.memberAuthority,
+          }),
         };
       }
     } catch {

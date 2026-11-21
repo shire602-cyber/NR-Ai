@@ -454,6 +454,7 @@
   "journal.memo.line.vatAmendedReturnRefund": "إقرار ضريبة القيمة المضافة المعدّل من {from} إلى {to}: استرداد الضريبة من الهيئة",
   "journal.memo.line.vatSettlementFxGain": "إقرار ضريبة القيمة المضافة من {from} إلى {to}: أرباح صرف محققة",
   "journal.memo.line.vatSettlementFxLoss": "إقرار ضريبة القيمة المضافة من {from} إلى {to}: خسائر صرف محققة",
+  "journal.memo.line.vatGroupIntercompany": "إقرار ضريبة القيمة المضافة من {from} إلى {to}: رصيد مستحق مع أعضاء المجموعة الضريبية",
   "journal.memo.line.vatReliefOutput": "إعفاء ضريبة المخرجات - {ref}",
   "journal.memo.line.vatReliefRecovered": "ضريبة مستردة عن دين معدوم - {ref}",
   "journal.memo.line.irrecoverableInputVat": "ضريبة مدخلات غير قابلة للاسترداد",

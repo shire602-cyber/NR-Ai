@@ -373,7 +373,12 @@ describe("W4-E VAT engine: report 07 scenario", () => {
     const sub = await t.as.post(`/api/vat-returns/${gen.body.id}/submit`, {});
     expect(sub.status, sub.text).toBe(200);
     expect(sub.body.status).toBe("submitted");
-    expect(sub.body.reconciliationSnapshot).toEqual(ok.body.reconciliationSnapshot);
+    const { filingReconciliation, ...approvalEvidence } = sub.body.reconciliationSnapshot;
+    expect(approvalEvidence).toEqual(ok.body.reconciliationSnapshot);
+    expect(filingReconciliation).toMatchObject({
+      unexplainedInputFils: approvalEvidence.unexplainedInputFils,
+      unexplainedOutputFils: approvalEvidence.unexplainedOutputFils,
+    });
     expect(sub.body.reconciliationOverrideAt).toBe(ok.body.reconciliationOverrideAt);
     expect(sub.body.filing.transmittedByMuhasib).toBe(false);
     const audit = await h.sql(

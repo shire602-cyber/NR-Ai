@@ -25,7 +25,10 @@
  * them), so they and their reversals are never refused although they touch 2020 / 1050.
  */
 import { sql } from "drizzle-orm";
+import type { JournalLineVatTreatment } from "../../shared/journal-line-treatments";
+import { uaeToday } from "../../shared/uae-date";
 import { DomainError } from "../errors";
+import { ENTRY_LOCAL_DATE_SQL } from "../reporting/ledger-query";
 import { rowsOf } from "./tx";
 import type { LedgerTx } from "./types";
 import {
@@ -61,9 +64,22 @@ export const REVERSAL_REPORTED_ON_OWN_DATE: ReadonlySet<string> = new Set(["vat_
  */
 export const VAT_LOCK_EXEMPT_SOURCES: ReadonlySet<string> = new Set(["vat_return_settlement"]);
 
+const VAT201_JOURNAL_TREATMENTS: readonly JournalLineVatTreatment[] = [
+  "standard",
+  "zero_rated",
+  "exempt",
+];
+
+export function isVat201JournalTreatment(
+  treatment: JournalLineVatTreatment | null | undefined
+): boolean {
+  return treatment != null && VAT201_JOURNAL_TREATMENTS.includes(treatment);
+}
+
 /**
  * B1 (NH1): an entry the VAT engine reports from its own record (bank-line VAT treatment, a
- * fixed-asset disposal for consideration), checked when the entry is reversed or voided.
+ * fixed-asset disposal for consideration, or treated manual journal), checked when the entry
+ * is posted from a draft, reversed or voided.
  */
 async function reportedByVatEngine(
   tx: LedgerTx,
@@ -83,7 +99,11 @@ async function reportedByVatEngine(
     UNION ALL
     SELECT 1 FROM journal_lines jl
      JOIN journal_entries je ON je.id = jl.entry_id
-     WHERE je.company_id = ${companyId} AND je.id = ${entryId} AND jl.vat_treatment IS NOT NULL
+     WHERE je.company_id = ${companyId} AND je.id = ${entryId}
+       AND jl.vat_treatment IN (${sql.join(
+         VAT201_JOURNAL_TREATMENTS.map((treatment) => sql`${treatment}`),
+         sql`, `
+       )})
     LIMIT 1
   `);
   return rowsOf(res).length > 0;
@@ -149,7 +169,8 @@ export async function findFiledVatPeriod(
   tx: LedgerTx,
   companyId: string,
   from: string,
-  to = from
+  to = from,
+  excludingReturnId?: string
 ): Promise<VatPeriodClosure | null> {
   const memberId = companyId.toLowerCase();
   const withMember = sql`jsonb_build_array(${memberId}::text, g.representative_company_id::text)`;
@@ -160,13 +181,18 @@ export async function findFiledVatPeriod(
     WITH own_return AS (
       SELECT * FROM vat_returns
        WHERE company_id = ${companyId}
+         AND (${excludingReturnId ?? null}::uuid IS NULL OR id <> ${excludingReturnId ?? null}::uuid)
          AND status IN ('submitted', 'filed')
          AND period_end >= ${from}::date
          AND period_start < ${to}::date + interval '1 day'
        ORDER BY period_end DESC LIMIT 1
     ),
     linked_audits AS MATERIALIZED (
-      SELECT DISTINCT a.company_id, a.resource_id
+      SELECT a.company_id, a.resource_id,
+             min(a.created_at) FILTER (WHERE CASE WHEN pg_input_is_valid(a.details, 'jsonb')
+                          THEN (a.details::jsonb #>> '{after,memberAuthority}') = 'settings.company'
+                            AND lower((a.details::jsonb #> '{after,members}')::text)::jsonb @> ${auditMembers}
+                          ELSE false END) AS authorized_since
         FROM audit_logs a
        WHERE a.resource_type = 'vat_group'
          AND a.action = 'vat.group.upsert'
@@ -179,10 +205,12 @@ export async function findFiledVatPeriod(
                   THEN lower((a.details::jsonb #> '{before,members}')::text)::jsonb @> ${auditMembers}
                     OR lower((a.details::jsonb #> '{after,members}')::text)::jsonb @> ${auditMembers}
                   ELSE false END
+       GROUP BY a.company_id, a.resource_id
     ),
     linked_groups AS MATERIALIZED (
-      SELECT g.id, g.representative_company_id
+      SELECT g.id, g.representative_company_id, a.authorized_since
         FROM vat_groups g
+        LEFT JOIN linked_audits a ON a.company_id = g.representative_company_id AND a.resource_id = g.id::text
        WHERE NOT EXISTS (SELECT 1 FROM own_return)
          AND g.representative_company_id <> ${companyId}
          AND (
@@ -200,27 +228,27 @@ export async function findFiledVatPeriod(
                 AND lower((h.reconciliation_snapshot #> '{filingVatGroup,memberIds}')::text)::jsonb
                     @> ${withMember}
            )
-           OR EXISTS (
-             SELECT 1 FROM linked_audits a
-              WHERE a.company_id = g.representative_company_id AND a.resource_id = g.id::text
-           )
+           OR a.resource_id IS NOT NULL
          )
     )
     SELECT id, status, company_id AS "companyId", amends_return_id AS "amendsReturnId",
            vat_group_id AS "vatGroupId",
+           authorized_member AS "authorizedMember",
            jsonb_build_object('filingVatGroup', reconciliation_snapshot -> 'filingVatGroup') AS "reconciliationSnapshot",
            period_start::date::text AS ps, period_end::date::text AS pe
       FROM (
         SELECT id, status, company_id, amends_return_id, vat_group_id, reconciliation_snapshot,
-               period_start, period_end
+               period_start, period_end, false AS authorized_member
           FROM own_return
         UNION ALL
         SELECT r.id, r.status, r.company_id, r.amends_return_id, r.vat_group_id,
-               r.reconciliation_snapshot, r.period_start, r.period_end
+               r.reconciliation_snapshot, r.period_start, r.period_end,
+               COALESCE(g.authorized_since <= r.created_at, false)
           FROM linked_groups g
           CROSS JOIN LATERAL (
             SELECT * FROM vat_returns r
              WHERE r.company_id = g.representative_company_id
+               AND (${excludingReturnId ?? null}::uuid IS NULL OR r.id <> ${excludingReturnId ?? null}::uuid)
                AND (r.vat_group_id = g.id OR (r.vat_group_id IS NULL AND r.amends_return_id IS NOT NULL))
                AND r.status IN ('submitted', 'filed')
                AND r.period_end >= ${from}::date
@@ -236,19 +264,23 @@ export async function findFiledVatPeriod(
     companyId: string;
     amendsReturnId: string | null;
     vatGroupId: string | null;
+    authorizedMember: boolean;
     reconciliationSnapshot: unknown;
     ps: string;
     pe: string;
   }>(res);
   let unresolved = false;
   for (const r of candidates) {
+    const ownReturn = r.companyId === memberId;
     const group = await resolveFilingVatGroup(tx, r, null);
     if (group === UNVERIFIED_VAT_GROUP) {
-      unresolved = true;
+      unresolved ||= ownReturn || r.authorizedMember;
       continue;
     }
-    const ownReturn = r.companyId === memberId;
-    if (ownReturn || group?.memberIds.includes(memberId)) {
+    if (
+      ownReturn ||
+      (group?.memberAuthority === "settings.company" && group.memberIds.includes(memberId))
+    ) {
       return {
         vatReturnId: r.id,
         status: r.status,
@@ -318,14 +350,14 @@ export function vatPeriodFiledError(period: VatPeriodClosure, postingDate: strin
 }
 
 /**
- * Throw 409 VAT_PERIOD_FILED when a posted entry affecting VAT is dated in (or, for a reversal,
- * undoes an entry dated in) a submitted / filed VAT period. The caller holds the VAT return lock.
+ * Throw 409 VAT_PERIOD_FILED when a posted entry affecting VAT falls in (or, for a reversal,
+ * undoes an entry in) a submitted / filed UAE reporting period. The caller holds the VAT return lock.
  */
 export async function assertVatPeriodOpen(
   tx: LedgerTx,
   input: {
     companyId: string;
-    dateIso: string;
+    date: Date;
     source: string | null;
     accountIds: string[];
     reversedEntryId?: string | null;
@@ -336,12 +368,12 @@ export async function assertVatPeriodOpen(
   }
 ): Promise<void> {
   if (VAT_LOCK_EXEMPT_SOURCES.has(input.source ?? "")) return;
-  const dates = [input.dateIso];
+  const dates = [uaeToday(input.date)];
   let originalSource: string | null = null;
   if (input.reversedEntryId) {
     const res = await tx.execute(sql`
-      SELECT date::date::text AS d, source FROM journal_entries
-       WHERE id = ${input.reversedEntryId} AND company_id = ${input.companyId}
+      SELECT ${sql.raw(ENTRY_LOCAL_DATE_SQL)}::text AS d, je.source FROM journal_entries je
+       WHERE je.id = ${input.reversedEntryId} AND je.company_id = ${input.companyId}
     `);
     const original = rowsOf<Record<string, string | null>>(res)[0];
     if (VAT_LOCK_EXEMPT_SOURCES.has(original?.source ?? "")) return;

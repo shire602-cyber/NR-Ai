@@ -276,10 +276,11 @@ export async function computeVat201(
 ): Promise<VatComputation> {
   const company = await loadVatCompany(input.companyId, tx);
   if (input.includeGroup !== false) {
-    const group =
+    const configured =
       filingVatGroup === undefined
         ? await loadVatGroupForRepresentative(input.companyId, tx)
-        : filingVatGroup;
+        : null;
+    const group = filingVatGroup ?? (configured?.memberAuthority ? configured : null);
     if (group) return computeGroup(input, company, group, tx);
   }
   const single = await computeSingle(input, company, new Set(), tx);
@@ -525,6 +526,13 @@ async function computeSingle(
 
 /** Internal: each single computation's VAT GL balances by (category, date), for group FX (S8). */
 const ledgerByDate = new WeakMap<VatComputation, LedgerVat["byCategoryDate"]>();
+
+/** Filing uses each member's functional-currency evidence without exposing it in preview JSON. */
+const memberComputations = new WeakMap<VatComputation, VatComputation[]>();
+
+export function vatMemberComputations(computation: VatComputation): VatComputation[] {
+  return memberComputations.get(computation) ?? [computation];
+}
 
 // ─── Filing currency (S1, W5-C follow-up) ────────────────────────────────
 
@@ -1805,7 +1813,7 @@ async function computeGroup(
     ledgerByCategory: mergeLedgerMaps(ledgers),
     hasVatAccounts: recon.some((r) => r.hasVatAccounts),
   });
-  return {
+  const result: VatComputation = {
     ...parts.find((p) => p.companyId === company.id)!,
     company: { ...company, trn: group.groupTrn },
     boxesFils,
@@ -1824,6 +1832,8 @@ async function computeGroup(
     },
     group,
   };
+  memberComputations.set(result, parts);
+  return result;
 }
 
 /** A member's VAT GL balances by category, in its functional currency (AED members) or AED. */

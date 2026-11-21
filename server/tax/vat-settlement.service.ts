@@ -22,7 +22,8 @@ import { journalLine, journalMemo } from "@shared/journal-memo";
 import type { Request } from "express";
 import { DomainError } from "../errors";
 import { ledgerQueryable } from "../ledger/tx";
-import { lockVatReturns } from "../ledger/vat-lock";
+import { getFilingVatGroup } from "../ledger/vat-group-scope";
+import { lockVatGroupMembership, lockVatReturnCompanies } from "../ledger/vat-lock";
 import { recordAudit } from "../services/audit.service";
 import { bankCurrencyOf, cashLegFor } from "../services/fx/bank-currency";
 import { convertFilsAtRate, getRate } from "../services/fx/rates";
@@ -37,11 +38,23 @@ import {
   type PostJournalLineInput,
 } from "../ledger";
 import { fromFils, toFils } from "../../shared/money";
-import { VAT_SETTLEMENT_SOURCE } from "./vat-reconciliation";
+import {
+  VAT_SETTLEMENT_SOURCE,
+  type VatFilingMemberEvidence,
+  type VatFilingReconciliation,
+} from "./vat-reconciliation";
 
 export { VAT_SETTLEMENT_SOURCE };
 
 const SETTLEABLE = new Set(["submitted", "filed"]);
+
+interface GroupSettlementEvidence {
+  outputFils: number;
+  inputFils: number;
+  paymentAccountId: string;
+  reference: string | null;
+  members: Array<{ companyId: string; outputFils: number; inputFils: number }>;
+}
 
 interface ReturnRow {
   id: string;
@@ -50,13 +63,13 @@ interface ReturnRow {
   period_end: string;
   box12: string;
   box13: string;
+  engine_version: string | null;
   vat_group_id: string | null;
   amends_return_id: string | null;
   reconciliation_snapshot: {
-    basis?: string;
-    returnOutputVatFils?: number;
-    returnInputVatFils?: number;
     filingVatGroup?: unknown;
+    filingReconciliation?: VatFilingReconciliation;
+    vatGroupSettlement?: GroupSettlementEvidence;
   } | null;
   payment_date: string | null;
   payment_amount: string | null;
@@ -68,16 +81,17 @@ interface ReturnRow {
 async function loadReturn(
   companyId: string,
   vatReturnId: string,
-  tx?: LedgerTx
+  tx?: LedgerTx,
+  forUpdate = true
 ): Promise<ReturnRow> {
   const { rows } = await ledgerQueryable(tx).query(
     `SELECT id, status, period_start::date::text AS period_start,
             period_end::date::text AS period_end, box12_total_due_tax::text AS box12,
-            box13_recoverable_tax::text AS box13, vat_group_id, amends_return_id,
+            box13_recoverable_tax::text AS box13, engine_version, vat_group_id, amends_return_id,
             reconciliation_snapshot, payment_status,
             payment_date::date::text AS payment_date, payment_amount::text AS payment_amount,
             declaration_date::date::text AS filed_on
-       FROM vat_returns WHERE id = $1 AND company_id = $2 ${tx ? "FOR UPDATE" : ""}`,
+       FROM vat_returns WHERE id = $1 AND company_id = $2 ${tx && forUpdate ? "FOR UPDATE" : ""}`,
     [vatReturnId, companyId]
   );
   if (!rows[0]) throw new DomainError("VAT_RETURN_NOT_FOUND", 404);
@@ -129,17 +143,38 @@ interface SettlementJournal {
   paymentAccountId: string | null;
 }
 
-interface PriorSettlement {
-  returnIds: string[];
+interface MemberSettlementTotals {
   outputFils: number;
   inputFils: number;
   outputBaseFils: number;
   inputBaseFils: number;
 }
 
+interface PriorSettlement extends MemberSettlementTotals {
+  returnIds: string[];
+  members: Map<string, MemberSettlementTotals>;
+  hasLegacyEntries: boolean;
+}
+
+function settlementCompanyIds(ret: ReturnRow, companyId: string): string[] {
+  const group = getFilingVatGroup(ret.reconciliation_snapshot);
+  return group?.memberAuthority === "settings.company" && group.memberIds.includes(companyId)
+    ? group.memberIds
+    : [companyId];
+}
+
+async function lockSettlementReturn(tx: LedgerTx, companyId: string, vatReturnId: string) {
+  await lockVatGroupMembership(tx, companyId);
+  const initial = await loadReturn(companyId, vatReturnId, tx, false);
+  const companyIds = settlementCompanyIds(initial, companyId);
+  await lockVatReturnCompanies(tx, companyIds);
+  return { ret: await loadReturn(companyId, vatReturnId, tx), companyIds };
+}
+
 async function findSettlementJournal(
   companyId: string,
-  vatReturnId: string,
+  ret: ReturnRow,
+  companyIds: string[],
   tx?: LedgerTx
 ): Promise<SettlementJournal | undefined> {
   // Before FX-aware settlements the AED box deltas were copied directly to the journal columns.
@@ -159,35 +194,70 @@ async function findSettlementJournal(
        FROM journal_entries je
        JOIN journal_lines jl ON jl.entry_id = je.id
        JOIN accounts a ON a.id = jl.account_id AND a.company_id = je.company_id
-      WHERE je.company_id = $1 AND je.source = $2 AND je.source_id = $3 AND je.status = 'posted'
+      WHERE je.company_id = ANY($4::uuid[]) AND je.source = $2 AND je.source_id = $3 AND je.status = 'posted'
         AND je.reversed_by_entry_id IS NULL AND je.entry_kind <> 'reversal'
       GROUP BY je.id
-      ORDER BY je.created_at DESC LIMIT 1`,
-    [companyId, VAT_SETTLEMENT_SOURCE, vatReturnId]
+      ORDER BY (je.company_id = $1) DESC, je.company_id, je.created_at DESC, je.id LIMIT 1`,
+    [companyId, VAT_SETTLEMENT_SOURCE, ret.id, companyIds]
   );
-  return rows[0] as SettlementJournal | undefined;
+  const entry = rows[0] as SettlementJournal | undefined;
+  const group = ret.reconciliation_snapshot?.vatGroupSettlement;
+  return entry && group
+    ? {
+        ...entry,
+        outputFils: String(group.outputFils),
+        inputFils: String(group.inputFils),
+        paymentAccountId: group.paymentAccountId,
+        reference: group.reference,
+      }
+    : entry;
 }
 
-/** Standalone return reconciliation is calculated in the ledger currency before AED conversion. */
-function bookVatAmounts(ret: ReturnRow) {
-  const snapshot = ret.reconciliation_snapshot;
-  const output = snapshot?.returnOutputVatFils;
-  const input = snapshot?.returnInputVatFils;
-  // Group reconciliation is consolidated in AED. A legacy amendment lacking its filing scope
-  // might also be a group return, so its reconciliation figures cannot establish book amounts.
+function settlementReconciliationRequired(): DomainError {
+  return new DomainError(
+    "VAT_SETTLEMENT_RECONCILIATION_REQUIRED",
+    409,
+    undefined,
+    "Reconcile the filed VAT figures to the posted VAT controls before recording settlement."
+  );
+}
+
+function filingMembers(ret: ReturnRow): VatFilingMemberEvidence[] | undefined {
+  const evidence = ret.reconciliation_snapshot?.filingReconciliation;
+  if (!evidence) return undefined;
   if (
-    ret.vat_group_id ||
-    snapshot?.filingVatGroup ||
-    (ret.amends_return_id && snapshot?.filingVatGroup === undefined) ||
-    snapshot?.basis !== "vat_control_accounts" ||
-    typeof output !== "number" ||
-    !Number.isSafeInteger(output) ||
-    typeof input !== "number" ||
-    !Number.isSafeInteger(input)
+    evidence.outputAedFils !== toFils(ret.box12) ||
+    evidence.inputAedFils !== toFils(ret.box13) ||
+    !Array.isArray(evidence.members) ||
+    !evidence.members.length ||
+    new Set(evidence.members.map((member) => member.companyId)).size !== evidence.members.length ||
+    evidence.members.reduce((sum, member) => sum + member.outputAedFils, 0) !==
+      evidence.outputAedFils ||
+    evidence.members.reduce((sum, member) => sum + member.inputAedFils, 0) !==
+      evidence.inputAedFils ||
+    evidence.members.some(
+      (m) =>
+        [
+          m.outputAedFils,
+          m.inputAedFils,
+          m.outputBaseFils,
+          m.inputBaseFils,
+          m.ledgerOutputBaseFils,
+          m.ledgerInputBaseFils,
+        ].some((value) => !Number.isSafeInteger(value)) ||
+        (m.outputAedFils !== 0 &&
+          (!m.outputBaseFils ||
+            Math.sign(m.ledgerOutputBaseFils) !== Math.sign(m.outputBaseFils))) ||
+        (m.inputAedFils !== 0 &&
+          (!m.inputBaseFils || Math.sign(m.ledgerInputBaseFils) !== Math.sign(m.inputBaseFils))) ||
+        (!ret.engine_version &&
+          (m.ledgerOutputBaseFils !== m.outputBaseFils ||
+            m.ledgerInputBaseFils !== m.inputBaseFils))
+    )
   ) {
-    return null;
+    throw settlementReconciliationRequired();
   }
-  return { output, input };
+  return evidence.members;
 }
 
 function settlementRoundsToZero(): DomainError {
@@ -199,22 +269,131 @@ function settlementRoundsToZero(): DomainError {
   );
 }
 
+const vatSide = (fils: number) => (fils > 0 ? { debitFils: fils } : { creditFils: -fils });
+
+async function vatControlLines(
+  tx: LedgerTx,
+  companyId: string,
+  output: number,
+  input: number,
+  amended: boolean,
+  params: { from: string; to: string }
+): Promise<PostJournalLineInput[]> {
+  const lines: PostJournalLineInput[] = [];
+  if (output)
+    lines.push({
+      accountId: await accountId(companyId, "2020", tx),
+      ...vatSide(output),
+      systemVat: true,
+      ...journalLine(amended ? "vatAmendedReturnOutput" : "vatReturnOutput", params),
+    });
+  if (input)
+    lines.push({
+      accountId: await accountId(companyId, "1050", tx),
+      ...vatSide(-input),
+      systemVat: true,
+      ...journalLine(amended ? "vatAmendedReturnInput" : "vatReturnInput", params),
+    });
+  return lines;
+}
+
+async function addVatFx(
+  tx: LedgerTx,
+  companyId: string,
+  lines: PostJournalLineInput[],
+  difference: number,
+  params: { from: string; to: string }
+) {
+  if (!difference) return;
+  const accounts = await getFxAccounts(tx, companyId);
+  lines.push({
+    accountId: difference > 0 ? accounts.gain : accounts.loss,
+    ...vatSide(-difference),
+    ...journalLine(difference > 0 ? "vatSettlementFxGain" : "vatSettlementFxLoss", params),
+  });
+}
+
+async function intercompanyVatLine(
+  tx: LedgerTx,
+  companyId: string,
+  base: string,
+  movement: number,
+  aedFils: number,
+  rate: string,
+  params: { from: string; to: string }
+): Promise<PostJournalLineInput> {
+  if (!movement) throw settlementRoundsToZero();
+  const debit = movement > 0;
+  const code = debit ? "1087" : "2087";
+  const name = debit ? "VAT Group Due From Members" : "VAT Group Due To Members";
+  const ar = debit ? "مبالغ مستحقة من أعضاء مجموعة الضريبة" : "مبالغ مستحقة لأعضاء مجموعة الضريبة";
+  const type = debit ? "asset" : "liability";
+  const subType = debit ? "other_current_asset" : "current_liability";
+  const q = ledgerQueryable(tx);
+  await q.query(
+    `INSERT INTO accounts (company_id, code, name_en, name_ar, type, sub_type, is_system_account)
+     VALUES ($1,$2,$3,$4,$5,$6,true) ON CONFLICT (company_id, code) DO NOTHING`,
+    [companyId, code, name, ar, type, subType]
+  );
+  const [account] = (
+    await q.query(
+      `SELECT id FROM accounts WHERE company_id=$1 AND code=$2 AND type=$3
+      AND sub_type=$4 AND is_system_account AND is_active AND NOT is_archived`,
+      [companyId, code, type, subType]
+    )
+  ).rows;
+  if (!account) throw settlementReconciliationRequired();
+  return {
+    accountId: account.id,
+    ...vatSide(movement),
+    ...(base !== VAT_FILING_CURRENCY && {
+      foreignCurrency: VAT_FILING_CURRENCY,
+      ...(debit
+        ? { foreignDebit: fromFils(Math.abs(aedFils)) }
+        : { foreignCredit: fromFils(Math.abs(aedFils)) }),
+      exchangeRate: rate,
+    }),
+    ...journalLine("vatGroupIntercompany", params),
+  };
+}
+
 async function buildSettlementLines(
   tx: LedgerTx,
   ret: ReturnRow,
   prior: PriorSettlement,
   input: { companyId: string; paymentAccountId: string; date: string },
   outputFils: number,
-  inputFils: number
+  inputFils: number,
+  group?: { own: MemberSettlementTotals; other: MemberSettlementTotals[] }
 ): Promise<PostJournalLineInput[]> {
   const { companyId, paymentAccountId, date } = input;
   const base = await loadBaseCurrency(companyId, tx);
-  const carrying = base === VAT_FILING_CURRENCY ? null : bookVatAmounts(ret);
-  const bookDeltas = carrying && {
-    output: carrying.output - prior.outputBaseFils,
-    input: carrying.input - prior.inputBaseFils,
-  };
-  if (outputFils === 0 && inputFils === 0 && !bookDeltas?.output && !bookDeltas?.input) {
+  const evidence = filingMembers(ret);
+  if (
+    (!group && evidence && evidence.length !== 1) ||
+    (!evidence &&
+      (base !== VAT_FILING_CURRENCY ||
+        (ret.amends_return_id && ret.reconciliation_snapshot?.filingVatGroup === undefined)))
+  ) {
+    throw settlementReconciliationRequired();
+  }
+  if (!evidence) {
+    const { rows } = await ledgerQueryable(tx).query(
+      `SELECT 1 FROM vat_workpapers WHERE company_id = $1 AND generated_vat_return_id = $2 LIMIT 1`,
+      [companyId, ret.id]
+    );
+    if (rows.length) throw settlementReconciliationRequired();
+  }
+  const member = evidence?.find((m) => m.companyId === companyId);
+  if (evidence && member?.baseCurrency !== base) throw settlementReconciliationRequired();
+  const carrying = member ? { output: member.outputBaseFils, input: member.inputBaseFils } : null;
+  const bookDeltas = group
+    ? { output: group.own.outputBaseFils, input: group.own.inputBaseFils }
+    : carrying && {
+        output: carrying.output - prior.outputBaseFils,
+        input: carrying.input - prior.inputBaseFils,
+      };
+  if (!group && outputFils === 0 && inputFils === 0 && !bookDeltas?.output && !bookDeltas?.input) {
     throw new DomainError(
       prior.returnIds.length ? "VAT_AMENDMENT_NOTHING_TO_SETTLE" : "VAT_RETURN_NOTHING_TO_SETTLE",
       422,
@@ -226,33 +405,24 @@ async function buildSettlementLines(
   }
   const netFils = outputFils - inputFils;
   const rate =
-    netFils || !bookDeltas
+    netFils || !bookDeltas || group?.other.some((m) => m.outputFils !== m.inputFils)
       ? await getRate(companyId, VAT_FILING_CURRENCY, base, date, { tx })
       : null;
   const toBase = (fils: number) => (rate ? convertFilsAtRate(fils, rate) : fils);
-  // Group returns and older returns without book amounts use the payment-date rate on the
-  // outstanding AED amounts. For standalone returns subtract the controls actually posted
-  // on the amendment chain from the return's recorded functional-currency amounts.
+  // Current evidence supplies functional-currency carrying amounts. Older AED-only books
+  // already use the statutory currency.
   const outputBaseFils = bookDeltas?.output ?? toBase(outputFils);
   const inputBaseFils = bookDeltas?.input ?? toBase(inputFils);
   const amended = prior.returnIds.length > 0;
   const params = { from: ret.period_start, to: ret.period_end };
-  const side = (fils: number) => (fils > 0 ? { debitFils: fils } : { creditFils: -fils });
-  const lines: PostJournalLineInput[] = [];
-  if (outputBaseFils)
-    lines.push({
-      accountId: await accountId(companyId, "2020", tx),
-      ...side(outputBaseFils),
-      systemVat: true,
-      ...journalLine(amended ? "vatAmendedReturnOutput" : "vatReturnOutput", params),
-    });
-  if (inputBaseFils)
-    lines.push({
-      accountId: await accountId(companyId, "1050", tx),
-      ...side(-inputBaseFils),
-      systemVat: true,
-      ...journalLine(amended ? "vatAmendedReturnInput" : "vatReturnInput", params),
-    });
+  const lines = await vatControlLines(
+    tx,
+    companyId,
+    outputBaseFils,
+    inputBaseFils,
+    amended,
+    params
+  );
   let bankMovement = 0;
   if (netFils) {
     const cash = await cashLegFor({
@@ -272,7 +442,7 @@ async function buildSettlementLines(
     bankMovement = netFils > 0 ? -cash.cashBaseFils : cash.cashBaseFils;
     lines.push({
       accountId: paymentAccountId,
-      ...side(bankMovement),
+      ...vatSide(bankMovement),
       ...(cash.tag
         ? {
             foreignCurrency: cash.tag.foreignCurrency,
@@ -294,17 +464,121 @@ async function buildSettlementLines(
       ),
     });
   }
-  if (!lines.length) throw settlementRoundsToZero();
-  const difference = outputBaseFils - inputBaseFils + bankMovement;
-  if (difference) {
-    const accounts = await getFxAccounts(tx, companyId);
-    lines.push({
-      accountId: difference > 0 ? accounts.gain : accounts.loss,
-      ...side(-difference),
-      ...journalLine(difference > 0 ? "vatSettlementFxGain" : "vatSettlementFxLoss", params),
-    });
+  let groupMovement = 0;
+  for (const other of group?.other ?? []) {
+    const net = other.outputFils - other.inputFils;
+    if (!net) continue;
+    const movement = toBase(net);
+    groupMovement += movement;
+    lines.push(
+      await intercompanyVatLine(tx, companyId, base, movement, net, rate?.rateText ?? "1", params)
+    );
   }
+  if (!group && !lines.length) throw settlementRoundsToZero();
+  await addVatFx(
+    tx,
+    companyId,
+    lines,
+    outputBaseFils - inputBaseFils + bankMovement + groupMovement,
+    params
+  );
   return lines;
+}
+
+interface SettlementPosting {
+  companyId: string;
+  lines: PostJournalLineInput[];
+}
+
+async function groupSettlementPostings(
+  tx: LedgerTx,
+  ret: ReturnRow,
+  prior: PriorSettlement,
+  companyIds: string[],
+  input: { companyId: string; paymentAccountId: string; date: string },
+  outputFils: number,
+  inputFils: number
+): Promise<{
+  postings: SettlementPosting[];
+  memberDeltas: Array<{ companyId: string; outputFils: number; inputFils: number }>;
+}> {
+  const evidence = filingMembers(ret);
+  if (
+    !evidence ||
+    prior.hasLegacyEntries ||
+    evidence.length !== companyIds.length ||
+    !companyIds.every((id) => evidence.some((member) => member.companyId === id))
+  ) {
+    throw settlementReconciliationRequired();
+  }
+  const members = evidence.map((m) => {
+    const settled = prior.members.get(m.companyId);
+    return {
+      companyId: m.companyId,
+      baseCurrency: m.baseCurrency,
+      outputFils: m.outputAedFils - (settled?.outputFils ?? 0),
+      inputFils: m.inputAedFils - (settled?.inputFils ?? 0),
+      outputBaseFils: m.outputBaseFils - (settled?.outputBaseFils ?? 0),
+      inputBaseFils: m.inputBaseFils - (settled?.inputBaseFils ?? 0),
+    };
+  });
+  const own = members.find((m) => m.companyId === input.companyId)!;
+  const other = members.filter((m) => m.companyId !== input.companyId);
+  const representativeLines = await buildSettlementLines(
+    tx,
+    ret,
+    prior,
+    input,
+    outputFils,
+    inputFils,
+    { own, other }
+  );
+  const postings: SettlementPosting[] = [
+    {
+      companyId: input.companyId,
+      lines: representativeLines,
+    },
+  ];
+  const params = { from: ret.period_start, to: ret.period_end };
+  for (const m of other) {
+    const base = await loadBaseCurrency(m.companyId, tx);
+    if (m.baseCurrency !== base) throw settlementReconciliationRequired();
+    const lines = await vatControlLines(
+      tx,
+      m.companyId,
+      m.outputBaseFils,
+      m.inputBaseFils,
+      prior.returnIds.length > 0,
+      params
+    );
+    const net = m.outputFils - m.inputFils;
+    let movement = 0;
+    if (net) {
+      const rate = await getRate(m.companyId, VAT_FILING_CURRENCY, base, input.date, { tx });
+      movement = -convertFilsAtRate(net, rate);
+      lines.push(
+        await intercompanyVatLine(tx, m.companyId, base, movement, net, rate.rateText, params)
+      );
+    }
+    await addVatFx(tx, m.companyId, lines, m.outputBaseFils - m.inputBaseFils + movement, params);
+    postings.push({ companyId: m.companyId, lines });
+  }
+  return {
+    postings: postings
+      .filter((posting) => posting.lines.length)
+      .sort((a, b) =>
+        a.companyId === input.companyId
+          ? -1
+          : b.companyId === input.companyId
+            ? 1
+            : a.companyId.localeCompare(b.companyId)
+      ),
+    memberDeltas: members.map(({ companyId, outputFils, inputFils }) => ({
+      companyId,
+      outputFils,
+      inputFils,
+    })),
+  };
 }
 
 /** The posted, unreversed settlement entry of a return, or null. */
@@ -313,8 +587,13 @@ export async function getVatReturnSettlement(
   vatReturnId: string,
   tx?: LedgerTx
 ): Promise<VatReturnSettlementEntry | null> {
-  await loadReturn(companyId, vatReturnId, tx);
-  const entry = await findSettlementJournal(companyId, vatReturnId, tx);
+  const ret = await loadReturn(companyId, vatReturnId, tx);
+  const entry = await findSettlementJournal(
+    companyId,
+    ret,
+    settlementCompanyIds(ret, companyId),
+    tx
+  );
   if (!entry) return null;
   const netFils = Number(entry.outputFils) - Number(entry.inputFils);
   return {
@@ -361,9 +640,8 @@ export async function settleVatReturn(input: {
   const reference = input.reference || null;
   const paymentAccountId = input.paymentAccountId.toLowerCase();
   return withLedgerTx(async (tx) => {
-    await lockVatReturns(tx, input.companyId);
-    const ret = await loadReturn(input.companyId, input.vatReturnId, tx);
-    const settled = await findSettlementJournal(input.companyId, ret.id, tx);
+    const { ret, companyIds } = await lockSettlementReturn(tx, input.companyId, input.vatReturnId);
+    const settled = await findSettlementJournal(input.companyId, ret, companyIds, tx);
     if (settled) {
       if (
         settled.date !== input.date ||
@@ -386,7 +664,7 @@ export async function settleVatReturn(input: {
           tx
         );
       }
-      const prior = await settledOnSupersededReturns(input.companyId, ret.id, tx);
+      const prior = await settledOnSupersededReturns(input.companyId, ret.id, companyIds, tx);
       return settlementResult(
         ret.id,
         settled,
@@ -427,60 +705,104 @@ export async function settleVatReturn(input: {
     // B2 (NH4): an amended return (voluntary disclosure) replaces the figures of the return it
     // amends, but what was already paid or refunded for those returns stays paid. Only the
     // difference is settled now (Exec. Reg. Art. 70: the disclosure states the difference).
-    const prior = await settledOnSupersededReturns(input.companyId, ret.id, tx);
+    const prior = await settledOnSupersededReturns(input.companyId, ret.id, companyIds, tx);
     const outputFils = toFils(ret.box12, { rounding: "halfUp" }) - prior.outputFils;
     const inputFils = toFils(ret.box13, { rounding: "halfUp" }) - prior.inputFils;
     const netFils = outputFils - inputFils;
-    const lines = await buildSettlementLines(
-      tx,
-      ret,
-      prior,
-      { companyId: input.companyId, paymentAccountId, date: input.date },
-      outputFils,
-      inputFils
-    );
+    const payment = { companyId: input.companyId, paymentAccountId, date: input.date };
+    if (
+      ret.vat_group_id &&
+      companyIds.length === 1 &&
+      !getFilingVatGroup(ret.reconciliation_snapshot)?.memberAuthority
+    ) {
+      throw settlementReconciliationRequired();
+    }
+    const groupPosting =
+      ret.vat_group_id || companyIds.length > 1
+        ? await groupSettlementPostings(tx, ret, prior, companyIds, payment, outputFils, inputFils)
+        : null;
+    const postings = groupPosting?.postings ?? [
+      {
+        companyId: input.companyId,
+        lines: await buildSettlementLines(tx, ret, prior, payment, outputFils, inputFils),
+      },
+    ];
+    if (!postings.length) {
+      throw new DomainError(
+        prior.returnIds.length ? "VAT_AMENDMENT_NOTHING_TO_SETTLE" : "VAT_RETURN_NOTHING_TO_SETTLE",
+        422
+      );
+    }
     // B2: one live settlement per return, but a reversed one may be settled again; each attempt
     // gets its own key (the first keeps the original format), so a re-settlement after a reversal
     // posts a new entry instead of replaying the reversed one.
     const earlier = await ledgerQueryable(tx).query(
       `SELECT COUNT(*)::int AS n FROM journal_entries
-      WHERE company_id = $1 AND source = $2 AND source_id = $3 AND entry_kind <> 'reversal'`,
-      [input.companyId, VAT_SETTLEMENT_SOURCE, ret.id]
+      WHERE company_id = ANY($1::uuid[]) AND source = $2 AND source_id = $3 AND entry_kind <> 'reversal'`,
+      [companyIds, VAT_SETTLEMENT_SOURCE, ret.id]
     );
     const attempt = Number(earlier.rows[0]?.n ?? 0);
-    const { entry } = await postJournal(
-      {
-        companyId: input.companyId,
-        date: input.date,
-        ...journalMemo(
-          netFils === 0
-            ? "vatReturnControlSettlement"
-            : prior.returnIds.length
-              ? netFils > 0
-                ? "vatAmendedReturnPayment"
-                : "vatAmendedReturnRefund"
-              : netFils > 0
-                ? "vatReturnPayment"
-                : "vatReturnRefund",
-          {
-            from: ret.period_start,
-            to: ret.period_end,
-            // Store the statutory amounts on the immutable entry, including amounts with no
-            // separately representable base line. The memo template uses only the dates.
-            vatOutputAedFils: String(outputFils),
-            vatInputAedFils: String(inputFils),
-            vatPaymentAccountId: paymentAccountId,
-          }
-        ),
-        status: "posted",
-        source: VAT_SETTLEMENT_SOURCE,
-        sourceId: ret.id,
+    const entries: Array<{ id: string; entryNumber: string }> = [];
+    for (const posting of postings) {
+      const { entry } = await postJournal(
+        {
+          companyId: posting.companyId,
+          date: input.date,
+          ...journalMemo(
+            netFils === 0
+              ? "vatReturnControlSettlement"
+              : prior.returnIds.length
+                ? netFils > 0
+                  ? "vatAmendedReturnPayment"
+                  : "vatAmendedReturnRefund"
+                : netFils > 0
+                  ? "vatReturnPayment"
+                  : "vatReturnRefund",
+            {
+              from: ret.period_start,
+              to: ret.period_end,
+              // Store the statutory amounts on the immutable entry, including amounts with no
+              // separately representable base line. The memo template uses only the dates.
+              vatOutputAedFils: String(
+                groupPosting?.memberDeltas.find((m) => m.companyId === posting.companyId)
+                  ?.outputFils ?? outputFils
+              ),
+              vatInputAedFils: String(
+                groupPosting?.memberDeltas.find((m) => m.companyId === posting.companyId)
+                  ?.inputFils ?? inputFils
+              ),
+              ...(posting.companyId === input.companyId && {
+                vatPaymentAccountId: paymentAccountId,
+              }),
+            }
+          ),
+          status: "posted",
+          source: VAT_SETTLEMENT_SOURCE,
+          sourceId: ret.id,
+          reference: posting.companyId === input.companyId ? reference : null,
+          idempotencyKey: `${VAT_SETTLEMENT_SOURCE}:${ret.id}${attempt ? `:${attempt}` : ""}`,
+          lines: posting.lines,
+        },
+        { actorId: input.actorId, audit: true, tx }
+      );
+      entries.push(entry);
+    }
+    const entry = entries[0];
+    if (groupPosting) {
+      const evidence: GroupSettlementEvidence = {
+        outputFils,
+        inputFils,
+        paymentAccountId,
         reference,
-        idempotencyKey: `${VAT_SETTLEMENT_SOURCE}:${ret.id}${attempt ? `:${attempt}` : ""}`,
-        lines,
-      },
-      { actorId: input.actorId, audit: true, tx }
-    );
+        members: groupPosting.memberDeltas,
+      };
+      await ledgerQueryable(tx).query(
+        `UPDATE vat_returns SET reconciliation_snapshot =
+          reconciliation_snapshot || jsonb_build_object('vatGroupSettlement', $3::jsonb)
+         WHERE id = $1 AND company_id = $2`,
+        [ret.id, input.companyId, JSON.stringify(evidence)]
+      );
+    }
     await syncPaymentFields(
       ret.id,
       { date: input.date, netPayable: Number(fromFils(netFils)) },
@@ -536,17 +858,20 @@ function settlementResult(
 async function settledOnSupersededReturns(
   companyId: string,
   vatReturnId: string,
+  companyIds: string[],
   tx: LedgerTx
 ): Promise<PriorSettlement> {
   const { rows } = await ledgerQueryable(tx).query(
-    `WITH RECURSIVE chain(id, amends, depth) AS (
-       SELECT id, amends_return_id, 0 FROM vat_returns WHERE id = $2 AND company_id = $1
+    `WITH RECURSIVE chain(id, amends, depth, group_settlement) AS (
+       SELECT id, amends_return_id, 0, reconciliation_snapshot -> 'vatGroupSettlement'
+         FROM vat_returns WHERE id = $2 AND company_id = $1
        UNION ALL
-       SELECT r.id, r.amends_return_id, c.depth + 1
+       SELECT r.id, r.amends_return_id, c.depth + 1, r.reconciliation_snapshot -> 'vatGroupSettlement'
          FROM vat_returns r JOIN chain c ON r.id = c.amends
         WHERE r.company_id = $1 AND c.depth < 50
      )
-     SELECT je.source_id AS return_id,
+     SELECT je.source_id AS return_id, je.company_id,
+            c.group_settlement,
             (je.memo_params ->> 'vatOutputAedFils')::bigint AS output_aed,
             (je.memo_params ->> 'vatInputAedFils')::bigint AS input_aed,
             COALESCE(SUM(CASE WHEN a.code = '2020'
@@ -554,21 +879,54 @@ async function settledOnSupersededReturns(
             COALESCE(SUM(CASE WHEN a.code = '1050'
                               THEN ROUND(jl.credit * 100) - ROUND(jl.debit * 100) END), 0)::bigint AS input_base
        FROM chain c
-       JOIN journal_entries je ON je.company_id = $1 AND je.source = $3
+       JOIN journal_entries je ON je.company_id = ANY($4::uuid[]) AND je.source = $3
                               AND je.source_id = c.id AND je.status = 'posted'
                               AND je.reversed_by_entry_id IS NULL AND je.entry_kind <> 'reversal'
        JOIN journal_lines jl ON jl.entry_id = je.id
      JOIN accounts a ON a.id = jl.account_id AND a.company_id = je.company_id
       WHERE c.depth > 0
-      GROUP BY je.id`,
-    [companyId, vatReturnId, VAT_SETTLEMENT_SOURCE]
+      GROUP BY je.id, c.group_settlement`,
+    [companyId, vatReturnId, VAT_SETTLEMENT_SOURCE, companyIds]
   );
+  const returnIds = new Set<string>();
+  const members = new Map<string, MemberSettlementTotals>();
+  const member = (id: string) => {
+    let totals = members.get(id);
+    if (!totals) {
+      totals = { outputFils: 0, inputFils: 0, outputBaseFils: 0, inputBaseFils: 0 };
+      members.set(id, totals);
+    }
+    return totals;
+  };
+  let outputFils = 0;
+  let inputFils = 0;
+  let hasLegacyEntries = false;
+  for (const row of rows) {
+    const totals = member(row.company_id);
+    totals.outputBaseFils += Number(row.output_base);
+    totals.inputBaseFils += Number(row.input_base);
+    if (returnIds.has(row.return_id)) continue;
+    returnIds.add(row.return_id);
+    const group = row.group_settlement as GroupSettlementEvidence | null;
+    outputFils += group?.outputFils ?? Number(row.output_aed ?? row.output_base);
+    inputFils += group?.inputFils ?? Number(row.input_aed ?? row.input_base);
+    if (group) {
+      for (const delta of group.members) {
+        member(delta.companyId).outputFils += delta.outputFils;
+        member(delta.companyId).inputFils += delta.inputFils;
+      }
+    } else {
+      hasLegacyEntries = true;
+    }
+  }
   return {
-    returnIds: rows.map((r) => r.return_id as string).sort(),
-    outputFils: rows.reduce((s, r) => s + Number(r.output_aed ?? r.output_base), 0),
-    inputFils: rows.reduce((s, r) => s + Number(r.input_aed ?? r.input_base), 0),
-    outputBaseFils: rows.reduce((s, r) => s + Number(r.output_base), 0),
-    inputBaseFils: rows.reduce((s, r) => s + Number(r.input_base), 0),
+    returnIds: [...returnIds].sort(),
+    outputFils,
+    inputFils,
+    outputBaseFils: member(companyId).outputBaseFils,
+    inputBaseFils: member(companyId).inputBaseFils,
+    members,
+    hasLegacyEntries,
   };
 }
 
@@ -579,6 +937,7 @@ async function settledOnSupersededReturns(
 async function laterSettledAmendments(
   companyId: string,
   vatReturnId: string,
+  companyIds: string[],
   tx: LedgerTx
 ): Promise<string[]> {
   const { rows } = await ledgerQueryable(tx).query(
@@ -591,11 +950,11 @@ async function laterSettledAmendments(
      )
      SELECT DISTINCT l.id
        FROM later l
-       JOIN journal_entries je ON je.company_id = $1 AND je.source = $3 AND je.source_id = l.id
+       JOIN journal_entries je ON je.company_id = ANY($4::uuid[]) AND je.source = $3 AND je.source_id = l.id
                               AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL
                               AND je.entry_kind <> 'reversal'
       WHERE l.depth > 0`,
-    [companyId, vatReturnId, VAT_SETTLEMENT_SOURCE]
+    [companyId, vatReturnId, VAT_SETTLEMENT_SOURCE, companyIds]
   );
   return rows.map((r) => r.id as string);
 }
@@ -609,14 +968,13 @@ export async function reverseVatReturnSettlement(input: {
   req?: Request;
 }) {
   return withLedgerTx(async (tx) => {
-    await lockVatReturns(tx, input.companyId);
-    await loadReturn(input.companyId, input.vatReturnId, tx);
-    const settled = await findSettlementJournal(input.companyId, input.vatReturnId, tx);
+    const { ret, companyIds } = await lockSettlementReturn(tx, input.companyId, input.vatReturnId);
+    const settled = await findSettlementJournal(input.companyId, ret, companyIds, tx);
     if (!settled) throw new DomainError("VAT_RETURN_NOT_SETTLED", 409);
     // C2 (RL6): a later amendment's settlement only settled the difference from this one. Undoing
     // this one alone would leave that VAT neither paid nor payable on any return (GL 2020 / 1050
     // off with nothing to re-settle), so reverse the latest settlement first.
-    const later = await laterSettledAmendments(input.companyId, input.vatReturnId, tx);
+    const later = await laterSettledAmendments(input.companyId, input.vatReturnId, companyIds, tx);
     if (later.length) {
       throw new DomainError(
         "VAT_SETTLEMENT_COUNTED_BY_AMENDMENT",
@@ -625,13 +983,15 @@ export async function reverseVatReturnSettlement(input: {
         "A later amended return's settlement already counted this payment. Reverse the latest amendment's settlement first, then this one."
       );
     }
-    await reverseBySource(
-      input.companyId,
-      VAT_SETTLEMENT_SOURCE,
-      input.vatReturnId,
-      { date: input.date, reason: `VAT settlement reversed: ${input.reason}` },
-      { actorId: input.actorId, req: input.req, companyId: input.companyId, tx }
-    );
+    for (const companyId of companyIds) {
+      await reverseBySource(
+        companyId,
+        VAT_SETTLEMENT_SOURCE,
+        input.vatReturnId,
+        { date: input.date, reason: `VAT settlement reversed: ${input.reason}` },
+        { actorId: input.actorId, req: input.req, companyId, tx }
+      );
+    }
     await syncPaymentFields(input.vatReturnId, null, tx);
     await recordAudit({
       userId: input.actorId,

@@ -13,7 +13,7 @@ import { DomainError } from "../errors";
 import { and, eq } from "drizzle-orm";
 import { accounts } from "../../shared/schema";
 import { postJournal, type LedgerTx } from "../ledger";
-import { computeVat201, loadVatAccounts, type VatComputation } from "./vat-engine";
+import { loadVatAccounts, type VatComputation } from "./vat-engine";
 
 export const IRRECOVERABLE_VAT_ACCOUNT_CODE = "5160";
 export const PARTIAL_EXEMPTION_SOURCE = "vat_partial_exemption";
@@ -55,18 +55,10 @@ export async function postPartialExemptionForPeriod(input: {
   to: string;
   actorId: string;
   vatReturnId: string;
+  computation: VatComputation;
   tx: LedgerTx;
 }): Promise<PartialExemptionPosting> {
-  const computation = await computeVat201(
-    {
-      companyId: input.companyId,
-      from: input.from,
-      to: input.to,
-      allowIncomplete: true,
-      includeGroup: false,
-    },
-    input.tx
-  );
+  const { computation } = input;
   const delta = computation.partialExemption.unpostedFils ?? 0;
   if (delta === 0) return { posted: false, deltaFils: 0, journalEntryId: null, computation };
   const vatAccounts = await loadVatAccounts(input.companyId, input.tx);
