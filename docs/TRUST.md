@@ -179,8 +179,7 @@ for MFA users, and each restore is written to the audit chain.
   edge provider. Neither is active until configured.
 - E-invoice XML validates locally against PINT AE shape; live ASP/FTA
   submission awaits provider credentials and is marked "not connected".
-- Bank feeds run on the provider abstraction with manual import as the
-  production path until a provider (Tarabut/Dapi/Salt Edge/FINX) is
-  contracted.
+- Banking supports CSV statement upload, review and reconciliation in the
+  signed-in workspace.
 - Rate-limit stores are in-memory per instance; multi-instance deployments
   need a shared store before horizontal scaling.

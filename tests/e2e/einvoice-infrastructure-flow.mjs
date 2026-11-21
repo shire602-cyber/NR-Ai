@@ -71,6 +71,11 @@ const copies = {
       "Original environment verified. This invoice can now be corrected and resubmitted.",
     sandbox: "Sandbox",
     environmentUnknown: "Environment unverified",
+    copy: "Copy",
+    copied: "Copied",
+    copyFailed: "Could not copy",
+    copyManually: "Select the text and copy manually.",
+    csvRequired: "Choose a bank CSV export.",
     firm: "Fixture firm",
     clients: ["Fixture bakery", "Fixture supplier"],
   },
@@ -92,11 +97,17 @@ const copies = {
     trackingDocumentId: "معرّف المستند لدى المزوّد",
     sandbox: "بيئة تجريبية",
     environmentUnknown: "البيئة غير متحقَّق منها",
+    copy: "نسخ",
+    copied: "تم النسخ",
+    copyFailed: "تعذّر النسخ",
+    copyManually: "حدّد النص وانسخه يدويًا.",
+    csvRequired: "اختر كشفًا بنكيًا بصيغة CSV.",
     firm: "مكتب المحاسبة التجريبي",
     clients: ["المخبز التجريبي", "المورد التجريبي"],
   },
 };
 const sellerTrn = "100123456700003";
+const callbackOrigin = "https://callbacks.example.test";
 const sellerTin = sellerTrn.slice(0, 10);
 const acubeInvoiceUuid = "019ffedf-0461-7dd2-b20c-a0df95b2bfff";
 const acubeLegalEntityUuid = "019e91b7-0a3c-7b1e-9f2d-5c8a1b4e6d70";
@@ -527,7 +538,7 @@ async function openBooks(page, navigate, persona, index) {
   const client = persona.clients[index];
   await navigate("/firm/clients");
   const book =
-    persona.width < 768
+    (page.viewportSize()?.width ?? persona.width) < 768
       ? page.getByTestId(`button-open-books-${client.id}`)
       : page
           .getByRole("row")
@@ -601,7 +612,7 @@ async function selectProviders(browser, persona) {
     await page.waitForFunction((title) => document.title === title, importTitle);
     assert.doesNotMatch(
       await page.locator("main").innerText(),
-      /\bbank\s+feeds?\b|الربط\s+البنكي\s+المباشر|الخلاصة\s+البنكية/i
+      /\bbank\s+feeds?\b|\b(?:connect|sync|xlsx|mt940|camt|ofx)\b|الربط\s+البنكي\s+المباشر|الخلاصة\s+البنكية|مزامنة/i
     );
     await expectFrame(page, lang);
     await navigate("/banking", "/bank-feeds");
@@ -612,6 +623,17 @@ async function selectProviders(browser, persona) {
     await importStatement.click();
     await page.waitForURL("**/bank-reconciliation?import=1");
     await page.getByTestId("button-download-sample-bank-csv").waitFor();
+    const statementFile = page.getByTestId("input-bank-statement-file");
+    assert.equal(await statementFile.getAttribute("accept"), ".csv");
+    await statementFile.setInputFiles({
+      name: "wrong.xlsx",
+      mimeType: "application/octet-stream",
+      buffer: Buffer.from("fixture"),
+    });
+    await page
+      .getByTestId("text-statement-preview-error")
+      .and(page.getByText(copies[lang].csvRequired, { exact: true }))
+      .waitFor();
   });
   console.log(
     `${lang}: two client books stayed isolated and missing credentials rendered gracefully`
@@ -796,6 +818,7 @@ async function sendInvoice(browser, persona) {
     await history.waitFor({ state: "hidden" });
     await page.keyboard.press("Escape");
     await sheet.waitFor({ state: "hidden" });
+    await page.setViewportSize({ width: 360, height: 900 });
     const listReporting = page
       .getByTestId(`einvoice-reportby-${invoiceId}`)
       .filter({ visible: true });
@@ -806,7 +829,17 @@ async function sendInvoice(browser, persona) {
         )
       )
       .waitFor();
+    await assertUnclippedOutcome(
+      page.getByTestId(`einvoice-delivery-${invoiceId}`).filter({ visible: true }),
+      `${lang} issuer invoice list at 360px`
+    );
     await navigate(`/invoices/${invoiceId}/edit`);
+    await assertUnclippedOutcome(
+      page
+        .getByTestId("einvoice-header-strip")
+        .getByTitle(`${copies[lang].delivery}: ${acceptedInSandbox}`, { exact: true }),
+      `${lang} issuer invoice header at 360px`
+    );
     const headerChip = page.getByTestId("einvoice-fta-chip");
     if (originalProvider === "acube") {
       await headerChip.getByText("Confirmation unavailable", { exact: true }).waitFor();
@@ -819,6 +852,105 @@ async function sendInvoice(browser, persona) {
   });
   console.log(`${lang}: queued, sent and accepted invoice status through the loopback provider`);
   await verifyPublicOutcome(browser, persona);
+  await inBrowser(browser, { ...persona, width: 360 }, async (page, navigate) => {
+    await openBooks(page, navigate, persona, 0);
+    await navigate("/invoices");
+    await assertUnclippedOutcome(
+      page.getByTestId(`einvoice-delivery-${invoiceId}`).filter({ visible: true }),
+      `${lang} issuer historical invoice list at 360px`
+    );
+    await navigate(`/invoices/${invoiceId}/edit`);
+    const label = `${copies[lang].delivery}: ${copies[lang].accepted} · ${copies[lang].environmentUnknown}`;
+    await assertUnclippedOutcome(
+      page.getByTestId("einvoice-header-strip").getByTitle(label, { exact: true }),
+      `${lang} issuer historical invoice header at 360px`
+    );
+  });
+}
+
+async function verifyCallbackClipboard(browser, persona) {
+  const { lang, clients, providers } = persona;
+  const labels = copies[lang];
+  await inBrowser(browser, persona, async (page, navigate) => {
+    await openBooks(page, navigate, persona, 0);
+    await navigate("/settings/einvoicing");
+    const details = page.getByTestId("einvoice-developer-details");
+    await details.locator("summary").click();
+    const url = `${callbackOrigin}/api/webhooks/einvoice/${providers[0]}/sandbox/${clients[0].id}`;
+    await details.getByText(url, { exact: true }).waitFor();
+    const copy = details.getByRole("button", { name: labels.copy, exact: true });
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: (text) =>
+            new Promise((resolve, reject) => {
+              window.einvoiceTestClipboard = { text, resolve, reject };
+            }),
+        },
+      });
+    });
+    await copy.click();
+    await page.waitForFunction((text) => window.einvoiceTestClipboard?.text === text, url);
+    const copied = page.getByText(labels.copied, { exact: true });
+    assert.equal(await copied.count(), 0, "A pending clipboard write must not claim success");
+    await page.evaluate(() => window.einvoiceTestClipboard.resolve());
+    await copied.waitFor();
+    await page.evaluate(() => delete window.einvoiceTestClipboard);
+    await copy.click();
+    await page.waitForFunction(() => Boolean(window.einvoiceTestClipboard));
+    await page.evaluate(() => window.einvoiceTestClipboard.reject(new Error("Clipboard denied")));
+    await page.getByText(labels.copyFailed, { exact: true }).waitFor();
+    await page.getByText(labels.copyManually, { exact: true }).waitFor();
+  });
+}
+
+async function verifyRejection(browser, persona) {
+  const { lang } = persona;
+  const { invoiceId } = await seedOutbound(persona, persona.contactId);
+  const documentId = randomUUID();
+  const scope = randomBytes(32).toString("hex");
+  await db.query(
+    `UPDATE invoices SET einvoice_status = 'rejected', einvoice_provider = 'complyance',
+       einvoice_provider_message_id = $2 WHERE id = $1`,
+    [invoiceId, documentId]
+  );
+  for (const environment of ["sandbox", null, "production"]) {
+    await db.query(
+      `UPDATE einvoice_documents SET status = 'rejected', provider = 'complyance',
+         provider_message_id = $2, delivery_status = 'rejected', provider_status = 'final_invalid',
+         last_error_code = 'COMPLYANCE_FINAL_INVALID',
+         validation = jsonb_set(validation, '{submission}', $3::jsonb) WHERE invoice_id = $1`,
+      [invoiceId, documentId, { environment, scope, providerAttempted: true }]
+    );
+    await inBrowser(browser, { ...persona, width: 360 }, async (page, navigate) => {
+      await openBooks(page, navigate, persona, 0);
+      await navigate(`/invoices/${invoiceId}/edit`);
+      const qualifier =
+        environment === "sandbox"
+          ? copies[lang].sandbox
+          : environment === null
+            ? copies[lang].environmentUnknown
+            : null;
+      const header = page.getByTestId("einvoice-header-rejection");
+      if (qualifier) await header.getByText(qualifier, { exact: false }).waitFor();
+      await header.getByTestId("einvoice-header-resubmit").click();
+      const rejection = page.getByTestId("einvoice-rejection");
+      await rejection.waitFor();
+      if (qualifier) {
+        await rejection
+          .locator("p")
+          .first()
+          .and(page.getByText(qualifier, { exact: false }))
+          .waitFor();
+      }
+      const text = await rejection.innerText();
+      const creditNote = lang === "ar" ? /إشعارًا دائنًا/gu : /credit note/gi;
+      assert.equal(text.match(creditNote)?.length ?? 0, environment === "production" ? 1 : 0);
+      assert.equal(await rejection.getByTestId("einvoice-resubmit").count(), 0);
+      await expectFrame(page, lang);
+    });
+  }
 }
 
 async function verifyLegacyRefusal(browser, persona, invoiceId, lang) {
@@ -862,7 +994,7 @@ async function assertUnclippedOutcome(label, surface) {
   await label.waitFor();
   const geometry = await label.evaluate((node) => {
     const range = document.createRange();
-    range.selectNodeContents(node);
+    const textNodes = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
     const viewport = document.documentElement.clientWidth;
     let minLeft = 0;
     let maxRight = viewport;
@@ -872,10 +1004,15 @@ async function assertUnclippedOutcome(label, surface) {
       minLeft = Math.max(minLeft, left);
       maxRight = Math.min(maxRight, left + parent.clientWidth);
     }
+    const outside = (rect) => rect.left < minLeft - 1 || rect.right > maxRight + 1;
+    let clipped = outside(node.getBoundingClientRect());
+    for (let text = textNodes.nextNode(); text && !clipped; text = textNodes.nextNode()) {
+      if (text.parentElement?.closest(".sr-only")) continue;
+      range.selectNodeContents(text);
+      clipped = [...range.getClientRects()].some(outside);
+    }
     return {
-      clipped: [...range.getClientRects()].some(
-        (rect) => rect.left < minLeft - 1 || rect.right > maxRight + 1
-      ),
+      clipped,
       overflow: document.documentElement.scrollWidth > viewport,
     };
   });
@@ -1017,7 +1154,9 @@ try {
   await startApp({
     ACUBE_BASE_URL: providerBase,
     ACUBE_LOGIN_URL: `${providerBase}/login`,
+    ACUBE_WEBHOOK_BASE_URL: callbackOrigin,
     COMPLYANCE_BASE_URL: providerBase,
+    COMPLYANCE_WEBHOOK_BASE_URL: callbackOrigin,
     ...encrypted,
   });
   for (const { token, clients } of personas) {
@@ -1032,7 +1171,7 @@ try {
       await verifyLegacyRefusal(browser, persona, persona.refusals[1], "ar");
     }
   };
-  for (const flow of [recover, sendInvoice]) {
+  for (const flow of [verifyCallbackClipboard, recover, sendInvoice, verifyRejection]) {
     const results = await Promise.allSettled(personas.map((persona) => flow(browser, persona)));
     for (const result of results) if (result.status === "rejected") throw result.reason;
   }

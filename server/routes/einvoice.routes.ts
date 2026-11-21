@@ -55,7 +55,7 @@ import {
 import { EINVOICE_TIMELINE, einvoicingScope } from "../services/einvoice/scope";
 import { listCompliancePills } from "../services/einvoice/compliance-pills";
 import { computeEInvoiceReadiness } from "../services/einvoice/readiness";
-import { getLegalEntity } from "../services/einvoice/legal-entities";
+import { currentOnboardingEntity, getLegalEntity } from "../services/einvoice/legal-entities";
 import {
   confirmLegacyEInvoiceEnvironment,
   needsLegacySubmissionRecovery,
@@ -235,7 +235,12 @@ async function settingsView(company: Company) {
   const configured = health.status === "configured";
   const legalEntity =
     configured && health.chosenProvider && health.environment
-      ? await getLegalEntity(company.id, health.chosenProvider, health.environment)
+      ? currentOnboardingEntity(
+          company,
+          await getLegalEntity(company.id, health.chosenProvider, health.environment),
+          health.chosenProvider,
+          health.environment
+        )
       : null;
   const secret = inboundWebhookSecret();
   return {
@@ -273,7 +278,7 @@ async function settingsView(company: Company) {
           : asp.status,
       },
       configured,
-      connected: legalEntity?.status === "active",
+      connected: !!legalEntity?.legalEntityId?.trim() && legalEntity.status === "active",
       provider: {
         name: health.chosenProvider,
         environment: health.environment,
@@ -533,7 +538,7 @@ export function registerEInvoiceRoutes(app: Express) {
           "EINVOICE_NEW_DOCUMENT_REQUIRED",
           409,
           { lastErrorCode: doc?.lastErrorCode ?? null },
-          "This invoice number cannot be sent again. Issue a credit note and a new invoice."
+          "This invoice number cannot be sent again."
         );
       }
       const provider = await providerForSubmission(invoice, company, doc);

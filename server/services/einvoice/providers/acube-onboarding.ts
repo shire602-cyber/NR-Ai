@@ -6,6 +6,7 @@ import {
   getLegalEntity,
   lockOnboardingCompany,
   matchesOnboardingCompany,
+  newOnboardingEntity,
   patchFromAcube,
   requireCompanyTin,
   updateLegalEntityRowIfCurrent,
@@ -90,22 +91,7 @@ export async function reserveAcubeCompany(args: {
       env,
       tin,
       {
-        ...(prior
-          ? {}
-          : {
-              legalEntityId: null,
-              status: "reserved",
-              nameEn: null,
-              nameAr: null,
-              vatTrn: null,
-              peppolAddress: null,
-              capabilities: null,
-              smpSyncAt: null,
-              registrySyncAt: null,
-              activatedAt: null,
-              lastSyncAt: null,
-              reservationExpiresAt: null,
-            }),
+        ...(prior ? {} : newOnboardingEntity),
         approver: args.approver,
         approverEmail: args.approver === "someone_else" ? (args.approverEmail ?? null) : null,
         lastAction: "RESERVE",

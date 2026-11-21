@@ -26,6 +26,7 @@ import {
   grantableRoles,
   normalizeCompanyRole,
   permissionsForRole,
+  type CompanyRole,
 } from "../../shared/permissions";
 import {
   companies,
@@ -37,14 +38,16 @@ import {
   type CompanyInvitation,
   type User,
 } from "../../shared/schema";
-import { and, eq, gt, or, sql, exists, isNull } from "drizzle-orm";
+import { and, eq, gt, inArray, or, sql, exists, isNull } from "drizzle-orm";
 import { databaseUtcNow } from "../config/database-time";
 import { db, type AppDatabase } from "../db";
 import { DomainError } from "../errors";
+import { isScopedIdPair } from "../tenancy";
 import {
   canAuthorizeDirectCompanyInvite,
   hasFirmCreatedCompanyMembership,
   markCompanyMembershipDirect,
+  reconcileCompanyMembershipOrigin,
   resolveFirmContext,
 } from "../services/firm/scope";
 import { isFirmRole } from "../../shared/access";
@@ -130,6 +133,33 @@ async function canManageCompanyOwnership(
   );
 }
 
+function normalizedInvitationEmail(email: string) {
+  return sql`lower(btrim(${users.email})) = ${normalizeEmail(email)}`;
+}
+
+async function getUniqueInvitationRecipient(email: string): Promise<User | undefined> {
+  const [recipient, duplicate] = await db
+    .select()
+    .from(users)
+    .where(normalizedInvitationEmail(email))
+    .limit(2);
+  if (duplicate) throw new DomainError("INVITATION_EMAIL_AMBIGUOUS", 409);
+  return recipient;
+}
+
+async function lockTeamCompany(
+  companyId: string,
+  conn: Pick<AppDatabase, "select">,
+  lock: "share" | "no key update"
+) {
+  const [company] = await conn
+    .select({ id: companies.id })
+    .from(companies)
+    .where(and(eq(companies.id, companyId), isNull(companies.deletedAt)))
+    .for(lock);
+  if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
+}
+
 async function assertTeamInviteAuthority(
   companyId: string,
   actor: Pick<User, "id" | "userType" | "firmRole" | "isAdmin"> | undefined,
@@ -138,14 +168,6 @@ async function assertTeamInviteAuthority(
   conn: Pick<AppDatabase, "select"> = db,
   lock?: "share"
 ) {
-  if (lock) {
-    const [company] = await conn
-      .select({ id: companies.id })
-      .from(companies)
-      .where(and(eq(companies.id, companyId), isNull(companies.deletedAt)))
-      .for(lock);
-    if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
-  }
   if (await canAuthorizeDirectCompanyInvite(companyId, actor?.id ?? null, role, conn)) return;
   if (role === "owner" && !(await canManageCompanyOwnership(companyId, actor, conn))) {
     throw new DomainError("ROLE_NOT_GRANTABLE", 403);
@@ -210,9 +232,95 @@ async function assertTeamInviteAuthority(
     return deny();
 }
 
-async function countOwners(companyId: string): Promise<number> {
-  const members = await storage.getCompanyUsersByCompanyId(companyId);
-  return members.filter((m) => normalizeCompanyRole(m.role) === "owner").length;
+async function mutateTeamMember(req: Request, nextRole: CompanyRole | null) {
+  const { companyId, memberId } = req.params;
+  const actorId = req.user!.id;
+  if (!isScopedIdPair(companyId, memberId)) throw new DomainError("NOT_FOUND", 404);
+  return db.transaction(async (tx) => {
+    // This company lock serializes owner checks across different target users. Acquire it
+    // before actor locks, matching invitation acceptance and outbound dispatch lock order.
+    await lockTeamCompany(companyId, tx, "no key update");
+    const scope = and(eq(companyUsers.companyId, companyId), eq(companyUsers.id, memberId));
+    const [target] = await tx
+      .select({ userId: companyUsers.userId })
+      .from(companyUsers)
+      .where(scope);
+    if (!target) throw new DomainError("NOT_FOUND", 404, undefined, "Team member not found");
+    const actors = await tx
+      .select({
+        id: users.id,
+        firmRole: users.firmRole,
+        isAdmin: users.isAdmin,
+        userType: users.userType,
+      })
+      .from(users)
+      .where(inArray(users.id, [actorId, target.userId]))
+      .orderBy(users.id)
+      .for("update");
+    const actor = actors.find((candidate) => candidate.id === actorId);
+    if (!actor) throw new DomainError("AUTH_REQUIRED", 401);
+    const denied = await scopedCompanyPermissionFailure(
+      actor,
+      companyId,
+      "team.manage",
+      tx,
+      "share"
+    );
+    if (denied)
+      throw new DomainError(denied.code, 403, {
+        companyId,
+        permission: "team.manage",
+        role: "role" in denied ? denied.role : null,
+      });
+    await reconcileCompanyMembershipOrigin(companyId, target.userId, tx);
+    const [member] = await tx.select().from(companyUsers).where(scope);
+    if (!member) throw new DomainError("NOT_FOUND", 404, undefined, "Team member not found");
+    const currentRole = normalizeCompanyRole(member.role);
+    if (
+      (currentRole === "owner" || nextRole === "owner") &&
+      !(await canManageCompanyOwnership(companyId, actor, tx))
+    ) {
+      throw new DomainError(
+        "ROLE_NOT_GRANTABLE",
+        403,
+        undefined,
+        nextRole === null ? "Only owners can remove an owner" : "Only owners can change owner roles"
+      );
+    }
+    if (currentRole === "owner" && nextRole !== "owner") {
+      const owners = await tx
+        .select({ id: companyUsers.id })
+        .from(companyUsers)
+        .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.role, "owner")))
+        .limit(2);
+      if (owners.length < 2)
+        throw new DomainError(
+          "LAST_OWNER",
+          409,
+          undefined,
+          "A company must keep at least one owner"
+        );
+    }
+    const updated =
+      nextRole === null
+        ? undefined
+        : await storage.updateCompanyUser(companyId, memberId, { role: nextRole }, tx);
+    const changed =
+      nextRole === null ? await storage.deleteCompanyUser(companyId, memberId, tx) : !!updated;
+    if (!changed) throw new DomainError("NOT_FOUND", 404, undefined, "Team member not found");
+    await recordAudit({
+      userId: actorId,
+      companyId,
+      action: nextRole === null ? "team.remove" : "team.role_change",
+      entityType: "company_user",
+      entityId: memberId,
+      before: { userId: member.userId, role: currentRole },
+      after: updated ? { userId: updated.userId, role: updated.role } : null,
+      req,
+      tx,
+    });
+    return updated;
+  });
 }
 
 async function invitationStateChanged(companyId: string, invitationId: string): Promise<never> {
@@ -359,7 +467,7 @@ export function registerTeamRoutes(app: Express) {
       if (!company)
         return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
 
-      const existingUser = await storage.getUserByEmail(email);
+      const existingUser = await getUniqueInvitationRecipient(email);
       await assertTeamInviteAuthority(companyId, req.user, existingUser, role);
       const existingRole = existingUser
         ? await storage.getUserRole(companyId, existingUser.id)
@@ -451,7 +559,7 @@ export function registerTeamRoutes(app: Express) {
       await assertTeamInviteAuthority(
         companyId,
         req.user,
-        await storage.getUserByEmail(current.email),
+        await getUniqueInvitationRecipient(current.email),
         current.role
       );
       const company = await storage.getCompany(companyId);
@@ -532,46 +640,8 @@ export function registerTeamRoutes(app: Express) {
     requireScopedCompanyPermission("team.manage"),
     strictBody(roleBodySchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = req.user!.id;
-      const { companyId, memberId } = req.params;
       const { role } = req.body as z.output<typeof roleBodySchema>;
-
-      const member = await storage.getCompanyUser(companyId, memberId);
-      if (!member) {
-        return res.status(404).json({ message: "Team member not found", code: "NOT_FOUND" });
-      }
-      const currentRole = normalizeCompanyRole(member.role);
-      if (
-        (role === "owner" || currentRole === "owner") &&
-        !(await canManageCompanyOwnership(companyId, req.user))
-      ) {
-        return res
-          .status(403)
-          .json({ message: "Only owners can change owner roles", code: "ROLE_NOT_GRANTABLE" });
-      }
-      if (currentRole === "owner" && role !== "owner" && (await countOwners(companyId)) <= 1) {
-        return res
-          .status(409)
-          .json({ message: "A company must keep at least one owner", code: "LAST_OWNER" });
-      }
-
-      const companyUser = await storage.updateCompanyUser(companyId, memberId, { role });
-      if (!companyUser) {
-        return res.status(404).json({ message: "Team member not found", code: "NOT_FOUND" });
-      }
-
-      await recordAudit({
-        userId,
-        companyId,
-        action: "team.role_change",
-        entityType: "company_user",
-        entityId: memberId,
-        before: { userId: member.userId, role: currentRole },
-        after: { userId: companyUser.userId, role: companyUser.role },
-        req,
-      });
-
-      res.json(companyUser);
+      res.json(await mutateTeamMember(req, role));
     })
   );
 
@@ -582,43 +652,7 @@ export function registerTeamRoutes(app: Express) {
     requirePermission("team.manage"),
     requireScopedCompanyPermission("team.manage"),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = req.user!.id;
-      const { companyId, memberId } = req.params;
-
-      const member = await storage.getCompanyUser(companyId, memberId);
-      if (!member) {
-        return res.status(404).json({ message: "Team member not found", code: "NOT_FOUND" });
-      }
-      const currentRole = normalizeCompanyRole(member.role);
-      if (currentRole === "owner") {
-        if (!(await canManageCompanyOwnership(companyId, req.user))) {
-          return res
-            .status(403)
-            .json({ message: "Only owners can remove an owner", code: "ROLE_NOT_GRANTABLE" });
-        }
-        if ((await countOwners(companyId)) <= 1) {
-          return res
-            .status(409)
-            .json({ message: "A company must keep at least one owner", code: "LAST_OWNER" });
-        }
-      }
-
-      const removed = await storage.deleteCompanyUser(companyId, memberId);
-      if (!removed) {
-        return res.status(404).json({ message: "Team member not found", code: "NOT_FOUND" });
-      }
-
-      await recordAudit({
-        userId,
-        companyId,
-        action: "team.remove",
-        entityType: "company_user",
-        entityId: memberId,
-        before: { userId: member.userId, role: currentRole },
-        after: null,
-        req,
-      });
-
+      await mutateTeamMember(req, null);
       res.status(204).send();
     })
   );
@@ -636,7 +670,7 @@ export function registerTeamRoutes(app: Express) {
       }
       const inv = resolved.invitation;
       const company = await storage.getCompany(inv.companyId);
-      const existing = await storage.getUserByEmail(inv.email);
+      const existing = await getUniqueInvitationRecipient(inv.email);
       res.json({
         email: inv.email,
         role: inv.role,
@@ -667,24 +701,26 @@ export function registerTeamRoutes(app: Express) {
         role,
         createdUser,
       } = await db.transaction(async (tx) => {
+        await lockTeamCompany(inv.companyId, tx, "share");
         // Serialize with assignment, company roles, and a competing invitation or account claim.
         const accounts = await tx
           .select()
           .from(users)
           .where(
             or(
-              signedIn ? eq(users.id, signedIn.id) : sql`lower(${users.email}) = ${email}`,
+              normalizedInvitationEmail(email),
+              signedIn ? eq(users.id, signedIn.id) : undefined,
               inv.invitedBy ? eq(users.id, inv.invitedBy) : undefined
             )
           )
           .orderBy(users.id)
           .for("update");
-        let user = accounts.find((account) =>
-          signedIn ? account.id === signedIn.id : normalizeEmail(account.email) === email
-        );
-        if (signedIn && (!user || normalizeEmail(user.email) !== email)) {
+        const recipients = accounts.filter((account) => normalizeEmail(account.email) === email);
+        if (signedIn && !recipients.some((recipient) => recipient.id === signedIn.id)) {
           throw new DomainError("INVITATION_EMAIL_MISMATCH", 403);
         }
+        if (recipients.length > 1) throw new DomainError("INVITATION_EMAIL_AMBIGUOUS", 409);
+        let [user] = recipients;
         if (!signedIn && user && !isPlaceholderPasswordHash(user.passwordHash)) {
           throw new DomainError("LOGIN_REQUIRED", 409);
         }

@@ -88,17 +88,23 @@ export function ComplyanceConnectCard({ companyId }: { companyId: string }) {
     retry: false,
   });
   const [adminEmail, setAdminEmail] = useState("");
+  const applyConnection = (data: ComplyanceConnectionView) => {
+    queryClient.setQueryData(key, data);
+    void queryClient.invalidateQueries({
+      queryKey: ["/api/companies", companyId, "einvoicing", "settings"],
+    });
+  };
   const connect = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/companies/${companyId}/einvoicing/complyance/connect`, {
         adminEmail,
       }),
-    onSuccess: (data: ComplyanceConnectionView) => queryClient.setQueryData(key, data),
+    onSuccess: applyConnection,
   });
   const sync = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/companies/${companyId}/einvoicing/complyance/sync`, {}),
-    onSuccess: (data: ComplyanceConnectionView) => queryClient.setQueryData(key, data),
+    onSuccess: applyConnection,
   });
 
   const v = view.data;

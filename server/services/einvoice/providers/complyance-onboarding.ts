@@ -19,15 +19,23 @@
  *   active    ready for invoicing
  *   inactive  the Complyance source/company is inactive (archived): sending is blocked
  */
-import type { Company, EInvoiceLegalEntity } from "../../../../shared/schema";
+import { randomUUID } from "node:crypto";
+import {
+  type Company,
+  type EInvoiceLegalEntity,
+  einvoiceLegalEntities,
+} from "../../../../shared/schema";
 import { DomainError } from "../../../errors";
 import { createLogger } from "../../../config/logger";
 import {
   assertProviderTin,
   getLegalEntity,
+  lockOnboardingCompany,
   matchesOnboardingCompany,
+  newOnboardingEntity,
   requireCompanyTin,
   upsertLegalEntity,
+  updateLegalEntityRowIfCurrent,
 } from "../legal-entities";
 import { isUaeTin, PEPPOL_SCHEME_UAE_TIN } from "../pint-ae-codes";
 import { tinFromTaxNumber } from "../../../../shared/validators/einvoice-identity";
@@ -75,51 +83,109 @@ export async function connectComplyanceCompany(args: {
 }): Promise<EInvoiceLegalEntity> {
   const { company, provider } = args;
   const tin = requireCompanyTin(company);
-  const existing = await getLegalEntity(company.id, COMPLYANCE_PROVIDER_NAME, provider.environment);
-  if (existing && existing.tin !== tin) {
-    throw new DomainError("EINVOICE_SUPPLIER_ENDPOINT_MISMATCH", 422);
-  }
-  const prev = details(existing);
-  const source = {
-    name:
-      (prev.sourceName as string | undefined) ?? defaultSourceFor(company.id, provider.cfg).name,
-    version: (prev.sourceVersion as string | undefined) ?? provider.cfg.sourceVersion,
-  };
-  const adminEmail = args.adminEmail ?? existing?.approverEmail ?? null;
-  if (!adminEmail) {
-    throw new DomainError(
-      "VALIDATION_ERROR",
-      400,
-      { fields: { adminEmail: ["Enter the administrator email the EmaraTax authorisation uses"] } },
-      "Enter the administrator email the EmaraTax authorisation uses."
-    );
-  }
-  const branchName =
-    args.branchName ??
-    (prev.branchName as string | undefined) ??
-    company.addressCity ??
-    "Head office";
-  const contactName = args.contactName ?? (prev.contactName as string | undefined) ?? null;
-
-  // Record the request first, so the card shows the EmaraTax step even if Complyance is down.
-  let row = await upsertLegalEntity(
-    company.id,
-    COMPLYANCE_PROVIDER_NAME,
-    provider.environment,
-    tin,
-    {
-      status: existing?.status && existing.status !== "reserved" ? existing.status : "reserved",
-      approver: "someone_else",
-      approverEmail: adminEmail,
-      providerDetails: {
-        ...prev,
-        sourceName: source.name,
-        sourceVersion: source.version,
-        branchName,
-        contactName,
-      },
+  const name = COMPLYANCE_PROVIDER_NAME;
+  const environment = provider.environment;
+  const operation = randomUUID();
+  const assertCurrentCompany = async (tx: Parameters<typeof lockOnboardingCompany>[1]) => {
+    const current = await lockOnboardingCompany(company.id, tx);
+    if (complyanceEnvironment() !== environment || current?.einvoicePartner !== name) {
+      throw new DomainError("EINVOICE_PROVIDER_NOT_CONFIGURED", 409);
     }
-  );
+    if (!matchesOnboardingCompany(current, name, tin)) {
+      throw new DomainError("EINVOICE_SUPPLIER_ENDPOINT_MISMATCH", 422);
+    }
+    return current;
+  };
+
+  // Only the explicit Connect action can replace a different taxpayer. Automatic and manual
+  // status refreshes must never create new registrations under their stale setup details.
+  const { row, source, adminEmail, contactName, branchName } = await db.transaction(async (tx) => {
+    const current = await assertCurrentCompany(tx);
+    const saved = await getLegalEntity(company.id, name, environment, tx, "update");
+    const replacing = !!saved && saved.tin !== tin;
+    if (replacing && !args.adminEmail) {
+      throw new DomainError("EINVOICE_SUPPLIER_ENDPOINT_MISMATCH", 422);
+    }
+    const existing = replacing ? undefined : saved;
+    const prev = details(existing);
+    const defaultSource = defaultSourceFor(
+      replacing ? `${company.id}-${tin}` : company.id,
+      provider.cfg
+    );
+    const source = {
+      name: (prev.sourceName as string | undefined) ?? defaultSource.name,
+      version: (prev.sourceVersion as string | undefined) ?? defaultSource.version,
+    };
+    const adminEmail = args.adminEmail ?? existing?.approverEmail;
+    if (!adminEmail) {
+      throw new DomainError(
+        "VALIDATION_ERROR",
+        400,
+        {
+          fields: { adminEmail: ["Enter the administrator email the EmaraTax authorisation uses"] },
+        },
+        "Enter the administrator email the EmaraTax authorisation uses."
+      );
+    }
+    const branchName =
+      args.branchName ??
+      (prev.branchName as string | undefined) ??
+      current.addressCity ??
+      "Head office";
+    const contactName = args.contactName ?? (prev.contactName as string | undefined) ?? null;
+    const row = await upsertLegalEntity(
+      company.id,
+      name,
+      environment,
+      tin,
+      {
+        ...(existing ? {} : newOnboardingEntity),
+        approver: "someone_else",
+        approverEmail: adminEmail,
+        lastAction: existing?.legalEntityId ? existing.lastAction : "CONNECT",
+        lastError: null,
+        providerDetails: {
+          ...prev,
+          sourceName: source.name,
+          sourceVersion: source.version,
+          branchName,
+          contactName,
+          connectOperation: operation,
+        },
+      },
+      tx
+    );
+    return { row, source, adminEmail, contactName, branchName };
+  });
+
+  const save = (patch: Partial<typeof einvoiceLegalEntities.$inferInsert>) =>
+    db.transaction(async (tx) => {
+      await assertCurrentCompany(tx);
+      const latest = await getLegalEntity(company.id, name, environment, tx, "update");
+      const latestDetails = details(latest);
+      if (
+        latestDetails.connectOperation !== operation ||
+        !(await updateLegalEntityRowIfCurrent(
+          row,
+          {
+            ...patch,
+            updatedAt: new Date(),
+            providerDetails: {
+              ...latestDetails,
+              ...(patch.providerDetails as Record<string, unknown> | undefined),
+              ...(latestDetails.onboardingPollAfter != null
+                ? { onboardingPollAfter: latestDetails.onboardingPollAfter }
+                : {}),
+              connectOperation: null,
+            },
+          },
+          tx
+        ))
+      ) {
+        throw new DomainError("EINVOICE_LEGAL_ENTITY_NOT_RESERVED", 409);
+      }
+      return (await getLegalEntity(company.id, name, environment, tx))!;
+    });
 
   let created: ComplyanceCompany | null = null;
   try {
@@ -136,7 +202,7 @@ export async function connectComplyanceCompany(args: {
   } catch (err) {
     if (!(err instanceof ComplyanceApiError)) throw err;
     if (AWAITING_AUTHORISATION.has(err.code)) {
-      return upsertLegalEntity(company.id, COMPLYANCE_PROVIDER_NAME, provider.environment, tin, {
+      return save({
         status: "reserved",
         lastError: err.code,
         lastAction: "CONNECT",
@@ -147,7 +213,7 @@ export async function connectComplyanceCompany(args: {
       created = await provider.findCompany({ sourceName: source.name }).catch(() => null);
       if (!created) {
         log.warn({ code: err.code, companyId: company.id }, "Complyance onboarding not confirmed");
-        return upsertLegalEntity(company.id, COMPLYANCE_PROVIDER_NAME, provider.environment, tin, {
+        return save({
           lastError: err.code,
           lastAction: "CONNECT",
           lastSyncAt: new Date(),
@@ -162,7 +228,17 @@ export async function connectComplyanceCompany(args: {
       );
     }
   }
-  if (!created) return row;
+  if (!created) return save({});
+  if (
+    typeof created.companyId !== "string" ||
+    !created.companyId.trim() ||
+    (created.platformEnvironment != null && created.platformEnvironment !== environment) ||
+    (row.legalEntityId && created.companyId !== row.legalEntityId) ||
+    (created.sourceName != null && created.sourceName !== source.name) ||
+    (created.sourceVersion != null && created.sourceVersion !== source.version)
+  ) {
+    throw new DomainError("COMPLYANCE_SOURCE_AMBIGUOUS", 502);
+  }
   const endpoint = created.peppolParticipantId ?? created.peppolId;
   const schemePrefix = `${PEPPOL_SCHEME_UAE_TIN}:`;
   const participantTin = endpoint?.startsWith(schemePrefix)
@@ -176,12 +252,11 @@ export async function connectComplyanceCompany(args: {
   if (vatTin) assertProviderTin(tin, vatTin);
   const patch = patchFromComplyance(created, details(row));
   if (patch.status === "active" && row.status !== "active") patch.activatedAt = new Date();
-  row = await upsertLegalEntity(company.id, COMPLYANCE_PROVIDER_NAME, provider.environment, tin, {
+  return save({
     ...patch,
     lastAction: row.legalEntityId ? "SYNC" : "CONNECT",
     lastError: null,
   });
-  return row;
 }
 
 /** Re-read the company's state (or retry registration while the EmaraTax step is pending). */

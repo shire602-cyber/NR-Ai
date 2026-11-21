@@ -1,6 +1,8 @@
 // Storage interface (IStorage) and the argument/result types it uses.
 // Part of server/storage.ts (split per domain, R20-09); import from "./storage".
 
+import type { AppDatabase } from "../db";
+
 import type {
   Account,
   ActivityLog,
@@ -672,9 +674,14 @@ export interface IStorage {
   updateCompanyUser(
     companyId: string,
     id: string,
-    data: Pick<Partial<InsertCompanyUser>, "role">
+    data: Pick<Partial<InsertCompanyUser>, "role">,
+    tx?: Pick<AppDatabase, "select" | "update">
   ): Promise<CompanyUser | undefined>;
-  deleteCompanyUser(companyId: string, id: string): Promise<boolean>;
+  deleteCompanyUser(
+    companyId: string,
+    id: string,
+    tx?: Pick<AppDatabase, "select" | "delete">
+  ): Promise<boolean>;
   getCompanyUser(companyId: string, id: string): Promise<CompanyUser | undefined>;
   getCompanyUserWithUser(companyId: string): Promise<CompanyMemberWithUser[]>;
 

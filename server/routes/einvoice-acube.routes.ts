@@ -46,7 +46,12 @@ import {
   runAcubePoll,
   runProviderEvents,
 } from "../services/einvoice/provider-events";
-import { companyTin, getLegalEntity, requireCompanyTin } from "../services/einvoice/legal-entities";
+import {
+  companyTin,
+  currentOnboardingEntity,
+  getLegalEntity,
+  requireCompanyTin,
+} from "../services/einvoice/legal-entities";
 import { companyProviderConfiguration } from "../services/einvoice/providers/company-provider";
 import {
   reserveAcubeCompany,
@@ -96,11 +101,12 @@ type StepState = "done" | "current" | "todo" | "failed";
 
 export async function acubeConnectionView(
   company: Company & Record<string, unknown>,
-  le: Awaited<ReturnType<typeof getLegalEntity>>
+  storedEntity: Awaited<ReturnType<typeof getLegalEntity>>
 ) {
   const config = await acubeConfiguration(company);
   const configured = !!config;
   const environment = acubeEnvironment();
+  const le = currentOnboardingEntity(company, storedEntity, ACUBE_PROVIDER_NAME, environment);
   const status = le?.status ?? null;
   const steps: Array<{ key: "reserve" | "approve" | "synced"; state: StepState }> = [
     { key: "reserve", state: le?.legalEntityId ? "done" : configured ? "current" : "todo" },
@@ -160,7 +166,7 @@ export async function acubeConnectionView(
           activatedAt: le.activatedAt,
         }
       : null,
-    canSend: configured && !!le?.legalEntityId && status === "active",
+    canSend: configured && !!le?.legalEntityId?.trim() && status === "active",
     steps,
     goLive: {
       ...scope,

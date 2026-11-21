@@ -283,6 +283,43 @@ export function matchesOnboardingCompany(
   );
 }
 
+/** Settings project only the entity for the currently selected taxpayer and environment. */
+export function currentOnboardingEntity(
+  company: CompanyTinSource & { id: string; einvoicePartner: string | null },
+  entity: EInvoiceLegalEntity | undefined,
+  provider: string,
+  environment: string
+): EInvoiceLegalEntity | undefined {
+  return entity &&
+    entity.companyId === company.id &&
+    entity.provider === provider &&
+    entity.environment === environment &&
+    (entity.status !== "active" || !!entity.legalEntityId?.trim()) &&
+    matchesOnboardingCompany(company, provider, entity.tin) &&
+    (!company.peppolScheme?.trim() || company.peppolScheme.trim() === PEPPOL_SCHEME_UAE_TIN) &&
+    (entity.peppolAddress === null ||
+      entity.peppolAddress === entity.tin ||
+      entity.peppolAddress === peppolAddressFor(entity.tin))
+    ? entity
+    : undefined;
+}
+
+/** Clear identity-specific state before onboarding a different taxpayer in the same local slot. */
+export const newOnboardingEntity: Partial<typeof einvoiceLegalEntities.$inferInsert> = {
+  legalEntityId: null,
+  status: "reserved",
+  nameEn: null,
+  nameAr: null,
+  vatTrn: null,
+  peppolAddress: null,
+  capabilities: null,
+  smpSyncAt: null,
+  registrySyncAt: null,
+  activatedAt: null,
+  lastSyncAt: null,
+  reservationExpiresAt: null,
+};
+
 /** Serialize onboarding state writes with company identity and provider selection changes. */
 export async function lockOnboardingCompany(companyId: string, conn: Pick<AppDatabase, "select">) {
   const [company] = await conn

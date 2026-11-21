@@ -88,17 +88,23 @@ export function AcubeConnectCard({ companyId }: { companyId: string }) {
   });
   const [approver, setApprover] = useState<"me" | "someone_else">("me");
   const [approverEmail, setApproverEmail] = useState("");
+  const applyConnection = (data: AcubeConnectionView) => {
+    queryClient.setQueryData(key, data);
+    void queryClient.invalidateQueries({
+      queryKey: ["/api/companies", companyId, "einvoicing", "settings"],
+    });
+  };
   const reserve = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/companies/${companyId}/einvoicing/acube/reserve`, {
         approver,
         approverEmail: approver === "someone_else" ? approverEmail : null,
       }),
-    onSuccess: (data: AcubeConnectionView) => queryClient.setQueryData(key, data),
+    onSuccess: applyConnection,
   });
   const sync = useMutation({
     mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/einvoicing/acube/sync`, {}),
-    onSuccess: (data: AcubeConnectionView) => queryClient.setQueryData(key, data),
+    onSuccess: applyConnection,
   });
 
   const v = view.data;

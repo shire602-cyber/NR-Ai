@@ -129,10 +129,11 @@ export function EInvoiceTrackBadges({
     showReportingLabel || obligationUnknown || (reportingConfirmed && environment !== "production");
   return (
     <span
-      className={cn("inline-flex flex-wrap items-center gap-1", className)}
+      className={cn("inline-flex min-w-0 max-w-full flex-wrap items-center gap-1", className)}
       data-testid={testId}
     >
       <StatusBadge
+        className="einvoice-status-badge"
         tone={acknowledgement === "received" ? "info" : DELIVERY_TONE[delivery]}
         title={`${t["einvoicing.trackDelivery"]}: ${deliveryText}`}
       >
@@ -143,7 +144,7 @@ export function EInvoiceTrackBadges({
         <StatusBadge
           tone={obligationUnknown ? "neutral" : REPORTING_TONE[reporting]}
           title={`${t["einvoicing.trackReporting"]}: ${reportingText}`}
-          className={showReportingText ? undefined : "px-1.5"}
+          className={showReportingText ? "einvoice-status-badge" : "px-1.5"}
           data-testid={showReportingLabel ? "einvoice-fta-chip" : undefined}
         >
           {/* Always keep a test environment or unknown obligation visible on the badge. */}
@@ -377,12 +378,15 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
     transmission,
   } = view;
   const rejectionErrorKey = errorKey(rejection?.code);
+  const rejectionEnvironment = rejection?.environment;
+  const correctionUnverified = transmission.correctionRevisionUnverified;
   const handedOver = !!transmission.providerDocumentId;
   const queuedForSubmission = view.submissionState === "queued";
   const reconciling = view.submissionState === "needs_reconciliation";
   const failedDelivery = delivery.status === "rejected" || delivery.status === "delivery_failed";
   const reportingOnlyFailure = isReportingOnlyFailure(delivery.status, reporting.status);
-  const canCorrectRejection = !!rejection?.resubmittable && !reportingOnlyFailure && !reconciling;
+  const canCorrectRejection =
+    !!rejection?.resubmittable && !!rejectionEnvironment && !reportingOnlyFailure && !reconciling;
   const acknowledgement = transmission.recipientAcknowledgement;
   const providerName = transmission.providerDisplayName ?? transmission.provider ?? "";
   const latestAction = send.submittedAt >= resubmit.submittedAt ? send : resubmit;
@@ -434,6 +438,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
           meta={deliveryMeta}
           badge={
             <StatusBadge
+              className="einvoice-status-badge"
               tone={acknowledgement === "received" ? "info" : DELIVERY_TONE[delivery.status]}
               data-testid={queuedForSubmission ? "einvoice-queued" : undefined}
             >
@@ -453,6 +458,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
           metaTone={reporting.overdue ? "warning" : undefined}
           badge={
             <StatusBadge
+              className="einvoice-status-badge"
               tone={
                 reportingObligationUnknown(reporting.status, reporting.obligationKnown)
                   ? "neutral"
@@ -613,23 +619,37 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
       )}
 
       {/* X6a: a lost response the provider may already hold: not a rejection, never resent. */}
-      {delivery.status === "needs_link" && (
+      {(delivery.status === "needs_link" || correctionUnverified) && (
         <div
           className="rounded-lg border border-warning/40 bg-warning-subtle p-4"
           data-testid="einvoice-needs-link"
           role="status"
         >
           <p className="text-small font-semibold text-foreground">
-            {formatMessage(t["einvoicing.needsLinkTitle"], { provider: providerName || "ASP" })}
+            {formatMessage(
+              t[
+                correctionUnverified
+                  ? "einvoicing.correctionUnverifiedTitle"
+                  : "einvoicing.needsLinkTitle"
+              ],
+              { provider: providerName || "ASP" }
+            )}
           </p>
           <p className="mt-1 text-small text-foreground">
-            {formatMessage(t["einvoicing.needsLinkBody"], { provider: providerName || "ASP" })}
+            {formatMessage(
+              t[
+                correctionUnverified
+                  ? "einvoicing.correctionUnverifiedBody"
+                  : "einvoicing.needsLinkBody"
+              ],
+              { provider: providerName || "ASP" }
+            )}
           </p>
         </div>
       )}
 
       {/* Rejection / delivery failure: the reason, where, and the way back. */}
-      {rejection && (
+      {rejection && !correctionUnverified && (
         <div
           className="rounded-lg border border-danger/40 bg-danger-subtle p-4"
           data-testid="einvoice-rejection"
@@ -639,15 +659,21 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
             <XCircle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
             <div className="min-w-0 flex-1">
               <p className="text-small font-semibold text-danger-subtle-foreground">
-                {delivery.status === "rejected"
-                  ? formatMessage(t["einvoicing.rejectedTitle"], {
-                      provider: rejection.providerDisplayName ?? (providerName || "ASP"),
-                    })
-                  : t[
-                      reportingOnlyFailure
+                {formatMessage(
+                  trackOutcomeLabel(
+                    t,
+                    delivery.status === "rejected"
+                      ? "einvoicing.rejectedTitle"
+                      : reportingOnlyFailure
                         ? "einvoicing.reporting_report_failed"
-                        : "einvoicing.deliveryFailedTitle"
-                    ]}
+                        : "einvoicing.deliveryFailedTitle",
+                    true,
+                    rejectionEnvironment
+                  ),
+                  {
+                    provider: rejection.providerDisplayName ?? (providerName || "ASP"),
+                  }
+                )}
               </p>
               <p className="mt-1 text-small text-foreground">
                 {rejectionErrorKey
@@ -747,7 +773,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
                       {resubmit.isPending && (
                         <Loader2 aria-hidden className="h-3.5 w-3.5 motion-safe:animate-spin" />
                       )}
-                      {t["einvoicing.resubmit"]}
+                      {trackOutcomeLabel(t, "einvoicing.resubmit", true, rejectionEnvironment)}
                     </Button>
                   </>
                 )}
@@ -770,11 +796,19 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
               </div>
               {(reportingOnlyFailure ? rejection.providerHoldsDocument : !canCorrectRejection) && (
                 <p className="mt-2 text-caption text-muted-foreground">
-                  {!reportingOnlyFailure && rejection.newDocumentRequired
-                    ? t["einvoicing.resubmitNewDocument"]
-                    : rejection.providerHoldsDocument
-                      ? t["einvoicing.resubmitHeld"]
-                      : t["einvoicing.resubmitBlocked"]}
+                  {
+                    t[
+                      rejectionEnvironment === "sandbox"
+                        ? "einvoicing.rejectionSandboxGuidance"
+                        : rejectionEnvironment !== "production"
+                          ? "einvoicing.rejectionUnknownGuidance"
+                          : !reportingOnlyFailure && rejection.creditNoteRequired
+                            ? "einvoicing.resubmitNewDocument"
+                            : rejection.providerHoldsDocument
+                              ? "einvoicing.resubmitHeld"
+                              : "einvoicing.resubmitBlocked"
+                    ]
+                  }
                 </p>
               )}
             </div>

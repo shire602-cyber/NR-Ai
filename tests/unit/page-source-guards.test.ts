@@ -197,7 +197,7 @@ describe("Mobile launch UX guards", () => {
       const bankingEn = JSON.parse(readFileSync("client/src/locales/en/banking.json", "utf8"));
       expect(bankingEn["banking.import.formatCsv"]).toContain("Arabic/English generic");
       expect(bankingEn["banking.import.formatDelimiters"]).toBe(
-        "Comma, semicolon, and tab-delimited Excel exports are supported"
+        "CSV exports can use commas, semicolons or tabs."
       );
       expect(bankingEn["banking.import.formatDrCr"]).toBe(
         "Amount + Dr/Cr type columns are supported"
@@ -236,7 +236,7 @@ describe("Mobile launch UX guards", () => {
         const catalog = JSON.parse(readFileSync(`client/src/locales/${loc}/banking.json`, "utf8"));
         expect(catalog["banking.import.columnMapping"]).toBe(text);
       }
-      expect(source).toContain(".xlsx");
+      expect(source).toContain('accept=".csv"');
     });
 
     it("R06-11 ambiguity must be confirmed before importing", () => {

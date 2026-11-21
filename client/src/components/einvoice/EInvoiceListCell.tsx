@@ -60,16 +60,17 @@ export function EInvoiceListCell({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="ms-1.5 inline-flex items-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="ms-1.5 inline-flex min-w-0 max-w-full items-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-testid={`einvoice-cell-${invoice.id}`}
       >
         <span className="sr-only">{t["einvoicing.statusAction"]}: </span>
         {showPills && pill ? (
           <span
-            className="inline-flex flex-wrap items-center gap-1"
+            className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-1"
             data-testid={`einvoice-compliance-${invoice.id}`}
           >
             <StatusBadge
+              className="einvoice-status-badge"
               tone={pill.overdue && deadline ? "danger" : REPORTING_TONE[reporting]}
               data-testid={`einvoice-reportby-${invoice.id}`}
             >
@@ -86,9 +87,12 @@ export function EInvoiceListCell({
                   )}
             </StatusBadge>
             {deadline && confirmationUnavailable && (
-              <StatusBadge tone="neutral">{t["einvoicing.reportingUnconfirmed"]}</StatusBadge>
+              <StatusBadge className="einvoice-status-badge" tone="neutral">
+                {t["einvoicing.reportingUnconfirmed"]}
+              </StatusBadge>
             )}
             <StatusBadge
+              className="einvoice-status-badge"
               tone={acknowledgement === "received" ? "info" : DELIVERY_TONE[delivery]}
               data-testid={`einvoice-delivery-${invoice.id}`}
             >

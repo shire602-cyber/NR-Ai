@@ -217,24 +217,25 @@ describe("R01-15 invitation lifecycle", () => {
       const viewer = await h.createTenant();
       const invitation = await invite(customer, viewer.email, "viewer");
       if (mixedHistory) {
-        // These persisted rows predate the exact membership ID in the acceptance audit.
-        await h.sql(
-          "INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')",
-          [customer.company.id, viewer.user.id]
-        );
-        await h.sql(
-          `UPDATE company_invitations SET status = 'accepted', accepted_user_id = $1,
-          accepted_at = (statement_timestamp() AT TIME ZONE 'UTC') - interval '4 hours' WHERE id = $2`,
-          [viewer.user.id, invitation.invitation.id]
-        );
+        // The receipt did not yet include a membership ID. Acceptance and the new membership
+        // used one database transaction, but the recorded acceptance time came from Node UTC.
+        const { db } = await import("../../server/db");
         const { recordAudit } = await import("../../server/services/audit.service");
-        await recordAudit({
-          userId: viewer.user.id,
-          companyId: customer.company.id,
-          action: "team.invite_accept",
-          entityType: "company_invitation",
-          entityId: invitation.invitation.id,
-          after: { role: "viewer", directCompanyGrant: true },
+        const { sql } = await import("drizzle-orm");
+        await db.transaction(async (tx) => {
+          await tx.execute(sql`INSERT INTO company_users (company_id, user_id, role)
+            VALUES (${customer.company.id}, ${viewer.user.id}, 'viewer')`);
+          await tx.execute(sql`UPDATE company_invitations SET status = 'accepted', accepted_user_id = ${viewer.user.id},
+            accepted_at = (statement_timestamp() AT TIME ZONE 'UTC') - interval '4 hours' WHERE id = ${invitation.invitation.id}`);
+          await recordAudit({
+            userId: viewer.user.id,
+            companyId: customer.company.id,
+            action: "team.invite_accept",
+            entityType: "company_invitation",
+            entityId: invitation.invitation.id,
+            after: { role: "viewer", directCompanyGrant: true },
+            tx,
+          });
         });
       } else {
         const accepted = await viewer.as.post(
@@ -319,6 +320,110 @@ describe("R01-15 invitation lifecycle", () => {
     const saved = await platform.as.put(`${team}/${member.id}`, { role: "viewer" });
     expect(saved.status, saved.text).toBe(200);
   });
+
+  it("preserves one owner when owner removal and demotion race", async () => {
+    if (!h.concurrencySupported) return;
+    const company = await h.createTenant();
+    const second = await h.createTenant();
+    const operator = await h.createTenant({ isAdmin: true });
+    const [otherOwner] = await h.sql(
+      "INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'owner') RETURNING id",
+      [company.company.id, second.user.id]
+    );
+    const [firstOwner] = await h.sql(
+      "SELECT id FROM company_users WHERE company_id = $1 AND user_id = $2",
+      [company.company.id, company.user.id]
+    );
+    const { db } = await import("../../server/db");
+    const { users } = await import("../../shared/schema");
+    const { inArray } = await import("drizzle-orm");
+    const owners = [company.user.id, second.user.id];
+    const team = `/api/companies/${company.company.id}/team`;
+    const requests = await db.transaction(async (tx) => {
+      await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(inArray(users.id, owners))
+        .orderBy(users.id)
+        .for("update");
+      const writes = [
+        operator.as.delete(`${team}/${otherOwner.id}`),
+        operator.as.put(`${team}/${firstOwner.id}`, { role: "viewer" }),
+      ];
+      await vi.waitFor(
+        async () => {
+          const blocked = await h.sql(
+            "SELECT pid FROM pg_stat_activity WHERE datname = current_database() AND cardinality(pg_blocking_pids(pid)) > 0"
+          );
+          expect(blocked).toHaveLength(2);
+        },
+        { timeout: 7000 }
+      );
+      return writes;
+    });
+    const results = await Promise.all(requests);
+    expect(results.filter((result) => result.status >= 200 && result.status < 300)).toHaveLength(1);
+    expect(results.find((result) => result.status === 409)?.body.code).toBe("LAST_OWNER");
+    expect(
+      await h.sql("SELECT user_id FROM company_users WHERE company_id = $1 AND role = 'owner'", [
+        company.company.id,
+      ])
+    ).toHaveLength(1);
+  });
+
+  it.each([false, true])(
+    "does not accept a case-duplicate mailbox (signed in = %s)",
+    async (authenticated) => {
+      const company = await h.createTenant();
+      const intended = await h.createTenant();
+      const invitation = await invite(company, intended.email, "viewer");
+      const token = tokenOf(invitation.inviteUrl);
+      const duplicateId = `00000000-0000-4000-8000-0000000000${authenticated ? "ac" : "ab"}`;
+      // Migration 0092 skips this index when historical case duplicates already exist.
+      await h.sql("DROP INDEX users_email_lower_unique");
+      try {
+        await h.sql(
+          "INSERT INTO users (id, email, name, password_hash) VALUES ($1, $2, 'Former import', '$placeholder$')",
+          [duplicateId, intended.email.toUpperCase()]
+        );
+        const endpoint = `/api/team-invitations/${token}/accept`;
+        const response = authenticated
+          ? await intended.as.post(endpoint, {})
+          : await anonPost(endpoint, {
+              name: "Recipient",
+              password: `${randomBytes(16).toString("hex")}A1!`,
+            });
+        expect(response.status, response.body.code).toBe(409);
+        expect(response.body.code).toBe("INVITATION_EMAIL_AMBIGUOUS");
+        expect(
+          await h.sql("SELECT status FROM company_invitations WHERE id = $1", [
+            invitation.invitation.id,
+          ])
+        ).toEqual([{ status: "pending" }]);
+        expect(
+          await h.sql(
+            "SELECT password_hash = '$placeholder$' AS unchanged FROM users WHERE id = $1",
+            [duplicateId]
+          )
+        ).toEqual([{ unchanged: true }]);
+        expect(
+          await h.sql(
+            "SELECT user_id FROM company_users WHERE company_id = $1 AND user_id IN ($2, $3)",
+            [company.company.id, duplicateId, intended.user.id]
+          )
+        ).toEqual([]);
+      } finally {
+        await h.sql("DELETE FROM company_users WHERE user_id = $1", [duplicateId]);
+        await h.sql(
+          "UPDATE company_invitations SET accepted_user_id = NULL WHERE accepted_user_id = $1",
+          [duplicateId]
+        );
+        // Accepted baseline audit logs can reference the duplicate user, so change its email first.
+        await h.sql("UPDATE users SET email = $1 WHERE id = $2", [email(), duplicateId]);
+        await h.sql("CREATE UNIQUE INDEX users_email_lower_unique ON users (lower(email))");
+      }
+    }
+  );
 
   it("requires the inviter's independent authority when the invitation is accepted", async () => {
     const owner = await h.createTenant();

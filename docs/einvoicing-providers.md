@@ -162,6 +162,7 @@ Env to unset: `ACUBE_*`.
 - `server/services/einvoice/providers/company-provider.ts`: scoped authentication configuration for the provider
 - `server/services/einvoice/workflow.ts`: provider-specific reconciliation rules and error codes
 - `server/services/einvoice/legacy-tracking.ts`: Complyance outbound seller and reference proof
+- `server/services/einvoice/store.ts`: Complyance correction revision evidence
 - `server/services/einvoice/provider-events.ts`: Complyance legacy purchase attribution and reporting poll
 - `server/routes.ts`: `registerEInvoiceComplyanceRoutes` import and call
 - `scripts/ops/asp-sandbox-dryrun.ts`: the `complyance` entry in `ASP_REQUIREMENTS` and its branch in `runProvider`

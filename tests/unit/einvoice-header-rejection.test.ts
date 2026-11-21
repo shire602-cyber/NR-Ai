@@ -90,39 +90,45 @@ describe("e-invoice header strip", () => {
     expect(isReportingOnlyFailure("delivered", "reported")).toBe(false);
   });
   it.each([
-    ["delivered", "Report failed"],
-    ["delivery_failed", "Delivery failed"],
-    ["rejected", "Rejected"],
-  ])("labels the header when reporting failed and delivery is %s", async (delivery, label) => {
-    await loadNamespace("en", "einvoicing");
-    const invoiceId = "fixture-invoice";
-    const client = new QueryClient();
-    client.setQueryData(einvoiceStatusKey(invoiceId), {
-      tracks: {
-        delivery: { status: delivery, at: null },
-        reporting: { status: "report_failed", required: true, reportBy: null },
-      },
-      transmission: { recipientAcknowledgement: null },
-      issues: [],
-      rejection: {
-        code: "EINVOICE_REPORT_FAILED",
-        message: "Check the reporting record",
-        reasons: [],
-        resubmittable: false,
-        providerHoldsDocument: true,
-      },
-    });
-    const html = renderToStaticMarkup(
-      createElement(QueryClientProvider, {
-        client,
-        children: createElement(EInvoiceHeaderStrip, { invoiceId }),
-      })
-    );
-    const banner = html.match(/data-testid="einvoice-header-rejection"[^>]*>(.*?)<\/div>/)?.[1];
-    expect(banner).toContain(`>${label}: </span>`);
-    expect(banner).not.toContain("Resubmit");
-    client.clear();
-  });
+    ["delivered", "production", "Report failed"],
+    ["delivery_failed", "production", "Delivery failed"],
+    ["rejected", "production", "Rejected"],
+    ["rejected", "sandbox", "Rejected · Sandbox"],
+    ["rejected", null, "Rejected · Environment unverified"],
+  ])(
+    "labels the header when reporting failed and delivery is %s (%s)",
+    async (delivery, environment, label) => {
+      await loadNamespace("en", "einvoicing");
+      const invoiceId = "fixture-invoice";
+      const client = new QueryClient();
+      client.setQueryData(einvoiceStatusKey(invoiceId), {
+        tracks: {
+          delivery: { status: delivery, at: null },
+          reporting: { status: "report_failed", required: true, reportBy: null },
+        },
+        transmission: { recipientAcknowledgement: null },
+        issues: [],
+        rejection: {
+          environment,
+          code: "EINVOICE_REPORT_FAILED",
+          message: "Check the reporting record",
+          reasons: [],
+          resubmittable: false,
+          providerHoldsDocument: true,
+        },
+      });
+      const html = renderToStaticMarkup(
+        createElement(QueryClientProvider, {
+          client,
+          children: createElement(EInvoiceHeaderStrip, { invoiceId }),
+        })
+      );
+      const banner = html.match(/data-testid="einvoice-header-rejection"[^>]*>(.*?)<\/div>/)?.[1];
+      expect(banner).toContain(`>${label}: </span>`);
+      expect(banner).not.toContain("Resubmit");
+      client.clear();
+    }
+  );
   it("summarises the first provider reason with its field and rule", () => {
     const s = rejectionSummary({
       code: "ACUBE_REJECTED",

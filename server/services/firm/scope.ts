@@ -156,6 +156,25 @@ function recordedCompanyAcceptance(companyId: SqlValue, userId: SqlValue) {
       and invite.status = 'accepted')`;
 }
 
+function acceptanceMatchesMembership(
+  details: SQL,
+  memberId: SQL,
+  memberCreatedAt: SQL,
+  acceptedAt: SQL,
+  auditCreatedAt: SQL,
+  directCreationEvidence = sql`false`
+) {
+  const recordedId = sql`(${details} #>> '{after,membershipId}')`;
+  // An explicit ID identifies the membership lifetime. Older receipts require both clocks to
+  // agree, except when an audited direct creation establishes the same database transaction.
+  return sql`(${recordedId} = ${memberId}::text or (
+    ${recordedId} is null and (
+      (${memberCreatedAt} <= ${acceptedAt} and ${memberCreatedAt} <= ${auditCreatedAt})
+      or ${directCreationEvidence}
+    )
+  ))`;
+}
+
 function verifiedDirectAcceptance(companyId: SqlValue, userId: SqlValue) {
   const details = auditDetails(sql`acceptance.details`);
   return sql`exists (select 1 from company_invitations confirmed
@@ -166,8 +185,19 @@ function verifiedDirectAcceptance(companyId: SqlValue, userId: SqlValue) {
       and acceptance.user_id = confirmed.accepted_user_id and acceptance.action = 'team.invite_accept'
       and acceptance.resource_type = 'company_invitation'
       and ${details} #>> '{after,directCompanyGrant}' = 'true'
-      and (${details} #>> '{after,membershipId}' = direct_member.id::text
-        or (${details} #>> '{after,membershipId}' is null and direct_member.created_at <= acceptance.created_at)))`;
+      and ${acceptanceMatchesMembership(
+        details,
+        sql`direct_member.id`,
+        sql`direct_member.created_at`,
+        sql`confirmed.accepted_at`,
+        sql`acceptance.created_at`,
+        sql`
+        date_trunc('milliseconds', direct_member.created_at) = acceptance.created_at
+        and not exists (select 1 from firm_company_grants current_grant
+          where current_grant.company_id = confirmed.company_id
+            and current_grant.user_id = confirmed.accepted_user_id and current_grant.created_membership)
+      `
+      )})`;
 }
 
 function directInviteGrantor(
@@ -213,6 +243,7 @@ export async function canAuthorizeDirectCompanyInvite(
 }
 
 function provenCompanyInvite(companyId: SqlValue, userId: SqlValue) {
+  const details = auditDetails(sql`accepted.details`);
   return sql`select ci.role from company_invitations ci
     join company_users target on target.company_id = ci.company_id and target.user_id = ci.accepted_user_id
     join users invitee on invitee.id = target.user_id
@@ -225,7 +256,9 @@ function provenCompanyInvite(companyId: SqlValue, userId: SqlValue) {
         COMPANY_ROLES.map((role) => sql`${role}`),
         sql`, `
       )})
-      and lower(invitee.email) = lower(ci.email) and target.created_at <= accepted.created_at
+      and lower(invitee.email) = lower(ci.email)
+      and ${details} #>> '{after,role}' = ci.role
+      and ${acceptanceMatchesMembership(details, sql`target.id`, sql`target.created_at`, sql`ci.accepted_at`, sql`accepted.created_at`)}
       and ${directInviteGrantor(
         sql`ci.company_id`,
         sql`ci.invited_by`,
@@ -271,7 +304,6 @@ export function firmCreatedMembership(
 ) {
   return sql`(${createdMembership} or (
     ${legacyTeamRoleSave(companyId, userId, grantCreatedAt)}
-    and not (${verifiedDirectAcceptance(companyId, userId)})
     and not (${acceptedCompanyInvite(companyId, userId)})
   ))`;
 }
@@ -499,7 +531,7 @@ export async function markCompanyMembershipDirect(
 export async function reconcileCompanyMembershipOrigin(
   companyId: string,
   userId: string,
-  exec: Executor
+  exec: Pick<Executor, "select" | "update">
 ) {
   if (!(await hasFirmCreatedCompanyMembership(companyId, userId, exec))) return;
   const role = await historicDirectCompanyRole(companyId, userId, exec);

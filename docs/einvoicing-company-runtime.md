@@ -85,4 +85,7 @@ provider connection and environment. For a tracked Complyance document, the work
 the provider still identifies it as terminal Needs Correction and that its seller and source match.
 The corrected submission must retain the provider document ID. After an uncertain correction, the
 app keeps tracking that original ID and prevents another submission while the outcome is unknown.
+If the correction changed the XML and its acknowledgement was lost, a status response for the
+reused document ID does not identify the accepted revision. The invoice remains in reconciliation
+and no XML is archived as cleared from that response alone.
 [Complyance document status](https://docs.complyance.io/api-reference/unify/documents/)

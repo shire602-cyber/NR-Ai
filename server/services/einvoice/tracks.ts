@@ -13,6 +13,7 @@
  * the retry job; it is derived from the two tracks with `legacyFromTracks`.
  */
 import type { EInvoiceStatus } from "../einvoice-status";
+import { calendarDateKey, uaeToday } from "../../../shared/uae-date";
 
 export type DeliveryStatus =
   | "draft"
@@ -213,7 +214,7 @@ export function deriveInvoiceTracks(args: {
   const isDraft = invoiceStatus === "draft";
   const inactive = isDraft || invoiceStatus === "void" || invoiceStatus === "cancelled";
   const reportBy = obligation.required && !inactive ? obligation.reportBy : null;
-  const today = now.toISOString().slice(0, 10);
+  const today = uaeToday(now);
   return {
     delivery,
     reporting,
@@ -347,10 +348,10 @@ export function reportByDate(
   issueDate: Date | string | null | undefined,
   days: number = reportWindowDays()
 ): string | null {
-  if (!issueDate) return null;
-  const d = typeof issueDate === "string" ? new Date(issueDate) : issueDate;
-  if (Number.isNaN(d.getTime())) return null;
-  const out = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + days));
+  const day = calendarDateKey(issueDate);
+  const start = Date.parse(day);
+  if (!Number.isFinite(start)) return null;
+  const out = new Date(start + days * 86_400_000);
   return out.toISOString().slice(0, 10);
 }
 

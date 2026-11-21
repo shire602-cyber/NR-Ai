@@ -335,31 +335,31 @@ export function mapComplyanceStatus(data: Record<string, unknown>): ComplyanceTr
   const state = providerString(data.state)?.toLowerCase();
   const terminal = data.isTerminal === true;
   const reasons = complyanceReasons(data.errors);
+  const approval = providerString(providerObject(data.compliance)?.ftaApprovedStatus);
+  const reporting = approval === "APPROVED" ? "reported" : "pending";
   switch (state) {
     case "submitted":
       return { delivery: "queued", reporting: "pending", errorCode: null, reasons: [] };
     case "processing":
       return { delivery: "sending", reporting: "pending", errorCode: null, reasons: [] };
     case "delivery_success":
-      return { delivery: "delivered", reporting: "pending", errorCode: null, reasons: [] };
+      return { delivery: "delivered", reporting, errorCode: null, reasons: [] };
     case "delivery_failed":
       return terminal
         ? {
             delivery: "delivery_failed",
-            reporting: "pending",
+            reporting,
             errorCode: "COMPLYANCE_DELIVERY_FAILED",
             reasons,
           }
-        : { delivery: "sending", reporting: "pending", errorCode: null, reasons: [] };
-    case "final_valid": {
-      const approval = providerString(providerObject(data.compliance)?.ftaApprovedStatus);
+        : { delivery: "sending", reporting, errorCode: null, reasons: [] };
+    case "final_valid":
       return {
         delivery: "delivered",
-        reporting: approval === "APPROVED" ? "reported" : "pending",
+        reporting,
         errorCode: null,
         reasons: [],
       };
-    }
     case "final_invalid": {
       const sources = new Set(
         (Array.isArray(data.errors) ? data.errors : []).map((e) =>
@@ -377,7 +377,7 @@ export function mapComplyanceStatus(data: Record<string, unknown>): ComplyanceTr
       }
       return {
         delivery: "rejected",
-        reporting: "pending",
+        reporting,
         errorCode: "COMPLYANCE_FINAL_INVALID",
         reasons,
       };

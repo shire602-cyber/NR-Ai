@@ -111,10 +111,13 @@ export interface EInvoiceStatusView {
     recipientAcknowledgement: RecipientAcknowledgement;
     canSubmit: boolean;
     canRefresh: boolean;
+    correctionRevisionUnverified?: boolean;
     environmentVerification?: EInvoiceEnvironmentVerification | null;
   };
   issues: EInvoiceIssue[];
   rejection: {
+    environment?: "sandbox" | "production" | null;
+    creditNoteRequired?: boolean;
     code: string | null;
     message: string | null;
     reasons: Array<{ code?: string; message?: string; field?: string | null }>;
@@ -122,7 +125,7 @@ export interface EInvoiceStatusView {
     resubmittable: boolean;
     providerHoldsDocument?: boolean;
     providerDisplayName?: string | null;
-    /** E2: the number is used up at the provider: credit note + new invoice. */
+    /** The original document number cannot be reused. */
     newDocumentRequired?: boolean;
   } | null;
   checklist: Array<{

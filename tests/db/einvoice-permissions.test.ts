@@ -580,6 +580,49 @@ describe("Company-scoped e-invoicing permissions", () => {
     expect((await submit()).body.code).toBe("PERMISSION_DENIED");
   });
 
+  it.each([false, true])(
+    "does not reconstruct an earlier membership from conflicting invitation evidence (old ID = %s)",
+    async (oldId) => {
+      const { context, staff, customer, invoiceId } = await externalFirmClient();
+      const companyId = customer.company.id;
+      const invite = await customer.as.post(`/api/companies/${companyId}/team/invite`, {
+        email: staff.email,
+        role: "viewer",
+      });
+      expect(invite.status, invite.text).toBe(201);
+      const invitationId = invite.body.invitation.id;
+      await h.sql(
+        `UPDATE company_invitations SET status = 'accepted', accepted_user_id = $1,
+      accepted_at = CASE WHEN $3 THEN now() ELSE now() - interval '4 hours' END WHERE id = $2`,
+        [staff.user.id, invitationId, oldId]
+      );
+      const { recordAudit } = await import("../../server/services/audit.service");
+      await recordAudit({
+        companyId,
+        userId: staff.user.id,
+        action: "team.invite_accept",
+        entityType: "company_invitation",
+        entityId: invitationId,
+        after: {
+          role: "viewer",
+          directCompanyGrant: true,
+          ...(oldId ? { membershipId: "00000000-0000-4000-8000-0000000000ba" } : {}),
+        },
+      });
+      const submit = () => staff.as.post(`/api/invoices/${invoiceId}/einvoice/submit`, {});
+      expect((await submit()).body.code).toBe("EINVOICE_PROVIDER_NOT_CONFIGURED");
+      const { removeFirmMember } = await import("../../server/services/firm/staff.service");
+      await removeFirmMember(context, staff.user.id);
+      expect(
+        await h.sql("SELECT id FROM company_users WHERE company_id = $1 AND user_id = $2", [
+          companyId,
+          staff.user.id,
+        ])
+      ).toEqual([]);
+      expect((await submit()).status).toBe(404);
+    }
+  );
+
   it("repairs a false marker proven to come from an older Team role edit", async () => {
     const { context, staff, customer, invoiceId } = await externalFirmClient();
     const companyId = customer.company.id;

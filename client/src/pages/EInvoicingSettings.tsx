@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useTranslation } from "@/lib/i18n";
+import { translateNow, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
 import { useToast } from "@/hooks/use-toast";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
@@ -838,9 +838,19 @@ function CompanyEInvoicingSettings({
                         size="sm"
                         variant="ghost"
                         className="h-7"
-                        onClick={() => {
-                          void navigator.clipboard?.writeText(url);
-                          toast({ title: s.copied });
+                        onClick={async () => {
+                          try {
+                            if (!navigator.clipboard?.writeText)
+                              throw new Error("Clipboard unavailable");
+                            await navigator.clipboard.writeText(url);
+                            toast({ title: s.copied });
+                          } catch {
+                            toast({
+                              title: translateNow("toasts.couldNotCopy"),
+                              description: translateNow("toasts.selectTextCopyManually"),
+                              variant: "destructive",
+                            });
+                          }
                         }}
                       >
                         {s.copy}

@@ -164,7 +164,7 @@ async function acube(url: URL, init: RequestInit): Promise<Response> {
       status: fake.legalEntityStatus,
       nameEn: "Pearl Trading L.L.C.",
       nameAr: "بيرل للتجارة ش.ذ.م.م",
-      vatTrn: TRN,
+      vatTrn: `${fake.legalEntityTin}00003`,
       isEnabled: active,
       enabledCapabilities: active
         ? [{ key: "billing.invoice" }, { key: "billing.credit_note" }]
@@ -558,6 +558,68 @@ describe("E1 without a provider: generated and validated, honestly not sent", ()
 });
 
 describe("E1 legal entity onboarding gates sending", () => {
+  it("hides a superseded A-Cube taxpayer and reconnects without changing submitted evidence", async () => {
+    const t = await linkedTenant();
+    const path = `/api/companies/${t.company.id}/einvoicing`;
+    const inv = await issuedInvoice(t);
+    expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const evidence = () =>
+      h.sql(
+        `SELECT xml_hash, provider_message_id, validation->'submission' AS pin
+      FROM einvoice_documents WHERE invoice_id = $1`,
+        [inv.id]
+      );
+    const original = await evidence();
+    expect(original).toEqual([
+      expect.objectContaining({
+        provider_message_id: expect.any(String),
+        pin: expect.objectContaining({
+          supplierTin: TIN,
+          legalEntityId: fake.leId,
+          environment: "sandbox",
+        }),
+      }),
+    ]);
+
+    const nextTin = "1005555555";
+    await h.sql(
+      `UPDATE companies SET trn_vat_number = $2, einvoice_tin = $3, peppol_participant_id = $3
+      WHERE id = $1`,
+      [t.company.id, `${nextTin}00003`, nextTin]
+    );
+    expect((await t.as.get(`${path}/settings`)).body.asp.connected).toBe(false);
+    expect((await t.as.get(`${path}/acube`)).body).toMatchObject({
+      canSend: false,
+      legalEntity: null,
+    });
+
+    const old = linkEvent();
+    fake.leId = crypto.randomUUID();
+    fake.legalEntityTin = nextTin;
+    const reserve = await t.as.post(`${path}/acube/reserve`, { approver: "me" });
+    expect(reserve.status, reserve.text).toBe(200);
+    expect(reserve.body.legalEntity).toMatchObject({
+      status: "reserved",
+      tin: nextTin,
+      legalEntityId: fake.leId,
+    });
+    expect((await webhook(t, old)).status).toBe(200);
+    expect((await webhook(t, { ...linkEvent(), tin: nextTin })).status).toBe(200);
+    await runProviderEvents({ companyId: t.company.id });
+    expect((await t.as.get(`${path}/acube`)).body.canSend).toBe(true);
+    expect((await t.as.get(`${path}/settings`)).body.asp.connected).toBe(true);
+    expect(await evidence()).toEqual(original);
+    const oldId = original[0].provider_message_id;
+    fake.docs.get(oldId)!.status = "accepted";
+    const tracked = await t.as.post(`/api/invoices/${inv.id}/einvoice/refresh-status`, {});
+    expect(tracked.status, tracked.text).toBe(200);
+    expect((await statusOf(t, inv.id)).transmission).toMatchObject({
+      providerDocumentId: oldId,
+      recipientAcknowledgement: "accepted",
+    });
+  });
+
   it("keeps an early ID-only signed LINK pending until the reservation response is verified", async () => {
     const t = await h.createTenant({
       companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "acube" },

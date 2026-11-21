@@ -87,7 +87,7 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.payrollApproved.message", "Payroll for {month}/{year} was approved."),
   T(
     "notification.bankSyncFailed.message",
-    "The bank connection[ ({provider})] could not import transactions[: {reason}]."
+    "Some transactions could not be imported[ from {provider}][: {reason}]. Upload a bank CSV to review and reconcile them."
   ),
   T("notification.deadlineDueGeneric.message", "A compliance obligation is due[ on {dueDate}]."),
   T("notification.taskDue.message", "A task is due[ on {dueDate}]."),
@@ -183,6 +183,10 @@ export const LEGACY_NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
 ];
 
 export const LEGACY_NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
+  T(
+    "notification.bankSyncFailed.message",
+    "The bank connection[ ({provider})] could not import transactions[: {reason}]."
+  ),
   T(
     "notification.bankSyncFailed.message",
     "The bank feed[ ({provider})] could not sync[: {reason}]. Reconnect it under Banking."

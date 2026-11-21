@@ -11,3 +11,11 @@ html:not(.dark) .einvoice-surface {
   --primary: var(--einvoice-emerald);
   --ring: var(--einvoice-emerald);
 }
+
+.einvoice-status-badge.whitespace-nowrap {
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
+}

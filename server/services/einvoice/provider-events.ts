@@ -637,12 +637,20 @@ export async function runProviderPoll(
       ? sql`(${einvoiceDocuments.status} = 'submitted'
              OR (${einvoiceDocuments.status} IN ('accepted', 'cleared')
                  AND lower(btrim(${einvoiceDocuments.providerStatus})) IS DISTINCT FROM 'accepted'))`
-      : sql`(${einvoiceDocuments.reportingStatus} = 'pending'
-             OR (${einvoiceDocuments.reportingStatus} IS NULL
-                 AND ${einvoiceDocuments.validation}->'submission'->>'reportingRequired' IS DISTINCT FROM 'false')
-             OR (${einvoiceDocuments.reportingStatus} = 'not_required'
-                 AND ${einvoiceDocuments.reportBy} IS NOT NULL)
-             OR lower(btrim(${einvoiceDocuments.providerStatus})) = 'delivery_success')`;
+      : sql`lower(btrim(${einvoiceDocuments.providerStatus})) = 'delivery_success'`;
+  // The buyer decision and the tax authority's decision are independent. Limit this path to
+  // verified provider lifecycle states after handoff; Needs Correction never entered delivery.
+  const pendingGovernment =
+    providerName === "complyance"
+      ? sql`OR (${einvoiceDocuments.deliveryStatus} IN ('delivered', 'rejected', 'delivery_failed')
+          AND lower(btrim(${einvoiceDocuments.providerStatus})) IN ('delivery_success', 'delivery_failed', 'final_valid', 'final_invalid')
+          AND (${einvoiceDocuments.reportingStatus} = 'pending'
+            OR (${einvoiceDocuments.reportingStatus} IS NULL
+                AND ${einvoiceDocuments.validation}->'submission'->>'reportingRequired' IS DISTINCT FROM 'false')
+            OR (${einvoiceDocuments.reportingStatus} = 'not_required'
+                AND (${einvoiceDocuments.reportBy} IS NOT NULL
+                     OR lower(btrim(${einvoiceDocuments.providerStatus})) = 'final_valid'))))`
+      : sql``;
   const retryableDeliveryFailure =
     providerName === "acube"
       ? sql`OR ${einvoiceDocuments.deliveryStatus} = 'delivery_failed'`
@@ -661,9 +669,16 @@ export async function runProviderPoll(
         opts.companyId ? eq(einvoiceDocuments.companyId, opts.companyId) : undefined,
         sql`${einvoiceDocuments.validation}->'submission'->>'environment' = ${environment}`,
         sql`${einvoiceDocuments.providerMessageId} IS NOT NULL`,
+        providerName === "complyance"
+          ? sql`(
+          ${einvoiceDocuments.validation}->'submission'->>'correctionUncertain' IS DISTINCT FROM 'true'
+          OR ${einvoiceDocuments.validation}->'submission'->>'correctionCandidateHash' = ${einvoiceDocuments.xmlHash}
+        )`
+          : undefined,
         sql`(${einvoiceDocuments.deliveryStatus} IN ('queued', 'sending')
              ${retryableDeliveryFailure}
              ${unverifiedReporting}
+             ${pendingGovernment}
              OR (${einvoiceDocuments.deliveryStatus} IS NULL
                  AND (${einvoiceDocuments.status} IN ('submitted', 'accepted') OR ${awaitingFollowUp}))
              OR (${einvoiceDocuments.deliveryStatus} = 'delivered'

@@ -180,7 +180,12 @@ export interface PortalInvoiceRow {
   amountDue: number;
   status: string;
   paymentStatus: "paid" | "partially_paid" | "overdue" | "unpaid" | "credit";
-  einvoice: { status: string; uuid: string | null; hasXml: boolean } | null;
+  einvoice:
+    | (NonNullable<ReturnType<typeof customerEInvoiceOutcome>> & {
+        uuid: string | null;
+        hasXml: boolean;
+      })
+    | null;
 }
 
 /** Issued documents of one contact with their open balance (R16-04/R16-06). */

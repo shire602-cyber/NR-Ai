@@ -17,6 +17,7 @@ import Decimal from "decimal.js";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { classifySupply, type SupplyClassification } from "../../shared/vat-classification";
 import { fromFils, toFils, tryToFils } from "../../shared/money";
+import { calendarDateKey } from "../../shared/uae-date";
 import { computeSalesDocument, storedLineToTotalsInput } from "./document-totals.service";
 import { dueDateFromTerms } from "./invoice-lifecycle";
 import { comment, el, opt, serializeXml, type XmlElement } from "./einvoice/xml";
@@ -134,8 +135,11 @@ type CompanyLike = Company & {
 };
 
 function formatDate(date: Date | string): string {
-  const d = typeof date === "string" ? new Date(date) : date;
-  return d.toISOString().split("T")[0];
+  const day = calendarDateKey(date);
+  const timestamp = Date.parse(day);
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== day)
+    throw new RangeError("Invalid e-invoice calendar date");
+  return day;
 }
 
 function formatTime(date: Date): string {

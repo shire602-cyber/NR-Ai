@@ -156,13 +156,15 @@ describe("server copy templates", () => {
     } as never);
     const english = {
       title: "Bank transaction import failed",
-      message: "The bank connection (Wio) could not import transactions: HTTP 502.",
+      message:
+        "Some transactions could not be imported from Wio: HTTP 502. Upload a bank CSV to review and reconcile them.",
     };
     expect(current).toMatchObject(english);
     expect(localizeNotification(legacy, en)).toEqual(english);
     expect(localizeNotification(legacy, ar, "ar")).toEqual({
       title: "تعذّر استيراد الحركات البنكية",
-      message: "تعذّر استيراد الحركات عبر الاتصال البنكي (Wio): HTTP 502.",
+      message:
+        "تعذّر استيراد بعض الحركات من Wio: HTTP 502. ارفع كشف حساب بنكيًا بصيغة CSV لمراجعتها وتسويتها.",
     });
   });
 

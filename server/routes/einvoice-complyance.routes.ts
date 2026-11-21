@@ -56,7 +56,11 @@ import {
   runProviderEvents,
   runProviderPoll,
 } from "../services/einvoice/provider-events";
-import { companyTin, getLegalEntity } from "../services/einvoice/legal-entities";
+import {
+  companyTin,
+  currentOnboardingEntity,
+  getLegalEntity,
+} from "../services/einvoice/legal-entities";
 import {
   assertCanVerifyEInvoiceTracking,
   confirmLegacyEInvoiceEnvironment,
@@ -97,11 +101,12 @@ async function complyanceProvider(company: Company): Promise<ComplyanceEInvoiceP
 
 export async function complyanceConnectionView(
   company: Company & Record<string, unknown>,
-  le: Awaited<ReturnType<typeof getLegalEntity>>
+  storedEntity: Awaited<ReturnType<typeof getLegalEntity>>
 ) {
   const config = await complyanceConfiguration(company);
   const configured = !!config;
   const environment = complyanceEnvironment();
+  const le = currentOnboardingEntity(company, storedEntity, COMPLYANCE_PROVIDER_NAME, environment);
   const scope = einvoicingScope({
     einvoiceScope: (company.einvoiceScope as string | null) ?? null,
     einvoiceTurnoverBand: (company.einvoiceTurnoverBand as string | null) ?? null,
@@ -118,7 +123,7 @@ export async function complyanceConnectionView(
     emaraTaxListing: COMPLYANCE_PROVIDER_MODULE.emaraTaxListing,
     tin: companyTin(company as Company & { peppolParticipantId?: string | null }),
     legalEntity: complyanceLegalEntityView(le),
-    canSend: configured && le?.status === "active",
+    canSend: configured && !!le?.legalEntityId?.trim() && le.status === "active",
     steps: complyanceSteps(configured, le),
     goLive: { ...scope, timeline: EINVOICE_TIMELINE, reportWindowDays: reportWindowDays() },
     webhook: {

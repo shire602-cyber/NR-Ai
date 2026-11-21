@@ -17,9 +17,12 @@ import { validateForEInvoicing } from "../einvoice.service";
 import { loadEInvoiceContext } from "./context";
 import {
   documentProviderEnvironment,
+  documentSubmissionMetadata,
   documentValidation,
   getEInvoiceDocument,
+  hasUnverifiedComplyanceCorrection,
   isQueuedEInvoiceDocument,
+  sha256Hex,
   submissionProviderPin,
 } from "./store";
 import { listDocumentEvents } from "./history";
@@ -101,6 +104,7 @@ export function projectEInvoiceDocument(
 
 export async function einvoiceStatusView(invoice: Invoice, company: Company, now = new Date()) {
   const doc = await getEInvoiceDocument(company.id, invoice.id);
+  const correctionRevisionUnverified = hasUnverifiedComplyanceCorrection(doc);
   const events = await listDocumentEvents(company.id, invoice.id, 100);
   const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
   const ctx = await loadEInvoiceContext(invoice, company, lines);
@@ -179,21 +183,22 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     .limit(1);
 
   const validation = documentValidation(doc) as { valid?: boolean } | null;
-  const submissionState = legacyRecovery
-    ? "needs_reconciliation"
-    : delivery === "rejected" || reporting === "report_failed"
-      ? "rejected"
-      : delivery === "needs_link"
-        ? "needs_reconciliation"
-        : delivery === "delivery_failed" && !retryScheduled
-          ? "failed"
-          : recipientAccepted || (sentToRecipient && !isAcube && providerId !== "complyance")
-            ? "accepted"
-            : handedOver
-              ? "sent"
-              : legacy === "queued" || retryScheduled
-                ? "queued"
-                : "draft";
+  const submissionState =
+    legacyRecovery || correctionRevisionUnverified
+      ? "needs_reconciliation"
+      : delivery === "rejected" || reporting === "report_failed"
+        ? "rejected"
+        : delivery === "needs_link"
+          ? "needs_reconciliation"
+          : delivery === "delivery_failed" && !retryScheduled
+            ? "failed"
+            : recipientAccepted || (sentToRecipient && !isAcube && providerId !== "complyance")
+              ? "accepted"
+              : handedOver
+                ? "sent"
+                : legacy === "queued" || retryScheduled
+                  ? "queued"
+                  : "draft";
   const issued = !["draft", "cancelled", "void"].includes(invoice.status);
   const maySubmit = issued && block === null && company.einvoicePartner === providerId;
   const checklist: ChecklistItem[] = [
@@ -259,6 +264,27 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
 
   const failed =
     delivery === "rejected" || delivery === "delivery_failed" || reporting === "report_failed";
+  const rejectionEnvironment =
+    pinnedEnvironment === "production" || pinnedEnvironment === "sandbox"
+      ? pinnedEnvironment
+      : null;
+  const submission = documentSubmissionMetadata(doc);
+  const creditNoteRequired =
+    rejectionEnvironment === "production" &&
+    delivery === "rejected" &&
+    !correctionRevisionUnverified &&
+    invoice.invoiceType !== "credit_note" &&
+    doc?.provider === "complyance" &&
+    invoice.einvoiceProvider === doc.provider &&
+    !!doc.providerMessageId &&
+    doc.providerMessageId === invoice.einvoiceProviderMessageId &&
+    doc.lastErrorCode === "COMPLYANCE_FINAL_INVALID" &&
+    providerStatus === "final_invalid" &&
+    !!(submission?.scope || submission?.environmentVerifiedAt) &&
+    !!invoice.einvoiceXml &&
+    !!doc.xmlHash &&
+    doc.xmlHash === invoice.einvoiceHash &&
+    doc.xmlHash === sha256Hex(invoice.einvoiceXml);
   return {
     status: legacy,
     submissionState,
@@ -278,6 +304,7 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
       },
     },
     transmission: {
+      correctionRevisionUnverified,
       provider: providerId,
       providerDisplayName: module?.displayName ?? null,
       environment,
@@ -289,6 +316,7 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
       recipientAcknowledgement: acknowledgement,
       canSubmit: maySubmit && submissionState === "draft" && !legacyRecovery,
       canRefresh:
+        !correctionRevisionUnverified &&
         configuration !== null &&
         ((handedOver && legacy !== "cleared") ||
           (!legacyRecovery && canRecoverAcubeSubmission(invoice, doc))),
@@ -297,6 +325,8 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     contactId: invoice.contactId ?? null,
     rejection: failed
       ? {
+          environment: rejectionEnvironment,
+          creditNoteRequired,
           code: doc?.lastErrorCode ?? null,
           message: doc?.lastError ?? invoice.einvoiceStatusDetail ?? null,
           reasons: (doc?.rejectionReasons as unknown[] | null) ?? [],

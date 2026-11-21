@@ -153,7 +153,7 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
         url: "/bank-accounts",
         icon: Landmark,
         testId: "banking.accounts.title",
-        // The Bank feeds route highlights Accounts and offers statement import without a provider.
+        // The historical banking URL opens statement import.
         matches: ["/bank-feeds"],
       },
       {

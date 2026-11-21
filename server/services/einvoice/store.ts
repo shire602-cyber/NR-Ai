@@ -96,7 +96,23 @@ export function documentSubmissionMetadata(
         ? metadata.correctionOriginalValidation
         : null,
     correctionUncertain: metadata?.correctionUncertain === true,
+    correctionCandidateHash:
+      typeof metadata?.correctionCandidateHash === "string"
+        ? metadata.correctionCandidateHash
+        : null,
   };
+}
+
+/** A provider ID reused for correction identifies the resource, never the XML revision. */
+export function hasUnverifiedComplyanceCorrection(
+  doc: EInvoiceDocument | null | undefined
+): boolean {
+  const pin = documentSubmissionMetadata(doc);
+  return (
+    doc?.provider === "complyance" &&
+    pin?.correctionUncertain === true &&
+    (!doc.xmlHash || doc.xmlHash !== pin.correctionCandidateHash)
+  );
 }
 
 /** A recorded due date is evidence of an obligation even on older, inconsistent rows. */
@@ -295,6 +311,35 @@ export interface ArchiveInput {
   provider?: string | null;
   providerMessageId?: string | null;
   now?: Date;
+}
+
+/** Retrieve the exact submitted bytes pinned to a tenant's tracked provider document. */
+export async function getSubmittedArchiveSource(
+  reference: Pick<
+    EInvoiceArchiveRow,
+    "companyId" | "invoiceId" | "provider" | "providerMessageId"
+  > & { sha256?: string | null },
+  conn: EInvoiceDb = db
+): Promise<EInvoiceArchiveRow | null> {
+  const { companyId, invoiceId, provider, providerMessageId, sha256 } = reference;
+  if (!invoiceId || !provider || !providerMessageId) return null;
+  const entries = await conn
+    .select()
+    .from(einvoiceArchive)
+    .where(
+      and(
+        eq(einvoiceArchive.companyId, companyId),
+        eq(einvoiceArchive.invoiceId, invoiceId),
+        eq(einvoiceArchive.direction, "outbound"),
+        eq(einvoiceArchive.kind, "submitted"),
+        eq(einvoiceArchive.provider, provider),
+        eq(einvoiceArchive.providerMessageId, providerMessageId),
+        sha256 ? eq(einvoiceArchive.sha256, sha256) : undefined
+      )
+    )
+    .limit(2);
+  const [entry] = entries;
+  return entries.length === 1 && sha256Hex(entry.xml) === entry.sha256 ? entry : null;
 }
 
 /**

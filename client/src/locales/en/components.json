@@ -298,7 +298,7 @@
   "components.srv.notification.billApproved.message": "Bill {label} was approved for payment.",
   "components.srv.notification.billPaid.message": "Bill {label} was paid.",
   "components.srv.notification.payrollApproved.message": "Payroll for {month}/{year} was approved.",
-  "components.srv.notification.bankSyncFailed.message": "The bank connection[ ({provider})] could not import transactions[: {reason}].",
+  "components.srv.notification.bankSyncFailed.message": "Some transactions could not be imported[ from {provider}][: {reason}]. Upload a bank CSV to review and reconcile them.",
   "components.srv.notification.deadlineDue.message": "{obligation} is due[ on {dueDate}].",
   "components.srv.notification.deadlineDueGeneric.message": "A compliance obligation is due[ on {dueDate}].",
   "components.srv.notification.taskDue.message": "A task is due[ on {dueDate}].",

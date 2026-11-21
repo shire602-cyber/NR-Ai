@@ -12,7 +12,6 @@ import { and, eq, ne, sql } from "drizzle-orm";
 import {
   companies,
   auditLogs,
-  einvoiceArchive,
   einvoiceDocuments,
   invoiceLines,
   invoices,
@@ -66,6 +65,8 @@ import {
   documentValidation,
   dueEInvoiceRetries,
   getEInvoiceDocument,
+  getSubmittedArchiveSource,
+  hasUnverifiedComplyanceCorrection,
   isQueuedEInvoiceDocument,
   lockEInvoiceInvoice,
   pinDocumentReporting,
@@ -268,7 +269,7 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         ok: false,
         status: 409,
         code: "EINVOICE_NEW_DOCUMENT_REQUIRED",
-        message: "This invoice number cannot be sent again. Issue a credit note and a new invoice.",
+        message: "This invoice number cannot be sent again.",
       };
     }
     if (
@@ -830,6 +831,7 @@ async function stopQueuedSubmission(
               correctionOriginalHash: null,
               correctionOriginalValidation: null,
               correctionUncertain: ambiguous,
+              correctionCandidateHash: ambiguous ? (current?.xmlHash ?? null) : null,
             },
           },
         },
@@ -864,21 +866,16 @@ async function correctionSource(
 ) {
   if (!provider || !pin.correctionOf || !pin.correctionOriginalHash)
     throw new Error("The previous outbound e-invoice source was not pinned");
-  const [original] = await tx
-    .select()
-    .from(einvoiceArchive)
-    .where(
-      and(
-        eq(einvoiceArchive.companyId, invoice.companyId),
-        eq(einvoiceArchive.invoiceId, invoice.id),
-        eq(einvoiceArchive.direction, "outbound"),
-        eq(einvoiceArchive.kind, "submitted"),
-        eq(einvoiceArchive.provider, provider),
-        eq(einvoiceArchive.providerMessageId, pin.correctionOf),
-        eq(einvoiceArchive.sha256, pin.correctionOriginalHash)
-      )
-    )
-    .limit(1);
+  const original = await getSubmittedArchiveSource(
+    {
+      companyId: invoice.companyId,
+      invoiceId: invoice.id,
+      provider,
+      providerMessageId: pin.correctionOf,
+      sha256: pin.correctionOriginalHash,
+    },
+    tx
+  );
   if (!original?.uuid) throw new Error("Could not restore the previous outbound e-invoice source");
   return { ...original, uuid: original.uuid };
 }
@@ -1011,6 +1008,7 @@ async function persistSubmissionOutcome(args: {
           correctionOriginalHash: null,
           correctionOriginalValidation: null,
           correctionUncertain,
+          correctionCandidateHash: correctionUncertain ? built.hash : null,
         },
       }
     : current.validation;
@@ -1311,28 +1309,45 @@ async function canReadTrackedEInvoice(
   return !!identity && provider.verifyOutboundDocument(id, identity).catch(() => false);
 }
 
-function frozenComplyanceOwner(
+async function frozenComplyanceSource(
   invoice: Invoice,
   doc: EInvoiceDocument,
   provider: EInvoiceProvider
-): EInvoiceOutboundIdentity | undefined {
+) {
   const pin = documentSubmissionMetadata(doc);
-  const xml = invoice.einvoiceXml;
+  const id = invoice.einvoiceProviderMessageId;
+  const pinnedHash = doc.xmlHash || invoice.einvoiceHash;
   if (
     doc.companyId !== invoice.companyId ||
     doc.invoiceId !== invoice.id ||
     doc.provider !== provider.name ||
+    (invoice.einvoiceProvider && invoice.einvoiceProvider !== provider.name) ||
     pin?.environment !== provider.environment ||
-    !xml ||
-    !doc.xmlHash ||
-    doc.xmlHash !== invoice.einvoiceHash ||
-    doc.xmlHash !== sha256Hex(xml)
+    doc.providerMessageId !== id ||
+    !id ||
+    (doc.xmlHash && invoice.einvoiceHash && doc.xmlHash !== invoice.einvoiceHash) ||
+    (pinnedHash && invoice.einvoiceXml && pinnedHash !== sha256Hex(invoice.einvoiceXml))
   )
     return;
+
+  const hasMirrors = !!invoice.einvoiceXml && !!invoice.einvoiceHash && !!doc.xmlHash;
+  const archive = hasMirrors
+    ? null
+    : await getSubmittedArchiveSource({
+        companyId: invoice.companyId,
+        invoiceId: invoice.id,
+        provider: provider.name,
+        providerMessageId: id,
+        sha256: pinnedHash,
+      });
+  const xml = hasMirrors ? invoice.einvoiceXml : archive?.xml;
+  const hash = pinnedHash ?? archive?.sha256;
+  if (!xml || !hash || (invoice.einvoiceXml && invoice.einvoiceXml !== xml)) return;
 
   try {
     const root = parseXml(xml).documentElement;
     const documentNumber = textAt(root, "cbc:ID");
+    const uuid = textAt(root, "cbc:UUID");
     const party = first(root, "cac:AccountingSupplierParty/cac:Party");
     if (!documentNumber || !party) return;
     const endpoint = first(party, "cbc:EndpointID");
@@ -1346,15 +1361,25 @@ function frozenComplyanceOwner(
       (supplierTrn && supplierTin !== taxTin) ||
       (pin.supplierTin && pin.supplierTin !== supplierTin) ||
       (pin.supplierTrn && pin.supplierTrn !== supplierTrn) ||
-      (pin.invoiceNumber && pin.invoiceNumber !== documentNumber)
+      (pin.invoiceNumber && pin.invoiceNumber !== documentNumber) ||
+      (!pinnedHash && !pin.invoiceNumber && invoice.number !== documentNumber) ||
+      (archive && archive.documentNumber !== documentNumber) ||
+      [doc.uuid, invoice.einvoiceUuid, archive?.uuid].some(
+        (expected) => expected && expected !== uuid
+      )
     )
       return;
     return {
-      documentNumber,
-      supplierTin,
-      supplierTrn,
-      legalEntityId: pin.legalEntityId,
-      sourceName: pin.sourceName,
+      identity: {
+        documentNumber,
+        supplierTin,
+        supplierTrn,
+        legalEntityId: pin.legalEntityId,
+        sourceName: pin.sourceName,
+      },
+      xml,
+      uuid,
+      hash,
     };
   } catch {
     return;
@@ -1438,10 +1463,18 @@ export async function refreshAndPersist(args: {
   const { invoice, company, provider } = args;
   const now = args.now ?? new Date();
   const existing = await getEInvoiceDocument(company.id, invoice.id);
-  const outboundIdentity =
+  if (hasUnverifiedComplyanceCorrection(existing))
+    return {
+      ok: false as const,
+      status: 409,
+      code: "EINVOICE_CORRECTION_REVISION_UNVERIFIED",
+      message: "The provider document ID does not establish which correction revision it accepted.",
+    };
+  const outboundSource =
     provider.name === "complyance" && existing
-      ? frozenComplyanceOwner(invoice, existing, provider)
+      ? await frozenComplyanceSource(invoice, existing, provider)
       : undefined;
+  const outboundIdentity = outboundSource?.identity;
   if (
     invoice.einvoiceProviderMessageId &&
     !(await canReadTrackedEInvoice(existing, invoice, provider, outboundIdentity))
@@ -1525,6 +1558,10 @@ export async function refreshAndPersist(args: {
       !fresh ||
       fresh.einvoiceProviderMessageId !== invoice.einvoiceProviderMessageId ||
       fresh.einvoiceStatus !== invoice.einvoiceStatus ||
+      fresh.einvoiceXml !== invoice.einvoiceXml ||
+      fresh.einvoiceHash !== invoice.einvoiceHash ||
+      fresh.einvoiceUuid !== invoice.einvoiceUuid ||
+      current?.xmlHash !== existing?.xmlHash ||
       current?.updatedAt?.getTime() !== existing?.updatedAt?.getTime() ||
       current?.deliveryStatus !== existing?.deliveryStatus ||
       current?.reportingStatus !== existing?.reportingStatus ||
@@ -1563,6 +1600,7 @@ export async function refreshAndPersist(args: {
         document: {
           ...result.document,
           status: legacy,
+          ...(outboundSource ? { xmlHash: outboundSource.hash, uuid: outboundSource.uuid } : {}),
           validation: (() => {
             const pinned = pinDocumentReporting(current, required, observedReporting, now);
             const correction = documentSubmissionMetadata(current);
@@ -1588,19 +1626,33 @@ export async function refreshAndPersist(args: {
       },
       tx
     );
-    const update = { ...result.update, einvoiceStatus: legacy };
+    const update: EInvoiceUpdate = {
+      ...result.update,
+      einvoiceStatus: legacy,
+      ...(outboundSource
+        ? {
+            einvoiceXml: outboundSource.xml,
+            einvoiceHash: outboundSource.hash,
+            ...(outboundSource.uuid ? { einvoiceUuid: outboundSource.uuid } : {}),
+          }
+        : {}),
+    };
     await updateInvoiceInTransaction(tx, fresh, update);
-    if (legacy === "cleared" && fresh.einvoiceXml) {
+    const clearedXml = outboundSource?.xml ?? fresh.einvoiceXml;
+    if (legacy === "cleared" && clearedXml) {
       await archiveEInvoiceXml(
         {
           companyId: company.id,
           invoiceId: invoice.id,
           direction: "outbound",
           kind: "cleared",
-          documentNumber: documentSubmissionMetadata(doc)?.invoiceNumber ?? fresh.number,
+          documentNumber:
+            outboundIdentity?.documentNumber ??
+            documentSubmissionMetadata(doc)?.invoiceNumber ??
+            fresh.number,
           documentType: doc.documentType,
-          uuid: fresh.einvoiceUuid,
-          xml: fresh.einvoiceXml,
+          uuid: outboundSource?.uuid ?? fresh.einvoiceUuid,
+          xml: clearedXml,
           provider: provider.name,
           providerMessageId: fresh.einvoiceProviderMessageId,
           now,

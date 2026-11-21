@@ -779,7 +779,7 @@ ${table(
       "Balances and contacts routes are crawled; single-pane depth must be reviewed.",
     ],
     [
-      "Bank feeds and rules",
+      "Statement import and rules",
       "Review",
       "Manual import/reconciliation is tested; live provider credentials are outside this audit.",
     ],
