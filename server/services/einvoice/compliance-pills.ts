@@ -1,15 +1,19 @@
 /**
  * X6d: per-invoice compliance pills for the invoice list. One row per issued (non-draft,
  * non-void) invoice with its report-by date and the two tracks, derived with the same
- * `deriveInvoiceTracks` the status view uses. Returns no rows unless the e-invoicing mandate
- * applies to the company (scope chosen and go-live reached), so a company outside scope sees
- * nothing. Transmission is separate: with no provider connected nothing is "sent".
+ * `deriveInvoiceTracks` the status view uses. Established obligations and observed outcomes stay
+ * visible after company settings change. Other rows appear when the company is in scope.
  */
 import type { Company } from "../../../shared/schema";
 import { storage } from "../../storage";
-import { listEInvoiceDocuments } from "./store";
+import { documentReportingRequired, listEInvoiceDocuments } from "./store";
 import { einvoiceMandateApplies } from "./scope";
-import { deriveInvoiceTracks, type DeliveryStatus, type ReportingStatus } from "./tracks";
+import {
+  deriveInvoiceTracks,
+  isReportingObservation,
+  type DeliveryStatus,
+  type ReportingStatus,
+} from "./tracks";
 import { invoiceReportingRequired } from "./workflow";
 
 export interface CompliancePill {
@@ -26,7 +30,6 @@ export async function listCompliancePills(
   now = new Date()
 ): Promise<{ mandateApplies: boolean; items: CompliancePill[] }> {
   const mandateApplies = einvoiceMandateApplies(company, now);
-  if (!mandateApplies) return { mandateApplies, items: [] };
   const [invoices, docs] = await Promise.all([
     storage.getInvoicesByCompanyId(company.id),
     listEInvoiceDocuments(company.id, 500),
@@ -37,7 +40,10 @@ export async function listCompliancePills(
     const status = String(invoice.status ?? "").toLowerCase();
     if (status === "draft" || status === "void" || status === "cancelled") continue;
     const doc = byInvoice.get(invoice.id) ?? null;
-    const required = invoiceReportingRequired(invoice, company, now);
+    const required = documentReportingRequired(
+      doc,
+      invoiceReportingRequired(invoice, company, now)
+    );
     const t = deriveInvoiceTracks({
       invoiceDate: invoice.date,
       invoiceStatus: invoice.status,
@@ -47,11 +53,12 @@ export async function listCompliancePills(
       required,
       now,
     });
+    if (!mandateApplies && !required && !isReportingObservation(t.reporting)) continue;
     items.push({
       invoiceId: invoice.id,
       reportBy: t.reportBy,
       overdue: t.overdue,
-      reportingRequired: required,
+      reportingRequired: t.reportingRequired,
       delivery: t.delivery,
       reporting: t.reporting,
     });

@@ -50,12 +50,14 @@ import {
 import { loadEInvoiceContext } from "./context";
 import {
   archiveEInvoiceXml,
+  documentReportingRequired,
   documentSubmissionMetadata,
   documentValidation,
   dueEInvoiceRetries,
   getEInvoiceDocument,
   isQueuedEInvoiceDocument,
   lockEInvoiceInvoice,
+  pinDocumentReporting,
   sha256Hex,
   SUBMISSION_LEASE_MS,
   submissionTriedProvider,
@@ -65,11 +67,15 @@ import {
 import { applyTracks, recordValidationEvent, type HistorySource } from "./history";
 import {
   deliveryFromLegacy,
+  isReportingObservation,
   legacyFromProviderTracks,
   projectEInvoiceLegacyStatus,
   NEW_DOCUMENT_REQUIRED_CODES,
   reportByDate,
+  reportingFromEvidence,
   reportingRequired,
+  reportingEvidenceAt,
+  storedReportingEvidence,
   type DeliveryStatus,
   type ReportingStatus,
 } from "./tracks";
@@ -391,7 +397,10 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
       return built;
     }
 
-    const required = invoiceReportingRequired(invoice, company, now);
+    const currentRequirement = invoiceReportingRequired(invoice, company, now);
+    const required = triedProvider
+      ? documentReportingRequired(existing, currentRequirement)
+      : currentRequirement;
     await updateInvoiceInTransaction(tx, invoice, {
       einvoiceUuid: built.uuid,
       einvoiceXml: built.xml,
@@ -411,7 +420,11 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         reporting: required ? "pending" : "not_required",
         providerStatus: null,
         errorCode: null,
-        reportBy: required ? reportByDate(invoice.date) : null,
+        reportBy: required
+          ? triedProvider
+            ? (existing?.reportBy ?? reportByDate(invoice.date))
+            : reportByDate(invoice.date)
+          : null,
       },
       {
         source,
@@ -446,6 +459,7 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
               scope,
               actorId: args.actorId ?? null,
               providerAttempted: triedProvider,
+              reportingRequired: required,
             },
           },
           validatedAt: now,
@@ -749,6 +763,22 @@ async function sendQueuedSubmission(
   return result;
 }
 
+function reportingForResult(
+  provider: string,
+  required: boolean,
+  result: EInvoiceProviderResult,
+  previous?: string | null
+): ReportingStatus {
+  const legacyConfirmation =
+    provider !== "acube" &&
+    provider !== "complyance" &&
+    result.reporting == null &&
+    result.status === "cleared"
+      ? "reported"
+      : undefined;
+  return reportingFromEvidence(provider, required, result.reporting, legacyConfirmation, previous);
+}
+
 async function persistSubmissionOutcome(args: {
   invoice: Invoice;
   current: EInvoiceDocument;
@@ -761,18 +791,22 @@ async function persistSubmissionOutcome(args: {
 }) {
   const { invoice, current, built, provider, dispatch, source, now, tx } = args;
   const r = dispatch.result;
-  const required = current.reportingStatus === "pending" || current.reportingStatus === "reported";
+  const required = documentReportingRequired(
+    current,
+    current.reportingStatus === "pending" || current.reportingStatus === "reported"
+  );
   const delivery: DeliveryStatus = r.delivery ?? deliveryFromLegacy(r.status);
-  const reporting: ReportingStatus = !required
-    ? "not_required"
-    : r.reporting && r.reporting !== "pending"
-      ? r.reporting
-      : r.status === "cleared"
-        ? "reported"
-        : "pending";
+  const reporting = reportingForResult(
+    provider.name,
+    required,
+    r,
+    storedReportingEvidence(current)
+  );
+  const observedReporting =
+    provider.name === "complyance" && isReportingObservation(r.reporting) ? r.reporting : null;
   const status = r.delivery
     ? legacyFromProviderTracks(provider.name, r.providerStatus, delivery, reporting)
-    : r.status;
+    : projectEInvoiceLegacyStatus(provider.name, r.providerStatus, r.status, reporting);
   const result = submittedEInvoiceOutcome(
     built,
     provider,
@@ -780,25 +814,38 @@ async function persistSubmissionOutcome(args: {
     current.attempts - 1,
     now
   );
-  const failed = delivery === "delivery_failed" || delivery === "rejected";
+  const failed =
+    delivery === "delivery_failed" || delivery === "rejected" || reporting === "report_failed";
   const errorCode =
-    r.errorCode ?? (delivery === "rejected" ? "EINVOICE_VALIDATION" : "TRANSPORT_ERROR");
+    r.errorCode ??
+    (delivery === "rejected"
+      ? "EINVOICE_VALIDATION"
+      : reporting === "report_failed"
+        ? "EINVOICE_REPORT_FAILED"
+        : "TRANSPORT_ERROR");
   const retry =
     !r.providerMessageId &&
     (!providerRequiresLegalEntity(provider) ||
       AMBIGUOUS_CODES.has(errorCode) ||
       RETRYABLE_BEFORE_HANDOFF.has(errorCode));
   const metadata = documentSubmissionMetadata(current);
-  const validation = metadata
+  const validationSnapshot = metadata
     ? {
         ...built.validation,
         submission: {
           ...metadata,
           providerAttempted:
             dispatch.providerAttempted || submissionTriedProvider(current) || result.handedOver,
+          reportingRequired: required,
         },
       }
     : current.validation;
+  const validation = pinDocumentReporting(
+    { validation: validationSnapshot },
+    required,
+    observedReporting,
+    now
+  );
   const { companyId, id: invoiceId } = invoice;
   await updateInvoiceInTransaction(tx, invoice, result.update);
   const documentRow = await applyTracks(
@@ -815,6 +862,8 @@ async function persistSubmissionOutcome(args: {
       source,
       provider: provider.name,
       now,
+      recordReporting:
+        !!observedReporting && !reportingEvidenceAt(current.validation, observedReporting),
       document: {
         ...result.document,
         validation,
@@ -1037,6 +1086,27 @@ export async function frozenEInvoiceOwner(
   provider: EInvoiceProvider
 ): Promise<EInvoiceOutboundIdentity | null> {
   const metadata = documentSubmissionMetadata(doc);
+  if (
+    metadata?.environmentVerifiedAt &&
+    metadata.invoiceNumber &&
+    metadata.supplierTin &&
+    doc.invoiceId === invoice.id &&
+    doc.companyId === invoice.companyId &&
+    doc.provider === provider.name &&
+    metadata.environment === provider.environment &&
+    invoice.einvoiceXml &&
+    doc.xmlHash &&
+    doc.xmlHash === invoice.einvoiceHash &&
+    doc.xmlHash === sha256Hex(invoice.einvoiceXml)
+  ) {
+    return {
+      documentNumber: metadata.invoiceNumber,
+      supplierTin: metadata.supplierTin,
+      supplierTrn: metadata.supplierTrn,
+      legalEntityId: metadata.legalEntityId,
+      sourceName: metadata.sourceName,
+    };
+  }
   const built = frozenEInvoice(invoice, doc);
   if (
     !built ||
@@ -1103,13 +1173,13 @@ export async function refreshAndPersist(args: {
     provider.name,
     existing?.providerStatus,
     invoice.einvoiceStatus ?? "not_generated",
-    existing?.reportingStatus
+    storedReportingEvidence(existing)
   );
   // An incomplete subsequent final_valid response cannot erase a verified reporting result.
   const statusForProviderRead =
     provider.name === "complyance" &&
     verifiedCurrentStatus === "cleared" &&
-    existing?.reportingStatus === "reported"
+    storedReportingEvidence(existing) === "reported"
       ? "accepted"
       : verifiedCurrentStatus;
   const result = await refreshEInvoiceStatus({
@@ -1119,23 +1189,15 @@ export async function refreshAndPersist(args: {
     ref,
   });
   if (!result.ok) return result;
-  const required = existing?.reportingStatus
-    ? existing.reportingStatus !== "not_required"
-    : invoiceReportingRequired(invoice, company);
+  const required = documentReportingRequired(
+    existing,
+    invoiceReportingRequired(invoice, company, now)
+  );
   const r = result.result;
   const delivery: DeliveryStatus = r.delivery ?? deliveryFromLegacy(r.status);
-  // E2: a provider that reports the FTA track in the status itself (Complyance: final_valid /
-  // final_invalid) is taken at its word; "pending" from a provider never overrides what we know.
-  const providerReporting =
-    r.reporting === "reported" || r.reporting === "report_failed" ? r.reporting : null;
-  let reporting: ReportingStatus = !required
-    ? "not_required"
-    : (providerReporting ??
-      (r.status === "cleared"
-        ? "reported"
-        : acube
-          ? "pending"
-          : ((existing?.reportingStatus as ReportingStatus | null) ?? "pending")));
+  let reporting = reportingForResult(provider.name, required, r, storedReportingEvidence(existing));
+  let observedReporting =
+    provider.name === "complyance" && isReportingObservation(r.reporting) ? r.reporting : null;
   if (
     required &&
     delivery === "delivered" &&
@@ -1144,8 +1206,10 @@ export async function refreshAndPersist(args: {
     invoice.einvoiceProviderMessageId
   ) {
     try {
-      reporting = (await provider.getReportingStatus(invoice.einvoiceProviderMessageId, ref))
-        .reporting;
+      const observed = await provider.getReportingStatus(invoice.einvoiceProviderMessageId, ref);
+      reporting = reportingFromEvidence(provider.name, required, observed.reporting, reporting);
+      if (provider.name === "complyance" && isReportingObservation(observed.reporting))
+        observedReporting = observed.reporting;
     } catch {
       log.warn({ invoiceId: invoice.id }, "E-invoice reporting check failed");
     }
@@ -1153,7 +1217,12 @@ export async function refreshAndPersist(args: {
   // Two-track providers drive the legacy status from the tracks; others report it directly.
   const legacy = r.delivery
     ? legacyFromProviderTracks(provider.name, r.providerStatus, delivery, reporting)
-    : result.update.einvoiceStatus;
+    : projectEInvoiceLegacyStatus(
+        provider.name,
+        r.providerStatus,
+        result.update.einvoiceStatus,
+        reporting
+      );
   const failed =
     delivery === "delivery_failed" || delivery === "rejected" || reporting === "report_failed";
   return db.transaction(async (tx) => {
@@ -1193,12 +1262,18 @@ export async function refreshAndPersist(args: {
         provider: provider.name,
         providerEventId: args.providerEventId ?? null,
         recordDelivery: !!r.providerStatus && r.providerStatus !== current?.providerStatus,
+        recordReporting:
+          !!observedReporting && !reportingEvidenceAt(current?.validation, observedReporting),
         now,
         document: {
           ...result.document,
           status: legacy,
+          validation: pinDocumentReporting(current, required, observedReporting, now),
           ...(acube && reporting !== "reported" ? { reportedAt: null } : {}),
-          clearedAt: legacy === "cleared" ? (current?.clearedAt ?? now) : result.document.clearedAt,
+          clearedAt:
+            legacy === "cleared"
+              ? (storedReportingEvidence(current) === "reported" ? current?.clearedAt : null) ?? now
+              : result.document.clearedAt,
         },
       },
       tx

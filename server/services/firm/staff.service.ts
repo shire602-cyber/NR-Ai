@@ -163,6 +163,9 @@ export async function assignStaff(
       .limit(1)
       .for("update");
     if (!staffUser) throw new DomainError("STAFF_NOT_FOUND", 404);
+    if (!(await isFirmClient(ctx, input.companyId, tx, "share"))) {
+      throw new DomainError("CLIENT_NOT_FOUND", 404);
+    }
     const staffCtx = await resolveFirmContext(
       { id: staffUser.id, firmRole: staffUser.firmRole, isAdmin: false },
       tx
@@ -297,22 +300,28 @@ export async function removeFirmMember(ctx: FirmContext, userId: string): Promis
   if (target.role === "firm_owner" && members.filter((m) => m.role === "firm_owner").length <= 1) {
     throw new DomainError("LAST_FIRM_OWNER", 409);
   }
-  // Remove every client grant the firm gave this member.
-  const assigned = (await db
-    .select({ companyId: firmStaffAssignments.companyId })
-    .from(firmStaffAssignments)
-    .where(eq(firmStaffAssignments.userId, userId))) as Array<{ companyId: string }>;
-  const granted = (await db
-    .select({ companyId: companyUsers.companyId })
-    .from(companyUsers)
-    .where(eq(companyUsers.userId, userId))) as Array<{ companyId: string }>;
-  for (const companyId of new Set([...assigned, ...granted].map((r) => r.companyId))) {
-    if (await isFirmClient(ctx, companyId)) {
-      await revokeCompanyAccess({ firmId: ctx.firmId, isNr: ctx.isNr, companyId, userId });
+  await db.transaction(async (tx) => {
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
+    const assigned = await tx
+      .select({ companyId: firmStaffAssignments.companyId })
+      .from(firmStaffAssignments)
+      .where(eq(firmStaffAssignments.userId, userId));
+    const firmGrants = await tx
+      .select({ companyId: firmCompanyGrants.companyId })
+      .from(firmCompanyGrants)
+      .where(and(eq(firmCompanyGrants.userId, userId), eq(firmCompanyGrants.firmId, ctx.firmId)));
+    const grantedCompanies = new Set(firmGrants.map((grant) => grant.companyId));
+    for (const companyId of new Set([
+      ...grantedCompanies,
+      ...assigned.map((row) => row.companyId),
+    ])) {
+      if (grantedCompanies.has(companyId) || (await isFirmClient(ctx, companyId, tx, "share"))) {
+        await revokeCompanyAccess({ firmId: ctx.firmId, isNr: ctx.isNr, companyId, userId }, tx);
+      }
     }
-  }
-  await db
-    .delete(firmMembers)
-    .where(and(eq(firmMembers.userId, userId), eq(firmMembers.firmId, ctx.firmId)));
-  if (ctx.isNr) await db.update(users).set({ firmRole: null }).where(eq(users.id, userId));
+    await tx
+      .delete(firmMembers)
+      .where(and(eq(firmMembers.userId, userId), eq(firmMembers.firmId, ctx.firmId)));
+    if (ctx.isNr) await tx.update(users).set({ firmRole: null }).where(eq(users.id, userId));
+  });
 }

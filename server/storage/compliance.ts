@@ -40,7 +40,7 @@ import {
 import { db } from "../db";
 import { and, desc, eq, lt, or, sql } from "drizzle-orm";
 import { CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP } from "../../shared/ct-workpaper";
-import { scopedGet, scopedUpdate } from "../tenancy";
+import { isScopedIdPair, scopedGet } from "../tenancy";
 import type { AuditLogFilter } from "./types";
 import { auditFilterConditions, auditLogToActivityLog, normalizeEmail } from "./helpers";
 import { EngagementStorage } from "./engagement";
@@ -467,9 +467,23 @@ export class ComplianceStorage extends EngagementStorage {
         | "lastSentAt"
         | "sendCount"
       >
-    >
+    >,
+    expected: Pick<CompanyInvitation, "status" | "tokenHash">
   ): Promise<CompanyInvitation | undefined> {
-    return scopedUpdate(companyInvitations, companyId, id, data);
+    if (!isScopedIdPair(companyId, id)) return undefined;
+    const [row] = await db
+      .update(companyInvitations)
+      .set(data)
+      .where(
+        and(
+          eq(companyInvitations.companyId, companyId),
+          eq(companyInvitations.id, id),
+          eq(companyInvitations.status, expected.status),
+          eq(companyInvitations.tokenHash, expected.tokenHash)
+        )
+      )
+      .returning();
+    return row;
   }
 
   // Activity Logs (Admin)

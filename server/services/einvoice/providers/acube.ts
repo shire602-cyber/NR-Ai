@@ -510,17 +510,19 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
   // The TDD download only confirms that an artifact is available. The A-Cube contract does
   // not expose an FTA acknowledgement through that endpoint, so reporting remains pending.
 
-  private async *documentPages(
-    kind: Kind,
-    direction: "incoming" | "outgoing",
+  private async *collectionPages(
+    path: string,
+    label: string,
+    identifier: (item: Record<string, unknown> | null) => string | null,
     signal: AbortSignal
   ): AsyncGenerator<unknown[]> {
     const visited = new Set<string>();
+    const separator = path.includes("?") ? "&" : "?";
     for (let page = 1; ; page++) {
       signal.throwIfAborted();
       const r = await this.call(
         "GET",
-        `/${kind}?direction=${direction}&itemsPerPage=${COLLECTION_PAGE_SIZE}&page=${page}`,
+        `${path}${separator}itemsPerPage=${COLLECTION_PAGE_SIZE}&page=${page}`,
         undefined,
         "application/ld+json",
         { signal }
@@ -531,7 +533,7 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
         throw new AcubeApiError(
           r.ok ? 502 : r.status,
           "ACUBE_UNAVAILABLE",
-          `Could not read the A-Cube ${direction} collection.`
+          `Could not read the A-Cube ${label} collection.`
         );
       }
       const view = providerObject(body?.view ?? body?.["hydra:view"]);
@@ -542,19 +544,28 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
         (typeof total === "number"
           ? total > page * COLLECTION_PAGE_SIZE
           : !view && items.length >= COLLECTION_PAGE_SIZE);
-      const ids = items.map((item: unknown) => this.documentId(providerObject(item), kind) ?? "");
+      const ids = items.map((item: unknown) => identifier(providerObject(item)) ?? "");
       const pageKey = JSON.stringify(ids.sort());
       if ((more && !items.length) || (items.length && visited.has(pageKey))) {
         throw new AcubeApiError(
           502,
           "ACUBE_UNAVAILABLE",
-          `A-Cube returned inconsistent ${direction} pagination.`
+          `A-Cube returned inconsistent ${label} pagination.`
         );
       }
       visited.add(pageKey);
       yield items;
       if (!more) return;
     }
+  }
+
+  private documentPages(kind: Kind, direction: "incoming" | "outgoing", signal: AbortSignal) {
+    return this.collectionPages(
+      `/${kind}?direction=${direction}`,
+      `${direction} ${kind}`,
+      (item) => this.documentId(item, kind),
+      signal
+    );
   }
 
   /** A number can repeat across companies. Link only the original outbound XML we handed over. */
@@ -640,8 +651,8 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
     const document = providerObject(r.json);
     if (!document || this.documentId(document, kind) !== providerMessageId) {
       throw new AcubeApiError(
-        502,
-        "ACUBE_UNAVAILABLE",
+        422,
+        "ACUBE_DOCUMENT_ID_MISMATCH",
         "A-Cube returned an invalid document resource."
       );
     }
@@ -772,23 +783,72 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
     return { ...body, legalEntityId, tin, status };
   }
 
-  /** Register the account's webhook destinations (idempotent: existing targets are kept). */
+  /** Register destinations or update the authentication for an existing exact target. */
   async ensureEventDestinations(args: {
     target: string;
     events: string[];
     authKey?: string | null;
     authToken?: string | null;
   }): Promise<{ created: string[]; existing: string[] }> {
-    const list = await this.call("GET", "/event-destinations");
-    const items = Array.isArray(list.json)
-      ? (list.json as Array<Record<string, unknown>>)
-      : (((list.json as Record<string, unknown>)?.["hydra:member"] as Array<
-          Record<string, unknown>
-        >) ?? []);
+    const requested = new Set(args.events);
+    const matches = new Map<string, { id: string; authType: string | null }>();
+    const signal = AbortSignal.timeout(COLLECTION_TIMEOUT_MS);
+    for await (const items of this.collectionPages(
+      "/event-destinations",
+      "event destinations",
+      (item) => providerString(item?.eventId),
+      signal
+    )) {
+      for (const item of items) {
+        const row = providerObject(item);
+        const event = providerString(row?.event);
+        const target = providerString(row?.target);
+        if (!event || !target) {
+          throw new AcubeApiError(
+            502,
+            "ACUBE_UNAVAILABLE",
+            "A-Cube returned an invalid event destination."
+          );
+        }
+        if (target !== args.target || !requested.has(event)) continue;
+        const id = providerString(row?.eventId);
+        if (
+          !id ||
+          row?.delivery !== "webhook" ||
+          (matches.has(event) && matches.get(event)?.id !== id)
+        ) {
+          throw new AcubeApiError(
+            502,
+            "ACUBE_UNAVAILABLE",
+            "A-Cube returned an ambiguous webhook destination."
+          );
+        }
+        matches.set(event, { id, authType: providerString(row?.authType) });
+      }
+    }
+
+    const authentication = {
+      authType: args.authToken ? "header" : "none",
+      authKey: args.authToken ? (args.authKey ?? null) : null,
+      authToken: args.authToken ?? null,
+    };
     const created: string[] = [];
     const existing: string[] = [];
-    for (const event of args.events) {
-      if (items.some((i) => i.event === event && i.target === args.target)) {
+    for (const event of requested) {
+      const match = matches.get(event);
+      if (match) {
+        // The list can mask an existing token, so apply the current configuration explicitly.
+        if (args.authToken || match.authType !== "none") {
+          const r = await this.call("PUT", `/event-destinations/${encodeURIComponent(match.id)}`, {
+            json: authentication,
+          });
+          if (!r.ok)
+            throw new AcubeApiError(
+              r.status,
+              "ACUBE_UNAVAILABLE",
+              `Could not update event destination ${event}.`
+            );
+        }
         existing.push(event);
         continue;
       }
@@ -797,9 +857,7 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
           event,
           target: args.target,
           delivery: "webhook",
-          authType: args.authToken ? "header" : "none",
-          authKey: args.authToken ? (args.authKey ?? null) : null,
-          authToken: args.authToken ?? null,
+          ...authentication,
         },
       });
       if (!r.ok) {

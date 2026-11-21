@@ -62,8 +62,10 @@ generator writes (`VATEX-AE-*`) have no GETS value and are sent as text only: co
 | rejected (Needs Correction)         | rejected        | pending       | COMPLYANCE_VALIDATION      |
 
 `delivery_success` confirms recipient receipt. Polling continues until the final result, including
-for voluntary submissions. `final_valid` confirms acceptance. When reporting is required, the
-`compliance.ftaApprovedStatus` field must explicitly say `APPROVED` to mark reporting complete.
+for voluntary submissions. `final_valid` confirms recipient acceptance. The app records a completed
+FTA report only when `compliance.ftaApprovedStatus` explicitly says `APPROVED`. A government
+rejection comes from an explicit government error. The obligation and due date are recorded when
+the invoice is queued. Observed outcomes remain visible on voluntary submissions.
 After `final_invalid` or GETS-HEAD-010 the number cannot be
 sent again (`NEW_DOCUMENT_REQUIRED_CODES`): resubmit answers 409 `EINVOICE_NEW_DOCUMENT_REQUIRED` and
 the status panel says to issue a credit note and a new invoice.

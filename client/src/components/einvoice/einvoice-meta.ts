@@ -65,6 +65,11 @@ export interface EInvoiceEvent {
   at: string | null;
 }
 
+export interface EInvoiceEnvironmentVerification {
+  provider: "acube" | "complyance";
+  environments: ("sandbox" | "production")[];
+}
+
 export interface EInvoiceStatusView {
   status: string;
   submissionState?:
@@ -101,6 +106,7 @@ export interface EInvoiceStatusView {
     recipientAcknowledgement: RecipientAcknowledgement;
     canSubmit: boolean;
     canRefresh: boolean;
+    environmentVerification?: EInvoiceEnvironmentVerification | null;
   };
   issues: EInvoiceIssue[];
   rejection: {

@@ -24,7 +24,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, type AppDatabase } from "../../db";
 import { einvoiceLegalEntities, type EInvoiceLegalEntity } from "../../../shared/schema";
 import { DomainError } from "../../errors";
-import { PEPPOL_SCHEME_UAE_TIN, isUaeTin } from "./pint-ae-codes";
+import { PEPPOL_SCHEME_UAE_TIN, isPintAeTrn, isUaeTin } from "./pint-ae-codes";
 import {
   effectiveTin,
   tinProblem,
@@ -56,6 +56,34 @@ export function normaliseLegalEntityStatus(raw: unknown): LegalEntityStatus {
 }
 
 export const peppolAddressFor = (tin: string) => `${PEPPOL_SCHEME_UAE_TIN}:${tin}`;
+
+/** Every identifier supplied by a provider must agree with the scoped legal entity. */
+export function matchesProviderEntityOwner(
+  entity: Pick<EInvoiceLegalEntity, "legalEntityId" | "tin">,
+  owner: { legalEntityId?: unknown; tin?: unknown }
+): boolean {
+  return (
+    (owner.legalEntityId == null || owner.legalEntityId === entity.legalEntityId) &&
+    (owner.tin == null || owner.tin === entity.tin)
+  );
+}
+
+/** Provider receipts use the registered taxpayer even if company VAT registration is absent. */
+export function matchesOnboardedTaxpayer(
+  entity: Pick<EInvoiceLegalEntity, "status" | "tin" | "peppolAddress">,
+  buyer: { endpoint: string | null; scheme: string | null; vatTrn: string | null }
+): boolean {
+  return (
+    entity.status === "active" &&
+    isUaeTin(entity.tin) &&
+    (entity.peppolAddress === null || entity.peppolAddress === peppolAddressFor(entity.tin)) &&
+    Boolean(buyer.endpoint || buyer.vatTrn) &&
+    (buyer.endpoint == null ||
+      (buyer.scheme === PEPPOL_SCHEME_UAE_TIN && buyer.endpoint === entity.tin)) &&
+    (buyer.vatTrn == null ||
+      (isPintAeTrn(buyer.vatTrn) && buyer.vatTrn.slice(0, 10) === entity.tin))
+  );
+}
 
 export async function getLegalEntity(
   companyId: string,

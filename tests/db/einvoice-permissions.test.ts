@@ -41,7 +41,7 @@ async function issuedInvoice(owner: Tenant): Promise<string> {
   return invoice.body.id;
 }
 
-async function externalFirmClient(independentMembership = false) {
+async function externalFirmClient(independentMembership = false, assign = true) {
   const owner = await h.createTenant();
   const staff = await h.createTenant();
   const customer = await h.createTenant({
@@ -83,12 +83,14 @@ async function externalFirmClient(independentMembership = false) {
     role: "firm_owner",
     platformAdmin: false,
   } as const;
-  const assigned = await assignStaff(context, {
-    companyId: customer.company.id,
-    staffUserId: staff.user.id,
-    action: "assign",
-  });
-  expect(assigned.action).toBe("assign");
+  if (assign) {
+    const assigned = await assignStaff(context, {
+      companyId: customer.company.id,
+      staffUserId: staff.user.id,
+      action: "assign",
+    });
+    expect(assigned.action).toBe("assign");
+  }
   return {
     staff,
     customer,
@@ -403,7 +405,172 @@ describe("Company-scoped e-invoicing permissions", () => {
     }
   );
 
-  it("requires verified email for resubmit whenever the submit policy applies", async () => {
+  it("accepts a direct team invitation over a firm-created membership and keeps the direct role", async () => {
+    const { context, staff, customer, platform, firmId, invoiceId } = await externalFirmClient();
+    const invited = await customer.as.post(`/api/companies/${customer.company.id}/team/invite`, {
+      email: staff.email,
+      role: "accountant",
+    });
+    expect(invited.status, invited.text).toBe(201);
+    const token = new URL(invited.body.inviteUrl).searchParams.get("teamInvite");
+    const accepted = await staff.as.post(`/api/team-invitations/${token}/accept`, {});
+    expect(accepted.status, accepted.text).toBe(200);
+
+    const { updateFirmMember, assignStaff, removeFirmMember } =
+      await import("../../server/services/firm/staff.service");
+    await updateFirmMember(context, staff.user.id, "preparer");
+    const memberAndGrant = await h.sql(
+      `SELECT cu.role, g.created_membership
+         FROM company_users cu JOIN firm_company_grants g USING (company_id, user_id)
+        WHERE cu.company_id = $1 AND cu.user_id = $2`,
+      [customer.company.id, staff.user.id]
+    );
+    expect(memberAndGrant).toEqual([{ role: "accountant", created_membership: false }]);
+
+    const suspended = await platform.as.post(`/api/admin/firms/${firmId}/decision`, {
+      decision: "suspend",
+    });
+    expect(suspended.status, suspended.text).toBe(200);
+    const submit = () => staff.as.post(`/api/invoices/${invoiceId}/einvoice/submit`, {});
+    expect((await submit()).body.code).toBe("EINVOICE_PROVIDER_NOT_CONFIGURED");
+
+    const resumed = await platform.as.post(`/api/admin/firms/${firmId}/decision`, {
+      decision: "approve",
+    });
+    expect(resumed.status, resumed.text).toBe(200);
+    await assignStaff(context, {
+      companyId: customer.company.id,
+      staffUserId: staff.user.id,
+      action: "unassign",
+    });
+    expect((await submit()).body.code).toBe("EINVOICE_PROVIDER_NOT_CONFIGURED");
+    await removeFirmMember(context, staff.user.id);
+    expect((await submit()).body.code).toBe("EINVOICE_PROVIDER_NOT_CONFIGURED");
+  });
+
+  it("honors the originally invited role when firm assignment and revocation intervene", async () => {
+    const { context, staff, customer, invoiceId } = await externalFirmClient(false, false);
+    const companyId = customer.company.id;
+    const invited = await customer.as.post(`/api/companies/${companyId}/team/invite`, {
+      email: staff.email,
+      role: "viewer",
+    });
+    expect(invited.status, invited.text).toBe(201);
+    const token = new URL(invited.body.inviteUrl).searchParams.get("teamInvite");
+    const { assignStaff, removeFirmMember } =
+      await import("../../server/services/firm/staff.service");
+    await assignStaff(context, { companyId, staffUserId: staff.user.id, action: "assign" });
+
+    const { endClientLink } = await import("../../server/services/firm/clients.service");
+    const [accepted] = await Promise.all([
+      staff.as.post(`/api/team-invitations/${token}/accept`, {}),
+      endClientLink(context, companyId, context.userId, null),
+    ]);
+    expect(accepted.status, accepted.text).toBe(200);
+    await removeFirmMember(context, staff.user.id);
+    expect(
+      await h.sql("SELECT role FROM company_users WHERE company_id = $1 AND user_id = $2", [
+        companyId,
+        staff.user.id,
+      ])
+    ).toEqual([{ role: "viewer" }]);
+    const submit = await staff.as.post(`/api/invoices/${invoiceId}/einvoice/submit`, {});
+    expect(submit.status, submit.text).toBe(403);
+    expect(submit.body.code).toBe("PERMISSION_DENIED");
+  });
+
+  it("keeps a role granted by a direct team edit through firm role changes", async () => {
+    const { context, staff, customer, platform, firmId } = await externalFirmClient();
+    const companyId = customer.company.id;
+    const [member] = await h.sql<{ id: string }>(
+      "SELECT id FROM company_users WHERE company_id = $1 AND user_id = $2",
+      [companyId, staff.user.id]
+    );
+    const changed = await customer.as.put(`/api/companies/${companyId}/team/${member.id}`, {
+      role: "admin",
+    });
+    expect(changed.status, changed.text).toBe(200);
+    const { updateFirmMember } = await import("../../server/services/firm/staff.service");
+    await updateFirmMember(context, staff.user.id, "viewer");
+    const suspended = await platform.as.post(`/api/admin/firms/${firmId}/decision`, {
+      decision: "suspend",
+    });
+    expect(suspended.status, suspended.text).toBe(200);
+    const selected = await staff.as.put(`/api/companies/${companyId}/einvoicing/partner`, {
+      partner: "acube",
+    });
+    expect(selected.status, selected.text).toBe(200);
+    expect(selected.body.chosen).toBe("acube");
+  });
+
+  it.each([false, true])(
+    "preserves a direct NR client's role without treating it as a firm assignment (with previous firm grant = %s)",
+    async (previouslyAssigned) => {
+      const owner = await h.createTenant({ firmRole: "firm_owner" });
+      const staff = await h.createTenant({ firmRole: "firm_admin", isAdmin: true });
+      const customer = await h.createTenant({ companyColumns: { company_type: "client" } });
+      const companyId = customer.company.id;
+      const prefix = `/api/companies/${companyId}/einvoicing`;
+      const { NR_FIRM_ID, canAccessFirmClient, resolveFirmContext } =
+        await import("../../server/services/firm/scope");
+      const context = {
+        firmId: NR_FIRM_ID,
+        userId: owner.user.id,
+        isNr: true,
+        role: "firm_owner",
+        platformAdmin: false,
+      } as const;
+      const { assignStaff, removeFirmMember } =
+        await import("../../server/services/firm/staff.service");
+      const assignment = { companyId, staffUserId: staff.user.id };
+      const staffFirm = (await resolveFirmContext({ id: staff.user.id }))!;
+      if (previouslyAssigned) {
+        await assignStaff(context, { ...assignment, action: "assign" });
+        // Migration 0108 backfilled grant markers from legacy company memberships.
+        await h.sql("DELETE FROM firm_staff_assignments WHERE company_id = $1 AND user_id = $2", [
+          companyId,
+          staff.user.id,
+        ]);
+        expect(await canAccessFirmClient(staffFirm, companyId)).toBe(true);
+      }
+      const invited = await customer.as.post(`/api/companies/${companyId}/team/invite`, {
+        email: staff.email,
+        role: "viewer",
+      });
+      expect(invited.status, invited.text).toBe(201);
+      const token = new URL(invited.body.inviteUrl).searchParams.get("teamInvite");
+      const accepted = await staff.as.post(`/api/team-invitations/${token}/accept`, {});
+      expect(accepted.status, accepted.text).toBe(200);
+
+      if (previouslyAssigned) await assignStaff(context, { ...assignment, action: "unassign" });
+      expect(await canAccessFirmClient(staffFirm, companyId)).toBe(false);
+      const directRead = await staff.as.get(`${prefix}/provider`);
+      expect(directRead.status, directRead.text).toBe(200);
+      const choose = () => staff.as.put(`${prefix}/partner`, { partner: "acube" });
+      const directDenied = await choose();
+      expect(directDenied.status, directDenied.text).toBe(403);
+      expect(directDenied.body).toMatchObject({
+        code: "PERMISSION_DENIED",
+        details: { role: "viewer" },
+      });
+
+      await assignStaff(context, { ...assignment, action: "assign" });
+      expect(await canAccessFirmClient(staffFirm, companyId)).toBe(true);
+      expect((await choose()).status).toBe(200);
+      await assignStaff(context, { ...assignment, action: "unassign" });
+      await removeFirmMember(context, staff.user.id);
+      expect((await staff.as.get(`${prefix}/provider`)).status).toBe(200);
+      expect((await choose()).status).toBe(403);
+      expect(
+        await h.sql(
+          "SELECT created_membership FROM firm_company_grants WHERE company_id = $1 AND user_id = $2",
+          [companyId, staff.user.id]
+        )
+      ).toEqual([{ created_membership: false }]);
+    }
+  );
+
+  it("requires verified email for each authorized transmission action", async () => {
     const owner = await h.createTenant();
     const invoiceId = await issuedInvoice(owner);
     await h.sql(
@@ -412,7 +579,7 @@ describe("Company-scoped e-invoicing permissions", () => {
     );
     emailProviderConfigured = true;
     vi.stubEnv("EMAIL_VERIFICATION_GRACE_DAYS", "0");
-    for (const action of ["submit", "resubmit"]) {
+    for (const action of ["submit", "resubmit", "confirm-environment"]) {
       const response = await owner.as.post(`/api/invoices/${invoiceId}/einvoice/${action}`, {});
       expect(response.status, response.text).toBe(403);
       expect(response.body.code).toBe("EMAIL_VERIFICATION_REQUIRED");

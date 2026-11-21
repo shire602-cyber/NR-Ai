@@ -710,8 +710,19 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     providerMessageId: string,
     identity: EInvoiceOutboundIdentity
   ): Promise<boolean> {
+    return (await this.checkOutboundDocument(providerMessageId, identity)) === "verified";
+  }
+
+  /** Verify one exact outbound resource, keeping temporary failures distinct from bad proof. */
+  async checkOutboundDocument(
+    providerMessageId: string,
+    identity: EInvoiceOutboundIdentity
+  ): Promise<"verified" | "mismatch" | "unavailable"> {
     try {
       const response = await this.call("GET", this.salesDocumentPath(providerMessageId));
+      if (response.status >= 500 || [401, 403, 408, 429].includes(response.status)) {
+        return "unavailable";
+      }
       const envelope = providerObject(response.json);
       const data = providerObject(envelope?.data);
       if (
@@ -722,15 +733,16 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
         data.documentNumber !== identity.documentNumber ||
         (data.environment != null && data.environment !== this.environment)
       )
-        return false;
-      return complyanceDocumentBelongsTo(data, {
+        return "mismatch";
+      const ownsDocument = complyanceDocumentBelongsTo(data, {
         tin: identity.supplierTin,
         trn: identity.supplierTrn,
         connectCompanyId: identity.legalEntityId,
         sourceName: identity.sourceName,
       }).ok;
+      return ownsDocument ? "verified" : "mismatch";
     } catch {
-      return false;
+      return "unavailable";
     }
   }
 
@@ -809,10 +821,20 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
         r.status >= 500 || r.status === 429
       );
     }
-    const data = (((r.json ?? {}) as Record<string, unknown>).data ?? {}) as Record<
-      string,
-      unknown
-    >;
+    const data = providerObject(providerObject(r.json)?.data);
+    if (
+      !data ||
+      providerString(data.documentId) !== documentId ||
+      (data.environment != null && providerString(data.environment) !== this.environment)
+    ) {
+      throw new ComplyanceApiError(
+        502,
+        "COMPLYANCE_UNAVAILABLE",
+        "Complyance returned an invalid purchase",
+        undefined,
+        true
+      );
+    }
     this.purchaseCache.set(documentId, data);
     return data;
   }
@@ -856,7 +878,7 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
             providerMessageId: id,
             documentType: null,
             documentNumber: str(raw.invoiceNumber),
-            legalEntityId: companyId,
+            legalEntityId: str(providerObject(raw.attribution)?.companyId) ?? companyId,
             ownerFiscalId: null,
           });
         }
@@ -885,26 +907,20 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     );
   }
 
-  /**
-   * Which company the purchase belongs to: the Connect company id the webhook (attribution) or the
-   * per-company listing gave, else the buyer's Peppol id (0235:TIN) read from the document.
-   */
+  /** Re-read the authenticated purchase before treating webhook or list attribution as valid. */
   async inboundOwner(
     providerMessageId: string,
     _ref: EInvoiceDocumentRef,
-    payload: Record<string, unknown>
+    _payload?: Record<string, unknown>
   ): Promise<InboundOwner> {
-    const fromPayload = str(payload.complyanceCompanyId) ?? str(payload.ownerLegalEntityId);
-    if (fromPayload) return { legalEntityId: fromPayload, tin: null };
     const data = await this.purchase(providerMessageId);
-    const invoice = (data.invoice ?? {}) as Record<string, unknown>;
-    const buyer = (((invoice.parties ?? {}) as Record<string, unknown>).buyer ?? {}) as Record<
-      string,
-      unknown
-    >;
-    const peppol = str(buyer.peppolId);
-    const tin = peppol ? peppol.replace(/^0235:/, "") : null;
-    return { legalEntityId: null, tin: tin && /^\d{10}$/.test(tin) ? tin : null };
+    const invoice = providerObject(data.invoice);
+    const buyer = providerObject(providerObject(invoice?.parties)?.buyer);
+    const peppol = providerString(buyer?.peppolId);
+    return {
+      legalEntityId: providerString(providerObject(data.attribution)?.companyId),
+      tin: peppol?.replace(/^0235:/, "") ?? null,
+    };
   }
 
   async receive(): Promise<InboundEInvoice[]> {

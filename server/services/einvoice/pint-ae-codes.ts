@@ -95,14 +95,13 @@ export const DOCUMENT_TYPE = {
   outOfScopeCreditNote: "81",
 } as const;
 
+export function isPintAeCreditNoteType(value?: string | null): boolean {
+  return value === DOCUMENT_TYPE.creditNote || value === DOCUMENT_TYPE.outOfScopeCreditNote;
+}
+
 /** Classify references returned by an ASP, including self-billed credit notes. */
 export function isCreditNoteDocumentType(value?: string | null): boolean {
-  return [
-    DOCUMENT_TYPE.creditNote,
-    DOCUMENT_TYPE.outOfScopeCreditNote,
-    "261",
-    "credit-note",
-  ].includes(value ?? "");
+  return isPintAeCreditNoteType(value) || value === "261" || value === "credit-note";
 }
 
 /** UNCL4461 payment means codes offered in settings. */

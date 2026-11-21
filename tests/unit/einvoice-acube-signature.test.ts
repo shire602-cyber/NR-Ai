@@ -245,7 +245,7 @@ describe("E1 two-track status model", () => {
     expect(legacyFromTracks("delivered", "pending")).toBe("accepted");
     expect(legacyFromTracks("delivered", "report_failed")).toBe("accepted");
     expect(legacyFromTracks("delivered", "reported")).toBe("cleared");
-    expect(legacyFromTracks("delivered", "not_required")).toBe("cleared");
+    expect(legacyFromTracks("delivered", "not_required")).toBe("accepted");
     expect(legacyFromTracks("queued", "pending")).toBe("submitted");
     expect(legacyFromTracks("delivery_failed", "pending")).toBe("failed");
     expect(deliveryFromLegacy("generated")).toBe("validated");

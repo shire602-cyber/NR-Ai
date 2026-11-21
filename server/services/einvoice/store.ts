@@ -20,6 +20,8 @@ import {
   type EInvoiceInboundDocument,
 } from "../../../shared/schema";
 import type { EInvoiceProviderEnvironment } from "../einvoice-provider";
+import { reportingEvidenceAt, type ReportingObservation } from "./tracks";
+import { isPintAeCreditNoteType } from "./pint-ae-codes";
 
 export const ARCHIVE_RETENTION_YEARS = 5;
 
@@ -46,13 +48,23 @@ export async function lockEInvoiceInvoice(companyId: string, invoiceId: string, 
   return invoice;
 }
 
-// Kept in the validation JSON beside the validation of this exact XML. Older rows have no pin.
-export function documentSubmissionMetadata(
+/** Keep any historical submission evidence even when its environment is missing. */
+export function documentSubmissionSnapshot(
   doc: Pick<EInvoiceDocument, "validation"> | null | undefined
 ) {
   const validation = doc?.validation;
   if (!validation || typeof validation !== "object" || !("submission" in validation)) return;
-  const metadata = validation.submission as Record<string, unknown> | null;
+  const submission = validation.submission;
+  if (submission && typeof submission === "object" && !Array.isArray(submission)) {
+    return submission as Record<string, unknown>;
+  }
+}
+
+// Kept in the validation JSON beside the validation of this exact XML. Older rows have no pin.
+export function documentSubmissionMetadata(
+  doc: Pick<EInvoiceDocument, "validation"> | null | undefined
+) {
+  const metadata = documentSubmissionSnapshot(doc);
   const environment = metadata?.environment;
   if (environment !== "sandbox" && environment !== "production" && environment !== "mock") return;
   return {
@@ -65,8 +77,58 @@ export function documentSubmissionMetadata(
     legalEntityId: typeof metadata?.legalEntityId === "string" ? metadata.legalEntityId : null,
     sourceName: typeof metadata?.sourceName === "string" ? metadata.sourceName : null,
     scope: typeof metadata?.scope === "string" ? metadata.scope : null,
+    reportingRequired:
+      typeof metadata?.reportingRequired === "boolean" ? metadata.reportingRequired : null,
+    environmentVerifiedAt:
+      typeof metadata?.environmentVerifiedAt === "string" ? metadata.environmentVerifiedAt : null,
     providerAttempted:
       typeof metadata?.providerAttempted === "boolean" ? metadata.providerAttempted : null,
+  };
+}
+
+/** Keep the obligation assessed when the document entered the queue. */
+export function documentReportingRequired(
+  doc:
+    | Pick<EInvoiceDocument, "validation" | "reportBy" | "reportingStatus" | "providerMessageId">
+    | null
+    | undefined,
+  fallback: boolean
+): boolean {
+  const metadata = documentSubmissionSnapshot(doc);
+  if (typeof metadata?.reportingRequired === "boolean") return metadata.reportingRequired;
+  // Older queued documents recorded a deadline for required filings and not_required otherwise.
+  if (doc?.reportBy) return true;
+  if (doc?.reportingStatus === "not_required" && (metadata?.operationId || doc.providerMessageId))
+    return false;
+  return fallback;
+}
+
+/** Retain a legacy document's obligation before its next provider observation replaces the old track. */
+export function pinDocumentReporting(
+  doc: Pick<EInvoiceDocument, "validation"> | null | undefined,
+  required: boolean,
+  observed: ReportingObservation | null,
+  now: Date
+) {
+  const validation = doc?.validation;
+  const snapshot = documentSubmissionSnapshot(doc);
+  const existingEvidence = snapshot?.reportingEvidence;
+  const reportingEvidence =
+    observed && !reportingEvidenceAt(validation, observed)
+      ? {
+          ...(existingEvidence && typeof existingEvidence === "object" ? existingEvidence : {}),
+          [observed]: now.toISOString(),
+        }
+      : existingEvidence;
+  return {
+    ...(validation && typeof validation === "object" && !Array.isArray(validation)
+      ? validation
+      : {}),
+    submission: {
+      ...snapshot,
+      reportingRequired: required,
+      ...(reportingEvidence ? { reportingEvidence } : {}),
+    },
   };
 }
 
@@ -378,13 +440,13 @@ export type InboundListItem = Pick<
   | "error"
   | "validation"
   | "receivedAt"
->;
+> & { vendorCreditReviewable: boolean };
 
 export async function listInboundDocuments(
   companyId: string,
   limit = 100
 ): Promise<InboundListItem[]> {
-  return db
+  const rows = await db
     .select({
       id: einvoiceInboundDocuments.id,
       supplierName: einvoiceInboundDocuments.supplierName,
@@ -393,15 +455,33 @@ export async function listInboundDocuments(
       documentType: einvoiceInboundDocuments.documentType,
       status: einvoiceInboundDocuments.status,
       billId: einvoiceInboundDocuments.billId,
+      debitNoteId: einvoiceInboundDocuments.debitNoteId,
       archiveId: einvoiceInboundDocuments.archiveId,
+      archivedSourceId: einvoiceArchive.id,
       error: einvoiceInboundDocuments.error,
       validation: einvoiceInboundDocuments.validation,
       receivedAt: einvoiceInboundDocuments.receivedAt,
     })
     .from(einvoiceInboundDocuments)
+    .leftJoin(
+      einvoiceArchive,
+      and(
+        eq(einvoiceArchive.id, einvoiceInboundDocuments.archiveId),
+        eq(einvoiceArchive.companyId, einvoiceInboundDocuments.companyId)
+      )
+    )
     .where(eq(einvoiceInboundDocuments.companyId, companyId))
     .orderBy(desc(einvoiceInboundDocuments.receivedAt))
     .limit(Math.min(Math.max(limit, 1), 500));
+  return rows.map(({ debitNoteId, archivedSourceId, ...row }) => ({
+    ...row,
+    vendorCreditReviewable:
+      row.status === "received" &&
+      isPintAeCreditNoteType(row.documentType) &&
+      archivedSourceId !== null &&
+      !row.billId &&
+      !debitNoteId,
+  }));
 }
 
 // ─── Buyer endpoints ────────────────────────────────────────────────────

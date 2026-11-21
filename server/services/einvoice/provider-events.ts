@@ -25,24 +25,28 @@ import {
   einvoiceDocuments,
   einvoiceLegalEntities,
   einvoiceProviderEvents,
-  type Company,
   type EInvoiceProviderEvent,
 } from "../../../shared/schema";
 import { storage } from "../../storage";
 import { createLogger } from "../../config/logger";
-import type { EInvoiceDocumentRef, EInvoiceProvider } from "../einvoice-provider";
-import { processInboundEInvoice } from "./inbound";
+import {
+  EInvoiceProviderError,
+  type EInvoiceDocumentRef,
+  type EInvoiceProvider,
+} from "../einvoice-provider";
+import { InboundLegalEntityChangedError, processInboundEInvoice } from "./inbound";
 import { refreshAndPersist } from "./workflow";
 import {
   findLegalEntitiesByProviderId,
   getLegalEntity,
+  matchesProviderEntityOwner,
   peppolAddressFor,
   updateLegalEntityRowIfCurrent,
 } from "./legal-entities";
 import { getCompanyEInvoiceProvider } from "./providers/company-provider";
 import { providerModule } from "./providers/registry";
 import { isCreditNoteDocumentType, isUaeTin } from "./pint-ae-codes";
-import { projectEInvoiceLegacyStatus } from "./tracks";
+import { projectEInvoiceLegacyStatus, storedReportingEvidence } from "./tracks";
 
 const log = createLogger("einvoice-provider-events");
 
@@ -51,6 +55,13 @@ export const ACUBE_POLL_JOB = "einvoice.acubePoll";
 const MAX_ATTEMPTS = 10;
 const LEASE_MS = 5 * 60 * 1000;
 const BASE_BACKOFF_MS = 30_000;
+const OUTBOUND_REFERENCE_UNVERIFIED = "no document in this company and environment";
+const EVENT_FAILURE = "Provider event could not be processed";
+const INBOUND_FAILURE = "Inbound receipt could not be processed";
+const INBOUND_WAIT_CONFIG = "Inbound receipt is waiting for provider configuration";
+const INBOUND_WAIT_ENTITY = "Inbound receipt is waiting for legal entity activation";
+const LEGACY_INBOUND_RECHECK = "Legacy inbound receipt requires reconciliation";
+const LEGACY_INBOUND_CHECKED = "Legacy inbound receipt was checked";
 
 export type CanonicalEventType =
   | "document.delivered"
@@ -119,12 +130,16 @@ async function claimEvents(opts: {
   provider?: EInvoiceProvider;
   limit: number;
 }): Promise<EInvoiceProviderEvent[]> {
-  // A later activation can recover legacy onboarding ignores. Routine syncs only update the
-  // entity's sync timestamps and do not make a previously ignored event eligible.
+  // Legacy "dead" rows used a generic error for both outages and missing configuration.
+  // Recheck earlier ignores when the link activated later or its activation time is unknown.
+  // Legacy processed rows are only revisited for an incomplete same-company receipt; the
+  // worker independently verifies ownership and the original source hash before any repair.
   const res = await db.execute(sql`
     UPDATE einvoice_provider_events e
        SET status = 'processing',
            attempts = e.attempts + 1,
+           last_error = CASE WHEN e.event_type = 'document.received' AND e.status = 'processed'
+                        THEN ${LEGACY_INBOUND_RECHECK} ELSE e.last_error END,
            locked_until = now() + (${LEASE_MS}::int * interval '1 millisecond')
      WHERE e.id IN (
        SELECT candidate.id
@@ -135,25 +150,54 @@ async function claimEvents(opts: {
           AND entity.environment = candidate.environment
         WHERE ((candidate.status = 'pending' AND candidate.next_attempt_at <= now())
                OR (candidate.status = 'processing' AND candidate.locked_until < now())
+               OR (candidate.event_type = 'document.delivered' AND candidate.status = 'ignored'
+                   AND candidate.last_error = ${OUTBOUND_REFERENCE_UNVERIFIED}
+                   AND EXISTS (
+                     SELECT 1 FROM einvoice_documents document
+                      WHERE document.company_id = candidate.company_id
+                        AND document.provider = candidate.provider
+                        AND document.provider_message_id = candidate.payload->>'documentId'
+                        AND document.validation->'submission'->>'environment' = candidate.environment
+                   ))
+               OR (candidate.event_type = 'document.received' AND candidate.status = 'dead'
+                   AND candidate.last_error = ${EVENT_FAILURE} AND candidate.next_attempt_at <= now())
                OR (candidate.event_type = 'document.received'
                    AND candidate.status = 'ignored'
                    AND candidate.last_error IN ('document belongs to no company of ours',
                                                 'legal entity is not active')
-                   AND COALESCE(entity.activated_at, entity.created_at) > candidate.processed_at)
+                   AND (entity.activated_at IS NULL OR entity.activated_at > candidate.processed_at))
                OR (candidate.event_type = 'document.received' AND candidate.status = 'processed'
+                   AND candidate.last_error IS DISTINCT FROM ${LEGACY_INBOUND_CHECKED}
                    AND EXISTS (
                      SELECT 1
                        FROM einvoice_inbound_documents incomplete
-                       JOIN einvoice_archive archive ON archive.company_id = incomplete.company_id
+                       LEFT JOIN einvoice_archive archive ON archive.company_id = incomplete.company_id
                         AND archive.sha256 = incomplete.sha256
-                      WHERE incomplete.company_id = candidate.company_id
-                        AND incomplete.document_type IN ('380', '480')
-                        AND incomplete.status IN ('failed', 'received', 'bill_created')
-                        AND incomplete.bill_id IS NULL
                         AND archive.direction = 'inbound' AND archive.kind = 'received'
-                        AND archive.provider_message_id = candidate.payload->>'documentId'
                         AND (archive.provider IS NULL OR archive.provider = candidate.provider)
+                      WHERE incomplete.company_id = candidate.company_id
+                        AND (
+                          incomplete.archive_id IS DISTINCT FROM archive.id
+                          OR archive.id IS NULL
+                          OR (incomplete.document_type IN ('380', '480')
+                              AND incomplete.status IN ('failed', 'received', 'bill_created')
+                              AND incomplete.bill_id IS NULL)
+                          OR (incomplete.status = 'credit_created' AND incomplete.debit_note_id IS NULL)
+                        )
+                        AND (archive.provider_message_id = candidate.payload->>'documentId'
+                             OR (archive.provider_message_id IS NULL
+                                 AND (NULLIF(candidate.payload->>'documentNumber', '') IS NULL
+                                      OR incomplete.document_number = candidate.payload->>'documentNumber')
+                                 AND NOT EXISTS (
+                                   SELECT 1 FROM einvoice_archive known
+                                    WHERE known.company_id = candidate.company_id
+                                      AND known.direction = 'inbound' AND known.kind = 'received'
+                                      AND known.provider_message_id = candidate.payload->>'documentId'
+                                      AND (known.provider IS NULL OR known.provider = candidate.provider)
+                                 )))
                    )
+                   -- An old archive has no environment marker. A shared message id does
+                   -- not establish which of two scoped inboxes originally supplied it.
                    AND NOT EXISTS (
                      SELECT 1 FROM einvoice_provider_events other
                       WHERE other.company_id = candidate.company_id
@@ -163,7 +207,7 @@ async function claimEvents(opts: {
                              OR other.environment <> candidate.environment)
                    )))
           AND (candidate.event_type <> 'document.received' OR candidate.company_id IS NULL
-               OR entity.status = 'active')
+               OR (entity.status = 'active' AND entity.tin ~ '^1[0-9]{9}$'))
           ${opts.id ? sql`AND candidate.id = ${opts.id}` : sql``}
           ${opts.companyId ? sql`AND candidate.company_id = ${opts.companyId}` : sql``}
           ${opts.provider ? sql`AND candidate.provider = ${opts.provider.name} AND candidate.environment = ${opts.provider.environment}` : sql``}
@@ -202,7 +246,7 @@ async function handleDelivered(row: CompanyEvent, provider: EInvoiceProvider): P
   if (!doc) {
     // The callback can arrive before the sender commits the provider message ID.
     if (row.attempts < 3) throw new Error("Provider document is not attached yet");
-    return { status: "ignored", note: "no document in this company and environment" };
+    return { status: "ignored", note: OUTBOUND_REFERENCE_UNVERIFIED };
   }
   if (docs.length > 1) {
     return { status: "ignored", note: "provider document id is ambiguous" };
@@ -214,7 +258,7 @@ async function handleDelivered(row: CompanyEvent, provider: EInvoiceProvider): P
     provider.name,
     doc.providerStatus,
     invoice.einvoiceStatus,
-    doc.reportingStatus
+    storedReportingEvidence(doc)
   );
   if (observedStatus === "cleared") {
     return { status: "ignored", companyId: company.id, note: "already delivered and reported" };
@@ -252,41 +296,51 @@ async function handleReceived(row: CompanyEvent, provider: EInvoiceProvider): Pr
         : "380",
   };
   const owner = await provider.inboundOwner(documentId, ref, payload);
-  const matches = await findLegalEntitiesByProviderId(
-    row.provider,
-    row.environment,
-    owner.legalEntityId,
-    owner.tin,
-    row.companyId
-  );
-  if (matches.length === 0) {
-    // Onboarding can change while the provider read is in flight.
-    const current = await getLegalEntity(row.companyId, row.provider, row.environment);
-    if (current?.status !== "active") return { status: "awaiting-onboarding" };
+  const le = await getLegalEntity(row.companyId, row.provider, row.environment);
+  if (le?.status !== "active" || !isUaeTin(le.tin)) return { status: "awaiting-onboarding" };
+  if (
+    !matchesProviderEntityOwner(le, owner) ||
+    ![
+      payload.ownerLegalEntityId,
+      payload.legalEntityUuid,
+      payload.legalEntityId,
+      payload.complyanceCompanyId,
+    ].every((legalEntityId) => matchesProviderEntityOwner(le, { legalEntityId })) ||
+    !matchesProviderEntityOwner(le, { tin: payload.ownerFiscalId })
+  ) {
     return { status: "ignored", note: "document does not match the linked legal entity" };
   }
-  if (matches.length > 1) {
-    // Never post a supplier's invoice into a guessed company.
-    return { status: "ignored", note: "legal entity is linked to more than one company" };
-  }
-  const le = matches[0];
-  if (le.status !== "active") return { status: "awaiting-onboarding" };
+  if (!owner.legalEntityId && !owner.tin)
+    throw new Error("Provider did not confirm inbound ownership");
   const company = await storage.getCompany(le.companyId);
   if (!company) return { status: "ignored", note: "company gone" };
   const xml = await provider.fetchSource(documentId, ref);
+  const legacyRecovery = row.lastError?.startsWith(LEGACY_INBOUND_RECHECK) ?? false;
   try {
     const received = await processInboundEInvoice({
-      company: company as Company & { peppolParticipantId?: string | null },
+      company,
       xml,
       provider: row.provider,
       providerMessageId: documentId,
+      onboardedEntity: le,
+      legacyRecovery,
     });
     if (received.status >= 500) throw new Error("Inbound e-invoice processing is unavailable");
+    if (received.body.status === "unmatched") {
+      return { status: "processed", companyId: company.id, note: LEGACY_INBOUND_CHECKED };
+    }
+    if (received.body.status === "credit-link-unverified") {
+      return {
+        status: "ignored",
+        companyId: company.id,
+        note: "Legacy credit requires administrator reconciliation",
+      };
+    }
     if (received.body.status === "invalid") {
       return {
         status: "processed",
         companyId: company.id,
-        note: "inbound document failed validation",
+        note: legacyRecovery ? LEGACY_INBOUND_CHECKED : "inbound document failed validation",
       };
     }
     if (
@@ -299,6 +353,7 @@ async function handleReceived(row: CompanyEvent, provider: EInvoiceProvider): Pr
   } catch (err) {
     // A rejected document is final. Operational errors (including an unavailable draft owner
     // or a locked accounting period) remain visible to the inbox retry job.
+    if (err instanceof InboundLegalEntityChangedError) return { status: "awaiting-onboarding" };
     const code = (err as { code?: string } | null)?.code;
     if (
       ![
@@ -314,7 +369,11 @@ async function handleReceived(row: CompanyEvent, provider: EInvoiceProvider): Pr
       note: "inbound document failed validation",
     };
   }
-  return { status: "processed", companyId: company.id };
+  return {
+    status: "processed",
+    companyId: company.id,
+    note: legacyRecovery ? LEGACY_INBOUND_CHECKED : undefined,
+  };
 }
 
 async function handleLegalEntity(row: CompanyEvent, provider: EInvoiceProvider): Promise<Outcome> {
@@ -387,6 +446,11 @@ async function settle(row: EInvoiceProviderEvent, provider?: EInvoiceProvider) {
     eq(einvoiceProviderEvents.attempts, row.attempts),
     eq(einvoiceProviderEvents.status, "processing")
   );
+  const inbound = row.eventType === "document.received" && Boolean(row.companyId);
+  const legacyRecheck = inbound && row.lastError?.startsWith(LEGACY_INBOUND_RECHECK);
+  const retryAt = () => new Date(Date.now() + eventBackoffMs(row.attempts));
+  const inboundNote = (note: string) =>
+    legacyRecheck ? `${LEGACY_INBOUND_RECHECK}: ${note}` : note;
   try {
     const { companyId } = row;
     const out: Outcome = companyId
@@ -402,7 +466,13 @@ async function settle(row: EInvoiceProviderEvent, provider?: EInvoiceProvider) {
     if (out.status === "awaiting-onboarding") {
       await db
         .update(einvoiceProviderEvents)
-        .set({ status: "pending", processedAt: null, lockedUntil: null, lastError: null })
+        .set({
+          status: "pending",
+          processedAt: null,
+          lockedUntil: null,
+          lastError: inboundNote(INBOUND_WAIT_ENTITY),
+          nextAttemptAt: retryAt(),
+        })
         .where(claim);
       return "deferred";
     }
@@ -417,18 +487,25 @@ async function settle(row: EInvoiceProviderEvent, provider?: EInvoiceProvider) {
       })
       .where(claim);
     return out.status;
-  } catch {
-    const dead = row.attempts >= MAX_ATTEMPTS;
+  } catch (err) {
+    const waitingForConfig =
+      inbound &&
+      err instanceof EInvoiceProviderError &&
+      err.code === "EINVOICE_PROVIDER_NOT_CONFIGURED";
+    const dead = !inbound && row.attempts >= MAX_ATTEMPTS;
     await db
       .update(einvoiceProviderEvents)
       .set({
         status: dead ? "dead" : "pending",
         processedAt: null,
         lockedUntil: null,
-        lastError: "Provider event could not be processed",
-        nextAttemptAt: new Date(Date.now() + eventBackoffMs(row.attempts)),
+        lastError: inbound
+          ? inboundNote(waitingForConfig ? INBOUND_WAIT_CONFIG : INBOUND_FAILURE)
+          : EVENT_FAILURE,
+        nextAttemptAt: retryAt(),
       })
       .where(claim);
+    if (waitingForConfig) return "deferred";
     log.warn({ id: row.id, eventType: row.eventType, attempts: row.attempts }, "event retry");
     return dead ? "dead" : "retrying";
   }
@@ -490,6 +567,11 @@ export async function runProviderPoll(
     providerName === "acube"
       ? sql`OR ${einvoiceDocuments.deliveryStatus} = 'delivery_failed'`
       : sql``;
+  const unverifiedReporting =
+    providerName === "complyance"
+      ? sql`OR (${einvoiceDocuments.reportingStatus} IN ('reported', 'report_failed')
+        AND ${einvoiceDocuments.validation}->'submission'->'reportingEvidence'->>${einvoiceDocuments.reportingStatus} IS NULL)`
+      : sql``;
   const inFlight = await db
     .select()
     .from(einvoiceDocuments)
@@ -501,6 +583,9 @@ export async function runProviderPoll(
         sql`${einvoiceDocuments.providerMessageId} IS NOT NULL`,
         sql`(${einvoiceDocuments.deliveryStatus} IN ('queued', 'sending')
              ${retryableDeliveryFailure}
+             ${unverifiedReporting}
+             OR (${einvoiceDocuments.deliveryStatus} IS NULL
+                 AND (${einvoiceDocuments.status} IN ('submitted', 'accepted') OR ${awaitingFollowUp}))
              OR (${einvoiceDocuments.deliveryStatus} = 'delivered'
                  AND ${awaitingFollowUp}))`
       )
@@ -543,8 +628,12 @@ export async function runProviderPoll(
     if (!provider?.listInbound) continue;
     try {
       for (const item of await provider.listInbound({ legalEntityIds: [entity.legalEntityId] })) {
-        if (item.legalEntityId && item.legalEntityId !== entity.legalEntityId) continue;
-        if (!item.legalEntityId && item.ownerFiscalId && item.ownerFiscalId !== entity.tin)
+        if (
+          !matchesProviderEntityOwner(entity, {
+            legalEntityId: item.legalEntityId,
+            tin: item.ownerFiscalId,
+          })
+        )
           continue;
         const documentCollection =
           item.documentCollection ??
@@ -559,6 +648,7 @@ export async function runProviderPoll(
           source: "poll",
         };
         if (item.legalEntityId) payload.ownerLegalEntityId = item.legalEntityId;
+        if (item.ownerFiscalId) payload.ownerFiscalId = item.ownerFiscalId;
         const res = await enqueueProviderEvent({
           provider: providerName,
           environment,

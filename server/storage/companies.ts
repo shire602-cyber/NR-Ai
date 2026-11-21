@@ -16,11 +16,12 @@ import {
   NR_FIRM_ID,
   accessibleClientCondition,
   canAccessFirmClient,
+  markCompanyMembershipDirect,
   type FirmContext,
 } from "../services/firm/scope";
 import { db } from "../db";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
-import { scopedDelete, scopedGet, scopedUpdate } from "../tenancy";
+import { isScopedIdPair, scopedDelete, scopedGet } from "../tenancy";
 import { UserStorage } from "./users";
 import type { CompanyMemberWithUser } from "./types";
 
@@ -260,7 +261,24 @@ export class CompanyStorage extends UserStorage {
     id: string,
     data: Pick<Partial<InsertCompanyUser>, "role">
   ): Promise<CompanyUser | undefined> {
-    return scopedUpdate(companyUsers, companyId, id, data);
+    if (!isScopedIdPair(companyId, id)) return undefined;
+    if (data.role === undefined) return scopedGet(companyUsers, companyId, id);
+    return db.transaction(async (tx) => {
+      const scope = and(eq(companyUsers.companyId, companyId), eq(companyUsers.id, id));
+      const [member] = await tx
+        .select({ userId: companyUsers.userId })
+        .from(companyUsers)
+        .where(scope);
+      if (!member) return undefined;
+      await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, member.userId))
+        .for("update");
+      const [updated] = await tx.update(companyUsers).set(data).where(scope).returning();
+      if (updated) await markCompanyMembershipDirect(companyId, updated.userId, tx);
+      return updated;
+    });
   }
 
   async deleteCompanyUser(companyId: string, id: string): Promise<boolean> {

@@ -42,12 +42,10 @@ export function EInvoiceListCell({
     () => docs.data?.items.find((d) => d.invoiceId === invoice.id),
     [docs.data, invoice.id]
   );
-  // X6d: with the mandate in force and a reportable (B2B) invoice, show the report-by date and
-  // the reporting/delivery state; outside scope nothing is shown beyond an existing document.
-  const showPills = !!compliance.data?.mandateApplies && !!pill?.reportingRequired;
+  const showPills = !!pill?.reportingRequired;
   if (!doc && !invoice.einvoiceStatus && !showPills) return null;
   const storedDelivery: DeliveryStatus =
-    (showPills ? pill?.delivery : undefined) ??
+    pill?.delivery ??
     doc?.deliveryStatus ??
     deliveryFromLegacyStatus(doc?.status ?? invoice.einvoiceStatus);
   const queuedForSubmission = (doc?.status ?? invoice.einvoiceStatus) === "queued";
@@ -57,9 +55,7 @@ export function EInvoiceListCell({
       ? "queued"
       : storedDelivery;
   const storedReporting: ReportingStatus =
-    (showPills ? pill?.reporting : undefined) ??
-    (doc?.reportingStatus as ReportingStatus | null) ??
-    (doc?.status === "cleared" || invoice.einvoiceStatus === "cleared" ? "reported" : "pending");
+    pill?.reporting ?? (doc?.reportingStatus as ReportingStatus | null) ?? "pending";
   const confirmationUnavailable =
     doc?.provider === "acube" &&
     !!doc.providerMessageId &&

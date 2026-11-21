@@ -17,6 +17,7 @@ import { validateForEInvoicing } from "../einvoice.service";
 import { loadEInvoiceContext } from "./context";
 import {
   documentProviderEnvironment,
+  documentReportingRequired,
   documentValidation,
   getEInvoiceDocument,
   isQueuedEInvoiceDocument,
@@ -24,10 +25,13 @@ import {
 } from "./store";
 import { listDocumentEvents } from "./history";
 import { getLegalEntity } from "./legal-entities";
+import { legacyTrackingAvailability, legacyTrackingReference } from "./legacy-tracking";
 import {
   deriveInvoiceTracks,
+  isReportingObservation,
   NEW_DOCUMENT_REQUIRED_CODES,
   projectEInvoiceLegacyStatus,
+  reportingEvidenceAt,
 } from "./tracks";
 import { einvoiceMandateApplies } from "./scope";
 import { canRecoverAcubeSubmission, invoiceReportingRequired } from "./workflow";
@@ -75,6 +79,7 @@ export function projectEInvoiceDocument(
     deliveryStatus: tracks.delivery,
     deliveryStatusAt: tracks.delivery === doc.deliveryStatus ? doc.deliveryStatusAt : null,
     reportingStatus: tracks.reporting,
+    reportingRequired: tracks.reportingRequired,
     reportingStatusAt: tracks.reporting === doc.reportingStatus ? doc.reportingStatusAt : null,
     clearedAt: status === "cleared" && tracks.reporting === "reported" ? doc.clearedAt : null,
     reportedAt: tracks.reporting === "reported" ? doc.reportedAt : null,
@@ -89,8 +94,9 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
   const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
   const ctx = await loadEInvoiceContext(invoice, company, lines);
   const issues = validateForEInvoicing(invoice, lines, company, ctx);
-  const required = invoiceReportingRequired(invoice, company, now);
-  const providerDocumentId = invoice.einvoiceProviderMessageId ?? null;
+  const required = documentReportingRequired(doc, invoiceReportingRequired(invoice, company, now));
+  const providerDocumentId =
+    invoice.einvoiceProviderMessageId ?? legacyTrackingReference(invoice, doc)?.messageId ?? null;
   const handedOver = !!providerDocumentId;
   const providerHoldsDocument = handedOver || !!doc?.providerMessageId;
   const pinnedEnvironment = documentProviderEnvironment(doc);
@@ -265,6 +271,7 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
       provider: providerId,
       providerDisplayName: module?.displayName ?? null,
       environment,
+      environmentVerification: await legacyTrackingAvailability(invoice, doc),
       connected: block === null,
       block,
       providerDocumentId,
@@ -303,12 +310,19 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
       : null,
     checklist,
     events: events.map((e) => {
-      const acubeReporting = e.track === "reporting" && (e.provider ?? providerId) === "acube";
-      const confirmationUnavailable = acubeReporting && e.toStatus === "reported";
+      const eventProvider = e.provider ?? providerId;
+      const unconfirmed = (outcome: string | null) => {
+        if (e.track !== "reporting" || !isReportingObservation(outcome)) return false;
+        if (eventProvider === "acube") return outcome === "reported";
+        if (eventProvider !== "complyance") return false;
+        const confirmedAt = reportingEvidenceAt(doc?.validation, outcome);
+        return !confirmedAt || e.createdAt.getTime() < Date.parse(confirmedAt);
+      };
+      const confirmationUnavailable = unconfirmed(e.toStatus);
       return {
         id: e.id,
         track: e.track,
-        from: acubeReporting && e.fromStatus === "reported" ? "pending" : e.fromStatus,
+        from: unconfirmed(e.fromStatus) ? "pending" : e.fromStatus,
         to: confirmationUnavailable ? "pending" : e.toStatus,
         ...(confirmationUnavailable ? { confirmationUnavailable } : {}),
         code: confirmationUnavailable ? null : e.code,

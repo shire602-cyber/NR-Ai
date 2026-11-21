@@ -377,6 +377,84 @@ describe("A-Cube over loopback HTTP", () => {
     ).not.toBe(scope);
     expect(await acube(url).getSubmissionScope(company)).not.toBe(scope);
   });
+
+  it("repairs a masked webhook credential on a later destination page without creating another destination", async () => {
+    const destinationId = randomUUID();
+    const token = randomUUID();
+    const event = "invoice.outbound";
+    const target = "https://example.test/api/webhooks/einvoice/acube/sandbox/fake-company";
+    const { url, seen } = await loopback([
+      { method: "POST", path: "/login", status: 200, body: { token: randomUUID() } },
+      {
+        method: "GET",
+        path: "/event-destinations?itemsPerPage=30&page=1",
+        status: 200,
+        body: {
+          member: [{ eventId: randomUUID(), event, target: "https://other-company.example.test" }],
+          view: { next: "/event-destinations?itemsPerPage=30&page=2" },
+        },
+      },
+      {
+        method: "GET",
+        path: "/event-destinations?itemsPerPage=30&page=2",
+        status: 200,
+        body: {
+          member: [
+            {
+              eventId: destinationId,
+              event,
+              target,
+              delivery: "webhook",
+              authType: "header",
+              authKey: "X-Old-Token",
+              authToken: "****",
+            },
+          ],
+          view: {},
+        },
+      },
+      {
+        method: "PUT",
+        path: `/event-destinations/${destinationId}`,
+        status: 200,
+        body: { eventId: destinationId },
+      },
+    ]);
+    expect(
+      await acube(url).ensureEventDestinations({
+        target,
+        events: [event, event],
+        authKey: "X-Acube-Token",
+        authToken: token,
+      })
+    ).toEqual({ created: [], existing: [event] });
+    expect(seen).toHaveLength(4);
+    const update = JSON.parse(seen[3].body);
+    expect(update).toMatchObject({ authType: "header", authKey: "X-Acube-Token" });
+    expect(update.authToken === token).toBe(true);
+  });
+
+  it("makes no destination changes when the authenticated listing is unavailable", async () => {
+    const { url, seen } = await loopback([
+      { method: "POST", path: "/login", status: 200, body: { token: randomUUID() } },
+      {
+        method: "GET",
+        path: "/event-destinations?itemsPerPage=30&page=1",
+        status: 503,
+        body: { detail: "Unavailable" },
+      },
+    ]);
+    await expect(
+      acube(url).ensureEventDestinations({
+        target: "https://example.test/webhook",
+        events: ["invoice.outbound"],
+      })
+    ).rejects.toMatchObject({ code: "ACUBE_UNAVAILABLE", status: 503 });
+    expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      "POST /login",
+      "GET /event-destinations?itemsPerPage=30&page=1",
+    ]);
+  });
 });
 
 describe("Complyance over loopback HTTP", () => {

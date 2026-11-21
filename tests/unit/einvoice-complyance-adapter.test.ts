@@ -292,7 +292,11 @@ describe("E2 Complyance status -> two tracks", () => {
   });
 
   it("requires explicit UAE FTA approval and keeps buyer and government rejections distinct", () => {
-    for (const compliance of [undefined, { ftaApprovedStatus: "REJECTED" }]) {
+    for (const compliance of [
+      undefined,
+      { ftaApprovedStatus: "REJECTED" },
+      { ftaApprovedStatus: "FAILED" },
+    ]) {
       expect(
         mapComplyanceStatus({ state: "final_valid", isTerminal: true, compliance })
       ).toMatchObject({
@@ -363,12 +367,16 @@ describe("E2 Complyance inbound (purchases)", () => {
     expect(sent).toHaveLength(2);
   });
 
-  it("uses the webhook's attribution without a read", async () => {
-    const { p, sent } = provider([]);
+  it("reads ownership from the matching purchase even when the webhook supplies attribution", async () => {
+    const { p, sent } = provider(["purchase_get"]);
     expect(
-      await p.inboundOwner("x", {}, { complyanceCompanyId: "66b9f0a1c2d3e4f567890123" })
-    ).toEqual({ legalEntityId: "66b9f0a1c2d3e4f567890123", tin: null });
-    expect(sent).toHaveLength(0);
+      await p.inboundOwner(
+        "01JEXAMPLE0000000000000142",
+        {},
+        { complyanceCompanyId: "unrelated-company" }
+      )
+    ).toEqual({ legalEntityId: null, tin: "1001234567" });
+    expect(sent).toHaveLength(1);
   });
 });
 

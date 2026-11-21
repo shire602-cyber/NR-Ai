@@ -7,6 +7,7 @@ import { authMiddleware, optionalAuthUser } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import {
   requirePermission,
+  requireScopedCompanyPermission,
   getCompanyRole,
   companyHasSingleMember,
 } from "../middleware/companyRolePolicy";
@@ -26,9 +27,19 @@ import {
   permissionsForRole,
   type CompanyRole,
 } from "../../shared/permissions";
-import { users, type CompanyInvitation } from "../../shared/schema";
-import { eq } from "drizzle-orm";
+import {
+  companyInvitations,
+  companyUsers,
+  users,
+  type CompanyInvitation,
+} from "../../shared/schema";
+import { and, eq, gt } from "drizzle-orm";
 import { db } from "../db";
+import { DomainError } from "../errors";
+import {
+  hasFirmCreatedCompanyMembership,
+  markCompanyMembershipDirect,
+} from "../services/firm/scope";
 import { zCompanyRole } from "../../shared/validators/company-role";
 
 const log = createLogger("team");
@@ -103,6 +114,12 @@ async function countOwners(companyId: string): Promise<number> {
   return members.filter((m) => normalizeCompanyRole(m.role) === "owner").length;
 }
 
+async function invitationStateChanged(companyId: string, invitationId: string): Promise<never> {
+  const invitation = await storage.getCompanyInvitation(companyId, invitationId);
+  if (!invitation) throw new DomainError("INVITATION_NOT_FOUND", 404);
+  throw new DomainError(`INVITATION_${invitation.status.toUpperCase()}`, 409);
+}
+
 async function resolveInvitationToken(
   token: string
 ): Promise<
@@ -127,9 +144,13 @@ async function resolveInvitationToken(
     };
   }
   if (invitation.status === "pending" && invitation.expiresAt.getTime() <= Date.now()) {
-    await storage.updateCompanyInvitation(invitation.companyId, invitation.id, {
-      status: "expired",
-    });
+    const expired = await storage.updateCompanyInvitation(
+      invitation.companyId,
+      invitation.id,
+      { status: "expired" },
+      invitation
+    );
+    if (!expired) return resolveInvitationToken(token);
     return {
       ok: false,
       status: 410,
@@ -218,12 +239,13 @@ export function registerTeamRoutes(app: Express) {
     "/api/companies/:companyId/team/invite",
     authMiddleware,
     requirePermission("team.manage"),
+    requireScopedCompanyPermission("team.manage"),
     strictBody(inviteBodySchema),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = req.user!.id;
       const { companyId } = req.params;
       const { email, role } = req.body as z.output<typeof inviteBodySchema>;
-      const actorRole = (req.companyRole as CompanyRole | undefined) ?? null;
+      const actorRole = req.companyRole ?? (await getCompanyRole(userId, companyId));
 
       if (actorRole && !grantableRoles(actorRole).includes(role)) {
         return res.status(403).json({
@@ -237,7 +259,15 @@ export function registerTeamRoutes(app: Express) {
         return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
 
       const existingUser = await storage.getUserByEmail(email);
-      if (existingUser && (await storage.getUserRole(companyId, existingUser.id))) {
+      const existingRole = existingUser
+        ? await storage.getUserRole(companyId, existingUser.id)
+        : null;
+      if (
+        existingUser &&
+        existingRole &&
+        (existingRole.role === "owner" ||
+          !(await hasFirmCreatedCompanyMembership(companyId, existingUser.id)))
+      ) {
         return res
           .status(409)
           .json({ message: "User is already a team member", code: "ALREADY_MEMBER" });
@@ -251,7 +281,13 @@ export function registerTeamRoutes(app: Express) {
         });
       }
       if (pending) {
-        await storage.updateCompanyInvitation(companyId, pending.id, { status: "expired" });
+        const expired = await storage.updateCompanyInvitation(
+          companyId,
+          pending.id,
+          { status: "expired" },
+          pending
+        );
+        if (!expired) return invitationStateChanged(companyId, pending.id);
       }
 
       const token = newToken();
@@ -297,6 +333,7 @@ export function registerTeamRoutes(app: Express) {
     "/api/companies/:companyId/team/invitations/:invitationId/resend",
     authMiddleware,
     requirePermission("team.manage"),
+    requireScopedCompanyPermission("team.manage"),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, invitationId } = req.params;
       const current = await storage.getCompanyInvitation(companyId, invitationId);
@@ -312,14 +349,20 @@ export function registerTeamRoutes(app: Express) {
       if (!company)
         return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       const token = newToken();
-      const updated = await storage.updateCompanyInvitation(companyId, invitationId, {
-        tokenHash: token.hash,
-        status: "pending",
-        expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
-        lastSentAt: new Date(),
-        sendCount: (current.sendCount ?? 0) + 1,
-      });
-      const delivery = await deliverInvitation(updated!, token.raw, company.name);
+      const updated = await storage.updateCompanyInvitation(
+        companyId,
+        invitationId,
+        {
+          tokenHash: token.hash,
+          status: "pending",
+          expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
+          lastSentAt: new Date(),
+          sendCount: (current.sendCount ?? 0) + 1,
+        },
+        current
+      );
+      if (!updated) return invitationStateChanged(companyId, invitationId);
+      const delivery = await deliverInvitation(updated, token.raw, company.name);
       await recordAudit({
         userId: req.user!.id,
         companyId,
@@ -330,7 +373,7 @@ export function registerTeamRoutes(app: Express) {
         after: { delivery: delivery.delivery },
         req,
       });
-      res.json({ invitation: publicInvitation(updated!), ...delivery });
+      res.json({ invitation: publicInvitation(updated), ...delivery });
     })
   );
 
@@ -348,10 +391,13 @@ export function registerTeamRoutes(app: Express) {
           .status(409)
           .json({ message: "Invitation was already accepted", code: "INVITATION_ACCEPTED" });
       }
-      const updated = await storage.updateCompanyInvitation(companyId, invitationId, {
-        status: "revoked",
-        revokedAt: new Date(),
-      });
+      const updated = await storage.updateCompanyInvitation(
+        companyId,
+        invitationId,
+        { status: "revoked", revokedAt: new Date() },
+        current
+      );
+      if (!updated) return invitationStateChanged(companyId, invitationId);
       await recordAudit({
         userId: req.user!.id,
         companyId,
@@ -362,7 +408,7 @@ export function registerTeamRoutes(app: Express) {
         after: { status: "revoked" },
         req,
       });
-      res.json({ invitation: publicInvitation(updated!) });
+      res.json({ invitation: publicInvitation(updated) });
     })
   );
 
@@ -372,12 +418,13 @@ export function registerTeamRoutes(app: Express) {
     "/api/companies/:companyId/team/:memberId",
     authMiddleware,
     requirePermission("team.manage"),
+    requireScopedCompanyPermission("team.manage"),
     strictBody(roleBodySchema),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = req.user!.id;
       const { companyId, memberId } = req.params;
       const { role } = req.body as z.output<typeof roleBodySchema>;
-      const actorRole = (req.companyRole as CompanyRole | undefined) ?? null;
+      const actorRole = req.companyRole ?? (await getCompanyRole(userId, companyId));
 
       const member = await storage.getCompanyUser(companyId, memberId);
       if (!member) {
@@ -497,8 +544,6 @@ export function registerTeamRoutes(app: Express) {
       }
       const inv = resolved.invitation;
       const { ...body } = req.body as z.output<typeof acceptBodySchema>;
-      const role = normalizeCompanyRole(inv.role);
-
       const signedIn = await optionalAuthUser(req);
       const existing = await storage.getUserByEmail(inv.email);
       const claimable = !!existing && isPlaceholderPasswordHash(existing.passwordHash);
@@ -547,18 +592,59 @@ export function registerTeamRoutes(app: Express) {
         createdUser = true;
       }
 
-      // A portal customer who becomes a team member is a real company user from now on; their
-      // portal bindings stay (they act through customer_portal_accounts, not membership).
-      if (signedIn && signedIn.userType === "client_portal") {
-        await db.update(users).set({ userType: "customer" }).where(eq(users.id, userId));
-      }
-      if (!(await storage.getUserRole(inv.companyId, userId))) {
-        await storage.createCompanyUser({ companyId: inv.companyId, userId, role });
-      }
-      await storage.updateCompanyInvitation(inv.companyId, inv.id, {
-        status: "accepted",
-        acceptedAt: new Date(),
-        acceptedUserId: userId,
+      const role = await db.transaction(async (tx) => {
+        // Firm assignment/demotion and direct grants share this lock order.
+        await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
+        const now = new Date();
+        const [accepted] = await tx
+          .update(companyInvitations)
+          .set({ status: "accepted", acceptedAt: now, acceptedUserId: userId })
+          .where(
+            and(
+              eq(companyInvitations.id, inv.id),
+              eq(companyInvitations.companyId, inv.companyId),
+              eq(companyInvitations.tokenHash, inv.tokenHash),
+              eq(companyInvitations.status, "pending"),
+              gt(companyInvitations.expiresAt, now)
+            )
+          )
+          .returning();
+        if (!accepted) {
+          const [current] = await tx
+            .select({ status: companyInvitations.status })
+            .from(companyInvitations)
+            .where(eq(companyInvitations.tokenHash, inv.tokenHash));
+          if (!current) throw new DomainError("INVITATION_NOT_FOUND", 404);
+          const status = current.status === "pending" ? "expired" : current.status;
+          throw new DomainError(`INVITATION_${status.toUpperCase()}`, 410);
+        }
+
+        // A portal customer who becomes a team member is a real company user from now on.
+        if (signedIn?.userType === "client_portal") {
+          await tx.update(users).set({ userType: "customer" }).where(eq(users.id, userId));
+        }
+        const [membership] = await tx
+          .select({ role: companyUsers.role })
+          .from(companyUsers)
+          .where(and(eq(companyUsers.companyId, inv.companyId), eq(companyUsers.userId, userId)))
+          .for("update");
+        const generated = await hasFirmCreatedCompanyMembership(inv.companyId, userId, tx);
+        if (membership?.role === "owner") {
+          if (generated) await markCompanyMembershipDirect(inv.companyId, userId, tx);
+          return "owner";
+        }
+        if (membership && !generated) return normalizeCompanyRole(membership.role);
+
+        const directRole = normalizeCompanyRole(accepted.role);
+        await tx
+          .insert(companyUsers)
+          .values({ companyId: inv.companyId, userId, role: directRole })
+          .onConflictDoUpdate({
+            target: [companyUsers.companyId, companyUsers.userId],
+            set: { role: directRole },
+          });
+        if (generated) await markCompanyMembershipDirect(inv.companyId, userId, tx);
+        return directRole;
       });
       await recordAudit({
         userId,

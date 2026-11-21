@@ -33,7 +33,7 @@
  * maker-checker approvals.
  */
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-import { and, eq, exists, isNull, ne, notExists } from "drizzle-orm";
+import { and, eq, exists, isNull, notExists, or } from "drizzle-orm";
 import { db, pool, type AppDatabase } from "../db";
 import {
   companies,
@@ -44,7 +44,12 @@ import {
   firms,
   firmStaffAssignments,
 } from "../../shared/schema";
-import { canAccessFirmClient, NR_FIRM_ID, resolveFirmContext } from "../services/firm/scope";
+import {
+  acceptedCompanyInvite,
+  canAccessFirmClient,
+  NR_FIRM_ID,
+  resolveFirmContext,
+} from "../services/firm/scope";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
 import { DomainError } from "../errors";
@@ -181,6 +186,7 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   // Sending an e-invoice through an ASP is an external tax transmission.
   r("POST", "invoices/*/einvoice/submit", "tax.submit"),
   r("POST", "invoices/*/einvoice/resubmit", "tax.submit"),
+  r("POST", "invoices/*/einvoice/confirm-environment", "tax.submit"),
   r("POST", "invoices/*/einvoice/refresh-status", "reports.read"),
   // X6a: linking an e-invoice the provider already holds changes what the invoice reports to the
   // FTA (Complyance manual link after GETS-HEAD-010).
@@ -624,42 +630,32 @@ export async function scopedCompanyPermissionFailure(
   lock?: "share"
 ): Promise<ScopedPermissionFailure | null> {
   if (user.userType === "client_portal") return { code: "PORTAL_USER_APP_DENIED" };
-  const createdGrant = conn
-    .select({ firmId: firmCompanyGrants.firmId })
+  const provenance = and(
+    eq(firmCompanyGrants.userId, user.id),
+    eq(firmCompanyGrants.companyId, companyId)
+  );
+  const grantQuery = conn
+    .select({ firmId: firmCompanyGrants.firmId, generated: firmCompanyGrants.createdMembership })
     .from(firmCompanyGrants)
-    .where(
-      and(
-        eq(firmCompanyGrants.userId, user.id),
-        eq(firmCompanyGrants.companyId, companyId),
-        eq(firmCompanyGrants.createdMembership, true),
-        ne(firmCompanyGrants.firmId, NR_FIRM_ID)
-      )
-    );
-  const [grant] = await createdGrant.limit(1);
+    .where(provenance);
+  const grants = await (lock ? grantQuery.for(lock) : grantQuery);
+  const generated = grants.find((row) => row.generated);
+  const grant = generated && generated.firmId !== NR_FIRM_ID ? generated : undefined;
   const firmScoped = isNraFirmRole(user.firmRole);
-  if (firmScoped) {
+  const nrRole = isFirmRole(user.firmRole) ? user.firmRole : undefined;
+  if (nrRole && (firmScoped || generated?.firmId === NR_FIRM_ID)) {
     const firm = await resolveFirmContext(user, conn);
     if (firm && (await canAccessFirmClient(firm, companyId, conn, lock))) {
-      if (!grant || firm.role === "firm_owner") return null;
-      // The generic lookup counts company membership as assignment. A row created by an
-      // external firm cannot stand in for this NR admin's own recorded grant.
-      const nrGrant = conn
-        .select({ firmId: firmCompanyGrants.firmId })
-        .from(firmCompanyGrants)
-        .where(
-          and(
-            eq(firmCompanyGrants.firmId, NR_FIRM_ID),
-            eq(firmCompanyGrants.userId, user.id),
-            eq(firmCompanyGrants.companyId, companyId)
-          )
-        )
-        .limit(1);
-      const [assignedByNr] = await (lock ? nrGrant.for(lock) : nrGrant);
-      if (assignedByNr) return null;
+      if (firmScoped) return null;
+      const role = FIRM_ROLE_COMPANY_ROLE[nrRole];
+      if (!roleHasAnyPermission(role, [permission])) return { code: "PERMISSION_DENIED", role };
+    } else if (generated) {
+      return { code: "COMPANY_ACCESS_DENIED" };
     }
-    if (grant) return { code: "COMPANY_ACCESS_DENIED" };
-  } else if (!grant && user.isAdmin && !isFirmRole(user.firmRole)) {
+  } else if (!grants.length && user.isAdmin && !nrRole) {
     return null;
+  } else if (generated && !grant) {
+    return { code: "COMPANY_ACCESS_DENIED" };
   }
 
   // Validate firm and link before locking company_users, following link revocation's lock order.
@@ -688,28 +684,32 @@ export async function scopedCompanyPermissionFailure(
   const [authority] = firmAuthority ? await (lock ? firmAuthority.for(lock) : firmAuthority) : [];
   if (grant && !isFirmRole(authority?.role)) return { code: "COMPANY_ACCESS_DENIED" };
 
-  // Firm staff can also be direct members of standalone customer companies. A firm-linked or
-  // legacy firm client must satisfy the firm scope above, including after a link is revoked.
-  const standaloneCompany = firmScoped
-    ? exists(
-        conn
-          .select({ id: companies.id })
-          .from(companies)
-          .where(
-            and(
-              eq(companies.id, companyId),
-              eq(companies.companyType, "customer"),
-              isNull(companies.deletedAt),
-              notExists(
-                conn
-                  .select({ id: firmClientLinks.id })
-                  .from(firmClientLinks)
-                  .where(eq(firmClientLinks.companyId, companies.id))
+  // For legacy NR roles, a recorded direct grant or an accepted company invitation
+  // establishes independent access. Unlinked customer accounts also have direct roles.
+  const directScope =
+    firmScoped && !grants.length
+      ? or(
+          acceptedCompanyInvite(companyId, user.id),
+          exists(
+            conn
+              .select({ id: companies.id })
+              .from(companies)
+              .where(
+                and(
+                  eq(companies.id, companyId),
+                  eq(companies.companyType, "customer"),
+                  isNull(companies.deletedAt),
+                  notExists(
+                    conn
+                      .select({ id: firmClientLinks.id })
+                      .from(firmClientLinks)
+                      .where(eq(firmClientLinks.companyId, companies.id))
+                  )
+                )
               )
-            )
           )
-      )
-    : undefined;
+        )
+      : undefined;
   const query = conn
     .select({ role: companyUsers.role })
     .from(companyUsers)
@@ -717,9 +717,16 @@ export async function scopedCompanyPermissionFailure(
       and(
         eq(companyUsers.companyId, companyId),
         eq(companyUsers.userId, user.id),
-        standaloneCompany,
+        directScope,
         // If a grant arrived after discovery, do not read its new membership as independent.
-        grant ? undefined : notExists(createdGrant)
+        generated
+          ? undefined
+          : notExists(
+              conn
+                .select({ id: firmCompanyGrants.id })
+                .from(firmCompanyGrants)
+                .where(and(provenance, eq(firmCompanyGrants.createdMembership, true)))
+            )
       )
     )
     .limit(1);

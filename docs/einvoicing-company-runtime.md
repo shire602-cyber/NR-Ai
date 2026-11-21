@@ -40,3 +40,16 @@ provider state with the company's credentials.
 
 The standalone legacy adapter tooling has its own direct environment configuration. A company's
 settings and submission flows resolve the company's encrypted bundle.
+
+## Restore tracking for an older e-invoice
+
+For a document already held by A-Cube or Complyance that lacks a recorded environment, open its
+e-invoice status and verify the environment explicitly. The invoice's saved provider and outbound
+document ID determine what the service checks. A verified email and the company's tax submission
+permission are required.
+
+Verification is available in the provider's current runtime environment when the company has a
+scoped encrypted credential bundle for it. The provider must confirm the original document.
+Successful verification saves the environment, records an audit entry, and lets signed callbacks
+and polling continue. If the provider environment has moved, an operator must restore the
+original environment setting before verifying the document.

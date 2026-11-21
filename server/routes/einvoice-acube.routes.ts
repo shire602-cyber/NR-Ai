@@ -238,6 +238,10 @@ function tokenMatches(given: string | undefined, expected: string): boolean {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+function webhookTokenHeaderName(): string {
+  return process.env.ACUBE_WEBHOOK_TOKEN_HEADER?.trim() || "X-Acube-Token";
+}
+
 export function registerEInvoiceAcubeRoutes(app: Express) {
   if (!listJobs().some((j) => j.name === PROVIDER_EVENTS_JOB)) {
     registerJob({
@@ -393,7 +397,7 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
       const out = await provider.ensureEventDestinations({
         target: `${base}${webhookPath(provider.environment, company.id)}`,
         events: events.length ? events : DEFAULT_WEBHOOK_EVENTS,
-        authKey: process.env.ACUBE_WEBHOOK_TOKEN_HEADER || "X-Acube-Token",
+        authKey: webhookTokenHeaderName(),
         authToken: webhookToken,
       });
       res.json(out);
@@ -424,8 +428,7 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
 
       const token = config.webhookSecret;
       if (token) {
-        const header = (process.env.ACUBE_WEBHOOK_TOKEN_HEADER || "X-Acube-Token").toLowerCase();
-        if (!tokenMatches(req.get(header), token)) {
+        if (!tokenMatches(req.get(webhookTokenHeaderName()), token)) {
           return res
             .status(401)
             .json({ code: "EINVOICE_WEBHOOK_BAD_TOKEN", message: "Invalid webhook token" });

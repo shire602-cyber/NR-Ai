@@ -11,7 +11,7 @@
  * line. Nothing here claims a transmission that did not happen: without a provider the panel
  * says "generated and validated — not sent".
  */
-import { useState, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -61,10 +61,8 @@ import {
   errorKey,
   fieldLabelKey,
   issueTextKey,
-  recipientAcknowledgement,
   isReportingOnlyFailure,
   reportingLabelKey,
-  sourceKey,
   type ChecklistState,
   type DeliveryStatus,
   type EInvoiceStatusView,
@@ -73,6 +71,9 @@ import {
 } from "./einvoice-meta";
 import { einvoiceStatusKey, useEInvoiceStatus } from "./use-einvoice";
 import "./einvoice-theme.css";
+
+const EInvoiceHistory = lazy(() => import("./EInvoiceHistory"));
+const EInvoiceTrackingNotice = lazy(() => import("./EInvoiceTrackingNotice"));
 
 // ─── Compact list cell ─────────────────────────────────────────────────
 
@@ -218,99 +219,6 @@ export function FinalizeChecklist({ view }: { view: EInvoiceStatusView }) {
   );
 }
 
-// ─── History drawer ────────────────────────────────────────────────────
-
-function eventLabel(e: EInvoiceStatusView["events"][number], t: Record<string, string>) {
-  if (e.track === "validation") {
-    return e.to === "passed" ? t["einvoicing.historyValidated"] : t["einvoicing.historyInvalid"];
-  }
-  const key =
-    e.track === "delivery"
-      ? deliveryLabelKey(
-          e.to as DeliveryStatus,
-          e.to === "queued" && e.providerStatus === null,
-          e.to === "delivered" ? recipientAcknowledgement(e.provider, e.providerStatus) : null
-        )
-      : reportingLabelKey(e.to as ReportingStatus, e.confirmationUnavailable);
-  const track =
-    e.track === "delivery" ? t["einvoicing.trackDelivery"] : t["einvoicing.trackReporting"];
-  return `${track}: ${t[key] ?? e.to}`;
-}
-
-export function EInvoiceHistory({
-  view,
-  open,
-  onOpenChange,
-}: {
-  view: EInvoiceStatusView;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const { t, locale } = useTranslation();
-  const timeFmt = new Intl.DateTimeFormat(locale === "ar" ? "ar-AE-u-nu-latn" : "en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side={locale === "ar" ? "left" : "right"}
-        className="einvoice-surface w-full overflow-y-auto sm:max-w-md"
-        data-testid="einvoice-history"
-      >
-        <SheetHeader>
-          <SheetTitle>{t["einvoicing.historyTitle"]}</SheetTitle>
-          <SheetDescription>{t["einvoicing.historyDescription"]}</SheetDescription>
-        </SheetHeader>
-        {view.events.length === 0 ? (
-          <p className="mt-6 text-small text-muted-foreground">{t["einvoicing.historyEmpty"]}</p>
-        ) : (
-          <ol className="mt-6 space-y-4 border-s border-border ps-4">
-            {view.events.map((e) => {
-              const err = errorKey(e.code);
-              const failed =
-                e.to === "rejected" ||
-                e.to === "delivery_failed" ||
-                e.to === "report_failed" ||
-                (e.track === "validation" && e.to === "failed");
-              return (
-                <li key={e.id} className="relative">
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "absolute -start-[1.3rem] top-1.5 h-2 w-2 rounded-full",
-                      failed ? "bg-danger" : "bg-muted-foreground"
-                    )}
-                  />
-                  <p className="text-small font-medium">{eventLabel(e, t)}</p>
-                  <p className="text-caption text-muted-foreground">
-                    {e.at ? `${formatDate(e.at, locale)} · ${timeFmt.format(new Date(e.at))}` : ""}
-                    {" · "}
-                    {t[sourceKey(e.source)] ?? e.source}
-                    {e.providerStatus ? (
-                      <>
-                        {" · "}
-                        <span dir="ltr" className="[unicode-bidi:isolate]">
-                          {e.providerStatus}
-                        </span>
-                      </>
-                    ) : null}
-                  </p>
-                  {(err || e.message) && failed && (
-                    <p className="mt-1 text-caption text-danger-subtle-foreground">
-                      {err ? t[err] : e.message}
-                    </p>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </SheetContent>
-    </Sheet>
-  );
-}
-
 // ─── Panel ─────────────────────────────────────────────────────────────
 
 function TrackRow({
@@ -362,7 +270,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
   const permission = useCompanyPermission();
   const submitAccess = permission.gate("tax.submit");
   const { t, locale } = useTranslation();
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState<boolean | null>(null);
   const [downloading, setDownloading] = useState<"xml" | "pdf" | null>(null);
   const [downloadFailed, setDownloadFailed] = useState(false);
   const status = useEInvoiceStatus(invoiceId, true);
@@ -437,14 +345,15 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
   const {
     tracks: { delivery, reporting },
     rejection,
+    transmission,
   } = view;
   const rejectionErrorKey = errorKey(rejection?.code);
-  const handedOver = !!view.transmission.providerDocumentId;
+  const handedOver = !!transmission.providerDocumentId;
   const queuedForSubmission = view.submissionState === "queued";
   const failedDelivery = delivery.status === "rejected" || delivery.status === "delivery_failed";
   const reportingOnlyFailure = isReportingOnlyFailure(delivery.status, reporting.status);
-  const acknowledgement = view.transmission.recipientAcknowledgement;
-  const providerName = view.transmission.providerDisplayName ?? view.transmission.provider ?? "";
+  const acknowledgement = transmission.recipientAcknowledgement;
+  const providerName = transmission.providerDisplayName ?? transmission.provider ?? "";
   const latestAction = send.submittedAt >= resubmit.submittedAt ? send : resubmit;
   const latestCheck = recheck.submittedAt > latestAction.submittedAt ? recheck.data : undefined;
   const actionError = (latestCheck?.valid ? null : latestAction.error) as
@@ -512,28 +421,33 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
       </div>
 
       {/* Honest boundary: nothing is sent without a connected provider. */}
-      {view.transmission.block &&
-        !handedOver &&
-        view.submissionState !== "needs_reconciliation" && (
-          <div
-            className="rounded-lg bg-surface-sunken p-4 text-small"
-            data-testid="einvoice-not-sent"
-            role="note"
+      {transmission.block && !handedOver && view.submissionState !== "needs_reconciliation" && (
+        <div
+          className="rounded-lg bg-surface-sunken p-4 text-small"
+          data-testid="einvoice-not-sent"
+          role="note"
+        >
+          <p className="font-medium text-foreground">{t["einvoicing.notSentTitle"]}</p>
+          <p className="mt-1 text-muted-foreground">{t[blockKey(transmission.block)]}</p>
+          <Link
+            href="/settings/einvoicing"
+            className="mt-2 inline-block font-medium text-accent underline-offset-4 hover:underline"
           >
-            <p className="font-medium text-foreground">{t["einvoicing.notSentTitle"]}</p>
-            <p className="mt-1 text-muted-foreground">{t[blockKey(view.transmission.block)]}</p>
-            <Link
-              href="/settings/einvoicing"
-              className="mt-2 inline-block font-medium text-accent underline-offset-4 hover:underline"
-            >
-              {t["einvoicing.setUpLink"]}
-            </Link>
-          </div>
-        )}
-      {handedOver && !view.transmission.canRefresh && view.transmission.block === "no_provider" && (
-        <p className="rounded-lg bg-surface-sunken p-4 text-small" role="status">
-          {t["einvoicing.trackingCredentialsUnavailable"]}
-        </p>
+            {t["einvoicing.setUpLink"]}
+          </Link>
+        </div>
+      )}
+      {(transmission.environmentVerification ||
+        (handedOver && !transmission.canRefresh && transmission.block === "no_provider")) && (
+        <Suspense>
+          <EInvoiceTrackingNotice
+            key={invoiceId}
+            invoiceId={invoiceId}
+            verification={transmission.environmentVerification}
+            providerName={providerName}
+            onVerified={invalidate}
+          />
+        </Suspense>
       )}
 
       {/* Validate-on-save: named missing fields with an in-place re-check. */}
@@ -830,7 +744,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
       )}
 
       <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-        {view.transmission.canSubmit && (
+        {transmission.canSubmit && (
           <Button
             size="sm"
             onClick={() => send.mutate()}
@@ -846,7 +760,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
             {formatMessage(t["einvoicing.sendVia"], { provider: providerName })}
           </Button>
         )}
-        {view.transmission.canRefresh && (
+        {transmission.canRefresh && (
           <Button
             size="sm"
             variant="outline"
@@ -894,7 +808,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
           <History aria-hidden className="h-3.5 w-3.5" />
           {formatMessage(t["einvoicing.historyButton"], { count: view.events.length })}
         </Button>
-        {!!view.transmission.provider && view.transmission.environment === "sandbox" && (
+        {!!transmission.provider && transmission.environment === "sandbox" && (
           <span className="ms-auto inline-flex items-center gap-1 text-caption text-muted-foreground">
             <CircleDashed aria-hidden className="h-3.5 w-3.5" />
             {t["einvoicing.sandboxNote"]}
@@ -908,7 +822,11 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
         </p>
       )}
 
-      <EInvoiceHistory view={view} open={historyOpen} onOpenChange={setHistoryOpen} />
+      {historyOpen !== null && (
+        <Suspense>
+          <EInvoiceHistory view={view} open={historyOpen} onOpenChange={setHistoryOpen} />
+        </Suspense>
+      )}
     </div>
   );
 }

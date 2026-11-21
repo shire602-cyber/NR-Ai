@@ -91,6 +91,7 @@ both providers may stay.
 - `server/services/einvoice/providers/company-credentials.ts`: the A-Cube credential schema
 - `server/services/einvoice/providers/company-provider.ts`: scoped authentication configuration for the provider
 - `server/services/einvoice/workflow.ts`: provider-specific reconciliation rules and error codes
+- `server/services/einvoice/legacy-tracking.ts`: A-Cube original source and outbound reference proof
 - `server/routes.ts`: `registerEInvoiceAcubeRoutes` import and call
 - `server/routes/einvoice.routes.ts` exposes the A-Cube submission reconciliation action.
 - `scripts/ops/asp-sandbox-dryrun.ts`: the `acube` entry in `ASP_REQUIREMENTS` and its branch in `runProvider`
@@ -159,6 +160,8 @@ Env to unset: `ACUBE_*`.
 - `server/services/einvoice/providers/company-credentials.ts`: the Complyance credential schema
 - `server/services/einvoice/providers/company-provider.ts`: scoped authentication configuration for the provider
 - `server/services/einvoice/workflow.ts`: provider-specific reconciliation rules and error codes
+- `server/services/einvoice/legacy-tracking.ts`: Complyance outbound seller and reference proof
+- `server/services/einvoice/provider-events.ts`: Complyance legacy purchase attribution and reporting poll
 - `server/routes.ts`: `registerEInvoiceComplyanceRoutes` import and call
 - `scripts/ops/asp-sandbox-dryrun.ts`: the `complyance` entry in `ASP_REQUIREMENTS` and its branch in `runProvider`
 - `server/http/body-limits.ts`: the `/api/webhooks/einvoice/complyance` entry in `RAW_WEBHOOK_PREFIXES`

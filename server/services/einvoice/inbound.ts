@@ -6,19 +6,22 @@
  * (service "bills.prepareDraftFromInbound"). Nothing is approved or posted.
  */
 import crypto from "node:crypto";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
+  einvoiceArchive,
   einvoiceInboundDocuments,
+  type EInvoiceLegalEntity,
   vendorBills,
   type EInvoiceInboundDocument,
 } from "../../../shared/schema";
 import { allocate } from "../../../shared/money";
 import { DomainError } from "../../errors";
 import { db, pool } from "../../db";
-import { withLedgerTx } from "../../ledger/tx";
+import { rowsOf, withLedgerTx } from "../../ledger/tx";
 import type { LedgerTx } from "../../ledger/types";
 import { has, resolve } from "../../platform/service-registry";
-import { all, children, fils, first, parseXml, textAt, type XNode } from "./dom";
+import { all, attr, children, fils, first, parseXml, text, textAt, type XNode } from "./dom";
+import { getLegalEntity, matchesOnboardedTaxpayer } from "./legal-entities";
 import { summariseValidation, validateEInvoiceXml } from "./validate";
 import {
   archiveEInvoiceXml,
@@ -97,6 +100,7 @@ export interface ParsedInboundDocument {
   supplierEndpoint: string | null;
   buyerTrn: string | null;
   buyerEndpoint: string | null;
+  buyerEndpointScheme: string | null;
   lines: ParsedInboundLine[];
   payableFils: number;
 }
@@ -168,6 +172,7 @@ export function parseInboundUbl(xml: string): ParsedInboundDocument {
     });
   }
 
+  const buyerEndpoint = buyer ? first(buyer, "cbc:EndpointID") : null;
   return {
     root: isCredit ? "CreditNote" : "Invoice",
     typeCode: textAt(root, isCredit ? "cbc:CreditNoteTypeCode" : "cbc:InvoiceTypeCode"),
@@ -185,7 +190,8 @@ export function parseInboundUbl(xml: string): ParsedInboundDocument {
     supplierTrn: vatOf(seller) ? textAt(vatOf(seller) as XNode, "cbc:CompanyID") : null,
     supplierEndpoint: textAt(seller, "cbc:EndpointID"),
     buyerTrn: buyer && vatOf(buyer) ? textAt(vatOf(buyer) as XNode, "cbc:CompanyID") : null,
-    buyerEndpoint: buyer ? textAt(buyer, "cbc:EndpointID") : null,
+    buyerEndpoint: text(buyerEndpoint),
+    buyerEndpointScheme: attr(buyerEndpoint, "schemeID"),
     lines: rawLines.map((l, i) => ({
       description: l.description,
       quantity: l.quantity,
@@ -269,11 +275,33 @@ type PrepareDraft = (
 
 function completedInbound(row: EInvoiceInboundDocument, isCredit: boolean): boolean {
   return (
-    (row.status === "bill_created" && Boolean(row.billId)) ||
-    (row.status === "credit_created" && Boolean(row.debitNoteId)) ||
-    (Boolean(row.archiveId) &&
-      (row.status === "invalid" || (isCredit && row.status === "received")))
+    Boolean(row.archiveId) &&
+    ((row.status === "bill_created" && Boolean(row.billId)) ||
+      (row.status === "credit_created" && Boolean(row.debitNoteId)) ||
+      row.status === "invalid" ||
+      (isCredit && row.status === "received"))
   );
+}
+
+async function inboundArchiveId(
+  row: EInvoiceInboundDocument,
+  conn: Pick<typeof db, "select"> = db
+) {
+  if (!row.archiveId) return null;
+  const [archive] = await conn
+    .select({ id: einvoiceArchive.id })
+    .from(einvoiceArchive)
+    .where(
+      and(
+        eq(einvoiceArchive.id, row.archiveId),
+        eq(einvoiceArchive.companyId, row.companyId),
+        eq(einvoiceArchive.sha256, row.sha256),
+        eq(einvoiceArchive.direction, "inbound"),
+        eq(einvoiceArchive.kind, "received")
+      )
+    )
+    .limit(1);
+  return archive?.id ?? null;
 }
 
 function duplicateInbound(row: EInvoiceInboundDocument): InboundResult {
@@ -350,11 +378,72 @@ async function findLegacyInboundBill(
   return bill.id;
 }
 
+/** A conversion audit links the inbound id to the original credit in the same company's ledger. */
+async function findLegacyInboundCredit(
+  row: EInvoiceInboundDocument,
+  parsed: ParsedInboundDocument,
+  tx: LedgerTx
+): Promise<string | null> {
+  const evidence = rowsOf<{ id: string; details: string }>(
+    await tx.execute(sql`
+      SELECT note.id, audit.details
+        FROM audit_logs audit
+        JOIN vendor_debit_notes note ON note.id::text = audit.resource_id
+         AND note.company_id = audit.company_id
+       WHERE audit.company_id = ${row.companyId} AND audit.action = 'bill.inbound.vendor_credit'
+         AND audit.resource_type = 'vendor_debit_note'
+         AND strpos(audit.details, ${`"inboundId":"${row.id}"`}) > 0
+         AND note.debit_note_number = ${parsed.documentNumber.slice(0, 64)}
+         AND note.note_date = ${parsed.issueDate}::date AND note.currency = ${parsed.currency}`)
+  );
+  const matches = new Set(
+    evidence
+      .filter(({ details }) => {
+        try {
+          const audit = JSON.parse(details);
+          return (
+            audit.after?.inboundId === row.id &&
+            audit.after?.documentNumber === parsed.documentNumber
+          );
+        } catch {
+          return false;
+        }
+      })
+      .map(({ id }) => id)
+  );
+  return matches.size === 1 ? (matches.values().next().value ?? null) : null;
+}
+
+export class InboundLegalEntityChangedError extends Error {}
+
+async function assertOnboardedEntityCurrent(entity: EInvoiceLegalEntity | undefined, tx: LedgerTx) {
+  if (!entity) return;
+  const current = await getLegalEntity(
+    entity.companyId,
+    entity.provider,
+    entity.environment,
+    tx,
+    "share"
+  );
+  if (
+    !current ||
+    current.status !== "active" ||
+    current.id !== entity.id ||
+    current.tin !== entity.tin ||
+    current.legalEntityId !== entity.legalEntityId ||
+    current.peppolAddress !== entity.peppolAddress
+  ) {
+    throw new InboundLegalEntityChangedError("The active legal entity changed during receipt");
+  }
+}
+
 export async function processInboundEInvoice(args: {
   company: InboundCompany;
   xml: string;
   provider?: string | null;
   providerMessageId?: string | null;
+  onboardedEntity?: EInvoiceLegalEntity;
+  legacyRecovery?: boolean;
   now?: Date;
 }): Promise<InboundResult> {
   const { company, xml } = args;
@@ -369,10 +458,18 @@ export async function processInboundEInvoice(args: {
   }
   const parsed = parseInboundUbl(xml);
   const tin = company.trnVatNumber?.slice(0, 10) ?? null;
-  const addressedToUs =
+  const addressedToCompany =
     (parsed.buyerTrn && parsed.buyerTrn === company.trnVatNumber) ||
     (parsed.buyerEndpoint &&
       (parsed.buyerEndpoint === company.peppolParticipantId || parsed.buyerEndpoint === tin));
+  const addressedToUs = args.onboardedEntity
+    ? args.onboardedEntity.companyId === company.id &&
+      matchesOnboardedTaxpayer(args.onboardedEntity, {
+        endpoint: parsed.buyerEndpoint,
+        scheme: parsed.buyerEndpointScheme,
+        vatTrn: parsed.buyerTrn,
+      })
+    : addressedToCompany;
   if (!addressedToUs) {
     throw new DomainError(
       "EINVOICE_INBOUND_WRONG_RECIPIENT",
@@ -388,14 +485,20 @@ export async function processInboundEInvoice(args: {
   const find = (tx?: LedgerTx) =>
     findInboundDuplicate(company.id, supplierKey, parsed.documentNumber, tx);
   const existing = await find();
-  if (existing && completedInbound(existing, isCredit)) return duplicateInbound(existing);
+  if (args.legacyRecovery && !existing) return { status: 200, body: { status: "unmatched" } };
+  if (existing && args.legacyRecovery) assertSameInboundSource(existing, hash);
+  if (existing && completedInbound(existing, isCredit) && (await inboundArchiveId(existing))) {
+    return duplicateInbound(existing);
+  }
   if (existing) assertSameInboundSource(existing, hash);
 
   const validation = summariseValidation(await validateEInvoiceXml(xml, { now }));
   // Persist the inbound receipt and archive first. Failed bill preparation can then be retried
   // against the same immutable source, and a finished credit note stays available for review.
   const captured = await withLedgerTx(async (tx): Promise<InboundResult | { id: string }> => {
+    await assertOnboardedEntityCurrent(args.onboardedEntity, tx);
     const prior = await find(tx);
+    if (args.legacyRecovery && !prior) return { status: 200, body: { status: "unmatched" } };
     const row =
       prior ??
       (await insertInboundDocument(
@@ -415,11 +518,13 @@ export async function processInboundEInvoice(args: {
       )) ??
       (await find(tx));
     if (!row) throw new Error("Inbound receipt could not be acquired.");
-    if (completedInbound(row, isCredit)) return duplicateInbound(row);
+    const priorArchiveId = await inboundArchiveId(row, tx);
+    if (args.legacyRecovery) assertSameInboundSource(row, hash);
+    if (completedInbound(row, isCredit) && priorArchiveId) return duplicateInbound(row);
     assertSameInboundSource(row, hash);
 
     const archiveId =
-      row.archiveId ??
+      priorArchiveId ??
       (
         await archiveEInvoiceXml(
           {
@@ -438,8 +543,32 @@ export async function processInboundEInvoice(args: {
         )
       ).id;
 
+    if (isCredit && row.status === "credit_created") {
+      const debitNoteId = row.debitNoteId ?? (await findLegacyInboundCredit(row, parsed, tx));
+      if (!debitNoteId) {
+        await updateInboundDocument(
+          company.id,
+          row.id,
+          {
+            archiveId,
+            error: "The linked vendor credit requires administrator reconciliation",
+          },
+          tx
+        );
+        return {
+          status: 409,
+          body: { status: "credit-link-unverified", code: "INBOUND_NOT_REVIEWABLE" },
+        };
+      }
+      const repaired = { archiveId, debitNoteId, error: null };
+      await updateInboundDocument(company.id, row.id, repaired, tx);
+      return duplicateInbound({ ...row, ...repaired });
+    }
     if (!isCredit && (prior || existing)) {
       const billId = await findLegacyInboundBill(company.id, parsed, tx);
+      if (row.billId && row.billId !== billId) {
+        throw new Error("The linked bill cannot be matched to the inbound document.");
+      }
       if (billId) {
         const repaired = {
           status: "bill_created",
@@ -522,6 +651,7 @@ export async function processInboundEInvoice(args: {
     const prepare = resolve<PrepareDraft>("bills.prepareDraftFromInbound");
     const write = await prepare(company.id, actorId, toInboundBill(parsed));
     return await withLedgerTx(async (tx) => {
+      await assertOnboardedEntityCurrent(args.onboardedEntity, tx);
       const row = await find(tx);
       if (!row) throw new Error("Inbound receipt no longer exists.");
       if (completedInbound(row, false)) return duplicateInbound(row);

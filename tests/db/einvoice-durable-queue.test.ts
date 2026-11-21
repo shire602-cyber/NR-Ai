@@ -263,6 +263,7 @@ describe("Durable UAE e-invoice submission queue", () => {
     const args = await readyInvoice();
     const { submitAndPersist, refreshAndPersist } =
       await import("../../server/services/einvoice/workflow");
+    const { documentSubmissionSnapshot } = await import("../../server/services/einvoice/store");
     const { storage } = await import("../../server/storage");
     const inheritedProvider = fakeProvider({ name: "acube", environment: "sandbox" });
     expect((await submitAndPersist({ ...args, provider: inheritedProvider })).ok).toBe(true);
@@ -296,13 +297,25 @@ describe("Durable UAE e-invoice submission queue", () => {
     const refreshed = await refreshAndPersist({ ...args, invoice, provider });
     expect(refreshed).toMatchObject({
       ok: true,
-      documentRow: { status: "accepted", reportingStatus: "pending", reportedAt: null },
+      documentRow: {
+        status: "accepted",
+        reportingStatus: "not_required",
+        reportBy: null,
+        reportedAt: null,
+        clearedAt: null,
+      },
+    });
+    if (!refreshed.ok) throw new Error("Expected the verified provider receipt to refresh");
+    expect(documentSubmissionSnapshot(refreshed.documentRow)).toMatchObject({
+      reportingRequired: false,
     });
     const events = await h.sql(
-      "SELECT provider_status FROM einvoice_document_events WHERE invoice_id = $1 AND track = 'delivery' AND provider_status = 'accepted'",
+      `SELECT track, provider_status FROM einvoice_document_events
+       WHERE invoice_id = $1 AND ((track = 'delivery' AND provider_status = 'accepted')
+                                  OR (track = 'reporting' AND to_status = 'reported'))`,
       [args.invoice.id]
     );
-    expect(events).toHaveLength(1);
+    expect(events).toEqual([{ track: "delivery", provider_status: "accepted" }]);
     expect(reads).toBe(1);
   });
 

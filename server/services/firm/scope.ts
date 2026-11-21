@@ -16,7 +16,7 @@
  * created by other code paths keep working). A revoked link, or a link to
  * another firm, always removes the company from NR's set.
  */
-import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import { db } from "../../db";
 import {
   companies,
@@ -130,10 +130,34 @@ export async function listFirmClientIds(ctx: Pick<FirmContext, "firmId" | "isNr"
   return rows.map((r) => r.id);
 }
 
-function assignedCondition(userId: string): SQL {
+/** An accepted team invitation records a direct role even without a firm grant. */
+export function acceptedCompanyInvite(companyId: string | SQLWrapper, userId: string | SQLWrapper) {
+  return sql`exists (select 1 from company_invitations ci where ci.company_id = ${companyId} and ci.accepted_user_id = ${userId} and ci.status = 'accepted')`;
+}
+
+function assignedCondition(ctx: FirmContext): SQL {
+  const grants = sql`select 1 from firm_company_grants fcg where fcg.company_id = ${companies.id} and fcg.user_id = ${ctx.userId}`;
+  const assignment = sql`exists (select 1 from firm_staff_assignments fsa where fsa.company_id = ${companies.id} and fsa.user_id = ${ctx.userId})`;
+  const verifiedAssignment = and(
+    assignment,
+    sql`(not exists (${grants}) or exists (${grants} and fcg.firm_id = ${ctx.firmId}))`,
+    sql`not exists (${grants} and fcg.created_membership and fcg.firm_id <> ${ctx.firmId})`
+  );
+  if (!ctx.isNr) return verifiedAssignment as SQL;
+  // Only NR has legacy assignments that predate explicit provenance. Known direct
+  // roles (and generated roles from another firm) do not stand in for assignments.
   return or(
-    sql`exists (select 1 from firm_staff_assignments fsa where fsa.company_id = ${companies.id} and fsa.user_id = ${userId})`,
-    sql`exists (select 1 from company_users cu where cu.company_id = ${companies.id} and cu.user_id = ${userId})`
+    verifiedAssignment,
+    and(
+      or(
+        and(
+          sql`not exists (${grants})`,
+          sql`not (${acceptedCompanyInvite(companies.id, ctx.userId)})`
+        ),
+        sql`exists (${grants} and fcg.created_membership and fcg.firm_id = ${ctx.firmId})`
+      ),
+      sql`exists (select 1 from company_users cu where cu.company_id = ${companies.id} and cu.user_id = ${ctx.userId})`
+    )
   ) as SQL;
 }
 
@@ -141,7 +165,7 @@ function assignedCondition(userId: string): SQL {
 export function accessibleClientCondition(ctx: FirmContext): SQL {
   const base = firmClientCondition(ctx.firmId, ctx.isNr);
   if (ctx.platformAdmin || firmRoleSeesAllClients(ctx.role)) return base;
-  return and(base, assignedCondition(ctx.userId)) as SQL;
+  return and(base, assignedCondition(ctx)) as SQL;
 }
 
 export async function listAccessibleClientIds(ctx: FirmContext): Promise<string[]> {
@@ -194,10 +218,19 @@ export async function canAccessFirmClient(
 /** Is the company in the firm's client set at all (regardless of assignment)? */
 export async function isFirmClient(
   ctx: Pick<FirmContext, "firmId" | "isNr">,
-  companyId: string
+  companyId: string,
+  conn: Pick<Executor, "select"> = db,
+  lock?: "share"
 ): Promise<boolean> {
   if (!isUuid(companyId)) return false;
-  const [row] = await db
+  if (lock) {
+    await conn
+      .select({ companyId: firmClientLinks.companyId })
+      .from(firmClientLinks)
+      .where(eq(firmClientLinks.companyId, companyId))
+      .for(lock);
+  }
+  const [row] = await conn
     .select({ id: companies.id })
     .from(companies)
     .where(and(eq(companies.id, companyId), firmClientCondition(ctx.firmId, ctx.isNr)))
@@ -223,8 +256,12 @@ export interface FirmMemberRow {
  * The firm's staff (R15-03): every user with a firm role in this firm. For NR
  * that is users.firm_role (legacy) plus any NR firm_members rows.
  */
-export async function listFirmMembers(firmId: string, isNr: boolean): Promise<FirmMemberRow[]> {
-  const byMembership = (await db
+export async function listFirmMembers(
+  firmId: string,
+  isNr: boolean,
+  conn: Pick<Executor, "select"> = db
+): Promise<FirmMemberRow[]> {
+  const byMembership = (await conn
     .select({ userId: users.id, name: users.name, email: users.email, role: firmMembers.role })
     .from(firmMembers)
     .innerJoin(users, eq(users.id, firmMembers.userId))
@@ -236,7 +273,7 @@ export async function listFirmMembers(firmId: string, isNr: boolean): Promise<Fi
   }>;
   const out = new Map<string, FirmMemberRow>();
   if (isNr) {
-    const legacy = (await db
+    const legacy = (await conn
       .select({ userId: users.id, name: users.name, email: users.email, role: users.firmRole })
       .from(users)
       .where(inArray(users.firmRole, [...FIRM_ROLES]))) as Array<{
@@ -256,8 +293,12 @@ export async function listFirmMembers(firmId: string, isNr: boolean): Promise<Fi
   return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function listFirmMemberIds(firmId: string, isNr: boolean): Promise<string[]> {
-  return (await listFirmMembers(firmId, isNr)).map((m) => m.userId);
+export async function listFirmMemberIds(
+  firmId: string,
+  isNr: boolean,
+  conn: Pick<Executor, "select"> = db
+): Promise<string[]> {
+  return (await listFirmMembers(firmId, isNr, conn)).map((m) => m.userId);
 }
 
 /** The firm role a user holds in `firmId`, or null when not a member there. */
@@ -268,6 +309,43 @@ export async function firmRoleOf(userId: string, firmId: string): Promise<FirmRo
 }
 
 // ─── Company access grants ───────────────────────────────────────────────────
+
+export async function hasFirmCreatedCompanyMembership(
+  companyId: string,
+  userId: string,
+  exec: Pick<Executor, "select"> = db
+): Promise<boolean> {
+  const [grant] = await exec
+    .select({ id: firmCompanyGrants.id })
+    .from(firmCompanyGrants)
+    .where(
+      and(
+        eq(firmCompanyGrants.companyId, companyId),
+        eq(firmCompanyGrants.userId, userId),
+        eq(firmCompanyGrants.createdMembership, true)
+      )
+    )
+    .limit(1);
+  return !!grant;
+}
+
+/** Adopt the role directly while holding the actor lock in the membership transaction. */
+export async function markCompanyMembershipDirect(
+  companyId: string,
+  userId: string,
+  exec: Pick<Executor, "update">
+): Promise<void> {
+  await exec
+    .update(firmCompanyGrants)
+    .set({ createdMembership: false })
+    .where(
+      and(
+        eq(firmCompanyGrants.companyId, companyId),
+        eq(firmCompanyGrants.userId, userId),
+        eq(firmCompanyGrants.createdMembership, true)
+      )
+    );
+}
 
 /**
  * Give a firm member a company_users row in a client's books (the core company
@@ -281,6 +359,7 @@ export async function grantCompanyAccess(
   // Commit the membership and its provenance together. A concurrent preexisting membership
   // must never be marked as firm-created merely because our insert lost the unique-key race.
   if (!exec) return db.transaction((tx) => grantCompanyAccess(input, tx));
+  await exec.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).for("update");
   const [created] = await exec
     .insert(companyUsers)
     .values({
@@ -308,29 +387,55 @@ export async function grantCompanyAccess(
 
 /**
  * Remove the access a firm granted in a company: the company_users rows it
- * created, its grant records and its staff assignments. With `userId`, only
- * that member. A company_users row that predates the firm grant is kept.
+ * created and its staff assignments. With `userId`, only that member. Records confirming
+ * independent origin remain so repeated revocations can distinguish those company roles.
  */
 export async function revokeCompanyAccess(
   input: { firmId: string; isNr: boolean; companyId: string; userId?: string },
-  exec: Executor = db
+  exec?: Executor
 ): Promise<{ removedMemberships: number }> {
+  if (!exec) return db.transaction((tx) => revokeCompanyAccess(input, tx));
   const grantWhere = and(
     eq(firmCompanyGrants.firmId, input.firmId),
     eq(firmCompanyGrants.companyId, input.companyId),
     input.userId ? eq(firmCompanyGrants.userId, input.userId) : undefined
   );
-  const grants = (await exec
-    .select({ userId: firmCompanyGrants.userId, created: firmCompanyGrants.createdMembership })
-    .from(firmCompanyGrants)
-    .where(grantWhere)) as Array<{ userId: string; created: boolean }>;
   const memberIds = input.userId
     ? [input.userId]
-    : await listFirmMemberIds(input.firmId, input.isNr);
-  const grantedUsers = new Set(grants.map((g) => g.userId));
+    : await listFirmMemberIds(input.firmId, input.isNr, exec);
+  const recorded = await exec
+    .select({ userId: firmCompanyGrants.userId })
+    .from(firmCompanyGrants)
+    .where(grantWhere);
+  const affected = [...new Set([...memberIds, ...recorded.map((row) => row.userId)])];
+  if (affected.length) {
+    await exec
+      .select({ id: users.id })
+      .from(users)
+      .where(inArray(users.id, affected))
+      .orderBy(users.id)
+      .for("update");
+  }
+  const grants = await exec
+    .select({ userId: firmCompanyGrants.userId, created: firmCompanyGrants.createdMembership })
+    .from(firmCompanyGrants)
+    .where(grantWhere);
   const toRemove = new Set(grants.filter((g) => g.created).map((g) => g.userId));
-  // Legacy rows (no grant record) of firm staff on this client: the firm added them.
-  for (const id of memberIds) if (!grantedUsers.has(id)) toRemove.add(id);
+  // An NR assignment predating provenance can still identify a legacy generated row.
+  if (input.isNr && memberIds.length) {
+    const assignments = await exec
+      .select({ userId: firmStaffAssignments.userId })
+      .from(firmStaffAssignments)
+      .where(
+        and(
+          eq(firmStaffAssignments.companyId, input.companyId),
+          inArray(firmStaffAssignments.userId, memberIds),
+          sql`not (${acceptedCompanyInvite(input.companyId, firmStaffAssignments.userId)})`,
+          sql`not exists (select 1 from firm_company_grants fcg where fcg.company_id = ${input.companyId} and fcg.user_id = ${firmStaffAssignments.userId})`
+        )
+      );
+    for (const { userId } of assignments) toRemove.add(userId);
+  }
   let removed = 0;
   if (toRemove.size > 0) {
     const del = (await exec
@@ -345,14 +450,17 @@ export async function revokeCompanyAccess(
       .returning({ id: companyUsers.id })) as Array<{ id: string }>;
     removed = del.length;
   }
-  await exec.delete(firmCompanyGrants).where(grantWhere);
+  await exec
+    .delete(firmCompanyGrants)
+    .where(and(grantWhere, eq(firmCompanyGrants.createdMembership, true)));
   if (memberIds.length > 0) {
     await exec
       .delete(firmStaffAssignments)
       .where(
         and(
           eq(firmStaffAssignments.companyId, input.companyId),
-          inArray(firmStaffAssignments.userId, memberIds)
+          inArray(firmStaffAssignments.userId, memberIds),
+          sql`not exists (select 1 from firm_client_links fcl where fcl.company_id = ${input.companyId} and fcl.status = 'active' and fcl.firm_id <> ${input.firmId})`
         )
       );
   }
@@ -372,8 +480,9 @@ export async function activeLinkForCompany(companyId: string) {
 /** Link a company to a firm as an active client (used for firm-created clients). */
 export async function activateClientLink(
   input: { firmId: string; isNr: boolean; companyId: string; actorId: string },
-  exec: Executor = db
+  exec?: Executor
 ): Promise<void> {
+  if (!exec) return db.transaction((tx) => activateClientLink(input, tx));
   await exec.insert(firmClientLinks).values({
     firmId: input.firmId,
     companyId: input.companyId,
@@ -384,9 +493,9 @@ export async function activateClientLink(
   });
   if (!input.isNr) {
     // Non-NR owners have no legacy bypass: give each a membership in the books.
-    const owners = (await listFirmMembers(input.firmId, false)).filter(
-      (m) => m.role === "firm_owner"
-    );
+    const owners = (await listFirmMembers(input.firmId, false, exec))
+      .filter((m) => m.role === "firm_owner")
+      .sort((a, b) => a.userId.localeCompare(b.userId));
     for (const o of owners) {
       await grantCompanyAccess(
         { firmId: input.firmId, userId: o.userId, companyId: input.companyId, role: o.role },

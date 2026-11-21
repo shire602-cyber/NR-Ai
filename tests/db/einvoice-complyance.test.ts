@@ -1019,7 +1019,7 @@ describe("E2 + F16: no FTA reporting before the mandate applies", () => {
     }
   );
 
-  it("pre-mandate company: final_valid still reads not_required, never overdue", async () => {
+  it("preserves provider-confirmed reporting without a local filing obligation", async () => {
     const t = await readyTenant({ ...SELLER_COLUMNS, einvoice_go_live_date: null });
     await h.sql(
       `UPDATE companies SET einvoice_scope = 'b2b', einvoice_turnover_band = 'large', einvoice_go_live_date = NULL WHERE id = $1`,
@@ -1031,14 +1031,198 @@ describe("E2 + F16: no FTA reporting before the mandate applies", () => {
     const d = docOf(t, inv.number)!;
     d.state = "final_valid";
     d.isTerminal = true;
+    // The current company settings no longer match the terms frozen on this invoice.
+    await h.sql(`UPDATE companies SET einvoice_go_live_date = '2026-01-01' WHERE id = $1`, [
+      t.company.id,
+    ]);
     await poll();
     const s = await statusOf(t, inv.id);
     expect(s.tracks.delivery.status).toBe("delivered");
     expect(s.tracks.reporting).toMatchObject({
-      status: "not_required",
+      status: "reported",
       required: false,
       reportBy: null,
       overdue: false,
     });
+    const documents = await t.as.get(`/api/companies/${t.company.id}/einvoicing/documents`);
+    expect(documents.status, documents.text).toBe(200);
+    expect(documents.body.items).toContainEqual(
+      expect.objectContaining({
+        invoiceId: inv.id,
+        reportingRequired: false,
+        reportingStatus: "reported",
+        reportBy: null,
+      })
+    );
+    const compliance = await t.as.get(`/api/companies/${t.company.id}/einvoicing/compliance`);
+    expect(compliance.status, compliance.text).toBe(200);
+    expect(compliance.body.items).toContainEqual(
+      expect.objectContaining({
+        invoiceId: inv.id,
+        reportingRequired: false,
+        reporting: "reported",
+        reportBy: null,
+      })
+    );
+    expect((await poll()).refreshed).toBe(0);
+  });
+
+  it.each([false, true])(
+    "keeps an actual government rejection visible on a voluntary submission (buyer rejected: %s)",
+    async (buyerRejected) => {
+      const t = await readyTenant({ ...SELLER_COLUMNS, einvoice_scope: "none" });
+      const inv = await issuedInvoice(t);
+      expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+      await runEInvoiceRetries();
+      const d = docOf(t, inv.number)!;
+      d.state = "final_invalid";
+      d.isTerminal = true;
+      d.errors = [{ code: "FTA-MLS-RE", message: "FTA rejected", path: [], source: "government" }];
+      if (buyerRejected)
+        d.errors.push({
+          code: "C3-MLS-RE",
+          message: "Buyer rejected",
+          path: [],
+          source: "delivery",
+        });
+      expect((await poll()).refreshed).toBe(1);
+      expect(await statusOf(t, inv.id)).toMatchObject({
+        submissionState: "rejected",
+        tracks: {
+          delivery: { status: buyerRejected ? "rejected" : "delivered" },
+          reporting: { status: "report_failed", required: false, reportBy: null, overdue: false },
+        },
+        rejection: { code: buyerRejected ? "COMPLYANCE_FINAL_INVALID" : "EINVOICE_REPORT_FAILED" },
+      });
+      expect((await poll()).refreshed).toBe(0);
+    }
+  );
+
+  it("reverifies legacy reported rows before projecting their approval, while preserving the old audit entry", async () => {
+    const t = await readyTenant();
+    const inv = await issuedInvoice(t);
+    expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const d = docOf(t, inv.number)!;
+    d.state = "final_valid";
+    d.isTerminal = true;
+    const oldAt = "2026-01-01T00:00:00.000Z";
+    await h.sql("UPDATE companies SET einvoice_scope = 'none' WHERE id = $1", [t.company.id]);
+    await h.sql(`UPDATE invoices SET einvoice_status = 'cleared' WHERE id = $1`, [inv.id]);
+    await h.sql(
+      `UPDATE einvoice_documents SET status = 'cleared', delivery_status = 'delivered',
+      provider_status = 'final_valid', reporting_status = 'reported', reported_at = $2,
+      reporting_status_at = $2, cleared_at = $2, validation = validation #- '{submission,reportingRequired}'
+      WHERE invoice_id = $1`,
+      [inv.id, oldAt]
+    );
+    const [{ id: earlierEvent }] = await h.sql(
+      `INSERT INTO einvoice_document_events
+      (company_id, invoice_id, track, from_status, to_status, provider, source, created_at)
+      VALUES ($1, $2, 'reporting', 'pending', 'reported', 'complyance', 'poll', $3) RETURNING id`,
+      [t.company.id, inv.id, oldAt]
+    );
+    const before = await statusOf(t, inv.id);
+    expect(before).toMatchObject({
+      status: "accepted",
+      tracks: { reporting: { status: "pending", required: true } },
+      document: { reportedAt: null, clearedAt: null },
+    });
+    expect(before.events).toContainEqual(
+      expect.objectContaining({ id: earlierEvent, to: "pending", confirmationUnavailable: true })
+    );
+    const compliance = await t.as.get(`/api/companies/${t.company.id}/einvoicing/compliance`);
+    expect(compliance.body).toMatchObject({
+      mandateApplies: false,
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          invoiceId: inv.id,
+          reportingRequired: true,
+          reporting: "pending",
+          reportBy: expect.any(String),
+        }),
+      ]),
+    });
+    expect((await poll()).refreshed).toBe(1);
+    const confirmed = await statusOf(t, inv.id);
+    expect(confirmed).toMatchObject({
+      status: "cleared",
+      tracks: { reporting: { status: "reported", required: true } },
+    });
+    expect(confirmed.document.reportedAt).not.toBe(oldAt);
+    expect(confirmed.document.clearedAt).toBe(confirmed.document.reportedAt);
+    expect(confirmed.document.validation).not.toHaveProperty("submission");
+    expect(confirmed.events).toContainEqual(
+      expect.objectContaining({ id: earlierEvent, to: "pending", confirmationUnavailable: true })
+    );
+    expect(confirmed.events).toContainEqual(
+      expect.objectContaining({
+        track: "reporting",
+        to: "reported",
+        at: confirmed.document.reportedAt,
+      })
+    );
+    expect((await poll()).refreshed).toBe(0);
+  });
+});
+
+describe("Legacy Complyance environment verification", () => {
+  it("restores an invoice-only reference from immutable archived proof and resumes polling", async () => {
+    const t = await readyTenant();
+    const inv = await issuedInvoice(t);
+    const path = `/api/invoices/${inv.id}/einvoice/confirm-environment`;
+    expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const held = docOf(t, inv.number)!;
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+    await h.sql("DELETE FROM einvoice_documents WHERE invoice_id = $1", [inv.id]);
+    await h.sql(
+      "UPDATE invoices SET einvoice_xml = NULL, einvoice_hash = NULL, einvoice_uuid = NULL WHERE id = $1",
+      [inv.id]
+    );
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      status: "submitted",
+      transmission: {
+        environmentVerification: { provider: "complyance", environments: ["sandbox"] },
+      },
+    });
+    const originalSource = held.source;
+    held.source = "wrong-seller:v1";
+    const wrong = await t.as.post(path, { environment: "sandbox" });
+    expect(wrong.status, wrong.text).toBe(422);
+    expect(wrong.body.code).toBe("EINVOICE_ENVIRONMENT_PROOF_MISMATCH");
+    expect(
+      await h.sql("SELECT id FROM einvoice_documents WHERE invoice_id = $1", [inv.id])
+    ).toEqual([]);
+
+    held.source = originalSource;
+    const verified = await t.as.post(path, { environment: "sandbox" });
+    expect(verified.status, verified.text).toBe(200);
+    expect(verified.body).toEqual({
+      provider: "complyance",
+      environment: "sandbox",
+      verified: true,
+    });
+    const [doc] = await h.sql(
+      "SELECT status, provider_message_id, attempts, next_retry_at, validation ->> 'valid' AS validation_result FROM einvoice_documents WHERE invoice_id = $1",
+      [inv.id]
+    );
+    expect(doc).toEqual({
+      status: "submitted",
+      provider_message_id: held.id,
+      attempts: 0,
+      next_retry_at: null,
+      validation_result: null,
+    });
+    held.state = "final_valid";
+    held.isTerminal = true;
+    expect(
+      (await events.runProviderPoll("complyance", { companyId: t.company.id })).refreshed
+    ).toBe(1);
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      status: "cleared",
+      transmission: { environmentVerification: null, providerDocumentId: held.id },
+    });
+    expect(fake.posts).toBe(1);
   });
 });

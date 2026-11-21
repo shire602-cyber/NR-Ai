@@ -34,6 +34,7 @@ import {
   getArchiveEntry,
   getEInvoiceDocument,
   documentProviderEnvironment,
+  documentReportingRequired,
   listArchive,
   listEInvoiceDocuments,
   listInboundDocuments,
@@ -47,6 +48,7 @@ import { EINVOICE_TIMELINE, einvoicingScope } from "../services/einvoice/scope";
 import { listCompliancePills } from "../services/einvoice/compliance-pills";
 import { computeEInvoiceReadiness } from "../services/einvoice/readiness";
 import { getLegalEntity } from "../services/einvoice/legal-entities";
+import { confirmLegacyEInvoiceEnvironment } from "../services/einvoice/legacy-tracking";
 import {
   INBOUND_SIGNATURE_HEADER,
   INBOUND_TIMESTAMP_HEADER,
@@ -571,6 +573,26 @@ export function registerEInvoiceRoutes(app: Express) {
 
   // Poll the ASP for the latest status.
   app.post(
+    "/api/invoices/:id/einvoice/confirm-environment",
+    authMiddleware,
+    requireCustomer,
+    strictBody(z.object({ environment: z.enum(["sandbox", "production"]) }).strict()),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { invoice, company } = await loadInvoiceAndCompany(req);
+      await assertScopedCompanyPermission(req.user, company.id, "tax.submit");
+      const { environment } = validated<{ environment: "sandbox" | "production" }>(req);
+      res.json(
+        await confirmLegacyEInvoiceEnvironment({
+          invoice,
+          company,
+          actorId: userOf(req),
+          environment,
+        })
+      );
+    })
+  );
+
+  app.post(
     "/api/invoices/:id/einvoice/refresh-status",
     authMiddleware,
     requireCustomer,
@@ -714,9 +736,10 @@ export function registerEInvoiceRoutes(app: Express) {
             legacyStatus: invoice?.einvoiceStatus ?? doc.status,
             provider: invoice?.einvoiceProvider,
             doc,
-            required: invoice
-              ? invoiceReportingRequired(invoice, company, now)
-              : doc.reportingStatus !== "not_required",
+            required: documentReportingRequired(
+              doc,
+              invoice ? invoiceReportingRequired(invoice, company, now) : false
+            ),
             now,
           });
           return {

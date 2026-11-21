@@ -26,7 +26,7 @@ company configuration check shows `not_configured` when the local credential bun
 | FTA reporting        | Required reports remain pending. `GET /{kind}/{id}/tdd` documents retrieval of the tax-data file. Confirmation requires a separate FTA acknowledgment. |
 | Inbound              | Page through both incoming collections, then fetch `/{kind}/{id}/source` using the document's collection and preserve the original UTF-8 XML before importing a draft bill. |
 | Legal entities       | `POST /legal-entities {tin}` reserves the TIN. The response `uuid` identifies the entity in `GET /legal-entities/{uuid}`.                                                                                |
-| Webhook destinations | `POST /event-destinations` per event (`invoice.outbound`, `invoice.inbound`, `credit_note.*`, `legal_entity.synchronized`)                                                                           |
+| Webhook destinations | Page through `GET /event-destinations`. Create missing event targets with `POST /event-destinations`. Update authentication for a matching target with `PUT /event-destinations/{uuid}`. |
 | Cancel               | none: `capabilities.cancel = false`; a sent invoice is corrected with a credit note                                                                                                                  |
 
 ## Two-track status

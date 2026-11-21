@@ -126,18 +126,14 @@ describe("[R05-19b] receipt split helpers", () => {
 });
 
 describe("[W4-C] inbound supplier credit notes waiting for review", () => {
-  it("lists only received PINT AE credit notes without a bill", () => {
-    const base = { supplierName: "S", documentNumber: "N", receivedAt: "", billId: null };
-    const items = [
-      { ...base, id: "1", documentType: "381", status: "received" },
-      { ...base, id: "2", documentType: "380", status: "received" },
-      { ...base, id: "3", documentType: "381", status: "credit_created" },
-      { ...base, id: "4", documentType: "81", status: "received" },
-      { ...base, id: "5", documentType: "81", status: "invalid" },
-      { ...base, id: "6", documentType: "81", status: "received", billId: "bill" },
-      { ...base, id: "7", documentType: "261", status: "invalid" },
-    ];
-    expect(pendingSupplierCreditNotes(items).map((d) => d.id)).toEqual(["1", "4"]);
+  it("offers review only when the scoped inbound API says the source can be converted", () => {
+    const base = { supplierName: "S", documentNumber: "N" };
+    expect(
+      pendingSupplierCreditNotes([
+        { ...base, id: "1", vendorCreditReviewable: true },
+        { ...base, id: "2", vendorCreditReviewable: false },
+      ]).map((d) => d.id)
+    ).toEqual(["1"]);
   });
 });
 

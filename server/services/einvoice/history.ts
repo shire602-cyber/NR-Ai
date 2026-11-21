@@ -42,6 +42,8 @@ export interface TrackMeta {
   document?: EInvoiceDocumentPatch;
   /** A resend or recovery attempt can enter the same delivery state as the preceding attempt. */
   recordDelivery?: boolean;
+  /** Provider confirmation can establish an outcome that an earlier snapshot only inferred. */
+  recordReporting?: boolean;
 }
 
 export async function applyTracks(
@@ -84,10 +86,11 @@ export async function applyTracks(
     });
   }
   if (row.providerMessageId && !current?.submittedAt) row.submittedAt = now;
-  if (patch.reporting && patch.reporting !== current?.reportingStatus) {
+  if (patch.reporting && (patch.reporting !== current?.reportingStatus || meta.recordReporting)) {
     row.reportingStatus = patch.reporting;
     row.reportingStatusAt = now;
-    if (patch.reporting === "reported" && !current?.reportedAt) row.reportedAt = now;
+    if (patch.reporting === "reported" && (!current?.reportedAt || meta.recordReporting))
+      row.reportedAt = now;
     events.push({
       ...base,
       track: "reporting",

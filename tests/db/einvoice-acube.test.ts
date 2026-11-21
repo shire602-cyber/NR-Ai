@@ -76,6 +76,17 @@ function restDocument(d: FakeDocument, direction: "incoming" | "outgoing", statu
 
 const fake = {
   posts: 0,
+  requests: 0,
+  destination: null as {
+    eventId: string;
+    event: string;
+    target: string;
+    authType: string;
+    authKey: string | null;
+    authToken: string | null;
+  } | null,
+  outboundOwnerTin: null as string | null,
+  beforeSourceRead: null as (() => Promise<void>) | null,
   tddReads: 0,
   submitDelayMs: 0,
   nextSubmit: [] as Array<"201" | "422" | "network">,
@@ -87,6 +98,10 @@ const fake = {
   incoming: [] as FakeDocument[],
   reset() {
     this.posts = 0;
+    this.requests = 0;
+    this.destination = null;
+    this.outboundOwnerTin = null;
+    this.beforeSourceRead = null;
     this.tddReads = 0;
     this.submitDelayMs = 0;
     this.nextSubmit = [];
@@ -106,10 +121,26 @@ const json = (status: number, body: unknown) =>
   });
 
 async function acube(url: URL, init: RequestInit): Promise<Response> {
+  fake.requests++;
   const method = (init.method ?? "GET").toUpperCase();
   const p = url.pathname;
   if (url.host === "common.api.acubeapi.com" && p === "/login") {
     return json(200, { token: "e30.eyJleHAiOjQxMDI0NDQ4MDB9.c2ln" });
+  }
+  if (method === "GET" && p === "/event-destinations" && fake.destination) {
+    return json(200, {
+      member: [{ ...fake.destination, authToken: "****", delivery: "webhook" }],
+      view: {},
+    });
+  }
+  if (
+    method === "PUT" &&
+    fake.destination &&
+    p === `/event-destinations/${fake.destination.eventId}`
+  ) {
+    const { authType, authKey, authToken } = JSON.parse(String(init.body));
+    fake.destination = { ...fake.destination, authType, authKey, authToken };
+    return json(200, { eventId: fake.destination.eventId });
   }
   if (method === "POST" && p === "/legal-entities") {
     fake.reservations++;
@@ -200,14 +231,22 @@ async function acube(url: URL, init: RequestInit): Promise<Response> {
     }
     const document = fake.docs.get(id);
     if (!document || document.kind !== kind) return json(404, { detail: "Not found" });
-    if (resource === "/source") return new Response(document.xml, { status: 200 });
+    if (resource === "/source") {
+      const before = fake.beforeSourceRead;
+      fake.beforeSourceRead = null;
+      await before?.();
+      return new Response(document.xml, { status: 200 });
+    }
     if (resource === "/tdd") {
       fake.tddReads++;
       return document.tdd
         ? new Response("<TaxDataDocument/>", { status: 200 })
         : new Response(null, { status: 204 });
     }
-    return json(200, restDocument(document, "outgoing", document.status));
+    return json(200, {
+      ...restDocument(document, "outgoing", document.status),
+      ...(fake.outboundOwnerTin ? { ownerFiscalId: fake.outboundOwnerTin } : {}),
+    });
   }
   return json(500, { detail: `fake A-Cube: no route ${method} ${p}` });
 }
@@ -230,6 +269,8 @@ const ENV_KEYS = [
   "ACUBE_SIGNATURE_PUBLIC_KEY",
   "ACUBE_WEBHOOK_BASE_URL",
   "ACUBE_WEBHOOK_INLINE",
+  "ACUBE_WEBHOOK_TOKEN_HEADER",
+  "ACUBE_WEBHOOK_EVENTS",
   "EINVOICE_ASP_BASE_URL",
   "EINVOICE_ASP_API_KEY",
 ];
@@ -283,7 +324,13 @@ beforeAll(async () => {
 function webhook(
   tenant: Tenant,
   payload: Record<string, unknown>,
-  opts: { created?: number; key?: crypto.KeyObject; token?: string; body?: string } = {}
+  opts: {
+    created?: number;
+    key?: crypto.KeyObject;
+    token?: string;
+    tokenHeader?: string;
+    body?: string;
+  } = {}
 ) {
   const body = JSON.stringify(payload);
   const path = `${WEBHOOK}/${tenant.company.id}`;
@@ -299,7 +346,7 @@ function webhook(
     headers: {
       "Content-Type": "application/json",
       ...headers,
-      ...(opts.token ? { "X-Acube-Token": opts.token } : {}),
+      ...(opts.token ? { [opts.tokenHeader ?? "X-Acube-Token"]: opts.token } : {}),
     },
   });
 }
@@ -860,11 +907,20 @@ describe("E1 submit, two tracks and history", () => {
         document: docProjection,
         tracks: { reporting: { status: "pending", at: null, confirmationUnavailable: true } },
       });
-      expect(detail.events).toContainEqual(expect.objectContaining({
-        id: eventId, track: "reporting", to: "pending", confirmationUnavailable: true, message: null,
-      }));
-      expect(await h.sql(`SELECT to_status, message FROM einvoice_document_events WHERE id = $1`, [eventId]))
-        .toEqual([{ to_status: "reported", message: "FTA accepted" }]);
+      expect(detail.events).toContainEqual(
+        expect.objectContaining({
+          id: eventId,
+          track: "reporting",
+          to: "pending",
+          confirmationUnavailable: true,
+          message: null,
+        })
+      );
+      expect(
+        await h.sql(`SELECT to_status, message FROM einvoice_document_events WHERE id = $1`, [
+          eventId,
+        ])
+      ).toEqual([{ to_status: "reported", message: "FTA accepted" }]);
       const list = await t.as.get(`/api/companies/${t.company.id}/einvoicing/documents`);
       expect(list.status, list.text).toBe(200);
       expect(list.body.items).toContainEqual(
@@ -960,6 +1016,36 @@ describe("E1 submit, two tracks and history", () => {
 });
 
 describe("E1 webhook authentication", () => {
+  it("reconciles a rotated destination token and still requires the signed callback", async () => {
+    const t = await linkedTenant();
+    const previous = crypto.randomUUID();
+    const active = crypto.randomUUID();
+    await useAcube(t, active);
+    process.env.ACUBE_WEBHOOK_EVENTS = "invoice.outbound";
+    process.env.ACUBE_WEBHOOK_TOKEN_HEADER = "  X-Rotated-Token  ";
+    fake.destination = {
+      eventId: crypto.randomUUID(),
+      event: "invoice.outbound",
+      target: `${PUBLIC_BASE}${WEBHOOK}/${t.company.id}`,
+      authType: "header",
+      authKey: "X-Acube-Token",
+      authToken: previous,
+    };
+    const setup = await t.as.post(`/api/companies/${t.company.id}/einvoicing/acube/webhooks`, {});
+    expect(setup.status, setup.text).toBe(200);
+    expect(setup.body).toEqual({ created: [], existing: ["invoice.outbound"] });
+    expect(fake.destination.authKey).toBe("X-Rotated-Token");
+    expect(fake.destination.authToken === active).toBe(true);
+    const tokenHeader = "X-Rotated-Token";
+    expect((await webhook(t, linkEvent(), { token: previous, tokenHeader })).body.code).toBe(
+      "EINVOICE_WEBHOOK_BAD_TOKEN"
+    );
+    const wrongKey = crypto.generateKeyPairSync("ed25519").privateKey;
+    expect(
+      (await webhook(t, linkEvent(), { token: active, tokenHeader, key: wrongKey })).body.code
+    ).toBe("EINVOICE_WEBHOOK_BAD_SIGNATURE");
+    expect((await webhook(t, linkEvent(), { token: active, tokenHeader })).status).toBe(200);
+  });
   it("refuses a bad signature, a stale replay and a bad token", async () => {
     const t = await linkedTenant();
     const other = crypto.generateKeyPairSync("ed25519").privateKey;
@@ -1071,4 +1157,195 @@ describe("E1 inbound: document.received -> draft bill tagged e-invoice", () => {
       ]);
     }
   );
+});
+
+describe("Legacy A-Cube environment verification", () => {
+  it("verifies one scoped reference, restores polling and signed callbacks, and never sends again", async () => {
+    const t = await linkedTenant();
+    const inv = await issuedInvoice(t);
+    const path = `/api/invoices/${inv.id}/einvoice/confirm-environment`;
+    expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const held = [...fake.docs.values()][0];
+    expect(held).toBeDefined();
+    await h.sql(
+      "UPDATE einvoice_documents SET validation = validation #- '{submission,environment}', delivery_status = NULL WHERE invoice_id = $1",
+      [inv.id]
+    );
+
+    const readsBefore = fake.requests;
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      transmission: {
+        canRefresh: false,
+        environmentVerification: { provider: "acube", environments: ["sandbox"] },
+      },
+    });
+    const other = await h.createTenant({ name: "Other tracking company" });
+    const denied = await other.as.post(path, { environment: "sandbox" });
+    expect(denied.status, denied.text).toBe(404);
+    await h.sql("UPDATE users SET email_verified = false WHERE id = $1", [t.user.id]);
+    const unverified = await t.as.post(path, { environment: "sandbox" });
+    expect(unverified.status, unverified.text).toBe(403);
+    expect(unverified.body.code).toBe("EMAIL_VERIFICATION_REQUIRED");
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+    await h.sql("UPDATE company_users SET role = 'viewer' WHERE company_id = $1 AND user_id = $2", [
+      t.company.id,
+      t.user.id,
+    ]);
+    expect((await t.as.post(path, { environment: "sandbox" })).status).toBe(403);
+    await h.sql("UPDATE company_users SET role = 'owner' WHERE company_id = $1 AND user_id = $2", [
+      t.company.id,
+      t.user.id,
+    ]);
+
+    const otherEnvironment = {
+      companyId: t.company.id,
+      provider: "acube",
+      environment: "production",
+    } as const;
+    const otherVariable = companyCredentialVariable(otherEnvironment);
+    process.env[otherVariable] = sealCompanyCredentials(otherEnvironment, {
+      email: "historic-account@example.test",
+      password: crypto.randomUUID(),
+    });
+    try {
+      const wrongEnvironment = await t.as.post(path, { environment: "production" });
+      expect(wrongEnvironment.status, wrongEnvironment.text).toBe(503);
+      expect(wrongEnvironment.body.code).toBe("EINVOICE_ENVIRONMENT_VERIFICATION_UNAVAILABLE");
+    } finally {
+      delete process.env[otherVariable];
+    }
+    const forged = await t.as.post(path, { environment: "sandbox", provider: "complyance" });
+    expect(forged.status, forged.text).toBe(400);
+    await h.sql("UPDATE invoices SET einvoice_provider = 'complyance' WHERE id = $1", [inv.id]);
+    expect((await t.as.post(path, { environment: "sandbox" })).status).toBe(503);
+    await h.sql("UPDATE invoices SET einvoice_provider = 'acube' WHERE id = $1", [inv.id]);
+    expect(fake.requests).toBe(readsBefore);
+
+    fake.outboundOwnerTin = "1007654321";
+    const wrongSeller = await t.as.post(path, { environment: "sandbox" });
+    expect(wrongSeller.status, wrongSeller.text).toBe(422);
+    expect(wrongSeller.body.code).toBe("EINVOICE_ENVIRONMENT_PROOF_MISMATCH");
+    fake.outboundOwnerTin = TIN;
+    const trackedId = held.id;
+    held.id = documentUuid();
+    const wrongId = await t.as.post(path, { environment: "sandbox" });
+    expect(wrongId.status, wrongId.text).toBe(422);
+    expect(wrongId.body.code).toBe("EINVOICE_ENVIRONMENT_PROOF_MISMATCH");
+    held.id = trackedId;
+    const source = held.xml;
+    held.xml += " ";
+    const wrongBytes = await t.as.post(path, { environment: "sandbox" });
+    expect(wrongBytes.status, wrongBytes.text).toBe(422);
+    held.xml = source;
+
+    let sourceStarted!: () => void;
+    let releaseSource!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      sourceStarted = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+      releaseSource = resolve;
+    });
+    fake.beforeSourceRead = async () => {
+      sourceStarted();
+      await release;
+    };
+    const stale = t.as.post(path, { environment: "sandbox" });
+    await entered;
+    try {
+      await h.sql("UPDATE invoices SET einvoice_provider_message_id = $2 WHERE id = $1", [
+        inv.id,
+        documentUuid(),
+      ]);
+    } finally {
+      releaseSource();
+    }
+    expect((await stale).status).toBe(422);
+    const [unpinned] = await h.sql(
+      "SELECT validation->'submission'->>'environment' AS environment FROM einvoice_documents WHERE invoice_id = $1",
+      [inv.id]
+    );
+    expect(unpinned.environment).toBeNull();
+    await h.sql("UPDATE invoices SET einvoice_provider_message_id = $2 WHERE id = $1", [
+      inv.id,
+      trackedId,
+    ]);
+
+    const duplicate = await issuedInvoice(t);
+    await h.sql(
+      "INSERT INTO einvoice_documents (company_id, invoice_id, status, provider, provider_message_id, validation) VALUES ($1,$2,'submitted','acube',$3, '{\"submission\":{\"environment\":\"sandbox\"}}')",
+      [t.company.id, duplicate.id, trackedId]
+    );
+    expect((await t.as.post(path, { environment: "sandbox" })).status).toBe(422);
+    await h.sql("DELETE FROM einvoice_documents WHERE invoice_id = $1", [duplicate.id]);
+
+    // The older document row can also be the only record of its tracking reference.
+    await h.sql(
+      "UPDATE invoices SET einvoice_provider = NULL, einvoice_provider_message_id = NULL WHERE id = $1",
+      [inv.id]
+    );
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      transmission: {
+        providerDocumentId: trackedId,
+        environmentVerification: { provider: "acube", environments: ["sandbox"] },
+      },
+    });
+
+    const event = await webhook(t, {
+      eventId: crypto.randomUUID(),
+      eventType: "invoice.outbound",
+      documentId: held.id,
+      status: "accepted",
+    });
+    expect(event.status, event.text).toBe(200);
+    await h.sql(
+      "UPDATE einvoice_provider_events SET attempts = 2 WHERE company_id = $1 AND event_type = 'document.delivered'",
+      [t.company.id]
+    );
+    await runProviderEvents({ companyId: t.company.id });
+    const [ignored] = await h.sql(
+      "SELECT status FROM einvoice_provider_events WHERE company_id = $1 AND event_type = 'document.delivered'",
+      [t.company.id]
+    );
+    expect(ignored.status).toBe("ignored");
+
+    const results = await Promise.all([
+      t.as.post(path, { environment: "sandbox" }),
+      t.as.post(path, { environment: "sandbox" }),
+    ]);
+    for (const response of results) {
+      expect(response.status, response.text).toBe(200);
+      expect(response.body).toEqual({ provider: "acube", environment: "sandbox", verified: true });
+    }
+    const afterProof = fake.requests;
+    expect((await t.as.post(path, { environment: "sandbox" })).status).toBe(200);
+    expect((await t.as.post(path, { environment: "production" })).status).toBe(409);
+    expect(fake.requests).toBe(afterProof);
+    const audits = await h.sql(
+      "SELECT user_id FROM audit_logs WHERE resource_id = $1 AND action = 'invoice.einvoice_environment_verified'",
+      [inv.id]
+    );
+    expect(audits).toEqual([{ user_id: t.user.id }]);
+    const [mirrors] = await h.sql(
+      "SELECT einvoice_provider, einvoice_provider_message_id FROM invoices WHERE id = $1",
+      [inv.id]
+    );
+    expect(mirrors).toEqual({
+      einvoice_provider: "acube",
+      einvoice_provider_message_id: trackedId,
+    });
+
+    held.status = "delivered";
+    expect((await runAcubePoll({ companyId: t.company.id })).refreshed).toBe(1);
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      status: "submitted",
+      transmission: { canRefresh: true, environmentVerification: null },
+    });
+    held.status = "accepted";
+    expect((await runProviderEvents({ companyId: t.company.id })).processed).toBe(1);
+    expect(await statusOf(t, inv.id)).toMatchObject({ status: "accepted" });
+    expect(await runEInvoiceRetries()).toEqual({ attempted: 0, submitted: 0 });
+    expect(fake.posts).toBe(1);
+  });
 });
