@@ -327,7 +327,17 @@ describe("Public SaaS launch surface", () => {
     const errors = load("serverErrors");
     const marketing = load("marketing");
     const csv = BANK_RECONCILIATION_COPY[locale];
+    const faq =
+      locale === "en" ? "How do I reconcile my bank statement?" : "كيف أطابق كشف حسابي البنكي؟";
+    const phase = readRepoFile("client/src/components/marketing/phase/PhaseSite.tsx");
+    const gallery = readRepoFile("client/src/dev/UiGallery.tsx");
 
+    expect(marketing["marketing.faq3Q"]).toBe(faq);
+    expect(phase).toContain(faq);
+    expect(gallery).toContain(
+      "description={L(BANK_RECONCILIATION_COPY.en, BANK_RECONCILIATION_COPY.ar)}"
+    );
+    expect(gallery).not.toMatch(/connect your bank|اربط حسابك البنكي/i);
     expect(load("portal")).not.toHaveProperty(["portal.eventType.bank.sync_failed"]);
     expect(load("components")).not.toHaveProperty([
       "components.srv.notification.bankSyncFailed.title",

@@ -4,7 +4,7 @@
  */
 import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { useHarness, type Tenant } from "./harness";
+import { accountByCode, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
 
@@ -300,24 +300,17 @@ describe("W4-D notification engine", () => {
       lines: [{ description: "Line", quantity: 1, unitPrice: 100, vatRate: 5 }],
     });
     expect(inv.status, inv.text).toBe(200);
-    // Seed the state consumed by the overdue scan and exercise the other
-    // handlers through their domain events. Invoice posting is tested separately.
-    await h.sql(
-      `UPDATE invoices SET status = 'sent', due_date = now() - interval '3 days' WHERE id = $1`,
-      [inv.body.id]
+    const issued = await t.as.patch(`/api/invoices/${inv.body.id}/status`, { status: "sent" });
+    expect(issued.status, issued.text).toBe(200);
+    const bank = await accountByCode(t, "1020");
+    const payment = await t.as.post(
+      `/api/companies/${t.company.id}/invoices/${inv.body.id}/payments`,
+      { method: "bank", paymentAccountId: bank.id, amount: 20 }
     );
-    await emit("invoice.issued", {
-      companyId: t.company.id,
-      entityId: inv.body.id,
-      number: inv.body.number,
-      totalFils: 10500,
-    });
-    await emit("payment.received", {
-      companyId: t.company.id,
-      entityId: crypto.randomUUID(),
-      invoiceId: inv.body.id,
-      amountFils: 2000,
-    });
+    expect(payment.status, payment.text).toBe(201);
+    await h.sql(`UPDATE invoices SET due_date = now() - interval '3 days' WHERE id = $1`, [
+      inv.body.id,
+    ]);
     await emit("bank.sync_failed", {
       companyId: t.company.id,
       entityId: crypto.randomUUID(),

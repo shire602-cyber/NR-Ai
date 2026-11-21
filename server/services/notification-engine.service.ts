@@ -28,6 +28,12 @@ import { escapeHtml, renderBilingualEmail, sendEmail } from "./email.service";
 import { isCapabilityLive } from "../../shared/capabilities";
 import { notificationCopy, renderServerCopy } from "../../shared/server-copy";
 import { customerVisibleNotification } from "../storage/notification-visibility";
+import { deliverOutboxMessage, enqueueEmail } from "../outbox/outbox";
+import {
+  currentDigestCopy,
+  DIGEST_WINDOW_MS,
+  renderNotificationDigest,
+} from "./notification-digest";
 
 const log = createLogger("notification-engine");
 
@@ -528,7 +534,7 @@ export async function scanVatDeadlines(now: Date = new Date()): Promise<number> 
 
 /** One digest email per opted-in user with the undigested notifications of the last day. */
 export async function sendDailyDigests(now: Date = new Date()): Promise<number> {
-  const since = new Date(now.getTime() - 26 * 3_600_000);
+  const since = new Date(now.getTime() - DIGEST_WINDOW_MS);
   const optedIn = await db
     .select({ userId: notificationPreferences.userId, email: users.email })
     .from(notificationPreferences)
@@ -541,7 +547,7 @@ export async function sendDailyDigests(now: Date = new Date()): Promise<number> 
     );
   let sent = 0;
   for (const u of optedIn) {
-    const rows = await db
+    const candidates = await db
       .select()
       .from(notifications)
       .where(
@@ -552,41 +558,30 @@ export async function sendDailyDigests(now: Date = new Date()): Promise<number> 
           gte(notifications.createdAt, since)
         )
       )
-      .limit(100);
+      .orderBy(notifications.createdAt, notifications.id);
+    const rows = candidates.filter(currentDigestCopy).slice(0, 100);
     if (!rows.length || !u.email) continue;
     const day = now.toISOString().slice(0, 10);
-    const items = rows.map(
-      (r: typeof notifications.$inferSelect) =>
-        `<strong>${escapeHtml(r.title)}</strong> — ${escapeHtml(r.message)}`
-    );
-    const html = renderBilingualEmail(
-      {
-        brandName: "Muhasib.ai",
-        heading: { en: `Your daily summary (${day})`, ar: `ملخصك اليومي (${day})` },
-        paragraphs: { en: items, ar: [`لديك ${rows.length} إشعارات جديدة.`] },
-      },
-      "bilingual"
-    );
-    const r = await sendEmail(u.email, `Muhasib.ai daily summary — ${rows.length} update(s)`, "", {
-      html,
-      category: "digest",
-      idempotencyKey: `digest:${u.userId}:${day}`,
-    });
-    if (r.queued) {
-      await db
-        .update(notifications)
-        .set({ digestedAt: now })
-        .where(
-          sql`${notifications.id} IN (${sql.join(
-            rows.map((x: { id: string }) => sql`${x.id}`),
-            sql`, `
-          )})`
-        );
+    const { subject, html, textBody } = renderNotificationDigest(day, rows);
+    try {
+      const queued = await enqueueEmail({
+        to: u.email,
+        subject,
+        html,
+        text: textBody,
+        category: "digest",
+        idempotencyKey: `digest:${u.userId}:${day}`,
+        notificationDigest: { userId: u.userId, notificationIds: rows.map(({ id }) => id) },
+      });
+      if (queued.duplicate) continue;
       await db
         .update(notificationPreferences)
         .set({ lastDigestAt: now })
         .where(eq(notificationPreferences.userId, u.userId));
       sent++;
+      if (queued.status === "queued") await deliverOutboxMessage(queued.id);
+    } catch (err) {
+      log.error({ err, userId: u.userId }, "Could not queue or deliver notification digest");
     }
   }
   return sent;

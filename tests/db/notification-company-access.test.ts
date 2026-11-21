@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { useHarness } from "./harness";
+import type { OutgoingEmail } from "../../server/outbox/providers";
 
 const h = useHarness();
 
-async function removeMemberWithNotifications() {
+async function memberWithNotifications() {
   const owner = await h.createTenant({ name: "Notification company owner" });
   const member = await h.createSecondTenant({ name: "Notification company member" });
   const [membership] = await h.sql<{ id: string }>(
@@ -23,15 +24,39 @@ async function removeMemberWithNotifications() {
   const before = await member.as.get("/api/notifications");
   expect(before.status, before.text).toBe(200);
   expect(before.body.notifications).toContainEqual(expect.objectContaining({ id: revoked.id }));
-  const removed = await owner.as.delete(`/api/companies/${owner.company.id}/team/${membership.id}`);
-  expect(removed.status, removed.text).toBe(204);
-  return { member, revoked, retained, personal, unreadBefore: before.body.unreadCount };
+  async function remove() {
+    const removed = await owner.as.delete(
+      `/api/companies/${owner.company.id}/team/${membership.id}`
+    );
+    expect(removed.status, removed.text).toBe(204);
+  }
+  return { member, revoked, retained, personal, unreadBefore: before.body.unreadCount, remove };
+}
+
+async function deliverPendingDigest(id: string) {
+  const { setEmailTransportOverride } = await import("../../server/outbox/providers");
+  const { processOutbox } = await import("../../server/outbox/outbox");
+  const delivered: OutgoingEmail[] = [];
+  setEmailTransportOverride({
+    name: "test",
+    send: async (email) => {
+      if (email.outboxId === id) delivered.push(email);
+      return { providerMessageId: email.outboxId };
+    },
+  });
+  try {
+    await processOutbox();
+  } finally {
+    setEmailTransportOverride(null);
+  }
+  return delivered;
 }
 
 describe("Notification access after team removal", () => {
   it("hides revoked company notices from the list, unread count and update endpoints", async () => {
-    const { member, revoked, retained, personal, unreadBefore } =
-      await removeMemberWithNotifications();
+    const { member, revoked, retained, personal, unreadBefore, remove } =
+      await memberWithNotifications();
+    await remove();
 
     const after = await member.as.get("/api/notifications");
     expect(after.status, after.text).toBe(200);
@@ -57,7 +82,8 @@ describe("Notification access after team removal", () => {
   });
 
   it("excludes revoked company details when creating a new daily digest", async () => {
-    const { member } = await removeMemberWithNotifications();
+    const { member, remove } = await memberWithNotifications();
+    await remove();
     const preferences = await member.as.put("/api/notification-preferences", {
       digestFrequency: "daily",
       emailEnabled: true,
@@ -74,6 +100,100 @@ describe("Notification access after team removal", () => {
     expect(digests[0].html).not.toContain("Revoked company detail");
     expect(digests[0].html).toContain("Current company detail");
     expect(digests[0].html).toContain("Personal detail");
+  });
+
+  it("rebuilds a queued digest after access changes without pulling in newer notifications", async () => {
+    const { member, retained, remove } = await memberWithNotifications();
+    const preferences = await member.as.put("/api/notification-preferences", {
+      digestFrequency: "daily",
+      emailEnabled: true,
+    });
+    expect(preferences.status, preferences.text).toBe(200);
+    const { sendDailyDigests } = await import("../../server/services/notification-engine.service");
+    await sendDailyDigests();
+    const [queued] = await h.sql<{ id: string; status: string; html: string }>(
+      `SELECT id, status, html FROM email_outbox WHERE category = 'digest' AND to_address = $1`,
+      [member.email]
+    );
+    expect(queued.status).toBe("blocked_no_provider");
+    expect(queued.html).toContain("Revoked company detail");
+
+    await remove();
+    await h.sql(`UPDATE notifications SET message = 'Updated company detail' WHERE id = $1`, [
+      retained.id,
+    ]);
+    await h.sql(
+      `INSERT INTO notifications (user_id, type, title, message)
+       VALUES ($1, 'system', 'New notice', 'New detail')`,
+      [member.user.id]
+    );
+    const delivered = await deliverPendingDigest(queued.id);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0].subject).toMatch(/2 update\(s\)/);
+    for (const body of [delivered[0].html, delivered[0].text]) {
+      expect(body).toContain("Updated company detail");
+      expect(body).toContain("Personal detail");
+      expect(body).not.toContain("Revoked company detail");
+      expect(body).not.toContain("Current company detail");
+      expect(body).not.toContain("New detail");
+    }
+  });
+
+  it("removes retired bilingual copy and revoked company details from an older queued digest", async () => {
+    const { member, remove } = await memberWithNotifications();
+    await h.sql(
+      `INSERT INTO notifications (user_id, type, title, message, event_key)
+       VALUES ($1, 'system', 'Bank feed sync failed', 'Retired English detail', 'bank.sync_failed:old'),
+              ($1, 'system', 'الربط البنكي', 'Retired Arabic detail', NULL)`,
+      [member.user.id]
+    );
+    const { enqueueEmail } = await import("../../server/outbox/outbox");
+    const day = new Date().toISOString().slice(0, 10);
+    const queued = await enqueueEmail({
+      to: member.email,
+      subject: "Old daily summary",
+      category: "digest",
+      idempotencyKey: `digest:${member.user.id}:${day}`,
+      html: [
+        "<p><strong>Revoked company notice</strong> — Revoked company detail</p>",
+        "<p><strong>Current company notice</strong> — Current company detail</p>",
+        "<p><strong>Bank feed sync failed</strong> — Retired English detail</p>",
+        "<p><strong>الربط البنكي</strong> — Retired Arabic detail</p>",
+      ].join(""),
+      text: "Revoked company detail, Retired English detail, Retired Arabic detail",
+    });
+    await remove();
+
+    const delivered = await deliverPendingDigest(queued.id);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0].subject).toMatch(/1 update\(s\)/);
+    for (const body of [delivered[0].html, delivered[0].text]) {
+      expect(body).toContain("Current company detail");
+      expect(body).not.toMatch(
+        /Revoked company detail|Retired English detail|Retired Arabic detail|Personal detail/
+      );
+    }
+  });
+
+  it("cancels and clears a queued digest if its last company becomes inaccessible", async () => {
+    const { member, remove, revoked } = await memberWithNotifications();
+    const { enqueueEmail } = await import("../../server/outbox/outbox");
+    const day = new Date().toISOString().slice(0, 10);
+    const queued = await enqueueEmail({
+      to: member.email,
+      subject: "Daily summary",
+      category: "digest",
+      idempotencyKey: `digest:${member.user.id}:${day}`,
+      notificationDigest: { userId: member.user.id, notificationIds: [revoked.id] },
+      html: "<p><strong>Revoked company notice</strong> — Revoked company detail</p>",
+      text: "Revoked company detail",
+    });
+    await remove();
+
+    expect(await deliverPendingDigest(queued.id)).toHaveLength(0);
+    expect(
+      await h.sql(`SELECT status, html, text_body FROM email_outbox WHERE id = $1`, [queued.id])
+    ).toEqual([{ status: "cancelled", html: null, text_body: null }]);
   });
 
   it("keeps client notices for an assigned firm admin until the assignment is removed", async () => {

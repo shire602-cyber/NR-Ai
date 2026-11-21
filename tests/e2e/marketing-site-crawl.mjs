@@ -122,8 +122,8 @@ async function checkPage(onPage, locale, path) {
   assert.deepEqual(layout, { direction: expectedDir, reflows: true }, `${path} layout`);
 }
 
-async function checkMissingPage(locale) {
-  const missing = `/${locale}/resources/missing-page`;
+async function checkMissingPage(locale, localePrefix = locale) {
+  const missing = `/${localePrefix}/resources/missing-page`;
   const url = new URL(`${missing}/?source=crawl`, base).href;
   const response = await page.goto(url);
   assert.equal(response?.status(), 404, `${missing} localized HTML status`);
@@ -313,6 +313,16 @@ try {
   await checkEncodedPage("ar", "%73ervices", "/services");
   await crawl("en");
   await crawl("ar");
+  await checkMissingPage("ar", "%61r");
+  for (const path of ["/bank-feeds/callback", "/banking/callback/"]) {
+    const callback = new URL(`${path}?code=old-code&state=old-state`, base).href;
+    for (const method of ["GET", "HEAD"]) {
+      const response = await page.request.fetch(callback, { method, maxRedirects: 0 });
+      assert.equal(response.status(), 303, callback);
+      assert.equal(response.headers().location, "/bank-feeds", callback);
+      assert.equal(response.headers()["referrer-policy"], "no-referrer", callback);
+    }
+  }
 
   contextErrors.length = 0;
   await page.setViewportSize({ width: 1440, height: 900 });
