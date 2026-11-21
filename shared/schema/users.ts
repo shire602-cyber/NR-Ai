@@ -205,6 +205,10 @@ export const oauthMailboxChallenges = pgTable(
   "oauth_mailbox_challenges",
   {
     challengeHash: text("challenge_hash").primaryKey(),
+    id: uuid("id")
+      .notNull()
+      .unique()
+      .default(sql`gen_random_uuid()`),
     codeHash: text("code_hash").notNull(),
     issuer: text("issuer").notNull(),
     providerSubject: text("provider_subject").notNull(),

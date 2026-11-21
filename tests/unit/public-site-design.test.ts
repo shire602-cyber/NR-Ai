@@ -100,6 +100,7 @@ describe("D1 public site", () => {
       "/en/book-a-demo"
     );
     expect(container.textContent).toContain("Prepare and review VAT 201 in the app, then submit it in EmaraTax.");
+    expect(container.textContent).toContain("Upload a CSV exported from your bank");
     for (const claim of UNSUPPORTED_CLAIMS) {
       expect(container.textContent ?? "", String(claim)).not.toMatch(claim);
     }
@@ -131,6 +132,7 @@ describe("D1 public site", () => {
       );
       expect(container.querySelector('a[hreflang="en"]')?.getAttribute("href")).toBe("/en");
       expect(container.textContent).toContain("مزوّد خدمة معتمد واحد لكل نسخة من التطبيق");
+      expect(container.textContent).toContain("ارفع كشف حسابك البنكي بصيغة CSV");
       expect(arabicModeEnglishLines()).toEqual([]);
     } finally {
       window.history.replaceState(null, "", previousUrl);

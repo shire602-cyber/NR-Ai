@@ -183,7 +183,7 @@
   "banking.recon.findMatches": "Find matches",
   "banking.recon.report": "Reconciliation report",
   "banking.recon.moreActions": "More actions",
-  "banking.feeds.unavailableTitle": "Live bank feeds are coming later.",
+  "banking.feeds.unavailableTitle": "Reconcile with a bank statement",
   "banking.feeds.unavailableBody": "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
   "banking.feeds.importStatement": "Import a statement",
   "banking.feeds.accountsTitle": "Your bank accounts",

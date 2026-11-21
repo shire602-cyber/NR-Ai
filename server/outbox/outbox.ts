@@ -18,6 +18,7 @@ import {
   emailOutbox,
   emailOutboxAttachments,
   customerPortalInvitations,
+  oauthMailboxChallenges,
   type EmailOutboxRow,
   type EmailOutboxStatus,
 } from "../../shared/schema";
@@ -32,6 +33,7 @@ import {
 const log = createLogger("email-outbox");
 
 export const DEFAULT_MAX_ATTEMPTS = 6;
+export const OAUTH_MAILBOX_CHALLENGE_ENTITY = "oauth_mailbox_challenge";
 const BASE_BACKOFF_MS = 60_000; // 1, 2, 4, 8, 16 min …
 const MAX_BACKOFF_MS = 6 * 60 * 60 * 1000;
 const LOCK_MS = 5 * 60 * 1000;
@@ -181,6 +183,13 @@ const isCurrentPortalInvite = sql`EXISTS (
     AND invite.status = 'pending' AND invite.expires_at > (now() AT TIME ZONE 'UTC')
 )`;
 
+// The challenge is deleted when consumed or when its permitted attempts are exhausted.
+const isCurrentMailboxChallenge = sql`EXISTS (
+  SELECT 1 FROM ${oauthMailboxChallenges} AS challenge
+  WHERE challenge.id = ${emailOutbox.relatedEntityId}
+    AND challenge.expires_at > (now() AT TIME ZONE 'UTC')
+)`;
+
 /** Claim rows for delivery (FOR UPDATE SKIP LOCKED); stale `sending` locks are reclaimed. */
 async function claim(ids: string[] | null, limit: number): Promise<EmailOutboxRow[]> {
   const params: unknown[] = [LOCK_MS, limit];
@@ -213,15 +222,27 @@ async function claim(ids: string[] | null, limit: number): Promise<EmailOutboxRo
 }
 
 async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
-  if (row.category === "portal_invite") {
+  const deliveryGuard =
+    row.category === "portal_invite"
+      ? isCurrentPortalInvite
+      : row.relatedEntityType === OAUTH_MAILBOX_CHALLENGE_ENTITY
+        ? isCurrentMailboxChallenge
+        : null;
+  if (deliveryGuard) {
     const [current] = await db
       .select({ id: emailOutbox.id })
       .from(emailOutbox)
-      .where(and(eq(emailOutbox.id, row.id), isCurrentPortalInvite));
+      .where(and(eq(emailOutbox.id, row.id), deliveryGuard));
     if (!current) {
       const [cancelled] = await db
         .update(emailOutbox)
-        .set({ status: "cancelled", lockedUntil: null, updatedAt: new Date() })
+        .set({
+          status: "cancelled",
+          lockedUntil: null,
+          html: null,
+          textBody: null,
+          updatedAt: new Date(),
+        })
         .where(eq(emailOutbox.id, row.id))
         .returning();
       await recordEvent(row.id, "cancelled");

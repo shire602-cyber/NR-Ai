@@ -3,7 +3,7 @@ import { eq, lte } from "drizzle-orm";
 import { oauthMailboxChallenges } from "@shared/schema";
 import { zEmail } from "@shared/validators/primitives";
 import { db } from "../db";
-import { activeProviderName } from "../outbox";
+import { activeProviderName, OAUTH_MAILBOX_CHALLENGE_ENTITY } from "../outbox";
 import { sendEmail } from "./email.service";
 import {
   getAuthIdentity,
@@ -44,18 +44,21 @@ export async function startMicrosoftMailboxChallenge(
   const challengeHash = hashOAuthSecret(browserSecret);
   const code = randomInt(100_000_000).toString().padStart(8, "0");
   await db.delete(oauthMailboxChallenges).where(lte(oauthMailboxChallenges.expiresAt, new Date()));
-  await db.insert(oauthMailboxChallenges).values({
-    challengeHash,
-    codeHash: hashCode(browserSecret, code),
-    issuer: profile.issuer,
-    providerSubject: profile.subject,
-    email,
-    displayName: profile.name,
-    avatarUrl: profile.picture,
-    nextPath,
-    expectedUserId: user?.id ?? null,
-    expiresAt: new Date(Date.now() + OAUTH_MAILBOX_TTL_MS),
-  });
+  const [challenge] = await db
+    .insert(oauthMailboxChallenges)
+    .values({
+      challengeHash,
+      codeHash: hashCode(browserSecret, code),
+      issuer: profile.issuer,
+      providerSubject: profile.subject,
+      email,
+      displayName: profile.name,
+      avatarUrl: profile.picture,
+      nextPath,
+      expectedUserId: user?.id ?? null,
+      expiresAt: new Date(Date.now() + OAUTH_MAILBOX_TTL_MS),
+    })
+    .returning({ id: oauthMailboxChallenges.id });
   try {
     const result = await sendEmail(
       email,
@@ -67,7 +70,12 @@ export async function startMicrosoftMailboxChallenge(
         "If you didn't start this sign-in, ignore this email. Never share this code.",
         "إذا لم تبدأ تسجيل الدخول، فتجاهل هذه الرسالة ولا تشارك الرمز مع أي شخص.",
       ].join("\n\n"),
-      { category: "security", relatedEntityType: "oauth_mailbox_challenge", sensitive: true }
+      {
+        category: "security",
+        relatedEntityType: OAUTH_MAILBOX_CHALLENGE_ENTITY,
+        relatedEntityId: challenge.id,
+        sensitive: true,
+      }
     );
     if (result.sent || result.status === "retrying" || result.status === "queued")
       return browserSecret;

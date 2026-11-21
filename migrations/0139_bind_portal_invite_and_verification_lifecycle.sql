@@ -8,6 +8,7 @@ DELETE FROM password_reset_tokens WHERE email IS NULL;
 -- Pending Microsoft callbacks with an email claim but no provider mailbox proof.
 CREATE TABLE IF NOT EXISTS oauth_mailbox_challenges (
   challenge_hash text PRIMARY KEY,
+  id uuid NOT NULL UNIQUE DEFAULT gen_random_uuid(),
   code_hash text NOT NULL,
   issuer text NOT NULL,
   provider_subject text NOT NULL,

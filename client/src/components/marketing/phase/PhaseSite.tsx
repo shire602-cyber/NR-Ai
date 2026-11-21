@@ -445,13 +445,7 @@ const homeLead = [
   "أرسل فواتير ثنائية اللغة، وامسح الإيصالات بالذكاء الاصطناعي، وأعدّ إقرار ضريبة القيمة المضافة، وامنح محاسبك وصولاً إلى دفاترك.",
 ] as const;
 const faqs: readonly [Bilingual, Bilingual][] = [
-  [
-    ["How do I reconcile my bank account?", "كيف أطابق حسابي البنكي؟"],
-    [
-      `${bankCopy[0]}. Live bank feeds are coming later.`,
-      `${bankCopy[1]}. سيتوفر الربط البنكي المباشر لاحقًا.`,
-    ],
-  ],
+  [["How do I reconcile my bank account?", "كيف أطابق حسابي البنكي؟"], bankCopy],
   [["How do I file my VAT return?", "كيف أقدّم إقرار ضريبة القيمة المضافة؟"], vatCopy],
   [
     ["Do I need a card to try it?", "هل أحتاج إلى بطاقة مصرفية للتجربة؟"],

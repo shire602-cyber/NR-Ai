@@ -347,4 +347,56 @@ describe("R01-15 OAuth flow with a mocked provider", () => {
     expect(cookie(verified.headers, "muhasib-mfa")).toBeTruthy();
     expect(accessFrom(verified.headers)).toBeFalsy();
   });
+
+  it.each(["active", "expired", "consumed"] as const)(
+    "rechecks a %s Microsoft mailbox challenge when the worker retries delivery",
+    async (state) => {
+      const { processOutbox, setEmailTransportOverride } = await import("../../server/outbox");
+      const email = `mailbox-retry-${state}@example.test`;
+      const sendChallenge = vi.fn(async (message: OutgoingEmail) => {
+        sent.push(message);
+        if (sendChallenge.mock.calls.length === 1) throw new Error("Temporary email failure");
+        return { providerMessageId: "test-mailbox-retry" };
+      });
+      setEmailTransportOverride({ name: "test", send: sendChallenge });
+
+      profiles.push(microsoft(`ms-retry-${state}`, email));
+      const pending = await callback("microsoft");
+      expect(pending.mailboxCookie).toBeTruthy();
+      const [mail] = await h.sql(
+        "SELECT id, status FROM email_outbox WHERE to_address = $1 AND related_entity_type = 'oauth_mailbox_challenge'",
+        [email]
+      );
+      expect(mail.status).toBe("retrying");
+
+      if (state === "expired") {
+        await h.sql(
+          "UPDATE oauth_mailbox_challenges SET expires_at = now() AT TIME ZONE 'UTC' - interval '1 minute' WHERE email = $1",
+          [email]
+        );
+      } else if (state === "consumed") {
+        // Model a provider accepting the message before its response was lost.
+        const verified = await verifyMailbox(codeFor(email), pending.mailboxCookie);
+        expect(verified.status, verified.text).toBe(200);
+      }
+
+      await h.sql(
+        "UPDATE email_outbox SET next_attempt_at = now() AT TIME ZONE 'UTC' WHERE id = $1",
+        [mail.id]
+      );
+      await processOutbox();
+      const [updated] = await h.sql(
+        "SELECT status, attempts, locked_until, html, text_body FROM email_outbox WHERE id = $1",
+        [mail.id]
+      );
+      expect(sendChallenge).toHaveBeenCalledTimes(state === "active" ? 2 : 1);
+      expect(updated).toEqual({
+        status: state === "active" ? "sent" : "cancelled",
+        attempts: state === "active" ? 2 : 1,
+        locked_until: null,
+        html: null,
+        text_body: null,
+      });
+    }
+  );
 });
