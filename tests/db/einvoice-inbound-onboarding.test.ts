@@ -818,8 +818,64 @@ describe("e-invoice inbox recovers incomplete purchases", () => {
 });
 
 describe("e-invoice legal entity synchronization", () => {
+  it("revisits an old early callback only when its exact scoped reservation is now known", async () => {
+    const t = await h.createTenant({
+      companyColumns: {
+        einvoice_partner: "acube",
+        trn_vat_number: `${BUYER_TIN}00003`,
+      },
+    });
+    const { enqueueProviderEvent, runProviderEvents } =
+      await import("../../server/services/einvoice/provider-events");
+    const { getLegalEntity, upsertLegalEntity } =
+      await import("../../server/services/einvoice/legal-entities");
+    await upsertLegalEntity(t.company.id, "acube", "sandbox", BUYER_TIN, {
+      status: "reserved",
+      legalEntityId: OWNER,
+    });
+    const old = async (legalEntityId: string) => {
+      const { id } = await enqueueProviderEvent({
+        provider: "acube",
+        environment: "sandbox",
+        companyId: t.company.id,
+        type: "legal_entity.synchronized",
+        eventId: `early-${legalEntityId}`,
+        payload: { legalEntityId, action: "LINK" },
+      });
+      await h.sql(
+        `UPDATE einvoice_provider_events SET status = 'ignored',
+        last_error = 'legal entity not reserved by us' WHERE id = $1`,
+        [id]
+      );
+    };
+    await old("foreign-entity");
+    await old(OWNER);
+    const legalEntityPatch = vi.fn(async () => ({ status: "active", legalEntityId: OWNER }));
+    expect(
+      await runProviderEvents({
+        companyId: t.company.id,
+        provider: { ...simulatedProvider(""), legalEntityPatch },
+      })
+    ).toEqual({
+      claimed: 1,
+      processed: 1,
+      failed: 0,
+    });
+    expect(legalEntityPatch).toHaveBeenCalledExactlyOnceWith(
+      OWNER,
+      { legalEntityId: OWNER, action: "LINK" },
+      BUYER_TIN
+    );
+    expect((await getLegalEntity(t.company.id, "acube", "sandbox"))?.status).toBe("active");
+  });
+
   it("keeps an old dead LINK and queued delivery durably waiting for the pinned configuration", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({
+      companyColumns: {
+        einvoice_partner: "acube",
+        trn_vat_number: `${BUYER_TIN}00003`,
+      },
+    });
     const { enqueueProviderEvent, runProviderEvents } =
       await import("../../server/services/einvoice/provider-events");
     const { getLegalEntity, upsertLegalEntity } =
@@ -890,7 +946,12 @@ describe("e-invoice legal entity synchronization", () => {
   });
 
   it("keeps a verified old callback from mutating a replacement legal entity", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({
+      companyColumns: {
+        einvoice_partner: "acube",
+        trn_vat_number: `${BUYER_TIN}00003`,
+      },
+    });
     const { enqueueProviderEvent, runProviderEvents } =
       await import("../../server/services/einvoice/provider-events");
     const { getLegalEntity, upsertLegalEntity } =

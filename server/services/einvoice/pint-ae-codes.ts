@@ -156,3 +156,14 @@ export function isPintAeTrn(value: string | null | undefined): boolean {
 export function tinFromTrn(trn: string | null | undefined): string | null {
   return trn && isPintAeTrn(trn) ? trn.slice(0, 10) : null;
 }
+
+/** The 0235 participant must identify the same UAE taxpayer as the statutory registration. */
+export function uaePeppolEndpointIssue(
+  scheme: string | null | undefined,
+  endpoint: string,
+  taxpayerTin: string | null
+): "invalid" | "mismatch" | null {
+  if (scheme !== PEPPOL_SCHEME_UAE_TIN) return null;
+  if (!isUaeTin(endpoint)) return "invalid";
+  return taxpayerTin && endpoint !== taxpayerTin ? "mismatch" : null;
+}

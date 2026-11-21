@@ -46,14 +46,12 @@ import {
   runAcubePoll,
   runProviderEvents,
 } from "../services/einvoice/provider-events";
-import {
-  companyTin,
-  getLegalEntity,
-  patchFromAcube,
-  requireCompanyTin,
-  upsertLegalEntity,
-} from "../services/einvoice/legal-entities";
+import { companyTin, getLegalEntity, requireCompanyTin } from "../services/einvoice/legal-entities";
 import { companyProviderConfiguration } from "../services/einvoice/providers/company-provider";
+import {
+  reserveAcubeCompany,
+  syncAcubeCompany,
+} from "../services/einvoice/providers/acube-onboarding";
 import {
   providerCallbackOrigin,
   providerCallbackUrl,
@@ -105,11 +103,12 @@ export async function acubeConnectionView(
   const environment = acubeEnvironment();
   const status = le?.status ?? null;
   const steps: Array<{ key: "reserve" | "approve" | "synced"; state: StepState }> = [
-    { key: "reserve", state: le ? "done" : configured ? "current" : "todo" },
+    { key: "reserve", state: le?.legalEntityId ? "done" : configured ? "current" : "todo" },
     {
       key: "approve",
-      state:
-        status === "active"
+      state: !le?.legalEntityId
+        ? "todo"
+        : status === "active"
           ? "done"
           : status === "inactive"
             ? "failed"
@@ -120,7 +119,11 @@ export async function acubeConnectionView(
     {
       key: "synced",
       state:
-        status === "active" ? (le?.registrySyncAt || le?.smpSyncAt ? "done" : "current") : "todo",
+        le?.legalEntityId && status === "active"
+          ? le.registrySyncAt || le.smpSyncAt
+            ? "done"
+            : "current"
+          : "todo",
     },
   ];
   const scope = einvoicingScope({
@@ -157,7 +160,7 @@ export async function acubeConnectionView(
           activatedAt: le.activatedAt,
         }
       : null,
-    canSend: configured && status === "active",
+    canSend: configured && !!le?.legalEntityId && status === "active",
     steps,
     goLive: {
       ...scope,
@@ -285,34 +288,22 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
       const { provider } = await acubeProvider(company);
       const body = validated<ReserveBody>(req);
       const tin = requireCompanyTin(company);
-      let reserved;
+      let reservation;
       try {
-        reserved = await provider.reserveLegalEntity(tin);
+        reservation = await reserveAcubeCompany({ company, provider, ...body });
       } catch (err) {
         if (err instanceof AcubeApiError) {
           throw new DomainError(err.code, err.status >= 500 ? 502 : 422);
         }
         throw err;
       }
-      const patch = patchFromAcube(reserved);
-      if (patch.status === "active") {
-        const prior = await getLegalEntity(company.id, ACUBE_PROVIDER_NAME, provider.environment);
-        if (prior?.status !== "active" || prior.legalEntityId !== reserved.legalEntityId) {
-          patch.activatedAt = new Date();
-        }
+      const le = reservation.row;
+      if (reservation.pending) {
+        res
+          .status(202)
+          .json(await acubeConnectionView(company as Company & Record<string, unknown>, le));
+        return;
       }
-      const le = await upsertLegalEntity(
-        company.id,
-        ACUBE_PROVIDER_NAME,
-        provider.environment,
-        tin,
-        {
-          ...patch,
-          approver: body.approver,
-          approverEmail: body.approver === "someone_else" ? (body.approverEmail ?? null) : null,
-          lastError: null,
-        }
-      );
       await recordAudit({
         userId: userOf(req),
         companyId: company.id,
@@ -335,33 +326,13 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
       const { provider } = await acubeProvider(company);
-      const le = await getLegalEntity(company.id, ACUBE_PROVIDER_NAME, provider.environment);
-      if (!le?.legalEntityId) {
-        throw new DomainError(
-          "EINVOICE_LEGAL_ENTITY_NOT_RESERVED",
-          409,
-          undefined,
-          "Reserve the TIN first."
-        );
-      }
-      const tin = requireCompanyTin(company);
-      if (tin !== le.tin) throw new DomainError("EINVOICE_SUPPLIER_ENDPOINT_MISMATCH", 422);
-      let current;
+      let row;
       try {
-        current = await provider.getLegalEntity(le.legalEntityId, tin);
+        row = await syncAcubeCompany(company, provider);
       } catch (err) {
         if (err instanceof AcubeApiError) throw new DomainError(err.code, 502);
         throw err;
       }
-      const patch = patchFromAcube({ ...current, action: "SYNC" });
-      if (patch.status === "active" && le.status !== "active") patch.activatedAt = new Date();
-      const row = await upsertLegalEntity(
-        company.id,
-        ACUBE_PROVIDER_NAME,
-        provider.environment,
-        le.tin,
-        patch
-      );
       res.json(await acubeConnectionView(company as Company & Record<string, unknown>, row));
     })
   );

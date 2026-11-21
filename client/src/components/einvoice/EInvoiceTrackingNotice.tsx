@@ -31,7 +31,14 @@ export default function EInvoiceTrackingNotice({
       apiRequest("POST", `/api/invoices/${invoiceId}/einvoice/confirm-environment`, body),
     onSuccess: () => {
       onVerified();
-      toast({ title: t["einvoicing.trackingVerified"] });
+      toast({
+        title:
+          t[
+            verification?.reference === "refusal"
+              ? "einvoicing.trackingRefusalVerified"
+              : "einvoicing.trackingVerified"
+          ],
+      });
     },
     onError: (error) =>
       toast({
@@ -51,12 +58,12 @@ export default function EInvoiceTrackingNotice({
 
   const disabled = !permission.known || access.disabled || verify.isPending;
   const manual = verification.reference === "manual";
-  const help =
-    verification.reference === "search"
-      ? "einvoicing.trackingSearchHelp"
-      : manual
-        ? "einvoicing.trackingManualHelp"
-        : "einvoicing.trackingVerificationHelp";
+  const help = {
+    search: "einvoicing.trackingSearchHelp",
+    manual: "einvoicing.trackingManualHelp",
+    stored: "einvoicing.trackingVerificationHelp",
+    refusal: "einvoicing.trackingRefusalHelp",
+  }[verification.reference];
   const id = documentId.trim();
   return (
     <div

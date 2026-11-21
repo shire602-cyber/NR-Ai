@@ -38,6 +38,7 @@ import {
   type User,
 } from "../../shared/schema";
 import { and, eq, gt, or, sql, exists, isNull } from "drizzle-orm";
+import { databaseUtcNow } from "../config/database-time";
 import { db, type AppDatabase } from "../db";
 import { DomainError } from "../errors";
 import {
@@ -52,6 +53,7 @@ import { zCompanyRole } from "../../shared/validators/company-role";
 const log = createLogger("team");
 
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const invitationDeadline = sql`${databaseUtcNow} + (${INVITATION_TTL_MS}::int * interval '1 millisecond')`;
 
 const inviteBodySchema = z.object({
   email: zEmail,
@@ -63,8 +65,8 @@ const acceptBodySchema = z.object({
   password: passwordPolicySchema.optional(),
 });
 
-function publicInvitation(inv: CompanyInvitation) {
-  const expired = inv.status === "pending" && inv.expiresAt.getTime() <= Date.now();
+function publicInvitation(inv: CompanyInvitation & { expired?: boolean }) {
+  const expired = inv.status === "pending" && inv.expired;
   return {
     id: inv.id,
     companyId: inv.companyId,
@@ -242,7 +244,7 @@ async function resolveInvitationToken(
       message: "Invitation not found",
     };
   }
-  if (invitation.status === "pending" && invitation.expiresAt.getTime() <= Date.now()) {
+  if (invitation.status === "pending" && invitation.expired) {
     const expired = await storage.updateCompanyInvitation(
       invitation.companyId,
       invitation.id,
@@ -373,7 +375,7 @@ export function registerTeamRoutes(app: Express) {
           .json({ message: "User is already a team member", code: "ALREADY_MEMBER" });
       }
       const pending = await storage.getPendingCompanyInvitationByEmail(companyId, email);
-      if (pending && pending.expiresAt.getTime() > Date.now()) {
+      if (pending && !pending.expired) {
         return res.status(409).json({
           message: "An invitation is already pending for this email; resend it instead",
           code: "INVITATION_PENDING",
@@ -398,8 +400,8 @@ export function registerTeamRoutes(app: Express) {
         tokenHash: token.hash,
         invitedBy: userId,
         status: "pending",
-        expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
-        lastSentAt: new Date(),
+        expiresAt: invitationDeadline,
+        lastSentAt: databaseUtcNow,
         sendCount: 1,
       });
       const delivery = await deliverInvitation(invitation, token.raw, company.name);
@@ -462,8 +464,8 @@ export function registerTeamRoutes(app: Express) {
         {
           tokenHash: token.hash,
           status: "pending",
-          expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
-          lastSentAt: new Date(),
+          expiresAt: invitationDeadline,
+          lastSentAt: databaseUtcNow,
           sendCount: (current.sendCount ?? 0) + 1,
           invitedBy: req.user!.id,
         },
@@ -503,7 +505,7 @@ export function registerTeamRoutes(app: Express) {
       const updated = await storage.updateCompanyInvitation(
         companyId,
         invitationId,
-        { status: "revoked", revokedAt: new Date() },
+        { status: "revoked", revokedAt: databaseUtcNow },
         current
       );
       if (!updated) return invitationStateChanged(companyId, invitationId);
@@ -706,17 +708,16 @@ export function registerTeamRoutes(app: Express) {
             .returning();
           if (!user) throw new DomainError("LOGIN_REQUIRED", 409);
         }
-        const now = new Date();
         const [accepted] = await tx
           .update(companyInvitations)
-          .set({ status: "accepted", acceptedAt: now, acceptedUserId: user.id })
+          .set({ status: "accepted", acceptedAt: databaseUtcNow, acceptedUserId: user.id })
           .where(
             and(
               eq(companyInvitations.id, inv.id),
               eq(companyInvitations.companyId, inv.companyId),
               eq(companyInvitations.tokenHash, inv.tokenHash),
               eq(companyInvitations.status, "pending"),
-              gt(companyInvitations.expiresAt, now)
+              gt(companyInvitations.expiresAt, databaseUtcNow)
             )
           )
           .returning();
@@ -739,7 +740,7 @@ export function registerTeamRoutes(app: Express) {
                 ? {
                     passwordHash: passwordHash!,
                     name: body.name!,
-                    passwordChangedAt: now,
+                    passwordChangedAt: databaseUtcNow,
                   }
                 : {}),
               ...(user.userType === "client_portal" ? { userType: "customer" } : {}),
@@ -748,7 +749,7 @@ export function registerTeamRoutes(app: Express) {
             .returning();
         }
         const [membership] = await tx
-          .select({ role: companyUsers.role })
+          .select({ id: companyUsers.id, role: companyUsers.role })
           .from(companyUsers)
           .where(and(eq(companyUsers.companyId, inv.companyId), eq(companyUsers.userId, user.id)))
           .for("update");
@@ -757,14 +758,17 @@ export function registerTeamRoutes(app: Express) {
           membership && (!generated || membership.role === "owner")
             ? normalizeCompanyRole(membership.role)
             : normalizeCompanyRole(accepted.role);
+        let membershipId = membership?.id;
         if (!membership || generated) {
-          await tx
+          const [saved] = await tx
             .insert(companyUsers)
             .values({ companyId: inv.companyId, userId: user.id, role: directRole })
             .onConflictDoUpdate({
               target: [companyUsers.companyId, companyUsers.userId],
               set: { role: directRole },
-            });
+            })
+            .returning({ id: companyUsers.id });
+          membershipId = saved.id;
         }
         if (generated) await markCompanyMembershipDirect(inv.companyId, user.id, tx);
         await recordAudit({
@@ -774,7 +778,12 @@ export function registerTeamRoutes(app: Express) {
           entityType: "company_invitation",
           entityId: inv.id,
           before: null,
-          after: { role: directRole, createdUser: !signedIn, directCompanyGrant: true },
+          after: {
+            role: directRole,
+            createdUser: !signedIn,
+            directCompanyGrant: true,
+            membershipId,
+          },
           req,
           tx,
         });

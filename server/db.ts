@@ -1,10 +1,12 @@
 // ✅ Must come first before any usage of process.env
 import "dotenv/config";
+import "./config/pin-timezone";
 
 import { sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { Pool as PgPool } from "pg";
 import * as schema from "@shared/schema";
+import { databaseSessionOptions } from "./config/database-time";
 import { createLogger } from "./config/logger";
 import { errorCode, errorMessage, errorProperty } from "./errors";
 
@@ -34,6 +36,7 @@ const POOL_CONFIG = {
   // pg also honours `statement_timeout` per-connection; expose via env for
   // long-running analytical queries that should be killed to protect the pool.
   statement_timeout: envInt("DB_STATEMENT_TIMEOUT_MS", 30_000),
+  ...databaseSessionOptions,
 };
 
 // Both drivers expose the node-postgres Pool / Drizzle API surface the app uses;
@@ -51,6 +54,7 @@ if (isNeon) {
   const { drizzle: neonDrizzle } = await import("drizzle-orm/neon-serverless");
   const ws = await import("ws");
   neonConfig.webSocketConstructor = ws.default;
+  neonConfig.poolQueryViaFetch = false;
   const neonPool = new NeonPool({ connectionString: DATABASE_URL, ...POOL_CONFIG });
   pool = neonPool as unknown as PgPool;
   db = neonDrizzle({ client: neonPool, schema }) as unknown as AppDatabase;
@@ -67,6 +71,10 @@ if (isNeon) {
   db = pgDrizzle({ client: pool, schema });
   _driver = "pg";
 }
+// Prevent unhandled 'error' events from crashing the process on idle clients.
+pool.on("error", (err: Error) => {
+  log.error({ err: err.message }, "Unexpected pool client error");
+});
 
 /** Rows of a raw `db.execute` result (node-postgres QueryResult or a bare row array). */
 export function rowsFromResult<T extends QueryRow = QueryRow>(result: unknown): T[] {

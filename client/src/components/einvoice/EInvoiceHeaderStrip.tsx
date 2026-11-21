@@ -92,6 +92,7 @@ export function EInvoiceHeaderStrip({
           queuedForSubmission={view.submissionState === "queued"}
           acknowledgement={view.transmission.recipientAcknowledgement}
           confirmationUnavailable={reporting.confirmationUnavailable}
+          environment={view.transmission.environment}
           showReportingLabel
         />
         {reportMeta && (

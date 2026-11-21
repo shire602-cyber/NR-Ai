@@ -1,5 +1,5 @@
 import type { EInvoiceDocument, Invoice } from "../../../shared/schema";
-import { getEInvoiceDocument } from "./store";
+import { documentProviderEnvironment, getEInvoiceDocument } from "./store";
 import { storedReportingEvidence, providerRecipientAcknowledgement } from "./tracks";
 
 type InvoiceReference = Pick<
@@ -19,10 +19,10 @@ export type EInvoiceCustomerEvidence = Pick<
 >;
 
 /** Public outcome for an already authorized invoice. Only the result is safe to return. */
-export function customerEInvoiceStatus(
+export function customerEInvoiceOutcome(
   invoice: InvoiceReference,
   evidence: EInvoiceCustomerEvidence | null | undefined
-): string | null {
+) {
   const stored = evidence?.status ?? invoice.einvoiceStatus;
   if (!stored) return null;
   const provider = evidence?.provider ?? invoice.einvoiceProvider;
@@ -34,23 +34,28 @@ export function customerEInvoiceStatus(
     (!evidence?.providerMessageId ||
       !invoice.einvoiceProviderMessageId ||
       evidence.providerMessageId === invoice.einvoiceProviderMessageId);
+  const pinned = consistent && providerMessageId ? documentProviderEnvironment(evidence) : null;
+  const environment = pinned === "sandbox" || pinned === "production" ? pinned : null;
+  const outcome = (status: string) => ({ status, environment });
   if (consistent && providerMessageId) {
-    if (evidence?.deliveryStatus === "rejected") return "rejected";
-    if (evidence?.deliveryStatus === "delivery_failed") return "failed";
+    if (evidence?.deliveryStatus === "rejected") return outcome("rejected");
+    if (evidence?.deliveryStatus === "delivery_failed") return outcome("failed");
     if (!evidence?.deliveryStatus || evidence.deliveryStatus === "delivered") {
       const acknowledgement = providerRecipientAcknowledgement(provider, evidence?.providerStatus);
-      if (acknowledgement === "received") return "delivered";
+      if (acknowledgement === "received") return outcome("delivered");
       if (acknowledgement === "accepted") {
-        return storedReportingEvidence(evidence, provider) === "reported" ? "cleared" : "accepted";
+        return outcome(
+          storedReportingEvidence(evidence, provider) === "reported" ? "cleared" : "accepted"
+        );
       }
     }
   }
   if (stored === "cleared" || stored === "accepted" || stored === "delivered") {
-    return consistent && providerMessageId ? "submitted" : "generated";
+    return outcome(consistent && providerMessageId ? "submitted" : "generated");
   }
-  return stored;
+  return outcome(stored);
 }
 
-export async function getCustomerEInvoiceStatus(invoice: Invoice) {
-  return customerEInvoiceStatus(invoice, await getEInvoiceDocument(invoice.companyId, invoice.id));
+export async function getCustomerEInvoiceOutcome(invoice: Invoice) {
+  return customerEInvoiceOutcome(invoice, await getEInvoiceDocument(invoice.companyId, invoice.id));
 }

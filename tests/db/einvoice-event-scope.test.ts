@@ -81,7 +81,10 @@ it("scopes webhook deduplication and status re-reads to the verified company and
     claimed: 1,
     processed: 1,
   });
-  expect(getStatus).toHaveBeenCalledExactlyOnceWith(providerDocumentUuid, { documentType: null });
+  expect(getStatus).toHaveBeenCalledExactlyOnceWith(
+    providerDocumentUuid,
+    expect.objectContaining({ documentType: null, knownCredentialScope: false })
+  );
   expect(
     (await h.sql(`SELECT status FROM einvoice_documents WHERE invoice_id = $1`, [aInvoice]))[0]
       .status
@@ -135,4 +138,65 @@ it("polls a manually selected company without opening another company's provider
   });
   expect(getStatus).toHaveBeenCalledTimes(1);
   expect(listInbound).toHaveBeenCalledExactlyOnceWith({ legalEntityIds: ["example-a"] });
+});
+
+it("parks a missing-provider webhook until its actual retry deadline", async () => {
+  const owner = await h.createTenant({ companyColumns: { einvoice_partner: "acube" } });
+  const { enqueueProviderEvent, runProviderEvents } =
+    await import("../../server/services/einvoice/provider-events");
+  const event = await enqueueProviderEvent({
+    provider: "acube",
+    environment: "sandbox",
+    type: "document.delivered",
+    eventId: "retry-deadline",
+    companyId: owner.company.id,
+    payload: { documentId: providerDocumentUuid },
+  });
+  // A pre-fix unclaimed event could have both default timestamps stored in Dubai time.
+  await h.sql(
+    `UPDATE einvoice_provider_events
+    SET received_at = stamp, next_attempt_at = stamp
+    FROM (SELECT (statement_timestamp() AT TIME ZONE 'UTC') + interval '4 hours' AS stamp) clock
+    WHERE id = $1`,
+    [event.id]
+  );
+  expect(await runProviderEvents({ id: event.id! })).toEqual({
+    claimed: 1,
+    processed: 0,
+    failed: 0,
+  });
+  const readEvent = () =>
+    h.sql(
+      `SELECT status, attempts, last_error, locked_until
+    FROM einvoice_provider_events WHERE id = $1`,
+      [event.id]
+    );
+  const paused = [
+    {
+      status: "pending",
+      attempts: 1,
+      last_error: "Provider event is waiting for provider configuration",
+      locked_until: null,
+    },
+  ];
+  expect(await readEvent()).toEqual(paused);
+  expect(await runProviderEvents({ id: event.id! })).toEqual({
+    claimed: 0,
+    processed: 0,
+    failed: 0,
+  });
+  expect(await readEvent()).toEqual(paused);
+  await h.sql(
+    `UPDATE einvoice_provider_events SET status = 'processing',
+    locked_until = (statement_timestamp() AT TIME ZONE 'UTC') + interval '5 minutes' WHERE id = $1`,
+    [event.id]
+  );
+  expect((await runProviderEvents({ id: event.id! })).claimed).toBe(0);
+  await h.sql(
+    `UPDATE einvoice_provider_events SET locked_until =
+    (statement_timestamp() AT TIME ZONE 'UTC') - interval '1 second' WHERE id = $1`,
+    [event.id]
+  );
+  expect((await runProviderEvents({ id: event.id! })).claimed).toBe(1);
+  expect(await readEvent()).toEqual([{ ...paused[0], attempts: 2 }]);
 });

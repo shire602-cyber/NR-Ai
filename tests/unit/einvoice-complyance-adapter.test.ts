@@ -44,6 +44,54 @@ const ENV = {
 } as NodeJS.ProcessEnv;
 const COMPANY_ID = "00000000-0000-4000-8000-000000000001";
 const SOURCE = { name: `muhasib-${COMPANY_ID}`, version: "v1" };
+const documentedStatusRef = {
+  knownCredentialScope: true,
+  outboundIdentity: {
+    documentNumber: "INV-2026-0001",
+    supplierTin: null,
+    supplierTrn: null,
+    legalEntityId: null,
+    sourceName: null,
+  },
+};
+
+it.each([
+  { environment: "production" },
+  { documentNumber: "another invoice" },
+  { attribution: { companyId: "another company" } },
+  { seller: { trn: "100999888700003" } },
+  { seller: "malformed" },
+  { sourceName: "" },
+])("rejects a poll observation with contradictory identity (%j)", async (patch) => {
+  const documentId = "01KExactCase";
+  const outboundIdentity = {
+    documentNumber: "INV-001",
+    supplierTin: "1001234567",
+    supplierTrn: "100123456700003",
+    legalEntityId: "ConnectExactCase",
+    sourceName: SOURCE.name,
+  };
+  const p = new ComplyanceEInvoiceProvider(ENV, {
+    fetch: async () =>
+      Response.json({
+        success: true,
+        data: {
+          state: "final_valid",
+          documentId,
+          documentNumber: outboundIdentity.documentNumber,
+          source: SOURCE.name,
+          environment: "sandbox",
+          ...patch,
+        },
+      }),
+  });
+  expect(
+    await p.getStatus(documentId, { outboundIdentity, knownCredentialScope: true })
+  ).toMatchObject({
+    status: "failed",
+    errorCode: "COMPLYANCE_UNAVAILABLE",
+  });
+});
 
 it("verifies recovery using the exact sales resource and rejects contradictory owners", async () => {
   const documentId = "01KExactCase";
@@ -309,14 +357,17 @@ describe("E2 Complyance status -> two tracks", () => {
   for (const [name, delivery, reporting, legacy, code] of cases) {
     it(`${name} -> ${delivery} / ${reporting}`, async () => {
       const { p, sent } = provider([name]);
-      const r = await p.getStatus("01K5EXAMPLE00000000000142");
+      const r = await p.getStatus("01K5EXAMPLE00000000000142", documentedStatusRef);
       expect(r).toMatchObject({ delivery, reporting, status: legacy, errorCode: code });
       expect(sent[0].headers.Authorization).toBe(`Bearer ${KEY}`);
     });
   }
 
   it("FTA rejection keeps the reason with its field path", async () => {
-    const r = await provider(["status_final_invalid_fta"]).p.getStatus("01K5EXAMPLE00000000000142");
+    const r = await provider(["status_final_invalid_fta"]).p.getStatus(
+      "01K5EXAMPLE00000000000142",
+      documentedStatusRef
+    );
     expect(r.reasons?.[0]).toEqual({
       code: "FTA-MLS-RE",
       message: "The FTA rejected the tax data document.",
@@ -361,7 +412,10 @@ describe("E2 Complyance status -> two tracks", () => {
   });
 
   it("a failed poll says nothing about the document (transient code)", async () => {
-    const r = await provider(["status_not_found"]).p.getStatus("01K5EXAMPLE00000000000142");
+    const r = await provider(["status_not_found"]).p.getStatus(
+      "01K5EXAMPLE00000000000142",
+      documentedStatusRef
+    );
     expect(r).toMatchObject({ status: "failed", errorCode: "COMPLYANCE_UNAVAILABLE" });
   });
 

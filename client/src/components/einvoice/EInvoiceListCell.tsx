@@ -15,6 +15,7 @@ import {
   deliveryLabelKey,
   recipientAcknowledgement,
   reportingLabelKey,
+  trackOutcomeLabel,
   type DeliveryStatus,
   type EInvoiceListEvidence,
   type ReportingStatus,
@@ -71,7 +72,12 @@ export function EInvoiceListCell({
               data-testid={`einvoice-reportby-${invoice.id}`}
             >
               {confirmationUnavailable || reporting === "reported" || reporting === "report_failed"
-                ? t[reportingLabelKey(reporting, confirmationUnavailable)]
+                ? trackOutcomeLabel(
+                    t,
+                    reportingLabelKey(reporting, confirmationUnavailable),
+                    reporting === "reported",
+                    doc?.environment
+                  )
                 : pill.reportBy
                   ? formatMessage(
                       pill.overdue ? t["launchProof.reportOverdueShort"] : t["einvoicing.reportBy"],
@@ -85,7 +91,12 @@ export function EInvoiceListCell({
             >
               {delivery === "validated"
                 ? t["einvoicing.delivery_validated_short"]
-                : t[deliveryLabelKey(delivery, queuedForSubmission, acknowledgement)]}
+                : trackOutcomeLabel(
+                    t,
+                    deliveryLabelKey(delivery, queuedForSubmission, acknowledgement),
+                    delivery === "delivered",
+                    doc?.environment
+                  )}
             </StatusBadge>
           </span>
         ) : (
@@ -95,6 +106,7 @@ export function EInvoiceListCell({
             queuedForSubmission={queuedForSubmission}
             acknowledgement={acknowledgement}
             confirmationUnavailable={confirmationUnavailable}
+            environment={doc?.environment}
           />
         )}
       </button>

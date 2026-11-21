@@ -150,14 +150,24 @@ function legacyTeamRoleSave(companyId: SqlValue, userId: SqlValue, createdAt: Sq
       and ${details} #>> '{before,role}' in ('accountant', 'bookkeeper', 'viewer'))`;
 }
 
+function recordedCompanyAcceptance(companyId: SqlValue, userId: SqlValue) {
+  return sql`exists (select 1 from company_invitations invite
+    where invite.company_id = ${companyId} and invite.accepted_user_id = ${userId}
+      and invite.status = 'accepted')`;
+}
+
 function verifiedDirectAcceptance(companyId: SqlValue, userId: SqlValue) {
+  const details = auditDetails(sql`acceptance.details`);
   return sql`exists (select 1 from company_invitations confirmed
     join company_users direct_member on direct_member.company_id = confirmed.company_id and direct_member.user_id = confirmed.accepted_user_id
     join audit_logs acceptance on acceptance.company_id = confirmed.company_id and acceptance.resource_id = confirmed.id::text
     where confirmed.company_id = ${companyId} and confirmed.accepted_user_id = ${userId}
-      and confirmed.status = 'accepted' and confirmed.accepted_at >= direct_member.created_at
+      and confirmed.status = 'accepted' and confirmed.accepted_at is not null
       and acceptance.user_id = confirmed.accepted_user_id and acceptance.action = 'team.invite_accept'
-      and ${auditDetails(sql`acceptance.details`)} #>> '{after,directCompanyGrant}' = 'true')`;
+      and acceptance.resource_type = 'company_invitation'
+      and ${details} #>> '{after,directCompanyGrant}' = 'true'
+      and (${details} #>> '{after,membershipId}' = direct_member.id::text
+        or (${details} #>> '{after,membershipId}' is null and direct_member.created_at <= acceptance.created_at)))`;
 }
 
 function directInviteGrantor(
@@ -206,13 +216,16 @@ function provenCompanyInvite(companyId: SqlValue, userId: SqlValue) {
   return sql`select ci.role from company_invitations ci
     join company_users target on target.company_id = ci.company_id and target.user_id = ci.accepted_user_id
     join users invitee on invitee.id = target.user_id
+    join audit_logs accepted on accepted.company_id = ci.company_id and accepted.resource_id = ci.id::text
+      and accepted.resource_type = 'company_invitation' and accepted.user_id = ci.accepted_user_id
+      and accepted.action = 'team.invite_accept'
     where ci.company_id = ${companyId} and ci.accepted_user_id = ${userId}
-      and ci.status = 'accepted' and ci.accepted_user_id <> ci.invited_by
+      and ci.status = 'accepted' and ci.accepted_at is not null and ci.accepted_user_id <> ci.invited_by
       and ci.role in (${sql.join(
         COMPANY_ROLES.map((role) => sql`${role}`),
         sql`, `
       )})
-      and lower(invitee.email) = lower(ci.email) and target.created_at <= ci.accepted_at
+      and lower(invitee.email) = lower(ci.email) and target.created_at <= accepted.created_at
       and ${directInviteGrantor(
         sql`ci.company_id`,
         sql`ci.invited_by`,
@@ -228,12 +241,8 @@ function provenCompanyInvite(companyId: SqlValue, userId: SqlValue) {
         where issued.company_id = ci.company_id and issued.resource_id = ci.id::text
           and issued.resource_type = 'company_invitation' and issued.user_id = ci.invited_by
           and issued.action in ('team.invite', 'team.invite_resend')
-          and issued.created_at between ci.created_at and ci.accepted_at)
-      and exists (select 1 from audit_logs accepted
-        where accepted.company_id = ci.company_id and accepted.resource_id = ci.id::text
-          and accepted.resource_type = 'company_invitation' and accepted.user_id = ci.accepted_user_id
-          and accepted.action = 'team.invite_accept')
-    order by ci.accepted_at desc, ci.id desc limit 1`;
+          and issued.created_at between ci.created_at and accepted.created_at)
+    order by accepted.created_at desc, ci.id desc limit 1`;
 }
 
 /** Only a proven acceptance on this membership counts as legacy independent authority. */
@@ -285,17 +294,15 @@ function assignedCondition(ctx: FirmContext): SQL {
     sql`not exists (${grants} and ${firmCreatedMembership(sql`fcg.company_id`, sql`fcg.user_id`, sql`fcg.created_membership`, sql`fcg.created_at`)} and fcg.firm_id <> ${ctx.firmId})`
   );
   if (!ctx.isNr) return verifiedAssignment as SQL;
-  // Only NR has legacy assignments that predate explicit provenance. Known direct
-  // roles (and generated roles from another firm) do not stand in for assignments.
+  // Accepted invitations suppress implicit legacy scope even if old mixed-clock dates
+  // leave too little evidence to treat this particular membership as an independent grant.
   return or(
     verifiedAssignment,
     and(
+      sql`not (${recordedCompanyAcceptance(companies.id, ctx.userId)})`,
       or(
-        and(
-          sql`not exists (${grants})`,
-          sql`not (${acceptedCompanyInvite(companies.id, ctx.userId)})`
-        ),
-        sql`exists (${grants} and fcg.created_membership and fcg.firm_id = ${ctx.firmId}) and not (${acceptedCompanyInvite(companies.id, ctx.userId)})`
+        sql`not exists (${grants})`,
+        sql`exists (${grants} and fcg.created_membership and fcg.firm_id = ${ctx.firmId})`
       ),
       sql`exists (select 1 from company_users cu where cu.company_id = ${companies.id} and cu.user_id = ${ctx.userId})`
     )
@@ -614,7 +621,7 @@ export async function revokeCompanyAccess(
         and(
           eq(firmStaffAssignments.companyId, input.companyId),
           inArray(firmStaffAssignments.userId, memberIds),
-          sql`not (${acceptedCompanyInvite(input.companyId, firmStaffAssignments.userId)})`,
+          sql`not (${recordedCompanyAcceptance(input.companyId, firmStaffAssignments.userId)})`,
           sql`not exists (select 1 from firm_company_grants fcg where fcg.company_id = ${input.companyId} and fcg.user_id = ${firmStaffAssignments.userId})`
         )
       );

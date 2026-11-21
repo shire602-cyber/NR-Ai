@@ -63,6 +63,7 @@ import {
   issueTextKey,
   isReportingOnlyFailure,
   reportingLabelKey,
+  trackOutcomeLabel,
   type ChecklistState,
   type DeliveryStatus,
   type EInvoiceStatusView,
@@ -86,6 +87,7 @@ export function EInvoiceTrackBadges({
   queuedForSubmission = false,
   acknowledgement = null,
   confirmationUnavailable = false,
+  environment,
 }: {
   delivery: DeliveryStatus;
   reporting: ReportingStatus;
@@ -94,6 +96,7 @@ export function EInvoiceTrackBadges({
   queuedForSubmission?: boolean;
   acknowledgement?: RecipientAcknowledgement;
   confirmationUnavailable?: boolean;
+  environment?: string | null;
   /** Spell the FTA reporting state out ("FTA: Pending") instead of the icon-only mark. */
   showReportingLabel?: boolean;
 }) {
@@ -102,8 +105,18 @@ export function EInvoiceTrackBadges({
   const deliveryText =
     delivery === "validated"
       ? t["einvoicing.delivery_validated_short"]
-      : t[deliveryLabelKey(delivery, queuedForSubmission, acknowledgement)];
-  const reportingText = t[reportingLabelKey(reporting, confirmationUnavailable)];
+      : trackOutcomeLabel(
+          t,
+          deliveryLabelKey(delivery, queuedForSubmission, acknowledgement),
+          delivery === "delivered",
+          environment
+        );
+  const reportingText = trackOutcomeLabel(
+    t,
+    reportingLabelKey(reporting, confirmationUnavailable),
+    reporting === "reported" && !confirmationUnavailable,
+    environment
+  );
   return (
     <span
       className={cn("inline-flex flex-wrap items-center gap-1", className)}
@@ -405,7 +418,12 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
               tone={acknowledgement === "received" ? "info" : DELIVERY_TONE[delivery.status]}
               data-testid={queuedForSubmission ? "einvoice-queued" : undefined}
             >
-              {t[deliveryLabelKey(delivery.status, queuedForSubmission, acknowledgement)]}
+              {trackOutcomeLabel(
+                t,
+                deliveryLabelKey(delivery.status, queuedForSubmission, acknowledgement),
+                delivery.status === "delivered",
+                transmission.environment
+              )}
             </StatusBadge>
           }
         />
@@ -416,7 +434,12 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
           metaTone={reporting.overdue ? "warning" : undefined}
           badge={
             <StatusBadge tone={REPORTING_TONE[reporting.status]}>
-              {t[reportingLabelKey(reporting.status, reporting.confirmationUnavailable)]}
+              {trackOutcomeLabel(
+                t,
+                reportingLabelKey(reporting.status, reporting.confirmationUnavailable),
+                reporting.status === "reported",
+                transmission.environment
+              )}
             </StatusBadge>
           }
         />

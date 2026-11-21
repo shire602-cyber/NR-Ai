@@ -20,7 +20,17 @@ import { db, pool } from "../../db";
 import { rowsOf, withLedgerTx } from "../../ledger/tx";
 import type { LedgerTx } from "../../ledger/types";
 import { has, resolve } from "../../platform/service-registry";
-import { all, attr, children, fils, first, parseXml, text, textAt, type XNode } from "./dom";
+import {
+  attr,
+  children,
+  fils,
+  first,
+  parseXml,
+  partyVatTrn,
+  text,
+  textAt,
+  type XNode,
+} from "./dom";
 import {
   getLegalEntity,
   matchesCompanyTaxpayer,
@@ -132,11 +142,6 @@ export function parseInboundUbl(xml: string): ParsedInboundDocument {
   if (!documentNumber || !issueDate || !seller) {
     throw bad("Inbound document is missing its ID, IssueDate or supplier party");
   }
-  const vatOf = (p: XNode | null) =>
-    p
-      ? (all(p, "cac:PartyTaxScheme").find((t) => textAt(t, "cac:TaxScheme/cbc:ID") === "VAT") ??
-        null)
-      : null;
   const currency = (textAt(root, "cbc:DocumentCurrencyCode") ?? "AED").toUpperCase();
 
   const lineNodes = children(root, isCredit ? "cac:CreditNoteLine" : "cac:InvoiceLine");
@@ -192,9 +197,9 @@ export function parseInboundUbl(xml: string): ParsedInboundDocument {
       textAt(seller, "cac:PartyLegalEntity/cbc:RegistrationName") ??
       textAt(seller, "cac:PartyName/cbc:Name") ??
       "Unknown supplier",
-    supplierTrn: vatOf(seller) ? textAt(vatOf(seller) as XNode, "cbc:CompanyID") : null,
+    supplierTrn: partyVatTrn(seller),
     supplierEndpoint: textAt(seller, "cbc:EndpointID"),
-    buyerTrn: buyer && vatOf(buyer) ? textAt(vatOf(buyer) as XNode, "cbc:CompanyID") : null,
+    buyerTrn: partyVatTrn(buyer),
     buyerEndpoint: text(buyerEndpoint),
     buyerEndpointScheme: attr(buyerEndpoint, "schemeID"),
     lines: rawLines.map((l, i) => ({
@@ -330,8 +335,8 @@ function duplicateInbound(row: EInvoiceInboundDocument): InboundResult {
 function assertSameInboundSource(row: EInvoiceInboundDocument, hash: string): void {
   if (row.sha256 !== hash) {
     throw new DomainError(
-      "EINVOICE_INBOUND_INVALID",
-      422,
+      "EINVOICE_INBOUND_SOURCE_CONFLICT",
+      409,
       undefined,
       "The source XML does not match the original inbound document."
     );
@@ -485,11 +490,12 @@ export async function processInboundEInvoice(args: {
     findInboundDuplicate(company.id, supplierKey, parsed.documentNumber, tx);
   const existing = await find();
   if (args.legacyRecovery && !existing) return { status: 200, body: { status: "unmatched" } };
-  if (existing && args.legacyRecovery) assertSameInboundSource(existing, hash);
-  if (existing && completedInbound(existing, isCredit) && (await inboundArchiveId(existing))) {
-    return duplicateInbound(existing);
+  if (existing) {
+    assertSameInboundSource(existing, hash);
+    if (completedInbound(existing, isCredit) && (await inboundArchiveId(existing))) {
+      return duplicateInbound(existing);
+    }
   }
-  if (existing) assertSameInboundSource(existing, hash);
 
   const validation = summariseValidation(await validateEInvoiceXml(xml, { now }));
   // Persist the inbound receipt and archive first. Failed bill preparation can then be retried
@@ -517,10 +523,9 @@ export async function processInboundEInvoice(args: {
       )) ??
       (await find(tx));
     if (!row) throw new Error("Inbound receipt could not be acquired.");
-    const priorArchiveId = await inboundArchiveId(row, tx);
-    if (args.legacyRecovery) assertSameInboundSource(row, hash);
-    if (completedInbound(row, isCredit) && priorArchiveId) return duplicateInbound(row);
     assertSameInboundSource(row, hash);
+    const priorArchiveId = await inboundArchiveId(row, tx);
+    if (completedInbound(row, isCredit) && priorArchiveId) return duplicateInbound(row);
 
     const archiveId =
       priorArchiveId ??
@@ -653,8 +658,8 @@ export async function processInboundEInvoice(args: {
       await assertOnboardedEntityCurrent(args.onboardedEntity, tx);
       const row = await find(tx);
       if (!row) throw new Error("Inbound receipt no longer exists.");
-      if (completedInbound(row, false)) return duplicateInbound(row);
       assertSameInboundSource(row, hash);
+      if (completedInbound(row, false)) return duplicateInbound(row);
       const legacyBillId = await findLegacyInboundBill(company.id, parsed, tx);
       const billId = legacyBillId ?? (await write(tx)).bill.id;
       await updateInboundDocument(

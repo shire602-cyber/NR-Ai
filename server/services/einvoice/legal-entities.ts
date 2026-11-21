@@ -22,9 +22,14 @@
  */
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, type AppDatabase } from "../../db";
-import { einvoiceLegalEntities, type EInvoiceLegalEntity } from "../../../shared/schema";
+import { companies, einvoiceLegalEntities, type EInvoiceLegalEntity } from "../../../shared/schema";
 import { DomainError } from "../../errors";
-import { PEPPOL_SCHEME_UAE_TIN, isPintAeTrn, isUaeTin } from "./pint-ae-codes";
+import {
+  PEPPOL_SCHEME_UAE_TIN,
+  isUaeTin,
+  tinFromTrn,
+  uaePeppolEndpointIssue,
+} from "./pint-ae-codes";
 import {
   effectiveTin,
   tinProblem,
@@ -75,8 +80,9 @@ function matchesTaxpayerTin(tin: string, buyer: InboundTaxpayer): boolean {
     isUaeTin(tin) &&
     Boolean(buyer.endpoint || buyer.vatTrn) &&
     (buyer.endpoint == null ||
-      (buyer.scheme === PEPPOL_SCHEME_UAE_TIN && buyer.endpoint === tin)) &&
-    (buyer.vatTrn == null || (isPintAeTrn(buyer.vatTrn) && buyer.vatTrn.slice(0, 10) === tin))
+      (buyer.scheme === PEPPOL_SCHEME_UAE_TIN &&
+        uaePeppolEndpointIssue(buyer.scheme, buyer.endpoint, tin) === null)) &&
+    (buyer.vatTrn == null || tinFromTrn(buyer.vatTrn) === tin)
   );
 }
 
@@ -97,7 +103,7 @@ export async function getLegalEntity(
   provider: string,
   environment: string,
   conn: Pick<AppDatabase, "select"> = db,
-  lock?: "share"
+  lock?: "share" | "update"
 ): Promise<EInvoiceLegalEntity | undefined> {
   const query = conn
     .select()
@@ -112,47 +118,6 @@ export async function getLegalEntity(
     .limit(1);
   const rows = await (lock ? query.for(lock) : query);
   return rows[0];
-}
-
-/**
- * Our rows for an A-Cube legal entity: by its id, else by TIN. More than one row means two of
- * our companies reserved the same taxpayer (e.g. a duplicate company record); callers that route
- * documents must then refuse to guess.
- */
-export async function findLegalEntitiesByProviderId(
-  provider: string,
-  environment: string,
-  legalEntityId: string | null | undefined,
-  tin?: string | null,
-  companyId?: string
-): Promise<EInvoiceLegalEntity[]> {
-  const scope = [
-    eq(einvoiceLegalEntities.provider, provider),
-    eq(einvoiceLegalEntities.environment, environment),
-  ];
-  if (companyId) scope.push(eq(einvoiceLegalEntities.companyId, companyId));
-  if (legalEntityId) {
-    const rows = await db
-      .select()
-      .from(einvoiceLegalEntities)
-      .where(and(...scope, eq(einvoiceLegalEntities.legalEntityId, legalEntityId)))
-      .limit(20);
-    if (rows.length) return rows;
-  }
-  if (tin) {
-    return db
-      .select()
-      .from(einvoiceLegalEntities)
-      .where(
-        and(
-          ...scope,
-          eq(einvoiceLegalEntities.tin, tin),
-          legalEntityId ? isNull(einvoiceLegalEntities.legalEntityId) : undefined
-        )
-      )
-      .limit(20);
-  }
-  return [];
 }
 
 /** Fields from a provider's legal-entity resource or synchronized event (A-Cube's shape). */
@@ -194,10 +159,11 @@ export async function upsertLegalEntity(
   provider: string,
   environment: string,
   tin: string,
-  patch: Partial<typeof einvoiceLegalEntities.$inferInsert>
+  patch: Partial<typeof einvoiceLegalEntities.$inferInsert>,
+  conn: Pick<AppDatabase, "insert"> = db
 ): Promise<EInvoiceLegalEntity> {
   const now = new Date();
-  const [row] = await db
+  const [row] = await conn
     .insert(einvoiceLegalEntities)
     .values({ companyId, provider, environment, tin, ...patch, updatedAt: now })
     .onConflictDoUpdate({
@@ -227,9 +193,10 @@ export async function updateLegalEntityRow(
 /** Store a webhook's verified response only for the local identity that was re-read. */
 export async function updateLegalEntityRowIfCurrent(
   entity: EInvoiceLegalEntity,
-  patch: Partial<typeof einvoiceLegalEntities.$inferInsert>
+  patch: Partial<typeof einvoiceLegalEntities.$inferInsert>,
+  conn: Pick<AppDatabase, "update"> = db
 ): Promise<boolean> {
-  const [updated] = await db
+  const [updated] = await conn
     .update(einvoiceLegalEntities)
     .set(patch)
     .where(
@@ -301,6 +268,29 @@ export function requireCompanyTin(company: CompanyTinSource): string {
     );
   }
   return tin;
+}
+
+export function matchesOnboardingCompany(
+  company: (CompanyTinSource & { einvoicePartner: string | null }) | undefined,
+  provider: string,
+  tin: string
+): boolean {
+  return (
+    !!company &&
+    company.einvoicePartner === provider &&
+    companyTin(company) === tin &&
+    !companyTinConflict(tin, company)
+  );
+}
+
+/** Serialize onboarding state writes with company identity and provider selection changes. */
+export async function lockOnboardingCompany(companyId: string, conn: Pick<AppDatabase, "select">) {
+  const [company] = await conn
+    .select()
+    .from(companies)
+    .where(eq(companies.id, companyId))
+    .for("update");
+  return company;
 }
 
 /** Require identity evidence from the provider before saving a reservation or connection. */

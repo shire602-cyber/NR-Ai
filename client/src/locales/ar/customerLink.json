@@ -36,7 +36,5 @@
   "customerLink.invoicePageTitle": "فاتورة {number} · {company}",
   "customerLink.invoiceExpiredBody": "انتهت صلاحية رابط هذه الفاتورة. اطلب من المرسل رابطًا جديدًا.",
   "customerLink.invoiceInvalidBody": "تأكد من فتح الرابط كاملًا كما ورد في الرسالة، أو اطلب من المرسل رابطًا جديدًا.",
-  "customerLink.einvoiceDelivered": "استلمها مزوّد خدمة المشتري",
-  "customerLink.einvoiceAccepted": "قبلها مزوّد خدمة المشتري",
   "customerLink.invoiceDownload": "تنزيل PDF"
 }

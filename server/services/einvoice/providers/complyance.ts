@@ -203,14 +203,16 @@ export function complyanceDocumentBelongsTo(
 ): { ok: boolean; checked: string[]; mismatched: string[] } {
   const checked = new Set<string>();
   const mismatched = new Set<string>();
-  const present = (v: unknown) => v != null && v !== "";
+  const present = (v: unknown) => v != null;
   const compare = (label: string, value: unknown, matches: boolean) => {
     if (!present(value)) return;
     checked.add(label);
     if (!matches) mismatched.add(label);
   };
 
-  for (const owner of [data, providerObject(data.attribution)]) {
+  const attribution = providerObject(data.attribution);
+  if (present(data.attribution) && !attribution) mismatched.add("attribution");
+  for (const owner of [data, attribution]) {
     if (!owner) continue;
     compare("source", owner.source, sourceNameFromReference(owner.source) === me.sourceName);
     compare("source", owner.sourceName, owner.sourceName === me.sourceName);
@@ -219,19 +221,20 @@ export function complyanceDocumentBelongsTo(
     }
   }
 
-  const nestedSeller = (body: unknown) =>
-    providerObject(providerObject(providerObject(body)?.parties)?.seller);
+  const nestedSeller = (body: unknown) => {
+    const parties = providerObject(body)?.parties;
+    if (present(parties) && !providerObject(parties)) mismatched.add("seller");
+    return providerObject(parties)?.seller;
+  };
   const tin = uaeTin(me.tin);
   const trn = uaeTrn(me.trn);
   const matchesTin = (value: unknown) => !!tin && uaeTin(value) === tin;
   const matchesTrn = (value: unknown) => !!trn && uaeTrn(value) === trn;
   const checkTaxId = (value: unknown) =>
     compare("sellerTaxId", value, matchesTin(value) || matchesTrn(value));
-  for (const seller of [
-    providerObject(data.seller),
-    nestedSeller(data.invoice),
-    nestedSeller(data.payload),
-  ]) {
+  for (const value of [data.seller, nestedSeller(data.invoice), nestedSeller(data.payload)]) {
+    const seller = providerObject(value);
+    if (present(value) && !seller) mismatched.add("seller");
     if (!seller) continue;
     for (const value of [seller.tin, seller.peppolId])
       compare("sellerTaxId", value, matchesTin(value));
@@ -820,30 +823,69 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
       if (response.status >= 500 || [401, 403, 408, 429].includes(response.status)) {
         return { verdict: "unavailable" };
       }
-      const envelope = providerObject(response.json);
-      const data = providerObject(envelope?.data);
-      if (
-        !response.ok ||
-        !data ||
-        envelope?.success === false ||
-        data.documentId !== providerMessageId ||
-        data.documentNumber !== identity.documentNumber ||
-        (data.environment != null && data.environment !== this.environment)
-      )
-        return { verdict: "mismatch" };
-      const ownsDocument = complyanceDocumentBelongsTo(data, {
-        tin: identity.supplierTin,
-        trn: identity.supplierTrn,
-        connectCompanyId: identity.legalEntityId,
-        sourceName: identity.sourceName,
-      }).ok;
-      return ownsDocument ? { verdict: "verified", data } : { verdict: "mismatch" };
+      const data = response.ok && this.provenSalesData(response.json, providerMessageId, identity);
+      return data ? { verdict: "verified", data } : { verdict: "mismatch" };
     } catch {
       return { verdict: "unavailable" };
     }
   }
 
-  async getStatus(providerMessageId: string): Promise<EInvoiceProviderResult> {
+  private provenSalesData(
+    payload: unknown,
+    providerMessageId: string,
+    identity: EInvoiceOutboundIdentity,
+    knownCredentialScope = false
+  ) {
+    const envelope = providerObject(payload);
+    const data = providerObject(envelope?.data);
+    if (
+      !envelope ||
+      !data ||
+      (envelope.success != null && envelope.success !== true) ||
+      data.documentId !== providerMessageId ||
+      (!knownCredentialScope && data.documentNumber == null) ||
+      [envelope, data].some(
+        (value) =>
+          (value.documentId != null && value.documentId !== providerMessageId) ||
+          (value.documentNumber != null && value.documentNumber !== identity.documentNumber) ||
+          (value.country != null && value.country !== "AE") ||
+          (value.environment != null && value.environment !== this.environment)
+      )
+    )
+      return null;
+    for (const body of [data.invoice, data.payload]) {
+      const header = providerObject(body)?.header;
+      const number = providerObject(header)?.documentNumber;
+      if (
+        (body != null && !providerObject(body)) ||
+        (header != null && !providerObject(header)) ||
+        (number != null && number !== identity.documentNumber)
+      )
+        return null;
+    }
+    const [outerOwner, documentOwner] = [envelope, data].map((value) =>
+      complyanceDocumentBelongsTo(value, {
+        tin: identity.supplierTin,
+        trn: identity.supplierTrn,
+        connectCompanyId: identity.legalEntityId,
+        sourceName: identity.sourceName,
+      })
+    );
+    if (outerOwner.mismatched.length || documentOwner.mismatched.length) return null;
+    return knownCredentialScope || documentOwner.ok ? data : null;
+  }
+
+  async getStatus(
+    providerMessageId: string,
+    ref?: EInvoiceDocumentRef
+  ): Promise<EInvoiceProviderResult> {
+    const invalid = {
+      providerMessageId,
+      status: "failed" as const,
+      detail: "Complyance could not verify the original e-invoice status response.",
+      errorCode: "COMPLYANCE_UNAVAILABLE",
+    };
+    if (!ref?.outboundIdentity) return invalid;
     let r: RawResponse;
     try {
       r = await this.call("GET", this.salesDocumentPath(providerMessageId));
@@ -869,18 +911,14 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
         raw: r.json ?? null,
       };
     }
-    const result = providerObject(r.json);
-    const data = providerObject(result?.data);
+    const data = this.provenSalesData(
+      r.json,
+      providerMessageId,
+      ref.outboundIdentity,
+      ref.knownCredentialScope
+    );
     const providerStatus = providerString(data?.state);
-    const returnedId = providerString(data?.documentId);
-    if (!data || !providerStatus || result?.success === false || returnedId !== providerMessageId) {
-      return {
-        providerMessageId,
-        status: "failed",
-        detail: "Complyance returned an invalid document status response.",
-        errorCode: "COMPLYANCE_UNAVAILABLE",
-      };
-    }
+    if (!data || !providerStatus) return invalid;
     const m = mapComplyanceStatus(data);
     const failed = m.errorCode !== null;
     return this.outcome(m.delivery, m.reporting, {

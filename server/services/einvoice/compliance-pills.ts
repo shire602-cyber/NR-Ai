@@ -5,7 +5,12 @@
  * visible after company settings change. Other rows appear when the company is in scope.
  */
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { einvoiceDocuments, invoices, type Company } from "../../../shared/schema";
+import {
+  customerContacts,
+  einvoiceDocuments,
+  invoices,
+  type Company,
+} from "../../../shared/schema";
 import { db } from "../../db";
 import { documentReportingRequired } from "./store";
 import { projectEInvoiceDocument } from "./status-view";
@@ -16,7 +21,7 @@ import {
   type DeliveryStatus,
   type ReportingStatus,
 } from "./tracks";
-import { invoiceReportingRequired } from "./workflow";
+import { invoiceReportingRequired } from "./reporting";
 
 export interface CompliancePill {
   invoiceId: string;
@@ -33,6 +38,7 @@ type DocumentEvidence = Pick<
   | "status"
   | "provider"
   | "providerStatus"
+  | "environment"
   | "providerMessageId"
   | "deliveryStatus"
   | "reportingStatus"
@@ -56,6 +62,7 @@ export async function listCompliancePills(
         einvoiceProvider: invoices.einvoiceProvider,
       },
       doc: einvoiceDocuments,
+      linkedBuyerTrn: customerContacts.trnNumber,
     })
     .from(invoices)
     .leftJoin(
@@ -63,6 +70,13 @@ export async function listCompliancePills(
       and(
         eq(einvoiceDocuments.invoiceId, invoices.id),
         eq(einvoiceDocuments.companyId, invoices.companyId)
+      )
+    )
+    .leftJoin(
+      customerContacts,
+      and(
+        eq(customerContacts.companyId, invoices.companyId),
+        eq(customerContacts.id, invoices.contactId)
       )
     )
     .where(
@@ -74,11 +88,16 @@ export async function listCompliancePills(
     .orderBy(desc(invoices.date));
   const items: CompliancePill[] = [];
   const documents: DocumentEvidence[] = [];
-  for (const { invoice, doc } of rows) {
+  for (const { invoice, doc, linkedBuyerTrn } of rows) {
     const status = String(invoice.status ?? "").toLowerCase();
     const required = documentReportingRequired(
       doc,
-      invoiceReportingRequired(invoice, company, now)
+      invoiceReportingRequired(
+        invoice,
+        company,
+        doc?.submittedAt ?? now,
+        invoice.customerTrn || linkedBuyerTrn
+      )
     );
     const t = deriveInvoiceTracks({
       invoiceDate: invoice.date,
@@ -95,6 +114,7 @@ export async function listCompliancePills(
         status,
         provider,
         providerStatus,
+        environment,
         providerMessageId,
         deliveryStatus,
         reportingStatus,
@@ -105,6 +125,7 @@ export async function listCompliancePills(
         status,
         provider,
         providerStatus,
+        environment,
         providerMessageId,
         deliveryStatus,
         reportingStatus,

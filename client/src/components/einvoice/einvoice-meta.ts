@@ -4,6 +4,7 @@
  * "einvoicing" namespace; tones follow the CTO colour semantics (green done, blue with the
  * provider, amber needs action, red failed, neutral not started / not applicable).
  */
+import { qualifyEInvoiceOutcome } from "@/lib/einvoice-outcome";
 import type { StatusTone } from "@/components/ui/status-badge";
 import { einvoiceIssueTextKey } from "@/lib/einvoice-issues";
 
@@ -61,6 +62,7 @@ export interface EInvoiceEvent {
   code: string | null;
   message: string | null;
   source: "user" | "webhook" | "poll" | "job" | "system";
+  environment?: string | null;
   provider: string | null;
   providerStatus: string | null;
   at: string | null;
@@ -69,7 +71,7 @@ export interface EInvoiceEvent {
 export interface EInvoiceEnvironmentVerification {
   provider: "acube" | "complyance";
   environments: ("sandbox" | "production")[];
-  reference: "stored" | "search" | "manual";
+  reference: "stored" | "search" | "manual" | "refusal";
 }
 
 export interface EInvoiceStatusView {
@@ -137,6 +139,7 @@ export interface EInvoiceDocumentRow {
   status: string;
   provider: string | null;
   providerStatus: string | null;
+  environment?: "sandbox" | "production" | null;
   providerMessageId: string | null;
   deliveryStatus: DeliveryStatus | null;
   reportingStatus: ReportingStatus | null;
@@ -239,6 +242,22 @@ export function recipientAcknowledgement(
 export const reportingLabelKey = (s: ReportingStatus, confirmationUnavailable = false) =>
   confirmationUnavailable ? "einvoicing.reportingUnconfirmed" : `einvoicing.reporting_${s}`;
 
+export function trackOutcomeLabel(
+  t: Record<string, string>,
+  key: string,
+  confirmed: boolean,
+  environment?: string | null
+) {
+  return confirmed
+    ? qualifyEInvoiceOutcome(
+        t[key],
+        environment,
+        t["einvoicing.sandbox"],
+        t["einvoicing.environmentUnknown"]
+      )
+    : t[key];
+}
+
 export function isReportingOnlyFailure(delivery: DeliveryStatus, reporting: ReportingStatus) {
   return reporting === "report_failed" && delivery !== "rejected" && delivery !== "delivery_failed";
 }
@@ -254,6 +273,8 @@ const KNOWN_ERRORS = new Set([
   "EINVOICE_LEGAL_ENTITY_NOT_ACTIVE",
   "EINVOICE_LEGAL_ENTITY_DELINKED",
   "EINVOICE_SUPPLIER_ENDPOINT_MISMATCH",
+  "EINVOICE_BUYER_ENDPOINT_MISMATCH",
+  "EINVOICE_PAYMENT_CARD_TYPE_REQUIRED",
   "EINVOICE_VALIDATION_FAILED",
   "EINVOICE_CANCELLED",
   // X6a: provider-neutral fallbacks when a provider gives no code of its own.

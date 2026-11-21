@@ -71,8 +71,8 @@ import { receivableSettledSql } from "../reporting/settlement";
 import { actorFromRequest, assertCompanyPermission } from "../services/approval-rules.service";
 import type { Permission } from "../../shared/permissions";
 import {
-  customerEInvoiceStatus,
-  getCustomerEInvoiceStatus,
+  customerEInvoiceOutcome,
+  getCustomerEInvoiceOutcome,
   type EInvoiceCustomerEvidence,
 } from "../services/einvoice/customer-outcome";
 
@@ -219,7 +219,7 @@ export async function contactInvoices(
     const settled = isCredit ? 0 : Number(r.settled);
     const due = isCredit ? 0 : Math.max(0, Math.round((total - settled) * 100) / 100);
     const dueDate = r.due_date ? new Date(r.due_date as string) : null;
-    const eInvoiceStatus = customerEInvoiceStatus(
+    const eInvoiceOutcome = customerEInvoiceOutcome(
       {
         einvoiceStatus: r.einvoice_status as string | null,
         einvoiceProvider: r.einvoice_provider as string | null,
@@ -249,9 +249,9 @@ export async function contactInvoices(
             : dueDate && dueDate.getTime() < now
               ? "overdue"
               : "unpaid",
-      einvoice: eInvoiceStatus
+      einvoice: eInvoiceOutcome
         ? {
-            status: eInvoiceStatus,
+            ...eInvoiceOutcome,
             uuid: (r.einvoice_uuid as string | null) ?? null,
             hasXml: r.has_xml === true,
           }
@@ -499,10 +499,12 @@ export function registerPortalPublicRoutes(app: Express) {
           .status(404)
           .json({ code: "EINVOICE_NOT_FOUND", message: "No e-invoice for this invoice" });
       }
+      const outcome = await getCustomerEInvoiceOutcome(invoice);
       res.set({
         "Content-Type": "application/xml; charset=utf-8",
         "Content-Disposition": `attachment; filename="einvoice-${invoice.number}.xml"`,
-        "X-Einvoice-Status": (await getCustomerEInvoiceStatus(invoice)) ?? "generated",
+        "X-Einvoice-Status": outcome?.status ?? "generated",
+        "X-Einvoice-Environment": outcome?.environment ?? "unknown",
       });
       res.send(invoice.einvoiceXml);
     })

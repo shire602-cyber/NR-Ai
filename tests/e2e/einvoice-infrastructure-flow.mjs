@@ -64,7 +64,10 @@ const copies = {
     bankStatementImport: "Import bank statements",
     verifyTracking: "Verify and save",
     trackingVerified: "Tracking environment verified",
+    refusalVerified:
+      "Original environment verified. This invoice can now be corrected and resubmitted.",
     sandbox: "Sandbox",
+    environmentUnknown: "Environment unverified",
     firm: "Fixture firm",
     clients: ["Fixture bakery", "Fixture supplier"],
   },
@@ -79,8 +82,10 @@ const copies = {
     bankStatementImport: "استيراد كشوف الحسابات البنكية",
     verifyTracking: "تحقّق واحفظ",
     trackingVerified: "تم التحقق من بيئة المتابعة",
+    refusalVerified: "تم التحقّق من البيئة الأصلية. يمكنك الآن تصحيح هذه الفاتورة وإعادة إرسالها.",
     trackingDocumentId: "معرّف المستند لدى المزوّد",
     sandbox: "بيئة تجريبية",
+    environmentUnknown: "البيئة غير متحقَّق منها",
     firm: "مكتب المحاسبة التجريبي",
     clients: ["المخبز التجريبي", "المورد التجريبي"],
   },
@@ -103,6 +108,7 @@ const credentials = {
 };
 const mockToken = randomUUID();
 const mockDocuments = new Map();
+const complyanceSales = new Map();
 const legacyDocuments = new Map();
 const verificationReads = new Set();
 let acubeStatus = "processed";
@@ -144,7 +150,11 @@ const mock = createServer(async (req, res) => {
       assert.ok(payload.payload.header.documentNumber);
       const documentId = randomUUID();
       posts.push("complyance");
-      mockDocuments.set(documentId, "complyance");
+      complyanceSales.set(documentId, {
+        documentNumber: payload.payload.header.documentNumber,
+        source: payload.source,
+        environment: payload.environment,
+      });
       await delay(2_000);
       return json(res, 200, { documentId });
     }
@@ -210,11 +220,12 @@ const mock = createServer(async (req, res) => {
           },
         });
       }
-      if (mockDocuments.get(documentId) === "complyance") {
+      if (complyanceSales.has(documentId)) {
         return json(res, 200, {
           success: true,
           data: {
             documentId,
+            ...complyanceSales.get(documentId),
             state: complyanceStatus,
             ...(complyanceStatus === "final_valid" && {
               compliance: { ftaApprovedStatus: "APPROVED" },
@@ -388,6 +399,44 @@ async function seedLegacyTracking(persona, contactId, reference) {
   return { invoiceId, provider, providerMessageId, reference };
 }
 
+async function seedLegacyRefusal(persona, contactId) {
+  const { invoiceId } = await seedOutbound(persona, contactId);
+  const companyId = persona.clients[0].id;
+  await db.query(
+    "UPDATE invoices SET einvoice_status = 'rejected', einvoice_provider = 'acube' WHERE id = $1",
+    [invoiceId]
+  );
+  await db.query(
+    `UPDATE einvoice_documents SET provider = 'acube', status = 'rejected', delivery_status = 'rejected',
+       last_error_code = 'ACUBE_VALIDATION', attempts = 1, validation = validation - 'submission'
+     WHERE company_id = $1 AND invoice_id = $2`,
+    [companyId, invoiceId]
+  );
+  await db.query(
+    `INSERT INTO einvoice_document_events (company_id, invoice_id, track, to_status, code, provider, source)
+     VALUES ($1, $2, 'delivery', 'rejected', 'ACUBE_VALIDATION', 'acube', 'user')`,
+    [companyId, invoiceId]
+  );
+  await db.query(
+    `INSERT INTO audit_logs (company_id, resource_type, resource_id, user_id, action, details)
+     SELECT $1, 'invoice', $2, id, 'invoice.einvoice_submit', $3 FROM users WHERE email = $4`,
+    [
+      companyId,
+      invoiceId,
+      {
+        after: {
+          provider: "acube",
+          environment: "sandbox",
+          providerMessageId: "",
+          status: "rejected",
+        },
+      },
+      persona.email,
+    ]
+  );
+  return invoiceId;
+}
+
 async function inBrowser(browser, { email, lang, width }, flow) {
   const ctx = await browser.newContext({
     locale: lang === "ar" ? "ar-AE" : "en-AE",
@@ -432,24 +481,7 @@ async function inBrowser(browser, { email, lang, width }, flow) {
     await page.getByTestId("button-login").click();
     await page.waitForURL((url) => url.pathname !== "/login");
     await page.waitForLoadState("networkidle");
-    page.on("pageerror", (error) => failures.push(error.message));
-    page.on("console", (msg) => {
-      if (msg.type() === "error") failures.push(msg.text());
-    });
-    page.on("requestfailed", (req) => {
-      const path = new URL(req.url()).pathname;
-      const error = req.failure()?.errorText;
-      // A full navigation cancels the prior page's speculative static preloads.
-      if (
-        error === "net::ERR_ABORTED" &&
-        /^(\/assets\/|\/firm-assets\/|\/favicon\.png$)/.test(path)
-      )
-        return;
-      failures.push(`${req.method()} ${path} ${error}`);
-    });
-    page.on("response", (res) => {
-      if (res.status() >= 400) failures.push(`${res.status()} ${new URL(res.url()).pathname}`);
-    });
+    monitorBrowserFailures(page, failures);
     await flow(page, async (path) => {
       await settleApi();
       // Use the app's router after login so the previous document's API requests can finish.
@@ -461,6 +493,24 @@ async function inBrowser(browser, { email, lang, width }, flow) {
   } finally {
     await ctx.close();
   }
+}
+
+function monitorBrowserFailures(page, failures) {
+  page.on("pageerror", (error) => failures.push(error.message));
+  page.on("console", (msg) => {
+    if (msg.type() === "error") failures.push(msg.text());
+  });
+  page.on("requestfailed", (req) => {
+    const path = new URL(req.url()).pathname;
+    const error = req.failure()?.errorText;
+    // A full navigation cancels the prior page's speculative static preloads.
+    if (error === "net::ERR_ABORTED" && /^(\/assets\/|\/firm-assets\/|\/favicon\.png$)/.test(path))
+      return;
+    failures.push(`${req.method()} ${path} ${error}`);
+  });
+  page.on("response", (res) => {
+    if (res.status() >= 400) failures.push(`${res.status()} ${new URL(res.url()).pathname}`);
+  });
 }
 
 async function open(page, path) {
@@ -687,7 +737,8 @@ async function sendInvoice(browser, persona) {
       complyanceStatus = "delivery_success";
     }
     await sheet.getByTestId("einvoice-refresh").click();
-    await delivery.getByText(copies[lang].recipientReceived, { exact: true }).waitFor();
+    const receivedInSandbox = `${copies[lang].recipientReceived} · ${copies[lang].sandbox}`;
+    await delivery.getByText(receivedInSandbox, { exact: true }).waitFor();
     const receipt = await request(token, "GET", statusPath);
     assert.equal(receipt.submissionState, "sent");
     assert.equal(receipt.transmission.recipientAcknowledgement, "received");
@@ -698,7 +749,8 @@ async function sendInvoice(browser, persona) {
       complyanceStatus = "final_valid";
     }
     await sheet.getByTestId("einvoice-refresh").click();
-    await delivery.getByText(copies[lang].accepted, { exact: true }).waitFor();
+    const acceptedInSandbox = `${copies[lang].accepted} · ${copies[lang].sandbox}`;
+    await delivery.getByText(acceptedInSandbox, { exact: true }).waitFor();
     const result = await request(token, "GET", statusPath);
     assert.equal(result.submissionState, "accepted");
     if (originalProvider === "acube") {
@@ -709,17 +761,109 @@ async function sendInvoice(browser, persona) {
     }
     await sheet.getByTestId("einvoice-history-open").click();
     const history = page.getByTestId("einvoice-history");
-    const { delivery: deliveryLabel, queued: queuedLabel, accepted: acceptedLabel } = copies[lang];
+    const { delivery: deliveryLabel, queued: queuedLabel } = copies[lang];
     await history.getByText(`${deliveryLabel}: ${queuedLabel}`, { exact: true }).waitFor();
-    await history
-      .getByText(`${deliveryLabel}: ${copies[lang].recipientReceived}`, { exact: true })
-      .waitFor();
-    await history.getByText(`${deliveryLabel}: ${acceptedLabel}`, { exact: true }).waitFor();
+    await history.getByText(`${deliveryLabel}: ${receivedInSandbox}`, { exact: true }).waitFor();
+    await history.getByText(`${deliveryLabel}: ${acceptedInSandbox}`, { exact: true }).waitFor();
     if (originalProvider === "acube") {
       await history.getByText("FTA reporting: Confirmation unavailable", { exact: true }).waitFor();
     }
   });
   console.log(`${lang}: queued, sent and accepted invoice status through the loopback provider`);
+  await verifyPublicOutcome(browser, persona);
+}
+
+async function verifyLegacyRefusal(browser, persona, invoiceId, lang) {
+  const { token } = persona;
+  const path = `/api/invoices/${invoiceId}/einvoice`;
+  const verifyPath = `${path}/confirm-environment`;
+  const before = await request(token, "GET", `${path}/status`);
+  assert.equal(before.transmission.environmentVerification.reference, "refusal");
+  assert.equal(before.rejection.resubmittable, false);
+  await inBrowser(browser, { ...persona, lang }, async (page, navigate) => {
+    await openBooks(page, navigate, persona, 0);
+    await navigate("/invoices");
+    await page.locator(`[data-testid="einvoice-cell-${invoiceId}"]:visible`).first().click();
+    const sheet = page.getByTestId("einvoice-sheet");
+    const tracking = sheet.getByTestId("einvoice-tracking-verification");
+    const confirm = tracking.getByTestId("einvoice-tracking-confirm");
+    assert.equal(await confirm.isDisabled(), true);
+    assert.equal(await sheet.getByTestId("einvoice-resubmit").count(), 0);
+    assert.equal(await tracking.getByTestId("einvoice-tracking-document-id").count(), 0);
+    assert.equal(await page.locator("html").getAttribute("dir"), lang === "ar" ? "rtl" : "ltr");
+    await tracking.getByTestId("einvoice-tracking-sandbox").check();
+    const recorded = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === verifyPath && response.request().method() === "POST"
+    );
+    await confirm.click();
+    const response = await recorded;
+    assert.ok(response.ok());
+    assert.equal((await response.json()).retryEligible, true);
+    await page.getByText(copies[lang].refusalVerified, { exact: true }).waitFor();
+    await sheet.getByTestId("einvoice-resubmit").waitFor();
+  });
+  const after = await request(token, "GET", `${path}/status`);
+  assert.equal(after.rejection.resubmittable, true);
+  assert.equal(after.transmission.providerDocumentId, null);
+  assert.deepEqual(posts, []);
+  console.log(`${lang}: verified legacy refusal eligibility without re-sending`);
+}
+
+async function verifyPublicOutcome(browser, persona) {
+  const { invoiceId, contactId, lang, width } = persona;
+  const token = randomBytes(16).toString("hex");
+  const { portalUrl } = await request(persona.token, "POST", "/api/portal/generate-access", {
+    contactId,
+  });
+  await db.query(
+    "UPDATE invoices SET share_token = $1, share_token_expires_at = NOW() + INTERVAL '1 day' WHERE id = $2",
+    [token, invoiceId]
+  );
+  await db.query("UPDATE customer_contacts SET preferred_language = $1 WHERE id = $2", [
+    lang,
+    contactId,
+  ]);
+  const context = await browser.newContext({
+    locale: lang === "ar" ? "ar-AE" : "en-AE",
+    viewport: { width, height: 900 },
+  });
+  const failures = [];
+  try {
+    const page = await context.newPage();
+    monitorBrowserFailures(page, failures);
+    const acceptanceText = lang === "ar" ? "قبلها مزوّد خدمة المشتري" : copies[lang].accepted;
+    const check = async (qualifier) => {
+      await open(page, `/view/invoice/${token}`);
+      await page
+        .locator(`html[lang="${lang}"][dir="${lang === "ar" ? "rtl" : "ltr"}"]`)
+        .waitFor({ state: "attached" });
+      const acceptance = page.getByTestId("public-invoice-einvoice");
+      await acceptance.and(page.getByText(qualifier, { exact: false })).waitFor();
+      const text = await acceptance.textContent();
+      // Staff and customer catalogs use their own localized spelling.
+      assert.ok(text.includes(acceptanceText));
+      await page.waitForLoadState("networkidle");
+      await open(page, portalUrl);
+      await page
+        .getByRole("row")
+        .getByText(`${acceptanceText} · ${qualifier}`, { exact: false })
+        .waitFor();
+      await page.waitForLoadState("networkidle");
+    };
+    await check(copies[lang].sandbox);
+    await db.query(
+      "UPDATE einvoice_documents SET validation = validation #- '{submission,environment}' WHERE invoice_id = $1",
+      [invoiceId]
+    );
+    await check(copies[lang].environmentUnknown);
+    assert.deepEqual(failures, [], `${lang} public e-invoice browser and API errors`);
+    console.log(
+      `${lang}: public invoice and customer portal qualify sandbox and legacy acceptance`
+    );
+  } finally {
+    await context.close();
+  }
 }
 
 let browser;
@@ -741,7 +885,14 @@ try {
         persona.providers[0] === "acube" ? "search" : "manual"
       ),
     ];
-    personas.push({ ...persona, ...outbound, legacy });
+    const refusals =
+      persona.providers[0] === "acube"
+        ? [
+            await seedLegacyRefusal(persona, outbound.contactId),
+            await seedLegacyRefusal(persona, outbound.contactId),
+          ]
+        : null;
+    personas.push({ ...persona, ...outbound, legacy, refusals });
   }
   assert.deepEqual(posts, []);
   await stopApp();
@@ -777,6 +928,10 @@ try {
   }
   const recover = async (browser, persona) => {
     for (const legacy of persona.legacy) await verifyLegacyTracking(browser, persona, legacy);
+    if (persona.refusals) {
+      await verifyLegacyRefusal(browser, persona, persona.refusals[0], "en");
+      await verifyLegacyRefusal(browser, persona, persona.refusals[1], "ar");
+    }
   };
   for (const flow of [recover, sendInvoice]) {
     const results = await Promise.allSettled(personas.map((persona) => flow(browser, persona)));

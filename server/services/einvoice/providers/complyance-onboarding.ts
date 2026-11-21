@@ -25,19 +25,21 @@ import { createLogger } from "../../../config/logger";
 import {
   assertProviderTin,
   getLegalEntity,
+  matchesOnboardingCompany,
   requireCompanyTin,
   upsertLegalEntity,
 } from "../legal-entities";
 import { isUaeTin, PEPPOL_SCHEME_UAE_TIN } from "../pint-ae-codes";
 import { tinFromTaxNumber } from "../../../../shared/validators/einvoice-identity";
 import { db } from "../../../db";
-import { einvoiceLegalEntities } from "../../../../shared/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { sql } from "drizzle-orm";
+import { rowsOf } from "../../../ledger/tx";
 import type { ProviderEnvironment } from "./types";
 import {
   COMPLYANCE_PROVIDER_NAME,
   ComplyanceApiError,
   ComplyanceEInvoiceProvider,
+  complyanceEnvironment,
   defaultSourceFor,
   patchFromComplyance,
   type ComplyanceCompany,
@@ -209,25 +211,51 @@ export async function syncPendingComplyanceCompanies(
   loadCompany: (id: string) => Promise<CompanyRow | undefined>,
   providerFor: (company: CompanyRow) => Promise<ComplyanceEInvoiceProvider | null>
 ): Promise<{ checked: number; activated: number }> {
-  const rows = await db
-    .select()
-    .from(einvoiceLegalEntities)
-    .where(
-      and(
-        eq(einvoiceLegalEntities.provider, COMPLYANCE_PROVIDER_NAME),
-        eq(einvoiceLegalEntities.environment, environment),
-        inArray(einvoiceLegalEntities.status, ["reserved", "pending"])
-      )
-    )
-    .limit(50);
+  if (complyanceEnvironment() !== environment) return { checked: 0, activated: 0 };
+  // Claim a bounded, fair batch first. Even rows that lack credentials or fail a read advance.
+  const due = sql`CASE WHEN jsonb_typeof(entity.provider_details->'onboardingPollAfter') = 'number'
+                  THEN (entity.provider_details->>'onboardingPollAfter')::numeric ELSE 0 END`;
+  const rows = rowsOf<{ companyId: string; tin: string }>(
+    await db.execute(sql`
+    UPDATE einvoice_legal_entities entity
+       SET provider_details = (CASE WHEN jsonb_typeof(entity.provider_details) = 'object'
+                                    THEN entity.provider_details ELSE '{}'::jsonb END)
+                              || jsonb_build_object('onboardingPollAfter', extract(epoch FROM now()) + 600)
+     WHERE entity.id IN (
+       SELECT entity.id FROM einvoice_legal_entities entity
+       JOIN companies company ON company.id = entity.company_id
+       WHERE entity.provider = ${COMPLYANCE_PROVIDER_NAME}
+         AND company.einvoice_partner = entity.provider AND entity.environment = ${environment}
+         AND entity.status IN ('reserved', 'pending') AND ${due} <= extract(epoch FROM now())
+       ORDER BY ${due}, entity.created_at, entity.id
+       LIMIT 50 FOR UPDATE OF entity SKIP LOCKED)
+    RETURNING entity.company_id AS "companyId", entity.tin`)
+  );
   let activated = 0;
   for (const row of rows) {
-    const company = await loadCompany(row.companyId);
-    if (!company) continue;
     try {
+      const company = await loadCompany(row.companyId);
+      if (!company || !matchesOnboardingCompany(company, COMPLYANCE_PROVIDER_NAME, row.tin))
+        continue;
       const provider = await providerFor(company);
-      if (!provider || provider.environment !== row.environment) continue;
-      const out = await connectComplyanceCompany({ company, provider });
+      if (
+        !provider ||
+        provider.environment !== environment ||
+        complyanceEnvironment() !== environment
+      )
+        continue;
+      const current = await loadCompany(row.companyId);
+      if (!current || !matchesOnboardingCompany(current, COMPLYANCE_PROVIDER_NAME, row.tin))
+        continue;
+      const entity = await getLegalEntity(row.companyId, COMPLYANCE_PROVIDER_NAME, environment);
+      if (
+        complyanceEnvironment() !== environment ||
+        !entity ||
+        !["reserved", "pending"].includes(entity.status) ||
+        entity.tin !== row.tin
+      )
+        continue;
+      const out = await connectComplyanceCompany({ company: current, provider });
       if (out.status === "active") activated++;
     } catch {
       log.warn({ companyId: row.companyId }, "Complyance sync failed");

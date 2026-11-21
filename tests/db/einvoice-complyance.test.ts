@@ -56,6 +56,7 @@ interface FakeDoc {
   isTerminal: boolean;
   errors: unknown[];
   ftaApproval?: string | null;
+  response?: Record<string, unknown>;
 }
 const fake = {
   authorised: false,
@@ -266,6 +267,7 @@ async function complyance(url: URL, init: RequestInit): Promise<Response> {
               : d.ftaApproval,
         },
         validationResults: { status: "Valid", validationSteps: [] },
+        ...d.response,
       },
     });
   }
@@ -510,6 +512,57 @@ describe("E2 without Complyance configured: nothing named, nothing sent", () => 
 });
 
 describe("E2 onboarding gates sending", () => {
+  it("filters switched providers before the batch and rotates unconfigured candidates fairly", async () => {
+    const insertWaiting = (provider: string, count: number) =>
+      h.sql(
+        `WITH waiting AS (
+          INSERT INTO companies (name, einvoice_partner, trn_vat_number)
+          SELECT 'Waiting ' || n, $1, $2 FROM generate_series(1, $3::int) n RETURNING id
+        ) INSERT INTO einvoice_legal_entities (company_id, provider, environment, tin, status, created_at)
+          SELECT id, 'complyance', 'sandbox', $4, 'reserved', now() - interval '1 day' FROM waiting`,
+        [provider, TRN, count, TIN]
+      );
+    await insertWaiting("acube", 55);
+    await insertWaiting("complyance", 50);
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "complyance" },
+    });
+    useComplyance(t);
+    const started = await connect(t);
+    expect(started.body.legalEntity.status).toBe("reserved");
+    fake.authorised = true;
+    fake.ready = true;
+    const first = await syncPending();
+    expect(first).toEqual({ checked: 50, activated: 0 });
+    const second = await syncPending();
+    expect(second).toEqual({ checked: 1, activated: 1 });
+    expect((await syncPending()).checked).toBe(0);
+    expect(
+      (await t.as.get(`/api/companies/${t.company.id}/einvoicing/complyance`)).body.canSend
+    ).toBe(true);
+  });
+
+  it("does not send onboarding work after selection changes during provider resolution", async () => {
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "complyance" },
+    });
+    useComplyance(t);
+    expect((await connect(t)).body.legalEntity.status).toBe("reserved");
+    fake.authorised = true;
+    const creates = fake.creates;
+    const result = await onboarding.syncPendingComplyanceCompanies(
+      "sandbox",
+      (id) => storage.getCompany(id),
+      async (company) => {
+        const config = await companyProviderConfiguration(company.id, company.einvoicePartner);
+        await h.sql(`UPDATE companies SET einvoice_partner = 'acube' WHERE id = $1`, [company.id]);
+        return config ? new Provider(config.env) : null;
+      }
+    );
+    expect(result).toEqual({ checked: 1, activated: 0 });
+    expect(fake.creates).toBe(creates);
+  });
+
   it("before EmaraTax -> reserved; registered -> pending; ready -> active; inactive -> 409", async () => {
     const t = await h.createTenant({
       companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "complyance" },
@@ -627,6 +680,44 @@ describe("Complyance taxpayer verification", () => {
 });
 
 describe("E2 submit, two tracks and history", () => {
+  it("keeps the persisted status and history when a poll contradicts the frozen submission", async () => {
+    const t = await readyTenant();
+    const inv = await issuedInvoice(t);
+    const submission = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
+    expect(submission.status).toBe(202);
+    await runEInvoiceRetries();
+    const sent = docOf(t, inv.number)!;
+    const original = await statusOf(t, inv.id);
+    expect(original.submissionState).toBe("sent");
+    sent.state = "final_valid";
+    sent.isTerminal = true;
+
+    for (const response of [
+      { documentId: "OTHER" },
+      { documentNumber: "OTHER" },
+      { environment: "production" },
+      { country: "ZZ" },
+      { seller: { trn: "100999888700003" } },
+      { attribution: { companyId: "another-company" } },
+      { payload: { header: { documentNumber: "OTHER" } } },
+      { sourceName: [] },
+    ]) {
+      sent.response = response;
+      await poll();
+      const unchanged = await statusOf(t, inv.id);
+      expect(unchanged.submissionState).toBe(original.submissionState);
+      expect(unchanged.tracks).toEqual(original.tracks);
+      expect(unchanged.events).toEqual(original.events);
+    }
+    // The documented status can omit ownership fields or use a nullable document number.
+    sent.response = { source: undefined, documentNumber: null };
+    expect((await poll()).refreshed).toBe(1);
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      submissionState: "accepted",
+      tracks: { reporting: { status: "reported" } },
+    });
+  });
+
   it("submits once (concurrent double submit), then delivered, then reported", async () => {
     const t = await readyTenant();
     const inv = await issuedInvoice(t);

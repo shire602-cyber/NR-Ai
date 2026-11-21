@@ -20,6 +20,7 @@
 import { createHash } from "node:crypto";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../db";
+import { databaseUtcNow } from "../../config/database-time";
 import { rowsOf } from "../../ledger/tx";
 import {
   companies,
@@ -38,8 +39,9 @@ import {
 import { InboundLegalEntityChangedError, processInboundEInvoice } from "./inbound";
 import { refreshAndPersist } from "./workflow";
 import {
-  findLegalEntitiesByProviderId,
   getLegalEntity,
+  lockOnboardingCompany,
+  matchesOnboardingCompany,
   matchesProviderEntityOwner,
   peppolAddressFor,
   updateLegalEntityRowIfCurrent,
@@ -63,6 +65,8 @@ const CALLBACK_WAIT_CONFIG = "Provider event is waiting for provider configurati
 const INBOUND_FAILURE = "Inbound receipt could not be processed";
 const INBOUND_WAIT_CONFIG = "Inbound receipt is waiting for provider configuration";
 const INBOUND_WAIT_ENTITY = "Inbound receipt is waiting for legal entity activation";
+const LEGAL_ENTITY_WAIT_RESERVATION = "Provider event is waiting for verified reservation";
+const LEGAL_ENTITY_UNRESERVED = "legal entity not reserved by us";
 const LEGACY_INBOUND_RECHECK = "Legacy inbound receipt requires reconciliation";
 const LEGACY_INBOUND_CHECKED = "Legacy inbound receipt was checked";
 const LEGACY_INBOUND_VALIDATION = "inbound document failed validation";
@@ -125,6 +129,8 @@ export async function enqueueProviderEvent(
       eventType: args.type,
       companyId: args.companyId,
       payload: args.payload,
+      receivedAt: databaseUtcNow,
+      nextAttemptAt: databaseUtcNow,
     })
     .onConflictDoNothing()
     .returning({ id: einvoiceProviderEvents.id });
@@ -141,13 +147,15 @@ async function claimEvents(opts: {
   // Recheck earlier ignores when the link activated later or its activation time is unknown.
   // Legacy processed rows are only revisited for an incomplete same-company receipt; the
   // worker independently verifies ownership and the original source hash before any repair.
+  // An untouched inbox row was due on arrival, even if an older session stored its two
+  // identical default timestamps in the database server's previous local time zone.
   const res = await db.execute(sql`
     UPDATE einvoice_provider_events e
        SET status = 'processing',
            attempts = e.attempts + 1,
            last_error = CASE WHEN e.event_type = 'document.received' AND e.status = 'processed'
                         THEN ${LEGACY_INBOUND_RECHECK} ELSE e.last_error END,
-           locked_until = now() + (${LEASE_MS}::int * interval '1 millisecond')
+           locked_until = ${databaseUtcNow} + (${LEASE_MS}::int * interval '1 millisecond')
      WHERE e.id IN (
        SELECT candidate.id
          FROM einvoice_provider_events candidate
@@ -155,8 +163,10 @@ async function claimEvents(opts: {
            ON entity.company_id = candidate.company_id
           AND entity.provider = candidate.provider
           AND entity.environment = candidate.environment
-        WHERE ((candidate.status = 'pending' AND candidate.next_attempt_at <= now())
-               OR (candidate.status = 'processing' AND candidate.locked_until < now())
+        WHERE ((candidate.status = 'pending'
+                   AND (candidate.next_attempt_at <= ${databaseUtcNow}
+                        OR (candidate.attempts = 0 AND candidate.next_attempt_at = candidate.received_at)))
+               OR (candidate.status = 'processing' AND candidate.locked_until < ${databaseUtcNow})
                OR (candidate.event_type = 'document.delivered' AND candidate.status = 'ignored'
                    AND candidate.last_error = ${OUTBOUND_REFERENCE_UNVERIFIED}
                    AND EXISTS (
@@ -166,10 +176,15 @@ async function claimEvents(opts: {
                         AND document.provider_message_id = candidate.payload->>'documentId'
                         AND document.validation->'submission'->>'environment' = candidate.environment
                    ))
+               OR (candidate.event_type = 'legal_entity.synchronized'
+                   AND candidate.status = 'ignored' AND candidate.last_error = ${LEGAL_ENTITY_UNRESERVED}
+                   AND entity.legal_entity_id = candidate.payload->>'legalEntityId'
+                   AND EXISTS (SELECT 1 FROM companies company
+                     WHERE company.id = candidate.company_id AND company.einvoice_partner = candidate.provider))
                OR (candidate.company_id IS NOT NULL AND candidate.status = 'dead'
                    AND candidate.event_type IN ('document.received', 'document.delivered',
                                                 'legal_entity.synchronized')
-                   AND candidate.last_error = ${EVENT_FAILURE} AND candidate.next_attempt_at <= now())
+                   AND candidate.last_error = ${EVENT_FAILURE} AND candidate.next_attempt_at <= ${databaseUtcNow})
                OR (candidate.event_type = 'document.received'
                    AND candidate.company_id IS NOT NULL AND candidate.status = 'ignored'
                    AND candidate.last_error = ${LEGACY_INBOUND_VALIDATION})
@@ -236,7 +251,7 @@ async function claimEvents(opts: {
 
 type Outcome =
   | { status: "processed" | "ignored"; companyId?: string | null; note?: string }
-  | { status: "awaiting-onboarding" };
+  | { status: "awaiting-onboarding"; note?: string };
 type CompanyEvent = EInvoiceProviderEvent & { companyId: string };
 
 async function handleDelivered(row: CompanyEvent, provider: EInvoiceProvider): Promise<Outcome> {
@@ -372,6 +387,7 @@ async function handleReceived(row: CompanyEvent, provider: EInvoiceProvider): Pr
     if (
       ![
         "EINVOICE_INBOUND_INVALID",
+        "EINVOICE_INBOUND_SOURCE_CONFLICT",
         "EINVOICE_INBOUND_UNPARSEABLE",
         "EINVOICE_INBOUND_WRONG_RECIPIENT",
       ].includes(code ?? "")
@@ -383,7 +399,9 @@ async function handleReceived(row: CompanyEvent, provider: EInvoiceProvider): Pr
       note:
         code === "EINVOICE_INBOUND_WRONG_RECIPIENT"
           ? "inbound document has a different buyer"
-          : "inbound source could not be validated",
+          : code === "EINVOICE_INBOUND_SOURCE_CONFLICT"
+            ? "inbound source differs from the original receipt"
+            : "inbound source could not be validated",
     };
   }
   return {
@@ -395,24 +413,34 @@ async function handleReceived(row: CompanyEvent, provider: EInvoiceProvider): Pr
 
 async function handleLegalEntity(row: CompanyEvent, provider: EInvoiceProvider): Promise<Outcome> {
   const payload = row.payload as Record<string, unknown>;
-  const legalEntityId = String(payload.legalEntityId ?? "");
+  const legalEntityId = typeof payload.legalEntityId === "string" ? payload.legalEntityId : null;
   const tin = typeof payload.tin === "string" ? payload.tin : null;
-  const rows = await findLegalEntitiesByProviderId(
-    row.provider,
-    row.environment,
-    legalEntityId,
-    tin,
-    row.companyId
-  );
-  if (rows.length === 0) return { status: "ignored", note: "legal entity not reserved by us" };
-  const [entity] = rows;
+  const entity = await getLegalEntity(row.companyId, row.provider, row.environment);
+  if (!entity) return { status: "ignored", note: LEGAL_ENTITY_UNRESERVED };
   if (!isUaeTin(entity.tin)) {
     return { status: "ignored", note: "stored taxpayer identity is invalid" };
   }
   if (tin && tin !== entity.tin) {
     return { status: "ignored", note: "event names a different taxpayer" };
   }
-  const confirmedId = entity.legalEntityId ?? legalEntityId;
+  const scopeCurrent = () =>
+    providerModule(row.provider)?.environment(process.env) === row.environment;
+  if (
+    !scopeCurrent() ||
+    !matchesOnboardingCompany(await storage.getCompany(row.companyId), row.provider, entity.tin)
+  ) {
+    return { status: "ignored", note: "company onboarding scope changed" };
+  }
+  const confirmedId = entity.legalEntityId;
+  if (!confirmedId && entity.status === "reserved" && entity.lastAction === "RESERVE") {
+    return { status: "awaiting-onboarding", note: LEGAL_ENTITY_WAIT_RESERVATION };
+  }
+  if (legalEntityId && legalEntityId !== confirmedId) {
+    return { status: "ignored", note: "event names a different legal entity" };
+  }
+  if (!legalEntityId && !tin) {
+    return { status: "ignored", note: "callback has no verifiable legal entity reference" };
+  }
   if (!provider.legalEntityPatch || !confirmedId) {
     return { status: "ignored", note: "callback has no verifiable legal entity reference" };
   }
@@ -436,8 +464,32 @@ async function handleLegalEntity(row: CompanyEvent, provider: EInvoiceProvider):
     return { status: "ignored", note: "provider returned a different legal entity" };
   }
   if (current.status === "active" && entity.status !== "active") current.activatedAt = new Date();
-  if (!(await updateLegalEntityRowIfCurrent(entity, { ...current, lastError: null }))) {
-    return { status: "ignored", note: "legal entity changed while the event was being verified" };
+  const updated = await db.transaction(async (tx) => {
+    const latest = await lockOnboardingCompany(entity.companyId, tx);
+    if (!scopeCurrent() || !matchesOnboardingCompany(latest, entity.provider, entity.tin))
+      return null;
+    const saved = await getLegalEntity(
+      entity.companyId,
+      entity.provider,
+      entity.environment,
+      tx,
+      "update"
+    );
+    if (saved?.id !== entity.id || saved.tin !== entity.tin || saved.legalEntityId !== confirmedId)
+      return null;
+    return updateLegalEntityRowIfCurrent(entity, { ...current, lastError: null }, tx);
+  });
+  if (updated === null) {
+    return {
+      status: "ignored",
+      note: "legal entity scope changed while the event was being verified",
+    };
+  }
+  if (!updated) {
+    return {
+      status: "awaiting-onboarding",
+      note: "Provider event is waiting for current legal entity state",
+    };
   }
   return { status: "processed", companyId: entity.companyId };
 }
@@ -468,7 +520,7 @@ async function settle(row: EInvoiceProviderEvent, provider?: EInvoiceProvider) {
   const scopedCallback = Boolean(row.companyId) && canonicalEventType({}, row.eventType) !== null;
   const inbound = scopedCallback && row.eventType === "document.received";
   const legacyRecheck = inbound && row.lastError?.startsWith(LEGACY_INBOUND_RECHECK);
-  const retryAt = () => new Date(Date.now() + eventBackoffMs(row.attempts));
+  const retryAt = sql`${databaseUtcNow} + (${eventBackoffMs(row.attempts)}::int * interval '1 millisecond')`;
   const inboundNote = (note: string) =>
     legacyRecheck ? `${LEGACY_INBOUND_RECHECK}: ${note}` : note;
   try {
@@ -490,8 +542,8 @@ async function settle(row: EInvoiceProviderEvent, provider?: EInvoiceProvider) {
           status: "pending",
           processedAt: null,
           lockedUntil: null,
-          lastError: inboundNote(INBOUND_WAIT_ENTITY),
-          nextAttemptAt: retryAt(),
+          lastError: inboundNote(out.note ?? INBOUND_WAIT_ENTITY),
+          nextAttemptAt: retryAt,
         })
         .where(claim);
       return "deferred";
@@ -500,7 +552,7 @@ async function settle(row: EInvoiceProviderEvent, provider?: EInvoiceProvider) {
       .update(einvoiceProviderEvents)
       .set({
         status: out.status,
-        processedAt: new Date(),
+        processedAt: databaseUtcNow,
         lockedUntil: null,
         lastError: out.note ?? null,
         companyId: out.companyId ?? row.companyId ?? null,
@@ -526,7 +578,7 @@ async function settle(row: EInvoiceProviderEvent, provider?: EInvoiceProvider) {
             : scopedCallback
               ? CALLBACK_FAILURE
               : EVENT_FAILURE,
-        nextAttemptAt: retryAt(),
+        nextAttemptAt: retryAt,
       })
       .where(claim);
     if (waitingForConfig) return "deferred";

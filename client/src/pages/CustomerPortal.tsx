@@ -36,6 +36,7 @@ import { useDocumentTitle, useLinkLocale } from "@/lib/customer-link";
 import { apiUrl } from "@/lib/api";
 import { DateText } from "@/components/documents/DateText";
 import { formatDate } from "@/lib/format-date";
+import { customerEInvoiceLabel, type CustomerEInvoiceOutcome } from "@/lib/einvoice-outcome";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 
 /**
@@ -69,7 +70,7 @@ interface PortalInvoice {
   amountDue: number;
   paymentStatus: "paid" | "partially_paid" | "overdue" | "unpaid" | "credit";
   canPayOnline?: boolean;
-  einvoice: { status: string; uuid: string | null; hasXml: boolean } | null;
+  einvoice: (CustomerEInvoiceOutcome & { uuid: string | null; hasXml: boolean }) | null;
 }
 
 interface StatementSection {
@@ -659,7 +660,7 @@ function PortalHome({ token }: { token: string | null }) {
                               <bdi>{invoice.number}</bdi>
                               {invoice.einvoice && (
                                 <span className="ms-2 text-caption text-muted-foreground">
-                                  <T k="portal.doc.einvoice" />
+                                  {customerEInvoiceLabel(invoice.einvoice, t)}
                                 </span>
                               )}
                             </TableCell>

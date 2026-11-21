@@ -76,6 +76,9 @@ export interface EInvoiceProviderResult {
 /** Options for a status/source call: credit notes live under a separate resource at some ASPs. */
 export interface EInvoiceDocumentRef {
   documentType?: string | null;
+  outboundIdentity?: EInvoiceOutboundIdentity;
+  /** The current connection matches the recorded submission scope. */
+  knownCredentialScope?: boolean;
   /** The provider collection that exposed the document, when known. */
   documentCollection?: "invoice" | "credit-note";
 }

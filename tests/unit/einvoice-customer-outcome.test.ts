@@ -1,14 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Invoice } from "../../shared/schema";
+import { customerEInvoiceLabel } from "../../client/src/lib/einvoice-outcome";
+import portalAr from "../../client/src/locales/ar/portal.json";
+import portalEn from "../../client/src/locales/en/portal.json";
 import {
-  customerEInvoiceStatus,
-  getCustomerEInvoiceStatus,
+  customerEInvoiceOutcome,
+  getCustomerEInvoiceOutcome,
   type EInvoiceCustomerEvidence,
 } from "../../server/services/einvoice/customer-outcome";
 import { providerCallbackUrl } from "../../server/services/einvoice/providers/callback-url";
 import { getEInvoiceDocument } from "../../server/services/einvoice/store";
 
-vi.mock("../../server/services/einvoice/store", () => ({ getEInvoiceDocument: vi.fn() }));
+vi.mock("../../server/services/einvoice/store", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../server/services/einvoice/store")>()),
+  getEInvoiceDocument: vi.fn(),
+}));
+
+const customerEInvoiceStatus = (...args: Parameters<typeof customerEInvoiceOutcome>) =>
+  customerEInvoiceOutcome(...args)?.status ?? null;
 
 const invoice = {
   einvoiceStatus: "cleared",
@@ -27,6 +36,32 @@ const document: EInvoiceCustomerEvidence = {
 };
 
 describe("customer e-invoice outcomes", () => {
+  it.each(["production", "sandbox", null])(
+    "returns only the recipient acceptance and stored %s environment",
+    (environment) => {
+      expect(
+        customerEInvoiceOutcome(invoice, {
+          ...document,
+          providerStatus: "accepted",
+          validation: { submission: { environment } },
+        })
+      ).toEqual({ status: "accepted", environment });
+    }
+  );
+  it.each([portalEn, portalAr])("qualifies receipt and clearance outside production", (t) => {
+    const generic = t["portal.doc.einvoice"];
+    const accepted = `${generic} · ${t["portal.doc.einvoiceAccepted"]}`;
+    const received = `${generic} · ${t["portal.doc.einvoiceDelivered"]}`;
+    expect(customerEInvoiceLabel({ status: "cleared", environment: "production" }, t)).toBe(
+      accepted
+    );
+    expect(customerEInvoiceLabel({ status: "cleared", environment: null }, t)).toBe(
+      `${accepted} · ${t["portal.doc.einvoiceEnvironmentUnknown"]}`
+    );
+    expect(customerEInvoiceLabel({ status: "delivered", environment: "sandbox" }, t)).toBe(
+      `${received} · ${t["portal.doc.einvoiceSandbox"]}`
+    );
+  });
   it("preserves local states and does not expose a status before any is recorded", () => {
     expect(customerEInvoiceStatus({ ...invoice, einvoiceStatus: null }, null)).toBeNull();
     expect(customerEInvoiceStatus({ ...invoice, einvoiceStatus: "generated" }, undefined)).toBe(
@@ -136,7 +171,10 @@ describe("customer e-invoice outcomes", () => {
   it("loads a single authorized invoice's evidence with both tenant and invoice identifiers", async () => {
     const scopedInvoice = { ...invoice, companyId: "company-one", id: "invoice-one" } as Invoice;
     vi.mocked(getEInvoiceDocument).mockResolvedValueOnce(undefined);
-    await expect(getCustomerEInvoiceStatus(scopedInvoice)).resolves.toBe("submitted");
+    await expect(getCustomerEInvoiceOutcome(scopedInvoice)).resolves.toEqual({
+      status: "submitted",
+      environment: null,
+    });
     expect(getEInvoiceDocument).toHaveBeenCalledExactlyOnceWith("company-one", "invoice-one");
   });
 });

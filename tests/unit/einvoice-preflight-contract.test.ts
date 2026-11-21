@@ -6,7 +6,11 @@ import {
   einvoiceIssuesFromError,
 } from "../../client/src/lib/einvoice-issues";
 import { preflightEInvoice } from "../../server/services/einvoice-submit.service";
-import { readEInvoiceDocumentType } from "../../server/services/einvoice.service";
+import {
+  frozenEInvoiceDispatchIssue,
+  generateEInvoiceXML,
+  readEInvoiceDocumentType,
+} from "../../server/services/einvoice.service";
 import { ublToGets } from "../../server/services/einvoice/providers/complyance-gets";
 import { validateEInvoiceXml } from "../../server/services/einvoice/validate";
 import { fixtureCompany, PINT_AE_FIXTURES } from "../fixtures/pint-ae/fixtures";
@@ -16,6 +20,48 @@ const credit = PINT_AE_FIXTURES.find((fixture) => fixture.name === "credit note"
 const ctx = { customer: standard.customer };
 
 describe("UAE e-invoice preflight", () => {
+  it("guards immutable invoices already queued with contradictory buyer identifiers or generic card", () => {
+    const old = (endpointId: string, paymentMeansCode: "48" | "54") =>
+      generateEInvoiceXML(
+        standard.invoice,
+        standard.lines,
+        fixtureCompany,
+        { ...standard.customer, endpointId },
+        { ...standard.opts, paymentMeansCode }
+      ).xml;
+    expect(frozenEInvoiceDispatchIssue(old("1009999999", "54"))).toBe(
+      "EINVOICE_BUYER_ENDPOINT_MISMATCH"
+    );
+    expect(frozenEInvoiceDispatchIssue(old("1007654321", "48"))).toBe(
+      "EINVOICE_PAYMENT_CARD_TYPE_REQUIRED"
+    );
+    expect(frozenEInvoiceDispatchIssue(old("1007654321", "54"))).toBeNull();
+
+    const key = einvoiceIssueTextKey("EINVOICE_PAYMENT_CARD_TYPE_REQUIRED") as keyof typeof en;
+    expect(en[key]).toContain("credit or debit");
+    expect(ar[key]).toMatch(/[\u0600-\u06ff]/);
+  });
+
+  it.each([standard, credit])(
+    "rejects a $name whose 0235 endpoint contradicts the buyer VAT TRN",
+    async (fixture) => {
+      const checked = await preflightEInvoice(fixture.invoice, fixture.lines, fixtureCompany, {
+        customer: { ...fixture.customer, endpointId: "1009999999", endpointScheme: "0235" },
+        originalInvoice: fixture.opts.originalInvoice,
+      });
+      expect(checked.built).toBeNull();
+      expect(checked.issues).toContainEqual(
+        expect.objectContaining({
+          field: "customer.endpointId",
+          code: "EINVOICE_BUYER_ENDPOINT_MISMATCH",
+        })
+      );
+      const key = einvoiceIssueTextKey("EINVOICE_BUYER_ENDPOINT_MISMATCH") as keyof typeof en;
+      expect(en[key]).toContain("TRN");
+      expect(ar[key]).toMatch(/[\u0600-\u06ff]/);
+    }
+  );
+
   it("rejects an invalid UAE buyer TRN and discounted VAT drift with localized fixes", async () => {
     const checked = await preflightEInvoice(
       { ...standard.invoice, vatAmount: 84, total: 1774 },

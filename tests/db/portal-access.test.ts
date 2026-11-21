@@ -452,14 +452,23 @@ describe("W4-D customer self-service", () => {
     const share = await t.as.post(`/api/invoices/${inv.id}/share`);
     expect(share.status, share.text).toBe(200);
     const shareToken = share.body.shareUrl.split("/").at(-1);
-    const readStatus = async (status: string) => {
+    const readStatus = async (
+      status: string,
+      environment: "sandbox" | "production" | null = null
+    ) => {
       const list = await h.anon.get(`/api/portal/${token}/invoices`);
-      expect(list.body[0].einvoice).toEqual({ status, uuid: "uuid-123", hasXml: true });
+      expect(list.body[0].einvoice).toEqual({
+        status,
+        environment,
+        uuid: "uuid-123",
+        hasXml: true,
+      });
       const view = await h.anon.get(`/api/public/invoices/${shareToken}`);
       expect(view.status, view.text).toBe(200);
-      expect(view.body.einvoice).toEqual({ status, uuid: "uuid-123" });
+      expect(view.body.einvoice).toEqual({ status, environment, uuid: "uuid-123" });
       const xml = await h.anon.get(`/api/portal/${token}/invoices/${inv.id}/einvoice`);
       expect(xml.headers.get("x-einvoice-status")).toBe(status);
+      expect(xml.headers.get("x-einvoice-environment")).toBe(environment ?? "unknown");
       return xml;
     };
     const xml = await readStatus("submitted");
@@ -474,10 +483,12 @@ describe("W4-D customer self-service", () => {
     await readStatus("delivered");
 
     await h.sql(
-      `UPDATE einvoice_documents SET provider_status = 'accepted' WHERE invoice_id = $1`,
+      `UPDATE einvoice_documents SET provider_status = 'accepted',
+         validation = jsonb_set(validation, '{submission,environment}', '"sandbox"')
+       WHERE invoice_id = $1`,
       [inv.id]
     );
-    await readStatus("accepted");
+    await readStatus("accepted", "sandbox");
 
     await h.sql(`UPDATE invoices SET einvoice_provider = 'complyance' WHERE id = $1`, [inv.id]);
     await h.sql(
@@ -485,15 +496,17 @@ describe("W4-D customer self-service", () => {
        WHERE invoice_id = $1`,
       [inv.id]
     );
-    await readStatus("accepted");
+    await readStatus("accepted", "sandbox");
 
     await h.sql(
       `UPDATE einvoice_documents SET validation =
-       jsonb_set(validation, '{submission,reportingEvidence}', '{"reported":"2026-01-01T00:00:00Z"}')
-       WHERE invoice_id = $1`,
+       jsonb_set(
+         jsonb_set(validation, '{submission,reportingEvidence}', '{"reported":"2026-01-01T00:00:00Z"}'),
+         '{submission,environment}', '"production"'
+       ) WHERE invoice_id = $1`,
       [inv.id]
     );
-    await readStatus("cleared");
+    await readStatus("cleared", "production");
   });
 });
 

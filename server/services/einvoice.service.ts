@@ -20,7 +20,7 @@ import { fromFils, toFils, tryToFils } from "../../shared/money";
 import { computeSalesDocument, storedLineToTotalsInput } from "./document-totals.service";
 import { dueDateFromTerms } from "./invoice-lifecycle";
 import { comment, el, opt, serializeXml, type XmlElement } from "./einvoice/xml";
-import { parseXml, textAt } from "./einvoice/dom";
+import { all, attr, first, parseXml, partyVatTrn, text, textAt } from "./einvoice/dom";
 import {
   CATEGORY_REASON_TEXT,
   CREDIT_NOTE_REASON_CODES,
@@ -34,6 +34,7 @@ import {
   paymentTermsText,
   tinFromTrn,
   transactionTypeCode,
+  uaePeppolEndpointIssue,
   type CreditNoteReasonCode,
   type LegalIdType,
   type PaymentMeansCode,
@@ -758,6 +759,8 @@ export interface EInvoiceIssue {
 
 /** IBT-049: the buyer's electronic address (cbc:EndpointID) cannot be built. */
 export const BUYER_ENDPOINT_MISSING = "EINVOICE_BUYER_ENDPOINT_MISSING";
+export const BUYER_ENDPOINT_MISMATCH = "EINVOICE_BUYER_ENDPOINT_MISMATCH";
+const PAYMENT_CARD_TYPE_REQUIRED = "EINVOICE_PAYMENT_CARD_TYPE_REQUIRED";
 
 /** ibr-144-ae: the buyer's street, city or emirate is missing (named fix-it field customer.address). */
 export const BUYER_ADDRESS_MISSING = "EINVOICE_BUYER_ADDRESS_MISSING";
@@ -766,6 +769,31 @@ const TRN_RE = /^[0-9]{15}$/;
 
 function validDate(value: string | Date | null | undefined): boolean {
   return value != null && Number.isFinite(new Date(value).getTime());
+}
+
+/** Recheck these dispatch requirements on immutable XML queued by an earlier release. */
+export function frozenEInvoiceDispatchIssue(xml: string): string | null {
+  try {
+    const root = parseXml(xml).documentElement;
+    const buyer = first(root, "cac:AccountingCustomerParty/cac:Party");
+    if (buyer) {
+      const endpoint = first(buyer, "cbc:EndpointID");
+      const participant = text(endpoint);
+      const buyerTin = tinFromTrn(partyVatTrn(buyer));
+      if (
+        participant &&
+        uaePeppolEndpointIssue(attr(endpoint, "schemeID"), participant, buyerTin) === "mismatch"
+      ) {
+        return BUYER_ENDPOINT_MISMATCH;
+      }
+    }
+    if (all(root, "cac:PaymentMeans/cbc:PaymentMeansCode").some((code) => text(code) === "48")) {
+      return PAYMENT_CARD_TYPE_REQUIRED;
+    }
+    return null;
+  } catch {
+    return "EINVOICE_SCHEMA_INVALID";
+  }
 }
 
 /** Check the stored invoice data before generating a UBL document. */
@@ -899,6 +927,9 @@ export function validateForEInvoicing(
   const buyerTrn = (ctx.customer?.trn ?? invoice.customerTrn)?.trim();
   const buyerEndpoint = ctx.customer?.endpointId?.trim();
   const buyerScheme = ctx.customer?.endpointScheme?.trim() || PEPPOL_SCHEME_UAE_TIN;
+  const buyerEndpointIssue = buyerEndpoint
+    ? uaePeppolEndpointIssue(buyerScheme, buyerEndpoint, tinFromTrn(buyerTrn))
+    : null;
   if (buyerTrn && !isPintAeTrn(buyerTrn)) {
     add(
       "invoice.customerTrn",
@@ -914,11 +945,17 @@ export function validateForEInvoicing(
         "or customer, or record the customer's Peppol endpoint (scheme 0235 with its 10-digit TIN, " +
         "or its own Peppol scheme and ID) (PINT-EndpointID)"
     );
-  } else if (buyerEndpoint && buyerScheme === PEPPOL_SCHEME_UAE_TIN && !isUaeTin(buyerEndpoint)) {
+  } else if (buyerEndpointIssue === "invalid") {
     add(
       "customer.endpointId",
       "EINVOICE_BUYER_ENDPOINT_INVALID",
       "Buyer Peppol scheme 0235 requires a 10-digit TIN starting with 1."
+    );
+  } else if (buyerEndpointIssue === "mismatch") {
+    add(
+      "customer.endpointId",
+      BUYER_ENDPOINT_MISMATCH,
+      "The buyer's Peppol 0235 endpoint must match the first 10 digits of the buyer's VAT TRN."
     );
   }
   if (lines.length === 0) {
@@ -982,6 +1019,13 @@ export function validateForEInvoicing(
 
   const iban = options?.payeeIban ?? co.einvoicePayeeIban;
   const meansCode = options?.paymentMeansCode ?? co.einvoicePaymentMeansCode;
+  if (meansCode === "48") {
+    add(
+      "invoice.paymentMeans",
+      PAYMENT_CARD_TYPE_REQUIRED,
+      "Check the payment record and use the confirmed credit or debit card method for e-invoicing."
+    );
+  }
   if (meansCode === "30" && !iban?.trim()) {
     add(
       "company.einvoicePayeeIban",

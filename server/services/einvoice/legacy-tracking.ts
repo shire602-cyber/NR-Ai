@@ -1,8 +1,9 @@
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import {
   auditLogs,
   companies,
   einvoiceArchive,
+  einvoiceDocumentEvents,
   einvoiceDocuments,
   invoices,
   users,
@@ -16,16 +17,23 @@ import { scopedCompanyPermissionFailure } from "../../middleware/companyRolePoli
 import type { EInvoiceOutboundIdentity } from "../einvoice-provider";
 import { readEInvoiceDocumentType } from "../einvoice.service";
 import { attr, first, parseXml, text, textAt } from "./dom";
-import { companyTin, getLegalEntity } from "./legal-entities";
+import {
+  assertLegalEntityCanSend,
+  companyTin,
+  getLegalEntity,
+  requireCompanyTin,
+} from "./legal-entities";
 import { isUaeTin, PEPPOL_SCHEME_UAE_TIN, tinFromTrn } from "./pint-ae-codes";
 import { AcubeApiError, AcubeEInvoiceProvider } from "./providers/acube";
 import { companyProviderConfiguration } from "./providers/company-provider";
 import { ComplyanceEInvoiceProvider } from "./providers/complyance";
 import type { ProviderEnvironment } from "./providers/types";
 import { applyTracks } from "./history";
+import { invoiceReportingDeadline, invoiceReportingRequired } from "./reporting";
 import {
   archiveEInvoiceXml,
   documentProviderEnvironment,
+  documentReportingRequired,
   documentSubmissionMetadata,
   documentSubmissionSnapshot,
   getEInvoiceDocument,
@@ -166,8 +174,23 @@ function recoveryPlan(invoice: Invoice, doc: EInvoiceDocument | undefined) {
 /** Advertise local configuration only. Opening the invoice makes no provider request. */
 export async function legacyTrackingAvailability(
   invoice: Invoice,
-  doc: EInvoiceDocument | undefined
+  doc: EInvoiceDocument | undefined,
+  company?: Pick<Company, "einvoicePartner">
 ) {
+  const refusal = await legacyRefusalProof(invoice, doc);
+  if (refusal) {
+    const configuration =
+      !company || company.einvoicePartner === "acube"
+        ? await companyProviderConfiguration(invoice.companyId, "acube", {
+            environment: refusal.environment,
+          })
+        : null;
+    return {
+      provider: "acube" as const,
+      reference: "refusal" as const,
+      environments: configuration ? [refusal.environment] : [],
+    };
+  }
   const plan = recoveryPlan(invoice, doc);
   const pin = documentProviderEnvironment(doc);
   if (!plan || (pin && invoice.einvoiceProviderMessageId && doc?.providerMessageId)) return null;
@@ -398,6 +421,216 @@ function assertSameEnvironment(current: string | null, requested: ProviderEnviro
   }
 }
 
+/** The old route recorded definitive direct refusals after the single provider attempt. */
+async function legacyRefusalProof(
+  invoice: Invoice,
+  doc: EInvoiceDocument | undefined,
+  conn: EInvoiceDb = db
+) {
+  const snapshot = documentSubmissionSnapshot(doc);
+  if (
+    !doc ||
+    doc.companyId !== invoice.companyId ||
+    doc.invoiceId !== invoice.id ||
+    invoice.einvoiceProvider !== "acube" ||
+    doc.provider !== "acube" ||
+    invoice.einvoiceStatus !== "rejected" ||
+    doc.status !== "rejected" ||
+    doc.deliveryStatus !== "rejected" ||
+    doc.lastErrorCode !== "ACUBE_VALIDATION" ||
+    doc.providerStatus ||
+    doc.attempts !== 1 ||
+    invoice.einvoiceProviderMessageId ||
+    doc.providerMessageId ||
+    invoice.einvoiceSubmittedAt ||
+    doc.submittedAt ||
+    doc.nextRetryAt ||
+    doc.submitClaimedAt ||
+    snapshot?.operationId ||
+    snapshot?.scope ||
+    !invoice.einvoiceXml ||
+    !invoice.einvoiceHash ||
+    doc.xmlHash !== invoice.einvoiceHash ||
+    !invoice.einvoiceUuid ||
+    doc.uuid !== invoice.einvoiceUuid
+  )
+    return null;
+
+  const audits = await conn
+    .select({
+      id: auditLogs.id,
+      action: auditLogs.action,
+      details: auditLogs.details,
+      createdAt: auditLogs.createdAt,
+    })
+    .from(auditLogs)
+    .where(
+      and(
+        eq(auditLogs.companyId, invoice.companyId),
+        eq(auditLogs.resourceType, "invoice"),
+        eq(auditLogs.resourceId, invoice.id),
+        inArray(auditLogs.action, ["invoice.einvoice_submit", "invoice.einvoice_resubmit"])
+      )
+    )
+    .limit(2);
+  const [audit] = audits;
+  if (audits.length !== 1 || audit.action !== "invoice.einvoice_submit") return null;
+  const delivery = await conn
+    .select({
+      code: einvoiceDocumentEvents.code,
+      provider: einvoiceDocumentEvents.provider,
+      status: einvoiceDocumentEvents.toStatus,
+    })
+    .from(einvoiceDocumentEvents)
+    .where(
+      and(
+        eq(einvoiceDocumentEvents.companyId, invoice.companyId),
+        eq(einvoiceDocumentEvents.invoiceId, invoice.id),
+        eq(einvoiceDocumentEvents.track, "delivery"),
+        inArray(einvoiceDocumentEvents.toStatus, [
+          "queued",
+          "sending",
+          "delivered",
+          "delivery_failed",
+          "rejected",
+          "needs_link",
+        ])
+      )
+    )
+    .limit(2);
+  if (
+    delivery.length !== 1 ||
+    delivery[0].status !== "rejected" ||
+    delivery[0].provider !== "acube" ||
+    delivery[0].code !== "ACUBE_VALIDATION"
+  )
+    return null;
+  const [archive] = await conn
+    .select({ id: einvoiceArchive.id })
+    .from(einvoiceArchive)
+    .where(
+      and(
+        eq(einvoiceArchive.companyId, invoice.companyId),
+        eq(einvoiceArchive.invoiceId, invoice.id),
+        eq(einvoiceArchive.direction, "outbound"),
+        inArray(einvoiceArchive.kind, ["submitted", "cleared"])
+      )
+    )
+    .limit(1);
+  if (archive) return null;
+  let outcome:
+    | { provider?: unknown; environment?: unknown; providerMessageId?: unknown; status?: unknown }
+    | undefined;
+  try {
+    outcome = JSON.parse(audit.details ?? "null")?.after;
+  } catch {
+    return null;
+  }
+  const environment = outcome?.environment;
+  if (
+    outcome?.provider !== "acube" ||
+    outcome.status !== "rejected" ||
+    (outcome.providerMessageId !== "" && outcome.providerMessageId !== null) ||
+    (environment !== "sandbox" && environment !== "production") ||
+    (snapshot?.environment && snapshot.environment !== environment)
+  )
+    return null;
+  return { auditId: audit.id, environment, attemptedAt: audit.createdAt };
+}
+
+async function confirmLegacyRefusal(args: {
+  invoice: Invoice;
+  actorId: string;
+  environment: ProviderEnvironment;
+  auditId: string;
+}) {
+  const { invoice, actorId, environment, auditId } = args;
+  return db.transaction(async (tx) => {
+    const current = await lockEInvoiceInvoice(invoice.companyId, invoice.id, tx);
+    const [company] = await tx
+      .select()
+      .from(companies)
+      .where(eq(companies.id, invoice.companyId))
+      .for("share");
+    if (!current || !company || company.deletedAt) throw new DomainError("INVOICE_NOT_FOUND", 404);
+    await assertCanVerifyEInvoiceTracking(actorId, company.id, tx, "share");
+    const doc = await getEInvoiceDocument(company.id, invoice.id, tx, "update");
+    assertSameEnvironment(documentProviderEnvironment(doc), environment);
+    const response = {
+      provider: "acube" as const,
+      environment,
+      verified: true as const,
+      retryEligible: true as const,
+    };
+    if (
+      documentSubmissionSnapshot(doc)?.legacyRefusalAuditId === auditId &&
+      canRetryOriginalRejectedNumber(current, doc)
+    )
+      return response;
+    const proof = await legacyRefusalProof(current, doc, tx);
+    if (
+      proof?.auditId !== auditId ||
+      proof.environment !== environment ||
+      current.einvoiceHash !== invoice.einvoiceHash
+    )
+      throw mismatch();
+    const config = await companyProviderConfiguration(company.id, "acube", { environment });
+    if (company.einvoicePartner !== "acube" || !config) throw cannotVerify();
+    const source = await savedSource(current, doc, { provider: "acube", messageId: null });
+    if (source.documentNumber !== current.number) throw mismatch();
+    const entity = await getLegalEntity(company.id, "acube", environment, tx, "share");
+    assertLegalEntityCanSend(entity, "A-Cube");
+    if (entity?.tin !== source.supplierTin || requireCompanyTin(company) !== source.supplierTin)
+      throw mismatch();
+    const scope = await new AcubeEInvoiceProvider(config.env).getSubmissionScope(company.id);
+    const now = new Date();
+    const required = documentReportingRequired(
+      doc,
+      invoiceReportingRequired(current, company, proof.attemptedAt)
+    );
+    await upsertEInvoiceDocument(
+      company.id,
+      invoice.id,
+      {
+        reportBy: required ? (doc?.reportBy ?? invoiceReportingDeadline(current)) : null,
+        validation: {
+          ...(doc?.validation as Record<string, unknown>),
+          submission: {
+            ...documentSubmissionSnapshot(doc),
+            environment,
+            scope,
+            invoiceNumber: source.documentNumber,
+            supplierTin: source.supplierTin,
+            supplierTrn: source.supplierTrn,
+            legalEntityId: entity.legalEntityId,
+            providerAttempted: true,
+            reportingRequired: required,
+            legacyRefusalAuditId: proof.auditId,
+            environmentVerifiedAt: now.toISOString(),
+          },
+        },
+      },
+      tx
+    );
+    await tx.insert(auditLogs).values({
+      userId: actorId,
+      companyId: company.id,
+      action: "invoice.einvoice_refusal_verified",
+      resourceType: "invoice",
+      resourceId: invoice.id,
+      details: JSON.stringify({
+        after: {
+          provider: "acube",
+          environment,
+          invoiceNumber: source.documentNumber,
+          originalAuditId: proof.auditId,
+        },
+      }),
+    });
+    return response;
+  });
+}
+
 /** Verify one recorded outbound reference and persist its environment without dispatching work. */
 export async function confirmLegacyEInvoiceEnvironment(args: {
   invoice: Invoice;
@@ -412,6 +645,25 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
   await assertCanVerifyEInvoiceTracking(actorId, company.id);
 
   const doc = await getEInvoiceDocument(company.id, invoice.id);
+  if (
+    documentSubmissionSnapshot(doc)?.legacyRefusalAuditId &&
+    canRetryOriginalRejectedNumber(invoice, doc)
+  ) {
+    if (documentId) throw mismatch();
+    assertSameEnvironment(documentProviderEnvironment(doc), environment);
+    return {
+      provider: "acube" as const,
+      environment,
+      verified: true as const,
+      retryEligible: true as const,
+    };
+  }
+  const refusal = await legacyRefusalProof(invoice, doc);
+  if (refusal) {
+    if (documentId) throw mismatch();
+    assertSameEnvironment(refusal.environment, environment);
+    return confirmLegacyRefusal({ invoice, actorId, environment, auditId: refusal.auditId });
+  }
   const plan = recoveryPlan(invoice, doc);
   if (!plan) throw cannotVerify();
   if (
@@ -462,7 +714,7 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
     const current = await lockEInvoiceInvoice(company.id, invoice.id, tx);
     if (!current) throw new DomainError("INVOICE_NOT_FOUND", 404);
     const [currentCompany] = await tx
-      .select({ deletedAt: companies.deletedAt })
+      .select()
       .from(companies)
       .where(eq(companies.id, company.id))
       .for("share");
@@ -510,6 +762,15 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
       throw mismatch();
 
     const now = new Date();
+    const original = { ...current, einvoiceXml: source.xml };
+    const required = documentReportingRequired(
+      stored,
+      invoiceReportingRequired(
+        original,
+        currentCompany,
+        current.einvoiceSubmittedAt ?? stored?.submittedAt ?? stored?.createdAt ?? now
+      )
+    );
     const validation =
       stored?.validation &&
       typeof stored.validation === "object" &&
@@ -530,6 +791,7 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
       documentType: source.documentType,
       xmlHash: source.hash,
       uuid: source.uuid,
+      reportBy: required ? (stored?.reportBy ?? invoiceReportingDeadline(original)) : null,
       validation: {
         ...validation,
         submission: {
@@ -539,6 +801,7 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
           environment,
           environmentVerifiedAt: now.toISOString(),
           providerAttempted: true,
+          reportingRequired: required,
           ...(stored?.lastErrorCode === "COMPLYANCE_XML_FAILED" ? { correctionBlocked: true } : {}),
         },
       },

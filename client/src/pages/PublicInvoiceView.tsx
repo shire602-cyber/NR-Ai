@@ -4,6 +4,7 @@ import { T } from "@/components/layout/T";
 // mobile row-card tables and the RTL rules.
 import "@/styles/rtl.css";
 import "@/styles/mobile.css";
+import { customerEInvoiceLabel, type CustomerEInvoiceOutcome } from "@/lib/einvoice-outcome";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { DateText } from "@/components/documents/DateText";
 import { useParams } from "wouter";
@@ -33,7 +34,7 @@ import { apiUrl } from "@/lib/api";
 interface PublicInvoiceData {
   /** W4-D (R16-14): present only when a payment gateway is live or in sandbox. */
   onlinePayment?: { available: boolean; status: string; provider: string | null };
-  einvoice?: { status: string; uuid: string | null } | null;
+  einvoice?: CustomerEInvoiceOutcome | null;
   /** The customer's own language when the firm recorded one (en | ar). */
   preferredLanguage?: string | null;
   /** The company's language (en | ar): the page opens in it until the viewer switches. */
@@ -433,12 +434,7 @@ export default function PublicInvoiceView() {
         )}
         {data.einvoice && (
           <p className="text-small text-muted-foreground" data-testid="public-invoice-einvoice">
-            <T k="portal.doc.einvoice" />
-            {data.einvoice.status === "delivered"
-              ? ` · ${t["customerLink.einvoiceDelivered"]}`
-              : data.einvoice.status === "accepted" || data.einvoice.status === "cleared"
-                ? ` · ${t["customerLink.einvoiceAccepted"]}`
-                : ""}
+            {customerEInvoiceLabel(data.einvoice, t)}
           </p>
         )}
 

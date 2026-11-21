@@ -12,6 +12,7 @@ import {
   deliveryLabelKey,
   errorKey,
   reportingLabelKey,
+  trackOutcomeLabel,
   sourceKey,
   type DeliveryStatus,
   type EInvoiceStatusView,
@@ -32,7 +33,13 @@ function eventLabel(e: EInvoiceStatusView["events"][number], t: Record<string, s
       : reportingLabelKey(e.to as ReportingStatus, e.confirmationUnavailable);
   const track =
     e.track === "delivery" ? t["einvoicing.trackDelivery"] : t["einvoicing.trackReporting"];
-  return `${track}: ${t[key] ?? e.to}`;
+  const label = trackOutcomeLabel(
+    t,
+    key,
+    e.to === "reported" || e.to === "delivered",
+    e.environment
+  );
+  return `${track}: ${label ?? e.to}`;
 }
 
 export default function EInvoiceHistory({

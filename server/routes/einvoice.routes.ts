@@ -67,16 +67,12 @@ import {
   recoverAcubeSubmission,
   refreshAndPersist,
   runEInvoiceRetries,
-  invoiceReportingRequired,
   enqueueEInvoiceSubmission,
 } from "../services/einvoice/workflow";
+import { invoiceReportingDeadline, invoiceReportingRequired } from "../services/einvoice/reporting";
 import { einvoiceStatusView, projectEInvoiceDocument } from "../services/einvoice/status-view";
 import { applyTracks, recordValidationEvent } from "../services/einvoice/history";
-import {
-  deriveInvoiceTracks,
-  NEW_DOCUMENT_REQUIRED_CODES,
-  reportByDate,
-} from "../services/einvoice/tracks";
+import { deriveInvoiceTracks, NEW_DOCUMENT_REQUIRED_CODES } from "../services/einvoice/tracks";
 import { runProviderEvents, runProviderPoll } from "../services/einvoice/provider-events";
 import {
   LEGAL_ID_TYPES,
@@ -84,6 +80,7 @@ import {
   PEPPOL_SCHEME_UAE_TIN,
   isUaeTin,
   tinFromTrn,
+  uaePeppolEndpointIssue,
 } from "../services/einvoice/pint-ae-codes";
 
 import { effectiveTin } from "../../shared/validators/einvoice-identity";
@@ -380,6 +377,8 @@ export function registerEInvoiceRoutes(app: Express) {
           ["queued", "submitted", "accepted", "cleared"].includes(invoice.einvoiceStatus ?? "") ||
           prior?.providerMessageId ||
           invoice.einvoiceProviderMessageId ||
+          submissionTriedProvider(prior) ||
+          (prior?.attempts ?? 0) > 0 ||
           needsLegacySubmissionRecovery(invoice, prior) ||
           prior?.deliveryStatus === "needs_link" ||
           prior?.submitClaimedAt ||
@@ -389,7 +388,7 @@ export function registerEInvoiceRoutes(app: Express) {
             "EINVOICE_ALREADY_SUBMITTED",
             409,
             undefined,
-            "A queued or submitted e-invoice cannot be regenerated."
+            "This e-invoice already has a submission record. Open its status to view the available actions."
           );
         }
         const lines = await tx
@@ -404,6 +403,8 @@ export function registerEInvoiceRoutes(app: Express) {
 
         const { xml, uuid, hash, documentType } = result.built;
         const now = new Date();
+        const generated = { ...invoice, einvoiceXml: xml };
+        const required = invoiceReportingRequired(generated, company, now);
         await tx
           .update(invoices)
           .set({
@@ -421,7 +422,7 @@ export function registerEInvoiceRoutes(app: Express) {
             uuid,
             xmlHash: hash,
             documentType,
-            validation: result.validation,
+            validation: { ...result.validation, submission: { reportingRequired: required } },
             validatedAt: now,
             lastError: null,
             rejectionReasons: null,
@@ -429,7 +430,6 @@ export function registerEInvoiceRoutes(app: Express) {
           },
           tx
         );
-        const required = invoiceReportingRequired(invoice, company, now);
         await recordValidationEvent(company.id, invoice.id, true, { source: "user", now }, tx);
         await applyTracks(
           company.id,
@@ -437,7 +437,7 @@ export function registerEInvoiceRoutes(app: Express) {
           {
             delivery: "validated",
             reporting: required ? "pending" : "not_required",
-            reportBy: required ? reportByDate(invoice.date) : null,
+            reportBy: required ? invoiceReportingDeadline(generated) : null,
             errorCode: null,
           },
           { source: "user", now },
@@ -926,10 +926,16 @@ export function registerEInvoiceRoutes(app: Express) {
       }
       const body = validated<BuyerEndpointBody>(req);
       const scheme = body.scheme ?? PEPPOL_SCHEME_UAE_TIN;
-      if (body.participantId && scheme === PEPPOL_SCHEME_UAE_TIN && !isUaeTin(body.participantId)) {
+      const endpointIssue = body.participantId
+        ? uaePeppolEndpointIssue(scheme, body.participantId, tinFromTrn(contact.trnNumber?.trim()))
+        : null;
+      if (endpointIssue === "invalid") {
         throw new DomainError("VALIDATION_ERROR", 400, {
           fields: { participantId: ["Under scheme 0235 the participant id is the 10-digit TIN"] },
         });
+      }
+      if (endpointIssue === "mismatch") {
+        throw new DomainError("EINVOICE_BUYER_ENDPOINT_MISMATCH", 422);
       }
       const row = await upsertBuyerEndpoint(companyId, contactId, {
         participantId: body.participantId ?? null,

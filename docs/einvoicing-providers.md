@@ -72,6 +72,7 @@ both providers may stay.
 ### Delete
 
 - `server/services/einvoice/providers/acube.ts`
+- `server/services/einvoice/providers/acube-onboarding.ts`
 - `server/services/einvoice/acube-signature.ts`
 - `server/routes/einvoice-acube.routes.ts`
 - `client/src/components/einvoice/AcubeConnectCard.tsx`

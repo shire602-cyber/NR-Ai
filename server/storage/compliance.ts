@@ -38,13 +38,20 @@ import {
   type VatReturn,
 } from "@shared/schema";
 import { db } from "../db";
-import { and, desc, eq, lt, or, sql } from "drizzle-orm";
+import { databaseUtcNow } from "../config/database-time";
+import { and, desc, eq, getTableColumns, lt, or, sql, type SQL } from "drizzle-orm";
 import { CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP } from "../../shared/ct-workpaper";
 import { isScopedIdPair, scopedGet } from "../tenancy";
 import type { AuditLogFilter } from "./types";
 import { auditFilterConditions, auditLogToActivityLog, normalizeEmail } from "./helpers";
 import { EngagementStorage } from "./engagement";
 import { sealAuditChainWaiting } from "../services/audit-chain.service";
+
+const invitationColumns = {
+  ...getTableColumns(companyInvitations),
+  expired: sql<boolean>`${companyInvitations.expiresAt} <= ${databaseUtcNow}`,
+};
+type InvitationWithExpiry = CompanyInvitation & { expired: boolean };
 
 export class ComplianceStorage extends EngagementStorage {
   // Audit Logs
@@ -402,9 +409,9 @@ export class ComplianceStorage extends EngagementStorage {
 
   // Company team invitations (W2-C, R01-04/R01-15). Every lookup by id is
   // scoped to the company; lookups by token use the SHA-256 digest only.
-  async listCompanyInvitations(companyId: string): Promise<CompanyInvitation[]> {
+  async listCompanyInvitations(companyId: string): Promise<InvitationWithExpiry[]> {
     return db
-      .select()
+      .select(invitationColumns)
       .from(companyInvitations)
       .where(eq(companyInvitations.companyId, companyId))
       .orderBy(desc(companyInvitations.createdAt));
@@ -420,9 +427,9 @@ export class ComplianceStorage extends EngagementStorage {
   async getPendingCompanyInvitationByEmail(
     companyId: string,
     email: string
-  ): Promise<CompanyInvitation | undefined> {
+  ): Promise<InvitationWithExpiry | undefined> {
     const [row] = await db
-      .select()
+      .select(invitationColumns)
       .from(companyInvitations)
       .where(
         and(
@@ -435,16 +442,23 @@ export class ComplianceStorage extends EngagementStorage {
     return row;
   }
 
-  async getCompanyInvitationByTokenHash(tokenHash: string): Promise<CompanyInvitation | undefined> {
+  async getCompanyInvitationByTokenHash(
+    tokenHash: string
+  ): Promise<InvitationWithExpiry | undefined> {
     const [row] = await db
-      .select()
+      .select(invitationColumns)
       .from(companyInvitations)
       .where(eq(companyInvitations.tokenHash, tokenHash))
       .limit(1);
     return row;
   }
 
-  async createCompanyInvitation(input: InsertCompanyInvitation): Promise<CompanyInvitation> {
+  async createCompanyInvitation(
+    input: Omit<InsertCompanyInvitation, "expiresAt" | "lastSentAt"> & {
+      expiresAt: Date | SQL;
+      lastSentAt?: Date | null | SQL;
+    }
+  ): Promise<CompanyInvitation> {
     const [row] = await db
       .insert(companyInvitations)
       .values({ ...input, email: normalizeEmail(input.email) })
@@ -458,17 +472,9 @@ export class ComplianceStorage extends EngagementStorage {
     data: Partial<
       Pick<
         CompanyInvitation,
-        | "status"
-        | "tokenHash"
-        | "expiresAt"
-        | "acceptedAt"
-        | "acceptedUserId"
-        | "revokedAt"
-        | "lastSentAt"
-        | "sendCount"
-        | "invitedBy"
+        "status" | "tokenHash" | "acceptedAt" | "acceptedUserId" | "sendCount" | "invitedBy"
       >
-    >,
+    > & { expiresAt?: Date | SQL; revokedAt?: Date | null | SQL; lastSentAt?: Date | SQL },
     expected: Pick<CompanyInvitation, "status" | "tokenHash">
   ): Promise<CompanyInvitation | undefined> {
     if (!isScopedIdPair(companyId, id)) return undefined;

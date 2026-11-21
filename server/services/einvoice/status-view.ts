@@ -42,7 +42,8 @@ import {
   reportingEvidenceAt,
 } from "./tracks";
 import { einvoiceMandateApplies } from "./scope";
-import { canRecoverAcubeSubmission, invoiceReportingRequired } from "./workflow";
+import { canRecoverAcubeSubmission } from "./workflow";
+import { invoiceReportingRequired } from "./reporting";
 import { companyProviderConfiguration } from "./providers/company-provider";
 import { providerModule } from "./providers/registry";
 
@@ -81,9 +82,11 @@ export function projectEInvoiceDocument(
     (doc.status === "failed" && doc.nextRetryAt && !doc.providerMessageId)
       ? "queued"
       : projectEInvoiceLegacyStatus(doc.provider, doc.providerStatus, doc.status, tracks.reporting);
+  const pinned = documentProviderEnvironment(doc);
   return {
     ...doc,
     status,
+    environment: pinned === "sandbox" || pinned === "production" ? pinned : null,
     deliveryStatus: tracks.delivery,
     deliveryStatusAt: tracks.delivery === doc.deliveryStatus ? doc.deliveryStatusAt : null,
     reportingStatus: tracks.reporting,
@@ -102,7 +105,15 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
   const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
   const ctx = await loadEInvoiceContext(invoice, company, lines);
   const issues = validateForEInvoicing(invoice, lines, company, ctx);
-  const required = documentReportingRequired(doc, invoiceReportingRequired(invoice, company, now));
+  const required = documentReportingRequired(
+    doc,
+    invoiceReportingRequired(
+      invoice,
+      company,
+      invoice.einvoiceSubmittedAt ?? doc?.submittedAt ?? now,
+      ctx.customer?.trn
+    )
+  );
   const providerDocumentId =
     invoice.einvoiceProviderMessageId ?? legacyTrackingReference(invoice, doc)?.messageId ?? null;
   const handedOver = !!providerDocumentId;
@@ -279,7 +290,7 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
       provider: providerId,
       providerDisplayName: module?.displayName ?? null,
       environment,
-      environmentVerification: await legacyTrackingAvailability(invoice, doc),
+      environmentVerification: await legacyTrackingAvailability(invoice, doc, company),
       connected: block === null,
       block,
       providerDocumentId,
@@ -348,6 +359,7 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
         message: confirmationUnavailable ? null : e.message,
         source: e.source,
         provider: e.provider,
+        environment: e.provider && e.provider === doc?.provider ? pinnedEnvironment : null,
         providerStatus: e.providerStatus,
         at: iso(e.createdAt),
       };

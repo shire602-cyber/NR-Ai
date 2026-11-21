@@ -169,6 +169,12 @@ describe("W4-C inbound e-invoices → draft bills", () => {
     const dup = await deliver(t, xml);
     expect(dup.status).toBe(200);
     expect(dup.body).toMatchObject({ duplicate: true, billId: first.body.billId });
+    const changed = await deliver(
+      t,
+      xml.replace("Consulting services", "Changed consulting services")
+    );
+    expect(changed.status, changed.text).toBe(409);
+    expect(changed.body.code).toBe("EINVOICE_INBOUND_SOURCE_CONFLICT");
     expect(
       (
         await h.sql(`SELECT count(*)::int AS n FROM vendor_bills WHERE company_id = $1`, [

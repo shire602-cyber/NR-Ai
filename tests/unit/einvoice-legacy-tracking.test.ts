@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EInvoiceDocument, Invoice } from "../../shared/schema";
+import { db } from "../../server/db";
 import { scopedCompanyPermissionFailure } from "../../server/middleware/companyRolePolicy";
 import {
   assertCanVerifyEInvoiceTracking,
@@ -13,6 +14,7 @@ import { companyProviderConfiguration } from "../../server/services/einvoice/pro
 import { providerModule } from "../../server/services/einvoice/providers/registry";
 import type { EInvoiceDb } from "../../server/services/einvoice/store";
 
+vi.mock("../../server/db", () => ({ db: { select: vi.fn() } }));
 vi.mock("../../server/middleware/companyRolePolicy", () => ({
   scopedCompanyPermissionFailure: vi.fn(),
 }));
@@ -484,5 +486,108 @@ describe("legacy tracking verification authority", () => {
     ).resolves.toBeUndefined();
     expect(lock).toHaveBeenCalledWith("share");
     expect(permission).toHaveBeenCalledWith(actor, COMPANY, "tax.submit", conn, "share");
+  });
+});
+
+describe("pre-upgrade A-Cube refusal provenance", () => {
+  const localConfig = vi.mocked(companyProviderConfiguration);
+  const read = vi.mocked(db.select);
+  const refused = invoice({
+    einvoiceStatus: "rejected",
+    einvoiceXml: "<Invoice/>",
+    einvoiceHash: "source-hash",
+    einvoiceUuid: "source-uuid",
+  });
+  const legacy = acubeReject({
+    validation: { valid: true },
+    xmlHash: refused.einvoiceHash,
+    uuid: refused.einvoiceUuid,
+  });
+  const outcome = {
+    provider: "acube",
+    status: "rejected",
+    environment: "sandbox",
+    providerMessageId: "",
+  };
+  const originalAudit = {
+    id: "audit-original",
+    action: "invoice.einvoice_submit",
+    createdAt: NOW,
+    details: JSON.stringify({ after: outcome }),
+  };
+  const directRefusal = { status: "rejected", provider: "acube", code: "ACUBE_VALIDATION" };
+
+  function databaseResults(...results: unknown[][]) {
+    for (const rows of results)
+      read.mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: async () => rows }) }),
+      } as unknown as ReturnType<typeof db.select>);
+  }
+
+  beforeEach(() => {
+    read.mockReset();
+    localConfig.mockReset().mockResolvedValue(null);
+  });
+
+  it("exposes only the environment recorded by the original audited refusal", async () => {
+    databaseResults([originalAudit], [directRefusal], []);
+    localConfig.mockResolvedValueOnce({
+      env: {},
+      module: providerModule("acube")!,
+      environment: "sandbox",
+      webhookSecret: null,
+    });
+    await expect(
+      legacyTrackingAvailability(refused, legacy, { einvoicePartner: "acube" })
+    ).resolves.toEqual({
+      provider: "acube",
+      reference: "refusal",
+      environments: ["sandbox"],
+    });
+    expect(localConfig).toHaveBeenCalledWith(COMPANY, "acube", { environment: "sandbox" });
+  });
+
+  it("keeps a verified historical refusal visible with no available environment when another provider is selected", async () => {
+    databaseResults([originalAudit], [directRefusal], []);
+    await expect(
+      legacyTrackingAvailability(refused, legacy, { einvoicePartner: "complyance" })
+    ).resolves.toEqual({
+      provider: "acube",
+      reference: "refusal",
+      environments: [],
+    });
+    expect(localConfig).not.toHaveBeenCalled();
+  });
+
+  it("holds multiple attempts, contradictory history, and previously archived submissions for read-only tracking", async () => {
+    databaseResults([originalAudit, originalAudit]);
+    await expect(legacyTrackingAvailability(refused, legacy)).resolves.toMatchObject({
+      reference: "search",
+    });
+    databaseResults(
+      [originalAudit],
+      [directRefusal, { ...directRefusal, status: "delivery_failed" }]
+    );
+    await expect(legacyTrackingAvailability(refused, legacy)).resolves.toMatchObject({
+      reference: "search",
+    });
+    databaseResults([originalAudit], [directRefusal], [{ id: "existing-submission" }]);
+    await expect(legacyTrackingAvailability(refused, legacy)).resolves.toMatchObject({
+      reference: "search",
+    });
+  });
+
+  it.each([
+    [
+      "a nonempty document ID",
+      JSON.stringify({ after: { ...outcome, providerMessageId: MESSAGE } }),
+    ],
+    ["a missing environment", JSON.stringify({ after: { ...outcome, environment: undefined } })],
+    ["a malformed historical audit", "{ malformed"],
+  ])("does not infer a definitive refusal from %s", async (_, details) => {
+    databaseResults([{ ...originalAudit, details }], [directRefusal], []);
+    await expect(legacyTrackingAvailability(refused, legacy)).resolves.toMatchObject({
+      reference: "search",
+    });
   });
 });

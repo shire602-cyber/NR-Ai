@@ -42,7 +42,7 @@ import { registerRoutes } from "./routes";
 import { initSocketServer } from "./services/socket.service";
 import { setupVite, serveStatic } from "./vite";
 import { initScheduler } from "./services/scheduler.service";
-import { runMigrations, closePool, ensureCriticalSchema, pingDb } from "./db";
+import { runMigrations, closePool, ensureCriticalSchema, pingDb, pool } from "./db";
 import { createHealthHandler } from "./routes/admin-health.routes";
 import { installGracefulShutdown } from "./shutdown";
 import { captureException } from "./services/monitoring";
@@ -109,7 +109,7 @@ const PgSession = connectPgSimple(session);
 app.use(
   session({
     store: new PgSession({
-      conString: env.DATABASE_URL,
+      pool,
       tableName: "session",
       createTableIfMissing: true,
     }),

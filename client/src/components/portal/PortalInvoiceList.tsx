@@ -24,6 +24,7 @@ import { getAuthHeaders } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
 import { isolateLtrText } from "@/lib/format-bidi";
+import { customerEInvoiceLabel, type CustomerEInvoiceOutcome } from "@/lib/einvoice-outcome";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 
 export interface PortalInvoice {
@@ -36,7 +37,7 @@ export interface PortalInvoice {
   total: number;
   amountDue: number;
   paymentStatus: "paid" | "partially_paid" | "overdue" | "unpaid" | "credit";
-  einvoice: { status: string; hasXml: boolean } | null;
+  einvoice: (CustomerEInvoiceOutcome & { hasXml: boolean }) | null;
 }
 
 const STATUS_TONE: Record<string, StatusTone> = {
@@ -236,6 +237,11 @@ export function PortalInvoiceList({
                         <span translate="no">
                           <MiddleTruncate text={String(inv.number ?? "")} />
                         </span>
+                        {inv.einvoice && (
+                          <span className="mt-1 block text-caption text-muted-foreground">
+                            {customerEInvoiceLabel(inv.einvoice, t)}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell
                         data-nowrap=""

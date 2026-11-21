@@ -57,6 +57,8 @@ import {
   nextRetryAt,
 } from "../einvoice-status";
 import { loadEInvoiceContext } from "./context";
+import { invoiceReportingDeadline, invoiceReportingRequired } from "./reporting";
+import { frozenEInvoiceDispatchIssue } from "../einvoice.service";
 import {
   archiveEInvoiceXml,
   documentReportingRequired,
@@ -80,17 +82,14 @@ import {
   legacyFromProviderTracks,
   projectEInvoiceLegacyStatus,
   NEW_DOCUMENT_REQUIRED_CODES,
-  reportByDate,
   reportingFromEvidence,
-  reportingRequired,
   reportingEvidenceAt,
   storedReportingEvidence,
   type DeliveryStatus,
   type ReportingStatus,
 } from "./tracks";
-import { einvoiceMandateApplies } from "./scope";
 import { assertLegalEntityCanSend, getLegalEntity, requireCompanyTin } from "./legal-entities";
-import { PEPPOL_SCHEME_UAE_TIN } from "./pint-ae-codes";
+import { isUaeTin, PEPPOL_SCHEME_UAE_TIN, tinFromTrn } from "./pint-ae-codes";
 import { attr, first, parseXml, text, textAt } from "./dom";
 
 const log = createLogger("einvoice-workflow");
@@ -104,19 +103,6 @@ type CompanyExtras = Company & {
 /** Does this provider only transmit for a linked legal entity (A-Cube, Complyance)? */
 export function providerRequiresLegalEntity(provider: EInvoiceProvider): boolean {
   return provider.requiresLegalEntity === true;
-}
-
-/** Whether this invoice must be reported to the FTA (B2B/B2G with a buyer TRN). */
-export function invoiceReportingRequired(
-  invoice: Pick<Invoice, "customerTrn">,
-  company: Company,
-  now: Date = new Date()
-): boolean {
-  return reportingRequired({
-    customerTrn: invoice.customerTrn,
-    companyScope: (company as CompanyExtras).einvoiceScope ?? null,
-    mandateApplies: einvoiceMandateApplies(company as CompanyExtras, now),
-  });
 }
 
 /**
@@ -275,7 +261,8 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
       return { ok: false, status: 404, code: "NOT_FOUND", message: "Company not found." };
     const existing = await getEInvoiceDocument(company.id, fresh.id, tx);
     const correctionOf = args.regenerate ? correctableComplyanceReference(fresh, existing) : null;
-    const verifiedEmailRequired = !!correctionOf || canRetryOriginalRejectedNumber(fresh, existing);
+    const definitiveAcubeRefusal = canRetryOriginalRejectedNumber(fresh, existing);
+    const verifiedEmailRequired = !!correctionOf || definitiveAcubeRefusal;
     if (NEW_DOCUMENT_REQUIRED_CODES.has(existing?.lastErrorCode ?? "")) {
       return {
         ok: false,
@@ -303,7 +290,7 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
     if (
       existing?.provider === "acube" &&
       existing.status === "rejected" &&
-      (!args.regenerate || !canRetryOriginalRejectedNumber(fresh, existing))
+      (!args.regenerate || !definitiveAcubeRefusal)
     ) {
       return {
         ok: false,
@@ -358,7 +345,7 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
     }
     const entity = await assertCanTransmit(company, provider, tx);
     if (
-      correctionOf &&
+      verifiedEmailRequired &&
       (entity?.tin !== original?.supplierTin ||
         (entity?.legalEntityId ?? null) !== original?.legalEntityId ||
         entitySourceName(entity) !== original?.sourceName)
@@ -428,7 +415,8 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
       return built;
     }
 
-    const currentRequirement = invoiceReportingRequired(invoice, company, now);
+    const generated = { ...invoice, einvoiceXml: built.xml };
+    const currentRequirement = invoiceReportingRequired(generated, company, now);
     const originalXml = correctionOf && existing ? frozenEInvoice(fresh, existing) : null;
     if (correctionOf && !originalXml) return retryProviderChanged();
     if (correctionOf && originalXml) {
@@ -455,8 +443,10 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
       )
         return retryProviderChanged();
     }
-    const required = triedProvider
-      ? documentReportingRequired(existing, currentRequirement)
+    const originalDate = fresh.einvoiceSubmittedAt ?? existing?.submittedAt ?? now;
+    const keepOriginalReporting = triedProvider && !definitiveAcubeRefusal;
+    const required = keepOriginalReporting
+      ? documentReportingRequired(existing, invoiceReportingRequired(fresh, company, originalDate))
       : currentRequirement;
     await updateInvoiceInTransaction(tx, invoice, {
       einvoiceUuid: built.uuid,
@@ -478,9 +468,8 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         providerStatus: null,
         errorCode: null,
         reportBy: required
-          ? triedProvider
-            ? (existing?.reportBy ?? reportByDate(invoice.date))
-            : reportByDate(invoice.date)
+          ? ((keepOriginalReporting ? existing?.reportBy : null) ??
+            invoiceReportingDeadline(keepOriginalReporting ? fresh : generated))
           : null,
       },
       {
@@ -731,6 +720,8 @@ async function dispatchQueuedSubmission(
       } satisfies SubmissionDispatch;
     }
     if (unissuedInvoice(invoice)) return blockedSubmission(claim, unissuedInvoiceCode(invoice));
+    const dispatchIssue = frozenEInvoiceDispatchIssue(claim.built.xml);
+    if (dispatchIssue) return blockedSubmission(claim, dispatchIssue);
 
     let context: EInvoiceProviderContext | undefined;
     if (providerRequiresLegalEntity(provider)) {
@@ -1215,25 +1206,23 @@ export async function adoptRecoveredEInvoice(args: {
       .limit(1);
     if (duplicate) return null;
     if (args.actorId)
-      await tx
-        .insert(auditLogs)
-        .values({
-          userId: args.actorId,
-          companyId: invoice.companyId,
-          action:
-            provider.name === "complyance"
-              ? "invoice.einvoice_complyance_link"
-              : "invoice.einvoice_environment_verified",
-          resourceType: "invoice",
-          resourceId: invoice.id,
-          details: JSON.stringify({
-            after: {
-              provider: provider.name,
-              environment: provider.environment,
-              providerMessageId: result.providerMessageId,
-            },
-          }),
-        });
+      await tx.insert(auditLogs).values({
+        userId: args.actorId,
+        companyId: invoice.companyId,
+        action:
+          provider.name === "complyance"
+            ? "invoice.einvoice_complyance_link"
+            : "invoice.einvoice_environment_verified",
+        resourceType: "invoice",
+        resourceId: invoice.id,
+        details: JSON.stringify({
+          after: {
+            provider: provider.name,
+            environment: provider.environment,
+            providerMessageId: result.providerMessageId,
+          },
+        }),
+      });
     return persistSubmissionOutcome({
       invoice,
       current,
@@ -1292,7 +1281,8 @@ export async function trackedEInvoiceProviderMatches(
 async function canReadTrackedEInvoice(
   doc: EInvoiceDocument | undefined,
   invoice: Invoice,
-  provider: EInvoiceProvider
+  provider: EInvoiceProvider,
+  outboundIdentity?: EInvoiceOutboundIdentity
 ) {
   const metadata = documentSubmissionMetadata(doc);
   const id = invoice.einvoiceProviderMessageId;
@@ -1303,6 +1293,7 @@ async function canReadTrackedEInvoice(
     metadata?.environment !== provider.environment
   )
     return false;
+  if (provider.name === "complyance") return Boolean(outboundIdentity);
   if (await trackedEInvoiceProviderMatches(doc, provider)) return true;
 
   if (
@@ -1321,6 +1312,56 @@ async function canReadTrackedEInvoice(
   if (!provider.verifyOutboundDocument) return false;
   const identity = await frozenEInvoiceOwner(invoice, doc, provider);
   return !!identity && provider.verifyOutboundDocument(id, identity).catch(() => false);
+}
+
+function frozenComplyanceOwner(
+  invoice: Invoice,
+  doc: EInvoiceDocument,
+  provider: EInvoiceProvider
+): EInvoiceOutboundIdentity | undefined {
+  const pin = documentSubmissionMetadata(doc);
+  const xml = invoice.einvoiceXml;
+  if (
+    doc.companyId !== invoice.companyId ||
+    doc.invoiceId !== invoice.id ||
+    doc.provider !== provider.name ||
+    pin?.environment !== provider.environment ||
+    !xml ||
+    !doc.xmlHash ||
+    doc.xmlHash !== invoice.einvoiceHash ||
+    doc.xmlHash !== sha256Hex(xml)
+  )
+    return;
+
+  try {
+    const root = parseXml(xml).documentElement;
+    const documentNumber = textAt(root, "cbc:ID");
+    const party = first(root, "cac:AccountingSupplierParty/cac:Party");
+    if (!documentNumber || !party) return;
+    const endpoint = first(party, "cbc:EndpointID");
+    const supplierTrn = textAt(party, "cac:PartyTaxScheme/cbc:CompanyID");
+    const taxTin = tinFromTrn(supplierTrn);
+    const supplierTin =
+      attr(endpoint, "schemeID") === PEPPOL_SCHEME_UAE_TIN ? text(endpoint) : taxTin;
+    if (
+      !supplierTin ||
+      !isUaeTin(supplierTin) ||
+      (supplierTrn && supplierTin !== taxTin) ||
+      (pin.supplierTin && pin.supplierTin !== supplierTin) ||
+      (pin.supplierTrn && pin.supplierTrn !== supplierTrn) ||
+      (pin.invoiceNumber && pin.invoiceNumber !== documentNumber)
+    )
+      return;
+    return {
+      documentNumber,
+      supplierTin,
+      supplierTrn,
+      legalEntityId: pin.legalEntityId,
+      sourceName: pin.sourceName,
+    };
+  } catch {
+    return;
+  }
 }
 
 /** The seller and document number frozen before dispatch, used to verify a sales resource. */
@@ -1400,9 +1441,13 @@ export async function refreshAndPersist(args: {
   const { invoice, company, provider } = args;
   const now = args.now ?? new Date();
   const existing = await getEInvoiceDocument(company.id, invoice.id);
+  const outboundIdentity =
+    provider.name === "complyance" && existing
+      ? frozenComplyanceOwner(invoice, existing, provider)
+      : undefined;
   if (
     invoice.einvoiceProviderMessageId &&
-    !(await canReadTrackedEInvoice(existing, invoice, provider))
+    !(await canReadTrackedEInvoice(existing, invoice, provider, outboundIdentity))
   ) {
     return {
       ok: false as const,
@@ -1411,7 +1456,12 @@ export async function refreshAndPersist(args: {
       message: "Restore the original provider connection to verify this document.",
     };
   }
-  const ref = { documentType: existing?.documentType ?? null };
+  const ref = {
+    documentType: existing?.documentType ?? null,
+    outboundIdentity,
+    knownCredentialScope:
+      !!outboundIdentity && (await trackedEInvoiceProviderMatches(existing, provider)),
+  };
   const acube = provider.name === "acube";
   const verifiedCurrentStatus = projectEInvoiceLegacyStatus(
     provider.name,
@@ -1435,7 +1485,11 @@ export async function refreshAndPersist(args: {
   if (!result.ok) return result;
   const required = documentReportingRequired(
     existing,
-    invoiceReportingRequired(invoice, company, now)
+    invoiceReportingRequired(
+      invoice,
+      company,
+      invoice.einvoiceSubmittedAt ?? existing?.submittedAt ?? now
+    )
   );
   const r = result.result;
   const delivery: DeliveryStatus = r.delivery ?? deliveryFromLegacy(r.status);
@@ -1500,6 +1554,7 @@ export async function refreshAndPersist(args: {
         delivery,
         reporting,
         providerStatus: r.providerStatus ?? null,
+        reportBy: required ? (current?.reportBy ?? invoiceReportingDeadline(fresh)) : null,
         errorCode: failed ? (r.errorCode ?? "EINVOICE_DELIVERY_FAILED") : null,
         errorMessage: failed ? (r.detail ?? null) : null,
       },

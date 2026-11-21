@@ -94,6 +94,7 @@ const fake = {
   legalEntityStatus: "Active",
   legalEntityTin: TIN,
   reservations: 0,
+  beforeReserveReply: null as (() => Promise<void>) | null,
   leId: crypto.randomUUID() as string,
   incoming: [] as FakeDocument[],
   reset() {
@@ -109,6 +110,7 @@ const fake = {
     this.legalEntityStatus = "Active";
     this.legalEntityTin = TIN;
     this.reservations = 0;
+    this.beforeReserveReply = null;
     this.leId = crypto.randomUUID();
     this.incoming = [];
   },
@@ -144,6 +146,9 @@ async function acube(url: URL, init: RequestInit): Promise<Response> {
   }
   if (method === "POST" && p === "/legal-entities") {
     fake.reservations++;
+    const beforeReply = fake.beforeReserveReply;
+    fake.beforeReserveReply = null;
+    await beforeReply?.();
     return json(201, {
       uuid: fake.leId,
       tin: fake.legalEntityTin,
@@ -468,6 +473,44 @@ describe("F16: no FTA report-by deadline before the mandate applies", () => {
     const d = await statusOf(t, inv.id);
     expect(d.tracks.reporting).toMatchObject({ reportBy: null, overdue: false });
   });
+
+  it("freezes the linked buyer's VAT identity and report-by date with the submitted XML", async () => {
+    const t = await linkedTenant();
+    const inv = await oldInvoice(t);
+    await h.sql("UPDATE invoices SET customer_trn = NULL WHERE id = $1", [inv.id]);
+    const prefix = `/api/invoices/${inv.id}`;
+    const generated = await t.as.post(`${prefix}/generate-einvoice`, {});
+    expect(generated.status, generated.text).toBe(200);
+    expect((await statusOf(t, inv.id)).tracks.reporting).toMatchObject({
+      required: true,
+      reportBy: "2026-01-15",
+    });
+    expect((await t.as.post(`${prefix}/einvoice/submit`, {})).status).toBe(202);
+    const [frozen] = await h.sql("SELECT contact_id, einvoice_xml from invoices WHERE id = $1", [
+      inv.id,
+    ]);
+    expect(frozen.einvoice_xml).toContain("100765432100003");
+    const [obligation] = await h.sql(
+      "SELECT report_by::text, validation->'submission'->>'reportingRequired' AS required FROM einvoice_documents WHERE invoice_id = $1",
+      [inv.id]
+    );
+    expect(obligation).toEqual({ report_by: "2026-01-15", required: "true" });
+
+    await h.sql(
+      "UPDATE customer_contacts SET trn_number = NULL WHERE company_id = $1 AND id = $2",
+      [t.company.id, frozen.contact_id]
+    );
+    await setScope(t, { scope: "b2b", band: "large", go: "2027-01-01" });
+    await runEInvoiceRetries();
+    const [held] = fake.docs.values();
+    expect(held.xml).toBe(frozen.einvoice_xml);
+    held.status = "accepted";
+    expect((await t.as.post(`${prefix}/einvoice/refresh-status`, {})).status).toBe(200);
+    expect((await statusOf(t, inv.id)).tracks.reporting).toMatchObject({
+      required: true,
+      reportBy: "2026-01-15",
+    });
+  });
 });
 
 describe("E1 without a provider: generated and validated, honestly not sent", () => {
@@ -515,6 +558,90 @@ describe("E1 without a provider: generated and validated, honestly not sent", ()
 });
 
 describe("E1 legal entity onboarding gates sending", () => {
+  it("keeps an early ID-only signed LINK pending until the reservation response is verified", async () => {
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "acube" },
+    });
+    await useAcube(t);
+    const route = `/api/companies/${t.company.id}/einvoicing/acube`;
+    const event = {
+      eventId: crypto.randomUUID(),
+      legalEntityUuid: fake.leId,
+      eventType: "legal_entity.synchronized",
+      action: "LINK",
+    };
+    let during: Record<string, unknown> | undefined;
+    let duplicateStatus: number | undefined;
+    fake.beforeReserveReply = async () => {
+      const receipt = await webhook(t, event);
+      if (receipt.status !== 200) throw new Error(receipt.text);
+      await runProviderEvents({ companyId: t.company.id });
+      [during] = await h.sql(
+        `SELECT e.status, e.next_attempt_at > e.received_at AS deferred,
+                le.legal_entity_id IS NULL AS unverified
+           FROM einvoice_provider_events e LEFT JOIN einvoice_legal_entities le
+             ON le.company_id = e.company_id AND le.provider = e.provider AND le.environment = e.environment
+          WHERE e.company_id = $1`,
+        [t.company.id]
+      );
+      duplicateStatus = (await t.as.post(`${route}/reserve`, { approver: "me" })).status;
+      const unrelated = await webhook(t, {
+        ...event,
+        eventId: crypto.randomUUID(),
+        legalEntityUuid: crypto.randomUUID(),
+      });
+      if (unrelated.status !== 200) throw new Error(unrelated.text);
+    };
+    const result = await t.as.post(`${route}/reserve`, { approver: "me" });
+    expect(during).toEqual({ status: "pending", deferred: true, unverified: true });
+    expect(duplicateStatus).toBe(202);
+    expect(fake.reservations).toBe(1);
+    expect(result.status, result.text).toBe(200);
+    expect(result.body.legalEntity).toMatchObject({ legalEntityId: fake.leId, status: "reserved" });
+    await h.sql(
+      `UPDATE einvoice_provider_events SET next_attempt_at = now() WHERE company_id = $1`,
+      [t.company.id]
+    );
+    expect(await runProviderEvents({ companyId: t.company.id })).toMatchObject({ processed: 2 });
+    expect(
+      await h.sql(
+        `SELECT status FROM einvoice_provider_events WHERE company_id = $1 ORDER BY status`,
+        [t.company.id]
+      )
+    ).toEqual([{ status: "ignored" }, { status: "processed" }]);
+    expect((await t.as.get(route)).body.legalEntity).toMatchObject({
+      legalEntityId: fake.leId,
+      tin: TIN,
+      status: "active",
+      lastAction: "LINK",
+    });
+  });
+
+  it("does not apply a reservation response after the company changes provider", async () => {
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "acube" },
+    });
+    await useAcube(t);
+    fake.beforeReserveReply = async () => {
+      await h.sql(`UPDATE companies SET einvoice_partner = 'complyance' WHERE id = $1`, [
+        t.company.id,
+      ]);
+    };
+    const route = `/api/companies/${t.company.id}/einvoicing/acube/reserve`;
+    const stale = await t.as.post(route, { approver: "me" });
+    expect(stale.status, stale.text).toBe(409);
+    expect(
+      await h.sql(
+        `SELECT status, legal_entity_id FROM einvoice_legal_entities WHERE company_id = $1`,
+        [t.company.id]
+      )
+    ).toEqual([{ status: "reserved", legal_entity_id: null }]);
+    await h.sql(`UPDATE companies SET einvoice_partner = 'acube' WHERE id = $1`, [t.company.id]);
+    const retried = await t.as.post(route, { approver: "me" });
+    expect(retried.status, retried.text).toBe(200);
+    expect(retried.body.legalEntity.legalEntityId).toBe(fake.leId);
+  });
+
   it("reserve -> LINK webhook -> active; DELINK -> 409; viewer cannot reserve", async () => {
     const t = await h.createTenant({
       companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "acube" },
@@ -615,7 +742,11 @@ describe("A-Cube taxpayer verification", () => {
     const rejected = await reserve();
     expect(rejected.status, rejected.text).toBe(502);
     expect(rejected.body.code).toBe("EINVOICE_PROVIDER_TIN_MISMATCH");
-    expect((await t.as.get(route)).body.legalEntity).toBeNull();
+    expect((await t.as.get(route)).body.legalEntity).toMatchObject({
+      status: "reserved",
+      tin: TIN,
+      legalEntityId: null,
+    });
 
     fake.legalEntityTin = TIN;
     expect((await reserve()).body.legalEntity.status).toBe("reserved");
@@ -823,6 +954,17 @@ describe("E1 submit, two tracks and history", () => {
     });
     const uuid = (await h.sql(`SELECT einvoice_uuid FROM invoices WHERE id = $1`, [inv.id]))[0]
       .einvoice_uuid;
+    const before = await h.sql(
+      "SELECT status, validation, xml_hash, last_error_code FROM einvoice_documents WHERE invoice_id = $1",
+      [inv.id]
+    );
+    expect((await t.as.post(`/api/invoices/${inv.id}/generate-einvoice`, {})).status).toBe(409);
+    expect(
+      await h.sql(
+        "SELECT status, validation, xml_hash, last_error_code FROM einvoice_documents WHERE invoice_id = $1",
+        [inv.id]
+      )
+    ).toEqual(before);
     const ordinary = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
     expect(ordinary.status).toBe(409);
     expect(fake.posts).toBe(1);
@@ -1182,6 +1324,121 @@ describe("E1 inbound: document.received -> draft bill tagged e-invoice", () => {
 });
 
 describe("Legacy A-Cube environment verification", () => {
+  it("recovers the exact original connection for a sole audited pre-upgrade validation refusal", async () => {
+    const t = await linkedTenant();
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+    const inv = await issuedInvoice(t);
+    const prefix = `/api/invoices/${inv.id}/einvoice`;
+    const [buyer] = await h.sql(
+      "UPDATE invoices SET customer_trn = NULL WHERE id = $1 RETURNING contact_id",
+      [inv.id]
+    );
+    await h.sql(
+      "UPDATE customer_contacts SET trn_number = NULL WHERE company_id = $1 AND id = $2",
+      [t.company.id, buyer.contact_id]
+    );
+    await h.sql(
+      "INSERT INTO einvoice_buyer_endpoints (company_id, contact_id, scheme, participant_id) VALUES ($1, $2, '0235', '1007654321')",
+      [t.company.id, buyer.contact_id]
+    );
+    expect((await t.as.post(`/api/invoices/${inv.id}/generate-einvoice`, {})).status).toBe(200);
+    await h.sql(
+      "UPDATE invoices SET einvoice_status = 'rejected', einvoice_provider = 'acube' WHERE id = $1",
+      [inv.id]
+    );
+    await h.sql(
+      `UPDATE einvoice_documents SET provider = 'acube', status = 'rejected', delivery_status = 'rejected', last_error_code = 'ACUBE_VALIDATION', attempts = 1, validation = validation - 'submission' WHERE invoice_id = $1`,
+      [inv.id]
+    );
+    await h.sql(
+      `INSERT INTO einvoice_document_events (company_id, invoice_id, track, to_status, code, provider, source) VALUES ($1, $2, 'delivery', 'rejected', 'ACUBE_VALIDATION', 'acube', 'user')`,
+      [t.company.id, inv.id]
+    );
+    const [original] = await h.sql(
+      "SELECT xml_hash, report_by FROM einvoice_documents WHERE invoice_id = $1",
+      [inv.id]
+    );
+    const audit = JSON.stringify({
+      after: {
+        provider: "acube",
+        environment: "sandbox",
+        providerMessageId: "",
+        status: "rejected",
+      },
+    });
+    await h.sql(
+      `INSERT INTO audit_logs (company_id, resource_type, resource_id, user_id, action, details) VALUES ($1, 'invoice', $2, $3, 'invoice.einvoice_submit', $4)`,
+      [t.company.id, inv.id, t.user.id, audit]
+    );
+    const originalRequests = fake.requests;
+    expect((await t.as.post(`${prefix}/resubmit`, {})).status).toBe(409);
+    expect(
+      (await t.as.post(`${prefix}/confirm-environment`, { environment: "production" })).status
+    ).toBe(409);
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      transmission: {
+        environmentVerification: {
+          provider: "acube",
+          reference: "refusal",
+          environments: ["sandbox"],
+        },
+      },
+      rejection: { code: "ACUBE_VALIDATION", resubmittable: false },
+    });
+    expect(fake.requests).toBe(originalRequests);
+
+    const confirmations = await Promise.all(
+      [1, 2].map(() => t.as.post(`${prefix}/confirm-environment`, { environment: "sandbox" }))
+    );
+    for (const result of confirmations) {
+      expect(result.status, result.text).toBe(200);
+      expect(result.body).toMatchObject({
+        retryEligible: true,
+        environment: "sandbox",
+        provider: "acube",
+      });
+    }
+    expect(fake.requests).toBe(originalRequests);
+    expect(
+      (
+        await h.sql(
+          "SELECT status, xml_hash, report_by, last_error_code, next_retry_at FROM einvoice_documents WHERE invoice_id = $1",
+          [inv.id]
+        )
+      )[0]
+    ).toEqual({
+      ...original,
+      status: "rejected",
+      last_error_code: "ACUBE_VALIDATION",
+      next_retry_at: null,
+    });
+    expect(
+      await h.sql(
+        "SELECT id FROM audit_logs WHERE resource_id = $1 AND action = 'invoice.einvoice_refusal_verified'",
+        [inv.id]
+      )
+    ).toHaveLength(1);
+    expect((await statusOf(t, inv.id)).rejection.resubmittable).toBe(true);
+    expect((await statusOf(t, inv.id)).tracks.reporting).toMatchObject({
+      required: false,
+      reportBy: null,
+    });
+    await h.sql(
+      "UPDATE customer_contacts SET trn_number = '100765432100003' WHERE company_id = $1 AND id = $2",
+      [t.company.id, buyer.contact_id]
+    );
+    expect((await t.as.post(`${prefix}/submit`, {})).status).toBe(409);
+    const corrected = await t.as.post(`${prefix}/resubmit`, {});
+    expect(corrected.status, corrected.text).toBe(202);
+    expect(corrected.body.tracks.reporting).toMatchObject({
+      required: true,
+      reportBy: expect.any(String),
+    });
+    await runEInvoiceRetries();
+    expect(fake.posts).toBe(1);
+    expect([...fake.docs.values()][0].number).toBe(inv.number);
+    expect([...fake.docs.values()][0].xml).toContain("100765432100003");
+  });
   it("finds an ambiguous legacy attempt by its exact outbound source without resending", async () => {
     const t = await linkedTenant();
     await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);

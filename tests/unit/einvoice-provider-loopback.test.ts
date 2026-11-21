@@ -89,6 +89,17 @@ function acube(url: string, overrides: NodeJS.ProcessEnv = {}) {
   });
 }
 
+const documentedStatusRef = {
+  knownCredentialScope: true,
+  outboundIdentity: {
+    documentNumber: "INV-2026-0001",
+    supplierTin: null,
+    supplierTrn: null,
+    legalEntityId: null,
+    sourceName: null,
+  },
+};
+
 function complyance(url: string, overrides: NodeJS.ProcessEnv = {}, sourceVersion = "v1") {
   return new ComplyanceEInvoiceProvider(
     { COMPLYANCE_API_KEY: randomUUID(), COMPLYANCE_BASE_URL: url, ...overrides },
@@ -471,11 +482,11 @@ describe("Complyance over loopback HTTP", () => {
       status: "submitted",
       providerMessageId: COMPLYANCE_ID,
     });
-    expect(await provider.getStatus(COMPLYANCE_ID)).toMatchObject({
+    expect(await provider.getStatus(COMPLYANCE_ID, documentedStatusRef)).toMatchObject({
       status: "submitted",
       delivery: "delivered",
     });
-    expect(await provider.getStatus(COMPLYANCE_ID)).toMatchObject({
+    expect(await provider.getStatus(COMPLYANCE_ID, documentedStatusRef)).toMatchObject({
       status: "cleared",
       reporting: "reported",
     });
@@ -665,7 +676,12 @@ describe.each(["acube", "complyance"] as const)("%s outage and malformed respons
     expect(rejected.status).toBe("rejected");
     expect(rejected.detail).toContain("[REDACTED]");
     expect(JSON.stringify(rejected).includes(credential)).toBe(false);
-    expect(await provider.getStatus(acubeMode ? ACUBE_ID : COMPLYANCE_ID)).toMatchObject({
+    expect(
+      await provider.getStatus(
+        acubeMode ? ACUBE_ID : COMPLYANCE_ID,
+        acubeMode ? undefined : documentedStatusRef
+      )
+    ).toMatchObject({
       status: "failed",
       errorCode: outage,
     });

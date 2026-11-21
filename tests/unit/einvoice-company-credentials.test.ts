@@ -113,7 +113,14 @@ describe("company e-invoicing credentials", () => {
         return Response.json({ invoiceId: "test-invoice", status: "valid" });
       }
       expect(authorization).toBe(`Bearer ${complyanceKey}`);
-      return Response.json({ data: { documentId: "test-invoice", state: "delivery_success" } });
+      return Response.json({
+        data: {
+          documentId: "test-invoice",
+          documentNumber: "INV-001",
+          environment: "sandbox",
+          state: "delivery_success",
+        },
+      });
     });
     const acube = await getCompanyEInvoiceProvider(acubeId, { provider: "acube", env, fetch });
     const cmp = await getCompanyEInvoiceProvider(complyanceId, {
@@ -122,7 +129,20 @@ describe("company e-invoicing credentials", () => {
       fetch,
     });
     expect((await acube.getStatus("test-invoice")).providerMessageId).toBe("test-invoice");
-    expect((await cmp.getStatus("test-invoice")).status).toBe("submitted");
+    expect(
+      (
+        await cmp.getStatus("test-invoice", {
+          knownCredentialScope: true,
+          outboundIdentity: {
+            documentNumber: "INV-001",
+            supplierTin: null,
+            supplierTrn: null,
+            legalEntityId: null,
+            sourceName: null,
+          },
+        })
+      ).status
+    ).toBe("submitted");
     await expect(
       getCompanyEInvoiceProvider(acubeId, {
         provider: "acube",

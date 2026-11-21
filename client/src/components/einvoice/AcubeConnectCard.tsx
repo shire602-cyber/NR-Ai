@@ -102,7 +102,7 @@ export function AcubeConnectCard({ companyId }: { companyId: string }) {
   });
 
   const v = view.data;
-  const le = v?.legalEntity ?? null;
+  const le = v?.legalEntity?.legalEntityId ? v.legalEntity : null;
   const statusLabel = !v?.configured
     ? t["einvoicing.acubeNotConnected"]
     : le

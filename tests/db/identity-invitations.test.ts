@@ -210,6 +210,93 @@ describe("R01-15 invitation lifecycle", () => {
     expect(denied.body.code).toBe("PERMISSION_DENIED");
   });
 
+  it.each([false, true])(
+    "keeps an invited viewer out of implicit firm assignment with mixed clocks = %s",
+    async (mixedHistory) => {
+      const customer = await h.createTenant({ companyColumns: { company_type: "client" } });
+      const viewer = await h.createTenant();
+      const invitation = await invite(customer, viewer.email, "viewer");
+      if (mixedHistory) {
+        // These persisted rows predate the exact membership ID in the acceptance audit.
+        await h.sql(
+          "INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')",
+          [customer.company.id, viewer.user.id]
+        );
+        await h.sql(
+          `UPDATE company_invitations SET status = 'accepted', accepted_user_id = $1,
+          accepted_at = (statement_timestamp() AT TIME ZONE 'UTC') - interval '4 hours' WHERE id = $2`,
+          [viewer.user.id, invitation.invitation.id]
+        );
+        const { recordAudit } = await import("../../server/services/audit.service");
+        await recordAudit({
+          userId: viewer.user.id,
+          companyId: customer.company.id,
+          action: "team.invite_accept",
+          entityType: "company_invitation",
+          entityId: invitation.invitation.id,
+          after: { role: "viewer", directCompanyGrant: true },
+        });
+      } else {
+        const accepted = await viewer.as.post(
+          `/api/team-invitations/${tokenOf(invitation.inviteUrl)}/accept`,
+          {}
+        );
+        expect(accepted.status, accepted.text).toBe(200);
+      }
+      await h.sql("UPDATE users SET firm_role = 'firm_admin', is_admin = true WHERE id = $1", [
+        viewer.user.id,
+      ]);
+      const provider = `/api/companies/${customer.company.id}/einvoicing`;
+      const blocked = await viewer.as.put(`${provider}/partner`, { partner: "acube" });
+      expect(blocked.status, blocked.text).toBe(403);
+      expect(blocked.body).toMatchObject({
+        code: "PERMISSION_DENIED",
+        details: { role: "viewer" },
+      });
+      const read = await viewer.as.get(`${provider}/provider`);
+      expect(read.status, read.text).toBe(200);
+      expect(read.body.status).toBe("not_selected");
+    }
+  );
+
+  it("does not infer firm assignment from unaudited accepted legacy records", async () => {
+    const customer = await h.createTenant({ companyColumns: { company_type: "client" } });
+    const viewer = await h.createTenant({ firmRole: "firm_admin", isAdmin: true });
+    const invitation = await invite(customer, viewer.email, "viewer");
+    await h.sql("INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')", [
+      customer.company.id,
+      viewer.user.id,
+    ]);
+    await h.sql(
+      `UPDATE company_invitations SET status = 'accepted', accepted_user_id = $1,
+      accepted_at = (statement_timestamp() AT TIME ZONE 'UTC') - interval '4 hours' WHERE id = $2`,
+      [viewer.user.id, invitation.invitation.id]
+    );
+    const url = `/api/companies/${customer.company.id}/einvoicing/partner`;
+    const ambiguous = await viewer.as.put(url, { partner: "acube" });
+    expect(ambiguous.status, ambiguous.text).toBe(403);
+    expect(ambiguous.body.code).toBe("COMPANY_ACCESS_DENIED");
+    await h.sql("INSERT INTO firm_staff_assignments (company_id, user_id) VALUES ($1, $2)", [
+      customer.company.id,
+      viewer.user.id,
+    ]);
+    const assigned = await viewer.as.put(url, { partner: "acube" });
+    expect(assigned.status, assigned.text).toBe(200);
+  });
+
+  it("pins each new application database session to UTC", async () => {
+    const { pool } = await import("../../server/db");
+    for (let n = 0; n < 2; n++) {
+      const client = await pool.connect();
+      try {
+        const { rows } = await client.query<{ TimeZone: string }>("SHOW TimeZone");
+        expect(rows).toEqual([{ TimeZone: "UTC" }]);
+      } finally {
+        client.release(true);
+      }
+    }
+  });
+
   it("requires explicit owner authority for owner role edits, removal, and invitations", async () => {
     const firm = await h.createTenant({ firmRole: "firm_owner", isAdmin: true });
     const client = await h.createTenant({ companyColumns: { company_type: "client" } });

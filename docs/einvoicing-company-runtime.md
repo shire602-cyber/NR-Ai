@@ -68,6 +68,12 @@ Successful verification saves the environment, records an audit entry, and lets 
 and polling continue. If the provider environment has moved, an operator must restore the
 original environment setting before verifying the document.
 
+An older A-Cube validation refusal can also be verified when the invoice has one direct attempt
+and the original audit records its environment. The saved XML, refusal history and seller must
+agree with that record and the company's active A-Cube connection. Verification records the
+connection and leaves the refusal in place. After correcting the invoice, use the separate
+resubmit action to validate and queue it under the original invoice number.
+
 A correction under the same invoice number requires an explicit resubmission through the original
 provider connection and environment. For a tracked Complyance document, the worker verifies that
 the provider still identifies it as terminal Needs Correction and that its seller and source match.
