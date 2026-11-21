@@ -145,7 +145,10 @@ export interface InboundDocument {
   receivedAt: string;
 }
 
-/** Supplier credit notes (UBL type 381) still waiting for review (W4-C residual). */
+/** PINT AE supplier credit notes still waiting for review (W4-C residual). */
 export function pendingSupplierCreditNotes(items: readonly InboundDocument[]): InboundDocument[] {
-  return items.filter((d) => d.documentType === "381" && d.status === "received" && !d.billId);
+  return items.filter(
+    (d) =>
+      (d.documentType === "381" || d.documentType === "81") && d.status === "received" && !d.billId
+  );
 }

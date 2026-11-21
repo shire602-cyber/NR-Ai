@@ -283,3 +283,223 @@ describe("e-invoice poll resource selection", () => {
     ]);
   });
 });
+
+describe("e-invoice inbox recovers incomplete purchases", () => {
+  async function purchase(number: string, documentId: string, includeUuid = true) {
+    const { runProviderEvents } = await import("../../server/services/einvoice/provider-events");
+    const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
+    const t = await h.createTenant({ companyColumns: { trn_vat_number: BUYER_TRN } });
+    await upsertLegalEntity(t.company.id, "acube", "sandbox", BUYER_TIN, {
+      status: "active",
+      legalEntityId: OWNER,
+    });
+    const source = await incomingXml(number);
+    const xml = includeUuid ? source : source.replace(/<cbc:UUID>[^<]*<\/cbc:UUID>/, "");
+    const provider = simulatedProvider(xml);
+    const { id } = await enqueueReceived(t.company.id, { documentId });
+    const run = () => runProviderEvents({ id: id!, provider });
+    const bills = () =>
+      h.sql<{ id: string }>(
+        "SELECT id FROM vendor_bills WHERE company_id = $1 AND bill_number = $2",
+        [t.company.id, number]
+      );
+    return { t, id, xml, run, bills };
+  }
+
+  it("rolls back a partially written bill and finishes exactly one purchase on retry", async () => {
+    const { t, id, run, bills } = await purchase("SUP-RETRY-ROLLBACK", "retry-rollback");
+    const registry = await import("../../server/platform/service-registry");
+    type Prepare =
+      typeof import("../../server/services/bill-payment.service").prepareDraftFromInbound;
+    const prepare = registry.resolve<Prepare>("bills.prepareDraftFromInbound");
+    registry.provide(
+      "bills.prepareDraftFromInbound",
+      (async (...args) => {
+        const write = await prepare(...args);
+        return async (tx) => {
+          await write(tx);
+          throw new Error("Interrupted after bill write");
+        };
+      }) satisfies Prepare,
+      { replace: true }
+    );
+    try {
+      expect(await run()).toEqual({ claimed: 1, processed: 0, failed: 1 });
+    } finally {
+      registry.provide("bills.prepareDraftFromInbound", prepare, { replace: true });
+    }
+    expect(await bills()).toEqual([]);
+    const [received] = await h.sql(
+      "SELECT status, bill_id, archive_id FROM einvoice_inbound_documents WHERE company_id = $1",
+      [t.company.id]
+    );
+    expect(received).toMatchObject({
+      status: "failed",
+      bill_id: null,
+      archive_id: expect.any(String),
+    });
+    const [event] = await h.sql(
+      "SELECT status, attempts, processed_at FROM einvoice_provider_events WHERE id = $1",
+      [id]
+    );
+    expect(event).toEqual({ status: "pending", attempts: 1, processed_at: null });
+    await h.sql("UPDATE einvoice_provider_events SET next_attempt_at = now() WHERE id = $1", [id]);
+
+    expect(await run()).toEqual({ claimed: 1, processed: 1, failed: 0 });
+    expect(await run()).toEqual({ claimed: 0, processed: 0, failed: 0 });
+    const [bill] = await bills();
+    expect(bill?.id).toBeTruthy();
+    expect(
+      await h.sql(
+        "SELECT status, bill_id, archive_id FROM einvoice_inbound_documents WHERE company_id = $1",
+        [t.company.id]
+      )
+    ).toEqual([{ status: "bill_created", bill_id: bill.id, archive_id: received.archive_id }]);
+    expect(await bills()).toHaveLength(1);
+  });
+
+  it("keeps an inbound event retryable while the company has no draft owner", async () => {
+    const { t, id, run, bills } = await purchase("SUP-WAITING-OWNER", "waiting-draft-owner");
+    await h.sql("DELETE FROM company_users WHERE company_id = $1", [t.company.id]);
+    expect(await run()).toEqual({ claimed: 1, processed: 0, failed: 1 });
+    expect(await bills()).toEqual([]);
+    expect(
+      await h.sql(
+        "SELECT status, bill_id, error FROM einvoice_inbound_documents WHERE company_id = $1",
+        [t.company.id]
+      )
+    ).toEqual([
+      { status: "failed", bill_id: null, error: "Company has no member to own the draft bill" },
+    ]);
+    await h.sql("INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'owner')", [
+      t.company.id,
+      t.user.id,
+    ]);
+    await h.sql("UPDATE einvoice_provider_events SET next_attempt_at = now() WHERE id = $1", [id]);
+    expect(await run()).toEqual({ claimed: 1, processed: 1, failed: 0 });
+    expect(await bills()).toHaveLength(1);
+  });
+
+  it.each([true, false])(
+    "repairs a processed legacy event by linking its bill (UUID: %s)",
+    async (includeUuid) => {
+      const number = "SUP-LEGACY-ORPHAN";
+      const documentId = "legacy-orphan";
+      const { t, id, xml, run, bills } = await purchase(number, documentId, includeUuid);
+      const { parseInboundUbl, toInboundBill } =
+        await import("../../server/services/einvoice/inbound");
+      const { archiveEInvoiceXml, insertInboundDocument } =
+        await import("../../server/services/einvoice/store");
+      const { createDraftFromInbound } = await import("../../server/services/bill-payment.service");
+      const parsed = parseInboundUbl(xml);
+      const original = (
+        await createDraftFromInbound(t.company.id, t.user.id, toInboundBill(parsed))
+      ).bill;
+      const archive = await archiveEInvoiceXml({
+        companyId: t.company.id,
+        direction: "inbound",
+        kind: "received",
+        documentNumber: number,
+        documentType: parsed.typeCode,
+        uuid: parsed.uuid,
+        xml,
+        providerMessageId: documentId,
+      });
+      await insertInboundDocument({
+        companyId: t.company.id,
+        supplierKey: parsed.supplierTrn!,
+        documentNumber: number,
+        documentType: parsed.typeCode,
+        uuid: parsed.uuid,
+        sha256: archive.sha256,
+        status: "failed",
+        archiveId: archive.id,
+        validation: { valid: true },
+      });
+      await h.sql(
+        "UPDATE einvoice_provider_events SET status = 'processed', processed_at = now(), attempts = 2 WHERE id = $1",
+        [id]
+      );
+      expect(await run()).toEqual({ claimed: 1, processed: 1, failed: 0 });
+      expect(await bills()).toEqual([{ id: original.id }]);
+      expect(
+        await h.sql(
+          "SELECT status, bill_id FROM einvoice_inbound_documents WHERE company_id = $1",
+          [t.company.id]
+        )
+      ).toEqual([{ status: "bill_created", bill_id: original.id }]);
+    }
+  );
+
+  it("leaves an incomplete legacy event alone when its message ID spans environments", async () => {
+    const documentId = "legacy-ambiguous-environment";
+    const { t, run } = await purchase("SUP-LEGACY-SCOPE", documentId);
+    const { enqueueProviderEvent, providerEventKey } =
+      await import("../../server/services/einvoice/provider-events");
+    expect(await run()).toEqual({ claimed: 1, processed: 1, failed: 0 });
+    await h.sql(
+      "UPDATE einvoice_inbound_documents SET status = 'failed', bill_id = NULL WHERE company_id = $1",
+      [t.company.id]
+    );
+    const payload = { documentId };
+    await enqueueProviderEvent({
+      provider: "acube",
+      environment: "production",
+      companyId: t.company.id,
+      type: "document.received",
+      eventId: providerEventKey("document.received", payload),
+      payload,
+    });
+    expect(await run()).toEqual({ claimed: 0, processed: 0, failed: 0 });
+    expect(
+      await h.sql("SELECT status, bill_id FROM einvoice_inbound_documents WHERE company_id = $1", [
+        t.company.id,
+      ])
+    ).toEqual([{ status: "failed", bill_id: null }]);
+  });
+});
+
+describe("e-invoice legal entity synchronization", () => {
+  it("keeps a verified old callback from mutating a replacement legal entity", async () => {
+    const t = await h.createTenant();
+    const { enqueueProviderEvent, runProviderEvents } =
+      await import("../../server/services/einvoice/provider-events");
+    const { getLegalEntity, upsertLegalEntity } =
+      await import("../../server/services/einvoice/legal-entities");
+    await upsertLegalEntity(t.company.id, "acube", "sandbox", BUYER_TIN, {
+      status: "active",
+      legalEntityId: OWNER,
+    });
+    const { id } = await enqueueProviderEvent({
+      provider: "acube",
+      environment: "sandbox",
+      companyId: t.company.id,
+      type: "legal_entity.synchronized",
+      eventId: "old-entity-callback",
+      payload: { legalEntityId: OWNER, action: "DELINK" },
+    });
+    const replacement = { status: "pending", legalEntityId: "replacement", tin: "1009999999" };
+    const legalEntityPatch = vi.fn(async () => {
+      await upsertLegalEntity(t.company.id, "acube", "sandbox", replacement.tin, {
+        status: replacement.status,
+        legalEntityId: replacement.legalEntityId,
+      });
+      return { legalEntityId: OWNER, status: "inactive", peppolAddress: null };
+    });
+    const provider = { ...simulatedProvider(""), legalEntityPatch };
+    expect(await runProviderEvents({ id: id!, provider })).toEqual({
+      claimed: 1,
+      processed: 1,
+      failed: 0,
+    });
+    expect(legalEntityPatch).toHaveBeenCalledExactlyOnceWith(
+      OWNER,
+      { legalEntityId: OWNER, action: "DELINK" },
+      BUYER_TIN
+    );
+    expect(await getLegalEntity(t.company.id, "acube", "sandbox")).toMatchObject(replacement);
+    expect(await h.sql("SELECT status FROM einvoice_provider_events WHERE id = $1", [id])).toEqual([
+      { status: "ignored" },
+    ]);
+  });
+});

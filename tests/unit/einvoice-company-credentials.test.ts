@@ -122,7 +122,7 @@ describe("company e-invoicing credentials", () => {
       fetch,
     });
     expect((await acube.getStatus("test-invoice")).providerMessageId).toBe("test-invoice");
-    expect((await cmp.getStatus("test-invoice")).status).toBe("accepted");
+    expect((await cmp.getStatus("test-invoice")).status).toBe("submitted");
     await expect(
       getCompanyEInvoiceProvider(acubeId, {
         provider: "acube",

@@ -55,6 +55,7 @@ interface FakeDoc {
   state: string;
   isTerminal: boolean;
   errors: unknown[];
+  ftaApproval?: string | null;
 }
 const fake = {
   authorised: false,
@@ -67,6 +68,7 @@ const fake = {
   posts: 0,
   submitDelayMs: 0,
   nextSubmit: [] as Array<"200" | "422" | "network">,
+  nextSalesReads: [] as Array<"ok" | "unavailable">,
   docs: new Map<string, FakeDoc>(),
   purchases: [] as Array<{ id: string; number: string; xml: string; companyId: string }>,
   reset() {
@@ -80,6 +82,7 @@ const fake = {
     this.posts = 0;
     this.submitDelayMs = 0;
     this.nextSubmit = [];
+    this.nextSalesReads = [];
     this.docs.clear();
     this.purchases = [];
   },
@@ -237,6 +240,7 @@ async function complyance(url: URL, init: RequestInit): Promise<Response> {
   }
   const one = /^\/api\/v3\/documents\/([^/]+)$/.exec(p);
   if (method === "GET" && one && url.searchParams.get("type") === "sales") {
+    if (fake.nextSalesReads.shift() === "unavailable") return json(503, { success: false });
     const d = fake.docs.get(one[1]);
     if (!d) return json(404, { success: false, code: "NOT_FOUND", message: "Document not found" });
     return json(200, {
@@ -253,7 +257,14 @@ async function complyance(url: URL, init: RequestInit): Promise<Response> {
         state: d.state,
         isTerminal: d.isTerminal,
         errors: d.errors,
-        compliance: { ftaApprovedStatus: d.state === "final_valid" ? "APPROVED" : "PENDING" },
+        compliance: {
+          ftaApprovedStatus:
+            d.ftaApproval === undefined
+              ? d.state === "final_valid"
+                ? "APPROVED"
+                : "PENDING"
+              : d.ftaApproval,
+        },
         validationResults: { status: "Valid", validationSteps: [] },
       },
     });
@@ -654,7 +665,7 @@ describe("E2 submit, two tracks and history", () => {
     ).toBe(true);
     await events.runProviderEvents();
     s = await statusOf(t, inv.id);
-    expect(s.status).toBe("accepted");
+    expect(s).toMatchObject({ status: "submitted", submissionState: "sent" });
     expect(s.tracks.delivery.status).toBe("delivered");
     expect(s.tracks.reporting.status).toBe("pending");
 
@@ -751,6 +762,41 @@ describe("E2 submit, two tracks and history", () => {
     expect(fake.posts).toBe(2);
   });
 
+  it("keeps required FTA reporting pending until an approved provider response arrives", async () => {
+    const t = await readyTenant();
+    const inv = await issuedInvoice(t);
+    expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const doc = docOf(t, inv.number)!;
+    doc.state = "final_valid";
+    doc.isTerminal = true;
+    for (const approval of [null, "REJECTED"]) {
+      doc.ftaApproval = approval;
+      expect((await poll()).refreshed).toBe(1);
+      expect(await statusOf(t, inv.id)).toMatchObject({
+        status: "accepted",
+        submissionState: "accepted",
+        document: { reportedAt: null },
+        tracks: { reporting: { status: "pending", required: true } },
+      });
+    }
+    doc.ftaApproval = "APPROVED";
+    expect((await poll()).refreshed).toBe(1);
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      status: "cleared",
+      submissionState: "accepted",
+      tracks: { reporting: { status: "reported", required: true } },
+    });
+    doc.ftaApproval = null;
+    const refreshed = await t.as.post(`/api/invoices/${inv.id}/einvoice/refresh-status`, {});
+    expect(refreshed.status, refreshed.text).toBe(200);
+    expect(refreshed.body.status).toBe("cleared");
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      status: "cleared",
+      tracks: { reporting: { status: "reported" } },
+    });
+  });
+
   it("a lost response is never sent twice: GETS-HEAD-010 reads 'needs link' (not rejected), then a person links the document", async () => {
     const t = await readyTenant();
     const inv = await issuedInvoice(t);
@@ -815,15 +861,43 @@ describe("E2 submit, two tracks and history", () => {
       { invoiceId: inv.id, documentId: stored.id }
     );
     expect(denied.status).toBe(403);
+    // Current configuration changed after the provider received the immutable invoice.
+    await h.sql("UPDATE companies SET einvoice_partner = 'acube' WHERE id = $1", [t.company.id]);
+    await h.sql(
+      "UPDATE einvoice_legal_entities SET status = 'inactive', provider_details = jsonb_set(provider_details, '{sourceName}', to_jsonb('replacement-source'::text)) WHERE company_id = $1 AND provider = 'complyance'",
+      [t.company.id]
+    );
+    fake.nextSalesReads = ["unavailable"];
+    const unavailable = await t.as.post(
+      `/api/companies/${t.company.id}/einvoicing/complyance/link`,
+      {
+        invoiceId: inv.id,
+        documentId: stored.id,
+      }
+    );
+    expect(unavailable.status, unavailable.text).toBe(502);
+    expect(unavailable.body.code).toBe("EINVOICE_PROVIDER_UNAVAILABLE");
+    expect((await statusOf(t, inv.id)).tracks.delivery.status).toBe("needs_link");
+    fake.nextSalesReads = ["ok", "unavailable"];
     const link = await t.as.post(`/api/companies/${t.company.id}/einvoicing/complyance/link`, {
       invoiceId: inv.id,
       documentId: stored.id,
     });
     expect(link.status, link.text).toBe(200);
+    expect(link.body).toEqual({ linked: true, refreshed: false });
     s = await statusOf(t, inv.id);
     expect(s.tracks.delivery.status).toBe("queued");
     expect(s.transmission.providerDocumentId).toBe(stored.id);
     expect(s.rejection).toBeNull();
+    const [archived] = await h.sql(
+      "SELECT provider_message_id FROM einvoice_archive WHERE invoice_id = $1 AND kind = 'submitted'",
+      [inv.id]
+    );
+    expect(archived?.provider_message_id).toBe(stored.id);
+    stored.state = "final_valid";
+    stored.isTerminal = true;
+    await poll();
+    expect((await statusOf(t, inv.id)).status).toBe("cleared");
     expect(fake.posts).toBe(2);
   });
 });
@@ -903,6 +977,48 @@ describe("E2 inbound: purchase.invoice.stored -> draft bill tagged e-invoice", (
 });
 
 describe("E2 + F16: no FTA reporting before the mandate applies", () => {
+  it.each([false, true])(
+    "continues to a buyer rejection for a voluntary receipt (legacy cleared: %s)",
+    async (legacy) => {
+      const t = await readyTenant({ ...SELLER_COLUMNS, einvoice_scope: "none" });
+      const inv = await issuedInvoice(t);
+      expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+      await runEInvoiceRetries();
+      const received = docOf(t, inv.number)!;
+      received.state = "delivery_success";
+      if (legacy) {
+        await h.sql(`UPDATE invoices SET einvoice_status = 'cleared' WHERE id = $1`, [inv.id]);
+        await h.sql(
+          `UPDATE einvoice_documents SET status = 'cleared', delivery_status = 'delivered',
+          provider_status = 'delivery_success', reporting_status = 'not_required', cleared_at = NOW()
+          WHERE invoice_id = $1`,
+          [inv.id]
+        );
+      } else {
+        expect((await poll()).refreshed).toBe(1);
+      }
+      expect(await statusOf(t, inv.id)).toMatchObject({
+        status: "submitted",
+        submissionState: "sent",
+        tracks: { reporting: { status: "not_required" } },
+        transmission: { recipientAcknowledgement: "received" },
+      });
+      received.state = "final_invalid";
+      received.isTerminal = true;
+      received.errors = [
+        { code: "C3-MLS-RE", message: "Buyer ASP rejected", path: [], source: "delivery" },
+      ];
+      expect((await poll()).refreshed).toBe(1);
+      expect(await statusOf(t, inv.id)).toMatchObject({
+        status: "rejected",
+        submissionState: "rejected",
+        tracks: { delivery: { status: "rejected" }, reporting: { status: "not_required" } },
+        rejection: { code: "COMPLYANCE_FINAL_INVALID", newDocumentRequired: true },
+      });
+      expect(fake.posts).toBe(1);
+    }
+  );
+
   it("pre-mandate company: final_valid still reads not_required, never overdue", async () => {
     const t = await readyTenant({ ...SELLER_COLUMNS, einvoice_go_live_date: null });
     await h.sql(

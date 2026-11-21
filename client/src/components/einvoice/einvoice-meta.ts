@@ -56,6 +56,7 @@ export interface EInvoiceEvent {
   track: "validation" | "delivery" | "reporting";
   from: string | null;
   to: string;
+  confirmationUnavailable?: boolean;
   code: string | null;
   message: string | null;
   source: "user" | "webhook" | "poll" | "job" | "system";
@@ -209,12 +210,26 @@ export function recipientAcknowledgement(
   provider: string | null | undefined,
   status: string | null | undefined
 ): RecipientAcknowledgement {
-  if (provider !== "acube") return null;
   const rawStatus = status?.trim().toLowerCase();
-  return rawStatus === "accepted" ? "accepted" : rawStatus === "delivered" ? "received" : null;
+  if (provider === "acube") {
+    return rawStatus === "accepted" ? "accepted" : rawStatus === "delivered" ? "received" : null;
+  }
+  if (provider === "complyance") {
+    return rawStatus === "final_valid"
+      ? "accepted"
+      : rawStatus === "delivery_success"
+        ? "received"
+        : null;
+  }
+  return null;
 }
 export const reportingLabelKey = (s: ReportingStatus, confirmationUnavailable = false) =>
   confirmationUnavailable ? "einvoicing.reportingUnconfirmed" : `einvoicing.reporting_${s}`;
+
+export function isReportingOnlyFailure(delivery: DeliveryStatus, reporting: ReportingStatus) {
+  return reporting === "report_failed" && delivery !== "rejected" && delivery !== "delivery_failed";
+}
+
 export const checklistLabelKey = (k: string) => `einvoicing.check_${k}`;
 export const checklistStateKey = (s: ChecklistState) => `einvoicing.checkState_${s}`;
 export const blockKey = (b: Exclude<TransmissionBlock, null>) => `einvoicing.block_${b}`;
@@ -222,6 +237,7 @@ export const sourceKey = (s: string) => `einvoicing.source_${s}`;
 
 const KNOWN_ERRORS = new Set([
   "EINVOICE_PROVIDER_NOT_CONFIGURED",
+  "EINVOICE_RETRY_PROVIDER_CHANGED",
   "EINVOICE_LEGAL_ENTITY_NOT_ACTIVE",
   "EINVOICE_LEGAL_ENTITY_DELINKED",
   "EINVOICE_SUPPLIER_ENDPOINT_MISMATCH",

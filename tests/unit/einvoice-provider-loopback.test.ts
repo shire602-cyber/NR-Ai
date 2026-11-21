@@ -393,7 +393,10 @@ describe("Complyance over loopback HTTP", () => {
       status: "submitted",
       providerMessageId: COMPLYANCE_ID,
     });
-    expect(await provider.getStatus(COMPLYANCE_ID)).toMatchObject({ status: "accepted" });
+    expect(await provider.getStatus(COMPLYANCE_ID)).toMatchObject({
+      status: "submitted",
+      delivery: "delivered",
+    });
     expect(await provider.getStatus(COMPLYANCE_ID)).toMatchObject({
       status: "cleared",
       reporting: "reported",

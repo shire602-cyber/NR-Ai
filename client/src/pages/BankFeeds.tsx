@@ -189,8 +189,8 @@ export default function BankFeeds() {
           <EmptyState
             size="md"
             icon={Landmark}
-            title={tt["banking.feeds.unavailableTitle"]}
-            description={tt["banking.feeds.unavailableBody"]}
+            title={tt["banking.feeds.notConfiguredTitle"]}
+            description={tt["banking.feeds.manualImportBody"]}
             action={{
               label: tt["banking.feeds.importStatement"],
               href: "/bank-reconciliation?import=1",

@@ -73,6 +73,10 @@ const bannedLaunchClaims = [
   /Securely link your.*bank account/i,
   /via encrypted feeds/i,
   /UAE bank feeds/i,
+  /live bank feeds[^.]*\b(?:coming|later|soon)\b/i,
+  /سيتوفر[^.]*الربط البنكي المباشر/,
+  /accredited provider (?:per deployment|configured for your deployment)/i,
+  /لكل\s+نسخة\s+من\s+التطبيق/,
   /Photo, email forward, or bank feed/i,
   /sync a bank line/i,
   /compliant with FTA/i,
@@ -310,7 +314,7 @@ describe("Public SaaS launch surface", () => {
     for (const expectedDemoSignal of [
       "Sample company workspace",
       "Pearl Trading LLC",
-      "CSV statement import, no live feed needed",
+      "CSV statement import",
       "Export VAT 201 workbook",
     ]) {
       expect(demoSource).toContain(expectedDemoSignal);

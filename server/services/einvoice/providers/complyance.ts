@@ -53,7 +53,7 @@ import type {
 } from "../../einvoice-provider";
 import type { EInvoiceRejectionReason } from "../../einvoice-status";
 import { createLogger } from "../../../config/logger";
-import { legacyFromTracks, type DeliveryStatus, type ReportingStatus } from "../tracks";
+import { legacyFromProviderTracks, type DeliveryStatus, type ReportingStatus } from "../tracks";
 import type { EInvoiceProviderModule } from "./types";
 import { ublToGets, unifyXmlRequest } from "./complyance-gets";
 import { providerObject, providerString, readProviderResponse } from "./response";
@@ -262,9 +262,9 @@ export function complyanceReasons(errors: unknown): EInvoiceRejectionReason[] {
  *   delivery_failed    an attempt failed, NOT final in the UAE: Complyance keeps trying and
  *                      says not to resend under a new number      -> sending / pending
  *                      (terminal only if isTerminal says so)      -> delivery_failed
- *   final_valid        buyer's ASP and the FTA both accepted      -> delivered / reported
- *   final_invalid      buyer's ASP or the FTA rejected            -> by the errors' source:
- *                      government -> delivered / report_failed; otherwise rejected / pending
+ *   final_valid        final recipient outcome                   -> delivered; FTA approval
+ *                      comes from the explicit compliance field
+ *   final_invalid      buyer's ASP or the FTA rejected            -> by explicit error sources
  *   rejected           failed validation (Needs Correction)       -> rejected / pending
  * Unknown states never read as success: delivery_failed with COMPLYANCE_UNKNOWN_STATE.
  */
@@ -272,15 +272,6 @@ export function mapComplyanceStatus(data: Record<string, unknown>): ComplyanceTr
   const state = providerString(data.state)?.toLowerCase();
   const terminal = data.isTerminal === true;
   const reasons = complyanceReasons(data.errors);
-  const steps = providerObject(data.validationResults)?.validationSteps;
-  const delivered =
-    Array.isArray(steps) &&
-    steps.some((step: unknown) => {
-      const entry = providerObject(step);
-      return (
-        /delivery success/i.test(providerString(entry?.name) ?? "") && entry?.status === "Valid"
-      );
-    });
   switch (state) {
     case "submitted":
       return { delivery: "queued", reporting: "pending", errorCode: null, reasons: [] };
@@ -297,19 +288,27 @@ export function mapComplyanceStatus(data: Record<string, unknown>): ComplyanceTr
             reasons,
           }
         : { delivery: "sending", reporting: "pending", errorCode: null, reasons: [] };
-    case "final_valid":
-      return { delivery: "delivered", reporting: "reported", errorCode: null, reasons: [] };
+    case "final_valid": {
+      const approval = providerString(providerObject(data.compliance)?.ftaApprovedStatus);
+      return {
+        delivery: "delivered",
+        reporting: approval === "APPROVED" ? "reported" : "pending",
+        errorCode: null,
+        reasons: [],
+      };
+    }
     case "final_invalid": {
       const sources = new Set(
         (Array.isArray(data.errors) ? data.errors : []).map((e) =>
-          String((e as Record<string, unknown>)?.source ?? "").toLowerCase()
+          providerString(providerObject(e)?.source)?.toLowerCase()
         )
       );
-      if (sources.has("government") || (delivered && !sources.has("delivery"))) {
+      if (sources.has("government")) {
+        const buyerRejected = sources.has("delivery");
         return {
-          delivery: "delivered",
+          delivery: buyerRejected ? "rejected" : "delivered",
           reporting: "report_failed",
-          errorCode: "EINVOICE_REPORT_FAILED",
+          errorCode: buyerRejected ? "COMPLYANCE_FINAL_INVALID" : "EINVOICE_REPORT_FAILED",
           reasons,
         };
       }
@@ -488,7 +487,8 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     reporting: ReportingStatus,
     extra: Partial<EInvoiceProviderResult> & { providerMessageId: string }
   ): EInvoiceProviderResult {
-    return { status: legacyFromTracks(delivery, reporting), delivery, reporting, ...extra };
+    const status = legacyFromProviderTracks(this.name, extra.providerStatus, delivery, reporting);
+    return { status, delivery, reporting, ...extra };
   }
 
   /** Bind a retry to the original workspace credential, source and environment. */
@@ -1035,9 +1035,16 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
   }
 
   /** Inbox hook: a company/Peppol event -> the company as Complyance holds it now. */
-  async legalEntityPatch(legalEntityId: string): Promise<LegalEntityPatch | null> {
+  async legalEntityPatch(
+    legalEntityId: string,
+    _payload: Record<string, unknown>,
+    expectedTin: string
+  ): Promise<LegalEntityPatch | null> {
     const c = await this.findCompany({ companyId: legalEntityId });
-    return c ? patchFromComplyance(c) : null;
+    if (!c) return null;
+    const { assertProviderTin } = await import("../legal-entities");
+    assertProviderTin(expectedTin, c.tin);
+    return patchFromComplyance(c);
   }
 }
 

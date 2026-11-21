@@ -3,12 +3,20 @@
  * UBL invoice or credit note addressed to one of our companies. We verify the
  * HMAC, parse and validate it, archive the XML, reject duplicates by document
  * id, and create a DRAFT vendor bill through the bills module
- * (service "bills.createDraftFromInbound"). Nothing is approved or posted.
+ * (service "bills.prepareDraftFromInbound"). Nothing is approved or posted.
  */
 import crypto from "node:crypto";
+import { and, eq, inArray, isNull } from "drizzle-orm";
+import {
+  einvoiceInboundDocuments,
+  vendorBills,
+  type EInvoiceInboundDocument,
+} from "../../../shared/schema";
 import { allocate } from "../../../shared/money";
 import { DomainError } from "../../errors";
-import { pool } from "../../db";
+import { db, pool } from "../../db";
+import { withLedgerTx } from "../../ledger/tx";
+import type { LedgerTx } from "../../ledger/types";
 import { has, resolve } from "../../platform/service-registry";
 import { all, children, fils, first, parseXml, textAt, type XNode } from "./dom";
 import { summariseValidation, validateEInvoiceXml } from "./validate";
@@ -200,7 +208,7 @@ const SUPPLY_FOR_CATEGORY: Record<string, string> = {
 
 const major = (f: number) => (f / 100).toFixed(2);
 
-/** Raw input for service "bills.createDraftFromInbound" (validated there by inboundBillSchema). */
+/** Raw input for service "bills.prepareDraftFromInbound" (validated there by inboundBillSchema). */
 export function toInboundBill(p: ParsedInboundDocument): Record<string, unknown> {
   const reverseCharge = p.lines.some((l) => l.category === "AE");
   return {
@@ -253,25 +261,109 @@ async function companyOwnerId(companyId: string): Promise<string | null> {
   return r.rows[0]?.user_id ?? null;
 }
 
-type CreateDraft = (
+type PrepareDraft = (
   companyId: string,
   actorId: string,
   raw: unknown
-) => Promise<{ bill: { id: string } }>;
+) => Promise<(tx: LedgerTx) => Promise<{ bill: { id: string } }>>;
+
+function completedInbound(row: EInvoiceInboundDocument, isCredit: boolean): boolean {
+  return (
+    (row.status === "bill_created" && Boolean(row.billId)) ||
+    (row.status === "credit_created" && Boolean(row.debitNoteId)) ||
+    (Boolean(row.archiveId) &&
+      (row.status === "invalid" || (isCredit && row.status === "received")))
+  );
+}
+
+function duplicateInbound(row: EInvoiceInboundDocument): InboundResult {
+  if (row.status === "invalid") {
+    return {
+      status: 422,
+      body: {
+        code: "EINVOICE_INBOUND_INVALID",
+        duplicate: true,
+        id: row.id,
+        status: row.status,
+        billId: null,
+        validation: row.validation,
+      },
+    };
+  }
+  return {
+    status: 200,
+    body: { duplicate: true, id: row.id, status: row.status, billId: row.billId },
+  };
+}
+
+function assertSameInboundSource(row: EInvoiceInboundDocument, hash: string): void {
+  if (row.sha256 !== hash) {
+    throw new DomainError(
+      "EINVOICE_INBOUND_INVALID",
+      422,
+      undefined,
+      "The source XML does not match the original inbound document."
+    );
+  }
+}
+
+/** Repair the linkage left by a bill committed separately by an older worker. */
+async function findLegacyInboundBill(
+  companyId: string,
+  parsed: ParsedInboundDocument,
+  tx: LedgerTx
+): Promise<string | null> {
+  const draft = toInboundBill(parsed);
+  const rows = await tx
+    .select({
+      id: vendorBills.id,
+      number: vendorBills.billNumber,
+      date: vendorBills.billDate,
+      currency: vendorBills.currency,
+      vendorTrn: vendorBills.vendorTrn,
+      vendorName: vendorBills.vendorName,
+    })
+    .from(vendorBills)
+    .where(
+      and(
+        eq(vendorBills.companyId, companyId),
+        eq(vendorBills.origin, "einvoice"),
+        eq(vendorBills.originRef, String(draft.originRef))
+      )
+    )
+    .limit(2);
+  if (!rows.length) return null;
+  const [bill] = rows;
+  const sameSupplier =
+    typeof draft.vendorTrn === "string"
+      ? bill.vendorTrn === draft.vendorTrn
+      : parsed.uuid !== null && bill.vendorTrn === null && bill.vendorName === draft.vendorName;
+  if (
+    rows.length !== 1 ||
+    !sameSupplier ||
+    bill.number !== draft.billNumber ||
+    bill.date.toISOString().slice(0, 10) !== parsed.issueDate ||
+    bill.currency !== parsed.currency
+  ) {
+    throw new Error("The existing bill cannot be matched unambiguously to the inbound document.");
+  }
+  return bill.id;
+}
 
 export async function processInboundEInvoice(args: {
   company: InboundCompany;
   xml: string;
+  provider?: string | null;
   providerMessageId?: string | null;
   now?: Date;
 }): Promise<InboundResult> {
   const { company, xml } = args;
   const now = args.now ?? new Date();
-  if (!has("bills.createDraftFromInbound")) {
+  if (!has("bills.prepareDraftFromInbound")) {
     throw new DomainError(
       "SERVICE_UNAVAILABLE",
       503,
-      { service: "bills.createDraftFromInbound" },
+      { service: "bills.prepareDraftFromInbound" },
       "The bills module is not available to receive e-invoices"
     );
   }
@@ -290,103 +382,184 @@ export async function processInboundEInvoice(args: {
     );
   }
 
+  const isCredit = parsed.root === "CreditNote";
+  const hash = sha256Hex(xml);
   const supplierKey = parsed.supplierTrn || parsed.supplierEndpoint || parsed.supplierName;
-  const existing = await findInboundDuplicate(company.id, supplierKey, parsed.documentNumber);
-  if (existing) {
-    return {
-      status: 200,
-      body: { duplicate: true, id: existing.id, status: existing.status, billId: existing.billId },
-    };
-  }
+  const find = (tx?: LedgerTx) =>
+    findInboundDuplicate(company.id, supplierKey, parsed.documentNumber, tx);
+  const existing = await find();
+  if (existing && completedInbound(existing, isCredit)) return duplicateInbound(existing);
+  if (existing) assertSameInboundSource(existing, hash);
 
   const validation = summariseValidation(await validateEInvoiceXml(xml, { now }));
-  const claimed = await insertInboundDocument({
-    companyId: company.id,
-    supplierKey,
-    supplierName: parsed.supplierName,
-    supplierTrn: parsed.supplierTrn,
-    documentNumber: parsed.documentNumber,
-    documentType: parsed.typeCode,
-    uuid: parsed.uuid,
-    sha256: sha256Hex(xml),
-    validation,
-    status: "received",
-    receivedAt: now,
-  });
-  if (!claimed) {
-    const again = await findInboundDuplicate(company.id, supplierKey, parsed.documentNumber);
-    return {
-      status: 200,
-      body: {
-        duplicate: true,
-        id: again?.id ?? null,
-        status: again?.status ?? null,
-        billId: again?.billId ?? null,
+  // Persist the inbound receipt and archive first. Failed bill preparation can then be retried
+  // against the same immutable source, and a finished credit note stays available for review.
+  const captured = await withLedgerTx(async (tx): Promise<InboundResult | { id: string }> => {
+    const prior = await find(tx);
+    const row =
+      prior ??
+      (await insertInboundDocument(
+        {
+          companyId: company.id,
+          supplierKey,
+          supplierName: parsed.supplierName,
+          supplierTrn: parsed.supplierTrn,
+          documentNumber: parsed.documentNumber,
+          documentType: parsed.typeCode,
+          uuid: parsed.uuid,
+          sha256: hash,
+          validation,
+          receivedAt: now,
+        },
+        tx
+      )) ??
+      (await find(tx));
+    if (!row) throw new Error("Inbound receipt could not be acquired.");
+    if (completedInbound(row, isCredit)) return duplicateInbound(row);
+    assertSameInboundSource(row, hash);
+
+    const archiveId =
+      row.archiveId ??
+      (
+        await archiveEInvoiceXml(
+          {
+            companyId: company.id,
+            direction: "inbound",
+            kind: "received",
+            documentNumber: parsed.documentNumber,
+            documentType: parsed.typeCode,
+            uuid: parsed.uuid,
+            xml,
+            provider: args.provider,
+            providerMessageId: args.providerMessageId,
+            now,
+          },
+          tx
+        )
+      ).id;
+
+    if (!isCredit && (prior || existing)) {
+      const billId = await findLegacyInboundBill(company.id, parsed, tx);
+      if (billId) {
+        const repaired = {
+          status: "bill_created",
+          archiveId,
+          billId,
+          validation: row.validation ?? validation,
+          error: null,
+        };
+        await updateInboundDocument(company.id, row.id, repaired, tx);
+        return duplicateInbound({ ...row, ...repaired });
+      }
+    }
+    if (!validation.xsd.available || !validation.schematron.available) {
+      await updateInboundDocument(
+        company.id,
+        row.id,
+        {
+          status: "failed",
+          archiveId,
+          validation,
+          error: "E-invoice validation is unavailable",
+        },
+        tx
+      );
+      return {
+        status: 503,
+        body: { code: "EINVOICE_VALIDATION_UNAVAILABLE", id: row.id, status: "failed" },
+      };
+    }
+    if (!validation.valid) {
+      await updateInboundDocument(
+        company.id,
+        row.id,
+        {
+          status: "invalid",
+          archiveId,
+          validation,
+          error: "Document failed PINT AE validation",
+        },
+        tx
+      );
+      return {
+        status: 422,
+        body: { code: "EINVOICE_INBOUND_INVALID", id: row.id, status: "invalid", validation },
+      };
+    }
+    if (isCredit) {
+      await updateInboundDocument(
+        company.id,
+        row.id,
+        {
+          status: "received",
+          archiveId,
+          validation,
+          error: "Supplier credit note received; review it and record the vendor credit",
+        },
+        tx
+      );
+      return { status: 202, body: { id: row.id, status: "received", billId: null, validation } };
+    }
+
+    await updateInboundDocument(
+      company.id,
+      row.id,
+      {
+        status: "received",
+        archiveId,
+        validation,
+        error: null,
       },
-    };
-  }
-  const archive = await archiveEInvoiceXml({
-    companyId: company.id,
-    direction: "inbound",
-    kind: "received",
-    documentNumber: parsed.documentNumber,
-    documentType: parsed.typeCode,
-    uuid: parsed.uuid,
-    xml,
-    providerMessageId: args.providerMessageId ?? null,
-    now,
+      tx
+    );
+    return { id: row.id };
   });
+  if ("status" in captured) return captured;
 
-  if (!validation.valid) {
-    await updateInboundDocument(company.id, claimed.id, {
-      status: "invalid",
-      archiveId: archive.id,
-      error: "Document failed PINT AE validation; no bill was created",
-    });
-    return {
-      status: 422,
-      body: { code: "EINVOICE_INBOUND_INVALID", id: claimed.id, status: "invalid", validation },
-    };
-  }
-  if (parsed.root === "CreditNote") {
-    // A supplier credit note is a vendor credit, not a bill. It is stored and archived for
-    // review; the reviewer converts it with POST /api/companies/:companyId/bills/inbound/:id/
-    // vendor-credit (service "bills.createVendorCreditFromInbound" -> vendor debit note).
-    await updateInboundDocument(company.id, claimed.id, {
-      archiveId: archive.id,
-      error: "Supplier credit note received; review it and record the vendor credit",
-    });
-    return { status: 202, body: { id: claimed.id, status: "received", billId: null, validation } };
-  }
-
-  const actorId = await companyOwnerId(company.id);
-  if (!actorId) {
-    await updateInboundDocument(company.id, claimed.id, {
-      status: "failed",
-      archiveId: archive.id,
-      error: "Company has no member to own the draft bill",
-    });
-    throw new DomainError("EINVOICE_INBOUND_NO_OWNER", 409);
-  }
   try {
-    const createDraft = resolve<CreateDraft>("bills.createDraftFromInbound");
-    const result = await createDraft(company.id, actorId, toInboundBill(parsed));
-    await updateInboundDocument(company.id, claimed.id, {
-      status: "bill_created",
-      billId: result.bill.id,
-      archiveId: archive.id,
-      error: null,
+    const actorId = await companyOwnerId(company.id);
+    if (!actorId) throw new DomainError("EINVOICE_INBOUND_NO_OWNER", 409);
+    const prepare = resolve<PrepareDraft>("bills.prepareDraftFromInbound");
+    const write = await prepare(company.id, actorId, toInboundBill(parsed));
+    return await withLedgerTx(async (tx) => {
+      const row = await find(tx);
+      if (!row) throw new Error("Inbound receipt no longer exists.");
+      if (completedInbound(row, false)) return duplicateInbound(row);
+      assertSameInboundSource(row, hash);
+      const legacyBillId = await findLegacyInboundBill(company.id, parsed, tx);
+      const billId = legacyBillId ?? (await write(tx)).bill.id;
+      await updateInboundDocument(
+        company.id,
+        row.id,
+        {
+          status: "bill_created",
+          billId,
+          error: null,
+        },
+        tx
+      );
+      if (legacyBillId) return duplicateInbound({ ...row, status: "bill_created", billId });
+      return {
+        status: 201,
+        body: { id: row.id, status: "bill_created", billId, validation },
+      };
     });
-    return {
-      status: 201,
-      body: { id: claimed.id, status: "bill_created", billId: result.bill.id, validation },
-    };
   } catch (err) {
-    await updateInboundDocument(company.id, claimed.id, {
-      status: "failed",
-      archiveId: archive.id,
-      error: (err as Error).message.slice(0, 500),
-    });
+    const note =
+      err instanceof DomainError && err.code === "EINVOICE_INBOUND_NO_OWNER"
+        ? "Company has no member to own the draft bill"
+        : "Inbound draft bill could not be created";
+    await db
+      .update(einvoiceInboundDocuments)
+      .set({ status: "failed", error: note })
+      .where(
+        and(
+          eq(einvoiceInboundDocuments.companyId, company.id),
+          eq(einvoiceInboundDocuments.id, captured.id),
+          inArray(einvoiceInboundDocuments.status, ["failed", "received"]),
+          isNull(einvoiceInboundDocuments.billId)
+        )
+      );
     throw err;
   }
 }

@@ -13,8 +13,6 @@
  */
 import express, { type Express, type Request, type Response } from "express";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
-import { db } from "../db";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -24,7 +22,7 @@ import { DomainError } from "../errors";
 import { createLogger } from "../config/logger";
 import { recordAudit } from "../services/audit.service";
 import { listJobs, registerJob } from "../platform/job-registry";
-import { invoices, type Company } from "../../shared/schema";
+import type { Company } from "../../shared/schema";
 import { MOF_ASP_REGISTER_URL } from "../services/einvoice/providers/types";
 import { companyProviderConfiguration } from "../services/einvoice/providers/company-provider";
 import {
@@ -58,14 +56,13 @@ import {
   runProviderPoll,
 } from "../services/einvoice/provider-events";
 import { companyTin, getLegalEntity } from "../services/einvoice/legal-entities";
-import { refreshAndPersist, trackedEInvoiceProviderMatches } from "../services/einvoice/workflow";
 import {
-  documentProviderEnvironment,
-  documentSubmissionMetadata,
-  getEInvoiceDocument,
-  lockEInvoiceInvoice,
-  upsertEInvoiceDocument,
-} from "../services/einvoice/store";
+  adoptRecoveredEInvoice,
+  frozenEInvoiceOwner,
+  refreshAndPersist,
+} from "../services/einvoice/workflow";
+import { providerObject } from "../services/einvoice/providers/response";
+import { documentProviderEnvironment, getEInvoiceDocument } from "../services/einvoice/store";
 import { EINVOICE_TIMELINE, einvoicingScope } from "../services/einvoice/scope";
 import { reportWindowDays } from "../services/einvoice/tracks";
 
@@ -291,6 +288,7 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
       if (
         doc?.provider !== COMPLYANCE_PROVIDER_NAME ||
         !LINKABLE_CODES.has(doc.lastErrorCode ?? "") ||
+        doc.providerMessageId ||
         invoice.einvoiceProviderMessageId
       ) {
         throw new DomainError(
@@ -306,39 +304,38 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
         : null;
       if (!config) throw new DomainError("EINVOICE_PROVIDER_NOT_CONFIGURED", 503);
       const provider = new ComplyanceEInvoiceProvider(config.env);
-      if (!(await trackedEInvoiceProviderMatches(doc, provider))) {
-        throw new DomainError("EINVOICE_PROVIDER_NOT_CONFIGURED", 503);
+      const identity = await frozenEInvoiceOwner(invoice, doc, provider);
+      if (!identity) throw new DomainError("EINVOICE_LINK_MISMATCH", 422);
+      const r = await provider
+        .call("GET", `/api/v3/documents/${encodeURIComponent(body.documentId)}?type=sales`)
+        .catch(() => null);
+      if (!r || r.status >= 500 || r.status === 408 || r.status === 429) {
+        throw new DomainError("EINVOICE_PROVIDER_UNAVAILABLE", 502);
       }
-      const pin = documentSubmissionMetadata(doc);
-      const r = await provider.call(
-        "GET",
-        `/api/v3/documents/${encodeURIComponent(body.documentId)}?type=sales`
-      );
-      const data = (((r.json ?? {}) as Record<string, unknown>).data ?? {}) as Record<
-        string,
-        unknown
-      >;
-      if (!r.ok || String(data.documentNumber ?? "") !== invoice.number) {
+      const envelope = providerObject(r.json);
+      const data = providerObject(envelope?.data);
+      if (
+        !r.ok ||
+        !data ||
+        envelope?.success === false ||
+        data.documentId !== body.documentId ||
+        data.documentNumber !== identity.documentNumber ||
+        (data.environment != null && data.environment !== environment)
+      ) {
         throw new DomainError(
           "EINVOICE_LINK_MISMATCH",
           422,
           { documentId: body.documentId },
-          "That Complyance document is not this invoice (its number differs or it was not found)."
+          "That Complyance document is not this invoice or could not be verified."
         );
       }
-      const le = await getLegalEntity(company.id, COMPLYANCE_PROVIDER_NAME, provider.environment);
-      const leDetails = (le?.providerDetails ?? {}) as Record<string, unknown>;
       const owner = complyanceDocumentBelongsTo(data, {
-        tin: le?.tin ?? companyTin(company),
-        trn: company.trnVatNumber ?? le?.vatTrn ?? null,
-        connectCompanyId: le?.legalEntityId ?? null,
-        sourceName: typeof leDetails.sourceName === "string" ? leDetails.sourceName : null,
+        tin: identity.supplierTin,
+        trn: identity.supplierTrn,
+        connectCompanyId: identity.legalEntityId,
+        sourceName: identity.sourceName,
       });
       if (!owner.ok) {
-        log.warn(
-          { companyId: company.id, invoiceId: invoice.id, ...owner },
-          "Complyance link refused: the document is not provably this company's"
-        );
         throw new DomainError(
           "EINVOICE_LINK_MISMATCH",
           422,
@@ -348,48 +345,15 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
             : "That Complyance document belongs to another seller."
         );
       }
-      const fresh = await db.transaction(async (tx) => {
-        const current = await lockEInvoiceInvoice(company.id, invoice.id, tx);
-        if (!current) throw new DomainError("NOT_FOUND", 404);
-        const currentDoc = await getEInvoiceDocument(company.id, invoice.id, tx);
-        const currentPin = documentSubmissionMetadata(currentDoc);
-        if (
-          current.einvoiceProviderMessageId ||
-          current.number !== invoice.number ||
-          currentDoc?.provider !== COMPLYANCE_PROVIDER_NAME ||
-          documentProviderEnvironment(currentDoc) !== environment ||
-          currentPin?.operationId !== pin?.operationId ||
-          currentPin?.scope !== pin?.scope ||
-          !LINKABLE_CODES.has(currentDoc.lastErrorCode ?? "")
-        ) {
-          throw new DomainError("EINVOICE_LINK_NOT_NEEDED", 409);
-        }
-        const [linked] = await tx
-          .update(invoices)
-          .set({
-            einvoiceProvider: COMPLYANCE_PROVIDER_NAME,
-            einvoiceProviderMessageId: body.documentId,
-            einvoiceStatus: "submitted",
-            einvoiceStatusDetail: null,
-          })
-          .where(and(eq(invoices.id, invoice.id), eq(invoices.companyId, company.id)))
-          .returning();
-        await upsertEInvoiceDocument(
-          company.id,
-          invoice.id,
-          {
-            status: "submitted",
-            provider: COMPLYANCE_PROVIDER_NAME,
-            providerMessageId: body.documentId,
-            rejectionReasons: null,
-            lastError: null,
-            nextRetryAt: null,
-          },
-          tx
-        );
-        return linked;
+
+      // Proof of handoff is durable and pollable even if the next status request fails.
+      const adopted = await adoptRecoveredEInvoice({
+        invoice,
+        document: doc,
+        provider,
+        result: { status: "submitted", delivery: "queued", providerMessageId: body.documentId },
       });
-      const out = await refreshAndPersist({ invoice: fresh, company, provider, source: "user" });
+      if (!adopted) throw new DomainError("EINVOICE_LINK_NOT_NEEDED", 409);
       await recordAudit({
         userId: userOf(req),
         companyId: company.id,
@@ -399,7 +363,13 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
         after: { documentId: body.documentId },
         req,
       });
-      res.json({ linked: true, refreshed: out.ok });
+      const fresh = await storage.getInvoice(invoice.id, company.id);
+      const out = fresh
+        ? await refreshAndPersist({ invoice: fresh, company, provider, source: "user" }).catch(
+            () => null
+          )
+        : null;
+      res.json({ linked: true, refreshed: out?.ok === true });
     })
   );
 

@@ -84,6 +84,26 @@ export function reportingFromLegacy(
   return status === "cleared" ? "reported" : "pending";
 }
 
+/** Correct historical statuses that treated a receipt or the availability of a TDD as final. */
+export function projectEInvoiceLegacyStatus<T extends string>(
+  provider: string | null | undefined,
+  providerStatus: string | null | undefined,
+  status: T | null | undefined,
+  reportingStatus?: string | null
+): T | "not_generated" | "submitted" | "accepted" {
+  const stored = status ?? "not_generated";
+  if (stored !== "accepted" && stored !== "cleared") return stored;
+  const observed = providerStatus?.trim().toLowerCase();
+  if (provider === "acube") {
+    return observed === "accepted" ? "accepted" : "submitted";
+  }
+  if (provider === "complyance") {
+    if (observed === "delivery_success") return "submitted";
+    if (observed === "final_valid" && reportingStatus !== "reported") return "accepted";
+  }
+  return stored;
+}
+
 /**
  * The two tracks and the report-by deadline of one invoice, derived from its stored e-invoice
  * document (if any), its legacy status and whether FTA reporting is required. Shared by the
@@ -93,7 +113,10 @@ export function deriveInvoiceTracks(args: {
   invoiceDate: Date | string | null | undefined;
   invoiceStatus: string | null | undefined;
   legacyStatus: string | null | undefined;
+  provider?: string | null;
   doc: {
+    provider?: string | null;
+    providerStatus?: string | null;
     deliveryStatus?: string | null;
     reportingStatus?: string | null;
     reportBy?: string | null;
@@ -108,14 +131,29 @@ export function deriveInvoiceTracks(args: {
   overdue: boolean;
 } {
   const now = args.now ?? new Date();
-  const legacy = args.legacyStatus ?? "not_generated";
   const { doc, required } = args;
-  const delivery: DeliveryStatus = isDeliveryStatus(doc?.deliveryStatus)
+  const provider = doc?.provider ?? args.provider;
+  const providerStatus = doc?.providerStatus?.trim().toLowerCase();
+  const legacy = projectEInvoiceLegacyStatus(
+    provider,
+    providerStatus,
+    args.legacyStatus,
+    doc?.reportingStatus
+  );
+  let delivery: DeliveryStatus = isDeliveryStatus(doc?.deliveryStatus)
     ? doc.deliveryStatus
     : deliveryFromLegacy(legacy);
-  const storedReporting: ReportingStatus = isReportingStatus(doc?.reportingStatus)
+  if (provider === "acube" && delivery === "delivered") {
+    if (providerStatus === "processed") delivery = "sending";
+    else if (providerStatus !== "accepted" && providerStatus !== "delivered") delivery = "queued";
+  }
+  let storedReporting: ReportingStatus = isReportingStatus(doc?.reportingStatus)
     ? doc.reportingStatus
-    : reportingFromLegacy(legacy, required);
+    : provider === "acube" || provider === "complyance"
+      ? "pending"
+      : reportingFromLegacy(legacy, required);
+  // Old A-Cube rows recorded the downloadable TDD as a completed FTA filing.
+  if (provider === "acube" && storedReporting === "reported") storedReporting = "pending";
   // A "pending" report that is not (yet) required is not a pending obligation.
   const reporting: ReportingStatus =
     !required && storedReporting === "pending" ? "not_required" : storedReporting;
@@ -164,10 +202,13 @@ export function legacyFromProviderTracks(
   delivery: DeliveryStatus,
   reporting: ReportingStatus
 ): EInvoiceStatus {
-  if (provider === "acube" && delivery === "delivered") {
-    const status = providerStatus?.trim().toLowerCase();
-    if (status === "delivered") return "submitted";
-    if (status === "accepted" && reporting !== "reported") return "accepted";
+  if (delivery === "delivered") {
+    return projectEInvoiceLegacyStatus(
+      provider,
+      providerStatus,
+      legacyFromTracks(delivery, reporting),
+      reporting
+    );
   }
   return legacyFromTracks(delivery, reporting);
 }

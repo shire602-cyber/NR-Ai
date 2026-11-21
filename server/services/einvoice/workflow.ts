@@ -29,6 +29,7 @@ import type {
   EInvoiceProviderContext,
   EInvoiceProviderResult,
   EInvoiceSubmission,
+  EInvoiceOutboundIdentity,
 } from "../einvoice-provider";
 import { getCompanyEInvoiceProvider } from "./providers/company-provider";
 import {
@@ -57,6 +58,7 @@ import {
   lockEInvoiceInvoice,
   sha256Hex,
   SUBMISSION_LEASE_MS,
+  submissionTriedProvider,
   upsertEInvoiceDocument,
   type EInvoiceDb,
 } from "./store";
@@ -64,6 +66,7 @@ import { applyTracks, recordValidationEvent, type HistorySource } from "./histor
 import {
   deliveryFromLegacy,
   legacyFromProviderTracks,
+  projectEInvoiceLegacyStatus,
   NEW_DOCUMENT_REQUIRED_CODES,
   reportByDate,
   reportingRequired,
@@ -73,6 +76,7 @@ import {
 import { einvoiceMandateApplies } from "./scope";
 import { assertLegalEntityCanSend, getLegalEntity, requireCompanyTin } from "./legal-entities";
 import { PEPPOL_SCHEME_UAE_TIN } from "./pint-ae-codes";
+import { attr, first, parseXml, text, textAt } from "./dom";
 
 const log = createLogger("einvoice-workflow");
 
@@ -132,6 +136,11 @@ function providerContext(legalEntity: EInvoiceLegalEntity | null): EInvoiceProvi
   return { legalEntity: legalEntity ? { providerDetails: legalEntity.providerDetails } : null };
 }
 
+function entitySourceName(entity: EInvoiceLegalEntity | null | undefined): string | null {
+  const details = entity?.providerDetails as Record<string, unknown> | null;
+  return typeof details?.sourceName === "string" ? details.sourceName : null;
+}
+
 const AMBIGUOUS_CODES: ReadonlySet<string> = new Set([
   "TRANSPORT_ERROR",
   "ACUBE_UNAVAILABLE",
@@ -146,6 +155,38 @@ const RETRYABLE_BEFORE_HANDOFF: ReadonlySet<string> = new Set([
   "COMPLYANCE_AUTH_FAILED",
   "COMPLYANCE_RATE_LIMITED",
 ]);
+
+export function canRecoverAcubeSubmission(
+  invoice: Pick<Invoice, "einvoiceProviderMessageId">,
+  doc: EInvoiceDocument | undefined
+) {
+  return (
+    !invoice.einvoiceProviderMessageId &&
+    doc?.provider === "acube" &&
+    !doc.providerMessageId &&
+    (doc.deliveryStatus === "needs_link" || AMBIGUOUS_CODES.has(doc.lastErrorCode ?? ""))
+  );
+}
+
+function frozenEInvoice(invoice: Invoice, doc: EInvoiceDocument): PreparedSubmission | null {
+  const validation = documentValidation(doc) as PreparedSubmission["validation"] | null;
+  return validation?.valid &&
+    invoice.einvoiceXml &&
+    doc.uuid &&
+    doc.xmlHash &&
+    doc.uuid === invoice.einvoiceUuid &&
+    doc.xmlHash === invoice.einvoiceHash &&
+    doc.xmlHash === sha256Hex(invoice.einvoiceXml)
+    ? {
+        ok: true,
+        xml: invoice.einvoiceXml,
+        uuid: doc.uuid,
+        hash: doc.xmlHash,
+        documentType: doc.documentType,
+        validation,
+      }
+    : null;
+}
 
 function needsLink(): EInvoiceProviderResult {
   return {
@@ -229,7 +270,11 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
     if (
       existing?.deliveryStatus === "needs_link" ||
       existing?.providerMessageId ||
-      fresh.einvoiceProviderMessageId
+      fresh.einvoiceProviderMessageId ||
+      (existing?.provider &&
+        existing.provider !== "mock" &&
+        !existing.nextRetryAt &&
+        AMBIGUOUS_CODES.has(existing.lastErrorCode ?? ""))
     ) {
       return {
         ok: false,
@@ -251,6 +296,16 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         code: "EINVOICE_SUBMISSION_IN_PROGRESS",
         message: "This e-invoice is already being processed.",
       };
+    }
+    const original = documentSubmissionMetadata(existing);
+    const triedProvider = submissionTriedProvider(existing);
+    if (
+      triedProvider &&
+      (existing?.provider !== provider.name ||
+        original?.environment !== provider.environment ||
+        (providerRequiresLegalEntity(provider) && company.einvoicePartner !== provider.name))
+    ) {
+      return retryProviderChanged();
     }
     if (providerRequiresLegalEntity(provider) && company.einvoicePartner !== provider.name) {
       return {
@@ -274,6 +329,13 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
     const entity = await assertCanTransmit(company, provider, tx);
     const scope =
       (await provider.getSubmissionScope?.(company.id, providerContext(entity))) ?? null;
+    if (
+      triedProvider &&
+      provider.getSubmissionScope &&
+      (!original?.scope || original.scope !== scope)
+    ) {
+      return retryProviderChanged();
+    }
     if (provider.getSubmissionScope && !scope) {
       return {
         ok: false,
@@ -378,9 +440,12 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
               operationId: randomUUID(),
               invoiceNumber: invoice.number,
               supplierTin: entity?.tin ?? null,
+              supplierTrn: company.trnVatNumber ?? null,
               legalEntityId: entity?.legalEntityId ?? null,
+              sourceName: entitySourceName(entity),
               scope,
               actorId: args.actorId ?? null,
+              providerAttempted: triedProvider,
             },
           },
           validatedAt: now,
@@ -402,6 +467,15 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
     }
     return queued(doc);
   });
+}
+
+function retryProviderChanged(): SubmitErr {
+  return {
+    ok: false,
+    status: 409,
+    code: "EINVOICE_RETRY_PROVIDER_CHANGED",
+    message: "Restore the original e-invoicing provider connection before retrying this invoice.",
+  };
 }
 
 function eligibleSubmission(doc: EInvoiceDocument | undefined, now: Date): doc is EInvoiceDocument {
@@ -443,16 +517,8 @@ async function claimQueuedSubmission(
       return null;
     }
     const ambiguous = !!doc.submitClaimedAt || AMBIGUOUS_CODES.has(doc.lastErrorCode ?? "");
-    const validation = documentValidation(doc) as PreparedSubmission["validation"] | null;
-    if (
-      !validation?.valid ||
-      !invoice.einvoiceXml ||
-      !doc.uuid ||
-      !doc.xmlHash ||
-      doc.uuid !== invoice.einvoiceUuid ||
-      doc.xmlHash !== invoice.einvoiceHash ||
-      doc.xmlHash !== sha256Hex(invoice.einvoiceXml)
-    ) {
+    const built = frozenEInvoice(invoice, doc);
+    if (!built) {
       await stopQueuedSubmission(tx, invoice, "EINVOICE_SCHEMA_INVALID", now, ambiguous);
       return null;
     }
@@ -482,14 +548,7 @@ async function claimQueuedSubmission(
       invoiceNumber: metadata.invoiceNumber ?? invoice.number,
       attempt,
       ambiguous,
-      built: {
-        ok: true,
-        xml: invoice.einvoiceXml,
-        uuid: doc.uuid,
-        hash: doc.xmlHash,
-        documentType: doc.documentType,
-        validation,
-      } satisfies PreparedSubmission,
+      built,
     };
   });
 }
@@ -516,15 +575,20 @@ function unissuedInvoiceCode(invoice: Invoice) {
   return invoice.status === "draft" ? "EINVOICE_INVOICE_NOT_ISSUED" : "EINVOICE_INVOICE_VOID";
 }
 
-function blockedSubmission(claim: SubmissionClaim, errorCode: string): EInvoiceProviderResult {
-  return claim.ambiguous
-    ? needsLink()
-    : {
-        providerMessageId: "",
-        status: "failed",
-        delivery: "delivery_failed",
-        errorCode,
-      };
+type SubmissionDispatch = { result: EInvoiceProviderResult; providerAttempted: boolean };
+
+function blockedSubmission(claim: SubmissionClaim, errorCode: string): SubmissionDispatch {
+  return {
+    providerAttempted: false,
+    result: claim.ambiguous
+      ? needsLink()
+      : {
+          providerMessageId: "",
+          status: "failed",
+          delivery: "delivery_failed",
+          errorCode,
+        },
+  };
 }
 
 async function canAuthorizeSubmission(actorId: string | null, companyId: string, tx: EInvoiceDb) {
@@ -561,8 +625,6 @@ async function dispatchQueuedSubmission(
       .where(and(eq(invoices.companyId, companyId), eq(invoices.id, id)));
     if (!invoice || invoice.einvoiceProviderMessageId || invoice.einvoiceHash !== claim.built.hash)
       return null;
-    if (unissuedInvoice(invoice)) return blockedSubmission(claim, unissuedInvoiceCode(invoice));
-
     const [company] = await tx
       .select()
       .from(companies)
@@ -570,6 +632,17 @@ async function dispatchQueuedSubmission(
       .for("share");
     if (!company || company.deletedAt)
       return blockedSubmission(claim, "EINVOICE_PROVIDER_NOT_CONFIGURED");
+
+    // Looking up this exact frozen A-Cube document is read-only. Current dispatch rights and the
+    // currently selected partner control a new POST, not recovery of a previous handoff.
+    if (claim.ambiguous && provider.name === "acube") {
+      const found = await lookupAcubeSubmission(provider, invoice, current, claim.built);
+      return {
+        providerAttempted: false,
+        result: found ?? (nextRetryAt(claim.attempt, now) ? transportFailure() : needsLink()),
+      } satisfies SubmissionDispatch;
+    }
+    if (unissuedInvoice(invoice)) return blockedSubmission(claim, unissuedInvoiceCode(invoice));
 
     let context: EInvoiceProviderContext | undefined;
     if (providerRequiresLegalEntity(provider)) {
@@ -599,7 +672,17 @@ async function dispatchQueuedSubmission(
         (await provider.getSubmissionScope(company.id, context)) !== metadata.scope)
     )
       return blockedSubmission(claim, "EINVOICE_PROVIDER_NOT_CONFIGURED");
-    return sendQueuedSubmission(claim, provider, context, now);
+    if (
+      claim.ambiguous &&
+      providerRequiresLegalEntity(provider) &&
+      (!claim.scope || claim.attempt > EINVOICE_MAX_ATTEMPTS)
+    ) {
+      return { providerAttempted: false, result: needsLink() } satisfies SubmissionDispatch;
+    }
+    return {
+      providerAttempted: true,
+      result: await sendQueuedSubmission(claim, provider, context, now),
+    } satisfies SubmissionDispatch;
   });
 }
 
@@ -645,19 +728,7 @@ async function sendQueuedSubmission(
     scopeFingerprint: claim.scope ?? undefined,
     context,
   };
-  if (claim.ambiguous && provider.lookupSubmission) {
-    const found = await provider.lookupSubmission(submission).catch(() => null);
-    if (found?.providerMessageId) return found;
-  }
-  // An incomplete search cannot establish that A-Cube did not receive the first request.
-  if (claim.ambiguous && provider.name === "acube") {
-    return nextRetryAt(claim.attempt, now) ? transportFailure() : needsLink();
-  }
   const knownProvider = providerRequiresLegalEntity(provider);
-  if (claim.ambiguous && knownProvider && (!claim.scope || claim.attempt > EINVOICE_MAX_ATTEMPTS)) {
-    return needsLink();
-  }
-
   const result = await provider.submit(submission).catch(transportFailure);
   if (result.numberAlreadyHeld) return needsLink();
   if (result.providerMessageId) return result;
@@ -678,19 +749,19 @@ async function sendQueuedSubmission(
   return result;
 }
 
-async function processQueuedSubmission(
-  candidate: EInvoiceDocument,
-  provider: EInvoiceProvider,
-  now: Date
-) {
-  const claim = await claimQueuedSubmission(candidate, provider, now);
-  if (!claim) return null;
-  const r = await dispatchQueuedSubmission(claim, provider, now);
-  if (!r) return null;
-  const { invoice, built } = claim;
-  const companyId = invoice.companyId;
-  const required =
-    candidate.reportingStatus === "pending" || candidate.reportingStatus === "reported";
+async function persistSubmissionOutcome(args: {
+  invoice: Invoice;
+  current: EInvoiceDocument;
+  built: PreparedSubmission;
+  provider: EInvoiceProvider;
+  dispatch: SubmissionDispatch;
+  source: HistorySource;
+  now: Date;
+  tx: EInvoiceDb;
+}) {
+  const { invoice, current, built, provider, dispatch, source, now, tx } = args;
+  const r = dispatch.result;
+  const required = current.reportingStatus === "pending" || current.reportingStatus === "reported";
   const delivery: DeliveryStatus = r.delivery ?? deliveryFromLegacy(r.status);
   const reporting: ReportingStatus = !required
     ? "not_required"
@@ -706,7 +777,7 @@ async function processQueuedSubmission(
     built,
     provider,
     { ...r, status },
-    claim.attempt - 1,
+    current.attempts - 1,
     now
   );
   const failed = delivery === "delivery_failed" || delivery === "rejected";
@@ -717,57 +788,182 @@ async function processQueuedSubmission(
     (!providerRequiresLegalEntity(provider) ||
       AMBIGUOUS_CODES.has(errorCode) ||
       RETRYABLE_BEFORE_HANDOFF.has(errorCode));
-
-  return db.transaction(async (tx) => {
-    const fresh = await lockEInvoiceInvoice(companyId, invoice.id, tx);
-    const current = await getEInvoiceDocument(companyId, invoice.id, tx, "update");
-    if (!fresh || fresh.einvoiceProviderMessageId || !holdsSubmissionClaim(current, claim))
-      return null;
-    await updateInvoiceInTransaction(tx, invoice, result.update);
-    const documentRow = await applyTracks(
-      companyId,
-      invoice.id,
-      {
-        delivery,
-        reporting,
-        providerStatus: r.providerStatus ?? null,
-        errorCode: failed || delivery === "needs_link" ? errorCode : null,
-        errorMessage: failed ? (r.detail ?? null) : null,
-      },
-      {
-        source: "job",
-        provider: provider.name,
-        now,
-        document: {
-          ...result.document,
-          validation: current.validation,
-          validatedAt: current.validatedAt,
-          nextRetryAt: retry ? result.document.nextRetryAt : null,
-          submitClaimedAt: null,
+  const metadata = documentSubmissionMetadata(current);
+  const validation = metadata
+    ? {
+        ...built.validation,
+        submission: {
+          ...metadata,
+          providerAttempted:
+            dispatch.providerAttempted || submissionTriedProvider(current) || result.handedOver,
         },
-      },
-      tx
-    );
-    if (result.handedOver) {
-      const archive = {
-        companyId,
-        invoiceId: invoice.id,
-        direction: "outbound" as const,
-        documentNumber: claim.invoiceNumber,
-        documentType: built.documentType,
-        uuid: built.uuid,
-        xml: built.xml,
-        provider: provider.name,
-        providerMessageId: result.providerMessageId,
-        now,
-      };
-      await archiveEInvoiceXml({ ...archive, kind: "submitted" }, tx);
-      if (result.document.status === "cleared") {
-        await archiveEInvoiceXml({ ...archive, kind: "cleared" }, tx);
       }
+    : current.validation;
+  const { companyId, id: invoiceId } = invoice;
+  await updateInvoiceInTransaction(tx, invoice, result.update);
+  const documentRow = await applyTracks(
+    companyId,
+    invoiceId,
+    {
+      delivery,
+      reporting,
+      providerStatus: r.providerStatus ?? null,
+      errorCode: failed || delivery === "needs_link" ? errorCode : null,
+      errorMessage: failed ? (r.detail ?? null) : null,
+    },
+    {
+      source,
+      provider: provider.name,
+      now,
+      document: {
+        ...result.document,
+        validation,
+        validatedAt: current.validatedAt,
+        nextRetryAt: retry ? result.document.nextRetryAt : null,
+        submitClaimedAt: null,
+      },
+    },
+    tx
+  );
+  if (result.handedOver) {
+    const archive = {
+      companyId,
+      invoiceId,
+      direction: "outbound" as const,
+      documentNumber: metadata?.invoiceNumber ?? invoice.number,
+      documentType: built.documentType,
+      uuid: built.uuid,
+      xml: built.xml,
+      provider: provider.name,
+      providerMessageId: result.providerMessageId,
+      now,
+    };
+    await archiveEInvoiceXml({ ...archive, kind: "submitted" }, tx);
+    if (result.document.status === "cleared") {
+      await archiveEInvoiceXml({ ...archive, kind: "cleared" }, tx);
     }
-    return { ...result, documentRow };
+  }
+  return { ...result, documentRow };
+}
+
+async function processQueuedSubmission(
+  candidate: EInvoiceDocument,
+  provider: EInvoiceProvider,
+  now: Date
+) {
+  const claim = await claimQueuedSubmission(candidate, provider, now);
+  if (!claim) return null;
+  const dispatch = await dispatchQueuedSubmission(claim, provider, now);
+  if (!dispatch) return null;
+  const { companyId, id } = claim.invoice;
+  return db.transaction(async (tx) => {
+    const invoice = await lockEInvoiceInvoice(companyId, id, tx);
+    const current = await getEInvoiceDocument(companyId, id, tx, "update");
+    if (!invoice || invoice.einvoiceProviderMessageId || !holdsSubmissionClaim(current, claim))
+      return null;
+    return persistSubmissionOutcome({
+      invoice,
+      current,
+      built: claim.built,
+      provider,
+      dispatch,
+      source: "job",
+      now,
+      tx,
+    });
   });
+}
+
+async function lookupAcubeSubmission(
+  provider: EInvoiceProvider,
+  invoice: Invoice,
+  doc: EInvoiceDocument,
+  built: PreparedSubmission
+) {
+  const metadata = documentSubmissionMetadata(doc);
+  if (
+    provider.name !== "acube" ||
+    doc.provider !== provider.name ||
+    doc.invoiceId !== invoice.id ||
+    doc.companyId !== invoice.companyId ||
+    metadata?.environment !== provider.environment ||
+    !provider.lookupSubmission
+  )
+    return null;
+  const result = await provider
+    .lookupSubmission({
+      invoiceId: invoice.id,
+      companyId: invoice.companyId,
+      invoiceNumber: metadata.invoiceNumber ?? invoice.number,
+      uuid: built.uuid,
+      xml: built.xml,
+      documentType: built.documentType ?? undefined,
+    })
+    .catch(() => null);
+  return result?.providerMessageId ? result : null;
+}
+
+/** Adopt a provider reference after a successful, document-specific read-only proof. */
+export async function adoptRecoveredEInvoice(args: {
+  invoice: Invoice;
+  document: EInvoiceDocument;
+  provider: EInvoiceProvider;
+  result: EInvoiceProviderResult;
+  now?: Date;
+}) {
+  const { invoice: originalInvoice, document, provider, result } = args;
+  const now = args.now ?? new Date();
+  const original = documentSubmissionMetadata(document);
+  if (
+    !original ||
+    document.provider !== provider.name ||
+    original.environment !== provider.environment ||
+    !result.providerMessageId
+  )
+    return null;
+  return db.transaction(async (tx) => {
+    const invoice = await lockEInvoiceInvoice(originalInvoice.companyId, originalInvoice.id, tx);
+    if (!invoice || invoice.einvoiceProviderMessageId) return null;
+    const current = await getEInvoiceDocument(invoice.companyId, invoice.id, tx, "update");
+    const metadata = documentSubmissionMetadata(current);
+    if (
+      !current ||
+      current.providerMessageId ||
+      current.provider !== document.provider ||
+      metadata?.operationId !== original.operationId ||
+      metadata?.environment !== original.environment ||
+      metadata?.scope !== original.scope ||
+      current.xmlHash !== document.xmlHash ||
+      (current.deliveryStatus !== "needs_link" &&
+        current.lastErrorCode !== "COMPLYANCE_DUPLICATE_NUMBER" &&
+        !canRecoverAcubeSubmission(invoice, current))
+    )
+      return null;
+    const built = frozenEInvoice(invoice, current);
+    if (!built) return null;
+    return persistSubmissionOutcome({
+      invoice,
+      current,
+      built,
+      provider,
+      dispatch: { result, providerAttempted: false },
+      source: "user",
+      now,
+      tx,
+    });
+  });
+}
+
+export async function recoverAcubeSubmission(
+  invoice: Invoice,
+  doc: EInvoiceDocument,
+  provider: EInvoiceProvider
+) {
+  if (!canRecoverAcubeSubmission(invoice, doc)) return null;
+  const built = frozenEInvoice(invoice, doc);
+  if (!built) return null;
+  const result = await lookupAcubeSubmission(provider, invoice, doc, built);
+  return result ? adoptRecoveredEInvoice({ invoice, document: doc, provider, result }) : null;
 }
 
 /** Explicit caller-driven processing still uses the same durable queue and worker claims. */
@@ -803,7 +999,6 @@ export async function trackedEInvoiceProviderMatches(
 async function canReadTrackedEInvoice(
   doc: EInvoiceDocument | undefined,
   invoice: Invoice,
-  company: Company,
   provider: EInvoiceProvider
 ) {
   const metadata = documentSubmissionMetadata(doc);
@@ -831,17 +1026,53 @@ async function canReadTrackedEInvoice(
     return source === invoice.einvoiceXml;
   }
   if (!provider.verifyOutboundDocument) return false;
-  const entity = await getLegalEntity(company.id, provider.name, provider.environment);
-  const details = entity?.providerDetails as Record<string, unknown> | null | undefined;
-  return provider
-    .verifyOutboundDocument(id, {
+  const identity = await frozenEInvoiceOwner(invoice, doc, provider);
+  return !!identity && provider.verifyOutboundDocument(id, identity).catch(() => false);
+}
+
+/** The seller and document number frozen before dispatch, used to verify a sales resource. */
+export async function frozenEInvoiceOwner(
+  invoice: Invoice,
+  doc: EInvoiceDocument,
+  provider: EInvoiceProvider
+): Promise<EInvoiceOutboundIdentity | null> {
+  const metadata = documentSubmissionMetadata(doc);
+  const built = frozenEInvoice(invoice, doc);
+  if (
+    !built ||
+    !metadata ||
+    doc.invoiceId !== invoice.id ||
+    doc.companyId !== invoice.companyId ||
+    doc.provider !== provider.name ||
+    metadata.environment !== provider.environment
+  )
+    return null;
+  try {
+    const root = parseXml(built.xml).documentElement;
+    const party = first(root, "cac:AccountingSupplierParty/cac:Party");
+    if (!party) return null;
+    const endpoint = first(party, "cbc:EndpointID");
+    const supplierTin =
+      metadata.supplierTin ??
+      (attr(endpoint, "schemeID") === PEPPOL_SCHEME_UAE_TIN ? text(endpoint) : null);
+    const entity = await getLegalEntity(invoice.companyId, provider.name, provider.environment);
+    const matchingEntity =
+      entity &&
+      supplierTin &&
+      entity.tin === supplierTin &&
+      (!metadata.legalEntityId || entity.legalEntityId === metadata.legalEntityId)
+        ? entity
+        : null;
+    return {
       documentNumber: metadata.invoiceNumber ?? invoice.number,
-      supplierTin: metadata.supplierTin ?? entity?.tin ?? null,
-      supplierTrn: entity?.vatTrn ?? company.trnVatNumber ?? null,
-      legalEntityId: metadata.legalEntityId ?? entity?.legalEntityId ?? null,
-      sourceName: typeof details?.sourceName === "string" ? details.sourceName : null,
-    })
-    .catch(() => false);
+      supplierTin,
+      supplierTrn: metadata.supplierTrn ?? textAt(party, "cac:PartyTaxScheme/cbc:CompanyID"),
+      legalEntityId: metadata.legalEntityId ?? matchingEntity?.legalEntityId ?? null,
+      sourceName: metadata.sourceName ?? entitySourceName(matchingEntity),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function refreshAndPersist(args: {
@@ -857,7 +1088,7 @@ export async function refreshAndPersist(args: {
   const existing = await getEInvoiceDocument(company.id, invoice.id);
   if (
     invoice.einvoiceProviderMessageId &&
-    !(await canReadTrackedEInvoice(existing, invoice, company, provider))
+    !(await canReadTrackedEInvoice(existing, invoice, provider))
   ) {
     return {
       ok: false as const,
@@ -868,19 +1099,21 @@ export async function refreshAndPersist(args: {
   }
   const ref = { documentType: existing?.documentType ?? null };
   const acube = provider.name === "acube";
-  const currentStatus = invoice.einvoiceStatus ?? "not_generated";
-  // Older A-Cube snapshots equated recipient receipt with acceptance and a TDD download with clearance.
-  const previousProviderStatus = existing?.providerStatus?.trim().toLowerCase();
-  const verifiedCurrentStatus =
-    acube && ["accepted", "cleared"].includes(currentStatus)
-      ? previousProviderStatus === "delivered" || previousProviderStatus === "processed"
-        ? "submitted"
-        : previousProviderStatus === "accepted"
-          ? "accepted"
-          : currentStatus
-      : currentStatus;
+  const verifiedCurrentStatus = projectEInvoiceLegacyStatus(
+    provider.name,
+    existing?.providerStatus,
+    invoice.einvoiceStatus ?? "not_generated",
+    existing?.reportingStatus
+  );
+  // An incomplete subsequent final_valid response cannot erase a verified reporting result.
+  const statusForProviderRead =
+    provider.name === "complyance" &&
+    verifiedCurrentStatus === "cleared" &&
+    existing?.reportingStatus === "reported"
+      ? "accepted"
+      : verifiedCurrentStatus;
   const result = await refreshEInvoiceStatus({
-    invoice: { ...invoice, einvoiceStatus: verifiedCurrentStatus },
+    invoice: { ...invoice, einvoiceStatus: statusForProviderRead },
     provider,
     now,
     ref,

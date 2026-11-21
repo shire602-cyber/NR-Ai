@@ -61,6 +61,7 @@ const copies = {
     sent: "Sending",
     recipientReceived: "Received by the buyer’s provider",
     accepted: "Accepted by the buyer’s provider",
+    bankFeedsUnavailable: "Bank feeds are not configured",
     firm: "Fixture firm",
     clients: ["Fixture bakery", "Fixture supplier"],
   },
@@ -70,7 +71,9 @@ const copies = {
     notConfigured: "غير مهيّأ",
     queued: "في قائمة انتظار الإرسال",
     sent: "لدى مزود الخدمة",
-    accepted: "تم التسليم",
+    recipientReceived: "استلمها مزود خدمة المشتري",
+    accepted: "قبلها مزود خدمة المشتري",
+    bankFeedsUnavailable: "لم يُعدّ الربط البنكي",
     firm: "مكتب المحاسبة التجريبي",
     clients: ["المخبز التجريبي", "المورد التجريبي"],
   },
@@ -93,8 +96,8 @@ const credentials = {
 };
 const mockToken = randomUUID();
 const mockDocuments = new Map();
-const acceptReady = new Set();
 let acubeStatus = "processed";
+let complyanceStatus = "submitted";
 const posts = [];
 const unexpected = [];
 
@@ -149,7 +152,13 @@ const mock = createServer(async (req, res) => {
       if (mockDocuments.get(documentId) === "complyance") {
         return json(res, 200, {
           success: true,
-          data: { documentId, state: acceptReady.has("complyance") ? "final_valid" : "submitted" },
+          data: {
+            documentId,
+            state: complyanceStatus,
+            ...(complyanceStatus === "final_valid" && {
+              compliance: { ftaApprovedStatus: "APPROVED" },
+            }),
+          },
         });
       }
     }
@@ -228,6 +237,12 @@ async function seed(fixture) {
 async function seedOutbound(persona) {
   const companyId = persona.clients[0].id;
   const clientPath = `/api/companies/${companyId}`;
+  if (persona.providers[0] === "complyance") {
+    // Opt in this fixture early so reporting is required regardless of the run date.
+    await db.query("UPDATE companies SET einvoice_go_live_date = CURRENT_DATE - 7 WHERE id = $1", [
+      companyId,
+    ]);
+  }
   const buyer = await request(persona.token, "POST", `${clientPath}/customer-contacts`, {
     name: "Fixture buyer LLC",
     nameAr: "المشتري التجريبي",
@@ -251,6 +266,14 @@ async function seedOutbound(persona) {
     `/api/invoices/${invoice.id}/generate-einvoice`
   );
   assert.equal(document.status, "generated");
+  if (persona.providers[0] === "acube") {
+    // Legacy A-Cube reporting was inferred from TDD availability and sometimes omitted the provider.
+    await db.query(
+      `INSERT INTO einvoice_document_events (company_id, invoice_id, track, from_status, to_status)
+       VALUES ($1, $2, 'reporting', 'pending', 'reported')`,
+      [companyId, invoice.id]
+    );
+  }
   await db.query(
     `INSERT INTO einvoice_legal_entities
        (company_id, provider, environment, legal_entity_id, tin, status, peppol_address, provider_details)
@@ -334,7 +357,9 @@ async function inBrowser(browser, { email, lang, width }, flow) {
     });
     await flow(page, async (path) => {
       await settleApi();
-      await open(page, path);
+      // Use the app's router after login so the previous document's API requests can finish.
+      await page.evaluate((href) => window.history.pushState(null, "", href), path);
+      await page.waitForURL(new URL(path, base).href);
     });
     await settleApi();
     assert.deepEqual(failures, [], `${lang} browser and API errors`);
@@ -420,6 +445,14 @@ async function selectProviders(browser, persona) {
       await selected.getAttribute("data-testid"),
       `einvoice-partner-option-${providers[0]}`
     );
+    await navigate("/bank-feeds");
+    await page.getByText(copies[lang].bankFeedsUnavailable, { exact: true }).waitFor();
+    await expectFrame(page, lang);
+    const importStatement = page.getByTestId("button-feeds-import-statement");
+    assert.equal(await importStatement.getAttribute("href"), "/bank-reconciliation?import=1");
+    await importStatement.click();
+    await page.waitForURL("**/bank-reconciliation?import=1");
+    await page.getByTestId("button-download-sample-bank-csv").waitFor();
   });
   console.log(
     `${lang}: two client books stayed isolated and missing credentials rendered gracefully`
@@ -463,6 +496,7 @@ async function sendInvoice(browser, persona) {
       await request(token, "PUT", `/api/companies/${persona.clients[0].id}/einvoicing/partner`, {
         partner: "complyance",
       });
+      await navigate("/dashboard");
       await openInvoice();
       const pinned = await request(token, "GET", statusPath);
       assert.equal(pinned.transmission.provider, "acube");
@@ -471,15 +505,19 @@ async function sendInvoice(browser, persona) {
       assert.equal(pinned.transmission.block, null);
       await delivery.getByText("Handed to A-Cube", { exact: true }).waitFor();
       acubeStatus = "delivered";
-      await sheet.getByTestId("einvoice-refresh").click();
-      await delivery.getByText(copies[lang].recipientReceived, { exact: true }).waitFor();
-      const receipt = await request(token, "GET", statusPath);
-      assert.equal(receipt.submissionState, "sent");
-      assert.equal(receipt.transmission.recipientAcknowledgement, "received");
-      assert.equal(receipt.transmission.canRefresh, true);
+    } else {
+      complyanceStatus = "delivery_success";
+    }
+    await sheet.getByTestId("einvoice-refresh").click();
+    await delivery.getByText(copies[lang].recipientReceived, { exact: true }).waitFor();
+    const receipt = await request(token, "GET", statusPath);
+    assert.equal(receipt.submissionState, "sent");
+    assert.equal(receipt.transmission.recipientAcknowledgement, "received");
+    assert.equal(receipt.transmission.canRefresh, true);
+    if (originalProvider === "acube") {
       acubeStatus = "accepted";
     } else {
-      acceptReady.add(originalProvider);
+      complyanceStatus = "final_valid";
     }
     await sheet.getByTestId("einvoice-refresh").click();
     await delivery.getByText(copies[lang].accepted, { exact: true }).waitFor();
@@ -487,17 +525,21 @@ async function sendInvoice(browser, persona) {
     assert.equal(result.submissionState, "accepted");
     if (originalProvider === "acube") {
       assert.equal(result.transmission.providerDocumentId, acubeInvoiceUuid);
+    } else {
+      assert.equal(receipt.tracks.reporting.status, "pending");
+      assert.equal(result.tracks.reporting.status, "reported");
     }
     await sheet.getByTestId("einvoice-history-open").click();
     const history = page.getByTestId("einvoice-history");
     const { delivery: deliveryLabel, queued: queuedLabel, accepted: acceptedLabel } = copies[lang];
     await history.getByText(`${deliveryLabel}: ${queuedLabel}`, { exact: true }).waitFor();
-    if (originalProvider === "acube") {
-      await history
-        .getByText(`${deliveryLabel}: ${copies[lang].recipientReceived}`, { exact: true })
-        .waitFor();
-    }
+    await history
+      .getByText(`${deliveryLabel}: ${copies[lang].recipientReceived}`, { exact: true })
+      .waitFor();
     await history.getByText(`${deliveryLabel}: ${acceptedLabel}`, { exact: true }).waitFor();
+    if (originalProvider === "acube") {
+      await history.getByText("FTA reporting: Confirmation unavailable", { exact: true }).waitFor();
+    }
   });
   console.log(`${lang}: queued, sent and accepted invoice status through the loopback provider`);
 }

@@ -61,8 +61,12 @@ export function documentSubmissionMetadata(
     actorId: typeof metadata?.actorId === "string" ? metadata.actorId : null,
     invoiceNumber: typeof metadata?.invoiceNumber === "string" ? metadata.invoiceNumber : null,
     supplierTin: typeof metadata?.supplierTin === "string" ? metadata.supplierTin : null,
+    supplierTrn: typeof metadata?.supplierTrn === "string" ? metadata.supplierTrn : null,
     legalEntityId: typeof metadata?.legalEntityId === "string" ? metadata.legalEntityId : null,
+    sourceName: typeof metadata?.sourceName === "string" ? metadata.sourceName : null,
     scope: typeof metadata?.scope === "string" ? metadata.scope : null,
+    providerAttempted:
+      typeof metadata?.providerAttempted === "boolean" ? metadata.providerAttempted : null,
   };
 }
 
@@ -72,7 +76,13 @@ export function documentProviderEnvironment(
   return documentSubmissionMetadata(doc)?.environment ?? null;
 }
 
-/** Unsettled and handed-over documents keep their recorded provider. */
+/** A completed vendor attempt binds subsequent retries, including after exhaustion. */
+export function submissionTriedProvider(doc: EInvoiceDocument | undefined): boolean {
+  if (!doc?.provider) return false;
+  return documentSubmissionMetadata(doc)?.providerAttempted ?? doc.attempts > 0;
+}
+
+/** Unsettled, attempted, and handed-over documents keep their recorded provider. */
 export function submissionProviderPin(
   invoice: Pick<Invoice, "einvoiceProviderMessageId">,
   doc: EInvoiceDocument | undefined
@@ -80,7 +90,9 @@ export function submissionProviderPin(
   return invoice.einvoiceProviderMessageId ||
     doc?.providerMessageId ||
     doc?.nextRetryAt ||
-    doc?.deliveryStatus === "needs_link"
+    doc?.submitClaimedAt ||
+    doc?.deliveryStatus === "needs_link" ||
+    submissionTriedProvider(doc)
     ? (doc ?? null)
     : undefined;
 }
@@ -308,9 +320,10 @@ export async function getArchiveEntry(
 export async function findInboundDuplicate(
   companyId: string,
   supplierKey: string,
-  documentNumber: string
+  documentNumber: string,
+  tx?: EInvoiceDb
 ): Promise<EInvoiceInboundDocument | undefined> {
-  const rows = await db
+  const query = (tx ?? db)
     .select()
     .from(einvoiceInboundDocuments)
     .where(
@@ -321,14 +334,16 @@ export async function findInboundDuplicate(
       )
     )
     .limit(1);
-  return rows[0];
+  const [row] = await (tx ? query.for("update") : query);
+  return row;
 }
 
 /** Claim the (company, supplier, document id) slot; null when it already exists. */
 export async function insertInboundDocument(
-  values: typeof einvoiceInboundDocuments.$inferInsert
+  values: typeof einvoiceInboundDocuments.$inferInsert,
+  conn: EInvoiceDb = db
 ): Promise<EInvoiceInboundDocument | null> {
-  const rows = await db
+  const rows = await conn
     .insert(einvoiceInboundDocuments)
     .values(values)
     .onConflictDoNothing()
@@ -339,9 +354,10 @@ export async function insertInboundDocument(
 export async function updateInboundDocument(
   companyId: string,
   id: string,
-  patch: Partial<typeof einvoiceInboundDocuments.$inferInsert>
+  patch: Partial<typeof einvoiceInboundDocuments.$inferInsert>,
+  conn: EInvoiceDb = db
 ): Promise<void> {
-  await db
+  await conn
     .update(einvoiceInboundDocuments)
     .set(patch)
     .where(

@@ -432,6 +432,74 @@ describe("Durable UAE e-invoice submission queue", () => {
     });
   });
 
+  it("keeps an exhausted attempt bound to its provider on both write endpoints and in the queue", async () => {
+    const args = await readyInvoice();
+    await selectComplyance(args.company.id);
+    const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
+      await import("../../server/services/einvoice/workflow");
+    const { EINVOICE_MAX_ATTEMPTS } = await import("../../server/services/einvoice-status");
+    let originalAttempts = 0;
+    let replacementAttempts = 0;
+    const original = fakeProvider({
+      name: "complyance",
+      environment: "sandbox",
+      requiresLegalEntity: true,
+      getSubmissionScope: async () => "fixture-original",
+      submit: async () => {
+        originalAttempts++;
+        return { providerMessageId: "", status: "failed", errorCode: "COMPLYANCE_RATE_LIMITED" };
+      },
+    });
+    const replacement = fakeProvider({
+      name: "acube",
+      environment: "sandbox",
+      requiresLegalEntity: true,
+      getSubmissionScope: async () => "fixture-replacement",
+      submit: async () => {
+        replacementAttempts++;
+        return { providerMessageId: "unexpected", status: "submitted" };
+      },
+    });
+    let now = new Date();
+    expect((await enqueueEInvoiceSubmission({ ...args, provider: original, now })).ok).toBe(true);
+    for (let attempts = 1; attempts <= EINVOICE_MAX_ATTEMPTS; attempts++) {
+      await runEInvoiceRetries(now, () => original);
+      const row = await storedDocument(args.invoice.id);
+      expect(row.attempts).toBe(attempts);
+      if (row.next_retry_at) now = new Date(row.next_retry_at);
+    }
+    await h.sql("UPDATE companies SET einvoice_partner = 'acube' WHERE id = $1", [args.company.id]);
+    await h.sql(
+      "INSERT INTO einvoice_legal_entities (company_id, provider, environment, tin, status) VALUES ($1, 'acube', 'sandbox', '1001234567', 'active')",
+      [args.company.id]
+    );
+    for (const endpoint of ["submit", "resubmit"]) {
+      const response = await args.tenant.as.post(
+        `/api/invoices/${args.invoice.id}/einvoice/${endpoint}`,
+        {}
+      );
+      expect(response.status, response.text).toBe(409);
+      expect(response.body.code).toBe("EINVOICE_RETRY_PROVIDER_CHANGED");
+    }
+    const direct = await enqueueEInvoiceSubmission({
+      ...args,
+      provider: replacement,
+      regenerate: true,
+    });
+    expect(direct).toMatchObject({
+      ok: false,
+      status: 409,
+      code: "EINVOICE_RETRY_PROVIDER_CHANGED",
+    });
+    expect(originalAttempts).toBe(EINVOICE_MAX_ATTEMPTS);
+    expect(replacementAttempts).toBe(0);
+    expect(await storedDocument(args.invoice.id)).toMatchObject({
+      attempts: EINVOICE_MAX_ATTEMPTS,
+      next_retry_at: null,
+      provider_message_id: null,
+    });
+  });
+
   it("releases an unused queue item when its provider is replaced and no longer configured", async () => {
     const args = await readyInvoice();
     await selectComplyance(args.company.id);

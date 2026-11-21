@@ -154,6 +154,7 @@
   "einvoicing.source_system": "النظام",
   "einvoicing.err_unknown": "لم يذكر مزود الخدمة سببًا.",
   "einvoicing.err_EINVOICE_PROVIDER_NOT_CONFIGURED": "لا يوجد مزود خدمة فوترة إلكترونية متصل، لذلك لم يُرسل شيء.",
+  "einvoicing.err_EINVOICE_RETRY_PROVIDER_CHANGED": "أعد الاتصال بمزوّد الفوترة الإلكترونية الأصلي قبل محاولة إرسال هذه الفاتورة مرة أخرى.",
   "einvoicing.err_EINVOICE_LEGAL_ENTITY_NOT_ACTIVE": "اربط هذه الشركة بمزود خدمة الفوترة الإلكترونية في منصة إمارات تاكس قبل الإرسال.",
   "einvoicing.err_EINVOICE_LEGAL_ENTITY_DELINKED": "لم يعد مزود خدمة الفوترة الإلكترونية مرتبطًا بهذه الشركة في منصة إمارات تاكس. أعد الربط للإرسال.",
   "einvoicing.err_EINVOICE_SUPPLIER_ENDPOINT_MISMATCH": "عنوانك للفوترة الإلكترونية في الفاتورة لا يطابق الرقم الضريبي المرتبط لدى مزود الخدمة.",

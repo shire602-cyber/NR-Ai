@@ -6,7 +6,12 @@
  */
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
-import { journalEntries, type Company, type Invoice } from "../../../shared/schema";
+import {
+  journalEntries,
+  type Company,
+  type EInvoiceDocument,
+  type Invoice,
+} from "../../../shared/schema";
 import { storage } from "../../storage";
 import { validateForEInvoicing } from "../einvoice.service";
 import { loadEInvoiceContext } from "./context";
@@ -19,9 +24,13 @@ import {
 } from "./store";
 import { listDocumentEvents } from "./history";
 import { getLegalEntity } from "./legal-entities";
-import { deriveInvoiceTracks, NEW_DOCUMENT_REQUIRED_CODES } from "./tracks";
+import {
+  deriveInvoiceTracks,
+  NEW_DOCUMENT_REQUIRED_CODES,
+  projectEInvoiceLegacyStatus,
+} from "./tracks";
 import { einvoiceMandateApplies } from "./scope";
-import { invoiceReportingRequired } from "./workflow";
+import { canRecoverAcubeSubmission, invoiceReportingRequired } from "./workflow";
 import { companyProviderConfiguration } from "./providers/company-provider";
 import { providerModule } from "./providers/registry";
 
@@ -51,6 +60,29 @@ export type TransmissionBlock =
 const iso = (d: Date | string | null | undefined) =>
   d ? (typeof d === "string" ? d : d.toISOString()) : null;
 
+export function projectEInvoiceDocument(
+  doc: EInvoiceDocument,
+  tracks: ReturnType<typeof deriveInvoiceTracks>
+) {
+  const status =
+    isQueuedEInvoiceDocument(doc) ||
+    (doc.status === "failed" && doc.nextRetryAt && !doc.providerMessageId)
+      ? "queued"
+      : projectEInvoiceLegacyStatus(doc.provider, doc.providerStatus, doc.status, tracks.reporting);
+  return {
+    ...doc,
+    status,
+    deliveryStatus: tracks.delivery,
+    deliveryStatusAt: tracks.delivery === doc.deliveryStatus ? doc.deliveryStatusAt : null,
+    reportingStatus: tracks.reporting,
+    reportingStatusAt: tracks.reporting === doc.reportingStatus ? doc.reportingStatusAt : null,
+    clearedAt: status === "cleared" && tracks.reporting === "reported" ? doc.clearedAt : null,
+    reportedAt: tracks.reporting === "reported" ? doc.reportedAt : null,
+    reportBy: tracks.reportBy,
+    validation: documentValidation(doc),
+  };
+}
+
 export async function einvoiceStatusView(invoice: Invoice, company: Company, now = new Date()) {
   const doc = await getEInvoiceDocument(company.id, invoice.id);
   const events = await listDocumentEvents(company.id, invoice.id, 100);
@@ -75,40 +107,32 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     : null;
   const isAcube = providerId === "acube";
   const providerStatus = doc?.providerStatus?.trim().toLowerCase();
-  const acubeAccepted = handedOver && isAcube && providerStatus === "accepted";
-  const receivedByRecipient = handedOver && isAcube && providerStatus === "delivered";
-  const storedStatus = invoice.einvoiceStatus ?? "not_generated";
-  const legacy =
-    handedOver && isAcube && (storedStatus === "accepted" || storedStatus === "cleared")
-      ? acubeAccepted
-        ? "accepted"
-        : "submitted"
-      : storedStatus;
-
-  const { delivery, reporting, reportBy, overdue } = deriveInvoiceTracks({
+  const tracks = deriveInvoiceTracks({
     invoiceDate: invoice.date,
     invoiceStatus: invoice.status,
-    legacyStatus: legacy,
-    doc: doc
-      ? {
-          deliveryStatus:
-            isAcube && doc.deliveryStatus === "delivered" && !acubeAccepted && !receivedByRecipient
-              ? "queued"
-              : doc.deliveryStatus,
-          // Older A-Cube rows inferred FTA reporting from a downloadable TDD, which is not an
-          // authoritative reporting outcome. A-Cube's publication provides no such signal here.
-          reportingStatus:
-            isAcube && doc.reportingStatus === "reported"
-              ? required
-                ? "pending"
-                : "not_required"
-              : doc.reportingStatus,
-          reportBy: doc.reportBy as string | null | undefined,
-        }
-      : null,
+    legacyStatus: invoice.einvoiceStatus,
+    provider: providerId,
+    doc: doc ?? null,
     required,
     now,
   });
+  const { delivery, reporting, reportBy, overdue } = tracks;
+  const legacy = projectEInvoiceLegacyStatus(
+    providerId,
+    providerStatus,
+    invoice.einvoiceStatus,
+    reporting
+  );
+  const sentToRecipient = handedOver && delivery === "delivered";
+  const receivedByRecipient =
+    sentToRecipient &&
+    ((isAcube && providerStatus === "delivered") ||
+      (providerId === "complyance" && providerStatus === "delivery_success"));
+  const recipientAccepted =
+    sentToRecipient &&
+    ((isAcube && providerStatus === "accepted") ||
+      (providerId === "complyance" && providerStatus === "final_valid"));
+  const retryScheduled = !providerHoldsDocument && !!doc?.nextRetryAt;
 
   // A handed-off invoice can be tracked through its own credentials after a company switches
   // providers or delinks its legal entity. New submissions still require the selected connection.
@@ -117,9 +141,9 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
       null)
     : null;
   let block: TransmissionBlock = null;
-  if (!configuration) block = environment === "mock" ? "test_provider" : "no_provider";
-  else if (!handedOver && tracksProvider && company.einvoicePartner !== providerId)
+  if (!handedOver && tracksProvider && company.einvoicePartner !== providerId)
     block = "provider_selection_changed";
+  else if (!configuration) block = environment === "mock" ? "test_provider" : "no_provider";
   else if (legalEntity?.status === "inactive") block = "legal_entity_delinked";
   else if (legalEntity?.status !== "active") block = "legal_entity_not_active";
 
@@ -146,14 +170,14 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
       ? "rejected"
       : delivery === "needs_link"
         ? "needs_reconciliation"
-        : handedOver && (isAcube ? acubeAccepted : delivery === "delivered")
-          ? "accepted"
-          : handedOver
-            ? "sent"
-            : legacy === "queued" || doc?.nextRetryAt
-              ? "queued"
-              : delivery === "delivery_failed"
-                ? "failed"
+        : delivery === "delivery_failed" && !retryScheduled
+          ? "failed"
+          : recipientAccepted || (sentToRecipient && !isAcube && providerId !== "complyance")
+            ? "accepted"
+            : handedOver
+              ? "sent"
+              : legacy === "queued" || retryScheduled
+                ? "queued"
                 : "draft";
   const issued = !["draft", "cancelled", "void"].includes(invoice.status);
   const maySubmit = issued && block === null && company.einvoicePartner === providerId;
@@ -224,19 +248,7 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     status: legacy,
     submissionState,
     detail: invoice.einvoiceStatusDetail ?? null,
-    document: doc
-      ? {
-          ...doc,
-          status: isQueuedEInvoiceDocument(doc)
-            ? "queued"
-            : isAcube && (doc.status === "accepted" || doc.status === "cleared")
-              ? legacy
-              : doc.status,
-          reportingStatus: reporting,
-          ...(reporting !== "reported" && isAcube ? { reportedAt: null } : null),
-          validation,
-        }
-      : null,
+    document: doc ? projectEInvoiceDocument(doc, tracks) : null,
     tracks: {
       delivery: { status: delivery, at: iso(doc?.deliveryStatusAt) },
       reporting: {
@@ -257,13 +269,15 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
       block,
       providerDocumentId,
       legalEntityStatus: legalEntity?.status ?? null,
-      recipientAcknowledgement: acubeAccepted
+      recipientAcknowledgement: recipientAccepted
         ? "accepted"
         : receivedByRecipient
           ? "received"
           : null,
       canSubmit: maySubmit && submissionState === "draft",
-      canRefresh: handedOver && configuration !== null && legacy !== "cleared",
+      canRefresh:
+        configuration !== null &&
+        ((handedOver && legacy !== "cleared") || canRecoverAcubeSubmission(invoice, doc)),
     },
     issues,
     contactId: invoice.contactId ?? null,
@@ -288,17 +302,22 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
         }
       : null,
     checklist,
-    events: events.map((e) => ({
-      id: e.id,
-      track: e.track,
-      from: e.fromStatus,
-      to: e.toStatus,
-      code: e.code,
-      message: e.message,
-      source: e.source,
-      provider: e.provider,
-      providerStatus: e.providerStatus,
-      at: iso(e.createdAt),
-    })),
+    events: events.map((e) => {
+      const acubeReporting = e.track === "reporting" && (e.provider ?? providerId) === "acube";
+      const confirmationUnavailable = acubeReporting && e.toStatus === "reported";
+      return {
+        id: e.id,
+        track: e.track,
+        from: acubeReporting && e.fromStatus === "reported" ? "pending" : e.fromStatus,
+        to: confirmationUnavailable ? "pending" : e.toStatus,
+        ...(confirmationUnavailable ? { confirmationUnavailable } : {}),
+        code: confirmationUnavailable ? null : e.code,
+        message: confirmationUnavailable ? null : e.message,
+        source: e.source,
+        provider: e.provider,
+        providerStatus: e.providerStatus,
+        at: iso(e.createdAt),
+      };
+    }),
   };
 }

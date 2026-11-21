@@ -100,7 +100,7 @@ it("tracks a prior A-Cube receipt through its original configuration, not the se
   expect((await tenant.as.get(statusPath)).body).toMatchObject({
     status: "submitted",
     submissionState: "sent",
-    tracks: { delivery: { status: "queued" }, reporting: { status: "pending" } },
+    tracks: { delivery: { status: "sending" }, reporting: { status: "pending" } },
     transmission: { recipientAcknowledgement: null, canRefresh: true },
   });
 

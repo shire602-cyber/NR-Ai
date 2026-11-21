@@ -37,6 +37,7 @@ function provider(environment: "sandbox" | "production") {
     providerMessageId,
     status: "accepted",
     delivery: "delivered",
+    providerStatus: "accepted",
   }));
   const simulated: EInvoiceProvider = {
     name: "acube",

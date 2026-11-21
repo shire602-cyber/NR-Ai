@@ -90,6 +90,7 @@ export const VERIFIED_EMAIL_RULES: readonly PathRule[] = [
   ),
   rule("POST", "invoices/*/post"),
   rule("POST", "invoices/*/einvoice/submit"),
+  rule("POST", "invoices/*/einvoice/resubmit"),
   rule("POST", "credit-notes/*/issue"),
   rule("POST", "companies/*/invoices/*/send-email"),
   // STEP5: inviting a customer to the portal sends email in the company's name.

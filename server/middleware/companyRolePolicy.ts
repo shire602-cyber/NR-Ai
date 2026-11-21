@@ -33,15 +33,28 @@
  * maker-checker approvals.
  */
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-import { and, eq, exists, isNull, notExists } from "drizzle-orm";
+import { and, eq, exists, isNull, ne, notExists } from "drizzle-orm";
 import { db, pool, type AppDatabase } from "../db";
-import { companies, companyUsers, firmClientLinks } from "../../shared/schema";
-import { canAccessFirmClient, resolveFirmContext } from "../services/firm/scope";
+import {
+  companies,
+  companyUsers,
+  firmClientLinks,
+  firmCompanyGrants,
+  firmMembers,
+  firms,
+  firmStaffAssignments,
+} from "../../shared/schema";
+import { canAccessFirmClient, NR_FIRM_ID, resolveFirmContext } from "../services/firm/scope";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
 import { DomainError } from "../errors";
 import { authenticateRequest } from "./auth";
-import { isFirmRole, isNraFirmRole } from "../../shared/access";
+import {
+  FIRM_ROLE_COMPANY_ROLE,
+  firmRoleSeesAllClients,
+  isFirmRole,
+  isNraFirmRole,
+} from "../../shared/access";
 import {
   normalizeCompanyRole,
   roleHasAnyPermission,
@@ -168,6 +181,7 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   // Sending an e-invoice through an ASP is an external tax transmission.
   r("POST", "invoices/*/einvoice/submit", "tax.submit"),
   r("POST", "invoices/*/einvoice/resubmit", "tax.submit"),
+  r("POST", "invoices/*/einvoice/refresh-status", "reports.read"),
   // X6a: linking an e-invoice the provider already holds changes what the invoice reports to the
   // FTA (Complyance manual link after GETS-HEAD-010).
   r("POST", "companies/*/einvoicing/complyance/link", "ledger.post"),
@@ -610,13 +624,69 @@ export async function scopedCompanyPermissionFailure(
   lock?: "share"
 ): Promise<ScopedPermissionFailure | null> {
   if (user.userType === "client_portal") return { code: "PORTAL_USER_APP_DENIED" };
+  const createdGrant = conn
+    .select({ firmId: firmCompanyGrants.firmId })
+    .from(firmCompanyGrants)
+    .where(
+      and(
+        eq(firmCompanyGrants.userId, user.id),
+        eq(firmCompanyGrants.companyId, companyId),
+        eq(firmCompanyGrants.createdMembership, true),
+        ne(firmCompanyGrants.firmId, NR_FIRM_ID)
+      )
+    );
+  const [grant] = await createdGrant.limit(1);
   const firmScoped = isNraFirmRole(user.firmRole);
   if (firmScoped) {
-    const firm = await resolveFirmContext(user);
-    if (firm && (await canAccessFirmClient(firm, companyId, conn, lock))) return null;
-  } else if (user.isAdmin && !isFirmRole(user.firmRole)) {
+    const firm = await resolveFirmContext(user, conn);
+    if (firm && (await canAccessFirmClient(firm, companyId, conn, lock))) {
+      if (!grant || firm.role === "firm_owner") return null;
+      // The generic lookup counts company membership as assignment. A row created by an
+      // external firm cannot stand in for this NR admin's own recorded grant.
+      const nrGrant = conn
+        .select({ firmId: firmCompanyGrants.firmId })
+        .from(firmCompanyGrants)
+        .where(
+          and(
+            eq(firmCompanyGrants.firmId, NR_FIRM_ID),
+            eq(firmCompanyGrants.userId, user.id),
+            eq(firmCompanyGrants.companyId, companyId)
+          )
+        )
+        .limit(1);
+      const [assignedByNr] = await (lock ? nrGrant.for(lock) : nrGrant);
+      if (assignedByNr) return null;
+    }
+    if (grant) return { code: "COMPANY_ACCESS_DENIED" };
+  } else if (!grant && user.isAdmin && !isFirmRole(user.firmRole)) {
     return null;
   }
+
+  // Validate firm and link before locking company_users, following link revocation's lock order.
+  const firmAuthority = grant
+    ? conn
+        .select({ role: firmMembers.role })
+        .from(firms)
+        .innerJoin(firmMembers, eq(firmMembers.firmId, firms.id))
+        .innerJoin(
+          firmClientLinks,
+          and(
+            eq(firmClientLinks.firmId, firms.id),
+            eq(firmClientLinks.companyId, companyId),
+            eq(firmClientLinks.status, "active")
+          )
+        )
+        .where(
+          and(
+            eq(firms.id, grant.firmId),
+            eq(firms.status, "active"),
+            eq(firmMembers.userId, user.id)
+          )
+        )
+        .limit(1)
+    : null;
+  const [authority] = firmAuthority ? await (lock ? firmAuthority.for(lock) : firmAuthority) : [];
+  if (grant && !isFirmRole(authority?.role)) return { code: "COMPANY_ACCESS_DENIED" };
 
   // Firm staff can also be direct members of standalone customer companies. A firm-linked or
   // legacy firm client must satisfy the firm scope above, including after a link is revoked.
@@ -647,15 +717,36 @@ export async function scopedCompanyPermissionFailure(
       and(
         eq(companyUsers.companyId, companyId),
         eq(companyUsers.userId, user.id),
-        standaloneCompany
+        standaloneCompany,
+        // If a grant arrived after discovery, do not read its new membership as independent.
+        grant ? undefined : notExists(createdGrant)
       )
     )
     .limit(1);
   const [membership] = await (lock ? query.for(lock) : query);
   const role = membership ? normalizeCompanyRole(membership.role) : null;
-  if (roleHasAnyPermission(role, [permission])) return null;
-
-  return role ? { code: "PERMISSION_DENIED", role } : { code: "COMPANY_ACCESS_DENIED" };
+  if (!role) return { code: "COMPANY_ACCESS_DENIED" };
+  if (isFirmRole(authority?.role)) {
+    if (!firmRoleSeesAllClients(authority.role)) {
+      const assignment = conn
+        .select({ userId: firmStaffAssignments.userId })
+        .from(firmStaffAssignments)
+        .where(
+          and(
+            eq(firmStaffAssignments.companyId, companyId),
+            eq(firmStaffAssignments.userId, user.id)
+          )
+        )
+        .limit(1);
+      const [assigned] = await (lock ? assignment.for(lock) : assignment);
+      if (!assigned) return { code: "COMPANY_ACCESS_DENIED" };
+    }
+    const currentRole = FIRM_ROLE_COMPANY_ROLE[authority.role];
+    if (!roleHasAnyPermission(currentRole, [permission])) {
+      return { code: "PERMISSION_DENIED", role: currentRole };
+    }
+  }
+  return roleHasAnyPermission(role, [permission]) ? null : { code: "PERMISSION_DENIED", role };
 }
 
 export async function assertScopedCompanyPermission(

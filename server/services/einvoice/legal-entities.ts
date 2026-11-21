@@ -20,7 +20,7 @@
  *      legal_entity.synchronized (action LINK) -> status active.
  * REVERIFY keeps it active; DELINK makes it inactive, which blocks sending (409).
  */
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, type AppDatabase } from "../../db";
 import { einvoiceLegalEntities, type EInvoiceLegalEntity } from "../../../shared/schema";
 import { DomainError } from "../../errors";
@@ -187,6 +187,33 @@ export async function updateLegalEntityRow(
     .where(eq(einvoiceLegalEntities.id, id))
     .returning();
   return row;
+}
+
+/** Store a webhook's verified response only for the local identity that was re-read. */
+export async function updateLegalEntityRowIfCurrent(
+  entity: EInvoiceLegalEntity,
+  patch: Partial<typeof einvoiceLegalEntities.$inferInsert>
+): Promise<boolean> {
+  const [updated] = await db
+    .update(einvoiceLegalEntities)
+    .set(patch)
+    .where(
+      and(
+        eq(einvoiceLegalEntities.id, entity.id),
+        eq(einvoiceLegalEntities.companyId, entity.companyId),
+        eq(einvoiceLegalEntities.provider, entity.provider),
+        eq(einvoiceLegalEntities.environment, entity.environment),
+        eq(einvoiceLegalEntities.tin, entity.tin),
+        entity.legalEntityId === null
+          ? isNull(einvoiceLegalEntities.legalEntityId)
+          : eq(einvoiceLegalEntities.legalEntityId, entity.legalEntityId),
+        eq(einvoiceLegalEntities.status, entity.status),
+        sql`date_trunc('milliseconds', ${einvoiceLegalEntities.updatedAt}) =
+            ${entity.updatedAt.toISOString()}::timestamp`
+      )
+    )
+    .returning({ id: einvoiceLegalEntities.id });
+  return Boolean(updated);
 }
 
 interface CompanyTinSource extends TinSource {

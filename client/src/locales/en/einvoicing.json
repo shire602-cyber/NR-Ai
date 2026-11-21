@@ -154,6 +154,7 @@
   "einvoicing.source_system": "system",
   "einvoicing.err_unknown": "The provider did not give a reason.",
   "einvoicing.err_EINVOICE_PROVIDER_NOT_CONFIGURED": "No e-invoicing provider is connected, so nothing was sent.",
+  "einvoicing.err_EINVOICE_RETRY_PROVIDER_CHANGED": "Restore the original e-invoicing provider connection before retrying this invoice.",
   "einvoicing.err_EINVOICE_LEGAL_ENTITY_NOT_ACTIVE": "Connect this company to your e-invoicing provider in EmaraTax before sending.",
   "einvoicing.err_EINVOICE_LEGAL_ENTITY_DELINKED": "Your e-invoicing provider is no longer linked to this company in EmaraTax. Link it again to send.",
   "einvoicing.err_EINVOICE_SUPPLIER_ENDPOINT_MISMATCH": "Your e-invoicing address on the invoice does not match the TIN linked at your provider.",

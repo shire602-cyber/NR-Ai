@@ -576,7 +576,10 @@ describe("A-Cube taxpayer verification", () => {
     const synced = await t.as.post(`${route}/sync`, {});
     expect(synced.status, synced.text).toBe(502);
     expect(synced.body.code).toBe("EINVOICE_PROVIDER_TIN_MISMATCH");
-    expect((await t.as.get(route)).body.legalEntity).toMatchObject({ status: "reserved", tin: TIN });
+    expect((await t.as.get(route)).body.legalEntity).toMatchObject({
+      status: "reserved",
+      tin: TIN,
+    });
 
     fake.legalEntityTin = TIN;
     const confirmed = await t.as.post(`${route}/sync`, {});
@@ -586,6 +589,34 @@ describe("A-Cube taxpayer verification", () => {
 });
 
 describe("A-Cube native signed webhook payloads", () => {
+  it.each([
+    { remoteStatus: "Inactive", remoteTin: "1005555555", eventStatus: "ignored" },
+    { remoteStatus: "Reserved", remoteTin: "1005555555", eventStatus: "ignored" },
+    { remoteStatus: "Inactive", remoteTin: "", eventStatus: "pending" },
+  ])(
+    "keeps the link when $remoteStatus sync lacks matching TIN evidence",
+    async ({ remoteStatus, remoteTin, eventStatus }) => {
+      const t = await linkedTenant();
+      fake.legalEntityStatus = remoteStatus;
+      fake.legalEntityTin = remoteTin;
+      const receipt = await webhook(t, linkEvent("DELINK", remoteStatus));
+      expect(receipt.status, receipt.text).toBe(200);
+      await runProviderEvents({ companyId: t.company.id });
+      const route = `/api/companies/${t.company.id}/einvoicing/acube`;
+      expect((await t.as.get(route)).body.legalEntity).toMatchObject({
+        status: "active",
+        tin: TIN,
+      });
+      expect(
+        await h.sql(
+          `SELECT status FROM einvoice_provider_events WHERE company_id = $1
+         AND event_type = 'legal_entity.synchronized' ORDER BY received_at DESC LIMIT 1`,
+          [t.company.id]
+        )
+      ).toEqual([{ status: eventStatus }]);
+    }
+  );
+
   it("uses the native legal entity UUID to confirm onboarding", async () => {
     const t = await h.createTenant({
       companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "acube" },
@@ -762,7 +793,7 @@ describe("E1 submit, two tracks and history", () => {
     );
   });
 
-  it("a provider-reported delivery error is shown and not auto-retried", async () => {
+  it("shows a provider-held delivery failure and polls for recovery without another POST", async () => {
     const t = await linkedTenant();
     const inv = await issuedInvoice(t);
     await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
@@ -772,29 +803,159 @@ describe("E1 submit, two tracks and history", () => {
     await runAcubePoll();
     const s = await statusOf(t, inv.id);
     expect(s.tracks.delivery.status).toBe("delivery_failed");
+    expect(s).toMatchObject({
+      submissionState: "failed",
+      transmission: { providerDocumentId: docId },
+    });
     expect(s.rejection).toMatchObject({ code: "ACUBE_DELIVERY_FAILED", retryScheduledAt: null });
     const row = await h.sql(
       `SELECT status, next_retry_at FROM einvoice_documents WHERE invoice_id = $1`,
       [inv.id]
     );
     expect(row[0]).toEqual({ status: "failed", next_retry_at: null });
+    fake.docs.get(docId)!.status = "accepted";
+    expect((await runAcubePoll()).refreshed).toBe(1);
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      status: "accepted",
+      submissionState: "accepted",
+    });
+    expect(fake.posts).toBe(1);
   });
 
-  it("an ambiguous transport failure is looked up at A-Cube before posting again", async () => {
+  it.each(["delivered", null, "unrecognised"])(
+    "projects a legacy TDD download as pending across status, documents and compliance (%s)",
+    async (providerStatus) => {
+      const t = await linkedTenant();
+      const inv = await issuedInvoice(t);
+      expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+      await runEInvoiceRetries();
+      await h.sql(`UPDATE invoices SET einvoice_status = 'cleared' WHERE id = $1`, [inv.id]);
+      await h.sql(
+        `UPDATE einvoice_documents SET status = 'cleared', delivery_status = 'delivered',
+        provider_status = $2, reporting_status = 'reported', reported_at = NOW(),
+        reporting_status_at = NOW(), cleared_at = NOW() WHERE invoice_id = $1`,
+        [inv.id, providerStatus]
+      );
+      const [{ id: eventId }] = await h.sql(
+        `INSERT INTO einvoice_document_events
+          (company_id, invoice_id, track, from_status, to_status, provider, source, message)
+          VALUES ($1, $2, 'reporting', 'pending', 'reported', 'acube', 'poll', 'FTA accepted')
+          RETURNING id`,
+        [t.company.id, inv.id]
+      );
+
+      const delivery = providerStatus === "delivered" ? "delivered" : "queued";
+      const docProjection = {
+        status: "submitted",
+        deliveryStatus: delivery,
+        reportingStatus: "pending",
+        reportedAt: null,
+        reportingStatusAt: null,
+        clearedAt: null,
+      };
+      const detail = await statusOf(t, inv.id);
+      expect(detail).toMatchObject({
+        status: "submitted",
+        submissionState: "sent",
+        document: docProjection,
+        tracks: { reporting: { status: "pending", at: null, confirmationUnavailable: true } },
+      });
+      expect(detail.events).toContainEqual(expect.objectContaining({
+        id: eventId, track: "reporting", to: "pending", confirmationUnavailable: true, message: null,
+      }));
+      expect(await h.sql(`SELECT to_status, message FROM einvoice_document_events WHERE id = $1`, [eventId]))
+        .toEqual([{ to_status: "reported", message: "FTA accepted" }]);
+      const list = await t.as.get(`/api/companies/${t.company.id}/einvoicing/documents`);
+      expect(list.status, list.text).toBe(200);
+      expect(list.body.items).toContainEqual(
+        expect.objectContaining({ invoiceId: inv.id, ...docProjection })
+      );
+      const pills = await t.as.get(`/api/companies/${t.company.id}/einvoicing/compliance`);
+      expect(pills.status, pills.text).toBe(200);
+      expect(pills.body.items).toContainEqual(
+        expect.objectContaining({
+          invoiceId: inv.id,
+          reporting: "pending",
+          delivery,
+        })
+      );
+    }
+  );
+
+  it("recovers an ambiguous A-Cube handoff after the selected provider and actor permission change", async () => {
     const t = await linkedTenant();
     const inv = await issuedInvoice(t);
     fake.nextSubmit = ["network"]; // A-Cube created it, the response was lost
     const first = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
     expect(first.body.status).toBe("queued");
     await runEInvoiceRetries();
-    expect((await statusOf(t, inv.id)).status).toBe("failed");
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      status: "failed",
+      submissionState: "queued",
+      rejection: { code: "TRANSPORT_ERROR", retryScheduledAt: expect.any(String) },
+    });
     expect(fake.posts).toBe(1);
+    await h.sql("UPDATE companies SET einvoice_partner = 'complyance' WHERE id = $1", [
+      t.company.id,
+    ]);
+    await h.sql("UPDATE company_users SET role = 'viewer' WHERE company_id = $1 AND user_id = $2", [
+      t.company.id,
+      t.user.id,
+    ]);
+    await h.sql(
+      "UPDATE einvoice_legal_entities SET status = 'inactive' WHERE company_id = $1 AND provider = 'acube'",
+      [t.company.id]
+    );
     const retry = await runEInvoiceRetries(new Date(Date.now() + 2 * 60_000));
     expect(retry).toEqual({ attempted: 1, submitted: 1 });
     expect(fake.posts).toBe(1); // found by invoice number, not posted twice
     const s = await statusOf(t, inv.id);
     expect(s.tracks.delivery.status).toBe("sending");
     expect(fake.docs.has(s.transmission.providerDocumentId)).toBe(true);
+  });
+
+  it("Refresh attaches an exact A-Cube document after the automatic lookup budget is exhausted", async () => {
+    const t = await linkedTenant();
+    const inv = await issuedInvoice(t);
+    fake.nextSubmit = ["network"];
+    expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const held = [...fake.docs.values()][0];
+    expect(held).toBeDefined();
+    fake.docs.delete(held.id);
+    const { EINVOICE_MAX_ATTEMPTS } = await import("../../server/services/einvoice-status");
+    for (let attempt = 1; attempt < EINVOICE_MAX_ATTEMPTS; attempt++) {
+      const [row] = await h.sql(
+        "SELECT next_retry_at AT TIME ZONE 'UTC' AS due FROM einvoice_documents WHERE invoice_id = $1",
+        [inv.id]
+      );
+      expect(row.due).toBeTruthy();
+      await runEInvoiceRetries(new Date(row.due));
+    }
+    await h.sql("UPDATE companies SET einvoice_partner = 'complyance' WHERE id = $1", [
+      t.company.id,
+    ]);
+    await h.sql("UPDATE company_users SET role = 'viewer' WHERE company_id = $1 AND user_id = $2", [
+      t.company.id,
+      t.user.id,
+    ]);
+    const status = await statusOf(t, inv.id);
+    expect(status.tracks.delivery.status).toBe("needs_link");
+    expect(status.transmission.canRefresh).toBe(true);
+    fake.docs.set(held.id, { ...held, status: "accepted" });
+    const recovered = await t.as.post(`/api/invoices/${inv.id}/einvoice/refresh-status`, {});
+    expect(recovered.status, recovered.text).toBe(200);
+    expect(recovered.body).toMatchObject({ status: "accepted", providerMessageId: held.id });
+    const [row] = await h.sql(
+      "SELECT attempts, provider_message_id, next_retry_at FROM einvoice_documents WHERE invoice_id = $1",
+      [inv.id]
+    );
+    expect(row).toMatchObject({
+      attempts: EINVOICE_MAX_ATTEMPTS,
+      provider_message_id: held.id,
+      next_retry_at: null,
+    });
+    expect(fake.posts).toBe(1);
   });
 });
 

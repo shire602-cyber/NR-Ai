@@ -55,14 +55,16 @@ generator writes (`VATEX-AE-*`) have no GETS value and are sent as text only: co
 | delivery_success                    | delivered       | pending       |                            |
 | delivery_failed (not terminal)      | sending         | pending       | (Complyance keeps trying)  |
 | delivery_failed (terminal)          | delivery_failed | pending       | COMPLYANCE_DELIVERY_FAILED |
-| final_valid                         | delivered       | reported      |                            |
+| final_valid                         | delivered       | Reported with explicit `APPROVED`, otherwise pending | |
 | final_invalid, `source: government` | delivered       | report_failed | EINVOICE_REPORT_FAILED     |
+| final_invalid, government and delivery errors | rejected | report_failed | COMPLYANCE_FINAL_INVALID |
 | final_invalid, otherwise            | rejected        | pending       | COMPLYANCE_FINAL_INVALID   |
 | rejected (Needs Correction)         | rejected        | pending       | COMPLYANCE_VALIDATION      |
 
-`final_valid` means both the buyer's ASP and the FTA accepted the document (`ftaApprovedStatus:
-APPROVED`). The F16 mandate gate still applies: before the company's go-live the reporting track reads
-`not_required` whatever the provider says. After `final_invalid` or GETS-HEAD-010 the number cannot be
+`delivery_success` confirms recipient receipt. Polling continues until the final result, including
+for voluntary submissions. `final_valid` confirms acceptance. When reporting is required, the
+`compliance.ftaApprovedStatus` field must explicitly say `APPROVED` to mark reporting complete.
+After `final_invalid` or GETS-HEAD-010 the number cannot be
 sent again (`NEW_DOCUMENT_REQUIRED_CODES`): resubmit answers 409 `EINVOICE_NEW_DOCUMENT_REQUIRED` and
 the status panel says to issue a credit note and a new invoice.
 

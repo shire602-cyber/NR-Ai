@@ -1,6 +1,6 @@
 /**
  * R04-23: inbound supplier e-invoices through the HMAC-signed webhook create
- * DRAFT vendor bills via bills.createDraftFromInbound, with duplicate
+ * DRAFT vendor bills via bills.prepareDraftFromInbound, with duplicate
  * detection by document id, validation, archive and honest 503s.
  */
 import crypto from "node:crypto";
@@ -160,10 +160,21 @@ describe("W4-C inbound e-invoices → draft bills", () => {
     expect(wrong.status).toBe(422);
     expect(wrong.body.code).toBe("EINVOICE_INBOUND_WRONG_RECIPIENT");
 
-    const invalid = await deliver(t, supplierInvoice({ number: "SUP-BAD-1", breakCity: true }));
+    const invalidXml = supplierInvoice({ number: "SUP-BAD-1", breakCity: true });
+    const invalid = await deliver(t, invalidXml);
     expect(invalid.status).toBe(422);
     expect(invalid.body.code).toBe("EINVOICE_INBOUND_INVALID");
     expect(invalid.body.validation.schematron.errorCount).toBeGreaterThan(0);
+    const repeated = await deliver(t, invalidXml);
+    expect(repeated.status).toBe(422);
+    expect(repeated.body).toMatchObject({
+      code: "EINVOICE_INBOUND_INVALID",
+      duplicate: true,
+      id: invalid.body.id,
+      status: "invalid",
+      billId: null,
+      validation: invalid.body.validation,
+    });
     const rows = await h.sql(
       `SELECT status, bill_id FROM einvoice_inbound_documents WHERE company_id = $1`,
       [t.company.id]
@@ -179,14 +190,14 @@ describe("W4-C inbound e-invoices → draft bills", () => {
     process.env.EINVOICE_INBOUND_WEBHOOK_SECRET = SECRET;
     const t = await tenant();
     const registry = await import("../../server/platform/service-registry");
-    const original = registry.resolve<(...a: never[]) => unknown>("bills.createDraftFromInbound");
-    registry.resetServices("bills.createDraftFromInbound");
+    const original = registry.resolve<(...a: never[]) => unknown>("bills.prepareDraftFromInbound");
+    registry.resetServices("bills.prepareDraftFromInbound");
     try {
       const r = await deliver(t, supplierInvoice({ number: "SUP-503" }));
       expect(r.status).toBe(503);
       expect(r.body.code).toBe("SERVICE_UNAVAILABLE");
     } finally {
-      registry.provide("bills.createDraftFromInbound", original, { replace: true });
+      registry.provide("bills.prepareDraftFromInbound", original, { replace: true });
     }
     expect(
       (

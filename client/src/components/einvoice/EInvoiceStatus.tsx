@@ -62,6 +62,7 @@ import {
   fieldLabelKey,
   issueTextKey,
   recipientAcknowledgement,
+  isReportingOnlyFailure,
   reportingLabelKey,
   sourceKey,
   type ChecklistState,
@@ -230,7 +231,7 @@ function eventLabel(e: EInvoiceStatusView["events"][number], t: Record<string, s
           e.to === "queued" && e.providerStatus === null,
           e.to === "delivered" ? recipientAcknowledgement(e.provider, e.providerStatus) : null
         )
-      : reportingLabelKey(e.to as ReportingStatus, e.provider === "acube" && e.to === "reported");
+      : reportingLabelKey(e.to as ReportingStatus, e.confirmationUnavailable);
   const track =
     e.track === "delivery" ? t["einvoicing.trackDelivery"] : t["einvoicing.trackReporting"];
   return `${track}: ${t[key] ?? e.to}`;
@@ -433,10 +434,15 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
   }
 
   const view = status.data;
-  const { delivery, reporting } = view.tracks;
+  const {
+    tracks: { delivery, reporting },
+    rejection,
+  } = view;
+  const rejectionErrorKey = errorKey(rejection?.code);
   const handedOver = !!view.transmission.providerDocumentId;
   const queuedForSubmission = view.submissionState === "queued";
   const failedDelivery = delivery.status === "rejected" || delivery.status === "delivery_failed";
+  const reportingOnlyFailure = isReportingOnlyFailure(delivery.status, reporting.status);
   const acknowledgement = view.transmission.recipientAcknowledgement;
   const providerName = view.transmission.providerDisplayName ?? view.transmission.provider ?? "";
   const latestAction = send.submittedAt >= resubmit.submittedAt ? send : resubmit;
@@ -655,7 +661,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
       )}
 
       {/* Rejection / delivery failure: the reason, where, and the way back. */}
-      {view.rejection && (
+      {rejection && (
         <div
           className="rounded-lg border border-danger/40 bg-danger-subtle p-4"
           data-testid="einvoice-rejection"
@@ -667,18 +673,22 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
               <p className="text-small font-semibold text-danger-subtle-foreground">
                 {delivery.status === "rejected"
                   ? formatMessage(t["einvoicing.rejectedTitle"], {
-                      provider: view.rejection.providerDisplayName ?? (providerName || "ASP"),
+                      provider: rejection.providerDisplayName ?? (providerName || "ASP"),
                     })
-                  : t["einvoicing.deliveryFailedTitle"]}
+                  : t[
+                      reportingOnlyFailure
+                        ? "einvoicing.reporting_report_failed"
+                        : "einvoicing.deliveryFailedTitle"
+                    ]}
               </p>
               <p className="mt-1 text-small text-foreground">
-                {errorKey(view.rejection.code)
-                  ? t[errorKey(view.rejection.code) as string]
-                  : (view.rejection.message ?? t["einvoicing.err_unknown"])}
+                {rejectionErrorKey
+                  ? t[rejectionErrorKey]
+                  : (rejection.message ?? t["einvoicing.err_unknown"])}
               </p>
-              {view.rejection.reasons.length > 0 && (
+              {rejection.reasons.length > 0 && (
                 <ul className="mt-3 space-y-2" data-testid="einvoice-rejection-reasons">
-                  {view.rejection.reasons.map((r, i) => (
+                  {rejection.reasons.map((r, i) => (
                     <li key={i} className="rounded-md bg-card px-3 py-2 text-small">
                       <p className="text-foreground">{r.message}</p>
                       {(r.field || r.code) && (
@@ -706,49 +716,60 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
                   ))}
                 </ul>
               )}
-              <ol
-                className="mt-3 space-y-1 text-small text-foreground"
-                data-testid="einvoice-fix-steps"
-              >
-                <li>
-                  1.{" "}
-                  {delivery.status === "rejected"
-                    ? t["einvoicing.fixStepCorrect"]
-                    : t["einvoicing.fixStepCheckBuyer"]}
-                </li>
-                <li>2. {t["einvoicing.fixStepRecheck"]}</li>
-                <li>3. {t["einvoicing.fixStepResubmit"]}</li>
-              </ol>
-              {view.rejection.retryScheduledAt && (
+              {!reportingOnlyFailure && (
+                <ol
+                  className="mt-3 space-y-1 text-small text-foreground"
+                  data-testid="einvoice-fix-steps"
+                >
+                  <li>
+                    1.{" "}
+                    {delivery.status === "rejected"
+                      ? t["einvoicing.fixStepCorrect"]
+                      : t["einvoicing.fixStepCheckBuyer"]}
+                  </li>
+                  <li>2. {t["einvoicing.fixStepRecheck"]}</li>
+                  <li>3. {t["einvoicing.fixStepResubmit"]}</li>
+                </ol>
+              )}
+              {rejection.retryScheduledAt && (
                 <p className="mt-2 text-caption text-muted-foreground">
                   {formatMessage(t["einvoicing.retryScheduled"], {
-                    date: formatDate(view.rejection.retryScheduledAt, locale),
+                    date: formatDate(rejection.retryScheduledAt, locale),
                   })}
                 </p>
               )}
               <div className="mt-3 flex flex-wrap gap-2">
-                {onEdit && (
-                  <Button size="sm" variant="outline" onClick={onEdit} data-testid="einvoice-fix">
-                    {t["einvoicing.fixInvoice"]}
-                  </Button>
+                {!reportingOnlyFailure && (
+                  <>
+                    {onEdit && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={onEdit}
+                        data-testid="einvoice-fix"
+                      >
+                        {t["einvoicing.fixInvoice"]}
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      onClick={() => resubmit.mutate()}
+                      {...submitAccess}
+                      disabled={
+                        !permission.known ||
+                        submitAccess.disabled ||
+                        resubmit.isPending ||
+                        !rejection.resubmittable
+                      }
+                      data-testid="einvoice-resubmit"
+                    >
+                      {resubmit.isPending && (
+                        <Loader2 aria-hidden className="h-3.5 w-3.5 motion-safe:animate-spin" />
+                      )}
+                      {t["einvoicing.resubmit"]}
+                    </Button>
+                  </>
                 )}
-                <Button
-                  size="sm"
-                  onClick={() => resubmit.mutate()}
-                  {...submitAccess}
-                  disabled={
-                    !permission.known ||
-                    submitAccess.disabled ||
-                    resubmit.isPending ||
-                    !view.rejection.resubmittable
-                  }
-                  data-testid="einvoice-resubmit"
-                >
-                  {resubmit.isPending && (
-                    <Loader2 aria-hidden className="h-3.5 w-3.5 motion-safe:animate-spin" />
-                  )}
-                  {t["einvoicing.resubmit"]}
-                </Button>
                 <AskNajmaButton
                   companyId={handoffCompanyId}
                   topic="einvoice"
@@ -756,7 +777,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
                   figures={[
                     {
                       label: t["launchProof.figureErrorCode"],
-                      value: view.rejection.code ?? "",
+                      value: rejection.code ?? "",
                     },
                     {
                       label: t["launchProof.figureDeliveryState"],
@@ -766,11 +787,13 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
                   testId="button-ask-najma-einvoice"
                 />
               </div>
-              {!view.rejection.resubmittable && (
+              {(reportingOnlyFailure
+                ? rejection.providerHoldsDocument
+                : !rejection.resubmittable) && (
                 <p className="mt-2 text-caption text-muted-foreground">
-                  {view.rejection.newDocumentRequired
+                  {!reportingOnlyFailure && rejection.newDocumentRequired
                     ? t["einvoicing.resubmitNewDocument"]
-                    : view.rejection.providerHoldsDocument
+                    : rejection.providerHoldsDocument
                       ? t["einvoicing.resubmitHeld"]
                       : t["einvoicing.resubmitBlocked"]}
                 </p>

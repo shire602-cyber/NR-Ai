@@ -12,7 +12,7 @@ import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
 import { einvoiceFieldHint } from "@/lib/einvoice-issues";
 import { EInvoiceSheet, EInvoiceTrackBadges } from "./EInvoiceStatus";
-import { errorKey, fieldLabelKey, rejectionSummary } from "./einvoice-meta";
+import { errorKey, fieldLabelKey, isReportingOnlyFailure, rejectionSummary } from "./einvoice-meta";
 import { useEInvoiceStatus } from "./use-einvoice";
 
 /** Form control to focus for a validation issue field, or null when the fix is elsewhere. */
@@ -42,6 +42,7 @@ export function EInvoiceHeaderStrip({
   const view = status.data;
   if (!view?.tracks) return null;
   const { delivery, reporting } = view.tracks;
+  const reportingOnlyFailure = isReportingOnlyFailure(delivery.status, reporting.status);
   const first = view.issues[0];
   const firstLabelKey = first ? fieldLabelKey(first.field) : null;
   const firstLabel = first ? (firstLabelKey ? t[firstLabelKey] : first.field) : "";
@@ -125,9 +126,15 @@ export function EInvoiceHeaderStrip({
           <XCircle aria-hidden className="h-4 w-4 shrink-0 text-danger" />
           <p className="min-w-0 flex-1 truncate text-small text-danger-subtle-foreground">
             <span className="font-medium">
-              {view.tracks.delivery.status === "rejected"
-                ? t["einvoicing.headerRejected"]
-                : t["einvoicing.headerDeliveryFailed"]}
+              {
+                t[
+                  reportingOnlyFailure
+                    ? "einvoicing.reporting_report_failed"
+                    : delivery.status === "rejected"
+                      ? "einvoicing.headerRejected"
+                      : "einvoicing.headerDeliveryFailed"
+                ]
+              }
               {": "}
             </span>
             <span dir="auto" title={rejectionText ?? undefined}>
@@ -150,7 +157,13 @@ export function EInvoiceHeaderStrip({
             onClick={() => setOpen(true)}
             data-testid="einvoice-header-resubmit"
           >
-            {t[view.rejection?.resubmittable ? "einvoicing.resubmit" : "einvoicing.headerDetails"]}
+            {
+              t[
+                view.rejection?.resubmittable && !reportingOnlyFailure
+                  ? "einvoicing.resubmit"
+                  : "einvoicing.headerDetails"
+              ]
+            }
           </Button>
         </div>
       )}

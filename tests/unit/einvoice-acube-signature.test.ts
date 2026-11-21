@@ -238,7 +238,7 @@ describe("E1 two-track status model", () => {
     );
     expect(
       legacyFromProviderTracks("complyance", "delivery_success", "delivered", "not_required")
-    ).toBe("cleared");
+    ).toBe("submitted");
   });
 
   it("derives the legacy status: delivered stays 'accepted' until the FTA report is in", () => {

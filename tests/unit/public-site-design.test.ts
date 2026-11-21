@@ -130,7 +130,9 @@ describe("D1 public site", () => {
         "/product/dashboard-ar.webp"
       );
       expect(container.querySelector('a[hreflang="en"]')?.getAttribute("href")).toBe("/en");
-      expect(container.textContent).toContain("مزوّد خدمة معتمد واحد لكل نسخة من التطبيق");
+      expect(container.querySelector(".phase-partners p")?.textContent).toBe(
+        "اختر مزوّد خدمة معتمدًا واحدًا لكل شركة"
+      );
       expect(arabicModeEnglishLines()).toEqual([]);
     } finally {
       window.history.replaceState(null, "", previousUrl);

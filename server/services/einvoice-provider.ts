@@ -93,7 +93,12 @@ export interface InboundOwner {
   tin: string | null;
 }
 
-export type LegalEntityPatch = Partial<typeof einvoiceLegalEntities.$inferInsert>;
+export type LegalEntityPatch = Partial<
+  Omit<
+    typeof einvoiceLegalEntities.$inferInsert,
+    "id" | "companyId" | "provider" | "environment" | "tin" | "createdAt"
+  >
+>;
 
 /** A supplier e-invoice the ASP received for us (Peppol corner 3). */
 export interface InboundEInvoice {
@@ -160,7 +165,8 @@ export interface EInvoiceProvider {
    */
   legalEntityPatch?(
     legalEntityId: string,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
+    expectedTin: string
   ): Promise<LegalEntityPatch | null>;
   /** Map an inbound ASP status webhook payload to a normalised status update. */
   parseWebhook(

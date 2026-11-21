@@ -37,11 +37,12 @@ import {
   findLegalEntitiesByProviderId,
   getLegalEntity,
   peppolAddressFor,
-  updateLegalEntityRow,
+  updateLegalEntityRowIfCurrent,
 } from "./legal-entities";
 import { getCompanyEInvoiceProvider } from "./providers/company-provider";
 import { providerModule } from "./providers/registry";
-import { isCreditNoteDocumentType } from "./pint-ae-codes";
+import { isCreditNoteDocumentType, isUaeTin } from "./pint-ae-codes";
+import { projectEInvoiceLegacyStatus } from "./tracks";
 
 const log = createLogger("einvoice-provider-events");
 
@@ -138,7 +139,29 @@ async function claimEvents(opts: {
                    AND candidate.status = 'ignored'
                    AND candidate.last_error IN ('document belongs to no company of ours',
                                                 'legal entity is not active')
-                   AND COALESCE(entity.activated_at, entity.created_at) > candidate.processed_at))
+                   AND COALESCE(entity.activated_at, entity.created_at) > candidate.processed_at)
+               OR (candidate.event_type = 'document.received' AND candidate.status = 'processed'
+                   AND EXISTS (
+                     SELECT 1
+                       FROM einvoice_inbound_documents incomplete
+                       JOIN einvoice_archive archive ON archive.company_id = incomplete.company_id
+                        AND archive.sha256 = incomplete.sha256
+                      WHERE incomplete.company_id = candidate.company_id
+                        AND incomplete.document_type IN ('380', '480')
+                        AND incomplete.status IN ('failed', 'received', 'bill_created')
+                        AND incomplete.bill_id IS NULL
+                        AND archive.direction = 'inbound' AND archive.kind = 'received'
+                        AND archive.provider_message_id = candidate.payload->>'documentId'
+                        AND (archive.provider IS NULL OR archive.provider = candidate.provider)
+                   )
+                   AND NOT EXISTS (
+                     SELECT 1 FROM einvoice_provider_events other
+                      WHERE other.company_id = candidate.company_id
+                        AND other.event_type = 'document.received'
+                        AND other.payload->>'documentId' = candidate.payload->>'documentId'
+                        AND (other.provider <> candidate.provider
+                             OR other.environment <> candidate.environment)
+                   )))
           AND (candidate.event_type <> 'document.received' OR candidate.company_id IS NULL
                OR entity.status = 'active')
           ${opts.id ? sql`AND candidate.id = ${opts.id}` : sql``}
@@ -187,10 +210,13 @@ async function handleDelivered(row: CompanyEvent, provider: EInvoiceProvider): P
   const invoice = await storage.getInvoice(doc.invoiceId, doc.companyId);
   const company = await storage.getCompany(doc.companyId);
   if (!invoice || !company) return { status: "ignored", note: "invoice or company gone" };
-  const legacyHandoff =
-    provider.name === "acube" &&
-    ["processed", "delivered"].includes(doc.providerStatus?.trim().toLowerCase() ?? "");
-  if (invoice.einvoiceStatus === "cleared" && !legacyHandoff) {
+  const observedStatus = projectEInvoiceLegacyStatus(
+    provider.name,
+    doc.providerStatus,
+    invoice.einvoiceStatus,
+    doc.reportingStatus
+  );
+  if (observedStatus === "cleared") {
     return { status: "ignored", companyId: company.id, note: "already delivered and reported" };
   }
   const r = await refreshAndPersist({
@@ -249,18 +275,41 @@ async function handleReceived(row: CompanyEvent, provider: EInvoiceProvider): Pr
   if (!company) return { status: "ignored", note: "company gone" };
   const xml = await provider.fetchSource(documentId, ref);
   try {
-    await processInboundEInvoice({
+    const received = await processInboundEInvoice({
       company: company as Company & { peppolParticipantId?: string | null },
       xml,
+      provider: row.provider,
       providerMessageId: documentId,
     });
+    if (received.status >= 500) throw new Error("Inbound e-invoice processing is unavailable");
+    if (received.body.status === "invalid") {
+      return {
+        status: "processed",
+        companyId: company.id,
+        note: "inbound document failed validation",
+      };
+    }
+    if (
+      received.body.status !== "received" &&
+      received.body.status !== "credit_created" &&
+      !(received.body.status === "bill_created" && typeof received.body.billId === "string")
+    ) {
+      throw new Error("Inbound e-invoice processing is incomplete");
+    }
   } catch (err) {
-    // Business outcomes (invalid / wrong recipient) are recorded by processInboundEInvoice and
-    // are final; only infrastructure errors (5xx) are retried.
-    const status = (err as { statusCode?: number }).statusCode ?? 500;
-    if (status >= 500) throw err;
+    // A rejected document is final. Operational errors (including an unavailable draft owner
+    // or a locked accounting period) remain visible to the inbox retry job.
+    const code = (err as { code?: string } | null)?.code;
+    if (
+      ![
+        "EINVOICE_INBOUND_INVALID",
+        "EINVOICE_INBOUND_UNPARSEABLE",
+        "EINVOICE_INBOUND_WRONG_RECIPIENT",
+      ].includes(code ?? "")
+    )
+      throw err;
     return {
-      status: "processed",
+      status: "ignored",
       companyId: company.id,
       note: "inbound document failed validation",
     };
@@ -281,12 +330,26 @@ async function handleLegalEntity(row: CompanyEvent, provider: EInvoiceProvider):
   );
   if (rows.length === 0) return { status: "ignored", note: "legal entity not reserved by us" };
   const [entity] = rows;
+  if (!isUaeTin(entity.tin)) {
+    return { status: "ignored", note: "stored taxpayer identity is invalid" };
+  }
+  if (tin && tin !== entity.tin) {
+    return { status: "ignored", note: "event names a different taxpayer" };
+  }
   const confirmedId = entity.legalEntityId ?? legalEntityId;
   // The event says something changed; the resource says what is true now.
   const current =
     provider.legalEntityPatch && confirmedId
-      ? await provider.legalEntityPatch(confirmedId, payload)
+      ? await provider.legalEntityPatch(confirmedId, payload, entity.tin).catch((err: unknown) => {
+          if ((err as { code?: string } | null)?.code === "EINVOICE_PROVIDER_TIN_MISMATCH") {
+            return false as const;
+          }
+          throw err;
+        })
       : null;
+  if (current === false) {
+    return { status: "ignored", note: "provider returned a different legal entity" };
+  }
   if (!current) throw new Error("Legal entity status could not be confirmed");
   if (
     (current.legalEntityId && current.legalEntityId !== confirmedId) ||
@@ -295,7 +358,9 @@ async function handleLegalEntity(row: CompanyEvent, provider: EInvoiceProvider):
     return { status: "ignored", note: "provider returned a different legal entity" };
   }
   if (current.status === "active" && entity.status !== "active") current.activatedAt = new Date();
-  await updateLegalEntityRow(entity.id, { ...current, lastError: null });
+  if (!(await updateLegalEntityRowIfCurrent(entity, { ...current, lastError: null }))) {
+    return { status: "ignored", note: "legal entity changed while the event was being verified" };
+  }
   return { status: "processed", companyId: entity.companyId };
 }
 
@@ -358,6 +423,7 @@ async function settle(row: EInvoiceProviderEvent, provider?: EInvoiceProvider) {
       .update(einvoiceProviderEvents)
       .set({
         status: dead ? "dead" : "pending",
+        processedAt: null,
         lockedUntil: null,
         lastError: "Provider event could not be processed",
         nextAttemptAt: new Date(Date.now() + eventBackoffMs(row.attempts)),
@@ -412,14 +478,18 @@ export async function runProviderPoll(
     return provider;
   }
 
-  // An A-Cube recipient-ASP receipt can precede the buyer's MLS decision. A final
-  // MLS no longer needs polling because the available TDD cannot confirm FTA reporting.
+  // Both providers can acknowledge recipient receipt before the final buyer decision.
   const awaitingFollowUp =
     providerName === "acube"
       ? sql`(${einvoiceDocuments.status} = 'submitted'
              OR (${einvoiceDocuments.status} IN ('accepted', 'cleared')
-                 AND lower(btrim(${einvoiceDocuments.providerStatus})) IN ('processed', 'delivered')))`
-      : sql`${einvoiceDocuments.reportingStatus} = 'pending'`;
+                 AND lower(btrim(${einvoiceDocuments.providerStatus})) IS DISTINCT FROM 'accepted'))`
+      : sql`(${einvoiceDocuments.reportingStatus} = 'pending'
+             OR lower(btrim(${einvoiceDocuments.providerStatus})) = 'delivery_success')`;
+  const retryableDeliveryFailure =
+    providerName === "acube"
+      ? sql`OR ${einvoiceDocuments.deliveryStatus} = 'delivery_failed'`
+      : sql``;
   const inFlight = await db
     .select()
     .from(einvoiceDocuments)
@@ -430,6 +500,7 @@ export async function runProviderPoll(
         sql`${einvoiceDocuments.validation}->'submission'->>'environment' = ${environment}`,
         sql`${einvoiceDocuments.providerMessageId} IS NOT NULL`,
         sql`(${einvoiceDocuments.deliveryStatus} IN ('queued', 'sending')
+             ${retryableDeliveryFailure}
              OR (${einvoiceDocuments.deliveryStatus} = 'delivered'
                  AND ${awaitingFollowUp}))`
       )

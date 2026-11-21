@@ -42,13 +42,8 @@ export async function listCompliancePills(
       invoiceDate: invoice.date,
       invoiceStatus: invoice.status,
       legacyStatus: invoice.einvoiceStatus,
-      doc: doc
-        ? {
-            deliveryStatus: doc.deliveryStatus,
-            reportingStatus: doc.reportingStatus,
-            reportBy: doc.reportBy as string | null | undefined,
-          }
-        : null,
+      provider: invoice.einvoiceProvider,
+      doc,
       required,
       now,
     });

@@ -92,6 +92,7 @@ both providers may stay.
 - `server/services/einvoice/providers/company-provider.ts`: scoped authentication configuration for the provider
 - `server/services/einvoice/workflow.ts`: provider-specific reconciliation rules and error codes
 - `server/routes.ts`: `registerEInvoiceAcubeRoutes` import and call
+- `server/routes/einvoice.routes.ts` exposes the A-Cube submission reconciliation action.
 - `scripts/ops/asp-sandbox-dryrun.ts`: the `acube` entry in `ASP_REQUIREMENTS` and its branch in `runProvider`
 - `server/http/body-limits.ts`: the `/api/webhooks/einvoice/acube` entry in `RAW_WEBHOOK_PREFIXES`
   (shared by `server/index.ts` and `tests/db/harness.ts`)
@@ -166,6 +167,7 @@ Env to unset: `ACUBE_*`.
 - `client/src/components/einvoice/EInvoiceProviderCard.tsx`: the `complyance` entry in `PROVIDER_CARDS`
 - `server/services/einvoice/tracks.ts`: the `COMPLYANCE_*` codes (`NEW_DOCUMENT_REQUIRED_CODES` may then
   be emptied)
+- `server/services/einvoice/status-view.ts` renders Complyance receipt and acceptance separately.
 - `client/src/components/einvoice/einvoice-meta.ts`: the `COMPLYANCE_*` entries of `KNOWN_ERRORS`
 - `server/services/einvoice-submit.service.ts`: the `COMPLYANCE_*` entries of `TRANSIENT_POLL_CODES`
 - `shared/capabilities.ts`: the `COMPLYANCE_*` env vars and detection branch

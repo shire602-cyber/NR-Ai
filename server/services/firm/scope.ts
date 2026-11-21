@@ -58,12 +58,13 @@ type Executor = Pick<typeof db, "select" | "insert" | "update" | "delete" | "exe
 
 /** Resolve the firm the user acts for, or null when they are not firm staff. */
 export async function resolveFirmContext(
-  actor: FirmActor | null | undefined
+  actor: FirmActor | null | undefined,
+  conn: Pick<Executor, "select"> = db
 ): Promise<FirmContext | null> {
   if (!actor?.id) return null;
   let firmRole = actor.firmRole;
   if (firmRole === undefined) {
-    const [u] = await db
+    const [u] = await conn
       .select({ firmRole: users.firmRole, isAdmin: users.isAdmin })
       .from(users)
       .where(eq(users.id, actor.id))
@@ -89,7 +90,7 @@ export async function resolveFirmContext(
       platformAdmin: true,
     };
   }
-  const [row] = await db
+  const [row] = await conn
     .select({
       firmId: firmMembers.firmId,
       role: firmMembers.role,
@@ -275,34 +276,34 @@ export async function firmRoleOf(userId: string, firmId: string): Promise<FirmRo
  */
 export async function grantCompanyAccess(
   input: { firmId: string; userId: string; companyId: string; role: FirmRole },
-  exec: Executor = db
+  exec?: Executor
 ): Promise<void> {
-  const [existing] = await exec
-    .select({ id: companyUsers.id })
-    .from(companyUsers)
-    .where(and(eq(companyUsers.companyId, input.companyId), eq(companyUsers.userId, input.userId)))
-    .limit(1);
-  let created = false;
-  if (!existing) {
-    await exec
-      .insert(companyUsers)
-      .values({
-        companyId: input.companyId,
-        userId: input.userId,
-        role: FIRM_ROLE_COMPANY_ROLE[input.role],
-      })
-      .onConflictDoNothing();
-    created = true;
-  }
-  await exec
-    .insert(firmCompanyGrants)
+  // Commit the membership and its provenance together. A concurrent preexisting membership
+  // must never be marked as firm-created merely because our insert lost the unique-key race.
+  if (!exec) return db.transaction((tx) => grantCompanyAccess(input, tx));
+  const [created] = await exec
+    .insert(companyUsers)
     .values({
-      firmId: input.firmId,
-      userId: input.userId,
       companyId: input.companyId,
-      createdMembership: created,
+      userId: input.userId,
+      role: FIRM_ROLE_COMPANY_ROLE[input.role],
     })
-    .onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning({ id: companyUsers.id });
+  const grant = exec.insert(firmCompanyGrants).values({
+    firmId: input.firmId,
+    userId: input.userId,
+    companyId: input.companyId,
+    createdMembership: !!created,
+  });
+  if (created) {
+    await grant.onConflictDoUpdate({
+      target: [firmCompanyGrants.firmId, firmCompanyGrants.userId, firmCompanyGrants.companyId],
+      set: { createdMembership: true },
+    });
+  } else {
+    await grant.onConflictDoNothing();
+  }
 }
 
 /**

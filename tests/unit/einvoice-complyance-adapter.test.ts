@@ -260,7 +260,7 @@ describe("E2 Complyance status -> two tracks", () => {
   const cases: Array<[string, string, string, string, string | null]> = [
     ["status_submitted", "queued", "pending", "submitted", null],
     ["status_processing", "sending", "pending", "submitted", null],
-    ["status_delivery_success", "delivered", "pending", "accepted", null],
+    ["status_delivery_success", "delivered", "pending", "submitted", null],
     ["status_delivery_failed_retrying", "sending", "pending", "submitted", null],
     ["status_final_valid", "delivered", "reported", "cleared", null],
     [
@@ -288,6 +288,38 @@ describe("E2 Complyance status -> two tracks", () => {
       code: "FTA-MLS-RE",
       message: "The FTA rejected the tax data document.",
       field: "parties.buyer.taxIds",
+    });
+  });
+
+  it("requires explicit UAE FTA approval and keeps buyer and government rejections distinct", () => {
+    for (const compliance of [undefined, { ftaApprovedStatus: "REJECTED" }]) {
+      expect(
+        mapComplyanceStatus({ state: "final_valid", isTerminal: true, compliance })
+      ).toMatchObject({
+        delivery: "delivered",
+        reporting: "pending",
+      });
+    }
+    const delivered = { validationSteps: [{ name: "Delivery Success", status: "Valid" }] };
+    expect(
+      mapComplyanceStatus({
+        state: "final_invalid",
+        isTerminal: true,
+        validationResults: delivered,
+      })
+    ).toMatchObject({
+      delivery: "rejected",
+      reporting: "pending",
+    });
+    expect(
+      mapComplyanceStatus({
+        state: "final_invalid",
+        isTerminal: true,
+        errors: [{ source: "delivery" }, { source: "government" }],
+      })
+    ).toMatchObject({
+      delivery: "rejected",
+      reporting: "report_failed",
     });
   });
 

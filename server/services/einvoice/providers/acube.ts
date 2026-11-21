@@ -716,10 +716,11 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
   /** E2 inbox hook: legal_entity.synchronized -> the legal entity as A-Cube holds it now. */
   async legalEntityPatch(
     legalEntityId: string,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
+    expectedTin: string
   ): Promise<LegalEntityPatch> {
     const { legalEntityPatchFrom } = await import("../legal-entities");
-    const current = await this.getLegalEntity(legalEntityId);
+    const current = await this.getLegalEntity(legalEntityId, expectedTin);
     return legalEntityPatchFrom({
       ...current,
       action: typeof payload.action === "string" ? payload.action : null,

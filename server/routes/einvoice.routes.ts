@@ -34,13 +34,12 @@ import {
   getArchiveEntry,
   getEInvoiceDocument,
   documentProviderEnvironment,
-  documentValidation,
-  isQueuedEInvoiceDocument,
   listArchive,
   listEInvoiceDocuments,
   listInboundDocuments,
   lockEInvoiceInvoice,
   submissionProviderPin,
+  submissionTriedProvider,
   upsertBuyerEndpoint,
   upsertEInvoiceDocument,
 } from "../services/einvoice/store";
@@ -57,14 +56,20 @@ import {
 } from "../services/einvoice/inbound";
 import {
   cancelAndPersist,
+  canRecoverAcubeSubmission,
+  recoverAcubeSubmission,
   refreshAndPersist,
   runEInvoiceRetries,
   invoiceReportingRequired,
   enqueueEInvoiceSubmission,
 } from "../services/einvoice/workflow";
-import { einvoiceStatusView } from "../services/einvoice/status-view";
+import { einvoiceStatusView, projectEInvoiceDocument } from "../services/einvoice/status-view";
 import { applyTracks, recordValidationEvent } from "../services/einvoice/history";
-import { NEW_DOCUMENT_REQUIRED_CODES, reportByDate } from "../services/einvoice/tracks";
+import {
+  deriveInvoiceTracks,
+  NEW_DOCUMENT_REQUIRED_CODES,
+  reportByDate,
+} from "../services/einvoice/tracks";
 import { runProviderEvents, runProviderPoll } from "../services/einvoice/provider-events";
 import {
   LEGAL_ID_TYPES,
@@ -110,11 +115,41 @@ async function activeProvider(
   }
 }
 
+function providerForSubmission(
+  invoice: Invoice,
+  company: Company,
+  doc: Awaited<ReturnType<typeof getEInvoiceDocument>>
+) {
+  if (
+    submissionTriedProvider(doc) &&
+    doc?.provider !== company.einvoicePartner &&
+    !invoice.einvoiceProviderMessageId &&
+    !doc?.providerMessageId &&
+    doc?.deliveryStatus !== "needs_link"
+  ) {
+    throw new DomainError(
+      "EINVOICE_RETRY_PROVIDER_CHANGED",
+      409,
+      undefined,
+      "Restore the original e-invoicing provider connection before retrying this invoice."
+    );
+  }
+  return activeProvider(company.id, submissionProviderPin(invoice, doc));
+}
+
 async function loadInvoiceAndCompany(
   req: Request
 ): Promise<{ invoice: Invoice; company: Company }> {
   const invoice = await findInvoiceForUser(userOf(req), req.params.id);
   if (!invoice) throw new DomainError("INVOICE_NOT_FOUND", 404, undefined, "Invoice not found");
+  try {
+    await assertScopedCompanyPermission(req.user, invoice.companyId, "reports.read");
+  } catch (err) {
+    if (err instanceof DomainError && err.code === "COMPANY_ACCESS_DENIED") {
+      throw new DomainError("INVOICE_NOT_FOUND", 404, undefined, "Invoice not found");
+    }
+    throw err;
+  }
   const company = await storage.getCompany(invoice.companyId);
   if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404, undefined, "Company not found");
   return { invoice, company };
@@ -474,7 +509,7 @@ export function registerEInvoiceRoutes(app: Express) {
           "This invoice number cannot be sent again. Issue a credit note and a new invoice."
         );
       }
-      const provider = await activeProvider(company.id, submissionProviderPin(invoice, doc));
+      const provider = await providerForSubmission(invoice, company, doc);
       const result = await enqueueEInvoiceSubmission({
         invoice,
         company,
@@ -507,7 +542,7 @@ export function registerEInvoiceRoutes(app: Express) {
       const { invoice, company } = await loadInvoiceAndCompany(req);
       await assertScopedCompanyPermission(req.user, company.id, "tax.submit");
       const prior = await getEInvoiceDocument(company.id, invoice.id);
-      const provider = await activeProvider(company.id, submissionProviderPin(invoice, prior));
+      const provider = await providerForSubmission(invoice, company, prior);
       const result = await enqueueEInvoiceSubmission({
         invoice,
         company,
@@ -541,10 +576,26 @@ export function registerEInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { invoice, company } = await loadInvoiceAndCompany(req);
-      if (!invoice.einvoiceProviderMessageId) {
-        return res.json({ status: invoice.einvoiceStatus, detail: null, reasons: null });
-      }
       const document = await getEInvoiceDocument(company.id, invoice.id);
+      if (!invoice.einvoiceProviderMessageId) {
+        if (document && canRecoverAcubeSubmission(invoice, document)) {
+          const provider = await activeProvider(company.id, document);
+          const recovered = await recoverAcubeSubmission(invoice, document, provider);
+          if (recovered)
+            return res.json({
+              status: recovered.update.einvoiceStatus,
+              detail: recovered.update.einvoiceStatusDetail ?? null,
+              reasons: recovered.documentRow.rejectionReasons,
+              providerMessageId: recovered.providerMessageId,
+            });
+        }
+        const current = await storage.getInvoice(invoice.id, company.id);
+        return res.json({
+          status: current?.einvoiceStatus ?? invoice.einvoiceStatus,
+          detail: null,
+          reasons: null,
+        });
+      }
       const provider = await activeProvider(company.id, document ?? null);
       const result = await refreshAndPersist({ invoice, company, provider });
       if (!result.ok) {
@@ -644,18 +695,36 @@ export function registerEInvoiceRoutes(app: Express) {
     authMiddleware,
     requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
-      const rows = await listEInvoiceDocuments(req.params.companyId);
+      const companyId = req.params.companyId;
+      const [company, rows] = await Promise.all([
+        storage.getCompany(companyId),
+        listEInvoiceDocuments(companyId),
+      ]);
+      if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
       const invoices = await Promise.all(
-        rows.map((r) => storage.getInvoice(r.invoiceId, req.params.companyId))
+        rows.map((row) => storage.getInvoice(row.invoiceId, companyId))
       );
+      const now = new Date();
       res.json({
-        items: rows.map((r, i) => ({
-          ...r,
-          status: isQueuedEInvoiceDocument(r) ? "queued" : r.status,
-          validation: documentValidation(r),
-          invoiceNumber: invoices[i]?.number ?? null,
-          customerName: invoices[i]?.customerName ?? null,
-        })),
+        items: rows.map((doc, i) => {
+          const invoice = invoices[i];
+          const tracks = deriveInvoiceTracks({
+            invoiceDate: invoice?.date,
+            invoiceStatus: invoice?.status,
+            legacyStatus: invoice?.einvoiceStatus ?? doc.status,
+            provider: invoice?.einvoiceProvider,
+            doc,
+            required: invoice
+              ? invoiceReportingRequired(invoice, company, now)
+              : doc.reportingStatus !== "not_required",
+            now,
+          });
+          return {
+            ...projectEInvoiceDocument(doc, tracks),
+            invoiceNumber: invoice?.number ?? null,
+            customerName: invoice?.customerName ?? null,
+          };
+        }),
       });
     })
   );
