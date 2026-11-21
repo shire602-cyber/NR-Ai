@@ -90,6 +90,40 @@ describe("migrations", () => {
     180_000
   );
 
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "repairs an interrupted VAT audit membership index build on the release schema path",
+    async () => {
+      const indexState = () =>
+        h.sql<{ valid: boolean; definition: string }>(`
+          SELECT indisvalid AS valid, pg_get_indexdef(indexrelid) AS definition
+            FROM pg_index
+           WHERE indexrelid = to_regclass('public.idx_audit_logs_vat_group_member_ids')
+        `);
+      expect(await indexState()).toEqual([
+        { valid: true, definition: expect.stringContaining("USING gin") },
+      ]);
+
+      await h.sql("DROP INDEX public.idx_audit_logs_vat_group_member_ids");
+      await h.sql(`INSERT INTO audit_logs (action, resource_type)
+                   VALUES ('schema.test', 'vat_audit_index_test'), ('schema.test', 'vat_audit_index_test')`);
+      // PostgreSQL keeps an invalid index when a concurrent unique build finds duplicates.
+      await expect(
+        h.sql(`CREATE UNIQUE INDEX CONCURRENTLY idx_audit_logs_vat_group_member_ids
+                 ON audit_logs (resource_type) WHERE resource_type = 'vat_audit_index_test'`)
+      ).rejects.toMatchObject({ code: "23505" });
+      expect(await indexState()).toEqual([
+        { valid: false, definition: expect.stringContaining("CREATE UNIQUE INDEX") },
+      ]);
+
+      const { ensureCriticalSchema } = await import("../../server/db");
+      await ensureCriticalSchema();
+      expect(await indexState()).toEqual([
+        { valid: true, definition: expect.stringContaining("USING gin") },
+      ]);
+    },
+    60_000
+  );
+
   it("0089 creates the platform foundation objects", async () => {
     const cols = await h.sql<{ table_name: string; column_name: string }>(
       `SELECT table_name, column_name FROM information_schema.columns

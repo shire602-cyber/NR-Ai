@@ -4,6 +4,7 @@
  * the settlement seam; the return's payment fields, the calendar and the ledger agree, and a
  * reversal returns it to unpaid. Payment status is not hand-editable.
  */
+import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { describe, expect, it, vi } from "vitest";
 import { accountByCode, useHarness, type ApiResponse, type Tenant } from "./harness";
@@ -559,7 +560,7 @@ describe("VAT filing and settlement transaction boundaries", () => {
       filingVatGroup: guess,
     });
     for (const details of [
-      `Malformed legacy audit with ${unrelated.company.id}`,
+      `{"before":{"members":["${unrelated.company.id}","${randomBytes(6_000).toString("hex")}"`,
       JSON.stringify({ before: { note: unrelated.company.id } }),
     ]) {
       await h.sql(
