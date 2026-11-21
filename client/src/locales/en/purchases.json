@@ -3,6 +3,7 @@
   "purchases.noCostCenter": "No cost center",
   "purchases.inboundCreditNotes": "Supplier credit notes to review",
   "purchases.inboundCreditNotesHint": "Credit notes received as e-invoices. Review each one and record it as a vendor credit (debit note).",
+  "purchases.loadMoreInboundCreditNotes": "Load more credit notes",
   "purchases.inboundCreditNoteRow": "{supplier} — credit note {number}",
   "purchases.recordVendorCredit": "Record vendor credit",
   "purchases.vendorCreditRecorded": "Vendor credit recorded",

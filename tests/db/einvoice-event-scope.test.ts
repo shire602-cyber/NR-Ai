@@ -107,8 +107,9 @@ it("scopes webhook deduplication and status re-reads to the verified company and
 });
 
 it("polls a manually selected company without opening another company's provider inbox", async () => {
-  const a = await h.createTenant();
-  const b = await h.createSecondTenant();
+  const selected = { companyColumns: { einvoice_partner: "acube" } };
+  const a = await h.createTenant(selected);
+  const b = await h.createSecondTenant(selected);
   await submittedInvoice(a, "sandbox");
   await submittedInvoice(b, "sandbox");
   const { runProviderPoll } = await import("../../server/services/einvoice/provider-events");

@@ -28,28 +28,49 @@ that key.
 - A-Cube bundles contain `email`, `password` and optional `webhookToken`.
 - Complyance bundles contain `apiKey` and optional `webhookSecret`.
 
-A-Cube callbacks use `/api/webhooks/einvoice/acube/<environment>/<company-uuid>`. The settings page
-can register this URL. A-Cube's Ed25519 signature covers the URL and the message body. If the bundle
-includes a webhook token, the route accepts it in the configured header.
+A-Cube callbacks use `/api/webhooks/einvoice/acube/<environment>/<company-uuid>`. Set
+`ACUBE_WEBHOOK_BASE_URL` to the public HTTPS origin. E-invoicing settings shows the selected
+provider URL under **Developer details**. A company administrator registers or updates the
+destinations using `POST /api/companies/<company-uuid>/einvoicing/acube/webhooks` with `{}` and normal
+authentication. The route uses that company's A-Cube credentials in the current environment.
 
-Complyance callbacks use `/api/webhooks/einvoice/complyance/<environment>/<company-uuid>`. Register
-the URL with the company's webhook signing secret. The route verifies the raw body with HMAC
-and uses event type and deduplication identifiers from the signed body. Without a signing secret,
-status is obtained by polling. For both providers, callbacks use a durable inbox and re-read
-provider state with the company's credentials.
+A-Cube's destination API configures events for the credential account. Use an account dedicated to
+the company for this registration. The company UUID in the callback URL selects the local
+credentials. A-Cube does not expose a taxpayer filter in its destination registration. The app
+verifies the Ed25519 signature over the URL and raw body and checks company ownership against
+authenticated provider data before using the event. It also requires the configured header when the
+bundle has a webhook token. [A-Cube UAE OpenAPI](https://docs.acubeapi.com/openapi/gov-ae-api.json)
+
+Complyance callbacks use `/api/webhooks/einvoice/complyance/<environment>/<company-uuid>` for event
+types available to the company's integration. Configure the URL with its signing secret. The route
+verifies the raw body with HMAC and reads the event type and deduplication identifiers from the
+signed body. Complyance documents polling for UAE outbound sales status. Both provider callbacks
+use a durable inbox and re-read provider data with the company's credentials.
+[Complyance document status](https://docs.complyance.io/api-reference/unify/documents/)
+
+**Direct signed XML endpoint** in settings is a separate inbound upload. It is listed only when its
+own HMAC configuration is enabled.
 
 The standalone legacy adapter tooling has its own direct environment configuration. A company's
 settings and submission flows resolve the company's encrypted bundle.
 
 ## Restore tracking for an older e-invoice
 
-For a document already held by A-Cube or Complyance that lacks a recorded environment, open its
-e-invoice status and verify the environment explicitly. The invoice's saved provider and outbound
-document ID determine what the service checks. A verified email and the company's tax submission
-permission are required.
+Open the e-invoice status to restore tracking for an older submission with a missing environment
+or an unknown provider document ID. The service uses the invoice's recorded provider. When the ID
+is missing, A-Cube must return one exact match for the saved outbound XML. For Complyance, enter the
+sales document ID from its portal so the service can verify the seller and original invoice number.
+A verified email and the company's tax submission permission are required.
 
 Verification is available in the provider's current runtime environment when the company has a
 scoped encrypted credential bundle for it. The provider must confirm the original document.
 Successful verification saves the environment, records an audit entry, and lets signed callbacks
 and polling continue. If the provider environment has moved, an operator must restore the
 original environment setting before verifying the document.
+
+A correction under the same invoice number requires an explicit resubmission through the original
+provider connection and environment. For a tracked Complyance document, the worker verifies that
+the provider still identifies it as terminal Needs Correction and that its seller and source match.
+The corrected submission must retain the provider document ID. After an uncertain correction, the
+app keeps tracking that original ID and prevents another submission while the outcome is unknown.
+[Complyance document status](https://docs.complyance.io/api-reference/unify/documents/)

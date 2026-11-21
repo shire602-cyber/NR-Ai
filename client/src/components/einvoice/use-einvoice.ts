@@ -1,10 +1,11 @@
 /** E1: data hooks for the e-invoice components (kept apart so the component files only export components). */
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type {
   EInvoiceCompliancePill,
   EInvoiceReadiness,
   EInvoiceDocumentRow,
+  EInvoiceListEvidence,
   EInvoiceStatusView,
 } from "./einvoice-meta";
 
@@ -27,24 +28,37 @@ export function useEInvoiceStatus(invoiceId: string | null | undefined, watch = 
   });
 }
 
-export function useEInvoiceDocuments(companyId: string | null | undefined) {
-  return useQuery<{ items: EInvoiceDocumentRow[] }>({
-    queryKey: ["/api/companies", companyId, "einvoicing", "documents"],
-    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/einvoicing/documents`),
-    enabled: !!companyId,
-    retry: false,
-    staleTime: 30_000,
-  });
+interface InvoiceEvidenceBatch {
+  items: EInvoiceCompliancePill[];
+  documents: EInvoiceDocumentRow[];
 }
 
-/** X6d: invoice-list compliance pills; empty unless the e-invoicing mandate applies. */
-export function useEInvoiceCompliance(companyId: string | null | undefined) {
-  return useQuery<{ mandateApplies: boolean; items: EInvoiceCompliancePill[] }>({
-    queryKey: ["/api/companies", companyId, "einvoicing", "compliance"],
-    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/einvoicing/compliance`),
-    enabled: !!companyId,
-    retry: false,
-    staleTime: 30_000,
+/** One evidence query per loaded invoice page, scoped to the displayed IDs. */
+export function useEInvoiceListEvidence(companyId: string | undefined, batches: string[][]) {
+  return useQueries({
+    queries: batches
+      .filter((ids) => ids.length)
+      .map((ids) => ({
+        queryKey: ["/api/companies", companyId, "einvoicing", "compliance", ids],
+        queryFn: (): Promise<InvoiceEvidenceBatch> =>
+          apiRequest(
+            "GET",
+            `/api/companies/${companyId}/einvoicing/compliance?invoiceIds=${ids.join(",")}`
+          ),
+        enabled: !!companyId,
+        retry: false,
+        staleTime: 30_000,
+      })),
+    combine: (results) => {
+      const evidence: Record<string, EInvoiceListEvidence> = {};
+      for (const { data } of results) {
+        for (const pill of data?.items ?? []) evidence[pill.invoiceId] = { pill };
+        for (const doc of data?.documents ?? []) {
+          evidence[doc.invoiceId] = { ...evidence[doc.invoiceId], doc };
+        }
+      }
+      return evidence;
+    },
   });
 }
 

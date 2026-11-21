@@ -25,6 +25,7 @@ import { listJobs, registerJob } from "../platform/job-registry";
 import type { Company } from "../../shared/schema";
 import { MOF_ASP_REGISTER_URL } from "../services/einvoice/providers/types";
 import { companyProviderConfiguration } from "../services/einvoice/providers/company-provider";
+import { providerCallbackUrl } from "../services/einvoice/providers/callback-url";
 import {
   COMPLYANCE_ACCREDITATION_NUMBER,
   COMPLYANCE_LEGAL_NAME,
@@ -57,6 +58,12 @@ import {
 } from "../services/einvoice/provider-events";
 import { companyTin, getLegalEntity } from "../services/einvoice/legal-entities";
 import {
+  assertCanVerifyEInvoiceTracking,
+  confirmLegacyEInvoiceEnvironment,
+  needsLegacySubmissionRecovery,
+  legacyTrackingAvailability,
+} from "../services/einvoice/legacy-tracking";
+import {
   adoptRecoveredEInvoice,
   frozenEInvoiceOwner,
   refreshAndPersist,
@@ -88,14 +95,6 @@ async function complyanceProvider(company: Company): Promise<ComplyanceEInvoiceP
   return new ComplyanceEInvoiceProvider(config.env);
 }
 
-function webhookBaseUrl(): string | null {
-  const base = process.env.COMPLYANCE_WEBHOOK_BASE_URL || process.env.AUTH_PUBLIC_URL || "";
-  return base ? base.replace(/\/+$/, "") : null;
-}
-
-const webhookPath = (environment: string, companyId: string) =>
-  `/api/webhooks/einvoice/complyance/${environment}/${companyId}`;
-
 export async function complyanceConnectionView(
   company: Company & Record<string, unknown>,
   le: Awaited<ReturnType<typeof getLegalEntity>>
@@ -108,7 +107,6 @@ export async function complyanceConnectionView(
     einvoiceTurnoverBand: (company.einvoiceTurnoverBand as string | null) ?? null,
     einvoiceGoLiveDate: (company.einvoiceGoLiveDate as string | null) ?? null,
   });
-  const base = webhookBaseUrl();
   return {
     provider: COMPLYANCE_PROVIDER_NAME,
     displayName: COMPLYANCE_PROVIDER_MODULE.displayName,
@@ -124,7 +122,7 @@ export async function complyanceConnectionView(
     steps: complyanceSteps(configured, le),
     goLive: { ...scope, timeline: EINVOICE_TIMELINE, reportWindowDays: reportWindowDays() },
     webhook: {
-      url: base ? `${base}${webhookPath(environment, company.id)}` : null,
+      url: providerCallbackUrl(COMPLYANCE_PROVIDER_NAME, environment, company.id),
       secretConfigured: !!config?.webhookSecret,
     },
   };
@@ -154,6 +152,7 @@ const LINKABLE_CODES: ReadonlySet<string> = new Set([
 const linkBody = z
   .object({
     invoiceId: z.string().uuid(),
+    environment: z.enum(["sandbox", "production"]).optional(),
     documentId: z
       .string()
       .trim()
@@ -272,11 +271,11 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
   // links it here. We confirm it is this invoice (same number) AND this company's document (its
   // source, Connect company or seller TIN) before tracking it, since invoice numbers can
   // repeat across tenants. Linking changes what the invoice reports
-  // to the FTA, so it needs the posting permission (POLICY_RULES has the same rule).
+  // to the FTA, so it needs the e-invoice transmission permission.
   app.post(
     "/api/companies/:companyId/einvoicing/complyance/link",
     authMiddleware,
-    requireScopedCompanyPermission("ledger.post"),
+    requireScopedCompanyPermission("tax.submit"),
     strictBody(linkBody),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
@@ -284,7 +283,27 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
       const body = validated<LinkBody>(req);
       const invoice = await storage.getInvoice(body.invoiceId, company.id);
       if (!invoice) throw new DomainError("NOT_FOUND", 404, undefined, "Invoice not found");
+      await assertCanVerifyEInvoiceTracking(userOf(req), company.id);
       const doc = await getEInvoiceDocument(company.id, invoice.id);
+      if (needsLegacySubmissionRecovery(invoice, doc)) {
+        const availability = await legacyTrackingAvailability(invoice, doc);
+        const pin = documentProviderEnvironment(doc);
+        const environment = body.environment ?? pin;
+        if (
+          availability?.provider !== COMPLYANCE_PROVIDER_NAME ||
+          (environment !== "sandbox" && environment !== "production")
+        ) {
+          throw new DomainError("EINVOICE_ENVIRONMENT_VERIFICATION_UNAVAILABLE", 503);
+        }
+        await confirmLegacyEInvoiceEnvironment({
+          invoice,
+          company,
+          actorId: userOf(req),
+          environment,
+          documentId: body.documentId,
+        });
+        return res.json({ linked: true, refreshed: false });
+      }
       if (
         doc?.provider !== COMPLYANCE_PROVIDER_NAME ||
         !LINKABLE_CODES.has(doc.lastErrorCode ?? "") ||
@@ -299,6 +318,8 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
         );
       }
       const environment = documentProviderEnvironment(doc);
+      if (body.environment && body.environment !== environment)
+        throw new DomainError("EINVOICE_ENVIRONMENT_ALREADY_VERIFIED", 409);
       const config = environment
         ? await companyProviderConfiguration(company.id, COMPLYANCE_PROVIDER_NAME, { environment })
         : null;
@@ -352,17 +373,9 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
         document: doc,
         provider,
         result: { status: "submitted", delivery: "queued", providerMessageId: body.documentId },
+        actorId: userOf(req),
       });
       if (!adopted) throw new DomainError("EINVOICE_LINK_NOT_NEEDED", 409);
-      await recordAudit({
-        userId: userOf(req),
-        companyId: company.id,
-        action: "invoice.einvoice_complyance_link",
-        entityType: "invoice",
-        entityId: invoice.id,
-        after: { documentId: body.documentId },
-        req,
-      });
       const fresh = await storage.getInvoice(invoice.id, company.id);
       const out = fresh
         ? await refreshAndPersist({ invoice: fresh, company, provider, source: "user" }).catch(

@@ -35,6 +35,7 @@ import {
   isFirmRole,
   type FirmRole,
 } from "../../../shared/access";
+import { COMPANY_ROLES } from "../../../shared/permissions";
 
 /** Seeded by migration 0108. */
 export const NR_FIRM_ID = "00000000-0000-4000-8000-000000000001";
@@ -130,9 +131,149 @@ export async function listFirmClientIds(ctx: Pick<FirmContext, "firmId" | "isNr"
   return rows.map((r) => r.id);
 }
 
-/** An accepted team invitation records a direct role even without a firm grant. */
-export function acceptedCompanyInvite(companyId: string | SQLWrapper, userId: string | SQLWrapper) {
-  return sql`exists (select 1 from company_invitations ci where ci.company_id = ${companyId} and ci.accepted_user_id = ${userId} and ci.status = 'accepted')`;
+type SqlValue = string | SQLWrapper;
+
+function auditDetails(details: SQL) {
+  return sql`((case when ${details} is json object then ${details} else '{}' end)::jsonb)`;
+}
+
+function legacyTeamRoleSave(companyId: SqlValue, userId: SqlValue, createdAt: SqlValue) {
+  const details = auditDetails(sql`change.details`);
+  return sql`exists (select 1 from company_users edited
+    join audit_logs change on change.company_id = edited.company_id and change.resource_id = edited.id::text
+    where edited.company_id = ${companyId} and edited.user_id = ${userId}
+      and edited.created_at = ${createdAt} and edited.role <> 'owner'
+      and change.resource_type = 'company_user' and change.action = 'team.role_change'
+      and change.created_at >= edited.created_at
+      and ${details} #>> '{after,userId}' = edited.user_id::text
+      and ${details} #>> '{after,role}' = edited.role
+      and ${details} #>> '{before,role}' in ('accountant', 'bookkeeper', 'viewer'))`;
+}
+
+function verifiedDirectAcceptance(companyId: SqlValue, userId: SqlValue) {
+  return sql`exists (select 1 from company_invitations confirmed
+    join company_users direct_member on direct_member.company_id = confirmed.company_id and direct_member.user_id = confirmed.accepted_user_id
+    join audit_logs acceptance on acceptance.company_id = confirmed.company_id and acceptance.resource_id = confirmed.id::text
+    where confirmed.company_id = ${companyId} and confirmed.accepted_user_id = ${userId}
+      and confirmed.status = 'accepted' and confirmed.accepted_at >= direct_member.created_at
+      and acceptance.user_id = confirmed.accepted_user_id and acceptance.action = 'team.invite_accept'
+      and ${auditDetails(sql`acceptance.details`)} #>> '{after,directCompanyGrant}' = 'true')`;
+}
+
+function directInviteGrantor(
+  companyId: SqlValue,
+  actorId: SqlValue,
+  role: SqlValue,
+  history?: SQL
+) {
+  return sql`exists (
+    select 1 from company_users grantor
+    join users grantor_user on grantor_user.id = grantor.user_id
+    where grantor.company_id = ${companyId} and grantor.user_id = ${actorId}
+      and grantor_user.user_type <> 'client_portal'
+      and (grantor.role = 'owner' or (grantor.role = 'admin' and ${role} <> 'owner'))
+      and not exists (select 1 from firm_company_grants origin
+        where origin.company_id = grantor.company_id and origin.user_id = grantor.user_id
+          and (origin.created_membership or (
+            ${legacyTeamRoleSave(sql`origin.company_id`, sql`origin.user_id`, sql`origin.created_at`)}
+            and not (${verifiedDirectAcceptance(sql`origin.company_id`, sql`origin.user_id`)})
+          )))
+      ${history ?? sql``}
+  )`;
+}
+
+export async function canAuthorizeDirectCompanyInvite(
+  companyId: string,
+  actorId: string | null,
+  role: string,
+  conn: Pick<Executor, "select"> = db
+): Promise<boolean> {
+  if (!actorId) return false;
+  const [company] = await conn
+    .select({ id: companies.id })
+    .from(companies)
+    .where(
+      and(
+        eq(companies.id, companyId),
+        isNull(companies.deletedAt),
+        directInviteGrantor(companyId, actorId, role)
+      )
+    );
+  return !!company;
+}
+
+function provenCompanyInvite(companyId: SqlValue, userId: SqlValue) {
+  return sql`select ci.role from company_invitations ci
+    join company_users target on target.company_id = ci.company_id and target.user_id = ci.accepted_user_id
+    join users invitee on invitee.id = target.user_id
+    where ci.company_id = ${companyId} and ci.accepted_user_id = ${userId}
+      and ci.status = 'accepted' and ci.accepted_user_id <> ci.invited_by
+      and ci.role in (${sql.join(
+        COMPANY_ROLES.map((role) => sql`${role}`),
+        sql`, `
+      )})
+      and lower(invitee.email) = lower(ci.email) and target.created_at <= ci.accepted_at
+      and ${directInviteGrantor(
+        sql`ci.company_id`,
+        sql`ci.invited_by`,
+        sql`ci.role`,
+        sql`
+        and grantor.created_at <= ci.created_at
+        and not exists (select 1 from audit_logs role_change
+          where role_change.company_id = ci.company_id and role_change.resource_id = grantor.id::text
+            and role_change.action = 'team.role_change' and role_change.created_at >= ci.created_at)
+      `
+      )}
+      and exists (select 1 from audit_logs issued
+        where issued.company_id = ci.company_id and issued.resource_id = ci.id::text
+          and issued.resource_type = 'company_invitation' and issued.user_id = ci.invited_by
+          and issued.action in ('team.invite', 'team.invite_resend')
+          and issued.created_at between ci.created_at and ci.accepted_at)
+      and exists (select 1 from audit_logs accepted
+        where accepted.company_id = ci.company_id and accepted.resource_id = ci.id::text
+          and accepted.resource_type = 'company_invitation' and accepted.user_id = ci.accepted_user_id
+          and accepted.action = 'team.invite_accept')
+    order by ci.accepted_at desc, ci.id desc limit 1`;
+}
+
+/** Only a proven acceptance on this membership counts as legacy independent authority. */
+export function acceptedCompanyInvite(companyId: SqlValue, userId: SqlValue) {
+  return sql`(${verifiedDirectAcceptance(companyId, userId)} or exists (${provenCompanyInvite(companyId, userId)}))`;
+}
+
+export async function historicDirectCompanyRole(
+  companyId: string,
+  userId: string,
+  conn: Pick<Executor, "select"> = db
+): Promise<string | null> {
+  const [match] = await conn
+    .select({ role: sql<string | null>`(${provenCompanyInvite(companyId, userId)})` })
+    .from(companyUsers)
+    .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, userId)));
+  return match?.role ?? null;
+}
+
+/** A short-lived Team role-save path flipped generated grants to false. Repair only exact proof. */
+export function firmCreatedMembership(
+  companyId: SqlValue,
+  userId: SqlValue,
+  createdMembership: SqlValue,
+  grantCreatedAt: SqlValue
+) {
+  return sql`(${createdMembership} or (
+    ${legacyTeamRoleSave(companyId, userId, grantCreatedAt)}
+    and not (${verifiedDirectAcceptance(companyId, userId)})
+    and not (${acceptedCompanyInvite(companyId, userId)})
+  ))`;
+}
+
+export function recordedFirmOrigin() {
+  return firmCreatedMembership(
+    firmCompanyGrants.companyId,
+    firmCompanyGrants.userId,
+    firmCompanyGrants.createdMembership,
+    firmCompanyGrants.createdAt
+  );
 }
 
 function assignedCondition(ctx: FirmContext): SQL {
@@ -141,7 +282,7 @@ function assignedCondition(ctx: FirmContext): SQL {
   const verifiedAssignment = and(
     assignment,
     sql`(not exists (${grants}) or exists (${grants} and fcg.firm_id = ${ctx.firmId}))`,
-    sql`not exists (${grants} and fcg.created_membership and fcg.firm_id <> ${ctx.firmId})`
+    sql`not exists (${grants} and ${firmCreatedMembership(sql`fcg.company_id`, sql`fcg.user_id`, sql`fcg.created_membership`, sql`fcg.created_at`)} and fcg.firm_id <> ${ctx.firmId})`
   );
   if (!ctx.isNr) return verifiedAssignment as SQL;
   // Only NR has legacy assignments that predate explicit provenance. Known direct
@@ -154,7 +295,7 @@ function assignedCondition(ctx: FirmContext): SQL {
           sql`not exists (${grants})`,
           sql`not (${acceptedCompanyInvite(companies.id, ctx.userId)})`
         ),
-        sql`exists (${grants} and fcg.created_membership and fcg.firm_id = ${ctx.firmId})`
+        sql`exists (${grants} and fcg.created_membership and fcg.firm_id = ${ctx.firmId}) and not (${acceptedCompanyInvite(companies.id, ctx.userId)})`
       ),
       sql`exists (select 1 from company_users cu where cu.company_id = ${companies.id} and cu.user_id = ${ctx.userId})`
     )
@@ -322,7 +463,7 @@ export async function hasFirmCreatedCompanyMembership(
       and(
         eq(firmCompanyGrants.companyId, companyId),
         eq(firmCompanyGrants.userId, userId),
-        eq(firmCompanyGrants.createdMembership, true)
+        recordedFirmOrigin()
       )
     )
     .limit(1);
@@ -343,6 +484,41 @@ export async function markCompanyMembershipDirect(
         eq(firmCompanyGrants.companyId, companyId),
         eq(firmCompanyGrants.userId, userId),
         eq(firmCompanyGrants.createdMembership, true)
+      )
+    );
+}
+
+/** Repair historical origin with the member locked, before a firm mutates the grant. */
+export async function reconcileCompanyMembershipOrigin(
+  companyId: string,
+  userId: string,
+  exec: Executor
+) {
+  if (!(await hasFirmCreatedCompanyMembership(companyId, userId, exec))) return;
+  const role = await historicDirectCompanyRole(companyId, userId, exec);
+  if (role) {
+    await exec
+      .update(companyUsers)
+      .set({ role })
+      .where(
+        and(
+          eq(companyUsers.companyId, companyId),
+          eq(companyUsers.userId, userId),
+          sql`${companyUsers.role} <> 'owner'`
+        )
+      );
+    await markCompanyMembershipDirect(companyId, userId, exec);
+    return;
+  }
+  await exec
+    .update(firmCompanyGrants)
+    .set({ createdMembership: true })
+    .where(
+      and(
+        eq(firmCompanyGrants.companyId, companyId),
+        eq(firmCompanyGrants.userId, userId),
+        eq(firmCompanyGrants.createdMembership, false),
+        recordedFirmOrigin()
       )
     );
 }
@@ -382,6 +558,7 @@ export async function grantCompanyAccess(
     });
   } else {
     await grant.onConflictDoNothing();
+    await reconcileCompanyMembershipOrigin(input.companyId, input.userId, exec);
   }
 }
 
@@ -417,10 +594,17 @@ export async function revokeCompanyAccess(
       .for("update");
   }
   const grants = await exec
-    .select({ userId: firmCompanyGrants.userId, created: firmCompanyGrants.createdMembership })
+    .select({ userId: firmCompanyGrants.userId })
     .from(firmCompanyGrants)
-    .where(grantWhere);
-  const toRemove = new Set(grants.filter((g) => g.created).map((g) => g.userId));
+    .where(and(grantWhere, recordedFirmOrigin()));
+  for (const { userId } of grants) {
+    await reconcileCompanyMembershipOrigin(input.companyId, userId, exec);
+  }
+  const generated = await exec
+    .select({ userId: firmCompanyGrants.userId })
+    .from(firmCompanyGrants)
+    .where(and(grantWhere, eq(firmCompanyGrants.createdMembership, true)));
+  const toRemove = new Set(generated.map((g) => g.userId));
   // An NR assignment predating provenance can still identify a legacy generated row.
   if (input.isNr && memberIds.length) {
     const assignments = await exec

@@ -97,11 +97,18 @@ it("tracks a prior A-Cube receipt through its original configuration, not the se
   await h.sql(`UPDATE einvoice_documents SET provider_status = 'processed' WHERE invoice_id = $1`, [
     invoiceId,
   ]);
+  await h.sql(
+    `INSERT INTO einvoice_document_events
+      (company_id, invoice_id, track, from_status, to_status, provider, provider_status, source)
+     VALUES ($1, $2, 'delivery', 'sending', 'delivered', 'acube', 'processed', 'poll')`,
+    [companyId, invoiceId]
+  );
   expect((await tenant.as.get(statusPath)).body).toMatchObject({
     status: "submitted",
     submissionState: "sent",
     tracks: { delivery: { status: "sending" }, reporting: { status: "pending" } },
     transmission: { recipientAcknowledgement: null, canRefresh: true },
+    events: [{ track: "delivery", to: "sending", providerStatus: "processed" }],
   });
 
   await h.sql(`UPDATE einvoice_documents SET provider_status = 'accepted' WHERE invoice_id = $1`, [

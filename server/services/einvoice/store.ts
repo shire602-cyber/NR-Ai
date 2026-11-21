@@ -4,7 +4,8 @@
  * participant ids. Every query is scoped by company id.
  */
 import crypto from "node:crypto";
-import { and, desc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db, type AppDatabase } from "../../db";
 import { DomainError } from "../../errors";
 import {
@@ -21,7 +22,7 @@ import {
 } from "../../../shared/schema";
 import type { EInvoiceProviderEnvironment } from "../einvoice-provider";
 import { reportingEvidenceAt, type ReportingObservation } from "./tracks";
-import { isPintAeCreditNoteType } from "./pint-ae-codes";
+import { PINT_AE_CREDIT_NOTE_TYPES } from "./pint-ae-codes";
 
 export const ARCHIVE_RETENTION_YEARS = 5;
 
@@ -83,6 +84,18 @@ export function documentSubmissionMetadata(
       typeof metadata?.environmentVerifiedAt === "string" ? metadata.environmentVerifiedAt : null,
     providerAttempted:
       typeof metadata?.providerAttempted === "boolean" ? metadata.providerAttempted : null,
+    correctableRejection: metadata?.correctableRejection === true,
+    verifiedEmailRequired: metadata?.verifiedEmailRequired === true,
+    correctionBlocked: metadata?.correctionBlocked === true,
+    correctionOf: typeof metadata?.correctionOf === "string" ? metadata.correctionOf : null,
+    correctionOriginalHash:
+      typeof metadata?.correctionOriginalHash === "string" ? metadata.correctionOriginalHash : null,
+    correctionOriginalValidation:
+      metadata?.correctionOriginalValidation &&
+      typeof metadata.correctionOriginalValidation === "object"
+        ? metadata.correctionOriginalValidation
+        : null,
+    correctionUncertain: metadata?.correctionUncertain === true,
   };
 }
 
@@ -446,7 +459,35 @@ export async function listInboundDocuments(
   companyId: string,
   limit = 100
 ): Promise<InboundListItem[]> {
-  const rows = await db
+  return queryInboundDocuments(companyId, Math.min(Math.max(limit, 1), 500));
+}
+
+export async function listInboundVendorCredits(companyId: string, limit: number, cursor?: string) {
+  const rows = await queryInboundDocuments(companyId, limit + 1, { cursor });
+  const items = rows.slice(0, limit);
+  return { items, nextCursor: rows.length > limit ? (items.at(-1)?.id ?? null) : null };
+}
+
+async function queryInboundDocuments(
+  companyId: string,
+  limit: number,
+  review?: { cursor?: string }
+): Promise<InboundListItem[]> {
+  const vendorCreditReviewable = and(
+    eq(einvoiceInboundDocuments.status, "received"),
+    inArray(einvoiceInboundDocuments.documentType, PINT_AE_CREDIT_NOTE_TYPES),
+    isNotNull(einvoiceArchive.id),
+    isNull(einvoiceInboundDocuments.billId),
+    isNull(einvoiceInboundDocuments.debitNoteId)
+  );
+  const cursorRow = alias(einvoiceInboundDocuments, "inbound_cursor");
+  const before = review?.cursor
+    ? db
+        .select({ receivedAt: cursorRow.receivedAt, id: cursorRow.id })
+        .from(cursorRow)
+        .where(and(eq(cursorRow.companyId, companyId), eq(cursorRow.id, review.cursor)))
+    : undefined;
+  return db
     .select({
       id: einvoiceInboundDocuments.id,
       supplierName: einvoiceInboundDocuments.supplierName,
@@ -455,12 +496,11 @@ export async function listInboundDocuments(
       documentType: einvoiceInboundDocuments.documentType,
       status: einvoiceInboundDocuments.status,
       billId: einvoiceInboundDocuments.billId,
-      debitNoteId: einvoiceInboundDocuments.debitNoteId,
       archiveId: einvoiceInboundDocuments.archiveId,
-      archivedSourceId: einvoiceArchive.id,
       error: einvoiceInboundDocuments.error,
       validation: einvoiceInboundDocuments.validation,
       receivedAt: einvoiceInboundDocuments.receivedAt,
+      vendorCreditReviewable: sql<boolean>`coalesce(${vendorCreditReviewable}, false)`,
     })
     .from(einvoiceInboundDocuments)
     .leftJoin(
@@ -470,18 +510,17 @@ export async function listInboundDocuments(
         eq(einvoiceArchive.companyId, einvoiceInboundDocuments.companyId)
       )
     )
-    .where(eq(einvoiceInboundDocuments.companyId, companyId))
-    .orderBy(desc(einvoiceInboundDocuments.receivedAt))
-    .limit(Math.min(Math.max(limit, 1), 500));
-  return rows.map(({ debitNoteId, archivedSourceId, ...row }) => ({
-    ...row,
-    vendorCreditReviewable:
-      row.status === "received" &&
-      isPintAeCreditNoteType(row.documentType) &&
-      archivedSourceId !== null &&
-      !row.billId &&
-      !debitNoteId,
-  }));
+    .where(
+      and(
+        eq(einvoiceInboundDocuments.companyId, companyId),
+        review ? vendorCreditReviewable : undefined,
+        before
+          ? sql`(${einvoiceInboundDocuments.receivedAt}, ${einvoiceInboundDocuments.id}) < (${before})`
+          : undefined
+      )
+    )
+    .orderBy(desc(einvoiceInboundDocuments.receivedAt), desc(einvoiceInboundDocuments.id))
+    .limit(limit);
 }
 
 // ─── Buyer endpoints ────────────────────────────────────────────────────

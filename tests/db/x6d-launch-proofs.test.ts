@@ -197,6 +197,38 @@ describe("X6d invoice-list compliance pills", () => {
     expect(row.overdue).toBe(false);
   });
 
+  it("derives status for requested company invoices even beyond the former document cutoff", async () => {
+    const tenant = await h.createTenant({
+      companyColumns: { ...SELLER, einvoice_scope: "b2b", einvoice_go_live_date: "2025-01-01" },
+    });
+    const invoice = await issued(tenant);
+    const other = await h.createSecondTenant();
+    const otherInvoice = await issued(other);
+    await h.sql(
+      `INSERT INTO einvoice_documents
+         (company_id, invoice_id, status, provider, provider_status, provider_message_id,
+          delivery_status, reporting_status, updated_at)
+       VALUES ($1, $2, 'accepted', 'complyance', 'final_valid', 'fixture-document',
+               'delivered', 'reported', now() - interval '1 day')`,
+      [tenant.company.id, invoice.id]
+    );
+    await h.sql(
+      `INSERT INTO einvoice_documents (company_id, invoice_id, status, updated_at)
+       SELECT $1, gen_random_uuid(), 'generated', now() FROM generate_series(1, 501)`,
+      [tenant.company.id]
+    );
+    const result = await tenant.as.get(
+      `/api/companies/${tenant.company.id}/einvoicing/compliance?invoiceIds=${invoice.id},${otherInvoice.id}`
+    );
+    expect(result.status, result.text).toBe(200);
+    expect(result.body.items).toMatchObject([
+      { invoiceId: invoice.id, reportingRequired: true, delivery: "delivered" },
+    ]);
+    expect(result.body.documents).toMatchObject([
+      { invoiceId: invoice.id, provider: "complyance", providerStatus: "final_valid" },
+    ]);
+  });
+
   it("is tenant-scoped", async () => {
     const t = await h.createTenant();
     const other = await h.createSecondTenant();

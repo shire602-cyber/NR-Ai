@@ -95,8 +95,13 @@ export const DOCUMENT_TYPE = {
   outOfScopeCreditNote: "81",
 } as const;
 
+export const PINT_AE_CREDIT_NOTE_TYPES: readonly string[] = [
+  DOCUMENT_TYPE.creditNote,
+  DOCUMENT_TYPE.outOfScopeCreditNote,
+];
+
 export function isPintAeCreditNoteType(value?: string | null): boolean {
-  return value === DOCUMENT_TYPE.creditNote || value === DOCUMENT_TYPE.outOfScopeCreditNote;
+  return typeof value === "string" && PINT_AE_CREDIT_NOTE_TYPES.includes(value);
 }
 
 /** Classify references returned by an ASP, including self-billed credit notes. */

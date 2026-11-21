@@ -29,6 +29,8 @@ import {
   grantCompanyAccess,
   isFirmClient,
   listFirmMembers,
+  reconcileCompanyMembershipOrigin,
+  recordedFirmOrigin,
   resolveFirmContext,
   revokeCompanyAccess,
   type FirmContext,
@@ -250,6 +252,18 @@ export async function setFirmMemberRole(
     // NR keeps users.firm_role as the legacy source of truth.
     if (ctx.isNr) await tx.update(users).set({ firmRole: role }).where(eq(users.id, userId));
 
+    const recorded = await tx
+      .select({ companyId: firmCompanyGrants.companyId })
+      .from(firmCompanyGrants)
+      .where(
+        and(
+          eq(firmCompanyGrants.firmId, ctx.firmId),
+          eq(firmCompanyGrants.userId, userId),
+          recordedFirmOrigin()
+        )
+      );
+    for (const { companyId } of recorded)
+      await reconcileCompanyMembershipOrigin(companyId, userId, tx);
     const generatedCompanyIds = tx
       .select({ companyId: firmCompanyGrants.companyId })
       .from(firmCompanyGrants)

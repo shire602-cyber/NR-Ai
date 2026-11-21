@@ -8,6 +8,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import {
   requirePermission,
   requireScopedCompanyPermission,
+  scopedCompanyPermissionFailure,
   getCompanyRole,
   companyHasSingleMember,
 } from "../middleware/companyRolePolicy";
@@ -25,21 +26,27 @@ import {
   grantableRoles,
   normalizeCompanyRole,
   permissionsForRole,
-  type CompanyRole,
 } from "../../shared/permissions";
 import {
+  companies,
   companyInvitations,
   companyUsers,
+  firmCompanyGrants,
+  firmMembers,
   users,
   type CompanyInvitation,
+  type User,
 } from "../../shared/schema";
-import { and, eq, gt } from "drizzle-orm";
-import { db } from "../db";
+import { and, eq, gt, or, sql, exists, isNull } from "drizzle-orm";
+import { db, type AppDatabase } from "../db";
 import { DomainError } from "../errors";
 import {
+  canAuthorizeDirectCompanyInvite,
   hasFirmCreatedCompanyMembership,
   markCompanyMembershipDirect,
+  resolveFirmContext,
 } from "../services/firm/scope";
+import { isFirmRole } from "../../shared/access";
 import { zCompanyRole } from "../../shared/validators/company-role";
 
 const log = createLogger("team");
@@ -107,6 +114,98 @@ async function deliverInvitation(
 function newToken() {
   const raw = randomBytes(32).toString("hex");
   return { raw, hash: hashToken(raw) };
+}
+
+async function canManageCompanyOwnership(
+  companyId: string,
+  actor: Pick<User, "id" | "userType" | "firmRole" | "isAdmin"> | undefined,
+  conn: Pick<AppDatabase, "select"> = db
+) {
+  if (!actor || actor.userType === "client_portal") return false;
+  return (
+    (await canAuthorizeDirectCompanyInvite(companyId, actor.id, "owner", conn)) ||
+    (await resolveFirmContext(actor, conn))?.platformAdmin === true
+  );
+}
+
+async function assertTeamInviteAuthority(
+  companyId: string,
+  actor: Pick<User, "id" | "userType" | "firmRole" | "isAdmin"> | undefined,
+  invitee: Pick<User, "id" | "firmRole" | "isAdmin"> | undefined,
+  role: string,
+  conn: Pick<AppDatabase, "select"> = db,
+  lock?: "share"
+) {
+  if (lock) {
+    const [company] = await conn
+      .select({ id: companies.id })
+      .from(companies)
+      .where(and(eq(companies.id, companyId), isNull(companies.deletedAt)))
+      .for(lock);
+    if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
+  }
+  if (await canAuthorizeDirectCompanyInvite(companyId, actor?.id ?? null, role, conn)) return;
+  if (role === "owner" && !(await canManageCompanyOwnership(companyId, actor, conn))) {
+    throw new DomainError("ROLE_NOT_GRANTABLE", 403);
+  }
+  const deny = () => {
+    throw new DomainError("PERMISSION_DENIED", 403, { permission: "team.manage" });
+  };
+  if (!actor) return deny();
+  if (await scopedCompanyPermissionFailure(actor, companyId, "team.manage", conn, lock))
+    return deny();
+
+  // A firm can onboard a new customer into a managed company. It cannot turn an existing
+  // company membership or someone's firm authority into independently durable access.
+  if (invitee) {
+    if (invitee.isAdmin || isFirmRole(invitee.firmRole)) return deny();
+    const [existing] = await conn
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(
+          eq(users.id, invitee.id),
+          or(
+            exists(
+              conn
+                .select({ id: firmMembers.userId })
+                .from(firmMembers)
+                .where(eq(firmMembers.userId, invitee.id))
+            ),
+            exists(
+              conn
+                .select({ id: companyUsers.userId })
+                .from(companyUsers)
+                .where(
+                  and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, invitee.id))
+                )
+            ),
+            exists(
+              conn
+                .select({ id: firmCompanyGrants.userId })
+                .from(firmCompanyGrants)
+                .where(
+                  and(
+                    eq(firmCompanyGrants.companyId, companyId),
+                    eq(firmCompanyGrants.userId, invitee.id)
+                  )
+                )
+            )
+          )
+        )
+      );
+    if (existing) return deny();
+  }
+  const [membership] = await conn
+    .select({ role: companyUsers.role })
+    .from(companyUsers)
+    .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, actor.id)));
+  if (
+    membership &&
+    (!grantableRoles(membership.role).includes(normalizeCompanyRole(role)) ||
+      (await hasFirmCreatedCompanyMembership(companyId, actor.id, conn)))
+  )
+    return deny();
 }
 
 async function countOwners(companyId: string): Promise<number> {
@@ -247,7 +346,7 @@ export function registerTeamRoutes(app: Express) {
       const { email, role } = req.body as z.output<typeof inviteBodySchema>;
       const actorRole = req.companyRole ?? (await getCompanyRole(userId, companyId));
 
-      if (actorRole && !grantableRoles(actorRole).includes(role)) {
+      if (role !== "owner" && actorRole && !grantableRoles(actorRole).includes(role)) {
         return res.status(403).json({
           message: "Only owners can invite another owner",
           code: "ROLE_NOT_GRANTABLE",
@@ -259,6 +358,7 @@ export function registerTeamRoutes(app: Express) {
         return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
 
       const existingUser = await storage.getUserByEmail(email);
+      await assertTeamInviteAuthority(companyId, req.user, existingUser, role);
       const existingRole = existingUser
         ? await storage.getUserRole(companyId, existingUser.id)
         : null;
@@ -323,6 +423,7 @@ export function registerTeamRoutes(app: Express) {
     "/api/companies/:companyId/team/invitations",
     authMiddleware,
     requirePermission("team.manage"),
+    requireScopedCompanyPermission("team.manage"),
     asyncHandler(async (req: Request, res: Response) => {
       const rows = await storage.listCompanyInvitations(req.params.companyId);
       res.json(rows.map(publicInvitation));
@@ -345,6 +446,12 @@ export function registerTeamRoutes(app: Express) {
           code: `INVITATION_${current.status.toUpperCase()}`,
         });
       }
+      await assertTeamInviteAuthority(
+        companyId,
+        req.user,
+        await storage.getUserByEmail(current.email),
+        current.role
+      );
       const company = await storage.getCompany(companyId);
       if (!company)
         return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
@@ -358,6 +465,7 @@ export function registerTeamRoutes(app: Express) {
           expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
           lastSentAt: new Date(),
           sendCount: (current.sendCount ?? 0) + 1,
+          invitedBy: req.user!.id,
         },
         current
       );
@@ -381,6 +489,7 @@ export function registerTeamRoutes(app: Express) {
     "/api/companies/:companyId/team/invitations/:invitationId",
     authMiddleware,
     requirePermission("team.manage"),
+    requireScopedCompanyPermission("team.manage"),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, invitationId } = req.params;
       const current = await storage.getCompanyInvitation(companyId, invitationId);
@@ -424,14 +533,16 @@ export function registerTeamRoutes(app: Express) {
       const userId = req.user!.id;
       const { companyId, memberId } = req.params;
       const { role } = req.body as z.output<typeof roleBodySchema>;
-      const actorRole = req.companyRole ?? (await getCompanyRole(userId, companyId));
 
       const member = await storage.getCompanyUser(companyId, memberId);
       if (!member) {
         return res.status(404).json({ message: "Team member not found", code: "NOT_FOUND" });
       }
       const currentRole = normalizeCompanyRole(member.role);
-      if (actorRole && actorRole !== "owner" && (role === "owner" || currentRole === "owner")) {
+      if (
+        (role === "owner" || currentRole === "owner") &&
+        !(await canManageCompanyOwnership(companyId, req.user))
+      ) {
         return res
           .status(403)
           .json({ message: "Only owners can change owner roles", code: "ROLE_NOT_GRANTABLE" });
@@ -467,10 +578,10 @@ export function registerTeamRoutes(app: Express) {
     "/api/companies/:companyId/team/:memberId",
     authMiddleware,
     requirePermission("team.manage"),
+    requireScopedCompanyPermission("team.manage"),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = req.user!.id;
       const { companyId, memberId } = req.params;
-      const actorRole = (req.companyRole as CompanyRole | undefined) ?? null;
 
       const member = await storage.getCompanyUser(companyId, memberId);
       if (!member) {
@@ -478,7 +589,7 @@ export function registerTeamRoutes(app: Express) {
       }
       const currentRole = normalizeCompanyRole(member.role);
       if (currentRole === "owner") {
-        if (actorRole && actorRole !== "owner") {
+        if (!(await canManageCompanyOwnership(companyId, req.user))) {
           return res
             .status(403)
             .json({ message: "Only owners can remove an owner", code: "ROLE_NOT_GRANTABLE" });
@@ -545,60 +656,60 @@ export function registerTeamRoutes(app: Express) {
       const inv = resolved.invitation;
       const { ...body } = req.body as z.output<typeof acceptBodySchema>;
       const signedIn = await optionalAuthUser(req);
-      const existing = await storage.getUserByEmail(inv.email);
-      const claimable = !!existing && isPlaceholderPasswordHash(existing.passwordHash);
+      const email = normalizeEmail(inv.email);
+      const passwordHash =
+        !signedIn && body.name && body.password ? await bcrypt.hash(body.password, 10) : null;
 
-      let userId: string;
-      let createdUser = false;
-      if (signedIn) {
-        if (normalizeEmail(signedIn.email) !== normalizeEmail(inv.email)) {
-          return res.status(403).json({
-            message: "This invitation was sent to a different email address",
-            code: "INVITATION_EMAIL_MISMATCH",
-          });
+      const {
+        user: acceptedUser,
+        role,
+        createdUser,
+      } = await db.transaction(async (tx) => {
+        // Serialize with assignment, company roles, and a competing invitation or account claim.
+        const accounts = await tx
+          .select()
+          .from(users)
+          .where(
+            or(
+              signedIn ? eq(users.id, signedIn.id) : sql`lower(${users.email}) = ${email}`,
+              inv.invitedBy ? eq(users.id, inv.invitedBy) : undefined
+            )
+          )
+          .orderBy(users.id)
+          .for("update");
+        let user = accounts.find((account) =>
+          signedIn ? account.id === signedIn.id : normalizeEmail(account.email) === email
+        );
+        if (signedIn && (!user || normalizeEmail(user.email) !== email)) {
+          throw new DomainError("INVITATION_EMAIL_MISMATCH", 403);
         }
-        userId = signedIn.id;
-      } else if (existing && !claimable) {
-        return res.status(409).json({
-          message: "An account already exists for this email. Sign in, then accept the invitation.",
-          code: "LOGIN_REQUIRED",
-        });
-      } else {
-        if (!body.name || !body.password) {
-          return res.status(400).json({
-            message: "Name and password are required to create your account",
-            code: "VALIDATION_ERROR",
-            fields: {
-              ...(body.name ? {} : { name: ["Required"] }),
-              ...(body.password ? {} : { password: ["Required"] }),
-            },
-          });
+        if (!signedIn && user && !isPlaceholderPasswordHash(user.passwordHash)) {
+          throw new DomainError("LOGIN_REQUIRED", 409);
         }
-        const passwordHash = await bcrypt.hash(body.password, 10);
-        if (claimable && existing) {
-          await storage.updateUserPassword(existing.id, passwordHash);
-          await storage.updateUser(existing.id, { name: body.name });
-          userId = existing.id;
-        } else {
-          const user = await storage.createUser({
-            name: body.name,
-            email: inv.email,
-            userType: "customer",
-            isAdmin: false,
-            passwordHash,
-          });
-          userId = user.id;
+        if (!signedIn && (!passwordHash || !body.name)) {
+          z.object({ name: zText(100, { min: 1 }), password: passwordPolicySchema }).parse(body);
         }
-        createdUser = true;
-      }
-
-      const role = await db.transaction(async (tx) => {
-        // Firm assignment/demotion and direct grants share this lock order.
-        await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
+        const claimPlaceholder = !signedIn && !!user;
+        const grantor = accounts.find((account) => account.id === inv.invitedBy);
+        await assertTeamInviteAuthority(inv.companyId, grantor, user, inv.role, tx, "share");
+        if (!user) {
+          [user] = await tx
+            .insert(users)
+            .values({
+              name: body.name!,
+              email,
+              passwordHash: passwordHash!,
+              userType: "customer",
+              isAdmin: false,
+            })
+            .onConflictDoNothing()
+            .returning();
+          if (!user) throw new DomainError("LOGIN_REQUIRED", 409);
+        }
         const now = new Date();
         const [accepted] = await tx
           .update(companyInvitations)
-          .set({ status: "accepted", acceptedAt: now, acceptedUserId: userId })
+          .set({ status: "accepted", acceptedAt: now, acceptedUserId: user.id })
           .where(
             and(
               eq(companyInvitations.id, inv.id),
@@ -619,44 +730,56 @@ export function registerTeamRoutes(app: Express) {
           throw new DomainError(`INVITATION_${status.toUpperCase()}`, 410);
         }
 
-        // A portal customer who becomes a team member is a real company user from now on.
-        if (signedIn?.userType === "client_portal") {
-          await tx.update(users).set({ userType: "customer" }).where(eq(users.id, userId));
+        // Placeholder credentials and portal conversion are committed with the invitation and role.
+        if (claimPlaceholder || user.userType === "client_portal") {
+          [user] = await tx
+            .update(users)
+            .set({
+              ...(claimPlaceholder
+                ? {
+                    passwordHash: passwordHash!,
+                    name: body.name!,
+                    passwordChangedAt: now,
+                  }
+                : {}),
+              ...(user.userType === "client_portal" ? { userType: "customer" } : {}),
+            })
+            .where(eq(users.id, user.id))
+            .returning();
         }
         const [membership] = await tx
           .select({ role: companyUsers.role })
           .from(companyUsers)
-          .where(and(eq(companyUsers.companyId, inv.companyId), eq(companyUsers.userId, userId)))
+          .where(and(eq(companyUsers.companyId, inv.companyId), eq(companyUsers.userId, user.id)))
           .for("update");
-        const generated = await hasFirmCreatedCompanyMembership(inv.companyId, userId, tx);
-        if (membership?.role === "owner") {
-          if (generated) await markCompanyMembershipDirect(inv.companyId, userId, tx);
-          return "owner";
+        const generated = await hasFirmCreatedCompanyMembership(inv.companyId, user.id, tx);
+        const directRole =
+          membership && (!generated || membership.role === "owner")
+            ? normalizeCompanyRole(membership.role)
+            : normalizeCompanyRole(accepted.role);
+        if (!membership || generated) {
+          await tx
+            .insert(companyUsers)
+            .values({ companyId: inv.companyId, userId: user.id, role: directRole })
+            .onConflictDoUpdate({
+              target: [companyUsers.companyId, companyUsers.userId],
+              set: { role: directRole },
+            });
         }
-        if (membership && !generated) return normalizeCompanyRole(membership.role);
-
-        const directRole = normalizeCompanyRole(accepted.role);
-        await tx
-          .insert(companyUsers)
-          .values({ companyId: inv.companyId, userId, role: directRole })
-          .onConflictDoUpdate({
-            target: [companyUsers.companyId, companyUsers.userId],
-            set: { role: directRole },
-          });
-        if (generated) await markCompanyMembershipDirect(inv.companyId, userId, tx);
-        return directRole;
+        if (generated) await markCompanyMembershipDirect(inv.companyId, user.id, tx);
+        await recordAudit({
+          userId: user.id,
+          companyId: inv.companyId,
+          action: "team.invite_accept",
+          entityType: "company_invitation",
+          entityId: inv.id,
+          before: null,
+          after: { role: directRole, createdUser: !signedIn, directCompanyGrant: true },
+          req,
+          tx,
+        });
+        return { user, role: directRole, createdUser: !signedIn };
       });
-      await recordAudit({
-        userId,
-        companyId: inv.companyId,
-        action: "team.invite_accept",
-        entityType: "company_invitation",
-        entityId: inv.id,
-        before: null,
-        after: { role, createdUser },
-        req,
-      });
-
       const company = await storage.getCompany(inv.companyId);
       const payload: Record<string, unknown> = {
         companyId: inv.companyId,
@@ -664,10 +787,14 @@ export function registerTeamRoutes(app: Express) {
         role,
       };
       if (createdUser) {
-        const user = (await storage.getUser(userId))!;
-        const tokens = await issueAuthTokens(req, res, user);
+        const tokens = await issueAuthTokens(req, res, acceptedUser);
         Object.assign(payload, tokens, {
-          user: { id: user.id, email: user.email, name: user.name, userType: user.userType },
+          user: {
+            id: acceptedUser.id,
+            email: acceptedUser.email,
+            name: acceptedUser.name,
+            userType: acceptedUser.userType,
+          },
         });
       }
       res.json(payload);

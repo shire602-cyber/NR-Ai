@@ -16,12 +16,14 @@ import {
   NR_FIRM_ID,
   accessibleClientCondition,
   canAccessFirmClient,
-  markCompanyMembershipDirect,
+  hasFirmCreatedCompanyMembership,
+  reconcileCompanyMembershipOrigin,
   type FirmContext,
 } from "../services/firm/scope";
 import { db } from "../db";
+import { DomainError } from "../errors";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
-import { isScopedIdPair, scopedDelete, scopedGet } from "../tenancy";
+import { isScopedIdPair, scopedGet } from "../tenancy";
 import { UserStorage } from "./users";
 import type { CompanyMemberWithUser } from "./types";
 
@@ -275,14 +277,38 @@ export class CompanyStorage extends UserStorage {
         .from(users)
         .where(eq(users.id, member.userId))
         .for("update");
+      await reconcileCompanyMembershipOrigin(companyId, member.userId, tx);
+      if (
+        data.role === "owner" &&
+        (await hasFirmCreatedCompanyMembership(companyId, member.userId, tx))
+      ) {
+        throw new DomainError("ROLE_NOT_GRANTABLE", 403);
+      }
       const [updated] = await tx.update(companyUsers).set(data).where(scope).returning();
-      if (updated) await markCompanyMembershipDirect(companyId, updated.userId, tx);
       return updated;
     });
   }
 
   async deleteCompanyUser(companyId: string, id: string): Promise<boolean> {
-    return scopedDelete(companyUsers, companyId, id);
+    if (!isScopedIdPair(companyId, id)) return false;
+    return db.transaction(async (tx) => {
+      const scope = and(eq(companyUsers.companyId, companyId), eq(companyUsers.id, id));
+      const [member] = await tx
+        .select({ userId: companyUsers.userId })
+        .from(companyUsers)
+        .where(scope);
+      if (!member) return false;
+      await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, member.userId))
+        .for("update");
+      const [removed] = await tx
+        .delete(companyUsers)
+        .where(scope)
+        .returning({ id: companyUsers.id });
+      return !!removed;
+    });
   }
 
   async getCompanyUser(companyId: string, id: string): Promise<CompanyUser | undefined> {

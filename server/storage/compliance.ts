@@ -466,6 +466,7 @@ export class ComplianceStorage extends EngagementStorage {
         | "revokedAt"
         | "lastSentAt"
         | "sendCount"
+        | "invitedBy"
       >
     >,
     expected: Pick<CompanyInvitation, "status" | "tokenHash">

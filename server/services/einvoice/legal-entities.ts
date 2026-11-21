@@ -68,20 +68,27 @@ export function matchesProviderEntityOwner(
   );
 }
 
+type InboundTaxpayer = { endpoint: string | null; scheme: string | null; vatTrn: string | null };
+
+function matchesTaxpayerTin(tin: string, buyer: InboundTaxpayer): boolean {
+  return (
+    isUaeTin(tin) &&
+    Boolean(buyer.endpoint || buyer.vatTrn) &&
+    (buyer.endpoint == null ||
+      (buyer.scheme === PEPPOL_SCHEME_UAE_TIN && buyer.endpoint === tin)) &&
+    (buyer.vatTrn == null || (isPintAeTrn(buyer.vatTrn) && buyer.vatTrn.slice(0, 10) === tin))
+  );
+}
+
 /** Provider receipts use the registered taxpayer even if company VAT registration is absent. */
 export function matchesOnboardedTaxpayer(
   entity: Pick<EInvoiceLegalEntity, "status" | "tin" | "peppolAddress">,
-  buyer: { endpoint: string | null; scheme: string | null; vatTrn: string | null }
+  buyer: InboundTaxpayer
 ): boolean {
   return (
     entity.status === "active" &&
-    isUaeTin(entity.tin) &&
     (entity.peppolAddress === null || entity.peppolAddress === peppolAddressFor(entity.tin)) &&
-    Boolean(buyer.endpoint || buyer.vatTrn) &&
-    (buyer.endpoint == null ||
-      (buyer.scheme === PEPPOL_SCHEME_UAE_TIN && buyer.endpoint === entity.tin)) &&
-    (buyer.vatTrn == null ||
-      (isPintAeTrn(buyer.vatTrn) && buyer.vatTrn.slice(0, 10) === entity.tin))
+    matchesTaxpayerTin(entity.tin, buyer)
   );
 }
 
@@ -244,7 +251,7 @@ export async function updateLegalEntityRowIfCurrent(
   return Boolean(updated);
 }
 
-interface CompanyTinSource extends TinSource {
+export interface CompanyTinSource extends TinSource {
   peppolParticipantId?: string | null;
   peppolScheme?: string | null;
 }
@@ -258,6 +265,22 @@ export function companyTin(company: CompanyTinSource): string | null {
   return scheme === PEPPOL_SCHEME_UAE_TIN && isUaeTin(endpoint) ? endpoint! : null;
 }
 
+/** Signed XML uses the same statutory company identity as the provider onboarding workflow. */
+export function matchesCompanyTaxpayer(company: CompanyTinSource, buyer: InboundTaxpayer): boolean {
+  const tin = companyTin(company);
+  return tin !== null && !companyTinConflict(tin, company) && matchesTaxpayerTin(tin, buyer);
+}
+
+function companyTinConflict(tin: string, company: CompanyTinSource): boolean {
+  const scheme = company.peppolScheme?.trim() || PEPPOL_SCHEME_UAE_TIN;
+  const endpoint = company.peppolParticipantId?.trim();
+  return Boolean(
+    tinProblem(tin, company) ||
+    (company.einvoiceTin && company.einvoiceTin !== tin) ||
+    (scheme === PEPPOL_SCHEME_UAE_TIN && endpoint && endpoint !== tin)
+  );
+}
+
 /** Resolve the taxpayer to register and send as, refusing conflicting company identity fields. */
 export function requireCompanyTin(company: CompanyTinSource): string {
   const tin = companyTin(company);
@@ -269,13 +292,7 @@ export function requireCompanyTin(company: CompanyTinSource): string {
       "Enter the company's 10-digit TIN or 15-digit TRN before connecting."
     );
   }
-  const scheme = company.peppolScheme?.trim() || PEPPOL_SCHEME_UAE_TIN;
-  const endpoint = company.peppolParticipantId?.trim();
-  if (
-    tinProblem(tin, company) ||
-    (company.einvoiceTin && company.einvoiceTin !== tin) ||
-    (scheme === PEPPOL_SCHEME_UAE_TIN && endpoint && endpoint !== tin)
-  ) {
+  if (companyTinConflict(tin, company)) {
     throw new DomainError(
       "EINVOICE_SUPPLIER_ENDPOINT_MISMATCH",
       422,

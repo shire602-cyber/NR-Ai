@@ -45,6 +45,7 @@ import {
   type PortalMessageBody,
 } from "../../shared/validators/portal";
 import { contactInvoices, ISSUED_STATUSES } from "./portal.public.routes";
+import { getCustomerEInvoiceStatus } from "../services/einvoice/customer-outcome";
 import { checkoutForInvoice, paymentsAvailability, publicBaseUrl } from "../services/payments";
 import { fromFils, sumFils, toFils } from "../../shared/money";
 
@@ -294,7 +295,7 @@ export function registerClientPortalRoutes(app: Express): void {
       res.set({
         "Content-Type": "application/xml; charset=utf-8",
         "Content-Disposition": `attachment; filename="einvoice-${invoice.number}.xml"`,
-        "X-Einvoice-Status": invoice.einvoiceStatus ?? "generated",
+        "X-Einvoice-Status": (await getCustomerEInvoiceStatus(invoice)) ?? "generated",
       });
       res.send(invoice.einvoiceXml);
     })

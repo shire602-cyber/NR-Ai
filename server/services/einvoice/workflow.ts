@@ -8,9 +8,12 @@
  * submission is claimed first so two requests never hand the same invoice to the ASP twice.
  */
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import {
   companies,
+  auditLogs,
+  einvoiceArchive,
+  einvoiceDocuments,
   invoiceLines,
   invoices,
   users,
@@ -20,6 +23,12 @@ import {
   type Invoice,
 } from "../../../shared/schema";
 import { db } from "../../db";
+import {
+  assertCanVerifyEInvoiceTracking,
+  canRetryOriginalRejectedNumber,
+  correctableComplyanceReference,
+  needsLegacySubmissionRecovery,
+} from "./legacy-tracking";
 import { createLogger } from "../../config/logger";
 import { DomainError } from "../../errors";
 import { scopedCompanyPermissionFailure } from "../../middleware/companyRolePolicy";
@@ -99,7 +108,7 @@ export function providerRequiresLegalEntity(provider: EInvoiceProvider): boolean
 
 /** Whether this invoice must be reported to the FTA (B2B/B2G with a buyer TRN). */
 export function invoiceReportingRequired(
-  invoice: Invoice,
+  invoice: Pick<Invoice, "customerTrn">,
   company: Company,
   now: Date = new Date()
 ): boolean {
@@ -265,6 +274,8 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
     if (!company || company.deletedAt)
       return { ok: false, status: 404, code: "NOT_FOUND", message: "Company not found." };
     const existing = await getEInvoiceDocument(company.id, fresh.id, tx);
+    const correctionOf = args.regenerate ? correctableComplyanceReference(fresh, existing) : null;
+    const verifiedEmailRequired = !!correctionOf || canRetryOriginalRejectedNumber(fresh, existing);
     if (NEW_DOCUMENT_REQUIRED_CODES.has(existing?.lastErrorCode ?? "")) {
       return {
         ok: false,
@@ -274,9 +285,9 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
       };
     }
     if (
+      needsLegacySubmissionRecovery(fresh, existing) ||
       existing?.deliveryStatus === "needs_link" ||
-      existing?.providerMessageId ||
-      fresh.einvoiceProviderMessageId ||
+      (!correctionOf && (existing?.providerMessageId || fresh.einvoiceProviderMessageId)) ||
       (existing?.provider &&
         existing.provider !== "mock" &&
         !existing.nextRetryAt &&
@@ -287,6 +298,19 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         status: 409,
         code: "EINVOICE_ALREADY_SUBMITTED",
         message: "Check or link the existing service provider document before sending it again.",
+      };
+    }
+    if (
+      existing?.provider === "acube" &&
+      existing.status === "rejected" &&
+      (!args.regenerate || !canRetryOriginalRejectedNumber(fresh, existing))
+    ) {
+      return {
+        ok: false,
+        status: 409,
+        code: "EINVOICE_NOT_RESUBMITTABLE",
+        message:
+          "Correct and explicitly resubmit a validation rejection through its original provider.",
       };
     }
     if (
@@ -323,7 +347,7 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
     }
     if (
       providerRequiresLegalEntity(provider) &&
-      !(await canAuthorizeSubmission(args.actorId ?? null, company.id, tx))
+      !(await canAuthorizeSubmission(args.actorId ?? null, company.id, tx, verifiedEmailRequired))
     ) {
       return {
         ok: false,
@@ -333,6 +357,13 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
       };
     }
     const entity = await assertCanTransmit(company, provider, tx);
+    if (
+      correctionOf &&
+      (entity?.tin !== original?.supplierTin ||
+        (entity?.legalEntityId ?? null) !== original?.legalEntityId ||
+        entitySourceName(entity) !== original?.sourceName)
+    )
+      return retryProviderChanged();
     const scope =
       (await provider.getSubmissionScope?.(company.id, providerContext(entity))) ?? null;
     if (
@@ -398,6 +429,32 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
     }
 
     const currentRequirement = invoiceReportingRequired(invoice, company, now);
+    const originalXml = correctionOf && existing ? frozenEInvoice(fresh, existing) : null;
+    if (correctionOf && !originalXml) return retryProviderChanged();
+    if (correctionOf && originalXml) {
+      const archive = await archiveEInvoiceXml(
+        {
+          companyId: invoice.companyId,
+          invoiceId: invoice.id,
+          direction: "outbound",
+          kind: "submitted",
+          documentNumber: invoice.number,
+          documentType: originalXml.documentType,
+          uuid: originalXml.uuid,
+          xml: originalXml.xml,
+          provider: provider.name,
+          providerMessageId: correctionOf,
+          now,
+        },
+        tx
+      );
+      if (
+        archive.invoiceId !== invoice.id ||
+        archive.provider !== provider.name ||
+        archive.providerMessageId !== correctionOf
+      )
+        return retryProviderChanged();
+    }
     const required = triedProvider
       ? documentReportingRequired(existing, currentRequirement)
       : currentRequirement;
@@ -460,6 +517,10 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
               actorId: args.actorId ?? null,
               providerAttempted: triedProvider,
               reportingRequired: required,
+              correctionOf,
+              verifiedEmailRequired,
+              correctionOriginalHash: originalXml?.hash ?? null,
+              correctionOriginalValidation: originalXml?.validation ?? null,
             },
           },
           validatedAt: now,
@@ -475,7 +536,12 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         action: args.regenerate ? "invoice.einvoice_resubmit" : "invoice.einvoice_submit",
         entityType: "invoice",
         entityId: invoice.id,
-        after: { provider: provider.name, environment: provider.environment, status: "queued" },
+        after: {
+          provider: provider.name,
+          environment: provider.environment,
+          status: "queued",
+          ...(correctionOf ? { correctionOf } : {}),
+        },
         tx,
       });
     }
@@ -605,7 +671,12 @@ function blockedSubmission(claim: SubmissionClaim, errorCode: string): Submissio
   };
 }
 
-async function canAuthorizeSubmission(actorId: string | null, companyId: string, tx: EInvoiceDb) {
+async function canAuthorizeSubmission(
+  actorId: string | null,
+  companyId: string,
+  tx: EInvoiceDb,
+  requireVerified = false
+) {
   if (!actorId) return false;
   const [actor] = await tx
     .select({
@@ -613,12 +684,15 @@ async function canAuthorizeSubmission(actorId: string | null, companyId: string,
       isAdmin: users.isAdmin,
       userType: users.userType,
       firmRole: users.firmRole,
+      emailVerified: users.emailVerified,
     })
     .from(users)
     .where(eq(users.id, actorId))
     .for("share");
   return (
-    !!actor && !(await scopedCompanyPermissionFailure(actor, companyId, "tax.submit", tx, "share"))
+    !!actor &&
+    (!requireVerified || !!actor.emailVerified) &&
+    !(await scopedCompanyPermissionFailure(actor, companyId, "tax.submit", tx, "share"))
   );
 }
 
@@ -663,7 +737,14 @@ async function dispatchQueuedSubmission(
       if (company.einvoicePartner !== provider.name || invoice.number !== metadata.invoiceNumber) {
         return blockedSubmission(claim, "EINVOICE_PROVIDER_NOT_CONFIGURED");
       }
-      if (!(await canAuthorizeSubmission(metadata.actorId, company.id, tx))) {
+      if (
+        !(await canAuthorizeSubmission(
+          metadata.actorId,
+          company.id,
+          tx,
+          metadata.verifiedEmailRequired
+        ))
+      ) {
         return blockedSubmission(claim, "PERMISSION_DENIED");
       }
       try {
@@ -686,6 +767,23 @@ async function dispatchQueuedSubmission(
         (await provider.getSubmissionScope(company.id, context)) !== metadata.scope)
     )
       return blockedSubmission(claim, "EINVOICE_PROVIDER_NOT_CONFIGURED");
+    if (metadata.correctionOf) {
+      if (claim.ambiguous) return { providerAttempted: false, result: needsLink() };
+      const proof = await provider
+        .checkCorrectableRejection?.(
+          metadata.correctionOf,
+          {
+            documentNumber: metadata.invoiceNumber ?? invoice.number,
+            supplierTin: metadata.supplierTin,
+            supplierTrn: metadata.supplierTrn,
+            legalEntityId: metadata.legalEntityId,
+            sourceName: metadata.sourceName,
+          },
+          context
+        )
+        .catch(() => "unavailable");
+      if (proof !== "verified") return blockedSubmission(claim, "EINVOICE_PROVIDER_UNAVAILABLE");
+    }
     if (
       claim.ambiguous &&
       providerRequiresLegalEntity(provider) &&
@@ -707,6 +805,48 @@ async function stopQueuedSubmission(
   now: Date,
   ambiguous = false
 ) {
+  const current = await getEInvoiceDocument(invoice.companyId, invoice.id, tx);
+  const pin = documentSubmissionMetadata(current);
+  if (pin?.correctionOf) {
+    const original = await correctionSource(tx, invoice, current?.provider, pin);
+    await updateInvoiceInTransaction(tx, invoice, {
+      einvoiceStatus: "submitted",
+      einvoiceProviderMessageId: pin.correctionOf,
+      einvoiceXml: original.xml,
+      einvoiceHash: original.sha256,
+      einvoiceUuid: original.uuid,
+    });
+    await applyTracks(
+      invoice.companyId,
+      invoice.id,
+      { delivery: "queued", errorCode: code },
+      {
+        source: "job",
+        now,
+        document: {
+          status: "submitted",
+          providerMessageId: pin.correctionOf,
+          nextRetryAt: null,
+          submitClaimedAt: null,
+          uuid: original.uuid,
+          xmlHash: original.sha256,
+          documentType: original.documentType,
+          validation: {
+            ...pin.correctionOriginalValidation,
+            submission: {
+              ...pin,
+              correctionOf: null,
+              correctionOriginalHash: null,
+              correctionOriginalValidation: null,
+              correctionUncertain: ambiguous,
+            },
+          },
+        },
+      },
+      tx
+    );
+    return;
+  }
   const status = ambiguous ? "submitted" : "failed";
   await applyTracks(
     invoice.companyId,
@@ -723,6 +863,33 @@ async function stopQueuedSubmission(
     tx
   );
   await updateInvoiceInTransaction(tx, invoice, { einvoiceStatus: status });
+}
+
+async function correctionSource(
+  tx: EInvoiceDb,
+  invoice: Pick<Invoice, "id" | "companyId">,
+  provider: string | null | undefined,
+  pin: NonNullable<ReturnType<typeof documentSubmissionMetadata>>
+) {
+  if (!provider || !pin.correctionOf || !pin.correctionOriginalHash)
+    throw new Error("The previous outbound e-invoice source was not pinned");
+  const [original] = await tx
+    .select()
+    .from(einvoiceArchive)
+    .where(
+      and(
+        eq(einvoiceArchive.companyId, invoice.companyId),
+        eq(einvoiceArchive.invoiceId, invoice.id),
+        eq(einvoiceArchive.direction, "outbound"),
+        eq(einvoiceArchive.kind, "submitted"),
+        eq(einvoiceArchive.provider, provider),
+        eq(einvoiceArchive.providerMessageId, pin.correctionOf),
+        eq(einvoiceArchive.sha256, pin.correctionOriginalHash)
+      )
+    )
+    .limit(1);
+  if (!original?.uuid) throw new Error("Could not restore the previous outbound e-invoice source");
+  return { ...original, uuid: original.uuid };
 }
 
 async function sendQueuedSubmission(
@@ -790,7 +957,21 @@ async function persistSubmissionOutcome(args: {
   tx: EInvoiceDb;
 }) {
   const { invoice, current, built, provider, dispatch, source, now, tx } = args;
-  const r = dispatch.result;
+  const metadata = documentSubmissionMetadata(current);
+  const correctionId = metadata?.correctionOf;
+  const originalStillTracked = !!correctionId && dispatch.result.providerMessageId !== correctionId;
+  const correctionUncertain =
+    !!correctionId &&
+    dispatch.result.providerMessageId !== correctionId &&
+    (dispatch.providerAttempted || dispatch.result.delivery === "needs_link");
+  const r: EInvoiceProviderResult = originalStillTracked
+    ? {
+        providerMessageId: correctionId,
+        status: "submitted",
+        delivery: "queued",
+        errorCode: dispatch.result.errorCode,
+      }
+    : dispatch.result;
   const required = documentReportingRequired(
     current,
     current.reportingStatus === "pending" || current.reportingStatus === "reported"
@@ -828,15 +1009,20 @@ async function persistSubmissionOutcome(args: {
     (!providerRequiresLegalEntity(provider) ||
       AMBIGUOUS_CODES.has(errorCode) ||
       RETRYABLE_BEFORE_HANDOFF.has(errorCode));
-  const metadata = documentSubmissionMetadata(current);
   const validationSnapshot = metadata
     ? {
-        ...built.validation,
+        ...(originalStillTracked ? metadata.correctionOriginalValidation : built.validation),
         submission: {
           ...metadata,
           providerAttempted:
             dispatch.providerAttempted || submissionTriedProvider(current) || result.handedOver,
           reportingRequired: required,
+          correctableRejection: r.correctableRejection === true,
+          correctionBlocked: r.errorCode === "COMPLYANCE_XML_FAILED",
+          correctionOf: null,
+          correctionOriginalHash: null,
+          correctionOriginalValidation: null,
+          correctionUncertain,
         },
       }
     : current.validation;
@@ -847,6 +1033,20 @@ async function persistSubmissionOutcome(args: {
     now
   );
   const { companyId, id: invoiceId } = invoice;
+  if (originalStillTracked && metadata?.correctionOriginalHash) {
+    const original = await correctionSource(tx, invoice, provider.name, metadata);
+    Object.assign(result.update, {
+      einvoiceXml: original.xml,
+      einvoiceHash: original.sha256,
+      einvoiceUuid: original.uuid,
+    });
+    Object.assign(result.document, {
+      xmlHash: original.sha256,
+      uuid: original.uuid,
+      documentType: original.documentType,
+      validation: null,
+    });
+  }
   await updateInvoiceInTransaction(tx, invoice, result.update);
   const documentRow = await applyTracks(
     companyId,
@@ -874,7 +1074,7 @@ async function persistSubmissionOutcome(args: {
     },
     tx
   );
-  if (result.handedOver) {
+  if (result.handedOver && !originalStillTracked) {
     const archive = {
       companyId,
       invoiceId,
@@ -959,6 +1159,7 @@ export async function adoptRecoveredEInvoice(args: {
   provider: EInvoiceProvider;
   result: EInvoiceProviderResult;
   now?: Date;
+  actorId?: string;
 }) {
   const { invoice: originalInvoice, document, provider, result } = args;
   const now = args.now ?? new Date();
@@ -971,8 +1172,17 @@ export async function adoptRecoveredEInvoice(args: {
   )
     return null;
   return db.transaction(async (tx) => {
+    const key = JSON.stringify([
+      originalInvoice.companyId,
+      provider.name,
+      provider.environment,
+      result.providerMessageId,
+    ]);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
     const invoice = await lockEInvoiceInvoice(originalInvoice.companyId, originalInvoice.id, tx);
     if (!invoice || invoice.einvoiceProviderMessageId) return null;
+    if (args.actorId)
+      await assertCanVerifyEInvoiceTracking(args.actorId, invoice.companyId, tx, "share");
     const current = await getEInvoiceDocument(invoice.companyId, invoice.id, tx, "update");
     const metadata = documentSubmissionMetadata(current);
     if (
@@ -990,6 +1200,40 @@ export async function adoptRecoveredEInvoice(args: {
       return null;
     const built = frozenEInvoice(invoice, current);
     if (!built) return null;
+    const [duplicate] = await tx
+      .select({ id: einvoiceDocuments.id })
+      .from(einvoiceDocuments)
+      .where(
+        and(
+          eq(einvoiceDocuments.companyId, invoice.companyId),
+          ne(einvoiceDocuments.invoiceId, invoice.id),
+          eq(einvoiceDocuments.provider, provider.name),
+          eq(einvoiceDocuments.providerMessageId, result.providerMessageId),
+          sql`${einvoiceDocuments.validation}->'submission'->>'environment' = ${provider.environment}`
+        )
+      )
+      .limit(1);
+    if (duplicate) return null;
+    if (args.actorId)
+      await tx
+        .insert(auditLogs)
+        .values({
+          userId: args.actorId,
+          companyId: invoice.companyId,
+          action:
+            provider.name === "complyance"
+              ? "invoice.einvoice_complyance_link"
+              : "invoice.einvoice_environment_verified",
+          resourceType: "invoice",
+          resourceId: invoice.id,
+          details: JSON.stringify({
+            after: {
+              provider: provider.name,
+              environment: provider.environment,
+              providerMessageId: result.providerMessageId,
+            },
+          }),
+        });
     return persistSubmissionOutcome({
       invoice,
       current,
@@ -1238,6 +1482,8 @@ export async function refreshAndPersist(args: {
       current?.provider !== existing?.provider ||
       current?.providerMessageId !== existing?.providerMessageId ||
       current?.providerStatus !== existing?.providerStatus ||
+      documentSubmissionMetadata(current)?.operationId !==
+        documentSubmissionMetadata(existing)?.operationId ||
       !canTransitionEInvoice(verifiedCurrentStatus, legacy)
     ) {
       return {
@@ -1268,11 +1514,26 @@ export async function refreshAndPersist(args: {
         document: {
           ...result.document,
           status: legacy,
-          validation: pinDocumentReporting(current, required, observedReporting, now),
+          validation: (() => {
+            const pinned = pinDocumentReporting(current, required, observedReporting, now);
+            const correction = documentSubmissionMetadata(current);
+            if (provider.name !== "complyance" || !correction?.scope) return pinned;
+            return {
+              ...pinned,
+              submission: {
+                ...pinned.submission,
+                correctableRejection:
+                  r.correctableRejection === true &&
+                  !correction.correctionBlocked &&
+                  !correction.correctionUncertain,
+              },
+            };
+          })(),
           ...(acube && reporting !== "reported" ? { reportedAt: null } : {}),
           clearedAt:
             legacy === "cleared"
-              ? (storedReportingEvidence(current) === "reported" ? current?.clearedAt : null) ?? now
+              ? ((storedReportingEvidence(current) === "reported" ? current?.clearedAt : null) ??
+                now)
               : result.document.clearedAt,
         },
       },
@@ -1318,6 +1579,7 @@ export async function cancelAndPersist(args: {
       current?.submitClaimedAt ||
       current?.nextRetryAt ||
       current?.deliveryStatus === "needs_link" ||
+      needsLegacySubmissionRecovery(invoice, current) ||
       (current?.status === "failed" && current.providerMessageId)
     ) {
       return {
@@ -1414,6 +1676,16 @@ async function deferQueuedSubmission(candidate: EInvoiceDocument, now: Date) {
     )
       return;
     if (doc.provider === "acube" || doc.provider === "complyance") {
+      if (documentSubmissionMetadata(doc)?.correctionOf) {
+        await stopQueuedSubmission(
+          tx,
+          invoice,
+          "EINVOICE_PROVIDER_NOT_CONFIGURED",
+          now,
+          !!doc.submitClaimedAt
+        );
+        return;
+      }
       const [company] = await tx
         .select({ partner: companies.einvoicePartner, deletedAt: companies.deletedAt })
         .from(companies)

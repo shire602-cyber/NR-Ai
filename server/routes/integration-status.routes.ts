@@ -82,7 +82,7 @@ export function registerIntegrationStatusRoutes(app: Express) {
         },
         {
           key: "openBanking",
-          name: "Bank feeds",
+          name: "Bank connections",
           configured: bankFeedsConfigured,
           detail: bankFeedsConfigured
             ? null

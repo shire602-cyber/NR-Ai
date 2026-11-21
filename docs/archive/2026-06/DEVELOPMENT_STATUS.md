@@ -86,10 +86,8 @@ decision, not just code: `billing` + `stripe.service` (monetization; flip
 3. **Arabic coverage** for all new strings (auth panel, eyebrows, Filing
    Pulse, express onboarding, new sidebar entries) + RTL audit.
 4. **Billing/Stripe rehab** when keys exist → flip BILLING_ENFORCEMENT.
-5. **Lean credentials** → live bank feeds through the already-shipped
-   connect/sync endpoints.
-6. **E-invoicing readiness** (UAE Peppol wave) — research plan first.
-7. PageHeader v2 (icon/back slots) for the ~25 intentionally skipped pages;
+5. **E-invoicing readiness** (UAE Peppol wave) — research plan first.
+6. PageHeader v2 (icon/back slots) for the ~25 intentionally skipped pages;
    dark-mode/mobile polish; layout-matching skeletons.
 
 ## Conventions

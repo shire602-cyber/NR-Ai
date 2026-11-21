@@ -30,6 +30,22 @@ export type DeliveryStatus =
 export type ReportingStatus = "not_required" | "pending" | "reported" | "report_failed";
 export type ReportingObservation = "reported" | "report_failed";
 
+/** A provider acknowledgement distinguishes delivery to the recipient ASP from its decision. */
+export function providerRecipientAcknowledgement(
+  provider: string | null | undefined,
+  status: string | null | undefined
+): "received" | "accepted" | null {
+  const observed = status?.trim().toLowerCase();
+  if (provider === "acube") {
+    if (observed === "delivered") return "received";
+    if (observed === "accepted") return "accepted";
+  } else if (provider === "complyance") {
+    if (observed === "delivery_success") return "received";
+    if (observed === "final_valid") return "accepted";
+  }
+  return null;
+}
+
 export const DELIVERY_STATUSES: DeliveryStatus[] = [
   "draft",
   "validated",

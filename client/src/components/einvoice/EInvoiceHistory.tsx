@@ -11,7 +11,6 @@ import { cn } from "@/lib/utils";
 import {
   deliveryLabelKey,
   errorKey,
-  recipientAcknowledgement,
   reportingLabelKey,
   sourceKey,
   type DeliveryStatus,
@@ -28,7 +27,7 @@ function eventLabel(e: EInvoiceStatusView["events"][number], t: Record<string, s
       ? deliveryLabelKey(
           e.to as DeliveryStatus,
           e.to === "queued" && e.providerStatus === null,
-          e.to === "delivered" ? recipientAcknowledgement(e.provider, e.providerStatus) : null
+          e.recipientAcknowledgement
         )
       : reportingLabelKey(e.to as ReportingStatus, e.confirmationUnavailable);
   const track =

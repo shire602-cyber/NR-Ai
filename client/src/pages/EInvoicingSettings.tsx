@@ -105,7 +105,8 @@ const COPY = {
     inboundTitle: "Received supplier e-invoices",
     inboundEnabled: "Receiving supplier e-invoices",
     inboundDisabled: "Receiving supplier e-invoices is not available yet",
-    endpoint: "Endpoint",
+    providerCallback: "Provider callback URL",
+    directXmlEndpoint: "Direct signed XML endpoint",
     developerDetails: "Developer details",
     copy: "Copy",
     copied: "Copied",
@@ -194,7 +195,8 @@ const COPY = {
     inboundTitle: "فواتير الموردين الإلكترونية المستلمة",
     inboundEnabled: "استقبال الفواتير مفعّل",
     inboundDisabled: "استقبال فواتير الموردين الإلكترونية غير متاح بعد",
-    endpoint: "نقطة الاستقبال",
+    providerCallback: "رابط إشعارات مزوّد الخدمة",
+    directXmlEndpoint: "نقطة استقبال ملفات XML الموقّعة مباشرةً",
     developerDetails: "تفاصيل للمطورين",
     copy: "نسخ",
     copied: "تم النسخ",
@@ -259,7 +261,7 @@ interface SettingsView {
     connected: boolean;
     provider: { name: string | null; environment: string | null; error: string | null };
   };
-  inbound: { enabled: boolean; endpoint: string };
+  inbound: { enabled: boolean; endpoint: string; providerCallbackUrl: string | null };
   validation: { xsd: boolean; schematron: boolean; schematronVersion: string };
 }
 
@@ -810,32 +812,42 @@ function CompanyEInvoicingSettings({
           <CardHeader>
             <CardTitle>{s.inboundTitle}</CardTitle>
             <CardDescription>
-              {view?.inbound.enabled ? s.inboundEnabled : s.inboundDisabled}
+              {view?.asp.connected || view?.inbound.enabled ? s.inboundEnabled : s.inboundDisabled}
             </CardDescription>
             {/* Spec 3.12: the inbound endpoint is developer detail, collapsed by default. */}
-            {view ? (
+            {view && (view.inbound.providerCallbackUrl || view.inbound.enabled) ? (
               <details className="mt-2 text-small" data-testid="einvoice-developer-details">
                 <summary className="cursor-pointer text-muted-foreground">
                   {s.developerDetails}
                 </summary>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="text-muted-foreground">{s.endpoint}</span>
-                  <bdi className="break-all font-mono text-xs" translate="no">
-                    {view.inbound.endpoint}
-                  </bdi>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="h-7"
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(view.inbound.endpoint);
-                      toast({ title: s.copied });
-                    }}
-                  >
-                    {s.copy}
-                  </Button>
-                </div>
+                {[
+                  { label: s.providerCallback, url: view.inbound.providerCallbackUrl },
+                  {
+                    label: s.directXmlEndpoint,
+                    url: view.inbound.enabled ? view.inbound.endpoint : null,
+                  },
+                ].map(({ label, url }) =>
+                  url ? (
+                    <div key={label} className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="text-muted-foreground">{label}</span>
+                      <bdi className="break-all font-mono text-xs" translate="no">
+                        {url}
+                      </bdi>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7"
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(url);
+                          toast({ title: s.copied });
+                        }}
+                      >
+                        {s.copy}
+                      </Button>
+                    </div>
+                  ) : null
+                )}
               </details>
             ) : null}
           </CardHeader>

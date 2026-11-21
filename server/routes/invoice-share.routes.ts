@@ -23,6 +23,7 @@ import { logPortalAccess } from "../services/portal-access.service";
 import { db } from "../db";
 import { invoiceOpenFils } from "../services/invoice-posting.service";
 import { recordInvoiceView } from "../services/invoice-activity.service";
+import { getCustomerEInvoiceStatus } from "../services/einvoice/customer-outcome";
 
 const sendEmailBody = z.object({
   to: zEmail,
@@ -192,6 +193,7 @@ export function registerInvoiceShareRoutes(app: Express) {
       const contact = invoice.contactId
         ? await storage.getCustomerContact(invoice.contactId)
         : null;
+      const eInvoiceStatus = await getCustomerEInvoiceStatus(invoice);
       // Return sanitized data (no internal IDs exposed except what's needed)
       res.json({
         // R16-14: "Pay now" only when a gateway is live/sandbox and something is owed.
@@ -200,8 +202,8 @@ export function registerInvoiceShareRoutes(app: Express) {
           status: payments.status,
           provider: payments.available ? payments.provider : null,
         },
-        einvoice: invoice.einvoiceStatus
-          ? { status: invoice.einvoiceStatus, uuid: invoice.einvoiceUuid ?? null }
+        einvoice: eInvoiceStatus
+          ? { status: eInvoiceStatus, uuid: invoice.einvoiceUuid ?? null }
           : null,
         preferredLanguage: contact?.preferredLanguage ?? null,
         companyLocale: company.locale === "ar" ? "ar" : "en",

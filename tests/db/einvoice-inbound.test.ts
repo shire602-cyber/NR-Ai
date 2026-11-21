@@ -30,15 +30,18 @@ const SECRET = "inbound-test-secret-0123456789abcdef";
 const BUYER_TRN = "100555666700003";
 
 /** A supplier invoice (Pearl Trading → the tenant), as the ASP would deliver it. */
-function supplierInvoice(over: { number?: string; buyerTrn?: string; breakCity?: boolean } = {}) {
+function supplierInvoice(
+  over: { number?: string; buyerTrn?: string; buyerVat?: boolean; breakCity?: boolean } = {}
+) {
   const f = PINT_AE_FIXTURES[0] as PintAeFixture;
   const invoice = {
     ...f.invoice,
     number: over.number ?? "SUP-2027-0042",
+    customerTrn: over.buyerVat === false ? null : (over.buyerTrn ?? BUYER_TRN),
   } as PintAeFixture["invoice"];
   const customer = {
     ...f.customer,
-    trn: over.buyerTrn ?? BUYER_TRN,
+    trn: invoice.customerTrn,
     endpointId: (over.buyerTrn ?? BUYER_TRN).slice(0, 10),
   };
   let { xml } = generateEInvoiceXML(invoice, f.lines, fixtureCompany, customer, f.opts);
@@ -68,6 +71,35 @@ afterEach(() => {
 });
 
 describe("W4-C inbound e-invoices → draft bills", () => {
+  it.each([
+    { einvoice_tin: BUYER_TRN.slice(0, 10) },
+    { corporate_tax_id: BUYER_TRN.slice(0, 10) + "00001" },
+  ])("matches signed XML against statutory identity $0 without VAT", async (companyColumns) => {
+    process.env.EINVOICE_INBOUND_WEBHOOK_SECRET = SECRET;
+    const t = await h.createTenant({ companyColumns, vatRegistered: false });
+    const xml = supplierInvoice({ buyerVat: false });
+    const first = await deliver(t, xml);
+    expect(first.status, first.text).toBe(201);
+    expect(first.body.status).toBe("bill_created");
+    const duplicate = await deliver(t, xml);
+    expect(duplicate.body).toMatchObject({ duplicate: true, billId: first.body.billId });
+  });
+
+  it("rejects signed XML when the buyer's 0235 endpoint conflicts with its matching VAT TRN", async () => {
+    process.env.EINVOICE_INBOUND_WEBHOOK_SECRET = SECRET;
+    const t = await tenant();
+    const xml = supplierInvoice().replace(
+      `schemeID="0235">${BUYER_TRN.slice(0, 10)}`,
+      'schemeID="0235">1009998887'
+    );
+    const result = await deliver(t, xml);
+    expect(result.status).toBe(422);
+    expect(result.body.code).toBe("EINVOICE_INBOUND_WRONG_RECIPIENT");
+    expect(
+      await h.sql("SELECT id FROM vendor_bills WHERE company_id = $1", [t.company.id])
+    ).toEqual([]);
+  });
+
   it("[R04-23] is disabled (503) without a webhook secret", async () => {
     const t = await tenant();
     const r = await deliver(t, supplierInvoice());

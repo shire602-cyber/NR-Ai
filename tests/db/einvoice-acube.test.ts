@@ -804,6 +804,7 @@ describe("E1 submit, two tracks and history", () => {
 
   it("shows a 422 rejection with the named field, then fix and resubmit keeps the UUID", async () => {
     const t = await linkedTenant();
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
     const inv = await issuedInvoice(t);
     fake.nextSubmit = ["422"];
     const r = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
@@ -822,6 +823,9 @@ describe("E1 submit, two tracks and history", () => {
     });
     const uuid = (await h.sql(`SELECT einvoice_uuid FROM invoices WHERE id = $1`, [inv.id]))[0]
       .einvoice_uuid;
+    const ordinary = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
+    expect(ordinary.status).toBe(409);
+    expect(fake.posts).toBe(1);
 
     const re = await t.as.post(`/api/invoices/${inv.id}/einvoice/resubmit`, {});
     expect(re.status, re.text).toBe(202);
@@ -1016,6 +1020,24 @@ describe("E1 submit, two tracks and history", () => {
 });
 
 describe("E1 webhook authentication", () => {
+  it("publishes and registers only the selected company's callback on a valid HTTPS origin", async () => {
+    const t = await linkedTenant();
+    const settings = `/api/companies/${t.company.id}/einvoicing/settings`;
+    const connection = `/api/companies/${t.company.id}/einvoicing/acube`;
+    const expected = `${PUBLIC_BASE}${WEBHOOK}/${t.company.id}`;
+    expect((await t.as.get(settings)).body.inbound).toMatchObject({
+      providerCallbackUrl: expected,
+    });
+    expect((await t.as.get(connection)).body.webhook.url).toBe(expected);
+
+    process.env.ACUBE_WEBHOOK_BASE_URL = `${PUBLIC_BASE}/unrouted-prefix?param=1`;
+    expect((await t.as.get(settings)).body.inbound.providerCallbackUrl).toBeNull();
+    expect((await t.as.get(connection)).body.webhook.url).toBeNull();
+    const refused = await t.as.post(`${connection}/webhooks`, {});
+    expect(refused.status, refused.text).toBe(409);
+    expect(refused.body.code).toBe("EINVOICE_WEBHOOK_URL_NOT_CONFIGURED");
+  });
+
   it("reconciles a rotated destination token and still requires the signed callback", async () => {
     const t = await linkedTenant();
     const previous = crypto.randomUUID();
@@ -1160,6 +1182,64 @@ describe("E1 inbound: document.received -> draft bill tagged e-invoice", () => {
 });
 
 describe("Legacy A-Cube environment verification", () => {
+  it("finds an ambiguous legacy attempt by its exact outbound source without resending", async () => {
+    const t = await linkedTenant();
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+    const inv = await issuedInvoice(t);
+    const prefix = `/api/invoices/${inv.id}/einvoice`;
+    expect((await t.as.post(`${prefix}/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const [held] = fake.docs.values();
+    await h.sql(
+      "UPDATE invoices SET einvoice_status = 'failed', einvoice_provider_message_id = NULL WHERE id = $1",
+      [inv.id]
+    );
+    await h.sql(
+      "UPDATE einvoice_documents SET status = 'failed', provider_message_id = NULL, delivery_status = 'delivery_failed', next_retry_at = NULL, validation = '{}' WHERE invoice_id = $1",
+      [inv.id]
+    );
+    await h.sql("UPDATE companies SET einvoice_partner = 'complyance' WHERE id = $1", [
+      t.company.id,
+    ]);
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      submissionState: "needs_reconciliation",
+      transmission: {
+        canRefresh: false,
+        canSubmit: false,
+        environmentVerification: {
+          provider: "acube",
+          reference: "search",
+          environments: ["sandbox"],
+        },
+      },
+    });
+    const requests = fake.requests;
+    for (const action of ["submit", "resubmit"])
+      expect((await t.as.post(`${prefix}/${action}`, {})).status).toBe(409);
+    expect(
+      (await t.as.post(`${prefix}/confirm-environment`, { environment: "production" })).status
+    ).toBe(503);
+    expect(fake.requests).toBe(requests);
+
+    const duplicateId = documentUuid();
+    fake.docs.set(duplicateId, { ...held, id: duplicateId });
+    expect(
+      (await t.as.post(`${prefix}/confirm-environment`, { environment: "sandbox" })).status
+    ).toBe(422);
+    fake.docs.delete(duplicateId);
+    const found = await t.as.post(`${prefix}/confirm-environment`, { environment: "sandbox" });
+    expect(found.status, found.text).toBe(200);
+    expect(found.body).toMatchObject({
+      providerDocumentId: held.id,
+      provider: "acube",
+      environment: "sandbox",
+    });
+    held.status = "accepted";
+    const refresh = await t.as.post(`${prefix}/refresh-status`, {});
+    expect(refresh.status, refresh.text).toBe(200);
+    expect(refresh.body.status).toBe("accepted");
+    expect(fake.posts).toBe(1);
+  });
   it("verifies one scoped reference, restores polling and signed callbacks, and never sends again", async () => {
     const t = await linkedTenant();
     const inv = await issuedInvoice(t);

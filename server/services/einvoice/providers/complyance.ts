@@ -178,57 +178,85 @@ export interface ComplyanceSellerIdentity {
   sourceName: string | null;
 }
 
-const digits = (v: unknown) => (str(v) ?? "").replace(/^0235:/, "").replace(/\D/g, "");
+const uaeTin = (value: unknown): string | null =>
+  typeof value === "string" && /^(?:0235:)?1\d{9}$/.test(value)
+    ? value.replace(/^0235:/, "")
+    : null;
+
+const uaeTrn = (value: unknown): string | null =>
+  typeof value === "string" && /^1\d{14}$/.test(value) ? value : null;
+
+function sourceNameFromReference(value: unknown): unknown {
+  if (typeof value === "string") return value.split(":", 1)[0];
+  // A nonempty but invalid source must not disappear behind a matching alternate field.
+  return providerObject(value)?.name ?? value;
+}
 
 /**
- * X6a (before e-invoicing goes on, item 2): one Complyance platform key serves every tenant and
- * invoice numbers repeat across tenants, so a document id typed by a user must be proven to be
- * THIS company's document before we track it: its source, Connect company or seller TIN/TRN must
- * match what onboarding recorded. Every identity the document carries must match, and it must
- * carry at least one; a document that names no seller cannot be linked (confirm the field names
- * in the live sandbox: docs/einvoicing-complyance.md).
+ * Invoice numbers can repeat across sellers. An authenticated sales read for a recovery must carry
+ * at least one verified owner marker. Check each source, Connect company and seller TIN/TRN
+ * independently so a matching alias cannot hide contradictory ownership.
  */
 export function complyanceDocumentBelongsTo(
   data: Record<string, unknown>,
   me: ComplyanceSellerIdentity
 ): { ok: boolean; checked: string[]; mismatched: string[] } {
-  const checked: string[] = [];
-  const mismatched: string[] = [];
-  const check = (label: string, theirs: string | null, ours: string | null) => {
-    if (!theirs) return;
-    checked.push(label);
-    if (!ours || theirs !== ours) mismatched.push(label);
+  const checked = new Set<string>();
+  const mismatched = new Set<string>();
+  const present = (v: unknown) => v != null && v !== "";
+  const compare = (label: string, value: unknown, matches: boolean) => {
+    if (!present(value)) return;
+    checked.add(label);
+    if (!matches) mismatched.add(label);
   };
-  const obj = (v: unknown) =>
-    v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
-  // Source: "name:version" (as we submit it) or { name }.
-  const rawSource = typeof data.source === "string" ? data.source : str(obj(data.source).name);
-  const sourceName = rawSource ? rawSource.split(":")[0] : str(data.sourceName);
-  check("source", sourceName, me.sourceName);
+  for (const owner of [data, providerObject(data.attribution)]) {
+    if (!owner) continue;
+    compare("source", owner.source, sourceNameFromReference(owner.source) === me.sourceName);
+    compare("source", owner.sourceName, owner.sourceName === me.sourceName);
+    for (const companyId of [owner.companyId, owner.connectCompanyId]) {
+      compare("connectCompanyId", companyId, companyId === me.connectCompanyId);
+    }
+  }
 
-  const attribution = obj(data.attribution);
-  check("connectCompanyId", str(attribution.companyId) ?? str(data.companyId), me.connectCompanyId);
-
-  // Seller tax ids, in GETS (invoice/payload.parties.seller) or a flat seller block.
-  const seller = {
-    ...obj(data.seller),
-    ...obj(obj(obj(data.invoice).parties).seller),
-    ...obj(obj(obj(data.payload).parties).seller),
+  const nestedSeller = (body: unknown) =>
+    providerObject(providerObject(providerObject(body)?.parties)?.seller);
+  const tin = uaeTin(me.tin);
+  const trn = uaeTrn(me.trn);
+  const matchesTin = (value: unknown) => !!tin && uaeTin(value) === tin;
+  const matchesTrn = (value: unknown) => !!trn && uaeTrn(value) === trn;
+  const checkTaxId = (value: unknown) =>
+    compare("sellerTaxId", value, matchesTin(value) || matchesTrn(value));
+  for (const seller of [
+    providerObject(data.seller),
+    nestedSeller(data.invoice),
+    nestedSeller(data.payload),
+  ]) {
+    if (!seller) continue;
+    for (const value of [seller.tin, seller.peppolId])
+      compare("sellerTaxId", value, matchesTin(value));
+    for (const value of [seller.trn, seller.vatTrn, seller.vatNumber])
+      compare("sellerTaxId", value, matchesTrn(value));
+    checkTaxId(seller.taxId);
+    if (!Array.isArray(seller.taxIds)) {
+      compare("sellerTaxId", seller.taxIds, false);
+      continue;
+    }
+    for (const taxId of seller.taxIds) {
+      const entry = providerObject(taxId);
+      if (entry && (present(entry.value) || present(entry.id))) {
+        checkTaxId(entry.value);
+        checkTaxId(entry.id);
+      } else {
+        checkTaxId(taxId);
+      }
+    }
+  }
+  return {
+    ok: checked.size > 0 && mismatched.size === 0,
+    checked: [...checked],
+    mismatched: [...mismatched],
   };
-  const ids: string[] = [];
-  for (const v of [seller.tin, seller.trn, seller.taxId, seller.vatNumber, seller.peppolId])
-    if (str(v)) ids.push(digits(v));
-  if (Array.isArray(seller.taxIds)) {
-    for (const t of seller.taxIds)
-      ids.push(digits(typeof t === "object" ? (obj(t).value ?? obj(t).id) : t));
-  }
-  for (const id of ids.filter(Boolean)) {
-    checked.push("sellerTaxId");
-    const ours = [digits(me.tin), digits(me.trn)].filter(Boolean);
-    if (!ours.includes(id)) mismatched.push("sellerTaxId");
-  }
-  return { ok: checked.length > 0 && mismatched.length === 0, checked, mismatched };
 }
 
 // ─── Status mapping (two tracks) ─────────────────────────────────────────
@@ -252,6 +280,38 @@ export function complyanceReasons(errors: unknown): EInvoiceRejectionReason[] {
       field: str(r.getsPath) ?? path ?? str(r.payloadPath),
     };
   });
+}
+
+function isCorrectableSalesState(data: Record<string, unknown>): boolean {
+  if (
+    data.state !== "rejected" ||
+    data.isTerminal !== true ||
+    (data.validationStage != null && data.validationStage !== "gets")
+  )
+    return false;
+  const compliance = providerObject(data.compliance);
+  if (compliance?.ftaApprovedStatus != null && compliance.ftaApprovedStatus !== "PENDING")
+    return false;
+  const delivery = [data.deliveryStatus, compliance?.peppolStatus, data.mlsStatus];
+  const final = [
+    "APPROVED",
+    "ACCEPTED",
+    "DELIVERED",
+    "DELIVERY_SUCCESS",
+    "FINAL_VALID",
+    "FINAL_INVALID",
+    "REJECTED",
+  ];
+  if (delivery.some((value) => final.includes(providerString(value)?.toUpperCase() ?? "")))
+    return false;
+  return (
+    !Array.isArray(data.errors) ||
+    !data.errors.some((item) =>
+      ["delivery", "government"].includes(
+        providerString(providerObject(item)?.source)?.toLowerCase() ?? ""
+      )
+    )
+  );
 }
 
 /**
@@ -623,6 +683,8 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     );
     if (r.status === 422) {
       const reasons = complyanceReasons(body.errors);
+      const documentId =
+        body.documentNumber === submission.invoiceNumber ? providerString(body.documentId) : null;
       if (reasons.some((x) => x.code === "GETS-HEAD-010")) {
         // The number is already used: an earlier attempt was stored, or this is a resend after a
         // final rejection. Complyance does not return the id here and has no sales listing.
@@ -639,7 +701,7 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
       }
       if (str(body.validationStage) === "xml") {
         return this.outcome("rejected", "pending", {
-          providerMessageId: "",
+          providerMessageId: documentId ?? "",
           detail: str(body.message) ?? "Complyance could not produce the e-invoice.",
           errorCode: "COMPLYANCE_XML_FAILED",
           reasons: [
@@ -653,7 +715,9 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
         });
       }
       return this.outcome("rejected", "pending", {
-        providerMessageId: "",
+        providerMessageId: documentId ?? "",
+        providerStatus: documentId ? "rejected" : null,
+        correctableRejection: !!documentId && body.validationStage === "gets",
         detail: reasons.map((x) => x.message).join("; ") || str(body.message) || "HTTP 422",
         errorCode: "COMPLYANCE_VALIDATION",
         reasons: reasons.length
@@ -718,10 +782,43 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     providerMessageId: string,
     identity: EInvoiceOutboundIdentity
   ): Promise<"verified" | "mismatch" | "unavailable"> {
+    return (await this.readOwnedSalesDocument(providerMessageId, identity)).verdict;
+  }
+
+  async checkCorrectableRejection(
+    providerMessageId: string,
+    identity: EInvoiceOutboundIdentity,
+    context?: EInvoiceProviderContext
+  ) {
+    const proof = await this.readOwnedSalesDocument(providerMessageId, identity);
+    if (proof.verdict !== "verified") return proof.verdict;
+    const source = sourceFromLegalEntity(context?.legalEntity ?? null);
+    if (!source || source.name !== identity.sourceName) return "mismatch";
+    for (const aliases of [proof.data, providerObject(proof.data.attribution)]) {
+      if (!aliases) continue;
+      const reference = aliases.source;
+      const version =
+        typeof reference === "string" && reference.includes(":")
+          ? reference.slice(reference.indexOf(":") + 1)
+          : providerObject(reference)?.version;
+      if (
+        [version, aliases.sourceVersion].some((value) => value != null && value !== source.version)
+      )
+        return "mismatch";
+    }
+    return isCorrectableSalesState(proof.data) ? "verified" : "mismatch";
+  }
+
+  private async readOwnedSalesDocument(
+    providerMessageId: string,
+    identity: EInvoiceOutboundIdentity
+  ): Promise<
+    { verdict: "verified"; data: Record<string, unknown> } | { verdict: "mismatch" | "unavailable" }
+  > {
     try {
       const response = await this.call("GET", this.salesDocumentPath(providerMessageId));
       if (response.status >= 500 || [401, 403, 408, 429].includes(response.status)) {
-        return "unavailable";
+        return { verdict: "unavailable" };
       }
       const envelope = providerObject(response.json);
       const data = providerObject(envelope?.data);
@@ -733,16 +830,16 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
         data.documentNumber !== identity.documentNumber ||
         (data.environment != null && data.environment !== this.environment)
       )
-        return "mismatch";
+        return { verdict: "mismatch" };
       const ownsDocument = complyanceDocumentBelongsTo(data, {
         tin: identity.supplierTin,
         trn: identity.supplierTrn,
         connectCompanyId: identity.legalEntityId,
         sourceName: identity.sourceName,
       }).ok;
-      return ownsDocument ? "verified" : "mismatch";
+      return ownsDocument ? { verdict: "verified", data } : { verdict: "mismatch" };
     } catch {
-      return "unavailable";
+      return { verdict: "unavailable" };
     }
   }
 
@@ -789,6 +886,7 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     return this.outcome(m.delivery, m.reporting, {
       providerMessageId,
       providerStatus,
+      correctableRejection: isCorrectableSalesState(data),
       detail: failed
         ? m.reasons.map((x) => x.message).join("; ") || `Complyance state: ${providerStatus}`
         : null,

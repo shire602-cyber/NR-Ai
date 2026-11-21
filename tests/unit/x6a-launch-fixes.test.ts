@@ -209,6 +209,31 @@ describe("[X6a e-invoicing 2] Complyance link: the document must be this company
       checked: [],
     });
   });
+
+  it.each([
+    [{ source: `${me.sourceName}:v1`, sourceName: "another-source" }, "source"],
+    [{ source: { name: me.sourceName }, attribution: { sourceName: "another-source" } }, "source"],
+    [
+      { companyId: "another-company", attribution: { companyId: me.connectCompanyId } },
+      "connectCompanyId",
+    ],
+    [
+      {
+        seller: { tin: "1009999999" },
+        invoice: { parties: { seller: { tin: me.tin } } },
+        payload: { parties: { seller: { tin: me.tin, trn: me.trn } } },
+      },
+      "sellerTaxId",
+    ],
+    [{ seller: { taxIds: [{ value: me.trn, id: "100999999900003" }] } }, "sellerTaxId"],
+    [{ seller: { trn: `unverified:${me.trn}` } }, "sellerTaxId"],
+    [{ seller: { tin: me.trn, trn: me.tin } }, "sellerTaxId"],
+  ])("rejects a contradictory or malformed marker in %j", (data, field) => {
+    expect(complyanceDocumentBelongsTo({ sourceName: me.sourceName, ...data }, me)).toMatchObject({
+      ok: false,
+      mismatched: [field],
+    });
+  });
 });
 
 describe("[X6a e-invoicing 3] 'needs link' is its own delivery state", () => {

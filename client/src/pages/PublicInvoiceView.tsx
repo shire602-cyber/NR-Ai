@@ -436,7 +436,9 @@ export default function PublicInvoiceView() {
             <T k="portal.doc.einvoice" />
             {data.einvoice.status === "delivered"
               ? ` · ${t["customerLink.einvoiceDelivered"]}`
-              : ""}
+              : data.einvoice.status === "accepted" || data.einvoice.status === "cleared"
+                ? ` · ${t["customerLink.einvoiceAccepted"]}`
+                : ""}
           </p>
         )}
 

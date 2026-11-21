@@ -21,7 +21,12 @@ import { rowsOf, withLedgerTx } from "../../ledger/tx";
 import type { LedgerTx } from "../../ledger/types";
 import { has, resolve } from "../../platform/service-registry";
 import { all, attr, children, fils, first, parseXml, text, textAt, type XNode } from "./dom";
-import { getLegalEntity, matchesOnboardedTaxpayer } from "./legal-entities";
+import {
+  getLegalEntity,
+  matchesCompanyTaxpayer,
+  matchesOnboardedTaxpayer,
+  type CompanyTinSource,
+} from "./legal-entities";
 import { summariseValidation, validateEInvoiceXml } from "./validate";
 import {
   archiveEInvoiceXml,
@@ -246,10 +251,8 @@ export function toInboundBill(p: ParsedInboundDocument): Record<string, unknown>
 
 // ─── Processing ─────────────────────────────────────────────────────────
 
-export interface InboundCompany {
+export interface InboundCompany extends CompanyTinSource {
   id: string;
-  trnVatNumber: string | null;
-  peppolParticipantId?: string | null;
 }
 
 export interface InboundResult {
@@ -457,19 +460,15 @@ export async function processInboundEInvoice(args: {
     );
   }
   const parsed = parseInboundUbl(xml);
-  const tin = company.trnVatNumber?.slice(0, 10) ?? null;
-  const addressedToCompany =
-    (parsed.buyerTrn && parsed.buyerTrn === company.trnVatNumber) ||
-    (parsed.buyerEndpoint &&
-      (parsed.buyerEndpoint === company.peppolParticipantId || parsed.buyerEndpoint === tin));
+  const buyer = {
+    endpoint: parsed.buyerEndpoint,
+    scheme: parsed.buyerEndpointScheme,
+    vatTrn: parsed.buyerTrn,
+  };
   const addressedToUs = args.onboardedEntity
     ? args.onboardedEntity.companyId === company.id &&
-      matchesOnboardedTaxpayer(args.onboardedEntity, {
-        endpoint: parsed.buyerEndpoint,
-        scheme: parsed.buyerEndpointScheme,
-        vatTrn: parsed.buyerTrn,
-      })
-    : addressedToCompany;
+      matchesOnboardedTaxpayer(args.onboardedEntity, buyer)
+    : matchesCompanyTaxpayer(company, buyer);
   if (!addressedToUs) {
     throw new DomainError(
       "EINVOICE_INBOUND_WRONG_RECIPIENT",

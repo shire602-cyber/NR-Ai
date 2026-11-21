@@ -1,9 +1,9 @@
 /**
  * E1: e-invoice cell for the invoice list (two-track badges; opens the status sheet) and the
- * "E-invoice" origin tag for bills that arrived as structured e-invoices. One shared query
- * per company (react-query dedupes it across rows).
+ * "E-invoice" origin tag for bills that arrived as structured e-invoices. The list passes
+ * each row's evidence from its page query.
  */
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { FileCode } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatMessage, useTranslation } from "@/lib/i18n";
@@ -16,32 +16,23 @@ import {
   recipientAcknowledgement,
   reportingLabelKey,
   type DeliveryStatus,
+  type EInvoiceListEvidence,
   type ReportingStatus,
 } from "./einvoice-meta";
 import { EInvoiceSheet, EInvoiceTrackBadges } from "./EInvoiceStatus";
-import { useEInvoiceCompliance, useEInvoiceDocuments } from "./use-einvoice";
 
 export function EInvoiceListCell({
-  companyId,
   invoice,
+  evidence,
   onEdit,
 }: {
-  companyId: string | null | undefined;
   invoice: { id: string; number?: string | null; einvoiceStatus?: string | null };
+  evidence?: EInvoiceListEvidence;
   onEdit?: () => void;
 }) {
   const { t, locale } = useTranslation();
   const [open, setOpen] = useState(false);
-  const docs = useEInvoiceDocuments(companyId);
-  const compliance = useEInvoiceCompliance(companyId);
-  const pill = useMemo(
-    () => compliance.data?.items.find((p) => p.invoiceId === invoice.id),
-    [compliance.data, invoice.id]
-  );
-  const doc = useMemo(
-    () => docs.data?.items.find((d) => d.invoiceId === invoice.id),
-    [docs.data, invoice.id]
-  );
+  const { pill, doc } = evidence ?? {};
   const showPills = !!pill?.reportingRequired;
   if (!doc && !invoice.einvoiceStatus && !showPills) return null;
   const storedDelivery: DeliveryStatus =

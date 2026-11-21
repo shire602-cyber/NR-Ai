@@ -93,6 +93,7 @@ import {
   type EInvoiceIssueItem,
 } from "@/lib/einvoice-issues";
 import { EInvoiceListCell } from "@/components/einvoice/EInvoiceListCell";
+import { useEInvoiceListEvidence } from "@/components/einvoice/use-einvoice";
 import { InvoiceCurrencyFields } from "@/components/invoices/InvoiceCurrencyFields";
 import { LineItemPicker } from "@/components/invoices/LineItemPicker";
 import { LineIncomeAccountPicker } from "@/components/invoices/LineIncomeAccountPicker";
@@ -1358,6 +1359,15 @@ export default function Invoices() {
       return true;
     });
   }, [invoices, dateRange.from, dateRange.to]);
+  const evidenceBatches = useMemo(() => {
+    const displayed = new Set(filteredInvoices.map(({ id }) => id));
+    return (
+      invoicePages.data?.pages.map(({ items }) =>
+        items.map(({ id }) => id).filter((id) => displayed.has(id))
+      ) ?? []
+    );
+  }, [filteredInvoices, invoicePages.data]);
+  const einvoiceEvidence = useEInvoiceListEvidence(selectedCompanyId, evidenceBatches);
 
   const handleExportExcel = () => {
     if (!filteredInvoices.length) {
@@ -2663,8 +2673,8 @@ export default function Invoices() {
                         <OverdueBadge invoice={invoice} />
                         <WrittenOffBadge invoice={invoice} />
                         <EInvoiceListCell
-                          companyId={selectedCompanyId}
                           invoice={invoice}
+                          evidence={einvoiceEvidence[invoice.id]}
                           onEdit={() => openInvoiceEditor(invoice)}
                         />
                       </div>
@@ -2822,8 +2832,8 @@ export default function Invoices() {
                             <WrittenOffBadge invoice={invoice} />
                             {/* E1: two-track e-invoice status; opens the status sheet. */}
                             <EInvoiceListCell
-                              companyId={selectedCompanyId}
                               invoice={invoice}
+                              evidence={einvoiceEvidence[invoice.id]}
                               onEdit={() => openInvoiceEditor(invoice)}
                             />
                           </TableCell>

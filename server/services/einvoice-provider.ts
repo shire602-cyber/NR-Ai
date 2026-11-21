@@ -69,6 +69,8 @@ export interface EInvoiceProviderResult {
    * invoice, so the workflow records "needs link" instead of a rejection.
    */
   numberAlreadyHeld?: boolean;
+  /** The exact document can be corrected under its original number and source. */
+  correctableRejection?: boolean;
 }
 
 /** Options for a status/source call: credit notes live under a separate resource at some ASPs. */
@@ -142,6 +144,11 @@ export interface EInvoiceProvider {
     providerMessageId: string,
     identity: EInvoiceOutboundIdentity
   ): Promise<boolean>;
+  checkCorrectableRejection?(
+    providerMessageId: string,
+    identity: EInvoiceOutboundIdentity,
+    context?: EInvoiceProviderContext
+  ): Promise<"verified" | "mismatch" | "unavailable">;
   /**
    * E1: list incoming documents (two-step receive: list, then fetchSource). E2: providers whose
    * inbox is listed per company receive the provider legal-entity ids to list.

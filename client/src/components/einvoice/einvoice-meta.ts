@@ -56,6 +56,7 @@ export interface EInvoiceEvent {
   track: "validation" | "delivery" | "reporting";
   from: string | null;
   to: string;
+  recipientAcknowledgement: RecipientAcknowledgement;
   confirmationUnavailable?: boolean;
   code: string | null;
   message: string | null;
@@ -68,6 +69,7 @@ export interface EInvoiceEvent {
 export interface EInvoiceEnvironmentVerification {
   provider: "acube" | "complyance";
   environments: ("sandbox" | "production")[];
+  reference: "stored" | "search" | "manual";
 }
 
 export interface EInvoiceStatusView {
@@ -149,6 +151,11 @@ export interface EInvoiceCompliancePill {
   reportingRequired: boolean;
   delivery: DeliveryStatus;
   reporting: ReportingStatus;
+}
+
+export interface EInvoiceListEvidence {
+  pill?: EInvoiceCompliancePill;
+  doc?: EInvoiceDocumentRow;
 }
 
 /** GET /api/companies/:id/einvoicing/readiness (X6d). */

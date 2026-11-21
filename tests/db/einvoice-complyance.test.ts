@@ -67,7 +67,7 @@ const fake = {
   creates: 0,
   posts: 0,
   submitDelayMs: 0,
-  nextSubmit: [] as Array<"200" | "422" | "network">,
+  nextSubmit: [] as Array<"200" | "422" | "network" | "wrong-id">,
   nextSalesReads: [] as Array<"ok" | "unavailable">,
   docs: new Map<string, FakeDoc>(),
   purchases: [] as Array<{ id: string; number: string; xml: string; companyId: string }>,
@@ -232,7 +232,7 @@ async function complyance(url: URL, init: RequestInit): Promise<Response> {
     });
     if (mode === "network") throw new TypeError("fetch failed: socket hang up");
     return json(200, {
-      documentId: id,
+      documentId: mode === "wrong-id" ? "unexpected-provider-document" : id,
       documentNumber: number,
       message: "Your invoice was validated and is ready for submission.",
       Base64XML: "",
@@ -693,13 +693,20 @@ describe("E2 submit, two tracks and history", () => {
 
   it("422 names the GETS field; fix and resubmit reuses the same number", async () => {
     const t = await readyTenant();
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
     const inv = await issuedInvoice(t);
     fake.nextSubmit = ["422"];
     const r = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
     expect(r.body.status).toBe("queued");
     await runEInvoiceRetries();
     let s = await statusOf(t, inv.id);
-    expect(s.rejection).toMatchObject({ code: "COMPLYANCE_VALIDATION", resubmittable: true });
+    const held = docOf(t, inv.number)!;
+    expect(s.rejection).toMatchObject({
+      code: "COMPLYANCE_VALIDATION",
+      resubmittable: true,
+      providerHoldsDocument: true,
+    });
+    expect(s.transmission.providerDocumentId).toBe(held.id);
     expect(s.rejection.reasons[0]).toMatchObject({
       code: "IBR-132-AE",
       field: "parties.buyer.taxIds",
@@ -707,11 +714,47 @@ describe("E2 submit, two tracks and history", () => {
     const re = await t.as.post(`/api/invoices/${inv.id}/einvoice/resubmit`, {});
     expect(re.status, re.text).toBe(202);
     expect(re.body.tracks.delivery.status).toBe("queued");
+    expect(
+      (await t.as.post(`/api/invoices/${inv.id}/einvoice/refresh-status`, {})).body.status
+    ).toBe("queued");
     await runEInvoiceRetries();
     expect(fake.posts).toBe(2);
     expect(fake.docs.size).toBe(1); // Complyance updated the stored document, same id
     s = await statusOf(t, inv.id);
     expect(s.rejection).toBeNull();
+    expect(s.transmission.providerDocumentId).toBe(held.id);
+  });
+
+  it("rechecks terminal Needs Correction and never switches provider identity on an unexpected resend response", async () => {
+    const t = await readyTenant();
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+    const inv = await issuedInvoice(t);
+    const prefix = `/api/invoices/${inv.id}/einvoice`;
+    fake.nextSubmit = ["422"];
+    expect((await t.as.post(`${prefix}/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const held = docOf(t, inv.number)!;
+    const originalHash = (await statusOf(t, inv.id)).document.xmlHash;
+    expect((await t.as.post(`${prefix}/resubmit`, {})).status).toBe(202);
+    held.ftaApproval = "APPROVED";
+    await runEInvoiceRetries();
+    expect(fake.posts).toBe(1);
+    expect((await statusOf(t, inv.id)).transmission.providerDocumentId).toBe(held.id);
+
+    held.ftaApproval = "PENDING";
+    await t.as.post(`${prefix}/refresh-status`, {});
+    expect((await statusOf(t, inv.id)).rejection.resubmittable).toBe(true);
+    expect((await t.as.post(`${prefix}/resubmit`, {})).status).toBe(202);
+    fake.nextSubmit = ["wrong-id"];
+    await runEInvoiceRetries();
+    expect(fake.posts).toBe(2);
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      document: { xmlHash: originalHash },
+      transmission: { providerDocumentId: held.id },
+    });
+    expect((await t.as.post(`${prefix}/resubmit`, {})).status).toBe(409);
+    await runEInvoiceRetries();
+    expect(fake.posts).toBe(2);
   });
 
   it("FTA rejection -> report_failed; buyer-ASP rejection -> a new document is required", async () => {
@@ -734,6 +777,7 @@ describe("E2 submit, two tracks and history", () => {
     let s = await statusOf(t, inv.id);
     expect(s.tracks.delivery.status).toBe("delivered");
     expect(s.tracks.reporting.status).toBe("report_failed");
+    expect(s.rejection.reasons).toContainEqual(expect.objectContaining({ field: "parties.buyer" }));
     expect(s.checklist.find((c: any) => c.key === "reported")).toMatchObject({
       state: "failed",
       code: "EINVOICE_REPORT_FAILED",
@@ -799,6 +843,7 @@ describe("E2 submit, two tracks and history", () => {
 
   it("a lost response is never sent twice: GETS-HEAD-010 reads 'needs link' (not rejected), then a person links the document", async () => {
     const t = await readyTenant();
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
     const inv = await issuedInvoice(t);
     fake.nextSubmit = ["network"];
     const first = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
@@ -850,7 +895,7 @@ describe("E2 submit, two tracks and history", () => {
       documentId: "01KNOSELLER000000000",
     });
     expect(anonymous.status).toBe(422);
-    // Linking needs the posting permission: an employee (documents.write only) is refused.
+    // Linking needs e-invoice transmission permission; documents.write alone is insufficient.
     const employee = await h.createTenant({ name: "CmpEmployee" });
     await h.sql(
       `INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'employee')`,
@@ -1167,6 +1212,59 @@ describe("E2 + F16: no FTA reporting before the mandate applies", () => {
 });
 
 describe("Legacy Complyance environment verification", () => {
+  it("verifies a user-supplied original document ID for a legacy ambiguous attempt", async () => {
+    const t = await readyTenant();
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+    const inv = await issuedInvoice(t);
+    const path = `/api/invoices/${inv.id}/einvoice/confirm-environment`;
+    expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const held = docOf(t, inv.number)!;
+    await h.sql(
+      "UPDATE invoices SET einvoice_status = 'failed', einvoice_provider_message_id = NULL WHERE id = $1",
+      [inv.id]
+    );
+    await h.sql(
+      "UPDATE einvoice_documents SET status = 'failed', provider_message_id = NULL, delivery_status = 'delivery_failed', next_retry_at = NULL, validation = '{}' WHERE invoice_id = $1",
+      [inv.id]
+    );
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      submissionState: "needs_reconciliation",
+      transmission: {
+        canSubmit: false,
+        environmentVerification: {
+          provider: "complyance",
+          reference: "manual",
+          environments: ["sandbox"],
+        },
+      },
+    });
+    const other = await h.createTenant({ name: "Unrelated Complyance recovery company" });
+    expect(
+      (await other.as.post(path, { environment: "sandbox", documentId: held.id })).status
+    ).toBe(404);
+    expect((await t.as.post(path, { environment: "sandbox" })).status).toBe(422);
+    expect((await t.as.post(path, { environment: "sandbox", documentId: "wrong-id" })).status).toBe(
+      422
+    );
+    const seller = held.source;
+    held.source = "another-company:v1";
+    expect((await t.as.post(path, { environment: "sandbox", documentId: held.id })).status).toBe(
+      422
+    );
+    held.source = seller;
+    const attached = await t.as.post(path, { environment: "sandbox", documentId: held.id });
+    expect(attached.status, attached.text).toBe(200);
+    expect(attached.body.providerDocumentId).toBe(held.id);
+    held.state = "final_valid";
+    held.isTerminal = true;
+    await events.runProviderPoll("complyance", { companyId: t.company.id });
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      status: "cleared",
+      transmission: { providerDocumentId: held.id },
+    });
+    expect(fake.posts).toBe(1);
+  });
   it("restores an invoice-only reference from immutable archived proof and resumes polling", async () => {
     const t = await readyTenant();
     const inv = await issuedInvoice(t);

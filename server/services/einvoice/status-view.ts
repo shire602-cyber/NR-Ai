@@ -25,12 +25,20 @@ import {
 } from "./store";
 import { listDocumentEvents } from "./history";
 import { getLegalEntity } from "./legal-entities";
-import { legacyTrackingAvailability, legacyTrackingReference } from "./legacy-tracking";
+import {
+  canRetryOriginalRejectedNumber,
+  correctableComplyanceReference,
+  legacyTrackingAvailability,
+  legacyTrackingReference,
+  needsLegacySubmissionRecovery,
+} from "./legacy-tracking";
 import {
   deriveInvoiceTracks,
   isReportingObservation,
+  mapAcubeDeliveryStatus,
   NEW_DOCUMENT_REQUIRED_CODES,
   projectEInvoiceLegacyStatus,
+  providerRecipientAcknowledgement,
   reportingEvidenceAt,
 } from "./tracks";
 import { einvoiceMandateApplies } from "./scope";
@@ -99,8 +107,10 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     invoice.einvoiceProviderMessageId ?? legacyTrackingReference(invoice, doc)?.messageId ?? null;
   const handedOver = !!providerDocumentId;
   const providerHoldsDocument = handedOver || !!doc?.providerMessageId;
+  const correctableComplyance = !!correctableComplyanceReference(invoice, doc);
+  const legacyRecovery = needsLegacySubmissionRecovery(invoice, doc);
   const pinnedEnvironment = documentProviderEnvironment(doc);
-  const tracksProvider = submissionProviderPin(invoice, doc) !== undefined;
+  const tracksProvider = legacyRecovery || submissionProviderPin(invoice, doc) !== undefined;
   const providerId = tracksProvider
     ? (doc?.provider ?? invoice.einvoiceProvider ?? null)
     : company.einvoicePartner;
@@ -130,14 +140,11 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     reporting
   );
   const sentToRecipient = handedOver && delivery === "delivered";
-  const receivedByRecipient =
-    sentToRecipient &&
-    ((isAcube && providerStatus === "delivered") ||
-      (providerId === "complyance" && providerStatus === "delivery_success"));
-  const recipientAccepted =
-    sentToRecipient &&
-    ((isAcube && providerStatus === "accepted") ||
-      (providerId === "complyance" && providerStatus === "final_valid"));
+  const acknowledgement = sentToRecipient
+    ? providerRecipientAcknowledgement(providerId, providerStatus)
+    : null;
+  const receivedByRecipient = acknowledgement === "received";
+  const recipientAccepted = acknowledgement === "accepted";
   const retryScheduled = !providerHoldsDocument && !!doc?.nextRetryAt;
 
   // A handed-off invoice can be tracked through its own credentials after a company switches
@@ -171,8 +178,9 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     .limit(1);
 
   const validation = documentValidation(doc) as { valid?: boolean } | null;
-  const submissionState =
-    delivery === "rejected" || reporting === "report_failed"
+  const submissionState = legacyRecovery
+    ? "needs_reconciliation"
+    : delivery === "rejected" || reporting === "report_failed"
       ? "rejected"
       : delivery === "needs_link"
         ? "needs_reconciliation"
@@ -276,15 +284,12 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
       block,
       providerDocumentId,
       legalEntityStatus: legalEntity?.status ?? null,
-      recipientAcknowledgement: recipientAccepted
-        ? "accepted"
-        : receivedByRecipient
-          ? "received"
-          : null,
-      canSubmit: maySubmit && submissionState === "draft",
+      recipientAcknowledgement: acknowledgement,
+      canSubmit: maySubmit && submissionState === "draft" && !legacyRecovery,
       canRefresh:
         configuration !== null &&
-        ((handedOver && legacy !== "cleared") || canRecoverAcubeSubmission(invoice, doc)),
+        ((handedOver && legacy !== "cleared") ||
+          (!legacyRecovery && canRecoverAcubeSubmission(invoice, doc))),
     },
     issues,
     contactId: invoice.contactId ?? null,
@@ -303,7 +308,11 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
             ["rejected", "delivery_failed"].includes(delivery) &&
             issues.length === 0 &&
             !doc?.nextRetryAt &&
-            !providerHoldsDocument &&
+            (!providerHoldsDocument || correctableComplyance) &&
+            !legacyRecovery &&
+            (providerId !== "acube" ||
+              doc?.status !== "rejected" ||
+              canRetryOriginalRejectedNumber(invoice, doc)) &&
             !NEW_DOCUMENT_REQUIRED_CODES.has(doc?.lastErrorCode ?? ""),
           newDocumentRequired: NEW_DOCUMENT_REQUIRED_CODES.has(doc?.lastErrorCode ?? ""),
         }
@@ -319,11 +328,21 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
         return !confirmedAt || e.createdAt.getTime() < Date.parse(confirmedAt);
       };
       const confirmationUnavailable = unconfirmed(e.toStatus);
+      // Old A-Cube rows recorded provider processing as delivery to the recipient.
+      const to = confirmationUnavailable
+        ? "pending"
+        : e.track === "delivery" && e.toStatus === "delivered" && eventProvider === "acube"
+          ? mapAcubeDeliveryStatus(e.providerStatus)
+          : e.toStatus;
       return {
         id: e.id,
         track: e.track,
         from: unconfirmed(e.fromStatus) ? "pending" : e.fromStatus,
-        to: confirmationUnavailable ? "pending" : e.toStatus,
+        to,
+        recipientAcknowledgement:
+          e.track === "delivery" && to === "delivered"
+            ? providerRecipientAcknowledgement(eventProvider, e.providerStatus)
+            : null,
         ...(confirmationUnavailable ? { confirmationUnavailable } : {}),
         code: confirmationUnavailable ? null : e.code,
         message: confirmationUnavailable ? null : e.message,

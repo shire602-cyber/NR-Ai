@@ -72,4 +72,35 @@ it("only offers review for received UAE credit notes with a same-company source 
     )
   );
   expect(result.body.items.every((row: object) => !("debitNoteId" in row))).toBe(true);
+
+  await h.sql(
+    `INSERT INTO einvoice_inbound_documents
+       (company_id, document_number, document_type, status, sha256, received_at)
+     SELECT $1, 'INVOICE-' || n, '380', 'invalid', 'fixture', now() + interval '1 day'
+     FROM generate_series(1, 110) AS n`,
+    [tenant.company.id]
+  );
+  await h.sql(
+    `UPDATE einvoice_inbound_documents
+        SET received_at = timestamp '2026-05-01 00:00:00.123456'
+      WHERE company_id = $1 AND document_number IN ('CN-RECEIVED', 'CN-OUT-OF-SCOPE')`,
+    [tenant.company.id]
+  );
+  const pending = `/api/companies/${tenant.company.id}/einvoicing/inbound?review=vendor-credits&limit=1`;
+  const first = await tenant.as.get(pending);
+  expect(first.status, first.text).toBe(200);
+  expect(first.body.items).toMatchObject([{ vendorCreditReviewable: true }]);
+  expect(first.body.nextCursor).toBe(first.body.items[0].id);
+  await h.sql(
+    `UPDATE einvoice_inbound_documents SET status = 'credit_created', debit_note_id = gen_random_uuid()
+      WHERE company_id = $1 AND id = $2`,
+    [tenant.company.id, first.body.nextCursor]
+  );
+  const next = await tenant.as.get(`${pending}&cursor=${first.body.nextCursor}`);
+  expect(next.status, next.text).toBe(200);
+  expect(next.body.items).toMatchObject([{ vendorCreditReviewable: true }]);
+  expect([...first.body.items, ...next.body.items].map((row) => row.documentNumber).sort()).toEqual(
+    ["CN-OUT-OF-SCOPE", "CN-RECEIVED"]
+  );
+  expect(next.body.nextCursor).toBeNull();
 });

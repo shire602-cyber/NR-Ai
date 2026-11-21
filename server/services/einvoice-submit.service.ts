@@ -196,9 +196,10 @@ export function applyProviderOutcome(
     lastError:
       result.status === "failed" || result.status === "rejected" ? (result.detail ?? null) : null,
     rejectionReasons:
-      result.status === "rejected"
-        ? (reasons ?? [{ code: "ASP", message: result.detail ?? "Rejected" }])
-        : null,
+      reasons ??
+      (result.status === "rejected"
+        ? [{ code: "ASP", message: result.detail ?? "Rejected" }]
+        : null),
     clearedAt: result.status === "cleared" ? now : null,
   };
 }
@@ -413,9 +414,10 @@ export async function refreshEInvoiceStatus(args: {
       lastError:
         result.status === "rejected" || result.status === "failed" ? (result.detail ?? null) : null,
       rejectionReasons:
-        result.status === "rejected"
-          ? (reasons ?? [{ code: "ASP", message: result.detail ?? "Rejected" }])
-          : null,
+        reasons ??
+        (result.status === "rejected"
+          ? [{ code: "ASP", message: result.detail ?? "Rejected" }]
+          : null),
       clearedAt: result.status === "cleared" ? now : null,
     },
   };

@@ -165,6 +165,50 @@ describe("e-invoice inbox onboarding", () => {
     expect(provider.inboundOwner).not.toHaveBeenCalled();
   });
 
+  it("rechecks previously ignored receipt validation only with independent ownership and correct buyer", async () => {
+    const t = await h.createTenant({ companyColumns: { einvoice_tin: BUYER_TIN } });
+    const { runProviderEvents } = await import("../../server/services/einvoice/provider-events");
+    const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
+    await upsertLegalEntity(t.company.id, "acube", "sandbox", BUYER_TIN, {
+      status: "active",
+      legalEntityId: OWNER,
+    });
+    const source = await incomingXml("SUP-RECHECK-BUYER");
+    const matching = await enqueueReceived(t.company.id, { documentId: "legacy-matching-buyer" });
+    const wrongBuyer = await enqueueReceived(t.company.id, { documentId: "legacy-wrong-buyer" });
+    const wrongOwner = await enqueueReceived(t.company.id, { documentId: "legacy-wrong-owner" });
+    await h.sql(
+      `UPDATE einvoice_provider_events
+          SET status = 'ignored', attempts = 1, last_error = 'inbound document failed validation',
+              processed_at = now()
+        WHERE company_id = $1`,
+      [t.company.id]
+    );
+    const matchingProvider = simulatedProvider(source);
+    const foreignBuyer = simulatedProvider(source.replaceAll(BUYER_TIN, "1001112223"));
+    const foreignOwner = simulatedProvider(source, "foreign-provider-entity");
+    for (const [receipt, provider] of [
+      [matching, matchingProvider],
+      [wrongBuyer, foreignBuyer],
+      [wrongOwner, foreignOwner],
+    ] as const) {
+      expect(await runProviderEvents({ id: receipt.id!, provider })).toEqual({
+        claimed: 1,
+        processed: 1,
+        failed: 0,
+      });
+      expect(await runProviderEvents({ id: receipt.id!, provider })).toEqual({
+        claimed: 0,
+        processed: 0,
+        failed: 0,
+      });
+    }
+    expect(foreignOwner.fetchSource).not.toHaveBeenCalled();
+    expect(
+      await h.sql("SELECT bill_number FROM vendor_bills WHERE company_id = $1", [t.company.id])
+    ).toEqual([{ bill_number: "SUP-RECHECK-BUYER" }]);
+  });
+
   it("keeps receipts queued without configuration and recovers a formerly dead receipt", async () => {
     const t = await h.createTenant({ companyColumns: { trn_vat_number: BUYER_TRN } });
     const { runProviderEvents } = await import("../../server/services/einvoice/provider-events");
@@ -352,10 +396,50 @@ describe("e-invoice inbox onboarding", () => {
 });
 
 describe("e-invoice poll resource selection", () => {
+  it("stops inbound discovery for the retired provider while processing its existing receipts", async () => {
+    const t = await h.createTenant({
+      companyColumns: { einvoice_tin: BUYER_TIN, einvoice_partner: "acube" },
+    });
+    const { runProviderEvents, runProviderPoll } =
+      await import("../../server/services/einvoice/provider-events");
+    const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
+    await upsertLegalEntity(t.company.id, "acube", "sandbox", BUYER_TIN, {
+      status: "active",
+      legalEntityId: OWNER,
+    });
+    const queued = await enqueueReceived(t.company.id, { documentId: "before-partner-switch" });
+    const selectOther = () =>
+      h.sql("UPDATE companies SET einvoice_partner = 'complyance' WHERE id = $1", [t.company.id]);
+    const listInbound = vi.fn(async (): Promise<InboundListing[]> => {
+      await selectOther();
+      return [
+        { providerMessageId: "after-partner-switch", documentType: "380", legalEntityId: OWNER },
+      ];
+    });
+    const provider = { ...simulatedProvider(await incomingXml("SUP-PARTNER-SWITCH")), listInbound };
+    const poll = () => runProviderPoll("acube", { companyId: t.company.id, provider });
+    expect(await poll()).toEqual({ refreshed: 0, enqueued: 0 });
+    expect(await poll()).toEqual({ refreshed: 0, enqueued: 0 });
+    expect(listInbound).toHaveBeenCalledTimes(1);
+    expect(await runProviderEvents({ id: queued.id!, provider })).toEqual({
+      claimed: 1,
+      processed: 1,
+      failed: 0,
+    });
+    expect(
+      await h.sql(
+        "SELECT COUNT(*)::int AS count FROM einvoice_provider_events WHERE company_id = $1",
+        [t.company.id]
+      )
+    ).toEqual([{ count: 1 }]);
+  });
+
   it.each(["poll", "legacy event"])(
     "preserves the 261 credit-note collection from %s",
     async (discovery) => {
-      const t = await h.createTenant({ companyColumns: { trn_vat_number: BUYER_TRN } });
+      const t = await h.createTenant({
+        companyColumns: { trn_vat_number: BUYER_TRN, einvoice_partner: "acube" },
+      });
       const { runProviderEvents, runProviderPoll } =
         await import("../../server/services/einvoice/provider-events");
       const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
@@ -734,6 +818,77 @@ describe("e-invoice inbox recovers incomplete purchases", () => {
 });
 
 describe("e-invoice legal entity synchronization", () => {
+  it("keeps an old dead LINK and queued delivery durably waiting for the pinned configuration", async () => {
+    const t = await h.createTenant();
+    const { enqueueProviderEvent, runProviderEvents } =
+      await import("../../server/services/einvoice/provider-events");
+    const { getLegalEntity, upsertLegalEntity } =
+      await import("../../server/services/einvoice/legal-entities");
+    await upsertLegalEntity(t.company.id, "acube", "sandbox", BUYER_TIN, {
+      status: "pending",
+      legalEntityId: OWNER,
+    });
+    const link = await enqueueProviderEvent({
+      provider: "acube",
+      environment: "sandbox",
+      companyId: t.company.id,
+      type: "legal_entity.synchronized",
+      eventId: "historical-link",
+      payload: { legalEntityId: OWNER, action: "LINK", tin: BUYER_TIN },
+    });
+    const delivery = await enqueueProviderEvent({
+      provider: "acube",
+      environment: "sandbox",
+      companyId: t.company.id,
+      type: "document.delivered",
+      eventId: "historical-delivery",
+      payload: { documentId: "held-delivery" },
+    });
+    await h.sql(
+      `UPDATE einvoice_provider_events SET attempts = 10, next_attempt_at = now(),
+              status = CASE WHEN id = $1 THEN 'dead' ELSE 'pending' END,
+              last_error = 'Provider event could not be processed'
+        WHERE id IN ($1, $2)`,
+      [link.id, delivery.id]
+    );
+    for (const item of [link, delivery]) {
+      expect(await runProviderEvents({ id: item.id! })).toEqual({
+        claimed: 1,
+        processed: 0,
+        failed: 0,
+      });
+      const [parked] = await h.sql(
+        "SELECT status, last_error, next_attempt_at > now() AS scheduled FROM einvoice_provider_events WHERE id = $1",
+        [item.id]
+      );
+      expect(parked).toEqual({
+        status: "pending",
+        last_error: "Provider event is waiting for provider configuration",
+        scheduled: true,
+      });
+      await h.sql("UPDATE einvoice_provider_events SET next_attempt_at = now() WHERE id = $1", [
+        item.id,
+      ]);
+    }
+    const legalEntityPatch = vi.fn(async () => ({ status: "active", legalEntityId: OWNER }));
+    const sandbox = { ...simulatedProvider(""), legalEntityPatch };
+    const production = { ...sandbox, environment: "production" as const };
+    expect(await runProviderEvents({ id: link.id!, provider: production })).toEqual({
+      claimed: 0,
+      processed: 0,
+      failed: 0,
+    });
+    expect(legalEntityPatch).not.toHaveBeenCalled();
+    expect((await getLegalEntity(t.company.id, "acube", "sandbox"))?.status).toBe("pending");
+    expect(await runProviderEvents({ id: link.id!, provider: sandbox })).toEqual({
+      claimed: 1,
+      processed: 1,
+      failed: 0,
+    });
+    expect(legalEntityPatch).toHaveBeenCalledTimes(1);
+    expect((await getLegalEntity(t.company.id, "acube", "sandbox"))?.status).toBe("active");
+  });
+
   it("keeps a verified old callback from mutating a replacement legal entity", async () => {
     const t = await h.createTenant();
     const { enqueueProviderEvent, runProviderEvents } =

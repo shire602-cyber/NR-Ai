@@ -61,7 +61,7 @@ const copies = {
     sent: "Sending",
     recipientReceived: "Received by the buyer’s provider",
     accepted: "Accepted by the buyer’s provider",
-    bankFeedsUnavailable: "Bank feeds are not configured",
+    bankStatementImport: "Import bank statements",
     verifyTracking: "Verify and save",
     trackingVerified: "Tracking environment verified",
     sandbox: "Sandbox",
@@ -76,9 +76,10 @@ const copies = {
     sent: "لدى مزود الخدمة",
     recipientReceived: "استلمها مزود خدمة المشتري",
     accepted: "قبلها مزود خدمة المشتري",
-    bankFeedsUnavailable: "لم يُعدّ الربط البنكي",
+    bankStatementImport: "استيراد كشوف الحسابات البنكية",
     verifyTracking: "تحقّق واحفظ",
     trackingVerified: "تم التحقق من بيئة المتابعة",
+    trackingDocumentId: "معرّف المستند لدى المزوّد",
     sandbox: "بيئة تجريبية",
     firm: "مكتب المحاسبة التجريبي",
     clients: ["المخبز التجريبي", "المورد التجريبي"],
@@ -148,6 +149,22 @@ const mock = createServer(async (req, res) => {
       return json(res, 200, { documentId });
     }
     if (req.method === "GET") {
+      if (pathname === "/invoices" && searchParams.get("direction") === "outgoing") {
+        assert.equal(req.headers.authorization, `Bearer ${mockToken}`);
+        assert.equal(searchParams.get("page"), "1");
+        return json(
+          res,
+          200,
+          [...legacyDocuments]
+            .filter(([, doc]) => doc.reference === "search")
+            .map(([uuid, doc]) => ({
+              uuid,
+              direction: "outgoing",
+              invoiceNumber: doc.number,
+              status: "processed",
+            }))
+        );
+      }
       if (["/invoices", "/credit-notes"].includes(pathname)) return json(res, 200, []);
       if (pathname === "/api/v3/documents" && searchParams.get("type") === "purchases") {
         return json(res, 200, { data: [], meta: { hasMore: false } });
@@ -345,28 +362,30 @@ async function seedOutbound(persona, existingContactId) {
   return { invoiceId: invoice.id, contactId };
 }
 
-async function seedLegacyTracking(persona, contactId) {
+async function seedLegacyTracking(persona, contactId, reference) {
   const { invoiceId } = await seedOutbound(persona, contactId);
   const provider = persona.providers[0];
   const providerMessageId = randomUUID();
+  const storedMessageId = reference === "stored" ? providerMessageId : null;
   const {
     rows: [invoice],
   } = await db.query(
     `UPDATE invoices SET einvoice_status = 'submitted', einvoice_provider = $2,
        einvoice_provider_message_id = $3 WHERE id = $1 RETURNING number, einvoice_xml`,
-    [invoiceId, provider, providerMessageId]
+    [invoiceId, provider, storedMessageId]
   );
   await db.query(
     `UPDATE einvoice_documents SET status = 'submitted', provider = $2,
-       provider_message_id = $3, delivery_status = 'sending' WHERE invoice_id = $1`,
-    [invoiceId, provider, providerMessageId]
+       provider_message_id = $3, delivery_status = $4 WHERE invoice_id = $1`,
+    [invoiceId, provider, storedMessageId, storedMessageId ? "sending" : "needs_link"]
   );
   legacyDocuments.set(providerMessageId, {
     provider,
+    reference,
     number: invoice.number,
     xml: invoice.einvoice_xml,
   });
-  return { invoiceId, provider, providerMessageId };
+  return { invoiceId, provider, providerMessageId, reference };
 }
 
 async function inBrowser(browser, { email, lang, width }, flow) {
@@ -522,7 +541,11 @@ async function selectProviders(browser, persona) {
       `einvoice-partner-option-${providers[0]}`
     );
     await navigate("/bank-feeds");
-    await page.getByText(copies[lang].bankFeedsUnavailable, { exact: true }).waitFor();
+    await page.getByText(copies[lang].bankStatementImport, { exact: true }).waitFor();
+    assert.doesNotMatch(
+      await page.locator("main").innerText(),
+      /\bbank\s+feeds?\b|الربط\s+البنكي\s+المباشر|الخلاصة\s+البنكية/i
+    );
     await expectFrame(page, lang);
     const importStatement = page.getByTestId("button-feeds-import-statement");
     assert.equal(await importStatement.getAttribute("href"), "/bank-reconciliation?import=1");
@@ -535,9 +558,9 @@ async function selectProviders(browser, persona) {
   );
 }
 
-async function verifyLegacyTracking(browser, persona) {
-  const { lang, token, legacy } = persona;
-  const { invoiceId, provider, providerMessageId } = legacy;
+async function verifyLegacyTracking(browser, persona, legacy) {
+  const { lang, token } = persona;
+  const { invoiceId, provider, providerMessageId, reference } = legacy;
   const invoicePath = `/api/invoices/${invoiceId}/einvoice`;
   const statusBefore = await request(token, "GET", `${invoicePath}/status`);
   assert.equal(statusBefore.transmission.environment, null);
@@ -545,10 +568,21 @@ async function verifyLegacyTracking(browser, persona) {
   assert.deepEqual(statusBefore.transmission.environmentVerification, {
     provider,
     environments: ["sandbox"],
+    reference,
   });
   await inBrowser(browser, persona, async (page, navigate) => {
     await openBooks(page, navigate, persona, 0);
+    const evidence = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === `/api/companies/${persona.clients[0].id}/einvoicing/compliance` &&
+        url.searchParams.get("invoiceIds")?.split(",").includes(invoiceId)
+      );
+    });
     await navigate("/invoices");
+    const batch = await evidence;
+    assert.equal(batch.status(), 200);
+    assert.ok((await batch.json()).documents.some((doc) => doc.invoiceId === invoiceId));
     await page.locator(`[data-testid="einvoice-cell-${invoiceId}"]:visible`).first().click();
     const sheet = page.getByTestId("einvoice-sheet");
     const tracking = sheet.getByTestId("einvoice-tracking-verification");
@@ -564,6 +598,14 @@ async function verifyLegacyTracking(browser, persona) {
     assert.equal(await sheet.getByTestId("einvoice-send").count(), 0);
     assert.equal(await sheet.getByTestId("einvoice-refresh").count(), 0);
     await choice.check();
+    if (reference === "manual") {
+      assert.equal(await confirm.isDisabled(), true);
+      await tracking
+        .getByRole("textbox", { name: copies[lang].trackingDocumentId })
+        .fill(providerMessageId);
+    } else {
+      assert.equal(await tracking.getByTestId("einvoice-tracking-document-id").count(), 0);
+    }
     const confirmation = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
@@ -572,8 +614,15 @@ async function verifyLegacyTracking(browser, persona) {
     await confirm.click();
     const result = await confirmation;
     assert.equal(result.status(), 200);
-    assert.deepEqual(result.request().postDataJSON(), { environment: "sandbox" });
-    assert.deepEqual(await result.json(), { provider, environment: "sandbox", verified: true });
+    assert.deepEqual(result.request().postDataJSON(), {
+      environment: "sandbox",
+      ...(reference === "manual" ? { documentId: providerMessageId } : {}),
+    });
+    const verified = await result.json();
+    assert.equal(verified.provider, provider);
+    assert.equal(verified.environment, "sandbox");
+    assert.equal(verified.verified, true);
+    if (reference !== "stored") assert.equal(verified.providerDocumentId, providerMessageId);
     await page.getByText(copies[lang].trackingVerified, { exact: true }).waitFor();
     await tracking.waitFor({ state: "hidden" });
     await sheet.getByTestId("einvoice-refresh").waitFor();
@@ -585,7 +634,7 @@ async function verifyLegacyTracking(browser, persona) {
   assert.equal(saved.transmission.provider, provider);
   assert.equal(saved.transmission.providerDocumentId, providerMessageId);
   assert.equal(saved.transmission.environmentVerification, null);
-  console.log(`${lang}: verified and saved the original tracking environment without resending`);
+  console.log(`${lang}: verified ${reference} tracking without resending`);
 }
 
 async function sendInvoice(browser, persona) {
@@ -684,7 +733,14 @@ try {
     const persona = await seed(fixture);
     await selectProviders(browser, persona);
     const outbound = await seedOutbound(persona);
-    const legacy = await seedLegacyTracking(persona, outbound.contactId);
+    const legacy = [
+      await seedLegacyTracking(persona, outbound.contactId, "stored"),
+      await seedLegacyTracking(
+        persona,
+        outbound.contactId,
+        persona.providers[0] === "acube" ? "search" : "manual"
+      ),
+    ];
     personas.push({ ...persona, ...outbound, legacy });
   }
   assert.deepEqual(posts, []);
@@ -719,7 +775,10 @@ try {
     assert.equal((await status(clients[0].id)).status, "configured");
     assert.equal((await status(clients[1].id)).status, "not_configured");
   }
-  for (const flow of [verifyLegacyTracking, sendInvoice]) {
+  const recover = async (browser, persona) => {
+    for (const legacy of persona.legacy) await verifyLegacyTracking(browser, persona, legacy);
+  };
+  for (const flow of [recover, sendInvoice]) {
     const results = await Promise.allSettled(personas.map((persona) => flow(browser, persona)));
     for (const result of results) if (result.status === "rejected") throw result.reason;
   }

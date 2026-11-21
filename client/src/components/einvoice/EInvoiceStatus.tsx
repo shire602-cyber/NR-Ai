@@ -350,8 +350,10 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
   const rejectionErrorKey = errorKey(rejection?.code);
   const handedOver = !!transmission.providerDocumentId;
   const queuedForSubmission = view.submissionState === "queued";
+  const reconciling = view.submissionState === "needs_reconciliation";
   const failedDelivery = delivery.status === "rejected" || delivery.status === "delivery_failed";
   const reportingOnlyFailure = isReportingOnlyFailure(delivery.status, reporting.status);
+  const canCorrectRejection = !!rejection?.resubmittable && !reportingOnlyFailure && !reconciling;
   const acknowledgement = transmission.recipientAcknowledgement;
   const providerName = transmission.providerDisplayName ?? transmission.provider ?? "";
   const latestAction = send.submittedAt >= resubmit.submittedAt ? send : resubmit;
@@ -421,7 +423,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
       </div>
 
       {/* Honest boundary: nothing is sent without a connected provider. */}
-      {transmission.block && !handedOver && view.submissionState !== "needs_reconciliation" && (
+      {transmission.block && !handedOver && !reconciling && (
         <div
           className="rounded-lg bg-surface-sunken p-4 text-small"
           data-testid="einvoice-not-sent"
@@ -602,35 +604,53 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
               </p>
               {rejection.reasons.length > 0 && (
                 <ul className="mt-3 space-y-2" data-testid="einvoice-rejection-reasons">
-                  {rejection.reasons.map((r, i) => (
-                    <li key={i} className="rounded-md bg-card px-3 py-2 text-small">
-                      <p className="text-foreground">{r.message}</p>
-                      {(r.field || r.code) && (
-                        <p className="mt-0.5 text-caption text-muted-foreground">
-                          {r.field && (
-                            <>
-                              {t["einvoicing.reasonWhere"]}{" "}
-                              <span dir="ltr" className="[unicode-bidi:isolate] break-all">
-                                {r.field}
-                              </span>
-                            </>
-                          )}
-                          {r.field && r.code ? " · " : ""}
-                          {r.code && (
-                            <>
-                              {t["einvoicing.reasonRule"]}{" "}
-                              <span dir="ltr" className="[unicode-bidi:isolate]">
-                                {r.code}
-                              </span>
-                            </>
-                          )}
+                  {rejection.reasons.map((r, i) => {
+                    const hint =
+                      canCorrectRejection && r.field
+                        ? einvoiceFieldHint(r.field, { contactId: view.contactId, invoiceId })
+                        : null;
+                    return (
+                      <li key={i} className="rounded-md bg-card px-3 py-2 text-small">
+                        <p dir="auto" className="text-foreground">
+                          {r.message}
                         </p>
-                      )}
-                    </li>
-                  ))}
+                        {(r.field || r.code) && (
+                          <p className="mt-0.5 text-caption text-muted-foreground">
+                            {r.field && (
+                              <>
+                                {t["einvoicing.reasonWhere"]}{" "}
+                                <span dir="ltr" className="[unicode-bidi:isolate] break-all">
+                                  {r.field}
+                                </span>
+                              </>
+                            )}
+                            {r.field && r.code ? " · " : ""}
+                            {r.code && (
+                              <>
+                                {t["einvoicing.reasonRule"]}{" "}
+                                <span dir="ltr" className="[unicode-bidi:isolate]">
+                                  {r.code}
+                                </span>
+                              </>
+                            )}
+                          </p>
+                        )}
+                        {hint?.href && hint.whereKey && (
+                          <SheetClose asChild>
+                            <Link
+                              href={hint.href}
+                              className="inline-flex min-h-11 items-center text-accent hover:underline"
+                            >
+                              {t[hint.whereKey]}
+                            </Link>
+                          </SheetClose>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
-              {!reportingOnlyFailure && (
+              {canCorrectRejection && (
                 <ol
                   className="mt-3 space-y-1 text-small text-foreground"
                   data-testid="einvoice-fix-steps"
@@ -653,7 +673,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
                 </p>
               )}
               <div className="mt-3 flex flex-wrap gap-2">
-                {!reportingOnlyFailure && (
+                {canCorrectRejection && (
                   <>
                     {onEdit && (
                       <Button
@@ -669,12 +689,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
                       size="sm"
                       onClick={() => resubmit.mutate()}
                       {...submitAccess}
-                      disabled={
-                        !permission.known ||
-                        submitAccess.disabled ||
-                        resubmit.isPending ||
-                        !rejection.resubmittable
-                      }
+                      disabled={!permission.known || submitAccess.disabled || resubmit.isPending}
                       data-testid="einvoice-resubmit"
                     >
                       {resubmit.isPending && (
@@ -701,9 +716,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
                   testId="button-ask-najma-einvoice"
                 />
               </div>
-              {(reportingOnlyFailure
-                ? rejection.providerHoldsDocument
-                : !rejection.resubmittable) && (
+              {(reportingOnlyFailure ? rejection.providerHoldsDocument : !canCorrectRejection) && (
                 <p className="mt-2 text-caption text-muted-foreground">
                   {!reportingOnlyFailure && rejection.newDocumentRequired
                     ? t["einvoicing.resubmitNewDocument"]
@@ -744,7 +757,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
       )}
 
       <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-        {transmission.canSubmit && (
+        {transmission.canSubmit && !reconciling && (
           <Button
             size="sm"
             onClick={() => send.mutate()}
@@ -760,7 +773,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
             {formatMessage(t["einvoicing.sendVia"], { provider: providerName })}
           </Button>
         )}
-        {transmission.canRefresh && (
+        {transmission.canRefresh && !reconciling && (
           <Button
             size="sm"
             variant="outline"

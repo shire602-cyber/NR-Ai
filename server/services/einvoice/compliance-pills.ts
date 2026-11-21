@@ -4,9 +4,11 @@
  * `deriveInvoiceTracks` the status view uses. Established obligations and observed outcomes stay
  * visible after company settings change. Other rows appear when the company is in scope.
  */
-import type { Company } from "../../../shared/schema";
-import { storage } from "../../storage";
-import { documentReportingRequired, listEInvoiceDocuments } from "./store";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { einvoiceDocuments, invoices, type Company } from "../../../shared/schema";
+import { db } from "../../db";
+import { documentReportingRequired } from "./store";
+import { projectEInvoiceDocument } from "./status-view";
 import { einvoiceMandateApplies } from "./scope";
 import {
   deriveInvoiceTracks,
@@ -25,21 +27,55 @@ export interface CompliancePill {
   reporting: ReportingStatus;
 }
 
+type DocumentEvidence = Pick<
+  ReturnType<typeof projectEInvoiceDocument>,
+  | "invoiceId"
+  | "status"
+  | "provider"
+  | "providerStatus"
+  | "providerMessageId"
+  | "deliveryStatus"
+  | "reportingStatus"
+  | "reportBy"
+>;
+
 export async function listCompliancePills(
   company: Company,
-  now = new Date()
-): Promise<{ mandateApplies: boolean; items: CompliancePill[] }> {
+  now = new Date(),
+  invoiceIds?: string[]
+) {
   const mandateApplies = einvoiceMandateApplies(company, now);
-  const [invoices, docs] = await Promise.all([
-    storage.getInvoicesByCompanyId(company.id),
-    listEInvoiceDocuments(company.id, 500),
-  ]);
-  const byInvoice = new Map(docs.map((d) => [d.invoiceId, d]));
+  const rows = await db
+    .select({
+      invoice: {
+        id: invoices.id,
+        date: invoices.date,
+        status: invoices.status,
+        customerTrn: invoices.customerTrn,
+        einvoiceStatus: invoices.einvoiceStatus,
+        einvoiceProvider: invoices.einvoiceProvider,
+      },
+      doc: einvoiceDocuments,
+    })
+    .from(invoices)
+    .leftJoin(
+      einvoiceDocuments,
+      and(
+        eq(einvoiceDocuments.invoiceId, invoices.id),
+        eq(einvoiceDocuments.companyId, invoices.companyId)
+      )
+    )
+    .where(
+      and(
+        eq(invoices.companyId, company.id),
+        invoiceIds ? inArray(invoices.id, invoiceIds) : undefined
+      )
+    )
+    .orderBy(desc(invoices.date));
   const items: CompliancePill[] = [];
-  for (const invoice of invoices) {
+  const documents: DocumentEvidence[] = [];
+  for (const { invoice, doc } of rows) {
     const status = String(invoice.status ?? "").toLowerCase();
-    if (status === "draft" || status === "void" || status === "cancelled") continue;
-    const doc = byInvoice.get(invoice.id) ?? null;
     const required = documentReportingRequired(
       doc,
       invoiceReportingRequired(invoice, company, now)
@@ -53,6 +89,29 @@ export async function listCompliancePills(
       required,
       now,
     });
+    if (invoiceIds && doc) {
+      const {
+        invoiceId,
+        status,
+        provider,
+        providerStatus,
+        providerMessageId,
+        deliveryStatus,
+        reportingStatus,
+        reportBy,
+      } = projectEInvoiceDocument(doc, t);
+      documents.push({
+        invoiceId,
+        status,
+        provider,
+        providerStatus,
+        providerMessageId,
+        deliveryStatus,
+        reportingStatus,
+        reportBy,
+      });
+    }
+    if (status === "draft" || status === "void" || status === "cancelled") continue;
     if (!mandateApplies && !required && !isReportingObservation(t.reporting)) continue;
     items.push({
       invoiceId: invoice.id,
@@ -63,5 +122,5 @@ export async function listCompliancePills(
       reporting: t.reporting,
     });
   }
-  return { mandateApplies, items };
+  return { mandateApplies, items, ...(invoiceIds ? { documents } : {}) };
 }

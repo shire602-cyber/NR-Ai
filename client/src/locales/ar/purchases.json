@@ -3,6 +3,7 @@
   "purchases.noCostCenter": "بدون مركز تكلفة",
   "purchases.inboundCreditNotes": "إشعارات دائنة من الموردين بانتظار المراجعة",
   "purchases.inboundCreditNotesHint": "إشعارات دائنة مستلمة كفواتير إلكترونية. راجع كل إشعار وسجّله كرصيد دائن للمورد (إشعار مدين).",
+  "purchases.loadMoreInboundCreditNotes": "عرض المزيد من الإشعارات الدائنة",
   "purchases.inboundCreditNoteRow": "{supplier} — إشعار دائن {number}",
   "purchases.recordVendorCredit": "تسجيل رصيد المورد",
   "purchases.vendorCreditRecorded": "تم تسجيل رصيد المورد",

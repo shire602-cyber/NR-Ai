@@ -45,6 +45,39 @@ const ENV = {
 const COMPANY_ID = "00000000-0000-4000-8000-000000000001";
 const SOURCE = { name: `muhasib-${COMPANY_ID}`, version: "v1" };
 
+it("verifies recovery using the exact sales resource and rejects contradictory owners", async () => {
+  const documentId = "01KExactCase";
+  const identity = {
+    documentNumber: "INV-001",
+    supplierTin: "1001234567",
+    supplierTrn: "100123456700003",
+    legalEntityId: "ConnectExactCase",
+    sourceName: SOURCE.name,
+  };
+  let data: Record<string, unknown> = {
+    documentId,
+    documentNumber: identity.documentNumber,
+    source: `${SOURCE.name}:${SOURCE.version}`,
+    attribution: { companyId: identity.legalEntityId },
+    invoice: { parties: { seller: { peppolId: `0235:${identity.supplierTin}` } } },
+    payload: { parties: { seller: { taxIds: [{ type: "VAT", value: identity.supplierTrn }] } } },
+  };
+  const fetchImpl = async (input: string | URL | Request, request?: RequestInit) => {
+    expect(String(input)).toBe(`${BASE}/api/v3/documents/${documentId}?type=sales`);
+    expect(request?.method).toBe("GET");
+    return Response.json({ success: true, data });
+  };
+  const provider = new ComplyanceEInvoiceProvider(ENV, { fetch: fetchImpl });
+  expect(await provider.checkOutboundDocument(documentId, identity)).toBe("verified");
+
+  data = { ...data, companyId: identity.legalEntityId.toLowerCase() };
+  expect(await provider.checkOutboundDocument(documentId, identity)).toBe("mismatch");
+
+  delete data.companyId;
+  data = { ...data, documentId: documentId.toLowerCase() };
+  expect(await provider.checkOutboundDocument(documentId, identity)).toBe("mismatch");
+});
+
 interface Sent {
   url: string;
   method: string;

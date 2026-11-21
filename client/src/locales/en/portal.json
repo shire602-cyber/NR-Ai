@@ -35,7 +35,7 @@
   "portal.eventType.bill.approved": "Bill approved",
   "portal.eventType.bill.paid": "Bill paid",
   "portal.eventType.payroll.approved": "Payroll approved",
-  "portal.eventType.bank.sync_failed": "Bank feed sync failed",
+  "portal.eventType.bank.sync_failed": "Bank transaction import failed",
   "portal.eventType.compliance.deadline_due": "Compliance deadline due",
   "portal.eventType.task.due": "Task due",
   "portal.inAppNotifications": "In-app notifications",

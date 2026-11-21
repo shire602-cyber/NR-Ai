@@ -20,6 +20,7 @@ import {
   companyProviderHealth,
   getCompanyEInvoiceProvider,
 } from "../services/einvoice/providers/company-provider";
+import { providerCallbackUrl } from "../services/einvoice/providers/callback-url";
 import { recordAudit } from "../services/audit.service";
 import { createLogger } from "../config/logger";
 import { findInvoiceForUser } from "./invoices.routes";
@@ -38,6 +39,7 @@ import {
   listArchive,
   listEInvoiceDocuments,
   listInboundDocuments,
+  listInboundVendorCredits,
   lockEInvoiceInvoice,
   submissionProviderPin,
   submissionTriedProvider,
@@ -48,7 +50,10 @@ import { EINVOICE_TIMELINE, einvoicingScope } from "../services/einvoice/scope";
 import { listCompliancePills } from "../services/einvoice/compliance-pills";
 import { computeEInvoiceReadiness } from "../services/einvoice/readiness";
 import { getLegalEntity } from "../services/einvoice/legal-entities";
-import { confirmLegacyEInvoiceEnvironment } from "../services/einvoice/legacy-tracking";
+import {
+  confirmLegacyEInvoiceEnvironment,
+  needsLegacySubmissionRecovery,
+} from "../services/einvoice/legacy-tracking";
 import {
   INBOUND_SIGNATURE_HEADER,
   INBOUND_TIMESTAMP_HEADER,
@@ -122,6 +127,9 @@ function providerForSubmission(
   company: Company,
   doc: Awaited<ReturnType<typeof getEInvoiceDocument>>
 ) {
+  if (needsLegacySubmissionRecovery(invoice, doc)) {
+    throw new DomainError("EINVOICE_ALREADY_SUBMITTED", 409);
+  }
   if (
     submissionTriedProvider(doc) &&
     doc?.provider !== company.einvoicePartner &&
@@ -276,6 +284,10 @@ async function settingsView(company: Company) {
     inbound: {
       enabled: secret !== null,
       endpoint: `/api/webhooks/einvoice/${company.id}/inbound`,
+      providerCallbackUrl:
+        configured && health.chosenProvider && health.environment
+          ? providerCallbackUrl(health.chosenProvider, health.environment, company.id)
+          : null,
       signatureHeader: INBOUND_SIGNATURE_HEADER,
       timestampHeader: INBOUND_TIMESTAMP_HEADER,
     },
@@ -367,6 +379,8 @@ export function registerEInvoiceRoutes(app: Express) {
         if (
           ["queued", "submitted", "accepted", "cleared"].includes(invoice.einvoiceStatus ?? "") ||
           prior?.providerMessageId ||
+          invoice.einvoiceProviderMessageId ||
+          needsLegacySubmissionRecovery(invoice, prior) ||
           prior?.deliveryStatus === "needs_link" ||
           prior?.submitClaimedAt ||
           prior?.nextRetryAt
@@ -576,17 +590,34 @@ export function registerEInvoiceRoutes(app: Express) {
     "/api/invoices/:id/einvoice/confirm-environment",
     authMiddleware,
     requireCustomer,
-    strictBody(z.object({ environment: z.enum(["sandbox", "production"]) }).strict()),
+    strictBody(
+      z
+        .object({
+          environment: z.enum(["sandbox", "production"]),
+          documentId: z
+            .string()
+            .trim()
+            .min(6)
+            .max(64)
+            .regex(/^[A-Za-z0-9_-]+$/)
+            .optional(),
+        })
+        .strict()
+    ),
     asyncHandler(async (req: Request, res: Response) => {
       const { invoice, company } = await loadInvoiceAndCompany(req);
       await assertScopedCompanyPermission(req.user, company.id, "tax.submit");
-      const { environment } = validated<{ environment: "sandbox" | "production" }>(req);
+      const { environment, documentId } = validated<{
+        environment: "sandbox" | "production";
+        documentId?: string;
+      }>(req);
       res.json(
         await confirmLegacyEInvoiceEnvironment({
           invoice,
           company,
           actorId: userOf(req),
           environment,
+          documentId,
         })
       );
     })
@@ -600,7 +631,12 @@ export function registerEInvoiceRoutes(app: Express) {
       const { invoice, company } = await loadInvoiceAndCompany(req);
       const document = await getEInvoiceDocument(company.id, invoice.id);
       if (!invoice.einvoiceProviderMessageId) {
-        if (document && canRecoverAcubeSubmission(invoice, document)) {
+        if (
+          document &&
+          documentProviderEnvironment(document) &&
+          !needsLegacySubmissionRecovery(invoice, document) &&
+          canRecoverAcubeSubmission(invoice, document)
+        ) {
           const provider = await activeProvider(company.id, document);
           const recovered = await recoverAcubeSubmission(invoice, document, provider);
           if (recovered)
@@ -764,8 +800,7 @@ export function registerEInvoiceRoutes(app: Express) {
     })
   );
 
-  // X6d: invoice-list compliance pills (report-by date + delivery/reporting state); empty unless
-  // the e-invoicing mandate applies to the company.
+  // X6d: scoped evidence for the exact invoice rows requested by the list.
   app.get(
     "/api/companies/:companyId/einvoicing/compliance",
     authMiddleware,
@@ -773,7 +808,15 @@ export function registerEInvoiceRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
-      res.json(await listCompliancePills(company));
+      const requested = req.query.invoiceIds;
+      if (requested === undefined) return res.json(await listCompliancePills(company));
+      const ids = z
+        .array(zUuid)
+        .min(1)
+        .max(100)
+        .safeParse(typeof requested === "string" ? requested.split(",") : requested);
+      if (!ids.success) throw new DomainError("VALIDATION_ERROR", 400);
+      res.json(await listCompliancePills(company, new Date(), ids.data));
     })
   );
 
@@ -813,6 +856,18 @@ export function registerEInvoiceRoutes(app: Express) {
     authMiddleware,
     requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
+      if (req.query.review === "vendor-credits") {
+        const page = z
+          .object({
+            limit: z.coerce.number().int().min(1).max(100).default(100),
+            cursor: zUuid.optional(),
+          })
+          .safeParse(req.query);
+        if (!page.success) throw new DomainError("VALIDATION_ERROR", 400);
+        return res.json(
+          await listInboundVendorCredits(req.params.companyId, page.data.limit, page.data.cursor)
+        );
+      }
       res.json({ items: await listInboundDocuments(req.params.companyId) });
     })
   );

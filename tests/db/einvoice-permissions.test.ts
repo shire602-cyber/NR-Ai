@@ -479,7 +479,7 @@ describe("Company-scoped e-invoicing permissions", () => {
     expect(submit.body.code).toBe("PERMISSION_DENIED");
   });
 
-  it("keeps a role granted by a direct team edit through firm role changes", async () => {
+  it("keeps a generated membership firm-scoped after an ordinary team role save", async () => {
     const { context, staff, customer, platform, firmId } = await externalFirmClient();
     const companyId = customer.company.id;
     const [member] = await h.sql<{ id: string }>(
@@ -490,6 +490,17 @@ describe("Company-scoped e-invoicing permissions", () => {
       role: "admin",
     });
     expect(changed.status, changed.text).toBe(200);
+    expect(
+      await h.sql(
+        "SELECT created_membership FROM firm_company_grants WHERE company_id = $1 AND user_id = $2",
+        [companyId, staff.user.id]
+      )
+    ).toEqual([{ created_membership: true }]);
+    const promote = await customer.as.put(`/api/companies/${companyId}/team/${member.id}`, {
+      role: "owner",
+    });
+    expect(promote.status, promote.text).toBe(403);
+    expect(promote.body.code).toBe("ROLE_NOT_GRANTABLE");
     const { updateFirmMember } = await import("../../server/services/firm/staff.service");
     await updateFirmMember(context, staff.user.id, "viewer");
     const suspended = await platform.as.post(`/api/admin/firms/${firmId}/decision`, {
@@ -499,8 +510,130 @@ describe("Company-scoped e-invoicing permissions", () => {
     const selected = await staff.as.put(`/api/companies/${companyId}/einvoicing/partner`, {
       partner: "acube",
     });
-    expect(selected.status, selected.text).toBe(200);
-    expect(selected.body.chosen).toBe("acube");
+    expect(selected.status, selected.text).toBe(403);
+    expect(selected.body.code).toBe("PERMISSION_DENIED");
+  });
+
+  it("scopes invitation listing, revocation, and member removal to the assigned client", async () => {
+    const firm = await h.createTenant({ firmRole: "firm_admin", isAdmin: true });
+    const owner = await h.createTenant({ companyColumns: { company_type: "client" } });
+    const person = await h.createTenant();
+    const prefix = `/api/companies/${owner.company.id}/team`;
+    const invited = await owner.as.post(`${prefix}/invite`, {
+      email: person.email,
+      role: "viewer",
+    });
+    expect(invited.status, invited.text).toBe(201);
+    const invitation = `${prefix}/invitations/${invited.body.invitation.id}`;
+    const [member] = await h.sql(
+      "INSERT INTO company_users (company_id,user_id,role) VALUES ($1,$2,'viewer') RETURNING id",
+      [owner.company.id, person.user.id]
+    );
+    for (const result of [
+      await firm.as.get(`${prefix}/invitations`),
+      await firm.as.delete(invitation),
+      await firm.as.delete(`${prefix}/${member.id}`),
+    ]) {
+      expect(result.status, result.text).toBe(403);
+      expect(result.body.code).toBe("COMPANY_ACCESS_DENIED");
+    }
+    expect((await owner.as.get(`${prefix}/invitations`)).body[0].status).toBe("pending");
+    expect((await owner.as.delete(invitation)).status).toBe(200);
+    expect((await owner.as.delete(`${prefix}/${member.id}`)).status).toBe(204);
+  });
+
+  it("reconciles a proven historic direct invitation through firm demotion and removal", async () => {
+    const { context, staff, customer, invoiceId } = await externalFirmClient();
+    const companyId = customer.company.id;
+    const invited = await customer.as.post(`/api/companies/${companyId}/team/invite`, {
+      email: staff.email,
+      role: "viewer",
+    });
+    expect(invited.status, invited.text).toBe(201);
+    const invitationId = invited.body.invitation.id;
+    // Legacy acceptance recorded consent but left the already-present accountant role intact.
+    await h.sql(
+      "UPDATE company_invitations SET status = 'accepted', accepted_user_id = $1, accepted_at = now() WHERE id = $2",
+      [staff.user.id, invitationId]
+    );
+    const { recordAudit } = await import("../../server/services/audit.service");
+    await recordAudit({
+      companyId,
+      userId: staff.user.id,
+      action: "team.invite_accept",
+      entityType: "company_invitation",
+      entityId: invitationId,
+      after: { role: "viewer" },
+    });
+    const submit = () => staff.as.post(`/api/invoices/${invoiceId}/einvoice/submit`, {});
+    expect((await submit()).body.code).toBe("PERMISSION_DENIED");
+    const { updateFirmMember, removeFirmMember } =
+      await import("../../server/services/firm/staff.service");
+    await updateFirmMember(context, staff.user.id, "preparer");
+    await removeFirmMember(context, staff.user.id);
+    expect(
+      await h.sql("SELECT role FROM company_users WHERE company_id = $1 AND user_id = $2", [
+        companyId,
+        staff.user.id,
+      ])
+    ).toEqual([{ role: "viewer" }]);
+    expect((await submit()).body.code).toBe("PERMISSION_DENIED");
+  });
+
+  it("repairs a false marker proven to come from an older Team role edit", async () => {
+    const { context, staff, customer, invoiceId } = await externalFirmClient();
+    const companyId = customer.company.id;
+    const [member] = await h.sql<{ id: string }>(
+      "UPDATE company_users SET role = 'admin' WHERE company_id = $1 AND user_id = $2 RETURNING id",
+      [companyId, staff.user.id]
+    );
+    await h.sql(
+      "UPDATE firm_company_grants SET created_membership = false WHERE company_id = $1 AND user_id = $2",
+      [companyId, staff.user.id]
+    );
+    await h.sql(
+      "INSERT INTO audit_logs (company_id, user_id, action, resource_type, resource_id, details) VALUES ($1, $2, 'team.role_change', 'company_user', $3, 'old unstructured audit')",
+      [companyId, customer.user.id, member.id]
+    );
+    const { recordAudit } = await import("../../server/services/audit.service");
+    await recordAudit({
+      companyId,
+      userId: customer.user.id,
+      action: "team.role_change",
+      entityType: "company_user",
+      entityId: member.id,
+      before: { userId: staff.user.id, role: "accountant" },
+      after: { userId: staff.user.id, role: "admin" },
+    });
+    // A delegated NR firm owner has scoped Team access but the damaged marker is not a direct grant.
+    const { NR_FIRM_ID } = await import("../../server/services/firm/scope");
+    await h.sql("UPDATE users SET firm_role = 'firm_owner' WHERE id = $1", [staff.user.id]);
+    await h.sql("UPDATE firm_client_links SET firm_id = $1 WHERE company_id = $2", [
+      NR_FIRM_ID,
+      companyId,
+    ]);
+    const stranger = await h.createTenant();
+    const denied = await staff.as.post(`/api/companies/${companyId}/team/invite`, {
+      email: stranger.email,
+      role: "viewer",
+    });
+    expect(denied.status, denied.text).toBe(403);
+    expect(denied.body.code).toBe("PERMISSION_DENIED");
+    await h.sql("UPDATE users SET firm_role = NULL WHERE id = $1", [staff.user.id]);
+    await h.sql("UPDATE firm_client_links SET firm_id = $1 WHERE company_id = $2", [
+      context.firmId,
+      companyId,
+    ]);
+    const { removeFirmMember } = await import("../../server/services/firm/staff.service");
+    await removeFirmMember(context, staff.user.id);
+    expect(
+      await h.sql("SELECT id FROM company_users WHERE company_id = $1 AND user_id = $2", [
+        companyId,
+        staff.user.id,
+      ])
+    ).toEqual([]);
+    const submit = await staff.as.post(`/api/invoices/${invoiceId}/einvoice/submit`, {});
+    expect(submit.status, submit.text).toBe(404);
   });
 
   it.each([false, true])(

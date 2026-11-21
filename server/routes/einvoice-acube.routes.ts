@@ -54,6 +54,10 @@ import {
   upsertLegalEntity,
 } from "../services/einvoice/legal-entities";
 import { companyProviderConfiguration } from "../services/einvoice/providers/company-provider";
+import {
+  providerCallbackOrigin,
+  providerCallbackUrl,
+} from "../services/einvoice/providers/callback-url";
 import { EINVOICE_TIMELINE, einvoicingScope } from "../services/einvoice/scope";
 import { reportWindowDays } from "../services/einvoice/tracks";
 
@@ -90,15 +94,6 @@ async function acubeProvider(company: Company) {
   return { provider: new AcubeEInvoiceProvider(config.env), webhookToken: config.webhookSecret };
 }
 
-function webhookBaseUrl(): string | null {
-  const base = process.env.ACUBE_WEBHOOK_BASE_URL || process.env.AUTH_PUBLIC_URL || "";
-  return base ? base.replace(/\/+$/, "") : null;
-}
-
-function webhookPath(environment: string, companyId: string): string {
-  return `/api/webhooks/einvoice/acube/${environment}/${companyId}`;
-}
-
 type StepState = "done" | "current" | "todo" | "failed";
 
 export async function acubeConnectionView(
@@ -128,7 +123,6 @@ export async function acubeConnectionView(
         status === "active" ? (le?.registrySyncAt || le?.smpSyncAt ? "done" : "current") : "todo",
     },
   ];
-  const base = webhookBaseUrl();
   const scope = einvoicingScope({
     einvoiceScope: (company.einvoiceScope as string | null) ?? null,
     einvoiceTurnoverBand: (company.einvoiceTurnoverBand as string | null) ?? null,
@@ -172,7 +166,7 @@ export async function acubeConnectionView(
       reportWindowDays: reportWindowDays(),
     },
     webhook: {
-      url: base ? `${base}${webhookPath(environment, company.id)}` : null,
+      url: providerCallbackUrl(ACUBE_PROVIDER_NAME, environment, company.id),
       tokenConfigured: !!config?.webhookSecret,
       signaturePinned: !!process.env.ACUBE_SIGNATURE_PUBLIC_KEY,
     },
@@ -381,13 +375,13 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
       const { provider, webhookToken } = await acubeProvider(company);
-      const base = webhookBaseUrl();
-      if (!base || !base.startsWith("https://")) {
+      const target = providerCallbackUrl(ACUBE_PROVIDER_NAME, provider.environment, company.id);
+      if (!target) {
         throw new DomainError(
           "EINVOICE_WEBHOOK_URL_NOT_CONFIGURED",
           409,
           undefined,
-          "Set ACUBE_WEBHOOK_BASE_URL to the public https address of this app."
+          "Set ACUBE_WEBHOOK_BASE_URL to the public HTTPS origin of this app."
         );
       }
       const events = (process.env.ACUBE_WEBHOOK_EVENTS ?? "")
@@ -395,7 +389,7 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
         .map((s) => s.trim())
         .filter(Boolean);
       const out = await provider.ensureEventDestinations({
-        target: `${base}${webhookPath(provider.environment, company.id)}`,
+        target,
         events: events.length ? events : DEFAULT_WEBHOOK_EVENTS,
         authKey: webhookTokenHeaderName(),
         authToken: webhookToken,
@@ -437,7 +431,8 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
 
       // @target-uri is the URL A-Cube called: the configured public base when set (behind a
       // proxy), else this request's own scheme and host.
-      const base = webhookBaseUrl() ?? `${req.protocol}://${req.get("host")}`;
+      const base =
+        providerCallbackOrigin(ACUBE_PROVIDER_NAME) ?? `${req.protocol}://${req.get("host")}`;
       const request = {
         method: req.method,
         targetUri: `${base}${req.originalUrl}`,

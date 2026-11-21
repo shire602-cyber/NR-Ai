@@ -80,6 +80,12 @@ not the linked TIN (422 `EINVOICE_SUPPLIER_ENDPOINT_MISMATCH`). Tested in
    (every minute, lease + backoff, dead after 10 attempts) processes it, re-reading the resource
    from A-Cube rather than trusting the payload.
 
+Registering destinations with `POST /api/companies/:companyId/einvoicing/acube/webhooks` uses the
+credentials for that company and environment. The registrations belong to the A-Cube credential
+account. Use a company-dedicated account because the A-Cube API does not provide a taxpayer filter
+for destinations. The settings page shows the URL computed from the configured public HTTPS origin.
+[A-Cube UAE OpenAPI](https://docs.acubeapi.com/openapi/gov-ae-api.json)
+
 The worker claims the durable queue with a five-minute lease and sends the stored, validated XML.
 After a lost response, it searches numbered pages of the outgoing collection and compares the
 complete original UTF-8 source, including any BOM or trailing whitespace. Unresolved deliveries

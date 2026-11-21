@@ -33,7 +33,7 @@
  * maker-checker approvals.
  */
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-import { and, eq, exists, isNull, notExists, or } from "drizzle-orm";
+import { and, eq, exists, isNull, notExists, or, sql } from "drizzle-orm";
 import { db, pool, type AppDatabase } from "../db";
 import {
   companies,
@@ -46,6 +46,8 @@ import {
 } from "../../shared/schema";
 import {
   acceptedCompanyInvite,
+  historicDirectCompanyRole,
+  recordedFirmOrigin,
   canAccessFirmClient,
   NR_FIRM_ID,
   resolveFirmContext,
@@ -190,7 +192,7 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("POST", "invoices/*/einvoice/refresh-status", "reports.read"),
   // X6a: linking an e-invoice the provider already holds changes what the invoice reports to the
   // FTA (Complyance manual link after GETS-HEAD-010).
-  r("POST", "companies/*/einvoicing/complyance/link", "ledger.post"),
+  r("POST", "companies/*/einvoicing/complyance/link", "tax.submit"),
   // Status / transition routes that write or reverse journal entries (J4): issuing ("sent"/"posted")
   // and voiding an invoice, issuing/voiding a credit note, debit/credit notes raised from an
   // invoice, recording a customer payment, applying/refunding customer credit and undoing an FX
@@ -635,11 +637,12 @@ export async function scopedCompanyPermissionFailure(
     eq(firmCompanyGrants.companyId, companyId)
   );
   const grantQuery = conn
-    .select({ firmId: firmCompanyGrants.firmId, generated: firmCompanyGrants.createdMembership })
+    .select({ firmId: firmCompanyGrants.firmId, generated: sql<boolean>`${recordedFirmOrigin()}` })
     .from(firmCompanyGrants)
     .where(provenance);
   const grants = await (lock ? grantQuery.for(lock) : grantQuery);
   const generated = grants.find((row) => row.generated);
+  const historicRole = generated ? await historicDirectCompanyRole(companyId, user.id, conn) : null;
   const grant = generated && generated.firmId !== NR_FIRM_ID ? generated : undefined;
   const firmScoped = isNraFirmRole(user.firmRole);
   const nrRole = isFirmRole(user.firmRole) ? user.firmRole : undefined;
@@ -649,13 +652,19 @@ export async function scopedCompanyPermissionFailure(
       if (firmScoped) return null;
       const role = FIRM_ROLE_COMPANY_ROLE[nrRole];
       if (!roleHasAnyPermission(role, [permission])) return { code: "PERMISSION_DENIED", role };
-    } else if (generated) {
+    } else if (generated && !historicRole) {
       return { code: "COMPANY_ACCESS_DENIED" };
     }
   } else if (!grants.length && user.isAdmin && !nrRole) {
     return null;
-  } else if (generated && !grant) {
+  } else if (generated && !grant && !historicRole) {
     return { code: "COMPANY_ACCESS_DENIED" };
+  }
+
+  // A legacy invitation may prove an independent role despite an unchanged old firm marker.
+  if (historicRole) {
+    const role = normalizeCompanyRole(historicRole);
+    return roleHasAnyPermission(role, [permission]) ? null : { code: "PERMISSION_DENIED", role };
   }
 
   // Validate firm and link before locking company_users, following link revocation's lock order.
@@ -725,7 +734,7 @@ export async function scopedCompanyPermissionFailure(
               conn
                 .select({ id: firmCompanyGrants.id })
                 .from(firmCompanyGrants)
-                .where(and(provenance, eq(firmCompanyGrants.createdMembership, true)))
+                .where(and(provenance, recordedFirmOrigin()))
             )
       )
     )

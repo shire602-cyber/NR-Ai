@@ -189,7 +189,7 @@ export default function BankFeeds() {
           <EmptyState
             size="md"
             icon={Landmark}
-            title={tt["banking.feeds.notConfiguredTitle"]}
+            title={tt["banking.feeds.statementImportTitle"]}
             description={tt["banking.feeds.manualImportBody"]}
             action={{
               label: tt["banking.feeds.importStatement"],
@@ -266,7 +266,7 @@ export default function BankFeeds() {
                         disabled={syncMutation.isPending}
                       >
                         <RefreshCw aria-hidden />
-                        {tt["banking.feeds.sync"]}
+                        {tt["banking.feeds.importTransactions"]}
                       </Button>
                     </>
                   ) : available.length === 1 ? (

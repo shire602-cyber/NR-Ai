@@ -36,6 +36,7 @@
   "customerLink.invoicePageTitle": "Invoice {number} · {company}",
   "customerLink.invoiceExpiredBody": "This invoice link has expired. Ask the sender for a new one.",
   "customerLink.invoiceInvalidBody": "Check that you opened the whole link from the message you received, or ask the sender for a new one.",
-  "customerLink.einvoiceDelivered": "Delivered",
+  "customerLink.einvoiceDelivered": "Received by the buyer’s provider",
+  "customerLink.einvoiceAccepted": "Accepted by the buyer’s provider",
   "customerLink.invoiceDownload": "Download PDF"
 }
