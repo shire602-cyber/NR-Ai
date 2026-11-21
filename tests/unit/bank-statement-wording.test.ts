@@ -26,7 +26,7 @@ vi.mock("@/components/layout/SettingsLayout", () => ({
   SettingsLayout: ({ children }: PropsWithChildren) => children,
 }));
 const prohibitedCopy =
-  /\bbank[- ]feeds?\b|\blive (?:bank )?feeds?\b|\bopen[- ]banking\b|connect your bank|reconnect|thousands of financial institutions and tools|الربط البنكي|مزامنة (?:الحساب|الخلاصة) البنكي/i;
+  /\bbank[\s–—‑-]+feeds?\b|\blive\s+(?:bank\s+)?feeds?\b|\bopen[\s–—‑-]+banking\b|connect your bank|reconnect|thousands of financial institutions and tools|الربط (?:البنكي|المصرفي)|مزامنة (?:الحساب|الخلاصة) البنكي/i;
 
 describe("signed-in CSV statement wording", () => {
   let container: HTMLDivElement;
@@ -229,10 +229,11 @@ describe("signed-in CSV statement wording", () => {
   );
 });
 
-it("keeps the configured example on the application's registered authorization path", () => {
-  const fixture = readFileSync(".env.example", "utf8").match(/^# BANK_FEED_REDIRECT_URIS=(\S+)/m);
-  expect(fixture).not.toBeNull();
-  expect(new URL(fixture![1]).pathname).toBe(BANK_AUTHORIZATION_RETURN_PATH);
+it("documents the CSV workflow in the environment example", () => {
+  const example = readFileSync(".env.example", "utf8");
+  expect(example.split("\n")).toContain(`# ${bankStatementCopy.en}`);
+  expect(example).not.toMatch(prohibitedCopy);
+  expect(example).not.toMatch(/^\s*#?\s*(?:BANK_FEED_|LEAN_|TARABUT_|WIO_)\w*\s*=/m);
 });
 
 it("replaces stored banking notification text before returning it to the client", () => {
@@ -249,6 +250,9 @@ it("replaces stored banking notification text before returning it to the client"
 it("keeps the audit, data map and both roadmap formats free of superseded wording", () => {
   for (const file of [
     "docs/archive/2026-06/DEVELOPMENT_STATUS.md",
+    "docs/archive/2026-06/COMPETITIVE_ROADMAP.md",
+    "docs/archive/2026-06/FIX_PLAN.md",
+    "docs/archive/root/COMPETITIVE_AUDIT_2026.md",
     "docs/archive/root/muhasibaisource20260611-audit.md",
     "docs/archive/root/Digits-Platform-Research.md",
     "docs/archive/teardown-evidence/competitor-briefing.md",
@@ -269,6 +273,12 @@ it("keeps the audit, data map and both roadmap formats free of superseded wordin
   expect(digits).toContain("### Other Integrations\n- [Historical comparison excerpt redacted.]");
   const bankingValidators = readFileSync("shared/validators/banking.ts", "utf8");
   expect(bankingValidators).not.toMatch(prohibitedCopy);
+  const markdownRoadmap = readFileSync("docs/archive/2026-06/COMPETITIVE_ROADMAP.md", "utf8");
+  const [statementSection, phases] = markdownRoadmap.split("## Phased roadmap");
+  expect(statementSection).toContain(bankStatementCopy.en);
+  expect(phases).not.toContain(bankStatementCopy.en);
+  const deployment = readFileSync("docs/vercel-uae-postgres-assessment.md", "utf8");
+  expect(deployment).not.toMatch(/bank and e-invoice integrations|bank[- ]feeds?|open[- ]banking/i);
   const benchmark = readFileSync("docs/qa/2026-06-21-benchmark-audit/benchmark-run.json", "utf8");
   expect(benchmark).toContain("[Historical copy redacted]");
   expect(benchmark).not.toMatch(
@@ -287,6 +297,9 @@ it("keeps the audit, data map and both roadmap formats free of superseded wordin
   for (const contents of [source, pdf]) {
     const text = contents.replace(/\s+/g, " ");
     expect(text).toContain(bankStatementCopy.en);
+    const monthsThreeToSix = text.indexOf("Months 3-6");
+    expect(monthsThreeToSix).toBeGreaterThan(text.indexOf(bankStatementCopy.en));
+    expect(text.slice(monthsThreeToSix)).not.toContain(bankStatementCopy.en);
     expect(text).not.toMatch(prohibitedCopy);
     expect(text).not.toMatch(/bank connect\/sync/i);
   }

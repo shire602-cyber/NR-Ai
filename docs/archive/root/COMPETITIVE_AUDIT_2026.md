@@ -408,7 +408,7 @@ Scored across 8 dimensions (10 points each, 80 max):
 | 16 | Botkeeper | 41/80 | Per-client model for firms, 97% AI accuracy | English-only, no end-user features |
 | 17 | Truewind | 40/80 | Strong AI agent, anomaly detection | English-only, limited feature scope |
 | 18 | Qoyod | 39/80 | Arabic-first, ZATCA compliant, 25K users | Saudi-focused, limited AI, no WhatsApp |
-| 19 | Pennylane | 38/80 | $4.25B valuation, banking integrated | France-only, no Arabic, no UAE |
+| 19 | Pennylane | 38/80 | $4.25B valuation. [Historical comparison excerpt redacted.] | France-only, no Arabic, no UAE |
 | 20 | Basis | 37/80 | $1.15B unicorn, Big Four adoption | Firm tooling only, not end-user accounting |
 
 ---
