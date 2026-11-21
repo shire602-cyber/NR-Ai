@@ -87,6 +87,8 @@ function Picture({
   alt: string;
   high?: boolean;
 }) {
+  // React 18 forwards lowercase DOM attributes without a development warning.
+  const imagePriority = high ? { fetchpriority: "high" } : {};
   return (
     <img
       className="phase-shot"
@@ -101,7 +103,7 @@ function Picture({
       width={1280}
       height={800}
       loading={high ? "eager" : "lazy"}
-      fetchPriority={high ? "high" : undefined}
+      {...imagePriority}
     />
   );
 }
