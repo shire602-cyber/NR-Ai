@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import pg from "pg";
@@ -88,6 +89,48 @@ describe("migrations", () => {
       }
     },
     180_000
+  );
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "fails the release when the VAT audit membership index cannot be installed, then retries",
+    async () => {
+      const name = "idx_audit_logs_vat_group_member_ids";
+      const runRelease = () =>
+        spawnSync(process.execPath, ["--import", "tsx", "server/migrate.ts"], {
+          cwd: repoRoot,
+          encoding: "utf8",
+          env: { ...process.env, DATABASE_URL: h.databaseUrl, LOG_LEVEL: "info" },
+          timeout: 25_000,
+        });
+
+      await h.sql(`DROP INDEX public.${name}`);
+      await h.sql(`CREATE TABLE public.${name} (id integer)`);
+      try {
+        const { ensureCriticalSchema } = await import("../../server/db");
+        await expect(ensureCriticalSchema()).resolves.toBeUndefined();
+
+        const failed = runRelease();
+        const output = failed.stdout + failed.stderr;
+        expect(failed.error).toBeUndefined();
+        expect(failed.status, output).toBe(1);
+        expect(output).toContain("Production migration failed");
+        expect(output).toContain(name);
+      } finally {
+        await h.sql(`DROP TABLE public.${name}`);
+      }
+
+      const repaired = runRelease();
+      const output = repaired.stdout + repaired.stderr;
+      expect(repaired.error).toBeUndefined();
+      expect(repaired.status, output).toBe(0);
+      expect(output).toContain("Production migration completed");
+      expect(
+        await h.sql(
+          `SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('public.${name}')`
+        )
+      ).toEqual([{ indisvalid: true }]);
+    },
+    60_000
   );
 
   it.skipIf(process.env.HARNESS_MODE !== "postgres")(

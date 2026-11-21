@@ -207,17 +207,30 @@ async function ensureVatGroupAuditMembershipIndex(): Promise<void> {
     await client.query(
       "SELECT pg_advisory_lock(hashtextextended('schema:idx_audit_logs_vat_group_member_ids', 0))"
     );
-    const { rows } = await client.query<{ indisvalid: boolean }>(
-      `SELECT indisvalid FROM pg_index
-        WHERE indexrelid = to_regclass('public.idx_audit_logs_vat_group_member_ids')`
+    const {
+      rows: [index],
+    } = await client.query<{
+      indisvalid: boolean;
+      on_audit_logs: boolean;
+      method: string;
+    }>(
+      `SELECT i.indisvalid, i.indrelid = 'public.audit_logs'::regclass AS on_audit_logs,
+              am.amname AS method
+         FROM pg_index i
+         JOIN pg_class c ON c.oid = i.indexrelid
+         JOIN pg_am am ON am.oid = c.relam
+        WHERE i.indexrelid = to_regclass('public.idx_audit_logs_vat_group_member_ids')`
     );
-    if (rows[0]?.indisvalid) return;
-    if (rows.length) {
+    if (index && (!index.on_audit_logs || (index.indisvalid && index.method !== "gin"))) {
+      throw new Error("Unexpected index definition for idx_audit_logs_vat_group_member_ids");
+    }
+    if (index?.indisvalid) return;
+    if (index) {
       await client.query("DROP INDEX CONCURRENTLY public.idx_audit_logs_vat_group_member_ids");
     }
     // Limit index keys for oversized payloads, including malformed legacy audit text.
     await client.query(`
-      CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_audit_logs_vat_group_member_ids
+      CREATE INDEX CONCURRENTLY idx_audit_logs_vat_group_member_ids
         ON public.audit_logs USING gin ((
           CASE WHEN octet_length(details) <= 2048
                THEN string_to_array(lower(details), '"')
@@ -234,11 +247,12 @@ async function ensureVatGroupAuditMembershipIndex(): Promise<void> {
 
 /**
  * Belt-and-suspenders schema guard: ensures critical columns exist regardless
- * of Drizzle migration tracking state. Every statement uses IF NOT EXISTS so
- * it is always safe to re-run. Covers migrations 0003-0020 which may have
- * been tracked-but-not-executed in the production database.
+ * of Drizzle migration tracking state. The steps are safe to rerun. The release
+ * path also requires the VAT-group audit index to be ready.
  */
-export async function ensureCriticalSchema(): Promise<void> {
+export async function ensureCriticalSchema({
+  requireVatGroupAuditMembershipIndex = false,
+}: { requireVatGroupAuditMembershipIndex?: boolean } = {}): Promise<void> {
   const schemaSteps: Array<{ name: string; sql: ReturnType<typeof sql> }> = [
     // ── 0003: invoice share token ────────────────────────────────────────
     {
@@ -1341,6 +1355,7 @@ export async function ensureCriticalSchema(): Promise<void> {
       { step: "audit_logs.vat_group_member_ids index", err: errorMessage(err) },
       "Schema guard step failed"
     );
+    if (requireVatGroupAuditMembershipIndex) throw err;
   }
   log.info({ ok, failed, mode: "schema-only" }, "Critical schema guard completed");
 }

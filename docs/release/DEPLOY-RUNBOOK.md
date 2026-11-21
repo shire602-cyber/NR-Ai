@@ -35,7 +35,7 @@ PORT=<free port> npm start                      # boot check: /health/ready 200,
 ```
 
 Record timings per migration (the migrate log) and fail the rehearsal on any error or boot failure.
-Use a direct PostgreSQL connection for the release runner. The release schema guard builds the VAT-group audit membership index concurrently. Its dedicated session gives each statement at least five minutes and holds an advisory lock to serialize retries. Check the release log for failures and use the query below to verify the index.
+Use a direct PostgreSQL connection for the release runner. The release schema guard builds the required VAT-group audit membership index concurrently. Its dedicated session gives each statement at least five minutes and holds an advisory lock to serialize retries. A failed build exits the release command with a nonzero status. Use the query below to verify the index after a successful release.
 
 ```sql
 SELECT indisvalid
