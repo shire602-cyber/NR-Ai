@@ -172,6 +172,32 @@ async function firmMfaRequirement(companyIds: string[], userId: string) {
   return matched && { companyId: matched.company_id, policy: matched.require_mfa };
 }
 
+function sendMfaEnrollmentRequired(
+  res: Response,
+  requirement: { companyId: string; policy: string }
+) {
+  res.status(403).json({
+    message: "This company requires two-factor authentication. Set it up in Security settings.",
+    code: "MFA_ENROLLMENT_REQUIRED",
+    details: { ...requirement, setupUrl: "/settings/security" },
+  });
+}
+
+/** Check enrollment against the same authorized targets a firm handler will act on. */
+export async function requireFirmCompanyMfa(
+  user: Express.User,
+  res: Response,
+  companyIds: string[]
+): Promise<boolean> {
+  if (user.isAdmin === true || companyIds.length === 0) return true;
+  const sec = await loadUserSecurity(user.id);
+  if (!sec || sec.mfa_enabled) return true;
+  const requirement = await firmMfaRequirement(companyIds, user.id);
+  if (!requirement) return true;
+  sendMfaEnrollmentRequired(res, requirement);
+  return false;
+}
+
 async function companyMfaRequirement(req: Request, user: Express.User) {
   if (segs(req.path)[0]?.toLowerCase() === "firm") {
     return firmMfaRequirement(await firmMfaTargetCompanies(req, user), user.id);
@@ -312,12 +338,7 @@ export async function securityPolicyMiddleware(
     if (!sec.mfa_enabled && user.isAdmin !== true) {
       const requirement = await companyMfaRequirement(req, user);
       if (requirement) {
-        res.status(403).json({
-          message:
-            "This company requires two-factor authentication. Set it up in Security settings.",
-          code: "MFA_ENROLLMENT_REQUIRED",
-          details: { ...requirement, setupUrl: "/settings/security" },
-        });
+        sendMfaEnrollmentRequired(res, requirement);
         return;
       }
     }

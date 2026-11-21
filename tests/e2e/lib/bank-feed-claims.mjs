@@ -1,10 +1,3 @@
-// These complete sentences already ship on the base and are being removed by the
-// parallel launch-copy PRs. Keep the exemption exact so new promises still fail.
-const DELEGATED_ROADMAP_SENTENCES = [
-  "Live bank feeds are coming later.",
-  "سيتوفر الربط البنكي المباشر لاحقًا.",
-];
-
 const CLAIMS = [
   /\b(?:(?:connect|link) your bank|securely link your[^.!?]*bank account|via encrypted feeds|UAE bank feeds|photo, email forward, or bank feed|sync a bank line)\b/gi,
   /\b(?:connect to|sync from)\s+(?:(?:a|your)\s+)?(?:live\s+)?bank feeds?\b/gi,
@@ -22,14 +15,8 @@ const NEGATED_AFTER =
   /^\s+(?:(?:is|are)\s+)?(?:unavailable|unsupported|not\s+(?:available|supported|offered)\b|غير\s+(?:متاح|مدعوم))/iu;
 
 /** Return the first unsupported bank feed claim, if any. */
-export function findUnsupportedBankFeedClaim(text, { allowDelegatedRoadmapCopy = false } = {}) {
-  let source = text;
-  if (allowDelegatedRoadmapCopy) {
-    for (const sentence of DELEGATED_ROADMAP_SENTENCES) {
-      source = source.replaceAll(sentence, " ");
-    }
-  }
-  source = source.replace(/\u0640|[\u064b-\u065f]|\u0670/gu, "").replace(/\s+/gu, " ");
+export function findUnsupportedBankFeedClaim(text) {
+  const source = text.replace(/\u0640|[\u064b-\u065f]|\u0670/gu, "").replace(/\s+/gu, " ");
   for (const pattern of CLAIMS) {
     for (const match of source.matchAll(pattern)) {
       const before = source.slice(0, match.index);

@@ -44,13 +44,6 @@ const publicLaunchFiles = [
   "client/src/locales/ar/marketing.json",
 ];
 
-const delegatedBankCopyFiles = new Set([
-  "client/src/components/marketing/phase/PhaseSite.tsx",
-  "client/src/components/marketing/phase/content.ts",
-  "client/src/locales/en/marketing.json",
-  "client/src/locales/ar/marketing.json",
-]);
-
 const bannedLaunchClaims = [
   /FTA-compliant/i,
   /FTA Compliant/i,
@@ -142,9 +135,7 @@ describe("Public SaaS launch surface", () => {
         expect(source, `${file} contains ${bannedClaim}`).not.toMatch(bannedClaim);
       }
       expect(
-        findUnsupportedBankFeedClaim(source, {
-          allowDelegatedRoadmapCopy: delegatedBankCopyFiles.has(file),
-        }),
+        findUnsupportedBankFeedClaim(source),
         `${file} contains an unsupported bank feed claim`
       ).toBeNull();
     }
@@ -332,6 +323,7 @@ describe("Public SaaS launch surface", () => {
     "Connect your bank in seconds",
     "Review transactions via encrypted feeds",
     "Live bank feeds are available now.",
+    "Live bank feeds are coming later.",
     "Bank feeds are coming soon.",
     "We will support live bank feeds.",
     "اربط حسابك البنكي واستورد المعاملات.",
@@ -362,15 +354,17 @@ describe("Public SaaS launch surface", () => {
     expect(findUnsupportedBankFeedClaim(copy)).toBe("Securely link your bank account");
   });
 
-  it("limits the parallel copy exemption to the existing roadmap sentences", () => {
-    const copy = "Live bank feeds are coming later. سيتوفر الربط البنكي المباشر لاحقًا.";
-    expect(findUnsupportedBankFeedClaim(copy)).not.toBeNull();
-    expect(findUnsupportedBankFeedClaim(copy, { allowDelegatedRoadmapCopy: true })).toBeNull();
-    expect(
-      findUnsupportedBankFeedClaim(`${copy} Connect your bank today.`, {
-        allowDelegatedRoadmapCopy: true,
-      })
-    ).toBe("Connect your bank");
+  it.each(["en", "ar"])("keeps %s unavailable banking states focused on CSV import", (locale) => {
+    const banking = JSON.parse(readRepoFile(`client/src/locales/${locale}/banking.json`));
+    const errors = JSON.parse(readRepoFile(`client/src/locales/${locale}/serverErrors.json`));
+    for (const copy of [
+      banking["banking.feeds.unavailableTitle"],
+      banking["banking.feeds.unavailableBody"],
+      errors["serverErrors.BANK_FEED_NOT_CONFIGURED"],
+    ]) {
+      expect(copy).toContain("CSV");
+      expect(findUnsupportedBankFeedClaim(copy)).toBeNull();
+    }
   });
 
   // X6b: the old test here compared advertised free-plan limits with source text. Pricing, the

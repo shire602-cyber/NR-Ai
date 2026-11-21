@@ -60,7 +60,11 @@ import { fromFils, mulRate, toFils } from "../../shared/money";
 import { emitDomainEvent } from "../platform/domain-events";
 import { createAndEmitNotification } from "../services/socket.service";
 import { notificationCopy } from "../../shared/server-copy";
-import { assertPeriodNotLocked, assertNotFutureDate } from "../services/period-lock.service";
+import {
+  assertPeriodNotLocked,
+  assertNotFutureDate,
+  lockPeriodPolicy,
+} from "../services/period-lock.service";
 import {
   dueDateFromTerms,
   prepareSalesLines,
@@ -477,10 +481,11 @@ export function registerInvoiceRoutes(app: Express) {
       const body = validated<CreateInvoiceInput>(req);
       const doc = await prepareNewDocument(companyId, body);
       const invoiceDate = toDate(body.date);
-      await assertPeriodNotLocked(companyId, invoiceDate);
 
       // Number allocation and insert in ONE transaction (FTA gap-free numbering).
       const invoice = await db.transaction(async (tx: typeof db) => {
+        await lockPeriodPolicy(tx, companyId, "shared");
+        await assertPeriodNotLocked(companyId, invoiceDate, tx);
         const number = await allocateInvoiceNumber(companyId, "invoice", invoiceDate, tx);
         const [inserted] = await tx
           .insert(invoicesTable)

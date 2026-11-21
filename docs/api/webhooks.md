@@ -62,14 +62,17 @@ The secret is shown once when the endpoint is created and stored encrypted.
 - Every event becomes a durable `webhook_deliveries` row (unique per endpoint and event id) and is
   attempted immediately. A durable event redelivery reuses matching historical records and keeps
   their original event IDs.
-- A non-2xx HTTP response or a URL rejected before sending schedules a retry with backoff
-  of 30 s, 2 min, 8 min, 32 min, and about 2 h, capped at 6 h. The retry job runs every minute.
-- A webhook attempt has a 15-second deadline. A timeout, lost response, or interrupted worker can
-  leave delivery uncertain if the receiver already processed the request. Such deliveries are
-  marked **dead** with a reason and cannot be replayed.
+- A non-2xx HTTP response or a confirmed pre-send failure such as a refused connection or a URL
+  rejection schedules a retry with backoff of 30 s, 2 min, 8 min, 32 min, and about 2 h, capped at
+  6 h. The retry job runs every minute and recovers interrupted pre-send claims.
+- The webhook transport has a 15-second deadline. A timeout, lost response, or interrupted worker
+  after transmission may leave delivery uncertain if the receiver already processed the request.
+  Such deliveries are marked **dead** with a reason and cannot be replayed.
 - After 6 failed attempts the delivery is **dead**. Settled deliveries with a known outcome can
   be replayed from the UI or `POST /api/webhooks/{endpointId}/deliveries/{deliveryId}/replay`.
   A replay keeps the event ID and body and uses a new delivery ID and signature. The API returns
-  409 if another delivery of that event to the same endpoint is active or uncertain.
+  409 if a delivery of that event to the same endpoint is active or uncertain. The delivery list
+  includes `replayEligible` and `replayUnavailableReason` (`delivery_pending`, `delivery_uncertain`,
+  or `null`).
 - Answer 2xx quickly, process asynchronously, and deduplicate on `X-Webhook-Id` to handle retries
   and deliberate replays.

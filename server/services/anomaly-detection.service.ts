@@ -560,16 +560,23 @@ export async function detectAnomalies(
   q: Queryable = pool
 ): Promise<AnomalyDetectionResult> {
   const anomalies: Anomaly[] = [];
-  await Promise.all([
-    duplicateAmounts(companyId, anomalies, q),
-    unusualAmounts(companyId, anomalies, q),
-    weekendEntries(companyId, anomalies, q),
-    roundNumbers(companyId, anomalies, q),
-    duplicateVendors(companyId, anomalies, q),
-    duplicateSupplierInvoices(companyId, anomalies, q),
-    vatAndTrn(companyId, anomalies, q),
-    crossPeriodBaseline(companyId, anomalies, q),
-  ]);
+  const rules = [
+    duplicateAmounts,
+    unusualAmounts,
+    weekendEntries,
+    roundNumbers,
+    duplicateVendors,
+    duplicateSupplierInvoices,
+    vatAndTrn,
+    crossPeriodBaseline,
+  ];
+  if (q === pool) {
+    await Promise.all(rules.map((run) => run(companyId, anomalies, q)));
+  } else {
+    // A caller's transaction runs on one connection. Finish each rule before
+    // the next so nothing is queued across a savepoint rollback on failure.
+    for (const run of rules) await run(companyId, anomalies, q);
+  }
 
   const severityOrder: Record<AnomalySeverity, number> = { critical: 0, warning: 1, info: 2 };
   anomalies.sort(

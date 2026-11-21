@@ -7,7 +7,7 @@
  * check and the write it guards. Rate limits are effectively off in the
  * harness, so no case can be "skipped" by a 429.
  */
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { accountByCode, ledgerTotals, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -56,6 +56,65 @@ describe.skipIf(process.env.HARNESS_MODE !== "postgres")("concurrency (real Post
     expect(new Set(nums).size).toBe(20);
     const seq = nums.map((x) => Number(String(x).split("-").pop())).sort((a, b) => a - b);
     expect(seq[seq.length - 1] - seq[0]).toBe(19);
+  });
+
+  it("rejects a draft invoice when a hard close wins the period lock, without consuming a number", async () => {
+    const tenant = await h.createTenant({ name: "InvoicePeriodRace" });
+    const companyId = tenant.company.id;
+    const { withLedgerTx } = await import("../../server/ledger/tx");
+    const { lockPeriod } = await import("../../server/services/month-end.service");
+    let signalPublished = () => {};
+    const published = new Promise<void>((resolve) => {
+      signalPublished = resolve;
+    });
+    let releaseClose = () => {};
+    const released = new Promise<void>((resolve) => {
+      releaseClose = resolve;
+    });
+    const close = withLedgerTx(async (tx) => {
+      await lockPeriod(companyId, "2025-11-30", tenant.user.id, { lockType: "hard" }, tx);
+      signalPublished();
+      await released;
+    });
+    await Promise.race([published, close]);
+
+    const endpoint = `/api/companies/${companyId}/invoices`;
+    const invoice = {
+      date: "2025-11-30",
+      customerName: "Period boundary customer",
+      lines: [{ description: "Consulting", quantity: 1, unitPrice: 100, vatRate: 5 }],
+    };
+    let responded = false;
+    const creating = tenant.as.post(endpoint, invoice).finally(() => {
+      responded = true;
+    });
+    try {
+      // Observe PostgreSQL's shared-lock waiter, or the early response on vulnerable code.
+      await vi.waitFor(
+        async () => {
+          const [lock] = await h.sql<{ waiting: boolean }>(`
+          SELECT EXISTS (
+            SELECT 1 FROM pg_locks
+             WHERE locktype = 'advisory' AND mode = 'ShareLock' AND NOT granted
+               AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+          ) AS waiting
+        `);
+          expect(lock.waiting || responded).toBe(true);
+        },
+        { timeout: 6000 }
+      );
+    } finally {
+      releaseClose();
+      await Promise.all([close, creating]);
+    }
+    const blocked = await creating;
+    expect(blocked.status, blocked.text).toBe(403);
+    expect(blocked.body.code).toBe("PERIOD_LOCKED");
+    expect(await h.sql("SELECT id FROM invoices WHERE company_id = $1", [companyId])).toEqual([]);
+
+    const next = await tenant.as.post(endpoint, { ...invoice, date: "2025-12-01" });
+    expect(next.status, next.text).toBe(200);
+    expect(next.body.number).toBe("INV-2025-00001");
   });
 
   it("10 parallel issues recognise revenue exactly once", async () => {

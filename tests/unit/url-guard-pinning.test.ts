@@ -129,6 +129,74 @@ describe("R17-15 DNS pinning", () => {
     expect(seen).toHaveLength(0);
   });
 
+  it("sends HTTP bytes only after the transmission boundary has been prepared", async () => {
+    __setOutboundGuardForTests({
+      isBlocked,
+      resolve: async () => [{ address: "127.0.0.1", family: 4 }],
+    });
+    let ready!: (markStarted: () => void) => void;
+    const prepare = new Promise<() => void>((resolve) => {
+      ready = resolve;
+    });
+    let preparing!: () => void;
+    const atBoundary = new Promise<void>((resolve) => {
+      preparing = resolve;
+    });
+    const started: boolean[] = [];
+    const pending = safeOutboundFetch(
+      `http://public.test:${port}/hook`,
+      { method: "POST", body: "webhook" },
+      {
+        prepareTransmission: () => {
+          preparing();
+          return prepare;
+        },
+      }
+    );
+    try {
+      expect(await Promise.race([atBoundary.then(() => "ready"), pending])).toBe("ready");
+      expect(seen).toHaveLength(0);
+    } finally {
+      ready(() => started.push(true));
+      await pending;
+    }
+    expect(started).toEqual([true]);
+    expect(seen).toHaveLength(1);
+  });
+
+  it("withholds HTTP bytes when the deadline expires during transmission preparation", async () => {
+    __setOutboundGuardForTests({
+      isBlocked,
+      resolve: async () => [{ address: "127.0.0.1", family: 4 }],
+    });
+    let ready!: (markStarted: () => void) => void;
+    const prepare = new Promise<() => void>((resolve) => {
+      ready = resolve;
+    });
+    let preparing!: () => void;
+    const atBoundary = new Promise<void>((resolve) => {
+      preparing = resolve;
+    });
+    const controller = new AbortController();
+    const started: boolean[] = [];
+    const pending = safeOutboundFetch(
+      `http://public.test:${port}/hook`,
+      { method: "POST", body: "webhook", signal: controller.signal },
+      {
+        prepareTransmission: () => {
+          preparing();
+          return prepare;
+        },
+      }
+    );
+    await atBoundary;
+    controller.abort();
+    ready(() => started.push(true));
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(started).toHaveLength(0);
+    expect(seen).toHaveLength(0);
+  });
+
   it("[R17-15] redirects are returned as-is by default and re-validated hop by hop when followed", async () => {
     __setOutboundGuardForTests({
       isBlocked,

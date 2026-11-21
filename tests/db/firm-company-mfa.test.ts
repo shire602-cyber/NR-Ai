@@ -3,6 +3,20 @@ import { useHarness } from "./harness";
 
 const h = useHarness();
 
+async function createMfaClients(action: string) {
+  const owner = await h.createTenant({ name: `MFA ${action} Firm Owner`, firmRole: "firm_owner" });
+  const protectedClient = await owner.as.post("/api/firm/clients", {
+    name: `MFA ${action} Client`,
+  });
+  const openClient = await owner.as.post("/api/firm/clients", { name: `MFA ${action}, LLC` });
+  expect(protectedClient.status, protectedClient.text).toBe(201);
+  expect(openClient.status, openClient.text).toBe(201);
+  const protectedId: string = protectedClient.body.id;
+  const openId: string = openClient.body.id;
+  const { setCompanyMfaPolicy } = await import("../../server/services/security/policy");
+  return { owner, protectedId, openId, setCompanyMfaPolicy };
+}
+
 describe("Company MFA on firm client actions", () => {
   it("checks the target company for named, body-scoped, and row-scoped firm writes", async () => {
     const owner = await h.createTenant({ name: "MFA Firm Owner", firmRole: "firm_owner" });
@@ -104,5 +118,130 @@ describe("Company MFA on firm client actions", () => {
     });
     expect(own.status).toBe(201);
     expect((await actor.as.get("/api/auth/security/overview")).status).toBe(200);
+  });
+
+  it("requires MFA only for the selected companies in a bulk trial-balance export", async () => {
+    const { owner, protectedId, openId, setCompanyMfaPolicy } = await createMfaClients("Export");
+    const actor = await h.createTenant({ name: "MFA Export Firm Admin", firmRole: "firm_admin" });
+    for (const companyId of [protectedId, openId]) {
+      const assigned = await owner.as.post(`/api/firm/clients/${companyId}/assign-staff`, {
+        staffUserId: actor.user.id,
+        action: "assign",
+      });
+      expect(assigned.status, assigned.text).toBe(200);
+    }
+    await setCompanyMfaPolicy(protectedId, "all", owner.user.id);
+    const path = "/api/firm/bulk/report-pack";
+    for (const input of [{ companyIds: [protectedId, openId] }, {}]) {
+      const result = await actor.as.post(path, input);
+      expect(
+        result.status,
+        `${result.headers.get("content-type")} for ${JSON.stringify(input)}`
+      ).toBe(403);
+      expect(result.body).toMatchObject({
+        code: "MFA_ENROLLMENT_REQUIRED",
+        details: { companyId: protectedId },
+      });
+    }
+    const openPack = await actor.as.post(path, { companyIds: [openId] });
+    expect(openPack.status).toBe(200);
+    expect(openPack.headers.get("content-type")).toContain("application/zip");
+    expect(openPack.headers.get("x-report-pack-files")).toBe("2");
+
+    const other = await h.createTenant({ name: "MFA Export Unrelated Company" });
+    await setCompanyMfaPolicy(other.company.id, "all", other.user.id);
+    const denied = await actor.as.post(path, { companyIds: [other.company.id, protectedId] });
+    expect(denied.status, denied.text).toBe(403);
+    expect(denied.body).toMatchObject({ code: "BULK_COMPANY_FORBIDDEN" });
+  });
+
+  it("requires MFA for the client in audit and CFO packs", async () => {
+    const { owner, protectedId, openId, setCompanyMfaPolicy } = await createMfaClients("Audit");
+    await setCompanyMfaPolicy(protectedId, "all", owner.user.id);
+    for (const pack of ["audit-pack", "cfo-pack"]) {
+      const path = (companyId: string) => `/api/firm/value-ops/clients/${companyId}/${pack}`;
+      expect((await owner.as.get(path(openId))).status).toBe(200);
+      const protectedPack = await owner.as.get(path(protectedId));
+      expect(protectedPack.status, protectedPack.text).toBe(403);
+      expect(protectedPack.body).toMatchObject({
+        code: "MFA_ENROLLMENT_REQUIRED",
+        details: { companyId: protectedId },
+      });
+      const head = await fetch(h.baseUrl + path(protectedId), {
+        method: "HEAD",
+        headers: { Authorization: `Bearer ${owner.token}` },
+      });
+      expect(head.status).toBe(403);
+    }
+  });
+
+  it("checks the assigned companies in value operations summaries", async () => {
+    const { owner, protectedId, openId, setCompanyMfaPolicy } = await createMfaClients("Summary");
+    const actor = await h.createTenant({ name: "MFA Summary Firm Admin", firmRole: "firm_admin" });
+    const assign = async (companyId: string) => {
+      const result = await owner.as.post(`/api/firm/clients/${companyId}/assign-staff`, {
+        staffUserId: actor.user.id,
+        action: "assign",
+      });
+      expect(result.status, result.text).toBe(200);
+    };
+    await assign(openId);
+    const base = "/api/firm/value-ops";
+    const aggregates = [base, `${base}/review-queue`, `${base}/action-brief`];
+    const unassigned = await actor.as.get(`${base}/clients/${protectedId}/audit-pack`);
+    expect(unassigned.status, unassigned.text).toBe(403);
+    expect(unassigned.body.message).toBe("Access denied to this client");
+    for (const path of aggregates) {
+      const available = await actor.as.get(path);
+      expect(available.status, available.text).toBe(200);
+    }
+    await assign(protectedId);
+    await setCompanyMfaPolicy(protectedId, "all", owner.user.id);
+    for (const path of aggregates) {
+      const gated = await actor.as.get(path);
+      expect(gated.status, gated.text).toBe(403);
+      expect(gated.body).toMatchObject({
+        code: "MFA_ENROLLMENT_REQUIRED",
+        details: { companyId: protectedId },
+      });
+    }
+  });
+
+  it("applies MFA to the actual clients resolved from the journal CSV and prevents partial posting", async () => {
+    const { owner, protectedId, openId, setCompanyMfaPolicy } = await createMfaClients("Import");
+    await setCompanyMfaPolicy(protectedId, "all", owner.user.id);
+    const header = "client,entry_ref,date,account_code,description,debit,credit";
+    const entry = (client: string, ref: string) =>
+      [
+        `${client},${ref},2026-10-01,1020,Opening cash,50.00,`,
+        `${client},${ref},2026-10-01,3010,Opening capital,,50.00`,
+      ].join("\n");
+    const path = "/api/firm/bulk/journal-import";
+    // Use a quoted name with a comma and a header alias to exercise the same CSV resolution as posting.
+    const openCsv = `${header}\n${entry('"mfa import, llc"', "MFA-open")}`;
+    const posted = await owner.as.post(path, { csv: openCsv });
+    expect(posted.status, posted.text).toBe(200);
+    expect(posted.body.entries).toMatchObject([{ companyId: openId, status: "posted" }]);
+
+    const mixedCsv = [
+      header,
+      entry(openId, "MFA-open-second"),
+      entry(protectedId.toUpperCase(), "MFA-protected"),
+    ].join("\n");
+    for (const dryRun of [false, true]) {
+      const denied = await owner.as.post(path, { csv: mixedCsv, dryRun });
+      expect(denied.status, denied.text).toBe(403);
+      expect(denied.body).toMatchObject({
+        code: "MFA_ENROLLMENT_REQUIRED",
+        details: { companyId: protectedId },
+      });
+    }
+    expect(
+      await h.sql(
+        `SELECT company_id, reference FROM journal_entries
+          WHERE company_id = ANY($1::uuid[]) AND source = 'firm_bulk_import'`,
+        [[openId, protectedId]]
+      )
+    ).toEqual([{ company_id: openId, reference: "MFA-open" }]);
   });
 });

@@ -8,6 +8,23 @@ import { useHarness } from "./harness";
 const h = useHarness();
 
 describe("STEP1 F6 admin integrations", () => {
+  it("lists manual statement import as available without provider setup", async () => {
+    const admin = await h.createTenant({ name: "BankStatementAdmin", isAdmin: true });
+    const status = await admin.as.get("/api/admin/integration-status");
+    expect(status.status, status.text).toBe(200);
+    expect(status.body.integrations).toContainEqual({
+      key: "bankStatementImport",
+      name: "Bank statement import",
+      configured: true,
+      detail: "Manual CSV and OFX import",
+      requiredEnv: [],
+      unlocks: "Import statements and reconcile transactions on the Bank reconciliation page",
+    });
+    expect(status.body.integrations).not.toContainEqual(
+      expect.objectContaining({ key: "openBanking" })
+    );
+  });
+
   it("[F6-status] an admin reads configured/not configured; a customer is refused", async () => {
     const admin = await h.createTenant({ name: "IntegrationsAdmin", isAdmin: true });
     const customer = await h.createTenant({ name: "IntegrationsCustomer" });

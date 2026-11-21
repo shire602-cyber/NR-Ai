@@ -43,6 +43,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatDateTime } from "@/lib/format-date";
 import { Key, Webhook, Plus, Trash2, Copy, Check, Send, Eye, RefreshCw } from "lucide-react";
 
 // ===========================
@@ -87,6 +88,8 @@ interface WebhookDeliveryItem {
   status?: "pending" | "in_flight" | "retrying" | "delivered" | "dead";
   nextAttemptAt?: string | null;
   lastError?: string | null;
+  replayEligible: boolean;
+  replayUnavailableReason: "delivery_pending" | "delivery_uncertain" | null;
   createdAt: string;
 }
 
@@ -507,8 +510,49 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
 // Webhooks Tab
 // ===========================
 
-function WebhooksTab({ companyId }: { companyId: string }) {
+function WebhookReplayControl({
+  delivery,
+  isPending,
+  onReplay,
+}: {
+  delivery: WebhookDeliveryItem;
+  isPending: boolean;
+  onReplay: () => void;
+}) {
   const { t } = useTranslation();
+  const reasonId = `webhook-replay-reason-${delivery.id}`;
+  const unavailable = delivery.replayEligible !== true;
+  const reasons = {
+    delivery_pending: t["developerSettings.replayDeliveryPending"],
+    delivery_uncertain: t["developerSettings.replayDeliveryUncertain"],
+  };
+  const reason = delivery.replayUnavailableReason && reasons[delivery.replayUnavailableReason];
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        title={t["developerSettings.replay"]}
+        aria-label={t["developerSettings.replay"]}
+        aria-describedby={unavailable ? reasonId : undefined}
+        onClick={onReplay}
+        disabled={isPending || unavailable}
+        data-testid={`button-replay-${delivery.id}`}
+      >
+        <RefreshCw className="h-4 w-4" />
+      </Button>
+      {unavailable && (
+        <p id={reasonId} className="text-xs text-muted-foreground">
+          {reason ?? t["developerSettings.replayUnavailable"]}
+        </p>
+      )}
+    </>
+  );
+}
+
+function WebhooksTab({ companyId }: { companyId: string }) {
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [createOpen, setCreateOpen] = useState(false);
   const [showSecretDialog, setShowSecretDialog] = useState(false);
@@ -520,6 +564,13 @@ function WebhooksTab({ companyId }: { companyId: string }) {
   // Form state
   const [newUrl, setNewUrl] = useState("");
   const [newEvents, setNewEvents] = useState<string[]>([]);
+  const statusLabels = {
+    pending: t["pages.pending"],
+    in_flight: t["pages.inProgress"],
+    retrying: t["developerSettings.deliveryRetrying"],
+    delivered: t["pageLabels.delivered"],
+    dead: t["pages.failed"],
+  };
 
   const { data: webhooks, isLoading } = useQuery<WebhookEndpointItem[]>({
     queryKey: ["/api/companies", companyId, "webhooks"],
@@ -530,15 +581,20 @@ function WebhooksTab({ companyId }: { companyId: string }) {
     queryKey: ["/api/webhooks", deliveriesEndpointId, "deliveries"],
     queryFn: () => apiRequest("GET", `/api/webhooks/${deliveriesEndpointId}/deliveries`),
     enabled: !!deliveriesEndpointId,
+    staleTime: 0,
+    refetchInterval: (query) =>
+      query.state.data?.some((delivery) => delivery.replayUnavailableReason === "delivery_pending")
+        ? 5_000
+        : false,
   });
 
-  // W5-B (R19-02): replay any delivery (same event id, new signed attempt).
   const replayMutation = useMutation({
-    mutationFn: (deliveryId: string) =>
-      apiRequest("POST", `/api/webhooks/${deliveriesEndpointId}/deliveries/${deliveryId}/replay`),
-    onSuccess: () =>
+    mutationFn: ({ endpointId, deliveryId }: { endpointId: string; deliveryId: string }) =>
+      apiRequest("POST", `/api/webhooks/${endpointId}/deliveries/${deliveryId}/replay`),
+    onError: () => toast({ variant: "destructive", title: t["developerSettings.replayFailed"] }),
+    onSettled: (_result, _error, { endpointId }) =>
       queryClient.invalidateQueries({
-        queryKey: ["/api/webhooks", deliveriesEndpointId, "deliveries"],
+        queryKey: ["/api/webhooks", endpointId, "deliveries"],
       }),
   });
 
@@ -902,8 +958,12 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                     <TableHead>
                       <T k="pageLabels.response" />
                     </TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead />
+                    <TableHead>
+                      <T k="pages.dateTime" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.actions" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -915,13 +975,15 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                       <TableCell>
                         {delivery.success ? (
                           <Badge className="bg-success-subtle text-success-subtle-foreground ">
-                            {delivery.status ?? "delivered"}
+                            {delivery.status
+                              ? statusLabels[delivery.status]
+                              : t["pageLabels.delivered"]}
                           </Badge>
                         ) : (
                           <Badge
                             variant={delivery.status === "retrying" ? "outline" : "destructive"}
                           >
-                            {delivery.status ?? "failed"}
+                            {delivery.status ? statusLabels[delivery.status] : t["pages.failed"]}
                           </Badge>
                         )}
                         <span className="ms-2 text-xs text-muted-foreground">
@@ -934,24 +996,28 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                           : t["developerSettings.noResponse"]}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
-                        {new Date(delivery.createdAt).toLocaleString()}
+                        {formatDateTime(delivery.createdAt, locale)}
                         {delivery.status === "retrying" && delivery.nextAttemptAt && (
                           <span className="block text-xs">
-                            → {new Date(delivery.nextAttemptAt).toLocaleTimeString()}
+                            {formatMessage(t["developerSettings.nextDeliveryAttempt"], {
+                              time: formatDateTime(delivery.nextAttemptAt, locale),
+                            })}
                           </span>
                         )}
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          title={t["developerSettings.replay"]}
-                          onClick={() => replayMutation.mutate(delivery.id)}
-                          disabled={replayMutation.isPending}
-                          data-testid={`button-replay-${delivery.id}`}
-                        >
-                          <RefreshCw className="h-4 w-4" />
-                        </Button>
+                        <WebhookReplayControl
+                          delivery={delivery}
+                          isPending={replayMutation.isPending}
+                          onReplay={() => {
+                            if (deliveriesEndpointId) {
+                              replayMutation.mutate({
+                                endpointId: deliveriesEndpointId,
+                                deliveryId: delivery.id,
+                              });
+                            }
+                          }}
+                        />
                       </TableCell>
                     </TableRow>
                   ))}

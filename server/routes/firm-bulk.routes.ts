@@ -16,11 +16,13 @@ import {
   buildReportPack,
   bulkScopeSchema,
   importJournalsAcrossClients,
+  prepareJournalImport,
   resolveBulkPeriod,
   resolveBulkTargets,
   zBulkCompanyIds,
   zBulkPeriod,
 } from "../services/firm/bulk.service";
+import { requireFirmCompanyMfa } from "../services/security/policy";
 import { asyncHandler } from "../middleware/errorHandler";
 import { db } from "../db";
 import { eq, and, gte, lte, inArray, count, sum, max, not, desc } from "drizzle-orm";
@@ -641,7 +643,10 @@ router.post(
   strictBody(journalImportSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const body = parsedBody<z.output<typeof journalImportSchema>>(req);
-    const result = await importJournalsAcrossClients(firmContextOf(res), body.csv, {
+    const ctx = firmContextOf(res);
+    const plan = await prepareJournalImport(ctx, body.csv);
+    if (!(await requireFirmCompanyMfa(req.user!, res, plan.companyIds))) return;
+    const result = await importJournalsAcrossClients(ctx, plan, {
       dryRun: body.dryRun,
       req,
     });
@@ -667,6 +672,7 @@ router.post(
         fields: { companyIds: ["No accessible clients to include"] },
       });
     }
+    if (!(await requireFirmCompanyMfa(req.user!, res, companyIds))) return;
     const period = resolveBulkPeriod(scope.period);
     const pack = await buildReportPack(ctx, companyIds, period);
     res.setHeader("Content-Type", "application/zip");

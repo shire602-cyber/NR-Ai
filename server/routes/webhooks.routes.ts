@@ -23,6 +23,7 @@ import {
   WEBHOOK_EVENTS,
   attemptWebhookDelivery,
   enqueueWebhookEvent,
+  listWebhookDeliveries,
   normaliseEventList,
   registerWebhookDispatch,
   replayWebhookDelivery,
@@ -201,17 +202,7 @@ export function registerWebhookRoutes(app: Express) {
     requireFeature("webhooks"),
     asyncHandler(async (req: Request, res: Response) => {
       const existing = await endpointForUser(req.params.id, req.user!.id);
-      const { rows } = await pool.query(
-        `SELECT id, event, event_id AS "eventId", status, attempt_number AS "attemptNumber",
-                max_attempts AS "maxAttempts", response_status AS "responseStatus",
-                response_body AS "responseBody", success, last_error AS "lastError",
-                next_attempt_at AS "nextAttemptAt", delivered_at AS "deliveredAt",
-                created_at AS "createdAt", payload
-           FROM webhook_deliveries WHERE webhook_endpoint_id = $1
-          ORDER BY created_at DESC LIMIT 100`,
-        [existing.id]
-      );
-      res.json(rows);
+      res.json(await listWebhookDeliveries(existing.id));
     })
   );
 

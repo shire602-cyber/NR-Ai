@@ -205,6 +205,8 @@ interface HopResult {
   bodyText: string;
 }
 
+type PrepareTransmission = () => Promise<() => void>;
+
 function headersToObject(init: HeadersInit | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   new Headers(init ?? {}).forEach((value, key) => {
@@ -231,7 +233,8 @@ function requestPinned(
   body: Buffer | null,
   timeoutMs: number,
   maxBodyBytes: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  prepareTransmission?: PrepareTransmission
 ): Promise<HopResult> {
   const isHttps = url.protocol === "https:";
   const lib = isHttps ? https : http;
@@ -287,8 +290,35 @@ function requestPinned(
       reject(err);
     });
     req.on("close", () => clearTimeout(timer));
-    if (body) req.write(body);
-    req.end();
+    if (!prepareTransmission) {
+      req.end(body ?? undefined);
+      return;
+    }
+
+    // Withhold the HTTP request until the connection is ready and the caller has
+    // durably recorded that the attempt may send. TCP/TLS failures before then
+    // cannot have delivered the request.
+    req.once("socket", (socket) => {
+      const start = async () => {
+        if (req.destroyed) return;
+        signal?.throwIfAborted();
+        const markStarted = await prepareTransmission();
+        if (req.destroyed) return;
+        signal?.throwIfAborted();
+        markStarted();
+        req.end(body ?? undefined);
+      };
+      const onConnected = () => {
+        void start().catch((err: unknown) => {
+          req.destroy(err instanceof Error ? err : new Error("Outbound transmission cancelled"));
+        });
+      };
+      // The request has its own socket (`agent: false`), so HTTPS waits for its
+      // new TLS handshake to complete, including certificate validation.
+      if (isHttps) socket.once("secureConnect", onConnected);
+      else if (socket.connecting) socket.once("connect", onConnected);
+      else onConnected();
+    });
   });
 }
 
@@ -302,12 +332,19 @@ function requestPinned(
  *   `maxRedirects` > 0 each hop's Location is validated and pinned again; 303 and
  *   301/302 on POST switch to a body-less GET.
  * - Response bodies are capped; a timeout applies per hop.
+ * - `prepareTransmission`, when provided, runs after connection setup and before writing
+ *   HTTP bytes. Its returned callback runs immediately before the HTTP request is written.
  * Throws OutboundUrlBlockedError when any hop fails validation.
  */
 export async function safeOutboundFetch(
   rawUrl: string,
   init: RequestInit,
-  opts: { timeoutMs?: number; maxBodyBytes?: number; maxRedirects?: number } = {}
+  opts: {
+    timeoutMs?: number;
+    maxBodyBytes?: number;
+    maxRedirects?: number;
+    prepareTransmission?: PrepareTransmission;
+  } = {}
 ): Promise<{ status: number; ok: boolean; bodyText: string; finalUrl: string; hops: number }> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxBodyBytes = opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
@@ -332,7 +369,8 @@ export async function safeOutboundFetch(
       body,
       timeoutMs,
       maxBodyBytes,
-      signal
+      signal,
+      opts.prepareTransmission
     );
     const location = result.headers.location;
     const isRedirect = result.status >= 300 && result.status < 400 && !!location;

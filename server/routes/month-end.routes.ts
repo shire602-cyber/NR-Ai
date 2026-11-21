@@ -632,11 +632,24 @@ export function registerMonthEndRoutes(app: Express) {
       const fye = parseReportDate(body.fiscalYearEnd, "fiscalYearEnd");
       if (!fye) throw new DomainError("FISCAL_YEAR_END_REQUIRED", 400);
       await requireCloseRole(req, companyId);
-      const { result, overridden } = await withLedgerTx(async (tx) => {
+      const { result, overridden, snapshot } = await withLedgerTx(async (tx) => {
         await lockPeriodPolicy(tx, companyId, "exclusive");
         await assertFiscalYearEnd(companyId, fye, ledgerQueryable(tx));
         const { checklist, overridden } = await enforceChecklist(companyId, fye, body, tx);
-        const snapshot = checklist.map((c) => ({ id: c.id, title: c.title, status: c.status }));
+        const snapshot = checklist.map(({ id, title, status, effectiveStatus, signOff }) => ({
+          id,
+          title,
+          status,
+          effectiveStatus: effectiveStatus ?? status,
+          signOff: signOff
+            ? {
+                stepKey: signOff.stepKey,
+                signedOffBy: signOff.signedOffBy,
+                signedOffAt: signOff.signedOffAt,
+                note: signOff.note,
+              }
+            : null,
+        }));
         const result = await closeFiscalYear(
           companyId,
           fye,
@@ -649,7 +662,7 @@ export function registerMonthEndRoutes(app: Express) {
           },
           tx
         );
-        return { result, overridden };
+        return { result, overridden, snapshot };
       });
       const { recordAudit } = await import("../services/audit.service");
       await recordAudit({
@@ -667,6 +680,7 @@ export function registerMonthEndRoutes(app: Express) {
           netIncome: result.summary.netIncome,
           checklistOverride: overridden,
           reason: body.reason ?? null,
+          checklist: snapshot,
         },
         req,
       });

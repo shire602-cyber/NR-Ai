@@ -359,6 +359,63 @@ describe.skipIf(process.env.HARNESS_MODE !== "postgres")("hard-close checklist c
 });
 
 describe("year-end close", () => {
+  it("preserves the sign-off that made an incomplete year-end checklist step pass", async () => {
+    const tenant = await h.createTenant({
+      name: "YearCloseSignOff",
+      vatRegistered: false,
+      companyColumns: { tax_registration_type: "Non-registered" },
+    });
+    const companyId = tenant.company.id;
+    const url = `/api/companies/${companyId}/month-end`;
+    await postJournalEntry(tenant, {
+      date: "2025-12-15",
+      description: "Year-end office expense",
+      lines: [
+        { code: "5010", debit: 100 },
+        { code: "1020", credit: 100 },
+      ],
+    });
+    const input = { fiscalYearEnd: "2025-12-31", hardClose: true };
+    const before = await tenant.as.post(`${url}/year-end-close`, input);
+    expect(before.status, before.text).toBe(422);
+    expect(before.body.details.incomplete).toEqual([expect.objectContaining({ id: 8 })]);
+
+    const note = "Reviewed the December expenses. No accrual is outstanding.";
+    const signOff = await tenant.as.post(`${url}/steps/accruals/sign-off`, {
+      period: "2025-12",
+      note,
+    });
+    expect(signOff.status, signOff.text).toBe(201);
+    const close = await tenant.as.post(`${url}/year-end-close`, input);
+    expect(close.status, close.text).toBe(201);
+    expect(close.body.lock.checklistOverride).toBe(false);
+
+    const [saved] = await h.sql<{ checklist_snapshot: unknown }>(
+      "SELECT checklist_snapshot FROM month_end_close WHERE id = $1 AND company_id = $2",
+      [close.body.lock.id, companyId]
+    );
+    expect(saved.checklist_snapshot).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 8,
+          status: "incomplete",
+          effectiveStatus: "complete",
+          signOff: {
+            stepKey: "accruals",
+            signedOffBy: tenant.user.id,
+            signedOffAt: signOff.body.signedOffAt,
+            note,
+          },
+        }),
+      ])
+    );
+    const [audit] = await h.sql<{ details: string }>(
+      "SELECT details FROM audit_logs WHERE company_id = $1 AND action = 'fiscal_year.close'",
+      [companyId]
+    );
+    expect(JSON.parse(audit.details).after.checklist).toEqual(saved.checklist_snapshot);
+  });
+
   it.skipIf(process.env.HARNESS_MODE !== "postgres")(
     "includes an AED 100 journal that commits while the year-end close waits for the period lock",
     async () => {

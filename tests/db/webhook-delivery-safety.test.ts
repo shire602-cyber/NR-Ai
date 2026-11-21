@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { WebhookTransportRequest } from "../../server/services/webhook.service";
 import { useHarness } from "./harness";
 
 const h = useHarness();
@@ -39,9 +42,100 @@ async function deliveries(endpointId: string) {
 
 afterEach(async () => {
   (await components()).setWebhookTransport(null);
+  (await import("../../server/services/url-guard")).__setOutboundGuardForTests(null);
 });
 
 describe("outbound webhook delivery safety", () => {
+  it("retries when the caller's deadline expires while the delivery claim is blocked", async ({
+    skip,
+  }) => {
+    if (!h.concurrencySupported) skip();
+    const svc = await components();
+    const { t, endpointId } = await endpoint();
+    const { pool } = await import("../../server/db");
+    const [delivery] = await h.sql<{ id: string }>(
+      `INSERT INTO webhook_deliveries
+         (webhook_endpoint_id, company_id, event, event_id, payload, status, attempt_number)
+       VALUES ($1, $2, 'bill.approved', $3, '{}', 'pending', 0) RETURNING id`,
+      [endpointId, t.company.id, randomUUID()]
+    );
+    const transport = vi.fn(async () => ({ status: 204, ok: true, bodyText: "" }));
+    svc.setWebhookTransport(transport);
+    const blocker = await pool.connect();
+    const controller = new AbortController();
+    let attempt: ReturnType<typeof svc.attemptWebhookDelivery> | undefined;
+    try {
+      await blocker.query("BEGIN");
+      await blocker.query("SELECT id FROM webhook_deliveries WHERE id = $1 FOR UPDATE", [
+        delivery.id,
+      ]);
+      attempt = svc.attemptWebhookDelivery(delivery.id, { signal: controller.signal });
+      await vi.waitFor(async () => {
+        const waiting = await h.sql(
+          `SELECT pid FROM pg_stat_activity WHERE datname = current_database()
+            AND wait_event_type = 'Lock' AND query LIKE '%UPDATE webhook_deliveries d%'`
+        );
+        expect(waiting).toHaveLength(1);
+      });
+      controller.abort();
+    } finally {
+      await blocker.query("ROLLBACK");
+      blocker.release();
+      await attempt;
+    }
+
+    expect(await attempt).toBe("retrying");
+    expect(transport).not.toHaveBeenCalled();
+    await h.sql("UPDATE webhook_deliveries SET next_attempt_at = now() WHERE id = $1", [
+      delivery.id,
+    ]);
+    expect(await svc.processDueWebhookDeliveries()).toMatchObject({ delivered: 1 });
+    expect(transport).toHaveBeenCalledOnce();
+  });
+
+  it("keeps an actual refused TCP connection retryable and permits replay after it settles", async () => {
+    const svc = await components();
+    const { t, endpointId } = await endpoint();
+    const { __setOutboundGuardForTests } = await import("../../server/services/url-guard");
+    __setOutboundGuardForTests({ isBlocked: (ip) => ip !== "127.0.0.1" });
+    const receiver = http.createServer((_req, res) => res.writeHead(204).end());
+    await new Promise<void>((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+    const port = (receiver.address() as AddressInfo).port;
+    await new Promise<void>((resolve) => receiver.close(() => resolve()));
+    await h.sql("UPDATE webhook_endpoints SET url = $2 WHERE id = $1", [
+      endpointId,
+      `https://127.0.0.1:${port}/receiver`,
+    ]);
+
+    const [id] = await svc.enqueueWebhookEvent(t.company.id, "bill.approved", {});
+    expect((await deliveries(endpointId))[0]).toMatchObject({ id, status: "retrying" });
+    const retrying = await t.as.get(`/api/webhooks/${endpointId}/deliveries`);
+    expect(retrying.status).toBe(200);
+    expect(retrying.body[0]).toMatchObject({
+      id,
+      replayEligible: false,
+      replayUnavailableReason: "delivery_pending",
+    });
+    await h.sql("UPDATE webhook_deliveries SET max_attempts = 2 WHERE id = $1", [id]);
+    expect(await svc.attemptWebhookDelivery(id, { force: true })).toBe("dead");
+    const list = await t.as.get(`/api/webhooks/${endpointId}/deliveries`);
+    expect(list.status).toBe(200);
+    expect(list.body[0]).toMatchObject({ id, replayEligible: true, replayUnavailableReason: null });
+
+    await new Promise<void>((resolve) => receiver.listen(port, "127.0.0.1", resolve));
+    try {
+      await h.sql("UPDATE webhook_endpoints SET url = $2 WHERE id = $1", [
+        endpointId,
+        `http://127.0.0.1:${port}/receiver`,
+      ]);
+      const replay = await t.as.post(`/api/webhooks/${endpointId}/deliveries/${id}/replay`);
+      expect(replay.status, replay.text).toBe(201);
+      expect(replay.body.status).toBe("delivered");
+    } finally {
+      await new Promise<void>((resolve) => receiver.close(() => resolve()));
+    }
+  });
+
   it("sends an event once when the recipient handles the request but the response times out", async () => {
     const svc = await components();
     const { t, endpointId } = await endpoint();
@@ -55,6 +149,8 @@ describe("outbound webhook delivery safety", () => {
     });
     const receivedIds: string[] = [];
     svc.setWebhookTransport(async (_, request) => {
+      const markStarted = await request.prepareTransmission();
+      markStarted();
       receivedIds.push(request.headers["X-Webhook-Id"]);
       if (receivedIds.length === 1) {
         signalReceived();
@@ -147,18 +243,23 @@ describe("outbound webhook delivery safety", () => {
     const svc = await components();
     const { t, endpointId } = await endpoint();
     const realSetTimeout = globalThis.setTimeout;
+    let expire!: () => void;
     const timers = vi
       .spyOn(globalThis, "setTimeout")
-      .mockImplementation((callback, delay, ...args) =>
-        realSetTimeout(callback, delay === 15_000 ? 20 : delay, ...args)
-      );
+      .mockImplementation((callback, delay, ...args) => {
+        if (delay === 15_000) expire = () => callback(...args);
+        return realSetTimeout(callback, delay, ...args);
+      });
     let release!: () => void;
     const late = new Promise<void>((resolve) => {
       release = resolve;
     });
     let signal: AbortSignal | undefined;
-    const transport = vi.fn(async (_url: string, init: { signal: AbortSignal }) => {
+    const transport = vi.fn(async (_url: string, init: WebhookTransportRequest) => {
+      const markStarted = await init.prepareTransmission();
+      markStarted();
       signal = init.signal;
+      expire();
       await late;
       return { status: 204, ok: true, bodyText: "" };
     });
@@ -182,6 +283,13 @@ describe("outbound webhook delivery safety", () => {
       const replay = await t.as.post(`/api/webhooks/${endpointId}/deliveries/${id}/replay`);
       expect(replay.status).toBe(409);
       expect(replay.body.code).toBe("INVALID_STATUS");
+      const history = await t.as.get(`/api/webhooks/${endpointId}/deliveries`);
+      expect(history.status).toBe(200);
+      expect(history.body[0]).toMatchObject({
+        id,
+        replayEligible: false,
+        replayUnavailableReason: "delivery_uncertain",
+      });
       expect(transport).toHaveBeenCalledTimes(1);
     } finally {
       clearTimeout(guard);
@@ -199,6 +307,50 @@ describe("outbound webhook delivery safety", () => {
     });
   });
 
+  it("recovers an interrupted pre-send claim and prevents its stale worker from writing", async () => {
+    const svc = await components();
+    const { t, endpointId } = await endpoint();
+    let signalClaimed!: () => void;
+    const claimed = new Promise<void>((resolve) => {
+      signalClaimed = resolve;
+    });
+    let release!: () => void;
+    const waitingToSend = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const writes: string[] = [];
+    svc.setWebhookTransport(async (_url, init) => {
+      const attempt = init.headers["X-Webhook-Attempt"];
+      if (attempt === "1") {
+        signalClaimed();
+        await waitingToSend;
+      }
+      const markStarted = await init.prepareTransmission();
+      markStarted();
+      writes.push(attempt);
+      return { status: 204, ok: true, bodyText: "" };
+    });
+
+    const sending = svc.enqueueWebhookEvent(t.company.id, "bill.approved", {});
+    try {
+      await claimed;
+      const [delivery] = await deliveries(endpointId);
+      await h.sql(
+        "UPDATE webhook_deliveries SET updated_at = now() - interval '11 minutes' WHERE id = $1",
+        [delivery.id]
+      );
+      expect(await svc.processDueWebhookDeliveries()).toMatchObject({ delivered: 1, dead: 0 });
+    } finally {
+      release();
+      await sending;
+    }
+    expect(writes).toEqual(["2"]);
+    expect((await deliveries(endpointId))[0]).toMatchObject({
+      status: "delivered",
+      attempt_number: 2,
+    });
+  });
+
   it("retires an interrupted claim and fences its late success", async () => {
     const svc = await components();
     const { t, endpointId } = await endpoint();
@@ -210,7 +362,9 @@ describe("outbound webhook delivery safety", () => {
     const late = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const transport = vi.fn(async () => {
+    const transport = vi.fn(async (_url: string, init: WebhookTransportRequest) => {
+      const markStarted = await init.prepareTransmission();
+      markStarted();
       signalReceived();
       await late;
       return { status: 204, ok: true, bodyText: "" };
@@ -246,7 +400,9 @@ describe("outbound webhook delivery safety", () => {
   it("does not resume an ambiguous retry queued by an older worker", async () => {
     const svc = await components();
     const { t, endpointId } = await endpoint();
-    const transport = vi.fn(async () => {
+    const transport = vi.fn(async (_url: string, init: WebhookTransportRequest) => {
+      const markStarted = await init.prepareTransmission();
+      markStarted();
       throw new Error("Outbound request timed out");
     });
     svc.setWebhookTransport(transport);
@@ -285,7 +441,9 @@ describe("outbound webhook delivery safety", () => {
       release = resolve;
     });
     const sentHeaders: Array<Record<string, string>> = [];
-    const transport = vi.fn(async (_url: string, req: { headers: Record<string, string> }) => {
+    const transport = vi.fn(async (_url: string, req: WebhookTransportRequest) => {
+      const markStarted = await req.prepareTransmission();
+      markStarted();
       sentHeaders.push(req.headers);
       if (sentHeaders.length === 1) {
         signalReceived();
@@ -299,19 +457,45 @@ describe("outbound webhook delivery safety", () => {
     try {
       await received;
       expect(await svc.replayWebhookDelivery(originalId)).toBeNull();
+      const history = await t.as.get(`/api/webhooks/${endpointId}/deliveries`);
+      expect(history.status).toBe(200);
+      expect(history.body.find((row: { id: string }) => row.id === originalId)).toMatchObject({
+        replayEligible: false,
+        replayUnavailableReason: "delivery_pending",
+      });
     } finally {
       release();
       await replay;
     }
 
     expect(await svc.replayWebhookDelivery(originalId)).toBeNull();
+    const replayId = await replay;
+    await h.sql(
+      `UPDATE webhook_deliveries SET created_at = now() - interval '2 days' WHERE id = $1`,
+      [replayId]
+    );
+    await h.sql(
+      `INSERT INTO webhook_deliveries
+         (webhook_endpoint_id, company_id, event, event_id, created_at, status)
+       SELECT $1, $2, 'bill.approved', gen_random_uuid()::text, now() - interval '1 day', 'delivered'
+         FROM generate_series(1, 100)`,
+      [endpointId, t.company.id]
+    );
+    const history = await t.as.get(`/api/webhooks/${endpointId}/deliveries`);
+    expect(history.status).toBe(200);
+    expect(history.body).toHaveLength(100);
+    expect(history.body.some((row: { id: string }) => row.id === replayId)).toBe(false);
+    expect(history.body.find((row: { id: string }) => row.id === originalId)).toMatchObject({
+      replayEligible: false,
+      replayUnavailableReason: "delivery_uncertain",
+    });
     expect(transport).toHaveBeenCalledTimes(1);
     expect(sentHeaders[0]["X-Webhook-Id"]).toBe(eventId);
     expect(sentHeaders[0]["X-Webhook-Delivery"]).not.toBe(originalId);
     expect(await deliveries(endpointId)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: originalId, status: "delivered" }),
-        expect.objectContaining({ id: await replay, status: "dead" }),
+        expect.objectContaining({ id: replayId, status: "dead" }),
       ])
     );
   });

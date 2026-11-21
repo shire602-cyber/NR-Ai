@@ -394,41 +394,61 @@ async function main() {
       }
     }
     const unsupportedClaim =
-      bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ??
-      findUnsupportedBankFeedClaim(bodyText, {
-        allowDelegatedRoadmapCopy: [
-          "/",
-          "/en",
-          "/ar",
-          "/en/product/bank-reconciliation",
-          "/ar/product/bank-reconciliation",
-        ].includes(route),
-      });
+      bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ?? findUnsupportedBankFeedClaim(bodyText);
     if (unsupportedClaim) {
       await fail(`public claim ${route}`, { unsupportedClaim });
     }
 
-    // The Banking panel is hidden on first load. Exercise the sample workflow
-    // without coupling the crawl to the copy used to describe it.
-    if (route === "/demo") {
+    if (homepage || route === "/") {
+      const question = /^\s*(?:How do I reconcile my bank account\?|كيف أطابق حسابي البنكي؟)\s*$/;
+      const summary = page.locator("summary").filter({ hasText: question });
       try {
-        const label = /^(Banking|الخدمات البنكية)$/;
-        await page.getByRole("tab", { name: label }).click();
-        const banking = page.getByRole("tabpanel", { name: label });
-        await banking.getByText("ADCB BANK CHARGE", { exact: true }).waitFor();
-        const copy = await banking.innerText();
-        const unsupportedClaim = findUnsupportedBankFeedClaim(copy);
-        const csvOnly = /\bCSV\b/i.test(copy);
-        if (!csvOnly || unsupportedClaim || routeErrors.length || apiFailures.length) {
-          await fail("public demo banking", {
-            csvOnly,
-            unsupportedClaim,
-            js: routeErrors,
-            api: apiFailures,
-          });
+        await summary.click();
+        const copy = await summary.locator("..").innerText();
+        if (!/\bCSV\b/i.test(copy) || findUnsupportedBankFeedClaim(copy)) {
+          await fail(`banking FAQ ${route}`, { copy });
+        }
+      } catch (error) {
+        await fail(`banking FAQ ${route}`, { detail: String(error) });
+      }
+    }
+    if (route.endsWith("/product/bank-reconciliation") && !/\bCSV\b/i.test(bodyText)) {
+      await fail(`bank reconciliation guidance ${route}`, { detail: "CSV instructions missing" });
+    }
+
+    if (route === "/demo") {
+      const toggle = page.getByTestId("button-language-toggle");
+      const initialLang = await page.locator("html").getAttribute("lang");
+      const labels = { en: "Banking", ar: "الخدمات البنكية" };
+      const otherLang = initialLang === "ar" ? "en" : "ar";
+      try {
+        for (const lang of [initialLang, otherLang]) {
+          if ((await page.locator("html").getAttribute("lang")) !== lang) await toggle.click();
+          await page
+            .locator(`html[lang="${lang}"][dir="${lang === "ar" ? "rtl" : "ltr"}"]`)
+            .waitFor();
+          const label = labels[lang];
+          await page.getByRole("tab", { name: label, exact: true }).click();
+          const banking = page.getByRole("tabpanel", { name: label, exact: true });
+          await banking.getByText("ADCB BANK CHARGE", { exact: true }).waitFor();
+          const copy = await banking.innerText();
+          const bankFeedWording = /\blive (?:bank )?feeds?\b|الربط البنكي المباشر|ربط مباشر/i;
+          const unsupportedClaim =
+            findUnsupportedBankFeedClaim(copy) ?? copy.match(bankFeedWording)?.[0];
+          const csvOnly = /\bCSV\b/i.test(copy);
+          if (!csvOnly || unsupportedClaim || routeErrors.length || apiFailures.length) {
+            await fail(`public demo banking ${lang}`, {
+              csvOnly,
+              unsupportedClaim,
+              js: routeErrors,
+              api: apiFailures,
+            });
+          }
         }
       } catch (error) {
         await fail("public demo banking", { detail: String(error) });
+      } finally {
+        if ((await page.locator("html").getAttribute("lang")) !== initialLang) await toggle.click();
       }
     }
   }

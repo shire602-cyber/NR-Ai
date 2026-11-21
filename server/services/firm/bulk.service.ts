@@ -25,7 +25,7 @@ import { postJournal } from "../../ledger";
 import { trialBalance } from "../../reporting";
 import { toFils, tryToFils } from "../../../shared/money";
 import { accounts, companies } from "../../../shared/schema";
-import { listAccessibleClientIds, type FirmContext } from "./scope";
+import { accessibleClientCondition, listAccessibleClientIds, type FirmContext } from "./scope";
 
 const PERIOD_RE = /^(\d{4})-(0[1-9]|1[0-2])$|^(\d{4})-Q([1-4])$|^Q([1-4]) (\d{4})$/;
 
@@ -192,27 +192,23 @@ interface ParsedLine {
   creditFils: number;
 }
 
+interface JournalImportPlan {
+  groups: { lines: ParsedLine[]; company: { id: string; name: string } | null }[];
+  companyIds: string[];
+  rowErrors: JournalImportRowError[];
+}
+
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * Import journal entries for many clients from one CSV. Columns (header row,
+ * Resolve the clients referred to in a journal CSV. Columns (header row,
  * case-insensitive): company (client id or exact client name), entry_ref,
  * date (YYYY-MM-DD), account_code, description, debit, credit.
- *
- * Every entry is validated on its own (client in scope, accounts exist in that
- * client, one side per line, balanced to the fils); valid entries are posted
- * through the ledger kernel, invalid ones are reported and skipped. Re-running
- * the same file replays (idempotency key per firm/client/entry_ref).
  */
-export async function importJournalsAcrossClients(
+export async function prepareJournalImport(
   ctx: FirmContext,
-  csv: string,
-  opts: { dryRun?: boolean; req?: import("express").Request } = {}
-): Promise<{
-  summary: { entries: number; posted: number; replayed: number; invalid: number; failed: number };
-  entries: JournalImportEntryResult[];
-  rowErrors: JournalImportRowError[];
-}> {
+  csv: string
+): Promise<JournalImportPlan> {
   const table = parseCsv(csv);
   if (table.length < 2) {
     throw new DomainError("BULK_VALIDATION_ERROR", 400, {
@@ -279,26 +275,44 @@ export async function importJournalsAcrossClients(
   });
 
   // Resolve companies within scope: by id, or by exact (case-insensitive) client name.
-  const accessible = await listAccessibleClientIds(ctx);
-  const clientRows = accessible.length
-    ? ((await db
-        .select({ id: companies.id, name: companies.name })
-        .from(companies)
-        .where(inArray(companies.id, accessible))) as Array<{ id: string; name: string }>)
-    : [];
+  const clientRows = (await db
+    .select({ id: companies.id, name: companies.name })
+    .from(companies)
+    .where(accessibleClientCondition(ctx))) as Array<{ id: string; name: string }>;
   const byId = new Map(clientRows.map((c) => [c.id.toLowerCase(), c]));
   const byName = new Map(clientRows.map((c) => [c.name.trim().toLowerCase(), c]));
   const resolveCompany = (ref: string) =>
     byId.get(ref.toLowerCase()) ?? byName.get(ref.toLowerCase()) ?? null;
 
-  const groups = new Map<string, ParsedLine[]>();
+  const byEntry = new Map<string, ParsedLine[]>();
   for (const l of lines) {
     const key = `${l.company.toLowerCase()}\u0000${l.entry}`;
-    const g = groups.get(key) ?? [];
+    const g = byEntry.get(key) ?? [];
     g.push(l);
-    groups.set(key, g);
+    byEntry.set(key, g);
   }
+  const groups = Array.from(byEntry.values(), (lines) => ({
+    lines,
+    company: resolveCompany(lines[0].company),
+  }));
+  const companyIds = [...new Set(groups.flatMap(({ company }) => (company ? [company.id] : [])))];
+  return { groups, companyIds, rowErrors };
+}
 
+/**
+ * Validate the resolved entries and post balanced journals through the kernel.
+ * Invalid entries are reported and skipped. Re-running the same file replays
+ * using the same firm, client and entry reference.
+ */
+export async function importJournalsAcrossClients(
+  ctx: FirmContext,
+  { groups, rowErrors }: JournalImportPlan,
+  opts: { dryRun?: boolean; req?: import("express").Request } = {}
+): Promise<{
+  summary: { entries: number; posted: number; replayed: number; invalid: number; failed: number };
+  entries: JournalImportEntryResult[];
+  rowErrors: JournalImportRowError[];
+}> {
   const accountCache = new Map<string, Map<string, string>>();
   async function accountMap(companyId: string) {
     let m = accountCache.get(companyId);
@@ -317,11 +331,10 @@ export async function importJournalsAcrossClients(
   }
 
   const results: JournalImportEntryResult[] = [];
-  for (const group of groups.values()) {
+  for (const { lines: group, company } of groups) {
     const first = group[0];
     const rowsInGroup = group.map((l) => l.row);
     const errors: JournalImportRowError[] = rowErrors.filter((e) => rowsInGroup.includes(e.row));
-    const company = resolveCompany(first.company);
     if (!company) {
       errors.push({ row: first.row, field: "company", message: "Client not found in your firm" });
     }

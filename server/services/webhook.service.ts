@@ -3,10 +3,10 @@
  *
  * Domain events (server/platform/domain-events.ts) are subscribed once at
  * startup. Every event a company's active endpoint subscribes to becomes a
- * durable `webhook_deliveries` row (status pending), unique per
- * (endpoint, event id), and is attempted straight away. Confirmed HTTP failures
- * are retried with backoff by the `webhooks.deliveryRetry` job. An unknown send
- * outcome is dead-lettered and cannot be replayed automatically or manually.
+ * durable `webhook_deliveries` row (status pending), unique per (endpoint,
+ * event id), and is attempted straight away. Confirmed HTTP failures and
+ * failures before sending are retried with backoff by `webhooks.deliveryRetry`.
+ * An unknown send outcome is dead-lettered without replay.
  *
  * Signature (documented in docs/api/webhooks.md):
  *   X-Muhasib-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<body>")>
@@ -71,17 +71,28 @@ export interface WebhookTransportResult {
   ok: boolean;
   bodyText: string;
 }
+export interface WebhookTransportRequest {
+  method: "POST";
+  headers: Record<string, string>;
+  body: string;
+  signal: AbortSignal;
+  /** Await before sending HTTP bytes, then call the returned function at the write. */
+  prepareTransmission: () => Promise<() => void>;
+}
 export type WebhookTransport = (
   url: string,
-  init: { method: "POST"; headers: Record<string, string>; body: string; signal: AbortSignal }
+  init: WebhookTransportRequest
 ) => Promise<WebhookTransportResult>;
 
 const WEBHOOK_TIMEOUT_MS = 15_000;
 const UNKNOWN_OUTCOME = "Webhook delivery outcome unknown";
 const SIGNING_FAILED = "Webhook signing failed before sending";
+const CLAIMED_BEFORE_SEND = "Webhook delivery claimed before sending";
+const PRE_SEND_FAILURE = "Webhook delivery failed before sending";
+const REPLAYABLE_PRE_SEND_ERRORS = [SIGNING_FAILED, PRE_SEND_FAILURE];
 
-const defaultTransport: WebhookTransport = (url, init) =>
-  safeOutboundFetch(url, init, { timeoutMs: WEBHOOK_TIMEOUT_MS });
+const defaultTransport: WebhookTransport = (url, { prepareTransmission, ...init }) =>
+  safeOutboundFetch(url, init, { timeoutMs: WEBHOOK_TIMEOUT_MS, prepareTransmission });
 
 let transport: WebhookTransport = defaultTransport;
 
@@ -92,7 +103,8 @@ export function setWebhookTransport(t: WebhookTransport | null): void {
 
 async function postWebhook(
   url: string,
-  init: Omit<Parameters<WebhookTransport>[1], "signal">,
+  init: Omit<WebhookTransportRequest, "signal" | "prepareTransmission">,
+  prepareTransmission: (signal: AbortSignal) => Promise<() => void>,
   parentSignal?: AbortSignal
 ): Promise<WebhookTransportResult> {
   const controller = new AbortController();
@@ -108,7 +120,10 @@ async function postWebhook(
       onAbort = () => reject(signal.reason);
       signal.addEventListener("abort", onAbort, { once: true });
     });
-    return await Promise.race([transport(url, { ...init, signal }), aborted]);
+    return await Promise.race([
+      transport(url, { ...init, signal, prepareTransmission: () => prepareTransmission(signal) }),
+      aborted,
+    ]);
   } finally {
     clearTimeout(timer);
     signal.removeEventListener("abort", onAbort);
@@ -255,16 +270,17 @@ export async function attemptWebhookDelivery(
   if (opts.signal?.aborted) return "skipped";
   const { rows } = await pq<ClaimedDelivery>(
     `UPDATE webhook_deliveries d
-        SET status = 'in_flight', attempt_number = d.attempt_number + 1, updated_at = now()
+        SET status = 'in_flight', attempt_number = d.attempt_number + 1,
+            last_error = $3, updated_at = now()
        FROM webhook_endpoints e
       WHERE d.id = $1 AND e.id = d.webhook_endpoint_id
         AND (d.status = 'pending' OR (d.status = 'retrying'
-          AND (d.response_status IS NOT NULL OR d.last_error LIKE 'Blocked: %')))
+          AND (d.response_status IS NOT NULL OR d.last_error LIKE 'Blocked: %' OR d.last_error = $4)))
         AND d.attempt_number < d.max_attempts
         AND ($2::boolean OR d.next_attempt_at IS NULL OR d.next_attempt_at <= now())
       RETURNING d.id, d.webhook_endpoint_id, d.event, d.event_id, d.payload, d.attempt_number,
                 d.max_attempts, e.url, e.secret`,
-    [deliveryId, opts.force === true]
+    [deliveryId, opts.force === true, CLAIMED_BEFORE_SEND, PRE_SEND_FAILURE]
   );
   const row = rows[0];
   if (!row) return "skipped";
@@ -281,7 +297,6 @@ export async function attemptWebhookDelivery(
     const secret = decryptSecret(row.secret) ?? "";
     const sig = signWebhookPayload(secret, row.payload, Math.floor(Date.now() / 1000));
     signatureHeader = sig.header;
-    sendStarted = true;
     const res = await postWebhook(
       row.url,
       {
@@ -298,6 +313,21 @@ export async function attemptWebhookDelivery(
         },
         body: row.payload,
       },
+      async (signal) => {
+        signal.throwIfAborted();
+        // Fence a stale worker before it can write. Clearing the pre-send marker
+        // here also makes an interrupted send conservative across worker restarts.
+        const started = await pool.query(
+          `UPDATE webhook_deliveries SET last_error = NULL, updated_at = now()
+            WHERE id = $1 AND status = 'in_flight' AND attempt_number = $2 AND last_error = $3`,
+          [row.id, attempt, CLAIMED_BEFORE_SEND]
+        );
+        if (!started.rowCount) throw new Error("Webhook delivery claim expired");
+        return () => {
+          signal.throwIfAborted();
+          sendStarted = true;
+        };
+      },
       opts.signal
     );
     status = res.status;
@@ -306,13 +336,16 @@ export async function attemptWebhookDelivery(
     retryable = !ok;
     if (!ok) error = `HTTP ${res.status}`;
   } catch (err) {
-    if (err instanceof OutboundUrlBlockedError) {
+    if (sendStarted) {
+      // A timeout or lost connection can hide a successful receiver-side commit.
+      error = `${UNKNOWN_OUTCOME} after transport failure`;
+    } else if (err instanceof OutboundUrlBlockedError) {
       // The URL guard rejected the destination before opening a connection.
       error = `Blocked: ${err.message}`;
       retryable = true;
-    } else if (sendStarted) {
-      // A timeout or lost connection can hide a successful receiver-side commit.
-      error = `${UNKNOWN_OUTCOME} after transport failure`;
+    } else if (signatureHeader) {
+      error = PRE_SEND_FAILURE;
+      retryable = true;
     } else {
       error = SIGNING_FAILED;
     }
@@ -354,16 +387,36 @@ export async function attemptWebhookDelivery(
 
 /** Attempt every due delivery (retry job). */
 export async function processDueWebhookDeliveries(limit = 100): Promise<Record<string, number>> {
-  // Old workers could have sent a POST before they stopped or scheduled an ambiguous retry.
-  const expired = await pool.query(
-    `UPDATE webhook_deliveries
-        SET status = 'dead', next_attempt_at = NULL,
-            response_status = NULL, response_body = NULL,
-            last_error = CASE WHEN status = 'in_flight' THEN $1 ELSE $2 END, updated_at = now()
-      WHERE (status = 'in_flight' AND updated_at < now() - interval '10 minutes')
-         OR (status = 'retrying' AND response_status IS NULL
-          AND (last_error IS NULL OR last_error NOT LIKE 'Blocked: %'))`,
-    [`${UNKNOWN_OUTCOME} after worker interruption`, `${UNKNOWN_OUTCOME} from a previous attempt`]
+  // A pre-send claim can be recovered. After the write boundary (or with no
+  // marker from an older worker), retrying could deliver an event twice.
+  const {
+    rows: [{ dead }],
+  } = await pq<{ dead: number }>(
+    `WITH recovered AS (
+       UPDATE webhook_deliveries
+          SET status = CASE
+                WHEN status = 'in_flight' AND last_error = $3 AND attempt_number < max_attempts
+                THEN 'retrying' ELSE 'dead' END,
+              next_attempt_at = CASE
+                WHEN status = 'in_flight' AND last_error = $3 AND attempt_number < max_attempts
+                THEN now() ELSE NULL END,
+              response_status = NULL, response_body = NULL,
+              last_error = CASE
+                WHEN status = 'in_flight' AND last_error = $3 THEN $4
+                WHEN status = 'in_flight' THEN $1 ELSE $2 END,
+              updated_at = now()
+        WHERE (status = 'in_flight' AND updated_at < now() - interval '10 minutes')
+           OR (status = 'retrying' AND response_status IS NULL
+            AND (last_error LIKE 'Blocked: %' OR last_error = $4) IS NOT TRUE)
+        RETURNING status
+     )
+     SELECT count(*) FILTER (WHERE status = 'dead')::integer AS dead FROM recovered`,
+    [
+      `${UNKNOWN_OUTCOME} after worker interruption`,
+      `${UNKNOWN_OUTCOME} from a previous attempt`,
+      CLAIMED_BEFORE_SEND,
+      PRE_SEND_FAILURE,
+    ]
   );
   const { rows } = await pq<{ id: string }>(
     `SELECT id FROM webhook_deliveries
@@ -372,9 +425,48 @@ export async function processDueWebhookDeliveries(limit = 100): Promise<Record<s
       ORDER BY next_attempt_at NULLS FIRST LIMIT $1`,
     [limit]
   );
-  const counts = { delivered: 0, retrying: 0, dead: expired.rowCount ?? 0, skipped: 0 };
+  const counts = { delivered: 0, retrying: 0, dead, skipped: 0 };
   for (const { id } of rows) counts[await attemptWebhookDelivery(id)] += 1;
   return counts;
+}
+
+// Use the same family-wide replay rules for the listing and the insert under
+// the advisory lock. An uncertain delivery blocks replay of all of its siblings.
+const SOURCE_EVENT_ROOT = `split_part(COALESCE(source.event_id, source.id::text), '#replay-', 1)`;
+const SIBLING_EVENT_ROOT = `split_part(COALESCE(sibling.event_id, sibling.id::text), '#replay-', 1)`;
+const REPLAY_REASON = `CASE
+    WHEN bool_or(sibling.status = 'dead' AND sibling.response_status IS NULL
+      AND (sibling.last_error = ANY($2::text[]) OR sibling.last_error LIKE 'Blocked: %') IS NOT TRUE)
+      THEN 'delivery_uncertain'
+    WHEN bool_or(sibling.status NOT IN ('delivered', 'dead')) THEN 'delivery_pending'
+  END`;
+
+export async function listWebhookDeliveries(endpointId: string) {
+  const { rows } = await pool.query(
+    `WITH recent AS (
+       SELECT source.id, ${SOURCE_EVENT_ROOT} AS event_root
+         FROM webhook_deliveries source WHERE source.webhook_endpoint_id = $1
+        ORDER BY source.created_at DESC LIMIT 100
+     ), eligibility AS (
+       SELECT roots.event_root, ${REPLAY_REASON} AS reason
+         FROM webhook_deliveries sibling
+         JOIN (SELECT DISTINCT event_root FROM recent) roots ON roots.event_root = ${SIBLING_EVENT_ROOT}
+        WHERE sibling.webhook_endpoint_id = $1 AND sibling.status <> 'delivered'
+        GROUP BY roots.event_root
+     )
+     SELECT source.id, source.event, source.event_id AS "eventId", source.status,
+            source.attempt_number AS "attemptNumber", source.max_attempts AS "maxAttempts",
+            source.response_status AS "responseStatus", source.response_body AS "responseBody",
+            source.success, source.last_error AS "lastError", source.next_attempt_at AS "nextAttemptAt",
+            source.delivered_at AS "deliveredAt", source.created_at AS "createdAt", source.payload,
+            eligibility.reason IS NULL AS "replayEligible", eligibility.reason AS "replayUnavailableReason"
+       FROM recent
+       JOIN webhook_deliveries source ON source.id = recent.id
+       LEFT JOIN eligibility ON eligibility.event_root = recent.event_root
+      ORDER BY source.created_at DESC`,
+    [endpointId, REPLAYABLE_PRE_SEND_ERRORS]
+  );
+  return rows;
 }
 
 /**
@@ -387,9 +479,8 @@ export async function replayWebhookDelivery(deliveryId: string): Promise<string 
   try {
     await client.query("BEGIN");
     const { rows: references } = await pq<{ endpoint_id: string; event_id: string }>(
-      `SELECT webhook_endpoint_id AS endpoint_id,
-              split_part(COALESCE(event_id, id::text), '#replay-', 1) AS event_id
-         FROM webhook_deliveries WHERE id = $1`,
+      `SELECT webhook_endpoint_id AS endpoint_id, ${SOURCE_EVENT_ROOT} AS event_id
+         FROM webhook_deliveries source WHERE id = $1`,
       [deliveryId],
       client
     );
@@ -403,25 +494,18 @@ export async function replayWebhookDelivery(deliveryId: string): Promise<string 
            (webhook_endpoint_id, company_id, event, event_id, payload, status, attempt_number,
             max_attempts, next_attempt_at, success, updated_at)
          SELECT source.webhook_endpoint_id, source.company_id, source.event,
-                $2 || '#replay-' || gen_random_uuid()::text,
+                $3 || '#replay-' || gen_random_uuid()::text,
                 source.payload, 'pending', 0, source.max_attempts, now(), false, now()
            FROM webhook_deliveries source
           WHERE source.id = $1 AND source.status IN ('delivered', 'dead')
-            AND NOT EXISTS (
-              SELECT 1 FROM webhook_deliveries sibling
+            AND (
+              SELECT ${REPLAY_REASON} FROM webhook_deliveries sibling
                WHERE sibling.webhook_endpoint_id = source.webhook_endpoint_id
-                 AND split_part(COALESCE(sibling.event_id, sibling.id::text), '#replay-', 1) = $2
-                 AND (
-                   sibling.status IN ('pending', 'in_flight', 'retrying')
-                   OR (
-                     sibling.status = 'dead' AND sibling.response_status IS NULL
-                     AND sibling.last_error IS DISTINCT FROM $3
-                     AND (sibling.last_error IS NULL OR sibling.last_error NOT LIKE 'Blocked: %')
-                   )
-                 )
-            )
+                 AND sibling.status <> 'delivered'
+                 AND ${SIBLING_EVENT_ROOT} = ${SOURCE_EVENT_ROOT}
+            ) IS NULL
          RETURNING id`,
-        [deliveryId, original.event_id, SIGNING_FAILED],
+        [deliveryId, REPLAYABLE_PRE_SEND_ERRORS, original.event_id],
         client
       );
       id = rows[0]?.id ?? null;

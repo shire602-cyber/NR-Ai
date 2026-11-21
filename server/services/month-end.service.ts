@@ -1341,10 +1341,11 @@ export async function getChecklistWithSignOffs(
   periodEnd: string,
   tx?: LedgerTx
 ): Promise<ChecklistItem[]> {
-  const [checklist, signoffs] = await Promise.all([
-    getCloseChecklist(companyId, periodStart, periodEnd, tx),
-    listStepSignOffs(companyId, periodEnd, tx && ledgerQueryable(tx)),
-  ]);
+  const readChecklist = () => getCloseChecklist(companyId, periodStart, periodEnd, tx);
+  const readSignOffs = () => listStepSignOffs(companyId, periodEnd, tx && ledgerQueryable(tx));
+  const [checklist, signoffs] = tx
+    ? [await readChecklist(), await readSignOffs()]
+    : await Promise.all([readChecklist(), readSignOffs()]);
   const byKey = new Map(signoffs.map((s) => [s.stepKey, s]));
   return checklist.map((item) => {
     const signOff = item.key ? (byKey.get(item.key) ?? null) : null;
