@@ -225,7 +225,7 @@ const MAPPER_FIELDS = [
 type MapperField = (typeof MAPPER_FIELDS)[number];
 
 interface StatementPreview {
-  kind: "csv" | "xlsx" | "mt940" | "camt053" | "ofx";
+  kind: "csv";
   detectedFormat: string;
   detectedFormatLabel: string;
   delimiter: string | null;
@@ -286,7 +286,7 @@ export default function BankReconciliation() {
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
   const [selectedBankAccount, setSelectedBankAccount] = useState<string>("");
-  // `?import=1` (e.g. from Bank feeds) opens the statement import straight away.
+  // `?import=1` opens the CSV statement import straight away.
   const [importDialogOpen, setImportDialogOpen] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -407,6 +407,7 @@ export default function BankReconciliation() {
       bankAccountId: string;
       fileBase64: string;
       fileName?: string;
+      expectedKind: "csv";
       dateOrder?: "DMY" | "MDY";
       decimalSeparator?: "." | ",";
       mapping?: Partial<Record<MapperField, number | null>>;
@@ -581,7 +582,6 @@ export default function BankReconciliation() {
     colDescription: t["banking.import.colDescription"],
     colDebit: t["banking.import.colDebit"],
     colCredit: t["banking.import.colCredit"],
-    formats: t["banking.import.formats"],
     formatCsv: t["banking.import.formatCsv"],
     formatDelimiters: t["banking.import.formatDelimiters"],
     formatDrCr: t["banking.import.formatDrCr"],
@@ -621,6 +621,7 @@ export default function BankReconciliation() {
         {
           fileBase64: await fileToBase64(file),
           fileName: file.name,
+          expectedKind: "csv",
           ...overrides,
           ...(overrides.mapping && headerRow ? { headerRow } : {}),
         }
@@ -650,7 +651,7 @@ export default function BankReconciliation() {
   };
 
   const handleStatementFile = (file: File | undefined) => {
-    if (file && /\.pdf$/i.test(file.name)) {
+    if (file && !/\.csv$/i.test(file.name)) {
       resetStatementPreview();
       setPreviewError(t["banking.import.csvRequired"]);
       return;
@@ -677,11 +678,12 @@ export default function BankReconciliation() {
     setIsImporting(true);
 
     try {
-      // CSV / XLSX / MT940 / CAMT.053 / OFX — send the file bytes plus the user's choices.
+      // Keep the original CSV bytes and the user's confirmed import choices.
       await importMutation.mutateAsync({
         bankAccountId: selectedBankAccount,
         fileBase64: await fileToBase64(importFile),
         fileName: importFile.name,
+        expectedKind: "csv",
         ...statementOverrides,
         ...(statementOverrides.mapping && statementPreview?.headerRow
           ? { headerRow: statementPreview.headerRow }
@@ -1363,7 +1365,7 @@ export default function BankReconciliation() {
                 <T k="pageLabels.statementFile" />
               </Label>
               <FileDrop
-                accept=".csv,.txt,.xlsx,.sta,.mt940,.xml,.ofx,.qfx"
+                accept=".csv"
                 onFiles={(files) => handleStatementFile(files[0])}
                 disabled={isImporting}
                 value={importFile?.name ?? null}
@@ -1436,54 +1438,52 @@ export default function BankReconciliation() {
                   </ul>
                 )}
 
-                {(statementPreview.kind === "csv" || statementPreview.kind === "xlsx") && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {statementPreview.dateOrder && statementPreview.dateOrder !== "YMD" && (
-                      <div className="space-y-1">
-                        <Label className="text-xs">{strings.dateOrder}</Label>
-                        <Select
-                          value={statementOverrides.dateOrder ?? statementPreview.dateOrder}
-                          onValueChange={(value) =>
-                            updateOverrides({
-                              ...statementOverrides,
-                              dateOrder: value as "DMY" | "MDY",
-                            })
-                          }
-                        >
-                          <SelectTrigger data-testid="select-statement-date-order">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="DMY">DD/MM/YYYY</SelectItem>
-                            <SelectItem value="MDY">MM/DD/YYYY</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {statementPreview.dateOrder && statementPreview.dateOrder !== "YMD" && (
                     <div className="space-y-1">
-                      <Label className="text-xs">{strings.decimalSeparator}</Label>
+                      <Label className="text-xs">{strings.dateOrder}</Label>
                       <Select
-                        value={
-                          statementOverrides.decimalSeparator ?? statementPreview.decimalSeparator
-                        }
+                        value={statementOverrides.dateOrder ?? statementPreview.dateOrder}
                         onValueChange={(value) =>
                           updateOverrides({
                             ...statementOverrides,
-                            decimalSeparator: value as "." | ",",
+                            dateOrder: value as "DMY" | "MDY",
                           })
                         }
                       >
-                        <SelectTrigger data-testid="select-statement-decimal">
+                        <SelectTrigger data-testid="select-statement-date-order">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value=".">{strings.decimalPoint}</SelectItem>
-                          <SelectItem value=",">{strings.decimalComma}</SelectItem>
+                          <SelectItem value="DMY">DD/MM/YYYY</SelectItem>
+                          <SelectItem value="MDY">MM/DD/YYYY</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
+                  )}
+                  <div className="space-y-1">
+                    <Label className="text-xs">{strings.decimalSeparator}</Label>
+                    <Select
+                      value={
+                        statementOverrides.decimalSeparator ?? statementPreview.decimalSeparator
+                      }
+                      onValueChange={(value) =>
+                        updateOverrides({
+                          ...statementOverrides,
+                          decimalSeparator: value as "." | ",",
+                        })
+                      }
+                    >
+                      <SelectTrigger data-testid="select-statement-decimal">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value=".">{strings.decimalPoint}</SelectItem>
+                        <SelectItem value=",">{strings.decimalComma}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                )}
+                </div>
 
                 {statementPreview.headers.length > 0 && (
                   <div className="space-y-2">
@@ -1583,10 +1583,6 @@ export default function BankReconciliation() {
                   <div className="flex items-center gap-2 text-xs">
                     <FileSpreadsheet className="w-3.5 h-3.5 text-success" />
                     <span>{strings.formatCsv}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-success" />
-                    <span>{strings.formats}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <CheckCircle2 className="w-3.5 h-3.5 text-success" />

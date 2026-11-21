@@ -81,6 +81,7 @@ const statementSourceShape = {
   csvContent: z.string().min(1, "csvContent (raw statement text) is required").optional(),
   fileBase64: z.string().min(1).optional(),
   fileName: z.string().max(255).optional(),
+  expectedKind: z.literal("csv").optional(),
   delimiter: z.enum([",", ";", "\t", "|"]).optional(),
   decimalSeparator: z.enum([".", ","]).optional(),
   dateOrder: z.enum(["DMY", "MDY", "YMD"]).optional(),
@@ -116,7 +117,7 @@ const statementSourceShape = {
 const hasStatementSource = (v: { csvContent?: string; fileBase64?: string }) =>
   Boolean(v.csvContent || v.fileBase64);
 const statementSourceMessage = {
-  message: "csvContent (raw statement text) or fileBase64 (XLSX/other file) is required",
+  message: "csvContent or fileBase64 is required",
   path: ["csvContent"],
 };
 
@@ -176,6 +177,12 @@ function statementOptions(body: StatementRequestBody): ParseOptions {
   if (body.format) options.format = body.format;
   if (body.mapping) options.mapping = body.mapping;
   return options;
+}
+
+function assertStatementKind(parsed: BankParseResult, expectedKind?: "csv"): void {
+  if (expectedKind && parsed.kind !== expectedKind) {
+    throw new DomainError("STATEMENT_CSV_REQUIRED", 400);
+  }
 }
 
 function summarizeRowErrors(parsed: BankParseResult): string[] {
@@ -402,6 +409,7 @@ export function registerBankStatementRoutes(app: Express) {
           .json({ message: "Could not read the statement file", code: "STATEMENT_UNREADABLE" });
       }
 
+      assertStatementKind(parsed, req.body.expectedKind);
       const errorRows = parsed.rows.filter((r) => r.errors.length > 0);
       res.json({
         kind: parsed.kind,
@@ -466,6 +474,7 @@ export function registerBankStatementRoutes(app: Express) {
           .status(400)
           .json({ message: "Could not read the statement file", code: "STATEMENT_UNREADABLE" });
       }
+      assertStatementKind(parsedFile, req.body.expectedKind);
       const format = parsedFile.format;
       const parseErrors = summarizeRowErrors(parsedFile);
       const validRows = parsedFile.rows.filter((r) => r.errors.length === 0 && r.date);

@@ -223,8 +223,8 @@ export function verifyAcubeSignature(args: {
   if (parsed.alg && parsed.alg.toLowerCase() !== "ed25519") {
     return { ok: false, reason: "unsupported_algorithm" };
   }
-  // The body must be covered: without content-digest a valid signature says nothing about it.
-  if (!parsed.components.includes("content-digest")) {
+  // The body and company-specific recipient URL must both be covered by the signature.
+  if (!["content-digest", "@target-uri"].every((key) => parsed.components.includes(key))) {
     return { ok: false, reason: "missing_component" };
   }
   if (!verifyContentDigest(headerValue(request.headers, "content-digest"), raw)) {
@@ -302,18 +302,23 @@ export async function getAcubePublicKey(
 ): Promise<KeyObject> {
   if (env.ACUBE_SIGNATURE_PUBLIC_KEY) return publicKeyFrom(env.ACUBE_SIGNATURE_PUBLIC_KEY);
   const now = opts.now ?? Date.now();
-  const cached = keyCache.get(environment);
-  if (cached && !opts.refresh && now - cached.at < KEY_TTL_MS) return cached.key;
   const common = (env.ACUBE_COMMON_URL || "https://common.api.acubeapi.com").replace(/\/+$/, "");
+  const cacheScope = `${environment}:${common}`;
+  const cached = keyCache.get(cacheScope);
+  if (cached && !opts.refresh && now - cached.at < KEY_TTL_MS) return cached.key;
   const res = await (opts.fetch ?? fetch)(
     `${common}/signature-public-key?environment=${encodeURIComponent(environment)}`,
-    { headers: { Accept: "application/json" } }
+    {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+      redirect: "error",
+    }
   );
   if (!res.ok) throw new Error(`A-Cube signature public key returned HTTP ${res.status}`);
   const body = (await res.json()) as { public_key?: string; publicKey?: string };
   const material = body.public_key ?? body.publicKey;
   if (!material) throw new Error("A-Cube signature public key response has no public_key");
   const key = publicKeyFrom(material);
-  keyCache.set(environment, { key, at: now });
+  keyCache.set(cacheScope, { key, at: now });
   return key;
 }

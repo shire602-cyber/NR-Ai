@@ -18,6 +18,7 @@ export function registerIntegrationStatusRoutes(app: Express) {
     authMiddleware,
     adminMiddleware,
     asyncHandler(async (_req: Request, res: Response) => {
+      const bankFeedsConfigured = isOpenBankingConfigured();
       const integrations = [
         {
           key: "email",
@@ -81,13 +82,15 @@ export function registerIntegrationStatusRoutes(app: Express) {
         },
         {
           key: "openBanking",
-          name: "Live bank feeds",
-          configured: isOpenBankingConfigured(),
-          detail: null,
+          name: "Bank connections",
+          configured: bankFeedsConfigured,
+          detail: bankFeedsConfigured
+            ? null
+            : "Not configured. Manual statement import is available.",
           requiredEnv: [
-            "Provider credentials per docs/EXTERNAL_DEPENDENCIES.md (Tarabut / Dapi / Salt Edge candidates)",
+            "LEAN_APP_TOKEN, TARABUT_CLIENT_ID + TARABUT_CLIENT_SECRET, or WIO_CLIENT_ID + WIO_CLIENT_SECRET",
           ],
-          unlocks: "Automatic bank transaction sync (CSV/OFX import works today)",
+          unlocks: "Provider connections and transaction import through a configured adapter",
         },
         {
           key: "push",

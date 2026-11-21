@@ -18,12 +18,17 @@
 import crypto from "node:crypto";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import {
+  companyCredentialVariable,
+  sealCompanyCredentials,
+} from "../../server/services/einvoice/providers/company-credentials";
 import { PINT_AE_FIXTURES, fixtureCompany, type PintAeFixture } from "../fixtures/pint-ae/fixtures";
 
 const h = useHarness();
 const TRN = "100123456700003";
 const TIN = "1001234567";
-const SECRET = "whsec_db_test_0123456789abcdef";
+const SECRET = crypto.randomUUID();
+const API_KEY = crypto.randomUUID();
 const WEBHOOK = "/api/webhooks/einvoice/complyance/sandbox";
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -50,29 +55,39 @@ interface FakeDoc {
   state: string;
   isTerminal: boolean;
   errors: unknown[];
+  ftaApproval?: string | null;
+  response?: Record<string, unknown>;
 }
 const fake = {
   authorised: false,
   ready: false,
   companyStatus: "active",
+  companyTin: TIN,
+  expectedConnectTin: TIN,
   companyId: "66b9f0a1c2d3e4f567890123",
+  beforeConnectReply: null as (() => Promise<void>) | null,
   sourceName: null as string | null,
   creates: 0,
   posts: 0,
   submitDelayMs: 0,
-  nextSubmit: [] as Array<"200" | "422" | "network">,
+  nextSubmit: [] as Array<"200" | "422" | "network" | "wrong-id">,
+  nextSalesReads: [] as Array<"ok" | "unavailable">,
   docs: new Map<string, FakeDoc>(),
   purchases: [] as Array<{ id: string; number: string; xml: string; companyId: string }>,
   reset() {
     this.authorised = false;
     this.ready = false;
     this.companyStatus = "active";
+    this.companyTin = TIN;
+    this.expectedConnectTin = TIN;
     this.companyId = crypto.randomBytes(12).toString("hex");
+    this.beforeConnectReply = null;
     this.sourceName = null;
     this.creates = 0;
     this.posts = 0;
     this.submitDelayMs = 0;
     this.nextSubmit = [];
+    this.nextSalesReads = [];
     this.docs.clear();
     this.purchases = [];
   },
@@ -86,11 +101,11 @@ function companyItem() {
     companyId: fake.companyId,
     sourceId: "01JSOURCE",
     branchId: "66b9f0b2c2d3e4f567890456",
-    peppolParticipantId: `0235:${TIN}`,
-    peppolId: `0235:${TIN}`,
+    peppolParticipantId: `0235:${fake.companyTin}`,
+    peppolId: `0235:${fake.companyTin}`,
     legalName: "Pearl Trading L.L.C.",
-    tin: TIN,
-    vatTrn: TRN,
+    tin: fake.companyTin,
+    vatTrn: `${fake.companyTin}00003`,
     sourceName: fake.sourceName,
     sourceVersion: "v1",
     countryCode: "AE",
@@ -111,15 +126,19 @@ async function complyance(url: URL, init: RequestInit): Promise<Response> {
   const headers = init.headers as Record<string, string>;
   if (!headers["User-Agent"]) return new Response("Forbidden", { status: 403 });
   if (p.startsWith("/v3/connect/")) {
-    if (headers["X-API-Key"] !== "cmp-sandbox-key")
+    if (headers["X-API-Key"] !== API_KEY)
       return json(401, { code: "invalid_api_key", message: "Invalid API key" });
-  } else if (headers.Authorization !== "Bearer cmp-sandbox-key") {
+  } else if (headers.Authorization !== `Bearer ${API_KEY}`) {
     return json(401, { error: "Unauthorized" });
   }
   if (method === "POST" && p === "/v3/connect/companies") {
     fake.creates++;
     const body = JSON.parse(String(init.body));
-    if (!fake.authorised || body.tin !== TIN || body.contactPersonEmail !== "owner@pearl.example") {
+    if (
+      !fake.authorised ||
+      body.tin !== fake.expectedConnectTin ||
+      body.contactPersonEmail !== "owner@pearl.example"
+    ) {
       return json(409, {
         success: false,
         error: {
@@ -138,6 +157,7 @@ async function complyance(url: URL, init: RequestInit): Promise<Response> {
       });
     }
     fake.sourceName = body.sourceName;
+    await fake.beforeConnectReply?.();
     return json(201, { success: true, data: companyItem(), meta: { requestId: "req" } });
   }
   if (method === "GET" && p === "/v3/connect/companies") {
@@ -222,7 +242,7 @@ async function complyance(url: URL, init: RequestInit): Promise<Response> {
     });
     if (mode === "network") throw new TypeError("fetch failed: socket hang up");
     return json(200, {
-      documentId: id,
+      documentId: mode === "wrong-id" ? "unexpected-provider-document" : id,
       documentNumber: number,
       message: "Your invoice was validated and is ready for submission.",
       Base64XML: "",
@@ -230,6 +250,7 @@ async function complyance(url: URL, init: RequestInit): Promise<Response> {
   }
   const one = /^\/api\/v3\/documents\/([^/]+)$/.exec(p);
   if (method === "GET" && one && url.searchParams.get("type") === "sales") {
+    if (fake.nextSalesReads.shift() === "unavailable") return json(503, { success: false });
     const d = fake.docs.get(one[1]);
     if (!d) return json(404, { success: false, code: "NOT_FOUND", message: "Document not found" });
     return json(200, {
@@ -246,8 +267,16 @@ async function complyance(url: URL, init: RequestInit): Promise<Response> {
         state: d.state,
         isTerminal: d.isTerminal,
         errors: d.errors,
-        compliance: { ftaApprovedStatus: d.state === "final_valid" ? "APPROVED" : "PENDING" },
+        compliance: {
+          ftaApprovedStatus:
+            d.ftaApproval === undefined
+              ? d.state === "final_valid"
+                ? "APPROVED"
+                : "PENDING"
+              : d.ftaApproval,
+        },
         validationResults: { status: "Valid", validationSteps: [] },
+        ...d.response,
       },
     });
   }
@@ -306,9 +335,7 @@ beforeAll(() => {
 
 const ENV_KEYS = [
   "EINVOICE_PROVIDER",
-  "COMPLYANCE_API_KEY",
   "COMPLYANCE_ENV",
-  "COMPLYANCE_WEBHOOK_SECRET",
   "COMPLYANCE_WEBHOOK_INLINE",
   "EINVOICE_ASP_BASE_URL",
   "EINVOICE_ASP_API_KEY",
@@ -318,15 +345,26 @@ const ENV_KEYS = [
 const saved: Record<string, string | undefined> = {};
 for (const k of ENV_KEYS) saved[k] = process.env[k];
 
-function useComplyance() {
-  process.env.EINVOICE_PROVIDER = "complyance";
-  process.env.COMPLYANCE_API_KEY = "cmp-sandbox-key";
-  process.env.COMPLYANCE_WEBHOOK_SECRET = SECRET;
+let credentialVariable: string | null = null;
+
+function useComplyance(t: Tenant, webhookSecret: string | null = SECRET) {
+  const context = {
+    companyId: t.company.id,
+    provider: "complyance",
+    environment: "sandbox",
+  } as const;
+  credentialVariable = companyCredentialVariable(context);
+  process.env[credentialVariable] = sealCompanyCredentials(context, {
+    apiKey: API_KEY,
+    webhookSecret: webhookSecret ?? undefined,
+  });
   process.env.COMPLYANCE_WEBHOOK_INLINE = "false";
 }
 
 beforeEach(() => fake.reset());
 afterEach(() => {
+  if (credentialVariable) delete process.env[credentialVariable];
+  credentialVariable = null;
   for (const k of ENV_KEYS) {
     if (saved[k] === undefined) delete process.env[k];
     else process.env[k] = saved[k];
@@ -340,6 +378,8 @@ type Onboarding = typeof import("../../server/services/einvoice/providers/comply
 let events: Events;
 let onboarding: Onboarding;
 let Provider: typeof import("../../server/services/einvoice/providers/complyance").ComplyanceEInvoiceProvider;
+let companyProviderConfiguration: typeof import("../../server/services/einvoice/providers/company-provider").companyProviderConfiguration;
+let runEInvoiceRetries: typeof import("../../server/services/einvoice/workflow").runEInvoiceRetries;
 let generateEInvoiceXML: typeof import("../../server/services/einvoice.service").generateEInvoiceXML;
 let storage: typeof import("../../server/storage").storage;
 beforeAll(async () => {
@@ -349,16 +389,24 @@ beforeAll(async () => {
     await import("../../server/services/einvoice/providers/complyance"));
   ({ generateEInvoiceXML } = await import("../../server/services/einvoice.service"));
   ({ storage } = await import("../../server/storage"));
+  ({ companyProviderConfiguration } =
+    await import("../../server/services/einvoice/providers/company-provider"));
+  ({ runEInvoiceRetries } = await import("../../server/services/einvoice/workflow"));
 });
 
 const poll = () => events.runProviderPoll("complyance");
 const syncPending = () =>
   onboarding.syncPendingComplyanceCompanies(
-    new Provider(),
-    (id) => storage.getCompany(id) as never
+    "sandbox",
+    (id) => storage.getCompany(id),
+    async (company) => {
+      const config = await companyProviderConfiguration(company.id, company.einvoicePartner);
+      return config ? new Provider(config.env) : null;
+    }
   );
 
 function webhook(
+  tenant: Tenant,
   type: string,
   data: Record<string, unknown>,
   opts: { eventId?: string; secret?: string; body?: string; timestamp?: string } = {}
@@ -378,7 +426,7 @@ function webhook(
     .createHmac("sha256", opts.secret ?? SECRET)
     .update(body)
     .digest("hex");
-  return h.anon.post(WEBHOOK, undefined, {
+  return h.anon.post(`${WEBHOOK}/${tenant.company.id}`, undefined, {
     raw: Buffer.from(opts.body ?? body, "utf8"),
     headers: {
       "Content-Type": "application/json",
@@ -418,8 +466,10 @@ const connect = (t: Tenant, adminEmail = "owner@pearl.example") =>
   t.as.post(`/api/companies/${t.company.id}/einvoicing/complyance/connect`, { adminEmail });
 
 async function readyTenant(columns: Record<string, unknown> = SELLER_COLUMNS) {
-  useComplyance();
-  const t = await h.createTenant({ companyColumns: columns });
+  const t = await h.createTenant({
+    companyColumns: { ...columns, einvoice_partner: "complyance" },
+  });
+  useComplyance(t);
   fake.authorised = true;
   fake.ready = true;
   const r = await connect(t);
@@ -441,10 +491,18 @@ describe("E2 without Complyance configured: nothing named, nothing sent", () => 
     expect(prov.status).toBe(200);
     expect(prov.body).toMatchObject({ provider: null, tin: TIN });
     expect(prov.body.goLive.timeline.large).toBeTruthy();
-    process.env.EINVOICE_PROVIDER = "complyance"; // selected but no key
-    expect(
-      (await t.as.get(`/api/companies/${t.company.id}/einvoicing/provider`)).body.provider
-    ).toBeNull();
+    expect(prov.body.status).toBe("not_selected");
+    const choice = await t.as.put(`/api/companies/${t.company.id}/einvoicing/partner`, {
+      partner: "complyance",
+    });
+    expect(choice.status, choice.text).toBe(200);
+    const selected = await t.as.get(`/api/companies/${t.company.id}/einvoicing/provider`);
+    expect(selected.body).toMatchObject({
+      provider: null,
+      chosenProvider: "complyance",
+      environment: "sandbox",
+      status: "not_configured",
+    });
     const card = await t.as.get(`/api/companies/${t.company.id}/einvoicing/complyance`);
     expect(card.body).toMatchObject({
       configured: false,
@@ -457,15 +515,160 @@ describe("E2 without Complyance configured: nothing named, nothing sent", () => 
     const sub = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
     expect(sub.status).toBe(503);
     expect(sub.body.code).toBe("EINVOICE_PROVIDER_NOT_CONFIGURED");
-    expect((await webhook("invoice.passed", { documentId: "x" })).status).toBe(503);
+    expect((await webhook(t, "invoice.passed", { documentId: "x" })).status).toBe(503);
     expect(fake.posts + fake.creates).toBe(0);
   });
 });
 
 describe("E2 onboarding gates sending", () => {
+  it("does not activate a Complyance taxpayer superseded while its response was pending", async () => {
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "complyance" },
+    });
+    useComplyance(t);
+    fake.authorised = true;
+    fake.ready = true;
+    fake.beforeConnectReply = async () => {
+      await h.sql(
+        `UPDATE companies SET trn_vat_number = $2, einvoice_tin = $3, peppol_participant_id = $3
+        WHERE id = $1`,
+        [t.company.id, "100555555500003", "1005555555"]
+      );
+    };
+    const response = await connect(t);
+    expect(response.status, response.text).toBe(422);
+    expect(
+      await h.sql(
+        `SELECT status, tin, legal_entity_id FROM einvoice_legal_entities WHERE company_id = $1`,
+        [t.company.id]
+      )
+    ).toEqual([{ status: "reserved", tin: TIN, legal_entity_id: null }]);
+    const path = `/api/companies/${t.company.id}/einvoicing/complyance`;
+    expect((await t.as.get(path)).body).toMatchObject({ canSend: false, legalEntity: null });
+    // The file shares a database with the separate poll batch fixtures.
+    await h.sql(`DELETE FROM einvoice_legal_entities WHERE company_id = $1`, [t.company.id]);
+  });
+
+  it("hides a superseded Complyance taxpayer and explicitly reconnects with a distinct source", async () => {
+    const t = await readyTenant();
+    const path = `/api/companies/${t.company.id}/einvoicing`;
+    const inv = await issuedInvoice(t);
+    expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const evidence = () =>
+      h.sql(
+        `SELECT xml_hash, provider_message_id, validation->'submission' AS pin
+      FROM einvoice_documents WHERE invoice_id = $1`,
+        [inv.id]
+      );
+    const original = await evidence();
+    const oldEntity = fake.companyId;
+    const oldSource = fake.sourceName;
+    expect(original).toEqual([
+      expect.objectContaining({
+        provider_message_id: expect.any(String),
+        pin: expect.objectContaining({
+          supplierTin: TIN,
+          legalEntityId: oldEntity,
+          sourceName: oldSource,
+          environment: "sandbox",
+        }),
+      }),
+    ]);
+
+    const nextTin = "1005555555";
+    await h.sql(
+      `UPDATE companies SET trn_vat_number = $2, einvoice_tin = $3, peppol_participant_id = $3
+      WHERE id = $1`,
+      [t.company.id, `${nextTin}00003`, nextTin]
+    );
+    expect((await t.as.get(`${path}/settings`)).body.asp.connected).toBe(false);
+    expect((await t.as.get(`${path}/complyance`)).body).toMatchObject({
+      canSend: false,
+      legalEntity: null,
+    });
+    expect((await t.as.post(`${path}/complyance/sync`, {})).status).toBe(422);
+
+    fake.companyId = crypto.randomBytes(12).toString("hex");
+    fake.companyTin = nextTin;
+    fake.expectedConnectTin = nextTin;
+    fake.sourceName = null;
+    const replacement = await connect(t);
+    expect(replacement.status, replacement.text).toBe(200);
+    expect(replacement.body.legalEntity).toMatchObject({
+      status: "active",
+      tin: nextTin,
+      legalEntityId: fake.companyId,
+    });
+    expect(fake.sourceName).not.toBe(oldSource);
+    expect((await t.as.get(`${path}/settings`)).body.asp.connected).toBe(true);
+    expect(await evidence()).toEqual(original);
+    const oldId = original[0].provider_message_id;
+    fake.docs.get(oldId)!.state = "final_valid";
+    const tracked = await t.as.post(`/api/invoices/${inv.id}/einvoice/refresh-status`, {});
+    expect(tracked.status, tracked.text).toBe(200);
+    expect((await statusOf(t, inv.id)).transmission).toMatchObject({
+      providerDocumentId: oldId,
+      recipientAcknowledgement: "accepted",
+    });
+  });
+
+  it("filters switched providers before the batch and rotates unconfigured candidates fairly", async () => {
+    const insertWaiting = (provider: string, count: number) =>
+      h.sql(
+        `WITH waiting AS (
+          INSERT INTO companies (name, einvoice_partner, trn_vat_number)
+          SELECT 'Waiting ' || n, $1, $2 FROM generate_series(1, $3::int) n RETURNING id
+        ) INSERT INTO einvoice_legal_entities (company_id, provider, environment, tin, status, created_at)
+          SELECT id, 'complyance', 'sandbox', $4, 'reserved', now() - interval '1 day' FROM waiting`,
+        [provider, TRN, count, TIN]
+      );
+    await insertWaiting("acube", 55);
+    await insertWaiting("complyance", 50);
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "complyance" },
+    });
+    useComplyance(t);
+    const started = await connect(t);
+    expect(started.body.legalEntity.status).toBe("reserved");
+    fake.authorised = true;
+    fake.ready = true;
+    const first = await syncPending();
+    expect(first).toEqual({ checked: 50, activated: 0 });
+    const second = await syncPending();
+    expect(second).toEqual({ checked: 1, activated: 1 });
+    expect((await syncPending()).checked).toBe(0);
+    expect(
+      (await t.as.get(`/api/companies/${t.company.id}/einvoicing/complyance`)).body.canSend
+    ).toBe(true);
+  });
+
+  it("does not send onboarding work after selection changes during provider resolution", async () => {
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "complyance" },
+    });
+    useComplyance(t);
+    expect((await connect(t)).body.legalEntity.status).toBe("reserved");
+    fake.authorised = true;
+    const creates = fake.creates;
+    const result = await onboarding.syncPendingComplyanceCompanies(
+      "sandbox",
+      (id) => storage.getCompany(id),
+      async (company) => {
+        const config = await companyProviderConfiguration(company.id, company.einvoicePartner);
+        await h.sql(`UPDATE companies SET einvoice_partner = 'acube' WHERE id = $1`, [company.id]);
+        return config ? new Provider(config.env) : null;
+      }
+    );
+    expect(result).toEqual({ checked: 1, activated: 0 });
+    expect(fake.creates).toBe(creates);
+  });
+
   it("before EmaraTax -> reserved; registered -> pending; ready -> active; inactive -> 409", async () => {
-    useComplyance();
-    const t = await h.createTenant({ companyColumns: SELLER_COLUMNS });
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "complyance" },
+    });
+    useComplyance(t);
     const prov = await t.as.get(`/api/companies/${t.company.id}/einvoicing/provider`);
     expect(prov.body.provider).toMatchObject({
       id: "complyance",
@@ -533,7 +736,7 @@ describe("E2 onboarding gates sending", () => {
 
     // The source is archived at Complyance; an onboarding event re-reads it -> sending blocked.
     fake.companyStatus = "inactive";
-    const w = await webhook("company.data.modified", { companyId: fake.companyId });
+    const w = await webhook(t, "company.data.modified", { companyId: fake.companyId });
     expect(w.status, w.text).toBe(200);
     await events.runProviderEvents();
     const delinked = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
@@ -543,7 +746,148 @@ describe("E2 onboarding gates sending", () => {
   });
 });
 
+describe("Complyance taxpayer verification", () => {
+  it("preserves the unlinked state when the provider responds with a different TIN", async () => {
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "complyance" },
+    });
+    useComplyance(t);
+    fake.authorised = true;
+    fake.ready = true;
+    fake.companyTin = "1005555555";
+    const route = `/api/companies/${t.company.id}/einvoicing/complyance`;
+    const rejected = await connect(t);
+    expect(rejected.status, rejected.text).toBe(502);
+    expect(rejected.body.code).toBe("EINVOICE_PROVIDER_TIN_MISMATCH");
+    expect((await t.as.get(route)).body.legalEntity).toMatchObject({
+      status: "reserved",
+      legalEntityId: null,
+      tin: TIN,
+    });
+
+    fake.companyTin = TIN;
+    const connected = await t.as.post(`${route}/sync`, {});
+    expect(connected.status, connected.text).toBe(200);
+    expect(connected.body.legalEntity.status).toBe("active");
+    fake.companyTin = "1005555555";
+    const synced = await t.as.post(`${route}/sync`, {});
+    expect(synced.status, synced.text).toBe(502);
+    expect(synced.body.code).toBe("EINVOICE_PROVIDER_TIN_MISMATCH");
+    expect((await t.as.get(route)).body.legalEntity).toMatchObject({
+      status: "active",
+      tin: TIN,
+    });
+  });
+});
+
 describe("E2 submit, two tracks and history", () => {
+  it("keeps the persisted status and history when a poll contradicts the frozen submission", async () => {
+    const t = await readyTenant();
+    const inv = await issuedInvoice(t);
+    const submission = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
+    expect(submission.status).toBe(202);
+    await runEInvoiceRetries();
+    const sent = docOf(t, inv.number)!;
+    const original = await statusOf(t, inv.id);
+    expect(original.submissionState).toBe("sent");
+    sent.state = "final_valid";
+    sent.isTerminal = true;
+
+    for (const response of [
+      { documentId: "OTHER" },
+      { documentNumber: "OTHER" },
+      { environment: "production" },
+      { country: "ZZ" },
+      { seller: { trn: "100999888700003" } },
+      { attribution: { companyId: "another-company" } },
+      { payload: { header: { documentNumber: "OTHER" } } },
+      { sourceName: [] },
+    ]) {
+      sent.response = response;
+      await poll();
+      const unchanged = await statusOf(t, inv.id);
+      expect(unchanged.submissionState).toBe(original.submissionState);
+      expect(unchanged.tracks).toEqual(original.tracks);
+      expect(unchanged.events).toEqual(original.events);
+    }
+    // The documented status can omit ownership fields or use a nullable document number.
+    sent.response = { source: undefined, documentNumber: null };
+    expect((await poll()).refreshed).toBe(1);
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      submissionState: "accepted",
+      tracks: { reporting: { status: "reported" } },
+    });
+  });
+
+  it.each([false, true])(
+    "recovers the exact archived source and ends polling at valid approval (document hash missing: %s)",
+    async (missingDocumentHash) => {
+      const t = await readyTenant();
+      const inv = await issuedInvoice(t);
+      expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+      await runEInvoiceRetries();
+      const held = docOf(t, inv.number)!;
+      const [original] = await h.sql(
+        "SELECT xml, sha256 FROM einvoice_archive WHERE company_id = $1 AND invoice_id = $2 AND kind = 'submitted'",
+        [t.company.id, inv.id]
+      );
+      held.state = "final_valid";
+      held.isTerminal = true;
+      await h.sql(
+        "UPDATE invoices SET einvoice_xml = NULL, einvoice_hash = NULL, einvoice_uuid = NULL WHERE id = $1",
+        [inv.id]
+      );
+      await h.sql(
+        "UPDATE einvoice_documents SET validation = jsonb_set(validation, '{submission,environment}', '\"production\"'::jsonb) WHERE invoice_id = $1",
+        [inv.id]
+      );
+      expect((await poll()).refreshed).toBe(0);
+      await h.sql(
+        "UPDATE einvoice_documents SET validation = jsonb_set(validation, '{submission,environment}', '\"sandbox\"'::jsonb) WHERE invoice_id = $1",
+        [inv.id]
+      );
+
+      const unrelated = await h.createSecondTenant();
+      const { archiveEInvoiceXml } = await import("../../server/services/einvoice/store");
+      const foreign = await archiveEInvoiceXml({
+        companyId: unrelated.company.id,
+        invoiceId: inv.id,
+        direction: "outbound",
+        kind: "submitted",
+        provider: "complyance",
+        providerMessageId: held.id,
+        documentNumber: inv.number,
+        xml: `${original.xml}\n`,
+      });
+      await h.sql("UPDATE einvoice_documents SET xml_hash = $2 WHERE invoice_id = $1", [
+        inv.id,
+        foreign.sha256,
+      ]);
+      fake.nextSalesReads = ["unavailable"];
+      expect((await poll()).refreshed).toBe(0);
+      expect(fake.nextSalesReads).toEqual(["unavailable"]);
+      fake.nextSalesReads = [];
+      await h.sql("UPDATE einvoice_documents SET xml_hash = $2 WHERE invoice_id = $1", [
+        inv.id,
+        missingDocumentHash ? null : original.sha256,
+      ]);
+
+      expect((await poll()).refreshed).toBe(1);
+      expect(await statusOf(t, inv.id)).toMatchObject({
+        status: "cleared",
+        document: { xmlHash: original.sha256 },
+        tracks: { reporting: { status: "reported" } },
+      });
+      const [cleared] = await h.sql(
+        "SELECT xml, sha256 FROM einvoice_archive WHERE company_id = $1 AND invoice_id = $2 AND kind = 'cleared'",
+        [t.company.id, inv.id]
+      );
+      expect(cleared).toEqual(original);
+      expect((await poll()).refreshed).toBe(0);
+      expect(fake.posts).toBe(1);
+    }
+  );
+
   it("submits once (concurrent double submit), then delivered, then reported", async () => {
     const t = await readyTenant();
     const inv = await issuedInvoice(t);
@@ -552,7 +896,9 @@ describe("E2 submit, two tracks and history", () => {
       t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {}),
       t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {}),
     ]);
-    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    expect([a.status, b.status]).toEqual([202, 202]);
+    expect(fake.posts).toBe(0);
+    await Promise.all([runEInvoiceRetries(), runEInvoiceRetries()]);
     expect(fake.posts).toBe(1);
     expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(409);
     expect(fake.posts).toBe(1);
@@ -571,14 +917,16 @@ describe("E2 submit, two tracks and history", () => {
     // invoice.passed says only "validated"; the re-read decides. Retries are absorbed.
     sent.state = "delivery_success";
     expect(
-      (await webhook("invoice.passed", { documentId: sent.id }, { eventId: "e1" })).body.duplicate
+      (await webhook(t, "invoice.passed", { documentId: sent.id }, { eventId: "e1" })).body
+        .duplicate
     ).toBe(false);
     expect(
-      (await webhook("invoice.passed", { documentId: sent.id }, { eventId: "e1" })).body.duplicate
+      (await webhook(t, "invoice.passed", { documentId: sent.id }, { eventId: "e1" })).body
+        .duplicate
     ).toBe(true);
     await events.runProviderEvents();
     s = await statusOf(t, inv.id);
-    expect(s.status).toBe("accepted");
+    expect(s).toMatchObject({ status: "submitted", submissionState: "sent" });
     expect(s.tracks.delivery.status).toBe("delivered");
     expect(s.tracks.reporting.status).toBe("pending");
 
@@ -606,29 +954,160 @@ describe("E2 submit, two tracks and history", () => {
 
   it("422 names the GETS field; fix and resubmit reuses the same number", async () => {
     const t = await readyTenant();
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
     const inv = await issuedInvoice(t);
     fake.nextSubmit = ["422"];
     const r = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
-    expect(r.body.status).toBe("rejected");
+    expect(r.body.status).toBe("queued");
+    await runEInvoiceRetries();
     let s = await statusOf(t, inv.id);
-    expect(s.rejection).toMatchObject({ code: "COMPLYANCE_VALIDATION", resubmittable: true });
+    const held = docOf(t, inv.number)!;
+    expect(s.rejection).toMatchObject({
+      code: "COMPLYANCE_VALIDATION",
+      resubmittable: true,
+      providerHoldsDocument: true,
+    });
+    expect(s.transmission.providerDocumentId).toBe(held.id);
     expect(s.rejection.reasons[0]).toMatchObject({
       code: "IBR-132-AE",
       field: "parties.buyer.taxIds",
     });
+    const rejectedHash = s.document.xmlHash;
+    await h.sql(
+      "UPDATE invoice_lines SET description = 'Corrected line submitted to provider' WHERE invoice_id = $1",
+      [inv.id]
+    );
     const re = await t.as.post(`/api/invoices/${inv.id}/einvoice/resubmit`, {});
-    expect(re.status, re.text).toBe(200);
+    expect(re.status, re.text).toBe(202);
     expect(re.body.tracks.delivery.status).toBe("queued");
+    expect(
+      (await t.as.post(`/api/invoices/${inv.id}/einvoice/refresh-status`, {})).body.status
+    ).toBe("queued");
+    await runEInvoiceRetries();
     expect(fake.posts).toBe(2);
     expect(fake.docs.size).toBe(1); // Complyance updated the stored document, same id
     s = await statusOf(t, inv.id);
     expect(s.rejection).toBeNull();
+    expect(s.transmission.providerDocumentId).toBe(held.id);
+    const accepted = docOf(t, inv.number)!;
+    accepted.state = "final_valid";
+    accepted.isTerminal = true;
+    const correctionHash = s.document.xmlHash;
+    await h.sql(
+      "UPDATE invoices SET einvoice_xml = NULL, einvoice_hash = NULL, einvoice_uuid = NULL WHERE id = $1",
+      [inv.id]
+    );
+    await h.sql("UPDATE einvoice_documents SET xml_hash = NULL WHERE invoice_id = $1", [inv.id]);
+    fake.nextSalesReads = ["unavailable"];
+    expect((await poll()).refreshed).toBe(0);
+    expect(fake.nextSalesReads).toEqual(["unavailable"]);
+    fake.nextSalesReads = [];
+    await h.sql("UPDATE einvoice_documents SET xml_hash = $2 WHERE invoice_id = $1", [
+      inv.id,
+      correctionHash,
+    ]);
+    expect((await poll()).refreshed).toBe(1);
+    const final = await statusOf(t, inv.id);
+    expect(final.document.xmlHash).not.toBe(rejectedHash);
+    const sqlRows = await h.sql(
+      "SELECT kind, sha256 FROM einvoice_archive WHERE invoice_id = $1 ORDER BY kind, created_at",
+      [inv.id]
+    );
+    expect(sqlRows).toEqual([
+      { kind: "cleared", sha256: final.document.xmlHash },
+      { kind: "submitted", sha256: rejectedHash },
+      { kind: "submitted", sha256: final.document.xmlHash },
+    ]);
+  });
+
+  it("rechecks terminal Needs Correction and never switches provider identity on an unexpected resend response", async () => {
+    const t = await readyTenant();
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+    const inv = await issuedInvoice(t);
+    const prefix = `/api/invoices/${inv.id}/einvoice`;
+    fake.nextSubmit = ["422"];
+    expect((await t.as.post(`${prefix}/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const held = docOf(t, inv.number)!;
+    const originalHash = (await statusOf(t, inv.id)).document.xmlHash;
+    expect((await t.as.post(`${prefix}/resubmit`, {})).status).toBe(202);
+    held.ftaApproval = "APPROVED";
+    await runEInvoiceRetries();
+    expect(fake.posts).toBe(1);
+    expect((await statusOf(t, inv.id)).transmission.providerDocumentId).toBe(held.id);
+
+    held.ftaApproval = "PENDING";
+    await t.as.post(`${prefix}/refresh-status`, {});
+    expect((await statusOf(t, inv.id)).rejection.resubmittable).toBe(true);
+    expect((await t.as.post(`${prefix}/resubmit`, {})).status).toBe(202);
+    fake.nextSubmit = ["wrong-id"];
+    await runEInvoiceRetries();
+    expect(fake.posts).toBe(2);
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      document: { xmlHash: originalHash },
+      transmission: { providerDocumentId: held.id },
+    });
+    expect((await t.as.post(`${prefix}/resubmit`, {})).status).toBe(409);
+    await runEInvoiceRetries();
+    expect(fake.posts).toBe(2);
+    const byteIdentical = docOf(t, inv.number)!;
+    byteIdentical.state = "final_valid";
+    byteIdentical.isTerminal = true;
+    expect((await poll()).refreshed).toBe(1);
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      status: "cleared",
+      document: { xmlHash: originalHash },
+    });
+  });
+
+  it("never marks the rejected XML cleared after a response-lost correction with different XML", async () => {
+    const t = await readyTenant();
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+    const inv = await issuedInvoice(t);
+    const prefix = `/api/invoices/${inv.id}/einvoice`;
+    fake.nextSubmit = ["422"];
+    expect((await t.as.post(`${prefix}/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const [rejected] = await h.sql("SELECT einvoice_hash FROM invoices WHERE id = $1", [inv.id]);
+
+    await h.sql(
+      "UPDATE invoice_lines SET description = 'Corrected consultancy' WHERE invoice_id = $1",
+      [inv.id]
+    );
+    expect((await t.as.post(`${prefix}/resubmit`, {})).status).toBe(202);
+    const [corrected] = await h.sql("SELECT einvoice_hash FROM invoices WHERE id = $1", [inv.id]);
+    expect(corrected.einvoice_hash).not.toBe(rejected.einvoice_hash);
+    fake.nextSubmit = ["network"];
+    await runEInvoiceRetries();
+    const held = docOf(t, inv.number)!;
+    held.state = "final_valid";
+    held.isTerminal = true;
+    await poll();
+
+    const view = await statusOf(t, inv.id);
+    expect(view.status).not.toBe("cleared");
+    expect(view.submissionState).toBe("needs_reconciliation");
+    expect(view.tracks.reporting.status).not.toBe("reported");
+    expect(view.transmission).toMatchObject({
+      providerDocumentId: held.id,
+      correctionRevisionUnverified: true,
+      canRefresh: false,
+    });
+    expect(
+      await h.sql("SELECT id FROM einvoice_archive WHERE invoice_id = $1 AND kind = 'cleared'", [
+        inv.id,
+      ])
+    ).toEqual([]);
+    expect((await t.as.post(`${prefix}/resubmit`, {})).status).toBe(409);
+    await runEInvoiceRetries();
+    expect(fake.posts).toBe(2);
   });
 
   it("FTA rejection -> report_failed; buyer-ASP rejection -> a new document is required", async () => {
     const t = await readyTenant();
     const inv = await issuedInvoice(t);
     await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
+    await runEInvoiceRetries();
     const d = docOf(t, inv.number)!;
     d.state = "final_invalid";
     d.isTerminal = true;
@@ -644,6 +1123,7 @@ describe("E2 submit, two tracks and history", () => {
     let s = await statusOf(t, inv.id);
     expect(s.tracks.delivery.status).toBe("delivered");
     expect(s.tracks.reporting.status).toBe("report_failed");
+    expect(s.rejection.reasons).toContainEqual(expect.objectContaining({ field: "parties.buyer" }));
     expect(s.checklist.find((c: any) => c.key === "reported")).toMatchObject({
       state: "failed",
       code: "EINVOICE_REPORT_FAILED",
@@ -651,6 +1131,7 @@ describe("E2 submit, two tracks and history", () => {
 
     const inv2 = await issuedInvoice(t);
     await t.as.post(`/api/invoices/${inv2.id}/einvoice/submit`, {});
+    await runEInvoiceRetries();
     const d2 = docOf(t, inv2.number)!;
     d2.state = "final_invalid";
     d2.isTerminal = true;
@@ -664,20 +1145,79 @@ describe("E2 submit, two tracks and history", () => {
       code: "COMPLYANCE_FINAL_INVALID",
       resubmittable: false,
       newDocumentRequired: true,
+      environment: "sandbox",
+      creditNoteRequired: false,
     });
     const re = await t.as.post(`/api/invoices/${inv2.id}/einvoice/resubmit`, {});
     expect(re.status).toBe(409);
     expect(re.body.code).toBe("EINVOICE_NEW_DOCUMENT_REQUIRED");
+    expect(re.body.message).not.toMatch(/credit note/i);
+    // Exercise the projection with a stored production result without using a production provider.
+    await h.sql(
+      `UPDATE einvoice_documents SET validation = jsonb_set(validation, '{submission,environment}', '"production"')
+       WHERE invoice_id = $1`,
+      [inv2.id]
+    );
+    expect((await statusOf(t, inv2.id)).rejection).toMatchObject({
+      environment: "production",
+      creditNoteRequired: true,
+    });
+    await h.sql(
+      `UPDATE einvoice_documents SET validation = validation #- '{submission,environment}'
+       WHERE invoice_id = $1`,
+      [inv2.id]
+    );
+    expect((await statusOf(t, inv2.id)).rejection).toMatchObject({
+      environment: null,
+      creditNoteRequired: false,
+    });
     expect(fake.posts).toBe(2);
+  });
+
+  it("keeps required FTA reporting pending until an approved provider response arrives", async () => {
+    const t = await readyTenant();
+    const inv = await issuedInvoice(t);
+    expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const doc = docOf(t, inv.number)!;
+    doc.state = "final_valid";
+    doc.isTerminal = true;
+    for (const approval of [null, "REJECTED"]) {
+      doc.ftaApproval = approval;
+      expect((await poll()).refreshed).toBe(1);
+      expect(await statusOf(t, inv.id)).toMatchObject({
+        status: "accepted",
+        submissionState: "accepted",
+        document: { reportedAt: null },
+        tracks: { reporting: { status: "pending", required: true } },
+      });
+    }
+    doc.ftaApproval = "APPROVED";
+    expect((await poll()).refreshed).toBe(1);
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      status: "cleared",
+      submissionState: "accepted",
+      tracks: { reporting: { status: "reported", required: true } },
+    });
+    doc.ftaApproval = null;
+    const refreshed = await t.as.post(`/api/invoices/${inv.id}/einvoice/refresh-status`, {});
+    expect(refreshed.status, refreshed.text).toBe(200);
+    expect(refreshed.body.status).toBe("cleared");
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      status: "cleared",
+      tracks: { reporting: { status: "reported" } },
+    });
   });
 
   it("a lost response is never sent twice: GETS-HEAD-010 reads 'needs link' (not rejected), then a person links the document", async () => {
     const t = await readyTenant();
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
     const inv = await issuedInvoice(t);
     fake.nextSubmit = ["network"];
     const first = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
-    expect(first.body.status).toBe("failed");
-    const { runEInvoiceRetries } = await import("../../server/services/einvoice/workflow");
+    expect(first.body.status).toBe("queued");
+    await runEInvoiceRetries();
+    expect((await statusOf(t, inv.id)).status).toBe("failed");
     await runEInvoiceRetries(new Date(Date.now() + 2 * 60_000));
     expect(fake.docs.size).toBe(1); // the retry was refused as a duplicate, nothing new stored
     let s = await statusOf(t, inv.id);
@@ -723,7 +1263,7 @@ describe("E2 submit, two tracks and history", () => {
       documentId: "01KNOSELLER000000000",
     });
     expect(anonymous.status).toBe(422);
-    // Linking needs the posting permission: an employee (documents.write only) is refused.
+    // Linking needs e-invoice transmission permission; documents.write alone is insufficient.
     const employee = await h.createTenant({ name: "CmpEmployee" });
     await h.sql(
       `INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'employee')`,
@@ -734,46 +1274,76 @@ describe("E2 submit, two tracks and history", () => {
       { invoiceId: inv.id, documentId: stored.id }
     );
     expect(denied.status).toBe(403);
+    // Current configuration changed after the provider received the immutable invoice.
+    await h.sql("UPDATE companies SET einvoice_partner = 'acube' WHERE id = $1", [t.company.id]);
+    await h.sql(
+      "UPDATE einvoice_legal_entities SET status = 'inactive', provider_details = jsonb_set(provider_details, '{sourceName}', to_jsonb('replacement-source'::text)) WHERE company_id = $1 AND provider = 'complyance'",
+      [t.company.id]
+    );
+    fake.nextSalesReads = ["unavailable"];
+    const unavailable = await t.as.post(
+      `/api/companies/${t.company.id}/einvoicing/complyance/link`,
+      {
+        invoiceId: inv.id,
+        documentId: stored.id,
+      }
+    );
+    expect(unavailable.status, unavailable.text).toBe(502);
+    expect(unavailable.body.code).toBe("EINVOICE_PROVIDER_UNAVAILABLE");
+    expect((await statusOf(t, inv.id)).tracks.delivery.status).toBe("needs_link");
+    fake.nextSalesReads = ["ok", "unavailable"];
     const link = await t.as.post(`/api/companies/${t.company.id}/einvoicing/complyance/link`, {
       invoiceId: inv.id,
       documentId: stored.id,
     });
     expect(link.status, link.text).toBe(200);
+    expect(link.body).toEqual({ linked: true, refreshed: false });
     s = await statusOf(t, inv.id);
     expect(s.tracks.delivery.status).toBe("queued");
     expect(s.transmission.providerDocumentId).toBe(stored.id);
     expect(s.rejection).toBeNull();
+    const [archived] = await h.sql(
+      "SELECT provider_message_id FROM einvoice_archive WHERE invoice_id = $1 AND kind = 'submitted'",
+      [inv.id]
+    );
+    expect(archived?.provider_message_id).toBe(stored.id);
+    stored.state = "final_valid";
+    stored.isTerminal = true;
+    await poll();
+    expect((await statusOf(t, inv.id)).status).toBe("cleared");
     expect(fake.posts).toBe(2);
   });
 });
 
 describe("E2 webhook authentication", () => {
   it("refuses a bad signature, a tampered body, a stale stamp and an unset secret", async () => {
-    await readyTenant();
-    const bad = await webhook("invoice.passed", { documentId: "x" }, { secret: "other" });
+    const t = await readyTenant();
+    const bad = await webhook(t, "invoice.passed", { documentId: "x" }, { secret: "other" });
     expect(bad.status).toBe(401);
     expect(bad.body).toMatchObject({
       code: "EINVOICE_WEBHOOK_BAD_SIGNATURE",
       reason: "bad_signature",
     });
     const tampered = await webhook(
+      t,
       "invoice.passed",
       { documentId: "x" },
       { body: '{"eventId":"forged"}' }
     );
     expect(tampered.body.reason).toBe("bad_signature");
     const stale = await webhook(
+      t,
       "invoice.passed",
       { documentId: "x" },
       { timestamp: new Date(Date.now() - 2 * 3600_000).toISOString() }
     );
     expect(stale.body.reason).toBe("stale");
-    expect((await webhook("isv.credits.pool.low", {})).body).toEqual({
+    expect((await webhook(t, "isv.credits.pool.low", {})).body).toEqual({
       received: true,
       ignored: true,
     });
-    delete process.env.COMPLYANCE_WEBHOOK_SECRET;
-    expect((await webhook("invoice.passed", { documentId: "x" })).status).toBe(503);
+    useComplyance(t, null);
+    expect((await webhook(t, "invoice.passed", { documentId: "x" })).status).toBe(503);
   });
 });
 
@@ -796,7 +1366,7 @@ describe("E2 inbound: purchase.invoice.stored -> draft bill tagged e-invoice", (
     );
     const id = "01JPURCHASE000000000000142";
     fake.purchases.push({ id, number: "AE-INV-005", xml, companyId: fake.companyId });
-    const w = await webhook("purchase.invoice.stored", {
+    const w = await webhook(t, "purchase.invoice.stored", {
       documentId: id,
       documentNumber: "AE-INV-005",
       documentType: "tax_invoice",
@@ -820,7 +1390,114 @@ describe("E2 inbound: purchase.invoice.stored -> draft bill tagged e-invoice", (
 });
 
 describe("E2 + F16: no FTA reporting before the mandate applies", () => {
-  it("pre-mandate company: final_valid still reads not_required, never overdue", async () => {
+  it("persists the obligation and due date when queued at 00:30 in Dubai", async () => {
+    const t = await readyTenant({ ...SELLER_COLUMNS, einvoice_go_live_date: "2027-01-01" });
+    const inv = await issuedInvoice(t);
+    await h.sql("UPDATE invoices SET date = '2027-01-01' WHERE id = $1", [inv.id]);
+    const { enqueueEInvoiceSubmission } = await import("../../server/services/einvoice/workflow");
+    const company = (await storage.getCompany(t.company.id))!;
+    const invoice = (await storage.getInvoice(inv.id, t.company.id))!;
+    const configuration = (await companyProviderConfiguration(company.id, "complyance"))!;
+    const result = await enqueueEInvoiceSubmission({
+      invoice,
+      company,
+      actorId: t.user.id,
+      provider: new Provider(configuration.env),
+      now: new Date("2026-12-31T20:30:00.000Z"),
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      documentRow: { reportBy: "2027-01-15", reportingStatus: "pending" },
+    });
+    expect(fake.posts).toBe(0);
+  });
+  it.each([
+    "final_invalid",
+    "delivery_failed",
+    "refused-validation",
+    "voluntary-final_valid",
+  ] as const)(
+    "polls an independently pending FTA outcome for %s only after handoff",
+    async (scenario) => {
+      const voluntary = scenario === "voluntary-final_valid";
+      const t = await readyTenant(
+        voluntary ? { ...SELLER_COLUMNS, einvoice_scope: "none" } : SELLER_COLUMNS
+      );
+      const inv = await issuedInvoice(t);
+      if (scenario === "refused-validation") fake.nextSubmit = ["422"];
+      expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+      await runEInvoiceRetries();
+      const held = docOf(t, inv.number)!;
+      if (scenario !== "refused-validation") {
+        held.state = voluntary ? "final_valid" : scenario;
+        held.isTerminal = true;
+        if (!voluntary)
+          held.errors = [{ code: "C3-MLS-RE", message: "Buyer rejected", source: "delivery" }];
+        held.ftaApproval = null;
+        expect((await poll()).refreshed).toBe(1);
+        expect((await statusOf(t, inv.id)).tracks.reporting.status).toBe(
+          voluntary ? "not_required" : "pending"
+        );
+      }
+      held.ftaApproval = "APPROVED";
+      if (scenario === "refused-validation") {
+        expect((await poll()).refreshed).toBe(0);
+      } else {
+        expect((await poll()).refreshed).toBe(1);
+        const view = await statusOf(t, inv.id);
+        expect(view.tracks.reporting.status).toBe("reported");
+        if (!voluntary)
+          expect(view.tracks.delivery.status).toBe(
+            scenario === "final_invalid" ? "rejected" : "delivery_failed"
+          );
+        expect((await poll()).refreshed).toBe(0);
+      }
+      expect(fake.posts).toBe(1);
+    }
+  );
+  it.each([false, true])(
+    "continues to a buyer rejection for a voluntary receipt (legacy cleared: %s)",
+    async (legacy) => {
+      const t = await readyTenant({ ...SELLER_COLUMNS, einvoice_scope: "none" });
+      const inv = await issuedInvoice(t);
+      expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+      await runEInvoiceRetries();
+      const received = docOf(t, inv.number)!;
+      received.state = "delivery_success";
+      if (legacy) {
+        await h.sql(`UPDATE invoices SET einvoice_status = 'cleared' WHERE id = $1`, [inv.id]);
+        await h.sql(
+          `UPDATE einvoice_documents SET status = 'cleared', delivery_status = 'delivered',
+          provider_status = 'delivery_success', reporting_status = 'not_required', cleared_at = NOW()
+          WHERE invoice_id = $1`,
+          [inv.id]
+        );
+      } else {
+        expect((await poll()).refreshed).toBe(1);
+      }
+      expect(await statusOf(t, inv.id)).toMatchObject({
+        status: "submitted",
+        submissionState: "sent",
+        tracks: { reporting: { status: "not_required" } },
+        transmission: { recipientAcknowledgement: "received" },
+      });
+      received.state = "final_invalid";
+      received.isTerminal = true;
+      received.errors = [
+        { code: "C3-MLS-RE", message: "Buyer ASP rejected", path: [], source: "delivery" },
+      ];
+      expect((await poll()).refreshed).toBe(1);
+      expect(await statusOf(t, inv.id)).toMatchObject({
+        status: "rejected",
+        submissionState: "rejected",
+        tracks: { delivery: { status: "rejected" }, reporting: { status: "not_required" } },
+        rejection: { code: "COMPLYANCE_FINAL_INVALID", newDocumentRequired: true },
+      });
+      expect(fake.posts).toBe(1);
+    }
+  );
+
+  it("preserves provider-confirmed reporting without a local filing obligation", async () => {
     const t = await readyTenant({ ...SELLER_COLUMNS, einvoice_go_live_date: null });
     await h.sql(
       `UPDATE companies SET einvoice_scope = 'b2b', einvoice_turnover_band = 'large', einvoice_go_live_date = NULL WHERE id = $1`,
@@ -828,17 +1505,299 @@ describe("E2 + F16: no FTA reporting before the mandate applies", () => {
     );
     const inv = await issuedInvoice(t);
     await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
+    await runEInvoiceRetries();
     const d = docOf(t, inv.number)!;
     d.state = "final_valid";
     d.isTerminal = true;
+    // The current company settings no longer match the terms frozen on this invoice.
+    await h.sql(`UPDATE companies SET einvoice_go_live_date = '2026-01-01' WHERE id = $1`, [
+      t.company.id,
+    ]);
     await poll();
     const s = await statusOf(t, inv.id);
     expect(s.tracks.delivery.status).toBe("delivered");
     expect(s.tracks.reporting).toMatchObject({
-      status: "not_required",
+      status: "reported",
       required: false,
       reportBy: null,
       overdue: false,
     });
+    const documents = await t.as.get(`/api/companies/${t.company.id}/einvoicing/documents`);
+    expect(documents.status, documents.text).toBe(200);
+    expect(documents.body.items).toContainEqual(
+      expect.objectContaining({
+        invoiceId: inv.id,
+        reportingRequired: false,
+        reportingStatus: "reported",
+        reportBy: null,
+      })
+    );
+    const compliance = await t.as.get(`/api/companies/${t.company.id}/einvoicing/compliance`);
+    expect(compliance.status, compliance.text).toBe(200);
+    expect(compliance.body.items).toContainEqual(
+      expect.objectContaining({
+        invoiceId: inv.id,
+        reportingRequired: false,
+        reporting: "reported",
+        reportBy: null,
+      })
+    );
+    expect((await poll()).refreshed).toBe(0);
+  });
+
+  it.each([false, true])(
+    "keeps an actual government rejection visible on a voluntary submission (buyer rejected: %s)",
+    async (buyerRejected) => {
+      const t = await readyTenant({ ...SELLER_COLUMNS, einvoice_scope: "none" });
+      const inv = await issuedInvoice(t);
+      expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+      await runEInvoiceRetries();
+      const d = docOf(t, inv.number)!;
+      d.state = "final_invalid";
+      d.isTerminal = true;
+      d.errors = [{ code: "FTA-MLS-RE", message: "FTA rejected", path: [], source: "government" }];
+      if (buyerRejected)
+        d.errors.push({
+          code: "C3-MLS-RE",
+          message: "Buyer rejected",
+          path: [],
+          source: "delivery",
+        });
+      expect((await poll()).refreshed).toBe(1);
+      expect(await statusOf(t, inv.id)).toMatchObject({
+        submissionState: "rejected",
+        tracks: {
+          delivery: { status: buyerRejected ? "rejected" : "delivered" },
+          reporting: { status: "report_failed", required: false, reportBy: null, overdue: false },
+        },
+        rejection: { code: buyerRejected ? "COMPLYANCE_FINAL_INVALID" : "EINVOICE_REPORT_FAILED" },
+      });
+      expect((await poll()).refreshed).toBe(0);
+    }
+  );
+
+  it("reverifies legacy reported rows before projecting their approval, while preserving the old audit entry", async () => {
+    const t = await readyTenant();
+    const inv = await issuedInvoice(t);
+    expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const d = docOf(t, inv.number)!;
+    d.state = "final_valid";
+    d.isTerminal = true;
+    const oldAt = "2026-01-01T00:00:00.000Z";
+    await h.sql("UPDATE companies SET einvoice_scope = 'none' WHERE id = $1", [t.company.id]);
+    await h.sql(`UPDATE invoices SET einvoice_status = 'cleared' WHERE id = $1`, [inv.id]);
+    await h.sql(
+      `UPDATE einvoice_documents SET status = 'cleared', delivery_status = 'delivered',
+      provider_status = 'final_valid', reporting_status = 'reported', reported_at = $2,
+      reporting_status_at = $2, cleared_at = $2, validation = validation #- '{submission,reportingRequired}'
+      WHERE invoice_id = $1`,
+      [inv.id, oldAt]
+    );
+    const [{ id: earlierEvent }] = await h.sql(
+      `INSERT INTO einvoice_document_events
+      (company_id, invoice_id, track, from_status, to_status, provider, source, created_at)
+      VALUES ($1, $2, 'reporting', 'pending', 'reported', 'complyance', 'poll', $3) RETURNING id`,
+      [t.company.id, inv.id, oldAt]
+    );
+    const before = await statusOf(t, inv.id);
+    expect(before).toMatchObject({
+      status: "accepted",
+      tracks: { reporting: { status: "pending", required: true } },
+      document: { reportedAt: null, clearedAt: null },
+    });
+    expect(before.events).toContainEqual(
+      expect.objectContaining({ id: earlierEvent, to: "pending", confirmationUnavailable: true })
+    );
+    const compliance = await t.as.get(`/api/companies/${t.company.id}/einvoicing/compliance`);
+    expect(compliance.body).toMatchObject({
+      mandateApplies: false,
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          invoiceId: inv.id,
+          reportingRequired: true,
+          reporting: "pending",
+          reportBy: expect.any(String),
+        }),
+      ]),
+    });
+    expect((await poll()).refreshed).toBe(1);
+    const confirmed = await statusOf(t, inv.id);
+    expect(confirmed).toMatchObject({
+      status: "cleared",
+      tracks: { reporting: { status: "reported", required: true } },
+    });
+    expect(confirmed.document.reportedAt).not.toBe(oldAt);
+    expect(confirmed.document.clearedAt).toBe(confirmed.document.reportedAt);
+    expect(confirmed.document.validation).not.toHaveProperty("submission");
+    expect(confirmed.events).toContainEqual(
+      expect.objectContaining({ id: earlierEvent, to: "pending", confirmationUnavailable: true })
+    );
+    expect(confirmed.events).toContainEqual(
+      expect.objectContaining({
+        track: "reporting",
+        to: "reported",
+        at: confirmed.document.reportedAt,
+      })
+    );
+    expect((await poll()).refreshed).toBe(0);
+  });
+
+  it("keeps polling a legacy document with unknown filing obligation without inventing its report-by date", async () => {
+    const t = await readyTenant();
+    const inv = await issuedInvoice(t);
+    expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const held = docOf(t, inv.number)!;
+    held.state = "final_valid";
+    held.isTerminal = true;
+    held.ftaApproval = "PENDING";
+    await h.sql(
+      "UPDATE invoices SET date = '2026-02-03', einvoice_status = 'accepted' WHERE id = $1",
+      [inv.id]
+    );
+    await h.sql(
+      `UPDATE einvoice_documents SET status = 'accepted', delivery_status = 'delivered', provider_status = 'final_valid',
+        reporting_status = NULL, report_by = NULL, validation = validation #- '{submission,reportingRequired}' WHERE invoice_id = $1`,
+      [inv.id]
+    );
+    expect((await poll()).refreshed).toBe(1);
+    expect((await statusOf(t, inv.id)).tracks.reporting).toMatchObject({
+      required: false,
+      obligationKnown: false,
+      status: "pending",
+      reportBy: null,
+      overdue: false,
+    });
+    const [stored] = await h.sql(
+      "SELECT report_by, validation->'submission'->>'reportingRequired' AS required FROM einvoice_documents WHERE invoice_id = $1",
+      [inv.id]
+    );
+    expect(stored).toMatchObject({ report_by: null, required: null });
+
+    held.ftaApproval = "APPROVED";
+    expect((await poll()).refreshed).toBe(1);
+    expect((await statusOf(t, inv.id)).tracks.reporting).toMatchObject({
+      required: false,
+      obligationKnown: false,
+      status: "reported",
+      reportBy: null,
+      overdue: false,
+    });
+    expect(fake.posts).toBe(1);
+  });
+});
+
+describe("Legacy Complyance environment verification", () => {
+  it("verifies a user-supplied original document ID for a legacy ambiguous attempt", async () => {
+    const t = await readyTenant();
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+    const inv = await issuedInvoice(t);
+    const path = `/api/invoices/${inv.id}/einvoice/confirm-environment`;
+    expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const held = docOf(t, inv.number)!;
+    await h.sql(
+      "UPDATE invoices SET einvoice_status = 'failed', einvoice_provider_message_id = NULL WHERE id = $1",
+      [inv.id]
+    );
+    await h.sql(
+      "UPDATE einvoice_documents SET status = 'failed', provider_message_id = NULL, delivery_status = 'delivery_failed', next_retry_at = NULL, validation = '{}' WHERE invoice_id = $1",
+      [inv.id]
+    );
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      submissionState: "needs_reconciliation",
+      transmission: {
+        canSubmit: false,
+        environmentVerification: {
+          provider: "complyance",
+          reference: "manual",
+          environments: ["sandbox"],
+        },
+      },
+    });
+    const other = await h.createTenant({ name: "Unrelated Complyance recovery company" });
+    expect(
+      (await other.as.post(path, { environment: "sandbox", documentId: held.id })).status
+    ).toBe(404);
+    expect((await t.as.post(path, { environment: "sandbox" })).status).toBe(422);
+    expect((await t.as.post(path, { environment: "sandbox", documentId: "wrong-id" })).status).toBe(
+      422
+    );
+    const seller = held.source;
+    held.source = "another-company:v1";
+    expect((await t.as.post(path, { environment: "sandbox", documentId: held.id })).status).toBe(
+      422
+    );
+    held.source = seller;
+    const attached = await t.as.post(path, { environment: "sandbox", documentId: held.id });
+    expect(attached.status, attached.text).toBe(200);
+    expect(attached.body.providerDocumentId).toBe(held.id);
+    held.state = "final_valid";
+    held.isTerminal = true;
+    await events.runProviderPoll("complyance", { companyId: t.company.id });
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      status: "cleared",
+      transmission: { providerDocumentId: held.id },
+    });
+    expect(fake.posts).toBe(1);
+  });
+  it("restores an invoice-only reference from immutable archived proof and resumes polling", async () => {
+    const t = await readyTenant();
+    const inv = await issuedInvoice(t);
+    const path = `/api/invoices/${inv.id}/einvoice/confirm-environment`;
+    expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const held = docOf(t, inv.number)!;
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+    await h.sql("DELETE FROM einvoice_documents WHERE invoice_id = $1", [inv.id]);
+    await h.sql(
+      "UPDATE invoices SET einvoice_xml = NULL, einvoice_hash = NULL, einvoice_uuid = NULL WHERE id = $1",
+      [inv.id]
+    );
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      status: "submitted",
+      transmission: {
+        environmentVerification: { provider: "complyance", environments: ["sandbox"] },
+      },
+    });
+    const originalSource = held.source;
+    held.source = "wrong-seller:v1";
+    const wrong = await t.as.post(path, { environment: "sandbox" });
+    expect(wrong.status, wrong.text).toBe(422);
+    expect(wrong.body.code).toBe("EINVOICE_ENVIRONMENT_PROOF_MISMATCH");
+    expect(
+      await h.sql("SELECT id FROM einvoice_documents WHERE invoice_id = $1", [inv.id])
+    ).toEqual([]);
+
+    held.source = originalSource;
+    const verified = await t.as.post(path, { environment: "sandbox" });
+    expect(verified.status, verified.text).toBe(200);
+    expect(verified.body).toEqual({
+      provider: "complyance",
+      environment: "sandbox",
+      verified: true,
+    });
+    const [doc] = await h.sql(
+      "SELECT status, provider_message_id, attempts, next_retry_at, validation ->> 'valid' AS validation_result FROM einvoice_documents WHERE invoice_id = $1",
+      [inv.id]
+    );
+    expect(doc).toEqual({
+      status: "submitted",
+      provider_message_id: held.id,
+      attempts: 0,
+      next_retry_at: null,
+      validation_result: null,
+    });
+    held.state = "final_valid";
+    held.isTerminal = true;
+    expect(
+      (await events.runProviderPoll("complyance", { companyId: t.company.id })).refreshed
+    ).toBe(1);
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      status: "cleared",
+      transmission: { environmentVerification: null, providerDocumentId: held.id },
+    });
+    expect(fake.posts).toBe(1);
   });
 });

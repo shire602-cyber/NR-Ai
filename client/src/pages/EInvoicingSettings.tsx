@@ -1,5 +1,5 @@
 import { TrialBanner } from "@/components/TrialBanner";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -26,16 +26,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useTranslation } from "@/lib/i18n";
+import { translateNow, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
 import { useToast } from "@/hooks/use-toast";
-import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { EInvoiceProviderCard } from "@/components/einvoice/EInvoiceProviderCard";
 import { EInvoicePartnerCard } from "@/components/einvoice/EInvoicePartnerCard";
+import "@/components/einvoice/einvoice-theme.css";
 
 // UAE e-invoicing (PINT AE) settings: identity, scope, ASP status, per-invoice
 // validation, archive and inbound documents (W4-C, R07-04/R07-13/R03-18/R04-23).
@@ -105,7 +105,8 @@ const COPY = {
     inboundTitle: "Received supplier e-invoices",
     inboundEnabled: "Receiving supplier e-invoices",
     inboundDisabled: "Receiving supplier e-invoices is not available yet",
-    endpoint: "Endpoint",
+    providerCallback: "Provider callback URL",
+    directXmlEndpoint: "Direct signed XML endpoint",
     developerDetails: "Developer details",
     copy: "Copy",
     copied: "Copied",
@@ -117,6 +118,7 @@ const COPY = {
     problemReported:
       "The provider reported a problem. Open the invoice's e-invoice status for details.",
     st_generated: "Generated",
+    st_queued: "Queued",
     st_submitted: "Submitted",
     st_accepted: "Accepted",
     st_cleared: "Cleared",
@@ -193,7 +195,8 @@ const COPY = {
     inboundTitle: "فواتير الموردين الإلكترونية المستلمة",
     inboundEnabled: "استقبال الفواتير مفعّل",
     inboundDisabled: "استقبال فواتير الموردين الإلكترونية غير متاح بعد",
-    endpoint: "نقطة الاستقبال",
+    providerCallback: "رابط إشعارات مزوّد الخدمة",
+    directXmlEndpoint: "نقطة استقبال ملفات XML الموقّعة مباشرةً",
     developerDetails: "تفاصيل للمطورين",
     copy: "نسخ",
     copied: "تم النسخ",
@@ -204,6 +207,7 @@ const COPY = {
     retry: "إعادة المحاولة",
     problemReported: "أبلغ المزود عن مشكلة. افتح حالة الفاتورة الإلكترونية لمعرفة التفاصيل.",
     st_generated: "تم الإنشاء",
+    st_queued: "في قائمة الانتظار",
     st_submitted: "تم الإرسال",
     st_accepted: "مقبولة",
     st_cleared: "تم الاعتماد",
@@ -257,7 +261,7 @@ interface SettingsView {
     connected: boolean;
     provider: { name: string | null; environment: string | null; error: string | null };
   };
-  inbound: { enabled: boolean; endpoint: string };
+  inbound: { enabled: boolean; endpoint: string; providerCallbackUrl: string | null };
   validation: { xsd: boolean; schematron: boolean; schematronVersion: string };
 }
 
@@ -352,11 +356,22 @@ async function downloadArchive(companyId: string, row: ArchiveRow): Promise<bool
 }
 
 export default function EInvoicingSettings() {
+  const { company, companyId } = useActiveCompany();
+  return (
+    <CompanyEInvoicingSettings key={companyId} companyId={companyId} companyName={company?.name} />
+  );
+}
+
+function CompanyEInvoicingSettings({
+  companyId,
+  companyName,
+}: {
+  companyId: string | undefined;
+  companyName: string | undefined;
+}) {
   const { locale } = useTranslation();
   const s: Copy = COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
-  const { companyId } = useDefaultCompany();
-  const { company: activeCompany } = useActiveCompany();
 
   const settings = useQuery<SettingsView>({
     queryKey: ["/api/companies", companyId, "einvoicing", "settings"],
@@ -376,6 +391,13 @@ export default function EInvoicingSettings() {
   });
 
   const view = settings.data;
+  const settingsReady = !!view;
+  useEffect(() => {
+    const target = window.location.hash.slice(1);
+    if (settingsReady && (target === "iban" || target === "trade-licence")) {
+      document.getElementById(target)?.scrollIntoView({ block: "center" });
+    }
+  }, [settingsReady]);
   // Saved values come from the server; the form only holds the user's edits.
   const [edits, setEdits] = useState<Partial<FormState>>({});
   const form: FormState = { ...formFromView(view), ...edits };
@@ -419,7 +441,10 @@ export default function EInvoicingSettings() {
 
   return (
     <SettingsLayout>
-      <div className="max-w-narrow space-y-6" dir={locale === "ar" ? "rtl" : "ltr"}>
+      <div
+        className="einvoice-surface max-w-narrow space-y-6 bg-background text-foreground"
+        dir={locale === "ar" ? "rtl" : "ltr"}
+      >
         <PageHeader
           eyebrow={s.eyebrow}
           title={s.title}
@@ -430,14 +455,21 @@ export default function EInvoicingSettings() {
         {/* After the trial the workspace is read-only (edits answer 402): say so up front. */}
         <TrialBanner endedOnly />
 
-        {!view ? (
+        {settings.isError ? (
+          <div className="flex flex-wrap items-center gap-2" role="alert">
+            <p className="text-muted-foreground">{s.loadFailed}</p>
+            <Button variant="link" className="min-h-11" onClick={() => void settings.refetch()}>
+              {s.retry}
+            </Button>
+          </div>
+        ) : !view ? (
           <p className="text-muted-foreground">{s.loading}</p>
         ) : (
           <>
             {/* WQ5: choose the accredited partner (no default), appoint it, verify it. It comes
                 first: it is the self-serve step, and the connection status below follows from it. */}
             {companyId && (
-              <EInvoicePartnerCard companyId={companyId} companyName={activeCompany?.name ?? ""} />
+              <EInvoicePartnerCard companyId={companyId} companyName={companyName ?? ""} />
             )}
 
             {/* E1/E2: the configured accredited provider's guided connection (or "Not connected"). */}
@@ -532,9 +564,9 @@ export default function EInvoicingSettings() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="tl">{s.tradeLicence}</Label>
+                  <Label htmlFor="trade-licence">{s.tradeLicence}</Label>
                   <Input
-                    id="tl"
+                    id="trade-licence"
                     value={form.tradeLicenceNo}
                     onChange={(e) => set("tradeLicenceNo")(e.target.value)}
                   />
@@ -780,32 +812,52 @@ export default function EInvoicingSettings() {
           <CardHeader>
             <CardTitle>{s.inboundTitle}</CardTitle>
             <CardDescription>
-              {view?.inbound.enabled ? s.inboundEnabled : s.inboundDisabled}
+              {view?.asp.connected || view?.inbound.enabled ? s.inboundEnabled : s.inboundDisabled}
             </CardDescription>
             {/* Spec 3.12: the inbound endpoint is developer detail, collapsed by default. */}
-            {view ? (
+            {view && (view.inbound.providerCallbackUrl || view.inbound.enabled) ? (
               <details className="mt-2 text-small" data-testid="einvoice-developer-details">
                 <summary className="cursor-pointer text-muted-foreground">
                   {s.developerDetails}
                 </summary>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="text-muted-foreground">{s.endpoint}</span>
-                  <bdi className="break-all font-mono text-xs" translate="no">
-                    {view.inbound.endpoint}
-                  </bdi>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="h-7"
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(view.inbound.endpoint);
-                      toast({ title: s.copied });
-                    }}
-                  >
-                    {s.copy}
-                  </Button>
-                </div>
+                {[
+                  { label: s.providerCallback, url: view.inbound.providerCallbackUrl },
+                  {
+                    label: s.directXmlEndpoint,
+                    url: view.inbound.enabled ? view.inbound.endpoint : null,
+                  },
+                ].map(({ label, url }) =>
+                  url ? (
+                    <div key={label} className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="text-muted-foreground">{label}</span>
+                      <bdi className="break-all font-mono text-xs" translate="no">
+                        {url}
+                      </bdi>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7"
+                        onClick={async () => {
+                          try {
+                            if (!navigator.clipboard?.writeText)
+                              throw new Error("Clipboard unavailable");
+                            await navigator.clipboard.writeText(url);
+                            toast({ title: s.copied });
+                          } catch {
+                            toast({
+                              title: translateNow("toasts.couldNotCopy"),
+                              description: translateNow("toasts.selectTextCopyManually"),
+                              variant: "destructive",
+                            });
+                          }
+                        }}
+                      >
+                        {s.copy}
+                      </Button>
+                    </div>
+                  ) : null
+                )}
               </details>
             ) : null}
           </CardHeader>

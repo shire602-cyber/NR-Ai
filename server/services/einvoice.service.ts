@@ -16,10 +16,12 @@ import crypto from "crypto";
 import Decimal from "decimal.js";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { classifySupply, type SupplyClassification } from "../../shared/vat-classification";
-import { fromFils } from "../../shared/money";
+import { fromFils, toFils, tryToFils } from "../../shared/money";
+import { calendarDateKey } from "../../shared/uae-date";
 import { computeSalesDocument, storedLineToTotalsInput } from "./document-totals.service";
 import { dueDateFromTerms } from "./invoice-lifecycle";
 import { comment, el, opt, serializeXml, type XmlElement } from "./einvoice/xml";
+import { all, attr, first, parseXml, partyVatTrn, text, textAt } from "./einvoice/dom";
 import {
   CATEGORY_REASON_TEXT,
   CREDIT_NOTE_REASON_CODES,
@@ -29,9 +31,11 @@ import {
   RCM_GOODS_TYPE_CODES,
   emirateSubentity,
   isPintAeTrn,
+  isUaeTin,
   paymentTermsText,
   tinFromTrn,
   transactionTypeCode,
+  uaePeppolEndpointIssue,
   type CreditNoteReasonCode,
   type LegalIdType,
   type PaymentMeansCode,
@@ -50,13 +54,14 @@ const NS = {
   cbc: "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
 };
 
-export type UblCategory = "S" | "Z" | "E" | "O" | "AE";
+export type UblCategory = "S" | "Z" | "E" | "O" | "AE" | "N";
 
 /** UNCL5305 category for a stored line, via the single classification table. */
 export function vatCategoryFor(
-  line: Pick<InvoiceLine, "vatSupplyType" | "vatRate">,
+  line: Pick<InvoiceLine, "vatSupplyType" | "vatRate"> & Partial<Pick<InvoiceLine, "marginScheme">>,
   reverseCharge?: boolean | null
 ): UblCategory {
+  if (line.marginScheme) return "N";
   return classifySupply({
     supplyType: line.vatSupplyType,
     vatRate: line.vatRate,
@@ -69,7 +74,9 @@ export interface EInvoiceParty {
   trn?: string | null;
   /** Address line 1 (IBT-035 / IBT-050). */
   address?: string | null;
+  addressLine2?: string | null;
   city?: string | null;
+  postalCode?: string | null;
   /** Stored emirate ("dubai") or PINT AE code ("DXB"). */
   emirate?: string | null;
   /** ISO 3166-1 alpha-2 or a common name ("UAE"); default AE. */
@@ -100,6 +107,7 @@ export interface EInvoiceOptions {
   creditNoteReasonCode?: CreditNoteReasonCode | null;
   paymentMeansCode?: PaymentMeansCode | null;
   payeeIban?: string | null;
+  paidAtIssue?: boolean;
   lineExtras?: EInvoiceLineExtra[];
   transactionFlags?: Partial<Record<TransactionFlag, boolean>>;
 }
@@ -127,8 +135,11 @@ type CompanyLike = Company & {
 };
 
 function formatDate(date: Date | string): string {
-  const d = typeof date === "string" ? new Date(date) : date;
-  return d.toISOString().split("T")[0];
+  const day = calendarDateKey(date);
+  const timestamp = Date.parse(day);
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== day)
+    throw new RangeError("Invalid e-invoice calendar date");
+  return day;
 }
 
 function formatTime(date: Date): string {
@@ -168,25 +179,39 @@ export function documentKind(
   invoice: Pick<InvoiceLike, "invoiceType">,
   categories: UblCategory[]
 ): { root: "Invoice" | "CreditNote"; typeCode: string; kind: string } {
+  const outsideVat = categories.length > 0 && categories.every((c) => c === "O" || c === "E");
   if (invoice.invoiceType === "credit_note") {
-    return { root: "CreditNote", typeCode: DOCUMENT_TYPE.creditNote, kind: "credit_note" };
+    return {
+      root: "CreditNote",
+      typeCode: outsideVat ? DOCUMENT_TYPE.outOfScopeCreditNote : DOCUMENT_TYPE.creditNote,
+      kind: "credit_note",
+    };
   }
+  const typeCode = outsideVat ? DOCUMENT_TYPE.outOfScope : DOCUMENT_TYPE.invoice;
   if (invoice.invoiceType === "debit_note") {
     // UNCL1001 383 is the debit-note code, but the PINT AE
     // 2026.5 schematron (ibr-cl-01) only admits 380/480 on an Invoice. A UAE
-    // debit note is therefore a 380 tax invoice that references the original
-    // invoice through cac:BillingReference.
-    return { root: "Invoice", typeCode: DOCUMENT_TYPE.invoice, kind: "debit_note" };
+    // debit note uses an Invoice that references the original through cac:BillingReference.
+    return { root: "Invoice", typeCode, kind: "debit_note" };
   }
-  if (categories.length > 0 && categories.every((c) => c === "O")) {
-    return { root: "Invoice", typeCode: DOCUMENT_TYPE.outOfScope, kind: "out_of_scope" };
+  return { root: "Invoice", typeCode, kind: outsideVat ? "out_of_scope" : "invoice" };
+}
+
+/** Read the document type from already generated UBL before submitting or polling it. */
+export function readEInvoiceDocumentType(xml: string): string | null {
+  try {
+    const root = parseXml(xml).documentElement;
+    if (root.localName === "CreditNote") return textAt(root, "cbc:CreditNoteTypeCode");
+    if (root.localName === "Invoice") return textAt(root, "cbc:InvoiceTypeCode");
+    return null;
+  } catch {
+    return null;
   }
-  return { root: "Invoice", typeCode: DOCUMENT_TYPE.invoice, kind: "invoice" };
 }
 
 export interface ComputedEInvoiceLine {
   line: InvoiceLine;
-  classification: SupplyClassification;
+  category: UblCategory;
   quantity: number;
   unitPriceFils: number;
   grossFils: number;
@@ -208,6 +233,8 @@ export function computeEInvoiceAmounts(invoice: InvoiceLike, lines: InvoiceLine[
         unitPrice: Math.abs(Number(l.unitPrice)),
         vatRate: l.vatRate,
         vatSupplyType: l.vatSupplyType,
+        marginScheme: l.marginScheme,
+        marginPurchaseCost: l.marginPurchaseCost,
         discountType: (l as InvoiceLine & { discountType?: string | null }).discountType ?? null,
         discountValue: (l as InvoiceLine & { discountValue?: number | null }).discountValue ?? null,
       });
@@ -219,18 +246,25 @@ export function computeEInvoiceAmounts(invoice: InvoiceLike, lines: InvoiceLine[
       reverseCharge: invoice.reverseCharge ?? null,
     }
   );
-  const computed: ComputedEInvoiceLine[] = totals.lines.map((t, i) => ({
-    line: lines[i],
-    classification: t.classification,
-    quantity: Math.abs(Number(lines[i].quantity)),
-    unitPriceFils: Math.round(Math.abs(Number(lines[i].unitPrice)) * 100),
-    grossFils: t.grossFils,
-    lineDiscountFils: t.lineDiscountFils,
-    documentDiscountFils: t.documentDiscountFils,
-    lineExtensionFils: t.grossFils - t.lineDiscountFils,
-    vatFils: t.vatFils,
-    vatRate: t.vatRate,
-  }));
+  const computed: ComputedEInvoiceLine[] = totals.lines.map((t, i) => {
+    const line = lines[i];
+    // PINT AE category N reports the selling price with no separate VAT. Rule ibr-115-ae
+    // forbids a document allowance tagged N, so include its allocated share on each line.
+    const margin = line.marginScheme;
+    const lineDiscountFils = t.lineDiscountFils + (margin ? t.documentDiscountFils : 0);
+    return {
+      line,
+      category: margin ? "N" : t.classification.ublCategory,
+      quantity: Math.abs(Number(line.quantity)),
+      unitPriceFils: Math.abs(toFils(line.unitPrice)),
+      grossFils: t.grossFils,
+      lineDiscountFils,
+      documentDiscountFils: margin ? 0 : t.documentDiscountFils,
+      lineExtensionFils: t.grossFils - lineDiscountFils,
+      vatFils: margin ? 0 : t.vatFils,
+      vatRate: t.vatRate,
+    };
+  });
   return { sign, totals, lines: computed };
 }
 
@@ -241,8 +275,8 @@ export function taxBreakdown(computed: ComputedEInvoiceLine[]) {
     { category: UblCategory; rate: number; taxableFils: number; allowanceFils: number }
   >();
   for (const l of computed) {
-    const category = l.classification.ublCategory;
-    const rate = category === "S" ? l.vatRate : 0;
+    const { category } = l;
+    const rate = category === "S" || category === "N" ? l.vatRate : 0;
     const key = `${category}:${rate}`;
     const g = groups.get(key) ?? { category, rate, taxableFils: 0, allowanceFils: 0 };
     g.taxableFils += l.lineExtensionFils - l.documentDiscountFils;
@@ -264,7 +298,7 @@ export function taxBreakdown(computed: ComputedEInvoiceLine[]) {
 
 function classifySupplyForCategory(category: UblCategory): SupplyClassification {
   const type =
-    category === "S"
+    category === "S" || category === "N"
       ? "standard_rated"
       : category === "Z"
         ? "zero_rated"
@@ -280,7 +314,9 @@ function classifySupplyForCategory(category: UblCategory): SupplyClassification 
 function taxCategory(tag: string, category: UblCategory, rate: number): XmlElement {
   const c = classifySupplyForCategory(category);
   const percent =
-    category === "E" || category === "O" ? null : (category === "S" ? rate * 100 : 0).toFixed(2);
+    category === "E" || category === "O"
+      ? null
+      : (category === "S" || category === "N" ? rate * 100 : 0).toFixed(2);
   const withReason = category === "E" || category === "O" || category === "AE";
   return el(
     tag,
@@ -297,7 +333,7 @@ function partyXml(p: EInvoiceParty, role: "seller" | "buyer"): XmlElement {
   const country = countryCode(p.country);
   const trn = p.trn?.trim() || null;
   const endpoint = p.endpointId?.trim() || tinFromTrn(trn);
-  const scheme = p.endpointScheme?.trim() || PEPPOL_SCHEME_UAE_TIN;
+  const scheme = (p.endpointId?.trim() && p.endpointScheme?.trim()) || PEPPOL_SCHEME_UAE_TIN;
   const subentity = country === "AE" ? emirateSubentity(p.emirate) : p.emirate?.trim() || null;
   const legalType = p.legalIdType ?? (p.legalId ? "TL" : null);
   return el(
@@ -309,14 +345,16 @@ function partyXml(p: EInvoiceParty, role: "seller" | "buyer"): XmlElement {
       el(
         "cac:PartyIdentification",
         null,
-        el("cbc:ID", { schemeID: scheme }, tinFromTrn(trn) ?? trn)
+        el("cbc:ID", { schemeID: PEPPOL_SCHEME_UAE_TIN }, tinFromTrn(trn))
       ),
     el("cac:PartyName", null, el("cbc:Name", null, p.name)),
     el(
       "cac:PostalAddress",
       null,
       opt("cbc:StreetName", p.address),
+      opt("cbc:AdditionalStreetName", p.addressLine2),
       opt("cbc:CityName", p.city),
+      opt("cbc:PostalZone", p.postalCode),
       opt("cbc:CountrySubentity", subentity),
       el("cac:Country", null, el("cbc:IdentificationCode", null, country))
     ),
@@ -363,6 +401,10 @@ export function sellerFromCompany(company: CompanyLike): EInvoiceParty {
     name: company.legalName || company.name,
     trn: company.trnVatNumber,
     address: company.addressStreet || company.businessAddress || null,
+    addressLine2:
+      [company.addressDistrict, company.addressPoBox && `PO Box ${company.addressPoBox}`]
+        .filter((part) => part?.trim())
+        .join(", ") || null,
     city: company.addressCity || null,
     emirate: company.emirate || null,
     country: company.addressCountry || "AE",
@@ -394,7 +436,7 @@ export function generateEInvoiceXML(
   const currency = (inv.currency || "AED").toUpperCase();
   const { totals, lines: computed } = computeEInvoiceAmounts(inv, lines);
   const breakdown = taxBreakdown(computed);
-  const categories = computed.map((l) => l.classification.ublCategory);
+  const categories = computed.map((l) => l.category);
   const doc = documentKind(inv, categories);
   const isCredit = doc.root === "CreditNote";
   const rate =
@@ -408,7 +450,9 @@ export function generateEInvoiceXML(
     name: customer?.name || inv.customerName || "Cash Customer",
     trn: customer?.trn ?? inv.customerTrn ?? null,
     address: customer?.address ?? inv.customerAddress ?? null,
+    addressLine2: customer?.addressLine2 ?? null,
     city: customer?.city ?? null,
+    postalCode: customer?.postalCode ?? null,
     emirate:
       customer?.emirate ??
       (inv as InvoiceLike & { placeOfSupplyEmirate?: string | null }).placeOfSupplyEmirate ??
@@ -426,6 +470,7 @@ export function generateEInvoiceXML(
   const flags: Partial<Record<TransactionFlag, boolean>> = {
     exports: buyerCountry !== "AE" && categories.includes("Z"),
     ...(opts.transactionFlags ?? {}),
+    marginScheme: categories.includes("N"),
   };
 
   const issueDate = formatDate(inv.date);
@@ -433,10 +478,10 @@ export function generateEInvoiceXML(
   const supplyDate = inv.supplyDate ? formatDate(inv.supplyDate) : null;
   const dueDate = resolveDueDate(inv);
   const payableFils = totals.totalFils;
-  const subtotalFils = totals.subtotalFils;
+  const subtotalFils = breakdown.reduce((s, g) => s + g.taxableFils, 0);
   const vatFils = breakdown.reduce((s, g) => s + g.taxFils, 0);
   const lineExtTotal = computed.reduce((s, l) => s + l.lineExtensionFils, 0);
-  const docAllowanceFils = totals.documentDiscountFils;
+  const docAllowanceFils = breakdown.reduce((s, g) => s + g.allowanceFils, 0);
 
   const reasonCode: CreditNoteReasonCode =
     opts.creditNoteReasonCode && opts.creditNoteReasonCode in CREDIT_NOTE_REASON_CODES
@@ -444,10 +489,9 @@ export function generateEInvoiceXML(
       : DEFAULT_CREDIT_NOTE_REASON;
 
   const original = opts.originalInvoice ?? null;
-  const originalId =
-    original?.number ?? (inv.originalInvoiceId ? String(inv.originalInvoiceId) : null);
+  const originalId = original?.number?.trim();
   const billingReference =
-    (isCredit || doc.kind === "debit_note") &&
+    ((isCredit && reasonCode !== "VD") || doc.kind === "debit_note") &&
     originalId &&
     el(
       "cac:BillingReference",
@@ -461,15 +505,15 @@ export function generateEInvoiceXML(
     );
 
   const iban = opts.payeeIban ?? co.einvoicePayeeIban ?? null;
-  const meansCode = (opts.paymentMeansCode ??
-    co.einvoicePaymentMeansCode ??
-    (iban ? "30" : "1")) as string;
+  const meansCode = opts.paymentMeansCode ?? co.einvoicePaymentMeansCode ?? (iban ? "30" : "1");
   const paymentMeans = el(
     "cac:PaymentMeans",
     null,
     el("cbc:PaymentMeansCode", null, meansCode),
     el("cbc:PaymentID", null, inv.number),
-    iban && el("cac:PayeeFinancialAccount", null, el("cbc:ID", null, iban.replace(/\s+/g, "")))
+    iban &&
+      (meansCode === "30" || meansCode === "42") &&
+      el("cac:PayeeFinancialAccount", null, el("cbc:ID", null, iban.replace(/\s+/g, "")))
   );
   const termsText = paymentTermsText(inv.paymentTerms);
 
@@ -503,9 +547,9 @@ export function generateEInvoiceXML(
   const qtyTag = isCredit ? "cbc:CreditedQuantity" : "cbc:InvoicedQuantity";
   const lineXml = computed.map((l, i) => {
     const extra = opts.lineExtras?.[i] ?? {};
-    const category = l.classification.ublCategory;
+    const { category } = l;
     const unitCode = extra.unitCode || "EA";
-    const lineVatFils = category === "S" ? l.vatFils : 0;
+    const lineVatFils = l.vatFils;
     const lineNetAfterDoc = l.lineExtensionFils - l.documentDiscountFils;
     const lineDiscount = l.line as InvoiceLine & {
       discountType?: string | null;
@@ -524,11 +568,11 @@ export function generateEInvoiceXML(
           el("cbc:ChargeIndicator", null, "false"),
           el("cbc:AllowanceChargeReasonCode", null, "95"),
           el("cbc:AllowanceChargeReason", null, "Discount"),
-          lineDiscount.discountType === "percent" && lineDiscount.discountValue
+          category !== "N" && lineDiscount.discountType === "percent" && lineDiscount.discountValue
             ? el("cbc:MultiplierFactorNumeric", null, String(Number(lineDiscount.discountValue)))
             : null,
           amountEl("cbc:Amount", l.lineDiscountFils, currency),
-          lineDiscount.discountType === "percent"
+          category !== "N" && lineDiscount.discountType === "percent"
             ? amountEl("cbc:BaseAmount", l.grossFils, currency)
             : null
         ),
@@ -613,7 +657,9 @@ export function generateEInvoiceXML(
             "cac:Address",
             null,
             opt("cbc:StreetName", buyer.address),
+            opt("cbc:AdditionalStreetName", buyer.addressLine2),
             opt("cbc:CityName", buyer.city),
+            opt("cbc:PostalZone", buyer.postalCode),
             opt("cbc:CountrySubentity", buyer.emirate),
             el("cac:Country", null, el("cbc:IdentificationCode", null, buyerCountry))
           )
@@ -642,7 +688,8 @@ export function generateEInvoiceXML(
     amountEl("cbc:TaxExclusiveAmount", subtotalFils, currency),
     amountEl("cbc:TaxInclusiveAmount", subtotalFils + vatFils, currency),
     docAllowanceFils > 0 && amountEl("cbc:AllowanceTotalAmount", docAllowanceFils, currency),
-    amountEl("cbc:PayableAmount", subtotalFils + vatFils, currency)
+    opts.paidAtIssue && amountEl("cbc:PrepaidAmount", subtotalFils + vatFils, currency),
+    amountEl("cbc:PayableAmount", opts.paidAtIssue ? 0 : subtotalFils + vatFils, currency)
   );
   const paymentTerms = termsText && el("cac:PaymentTerms", null, el("cbc:Note", null, termsText));
 
@@ -716,239 +763,397 @@ export interface EInvoiceIssue {
 
 /** IBT-049: the buyer's electronic address (cbc:EndpointID) cannot be built. */
 export const BUYER_ENDPOINT_MISSING = "EINVOICE_BUYER_ENDPOINT_MISSING";
+export const BUYER_ENDPOINT_MISMATCH = "EINVOICE_BUYER_ENDPOINT_MISMATCH";
+const PAYMENT_CARD_TYPE_REQUIRED = "EINVOICE_PAYMENT_CARD_TYPE_REQUIRED";
 
 /** ibr-144-ae: the buyer's street, city or emirate is missing (named fix-it field customer.address). */
 export const BUYER_ADDRESS_MISSING = "EINVOICE_BUYER_ADDRESS_MISSING";
 
 const TRN_RE = /^[0-9]{15}$/;
 
-/**
- * Pre-submission validation on the stored data: every issue here would make
- * the PINT AE document fail the schematron or be rejected by an ASP. Surfaced
- * to the UI as fix-it errors before generation.
- */
+function validDate(value: string | Date | null | undefined): boolean {
+  return value != null && Number.isFinite(new Date(value).getTime());
+}
+
+/** Recheck these dispatch requirements on immutable XML queued by an earlier release. */
+export function frozenEInvoiceDispatchIssue(xml: string): string | null {
+  try {
+    const root = parseXml(xml).documentElement;
+    const buyer = first(root, "cac:AccountingCustomerParty/cac:Party");
+    if (buyer) {
+      const endpoint = first(buyer, "cbc:EndpointID");
+      const participant = text(endpoint);
+      const buyerTin = tinFromTrn(partyVatTrn(buyer));
+      if (
+        participant &&
+        uaePeppolEndpointIssue(attr(endpoint, "schemeID"), participant, buyerTin) === "mismatch"
+      ) {
+        return BUYER_ENDPOINT_MISMATCH;
+      }
+    }
+    if (all(root, "cac:PaymentMeans/cbc:PaymentMeansCode").some((code) => text(code) === "48")) {
+      return PAYMENT_CARD_TYPE_REQUIRED;
+    }
+    return null;
+  } catch {
+    return "EINVOICE_SCHEMA_INVALID";
+  }
+}
+
+/** Check the stored invoice data before generating a UBL document. */
 export function validateForEInvoicing(
   invoice: Invoice,
   lines: InvoiceLine[],
   company: Company,
   ctx: {
     customer?: Partial<EInvoiceParty>;
-    originalInvoice?: { number: string } | null;
+    originalInvoice?: { number: string; date?: string | Date } | null;
     lineExtras?: EInvoiceLineExtra[];
+    options?: EInvoiceOptions;
   } = {}
 ): EInvoiceIssue[] {
   const issues: EInvoiceIssue[] = [];
+  const add = (field: string, code: string, message: string) =>
+    issues.push({ field, code, message });
   const inv = invoice as InvoiceLike;
   const co = company as CompanyLike;
+  const options = ctx.options;
+  const categories = lines.map((line) => vatCategoryFor(line, inv.reverseCharge));
+  const doc = documentKind(inv, categories);
+  const seller = sellerFromCompany(co);
+  const supplierTrn = seller.trn?.trim();
+  const needsVatId =
+    doc.typeCode !== DOCUMENT_TYPE.outOfScope &&
+    doc.typeCode !== DOCUMENT_TYPE.outOfScopeCreditNote;
 
-  if (!company.trnVatNumber) {
-    issues.push({
-      field: "company.trnVatNumber",
-      message: "Supplier TRN is required for e-invoicing",
-    });
-  } else if (!TRN_RE.test(company.trnVatNumber)) {
-    issues.push({
-      field: "company.trnVatNumber",
-      message: "Supplier TRN must be exactly 15 digits",
-    });
-  } else if (!isPintAeTrn(company.trnVatNumber)) {
-    issues.push({
-      field: "company.trnVatNumber",
-      message: "Supplier TRN must start with 1 and end with 03 (ibr-132-ae)",
-    });
+  if (!supplierTrn && needsVatId) {
+    add(
+      "company.trnVatNumber",
+      "EINVOICE_SUPPLIER_TRN_REQUIRED",
+      "Supplier TRN is required for e-invoicing"
+    );
+  } else if (supplierTrn && !TRN_RE.test(supplierTrn)) {
+    add(
+      "company.trnVatNumber",
+      "EINVOICE_SUPPLIER_TRN_INVALID",
+      "Supplier TRN must be exactly 15 digits"
+    );
+  } else if (supplierTrn && !isPintAeTrn(supplierTrn)) {
+    add(
+      "company.trnVatNumber",
+      "EINVOICE_SUPPLIER_TRN_INVALID",
+      "Supplier TRN must start with 1 and end with 03 (ibr-132-ae)"
+    );
   }
-  if (!company.name) {
-    issues.push({ field: "company.name", message: "Supplier legal name is required" });
+  if (!seller.name?.trim()) {
+    add("company.name", "EINVOICE_SUPPLIER_NAME_REQUIRED", "Supplier legal name is required");
   }
-  if (!(co.addressStreet || co.businessAddress)) {
-    issues.push({
-      field: "company.addressStreet",
-      message: "Supplier street address is required (ibr-143-ae)",
-    });
+  if (!seller.address?.trim()) {
+    add(
+      "company.addressStreet",
+      "EINVOICE_SUPPLIER_STREET_REQUIRED",
+      "Supplier street address is required (ibr-143-ae)"
+    );
   }
-  if (!co.addressCity) {
-    issues.push({
-      field: "company.addressCity",
-      message: "Supplier city is required (ibr-143-ae)",
-    });
+  if (!seller.city?.trim()) {
+    add(
+      "company.addressCity",
+      "EINVOICE_SUPPLIER_CITY_REQUIRED",
+      "Supplier city is required (ibr-143-ae)"
+    );
   }
-  if (countryCode(co.addressCountry) === "AE" && !emirateSubentity(co.emirate)) {
-    issues.push({ field: "company.emirate", message: "Supplier emirate is required (ibr-128-ae)" });
+  if (countryCode(seller.country) === "AE" && !emirateSubentity(seller.emirate)) {
+    add(
+      "company.emirate",
+      "EINVOICE_SUPPLIER_EMIRATE_REQUIRED",
+      "Supplier emirate is required (ibr-128-ae)"
+    );
   }
-  const sellerLegal = sellerLegalId(co);
-  if (!sellerLegal) {
-    issues.push({
-      field: "company.tradeLicenceNo",
-      message:
-        "Seller legal identifier (trade licence, Emirates ID, passport or Cabinet decision) is required (ibr-150-ae)",
-    });
-  } else if (sellerLegal.type === "PAS" && !co.sellerIdCountry) {
-    issues.push({
-      field: "company.sellerIdCountry",
-      message: "Passport issuing country is required for a passport seller ID (ibr-012-ae)",
-    });
+  if (!seller.legalId?.trim()) {
+    add(
+      "company.tradeLicenceNo",
+      "EINVOICE_SUPPLIER_LEGAL_ID_REQUIRED",
+      "Seller legal identifier (trade licence, Emirates ID, passport or Cabinet decision) is required (ibr-150-ae)"
+    );
+  } else if (
+    seller.legalIdType === "PAS" &&
+    !/^[A-Za-z]{2}$/.test(seller.legalAuthority?.trim() ?? "")
+  ) {
+    add(
+      "company.sellerIdCountry",
+      "EINVOICE_PASSPORT_COUNTRY_REQUIRED",
+      "Passport issuing country is required for a passport seller ID (ibr-012-ae)"
+    );
   }
   const buyerLegal = ctx.customer;
-  if (buyerLegal?.legalIdType === "PAS" && buyerLegal.legalId && !buyerLegal.legalAuthority) {
-    issues.push({
-      field: "customer.legalIdCountry",
-      message: "Passport issuing country is required for a passport buyer ID (ibr-010-ae)",
-    });
+  if (
+    buyerLegal?.legalIdType === "PAS" &&
+    buyerLegal.legalId &&
+    !/^[A-Za-z]{2}$/.test(buyerLegal.legalAuthority?.trim() ?? "")
+  ) {
+    add(
+      "customer.legalIdCountry",
+      "EINVOICE_PASSPORT_COUNTRY_REQUIRED",
+      "Passport issuing country is required for a passport buyer ID (ibr-010-ae)"
+    );
   }
-  const storedTin = (co as CompanyLike & { einvoiceTin?: string | null }).einvoiceTin;
+  const storedTin = co.einvoiceTin;
   if (storedTin && tinProblem(storedTin, co)) {
-    issues.push({
-      field: "company.einvoiceTin",
-      message: "Supplier TIN must be 10 digits starting with 1 and match the TRN's first 10 digits",
-    });
+    add(
+      "company.einvoiceTin",
+      "EINVOICE_SUPPLIER_TIN_INVALID",
+      "Supplier TIN must be 10 digits starting with 1 and match the TRN's first 10 digits"
+    );
   }
-  if (!invoice.number) {
-    issues.push({ field: "invoice.number", message: "Invoice number is required" });
+  const sellerEndpoint = seller.endpointId?.trim() || tinFromTrn(supplierTrn);
+  if (
+    (!sellerEndpoint && !needsVatId) ||
+    (sellerEndpoint &&
+      (!seller.endpointScheme || seller.endpointScheme === PEPPOL_SCHEME_UAE_TIN) &&
+      !isUaeTin(sellerEndpoint))
+  ) {
+    add(
+      "company.einvoiceTin",
+      "EINVOICE_SUPPLIER_ENDPOINT_INVALID",
+      "Enter a valid supplier Peppol address. Scheme 0235 requires a 10-digit TIN starting with 1."
+    );
   }
-  if (!invoice.date) {
-    issues.push({ field: "invoice.date", message: "Invoice issue date is required" });
+  if (!invoice.number?.trim()) {
+    add("invoice.number", "EINVOICE_INVOICE_NUMBER_REQUIRED", "Invoice number is required");
   }
-  if (!invoice.customerName) {
-    issues.push({ field: "invoice.customerName", message: "Buyer name is required" });
+  const issueDateValid = validDate(inv.date);
+  if (!issueDateValid) {
+    add("invoice.date", "EINVOICE_ISSUE_DATE_INVALID", "A valid invoice issue date is required");
   }
-  const buyerTrn = ctx.customer?.trn ?? invoice.customerTrn;
-  if (buyerTrn && !TRN_RE.test(buyerTrn)) {
-    issues.push({
-      field: "invoice.customerTrn",
-      message: "Buyer TRN must be exactly 15 digits when provided",
-    });
-  } else if (!ctx.customer?.endpointId?.trim() && !tinFromTrn(buyerTrn ?? null)) {
-    // PINT AE requires a buyer EndpointID (IBT-049) with a scheme; partyXml derives it from the
-    // TRN (0235 + 10-digit TIN) or takes the contact's recorded Peppol endpoint. Without either
-    // the document can never pass PINT-EndpointID, so say what to add before anything is built.
-    issues.push({
-      field: "customer.endpointId",
-      code: BUYER_ENDPOINT_MISSING,
-      message:
-        "Buyer has no electronic address (IBT-049): add the buyer's 15-digit TRN to the invoice " +
+  if (!(ctx.customer?.name || invoice.customerName)?.trim()) {
+    add("invoice.customerName", "EINVOICE_BUYER_NAME_REQUIRED", "Buyer name is required");
+  }
+  const buyerTrn = (ctx.customer?.trn ?? invoice.customerTrn)?.trim();
+  const buyerEndpoint = ctx.customer?.endpointId?.trim();
+  const buyerScheme = ctx.customer?.endpointScheme?.trim() || PEPPOL_SCHEME_UAE_TIN;
+  const buyerEndpointIssue = buyerEndpoint
+    ? uaePeppolEndpointIssue(buyerScheme, buyerEndpoint, tinFromTrn(buyerTrn))
+    : null;
+  if (buyerTrn && !isPintAeTrn(buyerTrn)) {
+    add(
+      "invoice.customerTrn",
+      "EINVOICE_BUYER_TRN_INVALID",
+      "Buyer TRN must be 15 digits, start with 1 and end with 03 (ibr-132-ae)"
+    );
+  }
+  if (!buyerTrn && !buyerEndpoint) {
+    add(
+      "customer.endpointId",
+      BUYER_ENDPOINT_MISSING,
+      "Buyer has no electronic address (IBT-049): add the buyer's 15-digit TRN to the invoice " +
         "or customer, or record the customer's Peppol endpoint (scheme 0235 with its 10-digit TIN, " +
-        "or its own Peppol scheme and ID) (PINT-EndpointID)",
-    });
+        "or its own Peppol scheme and ID) (PINT-EndpointID)"
+    );
+  } else if (buyerEndpointIssue === "invalid") {
+    add(
+      "customer.endpointId",
+      "EINVOICE_BUYER_ENDPOINT_INVALID",
+      "Buyer Peppol scheme 0235 requires a 10-digit TIN starting with 1."
+    );
+  } else if (buyerEndpointIssue === "mismatch") {
+    add(
+      "customer.endpointId",
+      BUYER_ENDPOINT_MISMATCH,
+      "The buyer's Peppol 0235 endpoint must match the first 10 digits of the buyer's VAT TRN."
+    );
   }
   if (lines.length === 0) {
-    issues.push({ field: "lines", message: "At least one invoice line is required" });
+    add("lines", "EINVOICE_LINES_REQUIRED", "At least one invoice line is required");
   }
-  if (!invoice.currency) {
-    issues.push({ field: "invoice.currency", message: "Document currency code is required" });
+  if (categories.includes("N") && categories.some((category) => category !== "N")) {
+    add(
+      "lines",
+      "EINVOICE_MARGIN_SCHEME_MIXED",
+      "PINT AE requires every line on a profit-margin scheme invoice to use that scheme (ibr-116-ae)"
+    );
   }
-  if (inv.invoiceType !== "credit_note" && Number(invoice.total) > 0 && !resolveDueDate(inv)) {
-    issues.push({
-      field: "invoice.dueDate",
-      message: "Payment due date is required when an amount is payable (ibr-127-ae)",
-    });
+  if (!/^[A-Za-z]{3}$/.test(inv.currency ?? "")) {
+    add(
+      "invoice.currency",
+      "EINVOICE_CURRENCY_INVALID",
+      "Enter a three-letter document currency code"
+    );
+  } else if (
+    inv.currency.toUpperCase() !== "AED" &&
+    (!Number.isFinite(Number(inv.exchangeRate)) || Number(inv.exchangeRate) <= 0)
+  ) {
+    add(
+      "invoice.exchangeRate",
+      "EINVOICE_EXCHANGE_RATE_INVALID",
+      "An exchange rate to AED is required for this currency"
+    );
   }
-  if (inv.invoiceType === "credit_note" && !(ctx.originalInvoice || inv.originalInvoiceId)) {
-    issues.push({
-      field: "invoice.originalInvoiceId",
-      message: "A credit note must reference the invoice it adjusts (ibr-055-ae)",
-    });
+  const payable = !options?.paidAtIssue && Number(invoice.total) > 0;
+  if (
+    (inv.dueDate && !validDate(inv.dueDate)) ||
+    (doc.root !== "CreditNote" && payable && issueDateValid && !resolveDueDate(inv))
+  ) {
+    add(
+      "invoice.dueDate",
+      "EINVOICE_DUE_DATE_INVALID",
+      "A valid payment due date is required when an amount is payable (ibr-127-ae)"
+    );
   }
-  if (ctx.customer) {
+  if (inv.supplyDate && !validDate(inv.supplyDate)) {
+    add("invoice.supplyDate", "EINVOICE_SUPPLY_DATE_INVALID", "Enter a valid supply date");
+  }
+
+  const original = ctx.originalInvoice ?? options?.originalInvoice;
+  const needsOriginal =
+    doc.kind === "debit_note" ||
+    (doc.root === "CreditNote" && options?.creditNoteReasonCode !== "VD");
+  if (needsOriginal && !original?.number?.trim()) {
+    add(
+      "invoice.originalInvoiceId",
+      "EINVOICE_ORIGINAL_INVOICE_REQUIRED",
+      "The adjustment must reference the number of the original invoice (ibr-055-ae)"
+    );
+  } else if (original?.date && !validDate(original.date)) {
+    add(
+      "invoice.originalInvoiceId",
+      "EINVOICE_ORIGINAL_INVOICE_DATE_INVALID",
+      "The original invoice must have a valid issue date"
+    );
+  }
+
+  const iban = options?.payeeIban ?? co.einvoicePayeeIban;
+  const meansCode = options?.paymentMeansCode ?? co.einvoicePaymentMeansCode;
+  if (meansCode === "48") {
+    add(
+      "invoice.paymentMeans",
+      PAYMENT_CARD_TYPE_REQUIRED,
+      "Check the payment record and use the confirmed credit or debit card method for e-invoicing."
+    );
+  }
+  if (meansCode === "30" && !iban?.trim()) {
+    add(
+      "company.einvoicePayeeIban",
+      "EINVOICE_PAYMENT_ACCOUNT_REQUIRED",
+      "Enter the receiving account IBAN for the selected credit-transfer payment method (ibr-192-ae)"
+    );
+  }
+
+  if (ctx.customer && countryCode(ctx.customer.country) === "AE") {
     const c = ctx.customer;
-    if (countryCode(c.country) === "AE") {
-      // Check the parts one by one (a buyer with no address at all used to slip through here and
-      // only surface later as the schematron rule ibr-144-ae).
-      const missing = [
-        !c.address?.trim() && "street",
-        !c.city?.trim() && "city",
-        !emirateSubentity(c.emirate) && "emirate",
-      ].filter(Boolean) as string[];
-      if (missing.length > 0) {
-        issues.push({
-          field: "customer.address",
-          code: BUYER_ADDRESS_MISSING,
-          message: `Buyer ${missing.join(", ")} missing: street, city and emirate are all required for a UAE buyer (ibr-144-ae)`,
-        });
-      }
+    const missing = [
+      !c.address?.trim() && "street",
+      !c.city?.trim() && "city",
+      !emirateSubentity(c.emirate) && "emirate",
+    ].filter(Boolean);
+    if (missing.length > 0) {
+      add(
+        "customer.address",
+        BUYER_ADDRESS_MISSING,
+        `Buyer ${missing.join(", ")} missing: street, city and emirate are all required for a UAE buyer (ibr-144-ae)`
+      );
     }
   }
 
-  let lineSum = 0;
-  let lineVat = 0;
-  let anyReverseCharge = false;
+  if (categories.includes("AE") && !buyerTrn) {
+    add(
+      "invoice.customerTrn",
+      "EINVOICE_REVERSE_CHARGE_TRN_REQUIRED",
+      "Buyer TRN is required on a reverse-charge invoice (ibr-103-ae)"
+    );
+  }
+  const extras = ctx.lineExtras ?? options?.lineExtras;
+  let numbersValid = true;
   lines.forEach((line, i) => {
-    const category = vatCategoryFor(line, inv.reverseCharge);
-    if (!line.description) {
-      issues.push({ field: `lines[${i}].description`, message: "Line description is required" });
+    if (!line.description?.trim()) {
+      add(
+        `lines[${i}].description`,
+        "EINVOICE_LINE_DESCRIPTION_REQUIRED",
+        "Line description is required"
+      );
     }
-    if (!(Math.abs(Number(line.quantity)) > 0)) {
-      issues.push({ field: `lines[${i}].quantity`, message: "Line quantity must be non-zero" });
+    const quantity = Number(line.quantity);
+    if (
+      !Number.isFinite(quantity) ||
+      quantity === 0 ||
+      (doc.root !== "CreditNote" && quantity < 0)
+    ) {
+      numbersValid = false;
+      add(
+        `lines[${i}].quantity`,
+        "EINVOICE_LINE_QUANTITY_INVALID",
+        "Line quantity must be finite and positive for an invoice, or non-zero for a credit note"
+      );
     }
-    if (line.unitPrice < 0) {
-      issues.push({
-        field: `lines[${i}].unitPrice`,
-        message: "Line unit price cannot be negative",
-      });
+    const priceFils = tryToFils(line.unitPrice);
+    if (priceFils === null || priceFils < 0) {
+      numbersValid = false;
+      add(
+        `lines[${i}].unitPrice`,
+        "EINVOICE_LINE_PRICE_INVALID",
+        "Enter a valid non-negative line unit price"
+      );
     }
-    if (category === "AE") {
-      anyReverseCharge = true;
-      const extra = ctx.lineExtras?.[i];
-      if (!extra?.gtin) {
-        issues.push({
-          field: `lines[${i}].gtin`,
-          message: "A reverse-charge line needs the item GTIN (ibr-174-ae)",
-        });
-      }
-      if (
-        !extra?.rcmGoodsType ||
-        !(RCM_GOODS_TYPE_CODES as readonly string[]).includes(extra.rcmGoodsType)
-      ) {
-        issues.push({
-          field: `lines[${i}].rcmGoodsType`,
-          message: "A reverse-charge line needs the goods type code (ibr-006-ae / ibr-166-ae)",
-        });
-      }
+    if (line.marginScheme && tryToFils(line.marginPurchaseCost) === null) {
+      numbersValid = false;
+      add(
+        `lines[${i}].marginPurchaseCost`,
+        "EINVOICE_MARGIN_SCHEME_COST_INVALID",
+        "Enter the purchase cost for the profit-margin scheme item"
+      );
     }
-    const ext = Number(line.quantity) * Number(line.unitPrice);
-    lineSum += ext;
-    lineVat += category === "S" ? ext * Number(line.vatRate ?? 0.05) : 0;
+    if (categories[i] !== "AE") return;
+
+    const extra = extras?.[i];
+    if (!extra?.gtin?.trim()) {
+      add(
+        `lines[${i}].gtin`,
+        "EINVOICE_REVERSE_CHARGE_GTIN_REQUIRED",
+        "A reverse-charge line needs the item GTIN (ibr-174-ae)"
+      );
+    }
+    if (
+      !extra?.rcmGoodsType ||
+      !(RCM_GOODS_TYPE_CODES as readonly string[]).includes(extra.rcmGoodsType)
+    ) {
+      add(
+        `lines[${i}].rcmGoodsType`,
+        "EINVOICE_REVERSE_CHARGE_GOODS_TYPE_REQUIRED",
+        "A reverse-charge line needs the goods type code (ibr-006-ae / ibr-166-ae)"
+      );
+    }
   });
-  if (anyReverseCharge && !buyerTrn) {
-    issues.push({
-      field: "invoice.customerTrn",
-      message: "Buyer TRN is required on a reverse-charge invoice (ibr-103-ae)",
-    });
-  }
 
-  const round2 = (n: number) => Math.round(n * 100) / 100;
-  const hasDiscount = Number(inv.discountAmount ?? 0) !== 0;
-  if (lines.length > 0 && !hasDiscount) {
-    if (Math.abs(round2(lineSum) - round2(invoice.subtotal)) > 0.05) {
-      issues.push({
-        field: "invoice.subtotal",
-        message: `Line totals (${round2(lineSum).toFixed(2)}) do not match the invoice subtotal (${round2(invoice.subtotal).toFixed(2)})`,
-      });
-    }
-    if (Math.abs(round2(lineVat) - round2(invoice.vatAmount)) > 0.05) {
-      issues.push({
-        field: "invoice.vatAmount",
-        message: `Line VAT (${round2(lineVat).toFixed(2)}) does not match the invoice VAT amount (${round2(invoice.vatAmount).toFixed(2)})`,
-      });
-    }
-  } else if (lines.length > 0) {
+  if (numbersValid && lines.length > 0) {
     try {
-      const { totals } = computeEInvoiceAmounts(inv, lines);
-      if (Math.abs(totals.subtotalFils - Math.round(Math.abs(invoice.subtotal) * 100)) > 1) {
-        issues.push({
-          field: "invoice.subtotal",
-          message: "Discounted line totals do not match the invoice subtotal",
-        });
+      const { sign, totals } = computeEInvoiceAmounts(inv, lines);
+      if (totals.subtotalFils * sign !== tryToFils(invoice.subtotal)) {
+        add(
+          "invoice.subtotal",
+          "EINVOICE_SUBTOTAL_MISMATCH",
+          "Line totals after discounts do not match the invoice subtotal"
+        );
       }
-    } catch (err) {
-      issues.push({ field: "lines", message: (err as Error).message });
+      if (totals.vatFils * sign !== tryToFils(invoice.vatAmount)) {
+        add(
+          "invoice.vatAmount",
+          "EINVOICE_VAT_TOTAL_MISMATCH",
+          "VAT calculated on the lines after discounts does not match the invoice VAT"
+        );
+      }
+      if (totals.totalFils * sign !== tryToFils(invoice.total)) {
+        add(
+          "invoice.total",
+          "EINVOICE_TOTAL_MISMATCH",
+          "Subtotal after discounts plus VAT does not equal the invoice total"
+        );
+      }
+    } catch {
+      add(
+        "lines",
+        "EINVOICE_LINE_AMOUNTS_INVALID",
+        "Check the line values and discounts: a discount cannot exceed the amount it applies to"
+      );
     }
   }
-  if (Math.abs(round2(invoice.subtotal + invoice.vatAmount) - round2(invoice.total)) > 0.05) {
-    issues.push({
-      field: "invoice.total",
-      message: "Subtotal plus VAT does not equal the invoice total",
-    });
-  }
-
   return issues;
 }

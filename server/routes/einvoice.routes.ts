@@ -1,23 +1,33 @@
 import express, { type Express, type Request, type Response } from "express";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { storage } from "../storage";
 import { db } from "../db";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { requirePermission } from "../middleware/companyRolePolicy";
+import {
+  assertScopedCompanyPermission,
+  requireScopedCompanyPermission,
+} from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
 import { DomainError } from "../errors";
-import { companies, type Company, type Invoice } from "../../shared/schema";
+import {
+  companies,
+  customerContacts,
+  invoiceLines,
+  invoices,
+  type Company,
+  type Invoice,
+} from "../../shared/schema";
 import { getCapability } from "../../shared/capabilities";
 import { zDate, zIbanAE, zText, zUuid } from "../../shared/validators/primitives";
 import { preflightEInvoice } from "../services/einvoice-submit.service";
+import { EInvoiceProviderError, type EInvoiceProvider } from "../services/einvoice-provider";
 import {
-  EInvoiceProviderError,
-  aspConfigured,
-  getEInvoiceProvider,
-  type EInvoiceProvider,
-} from "../services/einvoice-provider";
+  companyProviderHealth,
+  getCompanyEInvoiceProvider,
+} from "../services/einvoice/providers/company-provider";
+import { providerCallbackUrl } from "../services/einvoice/providers/callback-url";
 import { recordAudit } from "../services/audit.service";
 import { createLogger } from "../config/logger";
 import { findInvoiceForUser } from "./invoices.routes";
@@ -31,15 +41,25 @@ import {
 import {
   getArchiveEntry,
   getEInvoiceDocument,
+  documentProviderEnvironment,
   listArchive,
   listEInvoiceDocuments,
   listInboundDocuments,
+  listInboundVendorCredits,
+  lockEInvoiceInvoice,
+  submissionProviderPin,
+  submissionTriedProvider,
   upsertBuyerEndpoint,
   upsertEInvoiceDocument,
 } from "../services/einvoice/store";
 import { EINVOICE_TIMELINE, einvoicingScope } from "../services/einvoice/scope";
 import { listCompliancePills } from "../services/einvoice/compliance-pills";
 import { computeEInvoiceReadiness } from "../services/einvoice/readiness";
+import { currentOnboardingEntity, getLegalEntity } from "../services/einvoice/legal-entities";
+import {
+  confirmLegacyEInvoiceEnvironment,
+  needsLegacySubmissionRecovery,
+} from "../services/einvoice/legacy-tracking";
 import {
   INBOUND_SIGNATURE_HEADER,
   INBOUND_TIMESTAMP_HEADER,
@@ -49,14 +69,21 @@ import {
 } from "../services/einvoice/inbound";
 import {
   cancelAndPersist,
+  canRecoverAcubeSubmission,
+  recoverAcubeSubmission,
   refreshAndPersist,
   runEInvoiceRetries,
-  invoiceReportingRequired,
-  submitAndPersist,
+  enqueueEInvoiceSubmission,
 } from "../services/einvoice/workflow";
-import { einvoiceStatusView } from "../services/einvoice/status-view";
+import {
+  invoiceReportingDeadline,
+  invoiceReportingRequired,
+  projectInvoiceTracks,
+  reportingInvoiceColumns,
+} from "../services/einvoice/reporting";
+import { einvoiceStatusView, projectEInvoiceDocument } from "../services/einvoice/status-view";
 import { applyTracks, recordValidationEvent } from "../services/einvoice/history";
-import { NEW_DOCUMENT_REQUIRED_CODES, reportByDate } from "../services/einvoice/tracks";
+import { NEW_DOCUMENT_REQUIRED_CODES } from "../services/einvoice/tracks";
 import { runProviderEvents, runProviderPoll } from "../services/einvoice/provider-events";
 import {
   LEGAL_ID_TYPES,
@@ -64,6 +91,7 @@ import {
   PEPPOL_SCHEME_UAE_TIN,
   isUaeTin,
   tinFromTrn,
+  uaePeppolEndpointIssue,
 } from "../services/einvoice/pint-ae-codes";
 
 import { effectiveTin } from "../../shared/validators/einvoice-identity";
@@ -77,19 +105,54 @@ function validated<T>(req: Request): T {
   return req.body as T;
 }
 
-function activeProvider(): EInvoiceProvider {
+async function activeProvider(
+  companyId: string,
+  document?: Awaited<ReturnType<typeof getEInvoiceDocument>> | null
+): Promise<EInvoiceProvider> {
   try {
-    return getEInvoiceProvider();
+    if (document !== undefined) {
+      const environment = document ? documentProviderEnvironment(document) : null;
+      if (!document?.provider || !environment) {
+        throw new EInvoiceProviderError(
+          "EINVOICE_PROVIDER_NOT_CONFIGURED",
+          "The provider environment for this document needs to be confirmed before tracking it."
+        );
+      }
+      return await getCompanyEInvoiceProvider(companyId, {
+        provider: document.provider,
+        environment,
+      });
+    }
+    return await getCompanyEInvoiceProvider(companyId);
   } catch (err) {
-    // No accredited provider configured. Report this honestly as "not
-    // available" rather than letting a mock fabricate an acceptance.
+    if (!(err instanceof EInvoiceProviderError)) throw err;
+    throw new DomainError(err.code, err.status, undefined, err.message);
+  }
+}
+
+function providerForSubmission(
+  invoice: Invoice,
+  company: Company,
+  doc: Awaited<ReturnType<typeof getEInvoiceDocument>>
+) {
+  if (needsLegacySubmissionRecovery(invoice, doc)) {
+    throw new DomainError("EINVOICE_ALREADY_SUBMITTED", 409);
+  }
+  if (
+    submissionTriedProvider(doc) &&
+    doc?.provider !== company.einvoicePartner &&
+    !invoice.einvoiceProviderMessageId &&
+    !doc?.providerMessageId &&
+    doc?.deliveryStatus !== "needs_link"
+  ) {
     throw new DomainError(
-      err instanceof EInvoiceProviderError ? err.code : "EINVOICE_PROVIDER_NOT_CONFIGURED",
-      503,
+      "EINVOICE_RETRY_PROVIDER_CHANGED",
+      409,
       undefined,
-      (err as Error).message || "E-invoicing is not configured."
+      "Restore the original e-invoicing provider connection before retrying this invoice."
     );
   }
+  return activeProvider(company.id, submissionProviderPin(invoice, doc));
 }
 
 async function loadInvoiceAndCompany(
@@ -97,23 +160,17 @@ async function loadInvoiceAndCompany(
 ): Promise<{ invoice: Invoice; company: Company }> {
   const invoice = await findInvoiceForUser(userOf(req), req.params.id);
   if (!invoice) throw new DomainError("INVOICE_NOT_FOUND", 404, undefined, "Invoice not found");
+  try {
+    await assertScopedCompanyPermission(req.user, invoice.companyId, "reports.read");
+  } catch (err) {
+    if (err instanceof DomainError && err.code === "COMPANY_ACCESS_DENIED") {
+      throw new DomainError("INVOICE_NOT_FOUND", 404, undefined, "Invoice not found");
+    }
+    throw err;
+  }
   const company = await storage.getCompany(invoice.companyId);
   if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404, undefined, "Company not found");
   return { invoice, company };
-}
-
-function providerInfo() {
-  try {
-    const p = getEInvoiceProvider();
-    return { name: p.name, environment: p.environment, capabilities: p.capabilities, error: null };
-  } catch (err) {
-    return {
-      name: null,
-      environment: null,
-      capabilities: null,
-      error: err instanceof EInvoiceProviderError ? err.code : "EINVOICE_PROVIDER_NOT_CONFIGURED",
-    };
-  }
 }
 
 // ─── Validators ─────────────────────────────────────────────────────────
@@ -171,10 +228,20 @@ type BuyerEndpointBody = z.output<typeof buyerEndpointBody>;
 
 const cancelBody = z.object({ reason: zText(500, { min: 3 }) }).strict();
 
-function settingsView(company: Company) {
+async function settingsView(company: Company) {
   const c = company as Company & Record<string, unknown>;
-  const asp = getCapability("einvoicing_asp");
-  const configured = aspConfigured();
+  const asp = getCapability("einvoicing_asp", {});
+  const health = await companyProviderHealth(company);
+  const configured = health.status === "configured";
+  const legalEntity =
+    configured && health.chosenProvider && health.environment
+      ? currentOnboardingEntity(
+          company,
+          await getLegalEntity(company.id, health.chosenProvider, health.environment),
+          health.chosenProvider,
+          health.environment
+        )
+      : null;
   const secret = inboundWebhookSecret();
   return {
     companyId: company.id,
@@ -202,16 +269,38 @@ function settingsView(company: Company) {
       timeline: EINVOICE_TIMELINE,
     },
     asp: {
-      capability: asp,
+      capability: {
+        ...asp,
+        status: configured
+          ? health.environment === "production"
+            ? "live"
+            : "sandbox"
+          : asp.status,
+      },
       configured,
-      // Accreditation and the commercial contract are external: until an ASP
-      // is configured this stays "not connected — contract required".
-      connected: configured && asp.status !== "requires_external",
-      provider: providerInfo(),
+      connected: !!legalEntity?.legalEntityId?.trim() && legalEntity.status === "active",
+      provider: {
+        name: health.chosenProvider,
+        environment: health.environment,
+        capabilities:
+          configured && health.chosenProvider && health.environment
+            ? (
+                await getCompanyEInvoiceProvider(company.id, {
+                  provider: health.chosenProvider,
+                  environment: health.environment,
+                })
+              ).capabilities
+            : null,
+        error: configured ? null : "EINVOICE_PROVIDER_NOT_CONFIGURED",
+      },
     },
     inbound: {
       enabled: secret !== null,
       endpoint: `/api/webhooks/einvoice/${company.id}/inbound`,
+      providerCallbackUrl:
+        configured && health.chosenProvider && health.environment
+          ? providerCallbackUrl(health.chosenProvider, health.environment, company.id)
+          : null,
       signatureHeader: INBOUND_SIGNATURE_HEADER,
       timestampHeader: INBOUND_TIMESTAMP_HEADER,
     },
@@ -223,8 +312,8 @@ export function registerEInvoiceRoutes(app: Express) {
   if (!listJobs().some((j) => j.name === "einvoice.retry")) {
     registerJob({
       name: "einvoice.retry",
-      cron: "*/5 * * * *",
-      description: "Retry e-invoice submissions that failed in transport (exponential backoff)",
+      cron: "* * * * *",
+      description: "Send queued e-invoices and retry transport failures with backoff",
       run: async () => {
         await runEInvoiceRetries();
       },
@@ -260,6 +349,13 @@ export function registerEInvoiceRoutes(app: Express) {
       }> = [...pre.issues];
       const document = pre.validation;
       if (document) {
+        if (!document.xsd.available || !document.schematron.available) {
+          issues.push({
+            field: "document.validation",
+            code: "EINVOICE_VALIDATION_UNAVAILABLE",
+            message: "PINT AE validation is temporarily unavailable.",
+          });
+        }
         for (const layer of ["xsd", "schematron", "rules"] as const) {
           for (const e of document[layer].errors) {
             issues.push({
@@ -288,24 +384,82 @@ export function registerEInvoiceRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const { invoice, company } = await loadInvoiceAndCompany(req);
-      const current = invoice.einvoiceStatus ?? "not_generated";
-      if (["submitted", "accepted", "cleared"].includes(current)) {
-        throw new DomainError(
-          "EINVOICE_ALREADY_SUBMITTED",
-          409,
-          undefined,
-          "This e-invoice is already with the service provider and cannot be regenerated"
-        );
-      }
-      const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
-      const ctx = await loadEInvoiceContext(invoice, company, lines);
+      const { invoice: owned, company } = await loadInvoiceAndCompany(req);
+      const pre = await db.transaction(async (tx) => {
+        const invoice = await lockEInvoiceInvoice(company.id, owned.id, tx);
+        if (!invoice) throw new DomainError("INVOICE_NOT_FOUND", 404);
+        const prior = await getEInvoiceDocument(company.id, invoice.id, tx);
+        if (
+          ["queued", "submitted", "accepted", "cleared"].includes(invoice.einvoiceStatus ?? "") ||
+          prior?.providerMessageId ||
+          invoice.einvoiceProviderMessageId ||
+          submissionTriedProvider(prior) ||
+          (prior?.attempts ?? 0) > 0 ||
+          needsLegacySubmissionRecovery(invoice, prior) ||
+          prior?.deliveryStatus === "needs_link" ||
+          prior?.submitClaimedAt ||
+          prior?.nextRetryAt
+        ) {
+          throw new DomainError(
+            "EINVOICE_ALREADY_SUBMITTED",
+            409,
+            undefined,
+            "This e-invoice already has a submission record. Open its status to view the available actions."
+          );
+        }
+        const lines = await tx
+          .select()
+          .from(invoiceLines)
+          .where(eq(invoiceLines.invoiceId, invoice.id));
+        const ctx = await loadEInvoiceContext(invoice, company, lines, tx);
+        const result = await preflightEInvoice(invoice, lines, company, ctx, {
+          uuid: invoice.einvoiceUuid ?? undefined,
+        });
+        if (!result.built || !result.validation?.valid || result.issues.length) return result;
 
-      // A payload an ASP/FTA would reject must never be generated and stored. X6a: the same
-      // preflight GET …/einvoice/validate runs (one rule set, see preflightEInvoice).
-      // E1: regenerating keeps the e-invoice UUID (the ASP's idempotency key).
-      const pre = await preflightEInvoice(invoice, lines, company, ctx, {
-        uuid: invoice.einvoiceUuid ?? undefined,
+        const { xml, uuid, hash, documentType } = result.built;
+        const now = new Date();
+        const generated = { ...invoice, einvoiceXml: xml };
+        const required = invoiceReportingRequired(generated, company, now);
+        await tx
+          .update(invoices)
+          .set({
+            einvoiceUuid: uuid,
+            einvoiceXml: xml,
+            einvoiceHash: hash,
+            einvoiceStatus: "generated",
+          })
+          .where(and(eq(invoices.id, invoice.id), eq(invoices.companyId, company.id)));
+        await upsertEInvoiceDocument(
+          company.id,
+          invoice.id,
+          {
+            status: "generated",
+            uuid,
+            xmlHash: hash,
+            documentType,
+            validation: { ...result.validation, submission: { reportingRequired: required } },
+            validatedAt: now,
+            lastError: null,
+            rejectionReasons: null,
+            nextRetryAt: null,
+          },
+          tx
+        );
+        await recordValidationEvent(company.id, invoice.id, true, { source: "user", now }, tx);
+        await applyTracks(
+          company.id,
+          invoice.id,
+          {
+            delivery: "validated",
+            reporting: required ? "pending" : "not_required",
+            reportBy: required ? invoiceReportingDeadline(generated) : null,
+            errorCode: null,
+          },
+          { source: "user", now },
+          tx
+        );
+        return result;
       });
       if (pre.issues.length > 0 || !pre.built || !pre.validation) {
         return res.status(422).json({
@@ -314,50 +468,16 @@ export function registerEInvoiceRoutes(app: Express) {
           issues: pre.issues,
         });
       }
-      const { xml, uuid, hash, documentType } = pre.built;
-      const validation = pre.validation;
-      if (!validation.valid) {
-        log.warn({ id: invoice.id, validation }, "Generated e-invoice failed validation");
+      if (!pre.validation.valid) {
         return res.status(422).json({
           message: "The generated e-invoice failed PINT AE validation",
           code: "EINVOICE_SCHEMA_INVALID",
-          validation,
+          validation: pre.validation,
         });
       }
-
-      await storage.updateInvoice(invoice.id, invoice.companyId, {
-        einvoiceUuid: uuid,
-        einvoiceXml: xml,
-        einvoiceHash: hash,
-        einvoiceStatus: "generated",
-      });
-      await upsertEInvoiceDocument(company.id, invoice.id, {
-        status: "generated",
-        uuid,
-        xmlHash: hash,
-        documentType,
-        validation,
-        validatedAt: new Date(),
-        lastError: null,
-        rejectionReasons: null,
-        nextRetryAt: null,
-      });
-      // E1: generated and validated, not sent; reporting is pending unless out of scope.
-      const required = invoiceReportingRequired(invoice, company);
-      await recordValidationEvent(company.id, invoice.id, true, { source: "user" });
-      await applyTracks(
-        company.id,
-        invoice.id,
-        {
-          delivery: "validated",
-          reporting: required ? "pending" : "not_required",
-          reportBy: required ? reportByDate(invoice.date) : null,
-          errorCode: null,
-        },
-        { source: "user" }
-      );
-      log.info({ id: invoice.id, uuid }, "Generated e-invoice");
-      res.json({ uuid, hash, status: "generated", documentType, validation });
+      const { uuid, hash, documentType } = pre.built;
+      log.info({ id: owned.id, uuid }, "Generated e-invoice");
+      res.json({ uuid, hash, status: "generated", documentType, validation: pre.validation });
     })
   );
 
@@ -398,11 +518,12 @@ export function registerEInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { invoice, company } = await loadInvoiceAndCompany(req);
+      await assertScopedCompanyPermission(req.user, company.id, "tax.submit");
       const doc = await getEInvoiceDocument(company.id, invoice.id);
       const legacy = invoice.einvoiceStatus ?? "not_generated";
       const delivery = doc?.deliveryStatus ?? null;
       if (
-        !["rejected", "failed"].includes(legacy) &&
+        !["queued", "rejected", "failed"].includes(legacy) &&
         !["rejected", "delivery_failed"].includes(delivery ?? "")
       ) {
         throw new DomainError(
@@ -417,16 +538,16 @@ export function registerEInvoiceRoutes(app: Express) {
           "EINVOICE_NEW_DOCUMENT_REQUIRED",
           409,
           { lastErrorCode: doc?.lastErrorCode ?? null },
-          "This invoice number cannot be sent again. Issue a credit note and a new invoice."
+          "This invoice number cannot be sent again."
         );
       }
-      const provider = activeProvider();
-      const reset = legacy === "failed" ? { ...invoice, einvoiceStatus: "rejected" } : invoice;
-      const result = await submitAndPersist({
-        invoice: reset as Invoice,
+      const provider = await providerForSubmission(invoice, company, doc);
+      const result = await enqueueEInvoiceSubmission({
+        invoice,
         company,
         provider,
         regenerate: true,
+        actorId: userOf(req),
       });
       if (!result.ok) {
         return res.status(result.status).json({
@@ -436,18 +557,11 @@ export function registerEInvoiceRoutes(app: Express) {
           validation: "validation" in result ? result.validation : undefined,
         });
       }
-      await recordAudit({
-        userId: userOf(req),
-        companyId: invoice.companyId,
-        action: "invoice.einvoice_resubmit",
-        entityType: "invoice",
-        entityId: invoice.id,
-        after: { provider: provider.name, status: result.update.einvoiceStatus },
-        req,
-      });
-      res.json(
-        await einvoiceStatusView((await storage.getInvoice(invoice.id, company.id))!, company)
-      );
+      res
+        .status(202)
+        .json(
+          await einvoiceStatusView((await storage.getInvoice(invoice.id, company.id))!, company)
+        );
     })
   );
 
@@ -458,8 +572,15 @@ export function registerEInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { invoice, company } = await loadInvoiceAndCompany(req);
-      const provider = activeProvider();
-      const result = await submitAndPersist({ invoice, company, provider });
+      await assertScopedCompanyPermission(req.user, company.id, "tax.submit");
+      const prior = await getEInvoiceDocument(company.id, invoice.id);
+      const provider = await providerForSubmission(invoice, company, prior);
+      const result = await enqueueEInvoiceSubmission({
+        invoice,
+        company,
+        provider,
+        actorId: userOf(req),
+      });
       if (!result.ok) {
         return res.status(result.status).json({
           message: result.message,
@@ -468,22 +589,8 @@ export function registerEInvoiceRoutes(app: Express) {
           validation: result.validation,
         });
       }
-      await recordAudit({
-        userId: userOf(req),
-        companyId: invoice.companyId,
-        action: "invoice.einvoice_submit",
-        entityType: "invoice",
-        entityId: invoice.id,
-        after: {
-          provider: provider.name,
-          environment: provider.environment,
-          providerMessageId: result.providerMessageId,
-          status: result.update.einvoiceStatus,
-        },
-        req,
-      });
-      res.json({
-        status: result.update.einvoiceStatus,
+      res.status(202).json({
+        status: "queued",
         provider: provider.name,
         environment: provider.environment,
         providerMessageId: result.providerMessageId,
@@ -496,12 +603,74 @@ export function registerEInvoiceRoutes(app: Express) {
 
   // Poll the ASP for the latest status.
   app.post(
+    "/api/invoices/:id/einvoice/confirm-environment",
+    authMiddleware,
+    requireCustomer,
+    strictBody(
+      z
+        .object({
+          environment: z.enum(["sandbox", "production"]),
+          documentId: z
+            .string()
+            .trim()
+            .min(6)
+            .max(64)
+            .regex(/^[A-Za-z0-9_-]+$/)
+            .optional(),
+        })
+        .strict()
+    ),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { invoice, company } = await loadInvoiceAndCompany(req);
+      await assertScopedCompanyPermission(req.user, company.id, "tax.submit");
+      const { environment, documentId } = validated<{
+        environment: "sandbox" | "production";
+        documentId?: string;
+      }>(req);
+      res.json(
+        await confirmLegacyEInvoiceEnvironment({
+          invoice,
+          company,
+          actorId: userOf(req),
+          environment,
+          documentId,
+        })
+      );
+    })
+  );
+
+  app.post(
     "/api/invoices/:id/einvoice/refresh-status",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { invoice, company } = await loadInvoiceAndCompany(req);
-      const provider = activeProvider();
+      const document = await getEInvoiceDocument(company.id, invoice.id);
+      if (!invoice.einvoiceProviderMessageId) {
+        if (
+          document &&
+          documentProviderEnvironment(document) &&
+          !needsLegacySubmissionRecovery(invoice, document) &&
+          canRecoverAcubeSubmission(invoice, document)
+        ) {
+          const provider = await activeProvider(company.id, document);
+          const recovered = await recoverAcubeSubmission(invoice, document, provider);
+          if (recovered)
+            return res.json({
+              status: recovered.update.einvoiceStatus,
+              detail: recovered.update.einvoiceStatusDetail ?? null,
+              reasons: recovered.documentRow.rejectionReasons,
+              providerMessageId: recovered.providerMessageId,
+            });
+        }
+        const current = await storage.getInvoice(invoice.id, company.id);
+        return res.json({
+          status: current?.einvoiceStatus ?? invoice.einvoiceStatus,
+          detail: null,
+          reasons: null,
+        });
+      }
+      const provider = await activeProvider(company.id, document ?? null);
       const result = await refreshAndPersist({ invoice, company, provider });
       if (!result.ok) {
         return res.status(result.status).json({ message: result.message, code: result.code });
@@ -523,7 +692,19 @@ export function registerEInvoiceRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { invoice, company } = await loadInvoiceAndCompany(req);
       const { reason } = validated<z.output<typeof cancelBody>>(req);
-      const provider = activeProvider();
+      if (invoice.einvoiceStatus === "accepted" || invoice.einvoiceStatus === "cleared") {
+        throw new DomainError(
+          "EINVOICE_CREDIT_NOTE_REQUIRED",
+          409,
+          undefined,
+          "An accepted or cleared e-invoice cannot be cancelled; issue a credit note."
+        );
+      }
+      const document = await getEInvoiceDocument(company.id, invoice.id);
+      const provider = await activeProvider(
+        company.id,
+        invoice.einvoiceProviderMessageId ? (document ?? null) : undefined
+      );
       const result = await cancelAndPersist({ invoice, company, provider, reason });
       if (!result.ok) {
         return res.status(result.status).json({ message: result.message, code: result.code });
@@ -546,18 +727,18 @@ export function registerEInvoiceRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/settings",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
-      res.json(settingsView(company));
+      res.json(await settingsView(company));
     })
   );
 
   app.put(
     "/api/companies/:companyId/einvoicing/settings",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     strictBody(settingsBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
@@ -579,25 +760,67 @@ export function registerEInvoiceRoutes(app: Express) {
         after: patch,
         req,
       });
-      res.json(settingsView(updated));
+      res.json(await settingsView(updated));
     })
   );
 
   app.get(
     "/api/companies/:companyId/einvoicing/documents",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
-      const rows = await listEInvoiceDocuments(req.params.companyId);
-      const invoices = await Promise.all(
-        rows.map((r) => storage.getInvoice(r.invoiceId, req.params.companyId))
-      );
+      const companyId = req.params.companyId;
+      const [company, rows] = await Promise.all([
+        storage.getCompany(companyId),
+        listEInvoiceDocuments(companyId),
+      ]);
+      if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
+      if (!rows.length) return res.json({ items: [] });
+      const source = await db
+        .select({
+          invoice: {
+            ...reportingInvoiceColumns,
+            number: invoices.number,
+            customerName: invoices.customerName,
+          },
+          linkedBuyerTrn: customerContacts.trnNumber,
+        })
+        .from(invoices)
+        .leftJoin(
+          customerContacts,
+          and(
+            eq(customerContacts.id, invoices.contactId),
+            eq(customerContacts.companyId, invoices.companyId)
+          )
+        )
+        .where(
+          and(
+            eq(invoices.companyId, companyId),
+            inArray(
+              invoices.id,
+              rows.map((row) => row.invoiceId)
+            )
+          )
+        );
+      const byInvoice = new Map(source.map((row) => [row.invoice.id, row]));
+      const now = new Date();
       res.json({
-        items: rows.map((r, i) => ({
-          ...r,
-          invoiceNumber: invoices[i]?.number ?? null,
-          customerName: invoices[i]?.customerName ?? null,
-        })),
+        items: rows.map((doc) => {
+          const source = byInvoice.get(doc.invoiceId);
+          const invoice = source?.invoice;
+          const tracks = projectInvoiceTracks(
+            invoice,
+            doc,
+            company,
+            now,
+            invoice?.customerTrn || source?.linkedBuyerTrn
+          );
+          return {
+            ...projectEInvoiceDocument(doc, tracks),
+            invoiceNumber: invoice?.number ?? null,
+            customerName: invoice?.customerName ?? null,
+          };
+        }),
       });
     })
   );
@@ -606,7 +829,7 @@ export function registerEInvoiceRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/readiness",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
@@ -614,23 +837,30 @@ export function registerEInvoiceRoutes(app: Express) {
     })
   );
 
-  // X6d: invoice-list compliance pills (report-by date + delivery/reporting state); empty unless
-  // the e-invoicing mandate applies to the company.
+  // X6d: scoped evidence for the exact invoice rows requested by the list.
   app.get(
     "/api/companies/:companyId/einvoicing/compliance",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
-      res.json(await listCompliancePills(company));
+      const requested = req.query.invoiceIds;
+      if (requested === undefined) return res.json(await listCompliancePills(company));
+      const ids = z
+        .array(zUuid)
+        .min(1)
+        .max(100)
+        .safeParse(typeof requested === "string" ? requested.split(",") : requested);
+      if (!ids.success) throw new DomainError("VALIDATION_ERROR", 400);
+      res.json(await listCompliancePills(company, new Date(), ids.data));
     })
   );
 
   app.get(
     "/api/companies/:companyId/einvoicing/archive",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const before =
         typeof req.query.before === "string" && !Number.isNaN(Date.parse(req.query.before))
@@ -644,7 +874,7 @@ export function registerEInvoiceRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/archive/:archiveId",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const row = await getArchiveEntry(req.params.companyId, req.params.archiveId);
       if (!row) throw new DomainError("NOT_FOUND", 404, undefined, "Archive entry not found");
@@ -661,8 +891,20 @@ export function registerEInvoiceRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/inbound",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
+      if (req.query.review === "vendor-credits") {
+        const page = z
+          .object({
+            limit: z.coerce.number().int().min(1).max(100).default(100),
+            cursor: zUuid.optional(),
+          })
+          .safeParse(req.query);
+        if (!page.success) throw new DomainError("VALIDATION_ERROR", 400);
+        return res.json(
+          await listInboundVendorCredits(req.params.companyId, page.data.limit, page.data.cursor)
+        );
+      }
       res.json({ items: await listInboundDocuments(req.params.companyId) });
     })
   );
@@ -671,20 +913,17 @@ export function registerEInvoiceRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/einvoicing/inbound/poll",
     authMiddleware,
-    requirePermission("documents.write"),
+    requireScopedCompanyPermission("documents.write"),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
-      const provider = activeProvider();
+      const provider = await activeProvider(company.id);
       if (!provider.capabilities.receive) {
         throw new DomainError("EINVOICE_CAPABILITY_UNSUPPORTED", 501);
       }
       if (provider.listInbound && provider.inboundOwner) {
-        // E1/E2: an accredited provider's inbox spans every linked company, so incoming
-        // documents go through the durable event inbox, which routes each one to its own
-        // company by legal entity.
-        const poll = await runProviderPoll(provider.name, { provider });
-        const run = await runProviderEvents({ provider, limit: 50 });
+        const poll = await runProviderPoll(provider.name, { provider, companyId: company.id });
+        const run = await runProviderEvents({ provider, companyId: company.id, limit: 50 });
         return res.json({ received: poll.enqueued, results: [], processed: run.processed });
       }
       const items = await provider.receive(null);
@@ -713,7 +952,7 @@ export function registerEInvoiceRoutes(app: Express) {
   app.put(
     "/api/companies/:companyId/einvoicing/buyer-endpoints/:contactId",
     authMiddleware,
-    requirePermission("documents.write"),
+    requireScopedCompanyPermission("documents.write"),
     strictBody(buyerEndpointBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, contactId } = req.params;
@@ -724,10 +963,16 @@ export function registerEInvoiceRoutes(app: Express) {
       }
       const body = validated<BuyerEndpointBody>(req);
       const scheme = body.scheme ?? PEPPOL_SCHEME_UAE_TIN;
-      if (body.participantId && scheme === PEPPOL_SCHEME_UAE_TIN && !isUaeTin(body.participantId)) {
+      const endpointIssue = body.participantId
+        ? uaePeppolEndpointIssue(scheme, body.participantId, tinFromTrn(contact.trnNumber?.trim()))
+        : null;
+      if (endpointIssue === "invalid") {
         throw new DomainError("VALIDATION_ERROR", 400, {
           fields: { participantId: ["Under scheme 0235 the participant id is the 10-digit TIN"] },
         });
+      }
+      if (endpointIssue === "mismatch") {
+        throw new DomainError("EINVOICE_BUYER_ENDPOINT_MISMATCH", 422);
       }
       const row = await upsertBuyerEndpoint(companyId, contactId, {
         participantId: body.participantId ?? null,

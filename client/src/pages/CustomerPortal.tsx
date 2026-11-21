@@ -36,6 +36,7 @@ import { useDocumentTitle, useLinkLocale } from "@/lib/customer-link";
 import { apiUrl } from "@/lib/api";
 import { DateText } from "@/components/documents/DateText";
 import { formatDate } from "@/lib/format-date";
+import { customerEInvoiceLabel, type CustomerEInvoiceOutcome } from "@/lib/einvoice-outcome";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 
 /**
@@ -69,7 +70,7 @@ interface PortalInvoice {
   amountDue: number;
   paymentStatus: "paid" | "partially_paid" | "overdue" | "unpaid" | "credit";
   canPayOnline?: boolean;
-  einvoice: { status: string; uuid: string | null; hasXml: boolean } | null;
+  einvoice: (CustomerEInvoiceOutcome & { uuid: string | null; hasXml: boolean }) | null;
 }
 
 interface StatementSection {
@@ -653,16 +654,26 @@ function PortalHome({ token }: { token: string | null }) {
                         const late =
                           invoice.paymentStatus === "overdue" ? daysOverdue(invoice.dueDate) : 0;
                         const paying = payingId === invoice.id;
+                        const einvoiceLabel =
+                          invoice.einvoice && customerEInvoiceLabel(invoice.einvoice, t);
                         return (
                           <TableRow key={invoice.id}>
                             <TableCell data-cell="title" className="font-medium">
                               <bdi>{invoice.number}</bdi>
-                              {invoice.einvoice && (
-                                <span className="ms-2 text-caption text-muted-foreground">
-                                  <T k="portal.doc.einvoice" />
+                              {einvoiceLabel && (
+                                <span className="ms-2 hidden text-caption text-muted-foreground md:inline">
+                                  {einvoiceLabel}
                                 </span>
                               )}
                             </TableCell>
+                            {einvoiceLabel && (
+                              <TableCell
+                                data-cell="detail"
+                                className="text-caption text-muted-foreground md:hidden"
+                              >
+                                {einvoiceLabel}
+                              </TableCell>
+                            )}
                             <TableCell
                               data-cell="meta"
                               data-nowrap=""

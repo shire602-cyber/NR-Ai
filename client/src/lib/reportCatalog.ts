@@ -3436,7 +3436,7 @@ export const reportAutomationStarters: ReportAutomationStarter[] = [
     playbookIds: ["owner-cash-collections"],
     queueIds: ["collections", "planning-risk", "sales-mix"],
     setupSteps: [
-      "Connect invoice and bank refreshes.",
+      "Review your invoices and upload your latest bank statement as a CSV.",
       "Schedule the owner weekly command pack.",
       "Route overdue balances to payment chasing.",
     ],

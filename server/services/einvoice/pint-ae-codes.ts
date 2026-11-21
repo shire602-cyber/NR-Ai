@@ -50,7 +50,7 @@ export const CREDIT_NOTE_REASON_CODES = {
   "DL8.61.1.C": "VAT Decree-Law Art. 61(1)(c) adjustment",
   "DL8.61.1.D": "VAT Decree-Law Art. 61(1)(d) adjustment",
   "DL8.61.1.E": "VAT Decree-Law Art. 61(1)(e) adjustment",
-  VD: "Voluntary disclosure",
+  VD: "Volume discount",
 } as const;
 export type CreditNoteReasonCode = keyof typeof CREDIT_NOTE_REASON_CODES;
 export const DEFAULT_CREDIT_NOTE_REASON: CreditNoteReasonCode = "DL8.61.1.C";
@@ -92,16 +92,35 @@ export const DOCUMENT_TYPE = {
   invoice: "380",
   outOfScope: "480",
   creditNote: "381",
+  outOfScopeCreditNote: "81",
 } as const;
+
+export const PINT_AE_CREDIT_NOTE_TYPES: readonly string[] = [
+  DOCUMENT_TYPE.creditNote,
+  DOCUMENT_TYPE.outOfScopeCreditNote,
+];
+
+export function isPintAeCreditNoteType(value?: string | null): boolean {
+  return typeof value === "string" && PINT_AE_CREDIT_NOTE_TYPES.includes(value);
+}
+
+/** Classify references returned by an ASP, including self-billed credit notes. */
+export function isCreditNoteDocumentType(value?: string | null): boolean {
+  return isPintAeCreditNoteType(value) || value === "261" || value === "credit-note";
+}
 
 /** UNCL4461 payment means codes offered in settings. */
 export const PAYMENT_MEANS = {
   "1": "Instrument not defined",
   "10": "In cash",
+  "20": "Cheque",
   "30": "Credit transfer",
   "42": "Payment to bank account",
   "48": "Bank card",
   "49": "Direct debit",
+  "54": "Credit card",
+  "55": "Debit card",
+  "68": "Online payment service",
 } as const;
 export type PaymentMeansCode = keyof typeof PAYMENT_MEANS;
 
@@ -135,6 +154,16 @@ export function isPintAeTrn(value: string | null | undefined): boolean {
 
 /** TRN → TIN (the first 10 digits), the TRN-based fallback participant id. */
 export function tinFromTrn(trn: string | null | undefined): string | null {
-  if (!trn || !/^\d{15}$/.test(trn)) return null;
-  return trn.slice(0, 10);
+  return trn && isPintAeTrn(trn) ? trn.slice(0, 10) : null;
+}
+
+/** The 0235 participant must identify the same UAE taxpayer as the statutory registration. */
+export function uaePeppolEndpointIssue(
+  scheme: string | null | undefined,
+  endpoint: string,
+  taxpayerTin: string | null
+): "invalid" | "mismatch" | null {
+  if (scheme !== PEPPOL_SCHEME_UAE_TIN) return null;
+  if (!isUaeTin(endpoint)) return "invalid";
+  return taxpayerTin && endpoint !== taxpayerTin ? "mismatch" : null;
 }

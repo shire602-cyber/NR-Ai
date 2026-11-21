@@ -689,6 +689,41 @@ describe("W3-C banking: split, transfer, VAT, fee", () => {
 });
 
 describe("W3-C banking: statement and transactions", () => {
+  it("requires CSV when requested by the banking page and preserves existing parser clients", async () => {
+    const t = await vatTenant();
+    const account = await bankAccount(t);
+    const endpoint = `${base(t)}/bank-statements`;
+    const renamed = {
+      fileName: "renamed.csv",
+      fileBase64: Buffer.from(
+        ":20:REF\n:25:AE400000000\n:28C:00001/001\n:60F:C261001AED100,00\n:61:2610011001D10,00NTRFREF\n:86:Payment\n:62F:C261001AED90,00"
+      ).toString("base64"),
+    };
+    const legacyPreview = await t.as.post(`${endpoint}/preview`, renamed);
+    expect(legacyPreview.status, legacyPreview.text).toBe(200);
+    expect(legacyPreview.body.kind).toBe("mt940");
+    for (const path of ["preview", "import"]) {
+      const refused = await t.as.post(`${endpoint}/${path}`, {
+        ...renamed,
+        bankAccountId: account.id,
+        expectedKind: "csv",
+      });
+      expect(refused.status, refused.text).toBe(400);
+      expect(refused.body.code).toBe("STATEMENT_CSV_REQUIRED");
+    }
+    expect(await lines(t, account.id)).toEqual([]);
+    const accepted = await t.as.post(`${endpoint}/import`, {
+      bankAccountId: account.id,
+      fileName: "actual.csv",
+      expectedKind: "csv",
+      fileBase64: Buffer.from("Date,Description,Debit,Credit\n2026-10-01,Payment,10,0").toString(
+        "base64"
+      ),
+    });
+    expect(accepted.status, accepted.text).toBe(201);
+    expect(accepted.body.imported).toBe(1);
+  });
+
   it("[R06-20] reconciliation statement difference is 0 on a fixture, then sign-off and export", async () => {
     const t = await vatTenant();
     const ba = await bankAccount(t);

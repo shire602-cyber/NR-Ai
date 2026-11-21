@@ -445,13 +445,7 @@ const homeLead = [
   "أرسل فواتير ثنائية اللغة، وامسح الإيصالات بالذكاء الاصطناعي، وأعدّ إقرار ضريبة القيمة المضافة، وامنح محاسبك وصولاً إلى دفاترك.",
 ] as const;
 const faqs: readonly [Bilingual, Bilingual][] = [
-  [
-    ["How do I reconcile my bank account?", "كيف أطابق حسابي البنكي؟"],
-    [
-      `${bankCopy[0]}. Live bank feeds are coming later.`,
-      `${bankCopy[1]}. سيتوفر الربط البنكي المباشر لاحقًا.`,
-    ],
-  ],
+  [["How do I reconcile my bank account?", "كيف أطابق حسابي البنكي؟"], bankCopy],
   [["How do I file my VAT return?", "كيف أقدّم إقرار ضريبة القيمة المضافة؟"], vatCopy],
   [
     ["Do I need a card to try it?", "هل أحتاج إلى بطاقة مصرفية للتجربة؟"],
@@ -470,8 +464,8 @@ const faqs: readonly [Bilingual, Bilingual][] = [
   [
     ["Who handles e-invoice transmission?", "من يتولى إرسال الفواتير الإلكترونية؟"],
     [
-      "The accredited provider configured for your deployment handles transmission after its setup is complete.",
-      "يتولى مزوّد الخدمة المعتمد المُعدّ لنسخة التطبيق لديك إرسال الفواتير بعد اكتمال إعداده.",
+      "The accredited provider you select for your company handles transmission after you complete its setup.",
+      "يتولى مزوّد الخدمة المعتمد الذي تختاره لشركتك إرسال الفواتير بعد إكمال إعداده.",
     ],
   ],
 ];
@@ -542,8 +536,8 @@ function Home({ base, locale, tr }: { base: string; locale: string; tr: Translat
           <div className="phase-partners">
             <p>
               {tr([
-                "One accredited provider per deployment",
-                "مزوّد خدمة معتمد واحد لكل نسخة من التطبيق",
+                "Choose one accredited provider per company",
+                "اختر مزوّد خدمة معتمدًا واحدًا لكل شركة",
               ])}
             </p>
             <div>

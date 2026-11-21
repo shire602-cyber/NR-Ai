@@ -3,10 +3,8 @@
  * tax-ready" prompt state, approver links and the firm-console e-invoicing state.
  *
  * Honesty rules (owner decisions 2026-11-18):
- * - there is NO default partner. Every accredited provider compiled into the build is offered;
- *   EINVOICE_PROVIDER (plus its credentials) decides which one this deployment can connect;
- * - nothing is transmitted and nothing is "verified" unless the chosen partner is the configured
- *   one; otherwise the state is "not connected";
+ * - every compiled accredited provider is offered. The company chooses its own partner, and
+ *   transmits only after configuring its credentials and linking in EmaraTax;
  * - the approver page shows the company's display name and the EmaraTax steps only (no TRN or
  *   TIN: the owner has not decided whether those may be shown to someone without a login).
  */
@@ -32,7 +30,8 @@ import {
   type CompanyTaxIdentityBody,
   type TaxReadyField,
 } from "../../../shared/validators/einvoice-identity";
-import { activeProviderModule, providerModule, registeredProviderIds } from "./providers/registry";
+import { providerModule, registeredProviderIds } from "./providers/registry";
+import { companyProviderHealth } from "./providers/company-provider";
 
 type CompanyRow = Company;
 
@@ -209,14 +208,14 @@ export interface PartnerOption {
   accreditationNumber: string;
   website: string;
   emaraTaxListing: string;
-  /** This deployment has the provider selected AND configured. */
+  /** This company has the provider selected and configured. */
   live: boolean;
 }
 
 export interface PartnerView {
   partners: PartnerOption[];
   chosen: string | null;
-  /** Live provider id on this deployment (null: nothing can be transmitted). */
+  /** Configured provider id for this company, if any. */
   liveProvider: string | null;
   /** "Verify with partner" runs only when the chosen partner is the live one. */
   verifyAvailable: boolean;
@@ -227,8 +226,7 @@ export interface PartnerView {
   };
 }
 
-export function partnerOptions(): PartnerOption[] {
-  const live = activeProviderModule()?.id ?? null;
+function partnerOptions(live: string | null): PartnerOption[] {
   return registeredProviderIds().map((id) => {
     const m = providerModule(id)!;
     return {
@@ -243,15 +241,15 @@ export function partnerOptions(): PartnerOption[] {
   });
 }
 
-async function legalEntityStatusFor(companyId: string, provider: string | null) {
-  if (!provider) return null;
+async function legalEntityStatusFor(companyId: string, provider: string, environment: string) {
   const rows = await db
     .select({ status: einvoiceLegalEntities.status })
     .from(einvoiceLegalEntities)
     .where(
       and(
         eq(einvoiceLegalEntities.companyId, companyId),
-        eq(einvoiceLegalEntities.provider, provider)
+        eq(einvoiceLegalEntities.provider, provider),
+        eq(einvoiceLegalEntities.environment, environment)
       )
     )
     .limit(1);
@@ -259,11 +257,15 @@ async function legalEntityStatusFor(companyId: string, provider: string | null) 
 }
 
 export async function partnerView(company: CompanyRow): Promise<PartnerView> {
-  const partners = partnerOptions();
-  const live = partners.find((p) => p.live)?.id ?? null;
-  const chosen = company.einvoicePartner ?? null;
-  const verifyAvailable = !!chosen && chosen === live;
-  const leStatus = verifyAvailable ? await legalEntityStatusFor(company.id, chosen) : null;
+  const health = await companyProviderHealth(company);
+  const live = health.provider?.id ?? null;
+  const partners = partnerOptions(live);
+  const chosen = health.chosenProvider;
+  const verifyAvailable = live !== null;
+  const leStatus =
+    live && health.environment
+      ? await legalEntityStatusFor(company.id, live, health.environment)
+      : null;
   const links = await listApproverLinks(company.id);
   const openLink = links.some((l) => approverLinkState(l) === "active");
   // The approver ticked "Done" in EmaraTax: the client's next step is to verify with the partner.
@@ -294,30 +296,29 @@ export async function choosePartner(companyId: string, partner: string | null): 
   if (partner && !registeredProviderIds().includes(partner)) {
     throw new DomainError("EINVOICE_PARTNER_UNKNOWN", 422, { partner }, "Unknown partner.");
   }
-  // A different partner is a different EmaraTax appointment: approvals given (or still open)
-  // for the previous one no longer apply, so they are withdrawn.
-  const [current] = await db
-    .select({ partner: companies.einvoicePartner })
-    .from(companies)
-    .where(eq(companies.id, companyId))
-    .limit(1);
-  if ((current?.partner ?? null) !== partner) {
-    await db
+  // Changing partners withdraws approvals for the previous EmaraTax appointment.
+  await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ partner: companies.einvoicePartner })
+      .from(companies)
+      .where(eq(companies.id, companyId))
+      .for("update");
+    if (!current || (current.partner ?? null) === partner) return;
+    await tx
       .update(einvoiceApproverLinks)
       .set({ revokedAt: new Date() })
       .where(
         and(eq(einvoiceApproverLinks.companyId, companyId), isNull(einvoiceApproverLinks.revokedAt))
       );
-  }
-  await db
-    .update(companies)
-    .set({
-      einvoicePartner: partner,
-      // A different partner means a different EmaraTax appointment.
-      einvoiceAppointmentConfirmedAt: null,
-      einvoiceAppointmentConfirmedBy: null,
-    })
-    .where(eq(companies.id, companyId));
+    await tx
+      .update(companies)
+      .set({
+        einvoicePartner: partner,
+        einvoiceAppointmentConfirmedAt: null,
+        einvoiceAppointmentConfirmedBy: null,
+      })
+      .where(eq(companies.id, companyId));
+  });
 }
 
 /** "Confirmed by you, not yet verified": used when the partner offers no check. */
@@ -515,20 +516,29 @@ export async function firmEInvoicingStates(
   >();
   if (companyIds.length === 0) return out;
   const rows = await db.select().from(companies).where(inArray(companies.id, companyIds));
-  const live = activeProviderModule()?.id ?? null;
+  const healthByCompany = new Map(
+    await Promise.all(
+      rows.map(async (company) => [company.id, await companyProviderHealth(company)] as const)
+    )
+  );
   const active = new Set<string>();
   const pending = new Set<string>();
-  if (live) {
+  const configuredIds = rows
+    .filter((company) => healthByCompany.get(company.id)?.provider)
+    .map((company) => company.id);
+  if (configuredIds.length) {
     const les = await db
-      .select({ companyId: einvoiceLegalEntities.companyId, status: einvoiceLegalEntities.status })
+      .select({
+        companyId: einvoiceLegalEntities.companyId,
+        provider: einvoiceLegalEntities.provider,
+        environment: einvoiceLegalEntities.environment,
+        status: einvoiceLegalEntities.status,
+      })
       .from(einvoiceLegalEntities)
-      .where(
-        and(
-          inArray(einvoiceLegalEntities.companyId, companyIds),
-          eq(einvoiceLegalEntities.provider, live)
-        )
-      );
+      .where(inArray(einvoiceLegalEntities.companyId, configuredIds));
     for (const le of les) {
+      const health = healthByCompany.get(le.companyId);
+      if (health?.provider?.id !== le.provider || health.environment !== le.environment) continue;
       if (le.status === "active") active.add(le.companyId);
       else if (le.status === "reserved" || le.status === "pending") pending.add(le.companyId);
     }
@@ -548,7 +558,7 @@ export async function firmEInvoicingStates(
     const missing = missingSellerFields(c).length;
     const partner = c.einvoicePartner ?? null;
     const state: FirmEInvoicingState =
-      partner && partner === live && active.has(c.id)
+      partner && active.has(c.id)
         ? "connected"
         : c.einvoiceAppointmentConfirmedAt && partner
           ? "self_confirmed"

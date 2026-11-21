@@ -158,6 +158,8 @@
   "activityLog.action.invoice.debit_note": "Debit note issued against invoice",
   "activityLog.action.invoice.delete": "Invoice deleted",
   "activityLog.action.invoice.einvoice_cancel": "E-invoice cancelled",
+  "activityLog.action.invoice.einvoice_environment_verified": "E-invoice provider environment verified",
+  "activityLog.action.invoice.einvoice_refusal_verified": "Original e-invoice validation refusal verified",
   "activityLog.action.invoice.einvoice_resubmit": "E-invoice resubmitted",
   "activityLog.action.firm.handoff_requested": "Request sent to the accounting firm",
   "activityLog.action.invoice.einvoice_submit": "E-invoice submitted",

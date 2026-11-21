@@ -8,21 +8,29 @@
  * POST /firm/command-center/staff/assign, GET /firm/command-center/staff/workload)
  * goes through this module.
  */
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "../../db";
 import { DomainError } from "../../errors";
 import {
   companies,
   companyUsers,
+  firmCompanyGrants,
   firmMembers,
   firmStaffAssignments,
   users,
 } from "../../../shared/schema";
-import { firmRoleHasPermission, isFirmRole, type FirmRole } from "../../../shared/access";
+import {
+  FIRM_ROLE_COMPANY_ROLE,
+  firmRoleHasPermission,
+  isFirmRole,
+  type FirmRole,
+} from "../../../shared/access";
 import {
   grantCompanyAccess,
   isFirmClient,
   listFirmMembers,
+  reconcileCompanyMembershipOrigin,
+  recordedFirmOrigin,
   resolveFirmContext,
   revokeCompanyAccess,
   type FirmContext,
@@ -149,44 +157,55 @@ export async function assignStaff(
   if (!company || !(await isFirmClient(ctx, input.companyId))) {
     throw new DomainError("CLIENT_NOT_FOUND", 404);
   }
-  const [staffUser] = await db
-    .select({ id: users.id, firmRole: users.firmRole, isAdmin: users.isAdmin })
-    .from(users)
-    .where(eq(users.id, input.staffUserId))
-    .limit(1);
-  if (!staffUser) throw new DomainError("STAFF_NOT_FOUND", 404);
-  const staffCtx = await resolveFirmContext({
-    id: staffUser.id,
-    firmRole: staffUser.firmRole,
-    isAdmin: false,
+  return db.transaction(async (tx) => {
+    const [staffUser] = await tx
+      .select({ id: users.id, firmRole: users.firmRole })
+      .from(users)
+      .where(eq(users.id, input.staffUserId))
+      .limit(1)
+      .for("update");
+    if (!staffUser) throw new DomainError("STAFF_NOT_FOUND", 404);
+    if (!(await isFirmClient(ctx, input.companyId, tx, "share"))) {
+      throw new DomainError("CLIENT_NOT_FOUND", 404);
+    }
+    const staffCtx = await resolveFirmContext(
+      { id: staffUser.id, firmRole: staffUser.firmRole, isAdmin: false },
+      tx
+    );
+    if (!staffCtx || staffCtx.firmId !== ctx.firmId) {
+      throw new DomainError("NOT_FIRM_STAFF", 400, undefined, "User is not a firm staff member");
+    }
+    const role = input.role ?? "accountant";
+    if (input.action === "assign") {
+      await tx
+        .insert(firmStaffAssignments)
+        .values({ userId: staffUser.id, companyId: input.companyId, role })
+        .onConflictDoUpdate({
+          target: [firmStaffAssignments.userId, firmStaffAssignments.companyId],
+          set: { role },
+        });
+      await grantCompanyAccess(
+        {
+          firmId: ctx.firmId,
+          userId: staffUser.id,
+          companyId: input.companyId,
+          role: staffCtx.role,
+        },
+        tx
+      );
+    } else {
+      await revokeCompanyAccess(
+        {
+          firmId: ctx.firmId,
+          isNr: ctx.isNr,
+          companyId: input.companyId,
+          userId: staffUser.id,
+        },
+        tx
+      );
+    }
+    return { action: input.action, companyId: input.companyId, staffUserId: staffUser.id, role };
   });
-  if (!staffCtx || staffCtx.firmId !== ctx.firmId) {
-    throw new DomainError("NOT_FIRM_STAFF", 400, undefined, "User is not a firm staff member");
-  }
-  const role = input.role ?? "accountant";
-  if (input.action === "assign") {
-    await db
-      .insert(firmStaffAssignments)
-      .values({ userId: staffUser.id, companyId: input.companyId, role })
-      .onConflictDoUpdate({
-        target: [firmStaffAssignments.userId, firmStaffAssignments.companyId],
-        set: { role },
-      });
-    await grantCompanyAccess({
-      firmId: ctx.firmId,
-      userId: staffUser.id,
-      companyId: input.companyId,
-      role: staffCtx.role,
-    });
-  } else {
-    await revokeCompanyAccess({
-      firmId: ctx.firmId,
-      isNr: ctx.isNr,
-      companyId: input.companyId,
-      userId: staffUser.id,
-    });
-  }
-  return { action: input.action, companyId: input.companyId, staffUserId: staffUser.id, role };
 }
 
 // ─── Firm members ────────────────────────────────────────────────────────────
@@ -219,15 +238,53 @@ export async function setFirmMemberRole(
   role: FirmRole
 ): Promise<void> {
   if (!isFirmRole(role)) throw new DomainError("INVALID_FIRM_ROLE", 400);
-  await db
-    .insert(firmMembers)
-    .values({ firmId: ctx.firmId, userId, role, invitedBy: ctx.userId })
-    .onConflictDoUpdate({
-      target: firmMembers.userId,
-      set: { role, firmId: ctx.firmId, updatedAt: new Date() },
-    });
-  // NR keeps users.firm_role as the legacy source of truth.
-  if (ctx.isNr) await db.update(users).set({ firmRole: role }).where(eq(users.id, userId));
+  await db.transaction(async (tx) => {
+    // Submission workers share-lock the actor first. Role and generated membership changes
+    // follow the same order so dispatch observes one complete authorization state.
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
+    await tx
+      .insert(firmMembers)
+      .values({ firmId: ctx.firmId, userId, role, invitedBy: ctx.userId })
+      .onConflictDoUpdate({
+        target: firmMembers.userId,
+        set: { role, firmId: ctx.firmId, updatedAt: new Date() },
+      });
+    // NR keeps users.firm_role as the legacy source of truth.
+    if (ctx.isNr) await tx.update(users).set({ firmRole: role }).where(eq(users.id, userId));
+
+    const recorded = await tx
+      .select({ companyId: firmCompanyGrants.companyId })
+      .from(firmCompanyGrants)
+      .where(
+        and(
+          eq(firmCompanyGrants.firmId, ctx.firmId),
+          eq(firmCompanyGrants.userId, userId),
+          recordedFirmOrigin()
+        )
+      );
+    for (const { companyId } of recorded)
+      await reconcileCompanyMembershipOrigin(companyId, userId, tx);
+    const generatedCompanyIds = tx
+      .select({ companyId: firmCompanyGrants.companyId })
+      .from(firmCompanyGrants)
+      .where(
+        and(
+          eq(firmCompanyGrants.firmId, ctx.firmId),
+          eq(firmCompanyGrants.userId, userId),
+          eq(firmCompanyGrants.createdMembership, true)
+        )
+      );
+    await tx
+      .update(companyUsers)
+      .set({ role: FIRM_ROLE_COMPANY_ROLE[role] })
+      .where(
+        and(
+          eq(companyUsers.userId, userId),
+          ne(companyUsers.role, "owner"),
+          inArray(companyUsers.companyId, generatedCompanyIds)
+        )
+      );
+  });
 }
 
 export async function updateFirmMember(
@@ -257,22 +314,28 @@ export async function removeFirmMember(ctx: FirmContext, userId: string): Promis
   if (target.role === "firm_owner" && members.filter((m) => m.role === "firm_owner").length <= 1) {
     throw new DomainError("LAST_FIRM_OWNER", 409);
   }
-  // Remove every client grant the firm gave this member.
-  const assigned = (await db
-    .select({ companyId: firmStaffAssignments.companyId })
-    .from(firmStaffAssignments)
-    .where(eq(firmStaffAssignments.userId, userId))) as Array<{ companyId: string }>;
-  const granted = (await db
-    .select({ companyId: companyUsers.companyId })
-    .from(companyUsers)
-    .where(eq(companyUsers.userId, userId))) as Array<{ companyId: string }>;
-  for (const companyId of new Set([...assigned, ...granted].map((r) => r.companyId))) {
-    if (await isFirmClient(ctx, companyId)) {
-      await revokeCompanyAccess({ firmId: ctx.firmId, isNr: ctx.isNr, companyId, userId });
+  await db.transaction(async (tx) => {
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
+    const assigned = await tx
+      .select({ companyId: firmStaffAssignments.companyId })
+      .from(firmStaffAssignments)
+      .where(eq(firmStaffAssignments.userId, userId));
+    const firmGrants = await tx
+      .select({ companyId: firmCompanyGrants.companyId })
+      .from(firmCompanyGrants)
+      .where(and(eq(firmCompanyGrants.userId, userId), eq(firmCompanyGrants.firmId, ctx.firmId)));
+    const grantedCompanies = new Set(firmGrants.map((grant) => grant.companyId));
+    for (const companyId of new Set([
+      ...grantedCompanies,
+      ...assigned.map((row) => row.companyId),
+    ])) {
+      if (grantedCompanies.has(companyId) || (await isFirmClient(ctx, companyId, tx, "share"))) {
+        await revokeCompanyAccess({ firmId: ctx.firmId, isNr: ctx.isNr, companyId, userId }, tx);
+      }
     }
-  }
-  await db
-    .delete(firmMembers)
-    .where(and(eq(firmMembers.userId, userId), eq(firmMembers.firmId, ctx.firmId)));
-  if (ctx.isNr) await db.update(users).set({ firmRole: null }).where(eq(users.id, userId));
+    await tx
+      .delete(firmMembers)
+      .where(and(eq(firmMembers.userId, userId), eq(firmMembers.firmId, ctx.firmId)));
+    if (ctx.isNr) await tx.update(users).set({ firmRole: null }).where(eq(users.id, userId));
+  });
 }

@@ -5,18 +5,33 @@
  * original invoice from another company is ignored.
  */
 import { and, eq, inArray } from "drizzle-orm";
-import { db } from "../../db";
-import { products, type Company, type Invoice, type InvoiceLine } from "../../../shared/schema";
-import { storage } from "../../storage";
+import { db, type AppDatabase } from "../../db";
+import {
+  customerContacts,
+  invoices,
+  invoicePayments,
+  products,
+  type Company,
+  type Invoice,
+  type InvoiceLine,
+} from "../../../shared/schema";
 import type { EInvoiceContext } from "../einvoice-submit.service";
-import { countryCode, type EInvoiceLineExtra, type EInvoiceParty } from "../einvoice.service";
-import type { LegalIdType } from "./pint-ae-codes";
+import {
+  countryCode,
+  type EInvoiceLineExtra,
+  type EInvoiceOptions,
+  type EInvoiceParty,
+} from "../einvoice.service";
+import type { LegalIdType, PaymentMeansCode } from "./pint-ae-codes";
 import { getBuyerEndpoint } from "./store";
+
+type ContextReader = Pick<AppDatabase, "select">;
 
 export async function loadEInvoiceContext(
   invoice: Invoice,
   company: Company,
-  lines?: InvoiceLine[]
+  lines?: InvoiceLine[],
+  conn: ContextReader = db
 ): Promise<EInvoiceContext> {
   const customer: Partial<EInvoiceParty> & { name?: string } = {
     name: invoice.customerName,
@@ -24,23 +39,29 @@ export async function loadEInvoiceContext(
     address: invoice.customerAddress || null,
   };
   if (invoice.contactId) {
-    const contact = await storage.getCustomerContact(invoice.contactId);
-    if (contact && contact.companyId === company.id) {
-      // WQ5: the structured street / building / district, else the legacy single line.
-      const structured = [contact.addressStreet, contact.addressBuilding, contact.addressDistrict]
+    const [contact] = await conn
+      .select()
+      .from(customerContacts)
+      .where(
+        and(eq(customerContacts.companyId, company.id), eq(customerContacts.id, invoice.contactId))
+      );
+    if (contact) {
+      const additional = [contact.addressBuilding, contact.addressDistrict]
         .filter((v) => v && v.trim())
         .join(", ");
-      customer.address = invoice.customerAddress || structured || contact.address || null;
+      customer.address =
+        invoice.customerAddress || contact.addressStreet || contact.address || null;
+      if (!invoice.customerAddress && contact.addressStreet) {
+        customer.addressLine2 = additional || null;
+      }
       customer.city = contact.city || null;
-      customer.emirate =
-        (invoice as Invoice & { placeOfSupplyEmirate?: string | null }).placeOfSupplyEmirate ||
-        contact.emirate ||
-        null;
+      customer.postalCode = contact.postalCode || null;
+      customer.emirate = contact.emirate || null;
       customer.country = countryCode(contact.country);
       customer.trn = invoice.customerTrn || contact.trnNumber || null;
       customer.email = contact.email || null;
       customer.phone = contact.phone || null;
-      const endpoint = await getBuyerEndpoint(company.id, contact.id);
+      const endpoint = await getBuyerEndpoint(company.id, contact.id, conn);
       if (endpoint) {
         customer.endpointId = endpoint.participantId;
         customer.endpointScheme = endpoint.scheme;
@@ -52,17 +73,57 @@ export async function loadEInvoiceContext(
   }
   let originalInvoice: EInvoiceContext["originalInvoice"] = null;
   if (invoice.originalInvoiceId) {
-    const original = await storage.getInvoice(invoice.originalInvoiceId, company.id);
+    const [original] = await conn
+      .select({ number: invoices.number, date: invoices.date })
+      .from(invoices)
+      .where(and(eq(invoices.companyId, company.id), eq(invoices.id, invoice.originalInvoiceId)));
     if (original) originalInvoice = { number: original.number, date: original.date };
   }
-  const lineExtras = await loadLineExtras(company.id, lines);
-  const marginScheme = (lines ?? []).some((l) => l.marginScheme);
+  const lineExtras = await loadLineExtras(company.id, lines, conn);
+  const cashSalePayment = await loadCashSalePayment(invoice, company, conn);
   return {
     customer,
     originalInvoice,
     ...(lineExtras ? { lineExtras } : {}),
-    ...(marginScheme ? { options: { transactionFlags: { marginScheme: true } } } : {}),
+    options: cashSalePayment,
   };
+}
+
+const CASH_SALE_MEANS: Readonly<Record<string, PaymentMeansCode>> = {
+  cash: "10",
+  cheque: "20",
+  card: "48",
+  credit_card: "54",
+  debit_card: "55",
+  online: "68",
+};
+
+/** Use the settlement recorded at issuance of a cash-series document. */
+async function loadCashSalePayment(
+  invoice: Invoice,
+  company: Company,
+  conn: ContextReader
+): Promise<EInvoiceOptions> {
+  if (invoice.source !== "cash_sale" || invoice.status !== "paid") return {};
+  const [payment] = await conn
+    .select({ method: invoicePayments.method })
+    .from(invoicePayments)
+    .where(
+      and(
+        eq(invoicePayments.companyId, company.id),
+        eq(invoicePayments.invoiceId, invoice.id),
+        eq(invoicePayments.date, invoice.date),
+        eq(invoicePayments.amount, invoice.total)
+      )
+    )
+    .orderBy(invoicePayments.createdAt)
+    .limit(1);
+  if (!payment) return {};
+
+  const method = payment.method.trim().toLowerCase();
+  // A transfer code requires the receiving account identifier. Company-wide payment
+  // instructions do not establish which bank account actually received this cash sale.
+  return { paidAtIssue: true, paymentMeansCode: CASH_SALE_MEANS[method] ?? "1" };
 }
 
 /**
@@ -72,11 +133,12 @@ export async function loadEInvoiceContext(
  */
 async function loadLineExtras(
   companyId: string,
-  lines: InvoiceLine[] | undefined
+  lines: InvoiceLine[] | undefined,
+  conn: ContextReader
 ): Promise<EInvoiceLineExtra[] | null> {
   const ids = [...new Set((lines ?? []).map((l) => l.productId).filter(Boolean) as string[])];
   if (!lines || ids.length === 0) return null;
-  const rows = await db
+  const rows = await conn
     .select({ id: products.id, gtin: products.gtin, rcmGoodsType: products.rcmGoodsType })
     .from(products)
     .where(and(eq(products.companyId, companyId), inArray(products.id, ids)));

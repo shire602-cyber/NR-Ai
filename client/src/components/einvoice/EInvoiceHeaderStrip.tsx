@@ -5,12 +5,20 @@
  * link. "Details" opens the full status sheet (checklist, history, resubmit).
  */
 import { useState } from "react";
+import { Link } from "wouter";
 import { AlertTriangle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
+import { einvoiceFieldHint } from "@/lib/einvoice-issues";
 import { EInvoiceSheet, EInvoiceTrackBadges } from "./EInvoiceStatus";
-import { errorKey, fieldLabelKey, rejectionSummary } from "./einvoice-meta";
+import {
+  errorKey,
+  fieldLabelKey,
+  isReportingOnlyFailure,
+  rejectionSummary,
+  trackOutcomeLabel,
+} from "./einvoice-meta";
 import { useEInvoiceStatus } from "./use-einvoice";
 
 /** Form control to focus for a validation issue field, or null when the fix is elsewhere. */
@@ -40,6 +48,7 @@ export function EInvoiceHeaderStrip({
   const view = status.data;
   if (!view?.tracks) return null;
   const { delivery, reporting } = view.tracks;
+  const reportingOnlyFailure = isReportingOnlyFailure(delivery.status, reporting.status);
   const first = view.issues[0];
   const firstLabelKey = first ? fieldLabelKey(first.field) : null;
   const firstLabel = first ? (firstLabelKey ? t[firstLabelKey] : first.field) : "";
@@ -60,6 +69,7 @@ export function EInvoiceHeaderStrip({
         : t["einvoicing.err_unknown"])
     : null;
   const target = first ? focusTargetFor(first.field) : null;
+  const fixHref = first ? einvoiceFieldHint(first.field, { contactId: view.contactId }).href : null;
 
   const fix = () => {
     const el = target
@@ -82,6 +92,11 @@ export function EInvoiceHeaderStrip({
         <EInvoiceTrackBadges
           delivery={delivery.status}
           reporting={reporting.status}
+          queuedForSubmission={view.submissionState === "queued"}
+          acknowledgement={view.transmission.recipientAcknowledgement}
+          confirmationUnavailable={reporting.confirmationUnavailable}
+          obligationKnown={reporting.obligationKnown}
+          environment={view.transmission.environment}
           showReportingLabel
         />
         {reportMeta && (
@@ -114,11 +129,18 @@ export function EInvoiceHeaderStrip({
           data-testid="einvoice-header-rejection"
         >
           <XCircle aria-hidden className="h-4 w-4 shrink-0 text-danger" />
-          <p className="min-w-0 flex-1 truncate text-small text-danger-subtle-foreground">
+          <p className="min-w-0 flex-1 text-small text-danger-subtle-foreground [overflow-wrap:anywhere]">
             <span className="font-medium">
-              {view.tracks.delivery.status === "rejected"
-                ? t["einvoicing.headerRejected"]
-                : t["einvoicing.headerDeliveryFailed"]}
+              {trackOutcomeLabel(
+                t,
+                reportingOnlyFailure
+                  ? "einvoicing.reporting_report_failed"
+                  : delivery.status === "rejected"
+                    ? "einvoicing.headerRejected"
+                    : "einvoicing.headerDeliveryFailed",
+                true,
+                view.rejection?.environment
+              )}
               {": "}
             </span>
             <span dir="auto" title={rejectionText ?? undefined}>
@@ -141,7 +163,9 @@ export function EInvoiceHeaderStrip({
             onClick={() => setOpen(true)}
             data-testid="einvoice-header-resubmit"
           >
-            {t["einvoicing.resubmit"]}
+            {view.rejection?.resubmittable && view.rejection.environment && !reportingOnlyFailure
+              ? trackOutcomeLabel(t, "einvoicing.resubmit", true, view.rejection.environment)
+              : t["einvoicing.headerDetails"]}
           </Button>
         </div>
       )}
@@ -160,15 +184,23 @@ export function EInvoiceHeaderStrip({
                   count: view.issues.length - 1,
                 })}
           </p>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={fix}
-            data-testid="einvoice-header-fix"
-          >
-            {t["einvoicing.headerFix"]}
-          </Button>
+          {fixHref ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href={fixHref} data-testid="einvoice-header-fix">
+                {t["einvoicing.headerFix"]}
+              </Link>
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={fix}
+              data-testid="einvoice-header-fix"
+            >
+              {t["einvoicing.headerFix"]}
+            </Button>
+          )}
         </div>
       )}
       {open && (

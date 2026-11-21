@@ -25,6 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, request } from "playwright-core";
+import { waitForRouteText } from "./lib/route-readiness.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 const PUBLIC_ONLY = process.env.CUSTOMER_E2E_PUBLIC_ONLY === "true";
@@ -39,8 +40,20 @@ const SHOT_DIR = path.join(__dirname, ".artifacts");
 const RUN_ARTIFACT_PATH = path.join(SHOT_DIR, "customer-launch-last-run.json");
 
 const LOCALIZED_HOMEPAGES = {
-  "/en": { lang: "en", dir: "ltr", title: "Accounting and VAT for UAE businesses" },
-  "/ar": { lang: "ar", dir: "rtl", title: "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات" },
+  "/en": {
+    lang: "en",
+    dir: "ltr",
+    title: "Accounting and VAT for UAE businesses",
+    bankFaq: "How do I reconcile my bank account?",
+    providerChoice: "Choose one accredited provider per company",
+  },
+  "/ar": {
+    lang: "ar",
+    dir: "rtl",
+    title: "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات",
+    bankFaq: "كيف أطابق حسابي البنكي؟",
+    providerChoice: "اختر مزوّد خدمة معتمدًا واحدًا لكل شركة",
+  },
 };
 
 const PUBLIC_ROUTES = [
@@ -291,11 +304,8 @@ async function main() {
     apiFailures = [];
     await page.goto(`${BASE}${route}`, { timeout: 45000 });
     await page.waitForTimeout(options.waitMs ?? 1700);
+    const bodyText = await waitForRouteText(page, "body");
     const finalUrl = cleanPath(page.url());
-    const bodyText = await page
-      .locator("body")
-      .innerText()
-      .catch(() => "");
     const failText = bodyText.match(FAIL_TEXT)?.[0] ?? null;
     const blank = bodyText.trim().length < 40;
     const redirected = options.expectPrefix ? !finalUrl.startsWith(route) : finalUrl !== route;
@@ -346,6 +356,14 @@ async function main() {
         actual.title !== homepage.title
       ) {
         await fail(`localized homepage ${route}`, { expected: homepage, actual });
+      }
+      try {
+        const faq = page.locator(".phase-faq details").filter({ hasText: homepage.bankFaq });
+        await faq.locator("summary").click();
+        await faq.locator("p").filter({ hasText: "CSV" }).waitFor();
+        await page.getByText(homepage.providerChoice, { exact: true }).waitFor();
+      } catch (error) {
+        await fail(`localized banking and e-invoicing copy ${route}`, { detail: String(error) });
       }
     }
     const unsupportedClaim = bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ?? null;

@@ -20,12 +20,21 @@
  *      legal_entity.synchronized (action LINK) -> status active.
  * REVERIFY keeps it active; DELINK makes it inactive, which blocks sending (409).
  */
-import { and, eq } from "drizzle-orm";
-import { db } from "../../db";
-import { einvoiceLegalEntities, type EInvoiceLegalEntity } from "../../../shared/schema";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { db, type AppDatabase } from "../../db";
+import { companies, einvoiceLegalEntities, type EInvoiceLegalEntity } from "../../../shared/schema";
 import { DomainError } from "../../errors";
-import { PEPPOL_SCHEME_UAE_TIN, isUaeTin, tinFromTrn } from "./pint-ae-codes";
-import { effectiveTin } from "../../../shared/validators/einvoice-identity";
+import {
+  PEPPOL_SCHEME_UAE_TIN,
+  isUaeTin,
+  tinFromTrn,
+  uaePeppolEndpointIssue,
+} from "./pint-ae-codes";
+import {
+  effectiveTin,
+  tinProblem,
+  type TinSource,
+} from "../../../shared/validators/einvoice-identity";
 
 /** Provider legal-entity fields we keep (A-Cube's resource shape; other providers map onto it). */
 export interface LegalEntityFields {
@@ -53,12 +62,50 @@ export function normaliseLegalEntityStatus(raw: unknown): LegalEntityStatus {
 
 export const peppolAddressFor = (tin: string) => `${PEPPOL_SCHEME_UAE_TIN}:${tin}`;
 
+/** Every identifier supplied by a provider must agree with the scoped legal entity. */
+export function matchesProviderEntityOwner(
+  entity: Pick<EInvoiceLegalEntity, "legalEntityId" | "tin">,
+  owner: { legalEntityId?: unknown; tin?: unknown }
+): boolean {
+  return (
+    (owner.legalEntityId == null || owner.legalEntityId === entity.legalEntityId) &&
+    (owner.tin == null || owner.tin === entity.tin)
+  );
+}
+
+type InboundTaxpayer = { endpoint: string | null; scheme: string | null; vatTrn: string | null };
+
+function matchesTaxpayerTin(tin: string, buyer: InboundTaxpayer): boolean {
+  return (
+    isUaeTin(tin) &&
+    Boolean(buyer.endpoint || buyer.vatTrn) &&
+    (buyer.endpoint == null ||
+      (buyer.scheme === PEPPOL_SCHEME_UAE_TIN &&
+        uaePeppolEndpointIssue(buyer.scheme, buyer.endpoint, tin) === null)) &&
+    (buyer.vatTrn == null || tinFromTrn(buyer.vatTrn) === tin)
+  );
+}
+
+/** Provider receipts use the registered taxpayer even if company VAT registration is absent. */
+export function matchesOnboardedTaxpayer(
+  entity: Pick<EInvoiceLegalEntity, "status" | "tin" | "peppolAddress">,
+  buyer: InboundTaxpayer
+): boolean {
+  return (
+    entity.status === "active" &&
+    (entity.peppolAddress === null || entity.peppolAddress === peppolAddressFor(entity.tin)) &&
+    matchesTaxpayerTin(entity.tin, buyer)
+  );
+}
+
 export async function getLegalEntity(
   companyId: string,
   provider: string,
-  environment: string
+  environment: string,
+  conn: Pick<AppDatabase, "select"> = db,
+  lock?: "share" | "update"
 ): Promise<EInvoiceLegalEntity | undefined> {
-  const rows = await db
+  const query = conn
     .select()
     .from(einvoiceLegalEntities)
     .where(
@@ -69,40 +116,8 @@ export async function getLegalEntity(
       )
     )
     .limit(1);
+  const rows = await (lock ? query.for(lock) : query);
   return rows[0];
-}
-
-/**
- * Our rows for an A-Cube legal entity: by its id, else by TIN. More than one row means two of
- * our companies reserved the same taxpayer (e.g. a duplicate company record); callers that route
- * documents must then refuse to guess.
- */
-export async function findLegalEntitiesByProviderId(
-  provider: string,
-  environment: string,
-  legalEntityId: string | null | undefined,
-  tin?: string | null
-): Promise<EInvoiceLegalEntity[]> {
-  const scope = [
-    eq(einvoiceLegalEntities.provider, provider),
-    eq(einvoiceLegalEntities.environment, environment),
-  ];
-  if (legalEntityId) {
-    const rows = await db
-      .select()
-      .from(einvoiceLegalEntities)
-      .where(and(...scope, eq(einvoiceLegalEntities.legalEntityId, legalEntityId)))
-      .limit(20);
-    if (rows.length) return rows;
-  }
-  if (tin) {
-    return db
-      .select()
-      .from(einvoiceLegalEntities)
-      .where(and(...scope, eq(einvoiceLegalEntities.tin, tin)))
-      .limit(20);
-  }
-  return [];
 }
 
 /** Fields from a provider's legal-entity resource or synchronized event (A-Cube's shape). */
@@ -144,10 +159,11 @@ export async function upsertLegalEntity(
   provider: string,
   environment: string,
   tin: string,
-  patch: Partial<typeof einvoiceLegalEntities.$inferInsert>
+  patch: Partial<typeof einvoiceLegalEntities.$inferInsert>,
+  conn: Pick<AppDatabase, "insert"> = db
 ): Promise<EInvoiceLegalEntity> {
   const now = new Date();
-  const [row] = await db
+  const [row] = await conn
     .insert(einvoiceLegalEntities)
     .values({ companyId, provider, environment, tin, ...patch, updatedAt: now })
     .onConflictDoUpdate({
@@ -174,23 +190,156 @@ export async function updateLegalEntityRow(
   return row;
 }
 
-/**
- * The company's 10-digit TIN: explicit Peppol participant id, else the stored TIN (WQ5), else
- * the first 10 digits of the CT TRN, else of the VAT TRN.
- */
-export function companyTin(company: {
-  trnVatNumber?: string | null;
+/** Store a webhook's verified response only for the local identity that was re-read. */
+export async function updateLegalEntityRowIfCurrent(
+  entity: EInvoiceLegalEntity,
+  patch: Partial<typeof einvoiceLegalEntities.$inferInsert>,
+  conn: Pick<AppDatabase, "update"> = db
+): Promise<boolean> {
+  const [updated] = await conn
+    .update(einvoiceLegalEntities)
+    .set(patch)
+    .where(
+      and(
+        eq(einvoiceLegalEntities.id, entity.id),
+        eq(einvoiceLegalEntities.companyId, entity.companyId),
+        eq(einvoiceLegalEntities.provider, entity.provider),
+        eq(einvoiceLegalEntities.environment, entity.environment),
+        eq(einvoiceLegalEntities.tin, entity.tin),
+        entity.legalEntityId === null
+          ? isNull(einvoiceLegalEntities.legalEntityId)
+          : eq(einvoiceLegalEntities.legalEntityId, entity.legalEntityId),
+        eq(einvoiceLegalEntities.status, entity.status),
+        sql`date_trunc('milliseconds', ${einvoiceLegalEntities.updatedAt}) =
+            ${entity.updatedAt.toISOString()}::timestamp`
+      )
+    )
+    .returning({ id: einvoiceLegalEntities.id });
+  return Boolean(updated);
+}
+
+export interface CompanyTinSource extends TinSource {
   peppolParticipantId?: string | null;
-  einvoiceTin?: string | null;
-  corporateTaxId?: string | null;
-}): string | null {
-  if (company.peppolParticipantId && isUaeTin(company.peppolParticipantId)) {
-    return company.peppolParticipantId;
+  peppolScheme?: string | null;
+}
+
+/** Prefer the statutory identity. Legacy 0235 endpoints can supply a missing TIN. */
+export function companyTin(company: CompanyTinSource): string | null {
+  const statutory = effectiveTin(company);
+  if (statutory) return statutory;
+  const scheme = company.peppolScheme?.trim() || PEPPOL_SCHEME_UAE_TIN;
+  const endpoint = company.peppolParticipantId?.trim();
+  return scheme === PEPPOL_SCHEME_UAE_TIN && isUaeTin(endpoint) ? endpoint! : null;
+}
+
+/** Signed XML uses the same statutory company identity as the provider onboarding workflow. */
+export function matchesCompanyTaxpayer(company: CompanyTinSource, buyer: InboundTaxpayer): boolean {
+  const tin = companyTin(company);
+  return tin !== null && !companyTinConflict(tin, company) && matchesTaxpayerTin(tin, buyer);
+}
+
+function companyTinConflict(tin: string, company: CompanyTinSource): boolean {
+  const scheme = company.peppolScheme?.trim() || PEPPOL_SCHEME_UAE_TIN;
+  const endpoint = company.peppolParticipantId?.trim();
+  return Boolean(
+    tinProblem(tin, company) ||
+    (company.einvoiceTin && company.einvoiceTin !== tin) ||
+    (scheme === PEPPOL_SCHEME_UAE_TIN && endpoint && endpoint !== tin)
+  );
+}
+
+/** Resolve the taxpayer to register and send as, refusing conflicting company identity fields. */
+export function requireCompanyTin(company: CompanyTinSource): string {
+  const tin = companyTin(company);
+  if (!tin) {
+    throw new DomainError(
+      "EINVOICE_TIN_MISSING",
+      422,
+      { field: "company.trnVatNumber" },
+      "Enter the company's 10-digit TIN or 15-digit TRN before connecting."
+    );
   }
-  const stored = effectiveTin(company);
-  if (stored) return stored;
-  const tin = tinFromTrn(company.trnVatNumber ?? null);
-  return tin && isUaeTin(tin) ? tin : null;
+  if (companyTinConflict(tin, company)) {
+    throw new DomainError(
+      "EINVOICE_SUPPLIER_ENDPOINT_MISMATCH",
+      422,
+      undefined,
+      "The company's tax registration and e-invoicing address must use the same TIN."
+    );
+  }
+  return tin;
+}
+
+export function matchesOnboardingCompany(
+  company: (CompanyTinSource & { einvoicePartner: string | null }) | undefined,
+  provider: string,
+  tin: string
+): boolean {
+  return (
+    !!company &&
+    company.einvoicePartner === provider &&
+    companyTin(company) === tin &&
+    !companyTinConflict(tin, company)
+  );
+}
+
+/** Settings project only the entity for the currently selected taxpayer and environment. */
+export function currentOnboardingEntity(
+  company: CompanyTinSource & { id: string; einvoicePartner: string | null },
+  entity: EInvoiceLegalEntity | undefined,
+  provider: string,
+  environment: string
+): EInvoiceLegalEntity | undefined {
+  return entity &&
+    entity.companyId === company.id &&
+    entity.provider === provider &&
+    entity.environment === environment &&
+    (entity.status !== "active" || !!entity.legalEntityId?.trim()) &&
+    matchesOnboardingCompany(company, provider, entity.tin) &&
+    (!company.peppolScheme?.trim() || company.peppolScheme.trim() === PEPPOL_SCHEME_UAE_TIN) &&
+    (entity.peppolAddress === null ||
+      entity.peppolAddress === entity.tin ||
+      entity.peppolAddress === peppolAddressFor(entity.tin))
+    ? entity
+    : undefined;
+}
+
+/** Clear identity-specific state before onboarding a different taxpayer in the same local slot. */
+export const newOnboardingEntity: Partial<typeof einvoiceLegalEntities.$inferInsert> = {
+  legalEntityId: null,
+  status: "reserved",
+  nameEn: null,
+  nameAr: null,
+  vatTrn: null,
+  peppolAddress: null,
+  capabilities: null,
+  smpSyncAt: null,
+  registrySyncAt: null,
+  activatedAt: null,
+  lastSyncAt: null,
+  reservationExpiresAt: null,
+};
+
+/** Serialize onboarding state writes with company identity and provider selection changes. */
+export async function lockOnboardingCompany(companyId: string, conn: Pick<AppDatabase, "select">) {
+  const [company] = await conn
+    .select()
+    .from(companies)
+    .where(eq(companies.id, companyId))
+    .for("update");
+  return company;
+}
+
+/** Require identity evidence from the provider before saving a reservation or connection. */
+export function assertProviderTin(expected: string, actual: string | null | undefined): void {
+  if (actual !== expected) {
+    throw new DomainError(
+      "EINVOICE_PROVIDER_TIN_MISMATCH",
+      502,
+      undefined,
+      "The e-invoicing provider did not confirm this company's TIN."
+    );
+  }
 }
 
 /**

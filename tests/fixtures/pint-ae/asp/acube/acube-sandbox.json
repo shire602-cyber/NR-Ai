@@ -1,9 +1,10 @@
 {
-  "description": "DOC-DERIVED, NOT RECORDED. Request/response shapes for the A-Cube UAE API built from docs.acubeapi.com (UAE section and the OpenAPI pages, read 2026-11-16). Re-record every interaction against https://ae-sandbox.api.acubeapi.com before go-live; see README.md.",
+  "description": "DOC-DERIVED, NOT RECORDED. Request/response shapes for the A-Cube UAE API built from docs.acubeapi.com (UAE section and the OpenAPI schema, checked 2026-11-20). Re-record every interaction against https://ae-sandbox.api.acubeapi.com before go-live; see README.md.",
   "source": {
+    "openapi": "https://docs.acubeapi.com/openapi/gov-ae-api.json",
     "login": "https://docs.acubeapi.com/documentation/common/authentication",
-    "submit": "https://docs.acubeapi.com/documentation/api/gov-ae/api-invoicesoutgoing-post",
-    "submitCreditNote": "https://docs.acubeapi.com/documentation/api/gov-ae/api-credit-notesoutgoing-post",
+    "submit": "https://docs.acubeapi.com/documentation/api/gov-ae/api-invoices-post",
+    "submitCreditNote": "https://docs.acubeapi.com/documentation/gov-ae/documents/credit-notes",
     "status": "https://docs.acubeapi.com/documentation/api/gov-ae/api-invoices-uuid-get",
     "tdd": "https://docs.acubeapi.com/documentation/api/gov-ae/api-invoices-uuidtdd-get",
     "legalEntities": "https://docs.acubeapi.com/documentation/gov-ae/quick-start",
@@ -37,13 +38,13 @@
       "name": "submit-invoice-201",
       "request": {
         "method": "POST",
-        "path": "/invoices/outgoing",
+        "path": "/invoices",
         "contentType": "application/xml"
       },
       "response": {
         "status": 201,
         "body": {
-          "invoiceId": "01a0ab23-24d8-7787-bd01-883b1b089b00",
+          "uuid": "01a0ab23-24d8-7787-bd01-883b1b089b00",
           "invoiceTypeCode": "380",
           "createdAt": "2026-11-16T07:40:15+00:00",
           "updatedAt": "2026-11-16T07:40:15+00:00",
@@ -52,7 +53,7 @@
           "documentType": "invoice",
           "documentTypeCode": 380,
           "direction": "outgoing",
-          "status": "valid",
+          "status": "processed",
           "senderName": "Pearl Trading L.L.C.",
           "senderIdentifier": "0235:1001234567",
           "recipientName": "Acme Gulf FZ-LLC",
@@ -71,19 +72,19 @@
       "name": "submit-credit-note-201",
       "request": {
         "method": "POST",
-        "path": "/credit-notes/outgoing",
+        "path": "/credit-notes",
         "contentType": "application/xml"
       },
       "response": {
         "status": 201,
         "body": {
-          "creditNoteId": "01a0aec8-7f31-7b17-9122-26ded8285826",
+          "uuid": "01a0aec8-7f31-7b17-9122-26ded8285826",
           "ownerFiscalId": "1001234567",
           "legalEntityUuid": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
           "documentType": "credit-note",
           "documentTypeCode": 381,
           "direction": "outgoing",
-          "status": "valid",
+          "status": "processed",
           "senderIdentifier": "0235:1001234567",
           "recipientIdentifier": "0235:1007654321",
           "creditNoteNumber": "CN-2026-0001",
@@ -99,7 +100,7 @@
       "name": "submit-invoice-422",
       "request": {
         "method": "POST",
-        "path": "/invoices/outgoing",
+        "path": "/invoices",
         "contentType": "application/xml"
       },
       "response": {
@@ -123,7 +124,7 @@
     },
     {
       "name": "submit-invoice-404",
-      "request": { "method": "POST", "path": "/invoices/outgoing" },
+      "request": { "method": "POST", "path": "/invoices" },
       "response": {
         "status": 404,
         "body": { "title": "Not Found", "detail": "Legal entity not found", "status": 404 }
@@ -131,7 +132,7 @@
     },
     {
       "name": "submit-invoice-503",
-      "request": { "method": "POST", "path": "/invoices/outgoing" },
+      "request": { "method": "POST", "path": "/invoices" },
       "response": { "status": 503, "body": { "title": "Service Unavailable", "status": 503 } }
     },
     {
@@ -140,7 +141,7 @@
       "response": {
         "status": 200,
         "body": {
-          "invoiceId": "01a0ab23-24d8-7787-bd01-883b1b089b00",
+          "uuid": "01a0ab23-24d8-7787-bd01-883b1b089b00",
           "direction": "outgoing",
           "documentTypeCode": 380,
           "status": "sending_queued",
@@ -154,10 +155,24 @@
       "response": {
         "status": 200,
         "body": {
-          "invoiceId": "01a0ab23-24d8-7787-bd01-883b1b089b00",
+          "uuid": "01a0ab23-24d8-7787-bd01-883b1b089b00",
           "direction": "outgoing",
           "documentTypeCode": 380,
           "status": "delivered",
+          "invoiceNumber": "INV-2026-0001"
+        }
+      }
+    },
+    {
+      "name": "status-accepted",
+      "request": { "method": "GET", "path": "/invoices/01a0ab23-24d8-7787-bd01-883b1b089b00" },
+      "response": {
+        "status": 200,
+        "body": {
+          "uuid": "01a0ab23-24d8-7787-bd01-883b1b089b00",
+          "direction": "outgoing",
+          "documentTypeCode": 380,
+          "status": "accepted",
           "invoiceNumber": "INV-2026-0001"
         }
       }
@@ -168,7 +183,7 @@
       "response": {
         "status": 200,
         "body": {
-          "invoiceId": "01a0ab23-24d8-7787-bd01-883b1b089b00",
+          "uuid": "01a0ab23-24d8-7787-bd01-883b1b089b00",
           "direction": "outgoing",
           "documentTypeCode": 380,
           "status": "delivery_error",
@@ -182,7 +197,7 @@
       "response": { "status": 204, "body": null }
     },
     {
-      "name": "tdd-reported",
+      "name": "tdd-available",
       "request": { "method": "GET", "path": "/invoices/01a0ab23-24d8-7787-bd01-883b1b089b00/tdd" },
       "response": {
         "status": 200,
@@ -197,7 +212,7 @@
         "status": 200,
         "body": [
           {
-            "invoiceId": "01a0ab23-24d8-7787-bd01-883b1b089b00",
+            "uuid": "01a0ab23-24d8-7787-bd01-883b1b089b00",
             "direction": "outgoing",
             "status": "sending_queued",
             "invoiceNumber": "INV-2026-0001"
@@ -212,7 +227,7 @@
         "status": 200,
         "body": [
           {
-            "invoiceId": "01a0c453-5398-728c-8b10-84dd471cd797",
+            "uuid": "01a0c453-5398-728c-8b10-84dd471cd797",
             "ownerFiscalId": "1001234567",
             "legalEntityUuid": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
             "documentType": "invoice",
@@ -240,7 +255,7 @@
       "response": {
         "status": 200,
         "body": {
-          "invoiceId": "01a0c453-5398-728c-8b10-84dd471cd797",
+          "uuid": "01a0c453-5398-728c-8b10-84dd471cd797",
           "ownerFiscalId": "1001234567",
           "legalEntityUuid": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
           "documentTypeCode": 380,
@@ -256,7 +271,7 @@
       "response": {
         "status": 201,
         "body": {
-          "legalEntityId": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
+          "uuid": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
           "tin": "1001234567",
           "status": "RESERVED",
           "legalType": null,
@@ -283,7 +298,7 @@
       "response": {
         "status": 200,
         "body": {
-          "legalEntityId": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
+          "uuid": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
           "tin": "1001234567",
           "status": "Active",
           "legalType": "L3",
@@ -314,7 +329,7 @@
       "response": {
         "status": 200,
         "body": {
-          "legalEntityId": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
+          "uuid": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
           "tin": "1001234567",
           "status": "Inactive",
           "isEnabled": false,

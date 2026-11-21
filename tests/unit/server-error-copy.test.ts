@@ -74,10 +74,11 @@ function readCatalog(locale: "en" | "ar", ns: string): Record<string, string> {
   );
 }
 
-function copyFor(locale: "en" | "ar", code: string): string | undefined {
+function copyReader(locale: "en" | "ar") {
   const forms = readCatalog(locale, "forms");
   const server = readCatalog(locale, "serverErrors");
-  return forms[`forms.serverErrors.${code}`] ?? server[`serverErrors.${code}`];
+  return (code: string): string | undefined =>
+    forms[`forms.serverErrors.${code}`] ?? server[`serverErrors.${code}`];
 }
 
 describe("[G3] every customer-reachable error code has English and Arabic copy", () => {
@@ -90,12 +91,12 @@ describe("[G3] every customer-reachable error code has English and Arabic copy",
   });
 
   it("each code has specific en and ar copy", () => {
+    const english = copyReader("en");
+    const arabic = copyReader("ar");
     const missing: string[] = [];
     for (const [code, files] of codes) {
       if (MACHINE_ONLY.has(code)) continue;
-      const en = copyFor("en", code);
-      const ar = copyFor("ar", code);
-      if (!en || !ar) missing.push(`${code} (${[...new Set(files)][0]})`);
+      if (!english(code) || !arabic(code)) missing.push(`${code} (${[...new Set(files)][0]})`);
     }
     expect(missing).toEqual([]);
   });

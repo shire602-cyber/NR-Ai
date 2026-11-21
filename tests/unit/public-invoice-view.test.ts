@@ -137,6 +137,21 @@ describe("public invoice page", () => {
   });
 
   it.each([
+    ["en", "delivered", "Received by the buyer’s provider", "ltr"],
+    ["ar", "accepted", "قبلها مزوّد خدمة المشتري", "rtl"],
+  ])("shows the %s customer e-invoice outcome", async (locale, status, wording, direction) => {
+    await mount(200, {
+      ...PAYLOAD,
+      preferredLanguage: locale,
+      einvoice: { status, uuid: null },
+    });
+    expect(document.documentElement.dir).toBe(direction);
+    expect(
+      container.querySelector('[data-testid="public-invoice-einvoice"]')?.textContent
+    ).toContain(wording);
+  });
+
+  it.each([
     [404, "This link is not valid"],
     [410, "This link has expired"],
     [429, "Too many attempts"],

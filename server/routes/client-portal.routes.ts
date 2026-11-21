@@ -45,6 +45,7 @@ import {
   type PortalMessageBody,
 } from "../../shared/validators/portal";
 import { contactInvoices, ISSUED_STATUSES } from "./portal.public.routes";
+import { getCustomerEInvoiceOutcome } from "../services/einvoice/customer-outcome";
 import { checkoutForInvoice, paymentsAvailability, publicBaseUrl } from "../services/payments";
 import { fromFils, sumFils, toFils } from "../../shared/money";
 
@@ -291,10 +292,12 @@ export function registerClientPortalRoutes(app: Express): void {
           .status(404)
           .json({ code: "EINVOICE_NOT_FOUND", message: "No e-invoice for this invoice" });
       }
+      const outcome = await getCustomerEInvoiceOutcome(invoice);
       res.set({
         "Content-Type": "application/xml; charset=utf-8",
         "Content-Disposition": `attachment; filename="einvoice-${invoice.number}.xml"`,
-        "X-Einvoice-Status": invoice.einvoiceStatus ?? "generated",
+        "X-Einvoice-Status": outcome?.status ?? "generated",
+        "X-Einvoice-Environment": outcome?.environment ?? "unknown",
       });
       res.send(invoice.einvoiceXml);
     })

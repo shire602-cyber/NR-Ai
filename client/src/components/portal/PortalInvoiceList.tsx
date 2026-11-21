@@ -24,6 +24,7 @@ import { getAuthHeaders } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import { formatInteger } from "@/lib/format";
 import { isolateLtrText } from "@/lib/format-bidi";
+import { customerEInvoiceLabel, type CustomerEInvoiceOutcome } from "@/lib/einvoice-outcome";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 
 export interface PortalInvoice {
@@ -36,7 +37,7 @@ export interface PortalInvoice {
   total: number;
   amountDue: number;
   paymentStatus: "paid" | "partially_paid" | "overdue" | "unpaid" | "credit";
-  einvoice: { status: string; hasXml: boolean } | null;
+  einvoice: (CustomerEInvoiceOutcome & { hasXml: boolean }) | null;
 }
 
 const STATUS_TONE: Record<string, StatusTone> = {
@@ -230,13 +231,27 @@ export function PortalInvoiceList({
                 {rows.map((inv) => {
                   const isCredit = inv.paymentStatus === "credit";
                   const canPay = onlinePayment && !isCredit && inv.amountDue > 0;
+                  const einvoiceLabel = inv.einvoice && customerEInvoiceLabel(inv.einvoice, t);
                   return (
                     <TableRow key={inv.id} data-testid={`portal-invoice-row-${inv.id}`}>
                       <TableCell data-cell="title" className="font-medium text-foreground">
                         <span translate="no">
                           <MiddleTruncate text={String(inv.number ?? "")} />
                         </span>
+                        {einvoiceLabel && (
+                          <span className="mt-1 hidden text-caption text-muted-foreground md:block">
+                            {einvoiceLabel}
+                          </span>
+                        )}
                       </TableCell>
+                      {einvoiceLabel && (
+                        <TableCell
+                          data-cell="detail"
+                          className="text-caption text-muted-foreground md:hidden"
+                        >
+                          {einvoiceLabel}
+                        </TableCell>
+                      )}
                       <TableCell
                         data-nowrap=""
                         data-cell="meta"

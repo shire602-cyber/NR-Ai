@@ -1,9 +1,9 @@
 /**
  * E1: e-invoice cell for the invoice list (two-track badges; opens the status sheet) and the
- * "E-invoice" origin tag for bills that arrived as structured e-invoices. One shared query
- * per company (react-query dedupes it across rows).
+ * "E-invoice" origin tag for bills that arrived as structured e-invoices. The list passes
+ * each row's evidence from its page query.
  */
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { FileCode } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatMessage, useTranslation } from "@/lib/i18n";
@@ -13,82 +13,109 @@ import {
   REPORTING_TONE,
   deliveryFromLegacyStatus,
   deliveryLabelKey,
+  recipientAcknowledgement,
   reportingLabelKey,
+  trackOutcomeLabel,
   type DeliveryStatus,
+  type EInvoiceListEvidence,
   type ReportingStatus,
 } from "./einvoice-meta";
 import { EInvoiceSheet, EInvoiceTrackBadges } from "./EInvoiceStatus";
-import { useEInvoiceCompliance, useEInvoiceDocuments } from "./use-einvoice";
 
 export function EInvoiceListCell({
-  companyId,
   invoice,
+  evidence,
   onEdit,
 }: {
-  companyId: string | null | undefined;
   invoice: { id: string; number?: string | null; einvoiceStatus?: string | null };
+  evidence?: EInvoiceListEvidence;
   onEdit?: () => void;
 }) {
   const { t, locale } = useTranslation();
   const [open, setOpen] = useState(false);
-  const docs = useEInvoiceDocuments(companyId);
-  const compliance = useEInvoiceCompliance(companyId);
-  const pill = useMemo(
-    () => compliance.data?.items.find((p) => p.invoiceId === invoice.id),
-    [compliance.data, invoice.id]
-  );
-  const doc = useMemo(
-    () => docs.data?.items.find((d) => d.invoiceId === invoice.id),
-    [docs.data, invoice.id]
-  );
-  // X6d: with the mandate in force and a reportable (B2B) invoice, show the report-by date and
-  // the reporting/delivery state; outside scope nothing is shown beyond an existing document.
-  const showPills = !!compliance.data?.mandateApplies && !!pill?.reportingRequired;
+  const { pill, doc } = evidence ?? {};
+  const showPills = !!pill?.reportingRequired;
   if (!doc && !invoice.einvoiceStatus && !showPills) return null;
-  const delivery: DeliveryStatus =
-    (doc?.deliveryStatus as DeliveryStatus | null) ??
+  const storedDelivery: DeliveryStatus =
+    pill?.delivery ??
+    doc?.deliveryStatus ??
     deliveryFromLegacyStatus(doc?.status ?? invoice.einvoiceStatus);
-  const reporting: ReportingStatus =
-    (doc?.reportingStatus as ReportingStatus | null) ??
-    (doc?.status === "cleared" || invoice.einvoiceStatus === "cleared" ? "reported" : "pending");
+  const queuedForSubmission = (doc?.status ?? invoice.einvoiceStatus) === "queued";
+  const acknowledgement = recipientAcknowledgement(doc?.provider, doc?.providerStatus);
+  const delivery =
+    doc?.provider === "acube" && storedDelivery === "delivered" && !acknowledgement
+      ? "queued"
+      : storedDelivery;
+  const storedReporting: ReportingStatus =
+    pill?.reporting ?? (doc?.reportingStatus as ReportingStatus | null) ?? "pending";
+  const confirmationUnavailable =
+    doc?.provider === "acube" &&
+    !!doc.providerMessageId &&
+    (storedReporting === "pending" || storedReporting === "reported");
+  const reporting = confirmationUnavailable ? "pending" : storedReporting;
+  const obligationKnown = pill?.reportingObligationKnown ?? doc?.reportingObligationKnown;
+  const deadline = reporting === "pending" ? pill?.reportBy : null;
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="ms-1.5 inline-flex items-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="ms-1.5 inline-flex min-w-0 max-w-full items-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-testid={`einvoice-cell-${invoice.id}`}
       >
         <span className="sr-only">{t["einvoicing.statusAction"]}: </span>
         {showPills && pill ? (
           <span
-            className="inline-flex flex-wrap items-center gap-1"
+            className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-1"
             data-testid={`einvoice-compliance-${invoice.id}`}
           >
             <StatusBadge
-              tone={pill.overdue ? "danger" : REPORTING_TONE[pill.reporting]}
+              className="einvoice-status-badge"
+              tone={pill.overdue && deadline ? "danger" : REPORTING_TONE[reporting]}
               data-testid={`einvoice-reportby-${invoice.id}`}
             >
-              {pill.reporting === "reported" || pill.reporting === "report_failed"
-                ? t[reportingLabelKey(pill.reporting)]
-                : pill.reportBy
-                  ? formatMessage(
-                      pill.overdue ? t["launchProof.reportOverdueShort"] : t["einvoicing.reportBy"],
-                      { date: formatDate(pill.reportBy, locale) }
-                    )
-                  : t[reportingLabelKey(pill.reporting)]}
+              {deadline
+                ? formatMessage(
+                    pill.overdue ? t["launchProof.reportOverdueShort"] : t["einvoicing.reportBy"],
+                    { date: formatDate(deadline, locale) }
+                  )
+                : trackOutcomeLabel(
+                    t,
+                    reportingLabelKey(reporting, confirmationUnavailable, obligationKnown),
+                    reporting === "reported",
+                    doc?.environment
+                  )}
             </StatusBadge>
+            {deadline && confirmationUnavailable && (
+              <StatusBadge className="einvoice-status-badge" tone="neutral">
+                {t["einvoicing.reportingUnconfirmed"]}
+              </StatusBadge>
+            )}
             <StatusBadge
-              tone={DELIVERY_TONE[pill.delivery]}
+              className="einvoice-status-badge"
+              tone={acknowledgement === "received" ? "info" : DELIVERY_TONE[delivery]}
               data-testid={`einvoice-delivery-${invoice.id}`}
             >
-              {pill.delivery === "validated"
+              {delivery === "validated"
                 ? t["einvoicing.delivery_validated_short"]
-                : t[deliveryLabelKey(pill.delivery)]}
+                : trackOutcomeLabel(
+                    t,
+                    deliveryLabelKey(delivery, queuedForSubmission, acknowledgement),
+                    delivery === "delivered",
+                    doc?.environment
+                  )}
             </StatusBadge>
           </span>
         ) : (
-          <EInvoiceTrackBadges delivery={delivery} reporting={reporting} />
+          <EInvoiceTrackBadges
+            delivery={delivery}
+            reporting={reporting}
+            queuedForSubmission={queuedForSubmission}
+            acknowledgement={acknowledgement}
+            confirmationUnavailable={confirmationUnavailable}
+            obligationKnown={obligationKnown}
+            environment={doc?.environment}
+          />
         )}
       </button>
       {open && (

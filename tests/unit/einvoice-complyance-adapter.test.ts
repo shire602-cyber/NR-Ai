@@ -44,6 +44,87 @@ const ENV = {
 } as NodeJS.ProcessEnv;
 const COMPANY_ID = "00000000-0000-4000-8000-000000000001";
 const SOURCE = { name: `muhasib-${COMPANY_ID}`, version: "v1" };
+const documentedStatusRef = {
+  knownCredentialScope: true,
+  outboundIdentity: {
+    documentNumber: "INV-2026-0001",
+    supplierTin: null,
+    supplierTrn: null,
+    legalEntityId: null,
+    sourceName: null,
+  },
+};
+
+it.each([
+  { environment: "production" },
+  { documentNumber: "another invoice" },
+  { attribution: { companyId: "another company" } },
+  { seller: { trn: "100999888700003" } },
+  { seller: "malformed" },
+  { sourceName: "" },
+])("rejects a poll observation with contradictory identity (%j)", async (patch) => {
+  const documentId = "01KExactCase";
+  const outboundIdentity = {
+    documentNumber: "INV-001",
+    supplierTin: "1001234567",
+    supplierTrn: "100123456700003",
+    legalEntityId: "ConnectExactCase",
+    sourceName: SOURCE.name,
+  };
+  const p = new ComplyanceEInvoiceProvider(ENV, {
+    fetch: async () =>
+      Response.json({
+        success: true,
+        data: {
+          state: "final_valid",
+          documentId,
+          documentNumber: outboundIdentity.documentNumber,
+          source: SOURCE.name,
+          environment: "sandbox",
+          ...patch,
+        },
+      }),
+  });
+  expect(
+    await p.getStatus(documentId, { outboundIdentity, knownCredentialScope: true })
+  ).toMatchObject({
+    status: "failed",
+    errorCode: "COMPLYANCE_UNAVAILABLE",
+  });
+});
+
+it("verifies recovery using the exact sales resource and rejects contradictory owners", async () => {
+  const documentId = "01KExactCase";
+  const identity = {
+    documentNumber: "INV-001",
+    supplierTin: "1001234567",
+    supplierTrn: "100123456700003",
+    legalEntityId: "ConnectExactCase",
+    sourceName: SOURCE.name,
+  };
+  let data: Record<string, unknown> = {
+    documentId,
+    documentNumber: identity.documentNumber,
+    source: `${SOURCE.name}:${SOURCE.version}`,
+    attribution: { companyId: identity.legalEntityId },
+    invoice: { parties: { seller: { peppolId: `0235:${identity.supplierTin}` } } },
+    payload: { parties: { seller: { taxIds: [{ type: "VAT", value: identity.supplierTrn }] } } },
+  };
+  const fetchImpl = async (input: string | URL | Request, request?: RequestInit) => {
+    expect(String(input)).toBe(`${BASE}/api/v3/documents/${documentId}?type=sales`);
+    expect(request?.method).toBe("GET");
+    return Response.json({ success: true, data });
+  };
+  const provider = new ComplyanceEInvoiceProvider(ENV, { fetch: fetchImpl });
+  expect(await provider.checkOutboundDocument(documentId, identity)).toBe("verified");
+
+  data = { ...data, companyId: identity.legalEntityId.toLowerCase() };
+  expect(await provider.checkOutboundDocument(documentId, identity)).toBe("mismatch");
+
+  delete data.companyId;
+  data = { ...data, documentId: documentId.toLowerCase() };
+  expect(await provider.checkOutboundDocument(documentId, identity)).toBe("mismatch");
+});
 
 interface Sent {
   url: string;
@@ -260,7 +341,7 @@ describe("E2 Complyance status -> two tracks", () => {
   const cases: Array<[string, string, string, string, string | null]> = [
     ["status_submitted", "queued", "pending", "submitted", null],
     ["status_processing", "sending", "pending", "submitted", null],
-    ["status_delivery_success", "delivered", "pending", "accepted", null],
+    ["status_delivery_success", "delivered", "pending", "submitted", null],
     ["status_delivery_failed_retrying", "sending", "pending", "submitted", null],
     ["status_final_valid", "delivered", "reported", "cleared", null],
     [
@@ -276,14 +357,17 @@ describe("E2 Complyance status -> two tracks", () => {
   for (const [name, delivery, reporting, legacy, code] of cases) {
     it(`${name} -> ${delivery} / ${reporting}`, async () => {
       const { p, sent } = provider([name]);
-      const r = await p.getStatus("01K5EXAMPLE00000000000142");
+      const r = await p.getStatus("01K5EXAMPLE00000000000142", documentedStatusRef);
       expect(r).toMatchObject({ delivery, reporting, status: legacy, errorCode: code });
       expect(sent[0].headers.Authorization).toBe(`Bearer ${KEY}`);
     });
   }
 
   it("FTA rejection keeps the reason with its field path", async () => {
-    const r = await provider(["status_final_invalid_fta"]).p.getStatus("01K5EXAMPLE00000000000142");
+    const r = await provider(["status_final_invalid_fta"]).p.getStatus(
+      "01K5EXAMPLE00000000000142",
+      documentedStatusRef
+    );
     expect(r.reasons?.[0]).toEqual({
       code: "FTA-MLS-RE",
       message: "The FTA rejected the tax data document.",
@@ -291,8 +375,47 @@ describe("E2 Complyance status -> two tracks", () => {
     });
   });
 
+  it("requires explicit UAE FTA approval and keeps buyer and government rejections distinct", () => {
+    for (const compliance of [
+      undefined,
+      { ftaApprovedStatus: "REJECTED" },
+      { ftaApprovedStatus: "FAILED" },
+    ]) {
+      expect(
+        mapComplyanceStatus({ state: "final_valid", isTerminal: true, compliance })
+      ).toMatchObject({
+        delivery: "delivered",
+        reporting: "pending",
+      });
+    }
+    const delivered = { validationSteps: [{ name: "Delivery Success", status: "Valid" }] };
+    expect(
+      mapComplyanceStatus({
+        state: "final_invalid",
+        isTerminal: true,
+        validationResults: delivered,
+      })
+    ).toMatchObject({
+      delivery: "rejected",
+      reporting: "pending",
+    });
+    expect(
+      mapComplyanceStatus({
+        state: "final_invalid",
+        isTerminal: true,
+        errors: [{ source: "delivery" }, { source: "government" }],
+      })
+    ).toMatchObject({
+      delivery: "rejected",
+      reporting: "report_failed",
+    });
+  });
+
   it("a failed poll says nothing about the document (transient code)", async () => {
-    const r = await provider(["status_not_found"]).p.getStatus("01K5EXAMPLE00000000000142");
+    const r = await provider(["status_not_found"]).p.getStatus(
+      "01K5EXAMPLE00000000000142",
+      documentedStatusRef
+    );
     expect(r).toMatchObject({ status: "failed", errorCode: "COMPLYANCE_UNAVAILABLE" });
   });
 
@@ -331,12 +454,16 @@ describe("E2 Complyance inbound (purchases)", () => {
     expect(sent).toHaveLength(2);
   });
 
-  it("uses the webhook's attribution without a read", async () => {
-    const { p, sent } = provider([]);
+  it("reads ownership from the matching purchase even when the webhook supplies attribution", async () => {
+    const { p, sent } = provider(["purchase_get"]);
     expect(
-      await p.inboundOwner("x", {}, { complyanceCompanyId: "66b9f0a1c2d3e4f567890123" })
-    ).toEqual({ legalEntityId: "66b9f0a1c2d3e4f567890123", tin: null });
-    expect(sent).toHaveLength(0);
+      await p.inboundOwner(
+        "01JEXAMPLE0000000000000142",
+        {},
+        { complyanceCompanyId: "unrelated-company" }
+      )
+    ).toEqual({ legalEntityId: null, tin: "1001234567" });
+    expect(sent).toHaveLength(1);
   });
 });
 

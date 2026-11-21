@@ -13,6 +13,7 @@
  * the retry job; it is derived from the two tracks with `legacyFromTracks`.
  */
 import type { EInvoiceStatus } from "../einvoice-status";
+import { calendarDateKey, uaeToday } from "../../../shared/uae-date";
 
 export type DeliveryStatus =
   | "draft"
@@ -28,6 +29,23 @@ export type DeliveryStatus =
   | "needs_link";
 
 export type ReportingStatus = "not_required" | "pending" | "reported" | "report_failed";
+export type ReportingObservation = "reported" | "report_failed";
+
+/** A provider acknowledgement distinguishes delivery to the recipient ASP from its decision. */
+export function providerRecipientAcknowledgement(
+  provider: string | null | undefined,
+  status: string | null | undefined
+): "received" | "accepted" | null {
+  const observed = status?.trim().toLowerCase();
+  if (provider === "acube") {
+    if (observed === "delivered") return "received";
+    if (observed === "accepted") return "accepted";
+  } else if (provider === "complyance") {
+    if (observed === "delivery_success") return "received";
+    if (observed === "final_valid") return "accepted";
+  }
+  return null;
+}
 
 export const DELIVERY_STATUSES: DeliveryStatus[] = [
   "draft",
@@ -51,6 +69,39 @@ export const isDeliveryStatus = (s: unknown): s is DeliveryStatus =>
 export const isReportingStatus = (s: unknown): s is ReportingStatus =>
   typeof s === "string" && (REPORTING_STATUSES as string[]).includes(s);
 
+export function isReportingObservation(status: unknown): status is ReportingObservation {
+  return status === "reported" || status === "report_failed";
+}
+
+export function reportingEvidenceAt(
+  validation: unknown,
+  outcome: ReportingObservation
+): string | null {
+  const value = validation as {
+    submission?: { reportingEvidence?: Partial<Record<ReportingObservation, unknown>> };
+  } | null;
+  const observedAt = value?.submission?.reportingEvidence?.[outcome];
+  return typeof observedAt === "string" && !Number.isNaN(Date.parse(observedAt))
+    ? observedAt
+    : null;
+}
+
+/** The old Complyance projection inferred reporting outcomes without storing their proof. */
+export function storedReportingEvidence(
+  doc:
+    | { provider?: string | null; reportingStatus?: string | null; validation?: unknown }
+    | null
+    | undefined,
+  provider = doc?.provider
+): ReportingObservation | null {
+  const status = doc?.reportingStatus;
+  return isReportingObservation(status) &&
+    !(provider === "acube" && status === "reported") &&
+    (provider !== "complyance" || reportingEvidenceAt(doc?.validation, status))
+    ? status
+    : null;
+}
+
 /** Delivery states in which the ASP holds the document (no new submission). */
 export function isDeliveryInFlight(s: string | null | undefined): boolean {
   return s === "queued" || s === "sending" || s === "delivered" || s === "needs_link";
@@ -60,6 +111,7 @@ export function deliveryFromLegacy(status: string | null | undefined): DeliveryS
   switch (status) {
     case "generated":
       return "validated";
+    case "queued":
     case "submitted":
       return "queued";
     case "accepted":
@@ -75,12 +127,38 @@ export function deliveryFromLegacy(status: string | null | undefined): DeliveryS
   }
 }
 
-export function reportingFromLegacy(
-  status: string | null | undefined,
-  required: boolean
+/** The obligation supplies a fallback only when the provider has not confirmed an outcome. */
+export function reportingFromEvidence(
+  provider: string | null | undefined,
+  required: boolean,
+  ...observations: Array<string | null | undefined>
 ): ReportingStatus {
-  if (!required) return "not_required";
-  return status === "cleared" ? "reported" : "pending";
+  for (const status of observations) {
+    // A-Cube's prior reported snapshots established TDD availability only.
+    if (status === "report_failed" || (status === "reported" && provider !== "acube"))
+      return status;
+  }
+  return required ? "pending" : "not_required";
+}
+
+/** Correct historical statuses that treated a receipt or the availability of a TDD as final. */
+export function projectEInvoiceLegacyStatus<T extends string>(
+  provider: string | null | undefined,
+  providerStatus: string | null | undefined,
+  status: T | null | undefined,
+  reportingStatus?: string | null
+): T | "not_generated" | "submitted" | "accepted" {
+  const stored = status ?? "not_generated";
+  if (stored !== "accepted" && stored !== "cleared") return stored;
+  const observed = providerStatus?.trim().toLowerCase();
+  if (provider === "acube") {
+    return observed === "accepted" ? "accepted" : "submitted";
+  }
+  if (provider === "complyance") {
+    if (observed === "delivery_success") return "submitted";
+  }
+  if (stored === "cleared" && reportingStatus !== "reported") return "accepted";
+  return stored;
 }
 
 /**
@@ -89,45 +167,62 @@ export function reportingFromLegacy(
  * per-invoice status view and the invoice-list compliance pills so both always agree (X6d).
  */
 export function deriveInvoiceTracks(args: {
-  invoiceDate: Date | string | null | undefined;
   invoiceStatus: string | null | undefined;
   legacyStatus: string | null | undefined;
+  provider?: string | null;
   doc: {
+    provider?: string | null;
+    providerStatus?: string | null;
     deliveryStatus?: string | null;
     reportingStatus?: string | null;
-    reportBy?: string | null;
+    validation?: unknown;
   } | null;
-  required: boolean;
+  obligation: { required: boolean; known: boolean; reportBy: string | null };
   now?: Date;
 }): {
   delivery: DeliveryStatus;
   reporting: ReportingStatus;
+  reportingRequired: boolean;
+  reportingObligationKnown: boolean;
   isDraft: boolean;
   reportBy: string | null;
   overdue: boolean;
 } {
   const now = args.now ?? new Date();
-  const legacy = args.legacyStatus ?? "not_generated";
-  const { doc, required } = args;
-  const delivery: DeliveryStatus = isDeliveryStatus(doc?.deliveryStatus)
+  const { doc, obligation } = args;
+  const provider = doc?.provider ?? args.provider;
+  const providerStatus = doc?.providerStatus?.trim().toLowerCase();
+  const reporting = reportingFromEvidence(
+    provider,
+    obligation.required || !obligation.known,
+    storedReportingEvidence(doc, provider)
+  );
+  const legacy = projectEInvoiceLegacyStatus(
+    provider,
+    providerStatus,
+    args.legacyStatus,
+    reporting
+  );
+  let delivery: DeliveryStatus = isDeliveryStatus(doc?.deliveryStatus)
     ? doc.deliveryStatus
     : deliveryFromLegacy(legacy);
-  const storedReporting: ReportingStatus = isReportingStatus(doc?.reportingStatus)
-    ? doc.reportingStatus
-    : reportingFromLegacy(legacy, required);
-  // A "pending" report that is not (yet) required is not a pending obligation.
-  const reporting: ReportingStatus =
-    !required && storedReporting === "pending" ? "not_required" : storedReporting;
-  const isDraft = String(args.invoiceStatus ?? "").toLowerCase() === "draft";
-  // No deadline unless the mandate applies to this company; a draft has no deadline either.
-  const reportBy = required && !isDraft ? (doc?.reportBy ?? reportByDate(args.invoiceDate)) : null;
-  const today = now.toISOString().slice(0, 10);
+  if (provider === "acube" && delivery === "delivered") {
+    if (providerStatus === "processed") delivery = "sending";
+    else if (providerStatus !== "accepted" && providerStatus !== "delivered") delivery = "queued";
+  }
+  const invoiceStatus = String(args.invoiceStatus ?? "").toLowerCase();
+  const isDraft = invoiceStatus === "draft";
+  const inactive = isDraft || invoiceStatus === "void" || invoiceStatus === "cancelled";
+  const reportBy = obligation.required && !inactive ? obligation.reportBy : null;
+  const today = uaeToday(now);
   return {
     delivery,
     reporting,
+    reportingRequired: obligation.required,
+    reportingObligationKnown: obligation.known,
     isDraft,
     reportBy,
-    overdue: !isDraft && !!reportBy && reporting === "pending" && reportBy < today,
+    overdue: !!reportBy && reporting === "pending" && reportBy < today,
   };
 }
 
@@ -145,7 +240,7 @@ export function legacyFromTracks(
     case "sending":
       return "submitted";
     case "delivered":
-      return reporting === "reported" || reporting === "not_required" ? "cleared" : "accepted";
+      return reporting === "reported" ? "cleared" : "accepted";
     case "delivery_failed":
       return "failed";
     case "rejected":
@@ -156,12 +251,28 @@ export function legacyFromTracks(
   }
 }
 
+/** A-Cube reports recipient receipt before the recipient's final MLS decision. */
+export function legacyFromProviderTracks(
+  provider: string,
+  providerStatus: string | null | undefined,
+  delivery: DeliveryStatus,
+  reporting: ReportingStatus
+): EInvoiceStatus {
+  if (delivery === "delivered") {
+    return projectEInvoiceLegacyStatus(
+      provider,
+      providerStatus,
+      legacyFromTracks(delivery, reporting),
+      reporting
+    );
+  }
+  return legacyFromTracks(delivery, reporting);
+}
+
 /**
- * A-Cube document status -> delivery track. Both vocabularies are handled: the lifecycle page
- * (valid, sending_started, sending_queued, sending_error, delivered, delivery_error, received)
- * and the OpenAPI enum (new, valid, sending_*, sending_failed, processed, delivered,
- * delivery_failed, accepted, rejected, withdrawn, action_required). Unknown values never read
- * as success: they become delivery_failed so the document is visible and re-checked.
+ * A-Cube's lifecycle treats Peppol handover and provider-managed retries as in flight.
+ * `delivered` identifies recipient receipt. The subsequent `accepted` or `rejected` is the MLS.
+ * https://docs.acubeapi.com/documentation/gov-ae/documents/lifecycle
  */
 export function mapAcubeDeliveryStatus(raw: unknown): DeliveryStatus {
   const s = String(raw ?? "")
@@ -173,18 +284,18 @@ export function mapAcubeDeliveryStatus(raw: unknown): DeliveryStatus {
     case "sending_queued":
       return "queued";
     case "sending_started":
+    case "processed":
+    case "sending_failed":
+    case "delivery_failed":
       return "sending";
     case "delivered":
-    case "processed":
     case "accepted":
       return "delivered";
     case "rejected":
     case "withdrawn":
       return "rejected";
     case "sending_error":
-    case "sending_failed":
     case "delivery_error":
-    case "delivery_failed":
     case "action_required":
       return "delivery_failed";
     default:
@@ -237,10 +348,10 @@ export function reportByDate(
   issueDate: Date | string | null | undefined,
   days: number = reportWindowDays()
 ): string | null {
-  if (!issueDate) return null;
-  const d = typeof issueDate === "string" ? new Date(issueDate) : issueDate;
-  if (Number.isNaN(d.getTime())) return null;
-  const out = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + days));
+  const day = calendarDateKey(issueDate);
+  const start = Date.parse(day);
+  if (!Number.isFinite(start)) return null;
+  const out = new Date(start + days * 86_400_000);
   return out.toISOString().slice(0, 10);
 }
 
@@ -259,6 +370,7 @@ export const EINVOICE_ERROR_CODES = [
   "ACUBE_LEGAL_ENTITY_NOT_FOUND",
   "ACUBE_AUTH_FAILED",
   "ACUBE_UNAVAILABLE",
+  "ACUBE_RATE_LIMITED",
   "ACUBE_SENDING_FAILED",
   "ACUBE_DELIVERY_FAILED",
   "ACUBE_ACTION_REQUIRED",

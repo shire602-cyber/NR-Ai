@@ -70,6 +70,11 @@ import { resolveEmailLanguage } from "../services/email-layout";
 import { receivableSettledSql } from "../reporting/settlement";
 import { actorFromRequest, assertCompanyPermission } from "../services/approval-rules.service";
 import type { Permission } from "../../shared/permissions";
+import {
+  customerEInvoiceOutcome,
+  getCustomerEInvoiceOutcome,
+  type EInvoiceCustomerEvidence,
+} from "../services/einvoice/customer-outcome";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const ISSUED_STATUSES = ["sent", "posted", "partial", "paid"] as const;
@@ -175,7 +180,12 @@ export interface PortalInvoiceRow {
   amountDue: number;
   status: string;
   paymentStatus: "paid" | "partially_paid" | "overdue" | "unpaid" | "credit";
-  einvoice: { status: string; uuid: string | null; hasXml: boolean } | null;
+  einvoice:
+    | (NonNullable<ReturnType<typeof customerEInvoiceOutcome>> & {
+        uuid: string | null;
+        hasXml: boolean;
+      })
+    | null;
 }
 
 /** Issued documents of one contact with their open balance (R16-04/R16-06). */
@@ -193,8 +203,15 @@ export async function contactInvoices(
   const { rows } = await pool.query(
     `SELECT i.id, i.number, i.invoice_type, i.date, i.due_date, i.currency, i.subtotal, i.vat_amount,
             i.total, i.status, i.einvoice_status, i.einvoice_uuid, (i.einvoice_xml IS NOT NULL) AS has_xml,
+            i.einvoice_provider, i.einvoice_provider_message_id,
+            CASE WHEN d.id IS NOT NULL THEN jsonb_build_object(
+              'status', d.status, 'provider', d.provider, 'providerMessageId', d.provider_message_id,
+              'providerStatus', d.provider_status, 'deliveryStatus', d.delivery_status,
+              'reportingStatus', d.reporting_status, 'validation', d.validation
+            ) END AS einvoice_evidence,
             ${receivableSettledSql("i")}::text AS settled
        FROM invoices i
+       LEFT JOIN einvoice_documents d ON d.company_id = i.company_id AND d.invoice_id = i.id
       WHERE i.company_id = $1 AND i.contact_id = $2
         AND i.status IN ('sent', 'posted', 'partial', 'paid') ${extra}
       ORDER BY i.date DESC, i.number DESC`,
@@ -207,6 +224,14 @@ export async function contactInvoices(
     const settled = isCredit ? 0 : Number(r.settled);
     const due = isCredit ? 0 : Math.max(0, Math.round((total - settled) * 100) / 100);
     const dueDate = r.due_date ? new Date(r.due_date as string) : null;
+    const eInvoiceOutcome = customerEInvoiceOutcome(
+      {
+        einvoiceStatus: r.einvoice_status as string | null,
+        einvoiceProvider: r.einvoice_provider as string | null,
+        einvoiceProviderMessageId: r.einvoice_provider_message_id as string | null,
+      },
+      r.einvoice_evidence as EInvoiceCustomerEvidence | null
+    );
     return {
       id: r.id as string,
       number: r.number as string,
@@ -229,9 +254,9 @@ export async function contactInvoices(
             : dueDate && dueDate.getTime() < now
               ? "overdue"
               : "unpaid",
-      einvoice: r.einvoice_status
+      einvoice: eInvoiceOutcome
         ? {
-            status: r.einvoice_status as string,
+            ...eInvoiceOutcome,
             uuid: (r.einvoice_uuid as string | null) ?? null,
             hasXml: r.has_xml === true,
           }
@@ -479,10 +504,12 @@ export function registerPortalPublicRoutes(app: Express) {
           .status(404)
           .json({ code: "EINVOICE_NOT_FOUND", message: "No e-invoice for this invoice" });
       }
+      const outcome = await getCustomerEInvoiceOutcome(invoice);
       res.set({
         "Content-Type": "application/xml; charset=utf-8",
         "Content-Disposition": `attachment; filename="einvoice-${invoice.number}.xml"`,
-        "X-Einvoice-Status": invoice.einvoiceStatus ?? "generated",
+        "X-Einvoice-Status": outcome?.status ?? "generated",
+        "X-Einvoice-Environment": outcome?.environment ?? "unknown",
       });
       res.send(invoice.einvoiceXml);
     })

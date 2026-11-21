@@ -18,6 +18,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import pg from "pg";
+import { waitForRouteText } from "./lib/route-readiness.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 // Fable N1: browse in UAE time so a business date formatted as a browser-zone instant (a 30 Sep
@@ -133,6 +134,40 @@ async function mainShows(page, text, timeoutMs = 20000) {
   return false;
 }
 
+async function signInFixture(page, email, label) {
+  const login = await page.request.post(`${BASE}/api/auth/login`, {
+    data: { email, password: "Password123!" },
+  });
+  if (!login.ok()) throw new Error(`${label} login failed with HTTP ${login.status()}`);
+}
+
+/** Sign in a fresh company owner and finish the real three-step wizard before crawling. */
+async function completeExpressOnboarding(page, email, label) {
+  const timeout = 45000;
+  await signInFixture(page, email, label);
+
+  try {
+    await page.goto(`${BASE}/dashboard`, { timeout });
+    await page.waitForURL((url) => url.pathname === "/onboarding", { timeout });
+    await page.getByTestId("onboarding-express").click({ timeout });
+    await page.getByTestId("onboarding-skip").click({ timeout });
+    const [completion] = await Promise.all([
+      page.waitForResponse(
+        (res) =>
+          res.request().method() === "POST" &&
+          /^\/api\/companies\/[^/]+\/onboarding\/complete$/.test(new URL(res.url()).pathname),
+        { timeout }
+      ),
+      page.getByTestId("onboarding-task-explore").click({ timeout }),
+    ]);
+    if (!completion.ok())
+      throw new Error(`Onboarding completion returned HTTP ${completion.status()}`);
+    await page.waitForURL((url) => url.pathname === "/dashboard", { timeout });
+  } catch (cause) {
+    throw new Error(`${label} express onboarding did not finish at ${page.url()}`, { cause });
+  }
+}
+
 async function resolveExecutablePath() {
   if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
   try {
@@ -190,31 +225,7 @@ async function main() {
     await fail("register", { detail: `status ${reg.status()}` });
     throw new Error(`register failed: ${reg.status()}`);
   }
-  // W5-E: registration returns no session; sign in (sets the auth cookies).
-  await page.request.post(`${BASE}/api/auth/login`, { data: { email, password: "Password123!" } });
-
-  await page.goto(`${BASE}/dashboard`);
-  await page.waitForTimeout(3000);
-  if (page.url().includes("onboarding")) {
-    const express = page.locator('[data-testid="onboarding-express"]');
-    // The redirect to /onboarding can land after a fixed wait on a cold build.
-    await express.waitFor({ timeout: 10000 }).catch(() => undefined);
-    if (await express.count()) {
-      await express.click();
-      await page.waitForTimeout(4000);
-      // WP-B: onboarding is three screens; skip the starting point, then look around.
-      for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
-        const next = page.locator(`[data-testid="${id}"]`);
-        if (await next.count()) {
-          await next.click();
-          await page.waitForTimeout(1500);
-        }
-      }
-    }
-  }
-  if (!page.url().includes("dashboard")) {
-    await fail("express-onboarding", { detail: `ended on ${page.url()}` });
-  }
+  await completeExpressOnboarding(page, email, "Owner");
 
   // Promote to admin + firm owner so the crawl covers admin and firm suites.
   const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
@@ -257,11 +268,8 @@ async function main() {
     try {
       await page.goto(`${BASE}${route}`, { timeout: 45000 });
       await page.waitForTimeout(1700);
+      const mainText = await waitForRouteText(page, "main");
       const finalUrl = page.url().replace(BASE, "");
-      const mainText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
       const failText =
         mainText.match(FAIL_TEXT)?.[0] ?? (NOT_FOUND(mainText) ? "not-found screen" : null);
       const blank = mainText.trim().length < 40;
@@ -1163,73 +1171,74 @@ async function main() {
   // (a) 'client' userType: flat workspace sidebar — dashboard, documents,
   //     reports must render with no admin/firm assumptions leaking in.
   // (b) 'client_portal' userType: the separate portal layout.
-  async function crawlAs(label, userType, matrixRoutes) {
-    const mCtx = await browser.newContext({
+  async function openMatrixPage() {
+    const context = await browser.newContext({
       viewport: { width: 1440, height: 900 },
       timezoneId: BROWSER_TIMEZONE,
     });
-    await mCtx.addInitScript(() => {
+    await context.addInitScript(() => {
       // The client only probes the cookie session when this non-secret sign-in hint is set (R18-04).
       localStorage.setItem("muhasib_auth_hint", "1");
     });
-    const mPage = await mCtx.newPage();
-    let mErrors = [];
-    let mApi = [];
-    mPage.on("pageerror", (e) => mErrors.push(`JS: ${e.message.slice(0, 200)}`));
-    mPage.on("response", (r) => {
+    const page = await context.newPage();
+    const js = [];
+    const api = [];
+    page.on("pageerror", (e) => js.push(`JS: ${e.message.slice(0, 200)}`));
+    page.on("response", (r) => {
       const url = r.url();
       if (!url.includes("/api/") || r.status() < 400 || r.status() === 401 || r.status() === 403)
         return;
       const cleanPath = url.replace(BASE, "").split("?")[0];
       if (TOLERATED_API.some((re) => re.test(cleanPath))) return;
-      mApi.push(`${r.request().method()} ${cleanPath} -> ${r.status()}`);
+      api.push(`${r.request().method()} ${cleanPath} -> ${r.status()}`);
     });
+    return { context, page, js, api };
+  }
 
+  async function crawlAs(label, userType, matrixRoutes) {
     const mEmail = `e2e-${label}+${Date.now()}@test.local`;
-    const mReg = await mPage.request.post(`${BASE}/api/auth/register`, {
-      data: {
-        email: mEmail,
-        password: "Password123!",
-        name: `E2E ${label}`,
-        companyName: `${label} Co LLC`,
-      },
-    });
-    if (mReg.status() >= 300) {
-      await fail(`${label} register`, { detail: `status ${mReg.status()}` });
-      await mCtx.close();
-      return;
-    }
-    // W5-E: registration returns no session; sign in (sets the auth cookies).
-    await mPage.request.post(`${BASE}/api/auth/login`, {
-      data: { email: mEmail, password: "Password123!" },
-    });
-    // Complete onboarding via express so the dashboard doesn't redirect.
-    await mPage.goto(`${BASE}/dashboard`);
-    await mPage.waitForTimeout(2500);
-    if (mPage.url().includes("onboarding")) {
-      const express = mPage.locator('[data-testid="onboarding-express"]');
-      // The redirect to /onboarding can land after a fixed wait on a cold build.
-      await express.waitFor({ timeout: 10000 }).catch(() => undefined);
-      if (await express.count()) {
-        await express.click();
-        await mPage.waitForTimeout(3500);
-        // WP-B: onboarding is three screens; skip the starting point, then look around.
-        for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
-          const next = mPage.locator(`[data-testid="${id}"]`);
-          if (await next.count()) {
-            await next.click();
-            await mPage.waitForTimeout(1500);
-          }
-        }
+    const setup = await openMatrixPage();
+    try {
+      const registration = await setup.page.request.post(`${BASE}/api/auth/register`, {
+        data: {
+          email: mEmail,
+          password: "Password123!",
+          name: `E2E ${label}`,
+          companyName: `${label} Co LLC`,
+        },
+      });
+      if (!registration.ok()) {
+        await fail(`${label} register`, { detail: `status ${registration.status()}` });
+        return;
       }
+      await completeExpressOnboarding(setup.page, mEmail, label);
+      await setup.page.waitForLoadState("networkidle", { timeout: 45000 });
+    } finally {
+      // Retire the customer dashboard and its cookie session before changing the fixture's role.
+      await setup.context.close();
     }
+    if (setup.js.length || setup.api.length) {
+      await fail(`${label} onboarding setup`, {
+        js: setup.js.slice(0, 3),
+        api: [...new Set(setup.api)].slice(0, 5),
+      });
+    }
+
     const mDb = new pg.Client({ connectionString: process.env.DATABASE_URL });
     await mDb.connect();
-    await mDb.query(`UPDATE users SET user_type = $1, email_verified = true WHERE email = $2`, [
-      userType,
-      mEmail,
-    ]);
-    await mDb.end();
+    try {
+      const update = await mDb.query(
+        `UPDATE users SET user_type = $1, email_verified = true WHERE email = $2`,
+        [userType, mEmail]
+      );
+      if (update.rowCount !== 1)
+        throw new Error(`${label} fixture role update did not find its user`);
+    } finally {
+      await mDb.end();
+    }
+
+    const { context: mCtx, page: mPage, js: mErrors, api: mApi } = await openMatrixPage();
+    await signInFixture(mPage, mEmail, label);
 
     // Access boundary: an ordinary account must be rejected on every NRA /
     // admin surface even when guessing URLs directly. 401/403 both prove the
@@ -1251,22 +1260,13 @@ async function main() {
     }
 
     for (const route of matrixRoutes) {
-      mErrors = [];
-      mApi = [];
+      mErrors.length = 0;
+      mApi.length = 0;
       try {
         await mPage.goto(`${BASE}${route}`, { timeout: 45000 });
         await mPage.waitForTimeout(1500);
+        const bodyText = await waitForRouteText(mPage, "main", "body");
         const finalUrl = mPage.url().replace(BASE, "");
-        const mainText = await mPage
-          .locator("main")
-          .innerText()
-          .catch(() => "");
-        const bodyText =
-          mainText ||
-          (await mPage
-            .locator("body")
-            .innerText()
-            .catch(() => ""));
         const failText = bodyText.match(FAIL_TEXT)?.[0] ?? null;
         const blank = bodyText.trim().length < 40;
         if (mErrors.length || mApi.length || failText || blank) {
@@ -1321,36 +1321,55 @@ async function main() {
     const qStart = new Date(Date.UTC(now.getUTCFullYear(), qStartMonth, 1));
     const qEnd = new Date(Date.UTC(qStart.getUTCFullYear(), qStart.getUTCMonth() + 3, 0));
     const ymd = (d) => d.toISOString().slice(0, 10);
-    await page.request.post(`${BASE}/api/companies/${companyId}/vat-returns/generate`, {
-      headers: { "x-csrf-token": csrfToken ?? "" },
-      data: { periodStart: ymd(qStart), periodEnd: ymd(qEnd) },
-    });
-    const DATE_TEXT = /\b\d{1,2}(?:[–-]\d{1,2})? [A-Z][a-z]{2} \d{4}\b|\b[A-Z][a-z]{2} \d{4}\b/g;
+    const generated = await page.request.post(
+      `${BASE}/api/companies/${companyId}/vat-returns/generate`,
+      {
+        headers: { "x-csrf-token": csrfToken ?? "" },
+        data: { periodStart: ymd(qStart), periodEnd: ymd(qEnd) },
+      }
+    );
+    if (!generated.ok())
+      throw new Error(`VAT fixture generation returned HTTP ${generated.status()}`);
+    const { id: returnId, dueDate } = await generated.json();
+    if (!returnId || !dueDate) throw new Error("VAT fixture is missing its return ID or due date");
     const datesOn = async (p) => {
       await p.goto(`${BASE}/vat-filing`, { timeout: 45000 });
-      await p.waitForTimeout(2500);
-      const text = await p
-        .locator("main")
-        .innerText()
-        .catch(() => "");
-      return [...new Set(text.match(DATE_TEXT) ?? [])].sort();
+      await p.getByTestId(`button-view-${returnId}`).click({ timeout: 20000 });
+      const workbook = p.getByTestId("vat201-workbook");
+      const value = (label) =>
+        workbook
+          .locator("dl > div")
+          .filter({ has: p.getByText(label, { exact: true }) })
+          .locator("dd")
+          .innerText({ timeout: 15000 });
+      return { period: await value("Return period"), due: await value("Return due date") };
     };
     const utcCtx = await browser.newContext({
       viewport: { width: 1440, height: 900 },
       timezoneId: "UTC",
       storageState: await ctx.storageState(),
     });
-    const utcPage = await utcCtx.newPage();
-    const utcDates = await datesOn(utcPage);
-    await utcCtx.close();
+    let utcDates;
+    try {
+      utcDates = await datesOn(await utcCtx.newPage());
+    } finally {
+      await utcCtx.close();
+    }
     const localDates = await datesOn(page);
-    const endLabel = `${qEnd.getUTCDate()} ${qEnd.toLocaleString("en-GB", { month: "short", timeZone: "UTC" }).slice(0, 3)} ${qEnd.getUTCFullYear()}`;
-    const shown = localDates.some((d) => d.includes(endLabel.split(" ").slice(1).join(" ")));
-    if (JSON.stringify(utcDates) !== JSON.stringify(localDates) || !shown) {
+    const dateLabel = (d) =>
+      `${d.getUTCDate()} ${d.toLocaleString("en-GB", { month: "short", timeZone: "UTC" }).slice(0, 3)} ${d.getUTCFullYear()}`;
+    const expected = {
+      period: `${dateLabel(qStart)} – ${dateLabel(qEnd)}`,
+      due: dateLabel(new Date(dueDate)),
+    };
+    if (
+      JSON.stringify(utcDates) !== JSON.stringify(expected) ||
+      JSON.stringify(localDates) !== JSON.stringify(expected)
+    ) {
       await fail(`timezone probe /vat-filing (${BROWSER_TIMEZONE})`, {
-        utc: utcDates.slice(0, 12),
-        local: localDates.slice(0, 12),
-        expectedPeriodEnd: endLabel,
+        utc: utcDates,
+        local: localDates,
+        expected,
       });
     }
   } catch (e) {
@@ -1383,14 +1402,7 @@ async function main() {
         })
         .catch(() => {});
       const dir = await page.evaluate(() => document.documentElement.getAttribute("dir"));
-      let mainText = "";
-      for (let i = 0; i < 30 && mainText.trim().length < 40; i++) {
-        mainText = await page
-          .locator("main")
-          .innerText()
-          .catch(() => "");
-        if (mainText.trim().length < 40) await page.waitForTimeout(500);
-      }
+      const mainText = await waitForRouteText(page, "main");
       const blank = mainText.trim().length < 40;
       if (dir !== "rtl" || routeErrors.length || blank) {
         await fail(`rtl route ${route}`, {

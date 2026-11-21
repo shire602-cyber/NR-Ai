@@ -574,7 +574,7 @@
   "reportCatalog.starter.owner-cash-control-autopilot.setupTime": "إعداد في 10 دقائق",
   "reportCatalog.starter.owner-cash-control-autopilot.trigger": "يعمل بعد تحديث الفواتير والمدفوعات ونشاط البنك وبنود المبيعات.",
   "reportCatalog.starter.owner-cash-control-autopilot.primaryAction": "إطلاق الأتمتة الذاتية للنقد",
-  "reportCatalog.starter.owner-cash-control-autopilot.setupSteps.0": "اربط تحديثات الفواتير والبنك.",
+  "reportCatalog.starter.owner-cash-control-autopilot.setupSteps.0": "راجع فواتيرك وارفع أحدث كشف حساب بنكي بصيغة CSV.",
   "reportCatalog.starter.owner-cash-control-autopilot.setupSteps.1": "جدول حزمة قيادة المالك الأسبوعية.",
   "reportCatalog.starter.owner-cash-control-autopilot.setupSteps.2": "وجّه الأرصدة المتأخرة إلى متابعة السداد.",
   "reportCatalog.starter.owner-tax-spend-autopilot.audience": "المالك ورائد الأعمال المنفرد ومعد الإقرار الضريبي",

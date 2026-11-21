@@ -124,6 +124,9 @@ describe("client portal light root", () => {
       async () => {
         await act(async () => {});
         expect(container.querySelector("h1")).not.toBeNull();
+        expect(container.querySelector("table.row-cards tbody tr")?.textContent).toContain(
+          "INV-2026-00001"
+        );
       },
       { timeout: 10000 }
     );

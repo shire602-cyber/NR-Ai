@@ -65,6 +65,7 @@ import {
   type SalesDocumentTotals,
 } from "./document-totals.service";
 import { invoiceMachine, settlementStatus } from "./invoice-state-machine";
+import { assertNoOutstandingEInvoiceHandoff } from "./einvoice/store";
 import { has, resolve } from "../platform/service-registry";
 import { receivableSettlementPartsSql } from "../reporting/settlement";
 
@@ -758,6 +759,7 @@ export async function voidInvoice(
   return withDocumentLock(invoiceId, LOCK_NS.INVOICE_POSTING, async (tx) => {
     const inv = await lockInvoice(tx, invoiceId, companyId);
     if (inv.status === target) return { invoice: inv, reversedEntryIds: [] };
+    await assertNoOutstandingEInvoiceHandoff(companyId, invoiceId, tx);
     // B1 (NH3): the invoice that billed an asset disposal carries the disposal's receivable and
     // VAT; voiding it alone would leave the disposal moving proceeds that were never invoiced.
     const disposal = await tx.execute(sql`
@@ -1487,6 +1489,7 @@ export async function voidCreditNote(
   return withDocumentLock(lockId, LOCK_NS.INVOICE_POSTING, async (tx) => {
     const fresh = await lockInvoice(tx, creditNoteId, companyId);
     if (fresh.status === "void") return fresh;
+    await assertNoOutstandingEInvoiceHandoff(companyId, creditNoteId, tx);
     if (fresh.status === "draft") {
       const row = await transitionRow<Invoice>(
         tx,

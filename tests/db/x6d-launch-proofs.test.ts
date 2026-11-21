@@ -197,6 +197,182 @@ describe("X6d invoice-list compliance pills", () => {
     expect(row.overdue).toBe(false);
   });
 
+  it("derives status for requested company invoices even beyond the former document cutoff", async () => {
+    const tenant = await h.createTenant({
+      companyColumns: { ...SELLER, einvoice_scope: "b2b", einvoice_go_live_date: "2025-01-01" },
+    });
+    const invoice = await issued(tenant);
+    const other = await h.createSecondTenant();
+    const otherInvoice = await issued(other);
+    await h.sql(
+      `INSERT INTO einvoice_documents
+         (company_id, invoice_id, status, provider, provider_status, provider_message_id,
+          delivery_status, reporting_status, report_by, updated_at)
+       VALUES ($1, $2, 'accepted', 'complyance', 'final_valid', 'fixture-document',
+               'delivered', 'reported', '2026-11-30', now() - interval '1 day')`,
+      [tenant.company.id, invoice.id]
+    );
+    await h.sql(
+      `INSERT INTO einvoice_documents (company_id, invoice_id, status, updated_at)
+       SELECT $1, gen_random_uuid(), 'generated', now() FROM generate_series(1, 501)`,
+      [tenant.company.id]
+    );
+    const result = await tenant.as.get(
+      `/api/companies/${tenant.company.id}/einvoicing/compliance?invoiceIds=${invoice.id},${otherInvoice.id}`
+    );
+    expect(result.status, result.text).toBe(200);
+    expect(result.body.items).toMatchObject([
+      { invoiceId: invoice.id, reportingRequired: true, delivery: "delivered" },
+    ]);
+    expect(result.body.documents).toMatchObject([
+      { invoiceId: invoice.id, provider: "complyance", providerStatus: "final_valid" },
+    ]);
+  });
+
+  async function projections(t: Awaited<ReturnType<typeof h.createTenant>>, invoiceId: string) {
+    const prefix = `/api/companies/${t.company.id}/einvoicing`;
+    const [batch, documents, status] = await Promise.all([
+      t.as.get(`${prefix}/compliance?invoiceIds=${invoiceId}`),
+      t.as.get(`${prefix}/documents`),
+      t.as.get(`/api/invoices/${invoiceId}/einvoice/status`),
+    ]);
+    for (const response of [batch, documents, status])
+      expect(response.status, response.text).toBe(200);
+    const byInvoice = (item: { invoiceId: string }) => item.invoiceId === invoiceId;
+    return {
+      pill: batch.body.items.find(byInvoice),
+      batchDoc: batch.body.documents.find(byInvoice),
+      document: documents.body.items.find(byInvoice),
+      status: status.body.tracks.reporting,
+    };
+  }
+
+  it("does not invent a reporting deadline for an older accepted invoice from edited live buyer and mandate fields", async () => {
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER, einvoice_scope: "b2b", einvoice_go_live_date: "2025-01-01" },
+    });
+    const inv = await issued(t);
+    await h.sql(
+      `UPDATE invoices SET date = '2026-04-03', einvoice_status = 'accepted',
+          einvoice_provider = 'acube', einvoice_provider_message_id = 'legacy-document'
+        WHERE company_id = $1 AND id = $2`,
+      [t.company.id, inv.id]
+    );
+    await h.sql(
+      `INSERT INTO einvoice_documents (company_id, invoice_id, status, provider, provider_message_id, provider_status, delivery_status)
+       VALUES ($1, $2, 'accepted', 'acube', 'legacy-document', 'accepted', 'delivered')`,
+      [t.company.id, inv.id]
+    );
+
+    const view = await projections(t, inv.id);
+    expect(view.status).toMatchObject({
+      required: false,
+      obligationKnown: false,
+      reportBy: null,
+      overdue: false,
+    });
+    expect(view.pill).toMatchObject({
+      reportingRequired: false,
+      reportingObligationKnown: false,
+      reportBy: null,
+      overdue: false,
+    });
+    expect(view.batchDoc).toMatchObject({ reportBy: null });
+    expect(view.document).toMatchObject({
+      reportingRequired: false,
+      reportingObligationKnown: false,
+      reportBy: null,
+    });
+    await h.sql("UPDATE companies SET einvoice_scope = 'none' WHERE id = $1", [t.company.id]);
+    const paused = await projections(t, inv.id);
+    expect(paused.pill).toMatchObject({ reportingObligationKnown: false, reportBy: null });
+  });
+
+  it("retains a known historic obligation without inventing a missing deadline", async () => {
+    const t = await h.createTenant({ companyColumns: { ...SELLER, einvoice_scope: "none" } });
+    const inv = await issued(t);
+    await h.sql(
+      `INSERT INTO einvoice_documents (company_id, invoice_id, status, provider, provider_message_id, delivery_status, validation)
+       VALUES ($1, $2, 'submitted', 'acube', 'old-obligation', 'sending', '{"submission":{"reportingRequired":true}}')`,
+      [t.company.id, inv.id]
+    );
+    const view = await projections(t, inv.id);
+    expect(view.status).toMatchObject({
+      status: "pending",
+      required: true,
+      obligationKnown: true,
+      reportBy: null,
+      overdue: false,
+    });
+    expect(view.pill).toMatchObject({
+      reportingRequired: true,
+      reportingObligationKnown: true,
+      reportBy: null,
+      overdue: false,
+    });
+    expect(view.batchDoc).toMatchObject({ reportingRequired: true, reportBy: null });
+    expect(view.document).toMatchObject({ reportingRequired: true, reportBy: null });
+  });
+
+  it("re-evaluates generated-only rows using the current buyer and mandate before submission", async () => {
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER, einvoice_scope: "b2b", einvoice_go_live_date: "2025-01-01" },
+    });
+    const inv = await issued(t);
+    const contact = await t.as.post(`/api/companies/${t.company.id}/customer-contacts`, {
+      name: "VAT Buyer",
+      trnNumber: "100765432100003",
+    });
+    expect(contact.status, contact.text).toBeLessThan(300);
+    await h.sql(
+      "UPDATE invoices SET customer_trn = NULL, contact_id = $2, einvoice_status = 'generated', date = '2026-05-05' WHERE id = $1",
+      [inv.id, contact.body.id]
+    );
+    await h.sql(
+      `INSERT INTO einvoice_documents (company_id, invoice_id, status, validation, report_by)
+       VALUES ($1, $2, 'generated', '{"submission":{"reportingRequired":false}}', NULL)`,
+      [t.company.id, inv.id]
+    );
+    const view = await projections(t, inv.id);
+    expect(view.status).toMatchObject({
+      required: true,
+      obligationKnown: true,
+      reportBy: "2026-05-19",
+    });
+    expect(view.pill).toMatchObject({ reportingRequired: true, reportBy: "2026-05-19" });
+    expect(view.document).toMatchObject({ reportingRequired: true, reportBy: "2026-05-19" });
+  });
+
+  it("retains an explicit historic report-by date across company and buyer changes", async () => {
+    const t = await h.createTenant({ companyColumns: { ...SELLER, einvoice_scope: "none" } });
+    const inv = await issued(t);
+    await h.sql("UPDATE invoices SET customer_trn = NULL WHERE company_id = $1 AND id = $2", [
+      t.company.id,
+      inv.id,
+    ]);
+    await h.sql(
+      `INSERT INTO einvoice_documents (company_id, invoice_id, status, provider, provider_message_id, delivery_status, reporting_status, report_by, validation)
+       VALUES ($1, $2, 'submitted', 'acube', 'document-with-deadline', 'sending', 'not_required', '2026-05-19', '{"submission":{"reportingRequired":false}}')`,
+      [t.company.id, inv.id]
+    );
+
+    const view = await projections(t, inv.id);
+    expect(view.status).toMatchObject({ required: true, reportBy: "2026-05-19" });
+    expect(view.pill).toMatchObject({ reportingRequired: true, reportBy: "2026-05-19" });
+    expect(view.batchDoc).toMatchObject({ reportBy: "2026-05-19" });
+    expect(view.document).toMatchObject({ reportingRequired: true, reportBy: "2026-05-19" });
+
+    await h.sql("UPDATE invoices SET status = 'void' WHERE company_id = $1 AND id = $2", [
+      t.company.id,
+      inv.id,
+    ]);
+    const voidView = await projections(t, inv.id);
+    expect(voidView.pill).toBeUndefined();
+    expect(voidView.status).toMatchObject({ reportBy: null, overdue: false });
+    expect(voidView.batchDoc).toMatchObject({ reportBy: null });
+    expect(voidView.document).toMatchObject({ reportBy: null });
+  });
+
   it("is tenant-scoped", async () => {
     const t = await h.createTenant();
     const other = await h.createSecondTenant();

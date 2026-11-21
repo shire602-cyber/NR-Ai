@@ -75,6 +75,7 @@ import { Badge } from "@/components/ui/badge";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useOpenInvoiceParam } from "@/hooks/use-open-invoice-param";
 import type { CustomerContact } from "@shared/schema";
 import { ContactForm } from "@/components/contacts/ContactForm";
 import { PortalAccessSheet, type PortalSheetContact } from "@/components/portal/PortalAccessSheet";
@@ -179,7 +180,7 @@ export default function CustomerContacts() {
     expiresAt: "",
     ttlDays: 0,
   };
-  const { can: canDo, gate } = useCompanyPermission();
+  const { can: canDo, gate, known: permissionsKnown } = useCompanyPermission();
   const canManagePortal = canDo("documents.write");
   const portalAccessKey = [`/api/portal/contacts/${portalLinkDialog.contactId}/access`] as const;
   // The state (active / expired / revoked) is derived in `select`, not during render.
@@ -226,6 +227,14 @@ export default function CustomerContacts() {
     queryKey: ["/api/companies", companyId, "customer-contacts"],
     enabled: !!companyId,
   });
+  useOpenInvoiceParam(
+    (id) => {
+      const contact = contacts.find((entry) => entry.id === id);
+      if (contact && canDo("documents.write")) setEditContact(contact);
+    },
+    "/contacts",
+    !!companyId && !isLoading && permissionsKnown
+  );
 
   const importMutation = useMutation({
     mutationFn: async (data: any[]) => {
@@ -1099,7 +1108,7 @@ export default function CustomerContacts() {
       </Tabs>
 
       <Dialog open={!!editContact} onOpenChange={(open) => !open && setEditContact(null)}>
-        <DialogContent size="md">
+        <DialogContent size="md" data-testid="edit-customer-contact">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.editContact" />

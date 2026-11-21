@@ -108,7 +108,7 @@ describe("bank statement import dialog", () => {
     expect(text).toContain("استيراد");
     expect(text).toContain("الصيغ المدعومة");
     expect(text).toContain("CSV");
-    expect(text).not.toContain("PDF");
+    expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT|OFX/);
     expect(d!.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
       "استيراد"
     );
@@ -117,10 +117,31 @@ describe("bank statement import dialog", () => {
   it("in English: the same lines come from the catalog", async () => {
     await mountPage("en");
     const text = dialog()?.textContent ?? "";
-    expect(text).toContain("Comma, semicolon, and tab-delimited Excel exports are supported");
+    expect(text).toContain("CSV exports can use commas, semicolons or tabs.");
+    expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT|OFX/);
     expect(dialog()?.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
       "Import"
     );
+  });
+
+  it.each([
+    ["en", "Choose a bank CSV export."],
+    ["ar", "اختر كشفًا بنكيًا بصيغة CSV."],
+  ] as const)("rejects a non-CSV selection without calling preview in %s", async (locale, copy) => {
+    await mountPage(locale);
+    const input = dialog()?.querySelector<HTMLInputElement>(
+      '[data-testid="input-bank-statement-file"]'
+    );
+    expect(input?.getAttribute("accept")).toBe(".csv");
+    Object.defineProperty(input, "files", { value: [new File(["report"], "statement.xlsx")] });
+    await act(async () => {
+      input?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const error = dialog()?.querySelector('[data-testid="text-statement-preview-error"]');
+    expect(error?.textContent).toBe(copy);
+    expect(
+      vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("/bank-statements/preview"))
+    ).toBe(false);
   });
 
   it("lets the dialog content shrink to a phone (single minmax(0,1fr) column, no min-content growth)", async () => {

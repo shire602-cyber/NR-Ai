@@ -554,7 +554,7 @@ async function booksFlow(ctx, viewport, lang, co, who) {
     .locator("[data-testid^=link-einvoice-fix-]")
     .evaluateAll((els) => els.map((e) => e.getAttribute("href")));
   check(
-    links.length >= 2 && links.every((h) => h === "/contacts"),
+    links.length >= 2 && links.every((h) => h === `/contacts?open=${co.contactId}`),
     `${tag}generate: each issue links to the customer`,
     links
   );
