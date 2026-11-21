@@ -1623,11 +1623,12 @@ export async function resolveCustomerHeader(
   helpers: {
     dueDateFromTerms: (d: string, t: string | null | undefined) => string | null;
     termsFromDays: (n: number | null | undefined) => string | null;
-  }
+  },
+  q: LedgerTx = db
 ): Promise<CustomerHeader> {
   let contact: typeof customerContacts.$inferSelect | undefined;
   if (input.contactId) {
-    [contact] = await db
+    [contact] = await q
       .select()
       .from(customerContacts)
       .where(
@@ -1655,7 +1656,7 @@ export async function resolveCustomerHeader(
     input.paymentTerms ?? (contact ? helpers.termsFromDays(contact.paymentTerms) : null) ?? "net30";
   let emirate = input.placeOfSupplyEmirate ?? contact?.emirate ?? null;
   if (!emirate) {
-    const [co] = await db
+    const [co] = await q
       .select({ emirate: companies.emirate })
       .from(companies)
       .where(eq(companies.id, companyId));
@@ -1676,10 +1677,11 @@ export async function resolveCustomerHeader(
 export async function assertPlaceOfSupply(
   companyId: string,
   emirate: string | null,
-  supplyTypes: string[]
+  supplyTypes: string[],
+  q: LedgerTx = db
 ): Promise<void> {
   if (emirate || !supplyTypes.includes("standard_rated")) return;
-  const [co] = await db
+  const [co] = await q
     .select({ trn: companies.trnVatNumber })
     .from(companies)
     .where(eq(companies.id, companyId));

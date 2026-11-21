@@ -65,14 +65,17 @@ The secret is shown once when the endpoint is created and stored encrypted.
 - A non-2xx HTTP response or a confirmed pre-send failure such as a refused connection or a URL
   rejection schedules a retry with backoff of 30 s, 2 min, 8 min, 32 min, and about 2 h, capped at
   6 h. The retry job runs every minute and recovers interrupted pre-send claims.
-- The webhook transport has a 15-second deadline. A timeout, lost response, or interrupted worker
-  after transmission may leave delivery uncertain if the receiver already processed the request.
-  Such deliveries are marked **dead** with a reason and cannot be replayed.
+- The webhook transport allows 15 seconds to receive HTTP headers and up to two further seconds
+  to read the body. The HTTP status determines delivery even if the body is slow or incomplete.
+  A request that may have reached the receiver without a known response is marked **dead** with a
+  reason and cannot be replayed.
+- Pausing an endpoint holds queued deliveries until reactivation. The API returns 409 for manual
+  test sends and replays while the endpoint is paused.
 - After 6 failed attempts the delivery is **dead**. Settled deliveries with a known outcome can
   be replayed from the UI or `POST /api/webhooks/{endpointId}/deliveries/{deliveryId}/replay`.
   A replay keeps the event ID and body and uses a new delivery ID and signature. The API returns
   409 if a delivery of that event to the same endpoint is active or uncertain. The delivery list
   includes `replayEligible` and `replayUnavailableReason` (`delivery_pending`, `delivery_uncertain`,
-  or `null`).
+  `endpoint_disabled`, or `null`).
 - Answer 2xx quickly, process asynchronously, and deduplicate on `X-Webhook-Id` to handle retries
   and deliberate replays.

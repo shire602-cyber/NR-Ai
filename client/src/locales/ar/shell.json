@@ -18,7 +18,7 @@
   "shell.nav.banking": "البنوك",
   "shell.nav.bankAccounts": "الحسابات",
   "shell.nav.reconciliation": "التسوية البنكية",
-  "shell.nav.bankFeeds": "الربط البنكي",
+  "shell.nav.bankFeeds": "استيراد كشوف الحساب البنكية",
   "shell.nav.accounting": "المحاسبة",
   "shell.nav.chartOfAccounts": "دليل الحسابات",
   "shell.nav.journal": "دفتر اليومية",

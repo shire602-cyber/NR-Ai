@@ -16,6 +16,7 @@ vi.mock("@/hooks/useSubscription", () => ({
 }));
 
 const deliveriesPath = "/api/webhooks/endpoint-1/deliveries";
+let endpointIsActive: boolean;
 const delivery = {
   event: "invoice.issued",
   responseStatus: null,
@@ -35,13 +36,26 @@ const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
         id: "endpoint-1",
         url: "https://receiver.example.test/events",
         events: "invoice.issued",
-        isActive: true,
+        isActive: endpointIsActive,
         failureCount: 0,
         lastTriggeredAt: null,
       },
     ]);
   }
   if (url.endsWith(deliveriesPath)) {
+    if (!endpointIsActive) {
+      return json([
+        {
+          ...delivery,
+          id: "paused",
+          status: "delivered",
+          responseStatus: 200,
+          success: true,
+          replayEligible: false,
+          replayUnavailableReason: "endpoint_disabled",
+        },
+      ]);
+    }
     return json([
       {
         ...delivery,
@@ -84,6 +98,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  endpointIsActive = true;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("fetch", fetchMock);
   fetchMock.mockClear();
@@ -109,6 +124,7 @@ const copy = {
     replay: "Replay",
     uncertain: "The endpoint may already have received this event.",
     pending: "A delivery is pending or in progress.",
+    paused: "This endpoint is paused.",
     time: "Date & time",
     retryStatus: "Retry scheduled",
     nextAttempt: "Next attempt at",
@@ -120,6 +136,7 @@ const copy = {
     replay: "إعادة الإرسال",
     uncertain: "ربما تلقّت نقطة النهاية هذا الحدث بالفعل.",
     pending: "هناك إرسال قيد الانتظار أو التنفيذ.",
+    paused: "نقطة النهاية هذه متوقفة مؤقتًا.",
     time: "التاريخ والوقت",
     retryStatus: "تمت جدولة إعادة المحاولة",
     nextAttempt: "المحاولة التالية عند",
@@ -148,34 +165,33 @@ async function waitForElement<T extends HTMLElement>(find: () => T | null): Prom
   return found!;
 }
 
+async function openWebhooks(locale: keyof typeof copy) {
+  useI18n.getState().setLocale(locale);
+  const localeCopy = copy[locale];
+  expect(document.documentElement.dir).toBe(localeCopy.direction);
+  await flush(() =>
+    root.render(
+      createElement(QueryClientProvider, { client: queryClient }, createElement(DeveloperSettings))
+    )
+  );
+  const tab = [...container.querySelectorAll('[role="tab"]')].find(
+    (candidate) => candidate.textContent === localeCopy.tab
+  );
+  expect(tab).toBeDefined();
+  await flush(() =>
+    tab!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+  );
+  return waitForElement(() =>
+    container.querySelector<HTMLButtonElement>(`[title="${localeCopy.deliveries}"]`)
+  );
+}
+
 describe("Webhook replay in Developer Settings", () => {
   it.each(["en", "ar"] as const)(
     "shows localized eligibility and only replays eligible rows (%s)",
     async (locale) => {
-      useI18n.getState().setLocale(locale);
       const localeCopy = copy[locale];
-      expect(document.documentElement.dir).toBe(localeCopy.direction);
-      await flush(() =>
-        root.render(
-          createElement(
-            QueryClientProvider,
-            { client: queryClient },
-            createElement(DeveloperSettings)
-          )
-        )
-      );
-
-      const tab = [...container.querySelectorAll('[role="tab"]')].find(
-        (candidate) => candidate.textContent === localeCopy.tab
-      );
-      expect(tab).toBeDefined();
-      await flush(() =>
-        tab!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
-      );
-
-      const deliveriesButton = () =>
-        container.querySelector<HTMLButtonElement>(`[title="${localeCopy.deliveries}"]`);
-      const viewDeliveries = await waitForElement(deliveriesButton);
+      const viewDeliveries = await openWebhooks(locale);
       await flush(() => viewDeliveries.click());
       const eligible = await waitForElement(() => replayButton("eligible"));
       const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
@@ -199,6 +215,23 @@ describe("Webhook replay in Developer Settings", () => {
       await flush(() => eligible.click());
       await flush();
       expect(sentReplays()).toEqual([`${deliveriesPath}/eligible/replay`]);
+    }
+  );
+  it.each(["en", "ar"] as const)(
+    "explains why a paused endpoint cannot send (%s)",
+    async (locale) => {
+      endpointIsActive = false;
+      const viewDeliveries = await openWebhooks(locale);
+      const paused = copy[locale].paused;
+      const testButton = container.querySelector<HTMLButtonElement>(`button[title="${paused}"]`);
+      expect(testButton?.disabled).toBe(true);
+      await flush(() => viewDeliveries.click());
+      const replay = await waitForElement(() => replayButton("paused"));
+      expect(replay.disabled).toBe(true);
+      const reason = document.getElementById(replay.getAttribute("aria-describedby")!);
+      expect(reason?.textContent).toBe(paused);
+      act(() => replay.click());
+      expect(sentReplays()).toEqual([]);
     }
   );
 });

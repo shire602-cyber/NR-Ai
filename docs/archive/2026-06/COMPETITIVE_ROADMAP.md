@@ -66,7 +66,6 @@ Ready before rivals' SMEs migrate.
 
 ### P2 — Competitive parity — months 3–6
 Feature parity with Wafeq / Zoho.
-- Bank feeds / open banking (Lean, Tarabut) for auto-reconciliation.
 - Correct multi-currency + realised/unrealised FX; inventory with COGS.
 - Payroll + WPS/SIF end-to-end; 30+ report parity; period close + RE roll-forward; Arabic/RTL polish.
 

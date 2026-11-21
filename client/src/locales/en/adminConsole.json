@@ -50,6 +50,7 @@
   "developerSettings.replay": "Replay",
   "developerSettings.replayDeliveryPending": "A delivery is pending or in progress.",
   "developerSettings.replayDeliveryUncertain": "The endpoint may already have received this event.",
+  "developerSettings.endpointDisabled": "This endpoint is paused.",
   "developerSettings.replayUnavailable": "Replay is unavailable for this delivery.",
   "developerSettings.replayFailed": "Could not replay this webhook.",
   "developerSettings.deliveryRetrying": "Retry scheduled",

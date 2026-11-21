@@ -20,7 +20,11 @@ import crypto from "node:crypto";
 import { pool } from "../db";
 import { pq } from "./connectors/pq";
 import { createLogger } from "../config/logger";
-import { safeOutboundFetch, OutboundUrlBlockedError } from "./url-guard";
+import {
+  safeOutboundFetch,
+  OutboundUrlBlockedError,
+  OUTBOUND_RESPONSE_BODY_TIMEOUT_MS,
+} from "./url-guard";
 import { decryptSecret } from "./secret-vault";
 import { onDomainEvent, type DomainEvent, type DomainEventType } from "../platform/domain-events";
 import { listJobs, registerJob } from "../platform/job-registry";
@@ -78,6 +82,7 @@ export interface WebhookTransportRequest {
   signal: AbortSignal;
   /** Await before sending HTTP bytes, then call the returned function at the write. */
   prepareTransmission: () => Promise<() => void>;
+  onResponseHeaders: (status: number) => void;
 }
 export type WebhookTransport = (
   url: string,
@@ -91,8 +96,15 @@ const CLAIMED_BEFORE_SEND = "Webhook delivery claimed before sending";
 const PRE_SEND_FAILURE = "Webhook delivery failed before sending";
 const REPLAYABLE_PRE_SEND_ERRORS = [SIGNING_FAILED, PRE_SEND_FAILURE];
 
-const defaultTransport: WebhookTransport = (url, { prepareTransmission, ...init }) =>
-  safeOutboundFetch(url, init, { timeoutMs: WEBHOOK_TIMEOUT_MS, prepareTransmission });
+const defaultTransport: WebhookTransport = (
+  url,
+  { prepareTransmission, onResponseHeaders, ...init }
+) =>
+  safeOutboundFetch(url, init, {
+    timeoutMs: WEBHOOK_TIMEOUT_MS,
+    prepareTransmission,
+    onResponseHeaders,
+  });
 
 let transport: WebhookTransport = defaultTransport;
 
@@ -103,7 +115,7 @@ export function setWebhookTransport(t: WebhookTransport | null): void {
 
 async function postWebhook(
   url: string,
-  init: Omit<WebhookTransportRequest, "signal" | "prepareTransmission">,
+  init: Omit<WebhookTransportRequest, "signal" | "prepareTransmission" | "onResponseHeaders">,
   prepareTransmission: (signal: AbortSignal) => Promise<() => void>,
   parentSignal?: AbortSignal
 ): Promise<WebhookTransportResult> {
@@ -112,18 +124,33 @@ async function postWebhook(
     ? AbortSignal.any([parentSignal, controller.signal])
     : controller.signal;
   signal.throwIfAborted();
-  const timer = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
+  const abort = () => controller.abort();
+  let timer = setTimeout(abort, WEBHOOK_TIMEOUT_MS);
+  let observedResponse: WebhookTransportResult | undefined;
   let onAbort!: () => void;
   try {
-    // Bound the worker's wait even if a transport has not settled after cancellation.
-    const aborted = new Promise<never>((_resolve, reject) => {
-      onAbort = () => reject(signal.reason);
+    const aborted = new Promise<WebhookTransportResult>((resolve, reject) => {
+      // An observed status is authoritative even if a caller cancels while the body is open.
+      onAbort = () => (observedResponse ? resolve(observedResponse) : reject(signal.reason));
       signal.addEventListener("abort", onAbort, { once: true });
     });
     return await Promise.race([
-      transport(url, { ...init, signal, prepareTransmission: () => prepareTransmission(signal) }),
+      transport(url, {
+        ...init,
+        signal,
+        prepareTransmission: () => prepareTransmission(signal),
+        onResponseHeaders: (status) => {
+          if (signal.aborted || observedResponse) return;
+          observedResponse = { status, ok: status >= 200 && status < 300, bodyText: "" };
+          clearTimeout(timer);
+          timer = setTimeout(abort, OUTBOUND_RESPONSE_BODY_TIMEOUT_MS);
+        },
+      }),
       aborted,
     ]);
+  } catch (err) {
+    if (observedResponse) return observedResponse;
+    throw err;
   } finally {
     clearTimeout(timer);
     signal.removeEventListener("abort", onAbort);
@@ -273,7 +300,7 @@ export async function attemptWebhookDelivery(
         SET status = 'in_flight', attempt_number = d.attempt_number + 1,
             last_error = $3, updated_at = now()
        FROM webhook_endpoints e
-      WHERE d.id = $1 AND e.id = d.webhook_endpoint_id
+      WHERE d.id = $1 AND e.id = d.webhook_endpoint_id AND e.is_active
         AND (d.status = 'pending' OR (d.status = 'retrying'
           AND (d.response_status IS NOT NULL OR d.last_error LIKE 'Blocked: %' OR d.last_error = $4)))
         AND d.attempt_number < d.max_attempts
@@ -318,11 +345,13 @@ export async function attemptWebhookDelivery(
         // Fence a stale worker before it can write. Clearing the pre-send marker
         // here also makes an interrupted send conservative across worker restarts.
         const started = await pool.query(
-          `UPDATE webhook_deliveries SET last_error = NULL, updated_at = now()
-            WHERE id = $1 AND status = 'in_flight' AND attempt_number = $2 AND last_error = $3`,
+          `UPDATE webhook_deliveries d SET last_error = NULL, updated_at = now()
+             FROM webhook_endpoints e
+            WHERE d.id = $1 AND d.status = 'in_flight' AND d.attempt_number = $2 AND d.last_error = $3
+              AND e.id = d.webhook_endpoint_id AND e.is_active`,
           [row.id, attempt, CLAIMED_BEFORE_SEND]
         );
-        if (!started.rowCount) throw new Error("Webhook delivery claim expired");
+        if (!started.rowCount) throw new Error("Webhook delivery is no longer eligible to send");
         return () => {
           signal.throwIfAborted();
           sendStarted = true;
@@ -419,10 +448,11 @@ export async function processDueWebhookDeliveries(limit = 100): Promise<Record<s
     ]
   );
   const { rows } = await pq<{ id: string }>(
-    `SELECT id FROM webhook_deliveries
-      WHERE status IN ('pending', 'retrying') AND attempt_number < max_attempts
-        AND (next_attempt_at IS NULL OR next_attempt_at <= now())
-      ORDER BY next_attempt_at NULLS FIRST LIMIT $1`,
+    `SELECT d.id FROM webhook_deliveries d
+       JOIN webhook_endpoints e ON e.id = d.webhook_endpoint_id AND e.is_active
+      WHERE d.status IN ('pending', 'retrying') AND d.attempt_number < d.max_attempts
+        AND (d.next_attempt_at IS NULL OR d.next_attempt_at <= now())
+      ORDER BY d.next_attempt_at NULLS FIRST LIMIT $1`,
     [limit]
   );
   const counts = { delivered: 0, retrying: 0, dead, skipped: 0 };
@@ -459,9 +489,11 @@ export async function listWebhookDeliveries(endpointId: string) {
             source.response_status AS "responseStatus", source.response_body AS "responseBody",
             source.success, source.last_error AS "lastError", source.next_attempt_at AS "nextAttemptAt",
             source.delivered_at AS "deliveredAt", source.created_at AS "createdAt", source.payload,
-            eligibility.reason IS NULL AS "replayEligible", eligibility.reason AS "replayUnavailableReason"
+            e.is_active AND eligibility.reason IS NULL AS "replayEligible",
+            CASE WHEN e.is_active THEN eligibility.reason ELSE 'endpoint_disabled' END AS "replayUnavailableReason"
        FROM recent
        JOIN webhook_deliveries source ON source.id = recent.id
+       JOIN webhook_endpoints e ON e.id = source.webhook_endpoint_id
        LEFT JOIN eligibility ON eligibility.event_root = recent.event_root
       ORDER BY source.created_at DESC`,
     [endpointId, REPLAYABLE_PRE_SEND_ERRORS]
@@ -497,6 +529,7 @@ export async function replayWebhookDelivery(deliveryId: string): Promise<string 
                 $3 || '#replay-' || gen_random_uuid()::text,
                 source.payload, 'pending', 0, source.max_attempts, now(), false, now()
            FROM webhook_deliveries source
+           JOIN webhook_endpoints e ON e.id = source.webhook_endpoint_id AND e.is_active
           WHERE source.id = $1 AND source.status IN ('delivered', 'dead')
             AND (
               SELECT ${REPLAY_REASON} FROM webhook_deliveries sibling
@@ -504,6 +537,7 @@ export async function replayWebhookDelivery(deliveryId: string): Promise<string 
                  AND sibling.status <> 'delivered'
                  AND ${SIBLING_EVENT_ROOT} = ${SOURCE_EVENT_ROOT}
             ) IS NULL
+         FOR SHARE OF e
          RETURNING id`,
         [deliveryId, REPLAYABLE_PRE_SEND_ERRORS, original.event_id],
         client

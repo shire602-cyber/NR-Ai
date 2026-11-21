@@ -25,7 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, request } from "playwright-core";
-import { findUnsupportedBankFeedClaim } from "./lib/bank-feed-claims.mjs";
+import { findBankFeedMention, findUnsupportedBankFeedClaim } from "./lib/bank-feed-claims.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 const PUBLIC_ONLY = process.env.CUSTOMER_E2E_PUBLIC_ONLY === "true";
@@ -43,6 +43,16 @@ const LOCALIZED_HOMEPAGES = {
   "/en": { lang: "en", dir: "ltr", title: "Accounting and VAT for UAE businesses" },
   "/ar": { lang: "ar", dir: "rtl", title: "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات" },
 };
+
+const STATEMENT_IMPORT_LOCALES = [
+  { lang: "en", dir: "ltr", title: "Bank statement import", dialog: "Import Bank Statement" },
+  {
+    lang: "ar",
+    dir: "rtl",
+    title: "استيراد كشوف الحساب البنكية",
+    dialog: "استيراد كشف حساب البنك",
+  },
+];
 
 const PUBLIC_ROUTES = [
   "/",
@@ -330,7 +340,10 @@ async function main() {
     const locale = signedIn
       ? await page.locator("html").evaluate((html) => ({ lang: html.lang, dir: html.dir }))
       : null;
-    const wrongLocale = locale && (locale.lang !== "en" || locale.dir !== "ltr");
+    const expectedLocale = options.locale ?? "en";
+    const expectedDirection = expectedLocale === "ar" ? "rtl" : "ltr";
+    const wrongLocale =
+      locale && (locale.lang !== expectedLocale || locale.dir !== expectedDirection);
     const redirected = options.expectPrefix ? !finalUrl.startsWith(route) : finalUrl !== route;
     if (
       !response?.ok() ||
@@ -432,9 +445,7 @@ async function main() {
           const banking = page.getByRole("tabpanel", { name: label, exact: true });
           await banking.getByText("ADCB BANK CHARGE", { exact: true }).waitFor();
           const copy = await banking.innerText();
-          const bankFeedWording = /\blive (?:bank )?feeds?\b|الربط البنكي المباشر|ربط مباشر/i;
-          const unsupportedClaim =
-            findUnsupportedBankFeedClaim(copy) ?? copy.match(bankFeedWording)?.[0];
+          const unsupportedClaim = findBankFeedMention(copy);
           const csvOnly = /\bCSV\b/i.test(copy);
           if (!csvOnly || unsupportedClaim || routeErrors.length || apiFailures.length) {
             await fail(`public demo banking ${lang}`, {
@@ -681,7 +692,7 @@ async function main() {
       await fail("customer-invoice", { crash: e.message.slice(0, 150) });
     }
 
-    // Bank import: exercises the polished no-live-feed path with a realistic CSV.
+    // Bank import: exercise statement import with a realistic CSV.
     try {
       const connRes = await customerApi(`/api/companies/${companyId}/bank-connections`, {
         method: "POST",
@@ -751,6 +762,45 @@ async function main() {
     }
   }
 
+  for (const { lang, dir, title, dialog } of STATEMENT_IMPORT_LOCALES) {
+    const label = `signed-in statement import ${lang}`;
+    try {
+      if (lang === "ar") {
+        await page.getByTestId("button-language-toggle").click();
+        await page.locator(`html[lang="${lang}"][dir="${dir}"]`).waitFor();
+      }
+      const bodyText = await crawlRoute("/bank-feeds", { locale: lang });
+      const heading = page.getByRole("heading", { level: 1, name: title, exact: true });
+      const mention = findBankFeedMention(bodyText);
+      if (!(await heading.isVisible()) || !/\bCSV\b/.test(bodyText) || mention) {
+        await fail(label, {
+          heading: await heading.isVisible(),
+          mention,
+          csv: /\bCSV\b/.test(bodyText),
+        });
+      }
+
+      await page.getByTestId("button-feeds-import-statement").click();
+      await page.waitForURL(
+        (url) => url.pathname === "/bank-reconciliation" && url.searchParams.get("import") === "1"
+      );
+      const importDialog = page.getByRole("dialog", { name: dialog, exact: true });
+      await importDialog.getByTestId("select-import-bank-account").waitFor();
+      const dialogMention = findBankFeedMention(await importDialog.innerText());
+      if (dialogMention || routeErrors.length || apiFailures.length) {
+        await fail(`${label} dialog`, {
+          mention: dialogMention,
+          js: routeErrors,
+          api: apiFailures,
+        });
+      }
+      await page.keyboard.press("Escape");
+      await importDialog.waitFor({ state: "hidden" });
+    } catch (error) {
+      await fail(label, { detail: String(error) });
+    }
+  }
+
   runState.finishedAt = new Date().toISOString();
   runState.cleanup = await cleanupCreatedCustomer(runState);
   await writeRunArtifact(runState);
@@ -764,7 +814,7 @@ async function main() {
   await browser.close();
 
   console.log(
-    `\n=== Customer launch E2E: ${PUBLIC_ROUTES.length} public + ${CUSTOMER_ROUTES.length} SaaS + ${MOBILE_ROUTES.length} mobile routes · ${failures.length} failure(s) ===`
+    `\n=== Customer launch E2E: ${PUBLIC_ROUTES.length} public + ${CUSTOMER_ROUTES.length} SaaS + ${MOBILE_ROUTES.length} mobile routes + ${STATEMENT_IMPORT_LOCALES.length} signed-in banking locales · ${failures.length} failure(s) ===`
   );
   for (const f of failures) console.log(JSON.stringify(f));
   if (failures.length > 0) {

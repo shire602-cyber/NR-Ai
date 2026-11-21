@@ -304,6 +304,7 @@ router.post(
     // R15-07: shared bulk contract { companyIds?, period? } (docs/api/firm-bulk.md).
     const scope = parsedBody<z.output<typeof bulkScopeSchema>>(req);
     const targetIds = await resolveBulkTargets(firmContextOf(res), scope.companyIds);
+    if (!(await requireFirmCompanyMfa(req.user!, res, targetIds))) return;
     const clientCompanies: (typeof companies.$inferSelect)[] = targetIds.length
       ? await db.select().from(companies).where(inArray(companies.id, targetIds))
       : [];

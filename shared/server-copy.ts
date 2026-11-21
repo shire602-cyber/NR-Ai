@@ -45,7 +45,7 @@ export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billApproved.title", "Bill approved {label}"),
   T("notification.billPaid.title", "Bill paid {label}"),
   T("notification.payrollApproved.title", "Payroll approved"),
-  T("notification.bankSyncFailed.title", "Bank feed sync failed"),
+  T("notification.bankSyncFailed.title", "Bank transactions could not be retrieved"),
   T("notification.deadlineDue.title", "Deadline due[ {dueDate}]"),
   T("notification.taskDue.title", "Task due[ {dueDate}]"),
   T("notification.invoiceOverdue.title", "Invoice {number} is overdue"),
@@ -87,7 +87,7 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.payrollApproved.message", "Payroll for {month}/{year} was approved."),
   T(
     "notification.bankSyncFailed.message",
-    "The bank feed[ ({provider})] could not sync[: {reason}]. Reconnect it under Banking."
+    "Transactions could not be retrieved[ from {provider}][: {reason}]. Import a CSV statement on the Bank reconciliation page."
   ),
   T("notification.deadlineDueGeneric.message", "A compliance obligation is due[ on {dueDate}]."),
   T("notification.taskDue.message", "A task is due[ on {dueDate}]."),
@@ -176,12 +176,17 @@ export const REPORT_DELIVERY_TEMPLATES: readonly CopyTemplate[] = [
 
 /** Older stored sentences that map onto a current key (parse only, never rendered or catalogued). */
 export const LEGACY_NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
+  T("notification.bankSyncFailed.title", "Bank feed sync failed"),
   // AI drafts notice stored before it was catalog copy (broken-path sweep).
   T("notification.aiDraftsReview.title", "{count} AI draft journal entries need review"),
   T("notification.aiDraftsReview.title", "{count} AI draft journal entry need review"),
 ];
 
 export const LEGACY_NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
+  T(
+    "notification.bankSyncFailed.message",
+    "The bank feed[ ({provider})] could not sync[: {reason}]. Reconnect it under Banking."
+  ),
   T(
     "notification.aiDraftsReview.message",
     "The AI categorized {count} bank transactions with high confidence. Review and approve each draft journal entry before it posts to the GL."

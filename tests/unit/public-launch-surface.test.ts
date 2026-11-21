@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { findUnsupportedBankFeedClaim } from "../e2e/lib/bank-feed-claims.mjs";
+import { findBankFeedMention, findUnsupportedBankFeedClaim } from "../e2e/lib/bank-feed-claims.mjs";
 
 const repoRoot = process.cwd();
 
@@ -352,6 +352,51 @@ describe("Public SaaS launch surface", () => {
   it("does not let an honest negation mask a later positive claim", () => {
     const copy = "UAE bank feeds are not supported. Securely link your bank account today.";
     expect(findUnsupportedBankFeedClaim(copy)).toBe("Securely link your bank account");
+  });
+
+  it.each([
+    "Bank feeds",
+    "Live syncing is not available for it.",
+    "A bank-feed connection is unavailable.",
+    "Try open-banking next month.",
+    "الربط البنكي",
+    "المزامنة المباشرة غير متاحة له.",
+    "لا يوجد ربطٌ مصرفيّ.",
+    "الخدمات المصرفية المفتوحة",
+  ])("rejects a mention on statement-import surfaces: %s", (copy) => {
+    expect(findBankFeedMention(copy)).not.toBeNull();
+  });
+
+  it.each(["en", "ar"])(
+    "uses statement-import wording across signed-in banking in %s",
+    (locale) => {
+      const readCatalog = (name: string) =>
+        JSON.parse(readRepoFile(`client/src/locales/${locale}/${name}.json`));
+      const banking = readCatalog("banking");
+      const errors = readCatalog("serverErrors");
+      const shell = readCatalog("shell");
+      expect(banking["banking.feeds.title"]).toBe(
+        locale === "en" ? "Bank statement import" : "استيراد كشوف الحساب البنكية"
+      );
+      expect(shell["shell.nav.bankFeeds"]).toBe(banking["banking.feeds.title"]);
+      for (const copy of [
+        ...Object.entries(banking)
+          .filter(([key]) => key.startsWith("banking.feeds."))
+          .map(([, value]) => String(value)),
+        ...Object.entries(errors)
+          .filter(([key]) => /^serverErrors\.BANK_(?:FEED|CONNECTION)_/.test(key))
+          .map(([, value]) => String(value)),
+        shell["shell.nav.bankFeeds"],
+      ]) {
+        expect(findBankFeedMention(copy), copy).toBeNull();
+      }
+      expect(errors["serverErrors.BANK_FEED_NOT_SUPPORTED"]).toContain("CSV");
+    }
+  );
+
+  it("keeps the competitive roadmap free of a plan for unsupported bank feeds", () => {
+    const roadmap = readRepoFile("docs/archive/2026-06/COMPETITIVE_ROADMAP.md");
+    expect(findBankFeedMention(roadmap)).toBeNull();
   });
 
   it.each(["en", "ar"])("keeps %s unavailable banking states focused on CSV import", (locale) => {

@@ -23,6 +23,7 @@ import {
   NOT_CLOSING_SQL,
   aed,
   reportCurrencyOf,
+  runReportReads,
   type Fils,
   type Queryable,
 } from "./ledger-query";
@@ -316,9 +317,11 @@ export async function agedReceivables(
   q: Queryable = pool
 ): Promise<AgingReport> {
   const { companyId, asOf } = args;
-  const [{ rows }, control, unapplied, allowance, reportCurrency] = await Promise.all([
-    q.query(
-      `SELECT i.id, i.number, COALESCE(NULLIF(TRIM(i.customer_name), ''), 'Unknown Customer') AS name,
+  const [{ rows }, control, unapplied, allowance, reportCurrency] = await runReportReads(
+    q,
+    () =>
+      q.query(
+        `SELECT i.id, i.number, COALESCE(NULLIF(TRIM(i.customer_name), ''), 'Unknown Customer') AS name,
               ${LOCAL("i.date")}::text AS date,
               COALESCE(${LOCAL("i.due_date")}, ${LOCAL("i.date")} + 30)::text AS due,
               COALESCE(i.currency, co.base_currency) AS currency,
@@ -331,13 +334,13 @@ export async function agedReceivables(
           AND COALESCE(i.invoice_type, 'invoice') <> 'credit_note'
           AND ${LOCAL("i.date")} <= $2::date
         ORDER BY i.date, i.number`,
-      [companyId, asOf]
-    ),
-    controlBalance(companyId, asOf, "receivable", q),
-    unappliedFils(unappliedReceivableCreditsFilsSql("$1", AS_OF), companyId, asOf, q),
-    allowanceForDoubtfulDebtsFils(companyId, asOf, q),
-    reportCurrencyOf(companyId, q),
-  ]);
+        [companyId, asOf]
+      ),
+    () => controlBalance(companyId, asOf, "receivable", q),
+    () => unappliedFils(unappliedReceivableCreditsFilsSql("$1", AS_OF), companyId, asOf, q),
+    () => allowanceForDoubtfulDebtsFils(companyId, asOf, q),
+    () => reportCurrencyOf(companyId, q)
+  );
   return build(
     "receivable",
     asOf,
@@ -366,9 +369,11 @@ export async function agedPayablesWithVendors(
   q: Queryable = pool
 ): Promise<{ report: AgingReport; vendorOf: Map<string, string> }> {
   const { companyId, asOf } = args;
-  const [{ rows }, control, unapplied, reportCurrency] = await Promise.all([
-    q.query(
-      `SELECT b.id, b.vendor_id, b.bill_number AS number, COALESCE(NULLIF(TRIM(b.vendor_name), ''), 'Unknown Vendor') AS name,
+  const [{ rows }, control, unapplied, reportCurrency] = await runReportReads(
+    q,
+    () =>
+      q.query(
+        `SELECT b.id, b.vendor_id, b.bill_number AS number, COALESCE(NULLIF(TRIM(b.vendor_name), ''), 'Unknown Vendor') AS name,
               ${LOCAL("b.bill_date")}::text AS date,
               COALESCE(${LOCAL("b.due_date")}, ${LOCAL("b.bill_date")})::text AS due,
               COALESCE(b.currency, co.base_currency) AS currency,
@@ -380,12 +385,12 @@ export async function agedPayablesWithVendors(
           AND ${payableStatusSql("b")}
           AND ${LOCAL("b.bill_date")} <= $2::date
         ORDER BY b.bill_date, b.bill_number`,
-      [companyId, asOf]
-    ),
-    controlBalance(companyId, asOf, "payable", q),
-    unappliedFils(unappliedPayableCreditsFilsSql("$1", AS_OF), companyId, asOf, q),
-    reportCurrencyOf(companyId, q),
-  ]);
+        [companyId, asOf]
+      ),
+    () => controlBalance(companyId, asOf, "payable", q),
+    () => unappliedFils(unappliedPayableCreditsFilsSql("$1", AS_OF), companyId, asOf, q),
+    () => reportCurrencyOf(companyId, q)
+  );
   const vendorOf = new Map<string, string>();
   for (const r of rows as Array<{ id: string; vendor_id: string | null }>) {
     if (r.vendor_id) vendorOf.set(r.id, r.vendor_id);

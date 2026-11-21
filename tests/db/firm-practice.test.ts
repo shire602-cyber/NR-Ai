@@ -1150,6 +1150,73 @@ describe("W5-D firm practice management", () => {
     expect((await other.as.get(`/api/companies/${cid}/firm-requests`)).status).toBe(403);
   });
 
+  it("[R15-16] rejects ambiguous journal client names until the CSV supplies a company UUID", async () => {
+    const owner = await nrOwner();
+    const first = await createClient(owner, "Duplicate Journal Client LLC");
+    const second = await createClient(owner, "Older Duplicate Journal Client LLC");
+    // Simulate existing duplicates from before firm client creation checked names.
+    await h.sql(`UPDATE companies SET name = $2 WHERE id = $1`, [
+      second.id,
+      "DUPLICATE JOURNAL CLIENT LLC",
+    ]);
+    const csv = (client: string) =>
+      [
+        "company,entry_ref,date,account_code,description,debit,credit",
+        `${client},AMBIGUOUS-1,2026-10-01,1020,Opening cash,75,`,
+        `${client},AMBIGUOUS-1,2026-10-01,3010,Opening capital,,75`,
+      ].join("\n");
+    const path = "/api/firm/bulk/journal-import";
+    for (const dryRun of [true, false]) {
+      const ambiguous = await owner.as.post(path, {
+        csv: csv("duplicate journal client llc"),
+        dryRun,
+      });
+      expect(ambiguous.status, ambiguous.text).toBe(dryRun ? 200 : 422);
+      expect(ambiguous.body.summary).toMatchObject({ posted: 0, invalid: 1 });
+      expect(ambiguous.body.entries).toMatchObject([
+        {
+          companyId: null,
+          status: "invalid",
+          errors: [{ row: 2, field: "company", message: expect.stringMatching(/company UUID/i) }],
+        },
+      ]);
+    }
+    expect(await ledgerTotals(first.id)).toEqual({ debit: 0, credit: 0 });
+    expect(await ledgerTotals(second.id)).toEqual({ debit: 0, credit: 0 });
+
+    const selected = csv(second.id.toUpperCase());
+    const preview = await owner.as.post(path, { csv: selected, dryRun: true });
+    expect(preview.status, preview.text).toBe(200);
+    expect(preview.body.entries).toMatchObject([{ companyId: second.id, status: "validated" }]);
+    const posted = await owner.as.post(path, { csv: selected });
+    expect(posted.status, posted.text).toBe(200);
+    expect(posted.body.entries).toMatchObject([{ companyId: second.id, status: "posted" }]);
+    expect(await ledgerTotals(first.id)).toEqual({ debit: 0, credit: 0 });
+    expect(await ledgerTotals(second.id)).toEqual({ debit: 75, credit: 75 });
+  });
+
+  it("[R15-16] never treats an out-of-scope company UUID as a journal client name", async () => {
+    const owner = await nrOwner();
+    const foreign = await h.createTenant({ name: "Out-of-scope Journal Company" });
+    const alias = await createClient(owner, foreign.company.id);
+    const csv = [
+      "company,entry_ref,date,account_code,debit,credit",
+      `${foreign.company.id},UUID-1,2026-10-01,1020,75,`,
+      `${foreign.company.id},UUID-1,2026-10-01,3010,,75`,
+    ].join("\n");
+    const result = await owner.as.post("/api/firm/bulk/journal-import", { csv });
+    expect(result.status, result.text).toBe(422);
+    expect(result.body.entries).toMatchObject([
+      {
+        companyId: null,
+        status: "invalid",
+        errors: [{ row: 2, field: "company", message: "Client not found in your firm" }],
+      },
+    ]);
+    expect(await ledgerTotals(alias.id)).toEqual({ debit: 0, credit: 0 });
+    expect(await ledgerTotals(foreign.company.id)).toEqual({ debit: 0, credit: 0 });
+  });
+
   it("[R15-16] bulk journal import posts balanced entries per client through the ledger and reports row errors", async () => {
     const owner = await nrOwner();
     const a = await createClient(owner, "Bulk Journal Alpha LLC");

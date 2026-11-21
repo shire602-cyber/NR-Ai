@@ -31,10 +31,13 @@ async function deliveries(endpointId: string) {
     event_id: string;
     status: string;
     attempt_number: number;
+    response_status: number | null;
+    response_body: string | null;
     last_error: string | null;
     next_attempt_at: string | null;
   }>(
-    `SELECT id, event_id, status, attempt_number, last_error, next_attempt_at
+    `SELECT id, event_id, status, attempt_number, response_status, response_body,
+            last_error, next_attempt_at
        FROM webhook_deliveries WHERE webhook_endpoint_id = $1 ORDER BY created_at`,
     [endpointId]
   );
@@ -46,6 +49,201 @@ afterEach(async () => {
 });
 
 describe("outbound webhook delivery safety", () => {
+  it("pauses disabled endpoints without using their retry slots or sending forced attempts", async () => {
+    const svc = await components();
+    const paused = await endpoint();
+    const active = await endpoint();
+    const transport = vi.fn(async () => ({ status: 503, ok: false, bodyText: "" }));
+    svc.setWebhookTransport(transport);
+    transport.mockResolvedValueOnce({ status: 204, ok: true, bodyText: "" });
+    const [settledId] = await svc.enqueueWebhookEvent(paused.t.company.id, "bill.approved", {});
+    const [pausedId] = await svc.enqueueWebhookEvent(paused.t.company.id, "bill.approved", {});
+    const [activeId] = await svc.enqueueWebhookEvent(active.t.company.id, "bill.approved", {});
+    expect(
+      (await paused.t.as.put(`/api/webhooks/${paused.endpointId}`, { isActive: false })).status
+    ).toBe(200);
+    await h.sql(
+      `UPDATE webhook_deliveries SET next_attempt_at = CASE WHEN id = $1 THEN now() - interval '1 minute' ELSE now() END
+        WHERE id IN ($1, $2)`,
+      [pausedId, activeId]
+    );
+    transport.mockClear();
+    transport.mockResolvedValue({ status: 204, ok: true, bodyText: "" });
+
+    expect(await svc.attemptWebhookDelivery(pausedId, { force: true })).toBe("skipped");
+    const pausedPath = `/api/webhooks/${paused.endpointId}`;
+    const history = await paused.t.as.get(`${pausedPath}/deliveries`);
+    expect(history.status).toBe(200);
+    expect(history.body.find((row: { id: string }) => row.id === settledId)).toMatchObject({
+      replayEligible: false,
+      replayUnavailableReason: "endpoint_disabled",
+    });
+    const manual = await paused.t.as.post(`${pausedPath}/test`);
+    const replay = await paused.t.as.post(`${pausedPath}/deliveries/${settledId}/replay`);
+    expect([manual.status, replay.status]).toEqual([409, 409]);
+    expect(await svc.replayWebhookDelivery(settledId)).toBeNull();
+    expect(await deliveries(paused.endpointId)).toHaveLength(2);
+    expect(await svc.processDueWebhookDeliveries(1)).toMatchObject({ delivered: 1, skipped: 0 });
+    expect((await deliveries(paused.endpointId)).find((row) => row.id === pausedId)).toMatchObject({
+      id: pausedId,
+      status: "retrying",
+      attempt_number: 1,
+    });
+    expect((await deliveries(active.endpointId))[0]).toMatchObject({
+      id: activeId,
+      status: "delivered",
+      attempt_number: 2,
+    });
+    expect(transport).toHaveBeenCalledOnce();
+
+    expect(
+      (await paused.t.as.put(`/api/webhooks/${paused.endpointId}`, { isActive: true })).status
+    ).toBe(200);
+    expect(await svc.processDueWebhookDeliveries()).toMatchObject({ delivered: 1 });
+    expect(transport).toHaveBeenCalledTimes(2);
+  });
+
+  it("withholds HTTP bytes when the endpoint is disabled after the delivery claim", async () => {
+    const svc = await components();
+    const { t, endpointId } = await endpoint();
+    const { __setOutboundGuardForTests } = await import("../../server/services/url-guard");
+    let beginLookup!: () => void;
+    const resolving = new Promise<void>((resolve) => {
+      beginLookup = resolve;
+    });
+    let finishLookup!: () => void;
+    const lookup = new Promise<void>((resolve) => {
+      finishLookup = resolve;
+    });
+    __setOutboundGuardForTests({
+      isBlocked: (ip) => ip !== "127.0.0.1",
+      resolve: async () => {
+        beginLookup();
+        await lookup;
+        return [{ address: "127.0.0.1", family: 4 }];
+      },
+    });
+    let received = 0;
+    const receiver = http.createServer((_req, res) => {
+      received += 1;
+      res.writeHead(204).end();
+    });
+    await new Promise<void>((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+    let queued: Promise<string[]> | undefined;
+    try {
+      const port = (receiver.address() as AddressInfo).port;
+      await h.sql("UPDATE webhook_endpoints SET url = $2 WHERE id = $1", [
+        endpointId,
+        `http://paused-receiver.test:${port}/receiver`,
+      ]);
+      queued = svc.enqueueWebhookEvent(t.company.id, "bill.approved", {});
+      await Promise.race([resolving, queued]);
+      expect((await t.as.put(`/api/webhooks/${endpointId}`, { isActive: false })).status).toBe(200);
+    } finally {
+      finishLookup();
+      try {
+        await queued;
+      } finally {
+        receiver.closeAllConnections();
+        await new Promise<void>((resolve) => receiver.close(() => resolve()));
+      }
+    }
+    expect(received).toBe(0);
+    const [delivery] = await deliveries(endpointId);
+    expect(delivery).toMatchObject({ status: "retrying", attempt_number: 1 });
+    await h.sql("UPDATE webhook_deliveries SET next_attempt_at = now() WHERE id = $1", [
+      delivery.id,
+    ]);
+    expect(await svc.processDueWebhookDeliveries()).toMatchObject({ delivered: 0, skipped: 0 });
+  });
+
+  it.each([
+    { status: 200, outcome: "delivered" },
+    { status: 503, outcome: "retrying" },
+  ])(
+    "retains HTTP $status if a real receiver leaves its body open",
+    async ({ status, outcome }) => {
+      const svc = await components();
+      const { t, endpointId } = await endpoint();
+      const { __setOutboundGuardForTests } = await import("../../server/services/url-guard");
+      __setOutboundGuardForTests({ isBlocked: (ip) => ip !== "127.0.0.1" });
+      const receiver = http.createServer((_req, res) => {
+        res.writeHead(status, { "Content-Length": "40" });
+        res.write("partial response");
+      });
+      await new Promise<void>((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+      try {
+        const port = (receiver.address() as AddressInfo).port;
+        await h.sql("UPDATE webhook_endpoints SET url = $2 WHERE id = $1", [
+          endpointId,
+          `http://127.0.0.1:${port}/receiver`,
+        ]);
+        const [id] = await svc.enqueueWebhookEvent(t.company.id, "bill.approved", {});
+        expect((await deliveries(endpointId))[0]).toMatchObject({
+          id,
+          status: outcome,
+          response_status: status,
+          response_body: "partial response",
+          last_error: status === 200 ? null : `HTTP ${status}`,
+          attempt_number: 1,
+        });
+        if (outcome === "retrying") {
+          await h.sql(
+            "UPDATE webhook_deliveries SET next_attempt_at = now() + interval '1 day' WHERE id = $1",
+            [id]
+          );
+        }
+      } finally {
+        receiver.closeAllConnections();
+        await new Promise<void>((resolve) => receiver.close(() => resolve()));
+      }
+    }
+  );
+
+  it("preserves the real response status if the caller aborts after headers", async () => {
+    const svc = await components();
+    const { t, endpointId } = await endpoint();
+    const { __setOutboundGuardForTests, safeOutboundFetch } =
+      await import("../../server/services/url-guard");
+    __setOutboundGuardForTests({ isBlocked: (ip) => ip !== "127.0.0.1" });
+    const caller = new AbortController();
+    svc.setWebhookTransport((url, { prepareTransmission, onResponseHeaders, ...init }) =>
+      safeOutboundFetch(url, init, {
+        prepareTransmission,
+        onResponseHeaders: (status) => {
+          onResponseHeaders(status);
+          caller.abort();
+        },
+      })
+    );
+    const receiver = http.createServer((_req, res) => {
+      res.writeHead(202, { "Content-Length": "40" });
+      res.flushHeaders();
+    });
+    await new Promise<void>((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+    try {
+      const port = (receiver.address() as AddressInfo).port;
+      await h.sql("UPDATE webhook_endpoints SET url = $2 WHERE id = $1", [
+        endpointId,
+        `http://127.0.0.1:${port}/receiver`,
+      ]);
+      const [id] = await svc.enqueueWebhookEvent(t.company.id, "bill.approved", {}, randomUUID(), {
+        signal: caller.signal,
+      });
+      expect(caller.signal.aborted).toBe(true);
+      expect((await deliveries(endpointId))[0]).toMatchObject({
+        id,
+        status: "delivered",
+        response_status: 202,
+        last_error: null,
+        attempt_number: 1,
+      });
+    } finally {
+      receiver.closeAllConnections();
+      await new Promise<void>((resolve) => receiver.close(() => resolve()));
+    }
+  });
+
   it("retries when the caller's deadline expires while the delivery claim is blocked", async ({
     skip,
   }) => {

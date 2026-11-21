@@ -32,6 +32,7 @@ import {
   agedPayables,
   agedReceivables,
   loadAccounts,
+  runReportReads,
   type Queryable,
 } from "../reporting";
 import { computeVat201 } from "../tax/vat-engine";
@@ -228,10 +229,11 @@ export async function controlAccountTies(
 ): Promise<ControlTie[]> {
   const q = tx ? ledgerQueryable(tx) : pool;
   const out: ControlTie[] = [];
-  const [ar, ap] = await Promise.all([
-    agedReceivables({ companyId, asOf: periodEnd }, q),
-    agedPayables({ companyId, asOf: periodEnd }, q),
-  ]);
+  const [ar, ap] = await runReportReads(
+    q,
+    () => agedReceivables({ companyId, asOf: periodEnd }, q),
+    () => agedPayables({ companyId, asOf: periodEnd }, q)
+  );
   out.push(
     tie(
       "receivables",

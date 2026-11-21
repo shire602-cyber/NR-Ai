@@ -269,7 +269,7 @@ export function registerBankRoutes(app: Express) {
           "BANK_FEED_NOT_SUPPORTED",
           400,
           undefined,
-          "This connection is statement-only"
+          "Import a CSV statement from your bank on the Bank reconciliation page."
         );
       const result = await syncConnection(connection, {
         from: req.body.fromDate,
@@ -291,7 +291,7 @@ export function registerBankRoutes(app: Express) {
         "BANK_FEED_BALANCE_UNAVAILABLE",
         503,
         undefined,
-        "Live balances need a configured bank feed; use the reconciliation statement instead"
+        "Review the balance on your latest bank statement."
       );
     })
   );

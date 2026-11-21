@@ -50,7 +50,8 @@ company [company_id, client], entry_ref [entry, reference, ref], date, account_c
 description [memo], debit, credit
 ```
 
-- `company` is the client id or the exact client name (within your firm).
+- `company` is the client UUID or a unique exact client name within your firm. Use a
+  UUID when two clients share a name. Both preview and import reject ambiguous names.
 - Lines sharing `company` + `entry_ref` form one entry; they must share one date
   (`YYYY-MM-DD`), each line has exactly one of debit/credit (≤ 2 decimals), the entry has at
   least two lines and balances to the fils, and every account code exists in that client.

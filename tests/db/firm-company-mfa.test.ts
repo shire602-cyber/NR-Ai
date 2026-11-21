@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { useHarness } from "./harness";
+import { useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
 
@@ -15,6 +15,14 @@ async function createMfaClients(action: string) {
   const openId: string = openClient.body.id;
   const { setCompanyMfaPolicy } = await import("../../server/services/security/policy");
   return { owner, protectedId, openId, setCompanyMfaPolicy };
+}
+
+async function assignClient(owner: Tenant, actor: Tenant, companyId: string) {
+  const assigned = await owner.as.post(`/api/firm/clients/${companyId}/assign-staff`, {
+    staffUserId: actor.user.id,
+    action: "assign",
+  });
+  expect(assigned.status, assigned.text).toBe(200);
 }
 
 describe("Company MFA on firm client actions", () => {
@@ -153,6 +161,79 @@ describe("Company MFA on firm client actions", () => {
     const denied = await actor.as.post(path, { companyIds: [other.company.id, protectedId] });
     expect(denied.status, denied.text).toBe(403);
     expect(denied.body).toMatchObject({ code: "BULK_COMPANY_FORBIDDEN" });
+  });
+
+  it("requires MFA before computing the bulk VAT queue for the selected clients", async () => {
+    const { owner, protectedId, openId, setCompanyMfaPolicy } = await createMfaClients("VAT Queue");
+    const actor = await h.createTenant({ name: "VAT Queue Firm Admin", firmRole: "firm_admin" });
+    const path = "/api/firm/bulk/vat-queue";
+    await assignClient(owner, actor, openId);
+    const outsideScope = await actor.as.post(path, { companyIds: [protectedId] });
+    expect(outsideScope.status, outsideScope.text).toBe(403);
+    expect(outsideScope.body).toMatchObject({ code: "BULK_COMPANY_FORBIDDEN" });
+
+    await assignClient(owner, actor, protectedId);
+    await setCompanyMfaPolicy(protectedId, "all", owner.user.id);
+    for (const body of [{ companyIds: [protectedId, openId] }, {}]) {
+      const denied = await actor.as.post(path, body);
+      expect(denied.status, denied.text).toBe(403);
+      expect(denied.body).toMatchObject({
+        code: "MFA_ENROLLMENT_REQUIRED",
+        details: { companyId: protectedId },
+      });
+    }
+    const openQueue = await actor.as.post(path, { companyIds: [openId] });
+    expect(openQueue.status, openQueue.text).toBe(200);
+    expect(openQueue.body).toMatchObject([{ companyId: openId }]);
+  });
+
+  it("requires MFA before listing VAT workpapers for the requested client scope", async () => {
+    const { owner, protectedId, openId, setCompanyMfaPolicy } =
+      await createMfaClients("Workpapers");
+    const actor = await h.createTenant({ name: "Workpapers Firm Admin", firmRole: "firm_admin" });
+    const path = "/api/firm/vat-workpapers";
+    for (const companyId of [protectedId, openId]) {
+      const created = await owner.as.post(path, {
+        companyId,
+        periodStart: "2026-07-01",
+        periodEnd: "2026-09-30",
+      });
+      expect(created.status, created.text).toBe(201);
+    }
+    await assignClient(owner, actor, openId);
+    const linked = await h.createTenant({ name: "Linked SaaS Customer" });
+    const invite = await owner.as.post("/api/firm/client-links", { inviteeEmail: linked.email });
+    expect(invite.status, invite.text).toBe(201);
+    const accepted = await linked.as.post(`/api/firm-invitations/${invite.body.link.id}/accept`, {
+      companyId: linked.company.id,
+    });
+    expect(accepted.status, accepted.text).toBe(200);
+    await assignClient(owner, actor, linked.company.id);
+    await setCompanyMfaPolicy(linked.company.id, "all", linked.user.id);
+
+    const filteredPath = (companyId: string) => `${path}?companyId=${companyId}`;
+    expect((await actor.as.get(filteredPath(protectedId))).status).toBe(404);
+    const excluded = await actor.as.get(filteredPath(linked.company.id));
+    expect(excluded.status, excluded.text).toBe(200);
+    expect(excluded.body.workpapers).toEqual([]);
+    const assignedOnly = await actor.as.get(path);
+    expect(assignedOnly.status, assignedOnly.text).toBe(200);
+    expect(assignedOnly.body.workpapers).toMatchObject([{ companyId: openId }]);
+
+    await assignClient(owner, actor, protectedId);
+    await setCompanyMfaPolicy(protectedId, "all", owner.user.id);
+    for (const url of [path, filteredPath(protectedId)]) {
+      const denied = await actor.as.get(url);
+      expect(denied.status, denied.text).toBe(403);
+      expect(denied.body).toMatchObject({
+        code: "MFA_ENROLLMENT_REQUIRED",
+        details: { companyId: protectedId },
+      });
+      expect((await actor.as.request("HEAD", url)).status).toBe(403);
+    }
+    const openList = await actor.as.get(filteredPath(openId));
+    expect(openList.status, openList.text).toBe(200);
+    expect(openList.body.workpapers).toMatchObject([{ companyId: openId }]);
   });
 
   it("requires MFA for the client in audit and CFO packs", async () => {

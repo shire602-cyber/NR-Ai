@@ -14,9 +14,13 @@ const NEGATED_BEFORE =
 const NEGATED_AFTER =
   /^\s+(?:(?:is|are)\s+)?(?:unavailable|unsupported|not\s+(?:available|supported|offered)\b|غير\s+(?:متاح|مدعوم))/iu;
 
+function normalizeCopy(text) {
+  return text.replace(/\u0640|[\u064b-\u065f]|\u0670/gu, "").replace(/\s+/gu, " ");
+}
+
 /** Return the first unsupported bank feed claim, if any. */
 export function findUnsupportedBankFeedClaim(text) {
-  const source = text.replace(/\u0640|[\u064b-\u065f]|\u0670/gu, "").replace(/\s+/gu, " ");
+  const source = normalizeCopy(text);
   for (const pattern of CLAIMS) {
     for (const match of source.matchAll(pattern)) {
       const before = source.slice(0, match.index);
@@ -25,4 +29,18 @@ export function findUnsupportedBankFeedClaim(text) {
     }
   }
   return null;
+}
+
+/** Statement-import surfaces omit the feature entirely, including negative mentions. */
+export function findBankFeedMention(text) {
+  const source = normalizeCopy(text);
+  return (
+    source.match(
+      /\b(?:bank[\s-]+feeds?|live\s+(?:feeds?|sync(?:ing|hronization)?)|open[\s-]+banking)\b/iu
+    )?.[0] ??
+    source.match(
+      /(?:ال)?(?:ربط|خلاصة)\s+(?:ال)?(?:بنكي(?:ة)?|مصرفي(?:ة)?)|(?:ال)?مزامنة\s+(?:ال)?مباشرة|الخدمات المصرفية المفتوحة/u
+    )?.[0] ??
+    findUnsupportedBankFeedClaim(text)
+  );
 }

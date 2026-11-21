@@ -50,6 +50,7 @@
   "developerSettings.replay": "إعادة الإرسال",
   "developerSettings.replayDeliveryPending": "هناك إرسال قيد الانتظار أو التنفيذ.",
   "developerSettings.replayDeliveryUncertain": "ربما تلقّت نقطة النهاية هذا الحدث بالفعل.",
+  "developerSettings.endpointDisabled": "نقطة النهاية هذه متوقفة مؤقتًا.",
   "developerSettings.replayUnavailable": "إعادة الإرسال غير متاحة لهذا السجل.",
   "developerSettings.replayFailed": "تعذّرت إعادة إرسال هذا الإشعار.",
   "developerSettings.deliveryRetrying": "تمت جدولة إعادة المحاولة",

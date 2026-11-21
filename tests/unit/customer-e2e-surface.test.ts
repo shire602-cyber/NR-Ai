@@ -177,6 +177,19 @@ describe("customer launch E2E surface", () => {
     expect(scriptSource).toContain("direct EmaraTax");
   });
 
+  it("opens the CSV statement import dialog and scans the signed-in route in both directions", () => {
+    expect(scriptSource).toContain('lang: "en", dir: "ltr", title: "Bank statement import"');
+    expect(scriptSource).toMatch(
+      /lang: "ar",\s*dir: "rtl",\s*title: "استيراد كشوف الحساب البنكية"/
+    );
+    expect(scriptSource).toContain('crawlRoute("/bank-feeds", { locale: lang })');
+    expect(scriptSource).toContain("findBankFeedMention(bodyText)");
+    expect(scriptSource).toContain('getByTestId("button-feeds-import-statement").click()');
+    expect(scriptSource).toContain(
+      'importDialog.getByTestId("select-import-bank-account").waitFor()'
+    );
+  });
+
   it("actively probes NR-only and admin surfaces as forbidden for customers", () => {
     const forbiddenRoutes = extractStringArray(scriptSource, "FORBIDDEN_ROUTES");
     const forbiddenApis = extractStringArray(scriptSource, "FORBIDDEN_API_STATUS_PATHS");

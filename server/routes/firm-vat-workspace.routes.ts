@@ -14,6 +14,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { recordAudit } from "../services/audit.service";
 import { resolveAccessibleClientIds } from "../services/firm-command-center.service";
+import { requireFirmCompanyMfa } from "../services/security/policy";
 import {
   addVatWorkpaperRow,
   addVatWorkpaperRowsBulk,
@@ -27,6 +28,7 @@ import {
   listVatWorkpapers,
   normalizeWorkpaperStatus,
   recalculateVatWorkpaper,
+  resolveFirmVatWorkpaperListCompanies,
   scanVatWorkpaperEvidence,
   updateVatWorkpaperRow,
   updateVatWorkpaperStatus,
@@ -270,7 +272,9 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const companyId = typeof req.query.companyId === "string" ? req.query.companyId : undefined;
       const accessible = await accessibleClientIdsFor(req);
-      const workpapers = await listVatWorkpapers(accessible, companyId);
+      const targetIds = await resolveFirmVatWorkpaperListCompanies(accessible, companyId);
+      if (!(await requireFirmCompanyMfa(req.user!, res, targetIds))) return;
+      const workpapers = await listVatWorkpapers(targetIds);
       res.json({ workpapers });
     })
   );

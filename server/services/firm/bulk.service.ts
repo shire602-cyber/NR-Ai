@@ -25,6 +25,7 @@ import { postJournal } from "../../ledger";
 import { trialBalance } from "../../reporting";
 import { toFils, tryToFils } from "../../../shared/money";
 import { accounts, companies } from "../../../shared/schema";
+import { zUuid } from "../../../shared/validators/primitives";
 import { accessibleClientCondition, listAccessibleClientIds, type FirmContext } from "./scope";
 
 const PERIOD_RE = /^(\d{4})-(0[1-9]|1[0-2])$|^(\d{4})-Q([1-4])$|^Q([1-4]) (\d{4})$/;
@@ -192,8 +193,19 @@ interface ParsedLine {
   creditFils: number;
 }
 
+interface JournalImportClient {
+  id: string;
+  name: string;
+}
+
+interface JournalImportGroup {
+  lines: ParsedLine[];
+  company: JournalImportClient | null;
+  companyError?: string;
+}
+
 interface JournalImportPlan {
-  groups: { lines: ParsedLine[]; company: { id: string; name: string } | null }[];
+  groups: JournalImportGroup[];
   companyIds: string[];
   rowErrors: JournalImportRowError[];
 }
@@ -202,7 +214,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Resolve the clients referred to in a journal CSV. Columns (header row,
- * case-insensitive): company (client id or exact client name), entry_ref,
+ * case-insensitive): company (UUID or unambiguous exact client name), entry_ref,
  * date (YYYY-MM-DD), account_code, description, debit, credit.
  */
 export async function prepareJournalImport(
@@ -275,14 +287,17 @@ export async function prepareJournalImport(
   });
 
   // Resolve companies within scope: by id, or by exact (case-insensitive) client name.
-  const clientRows = (await db
+  const clientRows = await db
     .select({ id: companies.id, name: companies.name })
     .from(companies)
-    .where(accessibleClientCondition(ctx))) as Array<{ id: string; name: string }>;
+    .where(accessibleClientCondition(ctx));
   const byId = new Map(clientRows.map((c) => [c.id.toLowerCase(), c]));
-  const byName = new Map(clientRows.map((c) => [c.name.trim().toLowerCase(), c]));
-  const resolveCompany = (ref: string) =>
-    byId.get(ref.toLowerCase()) ?? byName.get(ref.toLowerCase()) ?? null;
+  // A null name match is ambiguous and remains so if more clients share the name.
+  const byName = new Map<string, JournalImportClient | null>();
+  for (const client of clientRows) {
+    const name = client.name.trim().toLowerCase();
+    byName.set(name, byName.has(name) ? null : client);
+  }
 
   const byEntry = new Map<string, ParsedLine[]>();
   for (const l of lines) {
@@ -291,10 +306,21 @@ export async function prepareJournalImport(
     g.push(l);
     byEntry.set(key, g);
   }
-  const groups = Array.from(byEntry.values(), (lines) => ({
-    lines,
-    company: resolveCompany(lines[0].company),
-  }));
+  const groups = Array.from(byEntry.values(), (lines): JournalImportGroup => {
+    const reference = lines[0].company.toLowerCase();
+    const uuid = zUuid.safeParse(reference);
+    // A UUID can identify only that company, even if another client uses it as a name.
+    const company = uuid.success ? byId.get(uuid.data) : byName.get(reference);
+    if (company) return { lines, company };
+    return {
+      lines,
+      company: null,
+      companyError:
+        company === null
+          ? "More than one client has this name. Use the company UUID."
+          : "Client not found in your firm",
+    };
+  });
   const companyIds = [...new Set(groups.flatMap(({ company }) => (company ? [company.id] : [])))];
   return { groups, companyIds, rowErrors };
 }
@@ -331,12 +357,12 @@ export async function importJournalsAcrossClients(
   }
 
   const results: JournalImportEntryResult[] = [];
-  for (const { lines: group, company } of groups) {
+  for (const { lines: group, company, companyError } of groups) {
     const first = group[0];
     const rowsInGroup = group.map((l) => l.row);
     const errors: JournalImportRowError[] = rowErrors.filter((e) => rowsInGroup.includes(e.row));
-    if (!company) {
-      errors.push({ row: first.row, field: "company", message: "Client not found in your firm" });
+    if (companyError) {
+      errors.push({ row: first.row, field: "company", message: companyError });
     }
     if (group.some((l) => l.date !== first.date)) {
       errors.push({

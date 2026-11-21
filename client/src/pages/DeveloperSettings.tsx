@@ -89,7 +89,7 @@ interface WebhookDeliveryItem {
   nextAttemptAt?: string | null;
   lastError?: string | null;
   replayEligible: boolean;
-  replayUnavailableReason: "delivery_pending" | "delivery_uncertain" | null;
+  replayUnavailableReason: "delivery_pending" | "delivery_uncertain" | "endpoint_disabled" | null;
   createdAt: string;
 }
 
@@ -525,6 +525,7 @@ function WebhookReplayControl({
   const reasons = {
     delivery_pending: t["developerSettings.replayDeliveryPending"],
     delivery_uncertain: t["developerSettings.replayDeliveryUncertain"],
+    endpoint_disabled: t["developerSettings.endpointDisabled"],
   };
   const reason = delivery.replayUnavailableReason && reasons[delivery.replayUnavailableReason];
 
@@ -800,8 +801,15 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          title={t["developerSettings.sendTestEvent"]}
-                          disabled={testMutation.isPending}
+                          title={
+                            t[
+                              wh.isActive
+                                ? "developerSettings.sendTestEvent"
+                                : "developerSettings.endpointDisabled"
+                            ]
+                          }
+                          aria-label={t["developerSettings.sendTestEvent"]}
+                          disabled={!wh.isActive || testMutation.isPending}
                           onClick={() => testMutation.mutate(wh.id)}
                         >
                           {testMutation.isPending ? (

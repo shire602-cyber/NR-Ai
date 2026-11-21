@@ -96,13 +96,42 @@ describe("W3-C bank feeds", () => {
       });
       expect(r.status, r.text).toBe(503);
       expect(r.body.code).toBe("BANK_FEED_NOT_CONFIGURED");
+      expect(r.body.message).toContain("CSV statement");
     }
     const status = await t.as.get(`/api/bank/providers`);
     expect(status.body.isConfigured).toBe(false);
     for (const s of status.body.statuses) {
       expect(s).toMatchObject({ configured: false, status: "requires_external" });
-      expect(s.message.en).toBe("Not connected — requires provider contract");
+      expect(s.message.en).toContain("CSV statement");
+      expect(s.message.ar).toMatch(/استورد.*CSV/);
     }
+    for (const c of status.body.capabilities) {
+      expect(c.label.en).toContain("Transaction import");
+      expect(c.label.ar).toContain("استيراد الحركات");
+    }
+  });
+
+  it("guides manual sources to statement import for unavailable transactions and balances", async () => {
+    const t = await tenant();
+    const manual = await t.as.post(`/api/companies/${t.company.id}/bank-connections`, {
+      bankName: "Statement Bank",
+      accountName: "Operating account",
+    });
+    expect(manual.status, manual.text).toBe(201);
+
+    const sync = await t.as.post(`/api/bank-connections/${manual.body.id}/sync`, {});
+    expect(sync.status, sync.text).toBe(400);
+    expect(sync.body).toMatchObject({
+      code: "BANK_FEED_NOT_SUPPORTED",
+      message: "Import a CSV statement from your bank on the Bank reconciliation page.",
+    });
+
+    const balance = await t.as.get(`/api/bank-connections/${manual.body.id}/balance`);
+    expect(balance.status, balance.text).toBe(503);
+    expect(balance.body).toMatchObject({
+      code: "BANK_FEED_BALANCE_UNAVAILABLE",
+      message: "Review the balance on your latest bank statement.",
+    });
   });
 
   it("[R06-14] the redirect URI must be allow-listed and the callback state must match", async () => {

@@ -29,6 +29,7 @@ import {
   loadAccounts,
   loadCompany,
   parseReportDate,
+  runReportReads,
   type Queryable,
 } from "../reporting";
 
@@ -597,10 +598,11 @@ export async function computeCloseSummary(
   q: Queryable = pool
 ): Promise<CloseSummary> {
   const { periodStart, periodEnd } = assertPeriodRange(periodStartRaw, periodEndRaw);
-  const [accounts, totals] = await Promise.all([
-    loadAccounts(companyId, q),
-    accountTotals(companyId, { from: periodStart, to: periodEnd }, q),
-  ]);
+  const [accounts, totals] = await runReportReads(
+    q,
+    () => loadAccounts(companyId, q),
+    () => accountTotals(companyId, { from: periodStart, to: periodEnd }, q)
+  );
   const re =
     accounts.find((a) => a.isActive && a.code === "3020") ??
     accounts.find((a) => a.isActive && isRetainedEarningsAccount(a)) ??

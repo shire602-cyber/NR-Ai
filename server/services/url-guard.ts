@@ -174,6 +174,7 @@ export async function validateOutboundUrl(raw: string): Promise<UrlGuardResult> 
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
+export const OUTBOUND_RESPONSE_BODY_TIMEOUT_MS = 2_000;
 const DEFAULT_MAX_BODY_BYTES = 64 * 1024;
 const MAX_REDIRECTS_CAP = 5;
 
@@ -231,15 +232,21 @@ function requestPinned(
   method: string,
   headers: Record<string, string>,
   body: Buffer | null,
-  timeoutMs: number,
-  maxBodyBytes: number,
-  signal?: AbortSignal,
-  prepareTransmission?: PrepareTransmission
+  options: {
+    timeoutMs: number;
+    bodyTimeoutMs: number;
+    maxBodyBytes: number;
+    signal?: AbortSignal;
+    prepareTransmission?: PrepareTransmission;
+    onHeaders: (status: number, headers: http.IncomingHttpHeaders) => void;
+  }
 ): Promise<HopResult> {
+  const { timeoutMs, bodyTimeoutMs, maxBodyBytes, signal, prepareTransmission } = options;
   const isHttps = url.protocol === "https:";
   const lib = isHttps ? https : http;
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
   return new Promise<HopResult>((resolve, reject) => {
+    let finishResponse: (() => void) | undefined;
     const req = lib.request(
       {
         protocol: url.protocol,
@@ -252,22 +259,29 @@ function requestPinned(
         // SNI and certificate checks use the real hostname, never the IP.
         ...(isHttps && !net.isIP(hostname) ? { servername: hostname } : {}),
         agent: false,
-        timeout: timeoutMs,
         signal,
       },
       (res) => {
+        clearTimeout(headerTimer);
+        const status = res.statusCode ?? 0;
         const chunks: Buffer[] = [];
         let total = 0;
         let done = false;
         const finish = () => {
           if (done) return;
           done = true;
+          clearTimeout(bodyTimer);
           resolve({
-            status: res.statusCode ?? 0,
+            status,
             headers: res.headers,
             bodyText: Buffer.concat(chunks).toString("utf8"),
           });
         };
+        finishResponse = finish;
+        const bodyTimer = setTimeout(() => {
+          finish();
+          res.destroy();
+        }, bodyTimeoutMs);
         res.on("data", (chunk: Buffer) => {
           if (done) return;
           total += chunk.length;
@@ -280,16 +294,24 @@ function requestPinned(
           chunks.push(chunk);
         });
         res.on("end", finish);
-        res.on("error", () => finish());
+        res.on("error", finish);
+        res.on("aborted", finish);
+        options.onHeaders(status, res.headers);
       }
     );
-    const timer = setTimeout(() => req.destroy(new Error("Outbound request timed out")), timeoutMs);
-    req.on("timeout", () => req.destroy(new Error("Outbound request timed out")));
+    const headerTimer = setTimeout(
+      () => req.destroy(new Error("Outbound request timed out before response headers")),
+      timeoutMs
+    );
     req.on("error", (err) => {
-      clearTimeout(timer);
-      reject(err);
+      clearTimeout(headerTimer);
+      if (finishResponse) finishResponse();
+      else reject(err);
     });
-    req.on("close", () => clearTimeout(timer));
+    req.on("close", () => {
+      clearTimeout(headerTimer);
+      finishResponse?.();
+    });
     if (!prepareTransmission) {
       req.end(body ?? undefined);
       return;
@@ -331,7 +353,9 @@ function requestPinned(
  * - Redirects are not followed by default (the 3xx is returned as-is). With
  *   `maxRedirects` > 0 each hop's Location is validated and pinned again; 303 and
  *   301/302 on POST switch to a body-less GET.
- * - Response bodies are capped; a timeout applies per hop.
+ * - Header and response-body deadlines apply separately per hop. A slow or interrupted body
+ *   returns the status and available body bytes once response headers are known.
+ * - `onResponseHeaders` reports the final status as soon as it is known.
  * - `prepareTransmission`, when provided, runs after connection setup and before writing
  *   HTTP bytes. Its returned callback runs immediately before the HTTP request is written.
  * Throws OutboundUrlBlockedError when any hop fails validation.
@@ -341,12 +365,15 @@ export async function safeOutboundFetch(
   init: RequestInit,
   opts: {
     timeoutMs?: number;
+    bodyTimeoutMs?: number;
     maxBodyBytes?: number;
     maxRedirects?: number;
     prepareTransmission?: PrepareTransmission;
+    onResponseHeaders?: (status: number) => void;
   } = {}
 ): Promise<{ status: number; ok: boolean; bodyText: string; finalUrl: string; hops: number }> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const bodyTimeoutMs = opts.bodyTimeoutMs ?? OUTBOUND_RESPONSE_BODY_TIMEOUT_MS;
   const maxBodyBytes = opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   const maxRedirects = Math.min(Math.max(opts.maxRedirects ?? 0, 0), MAX_REDIRECTS_CAP);
   let method = (init.method ?? "GET").toUpperCase();
@@ -361,17 +388,18 @@ export async function safeOutboundFetch(
     // DNS may finish after the caller stopped waiting. Do not start a request after abort.
     signal?.throwIfAborted();
     if (!verdict.ok) throw new OutboundUrlBlockedError(verdict.reason);
-    const result = await requestPinned(
-      verdict.url,
-      verdict.addresses[0],
-      method,
-      headers,
-      body,
+    const result = await requestPinned(verdict.url, verdict.addresses[0], method, headers, body, {
       timeoutMs,
+      bodyTimeoutMs,
       maxBodyBytes,
       signal,
-      opts.prepareTransmission
-    );
+      prepareTransmission: opts.prepareTransmission,
+      onHeaders: (status, responseHeaders) => {
+        const willFollow =
+          hop < maxRedirects && status >= 300 && status < 400 && responseHeaders.location;
+        if (!willFollow) opts.onResponseHeaders?.(status);
+      },
+    });
     const location = result.headers.location;
     const isRedirect = result.status >= 300 && result.status < 400 && !!location;
     if (!isRedirect || hop >= maxRedirects) {
