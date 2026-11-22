@@ -1,6 +1,7 @@
 // Source inspection is intentional: this is the unsupported-claims guard for public marketing,
 // legal and help copy. It scans the shipped source/catalog text for banned compliance and security
 // claims across pages that cannot all be rendered without API data.
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
@@ -142,28 +143,44 @@ describe("Public SaaS launch surface", () => {
     }
   });
 
-  it("describes CSV reconciliation in both locales and omits the bank feed roadmap", () => {
-    const bankFeedRoadmap = /live\s+bank feeds|الربط البنكي المباشر[^"\n]*(?:لاحق|قريب)/i;
-    const files = [
-      "client/src/components/marketing/phase/PhaseSite.tsx",
-      "client/src/components/marketing/phase/content.ts",
-      "server/routes/integration-status.routes.ts",
-      "docs/EXTERNAL_DEPENDENCIES.md",
-    ];
+  it("describes CSV statement upload and reconciliation in both locales", () => {
     for (const locale of ["en", "ar"]) {
       const prefix = `client/src/locales/${locale}`;
-      const keys = {
-        marketing: "marketing.faq3A",
-        banking: "banking.feeds.unavailableBody",
-        serverErrors: "serverErrors.BANK_FEED_NOT_CONFIGURED",
-      };
-      for (const [catalog, key] of Object.entries(keys)) {
-        const file = `${prefix}/${catalog}.json`;
-        files.push(file);
-        expect(JSON.parse(readRepoFile(file))[key], `${locale} ${key}`).toMatch(/CSV/);
+      const keys = [
+        ["marketing", "marketing.faq3A"],
+        ["banking", "banking.statementUpload.title"],
+        ["banking", "banking.statementUpload.description"],
+        ["banking", "banking.statementUpload.cta"],
+        ["serverErrors", "serverErrors.BANK_FEED_NOT_CONFIGURED"],
+      ];
+      for (const [catalog, key] of keys) {
+        const source = JSON.parse(readRepoFile(`${prefix}/${catalog}.json`));
+        expect(source[key], `${locale} ${key}`).toMatch(/CSV/);
       }
     }
-    for (const file of files) expect(readRepoFile(file), file).not.toMatch(bankFeedRoadmap);
+  });
+
+  it("omits unsupported banking claims from tracked source and documentation", () => {
+    const claims = [
+      /\blive[\s-]*bank[\s-]*feeds?\b/i,
+      /\bautomatic\s+bank\s+transaction\s+sync\b/i,
+      /\bbank[\s-]+feeds?\b[^\n.]{0,60}\b(?:coming|later|soon)\b/i,
+      /الربط\s+البنكي\s+المباشر|(?:الربط|المزامنة)\s+البنكي(?:ة)?[^\n.]{0,60}(?:قريب|لاحق)/,
+    ];
+    const files = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
+      .split("\0")
+      .filter((file) => /\.(?:md|tsx?|json|mjs|cjs|js|html|txt|ya?ml)$/i.test(file));
+    const matches = files.flatMap((file) => {
+      const source = readRepoFile(file);
+      const rules = file.startsWith("client/src/locales/")
+        ? [...claims, /\bbank\s+feeds?\b|الربط\s+البنكي/i]
+        : claims;
+      return rules.flatMap((rule) => {
+        const match = rule.exec(source);
+        return match ? [`${file}:${source.slice(0, match.index).split("\n").length}`] : [];
+      });
+    });
+    expect(matches).toEqual([]);
   });
 
   it("keeps authenticated SaaS chrome and dashboard copy claim-safe", () => {

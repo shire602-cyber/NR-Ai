@@ -49,6 +49,7 @@ const PAGES = {
   Pricing: () => import("../../client/src/pages/Pricing"),
   ForgotPassword: () => import("../../client/src/pages/ForgotPassword"),
   PrivacyPolicy: () => import("../../client/src/pages/PrivacyPolicy"),
+  BankFeeds: () => import("../../client/src/pages/BankFeeds"),
 };
 
 async function render(page: keyof typeof PAGES) {
@@ -81,6 +82,29 @@ const UNSUPPORTED_CLAIMS = [
   /trusted by/i,
   /SOC 2 (Type II )?(certified|compliant)/i,
 ];
+
+it.each([
+  ["en", "CSV bank statements", "Upload a CSV statement", "ltr"],
+  ["ar", "كشوف الحساب البنكي بصيغة CSV", "ارفع كشف حساب بصيغة CSV", "rtl"],
+] as const)(
+  "offers CSV statement upload on the legacy banking page in %s",
+  async (locale, title, cta, dir) => {
+    const previousUrl = window.location.href;
+    window.history.replaceState(null, "", "/bank-feeds");
+    try {
+      await setLocale(locale);
+      await render("BankFeeds");
+      expect(document.documentElement.dir).toBe(dir);
+      expect(container.querySelector("h1")?.textContent).toBe(title);
+      const link = container.querySelector('[data-testid="button-feeds-import-statement"]');
+      expect(link?.textContent).toBe(cta);
+      expect(link?.getAttribute("href")).toBe("/bank-reconciliation?import=1");
+      expect(container.textContent).not.toMatch(/\bbank\s+feeds?\b|الربط\s+البنكي/i);
+    } finally {
+      window.history.replaceState(null, "", previousUrl);
+    }
+  }
+);
 
 describe("D1 public site", () => {
   it("[D1] the landing page leads with an honest value proposition and sets its SEO meta", async () => {

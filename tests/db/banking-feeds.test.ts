@@ -86,6 +86,20 @@ async function tenant(): Promise<Tenant> {
 }
 
 describe("W3-C bank feeds", () => {
+  it("advertises only CSV statement upload on the admin integration status surface", async () => {
+    const admin = await h.createTenant({ isAdmin: true });
+    const response = await admin.as.get("/api/admin/integration-status");
+    expect(response.status, response.text).toBe(200);
+    expect(response.body.integrations).toContainEqual({
+      key: "openBanking",
+      name: "Bank statement upload",
+      configured: true,
+      detail: null,
+      requiredEnv: [],
+      unlocks: "Upload CSV bank statements for reconciliation",
+    });
+  });
+
   it("[R06-14] connect with an unconfigured provider is 503 BANK_FEED_NOT_CONFIGURED", async () => {
     await clearEnv();
     const t = await tenant();

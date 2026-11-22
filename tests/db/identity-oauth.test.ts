@@ -399,4 +399,49 @@ describe("R01-15 OAuth flow with a mocked provider", () => {
       });
     }
   );
+
+  it("keeps Microsoft mailbox proof usable when the worker already claimed its email", async () => {
+    const { processOutbox } = await import("../../server/outbox");
+    const email = "mailbox-worker-claim@example.test";
+    // Reproduce a worker claim between enqueue and the callback's delivery attempt.
+    await h.sql(`
+      CREATE FUNCTION test_claim_mailbox_email() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        UPDATE email_outbox
+        SET status = 'sending', locked_until = (now() AT TIME ZONE 'UTC') + interval '1 minute'
+        WHERE id = NEW.id;
+        RETURN NEW;
+      END;
+      $$;
+      CREATE TRIGGER test_claim_mailbox_email AFTER INSERT ON email_outbox
+      FOR EACH ROW WHEN (NEW.to_address = '${email}' AND NEW.related_entity_type = 'oauth_mailbox_challenge')
+      EXECUTE FUNCTION test_claim_mailbox_email();
+    `);
+    try {
+      profiles.push(microsoft("ms-worker-claim", email));
+      const pending = await callback("microsoft");
+      expect(pending.access).toBeFalsy();
+      expect(pending.r.headers.get("location")).toContain("microsoft_mailbox=1");
+      expect(pending.mailboxCookie).toBeTruthy();
+      const [message] = await h.sql("SELECT status FROM email_outbox WHERE to_address = $1", [
+        email,
+      ]);
+      expect(message?.status).toBe("sending");
+      expect(sent.some((mail) => mail.to === email)).toBe(false);
+
+      await h.sql(
+        "UPDATE email_outbox SET locked_until = (now() AT TIME ZONE 'UTC') - interval '1 second' WHERE to_address = $1",
+        [email]
+      );
+      await processOutbox();
+      const verified = await verifyMailbox(codeFor(email), pending.mailboxCookie);
+      expect(verified.status, verified.text).toBe(200);
+      expect(accessFrom(verified.headers)).toBeTruthy();
+    } finally {
+      await h.sql(`
+        DROP TRIGGER test_claim_mailbox_email ON email_outbox;
+        DROP FUNCTION test_claim_mailbox_email();
+      `);
+    }
+  });
 });

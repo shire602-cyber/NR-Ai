@@ -77,7 +77,13 @@ export async function startMicrosoftMailboxChallenge(
         sensitive: true,
       }
     );
-    if (result.sent || result.status === "retrying" || result.status === "queued")
+    // The worker can claim the message before the immediate delivery attempt.
+    if (
+      result.sent ||
+      result.status === "retrying" ||
+      result.status === "queued" ||
+      result.status === "sending"
+    )
       return browserSecret;
   } catch {
     // Delivery errors can contain email content. Report only the fixed error below.

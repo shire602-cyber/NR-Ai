@@ -291,7 +291,7 @@ export function registerBankRoutes(app: Express) {
         "BANK_FEED_BALANCE_UNAVAILABLE",
         503,
         undefined,
-        "Live balances need a configured bank feed; use the reconciliation statement instead"
+        "To review a bank balance, upload a CSV statement for reconciliation"
       );
     })
   );

@@ -2,7 +2,6 @@ import type { Express, Request, Response } from "express";
 import { authMiddleware, adminMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/email.service";
-import { isOpenBankingConfigured } from "../services/open-banking.service";
 import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
 import { isObjectStorageConfigured, objectStorageBackend } from "../services/fileStorage";
 import { connectorStatuses } from "../services/connectors/oauth";
@@ -81,13 +80,11 @@ export function registerIntegrationStatusRoutes(app: Express) {
         },
         {
           key: "openBanking",
-          name: "Open banking provider",
-          configured: isOpenBankingConfigured(),
+          name: "Bank statement upload",
+          configured: true,
           detail: null,
-          requiredEnv: [
-            "Provider credentials per docs/EXTERNAL_DEPENDENCIES.md (Tarabut / Dapi / Salt Edge candidates)",
-          ],
-          unlocks: "Automatic bank transaction sync (CSV/OFX import works today)",
+          requiredEnv: [],
+          unlocks: "Upload CSV bank statements for reconciliation",
         },
         {
           key: "push",

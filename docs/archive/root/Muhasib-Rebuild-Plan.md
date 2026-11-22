@@ -706,13 +706,7 @@ Everything in Phases 1–4 serves that sentence. Everything that doesn't, isn't 
 
 **Months 9–12 — Firms.** Land 20 firms with the bulk VAT workspace. One firm with 50 clients is worth 50 direct signups and churns less. Free for the firm, paid per client. Wafeq's 94 partner firms is the number to beat.
 
-**Months 13–18 — Fix the bank-feed gap, or route around it.** Structural, not a backlog item. CBUAE Open Finance (Circular 7/2023, in force 10 July 2025) **bans screen-scraping**, routes everything through one licensed central API Hub, and **meters it with usage fees**. Bank data in the UAE is a COGS line, not a free PSD2-style API. Only 7 of 267 UAE banks are reachable through any aggregator; Plaid has zero UAE coverage; DIFC and ADGM are excluded.
-
-Three options, in order:
-
-1. **Partner with Wio** — the single most important integration partner in this market, already integrated with Zoho, Xero, Fiskl and Wafeq. Start here.
-2. **Licensed aggregator** (Lean, Pay10) once business-account AIS is live — verify status before budgeting.
-3. **Make CSV import excellent** — the honest interim. Wafeq positions "reconciled without live feeds" and survives. Best-in-class import with format memory, fuzzy matching and one-click rules beats a feed that breaks silently, which is Zoho's most-complained-about flank.
+**Months 13–18 — Improve CSV statement import.** Prioritize format memory, suggested matches, and one-click reconciliation rules.
 
 **Beyond the UAE — but not yet.** Saudi (ZATCA Fatoora) is the obvious second market and your Arabic and e-invoicing work transfers. **Do not touch it until 100 paying UAE customers.** Wafeq's warning is right there: 18,000 claimed customers, ~90% of volume in Saudi, and a UAE product with no emirate field. They spread and got thin. Sequence: UAE → Saudi → Bahrain/Oman/Qatar (GCC VAT is harmonised, which makes this cheaper than it looks) → Egypt/Jordan.
 
