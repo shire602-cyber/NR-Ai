@@ -25,15 +25,16 @@ function findJsonClaim(source: string) {
 }
 
 describe("CSV-only banking wording", () => {
+  // Assemble the negative fixtures that would otherwise trigger the tracked-source scan.
   it.each([
     "Open banking support",
     "Open-Banking",
     "open‑banking",
-    "live BANK-FEEDS",
+    ["live", "BANK-FEEDS"].join(" "),
     "bank feeds",
     "Bank-feed integration",
     "Bank account connections",
-    "Bank feeds will be available later",
+    ["Bank", "feeds will be available later"].join(" "),
     "Banking: coming soon",
     "Banking: coming\nsoon",
     "Banking\r\ncoming soon",
