@@ -45,8 +45,10 @@ Both run in one transaction under a per-company advisory lock. Append-only table
 and counts) is written after the transaction commits; a failed restore (checksum mismatch, FK
 conflict) changes nothing and writes no success entry.
 
-A clone checks that the target is empty under its restore lock and creates a safety backup in the same
-transaction. The clone retains the target’s webhook endpoints, messaging credentials, report delivery settings and firm access. During clone apply, PostgreSQL queues writes to tables the clone replaces until it commits or rolls back.
+A clone checks that the target has no accounting activity, including budget plans, and creates a
+safety backup in the same transaction. It retains the target’s webhook endpoints, messaging
+credentials, report delivery settings and firm access. During clone apply, PostgreSQL locks the
+target company row until commit or rollback. Accounting writes for other companies can continue.
 
 ## Schedules
 

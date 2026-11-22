@@ -791,6 +791,7 @@ const CLONE_TARGET_ACTIVITY_TABLES = [
   "inventory_movements",
   "vat_returns",
   "corporate_tax_returns",
+  "budget_plans",
 ] as const;
 
 /** Skipped tables plus child tables reached only through skipped parents (to a fixed point). */
@@ -911,6 +912,13 @@ export async function restoreBackupIntoCompany(args: {
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
       `backup-restore:${args.targetCompanyId}`,
     ]);
+    if (!args.dryRun) {
+      // New accounting rows reference the company and acquire a conflicting FK
+      // key-share lock. Existing activity makes the target ineligible below.
+      await client.query("SELECT id FROM companies WHERE id = $1 FOR UPDATE", [
+        args.targetCompanyId,
+      ]);
+    }
     const { rows: cos } = await pq<{ id: string; base_currency: string | null }>(
       `SELECT id, base_currency FROM companies WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
       [[args.sourceCompanyId, args.targetCompanyId]],
@@ -938,16 +946,6 @@ export async function restoreBackupIntoCompany(args: {
       }));
     const manifest = full.tables.filter((t) => !skip.has(t.name));
 
-    if (!args.dryRun) {
-      // Ordinary writers already take PostgreSQL relation locks, including writers
-      // outside the HTTP app. Freeze the rewritten tables before inspecting the target.
-      const lockedTables = manifest
-        .map(({ name }) => name)
-        .sort()
-        .map(q)
-        .join(", ");
-      await client.query(`LOCK TABLE ${lockedTables} IN EXCLUSIVE MODE`);
-    }
     for (const table of CLONE_TARGET_ACTIVITY_TABLES) {
       const { rows: n } = await pq<{ n: string }>(
         `SELECT count(*) AS n FROM ${q(table)} WHERE company_id = $1`,

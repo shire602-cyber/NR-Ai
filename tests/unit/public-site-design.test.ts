@@ -7,7 +7,8 @@
  */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -81,6 +82,67 @@ const UNSUPPORTED_CLAIMS = [
   /trusted by/i,
   /SOC 2 (Type II )?(certified|compliant)/i,
 ];
+
+it.each([
+  ["en", "ltr"],
+  ["ar", "rtl"],
+] as const)("opens CSV import from the legacy banking URL in %s", async (locale, direction) => {
+  const originalUrl = window.location.href;
+  const { queryClient } = await import("../../client/src/lib/queryClient");
+  try {
+    window.history.replaceState(null, "", "/bank-feeds");
+    await setLocale(locale);
+    queryClient.setQueryData(["/api/auth/me"], {
+      id: "owner",
+      userType: "customer",
+    });
+    const companies = [{ id: "company", name: "Test Company", onboardingCompleted: true }];
+    queryClient.setQueryData(["/api/companies"], companies);
+    queryClient.setQueryData(["/api/companies", "company", "billing", "subscription"], {
+      trialLocked: false,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        Response.json(String(input).endsWith("/api/companies") ? companies : [])
+      )
+    );
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+    );
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({
+        matches: false,
+        addEventListener() {},
+        removeEventListener() {},
+      }))
+    );
+
+    const { default: App } = await import("../../client/src/App");
+    await act(async () => root.render(createElement(App)));
+    await vi.waitFor(async () => {
+      await act(async () => {});
+      expect(window.location.pathname + window.location.search).toBe(
+        "/bank-reconciliation?import=1"
+      );
+      expect(document.documentElement.dir).toBe(direction);
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+        BANK_RECONCILIATION_COPY[locale]
+      );
+    });
+  } finally {
+    act(() => root.render(null));
+    queryClient.clear();
+    vi.unstubAllGlobals();
+    window.history.replaceState(null, "", originalUrl);
+  }
+});
 
 describe("D1 public site", () => {
   it("[D1] the landing page leads with an honest value proposition and sets its SEO meta", async () => {
