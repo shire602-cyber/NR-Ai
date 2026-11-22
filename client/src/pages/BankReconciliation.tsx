@@ -226,8 +226,6 @@ type MapperField = (typeof MAPPER_FIELDS)[number];
 
 interface StatementPreview {
   kind: "csv" | "xlsx" | "mt940" | "camt053" | "ofx";
-  detectedFormat: string;
-  detectedFormatLabel: string;
   delimiter: string | null;
   decimalSeparator: "." | ",";
   dateOrder: "DMY" | "MDY" | "YMD" | null;
@@ -561,8 +559,7 @@ export default function BankReconciliation() {
 
   // Step 1 / F4: the import dialog copy lives in the banking catalog (en + ar).
   const strings = {
-    detected: t["banking.import.detected"],
-    genericFormat: t["banking.import.genericFormat"],
+    recognized: t["banking.import.statementRecognized"],
     reviewTitle: t["banking.import.reviewTitle"],
     rows: t["banking.import.rows"],
     valid: t["banking.import.valid"],
@@ -581,7 +578,6 @@ export default function BankReconciliation() {
     colDescription: t["banking.import.colDescription"],
     colDebit: t["banking.import.colDebit"],
     colCredit: t["banking.import.colCredit"],
-    formats: t["banking.import.formats"],
     formatCsv: t["banking.import.formatCsv"],
     formatDelimiters: t["banking.import.formatDelimiters"],
     formatDrCr: t["banking.import.formatDrCr"],
@@ -1397,16 +1393,11 @@ export default function BankReconciliation() {
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium text-sm">{strings.reviewTitle}</p>
-                  <Badge variant="secondary">
-                    {/* Sweep: the server's English "Generic (Arabic/English)" showed in Arabic;
-                        bank names stay proper names. */}
-                    {strings.detected}:{" "}
-                    {statementPreview.detectedFormat === "generic" ? (
-                      strings.genericFormat
-                    ) : (
-                      <span translate="no">{statementPreview.detectedFormatLabel}</span>
-                    )}
-                  </Badge>
+                  {statementPreview.validRows > 0 && (
+                    <Badge variant="secondary" data-testid="statement-recognized">
+                      {strings.recognized}
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {statementPreview.totalRows} {strings.rows} · {statementPreview.validRows}{" "}
@@ -1583,10 +1574,6 @@ export default function BankReconciliation() {
                   <div className="flex items-center gap-2 text-xs">
                     <FileSpreadsheet className="w-3.5 h-3.5 text-success" />
                     <span>{strings.formatCsv}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-success" />
-                    <span>{strings.formats}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <CheckCircle2 className="w-3.5 h-3.5 text-success" />

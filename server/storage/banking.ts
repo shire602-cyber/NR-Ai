@@ -1,4 +1,4 @@
-// DatabaseStorage part: Bank accounts, bank transactions, bank connections and reconciliation rules.
+// DatabaseStorage part: Bank accounts, transactions, statement associations and reconciliation rules.
 // Domain classes are chained with `extends` and composed into DatabaseStorage in
 // server/storage.ts (R20-09); import `storage` from "./storage", not these classes.
 
@@ -105,7 +105,7 @@ export class BankingStorage extends IntegrationStorage {
       .orderBy(desc(bankTransactions.transactionDate));
   }
 
-  // Bank connections
+  // Statement associations
   private decryptBankConnection<T extends BankConnection | undefined>(connection: T): T {
     if (!connection) return connection;
     return {
@@ -133,8 +133,11 @@ export class BankingStorage extends IntegrationStorage {
     return this.decryptBankConnection(connection);
   }
 
-  async createBankConnection(data: InsertBankConnection): Promise<BankConnection> {
-    const [connection] = await db
+  async createBankConnection(
+    data: InsertBankConnection & { id?: string },
+    writer: Pick<typeof db, "insert"> = db
+  ): Promise<BankConnection> {
+    const [connection] = await writer
       .insert(bankConnections)
       .values({
         ...data,

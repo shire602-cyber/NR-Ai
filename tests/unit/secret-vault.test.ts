@@ -45,7 +45,7 @@ describe("secret vault", () => {
     __resetSecretVaultForTests();
     expect(decryptSecret(encryptSecret("tok")!)).toBe("tok");
     // Ciphertext from the session-derived key no longer decrypts — expected
-    // on key rotation; bank connections are simply re-linked.
+    // on key rotation; affected processors require a new authorization.
     expect(() => decryptSecret(viaSession)).toThrow();
   });
 });

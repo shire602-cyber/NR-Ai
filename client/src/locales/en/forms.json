@@ -423,7 +423,7 @@
   "forms.contact.expenseAccount": "Expense account",
   "forms.contact.costCentre": "Cost centre",
   "forms.contact.preferredLanguage": "Preferred language for emails and links",
-  "forms.contact.preferredLanguageHelp": "Invoices, reminders, statements and the portal open in this language. Company default follows the company language (Arabic for an Arabic company, otherwise English and Arabic together).",
+  "forms.contact.preferredLanguageHelp": "Invoice, reminder, statement and portal invitation emails use this preference. Default emails use English and Arabic together when no preference is set.",
   "forms.contact.languageDefault": "Company default",
   "forms.preview.status.sent": "Issued",
   "forms.preview.status.paid": "Paid",

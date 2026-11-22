@@ -1,9 +1,9 @@
 /**
- * Compatibility facade over server/services/bank-feeds (W3-C, R06-14/R06-19).
+ * Compatibility facade for adapter status (W3-C, R06-14/R06-19).
  *
  * The old Wio/Lean classes built auth URLs with empty credentials and arbitrary redirect URIs and
- * never verified OAuth state. All provider logic now lives in bank-feeds/adapters.ts behind the
- * adapter contract; this module only answers "which providers are configured".
+ * never verified OAuth state. The adapter contract now handles provider logic, and this module
+ * reports configuration status.
  */
 import { BANK_FEED_ADAPTERS, providerStatuses } from "./bank-feeds";
 

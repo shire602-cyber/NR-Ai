@@ -44,7 +44,7 @@ From `LAUNCH_READINESS.md` — all owner inputs, enforcement already coded/teste
 3. **Domain:** buy + point DNS at Railway, set `FRONTEND_URL` (feeds CORS + reset
    links).
 4. **Web push:** `npx web-push generate-vapid-keys`, paste both.
-5. **Bank reconciliation:** upload a CSV statement to check intake completeness.
+5. Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 6. Then open a **private beta** to a handful of real companies.
 
 ## Phase 3 — Run the email-intake pilot (the 6-month proof, owner-led)

@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import { authMiddleware, adminMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/email.service";
@@ -93,7 +94,7 @@ export function registerIntegrationStatusRoutes(app: Express) {
           key: "bankStatementUpload",
           name: "Bank statement upload",
           configured: true,
-          detail: null,
+          detail: bankStatementCopy.en,
           requiredEnv: [],
           unlocks: "Upload CSV bank statements for reconciliation",
         },

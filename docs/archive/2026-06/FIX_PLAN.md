@@ -189,7 +189,7 @@
 - [x] **S-M1 Mass-assignment** — DONE via the `pickAllowed` allowlist helper (`server/utils/pick-allowed.ts`),
   now applied to: `companies` updateCompany (PUT+PATCH) + createBankAccount, `corporate-tax` create+update,
   `contacts` create, `cost-centers` create, `invoice-templates` create, `reconciliation-rules` create, and
-  `bank` connection create. (`accounts` already validated via `insertAccountSchema.parse`.) Each strips
+  manual statement association. (`accounts` already validated via `insertAccountSchema.parse`.) Each strips
   id/createdAt/unknown keys and pins the tenant scope. Update-handlers also swept: contacts, cost-centers,
   invoice-templates, reconciliation-rules updates now allowlist too. Lower-traffic routes also swept:
   inventory (createProduct) and ai (createBankTransaction). A repo-wide grep now shows **no remaining

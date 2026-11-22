@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 
 const repoRoot = process.cwd();
 
@@ -70,12 +71,7 @@ const bannedLaunchClaims = [
   /all data automatically/i,
   /reports generated automatically/i,
   /Untouched/i,
-  /Connect Your Bank/i,
-  /Securely link your.*bank account/i,
-  /via encrypted feeds/i,
-  /UAE bank feeds/i,
-  /Photo, email forward, or bank feed/i,
-  /sync a bank line/i,
+  unsupportedStatementCopy,
   /compliant with FTA/i,
   /SOC 2 Type II/i,
   /Trusted by 500\+ UAE businesses/i,

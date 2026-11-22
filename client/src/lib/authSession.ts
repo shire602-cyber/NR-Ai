@@ -16,6 +16,8 @@ export async function establishAuthenticatedSession(authUser: any): Promise<any>
   }
 
   queryClient.setQueryData(currentUserQueryKey, currentUser);
+  // Sign-in can happen within the workspace shell, where the company query is already mounted.
+  void queryClient.invalidateQueries({ queryKey: ["/api/companies"], exact: true });
   await queryClient.invalidateQueries({ queryKey: currentUserQueryKey });
   return currentUser;
 }

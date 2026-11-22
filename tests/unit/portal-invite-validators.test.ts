@@ -13,10 +13,10 @@ import { routeWritesAreGated } from "../../client/src/lib/plan-routes";
 const UUID = "11111111-1111-4111-8111-111111111111";
 
 describe("STEP5 portal invitation validators", () => {
-  it("invite body: language defaults to en, email is normalised, the note is capped", () => {
+  it("invite body: missing language is resolved by the sender, email is normalised, and the note is capped", () => {
     const ok = portalInviteBody.parse({ email: "  Layla@Example.TEST " });
     expect(ok.email).toBe("layla@example.test");
-    expect(ok.language).toBe("en");
+    expect(ok.language).toBeUndefined();
     expect(
       portalInviteBody.safeParse({ message: "x".repeat(PORTAL_INVITE_MESSAGE_MAX + 1) }).success
     ).toBe(false);

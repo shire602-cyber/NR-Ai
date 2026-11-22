@@ -106,6 +106,7 @@ import {
   linkAuthIdentity,
   markOAuthLogin,
   oauthCallbackFailureUrl,
+  oauthCallbackMfaUrl,
   oauthCallbackSuccessUrl,
   oauthRedirectUri,
   OAUTH_STATE_TTL_MS,
@@ -328,7 +329,7 @@ async function completeOAuthSignIn(
       ...authCookieBaseOptions(),
       maxAge: 5 * 60 * 1000,
     });
-    return `${frontendBaseUrl()}/login?mfa=1&next=${encodeURIComponent(nextPath)}`;
+    return oauthCallbackMfaUrl(nextPath);
   }
   await issueAuthTokens(req, res, user);
   await recordLoginSuccess(req, user, { method: "oauth", provider: profile.provider, mode });
@@ -872,7 +873,7 @@ export function registerAuthRoutes(app: Express): void {
         return res.redirect(redirectTo.toString());
       } catch (err) {
         log.warn({ err, provider, ip: req.ip }, "OAuth login start failed");
-        return res.redirect(oauthCallbackFailureUrl());
+        return res.redirect(oauthCallbackFailureUrl(req.query.next));
       }
     })
   );
@@ -887,6 +888,7 @@ export function registerAuthRoutes(app: Express): void {
         return res.redirect(oauthCallbackFailureUrl());
       }
 
+      let nextPath: string | undefined;
       try {
         if (provider === "microsoft") {
           const browserState = readCookie(req, microsoftCookie("state"));
@@ -904,6 +906,7 @@ export function registerAuthRoutes(app: Express): void {
           });
         }
         const state = await consumeOAuthState(provider, req.query.state);
+        nextPath = state.nextPath;
         const profile = await exchangeOAuthCallback(
           provider,
           callbackUrlFromRequest(req, provider),
@@ -922,7 +925,7 @@ export function registerAuthRoutes(app: Express): void {
       } catch (err) {
         log.warn({ code: errorCode(err), provider, ip: req.ip }, "OAuth login callback failed");
         clearAuthCookies(res);
-        return res.redirect(oauthCallbackFailureUrl());
+        return res.redirect(oauthCallbackFailureUrl(nextPath));
       }
     })
   );

@@ -80,7 +80,7 @@ describe("WP-A primitives", () => {
     expect(container.querySelector("h3, h2")).toBeNull();
     render(h(EmptyState, { icon: FileText, title: "No quotes" }));
     expect(container.querySelector('[data-size="md"] h3')?.textContent).toBe("No quotes");
-    render(h(EmptyState, { size: "lg", title: "Connect your bank", previewColumns: 3 }));
+    render(h(EmptyState, { size: "lg", title: "Upload a statement", previewColumns: 3 }));
     const lg = container.querySelector('[data-size="lg"]')!;
     expect(lg.querySelector(".bg-ledger-ruling")).not.toBeNull();
     expect(lg.querySelector("h2")?.className).toContain("text-h2");

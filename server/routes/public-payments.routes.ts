@@ -6,7 +6,6 @@
  *   POST /api/portal/public-invoices/:shareToken/pay    → { url } for "Pay now" on the shared invoice
  *   POST /api/webhooks/invoice-payments/:provider       ← gateway webhook (raw body, signature)
  */
-import crypto from "crypto";
 import type { Express, Request, Response } from "express";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
@@ -42,19 +41,7 @@ export function registerPublicPaymentRoutes(app: Express): void {
       }
       // Return the customer to the shared invoice view, which shows the payment state.
       const invoice = await storage.getInvoice(link.invoiceId, link.companyId);
-      let shareToken = invoice?.shareToken ?? null;
-      if (
-        invoice &&
-        (!shareToken ||
-          (invoice.shareTokenExpiresAt && new Date(invoice.shareTokenExpiresAt) < new Date()))
-      ) {
-        shareToken = crypto.randomBytes(16).toString("hex");
-        await storage.setInvoiceShareToken(
-          invoice.id,
-          shareToken,
-          new Date(Date.now() + 90 * 86_400_000)
-        );
-      }
+      const shareToken = invoice ? await storage.ensureInvoiceShareToken(invoice) : null;
       const back = `${publicBaseUrl()}/view/invoice/${shareToken ?? ""}`;
       const { url } = await startCheckout(link, {
         successUrl: `${back}?payment=success`,

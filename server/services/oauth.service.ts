@@ -6,6 +6,10 @@ import * as oidc from "openid-client";
 import { db, rowsFromResult } from "../db";
 import { getEnv, isProduction } from "../config/env";
 import { authIdentities, oauthLoginStates, users } from "../../shared/schema";
+import {
+  BANK_AUTHORIZATION_RETURN_PATH,
+  isBankAuthorizationReturnPath,
+} from "../../shared/bank-authorization-paths";
 
 export type OAuthProviderId = "google" | "microsoft";
 
@@ -205,6 +209,7 @@ export function sanitizeOAuthNextPath(input: unknown): string {
   try {
     const parsed = new URL(trimmed, "https://muhasib.local");
     if (parsed.origin !== "https://muhasib.local") return "/dashboard";
+    if (isBankAuthorizationReturnPath(parsed.pathname)) return BANK_AUTHORIZATION_RETURN_PATH;
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {
     return "/dashboard";
@@ -244,8 +249,19 @@ export function oauthCallbackSuccessUrl(nextPath: string): string {
   return `${frontendBaseUrl()}/auth/callback?next=${encodeURIComponent(safeNext)}`;
 }
 
-export function oauthCallbackFailureUrl(): string {
-  return `${frontendBaseUrl()}/login?oauth_error=1`;
+function oauthLoginUrl(outcome: "mfa" | "oauth_error", nextPath: unknown): string {
+  const params = new URLSearchParams({ [outcome]: "1" });
+  const next = sanitizeOAuthNextPath(nextPath);
+  if (next !== "/dashboard") params.set("next", next);
+  return `${frontendBaseUrl()}/login?${params}`;
+}
+
+export function oauthCallbackFailureUrl(nextPath?: unknown): string {
+  return oauthLoginUrl("oauth_error", nextPath);
+}
+
+export function oauthCallbackMfaUrl(nextPath: string): string {
+  return oauthLoginUrl("mfa", nextPath);
 }
 
 export async function createOAuthAuthorizationUrl(

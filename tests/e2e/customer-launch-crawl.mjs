@@ -23,6 +23,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 import { fileURLToPath } from "node:url";
 import { chromium, request } from "playwright-core";
 
@@ -101,7 +102,7 @@ const FORBIDDEN_API_STATUS_PATHS = [
 const FAIL_TEXT = /something went wrong|an error occurred|failed to load|unexpected error/i;
 const PRIVATE_TEXT = /WhatsApp|Document Chasing|Firm Command|NR Accountant|Value Ops/i;
 const PUBLIC_UNSUPPORTED_CLAIMS =
-  /SOC 2 Type II|FTA[-\s]?registered|FTA[-\s]?native|FTA Accredited|FTA VAT 201 filing|VAT 201 filing|Pre-filed|FTA · Live|bank-grade|bank-level|direct EmaraTax|VAT-compliant|UAE-compliant|No manual entry|Let AI Do the Rest|all data automatically|reports generated automatically|Untouched|Connect Your Bank|Securely link your.*bank account|via encrypted feeds|UAE bank feeds|Photo, email forward, or bank feed|sync a bank line|Trusted by 500\+ UAE businesses|Join 500\+ UAE businesses|500\+ UAE businesses|hundreds of UAE businesses|UAE businesses on Muhasib|In VAT filed last quarter|AI categorisation accuracy|AI categorization accuracy|99(?:\.8)?%|99%\+|95%\+|50,000\+|25\+\s*hours|20\+\s*hours|filings meet every regulatory requirement/i;
+  /SOC 2 Type II|FTA[-\s]?registered|FTA[-\s]?native|FTA Accredited|FTA VAT 201 filing|VAT 201 filing|Pre-filed|FTA · Live|bank-grade|bank-level|direct EmaraTax|VAT-compliant|UAE-compliant|No manual entry|Let AI Do the Rest|all data automatically|reports generated automatically|Untouched|Trusted by 500\+ UAE businesses|Join 500\+ UAE businesses|500\+ UAE businesses|hundreds of UAE businesses|UAE businesses on Muhasib|In VAT filed last quarter|AI categorisation accuracy|AI categorization accuracy|99(?:\.8)?%|99%\+|95%\+|50,000\+|25\+\s*hours|20\+\s*hours|filings meet every regulatory requirement/i;
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 async function resolveExecutablePath() {
@@ -348,7 +349,9 @@ async function main() {
         await fail(`localized homepage ${route}`, { expected: homepage, actual });
       }
     }
-    const unsupportedClaim = bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ?? null;
+    const unsupportedClaim =
+      bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ??
+      bodyText.match(unsupportedStatementCopy)?.[0];
     if (unsupportedClaim) {
       await fail(`public claim ${route}`, { unsupportedClaim });
     }
@@ -561,7 +564,7 @@ async function main() {
       await fail("customer-invoice", { crash: e.message.slice(0, 150) });
     }
 
-    // Bank import: exercises the polished no-live-feed path with a realistic CSV.
+    // Bank import: exercises the statement upload path with a realistic CSV.
     try {
       const connRes = await page.request.post(
         `${BASE}/api/companies/${companyId}/bank-connections`,
@@ -576,7 +579,7 @@ async function main() {
         }
       );
       if (connRes.status() >= 300) {
-        await fail("customer-bank connection", {
+        await fail("customer-statement association", {
           detail: `status ${connRes.status()}: ${(await connRes.text()).slice(0, 200)}`,
         });
       } else {

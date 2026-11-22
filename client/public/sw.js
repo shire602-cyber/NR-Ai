@@ -1,9 +1,9 @@
 // Bump this on any caching-strategy change to force old caches to be purged.
-const CACHE_NAME = "muhasib-v2";
+const CACHE_NAME = "muhasib-v4";
 
 // Only precache the offline fallback. We deliberately do NOT cache-first the
 // HTML shell — see the navigation handler below.
-const OFFLINE_URLS = ["/manifest.json"];
+const OFFLINE_URLS = ["/index.html", "/statement-return-init.js", "/manifest.json"];
 
 // Install: warm the cache with the offline fallback, then activate immediately.
 self.addEventListener("install", (event) => {
@@ -52,6 +52,19 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // The clean shell captures the return and replaces the history entry even offline.
+  // A response retains its original URL, so never store a callback response.
+  if (/^\/(?:bank-feeds|banking)\/callback\/?$/i.test(url.pathname)) {
+    if (isNavigationRequest(request)) {
+      event.respondWith(
+        fetch(request, { cache: "no-store" }).catch(() =>
+          caches.open(CACHE_NAME).then((cache) => cache.match("/index.html"))
+        )
+      );
+    }
+    return;
+  }
+
   // Navigation / HTML: NETWORK-FIRST. The HTML shell references content-hashed
   // chunk filenames, so it must always be fresh — a cached shell pointing at
   // deleted chunks is exactly what causes "Failed to fetch dynamically imported
@@ -68,7 +81,7 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => caches.match("/").then((cached) => cached || caches.match("/manifest.json")))
+        .catch(() => caches.match("/").then((cached) => cached || caches.match("/index.html")))
     );
     return;
   }

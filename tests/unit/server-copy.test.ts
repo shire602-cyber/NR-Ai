@@ -210,7 +210,7 @@ describe("server copy templates", () => {
     const english = {
       title: "Import a CSV bank statement",
       message:
-        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.",
+        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
     };
     expect(row).toMatchObject({
       ...english,
@@ -220,7 +220,7 @@ describe("server copy templates", () => {
     expect(localizeNotification(notification, en, "en")).toEqual(english);
     expect(localizeNotification(notification, ar, "ar")).toEqual({
       title: "استورد كشف حساب بنكي بصيغة CSV",
-      message: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك.",
+      message: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
     });
   });
 
