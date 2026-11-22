@@ -46,14 +46,12 @@ const LOCALIZED_HOMEPAGES = {
     lang: "en",
     dir: "ltr",
     title: "Accounting and VAT for UAE businesses",
-    bankFaq: "How do I reconcile my bank statement?",
     providerChoice: "Choose one accredited provider per company",
   },
   "/ar": {
     lang: "ar",
     dir: "rtl",
     title: "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات",
-    bankFaq: "كيف أطابق كشف حسابي البنكي؟",
     providerChoice: "اختر مزوّد خدمة معتمدًا واحدًا لكل شركة",
   },
 };
@@ -428,12 +426,9 @@ async function main() {
         await fail(`localized homepage ${route}`, { expected: homepage, actual });
       }
       try {
-        const faq = page.locator(".phase-faq details").filter({ hasText: homepage.bankFaq });
-        await faq.locator("summary").click();
-        await faq.locator("p").filter({ hasText: "CSV" }).waitFor();
         await page.getByText(homepage.providerChoice, { exact: true }).waitFor();
       } catch (error) {
-        await fail(`localized banking and e-invoicing copy ${route}`, { detail: String(error) });
+        await fail(`localized e-invoicing copy ${route}`, { detail: String(error) });
       }
     }
     const unsupportedClaim =
@@ -450,6 +445,8 @@ async function main() {
       const summary = page.locator("summary").filter({ hasText: question });
       try {
         await summary.click();
+        const answer = summary.locator("..").locator("p").filter({ hasText: "CSV" });
+        await answer.waitFor();
         const copy = await summary.locator("..").innerText();
         if (!/\bCSV\b/i.test(copy) || findBankFeedMention(copy)) {
           await fail(`banking FAQ ${route}`, { copy });
