@@ -259,6 +259,33 @@ describe("migrations", () => {
     ).toHaveLength(1);
   });
 
+  it("[S5] rerunning 0138 preserves invitations created after the upgrade", async () => {
+    const supplier = await h.createTenant();
+    const contacts = `/api/companies/${supplier.company.id}/customer-contacts`;
+    const contact = await supplier.as.post(contacts, {
+      name: "Portal customer",
+      email: "migration-portal@example.test",
+    });
+    expect(contact.status).toBe(200);
+    const invitation = await supplier.as.post(
+      `${contacts}/${contact.body.id}/portal-invitations`,
+      {}
+    );
+    expect(invitation.status).toBe(201);
+    const id = invitation.body.invitation.id;
+
+    await h.sql(sqlFile("0138_secure_portal_invitations"));
+    expect(
+      await h.sql("SELECT status FROM customer_portal_invitations WHERE id = $1", [id])
+    ).toEqual([{ status: "pending" }]);
+    expect(
+      await h.sql(
+        "SELECT html IS NOT NULL AS has_body FROM email_outbox WHERE related_entity_id = $1",
+        [id]
+      )
+    ).toEqual([{ has_body: true }]);
+  });
+
   it("[STEP2] 0133 resets a 15% company default VAT rate to 5% and leaves 0% and 5% alone", async () => {
     const a = await h.createTenant({ name: "Step2Rate15" });
     const b = await h.createTenant({ name: "Step2Rate0" });

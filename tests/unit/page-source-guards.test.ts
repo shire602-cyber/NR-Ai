@@ -187,9 +187,8 @@ describe("Mobile launch UX guards", () => {
   const source = read("client/src/pages/BankReconciliation.tsx");
 
   describe("Bank import launch UX", () => {
-    it("keeps a sample CSV path for buyers without live bank feeds", () => {
+    it("keeps a sample CSV for statement upload", () => {
       expect(source).toContain("muhasib-sample-bank-statement.csv");
-      expect(source).not.toContain('t["bankReconciliation.liveBankFeedsAreNot"]');
       // Step 1 / F4: the supported-format lines are catalog copy (en and ar), not page literals.
       for (const key of ["formatCsv", "formatDelimiters", "formatDrCr", "csvRequired"]) {
         expect(source).toContain(`banking.import.${key}`);

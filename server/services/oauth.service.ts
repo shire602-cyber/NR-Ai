@@ -30,6 +30,8 @@ export interface OAuthIdentityProfile {
   subject: string;
   email: string;
   emailVerified: boolean;
+  /** Set only after the app consumes its own Microsoft mailbox challenge. */
+  mailboxVerified?: boolean;
   name: string;
   picture?: string;
   claims: Record<string, unknown>;
@@ -78,7 +80,7 @@ const PROVIDERS: Record<OAuthProviderId, { label: string; issuer: string }> = {
 };
 
 const OAUTH_SCOPE = "openid email profile";
-const STATE_TTL_MS = 10 * 60 * 1000;
+export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const encryptionPrefix = "v1";
 
 const configCache = new Map<OAuthProviderId, Promise<oidc.Configuration>>();
@@ -89,6 +91,12 @@ export function isOAuthProviderId(value: string): value is OAuthProviderId {
 
 export function normalizeOAuthEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+export function hasOAuthMailboxProof(profile: OAuthIdentityProfile): boolean {
+  return (
+    profile.emailVerified || (profile.provider === "microsoft" && profile.mailboxVerified === true)
+  );
 }
 
 function providerCredentials(provider: OAuthProviderId): {
@@ -259,7 +267,7 @@ export async function createOAuthAuthorizationUrl(
     encryptedNonce: encryptOAuthSecret(nonce),
     nonceHash: hashOAuthSecret(nonce),
     nextPath,
-    expiresAt: new Date(Date.now() + STATE_TTL_MS),
+    expiresAt: new Date(Date.now() + OAUTH_STATE_TTL_MS),
     ipAddress: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
   });
@@ -383,16 +391,16 @@ export async function exchangeOAuthCallback(
   if (!issuer || !subject) throw new OAuthIdentityError("Missing issuer or subject");
   validateProviderIssuer(provider, issuer);
 
+  const claimedEmail = claimString(claims, "email");
   const rawEmail =
-    claimString(claims, "email") ||
-    claimString(claims, "preferred_username") ||
-    claimString(claims, "upn");
+    claimedEmail || claimString(claims, "preferred_username") || claimString(claims, "upn");
   if (!rawEmail || !rawEmail.includes("@")) {
     throw new OAuthIdentityError("OAuth provider did not return a usable email");
   }
 
-  const googleEmailVerified = claims.email_verified === true || claims.email_verified === "true";
-  if (provider === "google" && !googleEmailVerified) {
+  const emailVerified =
+    !!claimedEmail && (claims.email_verified === true || claims.email_verified === "true");
+  if (provider === "google" && !emailVerified) {
     throw new OAuthIdentityError("Google email is not verified");
   }
 
@@ -405,15 +413,15 @@ export async function exchangeOAuthCallback(
     issuer,
     subject,
     email,
-    emailVerified: provider === "google" ? true : true,
+    emailVerified,
     name,
     picture,
     claims,
   };
 }
 
-export async function getAuthIdentity(profile: OAuthIdentityProfile) {
-  const [identity] = await db
+export async function getAuthIdentity(profile: OAuthIdentityProfile, executor: typeof db = db) {
+  const [identity] = await executor
     .select()
     .from(authIdentities)
     .where(
@@ -426,45 +434,69 @@ export async function getAuthIdentity(profile: OAuthIdentityProfile) {
   return identity;
 }
 
+function microsoftMailboxMatch(profile: OAuthIdentityProfile) {
+  if (profile.provider !== "microsoft") return undefined;
+  if (!hasOAuthMailboxProof(profile)) {
+    throw new OAuthIdentityError("Microsoft sign-in requires mailbox proof");
+  }
+  return sql`lower(${users.email}) = ${normalizeOAuthEmail(profile.email)}`;
+}
+
 export async function linkAuthIdentity(
   userId: string,
   profile: OAuthIdentityProfile
 ): Promise<void> {
-  await db
-    .insert(authIdentities)
-    .values({
-      userId,
-      provider: profile.provider,
-      issuer: profile.issuer,
-      providerSubject: profile.subject,
-      providerEmail: profile.email,
-      providerEmailVerified: profile.emailVerified,
-      profile: profile.claims,
-      lastLoginAt: new Date(),
-    })
-    .onConflictDoNothing();
+  const mailbox = microsoftMailboxMatch(profile);
+  await db.transaction(async (tx) => {
+    if (mailbox) {
+      const [user] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, userId), mailbox))
+        .for("update");
+      if (!user)
+        throw new OAuthIdentityError("Verified Microsoft email must match the account email");
+    }
+    await tx
+      .insert(authIdentities)
+      .values({
+        userId,
+        provider: profile.provider,
+        issuer: profile.issuer,
+        providerSubject: profile.subject,
+        providerEmail: profile.email,
+        providerEmailVerified: profile.emailVerified,
+        profile: profile.claims,
+        lastLoginAt: new Date(),
+      })
+      .onConflictDoNothing();
 
-  const linked = await getAuthIdentity(profile);
-  if (!linked || linked.userId !== userId) {
-    throw new OAuthIdentityError("OAuth identity is already linked to another user");
-  }
+    const linked = await getAuthIdentity(profile, tx);
+    if (!linked || linked.userId !== userId) {
+      throw new OAuthIdentityError("OAuth identity is already linked to another user");
+    }
+  });
 }
 
-export async function markOAuthLogin(
-  userId: string,
-  profile?: OAuthIdentityProfile
-): Promise<void> {
+export async function markOAuthLogin(userId: string, profile: OAuthIdentityProfile) {
   const now = new Date();
-  await db
-    .update(users)
-    .set({
-      lastLoginAt: now,
-      ...(profile?.emailVerified ? { emailVerified: true } : {}),
-    })
-    .where(eq(users.id, userId));
+  const mailbox = microsoftMailboxMatch(profile);
+  return db.transaction(async (tx) => {
+    const [user] = await tx
+      .update(users)
+      .set({
+        lastLoginAt: now,
+        ...(hasOAuthMailboxProof(profile)
+          ? {
+              emailVerified: sql<boolean>`CASE WHEN lower(${users.email}) = ${normalizeOAuthEmail(profile.email)} THEN true ELSE ${users.emailVerified} END`,
+            }
+          : {}),
+      })
+      .where(and(eq(users.id, userId), mailbox))
+      .returning();
+    if (!user) throw new OAuthIdentityError("OAuth identity does not match the current account");
 
-  if (profile) {
-    await db
+    await tx
       .update(authIdentities)
       .set({
         providerEmail: profile.email,
@@ -474,12 +506,14 @@ export async function markOAuthLogin(
       })
       .where(
         and(
+          eq(authIdentities.userId, userId),
           eq(authIdentities.provider, profile.provider),
           eq(authIdentities.issuer, profile.issuer),
           eq(authIdentities.providerSubject, profile.subject)
         )
       );
-  }
+    return user;
+  });
 }
 
 export async function getUserByNormalizedOAuthEmail(email: string) {

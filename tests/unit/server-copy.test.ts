@@ -196,6 +196,22 @@ describe("server copy templates", () => {
     });
   });
 
+  it("offers a retry and CSV upload in both locales for an existing bank statement notice", () => {
+    const row = withNotificationCopy({
+      eventKey: "bank.sync_failed:legacy-notice",
+      title: "Previous title",
+      message: "Previous message",
+    });
+
+    expect(row.title).toBe("Review your bank statements");
+    expect(row.message).toContain("retry the transaction refresh");
+    expect(row.message).toContain("upload a CSV statement");
+    expect(localizeNotification(row, ar, "ar")).toEqual({
+      title: "راجع كشوف حسابك البنكي",
+      message: "افتح صفحة البنوك لإعادة محاولة تحديث المعاملات، أو ارفع كشف حساب بصيغة CSV للتسوية البنكية.",
+    });
+  });
+
   it("localises report delivery names and outcomes", () => {
     const n = buildReportDeliveryNotificationForPlan({
       userId: "u",

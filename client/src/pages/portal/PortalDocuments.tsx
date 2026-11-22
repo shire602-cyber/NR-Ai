@@ -9,8 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DateText } from "@/components/documents/DateText";
-import { apiRequest } from "@/lib/queryClient";
-import { apiUrl } from "@/lib/api";
+import { fetchPortalResource, portalQuery } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/auth";
 import { withCsrfHeader } from "@/lib/csrf";
 
@@ -22,15 +21,12 @@ async function uploadDocument(file: File) {
   form.append("file", file, file.name);
   let headers: Record<string, string> = { ...getAuthHeaders() };
   if (!headers.Authorization) headers = await withCsrfHeader("POST", headers);
-  const res = await fetch(apiUrl("/api/client-portal/documents"), {
+  const res = await fetchPortalResource("/api/client-portal/documents", {
     method: "POST",
     headers,
     body: form,
-    credentials: "include",
   });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`);
-  return body;
+  return res.json();
 }
 import { useToast } from "@/hooks/use-toast";
 
@@ -66,8 +62,7 @@ export default function PortalDocuments() {
   const [uploading, setUploading] = useState(false);
 
   const { data: documents = [], isLoading } = useQuery<any[]>({
-    queryKey: ["portal-documents"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/documents"),
+    ...portalQuery("/api/client-portal/documents"),
   });
 
   const uploadMutation = useMutation({

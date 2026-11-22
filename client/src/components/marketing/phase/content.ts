@@ -5,8 +5,8 @@ export type { SiteLocale } from "./routes";
 export type Bilingual = readonly [string, string];
 
 export const bankCopy: Bilingual = [
-  "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
-  "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
+  "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.",
+  "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك.",
 ];
 export const vatCopy: Bilingual = [
   "Prepare and review VAT 201 in the app, then submit it in EmaraTax.",
@@ -160,7 +160,6 @@ const featureData = [
         "Review suggestions and resolve unmatched entries.",
         "راجع المطابقات المقترحة وعالج الحركات غير المطابقة.",
       ],
-      ["Live bank feeds are coming later.", "سيتوفر الربط البنكي المباشر لاحقًا."],
     ],
   },
   {

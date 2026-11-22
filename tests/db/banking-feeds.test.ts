@@ -86,6 +86,34 @@ async function tenant(): Promise<Tenant> {
 }
 
 describe("W3-C bank feeds", () => {
+  it("reports CSV upload separately from existing provider configuration", async () => {
+    await clearEnv();
+    const admin = await h.createTenant({ isAdmin: true });
+    const response = await admin.as.get("/api/admin/integration-status");
+    expect(response.status, response.text).toBe(200);
+    expect(response.body.integrations).toContainEqual({
+      key: "bankStatementUpload",
+      name: "Bank statement upload",
+      configured: true,
+      detail: null,
+      requiredEnv: [],
+      unlocks: "Upload CSV bank statements for reconciliation",
+    });
+    expect(response.body.integrations).toContainEqual(
+      expect.objectContaining({ key: "openBanking", configured: false })
+    );
+
+    process.env.LEAN_APP_TOKEN = `test-${crypto.randomUUID()}`;
+    const configured = await admin.as.get("/api/admin/integration-status");
+    expect(configured.status, configured.text).toBe(200);
+    expect(configured.body.integrations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "openBanking", configured: true }),
+        expect.objectContaining({ key: "bankStatementUpload", configured: true, requiredEnv: [] }),
+      ])
+    );
+  });
+
   it("[R06-14] connect with an unconfigured provider is 503 BANK_FEED_NOT_CONFIGURED", async () => {
     await clearEnv();
     const t = await tenant();
@@ -221,7 +249,7 @@ describe("W3-C bank feeds", () => {
     ]);
   });
 
-  it("[R06-19] a provider failure marks the connection and emits bank.sync_failed", async () => {
+  it("[R06-19] an authorized retry restores a connection after a provider failure", async () => {
     process.env.LEAN_APP_TOKEN = "sandbox-app-token";
     process.env.BANK_FEED_REDIRECT_URIS = REDIRECT;
     await setBankFeedFetch(leanFixture([]));
@@ -264,5 +292,30 @@ describe("W3-C bank feeds", () => {
       [id]
     );
     expect(row[0].status).toBe("error");
+
+    const calls: string[] = [];
+    await setBankFeedFetch(leanFixture(calls));
+    const viewer = await h.createSecondTenant({ role: "viewer" });
+    expect((await viewer.as.post(`/api/bank-connections/${id}/sync`, {})).status).toBe(404);
+    await h.sql(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')`, [
+      t.company.id,
+      viewer.user.id,
+    ]);
+    expect((await viewer.as.post(`/api/bank-connections/${id}/sync`, {})).status).toBe(403);
+    expect(calls).toHaveLength(0);
+
+    const retry = await t.as.post(`/api/bank-connections/${id}/sync`, {});
+    expect(retry.status, retry.text).toBe(200);
+    expect(retry.body).toMatchObject({ imported: 2 });
+    const list = await t.as.get(`/api/companies/${t.company.id}/bank-connections`);
+    expect(list.status, list.text).toBe(200);
+    expect(list.body).toContainEqual(
+      expect.objectContaining({
+        id,
+        status: "active",
+        lastError: null,
+        lastSyncedAt: expect.any(String),
+      })
+    );
   });
 });

@@ -153,16 +153,13 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
         url: "/bank-accounts",
         icon: Landmark,
         testId: "banking.accounts.title",
-        // Fable P12: no bank-feed provider is available yet, so Bank feeds has no nav item;
-        // the route stays (it says "Not available yet") and highlights Accounts.
-        matches: ["/bank-feeds"],
       },
       {
         titleKey: "shell.nav.reconciliation",
         url: "/bank-reconciliation",
         icon: ArrowLeftRight,
         testId: "bankReconciliation",
-        matches: ["/reconciliation-rules", "/auto-reconcile"],
+        matches: ["/reconciliation-rules", "/auto-reconcile", "/bank-feeds"],
       },
     ],
   },

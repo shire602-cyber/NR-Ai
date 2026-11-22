@@ -1,4 +1,5 @@
 import { accountDisplayName } from "@/lib/account-name";
+import { BankConnectionRecovery } from "@/components/banking/BankConnectionRecovery";
 import { useMemo, useState } from "react";
 import {
   ErrorSummary,
@@ -228,6 +229,8 @@ export default function BankAccounts() {
           </Button>
         }
       />
+
+      <BankConnectionRecovery />
 
       <DataTableCard
         status={isLoading ? "loading" : !accounts || accounts.length === 0 ? "empty" : "ready"}
