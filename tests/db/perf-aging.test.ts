@@ -296,16 +296,19 @@ describe("PERF-AGING aging output is unchanged", () => {
     expect(ap.reconciliation.controlAccountName).toBe("Accounts Payable");
   });
 
-  it("checks membership against the company in the bill aging path", async () => {
-    const allowed = await a.as.get(`/api/companies/${a.company.id}/bills/aging`);
-    expect(allowed.status).toBe(200);
+  it.each(["companies", "Companies"])(
+    "checks membership against the company in the /%s bill aging path",
+    async (segment) => {
+      const allowed = await a.as.get(`/api/${segment}/${a.company.id}/bills/aging`);
+      expect(allowed.status).toBe(200);
 
-    const denied = await a.as.get(
-      `/api/companies/${b.company.id}/bills/aging?companyId=${a.company.id}`
-    );
-    expect(denied.status).toBe(403);
-    expect(denied.body.code).toBe("COMPANY_ACCESS_DENIED");
-  });
+      const denied = await a.as.get(
+        `/api/${segment}/${b.company.id}/bills/aging?companyId=${a.company.id}`
+      );
+      expect(denied.status).toBe(403);
+      expect(denied.body.code).toBe("COMPANY_ACCESS_DENIED");
+    }
+  );
 
   it("loads the bills/aging report with one database query per company", async () => {
     if (WRITE) return;

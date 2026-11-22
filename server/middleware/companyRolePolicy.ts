@@ -535,6 +535,7 @@ export async function companyRolePolicy(
     const allowed = !!role && roleHasAnyPermission(role, permissions);
     if (allowed) {
       req.companyRole = role!;
+      req.companyRoleCompanyId = companyId;
       return next();
     }
     const details = { permission: permissions[0], permissions, role, companyId };
@@ -578,12 +579,14 @@ export function requirePermission(...permissions: [Permission, ...Permission[]])
         res.status(400).json({ message: "Company ID required", code: "COMPANY_REQUIRED" });
         return;
       }
-      const role = await getCompanyRole(req.user.id, raw.toLowerCase());
+      const companyId = raw.toLowerCase();
+      const role = await getCompanyRole(req.user.id, companyId);
       if (!role) return deny(res, "COMPANY_ACCESS_DENIED", { companyId: raw });
       if (!roleHasAnyPermission(role, permissions)) {
         return deny(res, "PERMISSION_DENIED", { permission: permissions[0], permissions, role });
       }
       req.companyRole = role;
+      req.companyRoleCompanyId = companyId;
       next();
     })().catch(next);
   };
