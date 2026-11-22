@@ -1,5 +1,5 @@
-import { planDefinition } from "@shared/plans";
 import { BANK_RECONCILIATION_COPY } from "@shared/bank-reconciliation-copy";
+import { planDefinition } from "@shared/plans";
 
 export const starterPrice = planDefinition("starter").monthlyPrice;
 export type { SiteLocale } from "./routes";

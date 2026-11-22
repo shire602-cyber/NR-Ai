@@ -7,10 +7,9 @@
  */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
-import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -34,7 +33,6 @@ beforeEach(async () => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
-  vi.restoreAllMocks();
 });
 
 async function setLocale(locale: "en" | "ar") {
@@ -52,27 +50,11 @@ const PAGES = {
   Pricing: () => import("../../client/src/pages/Pricing"),
   ForgotPassword: () => import("../../client/src/pages/ForgotPassword"),
   PrivacyPolicy: () => import("../../client/src/pages/PrivacyPolicy"),
-  BankFeeds: () => import("../../client/src/pages/BankFeeds"),
 };
 
 async function render(page: keyof typeof PAGES) {
   const mod = await PAGES[page]();
   await act(async () => root.render(createElement(mod.default)));
-}
-
-async function renderBanking(client: QueryClient) {
-  const { ActiveCompanyProvider } =
-    await import("../../client/src/components/ActiveCompanyProvider");
-  const { default: BankFeeds } = await PAGES.BankFeeds();
-  await act(async () => {
-    root.render(
-      createElement(
-        QueryClientProvider,
-        { client },
-        createElement(ActiveCompanyProvider, { children: createElement(BankFeeds) })
-      )
-    );
-  });
 }
 
 /** Visible text, skipping user/sample data (translate="no") and explicitly non-Arabic islands. */
@@ -93,7 +75,7 @@ function arabicModeEnglishLines(): string[] {
 const UNSUPPORTED_CLAIMS = [
   /FTA[-\s]?(accredited|compliant|registered|approved)/i,
   /submits? (your|the) (VAT )?return(s)? (to|with) the FTA automatically/i,
-  unsupportedStatementCopy,
+  /(?:connect to|sync from) (?:a |your )?(?:live )?bank\s+feeds?/i,
   /money-back/i,
   /UAE-hosted/i,
   // "Most popular" is a plan-card highlight the owner asked for (X6b); it states no user count.
@@ -102,149 +84,77 @@ const UNSUPPORTED_CLAIMS = [
 ];
 
 it.each([
-  ["en", "CSV bank statements", "Upload a CSV statement", "ltr"],
-  ["ar", "كشوف الحساب البنكي بصيغة CSV", "ارفع كشف حساب بصيغة CSV", "rtl"],
+  ["en", "ltr"],
+  ["ar", "rtl"],
 ] as const)(
-  "offers CSV statement upload on the legacy banking page in %s",
-  async (locale, title, cta, dir) => {
-    const previousUrl = window.location.href;
-    window.history.replaceState(null, "", "/bank-feeds");
+  "opens CSV import from the legacy banking URL in %s",
+  async (locale, direction) => {
+    const originalUrl = window.location.href;
+    const { queryClient } = await import("../../client/src/lib/queryClient");
     try {
+      window.history.replaceState(null, "", "/bank-feeds");
       await setLocale(locale);
-      const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
-      client.setQueryData(["/api/companies"], []);
-      await renderBanking(client);
-      expect(document.documentElement.dir).toBe(dir);
-      expect(container.querySelector("h1")?.textContent).toBe(title);
-      const link = container.querySelector('[data-testid="button-feeds-import-statement"]');
-      expect(link?.textContent).toBe(cta);
-      expect(link?.getAttribute("href")).toBe("/bank-reconciliation?import=1");
-      expect(container.textContent).not.toMatch(/\bbank\s+feeds?\b|الربط\s+البنكي/i);
+      queryClient.setQueryData(["/api/auth/me"], {
+        id: "owner",
+        userType: "customer",
+      });
+      const companies = [{ id: "company", name: "Test Company", onboardingCompleted: true }];
+      queryClient.setQueryData(["/api/companies"], companies);
+      queryClient.setQueryData(["/api/companies", "company", "billing", "subscription"], {
+        trialLocked: false,
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: RequestInfo | URL) =>
+          Response.json(String(input).endsWith("/api/companies") ? companies : [])
+        )
+      );
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          observe() {}
+          unobserve() {}
+          disconnect() {}
+        }
+      );
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn(() => ({
+          matches: false,
+          addEventListener() {},
+          removeEventListener() {},
+        }))
+      );
+
+      const [{ default: App }] = await Promise.all([
+        import("../../client/src/App"),
+        import("../../client/src/pages/BankReconciliation"),
+      ]);
+      await act(async () => root.render(createElement(App)));
+      await vi.waitFor(
+        async () => {
+          await act(async () => {});
+          expect(window.location.pathname + window.location.search).toBe(
+            "/bank-reconciliation?import=1"
+          );
+          expect(document.documentElement.dir).toBe(direction);
+          const dialog = document.querySelector('[role="dialog"]');
+          expect(dialog).not.toBeNull();
+          expect(dialog?.textContent).toContain(BANK_RECONCILIATION_COPY[locale]);
+        },
+        { timeout: 4000 }
+      );
     } finally {
-      window.history.replaceState(null, "", previousUrl);
+      act(() => root.render(null));
+      queryClient.clear();
+      vi.unstubAllGlobals();
+      window.history.replaceState(null, "", originalUrl);
     }
-  }
+  },
+  15000
 );
-
-const recoveryConnection = {
-  id: "linked-account",
-  refreshConfigured: true,
-  status: "error",
-  hasToken: true,
-  bankAccountId: "bank-account",
-  accountName: "Current account",
-};
-const recoveryQueryKey = ["/api/companies", "workspace", "bank-connections"];
-
-function recoveryClient(
-  permissions: string[],
-  providers: string[],
-  queryFn = async () => [{ ...recoveryConnection, status: "active" }]
-) {
-  const client = new QueryClient({ defaultOptions: { queries: { queryFn, staleTime: Infinity } } });
-  client.setQueryData(["/api/companies"], [{ id: "workspace" }]);
-  client.setQueryData(["/api/companies", "workspace", "team", "me"], { permissions });
-  client.setQueryData(recoveryQueryKey, [
-    { ...recoveryConnection, refreshConfigured: providers.includes("lean") },
-    { ...recoveryConnection, id: "csv-only", refreshConfigured: false },
-    { ...recoveryConnection, id: "disconnected", status: "disconnected" },
-  ]);
-  return client;
-}
-
-it.each([
-  ["en", "Retry refresh"],
-  ["ar", "أعد محاولة التحديث"],
-] as const)(
-  "retries the failed bank connection and refreshes the page in %s",
-  async (locale, label) => {
-    await setLocale(locale);
-    const requests = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
-      if (String(url).endsWith("/api/csrf-token")) return Response.json({ csrfToken: "test-csrf" });
-      expect(String(url)).toBe("/api/bank-connections/linked-account/sync");
-      expect(options?.method).toBe("POST");
-      return Response.json({ imported: 2 });
-    });
-    const reload = vi.fn(async () => [{ ...recoveryConnection, status: "active" }]);
-    const client = recoveryClient(["documents.write"], ["lean"], reload);
-    const statementKey = ["/api/companies", "workspace", "bank-statements", "transactions"];
-    client.setQueryData(statementKey, []);
-    await renderBanking(client);
-
-    const buttons = container.querySelectorAll<HTMLButtonElement>("button");
-    expect([...buttons].map((button) => button.textContent)).toEqual([label]);
-    await act(async () => {
-      buttons[0].click();
-      await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
-    });
-    await vi.waitFor(async () => {
-      await act(async () => {});
-      expect(container.querySelector("button")).toBeNull();
-    });
-    expect(requests).toHaveBeenCalledWith(
-      "/api/bank-connections/linked-account/sync",
-      expect.objectContaining({ method: "POST" })
-    );
-    expect(client.getQueryState(statementKey)?.isInvalidated).toBe(true);
-  }
-);
-
-it.each([
-  { permissions: ["reports.read"], providers: ["lean"] },
-  { permissions: ["documents.write"], providers: ["wio"] },
-])("offers only CSV upload when retry is unavailable (%j)", async ({ permissions, providers }) => {
-  await renderBanking(recoveryClient(permissions, providers));
-  expect(container.querySelector("button")).toBeNull();
-  expect(container.querySelector('[href="/bank-reconciliation?import=1"]')).not.toBeNull();
-});
 
 describe("D1 public site", () => {
-  it.each([
-    {
-      locale: "en",
-      question: "How do I reconcile my bank account?",
-      copy: "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
-    },
-    {
-      locale: "ar",
-      question: "كيف أطابق حسابي البنكي؟",
-      copy: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
-    },
-  ] as const)(
-    "[D1] banking copy describes CSV reconciliation in $locale",
-    async ({ locale, question, copy }) => {
-      const { default: PhaseSite } =
-        await import("../../client/src/components/marketing/phase/PhaseSite");
-      const { t } = await import("../../client/src/lib/i18n");
-      const previousUrl = window.location.href;
-      try {
-        window.history.replaceState(null, "", `/${locale}`);
-        await act(async () => root.render(createElement(PhaseSite)));
-        const faq = [...container.querySelectorAll(".phase-faq details")].find(
-          (item) => item.querySelector("summary")?.textContent?.trim() === question
-        );
-        expect(faq?.querySelector("p")?.textContent).toBe(copy);
-
-        act(() => root.unmount());
-        root = createRoot(container);
-        window.history.replaceState(null, "", `/${locale}/product/bank-reconciliation`);
-        await act(async () => root.render(createElement(PhaseSite)));
-        expect(container.querySelector(".phase-lead")?.textContent).toBe(copy);
-        expect(container.querySelectorAll(".phase-product-detail ol > li")).toHaveLength(2);
-        expect(container.querySelector(".phase-product-detail ol")?.textContent).not.toMatch(
-          unsupportedStatementCopy
-        );
-        expect(t[locale]["marketing.faq3A"]).toBe(copy);
-        expect(t[locale]["marketing.prEveryBankBody"]).toBe(copy);
-        expect(t[locale]["banking.feeds.unavailableBody"]).toBe(copy);
-        expect(t[locale]["serverErrors.BANK_FEED_NOT_CONFIGURED"]).toBe(copy);
-      } finally {
-        act(() => root.render(null));
-        window.history.replaceState(null, "", previousUrl);
-      }
-    }
-  );
-
   it("[D1] the landing page leads with an honest value proposition and sets its SEO meta", async () => {
     const { default: PhaseSite } =
       await import("../../client/src/components/marketing/phase/PhaseSite");
@@ -371,24 +281,6 @@ describe("D1 public site", () => {
       expect(arabicModeEnglishLines(), page).toEqual([]);
     }
   });
-
-  it.each([
-    ["en", "CSV statement import"],
-    ["ar", "استيراد كشف الحساب بصيغة CSV"],
-  ] as const)(
-    "shows only the CSV import label in the %s demo banking tab",
-    async (locale, label) => {
-      await setLocale(locale);
-      await render("DemoWorkspace");
-      const tab = container.querySelector('[role="tab"][aria-controls$="-content-banking"]');
-      expect(tab).not.toBeNull();
-      await act(async () => {
-        tab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
-      });
-      const panel = container.querySelector('[role="tabpanel"][data-state="active"]');
-      expect(panel?.querySelector("p")?.textContent).toBe(label);
-    }
-  );
 
   it("[D1b] the product preview shows the post-D2 dashboard strip with shared money and status components", async () => {
     await render("MuhasibLanding");

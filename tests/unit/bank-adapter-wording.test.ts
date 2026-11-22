@@ -1,14 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-describe("bank adapter operator wording", () => {
+describe("bank statement operator wording", () => {
   it.each([
     "server/config/env.ts",
     "server/routes/bank.routes.ts",
-    "server/services/bank-feeds/adapters.ts",
-    "server/services/bank-feeds/http.ts",
     "server/services/bank-feeds/index.ts",
-    "server/services/bank-feeds/types.ts",
     "server/services/email-intake.ts",
     "shared/validators/banking.ts",
   ])("keeps retired wording out of log messages and comments in %s", (file) => {

@@ -348,7 +348,6 @@ Muhasib scored on what I could make it do today, not what it intends to do.
 | VAT figures internally consistent | ❌ **two engines, 75 vs 50** | ✅ | ✅ | ✅ | ✅ | n/a |
 | Corporate Tax | ⚠️ workpaper export only | taxable income only | tracking + humans file | ❌ none | ✅ module (Professional+) | ❌ |
 | Arabic + RTL | ⚠️ **382 keys / 1,004 hardcoded strings** | ✅ strong, Arabic-default | ✅ full | ❌ **none** | ⚠️ UI yes, **no Arabic CoA** | ❌ none |
-| Bank reconciliation | CSV statement import | — | CSV statement import | — | — | — |
 | WPS SIF payroll | ✅ **generator present** | ❌ | ❌ (Bayzat partner) | ❌ | ✅ (separate paid product) | ❌ |
 | Period lock / month-end | ❌ **500, broken** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Money stored as decimal | ⚠️ **ledger yes, VAT return no** | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -358,8 +357,6 @@ Muhasib scored on what I could make it do today, not what it intends to do.
 | Budgeting | ✅ present | ❌ | ❌ | ✅ | ✅ Premium+ | ❌ |
 | Price entry point | AED 0 / 49 / 149 / 299 | AED 69 / 99 / 249, **unlimited users** | **Free / 99 / 170**, unlimited users | ~$38–275, per-user | AED 0 / 69 / 129 / 159 / 349 / 799 | $23 / 43 / 70 + $11/user |
 | Customers | **0** | ~18,000 claimed (**~90% Saudi**) | 4,000+ self-reported | not disclosed | **>1m; UAE +77% CAGR, UAE data centres since Jan 2026** | 30m lifetime, **no UAE presence** |
-
-**Bank reconciliation.** Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 
 ### 7.3 What that table actually says
 
@@ -375,7 +372,7 @@ Muhasib scored on what I could make it do today, not what it intends to do.
 
 **The one you left out is the one that should worry you: Tally.** Accredited ASP #35, fully accredited 27 July 2026, native PINT AE XML, emirate field in party ledger masters, direct EmaraTax filing, full Arabic and bilingual invoices — and it **bundles unlimited e-invoices into the annual subscription while everyone else will meter per document**. ~AED 2,340 perpetual, ~AED 4,200 five-year TCO, 65,000+ UAE businesses. When the mandate lands, Tally is the safe answer, and "safe" is what a compliance purchase optimises for.
 
-**UAE financial-data access.** CBUAE Open Finance (Circular 7/2023, in force 10 July 2025) **bans screen-scraping** and routes everything through one licensed central API Hub with **usage fees**. Bank data in the UAE is a cost of goods sold, not a free PSD2-style API. Only 7 of 267 UAE banks are reachable through any aggregator; Plaid has zero UAE coverage; DIFC and ADGM are excluded entirely. Provider licensing and cost determine feasibility.
+**UAE Open Finance regulatory context.** CBUAE Open Finance (Circular 7/2023, in force 10 July 2025) **bans screen-scraping** and routes everything through one licensed central API Hub with **usage fees**. Bank data in the UAE is a cost of goods sold, not a free PSD2-style API. Only 7 of 267 UAE banks are reachable through any aggregator; Plaid has zero UAE coverage; DIFC and ADGM are excluded entirely. Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 
 ---
 

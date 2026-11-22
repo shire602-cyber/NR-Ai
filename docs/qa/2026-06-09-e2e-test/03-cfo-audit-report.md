@@ -32,7 +32,7 @@ As a QuickBooks-trained CFO, I cannot make a workflow adoption call from this ru
 |   1 | Memorised transactions / recurring templates    | ⚠️ Not tested | QuickBooks memorizes recurring entries and templates from transaction screens. |
 |   2 | Class or location tracking                      | ⚠️ Not tested | QuickBooks supports segment reporting by class/location.                       |
 |   3 | Customer and vendor centres                     | ⚠️ Not tested | QuickBooks centralizes balances, history, contacts, and notes.                 |
-|   4 | Bank statement reconciliation and rules         | ⚠️ Not tested | QuickBooks rules can auto-categorize recurring bank transactions.              |
+|   4 | Bank statement import and reconciliation rules | ⚠️ Not tested | Reconciliation rules were outside this test run.                |
 |   5 | Batch enter transactions                        | ⚠️ Not tested | QuickBooks Desktop supports matrix-style batch entry.                          |
 |   6 | Multi-currency revaluation                      | ⚠️ Not tested | QuickBooks revalues open foreign balances at period end.                       |
 |   7 | UAE FTA quarterly + annual reporting equivalent | ⚠️ Not tested | QuickBooks users expect tax reports to reconcile to source transactions.       |

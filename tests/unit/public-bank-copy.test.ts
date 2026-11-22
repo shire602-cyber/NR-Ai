@@ -10,16 +10,14 @@ import ar from "../../client/src/locales/ar/marketing.json";
 const bankCopyCases = [
   {
     locale: "en",
-    question: "How do I reconcile my bank account?",
-    importQuestion: "How do I import a CSV bank statement?",
+    question: "How do I reconcile my bank statement?",
     title: "Bank reconciliation",
     copy: "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
     catalog: en,
   },
   {
     locale: "ar",
-    question: "كيف أطابق حسابي البنكي؟",
-    importQuestion: "كيف أستورد كشف حسابي البنكي بصيغة CSV؟",
+    question: "كيف أطابق كشف حسابي البنكي؟",
     title: "المطابقة البنكية",
     copy: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
     catalog: ar,
@@ -56,7 +54,7 @@ async function renderPhase(path: string) {
 describe("Public banking copy", () => {
   it.each(bankCopyCases)(
     "uses the exact CSV answer in the $locale homepage FAQ and fallback catalog",
-    async ({ locale, question, importQuestion, copy, catalog }) => {
+    async ({ locale, question, copy, catalog }) => {
       await renderPhase("/" + locale);
 
       const faq = [...container.querySelectorAll("details")].find(
@@ -66,7 +64,7 @@ describe("Public banking copy", () => {
       await act(async () => faq?.querySelector("summary")?.click());
       expect(faq?.open).toBe(true);
       expect(faq?.querySelector("p")?.textContent).toBe(copy);
-      expect(catalog["marketing.faq3Q"]).toBe(importQuestion);
+      expect(catalog["marketing.faq3Q"]).toBe(question);
       expect(catalog["marketing.faq3A"]).toBe(copy);
     }
   );

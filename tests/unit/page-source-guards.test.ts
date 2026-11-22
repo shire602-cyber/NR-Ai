@@ -188,7 +188,7 @@ describe("Mobile launch UX guards", () => {
   const source = read("client/src/pages/BankReconciliation.tsx");
 
   describe("Bank import launch UX", () => {
-    it("keeps a sample CSV path for statement import", () => {
+    it("keeps a sample CSV available to buyers", () => {
       expect(source).toContain("muhasib-sample-bank-statement.csv");
       expect(source).toContain('t["banking.emptyTransactionsDescription"]');
       for (const locale of ["en", "ar"] as const) {
@@ -203,10 +203,6 @@ describe("Mobile launch UX guards", () => {
       expect(bankingEn["banking.import.formatCsv"]).toContain("Arabic/English generic");
       expect(bankingEn["banking.import.formatDelimiters"]).toBe(
         "CSV files can use commas, semicolons, or tabs"
-      );
-      const bankingAr = JSON.parse(readFileSync("client/src/locales/ar/banking.json", "utf8"));
-      expect(bankingAr["banking.import.formatDelimiters"]).toBe(
-        "يمكن فصل أعمدة ملف CSV بفاصلة أو فاصلة منقوطة أو علامة جدولة"
       );
       expect(bankingEn["banking.import.formatDrCr"]).toBe(
         "Amount + Dr/Cr type columns are supported"

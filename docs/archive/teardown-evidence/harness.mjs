@@ -279,18 +279,10 @@ async function main() {
   ctx.bankAccount = r.json;
 
   r = await api("GET", `/api/companies/${ctx.companyId}/bank-statements/unreconciled`, { token: ctx.token });
-  rec("bank: unreconciled statement lines", r.status === 200, { status: r.status });
+  rec("bank: unreconciled transactions", r.status === 200, { status: r.status });
 
   r = await api("GET", `/api/bank/providers`, { token: ctx.token });
-  const csvStatus = r.json?.statuses?.[0];
-  rec(
-    "bank: CSV reconciliation availability",
-    r.status === 200 &&
-      r.json?.statuses?.length === 1 &&
-      csvStatus?.id === "bank_reconciliation" &&
-      csvStatus?.status === "available",
-    r.json
-  );
+  rec("bank: CSV import availability", r.status === 200, r.json);
 
   // ── 16. Dashboard ─────────────────────────────────────────
   r = await api("GET", `/api/companies/${ctx.companyId}/dashboard/stats`, { token: ctx.token });

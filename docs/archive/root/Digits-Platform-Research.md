@@ -144,7 +144,6 @@ Digits generates the following financial reports, all interactive and real-time:
 ## 6. Integrations
 
 ### Banking & Financial Institutions
-- The research listed coverage of **12,000+ financial institutions**.
 - Named integrations: **Chase, Mercury, American Express, Brex, Arc**
 
 ### Payment Processors

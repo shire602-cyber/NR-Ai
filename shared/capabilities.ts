@@ -11,8 +11,8 @@
  *   disabled          optional feature, not configured
  *
  * Pure and isomorphic: computeCapabilities(env) takes an env record so it can
- * be unit-tested and evaluated on the server. Routes select which capabilities
- * to expose. Bank adapter readiness is reserved for operator diagnostics.
+ * be unit-tested and evaluated on the server; the client receives the
+ * serialisable `CapabilitySnapshot` (no secrets, only statuses and copy).
  * This module adds no routes.
  */
 
@@ -24,9 +24,6 @@ export type CapabilityId =
   | "ai"
   | "stripe_billing"
   | "invoice_payments"
-  | "bank_feed_lean"
-  | "bank_feed_tarabut"
-  | "bank_feed_wio"
   | "einvoicing_asp"
   | "shopify"
   | "stripe_payouts"
@@ -49,7 +46,7 @@ export interface Capability {
   id: CapabilityId;
   status: CapabilityStatus;
   label: LocalizedText;
-  /** External setup instructions or the supported workflow when unconfigured. */
+  /** Setup instructions or the available workflow. */
   externalAction: LocalizedText;
   /** Env vars that configure it (names only, never values). */
   envVars: readonly string[];
@@ -72,11 +69,6 @@ interface CapabilityDef {
   /** Returns null when not configured, else live/sandbox. */
   detect: (env: EnvLike) => Extract<CapabilityStatus, "live" | "sandbox"> | null;
 }
-
-const BANK_ADAPTER_DIAGNOSTIC_GUIDANCE = {
-  en: "Review adapter configuration in operator diagnostics.",
-  ar: "راجع إعدادات المحوّل في تشخيصات التشغيل.",
-};
 
 const set = (env: EnvLike, name: string): boolean => {
   const v = env[name];
@@ -171,45 +163,6 @@ const DEFS: readonly CapabilityDef[] = [
       if (!set(env, "STRIPE_SECRET_KEY") || !flag(env, "INVOICE_PAYMENTS_ENABLED")) return null;
       return (env.STRIPE_SECRET_KEY ?? "").startsWith("sk_live_") ? "live" : "sandbox";
     },
-  },
-  {
-    id: "bank_feed_lean",
-    label: { en: "Lean adapter diagnostics", ar: "تشخيص محوّل Lean" },
-    externalAction: BANK_ADAPTER_DIAGNOSTIC_GUIDANCE,
-    envVars: ["LEAN_APP_TOKEN", "LEAN_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      set(env, "LEAN_APP_TOKEN")
-        ? looksSandbox(env.LEAN_API_BASE_URL) || !set(env, "LEAN_API_BASE_URL")
-          ? "sandbox"
-          : "live"
-        : null,
-  },
-  {
-    id: "bank_feed_tarabut",
-    label: { en: "Tarabut adapter diagnostics", ar: "تشخيص محوّل Tarabut" },
-    externalAction: BANK_ADAPTER_DIAGNOSTIC_GUIDANCE,
-    envVars: ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET", "TARABUT_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      all(env, ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET"])
-        ? looksSandbox(env.TARABUT_API_BASE_URL) || !set(env, "TARABUT_API_BASE_URL")
-          ? "sandbox"
-          : "live"
-        : null,
-  },
-  {
-    id: "bank_feed_wio",
-    label: { en: "Wio adapter diagnostics", ar: "تشخيص محوّل Wio" },
-    externalAction: BANK_ADAPTER_DIAGNOSTIC_GUIDANCE,
-    envVars: ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET", "WIO_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      all(env, ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET"])
-        ? looksSandbox(env.WIO_API_BASE_URL) || !set(env, "WIO_API_BASE_URL")
-          ? "sandbox"
-          : "live"
-        : null,
   },
   {
     id: "einvoicing_asp",
@@ -345,7 +298,7 @@ const DEFS: readonly CapabilityDef[] = [
       ar: "اضبط FX_RATE_FEED (cbuae أو ecb أو كلاهما) وروابط المزود (FX_RATE_FEED_CBUAE_URL و FX_RATE_FEED_ECB_URL) المتفق عليها مع مزود الأسعار.",
     },
     envVars: ["FX_RATE_FEED", "FX_RATE_FEED_CBUAE_URL", "FX_RATE_FEED_ECB_URL", "FX_RATE_API_KEY"],
-    // W5-C (R14-14): adapter health is separate from CSV availability.
+    // W5-C (R14-14): adapter status depends on provider configuration.
     whenUnconfigured: "requires_external",
     detect: (env) => (set(env, "FX_RATE_FEED") ? "live" : null),
   },

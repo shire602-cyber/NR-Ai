@@ -19,7 +19,6 @@ import { hasAuthHint } from "@/lib/authHint";
 import { startBootFetch } from "@/lib/bootFetch";
 import { getStaticRoot } from "@/lib/staticRoot";
 import { SHELL_BOOT_API, firmFirstScreen } from "@shared/firm-boot";
-import { isBankAuthorizationReturnPath } from "@shared/bank-authorization-paths";
 import { afterFirstScreen, warmOnFirstInteraction } from "@/lib/warmOnInteraction";
 import {
   applyDocumentLocale,
@@ -119,8 +118,7 @@ if (explicitLocale && useI18n.getState().locale !== explicitLocale) {
 if (!lightBoot && hasAuthHint()) {
   // The firm landing screens also start the reads they paint from (the document starts the same
   // reads before any script runs, see server/vite.ts; startBootFetch skips ones already running).
-  const shellApi = isBankAuthorizationReturnPath(pathname) ? ["/api/auth/me"] : SHELL_BOOT_API;
-  startBootFetch([...shellApi, ...(firmShell ? (firmFirstScreen(pathname)?.api ?? []) : [])]);
+  startBootFetch([...SHELL_BOOT_API, ...(firmShell ? (firmFirstScreen(pathname)?.api ?? []) : [])]);
 }
 
 // The page chunk a firm route paints is fetched with the app root (after zod is configured, like

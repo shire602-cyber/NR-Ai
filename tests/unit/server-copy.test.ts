@@ -196,51 +196,6 @@ describe("server copy templates", () => {
     });
   });
 
-  it("renders CSV guidance in both locales for an existing statement notice", () => {
-    const row = withNotificationCopy({
-      eventKey: "bank.sync_failed:legacy-notice",
-      title: "Previous title",
-      message: "Previous message",
-    });
-
-    expect(row.title).toBe("Import a CSV bank statement");
-    expect(row.message).toBe(
-      "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books"
-    );
-    expect(localizeNotification(row, ar, "ar")).toEqual({
-      title: "استورد كشف حساب بنكي بصيغة CSV",
-      message: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
-    });
-  });
-
-  it("guides customers to CSV statement import after a bank transaction import fails", async () => {
-    const row = await notificationForEvent({
-      type: "bank.sync_failed",
-      payload: {
-        companyId: "c1",
-        entityId: "e1",
-        provider: "wio",
-        reason: "internal-provider-error",
-        occurredAt: "2026-11-16T00:00:00.000Z",
-      },
-    } as never);
-    const english = {
-      title: "Import a CSV bank statement",
-      message:
-        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
-    };
-    expect(row).toMatchObject({
-      ...english,
-      actionUrl: "/bank-reconciliation?import=1",
-    });
-    const notification = withNotificationCopy(row!);
-    expect(localizeNotification(notification, en, "en")).toEqual(english);
-    expect(localizeNotification(notification, ar, "ar")).toEqual({
-      title: "استورد كشف حساب بنكي بصيغة CSV",
-      message: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
-    });
-  });
-
   it("localises report delivery names and outcomes", () => {
     const n = buildReportDeliveryNotificationForPlan({
       userId: "u",

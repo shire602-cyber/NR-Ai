@@ -384,7 +384,7 @@ export const aiStatementImportBody = z
   .strict();
 export type AiStatementImportBody = z.output<typeof aiStatementImportBody>;
 
-// ─── Bank adapter requests (R06-14, R06-19) ────────────────────────────────
+// ─── Financial-data adapters (R06-14, R06-19) ────────────────────────────────────────────
 
 export const BANK_FEED_PROVIDERS = ["lean", "tarabut", "wio"] as const;
 export type BankFeedProviderId = (typeof BANK_FEED_PROVIDERS)[number];
@@ -399,23 +399,11 @@ export const bankFeedConnectBody = z
 
 export const bankFeedCallbackBody = z
   .object({
-    provider: z.enum(BANK_FEED_PROVIDERS).optional(),
-    code: z
-      .string()
-      .min(1)
-      .max(4000)
-      .refine((code) => code.trim().length > 0),
+    provider: z.enum(BANK_FEED_PROVIDERS),
+    code: z.string().trim().min(1).max(4000),
     state: z.string().trim().min(16).max(200),
   })
   .strict();
-
-export const bankAuthorizationReference = z.object({ returnId: zUuid, tabKey: zUuid }).strict();
-export const bankAuthorizationHandoffBody = bankAuthorizationReference.extend({
-  search: z.string().min(1).max(24_000),
-});
-export const bankAuthorizationResumeBody = bankAuthorizationReference.extend({
-  acknowledge: z.literal(true).optional(),
-});
 
 export const bankFeedSyncBody = z
   .object({

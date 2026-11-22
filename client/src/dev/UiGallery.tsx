@@ -19,6 +19,7 @@ import {
   YAxis,
 } from "recharts";
 import { Download, FileText, Landmark, Pencil, Send, Trash2 } from "lucide-react";
+import { BANK_RECONCILIATION_COPY } from "@shared/bank-reconciliation-copy";
 
 import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -80,7 +81,7 @@ const SERIES = [
 ];
 
 export default function UiGallery() {
-  const { locale, t } = useTranslation();
+  const { locale } = useTranslation();
   const ar = locale === "ar";
   const L = (en: string, arText: string) => (ar ? arText : en);
   const params = new URLSearchParams(useSearch());
@@ -291,10 +292,10 @@ export default function UiGallery() {
           className="mt-4"
           size="lg"
           icon={Landmark}
-          title={t.bankReconciliation}
-          description={t["banking.emptyTransactionsDescription"]}
-          action={{ label: t["banking.statementUpload.cta"], onClick: () => {} }}
-          secondaryAction={{ label: t["banking.accounts.add"], onClick: () => {} }}
+          title={L("Import a bank statement", "استورد كشف حساب بنكي")}
+          description={L(BANK_RECONCILIATION_COPY.en, BANK_RECONCILIATION_COPY.ar)}
+          action={{ label: L("Add bank account", "إضافة حساب بنكي"), onClick: () => {} }}
+          secondaryAction={{ label: L("Import statement", "استيراد كشف"), onClick: () => {} }}
         />
       </Section>
 

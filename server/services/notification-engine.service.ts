@@ -24,15 +24,13 @@ import {
 import { createLogger } from "../config/logger";
 import { onDomainEvent, type DomainEvent } from "../platform/domain-events";
 import { listJobs, registerJob } from "../platform/job-registry";
-import { escapeHtml, renderBilingualEmail, renderEmailText, sendEmail } from "./email.service";
+import { sendEmail } from "./email.service";
+import { renderQueuedNotificationEmail } from "./notification-email-copy";
 import { isCapabilityLive } from "../../shared/capabilities";
-import { BANK_SYNC_FAILED_NOTIFICATION } from "../../shared/notification-copy";
-import {
-  normalizeNotificationCopy,
-  notificationCopy,
-  renderServerCopy,
-  withNotificationCopy,
-} from "../../shared/server-copy";
+import { notificationCopy, renderServerCopy } from "../../shared/server-copy";
+import { customerVisibleNotification } from "../storage/notification-visibility";
+import { deliverOutboxMessage, enqueueEmail } from "../outbox/outbox";
+import { DIGEST_WINDOW_MS, renderNotificationDigest } from "./notification-digest";
 
 const log = createLogger("notification-engine");
 
@@ -44,7 +42,6 @@ export const NOTIFICATION_EVENT_TYPES = [
   "bill.approved",
   "bill.paid",
   "payroll.approved",
-  "bank.sync_failed",
   "compliance.deadline_due",
   "task.due",
 ] as const;
@@ -84,7 +81,6 @@ const TYPE_RULES: Record<
   "bill.approved": { category: null, emailByDefault: false, notificationType: "system" },
   "bill.paid": { category: null, emailByDefault: false, notificationType: "system" },
   "payroll.approved": { category: null, emailByDefault: true, notificationType: "system" },
-  "bank.sync_failed": { category: null, emailByDefault: true, notificationType: "system" },
   "compliance.deadline_due": {
     category: "vatDeadlines",
     emailByDefault: true,
@@ -206,10 +202,6 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
   const pushLive = isCapabilityLive("push");
   const urgent = input.priority === "urgent";
   const key = `${input.type}:${input.eventKey ?? input.entityId}`;
-  const bank = input.type === "bank.sync_failed" ? BANK_SYNC_FAILED_NOTIFICATION : null;
-  const title = bank?.title.en ?? input.title;
-  const message = bank?.message.en ?? input.message;
-  const actionUrl = bank?.actionUrl ?? input.actionUrl;
   const results: NotifyResult[] = [];
   for (const user of recipients) {
     const ch = resolveChannels(prefs.get(user.id), input.type, { pushLive, urgent });
@@ -226,12 +218,12 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
           userId: user.id,
           companyId: input.companyId,
           type: TYPE_RULES[input.type].notificationType,
-          title: title.slice(0, 200),
-          message: message.slice(0, 2000),
+          title: input.title.slice(0, 200),
+          message: input.message.slice(0, 2000),
           priority: input.priority ?? "normal",
           relatedEntityType: input.relatedEntityType ?? null,
           relatedEntityId: /^[0-9a-f-]{36}$/i.test(input.entityId) ? input.entityId : null,
-          actionUrl: actionUrl ?? null,
+          actionUrl: input.actionUrl ?? null,
           isRead: false,
           isDismissed: false,
           eventKey: key,
@@ -247,24 +239,9 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
       }
     }
     if (ch.email && user.email) {
-      // The signed-in language is a browser preference. Include both languages for bank guidance.
-      const normalized = normalizeNotificationCopy({ ...input, eventKey: key });
-      const content = {
-        brandName: "Muhasib.ai",
-        heading: bank?.title ?? { en: title, ar: title },
-        paragraphs: {
-          en: [escapeHtml(normalized.message)],
-          ar: bank ? [escapeHtml(bank.message.ar)] : [],
-        },
-        footer: bank
-          ? undefined
-          : "Muhasib.ai notifications — manage them under Settings → Notifications",
-      };
-      const language = bank ? "bilingual" : "en";
-      const subject = bank ? `${bank.title.en} | ${bank.title.ar}` : title;
-      const text = bank ? renderEmailText(content, language) : normalized.message;
-      const r = await sendEmail(user.email, subject, text, {
-        html: renderBilingualEmail(content, language),
+      const { subject, html, textBody } = renderQueuedNotificationEmail(input);
+      const r = await sendEmail(user.email, subject, textBody, {
+        html,
         companyId: input.companyId,
         category: "notification",
         relatedEntityType: input.relatedEntityType ?? null,
@@ -277,9 +254,9 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
       try {
         const { sendPushNotification } = await import("./push-notification.service");
         const r = await sendPushNotification(user.id, {
-          title,
-          body: message,
-          url: actionUrl ?? "/notifications",
+          title: input.title,
+          body: input.message,
+          url: input.actionUrl ?? "/notifications",
           tag: key,
         });
         result.push = r.sent > 0 ? "sent" : r.failed > 0 ? "failed" : "no_subscription";
@@ -396,20 +373,6 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
         relatedEntityType: "payroll_run",
         actionUrl: "/payroll",
       };
-    case "bank.sync_failed":
-      return {
-        ...base,
-        type: "bank.sync_failed",
-        ...notificationCopy(
-          BANK_SYNC_FAILED_NOTIFICATION.titleKey,
-          BANK_SYNC_FAILED_NOTIFICATION.messageKey
-        ),
-        priority: "high",
-        relatedEntityType: "bank_connection",
-        actionUrl: BANK_SYNC_FAILED_NOTIFICATION.actionUrl,
-        // One notification per failure day, not per retry.
-        eventKey: `${p.entityId}:${String(p.occurredAt).slice(0, 10)}`,
-      };
     case "compliance.deadline_due":
       return {
         ...base,
@@ -458,7 +421,6 @@ export function registerNotificationEngine(): void {
       "bill.approved",
       "bill.paid",
       "payroll.approved",
-      "bank.sync_failed",
       "compliance.deadline_due",
       "task.due",
     ] as const) {
@@ -561,7 +523,7 @@ export async function scanVatDeadlines(now: Date = new Date()): Promise<number> 
 
 /** One digest email per opted-in user with the undigested notifications of the last day. */
 export async function sendDailyDigests(now: Date = new Date()): Promise<number> {
-  const since = new Date(now.getTime() - 26 * 3_600_000);
+  const since = new Date(now.getTime() - DIGEST_WINDOW_MS);
   const optedIn = await db
     .select({ userId: notificationPreferences.userId, email: users.email })
     .from(notificationPreferences)
@@ -580,54 +542,35 @@ export async function sendDailyDigests(now: Date = new Date()): Promise<number> 
       .where(
         and(
           eq(notifications.userId, u.userId),
+          customerVisibleNotification(),
           isNull(notifications.digestedAt),
           gte(notifications.createdAt, since)
         )
       )
+      .orderBy(notifications.createdAt, notifications.id)
       .limit(100);
     if (!rows.length || !u.email) continue;
     const day = now.toISOString().slice(0, 10);
-    const bank = BANK_SYNC_FAILED_NOTIFICATION;
-    const itemsAr = [`لديك ${rows.length} إشعارات جديدة.`];
-    const items = rows.map((r: typeof notifications.$inferSelect) => {
-      const { title, message, copy } = withNotificationCopy(r);
-      if (copy.messageKey === bank.messageKey) {
-        itemsAr.push(
-          `<strong>${escapeHtml(bank.title.ar)}</strong> — ${escapeHtml(bank.message.ar)}`
-        );
-      }
-      return `<strong>${escapeHtml(title)}</strong> — ${escapeHtml(message)}`;
-    });
-    const content = {
-      brandName: "Muhasib.ai",
-      heading: { en: `Your daily summary (${day})`, ar: `ملخصك اليومي (${day})` },
-      paragraphs: { en: items, ar: itemsAr },
-    };
-    const r = await sendEmail(
-      u.email,
-      `Muhasib.ai daily summary — ${rows.length} update(s)`,
-      itemsAr.length > 1 ? renderEmailText(content, "bilingual") : "",
-      {
-        html: renderBilingualEmail(content, "bilingual"),
+    const { subject, html, textBody } = renderNotificationDigest(day, rows);
+    try {
+      const queued = await enqueueEmail({
+        to: u.email,
+        subject,
+        html,
+        text: textBody,
         category: "digest",
         idempotencyKey: `digest:${u.userId}:${day}`,
-      }
-    );
-    if (r.queued) {
-      await db
-        .update(notifications)
-        .set({ digestedAt: now })
-        .where(
-          sql`${notifications.id} IN (${sql.join(
-            rows.map((x: { id: string }) => sql`${x.id}`),
-            sql`, `
-          )})`
-        );
+        notificationDigest: { userId: u.userId, notificationIds: rows.map(({ id }) => id) },
+      });
+      if (queued.duplicate) continue;
       await db
         .update(notificationPreferences)
         .set({ lastDigestAt: now })
         .where(eq(notificationPreferences.userId, u.userId));
       sent++;
+      if (queued.status === "queued") await deliverOutboxMessage(queued.id);
+    } catch (err) {
+      log.error({ err, userId: u.userId }, "Could not queue or deliver notification digest");
     }
   }
   return sent;

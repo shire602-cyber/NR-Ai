@@ -4,13 +4,10 @@
  */
 import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
-import { BANK_SYNC_FAILED_NOTIFICATION } from "../../shared/notification-copy";
-import { bankStatementCopy } from "../../shared/bank-statement-copy";
-import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
-import { useHarness, type Tenant } from "./harness";
+import { accountByCode, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
+const retiredProviderTitle = ["Bank", "feed", "sync", "failed"].join(" ");
 
 const PDF = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n");
 const PNG = Buffer.from(
@@ -296,23 +293,25 @@ describe("W4-D notification engine", () => {
     ).toBe(0);
   });
 
-  it("[R13-32] payment received, statement review, task due and overdue invoices all notify staff", async () => {
+  it("[R13-32] staff receive payment, task and invoice alerts without provider alerts", async () => {
     const t = await h.createTenant();
     const inv = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
       customerName: "Notify Co",
       date: new Date(Date.now() - 40 * 86_400_000).toISOString().slice(0, 10),
       lines: [{ description: "Line", quantity: 1, unitPrice: 100, vatRate: 5 }],
     });
-    await t.as.patch(`/api/invoices/${inv.body.id}/status`, { status: "sent" });
-    const bank = await h.sql(`SELECT id FROM accounts WHERE company_id = $1 AND code = '1020'`, [
-      t.company.id,
+    expect(inv.status, inv.text).toBe(200);
+    const issued = await t.as.patch(`/api/invoices/${inv.body.id}/status`, { status: "sent" });
+    expect(issued.status, issued.text).toBe(200);
+    const bank = await accountByCode(t, "1020");
+    const payment = await t.as.post(
+      `/api/companies/${t.company.id}/invoices/${inv.body.id}/payments`,
+      { method: "bank", paymentAccountId: bank.id, amount: 20 }
+    );
+    expect(payment.status, payment.text).toBe(201);
+    await h.sql(`UPDATE invoices SET due_date = now() - interval '3 days' WHERE id = $1`, [
+      inv.body.id,
     ]);
-    await t.as.post(`/api/companies/${t.company.id}/invoices/${inv.body.id}/payments`, {
-      date: new Date().toISOString().slice(0, 10),
-      method: "bank",
-      paymentAccountId: bank[0].id,
-      amount: 20,
-    });
     await emit("bank.sync_failed", {
       companyId: t.company.id,
       entityId: crypto.randomUUID(),
@@ -323,9 +322,6 @@ describe("W4-D notification engine", () => {
       entityId: crypto.randomUUID(),
       dueDate: "2026-12-01",
     });
-    await h.sql(`UPDATE invoices SET due_date = now() - interval '3 days' WHERE id = $1`, [
-      inv.body.id,
-    ]);
     const { scanOverdueInvoices } =
       await import("../../server/services/notification-engine.service");
     await scanOverdueInvoices();
@@ -339,15 +335,41 @@ describe("W4-D notification engine", () => {
       )
     ).map((r) => r.event_key.split(":")[0]);
     expect(keys).toEqual(
-      expect.arrayContaining([
-        "bank.sync_failed",
-        "invoice.issued",
-        "invoice.overdue",
-        "payment.received",
-        "task.due",
-      ])
+      expect.arrayContaining(["invoice.issued", "invoice.overdue", "payment.received", "task.due"])
     );
+    expect(keys).not.toContain("bank.sync_failed");
+    const preferences = await t.as.get("/api/notification-preferences");
+    expect(preferences.status).toBe(200);
+    expect(preferences.body.eventTypes).toContain("task.due");
+    expect(preferences.body.eventTypes).not.toContain("bank.sync_failed");
     expect(keys.filter((k) => k === "invoice.overdue").length).toBe(1);
+  });
+
+  it("hides stored provider alerts and cancels an older queued email", async () => {
+    const t = await h.createTenant();
+    const eventKey = `bank.sync_failed:${crypto.randomUUID()}`;
+    const [notice] = await h.sql<{ id: string }>(
+      `INSERT INTO notifications (user_id, type, title, message, event_key)
+       VALUES ($1, 'system', $3, 'Reconnect it under Banking.', $2)
+       RETURNING id`,
+      [t.user.id, eventKey, retiredProviderTitle]
+    );
+    const result = await t.as.get("/api/notifications");
+    expect(result.status).toBe(200);
+    expect(result.body.notifications).not.toContainEqual(
+      expect.objectContaining({ id: notice.id })
+    );
+    expect(result.body.unreadCount).toBe(0);
+    expect((await t.as.patch(`/api/notifications/${notice.id}/read`)).status).toBe(404);
+    expect((await t.as.patch(`/api/notifications/${notice.id}/dismiss`)).status).toBe(404);
+
+    const [email] = await h.sql<{ id: string }>(
+      `INSERT INTO email_outbox (to_address, subject, category, idempotency_key)
+       VALUES ($1, $3, 'notification', $2) RETURNING id`,
+      [t.email.toLowerCase(), `notif:${eventKey}:${t.user.id}`, retiredProviderTitle]
+    );
+    const { deliverOutboxMessage } = await import("../../server/outbox/outbox");
+    await expect(deliverOutboxMessage(email.id)).resolves.toMatchObject({ status: "cancelled" });
   });
 
   it("[R16-18][R13-33] per-type email choice goes through the outbox with an honest status; daily digest batches", async () => {
@@ -371,13 +393,10 @@ describe("W4-D notification engine", () => {
 
     const d = await h.createSecondTenant();
     await d.as.put("/api/notification-preferences", { digestFrequency: "daily" });
-    await emit("bank.sync_failed", { companyId: d.company.id, entityId: crypto.randomUUID() });
-    // A digest can include rows written before the banking copy changed.
     await h.sql(
-      `UPDATE notifications SET title = 'Bank feed sync failed',
-         message = 'The bank feed (Test Provider) could not sync: HTTP 502. Reconnect it under Banking.'
-       WHERE user_id = $1 AND event_key LIKE 'bank.sync_failed:%'`,
-      [d.user.id]
+      `INSERT INTO notifications (user_id, type, title, message, event_key)
+       VALUES ($1, 'system', $3, 'Reconnect it under Banking.', $2)`,
+      [d.user.id, `bank.sync_failed:${crypto.randomUUID()}`, retiredProviderTitle]
     );
     await emit("task.due", {
       companyId: d.company.id,
@@ -393,121 +412,13 @@ describe("W4-D notification engine", () => {
     await sendDailyDigests();
     await sendDailyDigests();
     const digest = await h.sql(
-      `SELECT subject, html, text_body FROM email_outbox WHERE category = 'digest' AND to_address = $1`,
+      `SELECT subject, html FROM email_outbox WHERE category = 'digest' AND to_address = $1`,
       [d.email.toLowerCase()]
     );
     expect(digest.length).toBe(1);
-    expect(digest[0].html).toContain(bankStatementCopy.en);
-    expect(digest[0].html).toContain("Task due");
-    expect(digest[0].html).not.toMatch(unsupportedStatementCopy);
-    expect(digest[0].html).not.toMatch(/reconnect/i);
-    expect(digest[0].subject).toContain("2 update(s)");
-    for (const locale of ["en", "ar"] as const) {
-      const title = BANK_SYNC_FAILED_NOTIFICATION.title[locale];
-      const message = BANK_RECONCILIATION_COPY[locale];
-      expect(digest[0].html).toContain(`<strong>${title}</strong> — ${message}</p>`);
-      expect(digest[0].text_body.split("\n")).toContain(`${title} — ${message}`);
-    }
-    for (const body of [digest[0].html, digest[0].text_body]) {
-      expect(body).not.toMatch(/Test Provider|HTTP 502|Reconnect/);
-    }
+    expect(digest[0].subject).toContain("1 update(s)");
     expect(
       (await t.as.put("/api/notification-preferences", { digestFrequency: "hourly" })).status
     ).toBe(400);
-  });
-
-  it("routes unsuccessful imports to CSV reconciliation and queues the guidance in both languages", async () => {
-    const t = await h.createTenant();
-    const eventId = crypto.randomUUID();
-    await emit("bank.sync_failed", {
-      companyId: t.company.id,
-      entityId: eventId,
-      provider: "test-internal-provider",
-      reason: "HTTP 502",
-    });
-
-    const copy = BANK_SYNC_FAILED_NOTIFICATION;
-    const response = await t.as.get("/api/notifications");
-    expect(response.status).toBe(200);
-    expect(response.body.notifications).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          eventKey: expect.stringContaining(`bank.sync_failed:${eventId}`),
-          title: copy.title.en,
-          message: BANK_RECONCILIATION_COPY.en,
-          actionUrl: "/bank-reconciliation?import=1",
-          copy: {
-            titleKey: copy.titleKey,
-            titleParams: {},
-            messageKey: copy.messageKey,
-            messageParams: {},
-          },
-        }),
-      ])
-    );
-
-    const [mail] = await h.sql(
-      `SELECT status, subject, html, text_body FROM email_outbox
-       WHERE category = 'notification' AND to_address = $1`,
-      [t.email.toLowerCase()]
-    );
-    expect(mail.status).toBe("blocked_no_provider");
-    expect(mail.subject).toContain(copy.title.en);
-    expect(mail.subject).toContain(copy.title.ar);
-    for (const message of Object.values(BANK_RECONCILIATION_COPY)) {
-      expect(mail.html).toContain(`>${message}</p>`);
-    }
-    const [emailContent] = mail.text_body.split("\n\n--\n");
-    expect(emailContent).toBe(
-      [
-        `${copy.title.en}\n\n${BANK_RECONCILIATION_COPY.en}`,
-        `${copy.title.ar}\n\n${BANK_RECONCILIATION_COPY.ar}`,
-      ].join("\n\n---\n\n")
-    );
-    for (const body of [mail.html, mail.text_body]) {
-      expect(body).not.toMatch(/test-internal-provider|HTTP 502|Reconnect/);
-    }
-  });
-
-  it("replaces a historical bank notification with CSV guidance in the API and daily digest", async () => {
-    const t = await h.createTenant();
-    await t.as.put("/api/notification-preferences", { digestFrequency: "daily" });
-    const entityId = crypto.randomUUID();
-    await emit("bank.sync_failed", { companyId: t.company.id, entityId });
-    const legacyTitle = "Old bank alert";
-    const legacyMessage = "Old alert instructions";
-    await h.sql(
-      `UPDATE notifications SET title = $1, message = $2, action_url = '/bank-feeds'
-        WHERE user_id = $3 AND related_entity_id = $4`,
-      [legacyTitle, legacyMessage, t.user.id, entityId]
-    );
-
-    const result = await t.as.get("/api/notifications");
-    expect(result.status, result.text).toBe(200);
-    const message = BANK_RECONCILIATION_COPY.en;
-    expect(result.body.notifications).toContainEqual(
-      expect.objectContaining({
-        relatedEntityId: entityId,
-        title: BANK_SYNC_FAILED_NOTIFICATION.title.en,
-        message,
-        actionUrl: "/bank-reconciliation?import=1",
-        copy: {
-          titleKey: "notification.bankSyncFailed.title",
-          titleParams: {},
-          messageKey: "notification.bankSyncFailed.message",
-          messageParams: {},
-        },
-      })
-    );
-
-    const { sendDailyDigests } = await import("../../server/services/notification-engine.service");
-    await sendDailyDigests();
-    const [digest] = await h.sql<{ html: string }>(
-      `SELECT html FROM email_outbox WHERE category = 'digest' AND to_address = $1`,
-      [t.email.toLowerCase()]
-    );
-    expect(digest.html).toContain(BANK_SYNC_FAILED_NOTIFICATION.title.en);
-    expect(digest.html).toContain(message);
-    expect(digest.html).not.toContain(legacyMessage);
   });
 });

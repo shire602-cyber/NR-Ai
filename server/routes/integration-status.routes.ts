@@ -1,11 +1,10 @@
 import type { Express, Request, Response } from "express";
-import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import { authMiddleware, adminMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/email.service";
-import { allowedRedirectUris, providerStatuses } from "../services/bank-feeds";
 import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
 import { isObjectStorageConfigured, objectStorageBackend } from "../services/fileStorage";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { connectorStatuses } from "../services/connectors/oauth";
 
 /**
@@ -19,7 +18,6 @@ export function registerIntegrationStatusRoutes(app: Express) {
     authMiddleware,
     adminMiddleware,
     asyncHandler(async (_req: Request, res: Response) => {
-      const adapterStatuses = providerStatuses();
       const integrations = [
         {
           key: "email",
@@ -82,22 +80,12 @@ export function registerIntegrationStatusRoutes(app: Express) {
           unlocks: "Subscriptions, checkout, plan upgrades, tier enforcement",
         },
         {
-          key: "openBanking",
-          name: "Existing bank connections",
-          configured: adapterStatuses.some(({ configured }) => configured),
-          detail: null,
-          requiredEnv: [
-            "LEAN_APP_TOKEN — or TARABUT_CLIENT_ID + TARABUT_CLIENT_SECRET — or WIO_CLIENT_ID + WIO_CLIENT_SECRET",
-          ],
-          unlocks: "Refresh transactions for existing connections",
-        },
-        {
-          key: "bankStatementUpload",
-          name: "Bank statement upload",
+          key: "bankStatementCsvImport",
+          name: "CSV statement import",
           configured: true,
-          detail: bankStatementCopy.en,
+          detail: BANK_RECONCILIATION_COPY.en,
           requiredEnv: [],
-          unlocks: "Upload CSV bank statements for reconciliation",
+          unlocks: "Statement reconciliation",
         },
         {
           key: "push",
@@ -159,13 +147,7 @@ export function registerIntegrationStatusRoutes(app: Express) {
           unlocks: c.purpose.en,
         })),
       ];
-      res.json({
-        integrations,
-        bankProviderDiagnostics: {
-          statuses: adapterStatuses,
-          redirectUris: allowedRedirectUris(),
-        },
-      });
+      res.json({ integrations });
     })
   );
 }
