@@ -75,12 +75,12 @@ const envSchema = z.object({
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().optional(),
 
-  // === Open Banking (Wio Bank) ===
+  // === Wio Bank provider configuration ===
   WIO_CLIENT_ID: z.string().optional(),
   WIO_CLIENT_SECRET: z.string().optional(),
   WIO_API_BASE_URL: z.string().optional(),
 
-  // === Open Banking (Lean Technologies aggregator) ===
+  // === Lean Technologies provider configuration ===
   LEAN_APP_TOKEN: z.string().optional(),
   LEAN_API_BASE_URL: z.string().optional(),
 

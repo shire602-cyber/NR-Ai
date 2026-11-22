@@ -100,15 +100,15 @@ describe("CSV bank statement import page", () => {
   it.each([
     {
       locale: "en" as const,
-      title: "Import a CSV bank statement",
-      action: "Import a statement",
+      title: "CSV bank statements",
+      action: "Upload a CSV statement",
       workflow:
         "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
     },
     {
       locale: "ar" as const,
-      title: "استورد كشف حساب بنكي بصيغة CSV",
-      action: "استيراد كشف",
+      title: "كشوف الحساب البنكي بصيغة CSV",
+      action: "ارفع كشف حساب بصيغة CSV",
       workflow: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
     },
   ])(

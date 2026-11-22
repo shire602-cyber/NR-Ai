@@ -103,7 +103,7 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
-  // Manual (statement-only) connection record. Open-banking connections come only from callback.
+  // Manual statement records are created here. Provider connections are created by callbacks.
   app.post(
     "/api/companies/:companyId/bank-connections",
     authMiddleware,
@@ -194,7 +194,7 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
-  // ─── Open banking (to the external boundary) ────────────────────────────
+  // ─── Bank provider readiness and transaction import ────────────────────────────
 
   app.get(
     "/api/bank/providers",

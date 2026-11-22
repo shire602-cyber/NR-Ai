@@ -231,7 +231,7 @@ describe("D1 public site", () => {
         root = createRoot(container);
         window.history.replaceState(null, "", `/${locale}/product/bank-reconciliation`);
         await act(async () => root.render(createElement(PhaseRoot)));
-        expect(container.querySelector("main .phase-lead")?.textContent).toBe(workflow);
+        expect(container.querySelector("main .phase-lead")?.textContent).toBe(`${workflow}.`);
         expect(
           [...container.querySelectorAll("main .phase-product-detail ol > li")].map(
             (step) => step.textContent
