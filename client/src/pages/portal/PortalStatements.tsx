@@ -9,8 +9,9 @@ import {
   StatementOfAccount,
   type StatementSectionView,
 } from "@/components/documents/StatementOfAccount";
-import { apiRequest } from "@/lib/queryClient";
-import { apiUrl } from "@/lib/api";
+import { portalQuery } from "@/lib/queryClient";
+import { downloadPortalFile } from "@/lib/portal-files";
+import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/format-date";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 
@@ -29,9 +30,9 @@ interface Statement {
 
 export default function PortalStatements() {
   const { t, locale } = useTranslation();
+  const { toast } = useToast();
   const { data, isLoading } = useQuery<Statement>({
-    queryKey: ["portal-statements"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/statements"),
+    ...portalQuery("/api/client-portal/statements"),
   });
 
   if (isLoading) {
@@ -56,9 +57,14 @@ export default function PortalStatements() {
           sections.length > 0 ? (
             <Button
               variant="outline"
-              onClick={() =>
-                window.open(apiUrl("/api/client-portal/statements?format=pdf"), "_blank")
-              }
+              onClick={() => {
+                void downloadPortalFile(
+                  "/api/client-portal/statements?format=pdf",
+                  data?.asOf ? `statement-${data.asOf}.pdf` : "statement.pdf"
+                ).catch(() =>
+                  toast({ title: t["portal.doc.downloadFailed"], variant: "destructive" })
+                );
+              }}
             >
               <FileDown className="h-4 w-4 me-2" aria-hidden />
               <T k="portal.doc.downloadPdf" />

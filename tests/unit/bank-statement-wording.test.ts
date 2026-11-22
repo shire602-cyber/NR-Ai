@@ -32,6 +32,10 @@ import { withNotificationCopy } from "../../shared/server-copy";
 import { bankAuthorizationHandoffBody } from "../../shared/validators/banking";
 import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 
+vi.mock("@/components/banking/BankConnectionRecovery", () => ({
+  BankConnectionRecovery: () => null,
+}));
+
 vi.mock("@/components/layout/SettingsLayout", () => ({
   SettingsLayout: ({ children }: PropsWithChildren) => children,
 }));
@@ -516,7 +520,7 @@ it("replaces stored banking notification text before returning it to the client"
     title: "Legacy title",
     message: "Legacy instructions",
   });
-  expect(notice.title).toBe("Review your bank statement");
+  expect(notice.title).toBe("Import a CSV bank statement");
   expect(notice.message).toBe(bankStatementCopy.en);
   expect(notice.copy.messageKey).toBe("notification.bankSyncFailed.message");
 });

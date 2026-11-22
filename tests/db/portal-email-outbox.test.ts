@@ -53,7 +53,7 @@ describe("W4-D email outbox", () => {
     const reply = await t.as.get(`/api/companies/${t.company.id}/email-outbox`);
     expect(reply.status, reply.text).toBe(200);
     const visible = reply.body.find((row: { id: string }) => row.id === legacy.id);
-    expect(visible).toMatchObject({ subject: "Review your bank statement", status: "delivered" });
+    expect(visible).toMatchObject({ subject: "Import a CSV bank statement", status: "delivered" });
     expect(visible).not.toHaveProperty("idempotencyKey");
     expect(reply.body.find((row: { id: string }) => row.id === unrelated.id)?.subject).toBe(
       "Task due tomorrow"
@@ -120,7 +120,7 @@ describe("W4-D email outbox", () => {
     const deliveries = send.mock.calls.map(([message]) => message);
     const delivered = deliveries.find((m) => m.outboxId === immediate.id);
     expect(delivered).toMatchObject({
-      subject: "Review your bank statement",
+      subject: "Import a CSV bank statement",
       text: bankStatementCopy.en,
     });
     expect(delivered.html).toContain(bankStatementCopy.en);

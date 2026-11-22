@@ -13,6 +13,7 @@
 
 import { EMAIL_NOT_SET_UP_RUN_ERROR } from "./notification-copy";
 import { bankStatementCopy } from "./bank-statement-copy";
+import { BANK_STATEMENT_IMPORT_HREF } from "./app-links";
 
 export interface CopyDescriptor {
   key: string;
@@ -46,7 +47,7 @@ export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billApproved.title", "Bill approved {label}"),
   T("notification.billPaid.title", "Bill paid {label}"),
   T("notification.payrollApproved.title", "Payroll approved"),
-  T("notification.bankSyncFailed.title", "Review your bank statement"),
+  T("notification.bankSyncFailed.title", "Import a CSV bank statement"),
   T("notification.deadlineDue.title", "Deadline due[ {dueDate}]"),
   T("notification.taskDue.title", "Task due[ {dueDate}]"),
   T("notification.invoiceOverdue.title", "Invoice {number} is overdue"),
@@ -1503,6 +1504,7 @@ export function normalizeNotificationCopy<
   if (isBankStatementReview(n.eventKey)) {
     return {
       ...n,
+      actionUrl: BANK_STATEMENT_IMPORT_HREF,
       ...notificationCopy(
         "notification.bankSyncFailed.title",
         "notification.bankSyncFailed.message"

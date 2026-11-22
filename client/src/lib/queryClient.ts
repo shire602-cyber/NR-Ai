@@ -12,6 +12,11 @@ import {
 import { loadNamespaces, useI18n } from "./i18n";
 import { announcePlanLimit } from "./plan-limit";
 import {
+  clearRevokedPortalSelection,
+  getPortalAccountSelection,
+  portalRequestHeaders,
+} from "./portal-state";
+import {
   PERIOD_LOCK_REASON_HEADER,
   askLockReason,
   encodeLockReason,
@@ -41,7 +46,7 @@ export class ApiRequestNotSentError extends ApiError {
   }
 }
 
-async function throwIfResNotOk(res: Response) {
+async function throwIfResNotOk(res: Response, portalSelection?: string | null) {
   if (!res.ok) {
     let errorMessage = res.statusText;
     let body: Record<string, unknown> | undefined;
@@ -62,6 +67,13 @@ async function throwIfResNotOk(res: Response) {
       }
     } catch {
       errorMessage = res.statusText;
+    }
+    if (
+      portalSelection !== undefined &&
+      res.status === 403 &&
+      body?.code === "PORTAL_ACCESS_REVOKED"
+    ) {
+      clearRevokedPortalSelection(portalSelection);
     }
     // E3 (J2-r3): the localised error copy lives in `forms`, which public routes do not load.
     await loadNamespaces(useI18n.getState().locale, SERVER_ERROR_NAMESPACES).catch(() => undefined);
@@ -109,10 +121,11 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 async function buildRequestHeaders(
   method: string,
-  data?: unknown
+  data: unknown,
+  authHeaders: Record<string, string>
 ): Promise<Record<string, string>> {
   let headers: Record<string, string> = {
-    ...getAuthHeaders(),
+    ...authHeaders,
   };
 
   if (data !== undefined) {
@@ -127,11 +140,45 @@ async function buildRequestHeaders(
   return headers;
 }
 
-export async function apiRequest(
+/** Multipart and binary portal requests use the same selection and revocation handling. */
+export async function fetchPortalResource(path: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers ?? portalRequestHeaders());
+  const res = await fetch(apiUrl(path), { ...init, credentials: "include", headers });
+  await throwIfResNotOk(res, headers.get("X-Portal-Account"));
+  return res;
+}
+
+const PORTAL_API_PREFIX = /^\/api\/client-portal\//;
+
+/** The cache and request use the same supplier even if a retry runs after a selection change. */
+export function portalQuery<T = any>(
+  path: `/api/client-portal/${string}`,
+  selection = getPortalAccountSelection()
+) {
+  return {
+    queryKey: [path.replace(PORTAL_API_PREFIX, "portal-"), selection] as const,
+    queryFn: (): Promise<T> =>
+      requestWithHeaders("GET", path, undefined, portalRequestHeaders(selection)),
+  };
+}
+
+export function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
   /** Extra request headers, e.g. `X-Period-Lock-Reason` for an audited soft-lock override. */
+  extraHeaders?: Record<string, string>,
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean }
+): Promise<any> {
+  const authHeaders = PORTAL_API_PREFIX.test(url) ? portalRequestHeaders() : getAuthHeaders();
+  return requestWithHeaders(method, url, data, authHeaders, extraHeaders, options);
+}
+
+async function requestWithHeaders(
+  method: string,
+  url: string,
+  data: unknown,
+  authHeaders: Record<string, string>,
   extraHeaders?: Record<string, string>,
   options?: { queueWhenOffline?: boolean; keepalive?: boolean }
 ): Promise<any> {
@@ -143,7 +190,7 @@ export async function apiRequest(
 
   let headers: Record<string, string>;
   try {
-    headers = withExtra(await buildRequestHeaders(method, data));
+    headers = withExtra(await buildRequestHeaders(method, data, authHeaders));
   } catch (error) {
     if (immediateOnly) throw new ApiRequestNotSentError("Could not prepare the request.");
     throw error;
@@ -174,7 +221,7 @@ export async function apiRequest(
   if (res.status === 401) {
     const refreshed = await refreshSession();
     if (refreshed) {
-      headers = withExtra(await buildRequestHeaders(method, data));
+      headers = withExtra(await buildRequestHeaders(method, data, authHeaders));
       res = await send(headers);
     }
   }
@@ -197,14 +244,17 @@ export async function apiRequest(
     if (lockBody) {
       const reason = await askLockReason(lockBody);
       if (reason) {
-        const lockHeaders = withExtra(await buildRequestHeaders(method, data));
+        const lockHeaders = withExtra(await buildRequestHeaders(method, data, authHeaders));
         lockHeaders[PERIOD_LOCK_REASON_HEADER] = encodeLockReason(reason);
         res = await send(lockHeaders);
       }
     }
   }
 
-  await throwIfResNotOk(res);
+  await throwIfResNotOk(
+    res,
+    PORTAL_API_PREFIX.test(url) ? new Headers(headers).get("X-Portal-Account") : undefined
+  );
   return parseResponseBody(res);
 }
 

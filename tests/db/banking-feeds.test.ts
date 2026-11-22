@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import session from "express-session";
 import { freezeTime, useHarness, type Tenant } from "./harness";
 import type { FetchLike } from "../../server/services/bank-feeds/types";
-import { bankStatementCopy, bankStatementTitle } from "../../shared/bank-statement-copy";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import { LEGACY_BANK_AUTHORIZATION_RETURN_PATH } from "../../shared/bank-authorization-paths";
 
 const h = useHarness();
@@ -85,6 +85,7 @@ async function clearEnv() {
 }
 
 afterEach(clearEnv);
+afterEach(() => vi.unstubAllEnvs());
 
 async function tenant(): Promise<Tenant> {
   return h.createTenant({ name: "Feeds" });
@@ -411,6 +412,88 @@ describe("W3-C financial-data authorization", () => {
     }
   });
 
+  it.each(["en", "ar"])("exposes only customer readiness fields in %s", async (locale) => {
+    vi.stubEnv("LEAN_APP_TOKEN", undefined);
+    vi.stubEnv("TARABUT_CLIENT_ID", undefined);
+    vi.stubEnv("TARABUT_CLIENT_SECRET", undefined);
+    vi.stubEnv("WIO_CLIENT_ID", undefined);
+    vi.stubEnv("WIO_CLIENT_SECRET", undefined);
+    vi.stubEnv("WIO_API_BASE_URL", "https://sandbox.example.test");
+    vi.stubEnv("BANK_FEED_REDIRECT_URIS", REDIRECT);
+    const t = await tenant();
+    const getProviders = () =>
+      t.as.get("/api/bank/providers", { headers: { "Accept-Language": locale } });
+    const adapterIds = ["lean", "tarabut", "wio"];
+
+    for (const enabled of [false, true]) {
+      if (enabled) {
+        vi.stubEnv("WIO_CLIENT_ID", "sandbox-wio-client");
+        vi.stubEnv("WIO_CLIENT_SECRET", "sandbox-wio-secret");
+      }
+      const statuses = adapterIds.map((id) => {
+        const configured = enabled && id === "wio";
+        return { id, configured, status: configured ? "sandbox" : "requires_external" };
+      });
+      const result = await getProviders();
+      expect(result.status, result.text).toBe(200);
+      expect(result.body).toEqual({
+        providers: enabled ? ["wio"] : [],
+        isConfigured: enabled,
+        statuses,
+        redirectUris: [REDIRECT],
+        csvImport: { available: true, message: bankStatementCopy },
+        capabilities: statuses.map(({ id, status }) => ({ id: `bank_feed_${id}`, status })),
+      });
+    }
+  });
+
+  it("reports CSV upload separately from existing provider configuration", async () => {
+    await clearEnv();
+    const admin = await h.createTenant({ isAdmin: true });
+    const response = await admin.as.get("/api/admin/integration-status");
+    expect(response.status, response.text).toBe(200);
+    expect(response.body.integrations).toContainEqual({
+      key: "bankStatementUpload",
+      name: "Bank statement upload",
+      configured: true,
+      detail: bankStatementCopy.en,
+      requiredEnv: [],
+      unlocks: "Upload CSV bank statements for reconciliation",
+    });
+    expect(response.body.integrations).toContainEqual(
+      expect.objectContaining({ key: "openBanking", configured: false })
+    );
+
+    process.env.LEAN_APP_TOKEN = `test-${crypto.randomUUID()}`;
+    const configured = await admin.as.get("/api/admin/integration-status");
+    expect(configured.status, configured.text).toBe(200);
+    expect(configured.body.integrations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "openBanking", configured: true }),
+        expect.objectContaining({ key: "bankStatementUpload", configured: true, requiredEnv: [] }),
+      ])
+    );
+  });
+
+  it("guides customers to CSV import when statement-only sync or balance is unavailable", async () => {
+    const t = await tenant();
+    const connection = await t.as.post(`/api/companies/${t.company.id}/bank-connections`, {
+      bankName: "CSV Statement Account",
+    });
+    expect(connection.status, connection.text).toBe(201);
+    const path = `/api/bank-connections/${connection.body.id}`;
+    const csvMessage = bankStatementCopy.en;
+    const sync = await t.as.post(`${path}/sync`, {});
+    expect(sync.status, sync.text).toBe(400);
+    expect(sync.body).toMatchObject({ code: "BANK_FEED_NOT_SUPPORTED", message: csvMessage });
+    const balance = await t.as.get(`${path}/balance`);
+    expect(balance.status, balance.text).toBe(503);
+    expect(balance.body).toMatchObject({
+      code: "BANK_FEED_BALANCE_UNAVAILABLE",
+      message: csvMessage,
+    });
+  });
+
   it("[R06-14] connect with an unconfigured provider is 503 BANK_FEED_NOT_CONFIGURED", async () => {
     await clearEnv();
     const t = await tenant();
@@ -438,12 +521,12 @@ describe("W3-C financial-data authorization", () => {
     const integrations = await admin.as.get("/api/admin/integration-status");
     expect(integrations.status, integrations.text).toBe(200);
     expect(integrations.body.integrations).toContainEqual({
-      key: "bankStatementImport",
-      name: bankStatementTitle.en,
+      key: "bankStatementUpload",
+      name: "Bank statement upload",
       configured: true,
       detail: bankStatementCopy.en,
       requiredEnv: [],
-      unlocks: "",
+      unlocks: "Upload CSV bank statements for reconciliation",
     });
   });
 
@@ -702,9 +785,17 @@ describe("W3-C financial-data authorization", () => {
       { amount: "-105.50", external_id: "tx-1", bank_statement_account_id: ba.body.id },
       { amount: "2000.00", external_id: "tx-2", bank_statement_account_id: ba.body.id },
     ]);
+
+    await h.sql("UPDATE bank_connections SET access_token = NULL WHERE id = $1", [conn.id]);
+    const unavailable = await t.as.post(`/api/bank-connections/${conn.id}/sync`, {});
+    expect(unavailable.status, unavailable.text).toBe(409);
+    expect(unavailable.body).toMatchObject({
+      code: "BANK_FEED_RECONNECT_REQUIRED",
+      message: bankStatementCopy.en,
+    });
   });
 
-  it("[R06-19] a provider failure marks the connection and emits bank.sync_failed", async () => {
+  it("[R06-19] an authorized retry restores a connection after a provider failure", async () => {
     process.env.LEAN_APP_TOKEN = "sandbox-app-token";
     process.env.BANK_FEED_REDIRECT_URIS = REDIRECT;
     await setBankFeedFetch(leanFixture([]));
@@ -756,6 +847,31 @@ describe("W3-C financial-data authorization", () => {
     expect(connections.status, connections.text).toBe(200);
     expect(connections.body).toContainEqual(
       expect.objectContaining({ id, lastError: bankStatementCopy.en })
+    );
+
+    const calls: string[] = [];
+    await setBankFeedFetch(leanFixture(calls));
+    const viewer = await h.createSecondTenant({ role: "viewer" });
+    expect((await viewer.as.post(`/api/bank-connections/${id}/sync`, {})).status).toBe(404);
+    await h.sql(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')`, [
+      t.company.id,
+      viewer.user.id,
+    ]);
+    expect((await viewer.as.post(`/api/bank-connections/${id}/sync`, {})).status).toBe(403);
+    expect(calls).toHaveLength(0);
+
+    const retry = await t.as.post(`/api/bank-connections/${id}/sync`, {});
+    expect(retry.status, retry.text).toBe(200);
+    expect(retry.body).toMatchObject({ imported: 2 });
+    const list = await t.as.get(`/api/companies/${t.company.id}/bank-connections`);
+    expect(list.status, list.text).toBe(200);
+    expect(list.body).toContainEqual(
+      expect.objectContaining({
+        id,
+        status: "active",
+        lastError: null,
+        lastSyncedAt: expect.any(String),
+      })
     );
   });
 });

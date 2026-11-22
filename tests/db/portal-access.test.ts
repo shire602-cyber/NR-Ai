@@ -152,6 +152,7 @@ describe("W4-D portal identity and visibility", () => {
     await invoice(t, theirs);
     // STEP5: the binding comes from an invitation (no company membership, no staff bind route).
     const pu = await h.createSecondTenant({ userType: "client_portal" });
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [pu.user.id]);
     // Not linked yet → no data at all.
     const unlinked = await pu.as.get("/api/client-portal/invoices");
     expect(unlinked.status).toBe(403);
@@ -164,8 +165,11 @@ describe("W4-D portal identity and visibility", () => {
     const csrf = await fetch(`${h.baseUrl}/api/csrf-token`);
     const cookie = (csrf.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
     const csrfToken = ((await csrf.json()) as { csrfToken: string }).csrfToken;
-    const inviteToken = /#t=([0-9a-f]{64})/.exec(inv.body.inviteUrl)![1];
-    const bind = await fetch(`${h.baseUrl}/api/portal-invitations/${inviteToken}/accept`, {
+    const [mail] = await h.sql("SELECT html FROM email_outbox WHERE related_entity_id = $1", [
+      inv.body.invitation.id,
+    ]);
+    const inviteToken = /#t=([0-9a-f]{64})/.exec(mail.html)![1];
+    const bind = await fetch(`${h.baseUrl}/api/portal-invitations/accept`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -173,7 +177,7 @@ describe("W4-D portal identity and visibility", () => {
         cookie,
         "x-csrf-token": csrfToken,
       },
-      body: JSON.stringify({ acceptTerms: true }),
+      body: JSON.stringify({ token: inviteToken, email: pu.email, acceptTerms: true }),
     });
     expect(bind.status, await bind.text()).toBe(200);
     expect(

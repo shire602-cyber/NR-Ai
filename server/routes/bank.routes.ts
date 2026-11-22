@@ -9,6 +9,7 @@ import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
 import { bankStatementCopy } from "../../shared/bank-statement-copy";
+import { getCapabilities } from "../../shared/capabilities";
 import {
   bankAuthorizationHandoffBody,
   bankAuthorizationResumeBody,
@@ -220,6 +221,9 @@ export function registerBankRoutes(app: Express) {
         statuses: providerStatuses(),
         csvImport: { available: true, message: bankStatementCopy },
         redirectUris: allowedRedirectUris(),
+        capabilities: getCapabilities()
+          .filter(({ id }) => id.startsWith("bank_feed_"))
+          .map(({ id, status }) => ({ id, status })),
       });
     })
   );

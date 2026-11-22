@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Landmark, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import { useLocation } from "wouter";
+import { BankConnectionRecovery } from "@/components/banking/BankConnectionRecovery";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -117,14 +118,15 @@ export default function BankFeeds({
           )}
         </div>
       )}
+      {!retryCapture && !resumeAuthorization && <BankConnectionRecovery />}
       <Card>
         <EmptyState
           size="md"
-          icon={Landmark}
-          title={t["banking.feeds.importStatement"]}
+          icon={Upload}
+          title={t["banking.statementUpload.reconcileTitle"]}
           description={t["banking.feeds.unavailableBody"]}
           action={{
-            label: t["banking.feeds.importStatement"],
+            label: t["banking.statementUpload.cta"],
             href: "/bank-reconciliation?import=1",
             icon: Upload,
             testId: "button-feeds-import-statement",

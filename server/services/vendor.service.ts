@@ -7,6 +7,8 @@ import { and, asc, eq } from "drizzle-orm";
 import { db, pool } from "../db";
 import { DomainError } from "../errors";
 import { assertChosenAccountsNotControl } from "../ledger/control-accounts";
+import { ledgerQueryable } from "../ledger/tx";
+import type { LedgerTx } from "../ledger/types";
 import { vendors, type Vendor } from "../../shared/schema";
 import { scopedGet } from "../tenancy";
 import { agedPayablesWithVendors, type AgingReport } from "../reporting";
@@ -26,8 +28,12 @@ export async function listVendors(companyId: string, opts: { includeInactive?: b
   return rows;
 }
 
-export async function getVendor(companyId: string, vendorId: string): Promise<Vendor> {
-  const v = await scopedGet(vendors, companyId, vendorId);
+export async function getVendor(
+  companyId: string,
+  vendorId: string,
+  tx?: LedgerTx
+): Promise<Vendor> {
+  const v = await scopedGet(vendors, companyId, vendorId, tx);
   if (!v) throw new DomainError("VENDOR_NOT_FOUND", 404, undefined, "Vendor not found");
   return v;
 }
@@ -162,10 +168,11 @@ export interface ResolvedVendor {
  */
 export async function resolveVendor(
   companyId: string,
-  input: { vendor_id?: string | null; vendor_name?: string | null; vendor_trn?: string | null }
+  input: { vendor_id?: string | null; vendor_name?: string | null; vendor_trn?: string | null },
+  tx?: LedgerTx
 ): Promise<ResolvedVendor | null> {
   if (input.vendor_id) {
-    const v = await getVendor(companyId, input.vendor_id);
+    const v = await getVendor(companyId, input.vendor_id, tx);
     return {
       vendorId: v.id,
       vendorName: input.vendor_name || v.name,
@@ -175,7 +182,7 @@ export async function resolveVendor(
     };
   }
   if (!input.vendor_name && !input.vendor_trn) return null;
-  const r = await pool.query(
+  const r = await ledgerQueryable(tx).query(
     `SELECT * FROM vendors WHERE company_id = $1 AND is_active = true
         AND (($2::text IS NOT NULL AND trn = $2) OR ($3::text IS NOT NULL AND lower(name) = lower($3)))
       ORDER BY (trn = $2) DESC NULLS LAST LIMIT 1`,

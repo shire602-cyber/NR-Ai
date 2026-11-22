@@ -236,6 +236,53 @@ describe("capability registry", () => {
     expect(isCapabilityLive("ai", {})).toBe(false);
   });
 
+  it("reports technical adapter health at every provider status", () => {
+    const credentials = {
+      LEAN_APP_TOKEN: "test-app",
+      TARABUT_CLIENT_ID: "test-client",
+      TARABUT_CLIENT_SECRET: "test-secret",
+      WIO_CLIENT_ID: "test-client",
+      WIO_CLIENT_SECRET: "test-secret",
+    };
+    const productionUrls = {
+      LEAN_API_BASE_URL: "https://api.example.com",
+      TARABUT_API_BASE_URL: "https://api.example.com",
+      WIO_API_BASE_URL: "https://api.example.com",
+    };
+    for (const [env, status] of [
+      [{}, "requires_external"],
+      [credentials, "sandbox"],
+      [{ ...credentials, ...productionUrls }, "live"],
+    ] as const) {
+      const bankCapabilities = computeCapabilities(env).filter(({ id }) =>
+        id.startsWith("bank_feed_")
+      );
+      expect(bankCapabilities).toEqual(
+        [
+          ["bank_feed_lean", "Lean adapter", "مهايئ لين", ["LEAN_APP_TOKEN", "LEAN_API_BASE_URL"]],
+          [
+            "bank_feed_tarabut",
+            "Tarabut adapter",
+            "مهايئ ترابط",
+            ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET", "TARABUT_API_BASE_URL"],
+          ],
+          [
+            "bank_feed_wio",
+            "Wio adapter",
+            "مهايئ ويو",
+            ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET", "WIO_API_BASE_URL"],
+          ],
+        ].map(([id, en, ar, envVars]) => ({
+          id,
+          status,
+          label: { en, ar },
+          externalAction: { en: "Review adapter credentials", ar: "راجع بيانات اعتماد المهايئ" },
+          envVars,
+        }))
+      );
+    }
+  });
+
   it("[S5] news_feed is registered and push needs external VAPID keys (requires_external)", () => {
     const status = (env: Record<string, string>, id: string) =>
       computeCapabilities(env).find((c) => c.id === id)?.status;

@@ -187,6 +187,7 @@
   "compliance.vatFlow.confirmFiling": "Mark as filed",
   "compliance.vatFlow.filedDone": "Return recorded as filed",
   "compliance.vatFlow.filingFailed": "Could not record the filing",
+  "compliance.vatFlow.reconciliationOverrideReason": "Explain the difference for the audit log",
   "compliance.vatFlow.noTransmit": "This is your record of a filing made on EmaraTax. Muhasib did not transmit the return.",
   "compliance.vatFlow.recordPayment": "Record payment",
   "compliance.vatFlow.recordRefund": "Record refund",

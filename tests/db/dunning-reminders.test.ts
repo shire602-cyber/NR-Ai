@@ -88,7 +88,7 @@ describe("W4-D dunning engine", () => {
     const t = await h.createTenant();
     const cid = await contact(t, "Arabic Payer", "legacy-arabic@example.test", "ar");
     const inv = await invoice(t, cid);
-    const migration = readFileSync("migrations/0138_preserve_reminder_language.sql", "utf8");
+    const migration = readFileSync("migrations/0140_preserve_reminder_language.sql", "utf8");
     await h.sql("ALTER TABLE reminder_settings ALTER COLUMN language SET DEFAULT 'bilingual'");
     const [legacy] = await h.sql<{ id: string; language: string }>(
       `INSERT INTO reminder_settings (company_id, reminder_type, days_after_due)

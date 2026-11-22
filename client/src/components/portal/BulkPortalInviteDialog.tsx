@@ -27,6 +27,7 @@ type Outcome =
   | "already_active"
   | "pending"
   | "not_found"
+  | "delivery_failed"
   | "rate_limited";
 
 interface BulkProps {

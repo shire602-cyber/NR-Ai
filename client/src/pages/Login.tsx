@@ -5,6 +5,7 @@ import { LoginForm } from "@/components/auth/LoginForm";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { fetchCurrentUser } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
+import { ApiError, apiRequest } from "@/lib/queryClient";
 import { serverErrorMessage, VALIDATION_NAMESPACES } from "@/lib/validation-messages";
 import { establishAuthenticatedSession } from "@/lib/authSession";
 import { useTranslation } from "@/lib/i18n";
@@ -14,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { AUTH_BUTTON, AUTH_INPUT, AuthAlert, AuthHeader } from "@/components/auth/AuthBlocks";
 import { VerifyEmailState } from "@/components/auth/VerifyEmailState";
 import { BANK_AUTHORIZATION_RETURN_PATH } from "@shared/bank-authorization-paths";
+import { toAsciiDigits } from "@shared/arabic-text";
 
 function safeNextPath(): string {
   const params = new URLSearchParams(window.location.search);
@@ -107,6 +109,62 @@ function isVerifyEmailPath(): boolean {
   return typeof window !== "undefined" && window.location.pathname === "/verify-email";
 }
 
+function MicrosoftMailboxChallenge({ onBack }: { onBack: () => void }) {
+  const { t } = useTranslation(VALIDATION_NAMESPACES);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (busy || !/^[0-9]{8}$/.test(code)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { redirectTo } = await apiRequest("POST", "/api/auth/oauth/microsoft/verify-mailbox", {
+        code,
+      });
+      window.location.assign(redirectTo);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t["security.error"]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div data-testid="microsoft-mailbox-challenge">
+      <AuthHeader
+        title={t["security.loginMicrosoftMailboxTitle"]}
+        description={t["security.loginMicrosoftMailboxHelp"]}
+      />
+      {error && <AuthAlert tone="danger">{error}</AuthAlert>}
+      <form onSubmit={submit} className="space-y-5">
+        <div className="space-y-2">
+          <Label htmlFor="microsoft-mailbox-code">{t["security.loginMicrosoftMailboxCode"]}</Label>
+          <Input
+            id="microsoft-mailbox-code"
+            autoComplete="one-time-code"
+            inputMode="numeric"
+            dir="ltr"
+            maxLength={8}
+            autoFocus
+            className={AUTH_INPUT}
+            value={code}
+            onChange={(event) => setCode(toAsciiDigits(event.target.value).replace(/\D/g, ""))}
+            data-testid="input-microsoft-mailbox-code"
+          />
+        </div>
+        <Button type="submit" className={AUTH_BUTTON} disabled={busy || code.length !== 8}>
+          {t["security.verify"]}
+        </Button>
+        <Button type="button" variant="ghost" className="w-full" onClick={onBack}>
+          {t["security.loginMfaBack"]}
+        </Button>
+      </form>
+    </div>
+  );
+}
+
 export default function Login() {
   if (isVerifyEmailPath()) {
     return (
@@ -132,8 +190,14 @@ function SignIn() {
       ? { token: null }
       : null
   );
+  const [microsoftMailbox, setMicrosoftMailbox] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("microsoft_mailbox") === "1"
+  );
 
   useEffect(() => {
+    if (microsoftMailbox) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("oauth_error") === "1") {
       params.delete("oauth_error");
@@ -151,7 +215,7 @@ function SignIn() {
         }
       })
       .catch(() => {});
-  }, [setLocation]);
+  }, [microsoftMailbox, setLocation]);
 
   const handleSuccess = async (user: any, result?: Record<string, unknown>) => {
     if (result?.mfaRequired) {
@@ -168,7 +232,14 @@ function SignIn() {
 
   return (
     <AuthLayout variant="login">
-      {mfa ? (
+      {microsoftMailbox ? (
+        <MicrosoftMailboxChallenge
+          onBack={() => {
+            window.history.replaceState({}, "", "/login");
+            setMicrosoftMailbox(false);
+          }}
+        />
+      ) : mfa ? (
         <MfaChallenge
           mfaToken={mfa.token}
           onDone={(user, body) => handleSuccess(user, { ...body, mfaRequired: false })}

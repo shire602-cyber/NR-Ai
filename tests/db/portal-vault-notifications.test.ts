@@ -402,4 +402,46 @@ describe("W4-D notification engine", () => {
       (await t.as.put("/api/notification-preferences", { digestFrequency: "hourly" })).status
     ).toBe(400);
   });
+
+  it("replaces a historical bank notification with CSV guidance in the API and daily digest", async () => {
+    const t = await h.createTenant();
+    await t.as.put("/api/notification-preferences", { digestFrequency: "daily" });
+    const entityId = crypto.randomUUID();
+    await emit("bank.sync_failed", { companyId: t.company.id, entityId });
+    const legacyTitle = "Old bank alert";
+    const legacyMessage = "Old alert instructions";
+    await h.sql(
+      `UPDATE notifications SET title = $1, message = $2, action_url = '/bank-feeds'
+        WHERE user_id = $3 AND related_entity_id = $4`,
+      [legacyTitle, legacyMessage, t.user.id, entityId]
+    );
+
+    const result = await t.as.get("/api/notifications");
+    expect(result.status, result.text).toBe(200);
+    const message = bankStatementCopy.en;
+    expect(result.body.notifications).toContainEqual(
+      expect.objectContaining({
+        relatedEntityId: entityId,
+        title: "Import a CSV bank statement",
+        message,
+        actionUrl: "/bank-reconciliation?import=1",
+        copy: {
+          titleKey: "notification.bankSyncFailed.title",
+          titleParams: {},
+          messageKey: "notification.bankSyncFailed.message",
+          messageParams: {},
+        },
+      })
+    );
+
+    const { sendDailyDigests } = await import("../../server/services/notification-engine.service");
+    await sendDailyDigests();
+    const [digest] = await h.sql<{ html: string }>(
+      `SELECT html FROM email_outbox WHERE category = 'digest' AND to_address = $1`,
+      [t.email.toLowerCase()]
+    );
+    expect(digest.html).toContain("Import a CSV bank statement");
+    expect(digest.html).toContain(message);
+    expect(digest.html).not.toContain(legacyMessage);
+  });
 });

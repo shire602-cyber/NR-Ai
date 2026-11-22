@@ -1,11 +1,12 @@
 import type { Express, Request, Response } from "express";
-import { bankStatementCopy, bankStatementTitle } from "../../shared/bank-statement-copy";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import { authMiddleware, adminMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/email.service";
 import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
 import { isObjectStorageConfigured, objectStorageBackend } from "../services/fileStorage";
 import { connectorStatuses } from "../services/connectors/oauth";
+import { isOpenBankingConfigured } from "../services/open-banking.service";
 
 /**
  * The "what do I paste where" surface: each integration with its live
@@ -80,12 +81,22 @@ export function registerIntegrationStatusRoutes(app: Express) {
           unlocks: "Subscriptions, checkout, plan upgrades, tier enforcement",
         },
         {
-          key: "bankStatementImport",
-          name: bankStatementTitle.en,
+          key: "openBanking",
+          name: "Existing bank connections",
+          configured: isOpenBankingConfigured(),
+          detail: null,
+          requiredEnv: [
+            "LEAN_APP_TOKEN — or TARABUT_CLIENT_ID + TARABUT_CLIENT_SECRET — or WIO_CLIENT_ID + WIO_CLIENT_SECRET",
+          ],
+          unlocks: "Refresh transactions for existing connections",
+        },
+        {
+          key: "bankStatementUpload",
+          name: "Bank statement upload",
           configured: true,
           detail: bankStatementCopy.en,
           requiredEnv: [],
-          unlocks: "",
+          unlocks: "Upload CSV bank statements for reconciliation",
         },
         {
           key: "push",

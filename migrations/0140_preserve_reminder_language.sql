@@ -1,4 +1,4 @@
--- 0138_preserve_reminder_language (W4-D): keep the effective language of existing reminder rules.
+-- 0140_preserve_reminder_language (W4-D): keep the effective language of existing reminder rules.
 -- Idempotent: the old default identifies databases where legacy values still need conversion.
 DO $$
 BEGIN

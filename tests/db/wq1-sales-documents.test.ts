@@ -5,7 +5,7 @@
  * the sent / viewed log (7.25), document language (7.21), source filter (13.5), quote by email
  * (7.5).
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { accountByCode, ledgerTotals, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -494,19 +494,48 @@ describe("WQ1 attachments, document language, sent / viewed log (7.2g, 7.21, 7.2
     expect((await h.anon.get(`/api/public/invoices/${share.body.token}`)).status).toBe(200);
     // A refresh within the throttle window is one view.
     expect((await h.anon.get(`/api/public/invoices/${share.body.token}`)).status).toBe(200);
-    const log = await t.as.get(`/api/invoices/${inv.id}/activity`);
-    expect(log.status, log.text).toBe(200);
-    expect(
-      log.body.map((e: { kind: string; sent: boolean; status: string | null }) => e.kind).sort()
-    ).toEqual(["emailed", "viewed"]);
-    const emailed = log.body.find((e: { kind: string }) => e.kind === "emailed");
-    expect(emailed).toMatchObject({
-      recipient: "ap@gulfretail.example",
-      status: "blocked_no_provider",
-      sent: false,
-    });
+    // The public route records views in the background.
+    await vi.waitFor(
+      async () => {
+        const log = await t.as.get(`/api/invoices/${inv.id}/activity`);
+        expect(log.status, log.text).toBe(200);
+        expect(log.body.map((e: { kind: string }) => e.kind).sort()).toEqual([
+          "emailed",
+          "viewed",
+        ]);
+        const emailed = log.body.find((e: { kind: string }) => e.kind === "emailed");
+        expect(emailed).toMatchObject({
+          recipient: "ap@gulfretail.example",
+          status: "blocked_no_provider",
+          sent: false,
+        });
+      },
+      { timeout: 5000 }
+    );
     const stranger = await h.createSecondTenant();
     expect((await stranger.as.get(`/api/invoices/${inv.id}/activity`)).status).toBe(404);
+  });
+
+  it("records just one view when invoice share requests overlap", async (ctx) => {
+    if (!h.concurrencySupported) return ctx.skip();
+    const t = await h.createTenant();
+    const { id } = await issued(t, { customerName: "Gulf Retail LLC" });
+    const { recordInvoiceView, VIEW_THROTTLE_MS } = await import(
+      "../../server/services/invoice-activity.service"
+    );
+    const invoice = { id, companyId: t.company.id };
+    const now = new Date();
+
+    const recorded = await Promise.all(
+      Array.from({ length: 8 }, () => recordInvoiceView(invoice, now))
+    );
+    expect(recorded.filter(Boolean)).toHaveLength(1);
+    expect(await recordInvoiceView(invoice, new Date(now.getTime() + VIEW_THROTTLE_MS))).toBe(true);
+    const views = await h.sql(
+      "SELECT id FROM invoice_events WHERE invoice_id = $1 AND kind = 'viewed'",
+      [id]
+    );
+    expect(views).toHaveLength(2);
   });
 });
 

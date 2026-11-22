@@ -17,7 +17,7 @@ const migrationsFolder = path.resolve(projectRoot, "migrations");
 
 try {
   await runMigrations(migrationsFolder);
-  await ensureCriticalSchema();
+  await ensureCriticalSchema({ requireVatGroupAuditMembershipIndex: true });
   await backfillPlaintextSecrets();
   log.info("Production migration completed");
 } catch (err) {

@@ -203,7 +203,7 @@ export const tarabutAdapter: BankFeedAdapter = {
   },
 };
 
-// ─── Wio Business adapter ──────────────────────────────────────────────────
+// ─── Wio Business transaction provider ────────────────────────────────────
 
 function wioBase(): string {
   return env("WIO_API_BASE_URL") || "https://sandbox.api.business.wio.io";

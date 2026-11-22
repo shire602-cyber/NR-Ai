@@ -76,7 +76,7 @@ export interface ProviderStatus {
   status: CapabilityStatus;
 }
 
-/** Honest status per provider, from shared/capabilities.ts. */
+/** Customer readiness fields for each provider. */
 export function providerStatuses(): ProviderStatus[] {
   return Object.values(BANK_FEED_ADAPTERS).map((a) => {
     const cap = getCapability(a.capability);
@@ -599,7 +599,7 @@ export function registerBankFeedJobs(): void {
   registerJob({
     name: "bankFeeds.sync",
     cron: "41 */6 * * *",
-    description: "Import and deduplicate bank transactions by source reference",
+    description: "Import transactions for configured accounts (deduplicate by provider transaction ID)",
     run: async () => {
       await runScheduledBankFeedSync();
     },

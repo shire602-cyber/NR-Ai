@@ -273,7 +273,7 @@
   "components.srv.notification.billApproved.title": "Bill approved {label}",
   "components.srv.notification.billPaid.title": "Bill paid {label}",
   "components.srv.notification.payrollApproved.title": "Payroll approved",
-  "components.srv.notification.bankSyncFailed.title": "Review your bank statement",
+  "components.srv.notification.bankSyncFailed.title": "Import a CSV bank statement",
   "components.srv.notification.deadlineDue.title": "Deadline due[ {dueDate}]",
   "components.srv.notification.taskDue.title": "Task due[ {dueDate}]",
   "components.srv.notification.invoiceOverdue.title": "Invoice {number} is overdue",

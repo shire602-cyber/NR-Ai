@@ -280,7 +280,7 @@
   "components.srv.notification.billPaid.message": "تم سداد فاتورة المورد {label}.",
   "components.srv.notification.payrollApproved.title": "تم اعتماد الرواتب",
   "components.srv.notification.payrollApproved.message": "تم اعتماد رواتب {month}/{year}.",
-  "components.srv.notification.bankSyncFailed.title": "راجع كشف حسابك البنكي",
+  "components.srv.notification.bankSyncFailed.title": "استورد كشف حساب بنكي بصيغة CSV",
   "components.srv.notification.bankSyncFailed.message": "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
   "components.srv.notification.deadlineDue.title": "موعد استحقاق[ {dueDate}]",
   "components.srv.notification.deadlineDue.message": "{obligation} مستحق[ بتاريخ {dueDate}].",
