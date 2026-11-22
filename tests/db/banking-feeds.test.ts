@@ -5,6 +5,7 @@
  * Provider HTTP is a recorded sandbox-shaped fixture; nothing calls a real bank.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
 import { freezeTime, useHarness, type Tenant } from "./harness";
 import type { FetchLike } from "../../server/services/bank-feeds/types";
 import { bankStatementCopy, bankStatementTitle } from "../../shared/bank-statement-copy";
@@ -88,27 +89,35 @@ async function tenant(): Promise<Tenant> {
   return h.createTenant({ name: "Feeds" });
 }
 
-async function stageReturn(search: string) {
+async function browserHeaders() {
   const csrf = await h.anon.get("/api/csrf-token");
-  const headers = {
+  return {
     cookie: csrf.headers
       .getSetCookie()
       .map((header) => header.split(";")[0])
       .join("; "),
     "x-csrf-token": csrf.body.csrfToken,
   };
-  const reply = await h.anon.post("/api/bank-connections/handoff", { search }, { headers });
+}
+
+async function stageReturn(search: string, initial?: Awaited<ReturnType<typeof browserHeaders>>) {
+  const headers = initial ?? (await browserHeaders());
+  const tabKey = randomUUID();
+  const reply = await h.anon.post("/api/bank-connections/handoff", { search, tabKey }, { headers });
   expect(reply.status, reply.text).toBe(200);
-  expect(reply.body).toEqual({ staged: true });
+  const returnId = reply.body.returnId as string;
   const handoff = reply.headers
     .getSetCookie()
-    .find((header) => header.startsWith("statement-return="));
+    .find((header) => header.startsWith(`statement-return-${returnId}=`));
   expect(handoff).toBeDefined();
   return {
     handoff: handoff!,
+    reference: { returnId, tabKey },
     headers: { ...headers, cookie: `${headers.cookie}; ${handoff!.split(";")[0]}` },
   };
 }
+
+const resumeEndpoint = "/api/bank-connections/callback/resume";
 
 describe("W3-C financial-data authorization", () => {
   it("stages an anonymous return and resumes it once for its initiating user after signing in", async () => {
@@ -129,10 +138,13 @@ describe("W3-C financial-data authorization", () => {
     expect(started.status, started.text).toBe(200);
     const state = new URL(started.body.authUrl).searchParams.get("state")!;
     const search = `?${new URLSearchParams({ entity_id: code, state })}`;
-    const withoutCsrf = await h.anon.post("/api/bank-connections/handoff", { search });
+    const withoutCsrf = await h.anon.post("/api/bank-connections/handoff", {
+      search,
+      tabKey: randomUUID(),
+    });
     expect(withoutCsrf.status).toBe(403);
 
-    const { handoff, headers } = await stageReturn(search);
+    const { handoff, headers, reference } = await stageReturn(search);
     expect(handoff).toMatch(/; HttpOnly/i);
     expect(handoff).toMatch(/; Path=\/api\/bank-connections\/callback\/resume/i);
     expect(Number(/Max-Age=(\d+)/i.exec(handoff)?.[1])).toBeGreaterThan(0);
@@ -140,11 +152,11 @@ describe("W3-C financial-data authorization", () => {
     expect(decodeURIComponent(handoff)).not.toContain(code);
     expect(decodeURIComponent(handoff)).not.toContain(state);
     const endpoint = "/api/bank-connections/callback/resume";
-    expect((await h.anon.post(endpoint, { resume: true }, { headers })).status).toBe(401);
-    expect((await other.as.post(endpoint, { resume: true }, { headers })).body.code).toBe(
+    expect((await h.anon.post(endpoint, reference, { headers })).status).toBe(401);
+    expect((await other.as.post(endpoint, reference, { headers })).body.code).toBe(
       "INVALID_OAUTH_STATE"
     );
-    expect((await owner.as.post(endpoint, { resume: true })).status).toBe(204);
+    expect((await owner.as.post(endpoint, reference)).body).toEqual({ outcome: "expired" });
     expect(calls).toEqual([]);
 
     const login = await h.anon.post("/api/auth/login", {
@@ -158,17 +170,27 @@ describe("W3-C financial-data authorization", () => {
     expect(access).toBeDefined();
     headers.cookie += `; ${access!.split(";")[0]}`;
     const replies = await Promise.all([
-      h.anon.post(endpoint, { resume: true }, { headers }),
-      h.anon.post(endpoint, { resume: true }, { headers }),
+      h.anon.post(endpoint, reference, { headers }),
+      h.anon.post(endpoint, reference, { headers }),
     ]);
-    const completed = replies.filter((reply) => reply.status === 201);
-    expect(completed).toHaveLength(1);
-    expect(completed[0].body.connections).toMatchObject([
+    const completed = replies.find((reply) => reply.status === 201);
+    expect(completed?.body.connections).toMatchObject([
       { companyId: owner.company.id, provider: "lean" },
     ]);
-    expect(completed[0].headers.getSetCookie().join(" ")).toContain("statement-return=;");
-    const replay = await h.anon.post(endpoint, { resume: true }, { headers });
-    expect(replay.body).toEqual({ outcome: "failed" });
+    const replay = await h.anon.post(endpoint, reference, { headers });
+    expect(replay.body).toEqual(completed?.body);
+    const acknowledged = await h.anon.post(
+      endpoint,
+      { ...reference, acknowledge: true },
+      { headers }
+    );
+    expect(acknowledged.body).toEqual({ acknowledged: true });
+    expect(acknowledged.headers.getSetCookie().join(" ")).toContain(
+      `statement-return-${reference.returnId}=;`
+    );
+    expect((await h.anon.post(endpoint, reference, { headers })).body).toEqual({
+      outcome: "expired",
+    });
     expect(calls).toHaveLength(1);
   });
 
@@ -191,17 +213,170 @@ describe("W3-C financial-data authorization", () => {
     const endpoint = "/api/bank-connections/callback/resume";
     const restore = freezeTime(new Date(started.body.expiresAt).getTime() + 1000);
     try {
-      const expired = await owner.as.post(endpoint, { resume: true }, { headers: saved.headers });
+      const expired = await owner.as.post(endpoint, saved.reference, { headers: saved.headers });
       expect(expired.status, expired.text).toBe(200);
-      expect(expired.body).toEqual({ outcome: "failed" });
+      expect(expired.body).toEqual({ outcome: "expired" });
     } finally {
       restore();
     }
     const cancelled = await stageReturn("?error=access_denied&error_description=fixture");
     expect(
-      (await owner.as.post(endpoint, { resume: true }, { headers: cancelled.headers })).body
+      (await owner.as.post(endpoint, cancelled.reference, { headers: cancelled.headers })).body
     ).toEqual({ outcome: "cancelled" });
     expect(calls).toEqual([]);
+  });
+
+  it("keeps two simultaneous returns in one browser bound to their own tab and workspace", async () => {
+    vi.stubEnv("LEAN_APP_TOKEN", "sandbox-app-token");
+    vi.stubEnv("BANK_FEED_REDIRECT_URIS", REDIRECT);
+    const a = await tenant();
+    const b = await h.createSecondTenant();
+    await h.sql("INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'owner')", [
+      b.company.id,
+      a.user.id,
+    ]);
+    const { getAdapter } = await import("../../server/services/bank-feeds");
+    const adapter = getAdapter("lean");
+    const list = vi.spyOn(adapter, "listAccounts").mockImplementation(async ({ accessToken }) => [
+      {
+        externalId: accessToken,
+        name: "Fixture account",
+        bankName: "Fixture",
+        currency: "AED",
+        iban: null,
+        last4: null,
+      },
+    ]);
+    try {
+      const initial = await browserHeaders();
+      const stage = async (companyId: string, code: string) => {
+        const started = await a.as.post(`/api/companies/${companyId}/bank-connections/connect`, {
+          provider: "lean",
+          redirectUrl: REDIRECT,
+        });
+        expect(started.status, started.text).toBe(200);
+        const state = new URL(started.body.authUrl).searchParams.get("state")!;
+        return stageReturn(`?${new URLSearchParams({ code, state })}`, initial);
+      };
+      const [tabA, tabB] = await Promise.all([
+        stage(a.company.id, "account-a"),
+        stage(b.company.id, "account-b"),
+      ]);
+      const headers = {
+        ...initial,
+        cookie: [initial.cookie, tabA.handoff.split(";")[0], tabB.handoff.split(";")[0]].join("; "),
+      };
+      const mismatch = await a.as.post(
+        resumeEndpoint,
+        { ...tabB.reference, tabKey: tabA.reference.tabKey },
+        { headers }
+      );
+      expect(mismatch.body).toEqual({ outcome: "failed" });
+      expect(list).not.toHaveBeenCalled();
+
+      const first = await a.as.post(resumeEndpoint, tabA.reference, { headers });
+      expect(first.status, first.text).toBe(201);
+      expect(first.body.connections).toMatchObject([
+        { externalAccountId: "account-a", companyId: a.company.id },
+      ]);
+      const closed = await a.as.post(
+        resumeEndpoint,
+        { ...tabA.reference, acknowledge: true },
+        { headers }
+      );
+      expect(
+        closed.headers
+          .getSetCookie()
+          .filter((cookie) => cookie.startsWith("statement-return-"))
+          .map((cookie) => cookie.split(";")[0])
+      ).toEqual([`statement-return-${tabA.reference.returnId}=`]);
+      const second = await a.as.post(resumeEndpoint, tabB.reference, { headers });
+      expect(second.status, second.text).toBe(201);
+      expect(second.body.connections).toMatchObject([
+        { externalAccountId: "account-b", companyId: b.company.id },
+      ]);
+      expect(list).toHaveBeenCalledTimes(2);
+    } finally {
+      list.mockRestore();
+    }
+  });
+
+  it("rolls back all accounts and retries the saved exchange when the second insert fails", async () => {
+    vi.stubEnv("LEAN_APP_TOKEN", "sandbox-app-token");
+    vi.stubEnv("BANK_FEED_REDIRECT_URIS", REDIRECT);
+    const owner = await tenant();
+    const { getAdapter } = await import("../../server/services/bank-feeds");
+    const { storage } = await import("../../server/storage");
+    const handoff = await import("../../server/services/bank-feeds/return-handoff");
+    const receipt = vi.spyOn(handoff, "recordReturnReceipt").mockResolvedValueOnce(undefined);
+    const adapter = getAdapter("lean");
+    const exchange = vi
+      .spyOn(adapter, "exchangeCode")
+      .mockResolvedValue({ accessToken: "fixture-value", refreshToken: null, expiresAt: null });
+    const list = vi.spyOn(adapter, "listAccounts").mockResolvedValue(
+      ["first", "second"].map((externalId) => ({
+        externalId,
+        name: "Fixture account",
+        bankName: "Fixture",
+        currency: "AED",
+        iban: null,
+        last4: null,
+      }))
+    );
+    const insert = storage.createBankConnection.bind(storage);
+    let fail = true;
+    const writes = vi
+      .spyOn(storage, "createBankConnection")
+      .mockImplementation(async (data, writer) => {
+        if (fail && data.externalAccountId === "second") throw new Error("Second insert fixture");
+        return insert(data, writer);
+      });
+    try {
+      const started = await owner.as.post(
+        `/api/companies/${owner.company.id}/bank-connections/connect`,
+        { provider: "lean", redirectUrl: REDIRECT }
+      );
+      expect(started.status, started.text).toBe(200);
+      const state = new URL(started.body.authUrl).searchParams.get("state")!;
+      const { reference, headers } = await stageReturn(
+        `?${new URLSearchParams({ code: "fixture-code", state })}`
+      );
+      const initial = await owner.as.post(resumeEndpoint, reference, { headers });
+      expect(initial.status, initial.text).toBe(503);
+      expect(initial.body.code).toBe("AUTHORIZATION_RETRY");
+      expect(
+        await h.sql("SELECT id FROM bank_connections WHERE company_id = $1", [owner.company.id])
+      ).toEqual([]);
+      expect(
+        await h.sql("SELECT used_at FROM bank_feed_oauth_states WHERE company_id = $1", [
+          owner.company.id,
+        ])
+      ).toEqual([{ used_at: null }]);
+
+      fail = false;
+      const recovered = await owner.as.post(resumeEndpoint, reference, { headers });
+      expect(recovered.status, recovered.text).toBe(201);
+      expect(
+        recovered.body.connections.map(
+          (item: { externalAccountId: string }) => item.externalAccountId
+        )
+      ).toEqual(["first", "second"]);
+      const fallback = await owner.as.post(resumeEndpoint, reference, { headers });
+      expect(fallback.body).toEqual(recovered.body);
+      const replay = await owner.as.post(resumeEndpoint, reference, { headers });
+      expect(replay.status, replay.text).toBe(200);
+      expect(replay.body).toEqual(recovered.body);
+      expect(
+        await h.sql("SELECT id FROM bank_connections WHERE company_id = $1", [owner.company.id])
+      ).toHaveLength(2);
+      expect(exchange).toHaveBeenCalledOnce();
+      expect(list).toHaveBeenCalledOnce();
+    } finally {
+      writes.mockRestore();
+      exchange.mockRestore();
+      list.mockRestore();
+      receipt.mockRestore();
+    }
   });
 
   it("[R06-14] connect with an unconfigured provider is 503 BANK_FEED_NOT_CONFIGURED", async () => {
@@ -377,13 +552,13 @@ describe("W3-C financial-data authorization", () => {
     });
     expect(started.status, started.text).toBe(200);
     const state = new URL(started.body.authUrl).searchParams.get("state")!;
-    const { headers } = await stageReturn(
+    const { headers, reference } = await stageReturn(
       `?${new URLSearchParams({ code: ENTITY_SECRET, state })}`
     );
     const endpoint = "/api/bank-connections/callback/resume";
 
     await setCompanyMfaPolicy(company.id, "owners_admins", user.id);
-    const denied = await as.post(endpoint, { resume: true }, { headers });
+    const denied = await as.post(endpoint, reference, { headers });
     expect(denied.status, denied.text).toBe(403);
     expect(denied.body).toMatchObject({
       code: "MFA_ENROLLMENT_REQUIRED",
@@ -397,7 +572,7 @@ describe("W3-C financial-data authorization", () => {
     expect(authorization.used_at).toBeNull();
 
     await setCompanyMfaPolicy(company.id, "none", user.id);
-    const completed = await as.post(endpoint, { resume: true }, { headers });
+    const completed = await as.post(endpoint, reference, { headers });
     expect(completed.status, completed.text).toBe(201);
     expect(calls).toHaveLength(1);
   });

@@ -187,14 +187,6 @@ section { padding: 100px 0; }
 .band .stat .lbl { color: #b8ada0; font-size: 0.86rem; letter-spacing: 0.05em; margin-top: 10px; }
 
 /* ---------- Testimonials ---------- */
-.quote-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); }
-.quote { background: var(--paper); padding: 46px 40px; }
-.quote .mark { font-family: var(--serif); font-size: 3rem; color: var(--gold); line-height: 0.5; }
-.quote blockquote { font-family: var(--serif); font-size: 1.45rem; line-height: 1.4; margin: 18px 0 26px; color: var(--ink); }
-.quote .who { display: flex; align-items: center; gap: 14px; }
-.quote .who .av { width: 44px; height: 44px; border-radius: 50%; background: var(--ink); color: var(--paper); display: grid; place-items: center; font-family: var(--serif); font-size: 1.1rem; flex: none; }
-.quote .who .name { font-weight: 600; font-size: 0.95rem; }
-.quote .who .role { font-size: 0.82rem; color: var(--muted); }
 
 /* ---------- CTA band ---------- */
 .cta-band { background: var(--paper-2); text-align: center; }
@@ -285,7 +277,6 @@ form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 @media (max-width: 980px) {
   .hero-grid, .split, .about-lead, .contact-grid, .svc-row { grid-template-columns: 1fr; gap: 44px; }
   .cards, .ind-grid, .team-grid, .values { grid-template-columns: 1fr 1fr; }
-  .quote-grid { grid-template-columns: 1fr; }
   .band .stat-grid { grid-template-columns: 1fr 1fr; gap: 44px; }
   .footer-grid { grid-template-columns: 1fr 1fr; }
   .svc-row ul { grid-template-columns: 1fr; }

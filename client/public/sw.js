@@ -1,5 +1,5 @@
 // Bump this on any caching-strategy change to force old caches to be purged.
-const CACHE_NAME = "muhasib-v2";
+const CACHE_NAME = "muhasib-v3";
 
 // Only precache the offline fallback. We deliberately do NOT cache-first the
 // HTML shell — see the navigation handler below.
@@ -51,6 +51,10 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) {
     return;
   }
+
+  // Authorization returns belong to the browser navigation only. A cached HTML response also
+  // retains its original URL, even when stored under the offline shell's root key.
+  if (/^\/(?:bank-feeds|banking)\/callback\/?$/i.test(url.pathname)) return;
 
   // Navigation / HTML: NETWORK-FIRST. The HTML shell references content-hashed
   // chunk filenames, so it must always be fresh — a cached shell pointing at

@@ -1,114 +1,125 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Request, Response } from "express";
-import type { SessionData } from "express-session";
 import type { z } from "zod";
-import { bankFeedCallbackBody } from "../../../shared/validators/banking";
+import {
+  bankAuthorizationReference,
+  bankFeedCallbackBody,
+} from "../../../shared/validators/banking";
 import { authCookieBaseOptions } from "../../config/cookies";
 import { createLogger } from "../../config/logger";
-import { decryptSecret, encryptSecret } from "../secret-vault";
-import { pendingCallbackExpiry } from "./index";
+import { pendingCallbackExpiry, type CallbackResult } from "./index";
+import { deleteReturnSession, readReturnSession, writeReturnSession } from "./return-session";
 
-declare module "express-session" {
-  interface SessionData {
-    statementReturn?: { sealed: string; expiresAt: number };
-  }
-}
-
+type Reference = z.output<typeof bankAuthorizationReference>;
 type CallbackBody = z.output<typeof bankFeedCallbackBody>;
-type Outcome = "cancelled" | "failed";
+type Outcome = "cancelled" | "failed" | "expired";
+type Receipt = { userId: string; companyId: string; result: CallbackResult };
+type StoredHandoff = {
+  reference: Reference;
+  expiresAt: string;
+  value: { kind: "pending"; callback: CallbackBody } | { kind: "completed"; receipt: Receipt };
+};
+type PendingHandoff = { storeKey: string; reference: Reference; expiresAt: string };
 
-export type ReturnHandoff =
-  | { kind: "pending"; callback: CallbackBody; storeKey: string }
-  | { kind: "empty" | Outcome };
+export type ReturnHandoff = (PendingHandoff & StoredHandoff["value"]) | { kind: Outcome };
 
 const log = createLogger("statement-authorization");
 const cookiePath = "/api/bank-connections/callback/resume";
-const cookieName = () => `${authCookieBaseOptions().secure ? "__Secure-" : ""}statement-return`;
+const cookieName = (id: string) =>
+  `${authCookieBaseOptions().secure ? "__Secure-" : ""}statement-return-${id}`;
 const cookieOptions = () => ({ ...authCookieBaseOptions(), path: cookiePath });
 const outcomeMaxAge = 10 * 60 * 1000;
 const storeKeyFor = (handle: string) =>
   `statement-return:${createHash("sha256").update(handle).digest("hex")}`;
 
-function setReturnCookie(res: Response, value: string, maxAge: number): void {
-  res.cookie(cookieName(), value, { ...cookieOptions(), signed: true, maxAge });
+function setReturnCookie(res: Response, id: string, value: string, maxAge: number): void {
+  res.cookie(cookieName(id), value, { ...cookieOptions(), signed: true, maxAge });
 }
 
-/** Store a separately expiring record in the shared server session store before sign-in. */
 export async function stageReturnHandoff(
   req: Request,
   res: Response,
-  search: string
-): Promise<void> {
+  search: string,
+  tabKey: string
+): Promise<string> {
+  const returnId = randomUUID();
   const params = new URLSearchParams(search);
   const error = params.get("error");
-  if (error === "access_denied" || /^(?:cancelled|canceled)$/i.test(params.get("status") ?? "")) {
-    setReturnCookie(res, "cancelled", outcomeMaxAge);
-    return;
-  }
-
   const callback = bankFeedCallbackBody.safeParse({
     code: params.get("code") || params.get("entity_id"),
     state: params.get("state"),
   });
+  const cancelled =
+    error === "access_denied" || /^(?:cancelled|canceled)$/i.test(params.get("status") ?? "");
   const expiresAt =
-    !error && callback.success && (await pendingCallbackExpiry(callback.data.state));
+    !cancelled && !error && callback.success && (await pendingCallbackExpiry(callback.data.state));
   const now = Date.now();
   if (!callback.success || !expiresAt || expiresAt.getTime() <= now) {
-    setReturnCookie(res, "failed", outcomeMaxAge);
-    return;
+    const outcome = cancelled ? "cancelled" : !error && callback.success ? "expired" : "failed";
+    setReturnCookie(res, returnId, `${outcome}:${tabKey}`, outcomeMaxAge);
+    return returnId;
   }
 
   const handle = randomBytes(32).toString("base64url");
-  const maxAge = expiresAt.getTime() - now;
-  const record: SessionData = {
-    cookie: { expires: expiresAt, originalMaxAge: maxAge },
-    statementReturn: {
-      sealed: encryptSecret(JSON.stringify(callback.data))!,
-      expiresAt: expiresAt.getTime(),
-    },
+  const record: StoredHandoff = {
+    reference: { returnId, tabKey },
+    expiresAt: expiresAt.toISOString(),
+    value: { kind: "pending", callback: callback.data },
   };
-
-  await new Promise<void>((resolve, reject) => {
-    req.sessionStore.set(storeKeyFor(handle), record, (err) => (err ? reject(err) : resolve()));
-  });
-  setReturnCookie(res, handle, maxAge);
+  await writeReturnSession(req.sessionStore, storeKeyFor(handle), record, expiresAt);
+  setReturnCookie(res, returnId, handle, expiresAt.getTime() - now);
+  return returnId;
 }
 
-export async function readReturnHandoff(req: Request): Promise<ReturnHandoff> {
-  const handle: unknown = req.signedCookies?.[cookieName()];
-  if (handle === undefined) return { kind: "empty" };
-  if (handle === "cancelled" || handle === "failed") return { kind: handle };
-  if (typeof handle !== "string" || !/^[\w-]{43}$/.test(handle)) return { kind: "failed" };
-
+export async function readReturnHandoff(
+  req: Request,
+  reference: Reference
+): Promise<ReturnHandoff> {
+  const handle: unknown = req.signedCookies?.[cookieName(reference.returnId)];
+  for (const kind of ["cancelled", "failed", "expired"] as const) {
+    if (handle === `${kind}:${reference.tabKey}`) return { kind };
+  }
+  if (typeof handle !== "string" || !/^[\w-]{43}$/.test(handle)) return { kind: "expired" };
   const storeKey = storeKeyFor(handle);
-  const record = await new Promise<SessionData | null | undefined>((resolve, reject) => {
-    req.sessionStore.get(storeKey, (err, value) => (err ? reject(err) : resolve(value)));
-  });
-  const pending = record?.statementReturn;
-  if (!pending || pending.expiresAt <= Date.now()) return { kind: "failed" };
-
-  try {
-    const callback = bankFeedCallbackBody.parse(JSON.parse(decryptSecret(pending.sealed) ?? ""));
-    return { kind: "pending", callback, storeKey };
-  } catch {
+  const record = await readReturnSession<StoredHandoff>(req.sessionStore, storeKey);
+  if (!record) return { kind: "expired" };
+  if (
+    record.reference.returnId !== reference.returnId ||
+    record.reference.tabKey !== reference.tabKey
+  ) {
     return { kind: "failed" };
+  }
+  return { ...record.value, storeKey, reference, expiresAt: record.expiresAt };
+}
+
+export async function recordReturnReceipt(
+  req: Request,
+  handoff: PendingHandoff,
+  receipt: Receipt
+): Promise<void> {
+  const record: StoredHandoff = {
+    reference: handoff.reference,
+    expiresAt: handoff.expiresAt,
+    value: { kind: "completed", receipt },
+  };
+  try {
+    await writeReturnSession(
+      req.sessionStore,
+      handoff.storeKey,
+      record,
+      new Date(handoff.expiresAt)
+    );
+  } catch {
+    // The recorded connection IDs still recover the result if replacing the payload fails.
+    log.warn("Could not replace authorization data with its receipt");
   }
 }
 
-export function clearReturnCookie(res: Response): void {
-  res.clearCookie(cookieName(), cookieOptions());
-}
-
-export async function clearReturnHandoff(
+export async function clearCompletedReturn(
   req: Request,
   res: Response,
-  storeKey: string
+  handoff: PendingHandoff
 ): Promise<void> {
-  clearReturnCookie(res);
-  await new Promise<void>((resolve) => {
-    req.sessionStore.destroy(storeKey, (err) => {
-      if (err) log.warn("Could not clear expired or processed authorization data");
-      resolve();
-    });
-  });
+  await deleteReturnSession(req.sessionStore, handoff.storeKey);
+  res.clearCookie(cookieName(handoff.reference.returnId), cookieOptions());
 }

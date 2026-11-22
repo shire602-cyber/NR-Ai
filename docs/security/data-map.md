@@ -19,9 +19,12 @@ opinion and has not been reviewed by counsel or an auditor.
 | Communications               | outbound email bodies/attachments (sensitive messages flagged), WhatsApp messages (NR firm only) | `email_outbox`, `email_outbox_attachments`, `whatsapp_messages` | delivery and retries                             |
 | Backups                      | JSON snapshots of the books above                                                                | `backups.data_snapshot` (AES-256-GCM)                           | recovery                                         |
 
-An authorization return received before sign-in is encrypted in the server session store and
-expires with its original state within ten minutes. The browser keeps a signed, opaque HttpOnly
-reference. The application deletes the stored return after processing.
+An authorization return and any exchange data needed for retry are encrypted in the server session
+store. They become unusable when the original state expires within ten minutes. The browser holds
+a signed HttpOnly cookie for each return and an opaque reference in its originating tab. After
+completion, the application attempts to replace the saved return and exchange data with a receipt
+and record IDs. It attempts to delete the receipt after the tab acknowledges it. The session store
+prunes expired records separately.
 
 ## Processors and sub-processors (only when configured)
 

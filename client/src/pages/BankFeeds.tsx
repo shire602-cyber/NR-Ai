@@ -6,10 +6,11 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { useTranslation } from "@/lib/i18n";
-import { ApiRequestNotSentError, apiRequest } from "@/lib/queryClient";
+import { ApiError, ApiRequestNotSentError, apiRequest } from "@/lib/queryClient";
+import { clearBankReturnReference, readBankReturnReference } from "@/lib/bank-authorization-return";
 import { BANK_AUTHORIZATION_RETURN_PATH as callbackPath } from "@shared/bank-authorization-paths";
 
-type ReturnStatus = "pending" | "retry" | "cancelled" | "failed" | null;
+type ReturnStatus = "pending" | "retry" | "cancelled" | "failed" | "expired" | null;
 
 /** Keep existing banking links and callback bookmarks pointed at statement import. */
 export default function BankFeeds({
@@ -21,35 +22,58 @@ export default function BankFeeds({
 }) {
   const { t } = useTranslation();
   const [path, navigate] = useLocation();
-  const [returned, setReturned] = useState<ReturnStatus>(resumeAuthorization ? "pending" : null);
+  const [reference] = useState(() => (resumeAuthorization ? readBankReturnReference() : undefined));
+  const [returned, setReturned] = useState<ReturnStatus>(reference ? "pending" : null);
   const status = retryCapture ? "retry" : returned;
   const submitted = useRef(false);
 
   useEffect(() => {
-    if (path !== callbackPath || returned !== "pending" || submitted.current) return;
+    if (path !== callbackPath || !reference || returned !== "pending" || submitted.current) return;
     submitted.current = true;
-    void apiRequest("POST", "/api/bank-connections/callback/resume", { resume: true }, undefined, {
+    void apiRequest("POST", "/api/bank-connections/callback/resume", reference, undefined, {
       queueWhenOffline: false,
     }).then(
-      (result: { connections?: unknown[]; outcome?: "cancelled" | "failed" } | null) => {
-        if (result === null) setReturned(null);
-        else if (result.outcome) setReturned(result.outcome);
-        else if (Array.isArray(result.connections)) {
-          if (window.location.pathname === callbackPath) navigate("/bank-feeds", { replace: true });
+      (result: { connections?: unknown[]; outcome?: "cancelled" | "failed" | "expired" }) => {
+        if (result?.outcome) {
+          clearBankReturnReference(reference);
+          setReturned(result.outcome);
+        } else if (Array.isArray(result?.connections)) {
+          const isCurrent = readBankReturnReference()?.returnId === reference.returnId;
+          clearBankReturnReference(reference);
+          void apiRequest(
+            "POST",
+            "/api/bank-connections/callback/resume",
+            { ...reference, acknowledge: true },
+            undefined,
+            {
+              queueWhenOffline: false,
+            }
+          ).catch(() => undefined);
+          if (isCurrent && window.location.pathname === callbackPath) {
+            navigate("/bank-feeds", { replace: true });
+          }
         } else {
           setReturned("failed");
         }
       },
       (error: unknown) => {
-        if (error instanceof ApiRequestNotSentError) {
+        const code = error instanceof ApiError ? error.body?.code : undefined;
+        if (
+          error instanceof ApiRequestNotSentError ||
+          error instanceof TypeError ||
+          (error instanceof ApiError && error.status >= 500)
+        ) {
           submitted.current = false;
           setReturned("retry");
+        } else if (code === "AUTHORIZATION_RESTART") {
+          clearBankReturnReference(reference);
+          setReturned("expired");
         } else {
           setReturned("failed");
         }
       }
     );
-  }, [path, returned, navigate]);
+  }, [path, reference, returned, navigate]);
 
   return (
     <div className="space-y-6">
@@ -61,9 +85,11 @@ export default function BankFeeds({
               ? t["banking.feeds.returnCancelled"]
               : status === "failed"
                 ? t["banking.feeds.returnError"]
-                : status === "retry"
-                  ? t["banking.feeds.returnOffline"]
-                  : t["banking.feeds.returnPending"]}
+                : status === "expired"
+                  ? t["banking.feeds.returnExpired"]
+                  : status === "retry"
+                    ? t["banking.feeds.returnOffline"]
+                    : t["banking.feeds.returnPending"]}
           </p>
           {status === "retry" && (
             <Button

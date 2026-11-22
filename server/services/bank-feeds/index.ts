@@ -11,8 +11,9 @@
  *  - scheduled processing (job "bankFeeds.sync") deduplicates by external transaction ID
  *    and emits bank.sync_failed on failure
  */
-import { createHash, randomBytes } from "node:crypto";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import type { Store } from "express-session";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { DomainError } from "../../errors";
 import { storage } from "../../storage";
@@ -36,7 +37,13 @@ import type { BankFeedProviderId } from "../../../shared/validators/banking";
 import { emitDomainEvent } from "../../platform/domain-events";
 import { listJobs, registerJob } from "../../platform/job-registry";
 import { BANK_FEED_ADAPTERS } from "./adapters";
-import { BankFeedProviderError, type BankFeedAdapter, type FeedTokens } from "./types";
+import {
+  BankFeedProviderError,
+  type BankFeedAdapter,
+  type FeedAccount,
+  type FeedTokens,
+} from "./types";
+import { readReturnSession, writeReturnSession } from "./return-session";
 
 export { setBankFeedFetch } from "./http";
 export { BANK_FEED_ADAPTERS } from "./adapters";
@@ -164,10 +171,9 @@ type CallbackStateScope = {
   state: string;
 };
 
-function pendingCallbackState(state: string) {
+function unexpiredCallbackState(state: string) {
   return and(
     eq(bankFeedOauthStates.stateHash, hashState(state)),
-    isNull(bankFeedOauthStates.usedAt),
     gt(bankFeedOauthStates.expiresAt, new Date())
   );
 }
@@ -176,14 +182,14 @@ export async function pendingCallbackExpiry(state: string): Promise<Date | undef
   const [row] = await db
     .select({ expiresAt: bankFeedOauthStates.expiresAt })
     .from(bankFeedOauthStates)
-    .where(pendingCallbackState(state))
+    .where(and(unexpiredCallbackState(state), isNull(bankFeedOauthStates.usedAt)))
     .limit(1);
   return row?.expiresAt;
 }
 
 function activeCallbackState(input: CallbackStateScope) {
   return and(
-    pendingCallbackState(input.state),
+    unexpiredCallbackState(input.state),
     eq(bankFeedOauthStates.userId, input.userId),
     input.provider ? eq(bankFeedOauthStates.provider, input.provider) : undefined
   );
@@ -199,55 +205,178 @@ export async function resolveCallbackCompany(input: CallbackStateScope): Promise
   return row.companyId;
 }
 
+export type CallbackResult = { connections: ReturnType<typeof sanitizeConnection>[] };
+type StoredTokens = Omit<FeedTokens, "expiresAt"> & { expiresAt: string | null };
+type PreparedAccount = FeedAccount & { id: string };
+type CallbackProgress = { codeHash: string } & (
+  | { kind: "exchanging"; startedAt: number }
+  | { kind: "restart" }
+  | { kind: "exchanged"; tokens: StoredTokens }
+  | { kind: "prepared"; tokens: StoredTokens; accounts: PreparedAccount[] }
+  | { kind: "completed"; ids: string[] }
+);
+
+function invalidCallbackState(): DomainError {
+  return new DomainError("INVALID_OAUTH_STATE", 400, undefined, bankStatementCopy.en);
+}
+
 export async function completeCallback(
-  input: CallbackStateScope & {
-    companyId: string;
-    code: string;
+  input: CallbackStateScope & { companyId: string; code: string },
+  store: Store,
+  allowReplay = false
+): Promise<CallbackResult> {
+  const codeHash = hashState(input.code);
+  const key = `statement-progress:${hashState(input.state)}`;
+  const scoped = () =>
+    and(activeCallbackState(input), eq(bankFeedOauthStates.companyId, input.companyId));
+  const assertCode = (progress: CallbackProgress | undefined) => {
+    if (progress && progress.codeHash !== codeHash) throw invalidCallbackState();
+  };
+
+  // A durable claim precedes the external request, with the DB lock released during HTTP.
+  const { row, previous } = await db.transaction(async (tx) => {
+    const [row] = await tx.select().from(bankFeedOauthStates).where(scoped()).for("update");
+    if (!row || (row.usedAt && !allowReplay)) throw invalidCallbackState();
+    const previous = await readReturnSession<CallbackProgress>(store, key);
+    assertCode(previous);
+    if (!previous) {
+      if (row.usedAt) throw invalidCallbackState();
+      assertConfigured(getAdapter(row.provider));
+      await writeReturnSession(
+        store,
+        key,
+        { codeHash, kind: "exchanging", startedAt: Date.now() },
+        row.expiresAt
+      );
+    }
+    return { row, previous };
+  });
+
+  let progress = previous;
+  const saveProgress = (value: CallbackProgress) =>
+    writeReturnSession(store, key, value, row.expiresAt);
+
+  if (!progress) {
+    const adapter = getAdapter(row.provider);
+    let received: FeedTokens;
+    try {
+      received = await adapter.exchangeCode({ code: input.code, redirectUri: row.redirectUri });
+    } catch (err) {
+      await saveProgress({ codeHash, kind: "restart" });
+      throw providerFailure(adapter, err);
+    }
+    progress = {
+      codeHash,
+      kind: "exchanged",
+      tokens: { ...received, expiresAt: received.expiresAt?.toISOString() ?? null },
+    };
+    await saveProgress(progress);
   }
-): Promise<{ connections: ReturnType<typeof sanitizeConnection>[] }> {
-  // The stored state binds the authorization to its adapter even when the return URL omits it.
-  const [row] = await db
-    .update(bankFeedOauthStates)
-    .set({ usedAt: new Date() })
-    .where(and(activeCallbackState(input), eq(bankFeedOauthStates.companyId, input.companyId)))
-    .returning();
-  if (!row) {
-    throw new DomainError("INVALID_OAUTH_STATE", 400, undefined, bankStatementCopy.en);
+
+  if (progress.kind === "exchanging") {
+    if (!allowReplay) throw invalidCallbackState();
+    if (Date.now() - progress.startedAt < 60_000) {
+      throw new DomainError("AUTHORIZATION_RETRY", 503, undefined, bankStatementCopy.en);
+    }
+    throw new DomainError("AUTHORIZATION_RESTART", 409, undefined, bankStatementCopy.en);
   }
-  const adapter = getAdapter(row.provider);
-  assertConfigured(adapter);
-  let tokens: FeedTokens;
-  let accounts;
+  if (progress.kind === "restart") {
+    throw new DomainError("AUTHORIZATION_RESTART", 409, undefined, bankStatementCopy.en);
+  }
+
+  let result: { ids: string[]; connections: CallbackResult["connections"] };
   try {
-    tokens = await adapter.exchangeCode({ code: input.code, redirectUri: row.redirectUri });
-    accounts = await adapter.listAccounts(tokens);
-  } catch (err) {
-    throw providerFailure(adapter, err);
-  }
-  if (accounts.length === 0)
-    throw new DomainError("BANK_FEED_NO_ACCOUNTS", 422, undefined, bankStatementCopy.en);
-  const out = [];
-  for (const account of accounts) {
-    const connection = await storage.createBankConnection({
-      companyId: input.companyId,
-      provider: adapter.id,
-      connectionType: "open_banking",
-      bankName: account.bankName,
-      accountName: account.name,
-      bankAccountId: accounts.length === 1 ? row.bankAccountId : null,
-      externalAccountId: account.externalId,
-      accountNumberLast4: account.last4,
-      iban: account.iban,
-      consentId: tokens.consentId ?? null,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      tokenExpiresAt: tokens.expiresAt,
-      autoSync: true,
-      status: "active",
+    result = await db.transaction(async (tx) => {
+      const [current] = await tx.select().from(bankFeedOauthStates).where(scoped()).for("update");
+      if (!current) throw invalidCallbackState();
+      const saved = await readReturnSession<CallbackProgress>(store, key);
+      assertCode(saved);
+      if (current.usedAt) {
+        if (!allowReplay || (saved?.kind !== "completed" && saved?.kind !== "prepared")) {
+          throw invalidCallbackState();
+        }
+        const ids = saved.kind === "completed" ? saved.ids : saved.accounts.map((item) => item.id);
+        const connections = await tx
+          .select()
+          .from(bankConnections)
+          .where(
+            and(eq(bankConnections.companyId, row.companyId), inArray(bankConnections.id, ids))
+          );
+        const byId = new Map(connections.map((item) => [item.id, sanitizeConnection(item)]));
+        return { ids, connections: ids.flatMap((id) => byId.get(id) ?? []) };
+      }
+
+      let prepared = saved?.kind === "prepared" ? saved : undefined;
+      if (!prepared) {
+        if (saved?.kind !== "exchanged") throw invalidCallbackState();
+        const adapter = getAdapter(row.provider);
+        const { expiresAt, ...tokens } = saved.tokens;
+        let accounts: FeedAccount[];
+        try {
+          accounts = await adapter.listAccounts({
+            ...tokens,
+            expiresAt: expiresAt ? new Date(expiresAt) : null,
+          });
+        } catch (err) {
+          throw providerFailure(adapter, err);
+        }
+        if (!accounts.length) {
+          throw new DomainError("BANK_FEED_NO_ACCOUNTS", 422, undefined, bankStatementCopy.en);
+        }
+        if (row.expiresAt.getTime() <= Date.now()) {
+          throw new DomainError("AUTHORIZATION_RESTART", 409, undefined, bankStatementCopy.en);
+        }
+        prepared = {
+          codeHash,
+          kind: "prepared",
+          tokens: saved.tokens,
+          accounts: accounts.map((item) => ({ ...item, id: randomUUID() })),
+        };
+        // Keep the account snapshot and result IDs even if a later write rolls back.
+        await saveProgress(prepared);
+      }
+
+      const connections: CallbackResult["connections"] = [];
+      for (const account of prepared.accounts) {
+        const connection = await storage.createBankConnection(
+          {
+            id: account.id,
+            companyId: input.companyId,
+            provider: row.provider,
+            connectionType: "open_banking",
+            bankName: account.bankName,
+            accountName: account.name,
+            bankAccountId: prepared.accounts.length === 1 ? row.bankAccountId : null,
+            externalAccountId: account.externalId,
+            accountNumberLast4: account.last4,
+            iban: account.iban,
+            consentId: prepared.tokens.consentId ?? null,
+            accessToken: prepared.tokens.accessToken,
+            refreshToken: prepared.tokens.refreshToken,
+            tokenExpiresAt: prepared.tokens.expiresAt ? new Date(prepared.tokens.expiresAt) : null,
+            autoSync: true,
+            status: "active",
+          },
+          tx
+        );
+        connections.push(sanitizeConnection(connection));
+      }
+      await tx
+        .update(bankFeedOauthStates)
+        .set({ usedAt: new Date() })
+        .where(eq(bankFeedOauthStates.id, row.id));
+      return { ids: prepared.accounts.map((item) => item.id), connections };
     });
-    out.push(sanitizeConnection(connection));
+  } catch (err) {
+    if (err instanceof DomainError) throw err;
+    throw new DomainError("AUTHORIZATION_RETRY", 503, undefined, bankStatementCopy.en);
   }
-  return { connections: out };
+
+  // IDs and usedAt already recover a committed result if this cleanup is unavailable.
+  await saveProgress({ codeHash, kind: "completed", ids: result.ids }).catch(() =>
+    log.warn("Could not replace authorization snapshot with completed IDs")
+  );
+  return { connections: result.connections };
 }
 
 function providerFailure(adapter: BankFeedAdapter, err: unknown): DomainError {

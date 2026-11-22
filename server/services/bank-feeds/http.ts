@@ -11,7 +11,7 @@ export function setBankFeedFetch(fn: FetchLike | null): void {
 
 export function feedFetch(): FetchLike {
   if (fetchImpl) return fetchImpl;
-  return (url, init) => fetch(url, init) as ReturnType<FetchLike>;
+  return (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) });
 }
 
 export function env(name: string): string {

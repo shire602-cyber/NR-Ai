@@ -133,8 +133,11 @@ export class BankingStorage extends IntegrationStorage {
     return this.decryptBankConnection(connection);
   }
 
-  async createBankConnection(data: InsertBankConnection): Promise<BankConnection> {
-    const [connection] = await db
+  async createBankConnection(
+    data: InsertBankConnection & { id?: string },
+    writer: Pick<typeof db, "insert"> = db
+  ): Promise<BankConnection> {
+    const [connection] = await writer
       .insert(bankConnections)
       .values({
         ...data,

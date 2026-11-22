@@ -11,6 +11,7 @@ import { storage } from "../storage";
 import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import {
   bankAuthorizationHandoffBody,
+  bankAuthorizationResumeBody,
   bankFeedCallbackBody,
   bankFeedConnectBody,
   bankFeedSyncBody,
@@ -28,8 +29,9 @@ import {
   syncConnection,
 } from "../services/bank-feeds";
 import {
-  clearReturnCookie,
-  clearReturnHandoff,
+  clearCompletedReturn,
+  recordReturnReceipt,
+  type ReturnHandoff,
   readReturnHandoff,
   stageReturnHandoff,
 } from "../services/bank-feeds/return-handoff";
@@ -66,6 +68,7 @@ async function ownedConnection(req: Request, id: string, companyId?: string) {
 const connectionImportBody = z.object({ csvContent: z.string().min(1).max(5_000_000) }).strict();
 const connectionLinkBody = z.object({ bankAccountId: zUuid }).strict();
 type CallbackBody = z.output<typeof bankFeedCallbackBody>;
+type ReadyReturn = Extract<ReturnHandoff, { kind: "pending" | "completed" }>;
 
 export function registerBankRoutes(app: Express) {
   registerBankFeedJobs();
@@ -249,28 +252,49 @@ export function registerBankRoutes(app: Express) {
     "/api/bank-connections/handoff",
     strictBody(bankAuthorizationHandoffBody),
     asyncHandler(async (req, res) => {
-      const { search } = parsedBody<z.output<typeof bankAuthorizationHandoffBody>>(req);
-      await stageReturnHandoff(req, res, search);
-      res.set("Cache-Control", "no-store").json({ staged: true });
+      const { search, tabKey } = parsedBody<z.output<typeof bankAuthorizationHandoffBody>>(req);
+      const returnId = await stageReturnHandoff(req, res, search, tabKey);
+      res.set("Cache-Control", "no-store").json({ returnId });
     })
   );
 
   const finishAuthorization = asyncHandler(async (req, res) => {
     const { companyId } = req.params;
     await assertAccess(req, companyId);
-    const body: CallbackBody = res.locals.statementCallback ?? parsedBody<CallbackBody>(req);
-    const storeKey: string | undefined = res.locals.statementReturnKey;
-    const result = await completeCallback({ ...body, companyId, userId: userId(req) }).finally(
-      () => storeKey && clearReturnHandoff(req, res, storeKey)
+    const handoff: ReadyReturn | undefined = res.locals.statementReturn;
+    if (res.locals.acknowledgeStatementReturn) {
+      if (handoff?.kind === "completed") await clearCompletedReturn(req, res, handoff);
+      res.json({ acknowledged: true });
+      return;
+    }
+    if (handoff?.kind === "completed") {
+      res.status(200).json(handoff.receipt.result);
+      return;
+    }
+    const body = handoff?.callback ?? parsedBody<CallbackBody>(req);
+    const result = await completeCallback(
+      { ...body, companyId, userId: userId(req) },
+      req.sessionStore,
+      Boolean(handoff)
     );
+    if (handoff)
+      await recordReturnReceipt(req, handoff, { companyId, userId: userId(req), result });
     logger.info({ companyId, count: result.connections.length }, "Authorization return processed");
     res.status(201).json(result);
   });
 
   const resolveOrigin = asyncHandler(async (req, res, next) => {
-    const body: CallbackBody = res.locals.statementCallback ?? parsedBody<CallbackBody>(req);
-    const companyId = await resolveCallbackCompany({ ...body, userId: userId(req) });
-    // Apply the workspace guards using the company bound to the authenticated user's state.
+    const handoff: ReadyReturn | undefined = res.locals.statementReturn;
+    let companyId: string;
+    if (handoff?.kind === "completed") {
+      if (handoff.receipt.userId !== userId(req)) {
+        throw new DomainError("INVALID_OAUTH_STATE", 400, undefined, bankStatementCopy.en);
+      }
+      companyId = handoff.receipt.companyId;
+    } else {
+      const body = handoff?.callback ?? parsedBody<CallbackBody>(req);
+      companyId = await resolveCallbackCompany({ ...body, userId: userId(req) });
+    }
     await assertAccess(req, companyId);
     await assertTrialAccess(companyId, req.user!);
     req.params.companyId = companyId;
@@ -288,18 +312,17 @@ export function registerBankRoutes(app: Express) {
     "/api/bank-connections/callback/resume",
     authMiddleware,
     requireCustomer,
-    strictBody(z.object({ resume: z.literal(true) }).strict()),
+    strictBody(bankAuthorizationResumeBody),
     asyncHandler(async (req, res, next) => {
       res.set("Cache-Control", "no-store");
-      const handoff = await readReturnHandoff(req);
-      if (handoff.kind === "empty") {
-        res.status(204).end();
-      } else if (handoff.kind === "pending") {
-        res.locals.statementCallback = handoff.callback;
-        res.locals.statementReturnKey = handoff.storeKey;
+      const { returnId, tabKey, acknowledge } =
+        parsedBody<z.output<typeof bankAuthorizationResumeBody>>(req);
+      const handoff = await readReturnHandoff(req, { returnId, tabKey });
+      if (handoff.kind === "pending" || handoff.kind === "completed") {
+        res.locals.statementReturn = handoff;
+        res.locals.acknowledgeStatementReturn = acknowledge;
         next();
       } else {
-        clearReturnCookie(res);
         res.json({ outcome: handoff.kind });
       }
     }),
