@@ -141,7 +141,7 @@ export function registerPushRoutes(app: Express) {
       } catch {
         typePreferences = {};
       }
-      res.json({ ...preferences, typePreferences, eventTypes, channels });
+      res.json({ ...preferences, typePreferences, eventTypes: NOTIFICATION_EVENT_TYPES, channels });
     })
   );
 
