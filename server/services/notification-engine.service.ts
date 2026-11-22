@@ -1,4 +1,3 @@
-import { VAT_RECORDED_STATUSES } from "../../shared/vat-filing-status";
 /**
  * Notification engine (W4-D: R13-32, R13-33, R16-18).
  *
@@ -27,8 +26,10 @@ import { onDomainEvent, type DomainEvent } from "../platform/domain-events";
 import { listJobs, registerJob } from "../platform/job-registry";
 import { escapeHtml, renderBilingualEmail, sendEmail } from "./email.service";
 import { isCapabilityLive } from "../../shared/capabilities";
+import { VAT_RECORDED_STATUSES } from "../../shared/vat-filing-status";
 import {
-  currentNotificationText,
+  BANK_SYNC_FAILURE_COPY,
+  normalizeNotificationCopy,
   notificationCopy,
   renderServerCopy,
 } from "../../shared/server-copy";
@@ -388,13 +389,9 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
       return {
         ...base,
         type: "bank.sync_failed",
-        ...notificationCopy(
-          "notification.bankSyncFailed.title",
-          "notification.bankSyncFailed.message"
-        ),
+        ...BANK_SYNC_FAILURE_COPY,
         priority: "high",
         relatedEntityType: "bank_connection",
-        actionUrl: "/bank-reconciliation",
         // One notification per failure day, not per retry.
         eventKey: `${p.entityId}:${String(p.occurredAt).slice(0, 10)}`,
       };
@@ -576,8 +573,8 @@ export async function sendDailyDigests(now: Date = new Date()): Promise<number> 
       .limit(100);
     if (!rows.length || !u.email) continue;
     const day = now.toISOString().slice(0, 10);
-    const items = rows.map((r: typeof notifications.$inferSelect) => {
-      const { title, message } = currentNotificationText(r);
+    const items = rows.map((row: typeof notifications.$inferSelect) => {
+      const { title, message } = normalizeNotificationCopy(row);
       return `<strong>${escapeHtml(title)}</strong> — ${escapeHtml(message)}`;
     });
     const html = renderBilingualEmail(

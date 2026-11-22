@@ -1,3 +1,4 @@
+import type { LedgerTx } from "../../ledger/types";
 /**
  * FX rates — the single rate convention and tenant-scoped lookup (W2-E).
  *
@@ -54,8 +55,8 @@ export interface RateResult {
 }
 
 export interface GetRateOptions {
+  tx?: LedgerTx;
   rateType?: ExchangeRateType;
-  tx?: typeof db;
   /** Proximity window in days (default 7). */
   maxAgeDays?: number;
   /** Use the AED/USD peg when no row exists for that pair (default true; the sanity band opts out). */
@@ -130,8 +131,11 @@ export function invertRate(rate: Decimal.Value): Decimal {
 
 // ─── Lookup ───────────────────────────────────────────────────────────────
 
-export async function getCompanyBaseCurrency(companyId: string): Promise<string> {
-  const [row] = await db
+export async function getCompanyBaseCurrency(
+  companyId: string,
+  tx: LedgerTx = db
+): Promise<string> {
+  const [row] = await tx
     .select({ baseCurrency: companies.baseCurrency })
     .from(companies)
     .where(eq(companies.id, companyId))
@@ -153,7 +157,7 @@ async function findRow(
   to: string,
   asOfIso: string,
   rateType: ExchangeRateType,
-  tx = db
+  tx: LedgerTx = db
 ): Promise<ExchangeRate | null> {
   const end = isoToDate(addDaysIso(asOfIso, 1));
   const scope = companyId
@@ -349,6 +353,18 @@ export interface ConvertResult extends RateResult {
   convertedFils: number;
 }
 
+/** Apply one resolved rate to multiple integer amounts with the same rounding. */
+export function convertFilsAtRate(
+  amountFils: number,
+  rate: Pick<RateResult, "inverse" | "storedRate" | "rateText">
+): number {
+  // Divide by the stored rate instead of multiplying by a rounded reciprocal.
+  const convertedFils = rate.inverse
+    ? new D(amountFils).dividedBy(new D(rate.storedRate)).toDecimalPlaces(0).toNumber()
+    : mulRate(amountFils, rate.rateText);
+  return Object.is(convertedFils, -0) ? 0 : convertedFils;
+}
+
 /** Convert integer fils of `from` into integer fils of `to` (half-up). */
 export async function convert(
   companyId: string,
@@ -362,12 +378,7 @@ export async function convert(
     throw new DomainError("INVALID_AMOUNT", 400, { amountFils });
   }
   const r = await getRate(companyId, from, to, date, opts);
-  // Divide by the stored rate for inverse pairs instead of multiplying by a
-  // rounded reciprocal, so AED→USD with (USD, AED, 3.6725) stays exact.
-  const convertedFils = r.inverse
-    ? new D(amountFils).dividedBy(new D(r.storedRate)).toDecimalPlaces(0).toNumber()
-    : mulRate(amountFils, r.rateText);
-  return { ...r, amountFils, convertedFils: Object.is(convertedFils, -0) ? 0 : convertedFils };
+  return { ...r, amountFils, convertedFils: convertFilsAtRate(amountFils, r) };
 }
 
 // ─── Writes ───────────────────────────────────────────────────────────────
@@ -616,13 +627,16 @@ export async function deleteCompanyRate(companyId: string, rateId: string): Prom
 export async function toVatFilingCurrency(
   companyId: string,
   baseFils: number,
-  documentDate: Date | string
+  documentDate: Date | string,
+  tx?: LedgerTx
 ): Promise<{ filingCurrency: string; fils: number; rate: string; baseCurrency: string }> {
-  const baseCurrency = await getCompanyBaseCurrency(companyId);
+  const baseCurrency = await getCompanyBaseCurrency(companyId, tx);
   if (baseCurrency === VAT_FILING_CURRENCY) {
     return { filingCurrency: VAT_FILING_CURRENCY, fils: baseFils, rate: "1.000000", baseCurrency };
   }
-  const c = await convert(companyId, baseFils, baseCurrency, VAT_FILING_CURRENCY, documentDate);
+  const c = await convert(companyId, baseFils, baseCurrency, VAT_FILING_CURRENCY, documentDate, {
+    tx,
+  });
   return {
     filingCurrency: VAT_FILING_CURRENCY,
     fils: c.convertedFils,

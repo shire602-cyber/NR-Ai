@@ -17,7 +17,7 @@ import { DomainError } from "../../errors";
 import { storage } from "../../storage";
 import { createLogger } from "../../config/logger";
 import { getCapability, type CapabilityStatus } from "../../../shared/capabilities";
-import { bankCsvWorkflow } from "../../../shared/banking-copy";
+import { BANK_STATEMENT_IMPORT_GUIDANCE } from "../../../shared/bank-statement-copy";
 import { fromFils } from "../../../shared/money";
 import {
   bankAccounts,
@@ -52,7 +52,7 @@ function assertConfigured(adapter: BankFeedAdapter): void {
       "BANK_FEED_NOT_CONFIGURED",
       503,
       { provider: adapter.id, capability: adapter.capability },
-      bankCsvWorkflow.en
+      BANK_STATEMENT_IMPORT_GUIDANCE.en
     );
   }
 }
@@ -62,11 +62,9 @@ export interface ProviderStatus {
   label: string;
   configured: boolean;
   status: CapabilityStatus;
-  message: { en: string; ar: string };
-  externalAction: { en: string; ar: string };
 }
 
-/** Honest status per provider, from shared/capabilities.ts. */
+/** Customer readiness fields for each provider. */
 export function providerStatuses(): ProviderStatus[] {
   return Object.values(BANK_FEED_ADAPTERS).map((a) => {
     const cap = getCapability(a.capability);
@@ -76,15 +74,6 @@ export function providerStatuses(): ProviderStatus[] {
       label: a.label,
       configured,
       status: configured ? cap.status : "requires_external",
-      message: configured
-        ? cap.status === "sandbox"
-          ? {
-              en: "Sandbox credentials — test data only",
-              ar: "بيانات اعتماد تجريبية — بيانات اختبار فقط",
-            }
-          : { en: "Configured", ar: "مُعد" }
-        : bankCsvWorkflow,
-      externalAction: cap.externalAction,
     };
   });
 }
@@ -108,7 +97,12 @@ export function allowedRedirectUris(): string[] {
 function assertAllowedRedirect(uri: string): void {
   const allowed = allowedRedirectUris();
   if (!allowed.includes(uri)) {
-    throw new DomainError("REDIRECT_URI_NOT_ALLOWED", 400, { allowed }, bankCsvWorkflow.en);
+    throw new DomainError(
+      "REDIRECT_URI_NOT_ALLOWED",
+      400,
+      { allowed },
+      BANK_STATEMENT_IMPORT_GUIDANCE.en
+    );
   }
 }
 
@@ -179,7 +173,7 @@ export async function completeCallback(input: {
     )
     .returning();
   if (!row) {
-    throw new DomainError("INVALID_OAUTH_STATE", 400, undefined, bankCsvWorkflow.en);
+    throw new DomainError("INVALID_OAUTH_STATE", 400, undefined, BANK_STATEMENT_IMPORT_GUIDANCE.en);
   }
   assertAllowedRedirect(row.redirectUri);
   assertConfigured(adapter);
@@ -226,7 +220,7 @@ function providerFailure(adapter: BankFeedAdapter, err: unknown): DomainError {
     "BANK_FEED_PROVIDER_ERROR",
     502,
     { provider: adapter.id, providerStatus: status },
-    bankCsvWorkflow.en
+    BANK_STATEMENT_IMPORT_GUIDANCE.en
   );
 }
 
@@ -251,12 +245,22 @@ export async function syncConnection(
   const adapter = getAdapter(connection.provider);
   assertConfigured(adapter);
   if (!connection.bankAccountId) {
-    throw new DomainError("BANK_FEED_ACCOUNT_NOT_LINKED", 409, undefined, bankCsvWorkflow.en);
+    throw new DomainError(
+      "BANK_FEED_ACCOUNT_NOT_LINKED",
+      409,
+      undefined,
+      BANK_STATEMENT_IMPORT_GUIDANCE.en
+    );
   }
   const ba = await storage.getBankAccountById(connection.bankAccountId, connection.companyId);
   if (!ba) throw new DomainError("BANK_ACCOUNT_NOT_FOUND", 404);
   if (!connection.accessToken || !connection.externalAccountId) {
-    throw new DomainError("BANK_FEED_RECONNECT_REQUIRED", 409);
+    throw new DomainError(
+      "BANK_FEED_RECONNECT_REQUIRED",
+      409,
+      undefined,
+      BANK_STATEMENT_IMPORT_GUIDANCE.en
+    );
   }
   let tokens: FeedTokens = {
     accessToken: connection.accessToken,
@@ -400,7 +404,8 @@ export function registerBankFeedJobs(): void {
   registerJob({
     name: "bankFeeds.sync",
     cron: "41 */6 * * *",
-    description: "Maintain existing banking integration records",
+    description:
+      "Import transactions for configured accounts (deduplicate by provider transaction ID)",
     run: async () => {
       await runScheduledBankFeedSync();
     },

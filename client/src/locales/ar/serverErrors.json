@@ -1043,5 +1043,11 @@
   "serverErrors.PORTAL_INVITE_EMAIL_RESERVED": "استخدم دعوة بوابة العملاء لإعداد هذا الحساب.",
   "serverErrors.PORTAL_ACCOUNT_EMAIL_CHANGE_BLOCKED": "ألغِ وصول المستخدم النشط إلى البوابة قبل تغيير بريده الإلكتروني.",
   "serverErrors.OAUTH_MAILBOX_CODE_INVALID": "رمز التحقق من Microsoft غير صالح أو انتهت صلاحيته. تحقّق من الرمز أو أعد تسجيل الدخول.",
-  "serverErrors.OAUTH_MAILBOX_ACCOUNT_CHANGED": "تعذّر إكمال تسجيل الدخول عبر Microsoft. ابدأ من جديد من صفحة تسجيل الدخول."
+  "serverErrors.OAUTH_MAILBOX_ACCOUNT_CHANGED": "تعذّر إكمال تسجيل الدخول عبر Microsoft. ابدأ من جديد من صفحة تسجيل الدخول.",
+  "serverErrors.VAT_FILING_CONFLICT": "سُجّلت بيانات تقديم مختلفة لهذا الإقرار بالفعل.",
+  "serverErrors.VAT_FILING_AFTER_SETTLEMENT": "تاريخ تقديم الإقرار يأتي بعد الدفعة أو الاسترداد المسجّل. اعكس التسوية قبل تسجيل تاريخ التقديم هذا.",
+  "serverErrors.VAT_RETURN_STALE": "تغيّرت أرقام ضريبة القيمة المضافة بعد إنشاء هذا الإقرار. أعد إنشاء الإقرار قبل تقديمه.",
+  "serverErrors.VAT_GROUP_MEMBERSHIP_VERIFICATION_REQUIRED": "يجب التحقق من عضوية المجموعة الضريبية لهذه الفترة قبل تسجيل تغييرات ضريبة القيمة المضافة.",
+  "serverErrors.VAT_GROUP_MEMBER_AUTHORIZATION_REQUIRED": "يجب أن يوافق مالك كل شركة أو مسؤولها على عضويتها في المجموعة الضريبية.",
+  "serverErrors.VAT_RETURN_SCOPE_OVERLAP": "لدى إحدى الشركات التي يشملها هذا الإقرار إقرار ضريبة قيمة مضافة مقدّم لفترة متداخلة."
 }

@@ -1043,5 +1043,11 @@
   "serverErrors.PORTAL_INVITE_EMAIL_RESERVED": "Use your customer portal invitation to set up this account.",
   "serverErrors.PORTAL_ACCOUNT_EMAIL_CHANGE_BLOCKED": "Revoke the user’s active portal access before changing their email.",
   "serverErrors.OAUTH_MAILBOX_CODE_INVALID": "The Microsoft verification code is invalid or expired. Check the code or start sign-in again.",
-  "serverErrors.OAUTH_MAILBOX_ACCOUNT_CHANGED": "Microsoft sign-in could not be completed. Start again from the sign-in page."
+  "serverErrors.OAUTH_MAILBOX_ACCOUNT_CHANGED": "Microsoft sign-in could not be completed. Start again from the sign-in page.",
+  "serverErrors.VAT_FILING_CONFLICT": "Different filing evidence is already recorded for this return.",
+  "serverErrors.VAT_FILING_AFTER_SETTLEMENT": "The filing date is after the recorded payment or refund. Reverse the settlement before recording this filing date.",
+  "serverErrors.VAT_RETURN_STALE": "The VAT figures changed after this return was generated. Regenerate the return before filing.",
+  "serverErrors.VAT_GROUP_MEMBERSHIP_VERIFICATION_REQUIRED": "VAT group membership for this period must be verified before VAT changes can be recorded.",
+  "serverErrors.VAT_GROUP_MEMBER_AUTHORIZATION_REQUIRED": "A company owner or administrator must authorize VAT group membership for each member.",
+  "serverErrors.VAT_RETURN_SCOPE_OVERLAP": "A company covered by this VAT return already has a submitted or filed return for an overlapping period."
 }

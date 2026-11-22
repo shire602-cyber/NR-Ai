@@ -13,7 +13,8 @@
  *    leaves the filed return unchanged. A payment dated inside a filed period moves the reversal to
  *    the next open period (Executive Regulation Art. 70).
  */
-import { describe, expect, it } from "vitest";
+import pg from "pg";
+import { describe, expect, it, vi } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -176,5 +177,181 @@ describe("A1 x A2 x A3: filed VAT periods, write-offs, relief and control adjust
     expect(await adjustments(t, "2026-04-01", "2026-06-30")).toBe(-50);
     expect(await adjustments(t, "2026-07-01", "2026-09-30")).toBe(0);
     expect(await adjustments(t, "2026-10-01", "2026-10-31")).toBe(50);
+  });
+});
+
+describe("Filed VAT 201 uses the UAE reporting day and line treatment", () => {
+  const periodStart = "2026-04-01";
+  const periodEnd = "2026-06-30";
+  const quarterBoundary = new Date("2026-03-31T21:00:00Z");
+
+  async function zeroRatedLines(t: Tenant) {
+    const bank = await accountByCode(t, "1020");
+    const revenue = await accountByCode(t, "4010");
+    return [
+      { accountId: bank.id, debit: 100 },
+      { accountId: revenue.id, credit: 100, attributes: { vatTreatment: "zero_rated" as const } },
+    ];
+  }
+
+  async function zeroRatedSale(t: Tenant, date: Date | string, status: "posted" | "draft") {
+    const { postJournal } = await import("../../server/ledger");
+    return postJournal(
+      { companyId: t.company.id, date, status, lines: await zeroRatedLines(t) },
+      { actorId: t.user.id }
+    );
+  }
+
+  async function computedZeroRatedSales(t: Tenant): Promise<number> {
+    const computed = await t.as.get(`${base(t)}/vat/compute?from=${periodStart}&to=${periodEnd}`);
+    expect(computed.status, computed.text).toBe(200);
+    return Number(computed.body.boxes.box4ZeroRatedAmount);
+  }
+
+  const aprilLock = {
+    code: "VAT_PERIOD_FILED",
+    details: { postingDate: periodStart, periodStart, periodEnd },
+  };
+
+  it("refuses a VAT posting whose UTC timestamp falls on the filed UAE quarter's first day", async () => {
+    const t = await vatTenant();
+    await fileReturn(t, periodStart, periodEnd);
+
+    await zeroRatedSale(t, new Date("2026-03-31T19:59:59Z"), "posted");
+    await expect(zeroRatedSale(t, quarterBoundary, "posted")).rejects.toMatchObject(aprilLock);
+    expect(await computedZeroRatedSales(t)).toBe(0);
+  });
+
+  it("checks the UAE reporting day when approving a VAT draft", async () => {
+    const t = await vatTenant();
+    const checker = await h.createSecondTenant();
+    await h.sql("INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'owner')", [
+      t.company.id,
+      checker.user.id,
+    ]);
+    const { entry } = await zeroRatedSale(t, quarterBoundary, "draft");
+    await fileReturn(t, periodStart, periodEnd);
+
+    const approval = await checker.as.post(`/api/journal/${entry.id}/approve`, {});
+    expect(approval.status, approval.text).toBe(409);
+    expect(approval.body).toMatchObject(aprilLock);
+    expect(await computedZeroRatedSales(t)).toBe(0);
+  });
+
+  it("rechecks the draft's reporting day after a committed edit while posting waits", async (ctx) => {
+    ctx.skip(!h.concurrencySupported);
+    const t = await vatTenant();
+    const { entry } = await zeroRatedSale(t, "2026-03-30", "draft");
+    await fileReturn(t, periodStart, periodEnd);
+
+    const blocker = new pg.Client({ connectionString: h.databaseUrl });
+    let posting: ReturnType<Tenant["as"]["post"]> | undefined;
+    try {
+      await blocker.connect();
+      const { rows } = await blocker.query<{ pid: number }>(
+        `SELECT pg_backend_pid() AS pid,
+                pg_advisory_lock(hashtextextended('vat-returns:' || $1::uuid::text, 0))`,
+        [t.company.id]
+      );
+      posting = t.as.post(`/api/journal/${entry.id}/post`, {});
+      await vi.waitFor(
+        async () => {
+          const blocked = await h.sql(
+            `SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
+              AND $1::int = ANY(pg_blocking_pids(pid))`,
+            [rows[0].pid]
+          );
+          expect(blocked).toHaveLength(1);
+        },
+        { timeout: 8_000, interval: 25 }
+      );
+      const { updateDraftEntry } = await import("../../server/ledger");
+      await updateDraftEntry(
+        entry.id,
+        { date: quarterBoundary, lines: await zeroRatedLines(t) },
+        { actorId: t.user.id, companyId: t.company.id }
+      );
+    } finally {
+      await blocker.end();
+      await Promise.allSettled([posting]);
+    }
+
+    const result = await posting!;
+    expect(result.status, result.text).toBe(409);
+    expect(result.body).toMatchObject(aprilLock);
+    expect(await computedZeroRatedSales(t)).toBe(0);
+  });
+
+  it("checks the UAE reporting day of both the original VAT journal and its reversal", async () => {
+    const t = await vatTenant();
+    const fromOpenPeriod = await zeroRatedSale(t, "2026-03-30", "posted");
+    const fromFiledPeriod = await zeroRatedSale(t, quarterBoundary, "posted");
+    expect(await computedZeroRatedSales(t)).toBe(100);
+    await fileReturn(t, periodStart, periodEnd);
+
+    const { reverseEntry } = await import("../../server/ledger");
+    const ctx = { actorId: t.user.id, companyId: t.company.id };
+    await expect(
+      reverseEntry(fromOpenPeriod.entry.id, { date: quarterBoundary }, ctx)
+    ).rejects.toMatchObject(aprilLock);
+    await expect(
+      reverseEntry(fromFiledPeriod.entry.id, { date: "2026-07-01" }, ctx)
+    ).rejects.toMatchObject(aprilLock);
+    expect(await computedZeroRatedSales(t)).toBe(100);
+  });
+
+  it("allows an out-of-scope capital contribution and its reversal in a filed VAT period", async () => {
+    const t = await vatTenant();
+    const bank = await accountByCode(t, "1020");
+    const capital = await accountByCode(t, "3010");
+    const vatPayable = await accountByCode(t, "2020");
+    const journal = (
+      creditAccountId: string,
+      status: "posted" | "draft",
+      reason?: string,
+      date = "2026-04-02"
+    ) =>
+      t.as.post(`${base(t)}/journal`, {
+        date,
+        status,
+        lines: [
+          { accountId: bank.id, debit: 100 },
+          { accountId: creditAccountId, credit: 100, vatTreatment: "out_of_scope" },
+        ],
+        ...(reason ? { controlAdjustment: { reason } } : {}),
+      });
+    const original = await journal(capital.id, "posted");
+    expect(original.status, original.text).toBe(200);
+    await fileReturn(t, periodStart, periodEnd);
+
+    const posted = await journal(capital.id, "posted");
+    expect(posted.status, posted.text).toBe(200);
+    const draft = await journal(capital.id, "draft");
+    expect(draft.status, draft.text).toBe(200);
+    const draftPosted = await t.as.post(`/api/journal/${draft.body.id}/post`, {});
+    expect(draftPosted.status, draftPosted.text).toBe(200);
+    const reversed = await t.as.post(`/api/journal/${original.body.id}/reverse`, {
+      date: "2026-04-03",
+      reason: "Undo capital contribution",
+    });
+    expect(reversed.status, reversed.text).toBe(200);
+
+    const touchesVat = await journal(vatPayable.id, "posted", "Adjust output VAT");
+    expect(touchesVat.status, touchesVat.text).toBe(409);
+    expect(touchesVat.body.code).toBe("VAT_PERIOD_FILED");
+
+    const openAdjustment = await journal(
+      vatPayable.id,
+      "posted",
+      "Adjust output VAT",
+      "2026-03-30"
+    );
+    expect(openAdjustment.status, openAdjustment.text).toBe(200);
+    const reverseAdjustment = await t.as.post(`/api/journal/${openAdjustment.body.id}/reverse`, {
+      date: "2026-04-03",
+      reason: "Undo output VAT adjustment",
+    });
+    expect(reverseAdjustment.status, reverseAdjustment.text).toBe(409);
+    expect(reverseAdjustment.body.code).toBe("VAT_PERIOD_FILED");
   });
 });

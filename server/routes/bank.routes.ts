@@ -7,8 +7,8 @@ import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
-import { getCapabilitySnapshot } from "../../shared/capabilities";
-import { bankCsvWorkflow } from "../../shared/banking-copy";
+import { getCapabilities } from "../../shared/capabilities";
+import { BANK_STATEMENT_IMPORT_GUIDANCE } from "../../shared/bank-statement-copy";
 import {
   bankFeedCallbackBody,
   bankFeedConnectBody,
@@ -103,7 +103,7 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
-  // Manual (statement-only) connection record. Open-banking connections come only from callback.
+  // Manual statement records are created here. Provider connections are created by callbacks.
   app.post(
     "/api/companies/:companyId/bank-connections",
     authMiddleware,
@@ -194,20 +194,21 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
-  // ─── Open banking (to the external boundary) ────────────────────────────
+  // ─── Bank provider readiness and transaction import ────────────────────────────
 
   app.get(
     "/api/bank/providers",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (_req: Request, res: Response) => {
-      const snapshot = getCapabilitySnapshot();
       res.json({
         providers: getAvailableProviders(),
         isConfigured: isOpenBankingConfigured(),
         statuses: providerStatuses(),
         redirectUris: allowedRedirectUris(),
-        capabilities: snapshot.capabilities.filter((c) => c.id.startsWith("bank_feed_")),
+        capabilities: getCapabilities()
+          .filter(({ id }) => id.startsWith("bank_feed_"))
+          .map(({ id, status }) => ({ id, status })),
       });
     })
   );
@@ -266,7 +267,12 @@ export function registerBankRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const connection = await ownedConnection(req, req.params.id);
       if (connection.provider === "manual")
-        throw new DomainError("BANK_FEED_NOT_SUPPORTED", 400, undefined, bankCsvWorkflow.en);
+        throw new DomainError(
+          "BANK_FEED_NOT_SUPPORTED",
+          400,
+          undefined,
+          BANK_STATEMENT_IMPORT_GUIDANCE.en
+        );
       const result = await syncConnection(connection, {
         from: req.body.fromDate,
         to: req.body.toDate,
@@ -283,7 +289,12 @@ export function registerBankRoutes(app: Express) {
     requireFeature("bankImport"),
     asyncHandler(async (req: Request, _res: Response) => {
       await ownedConnection(req, req.params.id);
-      throw new DomainError("BANK_FEED_BALANCE_UNAVAILABLE", 503, undefined, bankCsvWorkflow.en);
+      throw new DomainError(
+        "BANK_FEED_BALANCE_UNAVAILABLE",
+        503,
+        undefined,
+        BANK_STATEMENT_IMPORT_GUIDANCE.en
+      );
     })
   );
 }

@@ -1,10 +1,7 @@
 # External Dependencies — Owner Action List
 
-_Updated 2026-06-11: every credential-blocked integration is now **fully built
-and wired** — the software side is done. Each item below activates the moment
-its environment variables are set on Railway. Log in as an admin and call
-`GET /api/admin/integration-status` to see live readiness, the exact env var
-names still missing, and what each one unlocks._
+Log in as an admin and call `GET /api/admin/integration-status` to see which
+integrations are configured and which environment variables they require.
 
 | #   | Item                  | Software status                                                                                                                                                                                                                              | What the owner inputs (Railway env vars)                                                                                                                                                                   | What happens when set                                                             |
 | --- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |

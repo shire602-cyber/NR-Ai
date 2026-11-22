@@ -16,7 +16,7 @@
  * This module adds no routes.
  */
 
-import { bankCsvWorkflow } from "./banking-copy";
+import { BANK_STATEMENT_IMPORT_GUIDANCE } from "./bank-statement-copy";
 
 export type CapabilityStatus = "live" | "sandbox" | "requires_external" | "disabled";
 
@@ -51,7 +51,7 @@ export interface Capability {
   id: CapabilityId;
   status: CapabilityStatus;
   label: LocalizedText;
-  /** What must happen externally for the capability to be live. */
+  /** Setup instructions or the available workflow. */
   externalAction: LocalizedText;
   /** Env vars that configure it (names only, never values). */
   envVars: readonly string[];
@@ -100,6 +100,12 @@ export function httpsFeedUrls(raw: string | undefined): string[] {
 }
 const flag = (env: EnvLike, name: string): boolean =>
   ["1", "true", "yes", "on"].includes((env[name] ?? "").trim().toLowerCase());
+
+const csvReconciliationCopy = {
+  label: { en: "Bank reconciliation (CSV import)", ar: "التسوية البنكية (استيراد CSV)" },
+  externalAction: BANK_STATEMENT_IMPORT_GUIDANCE,
+  envVars: [],
+} as const;
 
 const DEFS: readonly CapabilityDef[] = [
   {
@@ -171,9 +177,7 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_lean",
-    label: { en: "Bank reconciliation", ar: "المطابقة البنكية" },
-    externalAction: bankCsvWorkflow,
-    envVars: ["LEAN_APP_TOKEN", "LEAN_API_BASE_URL"],
+    ...csvReconciliationCopy,
     whenUnconfigured: "requires_external",
     detect: (env) =>
       set(env, "LEAN_APP_TOKEN")
@@ -184,9 +188,7 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_tarabut",
-    label: { en: "Bank reconciliation", ar: "المطابقة البنكية" },
-    externalAction: bankCsvWorkflow,
-    envVars: ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET", "TARABUT_API_BASE_URL"],
+    ...csvReconciliationCopy,
     whenUnconfigured: "requires_external",
     detect: (env) =>
       all(env, ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET"])
@@ -197,9 +199,7 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_wio",
-    label: { en: "Bank reconciliation", ar: "المطابقة البنكية" },
-    externalAction: bankCsvWorkflow,
-    envVars: ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET", "WIO_API_BASE_URL"],
+    ...csvReconciliationCopy,
     whenUnconfigured: "requires_external",
     detect: (env) =>
       all(env, ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET"])

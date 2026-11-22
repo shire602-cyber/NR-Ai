@@ -39,6 +39,7 @@ beforeEach(() => {
     vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : String(input);
       if (url.includes("/api/csrf-token")) return json({ csrfToken: "x" });
+      if (url.endsWith("/bank/providers")) return json({ isConfigured: false, statuses: [] });
       if (/\/api\/companies$/.test(url)) return json([{ id: "c-1", name: "شركة الواحة" }]);
       if (url.endsWith("/bank-accounts"))
         return json([

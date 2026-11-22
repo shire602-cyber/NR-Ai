@@ -7,10 +7,10 @@
  *
  * Drafts never touch the ledger; issuing them is the normal invoice flow.
  */
-import { db } from "../../db";
 import { invoiceLines, invoices, type Invoice } from "../../../shared/schema";
 import { fromFils, mulRate } from "../../../shared/money";
 import { emitDomainEvent } from "../../platform/domain-events";
+import { withLedgerTx, type LedgerTx } from "../../ledger";
 import { allocateInvoiceNumber } from "../invoice-numbering.service";
 import {
   dueDateFromTerms,
@@ -46,7 +46,8 @@ function toDate(iso: string): Date {
 export async function createDraftInvoice(
   companyId: string,
   input: DraftInvoiceInput,
-  actorUserId: string | null
+  actorUserId: string | null,
+  outer?: LedgerTx
 ): Promise<Invoice> {
   const header = await resolveCustomerHeader(
     companyId,
@@ -60,13 +61,15 @@ export async function createDraftInvoice(
       dueDate: input.dueDate ?? undefined,
       date: input.date,
     } as Parameters<typeof resolveCustomerHeader>[1],
-    { dueDateFromTerms, termsFromDays }
+    { dueDateFromTerms, termsFromDays },
+    outer
   );
   const { rows, totals } = prepareSalesLines(input.lines);
   await assertPlaceOfSupply(
     companyId,
     header.placeOfSupplyEmirate,
-    rows.map((r) => r.vatSupplyType)
+    rows.map((r) => r.vatSupplyType),
+    outer
   );
   const currency = (input.currency ?? "AED").toUpperCase();
   const rate = currency === "AED" ? 1 : Number(input.exchangeRate ?? 0);
@@ -79,7 +82,16 @@ export async function createDraftInvoice(
     );
   }
   const date = toDate(input.date);
-  const invoice = await db.transaction(async (tx: typeof db) => {
+  const notifyCreated = (invoice: Invoice) => {
+    emitDomainEvent("invoice.created", {
+      companyId,
+      entityId: invoice.id,
+      number: invoice.number,
+      totalFils: totals.totalFils,
+      actorUserId,
+    });
+  };
+  const invoice = await withLedgerTx(async (tx, { afterCommit }) => {
     const number = await allocateInvoiceNumber(companyId, "invoice", date, tx);
     const [inserted] = await tx
       .insert(invoices)
@@ -123,14 +135,9 @@ export async function createDraftInvoice(
         costCenterId: r.costCenterId,
       } as typeof invoiceLines.$inferInsert);
     }
+    if (outer) afterCommit(() => notifyCreated(inserted));
     return inserted as Invoice;
-  });
-  emitDomainEvent("invoice.created", {
-    companyId,
-    entityId: invoice.id,
-    number: invoice.number,
-    totalFils: totals.totalFils,
-    actorUserId,
-  });
+  }, outer);
+  if (!outer) notifyCreated(invoice);
   return invoice;
 }

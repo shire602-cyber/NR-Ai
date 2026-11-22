@@ -1,9 +1,8 @@
-import { sql } from "drizzle-orm";
-import { type LedgerTx } from "../ledger";
-import { rowsOf } from "../ledger/tx";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { NextFunction, Request, Response } from "express";
-import { db, pool } from "../db";
+import { pool } from "../db";
+import { ledgerQueryable } from "../ledger/tx";
+import type { LedgerTx } from "../ledger/types";
 import { AppError } from "../middleware/errorHandler";
 import { DomainError } from "../errors";
 import { todayIso } from "../ledger/normalize";
@@ -69,21 +68,22 @@ export async function getEffectiveLock(
   isoDate: string,
   tx?: LedgerTx
 ): Promise<EffectiveLock | null> {
-  const rows = rowsOf<{ period_end: string; lock_type: string; lock_scope: string }>(
-    await (tx ?? db).execute(sql`SELECT period_end::date::text AS period_end, lock_type, lock_scope
+  const result = await ledgerQueryable(tx).query(
+    `SELECT period_end::date::text AS period_end, lock_type, lock_scope
        FROM month_end_close
-      WHERE company_id = ${companyId}
+      WHERE company_id = $1
         AND status = 'locked'
         AND (
-          (COALESCE(lock_scope, 'month') = 'through' AND ${isoDate}::date <= period_end::date)
+          (COALESCE(lock_scope, 'month') = 'through' AND $2::date <= period_end::date)
           OR (COALESCE(lock_scope, 'month') = 'month'
-              AND ${isoDate}::date >= date_trunc('month', period_end)::date
-              AND ${isoDate}::date <= period_end::date)
+              AND $2::date >= date_trunc('month', period_end)::date
+              AND $2::date <= period_end::date)
         )
       ORDER BY CASE WHEN lock_type = 'hard' THEN 0 ELSE 1 END, period_end DESC
-      LIMIT 1`)
+      LIMIT 1`,
+    [companyId, isoDate]
   );
-  const row = rows[0];
+  const row = result.rows[0];
   if (!row) return null;
   return {
     periodEnd: row.period_end,
@@ -121,12 +121,11 @@ export async function resolveCloseActor(
   user: { id: string; isAdmin?: boolean; firmRole?: string | null },
   tx?: LedgerTx
 ): Promise<CloseActor> {
-  const rows = rowsOf<{ role: string }>(
-    await (tx ?? db).execute(sql`
-    SELECT role FROM company_users WHERE company_id = ${companyId} AND user_id = ${user.id} LIMIT 1
-  `)
+  const r = await ledgerQueryable(tx).query(
+    `SELECT role FROM company_users WHERE company_id = $1 AND user_id = $2 LIMIT 1`,
+    [companyId, user.id]
   );
-  const companyRole: string | null = rows[0]?.role ?? null;
+  const companyRole: string | null = r.rows[0]?.role ?? null;
   if (user.isAdmin) return { kind: "platform_admin", companyRole };
   if (user.firmRole === "firm_owner") return { kind: "firm_owner", companyRole };
   if (user.firmRole === "firm_admin") return { kind: "firm_admin", companyRole };

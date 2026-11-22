@@ -399,6 +399,6 @@
   "portal.chip.column": "Portal",
   "portal.switchLanguage": "العربية",
   "portal.doc.downloadFailed": "The PDF could not be downloaded. Please try again.",
-  "portal.eventType.bank.sync_failed": "Bank statement review",
+  "portal.eventType.bank.sync_failed": "CSV statement import reminder",
   "portal.bulk.outcome.delivery_failed": "Email delivery failed"
 }

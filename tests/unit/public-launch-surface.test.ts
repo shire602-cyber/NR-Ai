@@ -361,7 +361,7 @@ describe("Public SaaS launch surface", () => {
     for (const expectedDemoSignal of [
       "Sample company workspace",
       "Pearl Trading LLC",
-      "Bank statement imported by CSV",
+      "CSV statement import",
       "Export VAT 201 workbook",
     ]) {
       expect(demoSource).toContain(expectedDemoSignal);

@@ -1038,5 +1038,6 @@
   "pageLabels.backupColName": "الاسم",
   "pageLabels.backupColType": "النوع",
   "pageLabels.backupColSize": "الحجم",
-  "pageLabels.investingActivitiesHint": "النقد من شراء الأصول طويلة الأجل أو بيعها"
+  "pageLabels.investingActivitiesHint": "النقد من شراء الأصول طويلة الأجل أو بيعها",
+  "pageLabels.csvStatementImport": "استيراد كشف الحساب بصيغة CSV"
 }

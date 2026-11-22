@@ -282,7 +282,7 @@ async function main() {
   rec("bank: unreconciled feed", r.status === 200, { status: r.status });
 
   r = await api("GET", `/api/bank/providers`, { token: ctx.token });
-  rec("bank: open-banking providers", r.status === 200, r.json);
+  rec("Bank provider readiness", r.status === 200, r.json);
 
   // ── 16. Dashboard ─────────────────────────────────────────
   r = await api("GET", `/api/companies/${ctx.companyId}/dashboard/stats`, { token: ctx.token });

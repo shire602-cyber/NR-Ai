@@ -9,7 +9,6 @@ import { isNraFirmRole } from "../../shared/access";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
 import {
   addVatWorkpaperRow,
@@ -58,11 +57,9 @@ import {
 } from "../tax/vat-settlement.service";
 import {
   amendVatReturn,
-  assertReconciledOrOverridden,
   generateVatReturn,
   markVatReturnReady,
-  postReturnApportionment,
-  vatReturnMachine,
+  submitVatReturn,
 } from "../tax/vat-returns.service";
 import {
   addReturnAdjustment,
@@ -81,7 +78,6 @@ import {
   upsertRecoveryRule,
 } from "../tax/vat-recovery";
 import { parseIsoDate } from "../tax/vat-periods";
-import { todayIso } from "../ledger/normalize";
 import { sendTabular } from "../reporting/http";
 import {
   prepareVat201ForExport,
@@ -696,6 +692,7 @@ export function registerVATRoutes(app: Express) {
       const body = parsedBody<Body<typeof markVatReturnReadyBody>>(req);
       const updated = await markVatReturnReady({
         id: access.existing.id,
+        companyId: access.existing.companyId,
         userId: access.userId,
         overrideReason: body.overrideReason ?? null,
         req,
@@ -703,9 +700,6 @@ export function registerVATRoutes(app: Express) {
       res.json(updated);
     })
   );
-
-  /** A stored period boundary (UTC end-of-day timestamp) as YYYY-MM-DD. */
-  const isoDateOf = (d: unknown) => new Date(d as string).toISOString().slice(0, 10);
 
   // Submit VAT return. Never transmits anything to the FTA.
   app.post(
@@ -716,117 +710,28 @@ export function registerVATRoutes(app: Express) {
       const access = await requireReturnAccess(req, res);
       if (!access) return;
       const { existing, userId } = access;
+      await assertCompanyPermission(req, existing.companyId, "tax.submit");
       const body = parsedBody<Body<typeof submitVatReturnBody>>(req);
-      const reference = body.ftaReferenceNumber?.trim() ? body.ftaReferenceNumber.trim() : null;
-      const target = reference ? "filed" : "submitted";
-      // E2 (J3-r2): the EmaraTax filing date. Only with a reference; never in the future and
-      // never before the tax period has ended (EmaraTax opens the return after the period).
-      const filedOn = body.filedOn ?? null;
-      if (filedOn) {
-        const periodEndIso = isoDateOf(existing.periodEnd);
-        if (!reference) {
-          throw new DomainError(
-            "VALIDATION_ERROR",
-            400,
-            { fields: { ftaReferenceNumber: ["Enter the EmaraTax reference number"] } },
-            "A filing date needs the EmaraTax reference number"
-          );
-        }
-        if (filedOn > todayIso()) {
-          throw new DomainError(
-            "VAT_FILED_ON_FUTURE",
-            422,
-            { fields: { filedOn: ["The filing date cannot be in the future"] } },
-            "The filing date cannot be in the future"
-          );
-        }
-        if (filedOn <= periodEndIso) {
-          throw new DomainError(
-            "VAT_FILED_ON_IN_PERIOD",
-            422,
-            { periodEnd: periodEndIso, fields: { filedOn: ["File after the tax period ends"] } },
-            "A VAT return is filed after its tax period ends"
-          );
-        }
-      }
-      function matchesFiling(row: typeof existing) {
-        return (
-          !!reference &&
-          row.ftaReferenceNumber?.trim() === reference &&
-          (!filedOn || (row.declarationDate && isoDateOf(row.declarationDate) === filedOn)) &&
-          (body.declarantName === undefined || body.declarantName === row.declarantName) &&
-          (body.declarantPosition === undefined || body.declarantPosition === row.declarantPosition)
-        );
-      }
-      function sendFiling(row: typeof existing) {
-        res.json({
-          ...row,
-          filing: {
-            transmittedByMuhasib: false,
-            channel: reference ? "manual-emaratax" : "none",
-            message: reference
-              ? "Filing recorded with the EmaraTax reference you entered."
-              : "Ready to file. Submit your return in EmaraTax, then record the FTA reference number here.",
-          },
-        });
-      }
-      if (existing.ftaReferenceNumber?.trim()) {
-        if (!matchesFiling(existing)) throw new DomainError("VAT_FILING_EVIDENCE_CONFLICT", 409);
-        return sendFiling(existing);
-      }
-      if (existing.status !== target && !vatReturnMachine.can(existing.status, target)) {
-        throw new DomainError("INVALID_TRANSITION", 409, { from: existing.status, to: target });
-      }
-
-      // Preparing the return finalises its figures for this tax period.
-      await assertPeriodNotLocked(existing.companyId, existing.periodEnd);
-      // A1 (C6): irrecoverable input VAT (partial exemption) is in the GL before the return is final.
-      if (existing.status !== "submitted") await postReturnApportionment(existing, userId);
-      // The same reconciliation gate as "ready" applies when a draft is submitted directly.
-      if (existing.status !== "ready" && existing.status !== "submitted") {
-        await assertReconciledOrOverridden({
-          vatReturn: existing,
-          userId,
-          overrideReason: body.reconciliationOverrideReason ?? null,
-          req,
-        });
-      }
-
-      const vatReturn = await storage.updateUnfiledVatReturn(
-        existing.companyId,
-        existing.id,
-        existing.status,
-        {
-          status: target,
-          notes: body.notes ?? existing.notes ?? null,
-          ftaReferenceNumber: reference,
-          submittedBy: reference ? userId : null,
-          submittedAt: reference ? (filedOn ? new Date(`${filedOn}T08:00:00Z`) : new Date()) : null,
-          // D2 (N13): the filing date the user stated (the VAT 201 declaration date); the
-          // settlement of the filed return cannot predate it.
-          ...(filedOn ? { declarationDate: new Date(`${filedOn}T08:00:00Z`) } : {}),
-          declarantName: body.declarantName ?? existing.declarantName ?? null,
-          declarantPosition: body.declarantPosition ?? existing.declarantPosition ?? null,
-        }
-      );
-      if (!vatReturn) {
-        const current = await storage.getVatReturn(existing.id);
-        if (current?.companyId === existing.companyId && matchesFiling(current))
-          return sendFiling(current);
-        throw new DomainError("VAT_FILING_EVIDENCE_CONFLICT", 409);
-      }
-      await recordAudit({
-        userId,
+      const vatReturn = await submitVatReturn({
+        ...body,
+        id: existing.id,
         companyId: existing.companyId,
-        action: `vat_return.${target}`,
-        entityType: "vat_return",
-        entityId: existing.id,
-        before: { status: existing.status },
-        after: { status: target, ftaReferenceNumber: reference },
+        userId,
+        overrideReason: body.reconciliationOverrideReason,
         req,
       });
+      const reference = vatReturn.ftaReferenceNumber;
 
-      sendFiling(vatReturn);
+      res.json({
+        ...vatReturn,
+        filing: {
+          transmittedByMuhasib: false,
+          channel: reference ? "manual-emaratax" : "none",
+          message: reference
+            ? "Filing recorded with the EmaraTax reference you entered."
+            : "Ready to file. Submit your return in EmaraTax, then record the FTA reference number here.",
+        },
+      });
     })
   );
 
@@ -842,6 +747,7 @@ export function registerVATRoutes(app: Express) {
       const body = parsedBody<Body<typeof amendVatReturnBody>>(req);
       const result = await amendVatReturn({
         id: access.existing.id,
+        companyId: access.existing.companyId,
         userId: access.userId,
         reason: body.reason,
         req,

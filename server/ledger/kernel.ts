@@ -27,7 +27,7 @@ import {
 import { allocateEntryNumber, lockIdempotencyKey } from "./numbering";
 import { journalMemo } from "@shared/journal-memo";
 import { journalMachine, transitionRow } from "./state-machines";
-import { assertVatPeriodOpen } from "./vat-lock";
+import { assertVatPeriodOpen, isVat201JournalTreatment, lockVatReturns } from "./vat-lock";
 import { assertKernelControlPosting, stampControlAdjustment } from "./control-accounts";
 import { findPgError, rowsOf, withLedgerTx } from "./tx";
 import type {
@@ -275,6 +275,8 @@ export async function insertNormalizedEntry(
   internal: InternalPostOptions = {}
 ): Promise<PostJournalResult> {
   const actorId = actorOf(ctx);
+  // Use the same lock order for every entry that allocates a journal number.
+  await lockVatReturns(tx, n.companyId, "shared");
   if (n.idempotencyKey) {
     await lockIdempotencyKey(tx, n.companyId, n.idempotencyKey);
     const replay = await findByIdempotencyKey(tx, n.companyId, n.idempotencyKey);
@@ -298,11 +300,13 @@ export async function insertNormalizedEntry(
   if (isPosted) {
     await assertVatPeriodOpen(tx, {
       companyId: n.companyId,
-      dateIso: n.dateIso,
+      date: n.dateAt,
       source: n.source,
       accountIds: n.lines.map((l) => l.accountId),
       reversedEntryId: internal.reversedEntryId ?? null,
-      reportsVat: n.reportsVat === true,
+      reportsVat:
+        n.reportsVat === true ||
+        n.lines.some((line) => isVat201JournalTreatment(line.attributes?.vatTreatment)),
     });
   }
   const values = {
@@ -512,20 +516,25 @@ export async function postDraft(
   opts: PostDraftOptions = {}
 ): Promise<PostJournalResult> {
   const actorId = actorOf(ctx);
-  const pre = await loadEntry(ctx.tx ?? db, entryId, ctx.companyId);
-  if (!pre) throw notFound(entryId);
-  if (pre.status !== "draft") {
-    throw new DomainError(
-      "ENTRY_NOT_DRAFT",
-      409,
-      { status: pre.status },
-      "Only draft entries can be posted"
-    );
-  }
-  await assertPeriodNotLocked(pre.companyId, pre.date);
-  assertNotFuture(entryIso(pre));
+  const located = await loadEntry(ctx.tx ?? db, entryId, ctx.companyId);
+  if (!located) throw notFound(entryId);
 
   return withLedgerTx(async (tx) => {
+    await lockVatReturns(tx, located.companyId, "shared");
+    // Draft edits replace the header and lines in one transaction. Check the version we post.
+    const pre = await loadEntry(tx, entryId, located.companyId, true);
+    if (!pre) throw notFound(entryId);
+    if (pre.status !== "draft") {
+      throw new DomainError(
+        "ENTRY_NOT_DRAFT",
+        409,
+        { status: pre.status },
+        "Only draft entries can be posted"
+      );
+    }
+    await assertPeriodNotLocked(pre.companyId, pre.date, tx);
+    assertNotFuture(entryIso(pre));
+
     const raw = await loadLinesFils(tx, entryId);
     const lines = raw.filter((l) => l.debitFils !== 0 || l.creditFils !== 0);
     lines.forEach((l, i) => {
@@ -541,10 +550,13 @@ export async function postDraft(
     await assertAccountsUsable(tx, pre.companyId, normalized, false);
     await assertVatPeriodOpen(tx, {
       companyId: pre.companyId,
-      dateIso: entryIso(pre),
+      date: pre.date,
       source: pre.source ?? null,
       accountIds: normalized.map((l) => l.accountId),
       entryId,
+      reportsVat: normalized.some((line) =>
+        isVat201JournalTreatment(line.attributes?.vatTreatment)
+      ),
     });
 
     const patch: Record<string, unknown> = {
