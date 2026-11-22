@@ -45,14 +45,14 @@ const LOCALIZED_HOMEPAGES = {
     lang: "en",
     dir: "ltr",
     title: "Accounting and VAT for UAE businesses",
-    bankFaq: "How do I reconcile my bank account?",
+    bankFaq: "How do I reconcile my bank statement?",
     providerChoice: "Choose one accredited provider per company",
   },
   "/ar": {
     lang: "ar",
     dir: "rtl",
     title: "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات",
-    bankFaq: "كيف أطابق حسابي البنكي؟",
+    bankFaq: "كيف أطابق كشف حسابي البنكي؟",
     providerChoice: "اختر مزوّد خدمة معتمدًا واحدًا لكل شركة",
   },
 };

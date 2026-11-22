@@ -652,6 +652,16 @@ async function selectProviders(browser, persona) {
       (await saved.json()).identity.einvoicePaymentMeansCode,
       lang === "ar" ? "55" : "54"
     );
+    const bankAccount = await request(
+      token,
+      "POST",
+      `/api/companies/${clients[0].id}/bank-accounts`,
+      {
+        nameEn: "حساب الاختبار",
+        bankName: "بنك الاختبار",
+        currency: "AED",
+      }
+    );
     const statementEntry = "/bank-reconciliation?import=1";
     for (const path of ["/bank-feeds", "/banking"]) {
       await navigate(path, statementEntry);
@@ -663,16 +673,6 @@ async function selectProviders(browser, persona) {
       );
       await expectFrame(page, lang);
     }
-    const bankAccount = await request(
-      token,
-      "POST",
-      `/api/companies/${clients[0].id}/bank-accounts`,
-      {
-        nameEn: "حساب الاختبار",
-        bankName: "بنك الاختبار",
-        currency: "AED",
-      }
-    );
     const statementFile = page.getByTestId("input-bank-statement-file");
     assert.equal(await statementFile.getAttribute("accept"), ".csv");
     await statementFile.setInputFiles({
