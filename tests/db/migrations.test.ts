@@ -41,7 +41,7 @@ describe("migrations", () => {
       expect(e).toMatchObject({ version: "7", breakpoints: false });
       // Leave the last historical preview timestamp unused so installed preview databases
       // apply every migrated bank entry and the portal catch-up.
-      const cadence = e.tag === "0138_repair_bank_gl_links" ? 20_000 : 10_000;
+      const cadence = e.tag === "0138_repair_bank_gl_links" ? 50_000 : 10_000;
       expect(e.when - journal.entries[e.idx - 1].when).toBe(cadence);
     }
     for (const e of journal.entries.filter((x) => x.idx >= 89)) {

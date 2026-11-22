@@ -25,6 +25,7 @@
  *   - the client profile has an h1 and, in Arabic, "بيانات الاتصال" for the contact card;
  *   - a failing client list / command centre / invoice list shows a localized error state with
  *     Retry, never "No clients yet", zeroed tiles or the raw server message;
+ *   - the portfolio accepts CSV and XLSX, rejects legacy XLS, and localizes file and row errors;
  *   - an unassigned preparer sees an "assigned to you" empty state, no Add/Import controls and
  *     no client names from /api/firm/client-links;
  *   - firm A/R in the overview equals the settlement figure (partial payment respected);
@@ -314,7 +315,7 @@ async function openScreen(ctx, url, opts) {
   if (opts.before) await opts.before(page);
   const response = await page.goto(BASE + url, { waitUntil: "load" });
   await page.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => undefined);
-  await page.waitForTimeout(500);
+  await page.getByRole("heading", { level: 1 }).first().waitFor();
   if (opts.act) await opts.act(page);
 
   const phone = opts.viewport !== "desktop";
@@ -484,15 +485,17 @@ async function ownerScreens(browser, viewport, lang, data) {
   // Open books: the owner's own company is not onboarded; the click must land on the client.
   const nav = await openScreen(ctx, "/firm/clients", { ...base, name: "open books" });
   await nav.page.fill("[data-testid=input-client-search]", data.mine[0].name);
-  await nav.page.waitForTimeout(400);
   const target = phone
     ? nav.page.locator(`[data-testid=button-open-books-${data.mine[0].id}]`)
-    : nav.page.getByRole("button", { name: /Open books|فتح الدفاتر/ }).first();
+    : nav.page
+        .getByRole("row")
+        .filter({ hasText: data.mine[0].name })
+        .getByRole("button", { name: /Open books|فتح الدفاتر/ });
   await target.click();
   await nav.page
     .waitForURL((u) => /^\/dashboard/.test(u.pathname), { timeout: 15000 })
     .catch(() => undefined);
-  await nav.page.waitForTimeout(1500);
+  await nav.page.getByRole("heading", { level: 1 }).first().waitFor();
   const landed = new URL(nav.page.url()).pathname;
   check(landed === "/dashboard", "open books: lands on the client's /dashboard", landed);
   check(
@@ -726,6 +729,100 @@ async function apiChecks(data) {
   check(other.status === 404, "api: another tenant's id is a 404 on the comms log", other.status);
 }
 
+async function clientCsvImport(browser, lang, owner) {
+  currentLabel = `${lang} client CSV import`;
+  const context = await signedInContext(browser, "desktop", lang, owner);
+  try {
+    const page = await context.newPage();
+    await page.goto(BASE + "/firm/clients");
+    const label = lang === "ar" ? "استيراد العملاء" : "Import clients";
+    const name = `${lang === "ar" ? "شركة اختبار الاستيراد" : "CSV Import Test Company"} ${RUN}`;
+    await page.getByRole("button", { name: label, exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: label, exact: true });
+    const fileInput = dialog.locator("input#import-file");
+    const submit = dialog.getByTestId("button-import-clients");
+    const upload = async (filename, text) => {
+      await fileInput.setInputFiles({
+        name: filename,
+        mimeType: "text/csv",
+        buffer: Buffer.from(text),
+      });
+      const [response] = await Promise.all([
+        page.waitForResponse(
+          (res) =>
+            new URL(res.url()).pathname === "/api/firm/clients/import" &&
+            res.request().method() === "POST"
+        ),
+        submit.click(),
+      ]);
+      return response;
+    };
+
+    const instructions = await dialog.getByText(/Upload a CSV|ارفع ملف CSV/).innerText();
+    check(
+      instructions.startsWith(lang === "ar" ? "ارفع ملف CSV" : "Upload a CSV") &&
+        instructions.includes("XLSX") &&
+        instructions.includes("Company Name") &&
+        (await submit.innerText()) === (lang === "ar" ? "استيراد" : "Import"),
+      "the dialog shows localized instructions and action text",
+      instructions
+    );
+    check(
+      (await fileInput.getAttribute("accept")) === ".csv,.xlsx",
+      "the file picker advertises only CSV and XLSX"
+    );
+    await fileInput.setInputFiles({
+      name: "clients.xls",
+      mimeType: "application/vnd.ms-excel",
+      buffer: Buffer.from("legacy spreadsheet"),
+    });
+    const fileTypeMessage = lang === "ar" ? "اختر ملف CSV أو XLSX." : "Choose a CSV or XLSX file.";
+    await page.getByText(fileTypeMessage, { exact: true }).waitFor();
+    check(await submit.isDisabled(), "the legacy XLS file is rejected before submission");
+
+    const invalid = await upload("invalid.csv", 'Company Name\n"unterminated');
+    check(
+      invalid.status() === 400 && (await invalid.json()).code === "CLIENT_IMPORT_UNREADABLE",
+      "malformed CSV returns a structured import error"
+    );
+    const unreadableMessage =
+      lang === "ar"
+        ? "تعذّرت قراءة ملف الاستيراد. تحقّق من صيغة الملف وحاول مرة أخرى."
+        : "The import file could not be read. Check the file format and try again.";
+    await page.getByText(unreadableMessage, { exact: true }).waitFor();
+    check(
+      await page.getByText(unreadableMessage, { exact: true }).isVisible(),
+      "the file error is localized"
+    );
+
+    const response = await upload("clients.csv", `Company Name,Emirate\n${name},Dubai\n`);
+    check(
+      response.status() === 200,
+      "valid CSV submitted through the portfolio returns 200",
+      response.status()
+    );
+    if (!response.ok()) return;
+    const result = await response.json();
+    check(
+      result.errors.length === 0 && result.created.length === 1 && result.created[0].name === name,
+      "the named company is imported without row errors",
+      result
+    );
+    const duplicate = await upload("duplicate.csv", `Company Name,Emirate\n${name},Dubai\n`);
+    const message =
+      lang === "ar" ? "يوجد عميل بهذا الاسم بالفعل." : "A client with this name already exists.";
+    await dialog.getByText(message, { exact: false }).waitFor();
+    check(
+      duplicate.ok() &&
+        (await duplicate.json()).errors[0].code === "DUPLICATE_CLIENT" &&
+        (await dialog.getByText(message, { exact: false }).isVisible()),
+      "duplicate row feedback is localized"
+    );
+  } finally {
+    await context.close();
+  }
+}
+
 // ─── First-load budget (defect 14) ───────────────────────────────────────────
 
 const BUDGET = { requests: 50, scripts: 25, lcpMs: 9000 };
@@ -833,6 +930,7 @@ try {
       await staffScreens(browser, viewport, lang, data);
     }
   for (const lang of LANGS) await firstLoadBudget(browser, lang, data);
+  for (const lang of LANGS) await clientCsvImport(browser, lang, data.owner);
 } finally {
   await browser.close();
   await db.end();

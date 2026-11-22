@@ -17,12 +17,7 @@
 import type { InsertJournalEntry, InsertJournalLine, JournalEntry } from "../../shared/schema";
 import { fromFils, toFils } from "../../shared/money";
 import { DomainError } from "../errors";
-import {
-  assertPeriodNotLocked,
-  insertNormalizedEntry,
-  loadLinesFils,
-  type InternalPostOptions,
-} from "./kernel";
+import { insertNormalizedEntry, loadLinesFils, type InternalPostOptions } from "./kernel";
 import { normalizeEntry } from "./normalize";
 import { withLedgerTx } from "./tx";
 import type { EntryKind, LedgerTx, PostJournalLineInput } from "./types";
@@ -147,8 +142,6 @@ export async function createJournalEntryCompat(
     amountRounding: "halfUp",
   });
   const actorId = insertEntry.createdBy;
-  await assertPeriodNotLocked(n.companyId, n.dateAt);
-
   return withLedgerTx(async (tx) => {
     const internal: InternalPostOptions = {
       postedBy: insertEntry.postedBy ?? null,

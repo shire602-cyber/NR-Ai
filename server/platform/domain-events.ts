@@ -99,8 +99,11 @@ export type DomainEventInput<T extends DomainEventType> = Omit<
   "occurredAt"
 > & { occurredAt?: string | Date };
 
-type Handler<T extends DomainEventType> = (event: DomainEvent<T>) => void | Promise<void>;
-type AnyHandler = (event: DomainEvent) => void | Promise<void>;
+type Handler<T extends DomainEventType> = (
+  event: DomainEvent<T>,
+  signal?: AbortSignal
+) => void | Promise<void>;
+type AnyHandler = Handler<DomainEventType>;
 
 /** Handlers per type, each with its delivery key (durable outbox dedup). */
 const handlers = new Map<DomainEventType | "*", Map<AnyHandler, string>>();
@@ -123,7 +126,11 @@ export interface DomainEventHandlerOptions {
   name?: string;
 }
 
-/** Subscribe to one event type or "*" (all). Returns an unsubscribe function. */
+/**
+ * Subscribe to one event type or "*" (all). Returns an unsubscribe function.
+ * Durable dispatch supplies a signal that aborts on its handler deadline. In-memory delivery
+ * leaves it undefined.
+ */
 export function onDomainEvent<T extends DomainEventType>(
   type: T,
   handler: Handler<T>,

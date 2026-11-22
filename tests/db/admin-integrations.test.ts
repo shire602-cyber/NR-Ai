@@ -3,25 +3,32 @@
  * a real, admin-only call (it was a hard-coded "Connected" badge and a button that did nothing).
  */
 import { describe, expect, it, vi } from "vitest";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { useHarness } from "./harness";
 
 const h = useHarness();
 
 describe("STEP1 F6 admin integrations", () => {
-  it("shows built-in bank statement upload independently of adapter credentials", async () => {
-    const admin = await h.createTenant({ name: "BankingStatusAdmin", isAdmin: true });
-    const banking = async () => {
-      const response = await admin.as.get("/api/admin/integration-status");
-      expect(response.status, response.text).toBe(200);
-      return response.body.integrations.find((item: { key: string }) => item.key === "bankStatementCsvImport");
-    };
+  it("lists manual statement import as available without provider setup", async () => {
+    const admin = await h.createTenant({ name: "BankStatementAdmin", isAdmin: true });
+    const status = await admin.as.get("/api/admin/integration-status");
+    expect(status.status, status.text).toBe(200);
+    expect(status.body.integrations).toContainEqual({
+      key: "bankStatementCsvImport",
+      name: "CSV statement import",
+      configured: true,
+      detail: BANK_RECONCILIATION_COPY.en,
+      requiredEnv: [],
+      unlocks: "Statement reconciliation",
+    });
+    expect(status.body.integrations).not.toContainEqual(
+      expect.objectContaining({ key: "openBanking" })
+    );
+    vi.stubEnv("LEAN_APP_TOKEN", "sandbox-fixture");
     try {
-      vi.stubEnv("LEAN_APP_TOKEN", undefined);
-      const before = await banking();
-      expect(before).toMatchObject({ name: "CSV statement import", configured: true, requiredEnv: [] });
-      expect(before.detail).toContain("CSV");
-      vi.stubEnv("LEAN_APP_TOKEN", "sandbox-fixture");
-      expect(await banking()).toEqual(before);
+      const configured = await admin.as.get("/api/admin/integration-status");
+      expect(configured.status, configured.text).toBe(200);
+      expect(configured.body).toEqual(status.body);
     } finally {
       vi.unstubAllEnvs();
     }

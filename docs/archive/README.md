@@ -28,6 +28,9 @@ guidance; the live docs are `AGENTS.md`, `docs/*.md` and `tests/db/README.md`.
 | `Muhasib-Netmara-Accounting-System-Review.{docx,pdf}` | Netmara accounting system review |
 | `Muhasib-Netmara-Audit-and-Competitive-Roadmap.{docx,pdf}` | Netmara audit and competitive roadmap |
 
+The roadmap DOCX is the editable source for its PDF. The banking section records the CSV statement
+import and reconciliation workflow.
+
 ## `codex/` — agent hand-off and deploy prompts (formerly `docs/CODEX_*`)
 
 `CODEX_DEPLOY_AUTOPILOT_LEARNING.md`, `CODEX_DEPLOY_NOW.md`, `CODEX_DEPLOY_OPTIONAL_HARDENING.md`,

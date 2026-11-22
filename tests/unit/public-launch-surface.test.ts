@@ -2,10 +2,11 @@
 // legal and help copy. It scans the shipped source/catalog text for banned compliance and security
 // claims across pages that cannot all be rendered without API data.
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { findBankFeedMention, findUnsupportedBankFeedClaim } from "../e2e/lib/bank-feed-claims.mjs";
 import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 
 const repoRoot = process.cwd();
@@ -32,6 +33,7 @@ const publicLaunchFiles = [
   "client/src/components/marketing/phase/editorial/pages.ts",
   "client/src/components/marketing/phase/editorial/details.ts",
   "client/src/components/auth/AuthLayout.tsx",
+  "client/src/dev/UiGallery.tsx",
   "client/src/pages/Register.tsx",
   "client/src/pages/Services.tsx",
   "client/src/pages/Pricing.tsx",
@@ -143,6 +145,10 @@ describe("Public SaaS launch surface", () => {
       for (const bannedClaim of bannedLaunchClaims) {
         expect(source, `${file} contains ${bannedClaim}`).not.toMatch(bannedClaim);
       }
+      expect(
+        findBankFeedMention(source),
+        `${file} contains an unsupported banking claim`
+      ).toBeNull();
     }
   });
 
@@ -212,6 +218,10 @@ describe("Public SaaS launch surface", () => {
       for (const bannedClaim of bannedLaunchClaims) {
         expect(source, `${file} contains ${bannedClaim}`).not.toMatch(bannedClaim);
       }
+      expect(
+        findUnsupportedBankFeedClaim(source),
+        `${file} contains an unsupported banking claim`
+      ).toBeNull();
     }
   });
 
@@ -357,6 +367,117 @@ describe("Public SaaS launch surface", () => {
     ]) {
       expect(demoSource).toContain(expectedDemoSignal);
     }
+  });
+
+  const words = (...parts: string[]) => parts.join(" ");
+  const legacyBankingTerm = words("bank", "feeds");
+  const legacyArabicTerm = words("الربط", "البنكي");
+  const formerConnectPrompt = words("connect", "your", "bank");
+
+  it.each([
+    words("Connect", "your", "bank in seconds"),
+    "Review transactions via encrypted feeds",
+    words("Live", legacyBankingTerm, "are available now."),
+    words("Live", legacyBankingTerm, "are coming later."),
+    words("Bank", "feeds are coming soon."),
+    words("We will support live", legacyBankingTerm + "."),
+    "اربط حسابك البنكي واستورد المعاملات.",
+    "يمكنك ربط حسابك البنكي مباشرة.",
+    "زامن معاملاتك البنكية تلقائيًا.",
+    words(legacyArabicTerm, "المباشر متاح الآن."),
+    words("سيتوفر", legacyArabicTerm, "المباشر لاحقًا."),
+    "سنربط حسابك بالبنك قريباً.",
+  ])("flags an unsupported banking claim: %s", (copy) => {
+    expect(findUnsupportedBankFeedClaim(copy)).not.toBeNull();
+  });
+
+  it.each(["Can it connect to my bank directly?", "هل يتصل مباشرة بحسابي البنكي؟"])(
+    "rejects the former banking FAQ question: %s",
+    (copy) => {
+      expect(findUnsupportedBankFeedClaim(copy)).not.toBeNull();
+      expect(findBankFeedMention(copy)).not.toBeNull();
+    }
+  );
+
+  it.each([
+    words("CSV statement import, no live", "feed needed"),
+    "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.",
+    words("Live", legacyBankingTerm, "are not supported."),
+    words("UAE", legacyBankingTerm, "are not supported."),
+    words("We don't support UAE", legacyBankingTerm + "."),
+    words("Do not", formerConnectPrompt + "; upload a CSV statement."),
+    "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك.",
+    words(legacyArabicTerm, "المباشر غير متاح."),
+    "لا يمكنك ربط حسابك البنكي مباشرة.",
+  ])("accepts manual CSV or an honest negation: %s", (copy) => {
+    expect(findUnsupportedBankFeedClaim(copy)).toBeNull();
+  });
+
+  it("does not let an honest negation mask a later positive claim", () => {
+    const copy = words(
+      "UAE",
+      legacyBankingTerm,
+      "are not supported. Securely link",
+      "your",
+      "bank account today."
+    );
+    expect(findUnsupportedBankFeedClaim(copy)).toBe(words("Securely link", "your", "bank account"));
+  });
+
+  it.each([
+    words("Bank", "feeds"),
+    "Live syncing is not available for it.",
+    words("A bank-feed", "connection is unavailable."),
+    "Try open-banking next month.",
+    legacyArabicTerm,
+    "المزامنة المباشرة غير متاحة له.",
+    "لا يوجد ربطٌ مصرفيّ.",
+    "الخدمات المصرفية المفتوحة",
+    "ربط مباشر",
+    "تفعيل الربط المباشر قريبًا",
+    "سنربط حسابك بالبنك قريباً",
+  ])("rejects a mention on statement-import surfaces: %s", (copy) => {
+    expect(findBankFeedMention(copy)).not.toBeNull();
+  });
+
+  it.each(["en", "ar"])("keeps all %s catalog values use statement-import wording", (locale) => {
+    const directory = `client/src/locales/${locale}`;
+    const mentions: string[] = [];
+    for (const file of readdirSync(join(repoRoot, directory))) {
+      if (!file.endsWith(".json")) continue;
+      const catalog = JSON.parse(readRepoFile(`${directory}/${file}`)) as Record<string, unknown>;
+      for (const [key, value] of Object.entries(catalog)) {
+        if (typeof value === "string" && findBankFeedMention(value)) {
+          mentions.push(`${file}: ${key}`);
+        }
+      }
+    }
+    expect(mentions).toEqual([]);
+  });
+
+  it.each([
+    "docs/EMAIL_INTAKE_PILOT.md",
+    "docs/EXTERNAL_DEPENDENCIES.md",
+    "docs/archive/2026-06/AUDIT.md",
+    "docs/archive/2026-06/COMPETITIVE_ROADMAP.md",
+    "docs/archive/2026-06/DEVELOPMENT_STATUS.md",
+    "docs/archive/2026-06/LAUNCH_READINESS.md",
+    "docs/archive/2026-06/NEXT_STEPS.md",
+    "docs/archive/2026-06/PRODUCTION_HARDENING.md",
+    "docs/archive/codex/CODEX_TASK_PROMPT.md",
+    "docs/archive/root/COMPETITIVE_AUDIT_2026.md",
+  ])("keeps first-party launch and rollout guidance focused on statement import in %s", (file) => {
+    expect(findBankFeedMention(readRepoFile(file))).toBeNull();
+  });
+
+  it.each([
+    "docs/archive/root/Muhasib-Teardown-2026-08-07.md",
+    "docs/archive/root/Muhasib-Rebuild-Plan.md",
+    "docs/qa/2026-06-21-benchmark-audit/03-cfo-audit-report.md",
+  ])("omits obsolete banking comparisons in %s", (file) => {
+    expect(readRepoFile(file)).not.toMatch(
+      /\bUAE\s+bank\s+feeds?\b|\bbank\s+feeds?\s+(?:and|with)\s+rules\b/i
+    );
   });
 
   it.each(["en", "ar"] as const)("uses the same CSV wording in %s customer copy", (locale) => {

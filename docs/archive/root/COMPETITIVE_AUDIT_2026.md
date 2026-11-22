@@ -417,6 +417,8 @@ Scored across 8 dimensions (10 points each, 80 max):
 
 ## 4. REMAINING GAPS (What Muhasib.ai Could Add)
 
+Bank reconciliation uses CSV statement imports.
+
 ### Critical Gaps (Would Strengthen Competitive Position)
 
 Muhasib uses CSV statement uploads for bank reconciliation. QuickBooks, Xero,

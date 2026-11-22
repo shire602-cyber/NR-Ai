@@ -14,16 +14,24 @@
  *      accounts cannot issue documents or invite users (403 EMAIL_VERIFICATION_REQUIRED).
  *      Only active while EMAIL_VERIFICATION_ENFORCE is on AND an email provider exists.
  *
- * Platform admins and NR firm staff bypass the company MFA policy (they are not company
- * members in the RBAC sense) but are still subject to step-up when they have MFA.
+ * Platform admins retain the support exemption. The company MFA policy covers NR staff
+ * acting through authorized client access, including staff without a company membership.
  */
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { sql } from "./sql";
 import { createLogger } from "../../config/logger";
 import { authenticateRequest } from "../../middleware/auth";
-import { getCompanyRole, resolveRequestCompany } from "../../middleware/companyRolePolicy";
-import { isNraFirmRole } from "../../../shared/access";
-import type { CompanyRole } from "../../../shared/permissions";
+import {
+  getCompanyRole,
+  isSignedProviderCallback,
+  resolveRequestCompany,
+} from "../../middleware/companyRolePolicy";
+import { isFirmRole } from "../../../shared/access";
+import { canAccessFirmClient, resolveFirmContext } from "../firm/scope";
+import { firmMfaTargetCompanies } from "./firm-mfa-targets";
+import type { AppDatabase } from "../../db";
+import { firmMfaRequirement, policyCoversRole } from "./firm-company-mfa";
+export { policyCoversRole } from "./firm-company-mfa";
 import { COMPANY_MFA_POLICIES, type CompanyMfaPolicy } from "../../../shared/schema";
 import { emailVerificationConfig, mfaStepUpWindowMs } from "./config";
 
@@ -137,10 +145,48 @@ export async function setCompanyMfaPolicy(
   policyCache.set(companyId, { value: requireMfa, at: Date.now() });
 }
 
-export function policyCoversRole(policy: CompanyMfaPolicy, role: CompanyRole | null): boolean {
-  if (!role || policy === "none") return false;
-  if (policy === "all") return true;
-  return role === "owner" || role === "admin";
+function sendMfaEnrollmentRequired(
+  res: Response,
+  requirement: { companyId: string; policy: string }
+) {
+  res.status(403).json({
+    message: "This company requires two-factor authentication. Set it up in Security settings.",
+    code: "MFA_ENROLLMENT_REQUIRED",
+    details: { ...requirement, setupUrl: "/settings/security" },
+  });
+}
+
+/** Check enrollment against the same authorized targets a firm handler will act on. */
+export async function requireFirmCompanyMfa(
+  user: Express.User,
+  res: Response,
+  companyIds: string[],
+  exec?: Pick<AppDatabase, "execute">
+): Promise<boolean> {
+  if (user.isAdmin === true || companyIds.length === 0) return true;
+  const requirement = await firmMfaRequirement(companyIds, user.id, exec);
+  if (!requirement) return true;
+  sendMfaEnrollmentRequired(res, requirement);
+  return false;
+}
+
+async function companyMfaRequirement(req: Request, user: Express.User) {
+  if (segs(req.path)[0]?.toLowerCase() === "firm") {
+    return firmMfaRequirement(
+      await firmMfaTargetCompanies(req, user, { preDispatch: true }),
+      user.id
+    );
+  }
+  const companyId = await resolveRequestCompany(req, req.path);
+  if (!companyId) return undefined;
+  const policy = await getCompanyMfaPolicy(companyId);
+  if (policy === "none") return undefined;
+  const membership = await getCompanyRole(user.id, companyId);
+  if (policyCoversRole(policy, membership)) return { companyId, policy };
+  if (policy === "all" && !membership && isFirmRole(user.firmRole)) {
+    const ctx = await resolveFirmContext(user);
+    if (ctx && (await canAccessFirmClient(ctx, companyId))) return { companyId, policy };
+  }
 }
 
 // ─── Per-user state ────────────────────────────────────────────────────────
@@ -157,45 +203,6 @@ async function loadUserSecurity(userId: string): Promise<UserSecurityRow | null>
     [userId]
   );
   return rows[0] ?? null;
-}
-
-function mayNeedCompanyMfa(user: Express.User, sec: UserSecurityRow): boolean {
-  return !sec.mfa_enabled && user.isAdmin !== true && !isNraFirmRole(user.firmRole);
-}
-
-async function denyUnenrolledMember(
-  res: Response,
-  userId: string,
-  companyId: string
-): Promise<boolean> {
-  const policy = await getCompanyMfaPolicy(companyId);
-  if (policy === "none" || !policyCoversRole(policy, await getCompanyRole(userId, companyId))) {
-    return false;
-  }
-  res.status(403).json({
-    message: "This company requires two-factor authentication. Set it up in Security settings.",
-    code: "MFA_ENROLLMENT_REQUIRED",
-    details: { companyId, policy, setupUrl: "/settings/security" },
-  });
-  return true;
-}
-
-/** Use after authentication and company resolution on routes whose scope is set by the handler. */
-export async function requireCompanyMfaEnrollment(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> {
-  try {
-    const user = req.user!;
-    const sec = await loadUserSecurity(user.id);
-    if (sec && mayNeedCompanyMfa(user, sec)) {
-      if (await denyUnenrolledMember(res, user.id, req.params.companyId)) return;
-    }
-    next();
-  } catch (err) {
-    next(err);
-  }
 }
 
 /**
@@ -283,7 +290,12 @@ export async function securityPolicyMiddleware(
   try {
     const path = req.path;
     const s = segs(path);
-    if (s.length === 0 || MFA_POLICY_EXEMPT_PREFIXES.includes(s[0])) return next();
+    if (
+      s.length === 0 ||
+      MFA_POLICY_EXEMPT_PREFIXES.includes(s[0]) ||
+      isSignedProviderCallback(req.method, path)
+    )
+      return next();
 
     const stepUp = matchRule(STEP_UP_RULES, req, path);
     const verifiedEmail = matchRule(VERIFIED_EMAIL_RULES, req, path);
@@ -298,9 +310,12 @@ export async function securityPolicyMiddleware(
     if (!sec) return next();
 
     // 1. Company MFA policy.
-    if (mayNeedCompanyMfa(user, sec)) {
-      const companyId = await resolveRequestCompany(req, path).catch(() => null);
-      if (companyId && (await denyUnenrolledMember(res, user.id, companyId))) return;
+    if (!sec.mfa_enabled && user.isAdmin !== true) {
+      const requirement = await companyMfaRequirement(req, user);
+      if (requirement) {
+        sendMfaEnrollmentRequired(res, requirement);
+        return;
+      }
     }
 
     // 2. Step-up for sensitive actions.
@@ -324,7 +339,7 @@ export async function securityPolicyMiddleware(
     }
     next();
   } catch (err) {
-    log.error({ err }, "security policy check failed");
+    log.error({ requestId: req.id }, "security policy check failed");
     next(err);
   }
 }

@@ -48,6 +48,13 @@
   "developerSettings.viewDeliveries": "View deliveries",
   "developerSettings.sendTestEvent": "Send test event",
   "developerSettings.replay": "Replay",
+  "developerSettings.replayDeliveryPending": "A delivery is pending or in progress.",
+  "developerSettings.replayDeliveryUncertain": "The endpoint may already have received this event.",
+  "developerSettings.endpointDisabled": "This endpoint is paused.",
+  "developerSettings.replayUnavailable": "Replay is unavailable for this delivery.",
+  "developerSettings.replayFailed": "Could not replay this webhook.",
+  "developerSettings.deliveryRetrying": "Retry scheduled",
+  "developerSettings.nextDeliveryAttempt": "Next attempt at {time}",
   "feedback.weMayReachOutFor": "We may reach out for more details or to notify you of resolution",
   "feedback.reportAProblemOrError": "Report a problem or error",
   "feedback.shareWhatYouLove": "Share what you love",
@@ -650,5 +657,6 @@
   "activityLog.action.portal.invite_accept": "Customer portal invitation accepted",
   "activityLog.action.portal.account_revoke": "Customer portal access removed",
   "activityLog.entity.customer_portal_invitation": "Customer portal invitation",
-  "activityLog.entity.customer_portal_account": "Customer portal access"
+  "activityLog.entity.customer_portal_account": "Customer portal access",
+  "activityLog.action.team.firm_access_review": "Reviewed firm access"
 }

@@ -510,15 +510,25 @@ async function stageReleaseSchema(database) {
     "0138_secure_portal_invitations",
     "0139_bind_portal_invite_and_verification_lifecycle",
     "0140_preserve_reminder_language",
+    "0141_firm_membership_provenance",
+    "0142_recover_firm_membership_provenance",
+    "0143_preserve_firm_grant_review",
   ]) {
     psql(database, readFileSync(path.join(migrationsFolder, tag + ".sql"), "utf8"));
   }
 }
 
-async function applyPublishedBankHead(database, { ref, count, digest, historical }) {
+async function applyPublishedBankHead(
+  database,
+  { ref, count, digest, historical, entries = previewEntries.slice(0, count), useCurrentPurchases }
+) {
+  const purchases = useCurrentPurchases ? {} : { [historicalPurchases]: historicalPurchases };
   const folder = stageMigrations(
-    database, count, { [historicalPurchases]: historicalPurchases, ...historical },
-    { [historicalPurchases]: historicalHashes[historicalPurchases] }, previewEntries.slice(0, count)
+    database,
+    count,
+    { ...purchases, ...historical },
+    { [historicalPurchases]: historicalHashes[historicalPurchases] },
+    entries
   );
   const originalFiles = readMigrationFiles({ migrationsFolder: folder });
   const hash = createHash("sha256");
@@ -648,24 +658,20 @@ function verifyInvoiceJournalFindings(database, expectedCount) {
   );
 }
 
-async function checkPreviewPortalUpgrade() {
-  const database = "recorded_preview_portal";
+async function checkPreviewUpgrade(head) {
+  const { ref } = head;
+  const database = "preview_" + ref;
   await restore(database);
-  const originalFiles = await applyPublishedBankHead(database, {
-    ref: "d6d0c35c",
-    count: previewEntries.length,
-    digest: "48a48a671e6a85d310c3e94c4feb4bc6e9e7a8c4b222ba5f4b4d7e8243faad2e",
-    historical: {},
-  });
+  const originalFiles = await applyPublishedBankHead(database, head);
   const before = fixture(database, "snapshot.sql");
-  await timed("Apply release migrations from d6d0c35c", () => applyRelease(database));
+  await timed("Apply release migrations from " + ref, () => applyRelease(database));
   await verifyLedger(database, [
     ...originalFiles,
     ...files.filter((file) => file.folderMillis > originalFiles.at(-1).folderMillis),
   ]);
   assert.ok(schema(database) === schema("clean"), "Preview upgrade schema differs");
   assert.equal(fixture(database, "snapshot.sql"), before, "Preview upgrade changed business data");
-  console.log("Preview portal catch-up verified");
+  console.log("Preview catch-up verified from " + ref);
 }
 
 async function checkRecordedInvoiceProvenance() {
@@ -917,7 +923,24 @@ async function rehearse() {
     await checkRecordedBankAudit(head);
   }
   await checkRecordedInvoiceProvenance();
-  await checkPreviewPortalUpgrade();
+  await checkPreviewUpgrade({
+    ref: "d6d0c35c",
+    count: previewEntries.length,
+    digest: "48a48a671e6a85d310c3e94c4feb4bc6e9e7a8c4b222ba5f4b4d7e8243faad2e",
+    historical: {},
+  });
+  const preFirmEntries = [
+    ...journal.entries.slice(0, historicalCount),
+    ...JSON.parse(readFileSync(path.join(here, "historical/pre-firm-release-journal-tail.json"), "utf8")),
+  ];
+  await checkPreviewUpgrade({
+    ref: "0be21c6d",
+    count: preFirmEntries.length,
+    digest: "b621b62018b637563e8c43d0989f16a14c6abefd2c194e0415d785fb88194ab3",
+    historical: {},
+    entries: preFirmEntries,
+    useCurrentPurchases: true,
+  });
   console.log("Migration rehearsal passed");
 }
 

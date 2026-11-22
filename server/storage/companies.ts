@@ -16,13 +16,18 @@ import {
   NR_FIRM_ID,
   accessibleClientCondition,
   canAccessFirmClient,
+  lockFirmClientAccess,
+  lockFirmTimerUser,
+  resolveFirmContext,
+  settleClientTimersAtAccessLoss,
   type FirmContext,
 } from "../services/firm/scope";
-import { db } from "../db";
+import { db, type AppDatabase } from "../db";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { scopedDelete, scopedGet, scopedUpdate } from "../tenancy";
 import { UserStorage } from "./users";
 import type { CompanyMemberWithUser } from "./types";
+import { firmRoleHasPermission } from "@shared/access";
 
 const companyMemberUserColumns = {
   id: users.id,
@@ -118,8 +123,11 @@ export class CompanyStorage extends UserStorage {
     return out;
   }
 
-  async createCompany(insertCompany: InsertCompany): Promise<Company> {
-    const [company] = await db.insert(companies).values(insertCompany).returning();
+  async createCompany(
+    insertCompany: InsertCompany,
+    exec: Pick<AppDatabase, "insert"> = db
+  ): Promise<Company> {
+    const [company] = await exec.insert(companies).values(insertCompany).returning();
     return company;
   }
 
@@ -285,10 +293,36 @@ export class CompanyStorage extends UserStorage {
   }
 
   // Admin Company Management
-  async deleteCompany(id: string): Promise<void> {
-    await db
-      .update(companies)
-      .set({ deletedAt: new Date(), isActive: false })
-      .where(eq(companies.id, id));
+  async deleteCompany(
+    id: string,
+    firmActor?: Pick<FirmContext, "userId" | "firmId">
+  ): Promise<Date | null> {
+    return db.transaction(async (tx) => {
+      if (firmActor) await lockFirmTimerUser(tx, firmActor.userId);
+      await lockFirmClientAccess(tx, id);
+      const [active] = await tx
+        .select({ companyType: companies.companyType })
+        .from(companies)
+        .where(and(eq(companies.id, id), isNull(companies.deletedAt)));
+      if (!active) return null;
+      if (firmActor) {
+        const current = await resolveFirmContext({ id: firmActor.userId }, tx);
+        if (
+          active.companyType !== "client" ||
+          current?.firmId !== firmActor.firmId ||
+          !firmRoleHasPermission(current.role, "firm.clients.archive") ||
+          !(await canAccessFirmClient(current, id, tx))
+        ) {
+          return null;
+        }
+      }
+      const archivedAt = new Date();
+      await settleClientTimersAtAccessLoss(tx, id, archivedAt);
+      await tx
+        .update(companies)
+        .set({ deletedAt: archivedAt, isActive: false })
+        .where(eq(companies.id, id));
+      return archivedAt;
+    });
   }
 }

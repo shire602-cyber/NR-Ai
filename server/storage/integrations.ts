@@ -40,7 +40,7 @@ import {
   type WhatsappConfig,
   type WhatsappMessage,
 } from "@shared/schema";
-import { db } from "../db";
+import { db, type AppDatabase } from "../db";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { ContactStorage } from "./contacts";
 
@@ -57,8 +57,11 @@ export class IntegrationStorage extends ContactStorage {
   }
 
   // Integration Syncs
-  async createIntegrationSync(insertSync: InsertIntegrationSync): Promise<IntegrationSync> {
-    const [sync] = await db.insert(integrationSyncs).values(insertSync).returning();
+  async createIntegrationSync(
+    insertSync: InsertIntegrationSync,
+    exec: Pick<AppDatabase, "insert"> = db
+  ): Promise<IntegrationSync> {
+    const [sync] = await exec.insert(integrationSyncs).values(insertSync).returning();
     return sync;
   }
 
@@ -356,19 +359,22 @@ export class IntegrationStorage extends ContactStorage {
   async getDocumentVersions(
     companyId: string,
     documentType: string,
-    documentId: string
+    documentId: string,
+    options: { version?: number; limit?: number } = {}
   ): Promise<DocumentVersion[]> {
-    return await db
+    const query = db
       .select()
       .from(documentVersions)
       .where(
         and(
           eq(documentVersions.companyId, companyId),
           eq(documentVersions.documentType, documentType),
-          eq(documentVersions.documentId, documentId)
+          eq(documentVersions.documentId, documentId),
+          options.version === undefined ? undefined : eq(documentVersions.version, options.version)
         )
       )
       .orderBy(desc(documentVersions.version));
+    return options.limit === undefined ? query : query.limit(options.limit);
   }
 
   async getDocumentVersionCount(

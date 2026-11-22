@@ -26,6 +26,7 @@ import path from "node:path";
 import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 import { fileURLToPath } from "node:url";
 import { chromium, request } from "playwright-core";
+import { findBankFeedMention } from "./lib/bank-feed-claims.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 const PUBLIC_ONLY = process.env.CUSTOMER_E2E_PUBLIC_ONLY === "true";
@@ -44,6 +45,23 @@ const LOCALIZED_HOMEPAGES = {
   "/ar": { lang: "ar", dir: "rtl", title: "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات" },
 };
 
+const STATEMENT_IMPORT_LOCALES = [
+  {
+    lang: "en",
+    dir: "ltr",
+    title: "Bank reconciliation",
+    action: "Import statement",
+    dialog: "Import Bank Statement",
+  },
+  {
+    lang: "ar",
+    dir: "rtl",
+    title: "التسوية البنكية",
+    action: "استيراد كشف",
+    dialog: "استيراد كشف حساب البنك",
+  },
+];
+
 const PUBLIC_ROUTES = [
   "/",
   ...Object.keys(LOCALIZED_HOMEPAGES),
@@ -59,6 +77,8 @@ const PUBLIC_ROUTES = [
   "/privacy",
   "/terms",
   "/cookies",
+  "/en/product/bank-reconciliation",
+  "/ar/product/bank-reconciliation",
 ];
 
 const CUSTOMER_ROUTES = [
@@ -69,7 +89,6 @@ const CUSTOMER_ROUTES = [
   "/vat-filing",
   "/corporate-tax",
   "/reports",
-  "/advanced-reports",
   "/payment-chasing",
   "/contacts",
   "/integrations",
@@ -251,12 +270,16 @@ async function main() {
     executablePath: await resolveExecutablePath(),
     args: ["--no-sandbox"],
   });
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const ctx = await browser.newContext({
+    locale: "en-AE",
+    viewport: { width: 1440, height: 900 },
+  });
   const page = await ctx.newPage();
 
   const failures = [];
   let routeErrors = [];
   let apiFailures = [];
+  let signedIn = false;
   const runState = {
     baseUrl: BASE,
     publicOnly: PUBLIC_ONLY,
@@ -269,11 +292,28 @@ async function main() {
   };
 
   page.on("pageerror", (e) => routeErrors.push(`JS: ${e.message.slice(0, 200)}`));
+  page.on("console", (event) => {
+    if (event.type() !== "error") return;
+    const message = event.text();
+    // The response listener records HTTP failures and handles anonymous refresh.
+    if (!message.startsWith("Failed to load resource: the server responded with a status")) {
+      routeErrors.push(`Console: ${message.slice(0, 200)}`);
+    }
+  });
+  page.on("requestfailed", (failed) => {
+    const reason = failed.failure()?.errorText;
+    if (failed.url().startsWith(BASE) && reason !== "net::ERR_ABORTED") {
+      routeErrors.push(`Network: ${failed.method()} ${cleanPath(failed.url())} (${reason})`);
+    }
+  });
   page.on("response", (r) => {
     const url = r.url();
-    if (isExpectedAnonymousAuthFailure(r)) return;
-    if (!url.includes("/api/") || r.status() < 400 || r.status() === 401) return;
-    apiFailures.push(`${r.request().method()} ${cleanPath(url)} -> ${r.status()}`);
+    if (!url.startsWith(BASE) || r.status() < 400) return;
+    if (!signedIn && isExpectedAnonymousAuthFailure(r)) return;
+    const route = cleanPath(url);
+    const failure = `${r.request().method()} ${route} -> ${r.status()}`;
+    if (route.startsWith("/api/")) apiFailures.push(failure);
+    else routeErrors.push(failure);
   });
 
   const fail = async (name, detail) => {
@@ -290,8 +330,17 @@ async function main() {
   async function crawlRoute(route, options = {}) {
     routeErrors = [];
     apiFailures = [];
-    await page.goto(`${BASE}${route}`, { timeout: 45000 });
-    await page.waitForTimeout(options.waitMs ?? 1700);
+    const response = await page.goto(`${BASE}${route}`, { timeout: 45000 });
+    if (options.renderedData) {
+      await options.renderedData.waitFor({ timeout: 15000 });
+    } else {
+      await page
+        .waitForFunction(() => document.body.innerText.trim().length >= 40, undefined, {
+          timeout: 15000,
+        })
+        .catch(() => undefined);
+      await page.waitForTimeout(options.waitMs ?? 1700);
+    }
     const finalUrl = cleanPath(page.url());
     const bodyText = await page
       .locator("body")
@@ -299,12 +348,32 @@ async function main() {
       .catch(() => "");
     const failText = bodyText.match(FAIL_TEXT)?.[0] ?? null;
     const blank = bodyText.trim().length < 40;
+    const notFound = (await page.getByTestId("page-not-found").count()) > 0;
+    const locale = signedIn
+      ? await page.locator("html").evaluate((html) => ({ lang: html.lang, dir: html.dir }))
+      : null;
+    const expectedLocale = options.locale ?? "en";
+    const expectedDirection = expectedLocale === "ar" ? "rtl" : "ltr";
+    const wrongLocale =
+      locale && (locale.lang !== expectedLocale || locale.dir !== expectedDirection);
     const redirected = options.expectPrefix ? !finalUrl.startsWith(route) : finalUrl !== route;
-    if (routeErrors.length || apiFailures.length || failText || blank || redirected) {
+    if (
+      !response?.ok() ||
+      routeErrors.length ||
+      apiFailures.length ||
+      failText ||
+      blank ||
+      notFound ||
+      wrongLocale ||
+      redirected
+    ) {
       await fail(`route ${route}`, {
+        documentStatus: response?.status(),
         finalUrl: redirected ? finalUrl : undefined,
         failText,
         blank: blank || undefined,
+        notFound: notFound || undefined,
+        locale: wrongLocale ? locale : undefined,
         js: routeErrors.slice(0, 3),
         api: [...new Set(apiFailures)].slice(0, 5),
       });
@@ -351,9 +420,62 @@ async function main() {
     }
     const unsupportedClaim =
       bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ??
-      bodyText.match(unsupportedStatementCopy)?.[0];
+      bodyText.match(unsupportedStatementCopy)?.[0] ??
+      findBankFeedMention(bodyText);
     if (unsupportedClaim) {
       await fail(`public claim ${route}`, { unsupportedClaim });
+    }
+
+    if (homepage || route === "/") {
+      const question =
+        /^\s*(?:How do I reconcile my bank statement\?|كيف أطابق كشف حسابي البنكي؟)\s*$/;
+      const summary = page.locator("summary").filter({ hasText: question });
+      try {
+        await summary.click();
+        const copy = await summary.locator("..").innerText();
+        if (!/\bCSV\b/i.test(copy) || findBankFeedMention(copy)) {
+          await fail(`banking FAQ ${route}`, { copy });
+        }
+      } catch (error) {
+        await fail(`banking FAQ ${route}`, { detail: String(error) });
+      }
+    }
+    if (route.endsWith("/product/bank-reconciliation") && !/\bCSV\b/i.test(bodyText)) {
+      await fail(`bank reconciliation guidance ${route}`, { detail: "CSV instructions missing" });
+    }
+
+    if (route === "/demo") {
+      const toggle = page.getByTestId("button-language-toggle");
+      const initialLang = await page.locator("html").getAttribute("lang");
+      const labels = { en: "Banking", ar: "الخدمات البنكية" };
+      const otherLang = initialLang === "ar" ? "en" : "ar";
+      try {
+        for (const lang of [initialLang, otherLang]) {
+          if ((await page.locator("html").getAttribute("lang")) !== lang) await toggle.click();
+          await page
+            .locator(`html[lang="${lang}"][dir="${lang === "ar" ? "rtl" : "ltr"}"]`)
+            .waitFor();
+          const label = labels[lang];
+          await page.getByRole("tab", { name: label, exact: true }).click();
+          const banking = page.getByRole("tabpanel", { name: label, exact: true });
+          await banking.getByText("ADCB BANK CHARGE", { exact: true }).waitFor();
+          const copy = await banking.innerText();
+          const unsupportedClaim = findBankFeedMention(copy);
+          const csvOnly = /\bCSV\b/i.test(copy);
+          if (!csvOnly || unsupportedClaim || routeErrors.length || apiFailures.length) {
+            await fail(`public demo banking ${lang}`, {
+              csvOnly,
+              unsupportedClaim,
+              js: routeErrors,
+              api: apiFailures,
+            });
+          }
+        }
+      } catch (error) {
+        await fail("public demo banking", { detail: String(error) });
+      } finally {
+        if ((await page.locator("html").getAttribute("lang")) !== initialLang) await toggle.click();
+      }
     }
   }
 
@@ -434,52 +556,74 @@ async function main() {
     });
     throw new Error(`register failed: ${reg.status()}`);
   }
-  // W5-E: registration returns no session (R17-14); sign in, then read the company.
-  const loginRes = await page.request.post(`${BASE}/api/auth/login`, {
-    data: { email, password },
-  });
-  const registration = await loginRes.json().catch(() => ({}));
-  const companiesRes = await page.request.get(`${BASE}/api/companies`);
-  const registeredCompanies = await companiesRes.json().catch(() => []);
-  const firstCompany = Array.isArray(registeredCompanies) ? registeredCompanies[0] : null;
+  // Registration returns no session. Use the sign-in form so the browser gets
+  // the same session cookies and client state as a customer.
+  await page.goto(`${BASE}/login`);
+  const loginForm = page.locator("form");
+  const loginEmail = loginForm.getByTestId("input-email");
+  await loginEmail.waitFor();
+  // The preceding Arabic marketing checks may leave Arabic selected.
+  const switchToEnglish = page.getByRole("button", { name: "English", exact: true });
+  if (await switchToEnglish.isVisible()) await switchToEnglish.click();
+  await page.waitForFunction(
+    () => document.documentElement.lang === "en" && document.documentElement.dir === "ltr"
+  );
+  await loginEmail.fill(email);
+  await loginForm.getByTestId("input-password").fill(password);
+  const [loginRes] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        cleanPath(response.url()) === "/api/auth/login" && response.request().method() === "POST"
+    ),
+    loginForm.getByTestId("button-login").click(),
+  ]);
+  if (!loginRes.ok()) throw new Error(`customer login failed: ${loginRes.status()}`);
+  const { user } = await loginRes.json();
   runState.email = email;
-  runState.userId = registration?.user?.id ?? null;
-  runState.companyId = firstCompany?.id ?? null;
-  runState.companyName = firstCompany?.name ?? null;
+  runState.userId = user?.id ?? null;
   await writeRunArtifact(runState);
+  await page.waitForURL((url) => url.pathname === "/onboarding");
+  signedIn = true;
 
-  await page.goto(`${BASE}/dashboard`);
-  await page.waitForTimeout(2500);
-  if (page.url().includes("onboarding")) {
-    const express = page.locator('[data-testid="onboarding-express"]');
-    // The redirect to /onboarding can land after a fixed wait on a cold build.
-    await express.waitFor({ timeout: 10000 }).catch(() => undefined);
-    if (await express.count()) {
-      await express.click();
-      await page.waitForTimeout(3500);
-      // WP-B: onboarding is three screens; skip the starting point, then look around.
-      for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
-        const next = page.locator(`[data-testid="${id}"]`);
-        if (await next.count()) {
-          await next.click();
-          await page.waitForTimeout(1500);
-        }
-      }
-    }
-  }
-  if (!cleanPath(page.url()).startsWith("/dashboard")) {
-    await fail("customer-onboarding", { detail: `ended on ${cleanPath(page.url())}` });
-  }
+  // Send authenticated fixture requests through the browser that signed in,
+  // including Secure cookies on local loopback and the normal CSRF header.
+  const customerApi = (apiPath, { method = "GET", data, csrfToken } = {}) =>
+    page.evaluate(
+      async ({ apiPath, method, data, csrfToken }) => {
+        const response = await fetch(apiPath, {
+          method,
+          headers: {
+            ...(data !== undefined ? { "Content-Type": "application/json" } : {}),
+            ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+          },
+          body: data === undefined ? undefined : JSON.stringify(data),
+        });
+        const body = await response.json().catch(() => null);
+        return { status: response.status, body };
+      },
+      { apiPath, method, data, csrfToken }
+    );
 
-  const csrfToken = (await (await page.request.get(`${BASE}/api/csrf-token`)).json())?.csrfToken;
-  const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
-  const companyId = runState.companyId ?? companies?.[0]?.id;
-  runState.companyId = companyId ?? runState.companyId;
-  runState.companyName = runState.companyName ?? companies?.[0]?.name ?? null;
+  await page.getByTestId("onboarding-express").click();
+  // The fresh company goes through all three onboarding screens before the crawl.
+  await page.getByTestId("onboarding-skip").click();
+  await page.getByTestId("onboarding-task-explore").click();
+  await page.waitForURL((url) => url.pathname === "/dashboard");
+
+  const csrf = await customerApi("/api/csrf-token");
+  const companies = await customerApi("/api/companies");
+  const csrfToken = csrf.body?.csrfToken;
+  if (csrf.status !== 200 || !csrfToken) {
+    throw new Error(`customer CSRF token unavailable: ${csrf.status}`);
+  }
+  const [company] = Array.isArray(companies.body) ? companies.body : [];
+  if (companies.status !== 200 || !company?.id) {
+    throw new Error(`registered customer has no accessible company: ${companies.status}`);
+  }
+  const companyId = company.id;
+  runState.companyId = companyId;
+  runState.companyName = company.name ?? null;
   await writeRunArtifact(runState);
-  if (!companyId) {
-    await fail("customer-company", { detail: "registered customer has no company" });
-  }
 
   // Customer SaaS route crawl. This excludes every admin and NR firm route.
   for (const route of CUSTOMER_ROUTES) {
@@ -493,17 +637,19 @@ async function main() {
   }
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  if (companyId) {
+  {
     // Core bookkeeping: balanced journal posts through the same customer API used by the UI.
     try {
-      const accounts = await (
-        await page.request.get(`${BASE}/api/companies/${companyId}/accounts`)
-      ).json();
+      const { status, body: accounts } = await customerApi(`/api/companies/${companyId}/accounts`);
+      if (status !== 200 || !Array.isArray(accounts)) {
+        throw new Error(`accounts unavailable: ${status}`);
+      }
       const debitAccount = accounts.find((a) => a.type === "expense") ?? accounts[0];
       const creditAccount = accounts.find((a) => a.type === "asset") ?? accounts[1];
       const memo = `Customer E2E balanced entry ${Date.now()}`;
-      const entryRes = await page.request.post(`${BASE}/api/companies/${companyId}/journal`, {
-        headers: { "x-csrf-token": csrfToken ?? "" },
+      const entryRes = await customerApi(`/api/companies/${companyId}/journal`, {
+        method: "POST",
+        csrfToken,
         data: {
           date: new Date().toISOString().slice(0, 10),
           memo,
@@ -513,15 +659,15 @@ async function main() {
           ],
         },
       });
-      if (entryRes.status() >= 300) {
+      if (entryRes.status >= 300) {
         await fail("customer-journal create", {
-          detail: `status ${entryRes.status()}: ${(await entryRes.text()).slice(0, 200)}`,
+          detail: `status ${entryRes.status}: ${JSON.stringify(entryRes.body).slice(0, 200)}`,
         });
       } else {
-        const journalText = await crawlRoute("/journal", { expectPrefix: true });
-        if (!journalText.includes(memo)) {
-          await fail("customer-journal render", { detail: "posted entry not visible" });
-        }
+        await crawlRoute("/journal", {
+          expectPrefix: true,
+          renderedData: page.locator("main").getByText(memo, { exact: true }),
+        });
       }
     } catch (e) {
       await fail("customer-journal", { crash: e.message.slice(0, 150) });
@@ -529,36 +675,32 @@ async function main() {
 
     // Invoice creation: proves the launch invoice surface can create and render customer data.
     try {
-      const invoiceNumber = `CUST-E2E-${Date.now()}`;
       const customerName = "Launch QA Buyer LLC";
-      const invoiceRes = await page.request.post(`${BASE}/api/companies/${companyId}/invoices`, {
-        headers: { "x-csrf-token": csrfToken ?? "" },
+      const invoiceRes = await customerApi(`/api/companies/${companyId}/invoices`, {
+        method: "POST",
+        csrfToken,
         data: {
-          number: invoiceNumber,
           customerName,
           date: new Date().toISOString().slice(0, 10),
           currency: "AED",
-          subtotal: 1000,
-          vatAmount: 50,
-          total: 1050,
-          status: "sent",
           lines: [
             { description: "Launch QA services", quantity: 1, unitPrice: 1000, vatRate: 0.05 },
           ],
         },
       });
-      if (invoiceRes.status() >= 300) {
+      if (invoiceRes.status >= 300) {
         await fail("customer-invoice create", {
-          detail: `status ${invoiceRes.status()}: ${(await invoiceRes.text()).slice(0, 200)}`,
+          detail: `status ${invoiceRes.status}: ${JSON.stringify(invoiceRes.body).slice(0, 200)}`,
         });
       } else {
-        const createdInvoice = await invoiceRes.json().catch(() => ({}));
-        const renderedInvoiceMarker =
-          createdInvoice?.invoice?.number ?? createdInvoice?.number ?? invoiceNumber;
-        const invoiceText = await crawlRoute("/invoices", { expectPrefix: true });
-        if (!invoiceText.includes(renderedInvoiceMarker) && !invoiceText.includes(customerName)) {
-          await fail("customer-invoice render", { detail: "created invoice not visible" });
-        }
+        const invoiceId = invoiceRes.body?.id;
+        if (!invoiceId) throw new Error("created invoice is missing its ID");
+        await crawlRoute("/invoices", {
+          expectPrefix: true,
+          renderedData: page
+            .getByTestId(`invoice-row-${invoiceId}`)
+            .getByText(customerName, { exact: true }),
+        });
       }
     } catch (e) {
       await fail("customer-invoice", { crash: e.message.slice(0, 150) });
@@ -571,8 +713,6 @@ async function main() {
         {
           headers: { "x-csrf-token": csrfToken ?? "" },
           data: {
-            provider: "manual",
-            connectionType: "statement",
             bankName: "Emirates NBD",
             accountName: "Current AED",
           },
@@ -589,14 +729,14 @@ async function main() {
           "2026-06-01,Customer payment Pearl Trading,5250.00,RCPT-77",
           "2026-06-02,DEWA utility bill,-820.50,DEWA-9",
         ].join("\n");
-        const importRes = await page.request.post(
-          `${BASE}/api/companies/${companyId}/bank-connections/${conn.id}/import`,
-          { headers: { "x-csrf-token": csrfToken ?? "" }, data: { csvContent: csv } }
+        const importRes = await customerApi(
+          `/api/companies/${companyId}/bank-connections/${conn.id}/import`,
+          { method: "POST", csrfToken, data: { csvContent: csv } }
         );
-        const result = await importRes.json().catch(() => ({}));
-        if (importRes.status() >= 300 || (result?.imported ?? result?.count ?? 0) < 2) {
+        const result = importRes.body;
+        if (importRes.status >= 300 || (result?.imported ?? result?.count ?? 0) < 2) {
           await fail("customer-bank import", {
-            detail: `status ${importRes.status()}: ${JSON.stringify(result).slice(0, 160)}`,
+            detail: `status ${importRes.status}: ${JSON.stringify(result).slice(0, 160)}`,
           });
         }
       }
@@ -630,12 +770,92 @@ async function main() {
   }
 
   for (const apiPath of FORBIDDEN_API_STATUS_PATHS) {
-    const res = await page.request.get(`${BASE}${apiPath}`);
-    if (![401, 403].includes(res.status())) {
+    const { status } = await customerApi(apiPath);
+    if (status !== 403) {
       await fail(`forbidden api ${apiPath}`, {
-        detail: `expected 401/403, got ${res.status()}`,
+        detail: `expected 403 for a signed-in customer, got ${status}`,
       });
     }
+  }
+
+  // A stale provider response must never replace the CSV workflow or trigger a request to
+  // any retired endpoint. Intercept those requests locally.
+  await page.route("**/api/bank/providers", (route) =>
+    route.fulfill({
+      json: {
+        isConfigured: true,
+        providers: ["wio"],
+        statuses: [
+          { id: "wio", label: "Configured test provider", configured: true, status: "live" },
+        ],
+        redirectUris: [new URL("/bank-feeds/callback", BASE).href],
+      },
+    })
+  );
+  const providerMutations = [];
+  await page.route(
+    /\/api\/(?:companies\/[^/]+\/bank-connections\/(?:connect|callback)|bank-connections\/[^/]+\/sync)$/,
+    async (route) => {
+      providerMutations.push(new URL(route.request().url()).pathname);
+      await route.abort();
+    }
+  );
+
+  for (const { lang, dir, title, action, dialog } of STATEMENT_IMPORT_LOCALES) {
+    const label = `signed-in statement import ${lang}`;
+    try {
+      if (lang === "ar") {
+        await page.getByTestId("button-language-toggle").click();
+        await page.locator(`html[lang="${lang}"][dir="${dir}"]`).waitFor();
+      }
+      const heading = page.getByRole("heading", { level: 1, name: title, exact: true });
+      const bodyText = await crawlRoute("/bank-reconciliation", {
+        locale: lang,
+        renderedData: heading,
+      });
+      const mention = findBankFeedMention(bodyText);
+      if (!(await heading.isVisible()) || !/\bCSV\b/.test(bodyText) || mention) {
+        await fail(label, {
+          heading: await heading.isVisible(),
+          mention,
+          csv: /\bCSV\b/.test(bodyText),
+        });
+      }
+
+      const importAction = page.getByTestId("button-import-transactions");
+      if ((await importAction.innerText()).trim() !== action) {
+        await fail(`${label} action`, { expected: action, actual: await importAction.innerText() });
+      }
+      await importAction.click();
+      const importDialog = page.getByRole("dialog", { name: dialog, exact: true });
+      await importDialog.getByTestId("select-import-bank-account").waitFor();
+      const dialogMention = findBankFeedMention(await importDialog.innerText());
+      if (dialogMention || routeErrors.length || apiFailures.length) {
+        await fail(`${label} dialog`, {
+          mention: dialogMention,
+          js: routeErrors,
+          api: apiFailures,
+        });
+      }
+      await page.keyboard.press("Escape");
+      await importDialog.waitFor({ state: "hidden" });
+
+      await page.goto(`${BASE}/bank-feeds`);
+      await page.waitForURL(
+        (url) => url.pathname === "/bank-reconciliation" && url.searchParams.get("import") === "1"
+      );
+      await importDialog.getByTestId("select-import-bank-account").waitFor();
+      if (routeErrors.length || apiFailures.length) {
+        await fail(`${label} legacy entry`, { js: routeErrors, api: apiFailures });
+      }
+      await page.keyboard.press("Escape");
+      await importDialog.waitFor({ state: "hidden" });
+    } catch (error) {
+      await fail(label, { detail: String(error) });
+    }
+  }
+  if (providerMutations.length) {
+    await fail("signed-in statement import requested a provider mutation", { providerMutations });
   }
 
   runState.finishedAt = new Date().toISOString();
@@ -651,7 +871,7 @@ async function main() {
   await browser.close();
 
   console.log(
-    `\n=== Customer launch E2E: ${PUBLIC_ROUTES.length} public + ${CUSTOMER_ROUTES.length} SaaS + ${MOBILE_ROUTES.length} mobile routes · ${failures.length} failure(s) ===`
+    `\n=== Customer launch E2E: ${PUBLIC_ROUTES.length} public + ${CUSTOMER_ROUTES.length} SaaS + ${MOBILE_ROUTES.length} mobile routes + ${STATEMENT_IMPORT_LOCALES.length} signed-in banking locales · ${failures.length} failure(s) ===`
   );
   for (const f of failures) console.log(JSON.stringify(f));
   if (failures.length > 0) {

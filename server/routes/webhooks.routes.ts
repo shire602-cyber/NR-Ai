@@ -23,6 +23,7 @@ import {
   WEBHOOK_EVENTS,
   attemptWebhookDelivery,
   enqueueWebhookEvent,
+  listWebhookDeliveries,
   normaliseEventList,
   registerWebhookDispatch,
   replayWebhookDelivery,
@@ -201,17 +202,7 @@ export function registerWebhookRoutes(app: Express) {
     requireFeature("webhooks"),
     asyncHandler(async (req: Request, res: Response) => {
       const existing = await endpointForUser(req.params.id, req.user!.id);
-      const { rows } = await pool.query(
-        `SELECT id, event, event_id AS "eventId", status, attempt_number AS "attemptNumber",
-                max_attempts AS "maxAttempts", response_status AS "responseStatus",
-                response_body AS "responseBody", success, last_error AS "lastError",
-                next_attempt_at AS "nextAttemptAt", delivered_at AS "deliveredAt",
-                created_at AS "createdAt", payload
-           FROM webhook_deliveries WHERE webhook_endpoint_id = $1
-          ORDER BY created_at DESC LIMIT 100`,
-        [existing.id]
-      );
-      res.json(rows);
+      res.json(await listWebhookDeliveries(existing.id));
     })
   );
 
@@ -235,9 +226,15 @@ export function registerWebhookRoutes(app: Express) {
         `INSERT INTO webhook_deliveries
            (webhook_endpoint_id, company_id, event, event_id, payload, status, attempt_number,
             max_attempts, next_attempt_at, success, updated_at)
-         VALUES ($1, $2, 'test', $3, $4, 'pending', 0, 1, now(), false, now()) RETURNING id`,
+         SELECT id, company_id, 'test', $3, $4, 'pending', 0, 1, now(), false, now()
+           FROM webhook_endpoints WHERE id = $1 AND company_id = $2 AND is_active
+          FOR SHARE
+         RETURNING id`,
         [existing.id, existing.company_id, eventId, body]
       );
+      if (!rows[0]) {
+        throw new DomainError("INVALID_STATUS", 409, undefined, "Webhook endpoint is disabled");
+      }
       const outcome = await attemptWebhookDelivery(rows[0].id, { force: true });
       const { rows: d } = await pool.query(
         `SELECT id, status, response_status AS "responseStatus", last_error AS "lastError"
@@ -264,7 +261,18 @@ export function registerWebhookRoutes(app: Express) {
         [req.params.deliveryId, existing.id]
       );
       if (!rows[0]) throw new DomainError("NOT_FOUND", 404, undefined, "Delivery not found");
+      if (!existing.is_active) {
+        throw new DomainError("INVALID_STATUS", 409, undefined, "Webhook endpoint is disabled");
+      }
       const replayId = await replayWebhookDelivery(rows[0].id);
+      if (!replayId) {
+        throw new DomainError(
+          "INVALID_STATUS",
+          409,
+          undefined,
+          "Replay requires a completed delivery with a known outcome"
+        );
+      }
       const { rows: d } = await pool.query(
         `SELECT id, status, attempt_number AS "attemptNumber", response_status AS "responseStatus"
            FROM webhook_deliveries WHERE id = $1`,

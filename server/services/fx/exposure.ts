@@ -19,6 +19,7 @@
 import Decimal from "decimal.js";
 import { sql } from "drizzle-orm";
 import { db } from "../../db";
+import type { LedgerTx } from "../../ledger/types";
 import { mulRate, RATE_DECIMALS, sumFils, toFils, filsToNumber } from "../../../shared/money";
 import { DomainError } from "../../errors";
 import { addDaysIso, getCompanyBaseCurrency, getRate, isoToDate, type RateResult } from "./rates";
@@ -90,12 +91,13 @@ export interface ExposureOptions {
 export async function computeFxExposure(
   companyId: string,
   asOfIso: string,
-  opts: ExposureOptions = {}
+  opts: ExposureOptions = {},
+  tx: LedgerTx = db
 ): Promise<FxExposure> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(asOfIso) || Number.isNaN(isoToDate(asOfIso).getTime())) {
     throw new DomainError("INVALID_DATE", 400, { asOf: asOfIso });
   }
-  const base = await getCompanyBaseCurrency(companyId);
+  const base = await getCompanyBaseCurrency(companyId, tx);
   const rateType: ExchangeRateType = opts.rateType ?? "closing";
   const end = isoToDate(addDaysIso(asOfIso, 1));
   // The one settlement rule (D5c): payments, credit notes and applied credits up to asOf.
@@ -103,7 +105,7 @@ export async function computeFxExposure(
   const asOfSql = { asOf: `'${asOfIso}'::date` };
 
   const invoiceRows = rowsOf(
-    await db.execute(sql`
+    await tx.execute(sql`
       SELECT i.id, i.number, i.customer_name, i.currency, i.total, i.exchange_rate,
              ${sql.raw(receivableSettledSql("i", asOfSql))} AS paid
         FROM invoices i
@@ -119,7 +121,7 @@ export async function computeFxExposure(
   );
 
   const billRows = rowsOf(
-    await db.execute(sql`
+    await tx.execute(sql`
       SELECT b.id, b.bill_number, b.vendor_name, b.currency, b.total_amount, b.subtotal,
              b.reverse_charge, b.exchange_rate,
              ${sql.raw(payableSettledSql("b", asOfSql))} AS paid
@@ -135,7 +137,7 @@ export async function computeFxExposure(
   );
 
   const bankRows = rowsOf(
-    await db.execute(sql`
+    await tx.execute(sql`
       SELECT ba.id, ba.name_en, ba.bank_name, ba.currency, ba.gl_account_id,
              COALESCE(SUM(COALESCE(jl.foreign_debit, 0) - COALESCE(jl.foreign_credit, 0)), 0) AS foreign_balance,
              COALESCE(SUM(jl.debit - jl.credit), 0) AS book_balance
@@ -159,10 +161,17 @@ export async function computeFxExposure(
     if (rateCache.has(cur)) return rateCache.get(cur) ?? null;
     let r: RateResult | null = null;
     try {
-      r = await getRate(companyId, cur, base, asOfIso, {
-        rateType,
-        maxAgeDays: opts.maxAgeDays,
-      });
+      r = await getRate(
+        companyId,
+        cur,
+        base,
+        asOfIso,
+        {
+          rateType,
+          maxAgeDays: opts.maxAgeDays,
+          tx,
+        }
+      );
       if (r.warning) warnings.add(r.warning);
     } catch (err) {
       if (!(err instanceof DomainError) || err.code !== "NO_EXCHANGE_RATE") throw err;
