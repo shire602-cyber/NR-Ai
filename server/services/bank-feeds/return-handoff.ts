@@ -1,12 +1,13 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
-import type { Request, Response } from "express";
+import { createHash } from "node:crypto";
+import type { Request } from "express";
 import type { z } from "zod";
 import {
-  bankAuthorizationReference,
+  type bankAuthorizationReference,
   bankFeedCallbackBody,
 } from "../../../shared/validators/banking";
-import { authCookieBaseOptions } from "../../config/cookies";
 import { createLogger } from "../../config/logger";
+import { DomainError } from "../../errors";
+import { readCsrfIdentifierCookie } from "../../middleware/csrf";
 import { pendingCallbackExpiry, type CallbackResult } from "./index";
 import { deleteReturnSession, readReturnSession, writeReturnSession } from "./return-session";
 
@@ -15,34 +16,34 @@ type CallbackBody = z.output<typeof bankFeedCallbackBody>;
 type Outcome = "cancelled" | "failed" | "expired";
 type Receipt = { userId: string; companyId: string; result: CallbackResult };
 type StoredHandoff = {
-  reference: Reference;
-  expiresAt: string;
   value: { kind: "pending"; callback: CallbackBody } | { kind: "completed"; receipt: Receipt };
+  expiresAt: string;
 };
-type PendingHandoff = { storeKey: string; reference: Reference; expiresAt: string };
+type LiveHandoff = { storeKey: string; expiresAt: string };
 
-export type ReturnHandoff = (PendingHandoff & StoredHandoff["value"]) | { kind: Outcome };
+export type ReturnHandoff = (LiveHandoff & StoredHandoff["value"]) | { kind: Outcome };
 
 const log = createLogger("statement-authorization");
-const cookiePath = "/api/bank-connections/callback/resume";
-const cookieName = (id: string) =>
-  `${authCookieBaseOptions().secure ? "__Secure-" : ""}statement-return-${id}`;
-const cookieOptions = () => ({ ...authCookieBaseOptions(), path: cookiePath });
 const outcomeMaxAge = 10 * 60 * 1000;
-const storeKeyFor = (handle: string) =>
-  `statement-return:${createHash("sha256").update(handle).digest("hex")}`;
 
-function setReturnCookie(res: Response, id: string, value: string, maxAge: number): void {
-  res.cookie(cookieName(id), value, { ...cookieOptions(), signed: true, maxAge });
+function getStoreKey(req: Request, reference: Reference): string | undefined {
+  // This HttpOnly cookie exists before the CSRF-protected staging request. A reload can
+  // read the same tab's record without receiving any headers from that request.
+  const browserId = readCsrfIdentifierCookie(req);
+  if (!browserId) return;
+  const identity = JSON.stringify([browserId, reference.returnId, reference.tabKey]);
+  return `statement-return:${createHash("sha256").update(identity).digest("hex")}`;
 }
 
 export async function stageReturnHandoff(
   req: Request,
-  res: Response,
-  search: string,
-  tabKey: string
-): Promise<string> {
-  const returnId = randomUUID();
+  reference: Reference,
+  search: string
+): Promise<void> {
+  const storeKey = getStoreKey(req, reference);
+  if (!storeKey) throw new DomainError("CSRF_INVALID", 403);
+  if (await readReturnSession(req.sessionStore, storeKey)) return;
+
   const params = new URLSearchParams(search);
   const error = params.get("error");
   const callback = bankFeedCallbackBody.safeParse({
@@ -55,50 +56,39 @@ export async function stageReturnHandoff(
     !cancelled && !error && callback.success && (await pendingCallbackExpiry(callback.data.state));
   const now = Date.now();
   if (!callback.success || !expiresAt || expiresAt.getTime() <= now) {
-    const outcome = cancelled ? "cancelled" : !error && callback.success ? "expired" : "failed";
-    setReturnCookie(res, returnId, `${outcome}:${tabKey}`, outcomeMaxAge);
-    return returnId;
+    const kind = cancelled ? "cancelled" : !error && callback.success ? "expired" : "failed";
+    await writeReturnSession(req.sessionStore, storeKey, { kind }, new Date(now + outcomeMaxAge));
+    return;
   }
 
-  const handle = randomBytes(32).toString("base64url");
   const record: StoredHandoff = {
-    reference: { returnId, tabKey },
     expiresAt: expiresAt.toISOString(),
     value: { kind: "pending", callback: callback.data },
   };
-  await writeReturnSession(req.sessionStore, storeKeyFor(handle), record, expiresAt);
-  setReturnCookie(res, returnId, handle, expiresAt.getTime() - now);
-  return returnId;
+  await writeReturnSession(req.sessionStore, storeKey, record, expiresAt);
 }
 
 export async function readReturnHandoff(
   req: Request,
   reference: Reference
 ): Promise<ReturnHandoff> {
-  const handle: unknown = req.signedCookies?.[cookieName(reference.returnId)];
-  for (const kind of ["cancelled", "failed", "expired"] as const) {
-    if (handle === `${kind}:${reference.tabKey}`) return { kind };
-  }
-  if (typeof handle !== "string" || !/^[\w-]{43}$/.test(handle)) return { kind: "expired" };
-  const storeKey = storeKeyFor(handle);
-  const record = await readReturnSession<StoredHandoff>(req.sessionStore, storeKey);
+  const storeKey = getStoreKey(req, reference);
+  if (!storeKey) return { kind: "expired" };
+  const record = await readReturnSession<StoredHandoff | { kind: Outcome }>(
+    req.sessionStore,
+    storeKey
+  );
   if (!record) return { kind: "expired" };
-  if (
-    record.reference.returnId !== reference.returnId ||
-    record.reference.tabKey !== reference.tabKey
-  ) {
-    return { kind: "failed" };
-  }
-  return { ...record.value, storeKey, reference, expiresAt: record.expiresAt };
+  if ("kind" in record) return record;
+  return { ...record.value, storeKey, expiresAt: record.expiresAt };
 }
 
 export async function recordReturnReceipt(
   req: Request,
-  handoff: PendingHandoff,
+  handoff: LiveHandoff,
   receipt: Receipt
 ): Promise<void> {
   const record: StoredHandoff = {
-    reference: handoff.reference,
     expiresAt: handoff.expiresAt,
     value: { kind: "completed", receipt },
   };
@@ -110,16 +100,16 @@ export async function recordReturnReceipt(
       new Date(handoff.expiresAt)
     );
   } catch {
-    // The recorded connection IDs still recover the result if replacing the payload fails.
+    // The recorded IDs still recover the result if replacing the payload fails.
     log.warn("Could not replace authorization data with its receipt");
   }
 }
 
-export async function clearCompletedReturn(
-  req: Request,
-  res: Response,
-  handoff: PendingHandoff
-): Promise<void> {
-  await deleteReturnSession(req.sessionStore, handoff.storeKey);
-  res.clearCookie(cookieName(handoff.reference.returnId), cookieOptions());
+export async function clearCompletedReturn(req: Request, handoff: LiveHandoff): Promise<void> {
+  try {
+    await deleteReturnSession(req.sessionStore, handoff.storeKey);
+  } catch {
+    log.warn("Could not clear authorization data");
+    throw new DomainError("AUTHORIZATION_RETRY", 503);
+  }
 }

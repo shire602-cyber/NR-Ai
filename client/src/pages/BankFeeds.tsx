@@ -7,7 +7,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { useTranslation } from "@/lib/i18n";
 import { ApiError, ApiRequestNotSentError, apiRequest } from "@/lib/queryClient";
-import { clearBankReturnReference, readBankReturnReference } from "@/lib/bank-authorization-return";
+import {
+  clearBankReturnReference,
+  isBankReturnStaging,
+  readBankReturnReference,
+} from "@/lib/bank-authorization-return";
 import { BANK_AUTHORIZATION_RETURN_PATH as callbackPath } from "@shared/bank-authorization-paths";
 
 type ReturnStatus = "pending" | "retry" | "cancelled" | "failed" | "expired" | null;
@@ -26,14 +30,23 @@ export default function BankFeeds({
   const [returned, setReturned] = useState<ReturnStatus>(reference ? "pending" : null);
   const status = retryCapture ? "retry" : returned;
   const submitted = useRef(false);
+  const [poll, setPoll] = useState(0);
 
   useEffect(() => {
     if (path !== callbackPath || !reference || returned !== "pending" || submitted.current) return;
     submitted.current = true;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     void apiRequest("POST", "/api/bank-connections/callback/resume", reference, undefined, {
       queueWhenOffline: false,
     }).then(
       (result: { connections?: unknown[]; outcome?: "cancelled" | "failed" | "expired" }) => {
+        if (result?.outcome === "expired" && isBankReturnStaging(reference)) {
+          retryTimer = setTimeout(() => {
+            submitted.current = false;
+            setPoll((previous) => previous + 1);
+          }, 500);
+          return;
+        }
         if (result?.outcome) {
           clearBankReturnReference(reference);
           setReturned(result.outcome);
@@ -47,6 +60,7 @@ export default function BankFeeds({
             undefined,
             {
               queueWhenOffline: false,
+              keepalive: true,
             }
           ).catch(() => undefined);
           if (isCurrent && window.location.pathname === callbackPath) {
@@ -73,7 +87,8 @@ export default function BankFeeds({
         }
       }
     );
-  }, [path, reference, returned, navigate]);
+    return () => clearTimeout(retryTimer);
+  }, [path, poll, reference, returned, navigate]);
 
   return (
     <div className="space-y-6">

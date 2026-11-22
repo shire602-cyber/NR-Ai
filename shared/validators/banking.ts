@@ -409,11 +409,10 @@ export const bankFeedCallbackBody = z
   })
   .strict();
 
-export const bankAuthorizationHandoffBody = z
-  .object({ search: z.string().min(1).max(24_000), tabKey: zUuid })
-  .strict();
-
 export const bankAuthorizationReference = z.object({ returnId: zUuid, tabKey: zUuid }).strict();
+export const bankAuthorizationHandoffBody = bankAuthorizationReference.extend({
+  search: z.string().min(1).max(24_000),
+});
 export const bankAuthorizationResumeBody = bankAuthorizationReference.extend({
   acknowledge: z.literal(true).optional(),
 });

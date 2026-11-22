@@ -5,11 +5,7 @@
 import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { bankStatementCopy } from "../../shared/bank-statement-copy";
-import {
-  legacySyncMessage,
-  legacySyncSubject,
-  unsupportedStatementCopy,
-} from "../helpers/statement-copy.mjs";
+import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 import { useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -377,7 +373,7 @@ describe("W4-D notification engine", () => {
     await h.sql(
       `UPDATE notifications SET title = $2, message = $3
        WHERE user_id = $1 AND event_key LIKE 'bank.sync_failed:%'`,
-      [d.user.id, legacySyncSubject, legacySyncMessage]
+      [d.user.id, "Old review notification", "Old statement instructions"]
     );
     await emit("task.due", {
       companyId: d.company.id,

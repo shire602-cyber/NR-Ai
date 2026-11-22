@@ -212,6 +212,7 @@ type CallbackProgress = { codeHash: string } & (
   | { kind: "exchanging"; startedAt: number }
   | { kind: "restart" }
   | { kind: "exchanged"; tokens: StoredTokens }
+  | { kind: "discovering"; tokens: StoredTokens; startedAt: number; claimId: string }
   | { kind: "prepared"; tokens: StoredTokens; accounts: PreparedAccount[] }
   | { kind: "completed"; ids: string[] }
 );
@@ -286,6 +287,71 @@ export async function completeCallback(
 
   let result: { ids: string[]; connections: CallbackResult["connections"] };
   try {
+    const discovery = await db.transaction(async (tx) => {
+      const [current] = await tx.select().from(bankFeedOauthStates).where(scoped()).for("update");
+      if (!current) throw invalidCallbackState();
+      const saved = await readReturnSession<CallbackProgress>(store, key);
+      assertCode(saved);
+      if (current.usedAt || saved?.kind === "prepared") return;
+      if (saved?.kind !== "exchanged" && saved?.kind !== "discovering") {
+        throw invalidCallbackState();
+      }
+      if (saved.kind === "discovering" && Date.now() - saved.startedAt < 60_000) {
+        if (!allowReplay) throw invalidCallbackState();
+        throw new DomainError("AUTHORIZATION_RETRY", 503, undefined, bankStatementCopy.en);
+      }
+      const claim = {
+        codeHash,
+        kind: "discovering" as const,
+        tokens: saved.tokens,
+        startedAt: Date.now(),
+        claimId: randomUUID(),
+      };
+      await saveProgress(claim);
+      return claim;
+    });
+
+    if (discovery) {
+      // Only the claim and its outcome need the row lock. The provider request can be slow.
+      const adapter = getAdapter(row.provider);
+      const { expiresAt, ...tokens } = discovery.tokens;
+      let accounts: FeedAccount[] | undefined;
+      let failure: DomainError | undefined;
+      try {
+        accounts = await adapter.listAccounts({
+          ...tokens,
+          expiresAt: expiresAt ? new Date(expiresAt) : null,
+        });
+      } catch (err) {
+        failure = providerFailure(adapter, err);
+      }
+      await db.transaction(async (tx) => {
+        const [current] = await tx.select().from(bankFeedOauthStates).where(scoped()).for("update");
+        if (!current) {
+          throw new DomainError("AUTHORIZATION_RESTART", 409, undefined, bankStatementCopy.en);
+        }
+        const saved = await readReturnSession<CallbackProgress>(store, key);
+        if (saved?.kind !== "discovering" || saved.claimId !== discovery.claimId) {
+          throw new DomainError("AUTHORIZATION_RETRY", 503, undefined, bankStatementCopy.en);
+        }
+        if (accounts?.length) {
+          // Persist result IDs even if a later account write rolls back.
+          await saveProgress({
+            codeHash,
+            kind: "prepared",
+            tokens: saved.tokens,
+            accounts: accounts.map((item) => ({ ...item, id: randomUUID() })),
+          });
+        } else {
+          await saveProgress({ codeHash, kind: "exchanged", tokens: saved.tokens });
+        }
+      });
+      if (failure) throw failure;
+      if (!accounts?.length) {
+        throw new DomainError("BANK_FEED_NO_ACCOUNTS", 422, undefined, bankStatementCopy.en);
+      }
+    }
+
     result = await db.transaction(async (tx) => {
       const [current] = await tx.select().from(bankFeedOauthStates).where(scoped()).for("update");
       if (!current) throw invalidCallbackState();
@@ -306,35 +372,8 @@ export async function completeCallback(
         return { ids, connections: ids.flatMap((id) => byId.get(id) ?? []) };
       }
 
-      let prepared = saved?.kind === "prepared" ? saved : undefined;
-      if (!prepared) {
-        if (saved?.kind !== "exchanged") throw invalidCallbackState();
-        const adapter = getAdapter(row.provider);
-        const { expiresAt, ...tokens } = saved.tokens;
-        let accounts: FeedAccount[];
-        try {
-          accounts = await adapter.listAccounts({
-            ...tokens,
-            expiresAt: expiresAt ? new Date(expiresAt) : null,
-          });
-        } catch (err) {
-          throw providerFailure(adapter, err);
-        }
-        if (!accounts.length) {
-          throw new DomainError("BANK_FEED_NO_ACCOUNTS", 422, undefined, bankStatementCopy.en);
-        }
-        if (row.expiresAt.getTime() <= Date.now()) {
-          throw new DomainError("AUTHORIZATION_RESTART", 409, undefined, bankStatementCopy.en);
-        }
-        prepared = {
-          codeHash,
-          kind: "prepared",
-          tokens: saved.tokens,
-          accounts: accounts.map((item) => ({ ...item, id: randomUUID() })),
-        };
-        // Keep the account snapshot and result IDs even if a later write rolls back.
-        await saveProgress(prepared);
-      }
+      if (saved?.kind !== "prepared") throw invalidCallbackState();
+      const prepared = saved;
 
       const connections: CallbackResult["connections"] = [];
       for (const account of prepared.accounts) {

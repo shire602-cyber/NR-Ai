@@ -1,5 +1,4 @@
 import type { SessionData, Store } from "express-session";
-import { createLogger } from "../../config/logger";
 import { decryptSecret, encryptSecret } from "../secret-vault";
 
 declare module "express-session" {
@@ -7,8 +6,6 @@ declare module "express-session" {
     statementReturn?: { sealed: string; expiresAt: number };
   }
 }
-
-const log = createLogger("statement-authorization");
 
 export async function readReturnSession<T>(store: Store, key: string): Promise<T | undefined> {
   const record = await new Promise<SessionData | null | undefined>((resolve, reject) => {
@@ -39,10 +36,7 @@ export async function writeReturnSession(
 }
 
 export async function deleteReturnSession(store: Store, key: string): Promise<void> {
-  await new Promise<void>((resolve) => {
-    store.destroy(key, (err) => {
-      if (err) log.warn("Could not clear authorization data");
-      resolve();
-    });
+  await new Promise<void>((resolve, reject) => {
+    store.destroy(key, (err) => (err ? reject(err) : resolve()));
   });
 }

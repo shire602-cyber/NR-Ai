@@ -6,6 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
+import session from "express-session";
 import { freezeTime, useHarness, type Tenant } from "./harness";
 import type { FetchLike } from "../../server/services/bank-feeds/types";
 import { bankStatementCopy, bankStatementTitle } from "../../shared/bank-statement-copy";
@@ -102,19 +103,15 @@ async function browserHeaders() {
 
 async function stageReturn(search: string, initial?: Awaited<ReturnType<typeof browserHeaders>>) {
   const headers = initial ?? (await browserHeaders());
-  const tabKey = randomUUID();
-  const reply = await h.anon.post("/api/bank-connections/handoff", { search, tabKey }, { headers });
+  const reference = { returnId: randomUUID(), tabKey: randomUUID() };
+  const reply = await h.anon.post(
+    "/api/bank-connections/handoff",
+    { search, ...reference },
+    { headers }
+  );
   expect(reply.status, reply.text).toBe(200);
-  const returnId = reply.body.returnId as string;
-  const handoff = reply.headers
-    .getSetCookie()
-    .find((header) => header.startsWith(`statement-return-${returnId}=`));
-  expect(handoff).toBeDefined();
-  return {
-    handoff: handoff!,
-    reference: { returnId, tabKey },
-    headers: { ...headers, cookie: `${headers.cookie}; ${handoff!.split(";")[0]}` },
-  };
+  expect(reply.body).toEqual({ returnId: reference.returnId });
+  return { reference, headers };
 }
 
 const resumeEndpoint = "/api/bank-connections/callback/resume";
@@ -140,23 +137,31 @@ describe("W3-C financial-data authorization", () => {
     const search = `?${new URLSearchParams({ entity_id: code, state })}`;
     const withoutCsrf = await h.anon.post("/api/bank-connections/handoff", {
       search,
+      returnId: randomUUID(),
       tabKey: randomUUID(),
     });
     expect(withoutCsrf.status).toBe(403);
 
-    const { handoff, headers, reference } = await stageReturn(search);
-    expect(handoff).toMatch(/; HttpOnly/i);
-    expect(handoff).toMatch(/; Path=\/api\/bank-connections\/callback\/resume/i);
-    expect(Number(/Max-Age=(\d+)/i.exec(handoff)?.[1])).toBeGreaterThan(0);
-    expect(Number(/Max-Age=(\d+)/i.exec(handoff)?.[1])).toBeLessThanOrEqual(600);
-    expect(decodeURIComponent(handoff)).not.toContain(code);
-    expect(decodeURIComponent(handoff)).not.toContain(state);
+    const browser = await browserHeaders();
+    const { headers, reference } = await stageReturn(search, browser);
+    // Resume using only cookies issued before staging. A tab can reload before the
+    // staging response arrives.
+    expect(headers).toEqual(browser);
     const endpoint = "/api/bank-connections/callback/resume";
     expect((await h.anon.post(endpoint, reference, { headers })).status).toBe(401);
     expect((await other.as.post(endpoint, reference, { headers })).body.code).toBe(
       "INVALID_OAUTH_STATE"
     );
-    expect((await owner.as.post(endpoint, reference)).body).toEqual({ outcome: "expired" });
+    expect(
+      (await owner.as.post(endpoint, reference, { headers: await browserHeaders() })).body
+    ).toEqual({ outcome: "expired" });
+    const premature = await owner.as.post(
+      endpoint,
+      { ...reference, acknowledge: true },
+      { headers }
+    );
+    expect(premature.status, premature.text).toBe(409);
+    expect(premature.body.code).toBe("AUTHORIZATION_RETRY");
     expect(calls).toEqual([]);
 
     const login = await h.anon.post("/api/auth/login", {
@@ -179,15 +184,26 @@ describe("W3-C financial-data authorization", () => {
     ]);
     const replay = await h.anon.post(endpoint, reference, { headers });
     expect(replay.body).toEqual(completed?.body);
+    const destroy = vi
+      .spyOn(session.MemoryStore.prototype, "destroy")
+      .mockImplementationOnce((_key, callback) => callback?.(new Error("Unavailable store")));
+    try {
+      const failedAck = await h.anon.post(
+        endpoint,
+        { ...reference, acknowledge: true },
+        { headers }
+      );
+      expect(failedAck.status, failedAck.text).toBe(503);
+      expect((await h.anon.post(endpoint, reference, { headers })).body).toEqual(completed?.body);
+    } finally {
+      destroy.mockRestore();
+    }
     const acknowledged = await h.anon.post(
       endpoint,
       { ...reference, acknowledge: true },
       { headers }
     );
     expect(acknowledged.body).toEqual({ acknowledged: true });
-    expect(acknowledged.headers.getSetCookie().join(" ")).toContain(
-      `statement-return-${reference.returnId}=;`
-    );
     expect((await h.anon.post(endpoint, reference, { headers })).body).toEqual({
       outcome: "expired",
     });
@@ -262,16 +278,13 @@ describe("W3-C financial-data authorization", () => {
         stage(a.company.id, "account-a"),
         stage(b.company.id, "account-b"),
       ]);
-      const headers = {
-        ...initial,
-        cookie: [initial.cookie, tabA.handoff.split(";")[0], tabB.handoff.split(";")[0]].join("; "),
-      };
+      const headers = initial;
       const mismatch = await a.as.post(
         resumeEndpoint,
         { ...tabB.reference, tabKey: tabA.reference.tabKey },
         { headers }
       );
-      expect(mismatch.body).toEqual({ outcome: "failed" });
+      expect(mismatch.body).toEqual({ outcome: "expired" });
       expect(list).not.toHaveBeenCalled();
 
       const first = await a.as.post(resumeEndpoint, tabA.reference, { headers });
@@ -284,12 +297,10 @@ describe("W3-C financial-data authorization", () => {
         { ...tabA.reference, acknowledge: true },
         { headers }
       );
-      expect(
-        closed.headers
-          .getSetCookie()
-          .filter((cookie) => cookie.startsWith("statement-return-"))
-          .map((cookie) => cookie.split(";")[0])
-      ).toEqual([`statement-return-${tabA.reference.returnId}=`]);
+      expect(closed.body).toEqual({ acknowledged: true });
+      expect((await a.as.post(resumeEndpoint, tabA.reference, { headers })).body).toEqual({
+        outcome: "expired",
+      });
       const second = await a.as.post(resumeEndpoint, tabB.reference, { headers });
       expect(second.status, second.text).toBe(201);
       expect(second.body.connections).toMatchObject([
@@ -313,16 +324,26 @@ describe("W3-C financial-data authorization", () => {
     const exchange = vi
       .spyOn(adapter, "exchangeCode")
       .mockResolvedValue({ accessToken: "fixture-value", refreshToken: null, expiresAt: null });
-    const list = vi.spyOn(adapter, "listAccounts").mockResolvedValue(
-      ["first", "second"].map((externalId) => ({
+    let discovering!: () => void;
+    let releaseDiscovery!: () => void;
+    const startedDiscovery = new Promise<void>((resolve) => {
+      discovering = resolve;
+    });
+    const finishDiscovery = new Promise<void>((resolve) => {
+      releaseDiscovery = resolve;
+    });
+    const list = vi.spyOn(adapter, "listAccounts").mockImplementation(async () => {
+      discovering();
+      await finishDiscovery;
+      return ["first", "second"].map((externalId) => ({
         externalId,
         name: "Fixture account",
         bankName: "Fixture",
         currency: "AED",
         iban: null,
         last4: null,
-      }))
-    );
+      }));
+    });
     const insert = storage.createBankConnection.bind(storage);
     let fail = true;
     const writes = vi
@@ -341,7 +362,18 @@ describe("W3-C financial-data authorization", () => {
       const { reference, headers } = await stageReturn(
         `?${new URLSearchParams({ code: "fixture-code", state })}`
       );
-      const initial = await owner.as.post(resumeEndpoint, reference, { headers });
+      const pending = owner.as.post(resumeEndpoint, reference, { headers });
+      await startedDiscovery;
+      const readWithLock = h.sql(
+        "SELECT id FROM bank_feed_oauth_states WHERE company_id = $1 FOR UPDATE NOWAIT",
+        [owner.company.id]
+      );
+      try {
+        expect(await readWithLock).toHaveLength(1);
+      } finally {
+        releaseDiscovery();
+      }
+      const initial = await pending;
       expect(initial.status, initial.text).toBe(503);
       expect(initial.body.code).toBe("AUTHORIZATION_RETRY");
       expect(

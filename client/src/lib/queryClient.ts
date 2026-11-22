@@ -133,7 +133,7 @@ export async function apiRequest(
   data?: unknown | undefined,
   /** Extra request headers, e.g. `X-Period-Lock-Reason` for an audited soft-lock override. */
   extraHeaders?: Record<string, string>,
-  options?: { queueWhenOffline?: boolean }
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean }
 ): Promise<any> {
   const withExtra = (h: Record<string, string>) => (extraHeaders ? { ...h, ...extraHeaders } : h);
   const upperMethod = method.toUpperCase();
@@ -151,6 +151,14 @@ export async function apiRequest(
 
   const fullUrl = apiUrl(url);
   const body = data !== undefined ? JSON.stringify(data) : undefined;
+  const send = (requestHeaders: Record<string, string>) =>
+    fetch(fullUrl, {
+      method,
+      headers: requestHeaders,
+      body,
+      credentials: "include",
+      keepalive: options?.keepalive,
+    });
 
   // If we're offline and this is a mutation, queue it for the service worker
   // to replay once connectivity returns. Reads are not queued — they should
@@ -161,23 +169,13 @@ export async function apiRequest(
     throw new ApiError("You are offline. This change will sync when you reconnect.", 0);
   }
 
-  let res = await fetch(fullUrl, {
-    method,
-    headers,
-    body,
-    credentials: "include",
-  });
+  let res = await send(headers);
 
   if (res.status === 401) {
     const refreshed = await refreshSession();
     if (refreshed) {
       headers = withExtra(await buildRequestHeaders(method, data));
-      res = await fetch(fullUrl, {
-        method,
-        headers,
-        body,
-        credentials: "include",
-      });
+      res = await send(headers);
     }
   }
 
@@ -187,12 +185,7 @@ export async function apiRequest(
   if (await isCsrfInvalidResponse(res)) {
     clearCsrfToken();
     const retryHeaders = await withCsrfHeader(method, { ...headers });
-    res = await fetch(fullUrl, {
-      method,
-      headers: retryHeaders,
-      body,
-      credentials: "include",
-    });
+    res = await send(retryHeaders);
     if (await isCsrfInvalidResponse(res)) {
       clearCsrfToken();
     }
@@ -206,12 +199,7 @@ export async function apiRequest(
       if (reason) {
         const lockHeaders = withExtra(await buildRequestHeaders(method, data));
         lockHeaders[PERIOD_LOCK_REASON_HEADER] = encodeLockReason(reason);
-        res = await fetch(fullUrl, {
-          method,
-          headers: lockHeaders,
-          body,
-          credentials: "include",
-        });
+        res = await send(lockHeaders);
       }
     }
   }

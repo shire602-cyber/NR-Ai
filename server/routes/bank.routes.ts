@@ -252,8 +252,9 @@ export function registerBankRoutes(app: Express) {
     "/api/bank-connections/handoff",
     strictBody(bankAuthorizationHandoffBody),
     asyncHandler(async (req, res) => {
-      const { search, tabKey } = parsedBody<z.output<typeof bankAuthorizationHandoffBody>>(req);
-      const returnId = await stageReturnHandoff(req, res, search, tabKey);
+      const { search, returnId, tabKey } =
+        parsedBody<z.output<typeof bankAuthorizationHandoffBody>>(req);
+      await stageReturnHandoff(req, { returnId, tabKey }, search);
       res.set("Cache-Control", "no-store").json({ returnId });
     })
   );
@@ -263,7 +264,10 @@ export function registerBankRoutes(app: Express) {
     await assertAccess(req, companyId);
     const handoff: ReadyReturn | undefined = res.locals.statementReturn;
     if (res.locals.acknowledgeStatementReturn) {
-      if (handoff?.kind === "completed") await clearCompletedReturn(req, res, handoff);
+      if (handoff?.kind !== "completed") {
+        throw new DomainError("AUTHORIZATION_RETRY", 409, undefined, bankStatementCopy.en);
+      }
+      await clearCompletedReturn(req, handoff);
       res.json({ acknowledged: true });
       return;
     }

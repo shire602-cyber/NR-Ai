@@ -20,8 +20,8 @@ opinion and has not been reviewed by counsel or an auditor.
 | Backups                      | JSON snapshots of the books above                                                                | `backups.data_snapshot` (AES-256-GCM)                           | recovery                                         |
 
 An authorization return and any exchange data needed for retry are encrypted in the server session
-store. They become unusable when the original state expires within ten minutes. The browser holds
-a signed HttpOnly cookie for each return and an opaque reference in its originating tab. After
+store. They become unusable when the original state expires within ten minutes. The return is bound
+to the browser's HttpOnly CSRF cookie and an opaque reference in its originating tab. After
 completion, the application attempts to replace the saved return and exchange data with a receipt
 and record IDs. It attempts to delete the receipt after the tab acknowledges it. The session store
 prunes expired records separately.

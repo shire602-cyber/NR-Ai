@@ -141,7 +141,7 @@ describe("signed-in CSV statement wording", () => {
       expect(window.location.pathname + window.location.search).toBe(loginPath);
       expect(post.mock.calls.map(([, url]) => url)).toEqual(["/api/bank-connections/handoff"]);
       const reference = readBankReturnReference();
-      expect(reference).toEqual({ returnId, tabKey: expect.any(String) });
+      expect(reference).toEqual({ returnId: expect.any(String), tabKey: expect.any(String) });
       expect(JSON.stringify(reference)).not.toContain(state);
 
       act(() => root.unmount());
@@ -202,9 +202,9 @@ describe("signed-in CSV statement wording", () => {
       );
       expect(submittedFrom).toBe(BANK_AUTHORIZATION_RETURN_PATH);
       expect(window.history.length).toBe(entries);
-      expect(sessionStorage.length).toBe(0);
+      expect(sessionStorage.getItem("muhasib:statement-authorization")).not.toContain(state);
       expect(post).toHaveBeenCalledOnce();
-      const stageBody = post.mock.calls[0][2] as { tabKey: string };
+      const stageBody = post.mock.calls[0][2] as { returnId: string; tabKey: string };
       expect(stageBody).toMatchObject({ search, tabKey: expect.any(String) });
       expect(container.querySelector('[role="status"]')?.textContent).toBe(
         t[locale]["banking.feeds.returnOffline"]
@@ -213,10 +213,13 @@ describe("signed-in CSV statement wording", () => {
       expect(post.mock.calls.map(([, url, body]) => [url, body])).toEqual([
         ["/api/bank-connections/handoff", stageBody],
         ["/api/bank-connections/handoff", stageBody],
-        ["/api/bank-connections/callback/resume", { returnId, tabKey: stageBody.tabKey }],
         [
           "/api/bank-connections/callback/resume",
-          { returnId, tabKey: stageBody.tabKey, acknowledge: true },
+          { returnId: stageBody.returnId, tabKey: stageBody.tabKey },
+        ],
+        [
+          "/api/bank-connections/callback/resume",
+          { returnId: stageBody.returnId, tabKey: stageBody.tabKey, acknowledge: true },
         ],
       ]);
       expect(window.location.pathname + window.location.search).toBe("/bank-feeds");
@@ -298,9 +301,47 @@ describe("signed-in CSV statement wording", () => {
       expect(post.mock.calls[1].slice(0, 3)).toEqual([
         "POST",
         "/api/bank-connections/callback/resume",
-        { returnId, tabKey: stageBody.tabKey },
+        { returnId: stageBody.returnId, tabKey: stageBody.tabKey },
       ]);
       expect(window.location.pathname + window.location.search).toBe("/bank-feeds");
+      expect(container.textContent).toContain(bankStatementCopy[locale]);
+    }
+  );
+
+  it.each(["en", "ar"] as const)(
+    "resumes after refreshing before the staging response arrives in %s",
+    async (locale) => {
+      await setLocale(locale);
+      const search = `?code=opaque%252F&state=${randomBytes(32).toString("base64url")}`;
+      const post = vi
+        .spyOn(queryApi, "apiRequest")
+        .mockImplementationOnce(() => new Promise(() => {}))
+        .mockResolvedValueOnce({ outcome: "expired" })
+        .mockResolvedValueOnce({ connections: [{}] })
+        .mockResolvedValue({ acknowledged: true });
+      window.history.replaceState({}, "", BANK_AUTHORIZATION_RETURN_PATH + search);
+      await act(async () => root.render(createElement(ReturnRoute)));
+      const reference = readBankReturnReference()!;
+      expect(reference).toEqual({ returnId: expect.any(String), tabKey: expect.any(String) });
+      expect(sessionStorage.getItem("muhasib:statement-authorization")).not.toMatch(
+        /opaque|state=/
+      );
+      expect(post.mock.calls[0][2]).toEqual({ ...reference, search });
+      expect(post.mock.calls[0][4]).toMatchObject({ keepalive: true });
+      expect(window.location.search).toBe("");
+      act(() => root.unmount());
+      root = createRoot(container);
+      await act(async () => root.render(createElement(ReturnRoute)));
+      expect(container.querySelector('[role="status"]')?.textContent).toBe(
+        t[locale]["banking.feeds.returnPending"]
+      );
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 550)));
+      expect(post.mock.calls.slice(1).map(([, , body]) => body)).toEqual([
+        reference,
+        reference,
+        { ...reference, acknowledge: true },
+      ]);
+      expect(window.location.pathname).toBe("/bank-feeds");
       expect(container.textContent).toContain(bankStatementCopy[locale]);
     }
   );
@@ -494,14 +535,12 @@ it("keeps the audit, data map and both roadmap formats free of superseded wordin
     "docs/security/data-map.md",
     "docs/qa/2026-06-21-benchmark-audit/03-cfo-audit-report.md",
     "tests/e2e/benchmark-audit.mjs",
+    "client/src/components/ui/README.md",
     "client/src/locales/en/onboarding.json",
     "client/src/locales/ar/onboarding.json",
   ]) {
     const text = readFileSync(file, "utf8");
     expect(text, file).not.toMatch(prohibitedCopy);
-    expect(text, file).not.toMatch(
-      /bankConnectedDescription|bank account is already connected|حسابك البنكي مرتبط بالفعل|Named integrations: \*\*Chase/i
-    );
   }
   const digits = readFileSync("docs/archive/root/Digits-Platform-Research.md", "utf8");
   expect(digits).toContain("### Other Integrations\n- [Historical comparison excerpt redacted.]");
@@ -546,6 +585,16 @@ it("keeps the audit, data map and both roadmap formats free of superseded wordin
   }
 });
 
+it("uses CSV guidance in the shared UI example and omits unverified firm metrics", () => {
+  const example = readFileSync("client/src/components/ui/README.md", "utf8");
+  expect(example).toContain('t["banking.feeds.unavailableBody"]');
+  // These static pages and their README ship their copy as source.
+  for (const file of ["index.html", "about.html", "industries.html", "README.md"]) {
+    const copy = readFileSync(`sites/najma-al-raeda-website/${file}`, "utf8");
+    expect(copy).not.toMatch(/(?:700|500|40)\+|98%/);
+  }
+});
+
 it("keeps superseded banking terms out of tracked prose, comments, and fixtures", () => {
   // Read tracked text, including source comments and test data. Compatibility paths and
   // identifiers use hyphens or underscores; this scan checks the prose around them.
@@ -558,6 +607,7 @@ it("keeps superseded banking terms out of tracked prose, comments, and fixtures"
     "bank[[:blank:]]+sync",
     "sync(s|ing)?[[:blank:]]+(a|the)[[:blank:]]+feed",
     "banking[[:blank:]]+embedded",
+    "(account[[:blank:]]+is[[:blank:]]+already[[:blank:]]+connected|مرتبط[[:blank:]]+بالفعل)",
     "bank[[:blank:]]+connection[[:blank:]]+(deleted|created)",
     "الربط[[:blank:]]+(البنكي|المصرفي)",
     "مزامنة[[:blank:]]+(الحساب|الخلاصة)[[:blank:]]+البنكي",

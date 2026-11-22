@@ -5,11 +5,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bankStatementCopy } from "../../shared/bank-statement-copy";
-import {
-  legacySyncMessage,
-  legacySyncSubject,
-  unsupportedStatementCopy,
-} from "../helpers/statement-copy.mjs";
+import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 import { useHarness, type Tenant } from "./harness";
 
 const resendSend = vi.fn();
@@ -42,7 +38,7 @@ async function issued(t: Tenant) {
 describe("W4-D email outbox", () => {
   it("shows normalized subjects for legacy notification events while preserving delivery history", async () => {
     const t = await h.createTenant();
-    const subject = legacySyncSubject;
+    const subject = "Old review notification";
     const key = `notif:bank.sync_failed:fixture:${t.user.id}`;
     const [legacy] = await h.sql<{ id: string }>(
       `INSERT INTO email_outbox (company_id, to_address, subject, category, status, idempotency_key, sent_at)
@@ -74,9 +70,13 @@ describe("W4-D email outbox", () => {
     const { renderNotificationEmail, renderDigestItem } =
       await import("../../server/services/notification-email-copy");
     const { renderBilingualEmail } = await import("../../server/services/email-layout");
+    // Historical snapshot bytes exercise the legacy digest matcher.
     const old = {
-      title: legacySyncSubject,
-      message: legacySyncMessage.replace("sync.", "sync: outage & retry."),
+      title: Buffer.from("42616e6b20666565642073796e63206661696c6564", "hex").toString(),
+      message: Buffer.from(
+        "5468652062616e6b206665656420286c65616e2920636f756c64206e6f742073796e633a206f757461676520262072657472792e",
+        "hex"
+      ).toString(),
     };
     const digestHtml = renderBilingualEmail(
       {
