@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { useLocation } from "wouter";
+import { BankConnectionRecovery } from "@/components/banking/BankConnectionRecovery";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -56,6 +57,7 @@ export default function BankFeeds() {
     <div className="space-y-6">
       {callback && <CompleteLegacyCallback callback={callback} />}
       <PageHeader eyebrow={t["shell.nav.banking"]} title={t["banking.statementUpload.title"]} />
+      <BankConnectionRecovery />
       <Card>
         <EmptyState
           size="md"

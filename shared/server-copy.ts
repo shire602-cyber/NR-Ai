@@ -87,7 +87,7 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.payrollApproved.message", "Payroll for {month}/{year} was approved."),
   T(
     "notification.bankSyncFailed.message",
-    "Upload a CSV statement in Bank reconciliation to keep your books up to date."
+    "Open Banking to retry the transaction refresh, or upload a CSV statement for reconciliation."
   ),
   T("notification.deadlineDueGeneric.message", "A compliance obligation is due[ on {dueDate}]."),
   T("notification.taskDue.message", "A task is due[ on {dueDate}]."),

@@ -196,7 +196,7 @@ describe("server copy templates", () => {
     });
   });
 
-  it("shows CSV wording in both locales for an existing bank statement notice", () => {
+  it("offers a retry and CSV upload in both locales for an existing bank statement notice", () => {
     const row = withNotificationCopy({
       eventKey: "bank.sync_failed:legacy-notice",
       title: "Previous title",
@@ -204,10 +204,11 @@ describe("server copy templates", () => {
     });
 
     expect(row.title).toBe("Review your bank statements");
-    expect(row.message).toContain("Upload a CSV statement");
+    expect(row.message).toContain("retry the transaction refresh");
+    expect(row.message).toContain("upload a CSV statement");
     expect(localizeNotification(row, ar, "ar")).toEqual({
       title: "راجع كشوف حسابك البنكي",
-      message: "ارفع كشف حساب بصيغة CSV في صفحة التسوية البنكية لتحديث دفاترك.",
+      message: "افتح صفحة البنوك لإعادة محاولة تحديث المعاملات، أو ارفع كشف حساب بصيغة CSV للتسوية البنكية.",
     });
   });
 
