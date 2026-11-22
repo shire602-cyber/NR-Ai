@@ -129,8 +129,12 @@ async function acquirePeriodLock(
   );
 }
 
-export async function isPeriodLocked(companyId: string, date: string): Promise<boolean> {
-  return (await getEffectiveLock(companyId, date)) !== null;
+export async function isPeriodLocked(
+  companyId: string,
+  date: string,
+  tx?: LedgerTx
+): Promise<boolean> {
+  return (await getEffectiveLock(companyId, date, tx)) !== null;
 }
 
 /** The latest lock-through date for the company (null when none). */

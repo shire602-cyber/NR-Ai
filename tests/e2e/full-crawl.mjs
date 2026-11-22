@@ -163,6 +163,19 @@ async function resolveExecutablePath() {
   }
 }
 
+async function openDashboard(page) {
+  await page.goto(`${BASE}/dashboard`);
+  const express = page.getByTestId("onboarding-express");
+  const dashboard = page.getByTestId("dashboard-title");
+  await express.or(dashboard).filter({ visible: true }).first().waitFor({ timeout: 30000 });
+  if (await express.isVisible()) {
+    await express.click();
+    await page.getByTestId("onboarding-skip").click({ timeout: 20000 });
+    await page.getByTestId("onboarding-task-explore").click({ timeout: 20000 });
+  }
+  await dashboard.waitFor({ timeout: 20000 });
+}
+
 async function main() {
   fs.mkdirSync(SHOT_DIR, { recursive: true });
   const browser = await chromium.launch({
@@ -214,27 +227,11 @@ async function main() {
   // W5-E: registration returns no session; sign in (sets the auth cookies).
   await page.request.post(`${BASE}/api/auth/login`, { data: { email, password: "Password123!" } });
 
-  await page.goto(`${BASE}/dashboard`);
-  await page.waitForTimeout(3000);
-  if (page.url().includes("onboarding")) {
-    const express = page.locator('[data-testid="onboarding-express"]');
-    // The redirect to /onboarding can land after a fixed wait on a cold build.
-    await express.waitFor({ timeout: 10000 }).catch(() => undefined);
-    if (await express.count()) {
-      await express.click();
-      await page.waitForTimeout(4000);
-      // WP-B: onboarding is three screens; skip the starting point, then look around.
-      for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
-        const next = page.locator(`[data-testid="${id}"]`);
-        if (await next.count()) {
-          await next.click();
-          await page.waitForTimeout(1500);
-        }
-      }
-    }
-  }
-  if (!page.url().includes("dashboard")) {
+  try {
+    await openDashboard(page);
+  } catch (error) {
     await fail("express-onboarding", { detail: `ended on ${page.url()}` });
+    throw error;
   }
 
   // Promote to admin + firm owner so the crawl covers admin and firm suites.
@@ -277,6 +274,8 @@ async function main() {
     apiFailures = [];
     try {
       await page.goto(`${BASE}${route}`, { timeout: 45000 });
+      const main = page.locator("main");
+      await main.getByRole("heading").filter({ visible: true }).first().waitFor({ timeout: 18000 });
       const mainText = await renderedMainText(page);
       const finalUrl = page.url().replace(BASE, "");
       const failText =
@@ -1107,7 +1106,7 @@ async function main() {
     for (const expected of [
       "apiKeys",
       "email",
-      "bankStatementUpload",
+      "bankStatementCsvImport",
       "push",
       "stripe",
       "tokenEncryption",
@@ -1221,24 +1220,12 @@ async function main() {
       data: { email: mEmail, password: "Password123!" },
     });
     // Complete onboarding via express so the dashboard doesn't redirect.
-    await mPage.goto(`${BASE}/dashboard`);
-    await mPage.waitForTimeout(2500);
-    if (mPage.url().includes("onboarding")) {
-      const express = mPage.locator('[data-testid="onboarding-express"]');
-      // The redirect to /onboarding can land after a fixed wait on a cold build.
-      await express.waitFor({ timeout: 10000 }).catch(() => undefined);
-      if (await express.count()) {
-        await express.click();
-        await mPage.waitForTimeout(3500);
-        // WP-B: onboarding is three screens; skip the starting point, then look around.
-        for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
-          const next = mPage.locator(`[data-testid="${id}"]`);
-          if (await next.count()) {
-            await next.click();
-            await mPage.waitForTimeout(1500);
-          }
-        }
-      }
+    try {
+      await openDashboard(mPage);
+    } catch (error) {
+      await fail(`${label} express-onboarding`, { detail: error.message.slice(0, 150) });
+      await mCtx.close();
+      return;
     }
     const mDb = new pg.Client({ connectionString: process.env.DATABASE_URL });
     await mDb.connect();
@@ -1341,29 +1328,31 @@ async function main() {
         `VAT fixture failed with ${generated.status()}: ${vatReturn.code ?? "missing return ID"}`
       );
     }
-    const DATE_TEXT = /\b\d{1,2}(?:[–-]\d{1,2})? [A-Z][a-z]{2} \d{4}\b|\b[A-Z][a-z]{2} \d{4}\b/g;
     const datesOn = async (p) => {
-      await p.goto(`${BASE}/vat-filing`, { timeout: 45000 });
+      await p.goto(`${BASE}/vat-filing?tab=returns`, { timeout: 45000 });
       const row = p.getByTestId(`row-return-${vatReturn.id}`);
-      await row.waitFor();
-      const text = await renderedMainText(p);
-      return {
-        dates: [...new Set(text.match(DATE_TEXT) ?? [])].sort(),
-        period: await row.getByRole("cell").first().innerText(),
-      };
+      await row.waitFor({ state: "visible", timeout: 18000 });
+      const cells = row.getByRole("cell");
+      return { period: await cells.nth(0).innerText(), dueDate: await cells.nth(1).innerText() };
     };
     const utcCtx = await browser.newContext({
       viewport: { width: 1440, height: 900 },
       timezoneId: "UTC",
       storageState: await ctx.storageState(),
     });
-    const utcPage = await utcCtx.newPage();
-    const utcDates = await datesOn(utcPage);
-    await utcCtx.close();
+    let utcDates;
+    try {
+      utcDates = await datesOn(await utcCtx.newPage());
+    } finally {
+      await utcCtx.close();
+    }
     const localDates = await datesOn(page);
-    const monthLabel = (date) =>
-      date.toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
-    const expectedPeriod = `${monthLabel(qStart)} - ${monthLabel(qEnd)}`;
+    const month = new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+    const expectedPeriod = `${month.format(qStart)} - ${month.format(qEnd)}`;
     if (
       JSON.stringify(utcDates) !== JSON.stringify(localDates) ||
       utcDates.period !== expectedPeriod ||

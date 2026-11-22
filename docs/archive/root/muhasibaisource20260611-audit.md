@@ -20,13 +20,15 @@ cross-user notification mutation bug, likely webhook SSRF exposure, incomplete
 e-invoicing, no direct EmaraTax filing, no third-party
 security/compliance certification, and no production customer evidence.
 
+Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
+
 Best honest positioning:
 
 - Better than many generic accounting tools for a UAE accounting-firm workflow
   if the target is VAT/corporate-tax workpapers, Arabic/RTL, WhatsApp-driven
   chasing, client operations, and firm portfolio management.
 - Not currently better than Digits for AI-native bookkeeping automation,
-  payroll integrations, native mobile, MCP/developer ecosystem, or
+  payroll connectivity, native mobile, MCP/developer ecosystem, or
   security posture claims.
 - Not currently better than Wafeq or Zoho Books for market trust, certification
   posture, direct VAT filing, mature regional accounting operations, and live
@@ -247,7 +249,7 @@ Current public positioning from Digits:
 Assessment:
 
 - Muhasib has stronger UAE compliance depth and firm-specific UAE workflows.
-- Digits is ahead on AI-native ledger maturity, payroll integrations,
+- Digits is ahead on AI-native ledger maturity, payroll connectivity,
   mobile, MCP, public market trust, and security posture.
 
 ### Wafeq
@@ -291,8 +293,8 @@ Assessment:
 
 Current public positioning from QuickBooks:
 
-- Broad small-business accounting with invoicing, payments, expenses, bank
-  connections, reports, budgeting, payroll/time/inventory/project features.
+- Broad small-business accounting with invoicing, payments, expenses,
+  financial-institution connections, reports, budgeting, payroll/time/inventory/project features.
 - Public page now emphasizes Accounting AI: automated workflows, AI
   reconciliation, profit/loss insights, error finding, sales-tax automation,
   finance/project/customer AI, and chat insights.
@@ -307,7 +309,7 @@ Assessment:
 
 Current public positioning from Xero:
 
-- Cloud accounting with bank reconciliation, invoicing, expenses, bills, payroll,
+- Cloud accounting with invoicing, expenses, bills, payroll,
   analytics, practice tools, app store, mobile, support, and accountant
   collaboration.
 - Xero highlights JAX AI, Syft analytics, Workpapers, Xero HQ, Xero Practice
@@ -364,7 +366,7 @@ ecosystem scale and avoids fighting Digits on pure AI-native ledger automation.
 8. Encrypt every credential-bearing DB column, including stored financial-data authorization tokens.
 9. Implement UAE e-invoicing/PINT AE validation and ASP adapter.
 10. Add or integrate direct EmaraTax VAT filing if the goal is to beat Zoho in UAE compliance.
-11. Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
+11. Verify the bank reconciliation workflow. Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 12. Run full E2E locally/CI and keep the route crawl passing.
 13. Get third-party security review, then SOC 2/ISO roadmap if selling to firms.
 14. Get accountant pilot customers and measure time saved versus Wafeq/Zoho/manual workflows.

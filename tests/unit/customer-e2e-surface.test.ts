@@ -178,15 +178,14 @@ describe("customer launch E2E surface", () => {
   });
 
   it("opens the CSV statement import dialog and scans the signed-in route in both directions", () => {
-    expect(scriptSource).toMatch(/lang: "en",\s*dir: "ltr",\s*title: "CSV bank statements"/);
-    expect(scriptSource).toMatch(
-      /lang: "ar",\s*dir: "rtl",\s*title: "كشوف الحساب البنكي بصيغة CSV"/
-    );
-    expect(scriptSource).toContain('crawlRoute("/bank-feeds", { locale: lang })');
+    expect(scriptSource).toMatch(/lang: "en",\s*dir: "ltr",\s*title: "Bank reconciliation"/);
+    expect(scriptSource).toMatch(/lang: "ar",\s*dir: "rtl",\s*title: "التسوية البنكية"/);
+    expect(scriptSource).toContain('crawlRoute("/bank-reconciliation", {');
     expect(scriptSource).toContain("findBankFeedMention(bodyText)");
-    expect(scriptSource).toContain('getByTestId("button-feeds-import-statement")');
+    expect(scriptSource).toContain('getByTestId("button-import-transactions")');
     expect(scriptSource).toContain("await importAction.click()");
     expect(scriptSource).toContain('page.route("**/api/bank/providers"');
+    expect(scriptSource).toContain("await page.goto(`${BASE}/bank-feeds`)");
     expect(scriptSource).toContain("isConfigured: true");
     expect(scriptSource).toContain(
       'importDialog.getByTestId("select-import-bank-account").waitFor()'

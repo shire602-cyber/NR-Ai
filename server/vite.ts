@@ -5,6 +5,10 @@ import { type Server } from "http";
 import { fileURLToPath } from "url";
 import { LOCALE_COOKIE, SHELL_BOOT_API, firmFirstScreen } from "../shared/firm-boot";
 import { accessCookieName, refreshCookieName } from "./services/auth-cookies.service";
+import { features, tools } from "../client/src/components/marketing/phase/content";
+import { editorialPath } from "../client/src/components/marketing/phase/editorial/pages";
+import { siteLocale } from "../client/src/components/marketing/phase/routes";
+import { BANK_STATEMENT_ENTRY, isRetiredBankReturnPath } from "../shared/bank-statement-routes";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -23,6 +27,46 @@ export function rejectUnpublishedFiles(req: Request, res: Response, next: NextFu
     return;
   }
   next();
+}
+
+const marketingPaths = new Set([
+  "",
+  "/book-a-demo",
+  "/pricing",
+  "/solutions/small-business",
+  "/solutions/accounting-firms",
+  ...features.map(({ slug }) => `/product/${slug}`),
+  ...tools.map(({ slug }) => `/tools/${slug}`),
+]);
+
+function decodeUnreserved(pathname: string): string {
+  return pathname.replace(/%[\da-f]{2}/gi, (encoded) => {
+    const character = String.fromCharCode(Number.parseInt(encoded.slice(1), 16));
+    return /^[a-z0-9._~-]$/i.test(character) ? character : encoded;
+  });
+}
+
+function redirectRetiredBankReturn(req: Request, res: Response, next: NextFunction) {
+  if ((req.method === "GET" || req.method === "HEAD") && isRetiredBankReturnPath(decodeUnreserved(req.path))) {
+    res.set({ "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
+    res.redirect(303, BANK_STATEMENT_ENTRY);
+    return;
+  }
+  next();
+}
+
+/** Keep the localized error page renderable while reporting its status to HTTP clients. */
+function documentStatus(url: string): 200 | 404 {
+  const pathname = url.split(/[?#]/, 1)[0];
+  if (!siteLocale(decodeUnreserved(pathname))) return 200;
+  let localPath: string;
+  try {
+    // Match Wouter's decoding without treating encoded delimiters as path separators.
+    localPath = decodeURI(pathname).slice(3).replace(/\/$/, "");
+  } catch {
+    return 404;
+  }
+  return marketingPaths.has(localPath) || editorialPath(localPath) ? 200 : 404;
 }
 
 /**
@@ -51,6 +95,7 @@ export async function setupVite(app: Express, server: Server) {
     appType: "custom",
   });
 
+  app.use(redirectRetiredBankReturn);
   app.use(vite.middlewares);
   app.use(rejectUnpublishedFiles);
   app.use("*", async (req, res, next) => {
@@ -62,7 +107,7 @@ export async function setupVite(app: Express, server: Server) {
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(`src="/src/main.tsx"`, `src="/src/main.tsx?v=${nanoid()}"`);
       const page = await vite.transformIndexHtml(url, template);
-      res.status(200).set({ "Content-Type": "text/html" }).end(page);
+      res.status(documentStatus(url)).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
       next(e);
@@ -241,6 +286,7 @@ export function serveStatic(app: Express) {
     );
   }
 
+  app.use(redirectRetiredBankReturn);
   // Hashed assets — safe to cache aggressively because the filename changes
   // any time content does.
   for (const dir of ["assets", "firm-assets"]) {
@@ -256,13 +302,14 @@ export function serveStatic(app: Express) {
 
   const marketingDocument = loadMarketingDocument(distPath);
   if (marketingDocument) {
-    app.get(["/", /^\/(?:ar|en)(?:\/|$)/], (req, res, next) => {
-      const pathname = routeKey(req.originalUrl);
+    app.get("*", (req, res, next) => {
+      const pathname = decodeUnreserved(routeKey(req.originalUrl));
+      const locale = siteLocale(pathname);
+      if (pathname !== "/" && !locale) return next();
       const cookies = req.cookies as Record<string, string> | undefined;
       if (pathname === "/" && (cookies?.[accessCookieName()] || cookies?.[refreshCookieName()])) {
         return next();
       }
-      const locale = pathname === "/" ? null : pathname.split("/")[1] === "ar" ? "ar" : "en";
       let html = marketingDocument;
       if (locale) {
         html = html.replace('<html lang="en">', `<html lang="${locale}" dir="${locale === "ar" ? "rtl" : "ltr"}">`);
@@ -270,7 +317,7 @@ export function serveStatic(app: Express) {
           html = html.replace("</head>", `    <link rel="preload" as="image" fetchpriority="high" imagesrcset="/product/dashboard-${locale}-small.webp 720w, /product/dashboard-${locale}.webp 1280w" imagesizes="(max-width: 760px) calc(100vw - 34px), 56vw">\n  </head>`);
         }
       }
-      res.set(NO_STORE_HEADERS).type("html").send(html);
+      res.status(documentStatus(req.originalUrl)).set(NO_STORE_HEADERS).type("html").send(html);
     });
   }
 
@@ -310,6 +357,6 @@ export function serveStatic(app: Express) {
         );
       return;
     }
-    res.sendFile(path.resolve(distPath, "index.html"));
+    res.status(documentStatus(req.originalUrl)).sendFile(path.resolve(distPath, "index.html"));
   });
 }

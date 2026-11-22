@@ -1,4 +1,6 @@
 {
+  "serverErrors.AUTHORIZATION_RETRY": "Could not finish authorization. Try again.",
+  "serverErrors.AUTHORIZATION_RESTART": "Authorization expired. Start again from where you began, or upload a CSV statement.",
   "serverErrors.ACCESS_DENIED": "You do not have access to this report.",
   "serverErrors.ACCESS_RESTRICTED": "This area is not available for your account type.",
   "serverErrors.ACCOUNT_HAS_CHILDREN": "This account has child accounts. Move or delete them first.",
@@ -340,8 +342,6 @@
   "serverErrors.INVALID_MONTH": "The month is not valid.",
   "serverErrors.INVALID_MULTIPART": "The upload could not be read. Try uploading the file again.",
   "serverErrors.INVALID_OAUTH_STATE": "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
-  "serverErrors.AUTHORIZATION_RETRY": "Could not finish authorization. Try again.",
-  "serverErrors.AUTHORIZATION_RESTART": "Authorization expired. Start again from where you began, or upload a CSV statement.",
   "serverErrors.INVALID_OWNERSHIP": "The ownership percentage must be above 0% and at most 100%.",
   "serverErrors.INVALID_PERCENT": "The recoverable percentage must be between 0 and 100.",
   "serverErrors.INVALID_PERIOD": "The period end is before its start. Check the dates.",

@@ -144,7 +144,7 @@ Digits generates the following financial reports, all interactive and real-time:
 ## 6. Integrations
 
 ### Banking & Financial Institutions
-- [Historical comparison excerpt redacted.]
+- Named integrations: **Chase, Mercury, American Express, Brex, Arc**
 
 ### Payment Processors
 - **Stripe** — real-time payment sync

@@ -103,8 +103,8 @@ export function hashAttachment(content: Buffer | string): string {
 
 /**
  * A repeat content hash for the same company is a duplicate (same invoice
- * emailed twice, or emailed and also imported through another source). `seenHashes`
- * is the set of hashes already stored for that company.
+ * emailed twice). `seenHashes` is the set of hashes already stored for that
+ * company.
  */
 export function isDuplicateAttachment(hash: string, seenHashes: Set<string>): boolean {
   return seenHashes.has(hash);

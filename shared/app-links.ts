@@ -19,6 +19,3 @@ export function receiptHref(receiptId: string): string {
 export function invoiceHref(invoiceId: string): string {
   return `/invoices?open=${encodeURIComponent(invoiceId)}`;
 }
-
-/** Open the CSV statement import dialog. */
-export const BANK_STATEMENT_IMPORT_HREF = "/bank-reconciliation?import=1";

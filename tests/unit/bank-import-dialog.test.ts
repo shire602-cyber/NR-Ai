@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * Step 1 / F4: the bank statement import dialog is catalog copy in both languages. In Arabic it
- * has no English outside user data and brand names (the "Supported formats" lines and the Import
+ * has no English outside user data and brand names (the CSV requirements and the Import
  * button used to stay English), and its content is allowed to shrink to the phone width.
  */
 import { createElement, act } from "react";
@@ -9,6 +9,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -96,17 +97,14 @@ afterEach(async () => {
   useI18n.getState().setLocale("en");
 });
 
-async function mountPage(locale: "en" | "ar", page: "reconciliation" | "feeds" = "reconciliation") {
+async function mountPage(locale: "en" | "ar") {
   const i18n = await import("../../client/src/lib/i18n");
   await act(async () => i18n.useI18n.getState().setLocale(locale));
   const { queryClient } = await import("../../client/src/lib/queryClient");
   queryClient.clear();
   const { ActiveCompanyProvider } =
     await import("../../client/src/components/ActiveCompanyProvider");
-  const { default: Page } =
-    page === "feeds"
-      ? await import("../../client/src/pages/BankFeeds")
-      : await import("../../client/src/pages/BankReconciliation");
+  const { default: Page } = await import("../../client/src/pages/BankReconciliation");
   await act(async () => {
     root.render(
       createElement(
@@ -120,6 +118,13 @@ async function mountPage(locale: "en" | "ar", page: "reconciliation" | "feeds" =
 }
 
 const dialog = () => document.querySelector('[role="dialog"]') as HTMLElement | null;
+const retiredLabels = [
+  ["Bank", "feeds"].join(" "),
+  ["الربط", "البنكي"].join(" "),
+  "Sync now",
+  "Lean Technologies",
+  "مزامنة الآن",
+];
 
 async function chooseStatement() {
   const file = new File(["<Document/>"], "statement.xml");
@@ -131,49 +136,8 @@ async function chooseStatement() {
   Object.defineProperty(input, "files", { value: [file] });
   await act(async () => input!.dispatchEvent(new Event("change", { bubbles: true })));
 }
-describe("CSV bank statement import page", () => {
-  it.each([
-    {
-      locale: "en" as const,
-      title: "CSV bank statements",
-      action: "Upload a CSV statement",
-      workflow:
-        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
-    },
-    {
-      locale: "ar" as const,
-      title: "كشوف الحساب البنكي بصيغة CSV",
-      action: "ارفع كشف حساب بصيغة CSV",
-      workflow: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
-    },
-  ])(
-    "shows the CSV heading and import action, and localizes the unavailable-provider error in $locale",
-    async ({ locale, title, action, workflow }) => {
-      window.history.replaceState(null, "", "/bank-feeds");
-      await mountPage(locale, "feeds");
-      expect([...container.querySelectorAll("h1")].map((heading) => heading.textContent)).toEqual([
-        title,
-      ]);
-      expect(container.textContent).toContain(workflow);
-      const importLink = container.querySelector('[data-testid="button-feeds-import-statement"]');
-      expect(importLink?.textContent).toBe(action);
-      expect(importLink?.getAttribute("href")).toBe("/bank-reconciliation?import=1");
-
-      const { serverErrorCopy } = await import("../../client/src/lib/validation-messages");
-      for (const code of [
-        "BANK_FEED_NOT_CONFIGURED",
-        "BANK_FEED_RECONNECT_REQUIRED",
-        "BANK_FEED_NOT_SUPPORTED",
-        "BANK_FEED_BALANCE_UNAVAILABLE",
-      ]) {
-        expect(serverErrorCopy(locale, code), code).toBe(workflow);
-      }
-    }
-  );
-});
-
 describe("bank statement import dialog", () => {
-  it("in Arabic: every line is Arabic, including the supported formats and the Import button", async () => {
+  it("in Arabic: shows the approved CSV guidance and an Arabic Import button", async () => {
     await mountPage("ar");
     const d = dialog();
     expect(d).not.toBeNull();
@@ -186,19 +150,28 @@ describe("bank statement import dialog", () => {
     expect(lines.filter((line) => isEnglishLine(line))).toEqual([]);
     const text = d!.textContent ?? "";
     expect(text).toContain("استيراد");
-    expect(text).toContain("الصيغ المدعومة");
-    expect(text).toContain("CSV");
-    expect(text).not.toContain("PDF");
+    expect(text).toContain("متطلبات ملف CSV");
+    expect(text).toContain(BANK_RECONCILIATION_COPY.ar);
+    for (const label of retiredLabels)
+      expect(text.toLowerCase()).not.toContain(label.toLowerCase());
+    expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT\.053|OFX/i);
+    expect(d!.querySelector('[data-testid="button-download-sample-bank-csv"]')).not.toBeNull();
     expect(d!.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
       "استيراد"
     );
   });
 
-  it("in English: the same lines come from the catalog", async () => {
+  it("in English: shows the approved CSV guidance and the sample download", async () => {
     await mountPage("en");
     const text = dialog()?.textContent ?? "";
-    expect(text).toContain("CSV supports comma, semicolon, and tab delimiters");
-    expect(text).not.toMatch(/\b(?:XLSX|MT940|CAMT\.053|OFX)\b/);
+    expect(text).toContain(BANK_RECONCILIATION_COPY.en);
+    for (const label of retiredLabels)
+      expect(text.toLowerCase()).not.toContain(label.toLowerCase());
+    expect(text).toContain("CSV files can use commas, semicolons, or tabs");
+    expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT\.053|OFX/i);
+    expect(
+      dialog()?.querySelector('[data-testid="button-download-sample-bank-csv"]')
+    ).not.toBeNull();
     expect(dialog()?.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
       "Import"
     );

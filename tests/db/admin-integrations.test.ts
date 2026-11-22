@@ -3,7 +3,7 @@
  * a real, admin-only call (it was a hard-coded "Connected" badge and a button that did nothing).
  */
 import { describe, expect, it } from "vitest";
-import { bankStatementCopy } from "../../shared/bank-statement-copy";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { useHarness } from "./harness";
 
 const h = useHarness();
@@ -14,15 +14,15 @@ describe("STEP1 F6 admin integrations", () => {
     const status = await admin.as.get("/api/admin/integration-status");
     expect(status.status, status.text).toBe(200);
     expect(status.body.integrations).toContainEqual({
-      key: "bankStatementUpload",
-      name: "Bank statement upload",
+      key: "bankStatementCsvImport",
+      name: "CSV statement import",
       configured: true,
-      detail: bankStatementCopy.en,
+      detail: BANK_RECONCILIATION_COPY.en,
       requiredEnv: [],
-      unlocks: "Upload CSV bank statements for reconciliation",
+      unlocks: "Statement reconciliation",
     });
-    expect(status.body.integrations).toContainEqual(
-      expect.objectContaining({ key: "openBanking", name: "Existing bank connections" })
+    expect(status.body.integrations).not.toContainEqual(
+      expect.objectContaining({ key: "openBanking" })
     );
   });
 

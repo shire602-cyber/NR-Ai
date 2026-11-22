@@ -205,19 +205,6 @@ async function loadUserSecurity(userId: string): Promise<UserSecurityRow | null>
   return rows[0] ?? null;
 }
 
-/** Use after authentication and company resolution on routes whose scope is set by the handler. */
-export async function requireCompanyMfaEnrollment(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> {
-  try {
-    if (await requireFirmCompanyMfa(req.user!, res, [req.params.companyId])) next();
-  } catch (err) {
-    next(err);
-  }
-}
-
 /**
  * Accounts that existed before email verification shipped get the full grace period
  * from the rollout date rather than being restricted on deploy.

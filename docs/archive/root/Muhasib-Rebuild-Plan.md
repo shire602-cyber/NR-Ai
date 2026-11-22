@@ -688,7 +688,7 @@ Then rebuild `firm-command-center`, `value-ops` and `growth-opportunities` **onl
 | WPS SIF payroll | Built in | Wafeq ✗ · QuickBooks ✗ · FreshBooks ✗ · Zoho = separate paid product |
 | Arabic depth | Full UI + **Arabic CoA** + bilingual invoices | Zoho has **no Arabic chart of accounts**. QuickBooks and FreshBooks have no Arabic at all |
 | E-invoicing | ASP white-label, real transmission | Only SAP and Tally are accredited |
-| Bank reconciliation | Upload a CSV exported from your bank, review suggested matches, and reconcile against your books | [Historical comparison excerpt redacted.] |
+| Bank reconciliation | Upload a CSV exported from your bank, review suggested matches, and reconcile against your books | Compare the workflow against a representative statement. |
 
 ### The wedge: "the return files itself, and it's right"
 
@@ -706,7 +706,7 @@ Everything in Phases 1–4 serves that sentence. Everything that doesn't, isn't 
 
 **Months 9–12 — Firms.** Land 20 firms with the bulk VAT workspace. One firm with 50 clients is worth 50 direct signups and churns less. Free for the firm, paid per client. Wafeq's 94 partner firms is the number to beat.
 
-**Bank reconciliation.** Upload a CSV exported from your bank, review suggested matches, and reconcile against your books. The archived improvement priorities were format memory, match suggestions, and reconciliation rules.
+**Bank reconciliation.** Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 
 **Beyond the UAE — but not yet.** Saudi (ZATCA Fatoora) is the obvious second market and your Arabic and e-invoicing work transfers. **Do not touch it until 100 paying UAE customers.** Wafeq's warning is right there: 18,000 claimed customers, ~90% of volume in Saudi, and a UAE product with no emirate field. They spread and got thin. Sequence: UAE → Saudi → Bahrain/Oman/Qatar (GCC VAT is harmonised, which makes this cheaper than it looks) → Egypt/Jordan.
 

@@ -438,14 +438,6 @@ const NON_COMPANY_READS = new Set([
   "webhooks/events",
 ]);
 
-// The handoff saves a browser return. Callback handlers resolve the company from
-// that saved authorization, then enforce access, permissions and MFA on it.
-const HANDLER_SCOPED_BANK_POSTS = new Set([
-  "bank-connections/handoff",
-  "bank-connections/callback",
-  "bank-connections/callback/resume",
-]);
-
 const REQUIRED_COMPANY_INPUT = new Map<string, "body" | "query">([
   ["GET integrations/ecommerce", "query"],
   ["POST integrations/ecommerce/connect", "body"],
@@ -505,7 +497,6 @@ export async function resolveRequestCompanyWithSource(
   if (
     isPolicyExempt(path) ||
     (READ_METHODS.has(method) && NON_COMPANY_READS.has(route)) ||
-    (method === "POST" && HANDLER_SCOPED_BANK_POSTS.has(route)) ||
     isSignedProviderCallback(method, path)
   ) {
     return null;

@@ -346,7 +346,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                         ? new Date(key.lastUsedAt).toLocaleDateString(
                             locale === "ar" ? "ar-AE" : undefined
                           )
-                        : t["banking.feeds.never"]}
+                        : t["banking.common.never"]}
                     </TableCell>
                     <TableCell>
                       <Switch

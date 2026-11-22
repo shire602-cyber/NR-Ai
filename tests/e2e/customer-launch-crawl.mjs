@@ -49,15 +49,15 @@ const STATEMENT_IMPORT_LOCALES = [
   {
     lang: "en",
     dir: "ltr",
-    title: "CSV bank statements",
-    action: "Upload a CSV statement",
+    title: "Bank reconciliation",
+    action: "Import statement",
     dialog: "Import Bank Statement",
   },
   {
     lang: "ar",
     dir: "rtl",
-    title: "كشوف الحساب البنكي بصيغة CSV",
-    action: "ارفع كشف حساب بصيغة CSV",
+    title: "التسوية البنكية",
+    action: "استيراد كشف",
     dialog: "استيراد كشف حساب البنك",
   },
 ];
@@ -121,7 +121,7 @@ const FORBIDDEN_API_STATUS_PATHS = [
 const FAIL_TEXT = /something went wrong|an error occurred|failed to load|unexpected error/i;
 const PRIVATE_TEXT = /WhatsApp|Document Chasing|Firm Command|NR Accountant|Value Ops/i;
 const PUBLIC_UNSUPPORTED_CLAIMS =
-  /SOC 2 Type II|FTA[-\s]?registered|FTA[-\s]?native|FTA Accredited|FTA VAT 201 filing|VAT 201 filing|Pre-filed|FTA · Live|bank-grade|bank-level|direct EmaraTax|VAT-compliant|UAE-compliant|No manual entry|Let AI Do the Rest|all data automatically|reports generated automatically|Untouched|Trusted by 500\+ UAE businesses|Join 500\+ UAE businesses|500\+ UAE businesses|hundreds of UAE businesses|UAE businesses on Muhasib|In VAT filed last quarter|AI categorisation accuracy|AI categorization accuracy|99(?:\.8)?%|99%\+|95%\+|50,000\+|25\+\s*hours|20\+\s*hours|filings meet every regulatory requirement/i;
+  /SOC 2 Type II|FTA[-\s]?registered|FTA[-\s]?native|FTA Accredited|FTA VAT 201 filing|VAT 201 filing|Pre-filed|FTA · Live|bank-grade|bank-level|direct EmaraTax|VAT-compliant|UAE-compliant|No manual entry|Let AI Do the Rest|all data automatically|reports generated automatically|Untouched|Connect Your Bank|Securely link your.*bank account|via encrypted feeds|UAE bank\s+feeds|Photo, email forward, or bank\s+feed|sync a bank line|Trusted by 500\+ UAE businesses|Join 500\+ UAE businesses|500\+ UAE businesses|hundreds of UAE businesses|UAE businesses on Muhasib|In VAT filed last quarter|AI categorisation accuracy|AI categorization accuracy|99(?:\.8)?%|99%\+|95%\+|50,000\+|25\+\s*hours|20\+\s*hours|filings meet every regulatory requirement/i;
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 async function resolveExecutablePath() {
@@ -427,7 +427,8 @@ async function main() {
     }
 
     if (homepage || route === "/") {
-      const question = /^\s*(?:How do I reconcile my bank account\?|كيف أطابق حسابي البنكي؟)\s*$/;
+      const question =
+        /^\s*(?:How do I reconcile my bank statement\?|كيف أطابق كشف حسابي البنكي؟)\s*$/;
       const summary = page.locator("summary").filter({ hasText: question });
       try {
         await summary.click();
@@ -705,7 +706,7 @@ async function main() {
       await fail("customer-invoice", { crash: e.message.slice(0, 150) });
     }
 
-    // Bank import: exercises the statement upload path with a realistic CSV.
+    // Bank import uses a representative CSV.
     try {
       const connRes = await page.request.post(
         `${BASE}/api/companies/${companyId}/bank-connections`,
@@ -777,9 +778,8 @@ async function main() {
     }
   }
 
-  // Exercise the same customer workflow even when integration status advertises a configured
-  // provider. Fulfill the read locally and catch any attempted provider mutation before it leaves
-  // the browser.
+  // A stale provider response must never replace the CSV workflow or trigger a request to
+  // any retired endpoint. Intercept those requests locally.
   await page.route("**/api/bank/providers", (route) =>
     route.fulfill({
       json: {
@@ -808,8 +808,11 @@ async function main() {
         await page.getByTestId("button-language-toggle").click();
         await page.locator(`html[lang="${lang}"][dir="${dir}"]`).waitFor();
       }
-      const bodyText = await crawlRoute("/bank-feeds", { locale: lang });
       const heading = page.getByRole("heading", { level: 1, name: title, exact: true });
+      const bodyText = await crawlRoute("/bank-reconciliation", {
+        locale: lang,
+        renderedData: heading,
+      });
       const mention = findBankFeedMention(bodyText);
       if (!(await heading.isVisible()) || !/\bCSV\b/.test(bodyText) || mention) {
         await fail(label, {
@@ -819,14 +822,11 @@ async function main() {
         });
       }
 
-      const importAction = page.getByTestId("button-feeds-import-statement");
+      const importAction = page.getByTestId("button-import-transactions");
       if ((await importAction.innerText()).trim() !== action) {
         await fail(`${label} action`, { expected: action, actual: await importAction.innerText() });
       }
       await importAction.click();
-      await page.waitForURL(
-        (url) => url.pathname === "/bank-reconciliation" && url.searchParams.get("import") === "1"
-      );
       const importDialog = page.getByRole("dialog", { name: dialog, exact: true });
       await importDialog.getByTestId("select-import-bank-account").waitFor();
       const dialogMention = findBankFeedMention(await importDialog.innerText());
@@ -836,6 +836,17 @@ async function main() {
           js: routeErrors,
           api: apiFailures,
         });
+      }
+      await page.keyboard.press("Escape");
+      await importDialog.waitFor({ state: "hidden" });
+
+      await page.goto(`${BASE}/bank-feeds`);
+      await page.waitForURL(
+        (url) => url.pathname === "/bank-reconciliation" && url.searchParams.get("import") === "1"
+      );
+      await importDialog.getByTestId("select-import-bank-account").waitFor();
+      if (routeErrors.length || apiFailures.length) {
+        await fail(`${label} legacy entry`, { js: routeErrors, api: apiFailures });
       }
       await page.keyboard.press("Escape");
       await importDialog.waitFor({ state: "hidden" });
