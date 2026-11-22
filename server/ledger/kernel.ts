@@ -895,8 +895,8 @@ export async function updateDraftEntry(
     status: "draft",
     source: pre.source,
   });
-  await assertPeriodNotLocked(pre.companyId, pre.date);
-  await assertPeriodNotLocked(pre.companyId, n.dateAt);
+  await assertPeriodNotLocked(pre.companyId, pre.date, ctx.tx);
+  await assertPeriodNotLocked(pre.companyId, n.dateAt, ctx.tx);
   return withLedgerTx(async (tx) => {
     await assertAccountsUsable(tx, pre.companyId, n.lines, false);
     // B1 (NC1) / C1: an edited draft is held to the control-account rule like a new entry,

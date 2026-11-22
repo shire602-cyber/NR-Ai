@@ -7,10 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateSync } from "otplib";
 import type { OutgoingEmail } from "../../server/outbox";
 import { useHarness } from "./harness";
-import {
-  BANK_AUTHORIZATION_RETURN_PATH,
-  LEGACY_BANK_AUTHORIZATION_RETURN_PATH,
-} from "../../shared/bank-authorization-paths";
+import { BANK_STATEMENT_ENTRY } from "../../shared/bank-statement-routes";
 import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 
 const profiles: Array<Record<string, unknown>> = [];
@@ -181,10 +178,10 @@ describe("R01-15 OAuth flow with a mocked provider", () => {
   });
 
   it.each(["google", "microsoft"])(
-    "keeps the clean authorization continuation through %s sign-in and MFA",
+    "sends legacy banking returns to statement import through %s sign-in and MFA",
     async (provider) => {
       const tenant = await h.createTenant({ name: "OAuth Return" });
-      request.nextPath = `${LEGACY_BANK_AUTHORIZATION_RETURN_PATH}?code=fixture&state=fixture`;
+      request.nextPath = `/banking/callback?code=fixture&state=fixture`;
       try {
         const account = profile(`return-${provider}`, tenant.email, provider);
         profiles.push(account);
@@ -193,7 +190,7 @@ describe("R01-15 OAuth flow with a mocked provider", () => {
         expect(signedIn.access).toBeTruthy();
         const success = new URL(signedIn.r.headers.get("location")!);
         expect(success.pathname).toBe("/auth/callback");
-        expect(success.searchParams.get("next")).toBe(BANK_AUTHORIZATION_RETURN_PATH);
+        expect(success.searchParams.get("next")).toBe(BANK_STATEMENT_ENTRY);
 
         const enrollment = await tenant.as.post("/api/auth/mfa/enroll", {});
         expect(enrollment.status, enrollment.text).toBe(200);
@@ -207,16 +204,16 @@ describe("R01-15 OAuth flow with a mocked provider", () => {
         const mfa = new URL(challenged.r.headers.get("location")!);
         expect(mfa.pathname).toBe("/login");
         expect(mfa.searchParams.get("mfa")).toBe("1");
-        expect(mfa.searchParams.get("next")).toBe(BANK_AUTHORIZATION_RETURN_PATH);
+        expect(mfa.searchParams.get("next")).toBe(BANK_STATEMENT_ENTRY);
       } finally {
         request.nextPath = "/dashboard";
       }
     }
   );
 
-  it("resumes the clean authorization path after Microsoft mailbox proof", async () => {
+  it("resumes statement import after Microsoft mailbox proof", async () => {
     const tenant = await h.createTenant();
-    request.nextPath = `${LEGACY_BANK_AUTHORIZATION_RETURN_PATH}?code=fixture&state=fixture`;
+    request.nextPath = `/banking/callback?code=fixture&state=fixture`;
     try {
       profiles.push(microsoft("statement-return-mailbox", tenant.email));
       const pending = await callback("microsoft");
@@ -226,7 +223,7 @@ describe("R01-15 OAuth flow with a mocked provider", () => {
       expect(verified.status, verified.text).toBe(200);
       const destination = new URL(verified.body.redirectTo);
       expect(destination.pathname).toBe("/auth/callback");
-      expect(destination.searchParams.get("next")).toBe(BANK_AUTHORIZATION_RETURN_PATH);
+      expect(destination.searchParams.get("next")).toBe(BANK_STATEMENT_ENTRY);
     } finally {
       request.nextPath = "/dashboard";
     }

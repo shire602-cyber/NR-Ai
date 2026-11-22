@@ -43,6 +43,7 @@ import {
 import { db } from "../db";
 import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { InsightStorage } from "./insights";
+import { customerVisibleNotification } from "./notification-visibility";
 
 export class EngagementStorage extends InsightStorage {
   // Notifications
@@ -50,7 +51,13 @@ export class EngagementStorage extends InsightStorage {
     return await db
       .select()
       .from(notifications)
-      .where(and(eq(notifications.userId, userId), eq(notifications.isDismissed, false)))
+      .where(
+        and(
+          eq(notifications.userId, userId),
+          eq(notifications.isDismissed, false),
+          customerVisibleNotification()
+        )
+      )
       .orderBy(desc(notifications.createdAt));
   }
 
@@ -62,7 +69,8 @@ export class EngagementStorage extends InsightStorage {
         and(
           eq(notifications.userId, userId),
           eq(notifications.isRead, false),
-          eq(notifications.isDismissed, false)
+          eq(notifications.isDismissed, false),
+          customerVisibleNotification()
         )
       );
     return result.length;
@@ -79,7 +87,13 @@ export class EngagementStorage extends InsightStorage {
     const [notification] = await db
       .update(notifications)
       .set({ isRead: true, readAt: new Date() })
-      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
+      .where(
+        and(
+          eq(notifications.id, id),
+          eq(notifications.userId, userId),
+          customerVisibleNotification()
+        )
+      )
       .returning();
     return notification;
   }
@@ -88,14 +102,20 @@ export class EngagementStorage extends InsightStorage {
     await db
       .update(notifications)
       .set({ isRead: true, readAt: new Date() })
-      .where(eq(notifications.userId, userId));
+      .where(and(eq(notifications.userId, userId), customerVisibleNotification()));
   }
 
   async dismissNotification(id: string, userId: string): Promise<Notification | undefined> {
     const [notification] = await db
       .update(notifications)
       .set({ isDismissed: true })
-      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
+      .where(
+        and(
+          eq(notifications.id, id),
+          eq(notifications.userId, userId),
+          customerVisibleNotification()
+        )
+      )
       .returning();
     return notification;
   }

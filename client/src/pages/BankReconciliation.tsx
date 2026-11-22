@@ -292,7 +292,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
   const isActive = () => !!companyId && effectiveCompanyId(companies, companyId) === companyId;
 
   const [selectedBankAccount, setSelectedBankAccount] = useState<string>("");
-  // `?import=1` opens the statement import straight away.
+  // `?import=1` (e.g. from the legacy banking route) opens the statement import straight away.
   const [importDialogOpen, setImportDialogOpen] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -1623,7 +1623,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1.5">
                   <p className="font-medium text-xs">
-                    <T k="pageLabels.supportedFormats" />
+                    <T k="banking.import.csvDetails" />
                   </p>
                   <div className="flex items-center gap-2 text-xs">
                     <FileSpreadsheet className="w-3.5 h-3.5 text-success" />

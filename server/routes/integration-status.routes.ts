@@ -1,10 +1,10 @@
 import type { Express, Request, Response } from "express";
-import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import { authMiddleware, adminMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/email.service";
 import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
 import { isObjectStorageConfigured, objectStorageBackend } from "../services/fileStorage";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { connectorStatuses } from "../services/connectors/oauth";
 
 /**
@@ -80,12 +80,12 @@ export function registerIntegrationStatusRoutes(app: Express) {
           unlocks: "Subscriptions, checkout, plan upgrades, tier enforcement",
         },
         {
-          key: "bankStatementUpload",
-          name: "Bank CSV reconciliation",
+          key: "bankStatementCsvImport",
+          name: "CSV statement import",
           configured: true,
-          detail: bankStatementCopy.en,
+          detail: BANK_RECONCILIATION_COPY.en,
           requiredEnv: [],
-          unlocks: "CSV reconciliation",
+          unlocks: "Statement reconciliation",
         },
         {
           key: "push",

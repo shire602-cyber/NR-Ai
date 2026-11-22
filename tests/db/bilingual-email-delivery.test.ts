@@ -100,7 +100,7 @@ describe("customer email delivery for an Arabic company", () => {
     const csrf = await h.anon.get("/api/csrf-token");
     const cookie = csrf.headers
       .getSetCookie()
-      .map((header) => header.split(";")[0])
+      .map((value) => value.split(";")[0])
       .join("; ");
     const publicInvite = await h.anon.post(
       "/api/portal-invitations/lookup",

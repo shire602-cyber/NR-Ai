@@ -207,6 +207,17 @@ jobs:
       - name: Public launch crawl
         run: npm run e2e:customer:public
 
+      - name: Bilingual marketing route and accessibility crawl
+        run: npm run e2e:marketing
+
+      - name: Bilingual firm website crawl
+        run: |
+          python3 -m http.server 8080 --bind 127.0.0.1 --directory sites/najma-al-raeda-website > /tmp/firm-site.log 2>&1 &
+          firm_site_pid=$!
+          trap 'kill "$firm_site_pid"' EXIT
+          curl --fail --silent --retry 5 --retry-connrefused http://127.0.0.1:8080/ -o /dev/null
+          npm run e2e:firm-site
+
       - name: Server log on failure
         if: failure()
         run: tail -100 /tmp/server.log || true

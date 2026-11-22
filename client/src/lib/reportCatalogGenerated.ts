@@ -203,7 +203,8 @@ export const REPORT_UI_TEXT: Record<string, string> = {
   checkCashPressure: "Check cash pressure",
   openOwnerReportsForReceivables: "Open owner reports for receivables, runway, VAT, and profit.",
   queueTheWeeklyPack: "Queue the weekly pack",
-  sendTheOwnerPackAfter: "Send the owner pack after bank, invoice, and receipt updates.",
+  sendTheOwnerPackAfter:
+    "Send the owner pack after reconciling the bank CSV and updating invoices and receipts.",
   noDeliveryTime: "No delivery time",
   revenue: "Revenue",
   expenses: "Expenses",

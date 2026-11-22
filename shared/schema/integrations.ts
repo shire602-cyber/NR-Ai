@@ -143,7 +143,7 @@ export type InsertInvoiceTemplate = z.infer<typeof insertInvoiceTemplateSchema>;
 export type InvoiceTemplate = typeof invoiceTemplates.$inferSelect;
 
 // ===========================
-// Statement associations and authorized processing records
+// Bank statement sources and historical connection records
 // ===========================
 export const bankConnections = pgTable(
   "bank_connections",
@@ -155,7 +155,7 @@ export const bankConnections = pgTable(
       .notNull()
       .references(() => companies.id, { onDelete: "cascade" }),
     provider: text("provider").notNull().default("manual"), // manual | lean | ...
-    connectionType: text("connection_type").notNull().default("statement"), // statement | open_banking
+    connectionType: text("connection_type").notNull().default("statement"), // historical rows can carry a retired mode
     bankName: text("bank_name"),
     accountName: text("account_name"),
     bankAccountId: uuid("bank_account_id"), // optional link to bank_accounts ledger record

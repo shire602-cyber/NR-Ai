@@ -108,7 +108,6 @@
   "forms.claim.titlePlaceholder": "e.g. Client visit, Abu Dhabi, March",
   "forms.claim.category": "Category",
   "forms.claim.amountAed": "Amount (AED)",
-  "forms.claim.receiptUrlHint": "Link to the receipt",
   "forms.claim.total": "Claim total",
   "forms.claim.update": "Update claim",
   "forms.claim.saveDraft": "Save as draft",

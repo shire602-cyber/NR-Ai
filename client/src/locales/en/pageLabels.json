@@ -1039,5 +1039,5 @@
   "pageLabels.backupColType": "Type",
   "pageLabels.backupColSize": "Size",
   "pageLabels.investingActivitiesHint": "Cash from buying or selling long-term assets",
-  "pageLabels.csvStatementImport": "CSV statement import"
+  "pageLabels.bankCsvStatementImport": "CSV statement import"
 }

@@ -5,10 +5,9 @@ import { useTranslation } from "@/lib/i18n";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  replaceOnLoginRedirect?: boolean;
 }
 
-export function ProtectedRoute({ children, replaceOnLoginRedirect = false }: ProtectedRouteProps) {
+export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const [, setLocation] = useLocation();
   const { data: user, isLoading, isError } = useCurrentUser();
   const { t } = useTranslation();
@@ -29,12 +28,12 @@ export function ProtectedRoute({ children, replaceOnLoginRedirect = false }: Pro
           ? next
           : "/dashboard";
       const target = `/login?next=${encodeURIComponent(safeNext)}`;
-      setLocation(target, { replace: replaceOnLoginRedirect });
+      setLocation(target);
       if (`${window.location.pathname}${window.location.search}` !== target) {
         window.location.replace(target);
       }
     }
-  }, [isLoading, isError, user, setLocation, replaceOnLoginRedirect]);
+  }, [isLoading, isError, user, setLocation]);
 
   if (isPortalUser) return null;
   if (user) return <>{children}</>;

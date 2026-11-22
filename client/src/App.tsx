@@ -6,7 +6,8 @@ import { landingPathFor, onboardingRedirectTarget } from "@/lib/app-landing";
 import "@shared/zod-config";
 import { useCallback, useEffect, Suspense } from "react";
 import { lazyWithReload, clearChunkReloadGuards } from "@/lib/lazyWithReload";
-import { Switch, Route, useLocation, Link } from "wouter";
+import { Switch, Route, Redirect, useLocation, Link } from "wouter";
+import { BANK_STATEMENT_ENTRY, isRetiredBankReturnPath } from "@shared/bank-statement-routes";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useIsFetching } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -17,7 +18,6 @@ import { AppSidebar } from "@/components/layout/AppSidebar";
 import { PortalLayout } from "@/components/layout/PortalLayout";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { isAppSectionPath } from "@/components/layout/app-sections";
-import { useBankAuthorizationReturn } from "@/lib/bank-authorization-return";
 import { ErrorBoundary, SectionBoundary } from "@/components/ErrorBoundary";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -143,7 +143,6 @@ const DocumentChasing = lazyWithReload(() => import("@/pages/DocumentChasing"));
 const Feedback = lazyWithReload(() => import("@/pages/Feedback"));
 
 const Onboarding = lazyWithReload(() => import("@/pages/Onboarding"));
-const BankFeeds = lazyWithReload(() => import("@/pages/BankFeeds"));
 const BankReconciliation = lazyWithReload(() => import("@/pages/BankReconciliation"));
 const BankAccounts = lazyWithReload(() => import("@/pages/BankAccounts"));
 const EvidenceCenter = lazyWithReload(() => import("@/pages/EvidenceCenter"));
@@ -499,22 +498,10 @@ function FirmRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function AuthorizationCapture({ failed, retry }: { failed: boolean; retry: () => void }) {
-  if (!failed) return <PageLoader variant="form" />;
-  return (
-    <main className="mx-auto w-full max-w-3xl p-4 sm:p-8">
-      <Suspense fallback={<PageLoader variant="form" />}>
-        <BankFeeds retryCapture={retry} />
-      </Suspense>
-    </main>
-  );
-}
-
 function Router() {
   const [location, setLocation] = useLocation();
   const { data: user, isLoading: userLoading } = useCurrentUser();
   const pathname = pathnameOnly(location);
-  const authorization = useBankAuthorizationReturn(pathname);
 
   // Redirect authenticated users from landing to their home (portal or main dashboard)
   useEffect(() => {
@@ -522,6 +509,8 @@ function Router() {
       setLocation(landingPathFor(user));
     }
   }, [pathname, user, setLocation]);
+
+  if (isRetiredBankReturnPath(pathname)) return <Redirect to={BANK_STATEMENT_ENTRY} replace />;
 
   // Guard: authenticated users at root - wait for redirect
   if (pathname === "/" && userLoading) {
@@ -580,31 +569,6 @@ function Router() {
           </Suspense>
         </TrialAccessGate>
       </ProtectedRoute>
-    );
-  }
-
-  // Scrub the URL before the sign-in gate builds its return link. The callback API resolves
-  // the workspace independently of the active workspace or its loading state.
-  if (authorization.isCallback) {
-    return (
-      <Switch>
-        <Route path="/banking/callback">
-          <AuthorizationCapture failed={authorization.failed} retry={authorization.retry} />
-        </Route>
-        <Route path="/bank-feeds/callback">
-          {authorization.cleaning ? (
-            <AuthorizationCapture failed={authorization.failed} retry={authorization.retry} />
-          ) : (
-            <ProtectedRoute replaceOnLoginRedirect>
-              <main className="mx-auto w-full max-w-3xl p-4 sm:p-8">
-                <Suspense fallback={<PageLoader variant="form" />}>
-                  <BankFeeds resumeAuthorization />
-                </Suspense>
-              </main>
-            </ProtectedRoute>
-          )}
-        </Route>
-      </Switch>
     );
   }
 
@@ -703,7 +667,7 @@ function Router() {
             <Route path="/sales/receive-payment" component={ReceivePayment} />
             <Route path="/sales/cash-sale" component={CashSale} />
             <Route path="/banking">
-              <RedirectTo to="/bank-reconciliation" />
+              <Redirect to={BANK_STATEMENT_ENTRY} replace />
             </Route>
             <Route path="/compliance">
               <RedirectTo to="/compliance-calendar" />
@@ -806,7 +770,7 @@ function Router() {
             <Route path="/bank-reconciliation" component={BankReconciliation} />
             <Route path="/bank-accounts" component={BankAccounts} />
             <Route path="/bank-feeds">
-              <RedirectTo to="/bank-reconciliation" />
+              <Redirect to={BANK_STATEMENT_ENTRY} replace />
             </Route>
             <Route path="/evidence-center" component={EvidenceCenter} />
             <Route path="/vat-filing" component={VATFiling} />

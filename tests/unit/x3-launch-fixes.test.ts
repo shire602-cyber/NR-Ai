@@ -227,7 +227,7 @@ describe("X3 pricing makes only true claims", () => {
     expect(text).not.toMatch(/AI receipt reading/i);
     expect(text).toContain("E-invoicing (PINT AE)");
     expect(text).toContain("Sending needs an accredited service provider");
-    expect(text).not.toMatch(/coming soon/i);
+    expect(text).not.toMatch(/coming\s+soon/i);
   });
 });
 

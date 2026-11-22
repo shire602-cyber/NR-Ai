@@ -108,7 +108,6 @@
   "forms.claim.titlePlaceholder": "مثال: زيارة عميل، أبوظبي، مارس",
   "forms.claim.category": "الفئة",
   "forms.claim.amountAed": "المبلغ (د.إ)",
-  "forms.claim.receiptUrlHint": "رابط الإيصال",
   "forms.claim.total": "إجمالي المطالبة",
   "forms.claim.update": "تحديث المطالبة",
   "forms.claim.saveDraft": "حفظ كمسودة",

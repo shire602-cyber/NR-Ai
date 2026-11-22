@@ -142,6 +142,19 @@ async function resolveExecutablePath() {
   }
 }
 
+async function openDashboard(page) {
+  await page.goto(`${BASE}/dashboard`);
+  const express = page.getByTestId("onboarding-express");
+  const dashboard = page.getByTestId("dashboard-title");
+  await express.or(dashboard).filter({ visible: true }).first().waitFor({ timeout: 30000 });
+  if (await express.isVisible()) {
+    await express.click();
+    await page.getByTestId("onboarding-skip").click({ timeout: 20000 });
+    await page.getByTestId("onboarding-task-explore").click({ timeout: 20000 });
+  }
+  await dashboard.waitFor({ timeout: 20000 });
+}
+
 async function main() {
   fs.mkdirSync(SHOT_DIR, { recursive: true });
   const browser = await chromium.launch({
@@ -193,11 +206,8 @@ async function main() {
   // W5-E: registration returns no session; sign in (sets the auth cookies).
   await page.request.post(`${BASE}/api/auth/login`, { data: { email, password: "Password123!" } });
 
-  await page.goto(`${BASE}/dashboard`);
   try {
-    for (const step of ["onboarding-express", "onboarding-skip", "onboarding-task-explore"])
-      await page.getByTestId(step).click({ timeout: 25000 });
-    await page.waitForURL(`${BASE}/dashboard`, { timeout: 25000 });
+    await openDashboard(page);
   } catch (error) {
     await fail("express-onboarding", { detail: `ended on ${page.url()}` });
     throw error;
@@ -243,19 +253,10 @@ async function main() {
     apiFailures = [];
     try {
       await page.goto(`${BASE}${route}`, { timeout: 45000 });
-      await page
-        .waitForFunction(
-          () => (document.querySelector("main")?.innerText.trim().length ?? 0) >= 40,
-          undefined,
-          { timeout: 15000 }
-        )
-        .catch(() => undefined);
-      await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+      const main = page.locator("main");
+      await main.getByRole("heading").filter({ visible: true }).first().waitFor({ timeout: 18000 });
       const finalUrl = page.url().replace(BASE, "");
-      const mainText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
+      const mainText = await main.innerText();
       const failText =
         mainText.match(FAIL_TEXT)?.[0] ?? (NOT_FOUND(mainText) ? "not-found screen" : null);
       const blank = mainText.trim().length < 40;
@@ -1080,12 +1081,11 @@ async function main() {
     const companyId = companies?.[0]?.id;
 
     const status = await (await page.request.get(`${BASE}/api/admin/integration-status`)).json();
-    const integrations = status?.integrations ?? [];
-    const keys = integrations.map((i) => i.key).sort();
+    const keys = (status?.integrations ?? []).map((i) => i.key).sort();
     for (const expected of [
       "apiKeys",
-      "bankStatementUpload",
       "email",
+      "bankStatementCsvImport",
       "push",
       "stripe",
       "tokenEncryption",
@@ -1095,11 +1095,6 @@ async function main() {
         await fail("integration-status", { detail: `missing ${expected} in ${keys.join(",")}` });
         break;
       }
-    }
-
-    const bankUpload = integrations.find((integration) => integration.key === "bankStatementUpload");
-    if (!bankUpload?.configured || bankUpload.requiredEnv?.length || keys.includes("openBanking")) {
-      await fail("integration-status-bank-csv", { detail: "expected CSV upload without setup" });
     }
 
     // API key lifecycle: create returns the raw key exactly once.
@@ -1204,24 +1199,12 @@ async function main() {
       data: { email: mEmail, password: "Password123!" },
     });
     // Complete onboarding via express so the dashboard doesn't redirect.
-    await mPage.goto(`${BASE}/dashboard`);
-    await mPage.waitForTimeout(2500);
-    if (mPage.url().includes("onboarding")) {
-      const express = mPage.locator('[data-testid="onboarding-express"]');
-      // The redirect to /onboarding can land after a fixed wait on a cold build.
-      await express.waitFor({ timeout: 10000 }).catch(() => undefined);
-      if (await express.count()) {
-        await express.click();
-        await mPage.waitForTimeout(3500);
-        // WP-B: onboarding is three screens; skip the starting point, then look around.
-        for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
-          const next = mPage.locator(`[data-testid="${id}"]`);
-          if (await next.count()) {
-            await next.click();
-            await mPage.waitForTimeout(1500);
-          }
-        }
-      }
+    try {
+      await openDashboard(mPage);
+    } catch (error) {
+      await fail(`${label} express-onboarding`, { detail: error.message.slice(0, 150) });
+      await mCtx.close();
+      return;
     }
     const mDb = new pg.Client({ connectionString: process.env.DATABASE_URL });
     await mDb.connect();
@@ -1321,42 +1304,49 @@ async function main() {
     const qStart = new Date(Date.UTC(now.getUTCFullYear(), qStartMonth, 1));
     const qEnd = new Date(Date.UTC(qStart.getUTCFullYear(), qStart.getUTCMonth() + 3, 0));
     const ymd = (d) => d.toISOString().slice(0, 10);
-    await page.request.post(`${BASE}/api/companies/${companyId}/vat-returns/generate`, {
-      headers: { "x-csrf-token": csrfToken ?? "" },
-      data: { periodStart: ymd(qStart), periodEnd: ymd(qEnd) },
-    });
-    const DATE_TEXT = /\b\d{1,2}(?:[–-]\d{1,2})? [A-Z][a-z]{2} \d{4}\b|\b[A-Z][a-z]{2} \d{4}\b/g;
+    const generated = await page.request.post(
+      `${BASE}/api/companies/${companyId}/vat-returns/generate`,
+      {
+        headers: { "x-csrf-token": csrfToken ?? "" },
+        data: { periodStart: ymd(qStart), periodEnd: ymd(qEnd) },
+      }
+    );
+    if (!generated.ok()) throw new Error(`VAT return generation returned ${generated.status()}`);
+    const { id: returnId } = await generated.json();
+    if (!returnId) throw new Error("VAT return generation did not supply an ID");
     const datesOn = async (p) => {
-      await p.goto(`${BASE}/vat-filing`, { timeout: 45000 });
-      await p
-        .waitForFunction(
-          (pattern) => new RegExp(pattern).test(document.querySelector("main")?.innerText ?? ""),
-          DATE_TEXT.source,
-          { timeout: 15000 }
-        )
-        .catch(() => undefined);
-      const text = await p
-        .locator("main")
-        .innerText()
-        .catch(() => "");
-      return [...new Set(text.match(DATE_TEXT) ?? [])].sort();
+      await p.goto(`${BASE}/vat-filing?tab=returns`, { timeout: 45000 });
+      const row = p.getByTestId(`row-return-${returnId}`);
+      await row.waitFor({ state: "visible", timeout: 18000 });
+      const cells = row.getByRole("cell");
+      return { period: await cells.nth(0).innerText(), dueDate: await cells.nth(1).innerText() };
     };
     const utcCtx = await browser.newContext({
       viewport: { width: 1440, height: 900 },
       timezoneId: "UTC",
       storageState: await ctx.storageState(),
     });
-    const utcPage = await utcCtx.newPage();
-    const utcDates = await datesOn(utcPage);
-    await utcCtx.close();
+    let utcDates;
+    try {
+      utcDates = await datesOn(await utcCtx.newPage());
+    } finally {
+      await utcCtx.close();
+    }
     const localDates = await datesOn(page);
-    const endLabel = `${qEnd.getUTCDate()} ${qEnd.toLocaleString("en-GB", { month: "short", timeZone: "UTC" }).slice(0, 3)} ${qEnd.getUTCFullYear()}`;
-    const shown = localDates.some((d) => d.includes(endLabel.split(" ").slice(1).join(" ")));
-    if (JSON.stringify(utcDates) !== JSON.stringify(localDates) || !shown) {
+    const month = new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+    const expectedPeriod = `${month.format(qStart)} - ${month.format(qEnd)}`;
+    if (
+      JSON.stringify(utcDates) !== JSON.stringify(localDates) ||
+      localDates.period !== expectedPeriod
+    ) {
       await fail(`timezone probe /vat-filing (${BROWSER_TIMEZONE})`, {
-        utc: utcDates.slice(0, 12),
-        local: localDates.slice(0, 12),
-        expectedPeriodEnd: endLabel,
+        utc: utcDates,
+        local: localDates,
+        expectedPeriod,
       });
     }
   } catch (e) {

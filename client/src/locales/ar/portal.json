@@ -399,6 +399,5 @@
   "portal.chip.column": "البوابة",
   "portal.switchLanguage": "English · الإنجليزية",
   "portal.doc.downloadFailed": "تعذّر تنزيل ملف PDF. يُرجى المحاولة مرة أخرى.",
-  "portal.eventType.bank.sync_failed": "تذكير باستيراد كشف بنكي بصيغة CSV",
   "portal.bulk.outcome.delivery_failed": "تعذّر إرسال البريد الإلكتروني"
 }
