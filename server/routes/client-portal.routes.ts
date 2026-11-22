@@ -62,14 +62,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /**
  * A signed-in user with an active binding to an active contact. The binding is the only source of
  * access: the user's type and any company membership are irrelevant here. `X-Portal-Account`
- * picks an active binding. Scoped document and message operations require the selected binding.
+ * picks one of the user's OWN bindings. An unavailable selection fails without switching scope.
  */
-async function requirePortalUser(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-  requireBinding = false
-): Promise<void> {
+async function requirePortalUser(req: Request, res: Response, next: NextFunction): Promise<void> {
+  res.set("Cache-Control", "no-store");
   const user = req.user as { id: string } | undefined;
   if (!user) {
     res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
@@ -77,7 +73,8 @@ async function requirePortalUser(
   }
   const header = req.headers["x-portal-account"];
   const preferred = typeof header === "string" && UUID_RE.test(header) ? header : null;
-  const binding = await portalAccountForUser(user.id, preferred, requireBinding);
+  const binding =
+    header === undefined || preferred ? await portalAccountForUser(user.id, preferred) : null;
   if (!binding) {
     const [removed] = await db
       .select({ id: customerPortalAccounts.id })
@@ -163,24 +160,29 @@ export function totalsByCurrency(
 }
 
 export function registerClientPortalRoutes(app: Express): void {
-  const pinnedReadChain: RequestHandler[] = [
+  const chain: RequestHandler[] = [
     authMiddleware as RequestHandler,
     (req, res, next) => {
-      requirePortalUser(req, res, next, !!req.get("X-Portal-Account")).catch(next);
+      requirePortalUser(req, res, next).catch(next);
     },
   ];
+
   const pinnedWriteChain: RequestHandler[] = [
     authMiddleware as RequestHandler,
     (req, res, next) => {
-      requirePortalUser(req, res, next, true).catch(next);
+      if (!req.get("X-Portal-Account")) {
+        res.set("Cache-Control", "no-store");
+        return next(new DomainError("PORTAL_ACCESS_REVOKED", 403));
+      }
+      requirePortalUser(req, res, next).catch(next);
     },
   ];
 
   app.get(
     "/api/client-portal/company",
-    ...pinnedReadChain,
+    ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      const { company, contact, accountId } = scopeOf(req);
+      const { accountId, company, contact } = scopeOf(req);
       // The accounting firm serving this client (active engagement), for the portal header.
       const [firm] = await db
         .select({ name: firms.name })
@@ -189,7 +191,7 @@ export function registerClientPortalRoutes(app: Express): void {
         .where(and(eq(firmClientLinks.companyId, company.id), eq(firmClientLinks.status, "active")))
         .limit(1);
       res.json({
-        accountId,
+        portalAccountId: accountId,
         firmName: firm?.name ?? null,
         id: company.id,
         name: company.name,
@@ -205,6 +207,7 @@ export function registerClientPortalRoutes(app: Express): void {
     "/api/client-portal/accounts",
     authMiddleware as RequestHandler,
     asyncHandler(async (req: Request, res: Response) => {
+      res.set("Cache-Control", "no-store");
       const userId = (req.user as { id: string }).id;
       const bindings = await portalAccountsForUser(userId);
       const out = [];
@@ -213,7 +216,7 @@ export function registerClientPortalRoutes(app: Express): void {
           storage.getCompany(b.companyId),
           storage.getCustomerContact(b.contactId),
         ]);
-        if (!company || !contact || !contact.isActive) continue;
+        if (!company || !contact || contact.companyId !== company.id || !contact.isActive) continue;
         out.push({
           id: b.id,
           company: { id: company.id, name: company.name, logoUrl: company.logoUrl ?? null },
@@ -226,7 +229,7 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.get(
     "/api/client-portal/dashboard",
-    ...pinnedReadChain,
+    ...chain,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, contact } = scopeOf(req);
       const all = await contactInvoices(companyId, contact.id);
@@ -267,7 +270,7 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.get(
     "/api/client-portal/invoices",
-    ...pinnedReadChain,
+    ...chain,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, contact } = scopeOf(req);
       res.json(await contactInvoices(companyId, contact.id));
@@ -276,7 +279,7 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.get(
     "/api/client-portal/invoices/:id/pdf",
-    ...pinnedReadChain,
+    ...chain,
     asyncHandler(async (req: Request, res: Response) => {
       const scope = scopeOf(req);
       const invoice = await ownInvoice(scope, req.params.id);
@@ -295,7 +298,7 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.get(
     "/api/client-portal/invoices/:id/einvoice",
-    ...pinnedReadChain,
+    ...chain,
     asyncHandler(async (req: Request, res: Response) => {
       const invoice = await ownInvoice(scopeOf(req), req.params.id);
       if (!invoice || !invoice.einvoiceXml) {
@@ -315,7 +318,7 @@ export function registerClientPortalRoutes(app: Express): void {
   // Pay now: the same hosted checkout as the token portal, for the customer's own open invoice.
   app.post(
     "/api/client-portal/invoices/:id/pay",
-    ...pinnedReadChain,
+    ...chain,
     asyncHandler(async (req: Request, res: Response) => {
       const scope = scopeOf(req);
       const invoice = await ownInvoice(scope, req.params.id);
@@ -342,7 +345,7 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.get(
     "/api/client-portal/documents",
-    ...pinnedReadChain,
+    ...chain,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, contact } = scopeOf(req);
       res.json(await listVaultDocuments(companyId, { contactId: contact.id }));
@@ -355,7 +358,7 @@ export function registerClientPortalRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, contact, userId, accountId } = scopeOf(req);
       const { meta, file } = await readValidatedUpload(req);
-      if (!(await portalAccountForUser(userId, accountId, true))) {
+      if (!(await portalAccountForUser(userId, accountId))) {
         throw new DomainError("PORTAL_ACCESS_REVOKED", 403);
       }
       const doc = await createVaultDocument({
@@ -378,7 +381,7 @@ export function registerClientPortalRoutes(app: Express): void {
   // R16-15: the customer's statement of account (not the company's P&L / balance sheet).
   app.get(
     "/api/client-portal/statements",
-    ...pinnedReadChain,
+    ...chain,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, contact, accountId } = scopeOf(req);
       const q = statementQuery.parse(req.query);
@@ -402,7 +405,7 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.get(
     "/api/client-portal/messages",
-    ...pinnedReadChain,
+    ...chain,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, contact } = scopeOf(req);
       const rows = await db
@@ -442,7 +445,7 @@ export function registerClientPortalRoutes(app: Express): void {
           .limit(1);
         if (!thread) throw new DomainError("THREAD_NOT_FOUND", 404, undefined, "Thread not found");
       }
-      if (!(await portalAccountForUser(userId, accountId, true))) {
+      if (!(await portalAccountForUser(userId, accountId))) {
         throw new DomainError("PORTAL_ACCESS_REVOKED", 403);
       }
       const [message] = await db

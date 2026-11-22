@@ -1,3 +1,4 @@
+import { bankCsvWorkflow } from "../../shared/banking-copy";
 /**
  * D4: server-generated copy is described as stable keys + params and rendered from the en/ar
  * catalogs. Covers every template round trip, legacy stored English rows, catalog parity and
@@ -193,6 +194,21 @@ describe("server copy templates", () => {
     expect(localizeNotification({ title: "Hello", message: "World" }, ar)).toEqual({
       title: "Hello",
       message: "World",
+    });
+  });
+
+  it("offers CSV reconciliation in both locales for an existing bank statement notice", () => {
+    const row = withNotificationCopy({
+      eventKey: "bank.sync_failed:legacy-notice",
+      title: "Previous title",
+      message: "Previous message",
+    });
+
+    expect(row.title).toBe("Bank reconciliation");
+    expect(row.message).toBe(bankCsvWorkflow.en);
+    expect(localizeNotification(row, ar, "ar")).toEqual({
+      title: "المطابقة البنكية",
+      message: bankCsvWorkflow.ar,
     });
   });
 

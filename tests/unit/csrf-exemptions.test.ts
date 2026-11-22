@@ -40,7 +40,8 @@ describe("STEP5 CSRF exemptions (G3)", () => {
   });
 
   it("the invitation accept and the authenticated portal are protected", () => {
-    expect(isCsrfExemptPath(`/api/portal-invitations/${TOKEN}/accept`)).toBe(false);
+    expect(isCsrfExemptPath("/api/portal-invitations/lookup")).toBe(false);
+    expect(isCsrfExemptPath("/api/portal-invitations/accept")).toBe(false);
     expect(isCsrfExemptPath("/api/client-portal/messages")).toBe(false);
     expect(isCsrfExemptPath("/api/companies/x/portal-invitations/bulk")).toBe(false);
   });

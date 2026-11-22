@@ -297,11 +297,7 @@
   "portal.invite.send": "Send invitation",
   "portal.invite.failed": "Could not send the invitation.",
   "portal.invite.sentTo": "Invitation sent to {email}.",
-  "portal.invite.queued": "Invitation queued. It will send when email is configured.",
-  "portal.invite.linkCreated": "Invitation created. Copy the link to share it.",
-  "portal.invite.linkTitle": "Invitation link",
-  "portal.invite.linkBody": "Email is not set up, so nothing was sent. Share this link with the customer. It is shown only now and works once.",
-  "portal.invite.copyLink": "Copy link",
+  "portal.invite.queued": "Invitation queued for email delivery.",
   "portal.invite.revoked": "Invitation cancelled.",
   "portal.invite.nameLabel": "Name (optional)",
   "portal.invite.languageLabel": "Email language",
@@ -402,5 +398,7 @@
   "portal.account.signOutAll": "Sign out everywhere",
   "portal.chip.column": "Portal",
   "portal.switchLanguage": "العربية",
-  "portal.doc.downloadFailed": "The PDF could not be downloaded. Please try again."
+  "portal.doc.downloadFailed": "The PDF could not be downloaded. Please try again.",
+  "portal.eventType.bank.sync_failed": "Bank statement review",
+  "portal.bulk.outcome.delivery_failed": "Email delivery failed"
 }

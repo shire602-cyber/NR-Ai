@@ -1,38 +1,32 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { T } from "@/components/layout/T";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { useState, useRef } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Upload, FileText, FileImage, File, FolderOpen, Loader2, CheckCircle2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ErrorState } from "@/components/ui/error-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DateText } from "@/components/documents/DateText";
-import { usePortalSupplier, usePortalSupplierQuery } from "@/lib/portal-supplier";
-import { apiUrl } from "@/lib/api";
-import { getAuthHeaders } from "@/lib/auth";
+import { fetchPortalResource, portalQuery } from "@/lib/queryClient";
+import { portalRequestHeaders } from "@/lib/portal-state";
 import { withCsrfHeader } from "@/lib/csrf";
-import { failedResponseMessage } from "@/lib/validation-messages";
 
 /** W4-D (R16-09): real multipart upload; the server sniffs the bytes and stores them. */
-async function uploadDocument({ file, accountId }: { file: File; accountId: string }) {
+async function uploadDocument(file: File, supplier: string) {
   const form = new FormData();
   form.append("name", file.name.replace(/\.[^.]+$/, ""));
   form.append("category", "other");
   form.append("file", file, file.name);
-  let headers: Record<string, string> = { ...getAuthHeaders(), "X-Portal-Account": accountId };
-  if (!headers.Authorization) headers = await withCsrfHeader("POST", headers);
-  const res = await fetch(apiUrl("/api/client-portal/documents"), {
+  const headers = await withCsrfHeader("POST", portalRequestHeaders(supplier));
+  const res = await fetchPortalResource("/api/client-portal/documents", {
     method: "POST",
     headers,
     body: form,
-    credentials: "include",
   });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(await failedResponseMessage(res.status, body, `HTTP ${res.status}`));
-  return body;
+  return res.json();
 }
 import { useToast } from "@/hooks/use-toast";
 
@@ -61,23 +55,19 @@ function formatBytes(bytes: number | null) {
 }
 
 export default function PortalDocuments() {
+  const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const qc = useQueryClient();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
-  const uploadAccount = useRef<string | undefined>(undefined);
-  const company = usePortalSupplier()?.company;
 
-  const {
-    data: documents = [],
-    isLoading,
-    isLoadingError,
-    refetch,
-  } = usePortalSupplierQuery<any[]>("portal-documents", "documents");
+  const { data: documents = [], isLoading } = useQuery<any[]>({
+    ...portalQuery("/api/client-portal/documents", supplier),
+  });
 
   const uploadMutation = useMutation({
-    mutationFn: uploadDocument,
+    mutationFn: (file: File) => uploadDocument(file, supplier),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-documents"] });
       toast({
@@ -95,24 +85,19 @@ export default function PortalDocuments() {
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    const accountId = uploadAccount.current;
-    uploadAccount.current = undefined;
-    if (!file || !accountId) return;
+    if (!file) return;
     setUploading(true);
     try {
-      await uploadMutation.mutateAsync({ file, accountId });
+      await uploadMutation.mutateAsync(file);
     } catch {
-      // The mutation displays the localized error.
+      // The mutation reports upload failures to the customer.
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
     }
   }
 
-  const pick = () => {
-    uploadAccount.current = company?.accountId;
-    if (uploadAccount.current) fileRef.current?.click();
-  };
+  const pick = () => fileRef.current?.click();
 
   return (
     <div className="mx-auto max-w-[960px] space-y-6">
@@ -127,11 +112,7 @@ export default function PortalDocuments() {
         title={t["pages.documents"]}
         description={t["portal.doc.documentsHint"]}
         primaryAction={
-          <Button
-            onClick={pick}
-            disabled={!company?.accountId || uploading}
-            data-testid="button-portal-upload"
-          >
+          <Button onClick={pick} disabled={uploading} data-testid="button-portal-upload">
             {uploading ? (
               <Loader2 className="h-4 w-4 me-2 animate-spin" aria-hidden />
             ) : (
@@ -148,8 +129,6 @@ export default function PortalDocuments() {
             <div className="flex h-32 items-center justify-center">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
             </div>
-          ) : isLoadingError ? (
-            <ErrorState compact onRetry={() => void refetch()} />
           ) : documents.length === 0 ? (
             <EmptyState
               headingLevel="h2"

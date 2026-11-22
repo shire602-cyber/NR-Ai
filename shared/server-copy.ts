@@ -1477,20 +1477,29 @@ export function notificationCopy(
   };
 }
 
-/** Attach `copy` (stable keys + params) to a notification for API/socket responses. */
-export function bankingNotificationCopy<
-  T extends { title: string; message: string; eventKey?: string | null },
->(n: T): T {
-  return n.eventKey?.startsWith("bank.sync_failed:")
-    ? { ...n, title: "Bank reconciliation", message: bankCsvWorkflow.en }
-    : n;
+type StoredNotificationText = { title: string; message: string; eventKey?: string | null };
+
+/** Apply current wording when rendering a stored notification. */
+export function currentNotificationText({
+  title,
+  message,
+  eventKey,
+}: StoredNotificationText): { title: string; message: string } {
+  if (eventKey?.startsWith("bank.sync_failed:")) {
+    return notificationCopy(
+      "notification.bankSyncFailed.title",
+      "notification.bankSyncFailed.message"
+    );
+  }
+  return { title, message };
 }
 
-export function withNotificationCopy<
-  T extends { title: string; message: string; eventKey?: string | null },
->(n: T): T & { copy: NotificationCopyDescriptor } {
-  const display = bankingNotificationCopy(n);
-  return { ...display, copy: describeNotificationCopy(display) };
+/** Attach `copy` (stable keys + params) to a notification for API/socket responses. */
+export function withNotificationCopy<T extends StoredNotificationText>(
+  n: T
+): T & { copy: NotificationCopyDescriptor } {
+  const current = currentNotificationText(n);
+  return { ...n, ...current, copy: describeNotificationCopy(current) };
 }
 
 /** Key + params for a stored report-delivery run error or handoff sentence, or null. */

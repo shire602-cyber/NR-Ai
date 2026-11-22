@@ -1,5 +1,7 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { T } from "@/components/layout/T";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { CircleAlert, FileText, FolderOpen, PartyPopper, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,8 +9,6 @@ import { Alert } from "@/components/ui/alert";
 import { BalanceSummary } from "@/components/portal/BalanceSummary";
 import { PORTAL_WELCOME_KEY } from "@/lib/portal-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ErrorState } from "@/components/ui/error-state";
-import { CardListSkeleton } from "@/components/ui/loading-skeletons";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
@@ -21,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { usePortalSupplier, usePortalSupplierQuery } from "@/lib/portal-supplier";
+import { portalQuery } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { DateText } from "@/components/documents/DateText";
 
@@ -44,20 +44,19 @@ interface PortalDocumentRow {
  * documents shared with the accountant. Content width 960, centred.
  */
 export default function PortalDashboard() {
+  const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
-  const {
-    data,
-    isLoading,
-    error: dashboardError,
-    refetch: refetchDashboard,
-  } = usePortalSupplierQuery<any>("portal-dashboard", "dashboard", 60_000);
-  const {
-    data: documents = [],
-    isLoading: documentsLoading,
-    isLoadingError: documentsFailed,
-    refetch: refetchDocuments,
-  } = usePortalSupplierQuery<PortalDocumentRow[]>("portal-documents", "documents");
-  const company = usePortalSupplier()?.company;
+  const { data, isLoading } = useQuery({
+    ...portalQuery("/api/client-portal/dashboard", supplier),
+  });
+  const { data: documents = [] } = useQuery<PortalDocumentRow[]>({
+    ...portalQuery("/api/client-portal/documents", supplier),
+  });
+
+  const { data: company } = useQuery<{ name?: string }>({
+    ...portalQuery("/api/client-portal/company", supplier),
+    staleTime: 5 * 60 * 1000,
+  });
   const [welcome, setWelcome] = useState(() => {
     try {
       return window.localStorage.getItem(PORTAL_WELCOME_KEY) === "1";
@@ -138,11 +137,7 @@ export default function PortalDashboard() {
           )}
         </CardHeader>
         <CardContent className="p-0">
-          {isLoading ? (
-            <CardListSkeleton className="p-4" count={3} />
-          ) : dashboardError && !data ? (
-            <ErrorState compact onRetry={() => void refetchDashboard()} />
-          ) : recentInvoices.length === 0 ? (
+          {!isLoading && recentInvoices.length === 0 ? (
             <EmptyState
               headingLevel="h2"
               icon={FileText}
@@ -210,11 +205,7 @@ export default function PortalDashboard() {
           )}
         </CardHeader>
         <CardContent className={documents.length ? "p-0" : undefined}>
-          {documentsLoading ? (
-            <CardListSkeleton count={2} />
-          ) : documentsFailed ? (
-            <ErrorState compact onRetry={() => void refetchDocuments()} />
-          ) : documents.length === 0 ? (
+          {documents.length === 0 ? (
             <EmptyState
               compact
               headingLevel="h2"

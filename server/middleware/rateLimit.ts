@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { getAccessTokenFromRequest } from "../services/auth-cookies.service";
+import { portalInviteLogPath } from "../http/portal-invite-privacy";
 
 const log = createLogger("rate-limit");
 
@@ -202,11 +203,12 @@ export function buildLimiter(cfg: RouteLimit) {
       const retryAfter = resetTime
         ? Math.max(1, Math.ceil((resetTime.getTime() - Date.now()) / 1000))
         : Math.ceil((options.windowMs as number) / 1000);
+      const invitePath = portalInviteLogPath(req.originalUrl || req.url);
       log.warn(
         {
           ip: req.ip,
-          key: rateLimitIdentity(req).key,
-          path: req.path,
+          key: invitePath ? undefined : rateLimitIdentity(req).key,
+          path: invitePath ?? req.path,
           retryAfter,
           resetTime: resetTime?.toISOString(),
         },

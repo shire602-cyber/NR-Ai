@@ -1,3 +1,4 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -8,8 +9,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ChangePasswordCard } from "@/pages/security/ChangePasswordCard";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSessionActions } from "@/hooks/useSessionActions";
-import { apiRequest } from "@/lib/queryClient";
-import { usePortalSupplier } from "@/lib/portal-supplier";
+import { apiRequest, portalQuery } from "@/lib/queryClient";
+import { setSelectedPortalAccount } from "@/lib/portal-state";
 import { useI18n, useTranslation } from "@/lib/i18n";
 
 interface PortalAccountRow {
@@ -23,20 +24,17 @@ interface PortalAccountRow {
  * suppliers whose portals they can open. Sign-out here clears the server session.
  */
 export default function PortalAccount() {
+  const selected = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
   const [, navigate] = useLocation();
-  const supplier = usePortalSupplier();
   const { signOut } = useSessionActions();
   const { data: user } = useCurrentUser();
   const [busy, setBusy] = useState(false);
   const { data: accounts = [] } = useQuery<PortalAccountRow[]>({
-    queryKey: ["portal-accounts"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/accounts"),
+    ...portalQuery("/api/client-portal/accounts", selected),
     staleTime: 5 * 60 * 1000,
   });
-  const selected = supplier?.company.accountId;
-  const current = accounts.find((a) => a.id === selected) ?? accounts[0];
 
   const signOutEverywhere = async () => {
     setBusy(true);
@@ -138,7 +136,7 @@ export default function PortalAccount() {
                     </span>
                   </span>
                 </span>
-                {a.id === current?.id ? (
+                {a.id === selected ? (
                   <span className="flex shrink-0 items-center gap-1 text-caption font-medium text-success">
                     <Check className="h-4 w-4" aria-hidden />
                     {t["portal.account.current"]}
@@ -148,7 +146,10 @@ export default function PortalAccount() {
                     variant="outline"
                     size="sm"
                     className="min-h-11"
-                    onClick={() => supplier?.switchSupplier(a.id)}
+                    onClick={() => {
+                      setSelectedPortalAccount(a.id);
+                      navigate("/client-portal/dashboard");
+                    }}
                   >
                     {t["portal.account.open"]}
                   </Button>

@@ -7,7 +7,7 @@
  */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -32,6 +32,7 @@ beforeEach(async () => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.restoreAllMocks();
 });
 
 async function setLocale(locale: "en" | "ar") {
@@ -133,6 +134,7 @@ describe("D1 public site", () => {
       );
       expect(container.querySelector('a[hreflang="en"]')?.getAttribute("href")).toBe("/en");
       expect(container.textContent).toContain("مزوّد خدمة معتمد واحد لكل نسخة من التطبيق");
+      expect(container.textContent).toContain("ارفع كشف حسابك البنكي بصيغة CSV");
       expect(arabicModeEnglishLines()).toEqual([]);
     } finally {
       window.history.replaceState(null, "", previousUrl);

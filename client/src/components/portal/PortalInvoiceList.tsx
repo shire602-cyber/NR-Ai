@@ -1,3 +1,4 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { useMemo, useRef, useState } from "react";
 import { CreditCard, FileCode2, FileDown, FileText, Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,8 @@ import { useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { DateText } from "@/components/documents/DateText";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { downloadPortalFile as download } from "@/lib/portal-download";
+import { portalRequestHeaders } from "@/lib/portal-state";
+import { downloadPortalFile } from "@/lib/portal-files";
 import { formatInteger } from "@/lib/format";
 import { isolateLtrText } from "@/lib/format-bidi";
 import { formatMessage, useTranslation } from "@/lib/i18n";
@@ -75,13 +77,12 @@ export function PortalInvoiceList({
   invoices,
   loading,
   onlinePayment,
-  accountId,
 }: {
   invoices: PortalInvoice[];
   loading?: boolean;
-  accountId?: string;
   onlinePayment: boolean;
 }) {
+  const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [filter, setFilter] = useState<Filter>("all");
@@ -118,7 +119,7 @@ export function PortalInvoiceList({
         "POST",
         `/api/client-portal/invoices/${inv.id}/pay`,
         {},
-        accountId ? { "X-Portal-Account": accountId } : undefined
+        portalRequestHeaders(supplier)
       )) as {
         url?: string;
       };
@@ -289,10 +290,10 @@ export function PortalInvoiceList({
                             aria-label={`${t["portal.doc.downloadPdf"]} ${isolateLtrText(inv.number)}`}
                             onClick={() =>
                               void run(`pdf:${inv.id}`, () =>
-                                download(
+                                downloadPortalFile(
                                   `/api/client-portal/invoices/${inv.id}/pdf`,
                                   `invoice-${inv.number}.pdf`,
-                                  accountId
+                                  supplier
                                 )
                               )
                             }
@@ -314,10 +315,10 @@ export function PortalInvoiceList({
                               aria-label={`${t["portal.list.einvoiceXml"]} ${isolateLtrText(inv.number)}`}
                               onClick={() =>
                                 void run(`xml:${inv.id}`, () =>
-                                  download(
+                                  downloadPortalFile(
                                     `/api/client-portal/invoices/${inv.id}/einvoice`,
                                     `einvoice-${inv.number}.xml`,
-                                    accountId
+                                    supplier
                                   )
                                 )
                               }

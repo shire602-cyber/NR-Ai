@@ -11,6 +11,7 @@ import path from "node:path";
 import { chromium } from "playwright-core";
 import sharp from "sharp";
 import pg from "pg";
+import { readPortalInviteMail } from "./lib/portal-invite-mail.mjs";
 import { apiClient, assertLocal, PASSWORD } from "./lib/sweep-personas.mjs";
 
 const base = (process.env.BASE_URL ?? "").replace(/\/$/, "");
@@ -720,19 +721,25 @@ async function run(browser, lang, device) {
         language: lang,
       }
     );
-    const inviteToken = new URLSearchParams(new URL(invitation.inviteUrl).hash.slice(1)).get("t");
-    assert.ok(inviteToken);
-    const accept = await apiClient(base)(
-      "",
-      "POST",
-      `/api/portal-invitations/${inviteToken}/accept`,
-      {
-        name: localized("Layla Ahmad", "ليلى أحمد"),
-        password: PASSWORD,
-        acceptTerms: true,
-      }
-    );
-    assert.ok(accept.status < 300, `Portal invitation acceptance returned ${accept.status}`);
+    const { token: inviteToken } = await readPortalInviteMail(invitation.invitation.id);
+    const guest = await browser.newContext({ baseURL: base });
+    let accept;
+    try {
+      const { csrfToken } = await (await guest.request.get("/api/csrf-token")).json();
+      accept = await guest.request.post("/api/portal-invitations/accept", {
+        headers: { "X-CSRF-Token": csrfToken },
+        data: {
+          token: inviteToken,
+          email: contactEmail,
+          name: localized("Layla Ahmad", "ليلى أحمد"),
+          password: PASSWORD,
+          acceptTerms: true,
+        },
+      });
+      assert.ok(accept.ok(), `Portal invitation acceptance returned ${accept.status()}`);
+    } finally {
+      await guest.close();
+    }
     const secondContact = await checked(
       otherToken,
       "POST",

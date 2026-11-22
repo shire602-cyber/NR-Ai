@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { AlertCircle, RefreshCw, Home } from "lucide-react";
 import { apiUrl } from "@/lib/api";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { clientErrorPath, redactClientErrorText } from "@shared/client-error-privacy";
 
 interface Props {
   children: ReactNode;
@@ -54,13 +55,15 @@ async function reportToServer(error: Error, info: ErrorInfo, name?: string) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
+      referrerPolicy: "no-referrer",
       body: JSON.stringify({
-        message: error.message,
-        stack: error.stack,
-        componentStack: info.componentStack,
-        url: typeof window !== "undefined" ? window.location.href : undefined,
-        userAgent: typeof navigator !== "undefined" ? navigator.userAgent : undefined,
-        boundary: name,
+        message: redactClientErrorText(error.message),
+        stack: error.stack && redactClientErrorText(error.stack),
+        componentStack: info.componentStack && redactClientErrorText(info.componentStack),
+        url: typeof window !== "undefined" ? clientErrorPath(window.location.href) : undefined,
+        userAgent:
+          typeof navigator !== "undefined" ? redactClientErrorText(navigator.userAgent) : undefined,
+        boundary: name && redactClientErrorText(name),
       }),
     });
   } catch {
@@ -79,7 +82,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Error caught by boundary:", error, errorInfo);
+    console.error("Error caught by boundary:", redactClientErrorText(error.stack ?? error.message));
 
     // If a stale chunk failed to load and bubbled up to a boundary (rather than
     // being recovered by lazyWithReload), attempt a one-time hard reload to pull

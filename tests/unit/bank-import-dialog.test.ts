@@ -140,6 +140,10 @@ it.each([
   async (locale, copy) => {
     await mountPage(locale);
     expect(dialog()?.textContent).toContain(copy);
+    expect(dialog()?.textContent).not.toMatch(/\b(?:XLSX|MT940|CAMT\.053|OFX|PDF)\b/);
+    expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).not.toContain(
+      "/api/bank/providers"
+    );
     const { serverErrorCopy } = await import("../../client/src/lib/validation-messages");
     for (const code of [
       "BANK_CONNECTION_NOT_FOUND",

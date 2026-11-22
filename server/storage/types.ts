@@ -234,16 +234,16 @@ export interface IStorage {
   updateUserPassword(userId: string, passwordHash: string): Promise<void>;
 
   // Password reset tokens
-  createPasswordResetToken(input: {
+  replacePasswordResetToken(input: {
     userId: string;
+    email: string;
     tokenHash: string;
     expiresAt: Date;
-  }): Promise<void>;
+  }): Promise<boolean>;
   findValidPasswordResetToken(
     tokenHash: string
   ): Promise<{ id: string; userId: string } | undefined>;
-  markPasswordResetTokenUsed(id: string): Promise<void>;
-  deletePasswordResetTokensForUser(userId: string): Promise<void>;
+  resetPasswordWithToken(userId: string, tokenHash: string, passwordHash: string): Promise<boolean>;
 
   // Companies
   getCompany(id: string): Promise<Company | undefined>;

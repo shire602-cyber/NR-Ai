@@ -1037,5 +1037,11 @@
   "serverErrors.INVITATION_NOT_RESENDABLE": "This invitation can no longer be resent.",
   "serverErrors.INVITATION_NOT_REVOCABLE": "Only pending invitations can be cancelled.",
   "serverErrors.CONTACT_NOT_FOUND": "That customer could not be found.",
-  "serverErrors.INVOICE_NOT_FOUND": "That invoice could not be found."
+  "serverErrors.INVOICE_NOT_FOUND": "That invoice could not be found.",
+  "serverErrors.PORTAL_INVITE_EMAIL_UNVERIFIED": "Verify your email before accepting this invitation.",
+  "serverErrors.PORTAL_INVITE_DELIVERY_FAILED": "Could not deliver the invitation email. Check the address and try again.",
+  "serverErrors.PORTAL_INVITE_EMAIL_RESERVED": "Use your customer portal invitation to set up this account.",
+  "serverErrors.PORTAL_ACCOUNT_EMAIL_CHANGE_BLOCKED": "Revoke the user’s active portal access before changing their email.",
+  "serverErrors.OAUTH_MAILBOX_CODE_INVALID": "The Microsoft verification code is invalid or expired. Check the code or start sign-in again.",
+  "serverErrors.OAUTH_MAILBOX_ACCOUNT_CHANGED": "Microsoft sign-in could not be completed. Start again from the sign-in page."
 }

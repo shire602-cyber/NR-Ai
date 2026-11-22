@@ -1,18 +1,18 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { useState } from "react";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { T } from "@/components/layout/T";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Send, MessageSquare, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { ErrorState } from "@/components/ui/error-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { usePortalSupplier, usePortalSupplierQuery } from "@/lib/portal-supplier";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, portalQuery } from "@/lib/queryClient";
+import { portalRequestHeaders } from "@/lib/portal-state";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/format-date";
 
@@ -32,42 +32,24 @@ function formatStamp(value: string, locale: string): string {
  * bottom of the thread.
  */
 export default function PortalMessages() {
+  const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [draft, setDraft] = useState({ subject: "", content: "", accountId: "" });
-  const company = usePortalSupplier()?.company;
-  const accountId = company?.accountId;
+  const [subject, setSubject] = useState("");
+  const [content, setContent] = useState("");
 
-  function editDraft(field: "subject" | "content", value: string) {
-    if (!accountId) return;
-    setDraft((current) => ({
-      ...current,
-      accountId: current.accountId || accountId,
-      [field]: value,
-    }));
-  }
-
-  const {
-    data: messages = [],
-    isLoading,
-    isLoadingError,
-    refetch,
-  } = usePortalSupplierQuery<any[]>("portal-messages", "messages");
+  const { data: messages = [], isLoading } = useQuery<any[]>({
+    ...portalQuery("/api/client-portal/messages", supplier),
+  });
 
   const sendMutation = useMutation({
-    mutationFn: ({
-      accountId,
-      ...payload
-    }: {
-      accountId: string;
-      subject: string | null;
-      content: string;
-    }) =>
-      apiRequest("POST", "/api/client-portal/messages", payload, { "X-Portal-Account": accountId }),
+    mutationFn: (payload: { subject: string | null; content: string }) =>
+      apiRequest("POST", "/api/client-portal/messages", payload, portalRequestHeaders(supplier)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-messages"] });
-      setDraft({ subject: "", content: "", accountId: "" });
+      setSubject("");
+      setContent("");
       toast({
         title: translateNow("toasts.messageSent"),
         description: translateNow("toasts.nrAccountingWillRespondShortly"),
@@ -82,20 +64,8 @@ export default function PortalMessages() {
   });
 
   function handleSend() {
-    if (!draft.content.trim() || !accountId) return;
-    if (draft.accountId !== accountId) {
-      toast({
-        title: t["toasts.failedToSend"],
-        description: t["portal.doc.draftAccountChanged"],
-        variant: "destructive",
-      });
-      return;
-    }
-    sendMutation.mutate({
-      accountId: draft.accountId,
-      subject: draft.subject.trim() || null,
-      content: draft.content.trim(),
-    });
+    if (!content.trim()) return;
+    sendMutation.mutate({ subject: subject.trim() || null, content: content.trim() });
   }
 
   const thread = [...messages].sort(
@@ -115,8 +85,6 @@ export default function PortalMessages() {
             <div className="flex h-32 items-center justify-center">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
             </div>
-          ) : isLoadingError ? (
-            <ErrorState compact onRetry={() => void refetch()} />
           ) : thread.length === 0 ? (
             <EmptyState
               headingLevel="h2"
@@ -162,22 +130,20 @@ export default function PortalMessages() {
               className="h-11 md:h-9"
               aria-label={t["portal.doc.messageSubject"]}
               placeholder={t["portal.doc.messageSubject"]}
-              value={draft.subject}
-              disabled={!accountId || sendMutation.isPending}
-              onChange={(e) => editDraft("subject", e.target.value)}
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
             />
             <Textarea
               aria-label={t["portal.doc.messageBody"]}
               placeholder={t["portal.doc.messageBody"]}
               rows={3}
-              value={draft.content}
-              disabled={!accountId || sendMutation.isPending}
-              onChange={(e) => editDraft("content", e.target.value)}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
             />
             <div className="flex justify-end">
               <Button
                 type="submit"
-                disabled={!accountId || !draft.content.trim() || sendMutation.isPending}
+                disabled={!content.trim() || sendMutation.isPending}
                 data-testid="button-portal-send"
               >
                 {sendMutation.isPending ? (

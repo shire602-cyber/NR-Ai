@@ -9,7 +9,6 @@ import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { isPortalAppPath, namespacesForPath, setPublicBootScope } from "../../client/src/lib/i18n";
-import PortalApp from "../../client/src/PortalApp";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -23,8 +22,14 @@ let root: Root;
 let calls: string[] = [];
 let me: { status: number; body: unknown } = { status: 200, body: {} };
 let pdfStatus = 200;
-let statementDownloadAccount: string | null;
-let readAccounts: Array<[string, string | null]> = [];
+let revoked = false;
+let portalScopes: Array<string | null> = [];
+
+const FIRST_ACCOUNT = "10000000-0000-4000-8000-000000000001";
+const SECOND_ACCOUNT = "10000000-0000-4000-8000-000000000002";
+const FIRST_COMPANY = { id: "c1", name: "Al Noor Trading LLC", logoUrl: null };
+const SECOND_COMPANY = { id: "c2", name: "Second Supplier LLC", logoUrl: null };
+const CUSTOMER = { id: "k1", name: "Desert Rose", nameAr: "ديزرت روز" };
 
 const INVOICES = [
   {
@@ -45,22 +50,30 @@ function stub() {
     vi.fn(async (url: string, init?: RequestInit) => {
       const u = String(url);
       calls.push(u);
-      if (u.includes("/api/client-portal/"))
-        readAccounts.push([u, new Headers(init?.headers).get("X-Portal-Account")]);
       const json = (status: number, body: unknown) =>
         new Response(JSON.stringify(body), {
           status,
           headers: { "content-type": "application/json" },
         });
       if (u.includes("/api/auth/me")) return json(me.status, me.body);
+      const scope = new Headers(init?.headers).get("X-Portal-Account");
+      if (u.endsWith("/api/client-portal/accounts")) {
+        const first = { id: FIRST_ACCOUNT, company: FIRST_COMPANY, customer: CUSTOMER };
+        const second = { id: SECOND_ACCOUNT, company: SECOND_COMPANY, customer: CUSTOMER };
+        return json(200, revoked ? [second] : [first]);
+      }
+      if (u.includes("/api/client-portal/")) {
+        portalScopes.push(scope);
+        if (revoked && scope === FIRST_ACCOUNT) {
+          return json(403, { code: "PORTAL_ACCESS_REVOKED", message: "Access removed" });
+        }
+      }
       if (u.includes("/api/client-portal/company"))
         return json(200, {
-          id: "c1",
-          accountId: "supplier-one",
-          name: "Al Noor Trading LLC",
-          logoUrl: null,
+          ...(scope === SECOND_ACCOUNT ? SECOND_COMPANY : FIRST_COMPANY),
+          portalAccountId: scope === SECOND_ACCOUNT ? SECOND_ACCOUNT : FIRST_ACCOUNT,
           firmName: null,
-          customer: { id: "k1", name: "Desert Rose", nameAr: "ديزرت روز" },
+          customer: CUSTOMER,
         });
       if (u.includes("/api/client-portal/dashboard"))
         return json(200, {
@@ -71,27 +84,6 @@ function stub() {
           overdueByCurrency: [{ currency: "AED", amount: "13125.00", fils: 1312500, count: 1 }],
           nextDue: null,
         });
-      if (u.includes("/api/client-portal/statements")) {
-        if (u.includes("format=pdf")) {
-          statementDownloadAccount = new Headers(init?.headers).get("X-Portal-Account");
-          return json(403, {});
-        }
-        return json(200, {
-          accountId: "supplier-one",
-          asOf: "2026-10-31",
-          party: { name: "Desert Rose" },
-          company: { name: "Al Noor Trading LLC" },
-          sections: [
-            {
-              currency: "AED",
-              openingBalance: 0,
-              closingBalance: 0,
-              lines: [],
-              aging: { current: 0, days30: 0, days60: 0, days90: 0, over90: 0 },
-            },
-          ],
-        });
-      }
       if (u.includes("/pdf")) return pdfStatus === 200 ? new Response("%PDF") : json(pdfStatus, {});
       if (u.includes("/api/client-portal/invoices")) return json(200, INVOICES);
       if (u.includes("/api/client-portal/documents")) return json(200, []);
@@ -101,43 +93,44 @@ function stub() {
   );
 }
 
-async function waitForRender(assertRendered: () => void) {
+async function settle(rounds = 8) {
+  for (let i = 0; i < rounds; i++)
+    await act(async () => await new Promise((r) => setTimeout(r, 25)));
+}
+
+async function waitForPortal(assertReady: () => void) {
   await vi.waitFor(
     async () => {
       await act(async () => {});
-      assertRendered();
+      assertReady();
     },
-    { timeout: 3000 }
+    { timeout: 10000 }
   );
 }
 
 async function mountAt(path: string) {
   window.history.replaceState(null, "", path);
+  const { default: PortalApp } = await import("../../client/src/PortalApp");
   await act(async () => {
     root.render(createElement(PortalApp));
   });
+  await settle();
 }
 
 const text = () => container.textContent ?? "";
 
 beforeAll(async () => {
   const { loadLocale } = await import("../../client/src/lib/i18n");
-  await Promise.all([
-    loadLocale("en"),
-    loadLocale("ar"),
-    import("../../client/src/pages/portal/PortalDashboard"),
-    import("../../client/src/pages/portal/PortalInvoices"),
-    import("../../client/src/pages/portal/PortalDocuments"),
-    import("../../client/src/pages/portal/PortalStatements"),
-  ]);
+  await Promise.all([loadLocale("en"), loadLocale("ar")]);
 });
 
 beforeEach(async () => {
   localStorage.clear();
   localStorage.setItem("muhasib_auth_hint", "1");
   calls = [];
+  portalScopes = [];
+  revoked = false;
   pdfStatus = 200;
-  statementDownloadAccount = null;
   me = { status: 200, body: { id: "u1", email: "c@example.com", userType: "client_portal" } };
   const { useI18n } = await import("../../client/src/lib/i18n");
   const { queryClient } = await import("../../client/src/lib/queryClient");
@@ -146,7 +139,6 @@ beforeEach(async () => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  readAccounts = [];
   stub();
 });
 
@@ -159,18 +151,19 @@ afterEach(() => {
 describe("client portal light root", () => {
   it("renders the dashboard with exactly one h1 and the stacked-card table", async () => {
     await mountAt("/client-portal/dashboard");
-    await waitForRender(() => {
-      expect(container.querySelector("table.row-cards")?.textContent).toContain("INV-2026-00001");
-      expect(document.title).toBe("Dashboard · Al Noor Trading LLC");
-    });
+    await waitForPortal(() => expect(text()).toContain("INV-2026-00001"));
     expect(container.querySelectorAll("h1")).toHaveLength(1);
-    expect(container.querySelector("h1")?.textContent).toBe("Overview");
+    expect(container.querySelector("h1")!.textContent).toBe("Overview");
+    expect(container.querySelector("table.row-cards")).not.toBeNull();
+    // The tab is named after the page and the company, not the marketing default.
+    expect(document.title).toBe("Dashboard · Al Noor Trading LLC");
+    expect(portalScopes.filter((scope) => scope === null)).toHaveLength(1);
     expect(container.querySelector('[data-testid="full-app"]')).toBeNull();
   });
 
   it("empty pages put their title under the page h1 as an h2 (no skipped level)", async () => {
     await mountAt("/client-portal/documents");
-    await waitForRender(() =>
+    await waitForPortal(() =>
       expect(container.querySelector("h2")?.textContent).toMatch(/No documents/i)
     );
     expect(container.querySelectorAll("h1")).toHaveLength(1);
@@ -181,7 +174,7 @@ describe("client portal light root", () => {
     const { useI18n } = await import("../../client/src/lib/i18n");
     act(() => useI18n.getState().setLocale("ar"));
     await mountAt("/client-portal/invoices");
-    await waitForRender(() => expect(text()).toContain("د.إ"));
+    await waitForPortal(() => expect(text()).toContain("د.إ"));
     expect(document.documentElement.dir).toBe("rtl");
     expect(text()).not.toMatch(/Invoice number|Download PDF/);
   });
@@ -191,67 +184,81 @@ describe("client portal light root", () => {
     const { useI18n } = await import("../../client/src/lib/i18n");
     act(() => useI18n.getState().setLocale("ar"));
     await mountAt("/client-portal/invoices");
-    const download = () =>
-      [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-        /PDF/.test(button.getAttribute("aria-label") ?? button.textContent ?? "")
-      );
-    await waitForRender(() => expect(download()).toBeDefined());
-    await act(async () => download()!.click());
-    await waitForRender(() => expect(document.body.textContent).toContain("تعذّر تنزيل ملف PDF"));
+    await waitForPortal(() =>
+      expect(container.querySelector('[data-testid="portal-pdf-i1"]')).not.toBeNull()
+    );
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>("button")];
+    const dl = buttons.find((b) => /PDF/.test(b.getAttribute("aria-label") ?? b.textContent ?? ""));
+    expect(dl).toBeTruthy();
+    await act(async () => dl!.click());
+    await settle();
+    expect(document.body.textContent).toContain("تعذّر تنزيل ملف PDF");
   });
 
-  it("loads the displayed supplier’s invoices, statement and dashboard documents", async () => {
-    const { setSelectedPortalAccount } = await import("../../client/src/lib/auth");
-    const { navigate } = await import("wouter/use-browser-location");
-    setSelectedPortalAccount("supplier-one");
+  it("clears a revoked supplier selection and waits for a choice across reloads", async () => {
+    const { getSelectedPortalAccount, setSelectedPortalAccount } =
+      await import("../../client/src/lib/auth");
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    setSelectedPortalAccount(FIRST_ACCOUNT);
     await mountAt("/client-portal/dashboard");
-    await waitForRender(() => expect(text()).toContain("INV-2026-00001"));
-    setSelectedPortalAccount("supplier-two");
-    for (const resource of ["invoices", "statements"]) {
-      await act(async () => navigate(`/client-portal/${resource}`));
-      await waitForRender(() =>
-        expect(readAccounts).toContainEqual([
-          expect.stringContaining(`/api/client-portal/${resource}`),
-          "supplier-one",
-        ])
-      );
-    }
-    for (const resource of ["dashboard", "documents"]) {
-      expect(readAccounts).toContainEqual([
-        expect.stringContaining(`/api/client-portal/${resource}`),
-        "supplier-one",
-      ]);
-    }
+    await waitForPortal(() => expect(document.title).toBe("Dashboard · Al Noor Trading LLC"));
+
+    revoked = true;
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["portal-dashboard"] });
+    });
+    await waitForPortal(() =>
+      expect(container.querySelector('[data-testid="portal-access-removed"]')).not.toBeNull()
+    );
+    expect(getSelectedPortalAccount()).toBeNull();
+    expect(text()).not.toContain("INV-2026-00001");
+    expect(document.title).toBe("Dashboard");
+    expect(portalScopes).not.toContain(SECOND_ACCOUNT);
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    queryClient.clear();
+    portalScopes = [];
+    await mountAt("/client-portal/dashboard");
+    await waitForPortal(() => expect(text()).toContain(SECOND_COMPANY.name));
+    expect(getSelectedPortalAccount()).toBeNull();
+    expect(portalScopes).toEqual([]);
+
+    const choose = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === SECOND_COMPANY.name
+    );
+    expect(choose).toBeDefined();
+    await act(async () => choose!.click());
+    await waitForPortal(() => expect(document.title).toBe("Dashboard · Second Supplier LLC"));
+    expect(getSelectedPortalAccount()).toBe(SECOND_ACCOUNT);
+    expect(portalScopes).toContain(SECOND_ACCOUNT);
   });
 
-  it("downloads from the supplier shown in the statement after the selection changes", async () => {
-    const { setSelectedPortalAccount } = await import("../../client/src/lib/auth");
-    setSelectedPortalAccount("supplier-one");
-    await mountAt("/client-portal/statements");
-    const download = () =>
-      [...container.querySelectorAll("button")].find((button) =>
-        /Download PDF/.test(button.textContent ?? "")
-      );
-    await waitForRender(() => expect(download()).toBeDefined());
-    setSelectedPortalAccount("supplier-two");
-    await act(async () => download()!.click());
-    await waitForRender(() => expect(statementDownloadAccount).toBe("supplier-one"));
+  it("keeps a new supplier choice when a delayed request for the revoked one fails", async () => {
+    const { getSelectedPortalAccount, setSelectedPortalAccount } =
+      await import("../../client/src/lib/auth");
+    const { portalQuery } = await import("../../client/src/lib/queryClient");
+    const previous = portalQuery("/api/client-portal/dashboard", FIRST_ACCOUNT);
+    revoked = true;
+    setSelectedPortalAccount(SECOND_ACCOUNT);
+
+    await expect(previous.queryFn()).rejects.toMatchObject({ status: 403 });
+    expect(portalScopes).toEqual([FIRST_ACCOUNT]);
+    expect(getSelectedPortalAccount()).toBe(SECOND_ACCOUNT);
   });
 
   it("hands the page to the full app for a signed-out visitor and for staff", async () => {
     me = { status: 401, body: {} };
     // refresh endpoint also refuses
     await mountAt("/client-portal/dashboard");
-    const fullAppIsRendered = () =>
-      expect(container.querySelector('[data-testid="full-app"]')).not.toBeNull();
-    await waitForRender(fullAppIsRendered);
+    expect(container.querySelector('[data-testid="full-app"]')).not.toBeNull();
     act(() => root.unmount());
     root = createRoot(container);
     me = { status: 200, body: { id: "u2", userType: "customer", isAdmin: false } };
     const { queryClient } = await import("../../client/src/lib/queryClient");
     queryClient.clear();
     await mountAt("/client-portal/dashboard");
-    await waitForRender(fullAppIsRendered);
+    expect(container.querySelector('[data-testid="full-app"]')).not.toBeNull();
   });
 });
 

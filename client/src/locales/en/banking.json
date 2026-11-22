@@ -209,5 +209,9 @@
   "banking.import.importAction": "Import",
   "banking.rules.category": "Category (optional)",
   "banking.rules.categoryPlaceholder": "e.g. Rent, Salary, Utilities",
-  "banking.rules.memo": "Memo (optional)"
+  "banking.rules.memo": "Memo (optional)",
+  "banking.statementUpload.title": "CSV bank statements",
+  "banking.statementUpload.reconcileTitle": "Reconcile with a bank statement",
+  "banking.statementUpload.description": "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.",
+  "banking.statementUpload.cta": "Upload a CSV statement"
 }

@@ -1037,5 +1037,11 @@
   "serverErrors.INVITATION_NOT_RESENDABLE": "لا يمكن إعادة إرسال هذه الدعوة بعد الآن.",
   "serverErrors.INVITATION_NOT_REVOCABLE": "يمكن إلغاء الدعوات المعلّقة فقط.",
   "serverErrors.CONTACT_NOT_FOUND": "تعذّر العثور على هذا العميل.",
-  "serverErrors.INVOICE_NOT_FOUND": "تعذّر العثور على هذه الفاتورة."
+  "serverErrors.INVOICE_NOT_FOUND": "تعذّر العثور على هذه الفاتورة.",
+  "serverErrors.PORTAL_INVITE_EMAIL_UNVERIFIED": "تحقّق من بريدك الإلكتروني قبل قبول هذه الدعوة.",
+  "serverErrors.PORTAL_INVITE_DELIVERY_FAILED": "تعذّر إرسال رسالة الدعوة. تحقّق من العنوان وحاول مرة أخرى.",
+  "serverErrors.PORTAL_INVITE_EMAIL_RESERVED": "استخدم دعوة بوابة العملاء لإعداد هذا الحساب.",
+  "serverErrors.PORTAL_ACCOUNT_EMAIL_CHANGE_BLOCKED": "ألغِ وصول المستخدم النشط إلى البوابة قبل تغيير بريده الإلكتروني.",
+  "serverErrors.OAUTH_MAILBOX_CODE_INVALID": "رمز التحقق من Microsoft غير صالح أو انتهت صلاحيته. تحقّق من الرمز أو أعد تسجيل الدخول.",
+  "serverErrors.OAUTH_MAILBOX_ACCOUNT_CHANGED": "تعذّر إكمال تسجيل الدخول عبر Microsoft. ابدأ من جديد من صفحة تسجيل الدخول."
 }

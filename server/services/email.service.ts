@@ -183,8 +183,9 @@ export async function sendEmail(
       sensitive: options?.sensitive === true,
     });
   } catch (err) {
-    logger.error({ err: (err as Error)?.message }, "Could not enqueue email");
-    return { sent: false, queued: false, status: "not_queued", error: (err as Error)?.message };
+    const error = options?.sensitive ? "Could not store sensitive email" : (err as Error)?.message;
+    logger.error({ err: error }, "Could not enqueue email");
+    return { sent: false, queued: false, status: "not_queued", error };
   }
   if (queued.duplicate || queued.status === "blocked_no_provider") {
     if (queued.status === "blocked_no_provider") {

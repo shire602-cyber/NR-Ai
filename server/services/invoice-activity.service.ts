@@ -7,7 +7,7 @@
 //   at most once per invoice every VIEW_THROTTLE_MS so a refreshing customer does not flood it.
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { db } from "../db";
-import { emailOutbox, invoiceEvents, type Invoice } from "../../shared/schema";
+import { emailOutbox, invoiceEvents, invoices, type Invoice } from "../../shared/schema";
 import { createLogger } from "../config/logger";
 
 const log = createLogger("invoice-activity");
@@ -34,25 +34,37 @@ export async function recordInvoiceView(
 ): Promise<boolean> {
   try {
     const since = new Date(now.getTime() - VIEW_THROTTLE_MS);
-    const [recent] = await db
-      .select({ id: invoiceEvents.id })
-      .from(invoiceEvents)
-      .where(
-        and(
-          eq(invoiceEvents.invoiceId, invoice.id),
-          eq(invoiceEvents.kind, "viewed"),
-          gt(invoiceEvents.createdAt, since)
+    return await db.transaction(async (tx) => {
+      // Serialize the check and insert even when no prior view exists to lock.
+      const [locked] = await tx
+        .select({ id: invoices.id })
+        .from(invoices)
+        .where(and(eq(invoices.id, invoice.id), eq(invoices.companyId, invoice.companyId)))
+        .for("no key update");
+      if (!locked) return false;
+
+      const [recent] = await tx
+        .select({ id: invoiceEvents.id })
+        .from(invoiceEvents)
+        .where(
+          and(
+            eq(invoiceEvents.invoiceId, invoice.id),
+            eq(invoiceEvents.companyId, invoice.companyId),
+            eq(invoiceEvents.kind, "viewed"),
+            gt(invoiceEvents.createdAt, since)
+          )
         )
-      )
-      .limit(1);
-    if (recent) return false;
-    await db.insert(invoiceEvents).values({
-      invoiceId: invoice.id,
-      companyId: invoice.companyId,
-      kind: "viewed",
-      createdAt: now,
+        .limit(1);
+      if (recent) return false;
+
+      await tx.insert(invoiceEvents).values({
+        invoiceId: invoice.id,
+        companyId: invoice.companyId,
+        kind: "viewed",
+        createdAt: now,
+      });
+      return true;
     });
-    return true;
   } catch (err) {
     log.warn({ err, invoiceId: invoice.id }, "could not record the invoice view");
     return false;

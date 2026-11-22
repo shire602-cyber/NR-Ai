@@ -30,6 +30,7 @@ async function portalFor(t: Tenant, name: string) {
     token: link.body.token as string,
     contactId: c.body.id as string,
     number: inv.body.number as string,
+    invoiceId: inv.body.id as string,
   };
 }
 
@@ -51,6 +52,26 @@ describe("portal overview", () => {
     const headers = { "X-Portal-Account": older.id };
     const selected = await customer.as.get(url, { headers });
     expect(selected.body).toMatchObject({ accountId: older.id, party: { id: a.contactId } });
+    for (const [binding, owner, data] of [
+      [older, first, a],
+      [newer, second, b],
+    ] as const) {
+      const scoped = { headers: { "X-Portal-Account": binding.id } };
+      expect((await customer.as.get("/api/client-portal/company", scoped)).body).toMatchObject({
+        id: owner.company.id,
+        portalAccountId: binding.id,
+      });
+      expect((await customer.as.get("/api/client-portal/invoices", scoped)).body).toMatchObject([
+        { id: data.invoiceId },
+      ]);
+      expect((await customer.as.get("/api/client-portal/dashboard", scoped)).body).toMatchObject({
+        recentInvoices: [{ id: data.invoiceId }],
+      });
+      expect((await customer.as.get(url, scoped)).body).toMatchObject({
+        accountId: binding.id,
+        party: { id: data.contactId },
+      });
+    }
     const pdf = await customer.as.get(`${url}?format=pdf`, { headers });
     expect(pdf.status, pdf.text).toBe(200);
     expect(pdf.headers.get("content-type")).toContain("application/pdf");
@@ -91,8 +112,9 @@ describe("portal overview", () => {
       (await customer.as.post(messageUrl, { content: "Missing pinned supplier" })).status
     ).toBe(403);
     expect((await upload(older.id)).status).toBe(403);
-    expect((await customer.as.get(messageUrl)).body).toEqual([]);
-    expect((await customer.as.get("/api/client-portal/documents")).body).toEqual([]);
+    const secondScope = { headers: { "X-Portal-Account": newer.id } };
+    expect((await customer.as.get(messageUrl, secondScope)).body).toEqual([]);
+    expect((await customer.as.get("/api/client-portal/documents", secondScope)).body).toEqual([]);
   });
 
   it("returns info and invoices that equal the separate routes, with no caching", async () => {

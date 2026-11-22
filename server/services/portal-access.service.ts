@@ -367,20 +367,38 @@ export async function portalAccountsForUser(userId: string): Promise<PortalBindi
 }
 
 /**
- * The binding a request acts on: `preferredAccountId` (the X-Portal-Account header) when it is one
- * of the user's own active bindings, otherwise the newest. A foreign id is ignored, never honoured.
+ * Resolve the exact binding when one was requested. An unscoped first visit can use the newest
+ * binding until access has been removed, at which point the customer must choose a supplier.
  */
 export async function portalAccountForUser(
   userId: string,
-  preferredAccountId?: string | null,
-  requireExplicit = false
+  preferredAccountId?: string | null
 ): Promise<PortalBinding | null> {
-  const all = await portalAccountsForUser(userId);
-  if (preferredAccountId) {
-    const wanted = all.find((b) => b.id === preferredAccountId.toLowerCase());
-    if (wanted) return wanted;
-  }
-  return requireExplicit ? null : (all[0] ?? null);
+  const bindings = await db
+    .select({
+      id: customerPortalAccounts.id,
+      companyId: customerPortalAccounts.companyId,
+      contactId: customerPortalAccounts.contactId,
+      revokedAt: customerPortalAccounts.revokedAt,
+      active: customerContacts.isActive,
+    })
+    .from(customerPortalAccounts)
+    .innerJoin(
+      customerContacts,
+      and(
+        eq(customerContacts.id, customerPortalAccounts.contactId),
+        eq(customerContacts.companyId, customerPortalAccounts.companyId)
+      )
+    )
+    .where(
+      and(
+        eq(customerPortalAccounts.userId, userId),
+        preferredAccountId ? eq(customerPortalAccounts.id, preferredAccountId) : undefined
+      )
+    )
+    .orderBy(desc(customerPortalAccounts.createdAt));
+  if (bindings.some((binding) => binding.revokedAt || !binding.active)) return null;
+  return bindings[0] ?? null;
 }
 
 /** Remember the last portal request (at most once every 5 minutes per binding). */

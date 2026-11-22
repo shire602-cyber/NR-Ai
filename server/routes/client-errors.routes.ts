@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
+import { clientErrorPath, redactClientErrorText } from "@shared/client-error-privacy";
 
 const log = createLogger("client-error");
 
@@ -25,9 +26,15 @@ export function registerClientErrorRoutes(app: Express) {
       }
 
       const userId = req.user?.id ?? null;
+      const report = Object.fromEntries(
+        Object.entries(parsed.data).map(([key, value]) => [
+          key,
+          key === "url" ? clientErrorPath(value) : value && redactClientErrorText(value),
+        ])
+      );
       log.error(
         {
-          ...parsed.data,
+          ...report,
           userId,
           ip: req.ip,
           requestId: req.id,
