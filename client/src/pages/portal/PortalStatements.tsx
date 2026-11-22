@@ -1,3 +1,4 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { useQuery } from "@tanstack/react-query";
 import { FileDown, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,10 +30,11 @@ interface Statement {
 }
 
 export default function PortalStatements() {
+  const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { data, isLoading } = useQuery<Statement>({
-    ...portalQuery("/api/client-portal/statements"),
+    ...portalQuery("/api/client-portal/statements", supplier),
   });
 
   if (isLoading) {
@@ -60,7 +62,8 @@ export default function PortalStatements() {
               onClick={() => {
                 void downloadPortalFile(
                   "/api/client-portal/statements?format=pdf",
-                  data?.asOf ? `statement-${data.asOf}.pdf` : "statement.pdf"
+                  data?.asOf ? `statement-${data.asOf}.pdf` : "statement.pdf",
+                  supplier
                 ).catch(() =>
                   toast({ title: t["portal.doc.downloadFailed"], variant: "destructive" })
                 );

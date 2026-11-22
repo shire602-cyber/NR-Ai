@@ -9,6 +9,8 @@
  * credits) to the GL control account (1040 A/R, 2010 A/P) at the same date.
  */
 import { pool } from "../db";
+import { DomainError } from "../errors";
+import { baseCurrencyOf } from "../ledger/currency";
 import {
   localDateSql,
   payableOpenBaseFilsSql,
@@ -122,36 +124,24 @@ function bucketOf(days: number): AgingBucket {
   return "over90";
 }
 
-async function controlBalance(
-  companyId: string,
-  asOf: IsoDate,
-  kind: "receivable" | "payable",
-  q: Queryable
-): Promise<{
-  id: string | null;
-  code: string | null;
-  name: string | null;
-  fils: Fils;
-  fxFils: Fils;
-  adjustmentsFils: Fils;
-}> {
-  const code = kind === "receivable" ? "1040" : "2010";
-  // PERF-AGING: the control account is picked in SQL (the code, else the first account by
-  // code / name of the right type whose name matches, VAT / tax accounts excluded: the order
-  // loadAccounts returns and the old JS `find` walked) and its own lines are summed in the same
-  // statement (was a chart load, a whole-ledger trial balance and two more scans). Each figure
-  // keeps the predicates of the query it replaces: the balance and the FX revaluation exclude
-  // closing entries, the manual adjustments do not.
-  const { rows } = await q.query(
-    `WITH acct AS (
+const CONTROL_ACCOUNT = {
+  receivable: ["1040", "asset", "receivable"],
+  payable: ["2010", "liability", "payable"],
+} as const;
+
+// Prefer the standard account code and fall back to the first matching non-tax account.
+// Closing entries are excluded from the control balance and FX totals. The manual
+// adjustments include all posted entries with an adjustment reason.
+const CONTROL_BALANCE_SQL = `WITH acct AS (
        SELECT a.id, a.code, a.name_en
          FROM accounts a
         WHERE a.company_id = $1
-          AND (a.code = $2
-               OR (a.type = $3 AND a.name_en ~* $4 AND a.name_en !~* 'vat|tax'))
-        ORDER BY (a.code = $2) DESC, a.code, a.name_en
+          AND (a.code = $3
+               OR (a.type = $4 AND a.name_en ~* $5 AND a.name_en !~* 'vat|tax'))
+        ORDER BY (a.code = $3) DESC, a.code, a.name_en
         LIMIT 1)
-     SELECT acct.id, acct.code, acct.name_en, s.d, s.c, s.fx, s.adj
+     SELECT acct.id, acct.code, acct.name_en,
+            s.d::text, s.c::text, s.fx::text, s.adj::text
        FROM acct
        CROSS JOIN LATERAL (
          SELECT COALESCE(SUM(ROUND(jl.debit * 100)) FILTER (WHERE ${NOT_CLOSING_SQL}), 0)::bigint AS d,
@@ -163,18 +153,22 @@ async function controlBalance(
            FROM journal_lines jl
            JOIN journal_entries je ON je.id = jl.entry_id
           WHERE je.company_id = $1 AND je.status = 'posted' AND jl.account_id = acct.id
-            AND ${ENTRY_LOCAL_DATE_SQL} <= $5::date) s`,
-    [
-      companyId,
-      code,
-      kind === "receivable" ? "asset" : "liability",
-      kind === "receivable" ? "receivable" : "payable",
-      asOf,
-    ]
-  );
-  const r = rows[0] as
-    | { id: string; code: string; name_en: string; d: string; c: string; fx: string; adj: string }
-    | undefined;
+            AND ${ENTRY_LOCAL_DATE_SQL} <= $2::date) s`;
+
+type ControlBalanceRow = {
+  id: string;
+  code: string;
+  name_en: string;
+  d: string;
+  c: string;
+  fx: string;
+  adj: string;
+};
+
+function readControlBalance(
+  r: ControlBalanceRow | null | undefined,
+  kind: keyof typeof CONTROL_ACCOUNT
+) {
   if (!r) return { id: null, code: null, name: null, fils: 0, fxFils: 0, adjustmentsFils: 0 };
   const debit = Number(r.d);
   const credit = Number(r.c);
@@ -186,8 +180,28 @@ async function controlBalance(
   return { id: r.id, code: r.code, name: r.name_en, fils, fxFils, adjustmentsFils };
 }
 
+async function controlBalance(
+  companyId: string,
+  asOf: IsoDate,
+  kind: keyof typeof CONTROL_ACCOUNT,
+  q: Queryable
+) {
+  const { rows } = await q.query(CONTROL_BALANCE_SQL, [
+    companyId,
+    asOf,
+    ...CONTROL_ACCOUNT[kind],
+  ]);
+  return readControlBalance(rows[0] as ControlBalanceRow | undefined, kind);
+}
+
 /** Open-document rows the aging SQL returns (typed at the driver boundary). */
 type AgingDocRows = Parameters<typeof build>[2];
+type PayableAgingRow = {
+  base_currency: string | null;
+  control_balance: ControlBalanceRow | null;
+  unapplied_fils: string;
+  payable_documents: Array<AgingDocRows[number] & { vendor_id: string | null }>;
+};
 
 function build(
   kind: "receivable" | "payable",
@@ -369,34 +383,44 @@ export async function agedPayablesWithVendors(
   q: Queryable = pool
 ): Promise<{ report: AgingReport; vendorOf: Map<string, string> }> {
   const { companyId, asOf } = args;
-  const [{ rows }, control, unapplied, reportCurrency] = await runReportReads(
-    q,
-    () =>
-      q.query(
-        `SELECT b.id, b.vendor_id, b.bill_number AS number, COALESCE(NULLIF(TRIM(b.vendor_name), ''), 'Unknown Vendor') AS name,
-              ${LOCAL("b.bill_date")}::text AS date,
-              COALESCE(${LOCAL("b.due_date")}, ${LOCAL("b.bill_date")})::text AS due,
-              COALESCE(b.currency, co.base_currency) AS currency,
-              ($2::date - COALESCE(${LOCAL("b.due_date")}, ${LOCAL("b.bill_date")})) AS days,
-              ${payableOpenBaseFilsSql("b", AS_OF)} AS open_fils
-         FROM vendor_bills b
-         JOIN companies co ON co.id = b.company_id
-        WHERE b.company_id = $1
-          AND ${payableStatusSql("b")}
-          AND ${LOCAL("b.bill_date")} <= $2::date
-        ORDER BY b.bill_date, b.bill_number`,
-        [companyId, asOf]
-      ),
-    () => controlBalance(companyId, asOf, "payable", q),
-    () => unappliedFils(unappliedPayableCreditsFilsSql("$1", AS_OF), companyId, asOf, q),
-    () => reportCurrencyOf(companyId, q)
+  // Share a pool checkout and statement snapshot across the bills, credits and ledger totals.
+  const { rows } = await q.query(
+    `SELECT co.base_currency,
+            (SELECT row_to_json(control) FROM (${CONTROL_BALANCE_SQL}) control) AS control_balance,
+            (${unappliedPayableCreditsFilsSql("$1", AS_OF)})::text AS unapplied_fils,
+            COALESCE((
+              SELECT json_agg(doc) FROM (
+                SELECT b.id, b.vendor_id, b.bill_number AS number,
+                       COALESCE(NULLIF(TRIM(b.vendor_name), ''), 'Unknown Vendor') AS name,
+                       ${LOCAL("b.bill_date")}::text AS date,
+                       COALESCE(${LOCAL("b.due_date")}, ${LOCAL("b.bill_date")})::text AS due,
+                       COALESCE(b.currency, co.base_currency) AS currency,
+                       ($2::date - COALESCE(${LOCAL("b.due_date")}, ${LOCAL("b.bill_date")})) AS days,
+                       (${payableOpenBaseFilsSql("b", AS_OF)})::text AS open_fils
+                  FROM vendor_bills b
+                 WHERE b.company_id = co.id
+                   AND ${payableStatusSql("b")}
+                   AND ${LOCAL("b.bill_date")} <= $2::date
+                 ORDER BY b.bill_date, b.bill_number
+              ) doc
+            ), '[]'::json) AS payable_documents
+       FROM companies co WHERE co.id = $1`,
+    [companyId, asOf, ...CONTROL_ACCOUNT.payable]
+  );
+  const result = rows[0] as PayableAgingRow | undefined;
+  if (!result) throw new DomainError("COMPANY_NOT_FOUND", 404);
+
+  const report = build(
+    "payable",
+    asOf,
+    result.payable_documents,
+    readControlBalance(result.control_balance, "payable"),
+    baseCurrencyOf({ baseCurrency: result.base_currency }),
+    Number(result.unapplied_fils)
   );
   const vendorOf = new Map<string, string>();
-  for (const r of rows as Array<{ id: string; vendor_id: string | null }>) {
+  for (const r of result.payable_documents) {
     if (r.vendor_id) vendorOf.set(r.id, r.vendor_id);
   }
-  return {
-    report: build("payable", asOf, rows as AgingDocRows, control, reportCurrency, unapplied),
-    vendorOf,
-  };
+  return { report, vendorOf };
 }

@@ -1,4 +1,5 @@
 {
+  "portal.doc.draftAccountChanged": "This draft belongs to another supplier. Open that supplier’s portal to send it.",
   "portal.accept": "Accept",
   "portal.aging30": "1–30 days",
   "portal.aging60": "31–60 days",
@@ -356,7 +357,6 @@
   "portal.bulk.outcome.pending": "Already invited",
   "portal.bulk.outcome.not_found": "Not found",
   "portal.bulk.outcome.rate_limited": "Limit reached, try later",
-  "portal.bulk.outcome.delivery_failed": "Email delivery failed",
   "portal.dash.balanceDue": "Balance due",
   "portal.dash.overdueOf": "{count, plural, one {# overdue invoice:} other {# overdue invoices:}}",
   "portal.dash.nextDue": "Next payment due",
@@ -402,5 +402,6 @@
   "portal.account.signOutAll": "Sign out everywhere",
   "portal.chip.column": "Portal",
   "portal.switchLanguage": "العربية",
-  "portal.doc.downloadFailed": "The PDF could not be downloaded. Please try again."
+  "portal.doc.downloadFailed": "The PDF could not be downloaded. Please try again.",
+  "portal.bulk.outcome.delivery_failed": "Email delivery failed"
 }

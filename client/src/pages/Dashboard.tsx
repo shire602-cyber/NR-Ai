@@ -1,3 +1,5 @@
+import { PageSkeleton } from "@/components/PageSkeleton";
+import { ErrorState } from "@/components/ui/error-state";
 import { TrialBanner } from "@/components/TrialBanner";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import ClientDashboard from "./ClientDashboard";
@@ -18,7 +20,7 @@ import { EInvoiceReadinessCard } from "@/components/einvoice/EInvoiceReadinessCa
 
 export default function Dashboard() {
   const { data: user, isLoading } = useCurrentUser();
-  if (isLoading) return null;
+  if (isLoading) return <PageSkeleton variant="dashboard" />;
   if (user?.userType === "client") return <ClientDashboard />;
   return <CustomerDashboard />;
 }
@@ -31,7 +33,9 @@ function CustomerDashboard() {
     <div className="space-y-8">
       <TrialBanner />
       <DashboardHero m={m} empty={empty} />
-      {empty ? (
+      {m.statsError && !m.stats ? (
+        <ErrorState onRetry={() => void m.refetchStats()} />
+      ) : empty ? (
         <DashboardEmpty m={m} />
       ) : (
         <>

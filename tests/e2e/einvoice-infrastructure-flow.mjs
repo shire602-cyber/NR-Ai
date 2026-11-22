@@ -85,7 +85,7 @@ const copies = {
     copied: "Copied",
     copyFailed: "Could not copy",
     copyManually: "Select the text and copy manually.",
-    csvRequired: "Choose a bank CSV export.",
+    csvRequired: "Choose a CSV file exported from your bank.",
     firm: "Fixture firm",
     clients: ["Fixture bakery", "Fixture supplier"],
   },
@@ -121,7 +121,7 @@ const copies = {
     copied: "تم النسخ",
     copyFailed: "تعذّر النسخ",
     copyManually: "حدّد النص وانسخه يدويًا.",
-    csvRequired: "اختر كشفًا بنكيًا بصيغة CSV.",
+    csvRequired: "اختر ملف CSV صدّرته من مصرفك.",
     firm: "مكتب المحاسبة التجريبي",
     clients: ["المخبز التجريبي", "المورد التجريبي"],
   },
@@ -674,7 +674,7 @@ async function selectProviders(browser, persona) {
       await expectFrame(page, lang);
     }
     const statementFile = page.getByTestId("input-bank-statement-file");
-    assert.equal(await statementFile.getAttribute("accept"), ".csv");
+    assert.equal(await statementFile.getAttribute("accept"), ".csv,text/csv");
     await statementFile.setInputFiles({
       name: "wrong.xlsx",
       mimeType: "application/octet-stream",

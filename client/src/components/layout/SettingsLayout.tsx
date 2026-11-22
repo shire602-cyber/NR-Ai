@@ -53,9 +53,9 @@ export function SettingsLayout({ children, hide, items, className }: SettingsLay
                 aria-current={active ? "page" : undefined}
                 data-testid={item.testId ?? `settings-nav-${item.key}`}
                 className={cn(
-                  "relative flex h-9 shrink-0 items-center whitespace-nowrap rounded-md px-3 text-small font-medium transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "relative flex min-h-11 lg:min-h-9 shrink-0 items-center whitespace-nowrap rounded-md px-3 text-small font-medium transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   active
-                    ? "bg-secondary text-foreground lg:before:absolute lg:before:inset-y-2 lg:before:start-0 lg:before:w-0.5 lg:before:rounded-full lg:before:bg-primary"
+                    ? "bg-primary/10 text-foreground lg:before:absolute lg:before:inset-y-2 lg:before:start-0 lg:before:w-0.5 lg:before:rounded-full lg:before:bg-primary"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                 )}
               >

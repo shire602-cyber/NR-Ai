@@ -605,13 +605,17 @@ export async function submitVatReturn(input: {
       const storedDate = existing.declarationDate && dateOf(existing.declarationDate);
       if (
         target === "filed" &&
-        (existing.ftaReferenceNumber !== reference || (filedOn && filedOn !== storedDate))
+        (existing.ftaReferenceNumber?.trim() !== reference ||
+          (filedOn && filedOn !== storedDate) ||
+          (input.declarantName !== undefined && input.declarantName !== existing.declarantName) ||
+          (input.declarantPosition !== undefined &&
+            input.declarantPosition !== existing.declarantPosition))
       ) {
         throw new DomainError(
           "VAT_FILING_CONFLICT",
           409,
           undefined,
-          "A filing with a different reference or date is already recorded for this return."
+          "Different filing evidence is already recorded for this return."
         );
       }
       return existing;
@@ -685,8 +689,8 @@ export async function submitVatReturn(input: {
         status: target,
         notes: input.notes ?? existing.notes ?? null,
         ftaReferenceNumber: reference,
-        submittedBy: input.userId,
-        submittedAt: declaration ?? new Date(),
+        submittedBy: reference ? input.userId : null,
+        submittedAt: reference ? (declaration ?? new Date()) : null,
         ...(declaration ? { declarationDate: declaration } : {}),
         declarantName: input.declarantName ?? existing.declarantName ?? null,
         declarantPosition: input.declarantPosition ?? existing.declarantPosition ?? null,

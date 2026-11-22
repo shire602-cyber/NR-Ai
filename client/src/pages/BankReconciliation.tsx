@@ -1,7 +1,7 @@
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { accountDisplayName } from "@/lib/account-name";
 import { localizeServerWarning } from "@/lib/validation-messages";
-import { useState, useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { FileDrop } from "@/components/ui/file-drop";
 import { Label } from "@/components/ui/label";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Link } from "wouter";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -47,6 +48,7 @@ import { DataTableCard } from "@/components/ui/data-table";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActionButton } from "@/components/ui/row-actions";
 import { useToast } from "@/hooks/use-toast";
+import { effectiveCompanyId } from "@/lib/activeCompany";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
@@ -295,10 +297,16 @@ function downloadSampleBankCsv() {
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function BankReconciliation() {
+  const company = useDefaultCompany();
+  return <CompanyBankReconciliation key={company.companyId} company={company} />;
+}
+
+function CompanyBankReconciliation({ company }: { company: ReturnType<typeof useDefaultCompany> }) {
   const { t, locale } = useTranslation();
   const { gate } = useCompanyPermission();
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId, companies, isLoading: isLoadingCompany } = company;
+  const isActive = () => !!companyId && effectiveCompanyId(companies, companyId) === companyId;
 
   const [selectedBankAccount, setSelectedBankAccount] = useState<string>("");
   // `?import=1` (e.g. from the legacy banking route) opens the statement import straight away.
@@ -332,7 +340,12 @@ export default function BankReconciliation() {
 
   // ─── Queries ──────────────────────────────────────────────────────────────
 
-  const { data: bankAccounts, isLoading: isLoadingBankAccounts } = useQuery<BankAccount[]>({
+  const {
+    data: bankAccounts,
+    isLoading: isLoadingBankAccounts,
+    error: accountsError,
+    refetch: refetchAccounts,
+  } = useQuery<BankAccount[]>({
     queryKey: ["/api/companies", companyId, "bank-accounts"],
     enabled: !!companyId,
   });
@@ -350,7 +363,12 @@ export default function BankReconciliation() {
     (!statementPreview.requiresChoice || acknowledgeAmbiguity)
   );
 
-  const { data: transactions, isLoading: isLoadingTransactions } = useQuery<BankTransaction[]>({
+  const {
+    data: transactions,
+    isLoading: isLoadingTransactions,
+    error: transactionsError,
+    refetch: refetchTransactions,
+  } = useQuery<BankTransaction[]>({
     queryKey: ["/api/companies", companyId, "bank-statements", "transactions"],
     enabled: !!companyId,
   });
@@ -439,7 +457,10 @@ export default function BankReconciliation() {
       companyId: string;
       bankAccountId: string;
       acknowledgeAmbiguity: boolean;
-    }) => apiRequest("POST", `/api/companies/${reviewedCompanyId}/bank-statements/import`, payload),
+    }) => {
+      if (!isActive()) throw new Error(t["banking.import.companyChanged"]);
+      return apiRequest("POST", `/api/companies/${reviewedCompanyId}/bank-statements/import`, payload);
+    },
     onSuccess: (data: any, { companyId: reviewedCompanyId }) => {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", reviewedCompanyId, "bank-statements"],
@@ -603,7 +624,7 @@ export default function BankReconciliation() {
     notMapped: t["banking.import.notMapped"],
     confirmAssumption: t["banking.import.confirmAssumption"],
     previewLoading: t["banking.import.previewLoading"],
-    previewFailed: t["banking.import.previewFailed"],
+    previewFailed: t["pageLabels.bankCsvPreviewFailed"],
     sampleRows: t["banking.import.sampleRows"],
     colDate: t["banking.import.colDate"],
     colDescription: t["banking.import.colDescription"],
@@ -640,32 +661,38 @@ export default function BankReconciliation() {
     overrides: StatementOverrides,
     headerRow?: number
   ) => {
-    if (!companyId) return;
+    if (!companyId || !isActive()) return;
     // A later file, mapping or dialog reset invalidates every earlier response.
     const requestId = ++latestPreviewRequest.current;
     setPreviewLoading(true);
     setPreviewError(null);
     setAcknowledgeAmbiguity(false);
     try {
+      const fileBase64 = await fileToBase64(file).catch(() => null);
+      if (requestId !== latestPreviewRequest.current || !isActive()) return;
+      if (fileBase64 === null) {
+        setReviewedStatement(null);
+        setPreviewError(t["banking.import.fileUnreadable"]);
+        return;
+      }
       const payload: StatementPreviewPayload = {
-        fileBase64: await fileToBase64(file),
+        fileBase64,
         fileName: file.name,
         expectedKind: "csv",
         ...overrides,
         ...(overrides.mapping && headerRow ? { headerRow } : {}),
       };
-      if (requestId !== latestPreviewRequest.current) return;
       const preview = (await apiRequest(
         "POST",
         `/api/companies/${companyId}/bank-statements/preview`,
         payload
       )) as StatementPreview;
-      if (requestId !== latestPreviewRequest.current) return;
+      if (requestId !== latestPreviewRequest.current || !isActive()) return;
       setReviewedStatement({ requestId, companyId, file, payload, preview });
-    } catch (error: any) {
-      if (requestId !== latestPreviewRequest.current) return;
+    } catch {
+      if (requestId !== latestPreviewRequest.current || !isActive()) return;
       setReviewedStatement(null);
-      setPreviewError(error?.message || strings.previewFailed);
+      setPreviewError(strings.previewFailed);
     } finally {
       if (requestId === latestPreviewRequest.current) setPreviewLoading(false);
     }
@@ -686,17 +713,14 @@ export default function BankReconciliation() {
   };
 
   const handleStatementFile = (file: File | undefined) => {
-    if (file && !/\.csv$/i.test(file.name)) {
-      resetStatementPreview();
+    if (!file || !isActive()) return;
+    resetStatementPreview();
+    if (!/\.csv$/i.test(file.name)) {
       setPreviewError(t["banking.import.csvRequired"]);
       return;
     }
-    if (file) {
-      setImportFile(file);
-      setReviewedStatement(null);
-      setStatementOverrides({});
-      void runStatementPreview(file, {});
-    }
+    setImportFile(file);
+    void runStatementPreview(file, {});
   };
 
   const handleImport = async () => {
@@ -707,9 +731,12 @@ export default function BankReconciliation() {
     ) {
       return;
     }
+    if (!isActive()) {
+      setPreviewError(t["banking.import.companyChanged"]);
+      return;
+    }
 
     setIsImporting(true);
-
     try {
       await importMutation.mutateAsync({
         ...reviewedStatement.payload,
@@ -717,12 +744,8 @@ export default function BankReconciliation() {
         bankAccountId: selectedBankAccount,
         acknowledgeAmbiguity,
       });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: translateNow("toasts.importFailed"),
-        description: error?.message,
-      });
+    } catch {
+      // The mutation keeps the selected file and reports the import error.
     } finally {
       setIsImporting(false);
     }
@@ -771,7 +794,7 @@ export default function BankReconciliation() {
       <PageHeader
         eyebrow={t["shell.nav.banking"]}
         title={t.bankReconciliation}
-        description={t.bankReconciliationDescription}
+        description={t["pageLabels.bankCsvWorkflow"]}
         primaryAction={
           <Button
             onClick={() => setImportDialogOpen(true)}
@@ -917,12 +940,20 @@ export default function BankReconciliation() {
             </div>
 
             <DataTableCard
+              error={{
+                onRetry: () => {
+                  if (accountsError) void refetchAccounts();
+                  if (transactionsError) void refetchTransactions();
+                },
+              }}
               status={
-                isLoadingTransactions
-                  ? "loading"
-                  : filteredTransactions.length === 0
-                    ? "empty"
-                    : "ready"
+                (accountsError && !bankAccounts) || (transactionsError && !transactions)
+                  ? "error"
+                  : isLoadingTransactions
+                    ? "loading"
+                    : filteredTransactions.length === 0
+                      ? "empty"
+                      : "ready"
               }
               columnLabels={[t.date, t.description, t.amount, t.status]}
               empty={
@@ -943,7 +974,7 @@ export default function BankReconciliation() {
                   : {
                       icon: Building2,
                       title: t["banking.emptyTransactionsTitle"],
-                      description: t["banking.emptyTransactionsDescription"],
+                      description: t["pageLabels.bankCsvWorkflow"],
                       action: {
                         label: t["banking.importStatementAction"],
                         permission: "documents.write",
@@ -1365,14 +1396,18 @@ export default function BankReconciliation() {
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto grid-cols-[minmax(0,1fr)]">
           <DialogHeader>
             <DialogTitle>{t.importBankStatement}</DialogTitle>
-            <DialogDescription>{t.uploadBankStatement}</DialogDescription>
+            <DialogDescription>{t["pageLabels.bankCsvWorkflow"]}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>
                 <T k="pageLabels.bankAccount" />
               </Label>
-              <Select value={selectedBankAccount} onValueChange={setSelectedBankAccount}>
+              <Select
+                value={selectedBankAccount}
+                onValueChange={setSelectedBankAccount}
+                disabled={!bankAccounts?.length || isImporting}
+              >
                 <SelectTrigger data-testid="select-import-bank-account">
                   <SelectValue placeholder={t["bankReconciliation.selectAccount"]} />
                 </SelectTrigger>
@@ -1384,8 +1419,13 @@ export default function BankReconciliation() {
                   ))}
                 </SelectContent>
               </Select>
-              {(!bankAccounts || bankAccounts.length === 0) && (
-                <p className="text-xs text-warning">{t["banking.accounts.none"]}</p>
+              {bankAccounts?.length === 0 && (
+                <div className="rounded-lg border border-border bg-surface-sunken px-3 py-2">
+                  <p className="text-small text-foreground">{t["banking.accounts.none"]}</p>
+                  <Button asChild variant="link" className="px-0">
+                    <Link href="/bank-accounts">{t["banking.accounts.title"]}</Link>
+                  </Button>
+                </div>
               )}
             </div>
             <div className="space-y-2">
@@ -1393,28 +1433,28 @@ export default function BankReconciliation() {
                 <T k="pageLabels.statementFile" />
               </Label>
               <FileDrop
-                accept=".csv"
+                accept=".csv,text/csv"
                 onFiles={(files) => handleStatementFile(files[0])}
                 disabled={isImporting}
                 value={importFile?.name ?? null}
+                onClear={resetStatementPreview}
                 inputTestId="input-bank-statement-file"
               />
-              {importFile && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <FileSpreadsheet className="w-4 h-4 text-success" />
-                  <span>
-                    {importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)
-                  </span>
-                </div>
-              )}
               {previewLoading && (
-                <p className="text-xs text-muted-foreground flex items-center gap-2">
+                <p
+                  role="status"
+                  className="text-small text-muted-foreground flex items-center gap-2"
+                >
                   <Loader2 className="w-3 h-3 animate-spin" />
                   {strings.previewLoading}
                 </p>
               )}
               {previewError && (
-                <p className="text-xs text-destructive" data-testid="text-statement-preview-error">
+                <p
+                  role="alert"
+                  className="text-small text-destructive"
+                  data-testid="text-statement-preview-error"
+                >
                   {previewError}
                 </p>
               )}
@@ -1602,7 +1642,7 @@ export default function BankReconciliation() {
               </div>
             )}
             <div className="bg-muted/50 p-3 rounded-md text-sm space-y-1.5">
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1.5">
                   <p className="font-medium text-xs">
                     <T k="banking.import.csvDetails" />

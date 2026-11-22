@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 /**
  * W5-C multi-currency balances and the rate feed routes.
  * Issue ids: R14-16 (foreign bank balances, bank revaluation, FX on reimbursement and receipt
@@ -209,6 +210,64 @@ describe("R14-16 / R11-18 foreign-currency bank balances", () => {
   });
 });
 
+it("posts a USD receipt at the booked USD-to-EUR rate for a EUR company", async () => {
+  const t = await h.createTenant({ name: "EUR Receipt" });
+  await h.sql(`UPDATE companies SET base_currency = 'EUR' WHERE id = $1`, [t.company.id]);
+  await rate(t, { toCurrency: "EUR", rate: 0.9, effectiveDate: daysAgo(10) });
+  const expense = await accountByCode(t, "5010");
+  const bank = await accountByCode(t, "1020");
+  const draft = await t.as.post(`/api/companies/${t.company.id}/receipts`, {
+    merchant: "USD vendor",
+    date: daysAgo(3),
+    currency: "USD",
+    amount: 100,
+    vatAmount: 5,
+    invoiceNumber: "USD-105",
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const url = `/api/receipts/${draft.body.id}/post`;
+  const bad = await t.as.post(url, { accountId: expense.id, paymentAccountId: expense.id });
+  expect(bad.status).toBe(400);
+  const [unposted] = await h.sql(`SELECT exchange_rate, posted FROM receipts WHERE id = $1`, [
+    draft.body.id,
+  ]);
+  expect(Number(unposted.exchange_rate)).toBe(0.9);
+  expect(unposted.posted).toBe(false);
+
+  const posted = await t.as.post(url, { accountId: expense.id, paymentAccountId: bank.id });
+  expect(posted.status, posted.text).toBe(200);
+  expect(posted.body).toMatchObject({
+    exchangeRate: 0.9,
+    baseCurrencyAmount: 94.5,
+    invoiceNumber: "USD-105",
+  });
+  const [line] = await h.sql(
+    `SELECT credit, foreign_credit, foreign_currency, exchange_rate FROM journal_lines WHERE entry_id = $1 AND account_id = $2`,
+    [posted.body.journalEntryId, bank.id]
+  );
+  expect(Number(line.credit)).toBe(94.5);
+  expect(Number(line.foreign_credit)).toBe(105);
+  expect(line.foreign_currency).toBe("USD");
+  expect(Number(line.exchange_rate)).toBe(0.9);
+  await rate(t, { toCurrency: "EUR", rate: 0.8, effectiveDate: daysAgo(1) });
+  const revised = await t.as.post(`/api/receipts/${draft.body.id}/revise`, { date: daysAgo(1) });
+  expect(revised.status, revised.text).toBe(200);
+  expect(revised.body).toMatchObject({ exchangeRate: 0.8, baseCurrencyAmount: 84 });
+  const parity = await t.as.post(`/api/companies/${t.company.id}/receipts`, {
+    date: daysAgo(1),
+    currency: "USD",
+    exchangeRate: 1,
+    amount: 100,
+    vatAmount: 5,
+  });
+  expect(parity.status, parity.text).toBe(200);
+  const explicit = await t.as.post(`/api/receipts/${parity.body.id}/post`, {
+    accountId: expense.id,
+    paymentAccountId: bank.id,
+  });
+  expect(explicit.body).toMatchObject({ exchangeRate: 1, baseCurrencyAmount: 105 });
+});
+
 describe("R14-14 rate feed routes", () => {
   it("R14-14: an admin-ingested ECB/CBUAE payload writes system rows only; non-admins 403; unconfigured fetch 503", async () => {
     const admin = await h.createTenant({ name: "FeedAdmin", isAdmin: true });
@@ -280,4 +339,47 @@ describe("R14-14 rate feed routes", () => {
     const runs = await h.sql(`SELECT provider, status FROM fx_rate_feed_runs ORDER BY created_at`);
     expect(runs.map((r: any) => r.provider)).toEqual(["ecb", "cbuae", "csv"]);
   });
+});
+
+it("deduplicates concurrent retries of the same receipt capture", async () => {
+  const t = await h.createTenant();
+  const endpoint = `/api/companies/${t.company.id}/receipts`;
+  const payload = { captureId: randomUUID(), amount: 50, date: daysAgo(3) };
+  const responses = await Promise.all(
+    Array.from({ length: 5 }, () => t.as.post(endpoint, payload))
+  );
+  expect(responses.map((r) => r.status)).toEqual([200, 200, 200, 200, 200]);
+  expect(new Set(responses.map((r) => r.body.id)).size).toBe(1);
+  const rows = await h.sql("SELECT id FROM receipts WHERE company_id = $1 AND capture_id = $2", [
+    t.company.id,
+    payload.captureId,
+  ]);
+  expect(rows).toHaveLength(1);
+});
+
+it("posts using the leased connection for VAT setup and period locks", async () => {
+  const { pool } = await import("../../server/db");
+  const { postReceipt } = await import("../../server/services/receipt-posting.service");
+  const t = await h.createTenant();
+  const expense = await accountByCode(t, "5010");
+  const bank = await accountByCode(t, "1020");
+  const draft = await t.as.post(`/api/companies/${t.company.id}/receipts`, {
+    date: daysAgo(3),
+    amount: 100,
+    vatAmount: 5,
+  });
+  expect(draft.status).toBe(200);
+  const query = pool.query;
+  pool.query = (() => {
+    throw new Error("Posting requested a second pool connection");
+  }) as typeof query;
+  try {
+    const result = await postReceipt(draft.body, t.user.id, {
+      accountId: expense.id,
+      paymentAccountId: bank.id,
+    });
+    expect(result.receipt.baseCurrencyAmount).toBe(105);
+  } finally {
+    pool.query = query;
+  }
 });

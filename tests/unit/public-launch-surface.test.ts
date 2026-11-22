@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 // Source inspection is intentional: this is the unsupported-claims guard for public marketing,
 // legal and help copy. It scans the shipped source/catalog text for banned compliance and security
 // claims across pages that cannot all be rendered without API data.
@@ -193,7 +194,7 @@ describe("Public SaaS launch surface", () => {
   it("does not reintroduce unsupported public compliance or security claims", () => {
     for (const file of publicLaunchFiles) {
       const source = readRepoFile(file);
-      for (const bannedClaim of bannedLaunchClaims) {
+      for (const bannedClaim of [...bannedLaunchClaims, /\bbank\s+feeds?\b/i]) {
         expect(source, `${file} contains ${bannedClaim}`).not.toMatch(bannedClaim);
       }
       expect(
@@ -212,6 +213,8 @@ describe("Public SaaS launch surface", () => {
       const labels = JSON.parse(readRepoFile(`client/src/locales/${locale}/pageLabels.json`));
       expect(labels).not.toHaveProperty(["pageLabels.syncNewTransactionsEveryHour"]);
       const prefix = `client/src/locales/${locale}`;
+      const onboarding = JSON.parse(readRepoFile(`${prefix}/onboarding.json`));
+      expect(onboarding).not.toHaveProperty(["onboarding.bankConnectedDescription"]);
       const keys = [
         ["marketing", "marketing.faq3A"],
         ["banking", "banking.emptyTransactionsDescription"],
@@ -222,6 +225,56 @@ describe("Public SaaS launch surface", () => {
         expect(source[key], `${locale} ${key}`).toMatch(/CSV/);
       }
     }
+  });
+
+  it("omits future-feature wording from toast catalogs and release notes", () => {
+    const obsoleteToast = "toasts.newsletterFeatureWillBeAvailableSoonConfigure";
+    const futureClaims = [
+      /\bcoming\s+soon\b/i,
+      /\bwill\s+be\s+available\s+soon\b/i,
+      /ستتوفر[^.\n]*قريب/,
+    ];
+    for (const locale of ["en", "ar"]) {
+      const path = `client/src/locales/${locale}/toasts.json`;
+      const catalog: Record<string, string> = JSON.parse(readRepoFile(path));
+      expect(catalog).not.toHaveProperty([obsoleteToast]);
+      for (const claim of futureClaims) {
+        expect(Object.values(catalog).join("\n"), path).not.toMatch(claim);
+      }
+    }
+    const releaseNotes = "docs/release/SUPERSEDED-PRS.md";
+    for (const claim of futureClaims) {
+      expect(readRepoFile(releaseNotes), releaseNotes).not.toMatch(claim);
+    }
+  });
+
+  it("omits unsupported banking claims from tracked source and documentation", () => {
+    const claims = [
+      /\blive[\s-]*bank[\s-]*feeds?\b/i,
+      /\bautomatic\s+bank\s+transaction\s+sync\b/i,
+      /\bbank[\s-]+feeds?\b[^\n.]{0,60}\b(?:coming|later|soon)\b/i,
+      /\bbank\s+account\s+is\s+(?:already\s+)?connected\b/i,
+      /حسابك\s+البنكي\s+(?:مرتبط|متصل)/,
+      /الربط\s+البنكي\s+المباشر|(?:الربط|المزامنة)\s+البنكي(?:ة)?[^\n.]{0,60}(?:قريب|لاحق)/,
+    ];
+    const files = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
+      .split("\0")
+      .filter((file) => /\.(?:md|tsx?|json|mjs|cjs|js|html|txt|ya?ml|sql)$/i.test(file));
+    const matches = files.flatMap((file) => {
+      const source = readRepoFile(file);
+      const rules = [...claims];
+      if (file.startsWith("client/src/locales/")) {
+        rules.push(/\bbank\s+feeds?\b|الربط\s+البنكي/i);
+      }
+      if (file.startsWith("migrations/") || file.endsWith("/benchmark-run.json")) {
+        rules.push(/\bcoming\s+soon\b/i, /الرفع\s+قريب/);
+      }
+      return rules.flatMap((rule) => {
+        const match = rule.exec(source);
+        return match ? [`${file}:${source.slice(0, match.index).split("\n").length}`] : [];
+      });
+    });
+    expect(matches).toEqual([]);
   });
 
   it("keeps authenticated SaaS chrome and dashboard copy claim-safe", () => {

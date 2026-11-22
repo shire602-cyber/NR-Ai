@@ -67,7 +67,6 @@
   "onboarding.saveContinue": "Save & continue",
   "onboarding.accountsReadyDescription": "Your UAE-standard chart of accounts has been pre-configured and is ready to use.",
   "onboarding.looksGoodContinue": "Looks good, continue",
-  "onboarding.bankConnectedDescription": "Your bank account is ready for CSV statement uploads and reconciliation.",
   "onboarding.bankAddDescription": "Add your bank account to enable CSV statement import and reconciliation.",
   "onboarding.bankNamePlaceholder": "Emirates NBD Current",
   "onboarding.selectBank": "Select bank",

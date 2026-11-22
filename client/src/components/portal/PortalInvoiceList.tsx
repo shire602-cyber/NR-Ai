@@ -1,3 +1,4 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { useMemo, useRef, useState } from "react";
 import { CreditCard, FileCode2, FileDown, FileText, Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ import { useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { DateText } from "@/components/documents/DateText";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { portalRequestHeaders } from "@/lib/portal-state";
 import { downloadPortalFile } from "@/lib/portal-files";
 import { formatInteger } from "@/lib/format";
 import { isolateLtrText } from "@/lib/format-bidi";
@@ -81,6 +83,7 @@ export function PortalInvoiceList({
   loading?: boolean;
   onlinePayment: boolean;
 }) {
+  const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [filter, setFilter] = useState<Filter>("all");
@@ -113,7 +116,12 @@ export function PortalInvoiceList({
 
   const pay = (inv: PortalInvoice) =>
     run(`pay:${inv.id}`, async () => {
-      const res = (await apiRequest("POST", `/api/client-portal/invoices/${inv.id}/pay`, {})) as {
+      const res = (await apiRequest(
+        "POST",
+        `/api/client-portal/invoices/${inv.id}/pay`,
+        {},
+        portalRequestHeaders(supplier)
+      )) as {
         url?: string;
       };
       if (!res?.url) return false;
@@ -299,7 +307,8 @@ export function PortalInvoiceList({
                               void run(`pdf:${inv.id}`, () =>
                                 downloadPortalFile(
                                   `/api/client-portal/invoices/${inv.id}/pdf`,
-                                  `invoice-${inv.number}.pdf`
+                                  `invoice-${inv.number}.pdf`,
+                                  supplier
                                 )
                               )
                             }
@@ -323,7 +332,8 @@ export function PortalInvoiceList({
                                 void run(`xml:${inv.id}`, () =>
                                   downloadPortalFile(
                                     `/api/client-portal/invoices/${inv.id}/einvoice`,
-                                    `einvoice-${inv.number}.xml`
+                                    `einvoice-${inv.number}.xml`,
+                                    supplier
                                   )
                                 )
                               }

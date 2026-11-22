@@ -139,19 +139,43 @@ export function payrollRunInDateRange(run: PayrollRunReportRow, dateRange: DateR
   return valueInDateRange(periodDate.toISOString(), dateRange);
 }
 
-export function receiptExchangeRate(receipt: ReceiptReportRow): number {
+function receiptExchangeRate(receipt: ReceiptReportRow): number {
   const rate = Number(receipt.exchangeRate ?? 1);
   return Number.isFinite(rate) && rate > 0 ? rate : 1;
 }
 
-export function receiptSubtotalAed(receipt: ReceiptReportRow): number {
-  const base = Number(receipt.baseCurrencyAmount ?? 0);
-  if (Number.isFinite(base) && Math.abs(base) > 0.005) return base;
-  return (Number(receipt.amount) || 0) * receiptExchangeRate(receipt);
+function receiptSubtotalInBase(receipt: ReceiptReportRow): number {
+  return Math.round((Number(receipt.amount) || 0) * receiptExchangeRate(receipt) * 100) / 100;
 }
 
-export function receiptVatAed(receipt: ReceiptReportRow): number {
-  return (Number(receipt.vatAmount) || 0) * receiptExchangeRate(receipt);
+export function receiptVatInBase(receipt: ReceiptReportRow): number {
+  return Math.round((Number(receipt.vatAmount) || 0) * receiptExchangeRate(receipt) * 100) / 100;
+}
+
+/** Use the booked payment when its journal is available. Drafts use the captured estimate. */
+export function receiptSpendInBase(
+  receipt: ReceiptReportRow,
+  entry?: JournalEntryReportRow
+): number {
+  if (
+    receipt.posted &&
+    receipt.journalEntryId &&
+    receipt.paymentAccountId &&
+    entry?.id === receipt.journalEntryId &&
+    entry?.source === "receipt" &&
+    entry.status === "posted"
+  ) {
+    const payment = entry.lines?.find((line) => line.accountId === receipt.paymentAccountId);
+    if (payment) {
+      const bookedCredit = Number(payment.credit) - Number(payment.debit);
+      if (Number.isFinite(bookedCredit)) return bookedCredit;
+    }
+  }
+
+  const cash = Number(receipt.baseCurrencyAmount);
+  if (Number.isFinite(cash) && cash > 0) return cash;
+  if (!receipt.posted && receipt.exchangeRateSource === null && cash === 0) return 0;
+  return receiptSubtotalInBase(receipt) + (receipt.reverseCharge ? 0 : receiptVatInBase(receipt));
 }
 
 export function expenseClaimAmount(claim: ExpenseClaimReportRow): number {

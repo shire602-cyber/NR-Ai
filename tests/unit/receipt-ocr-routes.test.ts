@@ -181,6 +181,7 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
     expect(res.body.confidence).toBe(0);
     expect(res.body.confidenceBand).toBe("low");
     expect(res.body.reviewReasons.join(" ")).toMatch(/no confidence/i);
+    expect(res.body.reviewReasonCodes).toContain("MISSING_CONFIDENCE");
   });
 
   it("R05-22 retries once when subtotal + VAT does not equal the total, then returns the fix", async () => {

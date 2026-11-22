@@ -28,6 +28,7 @@ import { sendEmail } from "./email.service";
 import { renderQueuedNotificationEmail } from "./notification-email-copy";
 import { isCapabilityLive } from "../../shared/capabilities";
 import { notificationCopy, renderServerCopy } from "../../shared/server-copy";
+import { VAT_RECORDED_STATUSES } from "../../shared/vat-filing-status";
 import { customerVisibleNotification } from "../storage/notification-visibility";
 import { deliverOutboxMessage, enqueueEmail } from "../outbox/outbox";
 import { DIGEST_WINDOW_MS, renderNotificationDigest } from "./notification-digest";
@@ -494,14 +495,15 @@ export async function scanOverdueInvoices(now: Date = new Date()): Promise<numbe
   return n;
 }
 
-/** VAT returns not yet submitted that are due within 14 days (or overdue). */
+/** VAT returns with an outstanding external filing that are due within 14 days (or overdue). */
 export async function scanVatDeadlines(now: Date = new Date()): Promise<number> {
   const { rows } = await pool.query(
     `SELECT id, company_id, due_date::date::text AS due, period_end::date::text AS period_end
        FROM vat_returns
-      WHERE status NOT IN ('submitted', 'filed', 'amended')
+      WHERE status <> 'amended' AND NOT (status = ANY($2::text[])
+        AND NULLIF(BTRIM(fta_reference_number), '') IS NOT NULL)
         AND due_date::date <= ($1::date + 14)`,
-    [now.toISOString().slice(0, 10)]
+    [now.toISOString().slice(0, 10), VAT_RECORDED_STATUSES]
   );
   for (const r of rows) {
     await notify({

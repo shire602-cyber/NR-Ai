@@ -1,3 +1,4 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -43,16 +44,17 @@ interface PortalDocumentRow {
  * documents shared with the accountant. Content width 960, centred.
  */
 export default function PortalDashboard() {
+  const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const { data, isLoading } = useQuery({
-    ...portalQuery("/api/client-portal/dashboard"),
+    ...portalQuery("/api/client-portal/dashboard", supplier),
   });
   const { data: documents = [] } = useQuery<PortalDocumentRow[]>({
-    ...portalQuery("/api/client-portal/documents"),
+    ...portalQuery("/api/client-portal/documents", supplier),
   });
 
   const { data: company } = useQuery<{ name?: string }>({
-    ...portalQuery("/api/client-portal/company"),
+    ...portalQuery("/api/client-portal/company", supplier),
     staleTime: 5 * 60 * 1000,
   });
   const [welcome, setWelcome] = useState(() => {

@@ -62,14 +62,20 @@ export function coerceExportSheets(data: ExportData[]): ExportData[] {
   }));
 }
 
-export async function exportToExcel(data: ExportData[], filename: string) {
+export async function exportToExcel(
+  data: ExportData[],
+  filename: string,
+  assertActive?: () => void
+) {
   // E1: the workbook follows the language of the user who exports (labels, codes, dates, RTL).
   const sheets = await localizeExportSheets(coerceExportSheets(data));
   const { blob, filename: downloadedFilename } = await postForBlob(
     "/api/export/excel",
     { sheets, filename },
-    `${filename}.xlsx`
+    `${filename}.xlsx`,
+    assertActive
   );
+  assertActive?.();
   await triggerBlobDownload(blob, downloadedFilename);
 }
 
@@ -130,7 +136,8 @@ export async function triggerBlobDownload(blob: Blob, filename: string): Promise
 async function postForBlob(
   url: string,
   body: unknown,
-  fallbackFilename: string
+  fallbackFilename: string,
+  assertActive?: () => void
 ): Promise<{ blob: Blob; filename: string }> {
   let headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -140,6 +147,7 @@ async function postForBlob(
     headers = await withCsrfHeader("POST", headers);
   }
 
+  assertActive?.();
   const res = await fetch(apiUrl(url), {
     method: "POST",
     credentials: "include",
@@ -173,13 +181,15 @@ async function postForBlob(
 // totals row) stays consistent across in-flight and bulk exports.
 export async function downloadOcrExcel(
   rows: OcrExportRow[],
-  options: { filename?: string } = {}
+  options: { filename?: string; assertActive?: () => void } = {}
 ): Promise<void> {
   const { blob, filename } = await postForBlob(
     "/api/ocr/export-excel",
     { rows, filename: options.filename },
-    "muhasib-ocr-receipts.xlsx"
+    "muhasib-ocr-receipts.xlsx",
+    options.assertActive
   );
+  options.assertActive?.();
   await triggerBlobDownload(blob, filename);
 }
 
@@ -187,13 +197,15 @@ export async function downloadOcrExcel(
 // `ids` to filter to a subset, or omit it to export every saved receipt.
 export async function downloadReceiptsExcel(
   companyId: string,
-  options: { ids?: string[] } = {}
+  options: { ids?: string[]; assertActive?: () => void } = {}
 ): Promise<void> {
   const { blob, filename } = await postForBlob(
     `/api/companies/${companyId}/receipts/export-excel`,
     options.ids ? { ids: options.ids } : {},
-    "muhasib-receipts.xlsx"
+    "muhasib-receipts.xlsx",
+    options.assertActive
   );
+  options.assertActive?.();
   await triggerBlobDownload(blob, filename);
 }
 
@@ -956,21 +968,6 @@ export function prepareInvoiceStatusForExport(report: any): ExportData[] {
   ];
 }
 
-function receiptExportRate(receipt: any): number {
-  const rate = Number(receipt?.exchangeRate ?? 1);
-  return Number.isFinite(rate) && rate > 0 ? rate : 1;
-}
-
-function _receiptSubtotalExportAed(receipt: any): number {
-  const base = Number(receipt?.baseCurrencyAmount ?? 0);
-  if (Number.isFinite(base) && Math.abs(base) > 0.005) return base;
-  return (Number(receipt?.amount) || 0) * receiptExportRate(receipt);
-}
-
-function _receiptVatExportAed(receipt: any): number {
-  return (Number(receipt?.vatAmount) || 0) * receiptExportRate(receipt);
-}
-
 function expenseSummaryRows(rows: any[] = []) {
   return rows.map((row: any) => ({
     label: row.label,
@@ -983,6 +980,7 @@ function expenseSummaryRows(rows: any[] = []) {
 }
 
 export function prepareExpenseReportsForExport(report: any): ExportData[] {
+  const baseCurrency = report?.baseCurrency ?? "AED";
   return [
     {
       sheetName: "Expenses by Vendor",
@@ -990,9 +988,9 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
         { header: "Vendor", key: "label", width: 30 },
         { header: "Posted Entries", key: "entryCount", width: 16 },
         { header: "Expense Lines", key: "lineCount", width: 16 },
-        { header: "Debit (AED)", key: "debitAed", width: 18 },
-        { header: "Credit (AED)", key: "creditAed", width: 18 },
-        { header: "Net Expense (AED)", key: "netExpenseAed", width: 20 },
+        { header: `Debit (${baseCurrency})`, key: "debitAed", width: 18 },
+        { header: `Credit (${baseCurrency})`, key: "creditAed", width: 18 },
+        { header: `Net Expense (${baseCurrency})`, key: "netExpenseAed", width: 20 },
       ],
       rows: expenseSummaryRows(report?.byVendor),
     },
@@ -1002,9 +1000,9 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
         { header: "Category", key: "label", width: 28 },
         { header: "Posted Entries", key: "entryCount", width: 16 },
         { header: "Expense Lines", key: "lineCount", width: 16 },
-        { header: "Debit (AED)", key: "debitAed", width: 18 },
-        { header: "Credit (AED)", key: "creditAed", width: 18 },
-        { header: "Net Expense (AED)", key: "netExpenseAed", width: 20 },
+        { header: `Debit (${baseCurrency})`, key: "debitAed", width: 18 },
+        { header: `Credit (${baseCurrency})`, key: "creditAed", width: 18 },
+        { header: `Net Expense (${baseCurrency})`, key: "netExpenseAed", width: 20 },
       ],
       rows: expenseSummaryRows(report?.byCategory),
     },
@@ -1020,13 +1018,25 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
         { metric: "Needs posting", value: report?.unpostedReceipts ?? 0 },
         { metric: "Posted expense entries", value: report?.entryCount ?? 0 },
         { metric: "Posted expense lines", value: report?.lineCount ?? 0 },
-        { metric: "Posted expense debits (AED)", value: formatExportAmount(report?.debitAed) },
-        { metric: "Posted expense credits (AED)", value: formatExportAmount(report?.creditAed) },
-        { metric: "Net posted expenses (AED)", value: formatExportAmount(report?.totalAed) },
-        { metric: "Receipt VAT captured (AED)", value: formatExportAmount(report?.vatAed) },
         {
-          metric: "Receipt spend captured (AED)",
-          value: formatExportAmount(report?.receiptSpendAed),
+          metric: `Posted expense debits (${baseCurrency})`,
+          value: formatExportAmount(report?.debitAed),
+        },
+        {
+          metric: `Posted expense credits (${baseCurrency})`,
+          value: formatExportAmount(report?.creditAed),
+        },
+        {
+          metric: `Net posted expenses (${baseCurrency})`,
+          value: formatExportAmount(report?.totalAed),
+        },
+        {
+          metric: `Receipt VAT captured (${baseCurrency})`,
+          value: formatExportAmount(report?.receiptVat),
+        },
+        {
+          metric: `Receipt spend captured (${baseCurrency})`,
+          value: formatExportAmount(report?.receiptSpend),
         },
         { metric: "Basis", value: report?.basis ?? "" },
       ],
@@ -1094,9 +1104,9 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
         { header: "Expense Account", key: "category", width: 28 },
         { header: "Account Code", key: "accountCode", width: 16 },
         { header: "Source", key: "source", width: 18 },
-        { header: "Debit (AED)", key: "debitAed", width: 18 },
-        { header: "Credit (AED)", key: "creditAed", width: 18 },
-        { header: "Net Expense (AED)", key: "netExpenseAed", width: 20 },
+        { header: `Debit (${baseCurrency})`, key: "debitAed", width: 18 },
+        { header: `Credit (${baseCurrency})`, key: "creditAed", width: 18 },
+        { header: `Net Expense (${baseCurrency})`, key: "netExpenseAed", width: 20 },
       ],
       rows:
         report?.lines?.map((line: any) => ({

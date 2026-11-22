@@ -1,4 +1,5 @@
 {
+  "portal.doc.draftAccountChanged": "هذه المسودة تخص موردًا آخر. افتح بوابة ذلك المورد لإرسالها.",
   "portal.accept": "قبول",
   "portal.aging30": "1–30 يومًا",
   "portal.aging60": "31–60 يومًا",
@@ -356,7 +357,6 @@
   "portal.bulk.outcome.pending": "مدعو بالفعل",
   "portal.bulk.outcome.not_found": "غير موجود",
   "portal.bulk.outcome.rate_limited": "بلغت الحد، حاول لاحقًا",
-  "portal.bulk.outcome.delivery_failed": "تعذّر إرسال البريد الإلكتروني",
   "portal.dash.balanceDue": "الرصيد المستحق",
   "portal.dash.overdueOf": "{count, plural, zero {لا فواتير متأخرة:} one {فاتورة متأخرة واحدة:} two {فاتورتان متأخرتان:} few {# فواتير متأخرة:} many {# فاتورة متأخرة:} other {# فاتورة متأخرة:}}",
   "portal.dash.nextDue": "الدفعة التالية المستحقة",
@@ -402,5 +402,6 @@
   "portal.account.signOutAll": "تسجيل الخروج من كل مكان",
   "portal.chip.column": "البوابة",
   "portal.switchLanguage": "English · الإنجليزية",
-  "portal.doc.downloadFailed": "تعذّر تنزيل ملف PDF. يُرجى المحاولة مرة أخرى."
+  "portal.doc.downloadFailed": "تعذّر تنزيل ملف PDF. يُرجى المحاولة مرة أخرى.",
+  "portal.bulk.outcome.delivery_failed": "تعذّر إرسال البريد الإلكتروني"
 }

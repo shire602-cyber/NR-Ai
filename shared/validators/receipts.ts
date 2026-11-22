@@ -55,6 +55,7 @@ const clippedText = (max: number) =>
   z.string().transform((v) => sanitizePlainText(v).slice(0, max));
 
 const merchant = zText(200).optional().nullable();
+const invoiceNumber = zText(200).optional().nullable();
 const vatAmount = zAmountNonNegative.optional().nullable();
 const currency = zCurrency.optional();
 const exchangeRate = zExchangeRate.optional();
@@ -75,7 +76,9 @@ function refineReceipt(v: { amount?: number; vatAmount?: number | null }, ctx: z
 
 export const createReceiptBody = z
   .object({
+    captureId: zUuid.optional(),
     merchant,
+    invoiceNumber,
     date: zDate,
     // When `lines` are supplied the route derives amount/vatAmount from them.
     amount: zAmountPositive.optional(),
@@ -109,6 +112,7 @@ export type CreateReceiptBody = z.output<typeof createReceiptBody>;
 export const updateReceiptBody = z
   .object({
     merchant,
+    invoiceNumber,
     date: zDate.optional(),
     amount: zAmountPositive.optional(),
     vatAmount,
@@ -135,6 +139,7 @@ export type PostReceiptBody = z.output<typeof postReceiptBody>;
 export const reviseReceiptBody = z
   .object({
     merchant,
+    invoiceNumber,
     date: zDate.optional(),
     amount: zAmountPositive.optional(),
     vatAmount,

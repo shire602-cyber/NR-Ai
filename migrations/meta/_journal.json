@@ -1002,6 +1002,20 @@
    "when": 1781430580000,
    "tag": "0143_preserve_firm_grant_review",
    "breakpoints": false
+  },
+  {
+   "idx": 143,
+   "version": "7",
+   "when": 1781430590000,
+   "tag": "0144_receipt_invoice_number",
+   "breakpoints": false
+  },
+  {
+   "idx": 144,
+   "version": "7",
+   "when": 1781430600000,
+   "tag": "0145_receipt_rate_and_capture",
+   "breakpoints": false
   }
  ]
 }

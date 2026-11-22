@@ -7,10 +7,17 @@
  */
 import { type JournalLineKey, journalLine, journalMemo } from "@shared/journal-memo";
 import { storage } from "../storage";
-import type { Account, InsertJournalLine, Receipt } from "../../shared/schema";
+import {
+  accounts as accountTable,
+  receipts,
+  type Account,
+  type InsertJournalLine,
+  type Receipt,
+} from "../../shared/schema";
+import { and, eq } from "drizzle-orm";
+import { db } from "../db";
 import { DomainError } from "../errors";
 import { filsToNumber, mulRate, sumFils, toFils } from "../../shared/money";
-import { assertPeriodNotLocked } from "./period-lock.service";
 import {
   loadRecoveryRules,
   resolveRecovery,
@@ -19,7 +26,7 @@ import {
 } from "../tax/vat-recovery";
 import { recoverableShare } from "../tax/vat-boxes";
 import { SUPPLY_TYPES } from "../../shared/validators/primitives";
-import { documentCurrency, loadBaseCurrency } from "../ledger";
+import { documentCurrency, loadBaseCurrency, withLedgerTx } from "../ledger";
 import { has, resolve } from "../platform/service-registry";
 import type { FxGetRate } from "./fx";
 import { companyIsVatRegistered } from "../tax/vat-registration";
@@ -42,6 +49,9 @@ export interface ReceiptJournalPlan {
   memoParams?: Record<string, string>;
   lines: JournalLineInsert[];
   expenseAccountId: string | null;
+  exchangeRate: number;
+  exchangeRateSource: "manual" | "lookup" | null;
+  baseCurrencyAmount: number;
   /** W4-E: recoverable / blocked input-VAT split, persisted for the VAT engine. */
   vatTreatment: Omit<ReceiptVatTreatment, "receiptId" | "companyId">;
 }
@@ -98,6 +108,45 @@ function assertAccountUsable(account: Account | undefined, kind: "expense" | "pa
   return account;
 }
 
+/** Manual quotes, including parity, override the stored spot rate for this document. */
+export async function resolveReceiptRate(
+  companyId: string,
+  currency: string | null,
+  date: Date,
+  manual: number | null,
+  tx = db,
+  allowMissing = false
+) {
+  const baseCurrency = await loadBaseCurrency(companyId, tx);
+  const receiptCurrency = documentCurrency(currency, baseCurrency);
+  if (baseCurrency === receiptCurrency)
+    return { receiptCurrency, baseCurrency, rate: 1, source: null };
+  if (manual !== null)
+    return { receiptCurrency, baseCurrency, rate: manual, source: "manual" as const };
+
+  if (has("fx.getRate")) {
+    try {
+      const found = await resolve<FxGetRate>("fx.getRate")(
+        companyId,
+        receiptCurrency,
+        baseCurrency,
+        date.toISOString().slice(0, 10),
+        { tx }
+      );
+      return { receiptCurrency, baseCurrency, rate: found.rate, source: "lookup" as const };
+    } catch (error) {
+      if (!(error instanceof DomainError) || error.code !== "NO_EXCHANGE_RATE") throw error;
+    }
+  }
+  if (allowMissing) return { receiptCurrency, baseCurrency, rate: null, source: null };
+  throw new DomainError(
+    "EXCHANGE_RATE_REQUIRED",
+    400,
+    undefined,
+    "Foreign-currency receipt is missing a valid exchange rate"
+  );
+}
+
 /**
  * Build the journal lines for `receipt`. Pure apart from account lookups. Lines are computed in
  * fils; the payment credit is the sum of the debits (less self-assessed output VAT), so the
@@ -105,9 +154,13 @@ function assertAccountUsable(account: Account | undefined, kind: "expense" | "pa
  */
 export async function planReceiptJournal(
   receipt: Receipt,
-  opts: { expenseAccountId?: string | null; paymentAccountId: string; vat?: ReceiptVatOptions }
+  opts: { expenseAccountId?: string | null; paymentAccountId: string; vat?: ReceiptVatOptions },
+  tx = db
 ): Promise<ReceiptJournalPlan> {
-  const accounts = await storage.getAccountsByCompanyId(receipt.companyId);
+  const accounts = await tx
+    .select()
+    .from(accountTable)
+    .where(eq(accountTable.companyId, receipt.companyId));
   const byId = new Map(accounts.map((a) => [a.id, a]));
   const payment = assertAccountUsable(byId.get(opts.paymentAccountId), "payment");
 
@@ -165,34 +218,22 @@ export async function planReceiptJournal(
   }
   for (const c of components) assertAccountUsable(byId.get(c.accountId), "expense");
 
-  // W5-C (R14-19 / R14-16): foreign means "not the company's functional currency"; a foreign
-  // receipt still on the column default rate of 1 takes the receipt-date rate from fx.getRate.
-  const baseCurrency = await loadBaseCurrency(receipt.companyId);
-  const receiptCurrency = documentCurrency(receipt.currency, baseCurrency);
+  const existingRate = Number(receipt.exchangeRate);
+  const lockedRate = receipt.exchangeRateSource === "manual" || receipt.posted;
+  const quoted = await resolveReceiptRate(
+    receipt.companyId,
+    receipt.currency,
+    receiptEntryDate(receipt),
+    lockedRate && existingRate > 0 ? existingRate : null,
+    tx
+  );
+  const { receiptCurrency, baseCurrency } = quoted;
   const isForeign = receiptCurrency !== baseCurrency;
-  let fxRate = Number(receipt.exchangeRate) || 1;
-  if (isForeign && fxRate === 1 && has("fx.getRate")) {
-    try {
-      const day = (receipt.date ? new Date(receipt.date) : new Date()).toISOString().slice(0, 10);
-      const r = await resolve<FxGetRate>("fx.getRate")(
-        receipt.companyId,
-        receiptCurrency,
-        baseCurrency,
-        day
-      );
-      fxRate = r.rate;
-    } catch {
-      fxRate = 0;
-    }
-  }
-  if (isForeign && !(fxRate > 0)) {
-    throw new DomainError(
-      "EXCHANGE_RATE_REQUIRED",
-      400,
-      undefined,
-      "Foreign-currency receipt is missing a valid exchange rate"
-    );
-  }
+  const fxRate = quoted.rate!;
+  const fxSource =
+    receipt.posted && receipt.exchangeRateSource === "lookup" && quoted.source
+      ? "lookup"
+      : quoted.source;
   const toBase = (fils: number) => (isForeign ? mulRate(fils, fxRate) : fils);
   const merchant = receipt.merchant || "expense";
   const label = `${receipt.merchant || "Expense"} - ${receipt.category || "General"}`;
@@ -208,12 +249,13 @@ export async function planReceiptJournal(
         : "receiptLabelBare",
     { merchant: receipt.merchant ?? "", category: receipt.category ?? "" }
   );
-  const merchantLine = (key: "receiptInputVat" | "receiptInputVatRc" | "receiptOutputVatRc" | "receiptPayment") =>
-    journalLine(hasMerchant ? key : (`${key}NoMerchant` as JournalLineKey), { merchant });
+  const merchantLine = (
+    key: "receiptInputVat" | "receiptInputVatRc" | "receiptOutputVatRc" | "receiptPayment"
+  ) => journalLine(hasMerchant ? key : (`${key}NoMerchant` as JournalLineKey), { merchant });
 
   // E3 (J2-r3): a company that is not VAT registered recovers no input VAT (it stays in the
   // expense) and does not self-account reverse-charge VAT (there is none to record).
-  const vatRegistered = await companyIsVatRegistered(receipt.companyId);
+  const vatRegistered = await companyIsVatRegistered(receipt.companyId, tx);
   if (!vatRegistered && receipt.reverseCharge) {
     components = components.map((c) => ({ ...c, vatFils: 0 }));
   }
@@ -240,7 +282,7 @@ export async function planReceiptJournal(
 
   // W4-E (R05-28): per-component recoverable share. Blocked VAT (entertainment, personal-use
   // vehicles, company rules) is added to the expense; only the recoverable part is Input VAT.
-  const rules = vatBaseTotal > 0 ? await loadRecoveryRules(receipt.companyId) : [];
+  const rules = vatBaseTotal > 0 ? await loadRecoveryRules(receipt.companyId, tx) : [];
   const treatmentLines = components.map((c, i) => {
     const supplyType = assertSupplyType(
       opts.vat?.lineSupplyTypes?.[i] || opts.vat?.vatSupplyType || "standard_rated",
@@ -385,6 +427,9 @@ export async function planReceiptJournal(
     entryDate: receiptEntryDate(receipt),
     ...journalMemo("receipt", { party: label }),
     lines,
+    exchangeRate: fxRate,
+    exchangeRateSource: fxSource,
+    baseCurrencyAmount: filsToNumber(creditBase),
     expenseAccountId: splitLines.length > 0 ? null : components[0].accountId,
     vatTreatment: {
       supplyType: isReverseCharge
@@ -408,38 +453,58 @@ export async function postReceipt(
   userId: string,
   input: { accountId?: string | null; paymentAccountId: string; vat?: ReceiptVatOptions }
 ): Promise<{ receipt: Receipt; entryId: string }> {
-  if (receipt.posted) {
-    throw new DomainError(
-      "RECEIPT_POSTED",
-      409,
-      { receiptId: receipt.id, journalEntryId: receipt.journalEntryId },
-      "Receipt has already been posted"
+  return withLedgerTx(async (tx) => {
+    const [current] = await tx
+      .select()
+      .from(receipts)
+      .where(and(eq(receipts.id, receipt.id), eq(receipts.companyId, receipt.companyId)))
+      .for("update");
+    if (!current) throw new DomainError("RECEIPT_NOT_FOUND", 404);
+    if (current.posted) {
+      throw new DomainError(
+        "RECEIPT_POSTED",
+        409,
+        { receiptId: current.id, journalEntryId: current.journalEntryId },
+        "Receipt has already been posted"
+      );
+    }
+    const plan = await planReceiptJournal(
+      current,
+      {
+        expenseAccountId: input.accountId ?? null,
+        paymentAccountId: input.paymentAccountId,
+        vat: input.vat,
+      },
+      tx
     );
-  }
-  const plan = await planReceiptJournal(receipt, {
-    expenseAccountId: input.accountId ?? null,
-    paymentAccountId: input.paymentAccountId,
-    vat: input.vat,
+    const result = await storage.postReceiptAtomic(
+      {
+        receiptId: current.id,
+        companyId: current.companyId,
+        userId,
+        accountId: plan.expenseAccountId ?? current.accountId ?? null,
+        paymentAccountId: input.paymentAccountId,
+        exchangeRate: plan.exchangeRate,
+        exchangeRateSource: plan.exchangeRateSource,
+        baseCurrencyAmount: plan.baseCurrencyAmount,
+        entryDate: plan.entryDate,
+        memo: plan.memo,
+        memoKey: plan.memoKey,
+        memoParams: plan.memoParams,
+        lines: plan.lines,
+      },
+      tx
+    );
+    await saveReceiptVatTreatment(
+      {
+        receiptId: current.id,
+        companyId: current.companyId,
+        ...plan.vatTreatment,
+      },
+      tx
+    );
+    return { receipt: result.receipt, entryId: result.entry.id };
   });
-  await assertPeriodNotLocked(receipt.companyId, plan.entryDate);
-  const result = await storage.postReceiptAtomic({
-    receiptId: receipt.id,
-    companyId: receipt.companyId,
-    userId,
-    accountId: plan.expenseAccountId ?? receipt.accountId ?? null,
-    paymentAccountId: input.paymentAccountId,
-    entryDate: plan.entryDate,
-    memo: plan.memo,
-    memoKey: plan.memoKey,
-    memoParams: plan.memoParams,
-    lines: plan.lines,
-  });
-  await saveReceiptVatTreatment({
-    receiptId: receipt.id,
-    companyId: receipt.companyId,
-    ...plan.vatTreatment,
-  });
-  return { receipt: result.receipt, entryId: result.entry.id };
 }
 
 /**
@@ -457,30 +522,45 @@ export async function reviseReceipt(
   if (!paymentAccountId) {
     throw new DomainError("PAYMENT_ACCOUNT_REQUIRED", 400, undefined, "Payment account required");
   }
-  const plan = await planReceiptJournal(merged, {
-    expenseAccountId: merged.accountId,
-    paymentAccountId,
+  return withLedgerTx(async (tx) => {
+    const plan = await planReceiptJournal(
+      merged,
+      {
+        expenseAccountId: merged.accountId,
+        paymentAccountId,
+      },
+      tx
+    );
+    const result = await storage.reviseReceiptAtomic(
+      {
+        receiptId: receipt.id,
+        companyId: receipt.companyId,
+        expectedEntryId: receipt.journalEntryId,
+        userId,
+        patch: {
+          ...patch,
+          exchangeRate: plan.exchangeRate,
+          exchangeRateSource: plan.exchangeRateSource,
+          baseCurrencyAmount: plan.baseCurrencyAmount,
+        } as never,
+        reversalDate: null,
+        reason,
+        entryDate: plan.entryDate,
+        memo: plan.memo,
+        memoKey: plan.memoKey,
+        memoParams: plan.memoParams,
+        buildLines: () => plan.lines,
+      },
+      tx
+    );
+    await saveReceiptVatTreatment(
+      {
+        receiptId: receipt.id,
+        companyId: receipt.companyId,
+        ...plan.vatTreatment,
+      },
+      tx
+    );
+    return result;
   });
-  // The ledger kernel dates the reversal (original date if its period is open, else today) and
-  // enforces period locks for both entries.
-  await assertPeriodNotLocked(receipt.companyId, plan.entryDate);
-  const result = await storage.reviseReceiptAtomic({
-    receiptId: receipt.id,
-    companyId: receipt.companyId,
-    userId,
-    patch: patch as never,
-    reversalDate: null,
-    reason,
-    entryDate: plan.entryDate,
-    memo: plan.memo,
-    memoKey: plan.memoKey,
-    memoParams: plan.memoParams,
-    buildLines: () => plan.lines,
-  });
-  await saveReceiptVatTreatment({
-    receiptId: receipt.id,
-    companyId: receipt.companyId,
-    ...plan.vatTreatment,
-  });
-  return result;
 }

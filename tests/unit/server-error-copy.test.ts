@@ -74,13 +74,6 @@ function readCatalog(locale: "en" | "ar", ns: string): Record<string, string> {
   );
 }
 
-function copyReader(locale: "en" | "ar") {
-  const forms = readCatalog(locale, "forms");
-  const server = readCatalog(locale, "serverErrors");
-  return (code: string): string | undefined =>
-    forms[`forms.serverErrors.${code}`] ?? server[`serverErrors.${code}`];
-}
-
 describe("[G3] every customer-reachable error code has English and Arabic copy", () => {
   const codes = collectCodes();
 
@@ -91,12 +84,17 @@ describe("[G3] every customer-reachable error code has English and Arabic copy",
   });
 
   it("each code has specific en and ar copy", () => {
-    const english = copyReader("en");
-    const arabic = copyReader("ar");
+    const catalogs = (["en", "ar"] as const).map((locale) => ({
+      forms: readCatalog(locale, "forms"),
+      server: readCatalog(locale, "serverErrors"),
+    }));
     const missing: string[] = [];
     for (const [code, files] of codes) {
       if (MACHINE_ONLY.has(code)) continue;
-      if (!english(code) || !arabic(code)) missing.push(`${code} (${[...new Set(files)][0]})`);
+      const hasCopy = catalogs.every(({ forms, server }) =>
+        Boolean(forms[`forms.serverErrors.${code}`] ?? server[`serverErrors.${code}`])
+      );
+      if (!hasCopy) missing.push(`${code} (${[...new Set(files)][0]})`);
     }
     expect(missing).toEqual([]);
   });

@@ -669,6 +669,7 @@ type CreateBillArgs = {
   purchaseOrderId?: string | null;
   poLineIds?: Array<string | null>;
   tx?: LedgerTx;
+  onCreated?: (tx: LedgerTx, bill: BillRow) => Promise<void>;
 };
 
 /** Resolve and validate bill inputs before the caller acquires a write transaction. */
@@ -750,6 +751,7 @@ async function prepareBillCreate(args: CreateBillArgs) {
       `SELECT * FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
       [bill.id]
     );
+    await args.onCreated?.(tx, bill);
     return { bill, lines, warnings: prepared.warnings };
   };
 }
@@ -2012,28 +2014,18 @@ export async function runRecurringBill(
   companyId?: string
 ): Promise<BillWriteResult | null> {
   const r = await pool.query(
-    `SELECT * FROM recurring_bills WHERE id = $1 AND ($2::uuid IS NULL OR company_id = $2)`,
+    `SELECT *, next_run_on::date::text AS run_on_date, end_on::date::text AS end_on_date
+       FROM recurring_bills WHERE id = $1 AND ($2::uuid IS NULL OR company_id = $2)`,
     [id, companyId ?? null]
   );
   const rec = r.rows[0];
   if (!rec) throw new DomainError("RECURRING_BILL_NOT_FOUND", 404);
   if (!rec.is_active) return null;
-  const runOn =
-    rec.next_run_on instanceof Date
-      ? rec.next_run_on.toISOString().slice(0, 10)
-      : String(rec.next_run_on).slice(0, 10);
-  if (
-    rec.end_on &&
-    runOn > String(rec.end_on instanceof Date ? rec.end_on.toISOString().slice(0, 10) : rec.end_on)
-  ) {
+  const runOn: string = rec.run_on_date;
+  if (rec.end_on_date && runOn > rec.end_on_date) {
     await pool.query(`UPDATE recurring_bills SET is_active = false WHERE id = $1`, [id]);
     return null;
   }
-  const claimed = await pool.query(
-    `UPDATE recurring_bills SET next_run_on = $2 WHERE id = $1 AND next_run_on = $3 RETURNING id`,
-    [id, advance(runOn, rec.frequency), runOn]
-  );
-  if (!claimed.rowCount) return null; // another runner took this occurrence
   const t = rec.template as Record<string, unknown> & { due_in_days?: number };
   const dueInDays = typeof t.due_in_days === "number" ? t.due_in_days : null;
   const { due_in_days: _drop, ...template } = t;
@@ -2043,19 +2035,29 @@ export async function runRecurringBill(
     d.setUTCDate(d.getUTCDate() + dueInDays);
     due = d.toISOString().slice(0, 10);
   }
-  const result = await createBill({
-    companyId: rec.company_id,
-    actorId: rec.created_by,
-    status: "pending",
-    origin: "recurring",
-    originRef: rec.id,
-    input: { ...(template as unknown as BillCreateInput), bill_date: runOn, due_date: due },
-  });
-  await pool.query(`UPDATE recurring_bills SET last_bill_id = $2 WHERE id = $1`, [
-    id,
-    result.bill.id,
-  ]);
-  return result;
+  const alreadyClaimed = new Error("Recurring occurrence already claimed");
+  try {
+    return await createBill({
+      companyId: rec.company_id,
+      actorId: rec.created_by,
+      status: "pending",
+      origin: "recurring",
+      originRef: rec.id,
+      input: { ...(template as unknown as BillCreateInput), bill_date: runOn, due_date: due },
+      onCreated: async (tx, bill) => {
+        const claimed = await txRows(
+          tx,
+          `UPDATE recurring_bills SET next_run_on = $2, last_bill_id = $4
+            WHERE id = $1 AND is_active AND next_run_on = $3 RETURNING id`,
+          [id, advance(runOn, rec.frequency), runOn, bill.id]
+        );
+        if (!claimed.length) throw alreadyClaimed;
+      },
+    });
+  } catch (error) {
+    if (error === alreadyClaimed) return null;
+    throw error;
+  }
 }
 
 export async function runDueRecurringBills(today = new Date().toISOString().slice(0, 10)) {

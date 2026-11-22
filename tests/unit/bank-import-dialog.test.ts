@@ -103,9 +103,9 @@ async function chooseStatement(body: string, name = "statement.csv") {
   const input = dialog()!.querySelector<HTMLInputElement>(
     '[data-testid="input-bank-statement-file"]'
   )!;
-  const file = new File([body], name);
+  const file = new File([body], name, { type: "text/csv" });
   Object.defineProperty(file, "arrayBuffer", {
-    value: async () => Uint8Array.from(body, (character) => character.charCodeAt(0)).buffer,
+    value: async () => new TextEncoder().encode(body).buffer,
   });
   Object.defineProperty(input, "files", { configurable: true, value: [file] });
   await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
@@ -185,14 +185,14 @@ describe("bank statement import dialog", () => {
   });
 
   it.each([
-    ["en", "Choose a bank CSV export."],
-    ["ar", "اختر كشفًا بنكيًا بصيغة CSV."],
+    ["en", "Choose a CSV file exported from your bank."],
+    ["ar", "اختر ملف CSV صدّرته من مصرفك."],
   ] as const)("rejects a non-CSV selection without calling preview in %s", async (locale, copy) => {
     await mountPage(locale);
     const input = dialog()?.querySelector<HTMLInputElement>(
       '[data-testid="input-bank-statement-file"]'
     );
-    expect(input?.getAttribute("accept")).toBe(".csv");
+    expect(input?.getAttribute("accept")).toBe(".csv,text/csv");
     Object.defineProperty(input, "files", { value: [new File(["report"], "statement.xlsx")] });
     await act(async () => {
       input?.dispatchEvent(new Event("change", { bubbles: true }));

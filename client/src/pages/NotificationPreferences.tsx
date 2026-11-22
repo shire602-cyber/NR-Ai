@@ -431,23 +431,25 @@ export default function NotificationPreferences() {
                       <T k="portal.channelEmail" />
                     </span>
                   </div>
-                  {(preferences?.eventTypes ?? []).map((type) => (
-                    <div key={type} className="grid grid-cols-3 gap-2 p-3 items-center text-sm">
-                      <span id={`${channelLabels}-${type}`}>
-                        <T k={`portal.eventType.${type}`} />
-                      </span>
-                      <Switch
-                        aria-labelledby={`${channelLabels}-${type} ${channelLabels}-in-app`}
-                        checked={typePrefs[type]?.inApp !== false}
-                        onCheckedChange={(v) => setTypePref(type, "inApp", v)}
-                      />
-                      <Switch
-                        aria-labelledby={`${channelLabels}-${type} ${channelLabels}-email`}
-                        checked={typePrefs[type]?.email ?? false}
-                        onCheckedChange={(v) => setTypePref(type, "email", v)}
-                      />
-                    </div>
-                  ))}
+                  {(preferences?.eventTypes ?? [])
+                    .filter((type) => type !== "bank.sync_failed")
+                    .map((type) => (
+                      <div key={type} className="grid grid-cols-3 gap-2 p-3 items-center text-sm">
+                        <span id={`${channelLabels}-${type}`}>
+                          <T k={`portal.eventType.${type}`} />
+                        </span>
+                        <Switch
+                          aria-labelledby={`${channelLabels}-${type} ${channelLabels}-in-app`}
+                          checked={typePrefs[type]?.inApp !== false}
+                          onCheckedChange={(v) => setTypePref(type, "inApp", v)}
+                        />
+                        <Switch
+                          aria-labelledby={`${channelLabels}-${type} ${channelLabels}-email`}
+                          checked={typePrefs[type]?.email ?? false}
+                          onCheckedChange={(v) => setTypePref(type, "email", v)}
+                        />
+                      </div>
+                    ))}
                 </div>
               </CardContent>
             </Card>
