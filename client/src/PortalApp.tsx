@@ -5,6 +5,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { RTLProvider } from "@/components/RTLProvider";
 import { PortalLayout } from "@/components/layout/PortalLayout";
 import PortalProviders from "@/components/portal/PortalProviders";
+import { useTranslation } from "@/lib/i18n";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { isPortalAppPath, useI18n } from "@/lib/i18n";
@@ -34,8 +35,10 @@ const PortalAccount = lazyWithReload(() => import("@/pages/portal/PortalAccount"
 const FullApp = lazyWithReload(() => import("@/lib/zod-config").then(() => import("./App")));
 
 function PageSkeleton() {
+  const { t } = useTranslation();
   return (
     <div className="mx-auto max-w-[960px] space-y-4" role="status" aria-busy="true">
+      <span className="sr-only">{t["components.ui.loading"]}</span>
       <Skeleton className="h-8 w-48" />
       <Skeleton className="h-24 w-full" />
       <Skeleton className="h-48 w-full" />
@@ -50,7 +53,7 @@ function PortalGate({ children, onHandOver }: { children: ReactNode; onHandOver:
   useEffect(() => {
     if (!isLoading && !allowed) onHandOver();
   }, [isLoading, allowed, onHandOver]);
-  if (isLoading || !allowed) return null;
+  if (isLoading || !allowed) return <PageSkeleton />;
   return <>{children}</>;
 }
 
@@ -67,7 +70,7 @@ export default function PortalApp() {
 
   if (full) {
     return (
-      <Suspense fallback={null}>
+      <Suspense fallback={<PageSkeleton />}>
         <FullApp />
       </Suspense>
     );

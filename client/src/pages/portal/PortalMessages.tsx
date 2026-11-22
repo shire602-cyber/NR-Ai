@@ -1,3 +1,4 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { useState } from "react";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { T } from "@/components/layout/T";
@@ -11,6 +12,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { apiRequest, portalQuery } from "@/lib/queryClient";
+import { portalRequestHeaders } from "@/lib/portal-state";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/format-date";
 
@@ -30,6 +32,7 @@ function formatStamp(value: string, locale: string): string {
  * bottom of the thread.
  */
 export default function PortalMessages() {
+  const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -37,11 +40,12 @@ export default function PortalMessages() {
   const [content, setContent] = useState("");
 
   const { data: messages = [], isLoading } = useQuery<any[]>({
-    ...portalQuery("/api/client-portal/messages"),
+    ...portalQuery("/api/client-portal/messages", supplier),
   });
 
   const sendMutation = useMutation({
-    mutationFn: (payload: any) => apiRequest("POST", "/api/client-portal/messages", payload),
+    mutationFn: (payload: { subject: string | null; content: string }) =>
+      apiRequest("POST", "/api/client-portal/messages", payload, portalRequestHeaders(supplier)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-messages"] });
       setSubject("");

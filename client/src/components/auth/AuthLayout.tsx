@@ -69,7 +69,6 @@ export function AuthLayout({ children, variant }: AuthLayoutProps) {
           />
           <MarketingBrand testId="link-brand-home" />
           <div>
-            <p className="mk-eyebrow">{t["marketing.authEyebrow"]}</p>
             <p className="mk-auth__headline">
               {t[copy.lead]} <em>{t[copy.accent]}</em>
             </p>

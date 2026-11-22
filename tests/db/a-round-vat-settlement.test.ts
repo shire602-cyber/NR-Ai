@@ -282,7 +282,7 @@ describe("VAT return settlement", () => {
     const bank = await accountByCode(t, "1020");
     const ret = await generate(t, "2026-01-01", "2026-03-31");
     await h.sql(
-      `UPDATE vat_returns SET status='filed', engine_version=NULL, reconciliation_snapshot=NULL,
+      `UPDATE vat_returns SET status='filed', fta_reference_number='FIXTURE-OLDER-FILING', engine_version=NULL, reconciliation_snapshot=NULL,
          box12_total_due_tax=50, box14_payable_tax=50 WHERE id=$1`,
       [ret.id]
     );
@@ -590,7 +590,7 @@ describe("VAT return settlement", () => {
     // is too small to translate to a cent at the later settlement rate.
     const setFiledAmounts = (outputAedFils: number) =>
       h.sql(
-        `UPDATE vat_returns SET status = 'filed', reconciliation_snapshot = $2::jsonb,
+        `UPDATE vat_returns SET status = 'filed', fta_reference_number = 'FIXTURE-ROUNDING-FILING', reconciliation_snapshot = $2::jsonb,
                box12_total_due_tax = $3, box13_recoverable_tax = 0.01, box14_payable_tax = $4
          WHERE id = $1`,
         [

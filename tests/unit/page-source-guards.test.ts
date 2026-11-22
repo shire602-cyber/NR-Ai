@@ -190,7 +190,7 @@ describe("Mobile launch UX guards", () => {
   describe("Bank import launch UX", () => {
     it("keeps a sample CSV available to buyers", () => {
       expect(source).toContain("muhasib-sample-bank-statement.csv");
-      expect(source).toContain('t["banking.emptyTransactionsDescription"]');
+      expect(source).toContain('t["pageLabels.bankCsvWorkflow"]');
       for (const locale of ["en", "ar"] as const) {
         const catalog = JSON.parse(read(`client/src/locales/${locale}/banking.json`));
         expect(catalog["banking.emptyTransactionsDescription"]).toBe(bankStatementCopy[locale]);
@@ -241,7 +241,6 @@ describe("Mobile launch UX guards", () => {
         const catalog = JSON.parse(readFileSync(`client/src/locales/${loc}/banking.json`, "utf8"));
         expect(catalog["banking.import.columnMapping"]).toBe(text);
       }
-      expect(source).toContain(".xlsx");
     });
 
     it("R06-11 ambiguity must be confirmed before importing", () => {

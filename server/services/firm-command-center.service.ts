@@ -25,7 +25,6 @@ import {
   isNull,
   lt,
   max,
-  ne,
   notInArray,
   or,
   sql,
@@ -48,6 +47,9 @@ import {
 import { listAccessibleClientIds, resolveFirmContext, type FirmContext } from "./firm/scope";
 import { assignStaff, staffWorkloadInput } from "./firm/staff.service";
 
+import { isVatFilingRecorded } from "../../shared/vat-filing-status";
+import { activeVatReturnFilter, vatFilingOutstandingFilter } from "../tax/vat-filing-filter";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface ClientHealthInputs {
@@ -60,7 +62,8 @@ export interface ClientHealthInputs {
   /** Number of overdue invoices. */
   overdueInvoiceCount: number;
   /** Latest VAT return status, or null if none filed yet. */
-  vatStatus: "draft" | "pending_review" | "submitted" | "filed" | "amended" | null;
+  vatStatus: string | null;
+  vatReference?: string | null;
   /** Due date of latest VAT return, or null. */
   vatDueDate: Date | null;
   /** Receipts uploaded but not yet posted to GL. */
@@ -126,6 +129,7 @@ export interface ClientSnapshot {
   companyName: string;
   onboardingCompleted: boolean;
   vatStatus: ClientHealthInputs["vatStatus"];
+  vatReference?: string | null;
   vatDueDate: Date | null;
   overdueBalance: number;
   overdueInvoiceCount: number;
@@ -179,14 +183,13 @@ export function calculateHealthScore(inputs: ClientHealthInputs): ClientHealthSc
   else if (inputs.overdueBalance > 0) balancePenalty = 3;
   score -= balancePenalty;
 
-  // VAT status: filed = no penalty, submitted = no penalty, draft + overdue = -20,
-  // draft + due-soon (<=14 days) = -10, no return = -5.
+  // An open filing has a penalty when it is overdue or due within 14 days.
   let vatOnTime = true;
   let vatOverdue = false;
   if (inputs.vatStatus === null) {
     score -= 5;
     vatOnTime = false;
-  } else if (inputs.vatStatus !== "filed" && inputs.vatStatus !== "submitted") {
+  } else if (!isVatFilingRecorded(inputs.vatStatus, inputs.vatReference)) {
     if (inputs.vatDueDate) {
       const msUntilDue = inputs.vatDueDate.getTime() - now.getTime();
       const daysUntilDue = Math.floor(msUntilDue / (1000 * 60 * 60 * 24));
@@ -258,7 +261,10 @@ export function generateAlertsForClient(
   const alerts: AlertCandidate[] = [];
 
   // 1. VAT deadline approaching / overdue
-  if (snapshot.vatDueDate && snapshot.vatStatus !== "filed" && snapshot.vatStatus !== "submitted") {
+  if (
+    snapshot.vatDueDate &&
+    !isVatFilingRecorded(snapshot.vatStatus ?? "", snapshot.vatReference)
+  ) {
     const msUntilDue = snapshot.vatDueDate.getTime() - now.getTime();
     const daysUntilDue = Math.floor(msUntilDue / (1000 * 60 * 60 * 24));
     if (msUntilDue < 0) {
@@ -532,19 +538,21 @@ export async function buildClientSnapshots(
       maxPeriodEnd: max(vatReturns.periodEnd).as("max_period_end"),
     })
     .from(vatReturns)
-    .where(inArray(vatReturns.companyId, companyIds))
+    .where(and(inArray(vatReturns.companyId, companyIds), activeVatReturnFilter))
     .groupBy(vatReturns.companyId)
     .as("latest_vat_phase6");
 
   type VatRow = {
     companyId: string;
     status: string;
+    ftaReferenceNumber: string | null;
     dueDate: Date;
   };
   const vatRows = (await db
     .select({
       companyId: vatReturns.companyId,
       status: vatReturns.status,
+      ftaReferenceNumber: vatReturns.ftaReferenceNumber,
       dueDate: vatReturns.dueDate,
     })
     .from(vatReturns)
@@ -552,7 +560,8 @@ export async function buildClientSnapshots(
       latestVatSub,
       and(
         eq(vatReturns.companyId, latestVatSub.companyId),
-        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd)
+        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd),
+        activeVatReturnFilter
       )
     )) as VatRow[];
   const vatMap = new Map(vatRows.map((r) => [r.companyId, r]));
@@ -606,6 +615,7 @@ export async function buildClientSnapshots(
       companyName: c.name,
       onboardingCompleted: c.onboardingCompleted,
       vatStatus: (vat?.status as ClientSnapshot["vatStatus"]) ?? null,
+      vatReference: vat?.ftaReferenceNumber,
       vatDueDate: vat?.dueDate ?? null,
       overdueBalance: overdue?.overdue ?? 0,
       overdueInvoiceCount: overdue?.overdueCount ?? 0,
@@ -656,13 +666,7 @@ export async function buildDashboardSummary(
     db
       .select({ liability: sum(vatReturns.box14PayableTax) })
       .from(vatReturns)
-      .where(
-        and(
-          inArray(vatReturns.companyId, companyIds),
-          ne(vatReturns.status, "filed"),
-          ne(vatReturns.status, "submitted")
-        )
-      ),
+      .where(and(inArray(vatReturns.companyId, companyIds), vatFilingOutstandingFilter)),
     db
       .select({ cnt: count() })
       .from(receipts)
@@ -999,6 +1003,7 @@ export async function buildFirmDashboard(
       overdueBalance: s.overdueBalance,
       overdueInvoiceCount: s.overdueInvoiceCount,
       vatStatus: s.vatStatus,
+      vatReference: s.vatReference,
       vatDueDate: s.vatDueDate,
       receiptBacklog: s.receiptBacklog,
       lastActivityAt: s.lastActivityAt,

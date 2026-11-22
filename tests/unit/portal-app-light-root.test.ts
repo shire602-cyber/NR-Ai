@@ -23,6 +23,7 @@ let calls: string[] = [];
 let me: { status: number; body: unknown } = { status: 200, body: {} };
 let pdfStatus = 200;
 let revoked = false;
+let twoSuppliers = false;
 let portalScopes: Array<string | null> = [];
 
 const FIRST_ACCOUNT = "10000000-0000-4000-8000-000000000001";
@@ -60,7 +61,7 @@ function stub() {
       if (u.endsWith("/api/client-portal/accounts")) {
         const first = { id: FIRST_ACCOUNT, company: FIRST_COMPANY, customer: CUSTOMER };
         const second = { id: SECOND_ACCOUNT, company: SECOND_COMPANY, customer: CUSTOMER };
-        return json(200, revoked ? [second] : [first]);
+        return json(200, revoked ? [second] : twoSuppliers ? [first, second] : [first]);
       }
       if (u.includes("/api/client-portal/")) {
         portalScopes.push(scope);
@@ -75,17 +76,52 @@ function stub() {
           firmName: null,
           customer: CUSTOMER,
         });
+      const invoices =
+        scope === SECOND_ACCOUNT
+          ? [{ ...INVOICES[0], id: "i2", number: "INV-SECOND-002" }]
+          : INVOICES;
       if (u.includes("/api/client-portal/dashboard"))
         return json(200, {
           invoices: { total: 1, outstanding: 1, outstandingTotal: 13125, overdue: 1, paid: 0 },
           documents: { total: 0 },
-          recentInvoices: INVOICES,
+          recentInvoices: invoices,
           outstandingByCurrency: [{ currency: "AED", amount: "13125.00", fils: 1312500, count: 1 }],
           overdueByCurrency: [{ currency: "AED", amount: "13125.00", fils: 1312500, count: 1 }],
           nextDue: null,
         });
       if (u.includes("/pdf")) return pdfStatus === 200 ? new Response("%PDF") : json(pdfStatus, {});
-      if (u.includes("/api/client-portal/invoices")) return json(200, INVOICES);
+      if (u.includes("/api/client-portal/invoices")) return json(200, invoices);
+      if (u.endsWith("/api/client-portal/statements"))
+        return json(200, {
+          asOf: "2026-10-31",
+          sections: [
+            {
+              currency: "AED",
+              openingBalance: 0,
+              closingBalance: 13125,
+              totals: { debit: 13125, credit: 0 },
+              lines: [
+                {
+                  type: "invoice",
+                  date: "2026-10-01",
+                  reference: invoices[0].number,
+                  debit: 13125,
+                  credit: 0,
+                  balance: 13125,
+                },
+              ],
+              aging: {
+                current: 13125,
+                days30: 0,
+                days60: 0,
+                days90: 0,
+                over90: 0,
+                total: 13125,
+                unappliedCredits: 0,
+              },
+            },
+          ],
+        });
       if (u.includes("/api/client-portal/documents")) return json(200, []);
       if (u.includes("/api/client-portal/messages")) return json(200, []);
       return json(200, []);
@@ -130,6 +166,7 @@ beforeEach(async () => {
   calls = [];
   portalScopes = [];
   revoked = false;
+  twoSuppliers = false;
   pdfStatus = 200;
   me = { status: 200, body: { id: "u1", email: "c@example.com", userType: "client_portal" } };
   const { useI18n } = await import("../../client/src/lib/i18n");
@@ -194,6 +231,29 @@ describe("client portal light root", () => {
     await settle();
     expect(document.body.textContent).toContain("تعذّر تنزيل ملف PDF");
   });
+
+  it.each(["dashboard", "invoices", "statements"])(
+    "changes the supplier and its %s data together after a cross-tab switch",
+    async (page) => {
+      twoSuppliers = true;
+      const { setSelectedPortalAccount } = await import("../../client/src/lib/portal-state");
+      setSelectedPortalAccount(FIRST_ACCOUNT);
+      await mountAt(`/client-portal/${page}`);
+      await waitForPortal(() => expect(text()).toContain(INVOICES[0].number));
+      expect(document.title).toContain(FIRST_COMPANY.name);
+
+      await act(async () => {
+        localStorage.setItem("muhasib.portalAccount", SECOND_ACCOUNT);
+        window.dispatchEvent(new StorageEvent("storage", { key: "muhasib.portalAccount" }));
+      });
+
+      await waitForPortal(() => {
+        expect(document.title).toContain(SECOND_COMPANY.name);
+        expect(text()).toContain("INV-SECOND-002");
+        expect(text()).not.toContain(INVOICES[0].number);
+      });
+    }
+  );
 
   it("clears a revoked supplier selection and waits for a choice across reloads", async () => {
     const { getSelectedPortalAccount, setSelectedPortalAccount } =

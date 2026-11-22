@@ -22,6 +22,7 @@ import {
   emailMoney,
   htmlToText,
   renderBilingualEmail,
+  renderEmailText,
   resolveEmailLanguage,
   type EmailLanguage,
 } from "../../server/services/email-layout";
@@ -103,6 +104,25 @@ function expectShell(e: BuiltEmail, language: EmailLanguage) {
 }
 
 describe("layout and formatters", () => {
+  it.each(["en", "ar"] as const)(
+    "renders the product palette and isolated wordmark in %s",
+    (lang) => {
+      const content = {
+        brandName: "Oasis Trading",
+        heading: { en: "Invoice", ar: "الفاتورة" },
+        paragraphs: { en: ["Your invoice is ready."], ar: ["فاتورتك جاهزة."] },
+      };
+      const html = renderBilingualEmail(content, lang);
+      expect(html).toContain(lang === "ar" ? 'lang="ar" dir="rtl"' : 'lang="en" dir="ltr"');
+      expect(html).toContain("background:#F7F8F4");
+      expect(html).toContain("background:#0B6A4A");
+      expect(html).toContain("color:#14241E");
+      expect(html).toContain(lang === "ar" ? "'Noto Sans Arabic'" : "'Geist'");
+      expect(html).toContain("<bdi>Muhasib.ai</bdi>");
+      expect(renderEmailText(content, lang)).toContain("Muhasib.ai");
+    }
+  );
+
   it("formats money and dates by the app's rules (Latin digits, د.إ in Arabic)", () => {
     expect(emailMoney(1250, "AED").en).toBe("AED \u2066" + "1,250.00\u2069");
     expect(emailMoney(1250, "AED").ar).toContain("د.إ");
@@ -168,7 +188,11 @@ describe("layout and formatters", () => {
 });
 
 describe.each(LANGS)("invoice email (%s)", (language) => {
-  const e = buildInvoiceEmail(invoice, company, "Thank you for your business.\nSee you soon.", {
+  const note =
+    language === "ar"
+      ? "يرجى ذكر رقم الفاتورة عند التحويل البنكي."
+      : "Thank you for your business.\nSee you soon.";
+  const e = buildInvoiceEmail(invoice, company, note, {
     payUrl: PAY,
     language,
   });
@@ -206,7 +230,7 @@ describe.each(LANGS)("invoice email (%s)", (language) => {
     }
   });
 
-  it("never prints the seller TRN or the customer's message in Arabic", () => {
+  it("includes sender contact details and omits the seller TRN", () => {
     expect(e.html).not.toContain("100123456700003");
     expect(e.text).not.toContain("100123456700003");
     expect(e.html).toContain("Business Bay, Dubai");
@@ -215,6 +239,12 @@ describe.each(LANGS)("invoice email (%s)", (language) => {
 });
 
 describe("invoice email details", () => {
+  it("includes the sender’s payment instruction in Arabic HTML and plain text", () => {
+    const instruction = "يرجى ذكر رقم الفاتورة عند التحويل البنكي.";
+    const email = buildInvoiceEmail(invoice, company, instruction, { language: "ar" });
+    expect(email.html).toContain(instruction);
+    expect(email.text).toContain(instruction);
+  });
   it("Arabic copy has no leaked English words", () => {
     const e = buildInvoiceEmail(invoice, company, undefined, { portalUrl: PAY, language: "ar" });
     const text = stripAllowedLatin(arabicText(e.html));

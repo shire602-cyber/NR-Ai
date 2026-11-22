@@ -51,12 +51,7 @@ export function ErrorState({
       <h3 className={cn("font-semibold text-foreground", compact ? "text-sm" : "text-h3")}>
         {title ?? t["components.errorSectionCouldNotLoad"]}
       </h3>
-      <p
-        className={cn(
-          "mt-1 max-w-md leading-relaxed text-muted-foreground",
-          compact ? "text-xs" : "text-small"
-        )}
-      >
+      <p className={cn("mt-1 max-w-md leading-relaxed text-muted-foreground", "text-small")}>
         {description ?? t["components.errorStateDescription"]}
       </p>
       {onRetry && (

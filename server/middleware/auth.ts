@@ -44,6 +44,8 @@ declare global {
       authSessionId?: string | null;
       /** Normalised company_users.role, set by companyRolePolicy on company-scoped routes. */
       companyRole?: string;
+      /** The company whose membership and permissions were verified by the role policy. */
+      companyRoleCompanyId?: string;
       /** W5-E: epoch ms of the last MFA verification on this session (null = none). */
       authMfaAt?: number | null;
     }

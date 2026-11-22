@@ -1,5 +1,7 @@
 {
-  "banking.import.csvRequired": "Choose a bank CSV export.",
+  "banking.import.companyChanged": "The active company changed. Select a file for this company.",
+  "banking.import.csvRequired": "Choose a CSV file exported from your bank.",
+  "banking.import.fileUnreadable": "We couldn’t read this CSV. Choose the file again or export a fresh copy from your bank.",
   "banking.accounts.title": "Bank accounts",
   "banking.accounts.description": "Every bank account is linked to its own GL account so its lines can be reconciled.",
   "banking.accounts.add": "Add bank account",
@@ -93,7 +95,6 @@
   "banking.line.excluded": "Line excluded",
   "banking.line.confirmDraft": "Post draft",
   "banking.line.matched": "Line reconciled",
-  "banking.common.never": "Never",
   "banking.rules.account": "Post to GL account",
   "banking.rules.direction": "Applies to",
   "banking.rules.direction.any": "Money in and out",
@@ -170,10 +171,10 @@
   "banking.recon.findMatches": "Find matches",
   "banking.recon.report": "Reconciliation report",
   "banking.recon.moreActions": "More actions",
+  "banking.feeds.unavailableTitle": "Import a bank CSV",
   "banking.imports.sourceImport": "{format} import",
   "banking.import.detected": "Detected",
   "banking.import.genericFormat": "Generic (Arabic/English)",
-  "banking.import.statementRecognized": "Statement recognized",
   "banking.import.reviewTitle": "Review before importing",
   "banking.import.rows": "rows",
   "banking.import.valid": "valid",
@@ -192,7 +193,6 @@
   "banking.import.colDescription": "Description",
   "banking.import.colDebit": "Debit",
   "banking.import.colCredit": "Credit",
-  "banking.import.csvDetails": "CSV file requirements",
   "banking.import.field.date": "Date",
   "banking.import.field.description": "Description",
   "banking.import.field.reference": "Reference",
@@ -207,5 +207,8 @@
   "banking.import.importAction": "Import",
   "banking.rules.category": "Category (optional)",
   "banking.rules.categoryPlaceholder": "e.g. Rent, Salary, Utilities",
-  "banking.rules.memo": "Memo (optional)"
+  "banking.rules.memo": "Memo (optional)",
+  "banking.import.statementRecognized": "Statement recognized",
+  "banking.common.never": "Never",
+  "banking.import.csvDetails": "CSV file requirements"
 }

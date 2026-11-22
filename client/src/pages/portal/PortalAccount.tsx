@@ -1,3 +1,4 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -9,7 +10,7 @@ import { ChangePasswordCard } from "@/pages/security/ChangePasswordCard";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSessionActions } from "@/hooks/useSessionActions";
 import { apiRequest, portalQuery } from "@/lib/queryClient";
-import { getSelectedPortalAccount, setSelectedPortalAccount } from "@/lib/portal-state";
+import { setSelectedPortalAccount } from "@/lib/portal-state";
 import { useI18n, useTranslation } from "@/lib/i18n";
 
 interface PortalAccountRow {
@@ -23,6 +24,7 @@ interface PortalAccountRow {
  * suppliers whose portals they can open. Sign-out here clears the server session.
  */
 export default function PortalAccount() {
+  const selected = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
   const [, navigate] = useLocation();
@@ -30,10 +32,9 @@ export default function PortalAccount() {
   const { data: user } = useCurrentUser();
   const [busy, setBusy] = useState(false);
   const { data: accounts = [] } = useQuery<PortalAccountRow[]>({
-    ...portalQuery("/api/client-portal/accounts"),
+    ...portalQuery("/api/client-portal/accounts", selected),
     staleTime: 5 * 60 * 1000,
   });
-  const selected = getSelectedPortalAccount();
 
   const signOutEverywhere = async () => {
     setBusy(true);

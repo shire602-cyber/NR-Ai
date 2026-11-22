@@ -135,6 +135,9 @@ import type { FirmContext } from "../services/firm/scope";
 export type JournalLineInsert = Omit<InsertJournalLine, "entryId">;
 
 export interface PostReceiptAtomicArgs {
+  exchangeRate?: number;
+  exchangeRateSource?: "manual" | "lookup" | null;
+  baseCurrencyAmount?: number;
   receiptId: string;
   companyId: string;
   userId: string;
@@ -148,6 +151,7 @@ export interface PostReceiptAtomicArgs {
 }
 
 export interface ReviseReceiptAtomicArgs {
+  expectedEntryId: string | null;
   receiptId: string;
   companyId: string;
   userId: string;
@@ -427,6 +431,18 @@ export interface IStorage {
   // Receipts
   getReceipt(id: string, companyId: string): Promise<Receipt | undefined>;
   createReceipt(receipt: InsertReceipt, exec?: Pick<AppDatabase, "insert">): Promise<Receipt>;
+  getCapturedReceipt(companyId: string, captureId: string): Promise<Receipt | undefined>;
+  createCapturedReceipt(
+    data: InsertReceipt,
+    confirmDuplicate: boolean
+  ): Promise<
+    | { receipt: Receipt; replay: boolean; duplicate?: never }
+    | {
+        duplicate: Pick<Receipt, "id" | "merchant" | "amount" | "date">;
+        receipt?: never;
+        replay?: never;
+      }
+  >;
   getReceiptsByCompanyId(companyId: string): Promise<Receipt[]>;
   updateReceipt(id: string, companyId: string, data: Partial<InsertReceipt>): Promise<Receipt>;
   updateReceiptIfUnposted(
@@ -435,10 +451,12 @@ export interface IStorage {
     data: Partial<InsertReceipt>
   ): Promise<Receipt>;
   postReceiptAtomic(
-    args: PostReceiptAtomicArgs
+    args: PostReceiptAtomicArgs,
+    tx?: typeof db
   ): Promise<{ receipt: Receipt; entry: JournalEntry }>;
   reviseReceiptAtomic(
-    args: ReviseReceiptAtomicArgs
+    args: ReviseReceiptAtomicArgs,
+    tx?: typeof db
   ): Promise<{ receipt: Receipt; entry: JournalEntry; reversal: JournalEntry }>;
   splitReceiptAtomic(args: SplitReceiptAtomicArgs): Promise<Receipt[]>;
   deleteReceipt(id: string, companyId: string): Promise<void>;
@@ -652,7 +670,12 @@ export interface IStorage {
   getVatReturnsByCompanyId(companyId: string): Promise<VatReturn[]>;
   getVatReturn(id: string): Promise<VatReturn | undefined>;
   createVatReturn(vatReturn: InsertVatReturn): Promise<VatReturn>;
-  updateVatReturn(id: string, data: Partial<InsertVatReturn>): Promise<VatReturn>;
+  updateUnfiledVatReturn(
+    companyId: string,
+    id: string,
+    previousStatus: string,
+    data: Partial<InsertVatReturn>
+  ): Promise<VatReturn | undefined>;
   deleteVatReturn(id: string): Promise<void>;
 
   // Corporate Tax Returns

@@ -3,6 +3,9 @@ import express from "express";
 
 const COMPANY = "11111111-1111-4111-8111-111111111111";
 
+vi.mock("../../server/services/receipt-posting.service", () => ({
+  resolveReceiptRate: vi.fn(async () => ({ rate: 1, source: null })),
+}));
 vi.mock("../../server/middleware/auth", () => ({
   authMiddleware: (req: any, _res: any, next: any) => {
     req.user = { id: "user-1", userType: "customer" };
@@ -25,10 +28,11 @@ vi.mock("../../server/storage", () => ({
     hasCompanyAccess: vi.fn(async () => true),
     getReceiptsByCompanyId: vi.fn(async () => state.receipts),
     getReceipt: vi.fn(async (id: string) => state.receipts.find((r) => r.id === id)),
-    createReceipt: vi.fn(async (r: any) => {
+    getCapturedReceipt: vi.fn(async () => undefined),
+    createCapturedReceipt: vi.fn(async (r: any) => {
       const row = { id: `r-${state.receipts.length + 1}`, ...r };
       state.receipts.push(row);
-      return row;
+      return { receipt: row, replay: false };
     }),
     createTransactionClassification: vi.fn(async () => ({ id: "c-1" })),
   },

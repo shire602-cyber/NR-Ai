@@ -68,7 +68,7 @@ export default function ExpensesTab() {
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="tabular-nums text-kpi">
-                <Money amount={expenseReport.totalAed} currency={"AED"} />
+                <Money amount={expenseReport.totalAed} currency={expenseReport.baseCurrency} />
               </div>
             )}
           </CardContent>
@@ -85,7 +85,7 @@ export default function ExpensesTab() {
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="tabular-nums text-kpi">
-                <Money amount={expenseReport.subtotalAed} currency={"AED"} />
+                <Money amount={expenseReport.subtotalAed} currency={expenseReport.baseCurrency} />
               </div>
             )}
           </CardContent>
@@ -102,7 +102,7 @@ export default function ExpensesTab() {
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="tabular-nums text-kpi">
-                <Money amount={expenseReport.vatAed} currency={"AED"} />
+                <Money amount={expenseReport.receiptVat} currency={expenseReport.baseCurrency} />
               </div>
             )}
           </CardContent>
@@ -172,7 +172,7 @@ export default function ExpensesTab() {
                           {row.lineCount}
                         </TableCell>
                         <TableCell data-numeric>
-                          <Money amount={row.netExpenseAed} currency={"AED"} />
+                          <Money amount={row.netExpenseAed} currency={expenseReport.baseCurrency} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -227,13 +227,13 @@ export default function ExpensesTab() {
                         <TableCell className="font-medium">{row.label}</TableCell>
                         <TableCell data-numeric>{row.lineCount}</TableCell>
                         <TableCell data-numeric>
-                          <Money amount={row.debitAed} currency={"AED"} />
+                          <Money amount={row.debitAed} currency={expenseReport.baseCurrency} />
                         </TableCell>
                         <TableCell data-numeric>
-                          <Money amount={row.creditAed} currency={"AED"} />
+                          <Money amount={row.creditAed} currency={expenseReport.baseCurrency} />
                         </TableCell>
                         <TableCell data-numeric className=" font-medium">
-                          <Money amount={row.netExpenseAed} currency={"AED"} />
+                          <Money amount={row.netExpenseAed} currency={expenseReport.baseCurrency} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -520,13 +520,17 @@ export default function ExpensesTab() {
                       </TableCell>
                       <TableCell>{reportCodeLabel(line.source)}</TableCell>
                       <TableCell data-numeric>
-                        {line.debitAed > 0 ? formatCurrency(line.debitAed, "AED", locale) : "-"}
+                        {line.debitAed > 0
+                          ? formatCurrency(line.debitAed, expenseReport.baseCurrency, locale)
+                          : "-"}
                       </TableCell>
                       <TableCell data-numeric>
-                        {line.creditAed > 0 ? formatCurrency(line.creditAed, "AED", locale) : "-"}
+                        {line.creditAed > 0
+                          ? formatCurrency(line.creditAed, expenseReport.baseCurrency, locale)
+                          : "-"}
                       </TableCell>
                       <TableCell data-numeric className=" font-medium">
-                        <Money amount={line.netExpenseAed} currency={"AED"} />
+                        <Money amount={line.netExpenseAed} currency={expenseReport.baseCurrency} />
                       </TableCell>
                     </TableRow>
                   ))}
