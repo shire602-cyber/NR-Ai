@@ -102,7 +102,7 @@ describe("[WP-B] /pricing", () => {
     expect(featured?.getAttribute("data-featured")).toBe("true");
     expect(featured?.textContent).toContain("Most popular");
     expect(text()).toContain("Pay yearly and get 2 months free.");
-    expect(text()).not.toMatch(/coming soon|A-Cube|Complyance/i);
+    expect(text()).not.toMatch(/coming\s+soon|A-Cube|Complyance/i);
   });
 
   it("collapses comparison groups but keeps their rows in the table", async () => {

@@ -8,9 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
 import type { Company } from "@shared/schema";
-import { isBankAuthorizationReturnPath } from "@shared/bank-authorization-paths";
 import { getActiveCompanyId, switchActiveCompany, clearActiveCompany } from "@/lib/activeCompany";
 
 interface ActiveCompanyContextValue {
@@ -40,7 +38,6 @@ const ActiveCompanyContext = createContext<ActiveCompanyContextValue | null>(nul
 
 export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const [pathname] = useLocation();
   const [activeId, setActiveId] = useState<string | null>(() => getActiveCompanyId());
 
   // Stay in sync with `switchActiveCompany`/`clearActiveCompany` from
@@ -69,7 +66,6 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
     error,
   } = useQuery<Company[]>({
     queryKey: ["/api/companies"],
-    enabled: pathname !== "/login" && !isBankAuthorizationReturnPath(pathname),
   });
 
   const [switchingClient, setSwitchingClient] = useState(false);

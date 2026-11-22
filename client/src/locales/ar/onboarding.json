@@ -59,7 +59,6 @@
   "onboarding.expressIntro": "كل ما نحتاجه هو اسم شركتك — يتم إعداد دليل الحسابات الإماراتي وضريبة القيمة المضافة والفوترة تلقائيًا.",
   "onboarding.guidedTourPrompt": "تفضّل الجولة الإرشادية؟ اتبع الإعداد في ٣ دقائق",
   "onboarding.trnLabel": "الرقم الضريبي — رقم التسجيل الضريبي",
-  "onboarding.bankCardDesc": "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
   "onboarding.retrying": "جارٍ إعادة المحاولة…",
   "onboarding.companyDetailsTitle": "بيانات الشركة",
   "onboarding.companyDetailsDescription": "أضف بيانات منشأتك الرسمية للامتثال للمتطلبات في دولة الإمارات.",

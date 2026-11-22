@@ -97,7 +97,16 @@ describe("customer email delivery for an Arabic company", () => {
     expect(originalLink.status, originalLink.text).toBe(200);
     const inviteToken = inviteMail.text!.match(/\/portal\/join#t=([0-9a-f]{64})/)?.[1];
     expect(inviteToken).toBeDefined();
-    const publicInvite = await h.anon.get(`/api/portal-invitations/${inviteToken}`);
+    const csrf = await h.anon.get("/api/csrf-token");
+    const cookie = csrf.headers
+      .getSetCookie()
+      .map((value) => value.split(";")[0])
+      .join("; ");
+    const publicInvite = await h.anon.post(
+      "/api/portal-invitations/lookup",
+      { token: inviteToken },
+      { headers: { cookie, "x-csrf-token": csrf.body.csrfToken } }
+    );
     expect(publicInvite.status, publicInvite.text).toBe(200);
     expect(publicInvite.body.language).toBe(expected);
   });

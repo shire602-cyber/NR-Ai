@@ -340,8 +340,6 @@
   "serverErrors.INVALID_MONTH": "الشهر غير صالح.",
   "serverErrors.INVALID_MULTIPART": "تعذّرت قراءة الرفع. حاول رفع الملف مرة أخرى.",
   "serverErrors.INVALID_OAUTH_STATE": "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
-  "serverErrors.AUTHORIZATION_RETRY": "تعذّر إكمال التفويض. أعد المحاولة.",
-  "serverErrors.AUTHORIZATION_RESTART": "انتهت صلاحية التفويض. أعد بدءه من الصفحة التي بدأت منها، أو ارفع كشف حساب بصيغة CSV.",
   "serverErrors.INVALID_OWNERSHIP": "يجب أن تكون نسبة الملكية أكبر من 0% وألا تتجاوز 100%.",
   "serverErrors.INVALID_PERCENT": "يجب أن تكون النسبة القابلة للاسترداد بين 0 و100.",
   "serverErrors.INVALID_PERIOD": "نهاية الفترة قبل بدايتها. تحقق من التواريخ.",

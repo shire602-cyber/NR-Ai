@@ -3,10 +3,13 @@
  * encrypted, permissioned snapshots with merge / replace restore.
  */
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 import { useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
 const today = () => new Date().toISOString().slice(0, 10);
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 async function seed(t: Tenant) {
   const contact = await t.as.post(`/api/companies/${t.company.id}/customer-contacts`, {
@@ -98,8 +101,239 @@ describe("W5-B backups", () => {
     expect(JSON.stringify(list.body)).not.toContain("enc:v1");
     const dl = await t.as.get(`/api/backups/${b.id}/download`);
     expect(dl.status).toBe(200);
+    expect(dl.headers.get("x-backup-export-sha256")).toBe(sha256(dl.text));
     expect(dl.body.tables.vendor_bills[0].vendor_name).toBe("Raw SQL Vendor");
     expect(dl.body.companyId).toBe(t.company.id);
+  });
+
+  it("seals an encrypted download of a legacy plaintext backup and returns an export checksum", async () => {
+    const t = await h.createTenant();
+    const b = await backup(t, "Legacy snapshot");
+    const snapshot = {
+      version: "1.0",
+      companyId: t.company.id,
+      data: { accounts: [{ nameEn: "Private legacy account" }] },
+    };
+    const plaintext = JSON.stringify(snapshot);
+    await h.sql(
+      `UPDATE backups SET data_snapshot = $2, checksum = $3, format_version = '1.0',
+                         encrypted = false WHERE id = $1`,
+      [b.id, plaintext, sha256(plaintext)]
+    );
+    const response = await t.as.get(`/api/backups/${b.id}/download?format=encrypted`);
+    expect(response.status, response.text).toBe(200);
+    expect(response.text).toMatch(/^enc:v1:/);
+    expect(response.text).not.toContain("Private legacy account");
+    expect(response.headers.get("content-disposition")).toMatch(/\.muhbak"/);
+    expect(response.headers.get("x-backup-export-sha256")).toBe(sha256(response.text));
+    const { openSnapshot } = await import("../../server/services/backup.service");
+    expect(openSnapshot(response.text, sha256(plaintext)).snapshot).toEqual(snapshot);
+    const metadata = await t.as.get(`/api/backups/${b.id}`);
+    expect(metadata.body.checksum).toBe(sha256(plaintext));
+  });
+
+  it("enforces client scope and company backup permissions for NR firm administrators", async () => {
+    const staff = await h.createTenant({ firmRole: "firm_admin" });
+    const client = await h.createSecondTenant({ companyColumns: { company_type: "client" } });
+    const own = await backup(staff);
+    const clientBackup = await backup(client);
+    const companyUrl = `/api/companies/${client.company.id}/backups`;
+    const backupUrl = `/api/backups/${clientBackup.id}`;
+    const cloneUrl = `/api/backups/${own.id}/clone`;
+    const target = { targetCompanyId: client.company.id };
+    for (const path of [companyUrl, `${companyUrl}/manifest`, `${companyUrl}/schedule`]) {
+      expect((await staff.as.get(path)).status, path).toBe(403);
+    }
+    for (const path of [backupUrl, `${backupUrl}/download`]) {
+      expect((await staff.as.get(path)).status, path).toBe(404);
+    }
+    expect((await staff.as.post(`${backupUrl}/restore-preview`, { mode: "merge" })).status).toBe(
+      404
+    );
+    expect((await staff.as.post(`${cloneUrl}-preview`, target)).status).toBe(404);
+    expect(
+      (
+        await staff.as.post(cloneUrl, {
+          ...target,
+          confirmRestore: true,
+          confirmTargetName: client.company.name,
+        })
+      ).status
+    ).toBe(404);
+
+    await h.sql(
+      `INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'accountant')`,
+      [client.company.id, staff.user.id]
+    );
+    const insufficient = await staff.as.get(`${backupUrl}/download`);
+    expect(insufficient.status).toBe(403);
+    expect(insufficient.body.code).toBe("PERMISSION_DENIED");
+    expect((await staff.as.post(`${cloneUrl}-preview`, target)).status).toBe(403);
+
+    await h.sql(`UPDATE company_users SET role = 'admin' WHERE company_id = $1 AND user_id = $2`, [
+      client.company.id,
+      staff.user.id,
+    ]);
+    expect((await staff.as.get(`${backupUrl}/download`)).status).toBe(200);
+    const allowed = await staff.as.post(`${cloneUrl}-preview`, target);
+    expect(allowed.status, allowed.text).toBe(200);
+
+    const { NR_FIRM_ID } = await import("../../server/services/firm/scope");
+    await h.sql(
+      `INSERT INTO firm_client_links (company_id, firm_id, status) VALUES ($1, $2, 'revoked')`,
+      [client.company.id, NR_FIRM_ID]
+    );
+    expect((await staff.as.get(`${backupUrl}/download`)).status).toBe(404);
+    expect((await staff.as.post(`${cloneUrl}-preview`, target)).status).toBe(404);
+  });
+
+  it("requires current firm scope for backup downloads and clone targets with customer-type link history", async () => {
+    const { NR_FIRM_ID } = await import("../../server/services/firm/scope");
+    const staff = await h.createTenant({ firmRole: "firm_admin" });
+    const customer = await h.createSecondTenant({ companyColumns: { company_type: "customer" } });
+    const own = await backup(staff);
+    const customerBackup = await backup(customer);
+    await h.sql(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'admin')`, [
+      customer.company.id,
+      staff.user.id,
+    ]);
+    const [link] = await h.sql<{ id: string }>(
+      `INSERT INTO firm_client_links (company_id, firm_id, status)
+       VALUES ($1, $2, 'active') RETURNING id`,
+      [customer.company.id, NR_FIRM_ID]
+    );
+    const download = `/api/backups/${customerBackup.id}/download`;
+    const clone = `/api/backups/${own.id}/clone-preview`;
+    const target = { targetCompanyId: customer.company.id };
+    expect((await staff.as.get(download)).status).toBe(200);
+    expect((await staff.as.post(clone, target)).status).toBe(200);
+
+    // An independently granted company role may still be present after a firm link ends.
+    await h.sql("UPDATE firm_client_links SET status = 'revoked' WHERE id = $1", [link.id]);
+    expect((await staff.as.get(download)).status).toBe(404);
+    expect((await staff.as.post(clone, target)).status).toBe(404);
+    expect((await customer.as.get(download)).status).toBe(200);
+  });
+
+  it("excludes firm access tables and preserves current links and grants on historical backup restore", async () => {
+    const { NR_FIRM_ID } = await import("../../server/services/firm/scope");
+    const { sealSnapshot } = await import("../../server/services/backup.service");
+    const owner = await h.createTenant();
+    const former = await h.createSecondTenant();
+    const current = await h.createSecondTenant();
+    const [link] = await h.sql<{ id: string }>(
+      `INSERT INTO firm_client_links (company_id, firm_id, status)
+       VALUES ($1, $2, 'active') RETURNING id`,
+      [owner.company.id, NR_FIRM_ID]
+    );
+    const makeGrant = (userId: string) =>
+      h.sql<{ id: string }>(
+        `INSERT INTO firm_company_grants (company_id, firm_id, user_id)
+       VALUES ($1, $2, $3) RETURNING id`,
+        [owner.company.id, NR_FIRM_ID, userId]
+      );
+    const [formerGrant] = await makeGrant(former.user.id);
+    const saved = await backup(owner);
+    const downloaded = await owner.as.get(`/api/backups/${saved.id}/download`);
+    expect(downloaded.status, downloaded.text).toBe(200);
+    const snapshot = downloaded.body;
+    expect(snapshot.tables).not.toHaveProperty("firm_client_links");
+    expect(snapshot.tables).not.toHaveProperty("firm_company_grants");
+
+    snapshot.tables.firm_client_links = await h.sql(
+      "SELECT * FROM firm_client_links WHERE id = $1",
+      [link.id]
+    );
+    snapshot.tables.firm_company_grants = await h.sql(
+      "SELECT * FROM firm_company_grants WHERE id = $1",
+      [formerGrant.id]
+    );
+    const old = sealSnapshot(snapshot);
+    await h.sql("UPDATE backups SET data_snapshot = $2, checksum = $3 WHERE id = $1", [
+      saved.id,
+      old.sealed,
+      old.checksum,
+    ]);
+    await h.sql("UPDATE firm_client_links SET status = 'revoked' WHERE id = $1", [link.id]);
+    await h.sql("DELETE FROM firm_company_grants WHERE id = $1", [formerGrant.id]);
+    const [currentGrant] = await makeGrant(current.user.id);
+
+    for (const mode of ["merge", "replace"]) {
+      const restored = await owner.as.post(`/api/backups/${saved.id}/restore`, {
+        mode,
+        confirmRestore: true,
+        ...(mode === "replace" ? { confirmName: saved.name } : {}),
+      });
+      expect(restored.status, restored.text).toBe(200);
+      expect(await h.sql("SELECT status FROM firm_client_links WHERE id = $1", [link.id])).toEqual([
+        { status: "revoked" },
+      ]);
+      expect(
+        await h.sql("SELECT id, user_id FROM firm_company_grants WHERE company_id = $1", [
+          owner.company.id,
+        ])
+      ).toEqual([{ id: currentGrant.id, user_id: current.user.id }]);
+    }
+  });
+
+  it("strips retired connection credentials when capturing, downloading, or restoring backups", async () => {
+    const t = await h.createTenant();
+    const { encryptSecret, decryptSecret } = await import("../../server/services/secret-vault");
+    const [connection] = await h.sql<{ id: string }>(
+      `INSERT INTO bank_connections (
+        company_id, provider, connection_type, access_token, refresh_token,
+        token_expires_at, consent_id, auto_sync, account_name
+      ) VALUES ($1, 'lean', 'open_banking', $2, $3, now(), 'old-consent', true, 'Operating')
+      RETURNING id`,
+      [t.company.id, encryptSecret("old-access"), encryptSecret("old-refresh")]
+    );
+    const b = await backup(t);
+    const [newBackup] = await h.sql<{ data_snapshot: string }>(
+      "SELECT data_snapshot FROM backups WHERE id = $1",
+      [b.id]
+    );
+    const readSealed = (sealed: string) =>
+      JSON.parse(gunzipSync(Buffer.from(decryptSecret(sealed)!.slice(4), "base64")).toString());
+    const stripped = {
+      id: connection.id,
+      account_name: "Operating",
+      access_token: null,
+      refresh_token: null,
+      token_expires_at: null,
+      consent_id: null,
+      auto_sync: false,
+    };
+    const clean = readSealed(newBackup.data_snapshot);
+    expect(clean.tables.bank_connections[0]).toMatchObject(stripped);
+
+    const [originalConnection] = await h.sql("SELECT * FROM bank_connections WHERE id = $1", [
+      connection.id,
+    ]);
+    clean.tables.bank_connections[0] = originalConnection;
+    const oldJson = JSON.stringify(clean);
+    await h.sql("UPDATE backups SET data_snapshot = $2, checksum = $3 WHERE id = $1", [
+      b.id,
+      encryptSecret(oldJson),
+      createHash("sha256").update(oldJson).digest("hex"),
+    ]);
+    const download = await t.as.get(`/api/backups/${b.id}/download`);
+    expect(download.status, download.text).toBe(200);
+    expect(download.headers.get("x-backup-export-sha256")).toBe(sha256(download.text));
+    expect(sha256(download.text)).not.toBe(sha256(oldJson));
+    expect(download.body.tables.bank_connections[0]).toMatchObject(stripped);
+    const encrypted = await t.as.get(`/api/backups/${b.id}/download?format=encrypted`);
+    expect(encrypted.status, encrypted.text).toBe(200);
+    expect(encrypted.headers.get("x-backup-export-sha256")).toBe(sha256(encrypted.text));
+    expect(readSealed(encrypted.text).tables.bank_connections[0]).toMatchObject(stripped);
+
+    await h.sql("DELETE FROM bank_connections WHERE id = $1", [connection.id]);
+    const restored = await t.as.post(`/api/backups/${b.id}/restore`, {
+      mode: "merge",
+      confirmRestore: true,
+    });
+    expect(restored.status, restored.text).toBe(200);
+    const [row] = await h.sql("SELECT * FROM bank_connections WHERE id = $1", [connection.id]);
+    expect(row).toMatchObject(stripped);
   });
 
   it("[R19-07] replace mode reverts an edited invoice, brings back a deleted contact and removes later rows", async () => {
