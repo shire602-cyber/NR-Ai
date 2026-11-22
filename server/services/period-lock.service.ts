@@ -6,6 +6,7 @@ import { AppError } from "../middleware/errorHandler";
 import { DomainError } from "../errors";
 import { todayIso } from "../ledger/normalize";
 import { rowsOf } from "../ledger/tx";
+import { lockVatReturns } from "../ledger/vat-lock";
 import type { LedgerTx } from "../ledger/types";
 
 /**
@@ -105,6 +106,8 @@ export async function lockPeriodPolicy(
   companyId: string,
   mode: "shared" | "exclusive"
 ): Promise<void> {
+  // VAT mutations can post journals. Always acquire the VAT lock before the period lock.
+  await lockVatReturns(tx, companyId, "shared");
   const key = sql`hashtextextended('ledger-period:' || ${companyId.toLowerCase()}, 0)`;
   await tx.execute(
     mode === "shared"

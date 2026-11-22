@@ -105,12 +105,25 @@ it("recovers pre-provenance grants for downgrade and offboarding without adoptin
 
   const preserved = [direct, replacedBefore, replacedAfter, historical];
   const kept = await Promise.all(preserved.map(membership));
-  for (const user of staff) {
+  const ambiguous = [historical, replacedBefore];
+  for (const user of [original, direct, replacedAfter]) {
     const updated = await firm.as.patch(`/api/firm/members/${user.user.id}`, { role: "viewer" });
     expect(updated.status, updated.text).toBe(200);
   }
   expect(await membership(original)).toEqual({ ...ownMembership, role: "viewer" });
   expect(await Promise.all(preserved.map(membership))).toEqual(kept);
+  for (const user of ambiguous) {
+    const before = await membership(user);
+    const downgrade = await firm.as.patch(`/api/firm/members/${user.user.id}`, { role: "viewer" });
+    expect(downgrade.status, downgrade.text).toBe(409);
+    expect(downgrade.body.code).toBe("UNRESOLVED_FIRM_ACCESS");
+    expect(downgrade.body.details.membershipIds).toEqual([before.id]);
+    expect(await membership(user)).toEqual(before);
+    expect(await grant(user)).toEqual({ created_membership: true, membership_id: null });
+    expect(await h.sql("SELECT firm_role FROM users WHERE id = $1", [user.user.id])).toEqual([
+      { firm_role: "firm_admin" },
+    ]);
+  }
   const reviewPath = `/api/companies/${companyId}/team/firm-access-review`;
   for (const user of [historical, replacedBefore]) {
     const blocked = await firm.as.delete(`/api/firm/members/${user.user.id}`);
@@ -143,6 +156,10 @@ it("recovers pre-provenance grants for downgrade and offboarding without adoptin
   });
   expect(revoked.status, revoked.text).toBe(200);
   expect(await membership(historical)).toBeUndefined();
+  for (const user of ambiguous) {
+    const retried = await firm.as.patch(`/api/firm/members/${user.user.id}`, { role: "viewer" });
+    expect(retried.status, retried.text).toBe(200);
+  }
   for (const user of staff) {
     const removed = await firm.as.delete(`/api/firm/members/${user.user.id}`);
     expect(removed.status, removed.text).toBe(200);

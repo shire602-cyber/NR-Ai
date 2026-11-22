@@ -420,7 +420,8 @@ async function main() {
     }
     const unsupportedClaim =
       bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ??
-      bodyText.match(unsupportedStatementCopy)?.[0];
+      bodyText.match(unsupportedStatementCopy)?.[0] ??
+      findBankFeedMention(bodyText);
     if (unsupportedClaim) {
       await fail(`public claim ${route}`, { unsupportedClaim });
     }
@@ -711,8 +712,6 @@ async function main() {
         {
           headers: { "x-csrf-token": csrfToken ?? "" },
           data: {
-            provider: "manual",
-            connectionType: "statement",
             bankName: "Emirates NBD",
             accountName: "Current AED",
           },

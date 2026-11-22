@@ -198,7 +198,7 @@ export async function resolveDocumentRate(
   const cur = documentCurrency(currency, base);
   if (cur === base) return 1;
   if (supplied && supplied > 0) return supplied;
-  const r = await getRate(companyId, cur, base, dateIso, {}, tx);
+  const r = await getRate(companyId, cur, base, dateIso, { tx });
   return r.rate;
 }
 

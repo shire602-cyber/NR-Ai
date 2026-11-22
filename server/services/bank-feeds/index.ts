@@ -599,7 +599,7 @@ export function registerBankFeedJobs(): void {
   registerJob({
     name: "bankFeeds.sync",
     cron: "41 */6 * * *",
-    description: "Import transactions for configured accounts (deduplicate by provider transaction ID)",
+    description: "Refresh transactions for existing configured connections",
     run: async () => {
       await runScheduledBankFeedSync();
     },

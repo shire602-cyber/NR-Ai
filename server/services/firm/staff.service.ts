@@ -28,9 +28,11 @@ import {
   type FirmRole,
 } from "../../../shared/access";
 import { lockFirmMembership, requireFirmOwner } from "./ownership";
+import { permissionsForRole } from "../../../shared/permissions";
 import {
   accessibleClientCondition,
   accessibleClientsQuery,
+  assertNoUnresolvedFirmAccess,
   canAccessFirmClient,
   grantCompanyAccess,
   isFirmClient,
@@ -307,6 +309,24 @@ async function setFirmMemberRole(
       await requireFirmOwner(tx, ctx.firmId, userId);
     }
     const { grants, assignments, timerCompanyId } = await lockMemberClients(tx, ctx, userId);
+    const companyRole = FIRM_ROLE_COMPANY_ROLE[role];
+    const nextPermissions = permissionsForRole(companyRole);
+    if (
+      previous &&
+      permissionsForRole(FIRM_ROLE_COMPANY_ROLE[previous.role]).some(
+        (permission) => !nextPermissions.includes(permission)
+      )
+    ) {
+      for (const { companyId, membershipId } of grants) {
+        if (membershipId) continue;
+        await assertNoUnresolvedFirmAccess(
+          tx,
+          companyId,
+          and(eq(firmCompanyGrants.firmId, ctx.firmId), eq(firmCompanyGrants.userId, userId)),
+          companyRole
+        );
+      }
+    }
     const authorized = await authorizedTimerClients(tx, previous, timerCompanyId);
     const changedAt = new Date();
     await tx
@@ -333,7 +353,7 @@ async function setFirmMemberRole(
       if (!membershipId) continue;
       await tx
         .update(companyUsers)
-        .set({ role: FIRM_ROLE_COMPANY_ROLE[role] })
+        .set({ role: companyRole })
         .where(
           and(
             eq(companyUsers.id, membershipId),

@@ -239,6 +239,6 @@ One model for every migrating company (D1, accounting re-audit 3: N1-N4, N7, N14
 
 ### Reviewing legacy firm access
 
-Offboarding returns `UNRESOLVED_FIRM_ACCESS` with the company and membership IDs when a historical firm grant cannot be matched to its original membership. The transaction preserves the unresolved grant so the company owner can review it.
+Offboarding and role downgrades that would leave higher company permissions in place return `UNRESOLVED_FIRM_ACCESS` with the company and membership IDs when a historical firm grant cannot be matched to its original membership. The transaction preserves the unresolved grant so the company owner can review it.
 
 The owner can list reviewable memberships with `GET /api/companies/:companyId/team/firm-access-review`. Use `POST` on the same path with `membershipId` and a `decision` of `independent` or `revoke`. Confirming independence keeps the company's direct membership. Revoking removes that membership. Retry offboarding after the listed memberships have been reviewed.

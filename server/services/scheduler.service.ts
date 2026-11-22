@@ -760,7 +760,7 @@ export async function generateDueRecurringInvoices(): Promise<number> {
         let rate = 1;
         if (currency !== "AED") {
           try {
-            rate = (await getRate(template.companyId, currency, "AED", dateIso, {}, tx)).rate;
+            rate = (await getRate(template.companyId, currency, "AED", dateIso, { tx })).rate;
           } catch (err) {
             return note(
               "no_exchange_rate",

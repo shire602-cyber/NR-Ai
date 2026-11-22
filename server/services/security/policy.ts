@@ -205,27 +205,6 @@ async function loadUserSecurity(userId: string): Promise<UserSecurityRow | null>
   return rows[0] ?? null;
 }
 
-function mayNeedCompanyMfa(user: Express.User, sec: UserSecurityRow): boolean {
-  return !sec.mfa_enabled && user.isAdmin !== true && !isNraFirmRole(user.firmRole);
-}
-
-async function denyUnenrolledMember(
-  res: Response,
-  userId: string,
-  companyId: string
-): Promise<boolean> {
-  const policy = await getCompanyMfaPolicy(companyId);
-  if (policy === "none" || !policyCoversRole(policy, await getCompanyRole(userId, companyId))) {
-    return false;
-  }
-  res.status(403).json({
-    message: "This company requires two-factor authentication. Set it up in Security settings.",
-    code: "MFA_ENROLLMENT_REQUIRED",
-    details: { companyId, policy, setupUrl: "/settings/security" },
-  });
-  return true;
-}
-
 /** Use after authentication and company resolution on routes whose scope is set by the handler. */
 export async function requireCompanyMfaEnrollment(
   req: Request,
@@ -233,12 +212,7 @@ export async function requireCompanyMfaEnrollment(
   next: NextFunction
 ): Promise<void> {
   try {
-    const user = req.user!;
-    const sec = await loadUserSecurity(user.id);
-    if (sec && mayNeedCompanyMfa(user, sec)) {
-      if (await denyUnenrolledMember(res, user.id, req.params.companyId)) return;
-    }
-    next();
+    if (await requireFirmCompanyMfa(req.user!, res, [req.params.companyId])) next();
   } catch (err) {
     next(err);
   }

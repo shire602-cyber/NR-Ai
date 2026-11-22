@@ -19,7 +19,7 @@
 import { and, eq, inArray, isNull, ne, not, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../../db";
 import { DomainError } from "../../errors";
-import { normalizeCompanyRole } from "../../../shared/permissions";
+import { normalizeCompanyRole, permissionsForRole } from "../../../shared/permissions";
 import {
   companies,
   companyUsers,
@@ -418,6 +418,27 @@ function unresolvedMemberships(exec: Pick<Executor, "select">, companyId: string
     );
 }
 
+export async function assertNoUnresolvedFirmAccess(
+  exec: Pick<Executor, "select">,
+  companyId: string,
+  grantWhere: SQL | undefined,
+  allowedRole?: string
+): Promise<void> {
+  const unresolved = await unresolvedMemberships(exec, companyId, grantWhere);
+  const allowed = permissionsForRole(allowedRole);
+  const blocked = unresolved.filter(
+    ({ role }) =>
+      allowedRole === undefined ||
+      permissionsForRole(role).some((permission) => !allowed.includes(permission))
+  );
+  if (blocked.length) {
+    throw new DomainError("UNRESOLVED_FIRM_ACCESS", 409, {
+      companyId,
+      membershipIds: blocked.map(({ membershipId }) => membershipId),
+    });
+  }
+}
+
 async function assertCompanyOwner(
   exec: Pick<Executor, "select">,
   companyId: string,
@@ -490,13 +511,7 @@ export async function revokeCompanyAccess(
     eq(firmCompanyGrants.companyId, input.companyId),
     input.userId ? eq(firmCompanyGrants.userId, input.userId) : undefined
   );
-  const unresolved = await unresolvedMemberships(exec, input.companyId, grantWhere);
-  if (unresolved.length) {
-    throw new DomainError("UNRESOLVED_FIRM_ACCESS", 409, {
-      companyId: input.companyId,
-      membershipIds: unresolved.map(({ membershipId }) => membershipId),
-    });
-  }
+  await assertNoUnresolvedFirmAccess(exec, input.companyId, grantWhere);
   const grants = await exec
     .select({ userId: firmCompanyGrants.userId, membershipId: firmCompanyGrants.membershipId })
     .from(firmCompanyGrants)

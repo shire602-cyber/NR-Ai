@@ -471,6 +471,14 @@ describe("Public SaaS launch surface", () => {
     );
   });
 
+  it.each([
+    "docs/archive/root/Muhasib-Teardown-2026-08-07.md",
+    "docs/archive/root/Muhasib-Rebuild-Plan.md",
+    "docs/qa/2026-06-21-benchmark-audit/03-cfo-audit-report.md",
+  ])("omits obsolete banking comparisons in %s", (file) => {
+    expect(readRepoFile(file)).not.toMatch(/\bUAE bank feeds?\b|\bbank feeds? (?:and|with) rules\b/i);
+  });
+
   // X6b: the old test here compared advertised free-plan limits with source text. Pricing, the
   // trial banner and the Subscription page are now covered by rendering them
   // (tests/unit/trial-pricing.test.ts), which also pins the public trial claim to TRIAL_DAYS.

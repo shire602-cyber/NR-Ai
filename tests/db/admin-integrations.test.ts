@@ -3,6 +3,7 @@
  * a real, admin-only call (it was a hard-coded "Connected" badge and a button that did nothing).
  */
 import { describe, expect, it } from "vitest";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import { useHarness } from "./harness";
 
 const h = useHarness();
@@ -16,7 +17,7 @@ describe("STEP1 F6 admin integrations", () => {
       key: "bankStatementUpload",
       name: "Bank statement upload",
       configured: true,
-      detail: null,
+      detail: bankStatementCopy.en,
       requiredEnv: [],
       unlocks: "Upload CSV bank statements for reconciliation",
     });

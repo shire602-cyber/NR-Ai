@@ -169,8 +169,8 @@ export async function computeFxExposure(
         {
           rateType,
           maxAgeDays: opts.maxAgeDays,
-        },
-        tx
+          tx,
+        }
       );
       if (r.warning) warnings.add(r.warning);
     } catch (err) {

@@ -32,7 +32,7 @@ import {
 import { allocateEntryNumber, lockIdempotencyKey } from "./numbering";
 import { journalMemo } from "@shared/journal-memo";
 import { journalMachine, transitionRow } from "./state-machines";
-import { assertVatPeriodOpen, isVat201JournalTreatment, lockVatReturns } from "./vat-lock";
+import { assertVatPeriodOpen, isVat201JournalTreatment } from "./vat-lock";
 import { assertKernelControlPosting, stampControlAdjustment } from "./control-accounts";
 import { findPgError, rowsOf, withLedgerTx } from "./tx";
 import type {
@@ -264,7 +264,6 @@ export async function insertNormalizedEntry(
   const actorId = actorOf(ctx);
   // Year-end close/reopen takes this lock exclusively before posting a journal.
   await lockPeriodPolicy(tx, n.companyId, "shared");
-  await lockVatReturns(tx, n.companyId, "shared");
   if (n.idempotencyKey) {
     await lockIdempotencyKey(tx, n.companyId, n.idempotencyKey);
     const replay = await findByIdempotencyKey(tx, n.companyId, n.idempotencyKey);
@@ -509,7 +508,6 @@ export async function postDraft(
 
   return withLedgerTx(async (tx) => {
     await lockPeriodPolicy(tx, located.companyId, "shared");
-    await lockVatReturns(tx, located.companyId, "shared");
     // Draft edits replace the header and lines in one transaction. Check the version we post.
     const pre = await loadEntry(tx, entryId, located.companyId, true);
     if (!pre) throw notFound(entryId);
@@ -602,8 +600,7 @@ async function resolveReversalDate(
   tx: LedgerTx,
   original: JournalEntry,
   opts: ReverseOptions,
-  mode: ReversalMode,
-  tx?: LedgerTx
+  mode: ReversalMode
 ): Promise<Date> {
   const origIso = entryIso(original);
   if (mode === "voided") return new Date(original.date);
@@ -620,7 +617,6 @@ async function resolveReversalDate(
     if (!opts.allowFutureDate) assertNotFuture(iso);
     return iso === origIso ? new Date(original.date) : at;
   }
-  await lockPeriodPolicy(tx, original.companyId, "shared");
   if (!(await getEffectiveLock(original.companyId, origIso, tx))) return new Date(original.date);
   return new Date(`${todayIso()}T00:00:00.000Z`);
 }
@@ -659,7 +655,10 @@ async function reverseInTx(
   mode: ReversalMode,
   ctx: LedgerContext
 ): Promise<ReverseResult> {
-  const original = await loadEntry(tx, entryId, ctx.companyId, true);
+  const located = await loadEntry(tx, entryId, ctx.companyId);
+  if (!located) throw notFound(entryId);
+  await lockPeriodPolicy(tx, located.companyId, "shared");
+  const original = await loadEntry(tx, entryId, located.companyId, true);
   if (!original) throw notFound(entryId);
   assertReversible(original);
   const date = await resolveReversalDate(tx, original, opts, mode);
