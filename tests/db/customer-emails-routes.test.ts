@@ -70,13 +70,18 @@ describe("customer e-mails: language follows the customer", () => {
     expect(row.html + row.text_body).not.toContain("100123456700003");
   });
 
-  it("an explicit language beats the customer's, and no preference means both languages", async () => {
-    const t = await h.createTenant();
+  it("an Arabic company sends both languages when there is no preference and honors an explicit override", async () => {
+    const t = await h.createTenant({ companyColumns: { locale: "ar" } });
     const c = await contact(t);
     const inv = await issued(t, c.id);
-    await t.as.post(`${base(t)}/invoices/${inv.id}/send-email`, { to: "both@example.test" });
+    const sent = await t.as.post(`${base(t)}/invoices/${inv.id}/send-email`, {
+      to: "both@example.test",
+    });
+    expect(sent.status, sent.text).toBe(202);
     const both = await outbox("invoice", "both@example.test");
-    expect(both.subject).toContain(" | ");
+    expect(both.subject).toMatch(/Invoice .+\| فاتورة رقم /);
+    expect(both.text_body).toContain("Gulf Retail LLC");
+    expect(both.text_body).toContain("الخليج للتجزئة");
     expect(both.html).toContain('<div dir="ltr" lang="en"');
     expect(both.html).toContain('<div dir="rtl" lang="ar"');
     await t.as.post(`${base(t)}/invoices/${inv.id}/send-email`, {

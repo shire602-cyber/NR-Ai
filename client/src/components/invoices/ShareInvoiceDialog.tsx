@@ -40,7 +40,7 @@ function ShareInvoiceDialogBody({
   companyId: string | undefined;
   onClose: () => void;
 }) {
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [link, setLink] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -91,7 +91,7 @@ function ShareInvoiceDialogBody({
       const res = await apiRequest(
         "POST",
         `/api/companies/${companyId}/invoices/${invoice.id}/send-email`,
-        { to, language: locale === "ar" ? "ar" : "en" }
+        { to }
       );
       setOutcome(res?.sent ? "sent" : res?.emailConfigured === false ? "not_configured" : "queued");
     } catch {

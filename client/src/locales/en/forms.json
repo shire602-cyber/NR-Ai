@@ -354,6 +354,8 @@
   "forms.serverErrors.VAT_FILED_ON_FUTURE": "The filing date cannot be in the future.",
   "forms.serverErrors.VAT_FILED_ON_IN_PERIOD": "A VAT return is filed after its tax period ends. Choose a later filing date.",
   "forms.serverErrors.VAT_SETTLEMENT_DATE_IN_PERIOD": "The VAT payment or refund is dated after the end of the return period.",
+  "forms.serverErrors.VAT_SETTLEMENT_ROUNDS_TO_ZERO": "The VAT settlement is too small to record in the selected currency.",
+  "forms.serverErrors.VAT_SETTLEMENT_RECONCILIATION_REQUIRED": "Reconcile the filed VAT figures to the posted VAT controls before recording settlement.",
   "forms.serverErrors.VAT_RETURN_ALREADY_SETTLED": "A payment is already recorded for this return. Reverse it first to record a different one.",
   "forms.serverErrors.VAT_RETURN_NOT_SUBMITTED": "Record the EmaraTax filing before recording the payment or refund.",
   "forms.serverErrors.VAT_RETURN_NOTHING_TO_SETTLE": "This return has nothing to pay or receive.",

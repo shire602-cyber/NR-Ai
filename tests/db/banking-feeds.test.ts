@@ -4,7 +4,7 @@
  * allow-listed, tokens are encrypted at rest and never returned, sync dedupes by provider id.
  * Provider HTTP is a recorded sandbox-shaped fixture; nothing calls a real bank.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import type { FetchLike } from "../../server/services/bank-feeds/types";
 
@@ -80,12 +80,51 @@ async function clearEnv() {
 }
 
 afterEach(clearEnv);
+afterEach(() => vi.unstubAllEnvs());
 
 async function tenant(): Promise<Tenant> {
   return h.createTenant({ name: "Feeds" });
 }
 
 describe("W3-C bank feeds", () => {
+  it.each(["en", "ar"])("exposes only customer readiness fields in %s", async (locale) => {
+    vi.stubEnv("LEAN_APP_TOKEN", undefined);
+    vi.stubEnv("TARABUT_CLIENT_ID", undefined);
+    vi.stubEnv("TARABUT_CLIENT_SECRET", undefined);
+    vi.stubEnv("WIO_CLIENT_ID", undefined);
+    vi.stubEnv("WIO_CLIENT_SECRET", undefined);
+    vi.stubEnv("WIO_API_BASE_URL", "https://sandbox.example.test");
+    vi.stubEnv("BANK_FEED_REDIRECT_URIS", REDIRECT);
+    const t = await tenant();
+    const getProviders = () =>
+      t.as.get("/api/bank/providers", { headers: { "Accept-Language": locale } });
+    const labels = [
+      { id: "lean", label: "Lean Technologies" },
+      { id: "tarabut", label: "Tarabut Gateway" },
+      { id: "wio", label: "Wio Bank" },
+    ];
+
+    for (const enabled of [false, true]) {
+      if (enabled) {
+        vi.stubEnv("WIO_CLIENT_ID", "sandbox-wio-client");
+        vi.stubEnv("WIO_CLIENT_SECRET", "sandbox-wio-secret");
+      }
+      const statuses = labels.map((provider) => {
+        const configured = enabled && provider.id === "wio";
+        return { ...provider, configured, status: configured ? "sandbox" : "requires_external" };
+      });
+      const result = await getProviders();
+      expect(result.status, result.text).toBe(200);
+      expect(result.body).toEqual({
+        providers: enabled ? ["wio"] : [],
+        isConfigured: enabled,
+        statuses,
+        redirectUris: [REDIRECT],
+        capabilities: statuses.map(({ id, status }) => ({ id: `bank_feed_${id}`, status })),
+      });
+    }
+  });
+
   it("reports CSV upload separately from existing provider configuration", async () => {
     await clearEnv();
     const admin = await h.createTenant({ isAdmin: true });
@@ -114,6 +153,26 @@ describe("W3-C bank feeds", () => {
     );
   });
 
+  it("guides customers to CSV import when statement-only sync or balance is unavailable", async () => {
+    const t = await tenant();
+    const connection = await t.as.post(`/api/companies/${t.company.id}/bank-connections`, {
+      bankName: "CSV Statement Account",
+    });
+    expect(connection.status, connection.text).toBe(201);
+    const path = `/api/bank-connections/${connection.body.id}`;
+    const csvMessage =
+      "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.";
+    const sync = await t.as.post(`${path}/sync`, {});
+    expect(sync.status, sync.text).toBe(400);
+    expect(sync.body).toMatchObject({ code: "BANK_FEED_NOT_SUPPORTED", message: csvMessage });
+    const balance = await t.as.get(`${path}/balance`);
+    expect(balance.status, balance.text).toBe(503);
+    expect(balance.body).toMatchObject({
+      code: "BANK_FEED_BALANCE_UNAVAILABLE",
+      message: csvMessage,
+    });
+  });
+
   it("[R06-14] connect with an unconfigured provider is 503 BANK_FEED_NOT_CONFIGURED", async () => {
     await clearEnv();
     const t = await tenant();
@@ -124,12 +183,14 @@ describe("W3-C bank feeds", () => {
       });
       expect(r.status, r.text).toBe(503);
       expect(r.body.code).toBe("BANK_FEED_NOT_CONFIGURED");
+      expect(r.body.message).toBe(
+        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books."
+      );
     }
     const status = await t.as.get(`/api/bank/providers`);
     expect(status.body.isConfigured).toBe(false);
     for (const s of status.body.statuses) {
       expect(s).toMatchObject({ configured: false, status: "requires_external" });
-      expect(s.message.en).toBe("Not connected — requires provider contract");
     }
   });
 
@@ -247,6 +308,15 @@ describe("W3-C bank feeds", () => {
       { amount: "-105.50", external_id: "tx-1", bank_statement_account_id: ba.body.id },
       { amount: "2000.00", external_id: "tx-2", bank_statement_account_id: ba.body.id },
     ]);
+
+    await h.sql("UPDATE bank_connections SET access_token = NULL WHERE id = $1", [conn.id]);
+    const unavailable = await t.as.post(`/api/bank-connections/${conn.id}/sync`, {});
+    expect(unavailable.status, unavailable.text).toBe(409);
+    expect(unavailable.body).toMatchObject({
+      code: "BANK_FEED_RECONNECT_REQUIRED",
+      message:
+        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.",
+    });
   });
 
   it("[R06-19] an authorized retry restores a connection after a provider failure", async () => {

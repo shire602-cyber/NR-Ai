@@ -18,6 +18,7 @@ import { DomainError } from "../../errors";
 import { storage } from "../../storage";
 import { createLogger } from "../../config/logger";
 import { getCapability, type CapabilityStatus } from "../../../shared/capabilities";
+import { BANK_STATEMENT_IMPORT_GUIDANCE } from "../../../shared/bank-statement-copy";
 import { fromFils } from "../../../shared/money";
 import {
   bankAccounts,
@@ -52,7 +53,7 @@ function assertConfigured(adapter: BankFeedAdapter): void {
       "BANK_FEED_NOT_CONFIGURED",
       503,
       { provider: adapter.id, capability: adapter.capability },
-      `${adapter.label} is not connected — it requires a provider contract and credentials`
+      BANK_STATEMENT_IMPORT_GUIDANCE.en
     );
   }
 }
@@ -62,11 +63,9 @@ export interface ProviderStatus {
   label: string;
   configured: boolean;
   status: CapabilityStatus;
-  message: { en: string; ar: string };
-  externalAction: { en: string; ar: string };
 }
 
-/** Honest status per provider, from shared/capabilities.ts. */
+/** Customer readiness fields for each provider. */
 export function providerStatuses(): ProviderStatus[] {
   return Object.values(BANK_FEED_ADAPTERS).map((a) => {
     const cap = getCapability(a.capability);
@@ -76,18 +75,6 @@ export function providerStatuses(): ProviderStatus[] {
       label: a.label,
       configured,
       status: configured ? cap.status : "requires_external",
-      message: configured
-        ? cap.status === "sandbox"
-          ? {
-              en: "Sandbox credentials — test data only",
-              ar: "بيانات اعتماد تجريبية — بيانات اختبار فقط",
-            }
-          : { en: "Configured", ar: "مُعد" }
-        : {
-            en: "Not connected — requires provider contract",
-            ar: "غير متصل — يتطلب عقداً مع مزود الخدمة",
-          },
-      externalAction: cap.externalAction,
     };
   });
 }
@@ -276,7 +263,12 @@ export async function syncConnection(
   const ba = await storage.getBankAccountById(connection.bankAccountId, connection.companyId);
   if (!ba) throw new DomainError("BANK_ACCOUNT_NOT_FOUND", 404);
   if (!connection.accessToken || !connection.externalAccountId) {
-    throw new DomainError("BANK_FEED_RECONNECT_REQUIRED", 409);
+    throw new DomainError(
+      "BANK_FEED_RECONNECT_REQUIRED",
+      409,
+      undefined,
+      BANK_STATEMENT_IMPORT_GUIDANCE.en
+    );
   }
   let tokens: FeedTokens = {
     accessToken: connection.accessToken,
@@ -420,7 +412,7 @@ export function registerBankFeedJobs(): void {
   registerJob({
     name: "bankFeeds.sync",
     cron: "41 */6 * * *",
-    description: "Sync configured open-banking feeds (dedupe by provider transaction id)",
+    description: "Import transactions for configured accounts (deduplicate by provider transaction ID)",
     run: async () => {
       await runScheduledBankFeedSync();
     },

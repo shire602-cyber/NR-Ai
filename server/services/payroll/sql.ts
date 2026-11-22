@@ -10,9 +10,9 @@
  * transaction from withLedgerTx) the `$n` text is rebuilt as a drizzle `sql`
  * fragment so it joins that transaction with the same bound parameters.
  */
-import { sql, type SQL } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { db } from "../../db";
-import { rowsOf } from "../../ledger/tx";
+import { parameterizedSql, rowsOf } from "../../ledger/tx";
 import type { LedgerTx } from "../../ledger";
 
 export type Row = Record<string, unknown>;
@@ -24,31 +24,13 @@ interface Executor {
   execute(query: SQL): Promise<unknown>;
 }
 
-export function toSql(text: string, params: unknown[]): SQL {
-  const parts = text.split(/\$(\d+)/);
-  const chunks: SQL[] = [];
-  for (let i = 0; i < parts.length; i++) {
-    if (i % 2 === 0) {
-      if (parts[i]) chunks.push(sql.raw(parts[i]));
-    } else {
-      const index = Number(parts[i]) - 1;
-      if (index < 0 || index >= params.length) {
-        throw new Error(`Missing SQL parameter $${parts[i]}`);
-      }
-      // sql.param binds the value as ONE parameter (a `${array}` would expand to a tuple).
-      chunks.push(sql`${sql.param(params[index])}`);
-    }
-  }
-  return sql.join(chunks, sql.raw(""));
-}
-
 export async function q<T = Row>(
   text: string,
   params: unknown[] = [],
   tx?: LedgerTx
 ): Promise<T[]> {
   if (tx) {
-    return rowsOf<T>(await (tx as unknown as Executor).execute(toSql(text, params)));
+    return rowsOf<T>(await (tx as unknown as Executor).execute(parameterizedSql(text, params)));
   }
   const pool = (db as unknown as { $client: PgPoolLike }).$client;
   const result = await pool.query(text, params);
