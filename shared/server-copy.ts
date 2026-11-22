@@ -361,17 +361,13 @@ function legacyStatementImportCopy(n: { title: string; message: string }): CopyD
 }
 
 // Historical titles and messages are matched together so unrelated notices keep their wording.
-const LEGACY_BANK_REVIEW_TITLES = [
-  T("statementReview", LEGACY_BANK_RECONCILIATION_NOTICE.title),
-  T("statementReview", ["Bank", "feed", "sync", "failed"].join(" ")),
-];
+const LEGACY_BANK_REVIEW_TITLES = [T("statementReview", LEGACY_BANK_RECONCILIATION_NOTICE.title)];
 const LEGACY_BANK_REVIEW_MESSAGES = [
   T("statementReview", LEGACY_BANK_RECONCILIATION_NOTICE.message),
-  T(
-    "statementReview",
-    ["The bank", "feed[ ({provider})] could not sync[: {reason}]. Reconnect it under Banking."].join(" ")
-  ),
 ];
+const LEGACY_BANK_SYNC_TITLE = /^Bank\s+feed\s+sync\s+failed$/i;
+const LEGACY_BANK_SYNC_MESSAGE =
+  /^The bank\s+feed(?: \(.+?\))? could not sync(?:: .+?)?\. Reconnect\s+it\s+under\s+Banking\.$/is;
 
 export function isBankStatementReviewCopy({
   title,
@@ -382,8 +378,10 @@ export function isBankStatementReviewCopy({
 }): boolean {
   return (
     (title === BANK_STATEMENT_REVIEW_TITLE.en && message === BANK_RECONCILIATION_COPY.en) ||
-    (parseServerCopy(title, LEGACY_BANK_REVIEW_TITLES) !== null &&
-      parseServerCopy(message, LEGACY_BANK_REVIEW_MESSAGES) !== null)
+    ((parseServerCopy(title, LEGACY_BANK_REVIEW_TITLES) !== null ||
+      LEGACY_BANK_SYNC_TITLE.test(title)) &&
+      (parseServerCopy(message, LEGACY_BANK_REVIEW_MESSAGES) !== null ||
+        LEGACY_BANK_SYNC_MESSAGE.test(message)))
   );
 }
 

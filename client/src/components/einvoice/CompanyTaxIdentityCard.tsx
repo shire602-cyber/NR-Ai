@@ -54,6 +54,13 @@ export function CompanyTaxIdentityCard({ companyId }: { companyId: string }) {
     }
   }, [identity.data, dirty]);
 
+  useEffect(() => {
+    const target = window.location.hash.slice(1);
+    if (["company-tax-id-tin", "company-tax-id-seller-id-country"].includes(target)) {
+      document.getElementById(target)?.scrollIntoView({ block: "center" });
+    }
+  }, [form.sellerIdType]);
+
   const missing = identity.data?.missing ?? [];
 
   return (

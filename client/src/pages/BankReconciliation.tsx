@@ -227,7 +227,9 @@ const MAPPER_FIELDS = [
 type MapperField = (typeof MAPPER_FIELDS)[number];
 
 interface StatementPreview {
-  kind: "csv" | "xlsx" | "mt940" | "camt053" | "ofx";
+  kind: "csv";
+  detectedFormat: string;
+  detectedFormatLabel: string;
   delimiter: string | null;
   decimalSeparator: "." | ",";
   dateOrder: "DMY" | "MDY" | "YMD" | null;
@@ -253,6 +255,21 @@ interface StatementOverrides {
   dateOrder?: "DMY" | "MDY";
   decimalSeparator?: "." | ",";
   mapping?: Partial<Record<MapperField, number | null>>;
+}
+
+type StatementPreviewPayload = StatementOverrides & {
+  fileBase64: string;
+  fileName: string;
+  expectedKind: "csv";
+  headerRow?: number;
+};
+
+interface ReviewedStatement {
+  requestId: number;
+  companyId: string;
+  file: File;
+  payload: StatementPreviewPayload;
+  preview: StatementPreview;
 }
 
 async function fileToBase64(file: File): Promise<string> {
@@ -313,13 +330,13 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
   const [searchQuery, setSearchQuery] = useState("");
   const [showReconciled, setShowReconciled] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [statementPreview, setStatementPreview] = useState<StatementPreview | null>(null);
+  const latestPreviewRequest = useRef(0);
+  const [reviewedStatement, setReviewedStatement] = useState<ReviewedStatement | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [statementOverrides, setStatementOverrides] = useState<StatementOverrides>({});
   const [acknowledgeAmbiguity, setAcknowledgeAmbiguity] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const previewRequest = useRef(0);
 
   // ─── Queries ──────────────────────────────────────────────────────────────
 
@@ -332,6 +349,19 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     queryKey: ["/api/companies", companyId, "bank-accounts"],
     enabled: !!companyId,
   });
+
+  const statementPreview =
+    reviewedStatement?.file === importFile && reviewedStatement.companyId === companyId
+      ? reviewedStatement.preview
+      : null;
+  const canConfirmImport = Boolean(
+    statementPreview &&
+    bankAccounts?.some((account) => account.id === selectedBankAccount) &&
+    !isImporting &&
+    !previewLoading &&
+    statementPreview.validRows > 0 &&
+    (!statementPreview.requiresChoice || acknowledgeAmbiguity)
+  );
 
   const {
     data: transactions,
@@ -420,21 +450,21 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
   // ─── Mutations ────────────────────────────────────────────────────────────
 
   const importMutation = useMutation({
-    mutationFn: async (payload: {
+    mutationFn: async ({
+      companyId: reviewedCompanyId,
+      ...payload
+    }: StatementPreviewPayload & {
+      companyId: string;
       bankAccountId: string;
-      fileBase64: string;
-      fileName: string;
-      dateOrder?: "DMY" | "MDY";
-      decimalSeparator?: "." | ",";
-      mapping?: Partial<Record<MapperField, number | null>>;
-      headerRow?: number;
-      acknowledgeAmbiguity?: boolean;
+      acknowledgeAmbiguity: boolean;
     }) => {
       if (!isActive()) throw new Error(t["banking.import.companyChanged"]);
-      return apiRequest("POST", `/api/companies/${companyId}/bank-statements/import`, payload);
+      return apiRequest("POST", `/api/companies/${reviewedCompanyId}/bank-statements/import`, payload);
     },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
+    onSuccess: (data: any, { companyId: reviewedCompanyId }) => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", reviewedCompanyId, "bank-statements"],
+      });
       toast({
         title: translateNow("toasts.importSuccessful"),
         description:
@@ -617,10 +647,10 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
   };
 
   const resetStatementPreview = () => {
-    previewRequest.current += 1;
-    setPreviewLoading(false);
+    latestPreviewRequest.current += 1;
     setImportFile(null);
-    setStatementPreview(null);
+    setReviewedStatement(null);
+    setPreviewLoading(false);
     setPreviewError(null);
     setStatementOverrides({});
     setAcknowledgeAmbiguity(false);
@@ -632,40 +662,44 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     headerRow?: number
   ) => {
     if (!companyId || !isActive()) return;
-    const request = ++previewRequest.current;
+    // A later file, mapping or dialog reset invalidates every earlier response.
+    const requestId = ++latestPreviewRequest.current;
     setPreviewLoading(true);
     setPreviewError(null);
+    setAcknowledgeAmbiguity(false);
     try {
       const fileBase64 = await fileToBase64(file).catch(() => null);
-      if (request === previewRequest.current && isActive() && fileBase64 === null) {
-        setStatementPreview(null);
+      if (requestId !== latestPreviewRequest.current || !isActive()) return;
+      if (fileBase64 === null) {
+        setReviewedStatement(null);
         setPreviewError(t["banking.import.fileUnreadable"]);
         return;
       }
-      if (request !== previewRequest.current || !isActive()) return;
+      const payload: StatementPreviewPayload = {
+        fileBase64,
+        fileName: file.name,
+        expectedKind: "csv",
+        ...overrides,
+        ...(overrides.mapping && headerRow ? { headerRow } : {}),
+      };
       const preview = (await apiRequest(
         "POST",
         `/api/companies/${companyId}/bank-statements/preview`,
-        {
-          fileBase64,
-          fileName: file.name,
-          ...overrides,
-          ...(overrides.mapping && headerRow ? { headerRow } : {}),
-        }
+        payload
       )) as StatementPreview;
-      if (request === previewRequest.current && isActive()) setStatementPreview(preview);
+      if (requestId !== latestPreviewRequest.current || !isActive()) return;
+      setReviewedStatement({ requestId, companyId, file, payload, preview });
     } catch {
-      if (request !== previewRequest.current) return;
-      setStatementPreview(null);
+      if (requestId !== latestPreviewRequest.current || !isActive()) return;
+      setReviewedStatement(null);
       setPreviewError(strings.previewFailed);
     } finally {
-      if (request === previewRequest.current) setPreviewLoading(false);
+      if (requestId === latestPreviewRequest.current) setPreviewLoading(false);
     }
   };
 
   const updateOverrides = (next: StatementOverrides) => {
     setStatementOverrides(next);
-    setAcknowledgeAmbiguity(false);
     if (importFile)
       void runStatementPreview(importFile, next, statementPreview?.headerRow ?? undefined);
   };
@@ -689,39 +723,25 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     void runStatementPreview(file, {});
   };
 
-  const canImport =
-    !!importFile &&
-    !!bankAccounts?.some((account) => account.id === selectedBankAccount) &&
-    !previewLoading &&
-    !!statementPreview &&
-    statementPreview.validRows > 0 &&
-    (!statementPreview.requiresChoice || acknowledgeAmbiguity);
-
   const handleImport = async () => {
-    if (!canImport || isImporting) return;
+    if (
+      !canConfirmImport ||
+      !reviewedStatement ||
+      reviewedStatement.requestId !== latestPreviewRequest.current
+    ) {
+      return;
+    }
     if (!isActive()) {
       setPreviewError(t["banking.import.companyChanged"]);
       return;
     }
-    const request = previewRequest.current;
 
     setIsImporting(true);
     try {
-      const fileBase64 = await fileToBase64(importFile).catch(() => null);
-      if (request !== previewRequest.current || !isActive()) return;
-      if (fileBase64 === null) {
-        setStatementPreview(null);
-        setPreviewError(t["banking.import.fileUnreadable"]);
-        return;
-      }
       await importMutation.mutateAsync({
+        ...reviewedStatement.payload,
+        companyId: reviewedStatement.companyId,
         bankAccountId: selectedBankAccount,
-        fileBase64,
-        fileName: importFile.name,
-        ...statementOverrides,
-        ...(statementOverrides.mapping && statementPreview.headerRow
-          ? { headerRow: statementPreview.headerRow }
-          : {}),
         acknowledgeAmbiguity,
       });
     } catch {
@@ -1481,54 +1501,54 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                   </ul>
                 )}
 
-                {(statementPreview.kind === "csv" || statementPreview.kind === "xlsx") && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {statementPreview.dateOrder && statementPreview.dateOrder !== "YMD" && (
-                      <div className="space-y-1">
-                        <Label className="text-xs">{strings.dateOrder}</Label>
-                        <Select
-                          value={statementOverrides.dateOrder ?? statementPreview.dateOrder}
-                          onValueChange={(value) =>
-                            updateOverrides({
-                              ...statementOverrides,
-                              dateOrder: value as "DMY" | "MDY",
-                            })
-                          }
-                        >
-                          <SelectTrigger data-testid="select-statement-date-order">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="DMY">DD/MM/YYYY</SelectItem>
-                            <SelectItem value="MDY">MM/DD/YYYY</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {statementPreview.dateOrder && statementPreview.dateOrder !== "YMD" && (
                     <div className="space-y-1">
-                      <Label className="text-xs">{strings.decimalSeparator}</Label>
+                      <Label className="text-xs">{strings.dateOrder}</Label>
                       <Select
-                        value={
-                          statementOverrides.decimalSeparator ?? statementPreview.decimalSeparator
-                        }
+                        disabled={previewLoading || isImporting}
+                        value={statementOverrides.dateOrder ?? statementPreview.dateOrder}
                         onValueChange={(value) =>
                           updateOverrides({
                             ...statementOverrides,
-                            decimalSeparator: value as "." | ",",
+                            dateOrder: value as "DMY" | "MDY",
                           })
                         }
                       >
-                        <SelectTrigger data-testid="select-statement-decimal">
+                        <SelectTrigger data-testid="select-statement-date-order">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value=".">{strings.decimalPoint}</SelectItem>
-                          <SelectItem value=",">{strings.decimalComma}</SelectItem>
+                          <SelectItem value="DMY">DD/MM/YYYY</SelectItem>
+                          <SelectItem value="MDY">MM/DD/YYYY</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
+                  )}
+                  <div className="space-y-1">
+                    <Label className="text-xs">{strings.decimalSeparator}</Label>
+                    <Select
+                      disabled={previewLoading || isImporting}
+                      value={
+                        statementOverrides.decimalSeparator ?? statementPreview.decimalSeparator
+                      }
+                      onValueChange={(value) =>
+                        updateOverrides({
+                          ...statementOverrides,
+                          decimalSeparator: value as "." | ",",
+                        })
+                      }
+                    >
+                      <SelectTrigger data-testid="select-statement-decimal">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value=".">{strings.decimalPoint}</SelectItem>
+                        <SelectItem value=",">{strings.decimalComma}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                )}
+                </div>
 
                 {statementPreview.headers.length > 0 && (
                   <div className="space-y-2">
@@ -1542,6 +1562,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                           <div key={field} className="space-y-1">
                             <Label className="text-xs">{strings.fields[field]}</Label>
                             <Select
+                              disabled={previewLoading || isImporting}
                               value={current == null ? "__none" : String(current)}
                               onValueChange={(value) => handleMappingChange(field, value)}
                             >
@@ -1609,6 +1630,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                     <Checkbox
                       id="ack-statement-ambiguity"
                       checked={acknowledgeAmbiguity}
+                      disabled={previewLoading || isImporting}
                       onCheckedChange={(checked) => setAcknowledgeAmbiguity(checked === true)}
                       data-testid="checkbox-acknowledge-ambiguity"
                     />
@@ -1664,7 +1686,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
             </Button>
             <Button
               onClick={handleImport}
-              disabled={isImporting || !canImport}
+              disabled={!canConfirmImport}
               data-testid="button-confirm-import"
             >
               {isImporting && <Loader2 className="w-4 h-4 animate-spin" />}

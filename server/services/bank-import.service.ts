@@ -1,18 +1,30 @@
-import { storage } from "../storage";
-import { db } from "../db";
-import { createLogger } from "../config/logger";
-import { DomainError, errorMessage } from "../errors";
-import { bankImportBatches, type BankTransaction } from "../../shared/schema";
+import { and, eq, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
+import { db, type AppDatabase } from "../db";
+import { DomainError } from "../errors";
+import {
+  bankAccounts,
+  bankConnections,
+  bankImportBatches,
+  bankTransactionMatches,
+  bankTransactions,
+  type BankAccount,
+  type BankTransaction,
+} from "../../shared/schema";
 import { filsToNumber, tryToFils } from "../../shared/money";
 import { parseIsoDate } from "../../shared/validators/primitives";
 import {
+  bankRowKey,
+  decodeStatementBytes,
+  detectBankFileKind,
+  fingerprintBytes,
   importSourceFor,
   parseBankCsvText,
-  parseBankOfx,
   planBankImport,
   type BankFileKind,
+  type BankParseResult,
   type ImportPlan,
   type ParsedBankRow,
+  type ParseOptions,
 } from "./bank-statement-parser.service";
 import {
   continuityWarning,
@@ -20,139 +32,26 @@ import {
   previousClosingBalanceFils,
 } from "./bank-reconciliation.service";
 
-const log = createLogger("bank-import");
-
-export interface ParsedTransaction {
-  transactionDate: Date;
-  description: string;
-  amount: number; // positive = credit, negative = debit
-  reference?: string;
-}
-
-function toParsedTransactions(rows: ParsedBankRow[]): ParsedTransaction[] {
-  const out: ParsedTransaction[] = [];
-  for (const row of rows) {
-    if (row.errors.length > 0 || !row.date) {
-      log.warn({ row: row.rowIndex, errors: row.errors }, "Skipping malformed statement row");
-      continue;
-    }
-    out.push({
-      transactionDate: row.date,
-      description: row.description,
-      amount: row.amount,
-      reference: row.reference ?? undefined,
-    });
+export function parseStatementCsv(bytes: Buffer, options: ParseOptions = {}): BankParseResult {
+  const text = decodeStatementBytes(bytes);
+  if (detectBankFileKind(bytes, text) !== "csv") {
+    throw new DomainError("STATEMENT_CSV_REQUIRED", 400, undefined, "Choose a bank CSV export.");
   }
-  return out;
+  return parseBankCsvText(text, options, fingerprintBytes(bytes));
 }
 
-/**
- * Parse a CSV bank statement into structured transactions.
- * Delegates to the shared parser (bank-statement-parser.service.ts) so header detection, locale
- * handling and date validation behave exactly like the statement import endpoint.
- */
-export async function parseCSVBankStatement(
-  csvContent: string,
-  _bankName?: string
-): Promise<ParsedTransaction[]> {
-  const result = parseBankCsvText(csvContent);
-  if (result.rows.length === 0 && result.ignored.length === 0) {
-    throw new Error("CSV file must contain a header row and at least one data row");
-  }
-  return toParsedTransactions(result.rows);
+export function statementImportChoice(parsed: BankParseResult, acknowledged?: boolean) {
+  if (acknowledged || !parsed.warnings.some((warning) => warning.requiresChoice)) return null;
+  return {
+    code: "CHOICE_REQUIRED",
+    message:
+      "The statement is ambiguous. Confirm the date order, decimal separator or column mapping and retry.",
+    warnings: parsed.warnings,
+    dateOrder: parsed.dateOrder,
+    decimalSeparator: parsed.decimalSeparator,
+    detectedFormat: parsed.format,
+  };
 }
-
-/**
- * Parse OFX (Open Financial Exchange) bank statement.
- * Handles basic OFX/QFX format used by many banks.
- */
-export async function parseOFXStatement(ofxContent: string): Promise<ParsedTransaction[]> {
-  return toParsedTransactions(parseBankOfx(ofxContent).rows);
-}
-
-/**
- * Import parsed transactions into the database.
- * Identical rows inside one batch are all kept; rows the account already has (same date, amount,
- * description and reference) are skipped one-for-one, so re-importing a batch is idempotent.
- */
-export async function importBankStatement(
-  companyId: string,
-  connectionId: string,
-  parsedTransactions: ParsedTransaction[],
-  opts: { bankAccountId?: string | null; actorId?: string | null } = {}
-): Promise<{ imported: number; duplicates: number; errors: string[] }> {
-  // W3-C (R06-01/R06-12): rows land on the connection's managed bank account so they can be
-  // reconciled; the GL account is resolved from that account at reconcile time.
-  const bankAccount = opts.bankAccountId
-    ? await storage.getBankAccountById(opts.bankAccountId, companyId)
-    : undefined;
-  const existing = (await storage.getBankTransactionsByCompanyId(companyId)).filter((t) =>
-    bankAccount ? t.bankStatementAccountId === bankAccount.id : t.bankConnectionId === connectionId
-  );
-
-  const rows: ParsedBankRow[] = parsedTransactions.map((tx, index) => ({
-    rowIndex: index + 1,
-    raw: `${tx.transactionDate.toISOString().slice(0, 10)} ${tx.description} ${tx.amount}`,
-    date: tx.transactionDate,
-    description: tx.description,
-    debit: tx.amount < 0 ? Math.abs(tx.amount) : 0,
-    credit: tx.amount > 0 ? tx.amount : 0,
-    amount: tx.amount,
-    balance: null,
-    reference: tx.reference ?? null,
-    errors: [],
-  }));
-
-  const plan = planBankImport(
-    rows,
-    existing.map((t) => ({
-      date: t.transactionDate,
-      amount: Number(t.amount),
-      description: t.description,
-      reference: t.reference,
-      importSource: t.importSource,
-    })),
-    { fileFingerprint: "", kind: "csv" }
-  );
-
-  let imported = 0;
-  const errors: string[] = [];
-
-  for (const row of plan.toInsert) {
-    try {
-      await storage.createBankTransaction({
-        companyId,
-        transactionDate: row.date as Date,
-        description: row.description,
-        amount: row.amount,
-        reference: row.reference,
-        importSource: "csv",
-        bankConnectionId: connectionId,
-        bankStatementAccountId: bankAccount?.id ?? null,
-        bankAccountId: bankAccount?.glAccountId ?? null,
-        isReconciled: false,
-      });
-      imported++;
-    } catch (err: unknown) {
-      errors.push(`Row: ${row.description} — ${errorMessage(err)}`);
-    }
-  }
-  const duplicates = plan.skipped.filter((s) => s.reason !== "invalid_row").length;
-
-  // Update connection sync time
-  await storage.updateBankConnection(connectionId, {
-    lastSyncedAt: new Date(),
-  });
-
-  log.info(
-    { companyId, connectionId, imported, duplicates, errors: errors.length },
-    "Bank statement import complete"
-  );
-
-  return { imported, duplicates, errors };
-}
-
-// ─── W3-C: one import pipeline for statement files, AI/PDF rows and feeds ──────
 
 export interface ImportStatementRowsInput {
   companyId: string;
@@ -160,7 +59,7 @@ export interface ImportStatementRowsInput {
   rows: ParsedBankRow[];
   kind: BankFileKind;
   fileFingerprint: string;
-  /** Stored on each row (e.g. "csv:<fp>", "pdf_ai:<fp>"). Default importSourceFor(kind, fp). */
+  /** Stored on each row. Defaults to importSourceFor(kind, fileFingerprint). */
   importSource?: string;
   source: string;
   fileName?: string | null;
@@ -176,28 +75,94 @@ export interface ImportStatementRowsResult {
   continuityWarning: string | null;
 }
 
-/**
- * Dedupe against the account's existing rows (planBankImport), insert the new rows tagged with
- * an import batch (history + undo), and check opening-balance continuity (R06-12, R06-22).
- */
-export async function importStatementRows(
-  input: ImportStatementRowsInput
-): Promise<ImportStatementRowsResult> {
-  const bankAccount = await storage.getBankAccountById(input.bankAccountId, input.companyId);
-  if (!bankAccount)
+type BankImportTx = Parameters<Parameters<AppDatabase["transaction"]>[0]>[0];
+type ImportScope =
+  | { account: BankAccount; connectionId?: string }
+  | { account: null; connectionId: string };
+
+// Bound each insert below PostgreSQL's parameter limit, including future row columns. Await
+// each batch so an import retains its order and all rows commit or roll back together.
+const WRITE_BATCH_SIZE = 1000;
+
+function* writeBatches<T>(rows: T[]) {
+  for (let i = 0; i < rows.length; i += WRITE_BATCH_SIZE) {
+    yield rows.slice(i, i + WRITE_BATCH_SIZE);
+  }
+}
+
+function connectionScope(companyId: string, connectionId: string) {
+  return and(eq(bankConnections.companyId, companyId), eq(bankConnections.id, connectionId));
+}
+
+async function lockConnection(tx: BankImportTx, companyId: string, connectionId: string) {
+  const [connection] = await tx
+    .select({ bankAccountId: bankConnections.bankAccountId })
+    .from(bankConnections)
+    .where(connectionScope(companyId, connectionId))
+    .for("update");
+  if (!connection) throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404);
+  return connection;
+}
+
+async function lockBankAccount(tx: BankImportTx, companyId: string, accountId: string) {
+  // The account row serializes imports even when no statement rows exist yet. READ COMMITTED
+  // gives the duplicate query a fresh snapshot after another importer releases the lock.
+  const [account] = await tx
+    .select()
+    .from(bankAccounts)
+    .where(and(eq(bankAccounts.companyId, companyId), eq(bankAccounts.id, accountId)))
+    .for("update");
+  if (!account)
     throw new DomainError("BANK_ACCOUNT_NOT_FOUND", 404, undefined, "Bank account not found");
-  const existing = (await storage.getBankTransactionsByCompanyId(input.companyId)).filter(
-    (t) => t.bankStatementAccountId === bankAccount.id
-  );
+  return account;
+}
+
+/** Decide duplicates, check continuity and write a batch and its rows under the scope lock. */
+async function importWithinScope(
+  tx: BankImportTx,
+  input: Omit<ImportStatementRowsInput, "bankAccountId">,
+  { account, connectionId }: ImportScope
+): Promise<ImportStatementRowsResult> {
+  const existing = await tx
+    .select({
+      date: bankTransactions.transactionDate,
+      amount: bankTransactions.amount,
+      description: bankTransactions.description,
+      reference: bankTransactions.reference,
+      importSource: bankTransactions.importSource,
+    })
+    .from(bankTransactions)
+    .where(
+      and(
+        eq(bankTransactions.companyId, input.companyId),
+        isNull(bankTransactions.deletedAt),
+        account
+          ? or(
+              eq(bankTransactions.bankStatementAccountId, account.id),
+              and(
+                // Older links updated only the connection. Include those rows before they
+                // are adopted, so a direct CSV retry also cannot insert a second copy.
+                isNull(bankTransactions.bankStatementAccountId),
+                inArray(
+                  bankTransactions.bankConnectionId,
+                  tx
+                    .select({ id: bankConnections.id })
+                    .from(bankConnections)
+                    .where(
+                      and(
+                        eq(bankConnections.companyId, input.companyId),
+                        eq(bankConnections.bankAccountId, account.id)
+                      )
+                    )
+                )
+              )
+            )
+          : eq(bankTransactions.bankConnectionId, connectionId)
+      )
+    );
   const plan = planBankImport(
     input.rows,
-    existing.map((t) => ({
-      date: t.transactionDate,
-      amount: Number(t.amount),
-      description: t.description,
-      reference: t.reference,
-      importSource: t.importSource,
-    })),
+    existing.map((row) => ({ ...row, amount: Number(row.amount) })),
     {
       fileFingerprint: input.fileFingerprint,
       kind: input.kind,
@@ -205,16 +170,16 @@ export async function importStatementRows(
     }
   );
 
-  // Continuity: the first new row's running balance must follow the last known balance.
   const ordered = [...plan.toInsert].sort(
     (a, b) => (a.date as Date).getTime() - (b.date as Date).getTime() || a.rowIndex - b.rowIndex
   );
   const first = ordered[0];
-  let previous = first
-    ? await previousClosingBalanceFils(input.companyId, bankAccount.id, first.date as Date)
-    : null;
-  if (previous === null && first && existing.length === 0 && bankAccount.openingBalanceDate) {
-    previous = dbFils(bankAccount.openingBalance);
+  let previous =
+    first && account
+      ? await previousClosingBalanceFils(input.companyId, account.id, first.date as Date, tx)
+      : null;
+  if (previous === null && first && existing.length === 0 && account?.openingBalanceDate) {
+    previous = dbFils(account.openingBalance);
   }
   const warning = continuityWarning({
     previousBalanceFils: previous,
@@ -229,11 +194,11 @@ export async function importStatementRows(
   if (plan.toInsert.length === 0) {
     return { batchId: null, imported: [], plan, continuityWarning: warning };
   }
-  const [batch] = await db
+  const [batch] = await tx
     .insert(bankImportBatches)
     .values({
       companyId: input.companyId,
-      bankAccountId: bankAccount.id,
+      bankAccountId: account?.id ?? null,
       source: input.source,
       fileName: input.fileName ?? null,
       fileFingerprint: input.fileFingerprint,
@@ -244,27 +209,255 @@ export async function importStatementRows(
       continuityWarning: warning,
       createdBy: input.actorId,
     })
-    .returning();
+    .returning({ id: bankImportBatches.id });
   const importSource = input.importSource ?? importSourceFor(input.kind, input.fileFingerprint);
-  const imported = await storage.bulkCreateBankTransactions(
-    plan.toInsert.map((row) => ({
-      companyId: input.companyId,
-      // Cached copy of the account's current GL link; reconcile resolves it again (R06-01).
-      bankAccountId: bankAccount.glAccountId ?? null,
-      bankStatementAccountId: bankAccount.id,
-      transactionDate: row.date as Date,
-      description: row.description,
-      amount: row.amount,
-      balance: row.balance,
-      reference: row.reference,
-      category: null,
-      matchStatus: "unmatched",
-      isReconciled: false,
-      importSource,
-      importBatchId: batch.id,
-    }))
-  );
+  const imported: BankTransaction[] = [];
+  for (const chunk of writeBatches(plan.toInsert)) {
+    const inserted = await tx
+      .insert(bankTransactions)
+      .values(
+        chunk.map((row) => ({
+          companyId: input.companyId,
+          // Cached copy of the account's current GL link; reconcile resolves it again (R06-01).
+          bankAccountId: account?.glAccountId ?? null,
+          bankStatementAccountId: account?.id ?? null,
+          bankConnectionId: connectionId ?? null,
+          transactionDate: row.date as Date,
+          description: row.description,
+          amount: row.amount,
+          balance: row.balance,
+          reference: row.reference,
+          matchStatus: "unmatched",
+          isReconciled: false,
+          importSource,
+          importBatchId: batch.id,
+        }))
+      )
+      .returning();
+    imported.push(...inserted);
+  }
   return { batchId: batch.id, imported, plan, continuityWarning: warning };
+}
+
+export async function importStatementRows(
+  input: ImportStatementRowsInput
+): Promise<ImportStatementRowsResult> {
+  return db.transaction(
+    async (tx) => {
+      const account = await lockBankAccount(tx, input.companyId, input.bankAccountId);
+      return importWithinScope(tx, input, { account });
+    },
+    { isolationLevel: "read committed" }
+  );
+}
+
+/** Adopt old statement rows using the same connection → account lock order as imports. */
+async function adoptConnectionStatementRows(
+  tx: BankImportTx,
+  companyId: string,
+  connectionId: string,
+  account: BankAccount,
+  actorId: string
+) {
+  const source = and(
+    eq(bankTransactions.companyId, companyId),
+    eq(bankTransactions.bankConnectionId, connectionId),
+    isNull(bankTransactions.deletedAt)
+  );
+  const [assigned] = await tx
+    .select({ id: bankTransactions.id })
+    .from(bankTransactions)
+    .where(
+      and(
+        source,
+        isNotNull(bankTransactions.bankStatementAccountId),
+        ne(bankTransactions.bankStatementAccountId, account.id)
+      )
+    )
+    .limit(1);
+  const unassigned = and(source, isNull(bankTransactions.bankStatementAccountId));
+  const rows = await tx
+    .select({
+      id: bankTransactions.id,
+      date: bankTransactions.transactionDate,
+      amount: bankTransactions.amount,
+      description: bankTransactions.description,
+      reference: bankTransactions.reference,
+      glAccountId: bankTransactions.bankAccountId,
+      batchId: bankTransactions.importBatchId,
+      isReconciled: bankTransactions.isReconciled,
+      matchedJournalEntryId: bankTransactions.matchedJournalEntryId,
+      matchedReceiptId: bankTransactions.matchedReceiptId,
+      matchedInvoiceId: bankTransactions.matchedInvoiceId,
+      matchedType: bankTransactions.matchedType,
+      excludedAt: bankTransactions.excludedAt,
+    })
+    .from(bankTransactions)
+    .where(unassigned)
+    .orderBy(bankTransactions.createdAt, bankTransactions.id)
+    .for("update");
+  const [protectedMatch] = rows.length
+    ? await tx
+        .select({ id: bankTransactionMatches.id })
+        .from(bankTransactionMatches)
+        .innerJoin(
+          bankTransactions,
+          eq(bankTransactions.id, bankTransactionMatches.bankTransactionId)
+        )
+        .where(
+          and(
+            unassigned,
+            eq(bankTransactionMatches.companyId, companyId),
+            inArray(bankTransactionMatches.status, ["pending", "active"])
+          )
+        )
+        .limit(1)
+    : [];
+  if (
+    assigned ||
+    protectedMatch ||
+    rows.some(
+      (row) =>
+        row.isReconciled ||
+        row.matchedJournalEntryId ||
+        row.matchedReceiptId ||
+        row.matchedInvoiceId ||
+        row.matchedType ||
+        row.excludedAt ||
+        (row.glAccountId && row.glAccountId !== account.glAccountId)
+    )
+  ) {
+    throw new DomainError(
+      "BANK_STATEMENT_LINK_CONFLICT",
+      409,
+      undefined,
+      "Review the existing statement rows before changing their bank account."
+    );
+  }
+  if (!rows.length) return;
+
+  const existing = await tx
+    .select({
+      date: bankTransactions.transactionDate,
+      amount: bankTransactions.amount,
+      description: bankTransactions.description,
+      reference: bankTransactions.reference,
+    })
+    .from(bankTransactions)
+    .where(
+      and(
+        eq(bankTransactions.companyId, companyId),
+        eq(bankTransactions.bankStatementAccountId, account.id),
+        isNull(bankTransactions.deletedAt)
+      )
+    );
+  const counts = new Map<string, number>();
+  for (const row of existing) {
+    const key = bankRowKey({ ...row, amount: Number(row.amount) });
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const duplicates: string[] = [];
+  const batches = new Set<string>();
+  for (const row of rows) {
+    const key = bankRowKey({ ...row, amount: Number(row.amount) });
+    const remaining = counts.get(key) ?? 0;
+    if (remaining > 0) {
+      counts.set(key, remaining - 1);
+      duplicates.push(row.id);
+    }
+    if (row.batchId) batches.add(row.batchId);
+  }
+  await tx
+    .update(bankTransactions)
+    .set({ bankStatementAccountId: account.id, bankAccountId: account.glAccountId })
+    .where(unassigned);
+  for (const ids of writeBatches(duplicates)) {
+    await tx
+      .update(bankTransactions)
+      .set({
+        deletedAt: new Date(),
+        deletedBy: actorId,
+        excludeReason: "Duplicate on statement link",
+      })
+      .where(and(source, inArray(bankTransactions.id, ids)));
+  }
+  for (const ids of writeBatches([...batches])) {
+    await tx
+      .update(bankImportBatches)
+      .set({ bankAccountId: account.id })
+      .where(
+        and(
+          eq(bankImportBatches.companyId, companyId),
+          inArray(bankImportBatches.id, ids),
+          isNull(bankImportBatches.bankAccountId)
+        )
+      );
+  }
+}
+
+export async function linkConnectionStatement(
+  companyId: string,
+  connectionId: string,
+  bankAccountId: string,
+  actorId: string
+) {
+  return db.transaction(
+    async (tx) => {
+      await lockConnection(tx, companyId, connectionId);
+      const account = await lockBankAccount(tx, companyId, bankAccountId);
+      await adoptConnectionStatementRows(tx, companyId, connectionId, account, actorId);
+      const [updated] = await tx
+        .update(bankConnections)
+        .set({ bankAccountId, updatedAt: new Date() })
+        .where(connectionScope(companyId, connectionId))
+        .returning();
+      return updated;
+    },
+    { isolationLevel: "read committed" }
+  );
+}
+
+/** Older CSV callers join the same account lock. Unlinked records still serialize on their own row. */
+export async function importConnectionStatement(
+  companyId: string,
+  connectionId: string,
+  parsed: BankParseResult,
+  actorId: string
+): Promise<{ imported: number; duplicates: number; errors: string[] }> {
+  return db.transaction(
+    async (tx) => {
+      const connection = await lockConnection(tx, companyId, connectionId);
+      const account = connection.bankAccountId
+        ? await lockBankAccount(tx, companyId, connection.bankAccountId)
+        : null;
+      if (account)
+        await adoptConnectionStatementRows(tx, companyId, connectionId, account, actorId);
+      const result = await importWithinScope(
+        tx,
+        {
+          companyId,
+          rows: parsed.rows,
+          kind: "csv",
+          source: "csv",
+          format: parsed.format,
+          fileFingerprint: parsed.fileFingerprint,
+          actorId,
+        },
+        { account, connectionId }
+      );
+      const now = new Date();
+      await tx
+        .update(bankConnections)
+        .set({ lastSyncedAt: now, updatedAt: now })
+        .where(connectionScope(companyId, connectionId));
+      return {
+        imported: result.imported.length,
+        duplicates: result.plan.skipped.filter((row) => row.reason !== "invalid_row").length,
+        errors: [],
+      };
+    },
+    { isolationLevel: "read committed" }
+  );
 }
 
 function cleanNumber(v: number | string): number | string {

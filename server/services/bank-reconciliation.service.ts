@@ -24,7 +24,7 @@
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import { randomUUID } from "node:crypto";
 import type { Request } from "express";
-import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
@@ -2405,21 +2405,28 @@ export function continuityWarning(input: {
   return `Opening balance does not continue from the previous statement: expected ${fromFils(expected)} after the first row, statement shows ${fromFils(input.firstRow.balanceFils)} (gap ${fromFils(input.firstRow.balanceFils - expected)}).`;
 }
 
-/** The balance the next statement should start from: last running balance, else opening + sum. */
+/** The last known running balance before the next statement. */
 export async function previousClosingBalanceFils(
   companyId: string,
   bankAccountId: string,
-  beforeDate?: Date
+  beforeDate?: Date,
+  executor: Pick<typeof db, "select"> = db
 ): Promise<number | null> {
-  const { rows } = await pool.query(
-    `SELECT balance::text AS balance FROM bank_transactions
-      WHERE company_id = $1 AND bank_statement_account_id = $2 AND deleted_at IS NULL
-        AND balance IS NOT NULL AND ($3::timestamp IS NULL OR transaction_date < $3::timestamp)
-      ORDER BY transaction_date DESC, created_at DESC LIMIT 1`,
-    [companyId, bankAccountId, beforeDate ?? null]
-  );
-  if (rows[0]) return dbFils(rows[0].balance);
-  return null;
+  const [prior] = await executor
+    .select({ balance: bankTransactions.balance })
+    .from(bankTransactions)
+    .where(
+      and(
+        eq(bankTransactions.companyId, companyId),
+        eq(bankTransactions.bankStatementAccountId, bankAccountId),
+        isNull(bankTransactions.deletedAt),
+        isNotNull(bankTransactions.balance),
+        beforeDate ? lt(bankTransactions.transactionDate, beforeDate) : undefined
+      )
+    )
+    .orderBy(desc(bankTransactions.transactionDate), desc(bankTransactions.createdAt))
+    .limit(1);
+  return prior ? dbFils(prior.balance) : null;
 }
 
 // ─── Reconciliation statement (R06-20) ─────────────────────────────────────

@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
 import { cn } from "@/lib/utils";
@@ -78,6 +79,8 @@ const STEP_COPY: Record<StepKey, { title: string; body: string }> = {
 
 export function ComplyanceConnectCard({ companyId }: { companyId: string }) {
   const { t, locale } = useTranslation();
+  const { gate } = useCompanyPermission();
+  const setupGate = gate("settings.company");
   const key = ["/api/companies", companyId, "einvoicing", "complyance"];
   const view = useQuery<ComplyanceConnectionView>({
     queryKey: key,
@@ -85,17 +88,23 @@ export function ComplyanceConnectCard({ companyId }: { companyId: string }) {
     retry: false,
   });
   const [adminEmail, setAdminEmail] = useState("");
+  const applyConnection = (data: ComplyanceConnectionView) => {
+    queryClient.setQueryData(key, data);
+    void queryClient.invalidateQueries({
+      queryKey: ["/api/companies", companyId, "einvoicing", "settings"],
+    });
+  };
   const connect = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/companies/${companyId}/einvoicing/complyance/connect`, {
         adminEmail,
       }),
-    onSuccess: (data: ComplyanceConnectionView) => queryClient.setQueryData(key, data),
+    onSuccess: applyConnection,
   });
   const sync = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/companies/${companyId}/einvoicing/complyance/sync`, {}),
-    onSuccess: (data: ComplyanceConnectionView) => queryClient.setQueryData(key, data),
+    onSuccess: applyConnection,
   });
 
   const v = view.data;
@@ -216,7 +225,13 @@ export function ComplyanceConnectCard({ companyId }: { companyId: string }) {
                           </div>
                           <Button
                             onClick={() => connect.mutate()}
-                            disabled={connect.isPending || !v.tin || !adminEmail.includes("@")}
+                            {...setupGate}
+                            disabled={
+                              setupGate.disabled ||
+                              connect.isPending ||
+                              !v.tin ||
+                              !adminEmail.includes("@")
+                            }
                             data-testid="complyance-connect"
                           >
                             {connect.isPending && (
@@ -280,7 +295,8 @@ export function ComplyanceConnectCard({ companyId }: { companyId: string }) {
                           variant="outline"
                           size="sm"
                           onClick={() => sync.mutate()}
-                          disabled={sync.isPending}
+                          {...setupGate}
+                          disabled={setupGate.disabled || sync.isPending}
                           data-testid="complyance-sync"
                         >
                           <RefreshCw

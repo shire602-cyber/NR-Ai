@@ -89,9 +89,11 @@ import {
   einvoiceFieldHint,
   einvoiceIssueTextKey,
   einvoiceIssuesFromError,
+  einvoiceRuleTextKey,
   type EInvoiceIssueItem,
 } from "@/lib/einvoice-issues";
 import { EInvoiceListCell } from "@/components/einvoice/EInvoiceListCell";
+import { useEInvoiceListEvidence } from "@/components/einvoice/use-einvoice";
 import { InvoiceCurrencyFields } from "@/components/invoices/InvoiceCurrencyFields";
 import { LineItemPicker } from "@/components/invoices/LineItemPicker";
 import { LineIncomeAccountPicker } from "@/components/invoices/LineIncomeAccountPicker";
@@ -293,7 +295,7 @@ const BLANK_HEADER = {
 /** An e-invoice validator answer (GET /api/invoices/:id/einvoice/validate). */
 interface EInvoiceValidation {
   valid: boolean;
-  issues: Array<{ field: string; message: string }>;
+  issues: EInvoiceIssueItem[];
 }
 
 const isoDay = (d: Date) => format(d, "yyyy-MM-dd");
@@ -439,6 +441,8 @@ export default function Invoices() {
   const [addPaymentDialogOpen, setAddPaymentDialogOpen] = useState(false);
   const [einvoiceIssues, setEinvoiceIssues] = useState<{
     number: string;
+    invoiceId: string;
+    contactId: string | null;
     issues: EInvoiceIssueItem[];
   } | null>(null);
   const [viewPaymentsDialogOpen, setViewPaymentsDialogOpen] = useState(false);
@@ -971,7 +975,12 @@ export default function Invoices() {
           ? einvoiceIssuesFromError(error.body)
           : [];
       if (issues.length > 0) {
-        setEinvoiceIssues({ number: invoice.number, issues });
+        setEinvoiceIssues({
+          number: invoice.number,
+          invoiceId: invoice.id,
+          contactId: invoice.contactId ?? null,
+          issues,
+        });
         return;
       }
       toast({
@@ -1331,6 +1340,16 @@ export default function Invoices() {
     () => filterInvoiceDates(invoices, dateRange),
     [invoices, dateRange]
   );
+
+  const evidenceBatches = useMemo(() => {
+    const displayed = new Set(filteredInvoices.map(({ id }) => id));
+    return (
+      invoicePages.data?.pages.map(({ items }) =>
+        items.map(({ id }) => id).filter((id) => displayed.has(id))
+      ) ?? []
+    );
+  }, [filteredInvoices, invoicePages.data]);
+  const einvoiceEvidence = useEInvoiceListEvidence(selectedCompanyId, evidenceBatches);
 
   const handleExportExcel = async () => {
     if (!selectedCompanyId) return;
@@ -2273,24 +2292,34 @@ export default function Invoices() {
           <ul className="max-h-80 space-y-2 overflow-y-auto text-sm">
             {(einvoiceIssues?.issues ?? []).map((issue, i) => {
               // X5 (J1 L3): a readable field name and where to fix it, never a raw data path.
-              const hint = einvoiceFieldHint(issue.field);
-              const label = hint.labelKey ? t[hint.labelKey] : hint.ruleLabel;
-              const fixKey = einvoiceIssueTextKey(issue.code);
+              const hint = einvoiceFieldHint(issue.field, einvoiceIssues ?? undefined);
+              const label = hint.labelKey ? t[hint.labelKey] : null;
+              const fixKey = einvoiceIssueTextKey(issue.code) ?? einvoiceRuleTextKey(issue.ruleId);
+              const detail =
+                (fixKey && t[fixKey]) ||
+                (locale === "ar" ? t["einvoicing.validationFinding"] : issue.message);
               return (
                 <li key={`${issue.field}-${i}`} className="rounded-md border p-2">
                   {label && (
                     <span className="block text-xs font-medium text-muted-foreground">{label}</span>
                   )}
-                  {fixKey ? (
-                    <span data-testid={`einvoice-issue-${issue.code}`}>{t[fixKey]}</span>
-                  ) : (
-                    issue.message
+                  {issue.ruleId && (
+                    <p className="text-xs text-muted-foreground">
+                      {t["einvoicing.validationRule"]}{" "}
+                      <bdi dir="ltr" translate="no">
+                        {issue.ruleId}
+                      </bdi>
+                    </p>
                   )}
+                  <span data-testid={issue.code ? `einvoice-issue-${issue.code}` : undefined}>
+                    {detail}
+                  </span>
                   {hint.whereKey && (
                     <span className="mt-1 block text-xs">
                       {hint.href ? (
                         <Link
                           href={hint.href}
+                          onClick={() => setEinvoiceIssues(null)}
                           className="inline-flex min-h-11 items-center text-accent hover:underline sm:min-h-0"
                           data-testid={`link-einvoice-fix-${i}`}
                         >
@@ -2634,8 +2663,8 @@ export default function Invoices() {
                         <OverdueBadge invoice={invoice} />
                         <WrittenOffBadge invoice={invoice} />
                         <EInvoiceListCell
-                          companyId={selectedCompanyId}
                           invoice={invoice}
+                          evidence={einvoiceEvidence[invoice.id]}
                           onEdit={() => openInvoiceEditor(invoice)}
                         />
                       </div>
@@ -2793,8 +2822,8 @@ export default function Invoices() {
                             <WrittenOffBadge invoice={invoice} />
                             {/* E1: two-track e-invoice status; opens the status sheet. */}
                             <EInvoiceListCell
-                              companyId={selectedCompanyId}
                               invoice={invoice}
+                              evidence={einvoiceEvidence[invoice.id]}
                               onEdit={() => openInvoiceEditor(invoice)}
                             />
                           </TableCell>

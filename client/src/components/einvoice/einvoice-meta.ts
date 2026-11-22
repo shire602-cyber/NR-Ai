@@ -4,7 +4,9 @@
  * "einvoicing" namespace; tones follow the CTO colour semantics (green done, blue with the
  * provider, amber needs action, red failed, neutral not started / not applicable).
  */
+import { qualifyEInvoiceOutcome } from "@/lib/einvoice-outcome";
 import type { StatusTone } from "@/components/ui/status-badge";
+import { einvoiceIssueTextKey } from "@/lib/einvoice-issues";
 
 export type DeliveryStatus =
   | "draft"
@@ -17,6 +19,7 @@ export type DeliveryStatus =
   /** X6a: the provider may hold it after a lost response; a person links it (never resent). */
   | "needs_link";
 export type ReportingStatus = "not_required" | "pending" | "reported" | "report_failed";
+export type RecipientAcknowledgement = "received" | "accepted" | null;
 export type ChecklistState =
   | "done"
   | "in_progress"
@@ -27,6 +30,7 @@ export type ChecklistState =
 export type TransmissionBlock =
   | "no_provider"
   | "test_provider"
+  | "provider_selection_changed"
   | "legal_entity_not_active"
   | "legal_entity_delinked"
   | null;
@@ -45,7 +49,7 @@ const ISSUE_TEXT_KEYS: Record<string, string> = {
 };
 
 export function issueTextKey(code: string | undefined): string | null {
-  return code ? (ISSUE_TEXT_KEYS[code] ?? null) : null;
+  return code ? (ISSUE_TEXT_KEYS[code] ?? einvoiceIssueTextKey(code)) : null;
 }
 
 export interface EInvoiceEvent {
@@ -53,22 +57,43 @@ export interface EInvoiceEvent {
   track: "validation" | "delivery" | "reporting";
   from: string | null;
   to: string;
+  recipientAcknowledgement: RecipientAcknowledgement;
+  confirmationUnavailable?: boolean;
   code: string | null;
   message: string | null;
   source: "user" | "webhook" | "poll" | "job" | "system";
+  environment?: string | null;
+  provider: string | null;
   providerStatus: string | null;
   at: string | null;
 }
 
+export interface EInvoiceEnvironmentVerification {
+  provider: "acube" | "complyance";
+  environments: ("sandbox" | "production")[];
+  reference: "stored" | "search" | "manual" | "refusal";
+}
+
 export interface EInvoiceStatusView {
   status: string;
+  submissionState?:
+    | "draft"
+    | "queued"
+    | "sent"
+    | "accepted"
+    | "rejected"
+    | "failed"
+    | "needs_reconciliation";
   detail: string | null;
+  contactId: string | null;
   tracks: {
-    delivery: { status: DeliveryStatus; at: string | null };
+    delivery: { status: DeliveryStatus; at: string | null; confirmationUnavailable?: boolean };
     reporting: {
       status: ReportingStatus;
       at: string | null;
       required: boolean;
+      obligationKnown?: boolean;
+      confirmationUnavailable?: boolean;
       mandateApplies?: boolean;
       reportBy: string | null;
       overdue: boolean;
@@ -83,15 +108,24 @@ export interface EInvoiceStatusView {
     block: TransmissionBlock;
     providerDocumentId: string | null;
     legalEntityStatus: string | null;
+    recipientAcknowledgement: RecipientAcknowledgement;
+    canSubmit: boolean;
+    canRefresh: boolean;
+    correctionRevisionUnverified?: boolean;
+    environmentVerification?: EInvoiceEnvironmentVerification | null;
   };
   issues: EInvoiceIssue[];
   rejection: {
+    environment?: "sandbox" | "production" | null;
+    creditNoteRequired?: boolean;
     code: string | null;
     message: string | null;
     reasons: Array<{ code?: string; message?: string; field?: string | null }>;
     retryScheduledAt: string | null;
     resubmittable: boolean;
-    /** E2: the number is used up at the provider: credit note + new invoice. */
+    providerHoldsDocument?: boolean;
+    providerDisplayName?: string | null;
+    /** The original document number cannot be reused. */
     newDocumentRequired?: boolean;
   } | null;
   checklist: Array<{
@@ -107,8 +141,14 @@ export interface EInvoiceStatusView {
 export interface EInvoiceDocumentRow {
   invoiceId: string;
   status: string;
+  provider: string | null;
+  providerStatus: string | null;
+  environment?: "sandbox" | "production" | null;
+  providerMessageId: string | null;
   deliveryStatus: DeliveryStatus | null;
+  deliveryConfirmationUnavailable?: boolean;
   reportingStatus: ReportingStatus | null;
+  reportingObligationKnown?: boolean;
   reportBy: string | null;
 }
 
@@ -118,8 +158,15 @@ export interface EInvoiceCompliancePill {
   reportBy: string | null;
   overdue: boolean;
   reportingRequired: boolean;
+  reportingObligationKnown?: boolean;
   delivery: DeliveryStatus;
+  deliveryConfirmationUnavailable?: boolean;
   reporting: ReportingStatus;
+}
+
+export interface EInvoiceListEvidence {
+  pill?: EInvoiceCompliancePill;
+  doc?: EInvoiceDocumentRow;
 }
 
 /** GET /api/companies/:id/einvoicing/readiness (X6d). */
@@ -170,8 +217,92 @@ export const REPORTING_TONE: Record<ReportingStatus, StatusTone> = {
   report_failed: "danger",
 };
 
-export const deliveryLabelKey = (s: DeliveryStatus) => `einvoicing.delivery_${s}`;
-export const reportingLabelKey = (s: ReportingStatus) => `einvoicing.reporting_${s}`;
+export const deliveryLabelKey = (
+  status: DeliveryStatus,
+  queuedForSubmission = false,
+  acknowledgement: RecipientAcknowledgement = null
+) =>
+  acknowledgement === "accepted"
+    ? "einvoicing.recipientAccepted"
+    : acknowledgement === "received"
+      ? "einvoicing.recipientReceived"
+      : queuedForSubmission
+        ? "einvoicing.submissionQueued"
+        : `einvoicing.delivery_${status}`;
+
+export function deliveryOutcomeLabel(
+  t: Record<string, string>,
+  status: DeliveryStatus,
+  options: {
+    queuedForSubmission?: boolean;
+    acknowledgement?: RecipientAcknowledgement;
+    confirmationUnavailable?: boolean;
+    environment?: string | null;
+  }
+) {
+  if (options.confirmationUnavailable) return t["einvoicing.deliveryUnconfirmed"];
+  return trackOutcomeLabel(
+    t,
+    deliveryLabelKey(status, options.queuedForSubmission, options.acknowledgement),
+    status === "delivered" || status === "rejected" || status === "delivery_failed",
+    options.environment
+  );
+}
+
+export function recipientAcknowledgement(
+  provider: string | null | undefined,
+  status: string | null | undefined
+): RecipientAcknowledgement {
+  const rawStatus = status?.trim().toLowerCase();
+  if (provider === "acube") {
+    return rawStatus === "accepted" ? "accepted" : rawStatus === "delivered" ? "received" : null;
+  }
+  if (provider === "complyance") {
+    return rawStatus === "final_valid"
+      ? "accepted"
+      : rawStatus === "delivery_success"
+        ? "received"
+        : null;
+  }
+  return null;
+}
+export const reportingObligationUnknown = (status: ReportingStatus, known?: boolean) =>
+  known === false && status !== "reported" && status !== "report_failed";
+
+export const reportingOutcomeConfirmed = (status: ReportingStatus, unavailable?: boolean) =>
+  !unavailable && (status === "reported" || status === "report_failed");
+
+export const reportingLabelKey = (
+  status: ReportingStatus,
+  confirmationUnavailable = false,
+  obligationKnown?: boolean
+) =>
+  reportingObligationUnknown(status, obligationKnown)
+    ? "einvoicing.reportingObligationUnknown"
+    : confirmationUnavailable
+      ? "einvoicing.reportingUnconfirmed"
+      : `einvoicing.reporting_${status}`;
+
+export function trackOutcomeLabel(
+  t: Record<string, string>,
+  key: string,
+  confirmed: boolean,
+  environment?: string | null
+) {
+  return confirmed
+    ? qualifyEInvoiceOutcome(
+        t[key],
+        environment,
+        t["einvoicing.sandbox"],
+        t["einvoicing.environmentUnknown"]
+      )
+    : t[key];
+}
+
+export function isReportingOnlyFailure(delivery: DeliveryStatus, reporting: ReportingStatus) {
+  return reporting === "report_failed" && delivery !== "rejected" && delivery !== "delivery_failed";
+}
+
 export const checklistLabelKey = (k: string) => `einvoicing.check_${k}`;
 export const checklistStateKey = (s: ChecklistState) => `einvoicing.checkState_${s}`;
 export const blockKey = (b: Exclude<TransmissionBlock, null>) => `einvoicing.block_${b}`;
@@ -179,9 +310,12 @@ export const sourceKey = (s: string) => `einvoicing.source_${s}`;
 
 const KNOWN_ERRORS = new Set([
   "EINVOICE_PROVIDER_NOT_CONFIGURED",
+  "EINVOICE_RETRY_PROVIDER_CHANGED",
   "EINVOICE_LEGAL_ENTITY_NOT_ACTIVE",
   "EINVOICE_LEGAL_ENTITY_DELINKED",
   "EINVOICE_SUPPLIER_ENDPOINT_MISMATCH",
+  "EINVOICE_BUYER_ENDPOINT_MISMATCH",
+  "EINVOICE_PAYMENT_CARD_TYPE_REQUIRED",
   "EINVOICE_VALIDATION_FAILED",
   "EINVOICE_CANCELLED",
   // X6a: provider-neutral fallbacks when a provider gives no code of its own.
@@ -192,6 +326,7 @@ const KNOWN_ERRORS = new Set([
   "ACUBE_BAD_REQUEST",
   "ACUBE_LEGAL_ENTITY_NOT_FOUND",
   "ACUBE_AUTH_FAILED",
+  "ACUBE_RATE_LIMITED",
   "ACUBE_UNAVAILABLE",
   "ACUBE_SENDING_FAILED",
   "ACUBE_DELIVERY_FAILED",
@@ -231,11 +366,11 @@ export function deliveryFromLegacyStatus(status: string | null | undefined): Del
   switch (status) {
     case "generated":
       return "validated";
+    case "queued":
     case "submitted":
-      return "queued";
     case "accepted":
     case "cleared":
-      return "delivered";
+      return "queued";
     case "rejected":
     case "cancelled":
       return "rejected";
@@ -263,12 +398,18 @@ export function fieldLabelKey(field: string): string | null {
     "company.emirate": "einvoicing.field_companyEmirate",
     "company.tradeLicenceNo": "einvoicing.field_companyTradeLicence",
     "company.name": "einvoicing.field_companyName",
+    "company.einvoiceTin": "einvoicing.field_supplierTin",
+    "company.einvoicePayeeIban": "einvoicing.field_payeeIban",
+    "company.sellerIdCountry": "einvoicing.field_passportCountry",
     "customer.address": "einvoicing.field_customerAddress",
+    "customer.legalIdCountry": "einvoicing.field_passportCountry",
     "invoice.customerName": "einvoicing.field_customerName",
     "invoice.customerTrn": "einvoicing.field_customerTrn",
     "customer.endpointId": "einvoicing.field_customerEndpoint",
     "invoice.currency": "einvoicing.field_currency",
+    "invoice.exchangeRate": "einvoicing.field_exchangeRate",
     "invoice.date": "einvoicing.field_date",
+    "invoice.supplyDate": "einvoicing.field_supplyDate",
     "invoice.dueDate": "einvoicing.field_dueDate",
     "invoice.number": "einvoicing.field_number",
     "invoice.originalInvoiceId": "einvoicing.field_originalInvoice",
@@ -283,9 +424,7 @@ export function fieldLabelKey(field: string): string | null {
   return null;
 }
 
-/** One-line rejection reason for the header strip: the first provider reason (with its field or
- * rule), else the localised error code, else the stored message. `code`/`field` are returned so the
- * caller can render them as LTR isolates. */
+/** The first provider reason and fallback message. The header localizes known codes. */
 export function rejectionSummary(rejection: EInvoiceStatusView["rejection"]): {
   message: string | null;
   field: string | null;

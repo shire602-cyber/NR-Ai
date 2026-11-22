@@ -26,6 +26,7 @@ import path from "node:path";
 import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 import { fileURLToPath } from "node:url";
 import { chromium, request } from "playwright-core";
+import { waitForRouteText } from "./lib/route-readiness.mjs";
 import { findBankFeedMention } from "./lib/bank-feed-claims.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
@@ -41,8 +42,18 @@ const SHOT_DIR = path.join(__dirname, ".artifacts");
 const RUN_ARTIFACT_PATH = path.join(SHOT_DIR, "customer-launch-last-run.json");
 
 const LOCALIZED_HOMEPAGES = {
-  "/en": { lang: "en", dir: "ltr", title: "Accounting and VAT for UAE businesses" },
-  "/ar": { lang: "ar", dir: "rtl", title: "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات" },
+  "/en": {
+    lang: "en",
+    dir: "ltr",
+    title: "Accounting and VAT for UAE businesses",
+    providerChoice: "Choose one accredited provider per company",
+  },
+  "/ar": {
+    lang: "ar",
+    dir: "rtl",
+    title: "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات",
+    providerChoice: "اختر مزوّد خدمة معتمدًا واحدًا لكل شركة",
+  },
 };
 
 const STATEMENT_IMPORT_LOCALES = [
@@ -341,11 +352,8 @@ async function main() {
         .catch(() => undefined);
       await page.waitForTimeout(options.waitMs ?? 1700);
     }
+    const bodyText = await waitForRouteText(page, "body");
     const finalUrl = cleanPath(page.url());
-    const bodyText = await page
-      .locator("body")
-      .innerText()
-      .catch(() => "");
     const failText = bodyText.match(FAIL_TEXT)?.[0] ?? null;
     const blank = bodyText.trim().length < 40;
     const notFound = (await page.getByTestId("page-not-found").count()) > 0;
@@ -417,6 +425,11 @@ async function main() {
       ) {
         await fail(`localized homepage ${route}`, { expected: homepage, actual });
       }
+      try {
+        await page.getByText(homepage.providerChoice, { exact: true }).waitFor();
+      } catch (error) {
+        await fail(`localized e-invoicing copy ${route}`, { detail: String(error) });
+      }
     }
     const unsupportedClaim =
       bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ??
@@ -432,6 +445,8 @@ async function main() {
       const summary = page.locator("summary").filter({ hasText: question });
       try {
         await summary.click();
+        const answer = summary.locator("..").locator("p").filter({ hasText: "CSV" });
+        await answer.waitFor();
         const copy = await summary.locator("..").innerText();
         if (!/\bCSV\b/i.test(copy) || findBankFeedMention(copy)) {
           await fail(`banking FAQ ${route}`, { copy });

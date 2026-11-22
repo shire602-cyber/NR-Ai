@@ -131,6 +131,7 @@ beforeEach(async () => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -162,9 +163,12 @@ describe("customer portal /portal/:token", () => {
   });
 
   it("shows the due date, the days overdue in natural Arabic, and a localized amount", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 20, 12));
+    const invoices = [{ ...INVOICES[0], date: "2026-09-21", dueDate: "2026-10-21" }, INVOICES[1]];
     handler = () => ({
       status: 200,
-      body: { info: { ...INFO, companyLocale: "ar" }, invoices: INVOICES },
+      body: { info: { ...INFO, companyLocale: "ar" }, invoices },
     });
     stub();
     await mountAt("/portal/tok123", "portal");

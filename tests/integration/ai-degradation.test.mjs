@@ -3,9 +3,7 @@
 // The product is "AI accounting software", but the AI runs on an external key
 // (OPENAI_API_KEY) that is NOT set in CI or in any environment before the key is
 // provisioned. In that state the AI features must degrade to a clear 503
-// "not configured" — NEVER an HTTP 500. Four endpoints (cfo-advice, anomaly
-// detection, cashflow forecast, bank-statement parsing) used to return 500,
-// surfacing the marquee feature as a server crash.
+// "not configured" response.
 //
 // Runs with NO key on purpose. If OPENAI_API_KEY *is* set, the AI paths return
 // 200 and the "must not 500" assertion still holds.
@@ -40,7 +38,6 @@ async function main() {
   const calls = [
     ["cfo-advice", "POST", "/api/ai/cfo-advice", { companyId: cid, question: "how is my cash flow?" }],
     ["detect-anomalies", "POST", "/api/ai/detect-anomalies", { companyId: cid }],
-    ["parse-bank-statement", "POST", "/api/ai/parse-bank-statement", { companyId: cid, text: "01/01 PMT 500" }],
     ["nl-gateway", "POST", "/api/ai/nl-gateway", { companyId: cid, message: "what is my revenue" }],
     ["ocr/process", "POST", "/api/ocr/process", { companyId: cid, imageData: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" }],
   ];
@@ -54,6 +51,14 @@ async function main() {
         { status: r.s, code: r.j?.code, msg: String(r.j?.message).slice(0, 60) });
     }
   }
+
+  const statement = await api("POST", "/api/ai/parse-bank-statement", {
+    token,
+    body: { companyId: cid, text: "01/01 PMT 500" },
+  });
+  ok("legacy statement extraction directs callers to CSV",
+    statement.s === 410 && statement.j?.code === "STATEMENT_CSV_REQUIRED",
+    { status: statement.s, code: statement.j?.code });
 
   // The cash-flow forecast is document driven (S3): no model call, so no key is needed. An empty
   // company has nothing to forecast -> 400 INSUFFICIENT_DATA, never 500 and never a fabricated row.

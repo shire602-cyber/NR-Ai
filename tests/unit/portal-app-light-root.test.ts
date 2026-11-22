@@ -188,7 +188,12 @@ afterEach(() => {
 describe("client portal light root", () => {
   it("renders the dashboard with exactly one h1 and the stacked-card table", async () => {
     await mountAt("/client-portal/dashboard");
-    await waitForPortal(() => expect(text()).toContain("INV-2026-00001"));
+    await waitForPortal(() => {
+      expect(container.querySelector("h1")).not.toBeNull();
+      expect(container.querySelector("table.row-cards tbody tr")?.textContent).toContain(
+        "INV-2026-00001"
+      );
+    });
     expect(container.querySelectorAll("h1")).toHaveLength(1);
     expect(container.querySelector("h1")!.textContent).toBe("Overview");
     expect(container.querySelector("table.row-cards")).not.toBeNull();

@@ -5,7 +5,7 @@
  * Client-safe (no imports).
  */
 export function uaeToday(now: Date = new Date()): string {
-  return new Date(now.getTime() + 4 * 3_600_000).toISOString().slice(0, 10);
+  return new Date(now.getTime() + UAE_OFFSET_MS).toISOString().slice(0, 10);
 }
 
 const DAY_MS = 86_400_000;
@@ -27,6 +27,20 @@ function utcParts(ms: number): CalendarParts {
   return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
 }
 
+function boundaryCalendarMillis(ms: number): number | null {
+  const msOfDay = ((ms % DAY_MS) + DAY_MS) % DAY_MS;
+  const secOfDay = Math.floor(msOfDay / 1000);
+  if (msOfDay === 0 || secOfDay === 86_399) return ms; // UTC 00:00 / 23:59:59
+  if (msOfDay === 20 * HOUR_MS || secOfDay === 20 * 3600 - 1) {
+    return ms + UAE_OFFSET_MS; // UAE 00:00 / 23:59:59
+  }
+  return null;
+}
+
+function calendarClockMillis(ms: number): number {
+  return boundaryCalendarMillis(ms) ?? ms + UAE_OFFSET_MS;
+}
+
 /**
  * The calendar day a stored business-date instant stands for, or null when the instant is an
  * ordinary timestamp (N1). Date-only values (period starts/ends, due dates, document dates,
@@ -38,13 +52,8 @@ function utcParts(ms: number): CalendarParts {
  * they encode instead.
  */
 export function boundaryCalendarParts(ms: number): CalendarParts | null {
-  const msOfDay = ((ms % DAY_MS) + DAY_MS) % DAY_MS;
-  const secOfDay = Math.floor(msOfDay / 1000);
-  if (msOfDay === 0 || secOfDay === 86_399) return utcParts(ms); // UTC 00:00 / 23:59:59
-  if (msOfDay === 20 * HOUR_MS || secOfDay === 20 * 3600 - 1) {
-    return utcParts(ms + UAE_OFFSET_MS); // UAE 00:00 / 23:59:59
-  }
-  return null;
+  const boundary = boundaryCalendarMillis(ms);
+  return boundary === null ? null : utcParts(boundary);
 }
 
 /**
@@ -62,7 +71,7 @@ export function calendarParts(value: CalendarInput): CalendarParts | null {
   }
   const ms = value instanceof Date ? value.getTime() : new Date(value).getTime();
   if (Number.isNaN(ms)) return null;
-  return boundaryCalendarParts(ms) ?? utcParts(ms + UAE_OFFSET_MS);
+  return utcParts(calendarClockMillis(ms));
 }
 
 /** `calendarParts` as `YYYY-MM-DD` ("" for an empty or invalid value). */
@@ -70,4 +79,10 @@ export function calendarDateKey(value: CalendarInput): string {
   const p = calendarParts(value);
   if (!p) return "";
   return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
+}
+
+/** Clock time on the same business day as `calendarDateKey`, without a time-zone suffix. */
+export function calendarTimeKey(value: Date | string): string {
+  const ms = value instanceof Date ? value.getTime() : Date.parse(value);
+  return Number.isNaN(ms) ? "" : new Date(calendarClockMillis(ms)).toISOString().slice(11, 19);
 }

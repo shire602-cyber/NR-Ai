@@ -26,6 +26,7 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { afterAll, beforeAll, vi } from "vitest";
 import pg from "pg";
+import { databaseSessionOptions } from "../../server/config/database-time";
 import { HARNESS_DB_PREFIX, createDatabase, databaseUrl, dropDatabase, repoRoot } from "./pg-admin";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -346,7 +347,11 @@ export async function startHarness(): Promise<Harness> {
     await ensureCriticalSchema();
   }
 
-  const sqlPool = new pg.Pool({ connectionString: dbUrl, max: mode === "postgres" ? 4 : 1 });
+  const sqlPool = new pg.Pool({
+    connectionString: dbUrl,
+    max: mode === "postgres" ? 4 : 1,
+    ...databaseSessionOptions,
+  });
   sqlPool.on("error", () => undefined);
 
   let inner = await buildApp();

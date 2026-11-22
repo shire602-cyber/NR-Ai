@@ -115,7 +115,7 @@ describe("[W4-C] e-invoice 422 issue list", () => {
     });
     expect(schema).toEqual([
       { field: "UBL schema", message: "cvc-complex-type" },
-      { field: "PINT AE schematron ibr-174-ae", message: "GTIN scheme 0160" },
+      { field: "PINT AE schematron ibr-174-ae", message: "GTIN scheme 0160", ruleId: "ibr-174-ae" },
     ]);
     expect(einvoiceIssuesFromError(undefined)).toEqual([]);
     expect(einvoiceIssuesFromError({ message: "x" })).toEqual([]);

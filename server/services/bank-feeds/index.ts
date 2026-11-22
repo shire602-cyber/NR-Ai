@@ -1,10 +1,8 @@
-import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { eq, isNotNull, isNull, or } from "drizzle-orm";
 import { db } from "../../db";
 import { DomainError } from "../../errors";
-import { storage } from "../../storage";
 import { BANK_RECONCILIATION_COPY } from "../../../shared/bank-reconciliation-copy";
 import {
-  bankAccounts,
   bankConnections,
   bankFeedOauthStates,
   type BankConnection,
@@ -63,20 +61,4 @@ export function sanitizeConnection(connection: BankConnection) {
     autoSync: false,
     lastError: rest.lastError ? BANK_RECONCILIATION_COPY.en : null,
   };
-}
-
-/** Link a statement source to a managed account of the same company. */
-export async function linkConnection(
-  companyId: string,
-  connectionId: string,
-  bankAccountId: string
-): Promise<BankConnection> {
-  const [ba] = await db
-    .select({ id: bankAccounts.id })
-    .from(bankAccounts)
-    .where(and(eq(bankAccounts.id, bankAccountId), eq(bankAccounts.companyId, companyId)));
-  if (!ba) throw new DomainError("BANK_ACCOUNT_NOT_FOUND", 404);
-  const updated = await storage.updateBankConnection(connectionId, { bankAccountId });
-  if (!updated) throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404);
-  return updated;
 }

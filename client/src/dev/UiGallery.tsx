@@ -295,7 +295,7 @@ export default function UiGallery() {
           title={L("Import a bank statement", "استورد كشف حساب بنكي")}
           description={L(BANK_RECONCILIATION_COPY.en, BANK_RECONCILIATION_COPY.ar)}
           action={{ label: L("Add bank account", "إضافة حساب بنكي"), onClick: () => {} }}
-          secondaryAction={{ label: L("Import statement", "استيراد كشف"), onClick: () => {} }}
+          secondaryAction={{ label: L("Upload CSV", "رفع ملف CSV"), onClick: () => {} }}
         />
       </Section>
 

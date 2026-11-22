@@ -4,7 +4,7 @@
  * POST /api/companies/:companyId/bills/inbound/:id/vendor-credit. Renders nothing when no
  * credit note is waiting.
  */
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -17,9 +17,15 @@ export function InboundCreditNotesCard({ companyId }: { companyId: string | unde
   const { t } = useTranslation();
   const { toast } = useToast();
   const key = ["/api/companies", companyId, "einvoicing", "inbound"];
-  const { data } = useQuery<{ items: InboundDocument[] }>({
-    queryKey: key,
-    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/einvoicing/inbound`),
+  const inbox = useInfiniteQuery<{ items: InboundDocument[]; nextCursor: string | null }>({
+    queryKey: [...key, "vendor-credits"],
+    queryFn: ({ pageParam }) =>
+      apiRequest(
+        "GET",
+        `/api/companies/${companyId}/einvoicing/inbound?review=vendor-credits${pageParam ? `&cursor=${encodeURIComponent(String(pageParam))}` : ""}`
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.nextCursor,
     enabled: !!companyId,
     retry: false,
   });
@@ -38,7 +44,9 @@ export function InboundCreditNotesCard({ companyId }: { companyId: string | unde
         description: err.message,
       }),
   });
-  const pending = pendingSupplierCreditNotes(data?.items ?? []);
+  const pending = pendingSupplierCreditNotes(
+    inbox.data?.pages.flatMap((page) => page.items ?? []) ?? []
+  );
   if (pending.length === 0) return null;
   return (
     <Card data-testid="inbound-credit-notes">
@@ -65,6 +73,17 @@ export function InboundCreditNotesCard({ companyId }: { companyId: string | unde
             </Button>
           </div>
         ))}
+        {inbox.hasNextPage && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={inbox.isFetchingNextPage || record.isPending}
+            onClick={() => void inbox.fetchNextPage()}
+          >
+            {t["purchases.loadMoreInboundCreditNotes"]}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

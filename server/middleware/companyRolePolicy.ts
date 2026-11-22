@@ -33,13 +33,36 @@
  * maker-checker approvals.
  */
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-import { pool } from "../db";
+import { and, eq, exists, isNull, notExists, or, sql } from "drizzle-orm";
+import { db, pool, type AppDatabase } from "../db";
+import {
+  companies,
+  companyUsers,
+  firmClientLinks,
+  firmCompanyGrants,
+  firmMembers,
+  firms,
+  firmStaffAssignments,
+} from "../../shared/schema";
+import {
+  acceptedCompanyInvite,
+  historicDirectCompanyRole,
+  recordedFirmOrigin,
+  canAccessFirmClient,
+  NR_FIRM_ID,
+  resolveFirmContext,
+} from "../services/firm/scope";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
 import { DomainError } from "../errors";
 import { RAW_WEBHOOK_PREFIXES } from "../http/body-limits";
 import { authenticateRequest } from "./auth";
-import { isNraFirmRole } from "../../shared/access";
+import {
+  FIRM_ROLE_COMPANY_ROLE,
+  firmRoleSeesAllClients,
+  isFirmRole,
+  isNraFirmRole,
+} from "../../shared/access";
 import { zUuid } from "../../shared/validators/primitives";
 import {
   normalizeCompanyRole,
@@ -116,7 +139,11 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   // WQ5: e-invoicing tax identity, partner choice and approver links (links carry an email and a
   // no-login URL, so even listing them is an admin action). The first-invoice prompt's "shown"
   // marker is written by whoever drafts the invoice.
+  r("MUT", "companies/*/einvoicing/settings", "settings.company"),
   r("MUT", "companies/*/einvoicing/identity", "settings.company"),
+  r("MUT", "companies/*/einvoicing/acube/**", "settings.company"),
+  r("POST", "companies/*/einvoicing/complyance/connect", "settings.company"),
+  r("POST", "companies/*/einvoicing/complyance/sync", "settings.company"),
   r("MUT", "companies/*/einvoicing/partner/**", "settings.company"),
   r("*", "companies/*/einvoicing/approver-links/**", "settings.company"),
   r("POST", "companies/*/einvoicing/tax-ready/shown", "documents.write"),
@@ -160,9 +187,14 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("MUT", "companies/*/journal/**", "ledger.post"),
   r("MUT", "journal/**", "ledger.post"),
   r("POST", "invoices/*/post", "ledger.post"),
+  // Sending an e-invoice through an ASP is an external tax transmission.
+  r("POST", "invoices/*/einvoice/submit", "tax.submit"),
+  r("POST", "invoices/*/einvoice/resubmit", "tax.submit"),
+  r("POST", "invoices/*/einvoice/confirm-environment", "tax.submit"),
+  r("POST", "invoices/*/einvoice/refresh-status", "reports.read"),
   // X6a: linking an e-invoice the provider already holds changes what the invoice reports to the
   // FTA (Complyance manual link after GETS-HEAD-010).
-  r("POST", "companies/*/einvoicing/complyance/link", "ledger.post"),
+  r("POST", "companies/*/einvoicing/complyance/link", "tax.submit"),
   // Status / transition routes that write or reverse journal entries (J4): issuing ("sent"/"posted")
   // and voiding an invoice, issuing/voiding a credit note, debit/credit notes raised from an
   // invoice, recording a customer payment, applying/refunding customer credit and undoing an FX
@@ -684,6 +716,178 @@ export function requirePermission(...permissions: [Permission, ...Permission[]])
       req.companyRoleCompanyId = companyId;
       next();
     })().catch(next);
+  };
+}
+
+type ScopedCompanyActor = Pick<Express.User, "id" | "isAdmin" | "userType" | "firmRole">;
+
+type ScopedPermissionFailure =
+  | { code: "PORTAL_USER_APP_DENIED" }
+  | { code: "COMPANY_ACCESS_DENIED" }
+  | { code: "PERMISSION_DENIED"; role: CompanyRole };
+
+/** Permission check for actions that also require an active firm or direct company scope. */
+export async function scopedCompanyPermissionFailure(
+  user: ScopedCompanyActor,
+  companyId: string,
+  permission: Permission,
+  conn: Pick<AppDatabase, "select"> = db,
+  lock?: "share"
+): Promise<ScopedPermissionFailure | null> {
+  if (user.userType === "client_portal") return { code: "PORTAL_USER_APP_DENIED" };
+  const provenance = and(
+    eq(firmCompanyGrants.userId, user.id),
+    eq(firmCompanyGrants.companyId, companyId)
+  );
+  const grantQuery = conn
+    .select({ firmId: firmCompanyGrants.firmId, generated: sql<boolean>`${recordedFirmOrigin()}` })
+    .from(firmCompanyGrants)
+    .where(provenance);
+  const grants = await (lock ? grantQuery.for(lock) : grantQuery);
+  const generated = grants.find((row) => row.generated);
+  const historicRole = generated ? await historicDirectCompanyRole(companyId, user.id, conn) : null;
+  const grant = generated && generated.firmId !== NR_FIRM_ID ? generated : undefined;
+  const firmScoped = isNraFirmRole(user.firmRole);
+  const nrRole = isFirmRole(user.firmRole) ? user.firmRole : undefined;
+  if (nrRole && (firmScoped || generated?.firmId === NR_FIRM_ID)) {
+    const firm = await resolveFirmContext(user, conn);
+    if (firm && (await canAccessFirmClient(firm, companyId, conn, lock))) {
+      if (firmScoped) return null;
+      const role = FIRM_ROLE_COMPANY_ROLE[nrRole];
+      if (!roleHasAnyPermission(role, [permission])) return { code: "PERMISSION_DENIED", role };
+    } else if (generated && !historicRole) {
+      return { code: "COMPANY_ACCESS_DENIED" };
+    }
+  } else if (!grants.length && user.isAdmin && !nrRole) {
+    return null;
+  } else if (generated && !grant && !historicRole) {
+    return { code: "COMPANY_ACCESS_DENIED" };
+  }
+
+  // A legacy invitation may prove an independent role despite an unchanged old firm marker.
+  if (historicRole) {
+    const role = normalizeCompanyRole(historicRole);
+    return roleHasAnyPermission(role, [permission]) ? null : { code: "PERMISSION_DENIED", role };
+  }
+
+  // Validate firm and link before locking company_users, following link revocation's lock order.
+  const firmAuthority = grant
+    ? conn
+        .select({ role: firmMembers.role })
+        .from(firms)
+        .innerJoin(firmMembers, eq(firmMembers.firmId, firms.id))
+        .innerJoin(
+          firmClientLinks,
+          and(
+            eq(firmClientLinks.firmId, firms.id),
+            eq(firmClientLinks.companyId, companyId),
+            eq(firmClientLinks.status, "active")
+          )
+        )
+        .where(
+          and(
+            eq(firms.id, grant.firmId),
+            eq(firms.status, "active"),
+            eq(firmMembers.userId, user.id)
+          )
+        )
+        .limit(1)
+    : null;
+  const [authority] = firmAuthority ? await (lock ? firmAuthority.for(lock) : firmAuthority) : [];
+  if (grant && !isFirmRole(authority?.role)) return { code: "COMPANY_ACCESS_DENIED" };
+
+  // For legacy NR roles, a recorded direct grant or an accepted company invitation
+  // establishes independent access. Unlinked customer accounts also have direct roles.
+  const directScope =
+    firmScoped && !grants.length
+      ? or(
+          acceptedCompanyInvite(companyId, user.id),
+          exists(
+            conn
+              .select({ id: companies.id })
+              .from(companies)
+              .where(
+                and(
+                  eq(companies.id, companyId),
+                  eq(companies.companyType, "customer"),
+                  isNull(companies.deletedAt),
+                  notExists(
+                    conn
+                      .select({ id: firmClientLinks.id })
+                      .from(firmClientLinks)
+                      .where(eq(firmClientLinks.companyId, companies.id))
+                  )
+                )
+              )
+          )
+        )
+      : undefined;
+  const query = conn
+    .select({ role: companyUsers.role })
+    .from(companyUsers)
+    .where(
+      and(
+        eq(companyUsers.companyId, companyId),
+        eq(companyUsers.userId, user.id),
+        directScope,
+        // If a grant arrived after discovery, do not read its new membership as independent.
+        generated
+          ? undefined
+          : notExists(
+              conn
+                .select({ id: firmCompanyGrants.id })
+                .from(firmCompanyGrants)
+                .where(and(provenance, recordedFirmOrigin()))
+            )
+      )
+    )
+    .limit(1);
+  const [membership] = await (lock ? query.for(lock) : query);
+  const role = membership ? normalizeCompanyRole(membership.role) : null;
+  if (!role) return { code: "COMPANY_ACCESS_DENIED" };
+  if (isFirmRole(authority?.role)) {
+    if (!firmRoleSeesAllClients(authority.role)) {
+      const assignment = conn
+        .select({ userId: firmStaffAssignments.userId })
+        .from(firmStaffAssignments)
+        .where(
+          and(
+            eq(firmStaffAssignments.companyId, companyId),
+            eq(firmStaffAssignments.userId, user.id)
+          )
+        )
+        .limit(1);
+      const [assigned] = await (lock ? assignment.for(lock) : assignment);
+      if (!assigned) return { code: "COMPANY_ACCESS_DENIED" };
+    }
+    const currentRole = FIRM_ROLE_COMPANY_ROLE[authority.role];
+    if (!roleHasAnyPermission(currentRole, [permission])) {
+      return { code: "PERMISSION_DENIED", role: currentRole };
+    }
+  }
+  return roleHasAnyPermission(role, [permission]) ? null : { code: "PERMISSION_DENIED", role };
+}
+
+export async function assertScopedCompanyPermission(
+  user: ScopedCompanyActor | undefined,
+  companyId: string | undefined,
+  permission: Permission
+): Promise<void> {
+  if (!user) throw new DomainError("AUTH_REQUIRED", 401);
+  if (!companyId || !zUuid.safeParse(companyId).success) throw new DomainError("COMPANY_REQUIRED", 400);
+  const failure = await scopedCompanyPermissionFailure(user, companyId, permission);
+  if (!failure) return;
+  const details = { companyId, permission, role: "role" in failure ? failure.role : null };
+  throw new DomainError(failure.code, 403, details);
+}
+
+/** Always enforce the named company's permission, including assignment for legacy firm staff. */
+export function requireScopedCompanyPermission(permission: Permission): RequestHandler {
+  return (req, _res, next) => {
+    void assertScopedCompanyPermission(req.user, req.params.companyId, permission).then(
+      () => next(),
+      next
+    );
   };
 }
 

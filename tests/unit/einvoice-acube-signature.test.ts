@@ -19,6 +19,7 @@ import {
 import {
   acubeStatusErrorCode,
   deliveryFromLegacy,
+  legacyFromProviderTracks,
   legacyFromTracks,
   mapAcubeDeliveryStatus,
   reportByDate,
@@ -57,7 +58,7 @@ const request = (headers = s.headers, targetUri = s.targetUri) => ({
 describe("E1 A-Cube webhook signature", () => {
   const key = publicKeyFrom(s.publicKeyPem);
 
-  it("accepts the signed document.received fixture", () => {
+  it("accepts the legacy signed document.received fixture", () => {
     const v = verifyAcubeSignature({
       raw: Buffer.from(s.body),
       request: request(),
@@ -211,7 +212,7 @@ describe("E1 two-track status model", () => {
       ["valid", "new", "sending_queued", "sending_started", "delivered", "processed"].map(
         mapAcubeDeliveryStatus
       )
-    ).toEqual(["queued", "queued", "queued", "sending", "delivered", "delivered"]);
+    ).toEqual(["queued", "queued", "queued", "sending", "delivered", "sending"]);
     expect(
       [
         "sending_error",
@@ -220,18 +221,31 @@ describe("E1 two-track status model", () => {
         "delivery_failed",
         "action_required",
       ].map(mapAcubeDeliveryStatus)
-    ).toEqual(Array(5).fill("delivery_failed"));
+    ).toEqual(["delivery_failed", "sending", "delivery_failed", "sending", "delivery_failed"]);
     expect(mapAcubeDeliveryStatus("rejected")).toBe("rejected");
     expect(mapAcubeDeliveryStatus("something_new")).toBe("delivery_failed");
     expect(acubeStatusErrorCode("delivery_error")).toBe("ACUBE_DELIVERY_FAILED");
     expect(acubeStatusErrorCode("delivered")).toBeNull();
   });
 
+  it("preserves A-Cube receipt as in flight until positive MLS", () => {
+    expect(legacyFromProviderTracks("acube", "processed", "sending", "pending")).toBe("submitted");
+    expect(legacyFromProviderTracks("acube", "delivered", "delivered", "not_required")).toBe(
+      "submitted"
+    );
+    expect(legacyFromProviderTracks("acube", "accepted", "delivered", "not_required")).toBe(
+      "accepted"
+    );
+    expect(
+      legacyFromProviderTracks("complyance", "delivery_success", "delivered", "not_required")
+    ).toBe("submitted");
+  });
+
   it("derives the legacy status: delivered stays 'accepted' until the FTA report is in", () => {
     expect(legacyFromTracks("delivered", "pending")).toBe("accepted");
     expect(legacyFromTracks("delivered", "report_failed")).toBe("accepted");
     expect(legacyFromTracks("delivered", "reported")).toBe("cleared");
-    expect(legacyFromTracks("delivered", "not_required")).toBe("cleared");
+    expect(legacyFromTracks("delivered", "not_required")).toBe("accepted");
     expect(legacyFromTracks("queued", "pending")).toBe("submitted");
     expect(legacyFromTracks("delivery_failed", "pending")).toBe("failed");
     expect(deliveryFromLegacy("generated")).toBe("validated");
@@ -254,15 +268,24 @@ describe("E1 two-track status model", () => {
 
   it("normalises webhook and API event names and builds stable dedupe keys", () => {
     const p = fixture.payloads;
-    expect(canonicalEventType(p["document.received"])).toBe("document.received");
-    expect(canonicalEventType(p["document.delivered"])).toBe("document.delivered");
+    expect(canonicalEventType(p["invoice.inbound"])).toBe("document.received");
+    expect(canonicalEventType(p["invoice.outbound"])).toBe("document.delivered");
+    expect(canonicalEventType(p["credit_note.inbound"])).toBe("document.received");
+    expect(canonicalEventType(p["credit_note.outbound"])).toBe("document.delivered");
     expect(canonicalEventType(p["legal_entity.synchronized.LINK"])).toBe(
       "legal_entity.synchronized"
     );
     expect(canonicalEventType({}, "invoice.inbound")).toBe("document.received");
     expect(canonicalEventType({}, "credit_note.outbound")).toBe("document.delivered");
     expect(canonicalEventType({ hello: 1 })).toBeNull();
-    expect(providerEventKey("document.received", p["document.received"])).toBe(
+    const inbound = p["invoice.inbound"];
+    expect(
+      providerEventKey("document.received", { ...inbound, documentId: inbound.invoiceUuid })
+    ).toBe("doc:01a0c453-5398-728c-8b10-84dd471cd797:received");
+    expect(providerEventKey("document.delivered", p["invoice.outbound"])).toBe(
+      "01a0ab23-2611-7c3e-9d41-5b7e8f0a1c22"
+    );
+    expect(providerEventKey("document.received", JSON.parse(s.body))).toBe(
       "doc:01a0c453-5398-728c-8b10-84dd471cd797:received"
     );
     expect(providerEventKey("legal_entity.synchronized", p["legal_entity.synchronized.LINK"])).toBe(

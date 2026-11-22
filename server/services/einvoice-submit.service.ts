@@ -8,6 +8,7 @@ import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import {
   validateForEInvoicing,
   generateEInvoiceXML,
+  readEInvoiceDocumentType,
   type EInvoiceIssue,
   type EInvoiceLineExtra,
   type EInvoiceOptions,
@@ -67,7 +68,7 @@ export interface EInvoiceContext {
   options?: EInvoiceOptions;
 }
 
-type SubmitOk = {
+export type SubmitOk = {
   ok: true;
   update: EInvoiceUpdate;
   document: EInvoiceDocumentUpdate;
@@ -78,7 +79,7 @@ type SubmitOk = {
   /** E1: the provider's own outcome (two-track status, error code). */
   result: EInvoiceProviderResult;
 };
-type SubmitErr = {
+export type SubmitErr = {
   ok: false;
   status: number;
   code: string;
@@ -166,7 +167,7 @@ export function buildEInvoiceDocument(
       xml: invoice.einvoiceXml,
       uuid: invoice.einvoiceUuid,
       hash: invoice.einvoiceHash,
-      documentType: null,
+      documentType: readEInvoiceDocumentType(invoice.einvoiceXml),
     };
   }
   const generated = generateFreshDocument(invoice, lines, company, ctx, uuid);
@@ -195,34 +196,33 @@ export function applyProviderOutcome(
     lastError:
       result.status === "failed" || result.status === "rejected" ? (result.detail ?? null) : null,
     rejectionReasons:
-      result.status === "rejected"
-        ? (reasons ?? [{ code: "ASP", message: result.detail ?? "Rejected" }])
-        : null,
+      reasons ??
+      (result.status === "rejected"
+        ? [{ code: "ASP", message: result.detail ?? "Rejected" }]
+        : null),
     clearedAt: result.status === "cleared" ? now : null,
   };
 }
 
-export async function submitEInvoice(args: {
+export async function prepareEInvoiceSubmission(args: {
   invoice: Invoice;
   lines: InvoiceLine[];
   company: Company;
-  provider: EInvoiceProvider;
   ctx?: EInvoiceContext;
-  attempts?: number;
   now?: Date;
-}): Promise<SubmitOk | SubmitErr> {
-  const { invoice, lines, company, provider } = args;
+}): Promise<PreparedSubmission | SubmitErr> {
+  const { invoice, lines, company } = args;
   const now = args.now ?? new Date();
   const current = (invoice.einvoiceStatus as string) || "not_generated";
-  if (invoice.status === "draft" || invoice.status === "void") {
+  if (invoice.status === "draft" || invoice.status === "void" || invoice.status === "cancelled") {
     return {
       ok: false,
       status: 409,
-      code: invoice.status === "void" ? "EINVOICE_INVOICE_VOID" : "EINVOICE_INVOICE_NOT_ISSUED",
+      code: invoice.status === "draft" ? "EINVOICE_INVOICE_NOT_ISSUED" : "EINVOICE_INVOICE_VOID",
       message:
-        invoice.status === "void"
-          ? "A void invoice cannot be transmitted."
-          : "Issue the invoice before transmitting it as an e-invoice.",
+        invoice.status === "draft"
+          ? "Issue the invoice before transmitting it as an e-invoice."
+          : "The invoice was voided or cancelled and cannot be transmitted.",
     };
   }
   if (current === "accepted" || current === "cleared") {
@@ -274,30 +274,34 @@ export async function submitEInvoice(args: {
     };
   }
 
-  assertEInvoiceTransition("generated", "submitted");
-  const result = await provider.submit({
-    invoiceId: invoice.id,
-    invoiceNumber: invoice.number,
-    uuid: built.uuid,
-    xml: built.xml,
-    documentType: built.documentType ?? undefined,
-    companyId: company.id,
-  });
+  return { ...built, validation };
+}
 
-  const docPatch = applyProviderOutcome(result, args.attempts ?? 0, now);
+export type PreparedSubmission = Extract<ReturnType<typeof buildEInvoiceDocument>, { ok: true }> & {
+  validation: EInvoiceValidationSummary;
+};
+
+export function submittedEInvoiceOutcome(
+  built: PreparedSubmission,
+  provider: EInvoiceProvider,
+  result: EInvoiceProviderResult,
+  prevAttempts: number,
+  now: Date
+): SubmitOk {
+  const docPatch = applyProviderOutcome(result, prevAttempts, now);
   return {
     ok: true,
     result,
     providerMessageId: result.providerMessageId,
     xml: built.xml,
-    handedOver: result.status !== "failed" && !!result.providerMessageId,
+    handedOver: !!result.providerMessageId,
     document: {
       ...docPatch,
       provider: provider.name,
       uuid: built.uuid,
       xmlHash: built.hash,
       documentType: built.documentType,
-      validation,
+      validation: built.validation,
       validatedAt: now,
     },
     update: {
@@ -307,10 +311,36 @@ export async function submitEInvoice(args: {
       einvoiceStatus: result.status,
       einvoiceProvider: provider.name,
       einvoiceProviderMessageId: result.providerMessageId || null,
-      einvoiceSubmittedAt: now,
+      einvoiceSubmittedAt: result.providerMessageId ? now : null,
       einvoiceStatusDetail: result.detail ?? null,
     },
   };
+}
+
+export async function submitEInvoice(args: {
+  invoice: Invoice;
+  lines: InvoiceLine[];
+  company: Company;
+  provider: EInvoiceProvider;
+  ctx?: EInvoiceContext;
+  attempts?: number;
+  now?: Date;
+}): Promise<SubmitOk | SubmitErr> {
+  const { invoice, company, provider } = args;
+  const now = args.now ?? new Date();
+  const built = await prepareEInvoiceSubmission({ ...args, now });
+  if (!built.ok) return built;
+
+  assertEInvoiceTransition("generated", "submitted");
+  const result = await provider.submit({
+    invoiceId: invoice.id,
+    invoiceNumber: invoice.number,
+    uuid: built.uuid,
+    xml: built.xml,
+    documentType: built.documentType ?? undefined,
+    companyId: company.id,
+  });
+  return submittedEInvoiceOutcome(built, provider, result, args.attempts ?? 0, now);
 }
 
 /** Provider error codes that mean "could not ask", not "the document failed". */
@@ -318,10 +348,13 @@ const TRANSIENT_POLL_CODES = new Set([
   "TRANSPORT_ERROR",
   "ACUBE_UNAVAILABLE",
   "ACUBE_AUTH_FAILED",
+  "ACUBE_RATE_LIMITED",
+  "ACUBE_UNKNOWN_STATUS",
   // E2: Complyance
   "COMPLYANCE_UNAVAILABLE",
   "COMPLYANCE_AUTH_FAILED",
   "COMPLYANCE_RATE_LIMITED",
+  "COMPLYANCE_UNKNOWN_STATE",
 ]);
 
 export async function refreshEInvoiceStatus(args: {
@@ -336,7 +369,7 @@ export async function refreshEInvoiceStatus(args: {
       document: EInvoiceDocumentUpdate;
       result: EInvoiceProviderResult;
     }
-  | SubmitErr
+  | (SubmitErr & { verifiedReportingApproval?: true })
 > {
   const { invoice, provider } = args;
   const now = args.now ?? new Date();
@@ -350,7 +383,10 @@ export async function refreshEInvoiceStatus(args: {
     };
   }
   const result = await provider.getStatus(messageId, args.ref);
-  if (result.errorCode && TRANSIENT_POLL_CODES.has(result.errorCode)) {
+  if (
+    result.providerMessageId !== messageId ||
+    (result.errorCode && TRANSIENT_POLL_CODES.has(result.errorCode))
+  ) {
     // E1: a failed poll says nothing about the document; keep its status.
     return {
       ok: false,
@@ -366,6 +402,9 @@ export async function refreshEInvoiceStatus(args: {
       status: 409,
       code: "EINVOICE_INVALID_TRANSITION",
       message: `The provider reported ${result.status} for a document that is ${current}.`,
+      ...(provider.name === "complyance" && result.reporting === "reported"
+        ? { verifiedReportingApproval: true as const }
+        : {}),
     };
   }
   const reasons = result.reasons && result.reasons.length > 0 ? result.reasons : null;
@@ -378,9 +417,10 @@ export async function refreshEInvoiceStatus(args: {
       lastError:
         result.status === "rejected" || result.status === "failed" ? (result.detail ?? null) : null,
       rejectionReasons:
-        result.status === "rejected"
-          ? (reasons ?? [{ code: "ASP", message: result.detail ?? "Rejected" }])
-          : null,
+        reasons ??
+        (result.status === "rejected"
+          ? [{ code: "ASP", message: result.detail ?? "Rejected" }]
+          : null),
       clearedAt: result.status === "cleared" ? now : null,
     },
   };

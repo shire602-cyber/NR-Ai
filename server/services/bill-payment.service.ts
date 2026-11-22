@@ -659,7 +659,7 @@ async function updateHeader(
   ]);
 }
 
-export async function createBill(args: {
+type CreateBillArgs = {
   companyId: string;
   actorId: string;
   input: BillCreateInput;
@@ -670,7 +670,10 @@ export async function createBill(args: {
   poLineIds?: Array<string | null>;
   tx?: LedgerTx;
   onCreated?: (tx: LedgerTx, bill: BillRow) => Promise<void>;
-}): Promise<BillWriteResult> {
+};
+
+/** Resolve and validate bill inputs before the caller acquires a write transaction. */
+async function prepareBillCreate(args: CreateBillArgs) {
   const { companyId, actorId, input } = args;
   await assertPeriodNotLocked(companyId, input.bill_date, args.tx);
   const prepared = await prepareBill(companyId, input as BillFieldsInput, null, args.tx);
@@ -690,7 +693,7 @@ export async function createBill(args: {
       prepared.header.due_date = d.toISOString().slice(0, 10);
     }
   }
-  return withLedgerTx(async (tx) => {
+  return async (tx: LedgerTx): Promise<BillWriteResult> => {
     const h = prepared.header;
     const rows = await txRows<BillRow & Record<string, unknown>>(
       tx,
@@ -750,7 +753,11 @@ export async function createBill(args: {
     );
     await args.onCreated?.(tx, bill);
     return { bill, lines, warnings: prepared.warnings };
-  }, args.tx);
+  };
+}
+
+export async function createBill(args: CreateBillArgs): Promise<BillWriteResult> {
+  return withLedgerTx(await prepareBillCreate(args), args.tx);
 }
 
 /** Edit a bill that has no journal yet (draft / pending / rejected). */
@@ -1903,12 +1910,12 @@ export async function batchPaymentCsv(companyId: string, billIds: string[]) {
  * Create a DRAFT bill from a structured inbound document (e-invoice, OCR, email intake). The
  * draft has no journal; it goes through the normal submit → approve flow.
  */
-export async function createDraftFromParsedInbound(
+function inboundDraftArgs(
   companyId: string,
   actorId: string,
   doc: InboundBillInput
-): Promise<BillWriteResult> {
-  return createBill({
+): CreateBillArgs {
+  return {
     companyId,
     actorId,
     status: "draft",
@@ -1933,7 +1940,15 @@ export async function createDraftFromParsedInbound(
         account_id: l.accountId ?? null,
       })),
     } as BillCreateInput,
-  });
+  };
+}
+
+export async function createDraftFromParsedInbound(
+  companyId: string,
+  actorId: string,
+  doc: InboundBillInput
+): Promise<BillWriteResult> {
+  return createBill(inboundDraftArgs(companyId, actorId, doc));
 }
 
 /**
@@ -1946,6 +1961,13 @@ export async function createDraftFromInbound(
   raw: unknown
 ): Promise<BillWriteResult> {
   return createDraftFromParsedInbound(companyId, actorId, parseStrict(inboundBillSchema, raw));
+}
+
+/** Prepare the usual inbound draft so its write can commit with the caller's document linkage. */
+export async function prepareDraftFromInbound(companyId: string, actorId: string, raw: unknown) {
+  return prepareBillCreate(
+    inboundDraftArgs(companyId, actorId, parseStrict(inboundBillSchema, raw))
+  );
 }
 
 function advance(dateIso: string, frequency: string): string {
@@ -2121,6 +2143,8 @@ export function registerBillServices(): void {
   if (!has("bills.reversePayment")) provide("bills.reversePayment", reverseBillPayment);
   if (!has("bills.createDraftFromInbound"))
     provide("bills.createDraftFromInbound", createDraftFromInbound);
+  if (!has("bills.prepareDraftFromInbound"))
+    provide("bills.prepareDraftFromInbound", prepareDraftFromInbound);
   if (!has("bills.createVendorCreditFromInbound"))
     provide("bills.createVendorCreditFromInbound", createVendorCreditFromInbound);
   if (!listJobs().some((j) => j.name === "bills.recurring")) {
