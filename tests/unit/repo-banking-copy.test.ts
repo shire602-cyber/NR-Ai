@@ -40,6 +40,7 @@ function filesIn(dir: string, extension: string): string[] {
 const archivedBankImportMentions = [
   /\byodlee\s*\+\s*wio\b/i,
   /\b(?:bank[-\s]+data\s+access|(?:access\s+(?:to\s+)?bank[-\s]+data|bank[-\s]+data)\s+(?:through|via|from)\s+[^.\n]{0,45}\baggregators?)\b/i,
+  /\breachable\s+through\s+any\s+aggregator\b/i,
   /\bbank\s+connections\b/i,
 ];
 
@@ -126,6 +127,10 @@ function docxToText(data: Buffer): string {
 
 describe("CSV banking wording in the repository", () => {
   it.each([
+    [
+      ["Only 7 of 267 UAE banks are ", "reachable through ", "any aggregator", "."],
+      ["reachable through ", "any aggregator"],
+    ],
     [["Bank transaction imports | ", "Yodlee", " + ", "Wio", " |"], ["Yodlee", " + ", "Wio"]],
     [["Historical banking plan: ", "bank-data", " access", " through aggregators."], ["bank-data", " access"]],
     [["Access ", "bank data ", "via regional ", "aggregators."], ["Access ", "bank data ", "via regional ", "aggregators"]],
