@@ -82,7 +82,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
     navigate("/client-portal/dashboard");
   }
 
-  const selectedId = getSelectedPortalAccount();
+  const selectedId = company?.accountId ?? getSelectedPortalAccount();
   const current = accounts.find((a) => a.id === selectedId) ?? accounts[0];
   const removed =
     companyError instanceof ApiError &&

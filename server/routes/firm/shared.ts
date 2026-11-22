@@ -72,6 +72,8 @@ export async function seedChartOfAccounts(companyId: string): Promise<void> {
   await storage.createBulkAccounts(defaultAccounts);
 }
 
+import { isVatFilingRecorded } from "../../../shared/vat-filing-status";
+
 export interface ClientStats {
   invoiceCount: number;
   invoiceTotal: number;
@@ -80,7 +82,7 @@ export interface ClientStats {
   overdueAr: number;
   lastReceiptDate: Date | null;
   lastBankActivityDate: Date | null;
-  vatStatus: { status: string; dueDate: Date; periodEnd: Date } | null;
+  vatStatus: { status: string; dueDate: Date; periodEnd: Date; filingRecorded: boolean } | null;
   assignedStaff: Array<{ id: string; name: string; email: string; role: string }>;
 }
 
@@ -152,13 +154,20 @@ export async function getClientStatsBatch(companyIds: string[]): Promise<Map<str
       .selectDistinctOn([vatReturns.companyId], {
         companyId: vatReturns.companyId,
         status: vatReturns.status,
+        reference: vatReturns.ftaReferenceNumber,
         dueDate: vatReturns.dueDate,
         periodEnd: vatReturns.periodEnd,
       })
       .from(vatReturns)
       .where(inArray(vatReturns.companyId, companyIds))
       .orderBy(vatReturns.companyId, desc(vatReturns.periodEnd)) as Promise<
-      { companyId: string; status: string; dueDate: Date; periodEnd: Date }[]
+      {
+        companyId: string;
+        status: string;
+        reference: string | null;
+        dueDate: Date;
+        periodEnd: Date;
+      }[]
     >,
     assignedStaffByCompany(companyIds),
     firmReceivablesAed(companyIds),
@@ -178,7 +187,14 @@ export async function getClientStatsBatch(companyIds: string[]): Promise<Map<str
       overdueAr: ar?.overdue ?? 0,
       lastReceiptDate: rec.get(id) ?? null,
       lastBankActivityDate: bank.get(id) ?? null,
-      vatStatus: v ? { status: v.status, dueDate: v.dueDate, periodEnd: v.periodEnd } : null,
+      vatStatus: v
+        ? {
+            status: v.status,
+            dueDate: v.dueDate,
+            periodEnd: v.periodEnd,
+            filingRecorded: isVatFilingRecorded(v.status, v.reference),
+          }
+        : null,
       assignedStaff: (staff.get(id) ?? []).map(({ companyId: _c, ...s }) => s),
     });
   }
@@ -244,11 +260,14 @@ export function maxHealthStatus(...statuses: HealthStatus[]): HealthStatus {
 }
 
 export function vatHealthFromReturn(
-  vat: { status: string; dueDate: Date | string | null } | null | undefined,
+  vat:
+    | { status: string; ftaReferenceNumber?: string | null; dueDate: Date | string | null }
+    | null
+    | undefined,
   now: Date
 ): VatHealthStatus {
   if (!vat) return "on-track";
-  if (vat.status === "filed" || vat.status === "submitted") return "on-track";
+  if (isVatFilingRecorded(vat.status, vat.ftaReferenceNumber)) return "on-track";
   const dueIn = daysUntil(vat.dueDate, now);
   if (dueIn === null) return "on-track";
   if (dueIn < 0) return "overdue";

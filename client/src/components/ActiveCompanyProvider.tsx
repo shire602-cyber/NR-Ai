@@ -8,8 +8,14 @@ import {
   type ReactNode,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ReceiptQueueProvider } from "@/components/receipts/ReceiptQueueProvider";
 import type { Company } from "@shared/schema";
-import { getActiveCompanyId, switchActiveCompany, clearActiveCompany } from "@/lib/activeCompany";
+import {
+  getActiveCompanyId,
+  resolveActiveCompany,
+  switchActiveCompany,
+  clearActiveCompany,
+} from "@/lib/activeCompany";
 
 interface ActiveCompanyContextValue {
   /** The currently active company (firm-managed client if switched, else first owned company). */
@@ -101,8 +107,7 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
   const value = useMemo<ActiveCompanyContextValue>(() => {
     const list = companies ?? [];
     const activeMatch = activeId ? list.find((c) => c.id === activeId) : undefined;
-    const fallback = list[0];
-    const company = activeMatch ?? fallback;
+    const company = resolveActiveCompany(list, activeId);
     return {
       company,
       companyId: company?.id,
@@ -125,7 +130,11 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
     clearActiveClientCompany,
   ]);
 
-  return <ActiveCompanyContext.Provider value={value}>{children}</ActiveCompanyContext.Provider>;
+  return (
+    <ActiveCompanyContext.Provider value={value}>
+      <ReceiptQueueProvider>{children}</ReceiptQueueProvider>
+    </ActiveCompanyContext.Provider>
+  );
 }
 
 /**

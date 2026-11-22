@@ -1966,20 +1966,15 @@ export async function runRecurringBill(
   companyId?: string
 ): Promise<BillWriteResult | null> {
   const r = await pool.query(
-    `SELECT * FROM recurring_bills WHERE id = $1 AND ($2::uuid IS NULL OR company_id = $2)`,
+    `SELECT *, next_run_on::date::text AS run_on_date, end_on::date::text AS end_on_date
+       FROM recurring_bills WHERE id = $1 AND ($2::uuid IS NULL OR company_id = $2)`,
     [id, companyId ?? null]
   );
   const rec = r.rows[0];
   if (!rec) throw new DomainError("RECURRING_BILL_NOT_FOUND", 404);
   if (!rec.is_active) return null;
-  const runOn =
-    rec.next_run_on instanceof Date
-      ? rec.next_run_on.toISOString().slice(0, 10)
-      : String(rec.next_run_on).slice(0, 10);
-  if (
-    rec.end_on &&
-    runOn > String(rec.end_on instanceof Date ? rec.end_on.toISOString().slice(0, 10) : rec.end_on)
-  ) {
+  const runOn: string = rec.run_on_date;
+  if (rec.end_on_date && runOn > rec.end_on_date) {
     await pool.query(`UPDATE recurring_bills SET is_active = false WHERE id = $1`, [id]);
     return null;
   }

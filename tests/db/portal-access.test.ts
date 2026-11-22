@@ -204,7 +204,14 @@ describe("W4-D portal identity and visibility", () => {
     expect(msgs.body.map((m: { content: string }) => m.content)).toEqual([
       "Hello, your statement is ready",
     ]);
-    const reply = await pu.as.post("/api/client-portal/messages", { content: "Thanks!" });
+    const portalCompany = await pu.as.get("/api/client-portal/company");
+    const reply = await pu.as.post(
+      "/api/client-portal/messages",
+      { content: "Thanks!" },
+      {
+        headers: { "X-Portal-Account": portalCompany.body.accountId },
+      }
+    );
     expect(reply.status, reply.text).toBe(201);
     expect(reply.body.contactId).toBe(mine);
     expect(reply.body.visibility).toBe("customer");

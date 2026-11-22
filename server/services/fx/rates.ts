@@ -55,6 +55,7 @@ export interface RateResult {
 
 export interface GetRateOptions {
   rateType?: ExchangeRateType;
+  tx?: typeof db;
   /** Proximity window in days (default 7). */
   maxAgeDays?: number;
   /** Use the AED/USD peg when no row exists for that pair (default true; the sanity band opts out). */
@@ -151,13 +152,14 @@ async function findRow(
   from: string,
   to: string,
   asOfIso: string,
-  rateType: ExchangeRateType
+  rateType: ExchangeRateType,
+  tx = db
 ): Promise<ExchangeRate | null> {
   const end = isoToDate(addDaysIso(asOfIso, 1));
   const scope = companyId
     ? or(eq(exchangeRates.companyId, companyId), isNull(exchangeRates.companyId))
     : isNull(exchangeRates.companyId);
-  const rows = await db
+  const rows = await tx
     .select()
     .from(exchangeRates)
     .where(
@@ -285,11 +287,11 @@ async function lookup(
     };
   }
 
-  const row = await findRow(companyId, from, to, asOfIso, rateType);
+  const row = await findRow(companyId, from, to, asOfIso, rateType, opts.tx);
   if (row) return buildResult(row, from, asOfIso, maxAgeDays);
 
   if (rateType !== "spot" && opts.fallbackToSpot !== false) {
-    const spot = await findRow(companyId, from, to, asOfIso, "spot");
+    const spot = await findRow(companyId, from, to, asOfIso, "spot", opts.tx);
     if (spot) {
       return buildResult(
         spot,

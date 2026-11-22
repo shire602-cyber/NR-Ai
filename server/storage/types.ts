@@ -134,6 +134,8 @@ import type { db } from "../db";
 export type JournalLineInsert = Omit<InsertJournalLine, "entryId">;
 
 export interface PostReceiptAtomicArgs {
+  exchangeRate?: number;
+  baseCurrencyAmount?: number;
   receiptId: string;
   companyId: string;
   userId: string;
@@ -432,7 +434,8 @@ export interface IStorage {
     data: Partial<InsertReceipt>
   ): Promise<Receipt>;
   postReceiptAtomic(
-    args: PostReceiptAtomicArgs
+    args: PostReceiptAtomicArgs,
+    tx?: typeof db
   ): Promise<{ receipt: Receipt; entry: JournalEntry }>;
   reviseReceiptAtomic(
     args: ReviseReceiptAtomicArgs
@@ -647,6 +650,12 @@ export interface IStorage {
   getVatReturn(id: string): Promise<VatReturn | undefined>;
   createVatReturn(vatReturn: InsertVatReturn): Promise<VatReturn>;
   updateVatReturn(id: string, data: Partial<InsertVatReturn>): Promise<VatReturn>;
+  recordVatReturnFiling(
+    companyId: string,
+    id: string,
+    previousStatus: string,
+    data: Partial<InsertVatReturn>
+  ): Promise<VatReturn | undefined>;
   deleteVatReturn(id: string): Promise<void>;
 
   // Corporate Tax Returns

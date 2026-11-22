@@ -222,10 +222,11 @@ export function registerBillPayRoutes(app: Express) {
         })
         .parse(req.query);
       const { rows } = await pool.query(
-        `SELECT p.id, p.bill_id, p.payment_date, p.amount, p.payment_method, p.reference,
+        `SELECT p.id, p.bill_id, p.payment_date::date::text AS payment_date, p.amount,
+                p.payment_method, p.reference, p.kind, p.status,
                 b.vendor_name, b.bill_number, b.currency
            FROM bill_payments p JOIN vendor_bills b ON b.id = p.bill_id
-          WHERE b.company_id = $1 AND b.status IN ('paid', 'partial')
+          WHERE b.company_id = $1
             AND ($2::uuid IS NULL OR (p.payment_date, p.id) < (
               SELECT pivot.payment_date, pivot.id
                 FROM bill_payments pivot JOIN vendor_bills owner ON owner.id = pivot.bill_id

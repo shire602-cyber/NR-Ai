@@ -93,6 +93,7 @@ async function open(page, route, lang, finalRoute = route) {
     if (route.includes("report=")) await page.getByTestId("button-back-to-report-center").waitFor();
     else await page.getByTestId("report-catalogue").waitFor();
   }
+  if (route === "/bill-pay?tab=summary") await page.getByTestId("bill-summary-balances").waitFor();
   if (route === "/financial-statements") await page.getByTestId("pl-total-revenue").waitFor();
   assert.equal(await page.getByTestId("page-not-found").count(), 0);
   const layout = await page.evaluate(() => {
@@ -104,7 +105,18 @@ async function open(page, route, lang, finalRoute = route) {
   assert.ok(layout.overflow <= 1, `${route} overflows by ${layout.overflow}px`);
 }
 
-async function bankFlow(page, lang, name) {
+async function selectCompany(page, companyId, notify = true) {
+  await page.evaluate(
+    ({ companyId, notify }) => {
+      const key = "muhasib_active_company_id";
+      localStorage.setItem(key, companyId);
+      if (notify) window.dispatchEvent(new StorageEvent("storage", { key }));
+    },
+    { companyId, notify }
+  );
+}
+
+async function bankFlow(page, lang, name, companyId, otherCompanyId) {
   await page.getByTestId("button-import-transactions").click();
   const file = page.getByTestId("input-bank-statement-file");
   assert.equal(await file.getAttribute("accept"), ".csv,text/csv");
@@ -156,6 +168,26 @@ async function bankFlow(page, lang, name) {
   await file.setInputFiles(statement);
   await page.getByTestId("panel-statement-mapper").waitFor();
   await capture(page, `${name}-bank-csv-preview`);
+  await selectCompany(page, otherCompanyId, false);
+  page.on("request", watch);
+  await confirm.click();
+  await page.getByTestId("text-statement-preview-error").waitFor();
+  page.off("request", watch);
+  assert.ok(!requests.some((url) => url.endsWith("/bank-statements/import")));
+  await selectCompany(page, otherCompanyId);
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page.getByTestId("button-import-transactions").click();
+  await page.getByTestId("select-import-bank-account").click();
+  await page.getByRole("option").first().click();
+  assert.equal(await page.getByTestId("panel-statement-mapper").count(), 0);
+  assert.ok(await confirm.isDisabled());
+  await selectCompany(page, companyId);
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page.getByTestId("button-import-transactions").click();
+  await page.getByTestId("select-import-bank-account").click();
+  await page.getByRole("option").first().click();
+  await file.setInputFiles(statement);
+  await page.getByTestId("panel-statement-mapper").waitFor();
   await confirm.click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   await page.getByText(description, { exact: true }).filter({ visible: true }).first().waitFor();
@@ -163,7 +195,7 @@ async function bankFlow(page, lang, name) {
   await page.waitForLoadState("networkidle");
 }
 
-async function manualReceiptFlow(page, companyId, token, lang, name) {
+async function manualReceiptFlow(page, companyId, otherCompanyId, token, lang, name) {
   assert.equal((await checked(token, "GET", "/api/ocr/status")).aiConfigured, false);
   const image = await sharp({
     create: { width: 160, height: 200, channels: 3, background: "#e0e8e0" },
@@ -200,11 +232,7 @@ async function manualReceiptFlow(page, companyId, token, lang, name) {
     }
   };
   page.on("request", watch);
-  await page.evaluate(() => {
-    const key = "muhasib_active_company_id";
-    localStorage.setItem(key, crypto.randomUUID());
-    window.dispatchEvent(new StorageEvent("storage", { key }));
-  });
+  await selectCompany(page, otherCompanyId, false);
   await page.getByTestId("button-submit-manual-expense").click();
   await page
     .getByText(
@@ -213,11 +241,13 @@ async function manualReceiptFlow(page, companyId, token, lang, name) {
     .first()
     .waitFor();
   assert.deepEqual(receiptWrites, []);
-  await page.evaluate((origin) => {
-    const key = "muhasib_active_company_id";
-    localStorage.setItem(key, origin);
-    window.dispatchEvent(new StorageEvent("storage", { key }));
-  }, companyId);
+  await selectCompany(page, otherCompanyId);
+  await page.getByTestId("dialog-manual-expense").waitFor({ state: "hidden" });
+  assert.equal(await page.getByTestId("receipt-card-0").count(), 0);
+  await selectCompany(page, companyId);
+  await page.getByTestId("button-manual-receipt-1").click();
+  await page.getByTestId("input-manual-merchant").fill(merchant);
+  await page.getByTestId("input-manual-amount").fill("125");
   page.off("request", watch);
   await page.getByTestId("button-submit-manual-expense").click();
   await page.getByTestId("dialog-manual-expense").waitFor({ state: "hidden" });
@@ -228,7 +258,7 @@ async function manualReceiptFlow(page, companyId, token, lang, name) {
   );
 }
 
-async function ocrReview(page, lang, name) {
+async function ocrReview(page, lang, name, token, companyId, otherCompanyId) {
   // Exercise review using a local fixture response. The browser never contacts an OCR provider.
   const statusPattern = "**/api/ocr/status";
   const processPattern = "**/api/ocr/process";
@@ -275,7 +305,10 @@ async function ocrReview(page, lang, name) {
     await merchantInput.waitFor();
     assert.equal(await merchantInput.inputValue(), merchant);
     await merchantInput.fill(lang === "ar" ? "مكتبة الواحة الجديدة" : "New Oasis Stationery");
-    assert.ok(await page.getByTestId("input-amount-0").isVisible());
+    await page.getByTestId("input-amount-0").fill("95");
+    const invoiceNumber = page.locator('[id="ocr-number-0"]');
+    await invoiceNumber.fill("OCR-95");
+    assert.equal(await page.locator('[id="ocr-subtotal-0"]').inputValue(), "90");
     assert.match(
       await page.getByTestId("text-classifier-why-0").innerText(),
       lang === "ar" ? /قواعد شركتك/ : /your company rules/
@@ -304,6 +337,26 @@ async function ocrReview(page, lang, name) {
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     await page.getByTestId("receipt-card-0").scrollIntoViewIfNeeded();
     await capture(page, `${name}-receipt-ocr-review`);
+    const exportRequests = [];
+    const watchExport = (request) => {
+      if (request.url().endsWith("/api/ocr/export-excel")) exportRequests.push(request.url());
+    };
+    page.on("request", watchExport);
+    await selectCompany(page, otherCompanyId, false);
+    await page.getByTestId("button-download-ocr-excel").click();
+    await page
+      .getByText(
+        lang === "ar" ? /تنتمي هذه المسودة إلى شركة أخرى/ : /This draft belongs to another company/
+      )
+      .first()
+      .waitFor();
+    assert.deepEqual(exportRequests, []);
+    page.off("request", watchExport);
+    await selectCompany(page, otherCompanyId);
+    await page.getByTestId("receipt-card-0").waitFor({ state: "hidden" });
+    assert.equal(await page.getByTestId("button-download-ocr-excel").count(), 0);
+    await selectCompany(page, companyId);
+    await page.getByTestId("receipt-card-0").waitFor();
     await page.getByTestId("input-file").setInputFiles({
       name: "keep-pending.png",
       mimeType: "image/png",
@@ -312,9 +365,24 @@ async function ocrReview(page, lang, name) {
         .toBuffer(),
     });
     await page.getByTestId("receipt-card-1").waitFor();
+    const auditResponse = page.waitForResponse((response) =>
+      response.url().endsWith("/review-decision")
+    );
     await page.getByTestId("button-save-all").click();
     await page.getByTestId("receipt-card-1").waitFor({ state: "hidden" });
     assert.ok(await page.getByTestId("button-manual-receipt-0").isVisible());
+    assert.ok((await auditResponse).ok());
+    const saved = (await checked(token, "GET", `/api/companies/${companyId}/receipts`)).find(
+      (row) => row.invoiceNumber === "OCR-95"
+    );
+    assert.ok(saved);
+    assert.equal(Number(saved.amount) + Number(saved.vatAmount), 95);
+    assert.equal(Number(saved.vatAmount), 5);
+    const reviewLog = await db.query(
+      "SELECT details::jsonb -> 'after' AS after FROM audit_logs WHERE resource_id = $1 AND action = 'receipt.ai_review'",
+      [saved.id]
+    );
+    assert.equal(reviewLog.rows[0].after.decision, "corrected");
   } finally {
     await page.unroute(statusPattern);
     await page.unroute(processPattern);
@@ -441,6 +509,29 @@ async function run(browser, lang, device) {
   const { token } = await checked("", "POST", "/api/auth/login", { email, password: PASSWORD });
   const [{ id: companyId }] = await checked(token, "GET", "/api/companies");
   const company = `/api/companies/${companyId}`;
+  const otherEmail = `second-company+${runId}@example.test`;
+  await checked("", "POST", "/api/auth/register", {
+    email: otherEmail,
+    password: PASSWORD,
+    name: "Second Owner",
+    companyName: "Second Supplier",
+  });
+  const { token: otherToken } = await checked("", "POST", "/api/auth/login", {
+    email: otherEmail,
+    password: PASSWORD,
+  });
+  const [{ id: otherCompanyId }] = await checked(otherToken, "GET", "/api/companies");
+  await checked(otherToken, "POST", `/api/companies/${otherCompanyId}/onboarding/complete`, {});
+  await checked(otherToken, "POST", `/api/companies/${otherCompanyId}/bank-accounts`, {
+    nameEn: localized("Second operating account", "الحساب التشغيلي الثاني"),
+    bankName: "Emirates NBD",
+    currency: "AED",
+  });
+  await db.query(
+    `INSERT INTO company_users (company_id, user_id, role)
+    SELECT $1, id, 'owner' FROM users WHERE email = $2`,
+    [otherCompanyId, email]
+  );
 
   const context = await browser.newContext({
     ...viewports[device],
@@ -478,7 +569,7 @@ async function run(browser, lang, device) {
       } catch (observed) {
         console.error(observed.message);
       }
-      console.error(`FAIL ${name} ${label}: ${error.message}`);
+      console.error(`FAIL ${name} ${label}: ${error.stack ?? error.message}`);
       process.exitCode = 1;
     }
   }
@@ -488,6 +579,7 @@ async function run(browser, lang, device) {
       await page.getByTestId("signup-plan-step").waitFor();
     });
     await login(context, email);
+    await selectCompany(page, companyId);
     await screen("/onboarding", "onboarding", async () => {
       await page.getByTestId("onboarding-express").waitFor();
     });
@@ -504,6 +596,32 @@ async function run(browser, lang, device) {
       bankName: "Emirates NBD",
       currency: "AED",
     });
+
+    const exampleBill = await checked(token, "POST", `${company}/bills`, {
+      vendor_name: localized("Palm Stationery", "مكتبة النخيل"),
+      vendor_trn: "100000000000029",
+      bill_number: "PALM-01",
+      bill_date: "2026-11-10",
+      due_date: "2026-12-15",
+      line_items: [
+        {
+          description: localized("Stationery", "قرطاسية"),
+          quantity: 1,
+          unit_price: 100,
+          vat_rate: 5,
+        },
+      ],
+    });
+    const bill = `/api/bills/${exampleBill.id}`;
+    await checked(token, "POST", `${bill}/approve`, {});
+    const paid = await checked(token, "POST", `${bill}/payments`, {
+      payment_date: "2026-11-14",
+      amount: 105,
+    });
+    const reversed = await checked(token, "POST", `${bill}/payments/${paid.payment.id}/void`, {
+      reason: "Receipt for supplier correction",
+    });
+    assert.equal(reversed.bill_status, "approved");
 
     for (const [route, label] of [
       ["/dashboard", "dashboard"],
@@ -523,17 +641,28 @@ async function run(browser, lang, device) {
       ["/settings/security", "settings-security"],
       ["/bank-accounts", "bank-accounts"],
     ])
-      await screen(route, label);
+      await screen(
+        route,
+        label,
+        label === "bill-payments"
+          ? async () => {
+              await page.getByText(localized("Voided", "ملغاة"), { exact: true }).waitFor();
+              await page.getByText(localized("Reversal", "قيد عكسي"), { exact: true }).waitFor();
+            }
+          : undefined
+      );
 
     await screen("/receipts", "receipts", () =>
-      manualReceiptFlow(page, companyId, token, lang, name)
+      manualReceiptFlow(page, companyId, otherCompanyId, token, lang, name)
     );
-    await screen("/receipts", "receipt-ocr", () => ocrReview(page, lang, name));
+    await screen("/receipts", "receipt-ocr", () =>
+      ocrReview(page, lang, name, token, companyId, otherCompanyId)
+    );
     await retryReceiptList(context, lang);
     console.log(`PASS ${name} receipt-retry`);
     await screen("/bank-reconciliation", "bank", async () => {
       await page.getByText(copy[lang].bank, { exact: true }).first().waitFor();
-      await bankFlow(page, lang, name);
+      await bankFlow(page, lang, name, companyId, otherCompanyId);
     });
     let providerRequests = 0;
     const providerUrl = "**/api/bank/providers";
@@ -604,8 +733,35 @@ async function run(browser, lang, device) {
       }
     );
     assert.ok(accept.status < 300, `Portal invitation acceptance returned ${accept.status}`);
+    const secondContact = await checked(
+      otherToken,
+      "POST",
+      `/api/companies/${otherCompanyId}/customer-contacts`,
+      {
+        name: "Second Portal Contact",
+        email: contactEmail,
+      }
+    );
+    const bound = await db.query(
+      `SELECT a.user_id, a.id FROM customer_portal_accounts a JOIN users u ON u.id = a.user_id
+       WHERE a.company_id = $1 AND u.email = $2`,
+      [companyId, contactEmail]
+    );
+    const firstBinding = bound.rows[0].id;
+    const second = await db.query(
+      `INSERT INTO customer_portal_accounts (user_id, company_id, contact_id)
+       VALUES ($1, $2, $3) RETURNING id`,
+      [bound.rows[0].user_id, otherCompanyId, secondContact.id]
+    );
+    const otherBinding = second.rows[0].id;
+    const selectSupplier = (id) =>
+      page.evaluate((account) => {
+        localStorage.setItem("muhasib.portalAccount", account);
+      }, id);
+
     await context.clearCookies();
     await login(context, contactEmail);
+    await selectSupplier(firstBinding);
     for (const section of [
       "dashboard",
       "invoices",
@@ -616,7 +772,41 @@ async function run(browser, lang, device) {
     ]) {
       await screen(
         section === "dashboard" ? "/client-portal" : `/client-portal/${section}`,
-        `portal-${section}`
+        `portal-${section}`,
+        section === "messages"
+          ? async () => {
+              const message = localized("Message for the first supplier", "رسالة للمورد الأول");
+              await page.getByRole("textbox").last().fill(message);
+              await selectSupplier(otherBinding);
+              const sent = page.waitForResponse(
+                (response) =>
+                  response.url().endsWith("/api/client-portal/messages") &&
+                  response.request().method() === "POST"
+              );
+              await page.getByTestId("button-portal-send").click();
+              assert.equal((await (await sent).json()).companyId, companyId);
+              await selectSupplier(firstBinding);
+            }
+          : section === "documents"
+            ? async () => {
+                const choosing = page.waitForEvent("filechooser");
+                await page.getByTestId("button-portal-upload").click();
+                const chooser = await choosing;
+                await selectSupplier(otherBinding);
+                const upload = page.waitForResponse(
+                  (response) =>
+                    response.url().endsWith("/api/client-portal/documents") &&
+                    response.request().method() === "POST"
+                );
+                await chooser.setFiles({
+                  name: "scoped-document.txt",
+                  mimeType: "text/plain",
+                  buffer: Buffer.from("Document belongs to the first supplier."),
+                });
+                assert.equal((await (await upload).json()).companyId, companyId);
+                await selectSupplier(firstBinding);
+              }
+            : undefined
       );
     }
   } finally {

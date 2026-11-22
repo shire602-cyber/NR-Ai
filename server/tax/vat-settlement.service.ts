@@ -2,7 +2,7 @@
  * VAT return settlement (accounting round A integration; A2 H8 follow-up).
  *
  * A2 made 2020 Output VAT / 1050 Input VAT control accounts: a manual journal on them needs a
- * reasoned adjustment. Paying the FTA (or receiving a refund) for a submitted / filed return is
+ * reasoned adjustment. Paying the FTA (or receiving a refund) for a return filed in EmaraTax is
  * not an adjustment, so it posts through this seam, from the return's own figures:
  *
  *   Dr 2020 Output VAT          Box 12 (total VAT due)
@@ -22,16 +22,16 @@ import { pool } from "../db";
 import { recordAudit } from "../services/audit.service";
 import { postJournal, reverseBySource, withLedgerTx, type PostJournalLineInput } from "../ledger";
 import { fromFils, toFils } from "../../shared/money";
+import { isVatFilingRecorded } from "../../shared/vat-filing-status";
 import { VAT_SETTLEMENT_SOURCE } from "./vat-reconciliation";
 
 export { VAT_SETTLEMENT_SOURCE };
-
-const SETTLEABLE = new Set(["submitted", "filed"]);
 
 interface ReturnRow {
   id: string;
   company_id: string;
   status: string;
+  fta_reference_number: string | null;
   period_start: string;
   period_end: string;
   box12: string;
@@ -43,7 +43,7 @@ interface ReturnRow {
 
 async function loadReturn(companyId: string, vatReturnId: string): Promise<ReturnRow> {
   const { rows } = await pool.query(
-    `SELECT id, company_id, status, period_start::date::text AS period_start,
+    `SELECT id, company_id, status, fta_reference_number, period_start::date::text AS period_start,
             period_end::date::text AS period_end, box12_total_due_tax::text AS box12,
             box13_recoverable_tax::text AS box13, box14_payable_tax::text AS box14,
             declaration_date::date::text AS filed_on
@@ -154,12 +154,12 @@ export async function settleVatReturn(input: {
   req?: Request;
 }) {
   const ret = await loadReturn(input.companyId, input.vatReturnId);
-  if (!SETTLEABLE.has(ret.status)) {
+  if (ret.status === "amended" || !isVatFilingRecorded(ret.status, ret.fta_reference_number)) {
     throw new DomainError(
       "VAT_RETURN_NOT_SUBMITTED",
       409,
       { status: ret.status },
-      "Submit the VAT return before recording its payment or refund"
+      "Record the EmaraTax filing before recording the payment or refund"
     );
   }
   if (input.date <= ret.period_end) {
@@ -174,7 +174,7 @@ export async function settleVatReturn(input: {
   // declared, so it cannot predate the filing recorded on EmaraTax (the payable tax is the one the
   // filed return states). A payment made before filing is a payment on account:
   // record it once the return is filed. Without a stated filing date nothing is checked.
-  if (ret.status === "filed" && ret.filed_on && input.date < ret.filed_on) {
+  if (ret.filed_on && input.date < ret.filed_on) {
     throw new DomainError(
       "VAT_SETTLEMENT_BEFORE_FILING",
       422,

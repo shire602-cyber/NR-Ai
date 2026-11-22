@@ -12,6 +12,7 @@ export interface ClientStats {
   lastBankActivityDate: string | null;
   vatStatus: {
     status: string;
+    filingRecorded?: boolean;
     dueDate: string;
     periodEnd: string;
   } | null;

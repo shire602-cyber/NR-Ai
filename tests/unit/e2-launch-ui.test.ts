@@ -163,7 +163,7 @@ describe("[E2][J3-r2] VAT return after 'ready'", () => {
   });
 
   it("a refund return offers Record refund", async () => {
-    await renderVat({ status: "filed", box14PayableTax: -190 });
+    await renderVat({ status: "filed", ftaReferenceNumber: "ET-1", box14PayableTax: -190 });
     const btn = all(`button-record-settlement-${RID}`)[0];
     expect(btn.textContent).toMatch(/Record refund/);
   });
@@ -171,6 +171,7 @@ describe("[E2][J3-r2] VAT return after 'ready'", () => {
   it("a paid return shows Paid, the last checklist step done, and offers a reversal", async () => {
     await renderVat({
       status: "filed",
+      ftaReferenceNumber: "ET-1",
       paymentStatus: "paid",
       paymentDate: "2026-10-20T00:00:00Z",
     });

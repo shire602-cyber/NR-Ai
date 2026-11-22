@@ -266,12 +266,7 @@ export function registerBankRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const connection = await ownedConnection(req, req.params.id);
       if (connection.provider === "manual")
-        throw new DomainError(
-          "BANK_FEED_NOT_SUPPORTED",
-          400,
-          undefined,
-          "This connection is statement-only"
-        );
+        throw new DomainError("BANK_FEED_NOT_SUPPORTED", 400, undefined, bankCsvWorkflow.en);
       const result = await syncConnection(connection, {
         from: req.body.fromDate,
         to: req.body.toDate,

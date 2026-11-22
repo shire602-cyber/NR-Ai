@@ -55,7 +55,7 @@ export function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats["vatS
   const now = new Date();
   const daysUntilDue = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (vatStatus.status === "filed" || vatStatus.status === "submitted") {
+  if (vatStatus.filingRecorded) {
     return (
       <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30">
         <T k="pages.filed" />

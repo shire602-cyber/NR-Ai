@@ -2,7 +2,7 @@
 
 The screenshots show the production client build against disposable Postgres data. Each screen was opened at 1440 × 900 and 390 × 844 in English and Arabic RTL.
 
-The browser test checks page rendering, locale and direction, horizontal overflow, console errors and failed requests. It covers CSV preview and import, rejection of a PDF before preview, manual receipt entry with a stored image, and localized OCR review using a simulated response. A separate probe injects a receipt-list outage and verifies recovery through Retry.
+The browser test checks page rendering, locale and direction, horizontal overflow, console errors and failed requests. It covers CSV preview and import, rejection of a PDF before preview, manual receipt entry with a stored image, and localized OCR review using a simulated response. A separate probe injects a receipt-list outage and verifies recovery through Retry. The fixtures switch between authorized companies during CSV import and receipt review, then switch supplier selection during a portal message and file upload. Payment history shows a voided payment and its reversal, and the bill summary waits for balances before capture.
 
 The invoice email comes from the real local outbox. The test verifies the provider-free delivery status and opens the invoice link in a separate signed-out browser. The email screenshot shortens the printed share URL.
 

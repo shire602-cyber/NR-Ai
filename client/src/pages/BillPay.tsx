@@ -296,6 +296,8 @@ interface BillPayment {
   payment_date: string;
   amount: string;
   payment_method: string;
+  kind: "payment" | "reversal" | "vendor_credit" | "prepayment";
+  status: "active" | "voided";
   reference: string | null;
   notes: string | null;
   created_at: string;
@@ -2096,7 +2098,7 @@ export default function BillPay() {
                     <T k="pages.amount" />
                   </TableHead>
                   <TableHead>
-                    <T k="pages.method" />
+                    <T k="screens.billHistoryTypeAndStatus" />
                   </TableHead>
                   <TableHead>
                     <T k="pages.reference" />
@@ -2128,8 +2130,18 @@ export default function BillPay() {
                       className="font-medium"
                       data-cell="amount"
                     />
-                    <TableCell data-nowrap="" className="text-muted-foreground">
-                      {paymentMethodLabel(payment.payment_method || "bank_transfer")}
+                    <TableCell
+                      data-cell="status"
+                      data-nowrap=""
+                      className="text-muted-foreground max-md:text-caption"
+                    >
+                      <div>{t[`screens.billHistoryKind.${payment.kind}`]}</div>
+                      <div>{t[`screens.billHistoryStatus.${payment.status}`]}</div>
+                      {payment.kind === "payment" && payment.payment_method && (
+                        <div className="hidden md:block">
+                          {paymentMethodLabel(payment.payment_method)}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell data-nowrap="" className="text-muted-foreground">
                       <span dir="ltr" className="[unicode-bidi:isolate]">
@@ -2163,7 +2175,10 @@ export default function BillPay() {
           {summaryError && !summary ? (
             <ErrorState compact onRetry={() => void refetchSummary()} />
           ) : (
-            <div className="grid grid-cols-2 gap-4 xl:grid-cols-4 mobile-keep-cols">
+            <div
+              className="grid grid-cols-2 gap-4 xl:grid-cols-4 mobile-keep-cols"
+              data-testid={summary ? "bill-summary-balances" : undefined}
+            >
               <StatCard
                 label={t["pages.pending"]}
                 value={<Money amount={summary?.pending.total || 0} />}

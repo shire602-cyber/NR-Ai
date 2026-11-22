@@ -1,4 +1,5 @@
 {
+  "pageLabels.receiptAmountsInvalid": "أدخل إجمالي إيصال أكبر من الضريبة وتحقق من المبلغ قبل الضريبة وقيمتها.",
   "pageLabels.receiptDraftCompanyChanged": "تنتمي هذه المسودة إلى شركة أخرى. عد إلى تلك الشركة لحفظها.",
   "pageLabels.receiptVatCurrency": "مبلغ ضريبة القيمة المضافة ({currency})",
   "pageLabels.receiptIssueMissingConfidence": "لم تُبلغ أداة قراءة الإيصال عن درجة الثقة.",

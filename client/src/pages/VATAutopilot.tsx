@@ -42,7 +42,7 @@ import { AlertTriangle, CheckCircle2, Clock, FileText, Send, Loader2, XCircle } 
 
 // ─── Types matching the server's VAT autopilot service ───────────────────────
 
-type VatPeriodStatus = "draft" | "ready" | "submitted" | "accepted";
+type VatPeriodStatus = "draft" | "ready" | "filed" | "paid";
 
 interface DeadlineStatus {
   daysUntilDue: number;
@@ -137,8 +137,8 @@ const STATUS_VARIANT: Record<VatPeriodStatus, "default" | "secondary" | "destruc
   {
     draft: "outline",
     ready: "default",
-    submitted: "secondary",
-    accepted: "secondary",
+    filed: "secondary",
+    paid: "secondary",
   };
 
 const LEVEL_BADGE: Record<DeadlineStatus["level"], { labelKey: string; className: string }> = {
@@ -188,8 +188,8 @@ const ADJUSTMENT_BOXES = [
 const STATUS_KEY: Record<VatPeriodStatus, string> = {
   draft: "compliance.autopilotStatusDraft",
   ready: "compliance.autopilotStatusReady",
-  submitted: "compliance.autopilotStatusSubmitted",
-  accepted: "compliance.autopilotStatusAccepted",
+  filed: "compliance.autopilotStageFiled",
+  paid: "compliance.autopilotStagePaid",
 };
 
 const FREQUENCY_KEY: Record<VatPeriodSummary["frequency"], string> = {
@@ -712,7 +712,7 @@ export function VatPeriodsPanel() {
                   the Returns tab (one state machine), so this links there instead of marking a
                   period submitted in one click. */}
               {currentPeriodId &&
-                (currentPeriodStatus === "ready" || currentPeriodStatus === "submitted") && (
+                (currentPeriodStatus === "ready" || currentPeriodStatus === "filed") && (
                   <Button asChild variant="secondary" data-testid="link-open-vat-return">
                     <Link href="/vat-filing?tab=returns">
                       <Send className="h-4 w-4 me-2" />
@@ -720,10 +720,10 @@ export function VatPeriodsPanel() {
                     </Link>
                   </Button>
                 )}
-              {currentPeriodId && currentPeriodStatus === "accepted" && (
+              {currentPeriodId && currentPeriodStatus === "paid" && (
                 <Badge variant="secondary" className="text-xs">
                   <CheckCircle2 className="h-3 w-3 me-1" />
-                  <T k="pageLabels.acceptedByFta" />
+                  <T k="compliance.autopilotStagePaid" />
                 </Badge>
               )}
             </div>

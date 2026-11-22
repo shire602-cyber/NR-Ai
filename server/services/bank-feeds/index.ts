@@ -4,8 +4,7 @@
  *  - connect refuses with 503 BANK_FEED_NOT_CONFIGURED when the provider has no credentials
  *  - the OAuth state is random, stored as a SHA-256 hash, single-use, 10-minute expiry, bound to
  *    company + user + provider, and verified on callback (400 INVALID_OAUTH_STATE otherwise)
- *  - the redirect URI must be on an allow-list (BANK_FEED_REDIRECT_URIS, else FRONTEND_URL /
- *    AUTH_PUBLIC_URL + /bank-feeds/callback)
+ *  - integration callbacks require an explicit BANK_FEED_REDIRECT_URIS entry
  *  - tokens are stored only through storage.createBankConnection / updateBankConnectionTokens,
  *    which encrypt with server/services/secret-vault.ts; API responses never include them
  *  - scheduled sync (job "bankFeeds.sync") dedupes by provider transaction id and emits
@@ -92,32 +91,24 @@ export function providerStatuses(): ProviderStatus[] {
 
 /** Exact redirect URIs the connect flow may send the user back to. */
 export function allowedRedirectUris(): string[] {
-  const explicit = (process.env.BANK_FEED_REDIRECT_URIS ?? "")
+  return (process.env.BANK_FEED_REDIRECT_URIS ?? "")
     .split(",")
     .map((s) => s.trim())
-    .filter(Boolean);
-  if (explicit.length) return explicit;
-  const out: string[] = [];
-  for (const base of [process.env.FRONTEND_URL, process.env.AUTH_PUBLIC_URL]) {
-    if (!base) continue;
-    try {
-      out.push(new URL("/bank-feeds/callback", base).toString());
-    } catch {
-      /* ignore malformed env */
-    }
-  }
-  return out;
+    .filter((uri) => {
+      try {
+        const url = new URL(uri);
+        const path = decodeURIComponent(url.pathname).replace(/\/+$/, "").toLowerCase();
+        return path !== "/bank-feeds/callback";
+      } catch {
+        return false;
+      }
+    });
 }
 
 function assertAllowedRedirect(uri: string): void {
   const allowed = allowedRedirectUris();
   if (!allowed.includes(uri)) {
-    throw new DomainError(
-      "REDIRECT_URI_NOT_ALLOWED",
-      400,
-      { allowed },
-      "The redirect URI is not on the bank-feed allow-list"
-    );
+    throw new DomainError("REDIRECT_URI_NOT_ALLOWED", 400, { allowed }, bankCsvWorkflow.en);
   }
 }
 
@@ -188,13 +179,9 @@ export async function completeCallback(input: {
     )
     .returning();
   if (!row) {
-    throw new DomainError(
-      "INVALID_OAUTH_STATE",
-      400,
-      undefined,
-      "The bank connection request expired or did not start here. Start again."
-    );
+    throw new DomainError("INVALID_OAUTH_STATE", 400, undefined, bankCsvWorkflow.en);
   }
+  assertAllowedRedirect(row.redirectUri);
   assertConfigured(adapter);
   let tokens: FeedTokens;
   let accounts;
@@ -264,12 +251,7 @@ export async function syncConnection(
   const adapter = getAdapter(connection.provider);
   assertConfigured(adapter);
   if (!connection.bankAccountId) {
-    throw new DomainError(
-      "BANK_FEED_ACCOUNT_NOT_LINKED",
-      409,
-      undefined,
-      "Link this feed to a bank account before syncing"
-    );
+    throw new DomainError("BANK_FEED_ACCOUNT_NOT_LINKED", 409, undefined, bankCsvWorkflow.en);
   }
   const ba = await storage.getBankAccountById(connection.bankAccountId, connection.companyId);
   if (!ba) throw new DomainError("BANK_ACCOUNT_NOT_FOUND", 404);

@@ -48,6 +48,7 @@ import { DataTableCard } from "@/components/ui/data-table";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActionButton } from "@/components/ui/row-actions";
 import { useToast } from "@/hooks/use-toast";
+import { getActiveCompanyId, resolveActiveCompany } from "@/lib/activeCompany";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
@@ -281,13 +282,20 @@ function downloadSampleBankCsv() {
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function BankReconciliation() {
+  const company = useDefaultCompany();
+  return <CompanyBankReconciliation key={company.companyId} company={company} />;
+}
+
+function CompanyBankReconciliation({ company }: { company: ReturnType<typeof useDefaultCompany> }) {
   const { t, locale } = useTranslation();
   const { gate } = useCompanyPermission();
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId, companies, isLoading: isLoadingCompany } = company;
+  const isActive = () =>
+    !!companyId && resolveActiveCompany(companies, getActiveCompanyId())?.id === companyId;
 
   const [selectedBankAccount, setSelectedBankAccount] = useState<string>("");
-  // `?import=1` (e.g. from Bank feeds) opens the statement import straight away.
+  // `?import=1` opens the statement import straight away.
   const [importDialogOpen, setImportDialogOpen] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -424,7 +432,10 @@ export default function BankReconciliation() {
       mapping?: Partial<Record<MapperField, number | null>>;
       headerRow?: number;
       acknowledgeAmbiguity?: boolean;
-    }) => apiRequest("POST", `/api/companies/${companyId}/bank-statements/import`, payload),
+    }) => {
+      if (!isActive()) throw new Error(t["banking.import.companyChanged"]);
+      return apiRequest("POST", `/api/companies/${companyId}/bank-statements/import`, payload);
+    },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
       toast({
@@ -624,22 +635,29 @@ export default function BankReconciliation() {
     overrides: StatementOverrides,
     headerRow?: number
   ) => {
-    if (!companyId) return;
+    if (!companyId || !isActive()) return;
     const request = ++previewRequest.current;
     setPreviewLoading(true);
     setPreviewError(null);
     try {
+      const fileBase64 = await fileToBase64(file).catch(() => null);
+      if (request === previewRequest.current && isActive() && fileBase64 === null) {
+        setStatementPreview(null);
+        setPreviewError(t["banking.import.fileUnreadable"]);
+        return;
+      }
+      if (request !== previewRequest.current || !isActive()) return;
       const preview = (await apiRequest(
         "POST",
         `/api/companies/${companyId}/bank-statements/preview`,
         {
-          fileBase64: await fileToBase64(file),
+          fileBase64,
           fileName: file.name,
           ...overrides,
           ...(overrides.mapping && headerRow ? { headerRow } : {}),
         }
       )) as StatementPreview;
-      if (request === previewRequest.current) setStatementPreview(preview);
+      if (request === previewRequest.current && isActive()) setStatementPreview(preview);
     } catch {
       if (request !== previewRequest.current) return;
       setStatementPreview(null);
@@ -665,7 +683,7 @@ export default function BankReconciliation() {
   };
 
   const handleStatementFile = (file: File | undefined) => {
-    if (!file) return;
+    if (!file || !isActive()) return;
     resetStatementPreview();
     if (!/\.csv$/i.test(file.name)) {
       setPreviewError(t["banking.import.csvRequired"]);
@@ -677,7 +695,7 @@ export default function BankReconciliation() {
 
   const canImport =
     !!importFile &&
-    !!selectedBankAccount &&
+    !!bankAccounts?.some((account) => account.id === selectedBankAccount) &&
     !previewLoading &&
     !!statementPreview &&
     statementPreview.validRows > 0 &&
@@ -685,10 +703,16 @@ export default function BankReconciliation() {
 
   const handleImport = async () => {
     if (!canImport || isImporting) return;
+    if (!isActive()) {
+      setPreviewError(t["banking.import.companyChanged"]);
+      return;
+    }
+    const request = previewRequest.current;
 
     setIsImporting(true);
     try {
       const fileBase64 = await fileToBase64(importFile).catch(() => null);
+      if (request !== previewRequest.current || !isActive()) return;
       if (fileBase64 === null) {
         setStatementPreview(null);
         setPreviewError(t["banking.import.fileUnreadable"]);

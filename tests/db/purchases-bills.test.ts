@@ -380,6 +380,15 @@ describe("W3-B bills: payments", () => {
     });
     expect(v.status, v.text).toBe(200);
     expect(v.body.bill_status).toBe("approved");
+    const history = await t.as.get(`${billsUrl(t)}/all-payments`);
+    expect(history.status, history.text).toBe(200);
+    expect(history.body.items).toHaveLength(2);
+    expect(history.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: p.body.payment.id, kind: "payment", status: "voided" }),
+        expect.objectContaining({ bill_id: bill.id, kind: "reversal", status: "active" }),
+      ])
+    );
     expect(await balanceFils(t, "2010")).toBe(105_000);
     expect(await balanceFils(t, "1020", "debit")).toBe(0);
     expect(
@@ -527,6 +536,7 @@ describe("W3-B debit notes, prepayments, vendors, approval rules, services", () 
       name: "Office rent",
       frequency: "monthly",
       next_run_on: "2026-02-01",
+      end_on: "2026-02-01",
       template: {
         vendor_name: "Landlord LLC",
         category: "rent",
@@ -546,6 +556,12 @@ describe("W3-B debit notes, prepayments, vendors, approval rules, services", () 
       rec.body.id,
     ]);
     expect(next[0].d).toBe("2026-03-01");
+    expect(String(run.body.bill.bill_date).slice(0, 10)).toBe("2026-02-01");
+    const expired = await t.as.post(
+      `/api/companies/${t.company.id}/recurring-bills/${rec.body.id}/run`,
+      {}
+    );
+    expect(expired.body.created).toBe(false);
 
     const receipt = await h.sql<{ id: string }>(
       `INSERT INTO receipts (company_id, merchant, date, amount, vat_amount, currency, uploaded_by)

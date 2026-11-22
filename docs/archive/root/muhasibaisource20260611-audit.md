@@ -307,7 +307,7 @@ Assessment:
 
 Current public positioning from Xero:
 
-- Cloud accounting with bank feeds, invoicing, expenses, bills, payroll,
+- Cloud accounting with bank integrations, invoicing, expenses, bills, payroll,
   analytics, practice tools, app store, mobile, support, and accountant
   collaboration.
 - Xero highlights JAX AI, Syft analytics, Workpapers, Xero HQ, Xero Practice
@@ -316,7 +316,7 @@ Current public positioning from Xero:
 Assessment:
 
 - Muhasib has stronger UAE-specific product intent.
-- Xero is far ahead on maturity, ecosystem, bank feeds, partner network, and
+- Xero is far ahead on maturity, ecosystem, bank integrations, partner network, and
   practice management proof.
 
 ## Feature Scorecard

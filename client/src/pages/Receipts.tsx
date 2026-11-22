@@ -1,5 +1,12 @@
 import { DatePicker } from "@/components/ui/date-picker";
-import { useState, useCallback, useEffect, useMemo } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import {
   FormActions,
   FormErrorSummary,
@@ -93,12 +100,14 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ReceiptAutomation } from "./ReceiptAutopilot";
+import { useReceiptQueue } from "@/components/receipts/ReceiptQueueProvider";
 import { ReceiptLinesDialog, type ReceiptForSplit } from "@/components/receipts/ReceiptLinesDialog";
 import { SiGooglesheets } from "react-icons/si";
 import { VirtualList } from "@/components/VirtualList";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { currencyLabel } from "@/lib/format-money";
-import { getActiveCompanyId } from "@/lib/activeCompany";
+import { getActiveCompanyId, resolveActiveCompany } from "@/lib/activeCompany";
+import { toFilsInput } from "@/lib/receipt-split";
 import { Money } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import {
@@ -169,6 +178,7 @@ function withReviewMeta(data: ExtractedData): ExtractedData {
     original: data.original ?? {
       merchant: data.merchant,
       date: data.date,
+      invoiceNumber: data.invoiceNumber,
       total: data.total,
       vatAmount: data.vatAmount,
       category: data.category,
@@ -176,7 +186,7 @@ function withReviewMeta(data: ExtractedData): ExtractedData {
   };
 }
 
-interface ProcessedReceipt {
+export interface ProcessedReceipt {
   id: string;
   companyId: string;
   file: File;
@@ -437,15 +447,37 @@ function receiptCategoryLabel(t: Record<string, string>, category: string): stri
 }
 
 export default function Receipts() {
+  const company = useDefaultCompany();
+  const key = company.companyId ?? "";
+  const [processedReceipts, setProcessedReceipts] = useReceiptQueue(key);
+  return (
+    <CompanyReceipts
+      key={key}
+      company={company}
+      processedReceipts={processedReceipts}
+      setProcessedReceipts={setProcessedReceipts}
+    />
+  );
+}
+
+function CompanyReceipts({
+  company,
+  processedReceipts,
+  setProcessedReceipts,
+}: {
+  company: ReturnType<typeof useDefaultCompany>;
+  processedReceipts: ProcessedReceipt[];
+  setProcessedReceipts: Dispatch<SetStateAction<ProcessedReceipt[]>>;
+}) {
   const { t, locale } = useTranslation();
   // Receipt-capture strings for the confidence/duplicate/TRN additions (en + ar).
   const tr = useCallback((en: string, ar: string) => (locale === "ar" ? ar : en), [locale]);
   const accountLabel = (a?: { nameEn: string; nameAr?: string | null }) =>
     a ? accountDisplayName(a, locale) : "";
   const { toast } = useToast();
-  const { companyId, companies, isLoading: _isLoadingCompany } = useDefaultCompany();
+  const { companyId, companies, isLoading: _isLoadingCompany } = company;
   const assertDraftCompany = (origin: string) => {
-    const active = getActiveCompanyId() ?? companies?.[0]?.id ?? companyId;
+    const active = resolveActiveCompany(companies, getActiveCompanyId())?.id;
     if (origin !== companyId || origin !== active) {
       throw new Error(t["pageLabels.receiptDraftCompanyChanged"]);
     }
@@ -464,7 +496,6 @@ export default function Receipts() {
     staleTime: 5 * 60 * 1000,
   });
   const autoReadUnavailable = !ocrStatusLoading && ocrStatus?.aiConfigured !== true;
-  const [processedReceipts, setProcessedReceipts] = useState<ProcessedReceipt[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
   const [isSavingAll, setIsSavingAll] = useState(false);
@@ -977,7 +1008,7 @@ export default function Receipts() {
         }
       }
     },
-    [companyId, toast, tr, locale]
+    [companyId, toast, tr, locale, setProcessedReceipts]
   );
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -1324,6 +1355,49 @@ export default function Receipts() {
     return null;
   };
 
+  const amountsFrom = (data: ExtractedData) => {
+    const vat = toFilsInput(String(data.vatAmount ?? 0));
+    const total = toFilsInput(String(data.total ?? data.subtotal ?? 0));
+    const invalidAmounts = t["pageLabels.receiptAmountsInvalid"];
+    if (
+      vat === null ||
+      total === null ||
+      !Number.isSafeInteger(vat) ||
+      !Number.isSafeInteger(total)
+    ) {
+      throw new Error(invalidAmounts);
+    }
+    const net = data.total == null ? total : total - vat;
+    if (net <= 0 || vat > net) throw new Error(invalidAmounts);
+    return { net, vat };
+  };
+
+  const editOcrAmount = (
+    id: string,
+    data: ExtractedData,
+    field: "subtotal" | "vatAmount" | "total",
+    value: string
+  ) => {
+    const input = value === "" ? undefined : Number(value);
+    const vat = field === "vatAmount" ? input : data.vatAmount;
+    const net =
+      field === "subtotal"
+        ? input
+        : (data.subtotal ?? (data.total == null ? undefined : data.total - (data.vatAmount ?? 0)));
+    if (field === "total") {
+      updateReceiptData(id, {
+        total: input,
+        subtotal: input == null ? undefined : Math.round((input - (vat ?? 0)) * 100) / 100,
+      });
+      return;
+    }
+    updateReceiptData(id, {
+      subtotal: net,
+      vatAmount: vat,
+      total: net == null ? undefined : Math.round((net + (vat ?? 0)) * 100) / 100,
+    });
+  };
+
   const updateReceiptData = (id: string, updates: Partial<ExtractedData>) => {
     setProcessedReceipts((prev) =>
       prev.map((receipt) =>
@@ -1406,11 +1480,13 @@ export default function Receipts() {
         assertDraftCompany(receipt.companyId);
         // The server derives companyId/uploader from the session and URL and rejects unknown
         // fields (W2-D), so only the fields the receipt contract accepts are sent.
+        const { net, vat } = amountsFrom(receipt.data);
         const receiptData = {
           merchant: receipt.data!.merchant || "Unknown",
           date: receipt.data!.date || new Date().toISOString().split("T")[0],
-          amount: Number(receipt.data!.subtotal ?? receipt.data!.total) || 0,
-          vatAmount: receipt.data!.vatAmount ? Number(receipt.data!.vatAmount) : null,
+          amount: net / 100,
+          vatAmount: vat / 100,
+          invoiceNumber: receipt.data.invoiceNumber?.trim() || null,
           category: receipt.data!.category || "Uncategorized",
           currency: receipt.data!.currency || "AED",
           imageData: receipt.preview,
@@ -1447,11 +1523,12 @@ export default function Receipts() {
             `/api/companies/${receipt.companyId}/receipts/${created.id}/review-decision`,
             {
               decision: receiptReviewDecision(receipt.data!.original, {
-                merchant: receipt.data!.merchant,
-                date: receipt.data!.date,
-                total: receipt.data!.total,
-                vatAmount: receipt.data!.vatAmount,
-                category: receipt.data!.category,
+                merchant: created.merchant,
+                date: created.date?.slice(0, 10),
+                total: Number(created.amount ?? 0) + Number(created.vatAmount ?? 0),
+                vatAmount: created.vatAmount,
+                invoiceNumber: created.invoiceNumber,
+                category: created.category,
               }),
               band: receipt.data!.confidenceBand,
             }
@@ -1510,19 +1587,6 @@ export default function Receipts() {
     }
   };
 
-  // Warn before navigating away/refreshing while there are extracted-but-unsaved
-  // receipts — they live only in memory until "Save All", so a refresh loses them.
-  const hasUnsavedReceipts = processedReceipts.some((r) => r.status !== "saved");
-  useEffect(() => {
-    if (!hasUnsavedReceipts) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [hasUnsavedReceipts]);
-
   const pendingCount = processedReceipts.filter((r) => r.status === "pending").length;
   const processingCount = processedReceipts.filter((r) => r.status === "processing").length;
   const completedCount = processedReceipts.filter(isReceiptReadyToSave).length;
@@ -1559,7 +1623,18 @@ export default function Receipts() {
     });
   }, [receipts, dateRange.from, dateRange.to]);
 
-  const handleExportExcel = () => {
+  function canExportReceipts(origin: string) {
+    try {
+      assertDraftCompany(origin);
+      return true;
+    } catch {
+      toast({ title: t["pageLabels.receiptDraftCompanyChanged"], variant: "destructive" });
+      return false;
+    }
+  }
+
+  const handleExportExcel = async () => {
+    if (!companyId || !canExportReceipts(companyId)) return;
     if (!filteredReceipts.length) {
       toast({
         variant: "destructive",
@@ -1574,7 +1649,20 @@ export default function Receipts() {
         ? `_${format(dateRange.from, "yyyy-MM-dd")}_to_${format(dateRange.to, "yyyy-MM-dd")}`
         : "";
 
-    exportToExcel([prepareReceiptsForExport(filteredReceipts, locale)], `expenses${dateRangeStr}`);
+    try {
+      await exportToExcel(
+        [prepareReceiptsForExport(filteredReceipts, locale)],
+        `expenses${dateRangeStr}`,
+        () => assertDraftCompany(companyId)
+      );
+    } catch (error) {
+      toast({
+        title: tr("Export failed", "فشل التصدير"),
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+      return;
+    }
     toast({
       title: tr("Export successful", "تم التصدير بنجاح"),
       description: tr(
@@ -1585,6 +1673,7 @@ export default function Receipts() {
   };
 
   const handleExportGoogleSheets = async () => {
+    if (!companyId || !canExportReceipts(companyId)) return;
     if (!companyId || !filteredReceipts.length) {
       toast({
         variant: "destructive",
@@ -1633,6 +1722,7 @@ export default function Receipts() {
   // Server-rendered Excel of the OCR-extracted rows currently on screen
   // (post-extraction, pre-save). Skips rows that haven't completed OCR yet.
   const handleDownloadOcrExcel = async () => {
+    if (!companyId || !canExportReceipts(companyId)) return;
     const rows = processedReceipts
       .filter((r) => r.status === "completed" || r.status === "saved")
       .filter((r) => r.data)
@@ -1652,7 +1742,7 @@ export default function Receipts() {
 
     setIsOcrExporting(true);
     try {
-      await downloadOcrExcel(rows);
+      await downloadOcrExcel(rows, { assertActive: () => assertDraftCompany(companyId) });
       toast({
         title: tr("Excel ready", "ملف Excel جاهز"),
         description: tr(
@@ -1676,6 +1766,7 @@ export default function Receipts() {
   // as the OCR export, so users get a consistent spreadsheet format for both
   // in-flight scans and historical data.
   const handleDownloadReceiptsExcel = async () => {
+    if (!companyId || !canExportReceipts(companyId)) return;
     if (!companyId || !filteredReceipts.length) {
       toast({
         variant: "destructive",
@@ -1688,6 +1779,7 @@ export default function Receipts() {
     try {
       await downloadReceiptsExcel(companyId, {
         ids: filteredReceipts.map((r: any) => r.id),
+        assertActive: () => assertDraftCompany(companyId),
       });
       toast({
         title: tr("Excel ready", "ملف Excel جاهز"),
@@ -2127,22 +2219,20 @@ export default function Receipts() {
                               />
                             </div>
 
-                            {receipt.data.invoiceNumber && (
-                              <div className="space-y-1 sm:col-span-2">
-                                <Label htmlFor={`ocr-number-${index}`}>
-                                  {t["pageLabels.receiptDocumentNumber"]}
-                                </Label>
-                                <Input
-                                  id={`ocr-number-${index}`}
-                                  dir="ltr"
-                                  value={receipt.data.invoiceNumber || ""}
-                                  onChange={(e) =>
-                                    updateReceiptData(receipt.id, { invoiceNumber: e.target.value })
-                                  }
-                                  className="min-h-10"
-                                />
-                              </div>
-                            )}
+                            <div className="space-y-1 sm:col-span-2">
+                              <Label htmlFor={`ocr-number-${index}`}>
+                                {t["pageLabels.receiptDocumentNumber"]}
+                              </Label>
+                              <Input
+                                id={`ocr-number-${index}`}
+                                dir="ltr"
+                                value={receipt.data.invoiceNumber || ""}
+                                onChange={(e) =>
+                                  updateReceiptData(receipt.id, { invoiceNumber: e.target.value })
+                                }
+                                className="min-h-10"
+                              />
+                            </div>
 
                             <div className="space-y-1">
                               <Label htmlFor={`ocr-subtotal-${index}`}>
@@ -2154,9 +2244,12 @@ export default function Receipts() {
                                 id={`ocr-subtotal-${index}`}
                                 value={receipt.data.subtotal ?? receipt.data.total ?? ""}
                                 onChange={(e) =>
-                                  updateReceiptData(receipt.id, {
-                                    subtotal: parseFloat(e.target.value),
-                                  })
+                                  editOcrAmount(
+                                    receipt.id,
+                                    receipt.data!,
+                                    "subtotal",
+                                    e.target.value
+                                  )
                                 }
                                 className="min-h-10"
                               />
@@ -2174,9 +2267,12 @@ export default function Receipts() {
                                 id={`ocr-vat-${index}`}
                                 value={receipt.data.vatAmount ?? ""}
                                 onChange={(e) =>
-                                  updateReceiptData(receipt.id, {
-                                    vatAmount: parseFloat(e.target.value),
-                                  })
+                                  editOcrAmount(
+                                    receipt.id,
+                                    receipt.data!,
+                                    "vatAmount",
+                                    e.target.value
+                                  )
                                 }
                                 className="min-h-10"
                               />
@@ -2192,9 +2288,7 @@ export default function Receipts() {
                                 id={`ocr-total-${index}`}
                                 value={receipt.data.total ?? ""}
                                 onChange={(e) =>
-                                  updateReceiptData(receipt.id, {
-                                    total: parseFloat(e.target.value),
-                                  })
+                                  editOcrAmount(receipt.id, receipt.data!, "total", e.target.value)
                                 }
                                 className="h-8 font-semibold"
                                 data-testid={`input-amount-${index}`}

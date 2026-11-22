@@ -1,4 +1,11 @@
 {
+  "screens.billHistoryTypeAndStatus": "Type and status",
+  "screens.billHistoryKind.payment": "Payment",
+  "screens.billHistoryKind.reversal": "Reversal",
+  "screens.billHistoryKind.vendor_credit": "Vendor credit",
+  "screens.billHistoryKind.prepayment": "Prepayment",
+  "screens.billHistoryStatus.active": "Active",
+  "screens.billHistoryStatus.voided": "Voided",
   "screens.loadMorePayments": "Load more payments",
   "screens.statusAccepted": "Accepted",
   "screens.statusExpired": "Expired",

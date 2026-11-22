@@ -1,4 +1,11 @@
 {
+  "screens.billHistoryTypeAndStatus": "النوع والحالة",
+  "screens.billHistoryKind.payment": "دفعة",
+  "screens.billHistoryKind.reversal": "قيد عكسي",
+  "screens.billHistoryKind.vendor_credit": "إشعار دائن من المورد",
+  "screens.billHistoryKind.prepayment": "دفعة مقدّمة",
+  "screens.billHistoryStatus.active": "نشطة",
+  "screens.billHistoryStatus.voided": "ملغاة",
   "screens.loadMorePayments": "عرض المزيد من المدفوعات",
   "screens.statusAccepted": "مقبول",
   "screens.statusExpired": "منتهي الصلاحية",

@@ -372,14 +372,15 @@ export async function portalAccountsForUser(userId: string): Promise<PortalBindi
  */
 export async function portalAccountForUser(
   userId: string,
-  preferredAccountId?: string | null
+  preferredAccountId?: string | null,
+  requireExplicit = false
 ): Promise<PortalBinding | null> {
   const all = await portalAccountsForUser(userId);
   if (preferredAccountId) {
     const wanted = all.find((b) => b.id === preferredAccountId.toLowerCase());
     if (wanted) return wanted;
   }
-  return all[0] ?? null;
+  return requireExplicit ? null : (all[0] ?? null);
 }
 
 /** Remember the last portal request (at most once every 5 minutes per binding). */

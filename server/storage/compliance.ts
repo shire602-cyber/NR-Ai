@@ -112,6 +112,27 @@ export class ComplianceStorage extends EngagementStorage {
     return vatReturn;
   }
 
+  async recordVatReturnFiling(
+    companyId: string,
+    id: string,
+    previousStatus: string,
+    data: Partial<InsertVatReturn>
+  ): Promise<VatReturn | undefined> {
+    const [updated] = await db
+      .update(vatReturns)
+      .set({ ...data, updatedAt: new Date() })
+      .where(
+        and(
+          eq(vatReturns.id, id),
+          eq(vatReturns.companyId, companyId),
+          eq(vatReturns.status, previousStatus),
+          sql`NULLIF(BTRIM(${vatReturns.ftaReferenceNumber}), '') IS NULL`
+        )
+      )
+      .returning();
+    return updated;
+  }
+
   async deleteVatReturn(id: string): Promise<void> {
     await db.delete(vatReturns).where(eq(vatReturns.id, id));
   }

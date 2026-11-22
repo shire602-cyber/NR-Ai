@@ -31,12 +31,13 @@ export const receipts = pgTable(
       .notNull()
       .references(() => companies.id, { onDelete: "cascade" }),
     merchant: text("merchant"),
+    invoiceNumber: text("invoice_number"),
     date: timestamp("date"),
     amount: money("amount"),
     vatAmount: money("vat_amount"),
     currency: text("currency").default("AED"),
-    exchangeRate: rate("exchange_rate").notNull().default(1), // Rate to AED at time of transaction
-    baseCurrencyAmount: money("base_currency_amount").notNull().default(0), // Amount in AED
+    exchangeRate: rate("exchange_rate").notNull().default(1), // Rate to functional currency at posting
+    baseCurrencyAmount: money("base_currency_amount").notNull().default(0), // Amount in functional currency
     category: text("category"),
     accountId: uuid("account_id").references(() => accounts.id), // Expense account to debit
     paymentAccountId: uuid("payment_account_id").references(() => accounts.id), // Cash/Bank account to credit

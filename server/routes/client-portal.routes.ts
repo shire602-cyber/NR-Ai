@@ -62,9 +62,14 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /**
  * A signed-in user with an active binding to an active contact. The binding is the only source of
  * access: the user's type and any company membership are irrelevant here. `X-Portal-Account`
- * picks one of the user's OWN bindings (a foreign id is ignored).
+ * picks an active binding. Scoped document and message operations require the selected binding.
  */
-async function requirePortalUser(req: Request, res: Response, next: NextFunction): Promise<void> {
+async function requirePortalUser(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  requireBinding = false
+): Promise<void> {
   const user = req.user as { id: string } | undefined;
   if (!user) {
     res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
@@ -72,7 +77,7 @@ async function requirePortalUser(req: Request, res: Response, next: NextFunction
   }
   const header = req.headers["x-portal-account"];
   const preferred = typeof header === "string" && UUID_RE.test(header) ? header : null;
-  const binding = await portalAccountForUser(user.id, preferred);
+  const binding = await portalAccountForUser(user.id, preferred, requireBinding);
   if (!binding) {
     const [removed] = await db
       .select({ id: customerPortalAccounts.id })
@@ -165,11 +170,24 @@ export function registerClientPortalRoutes(app: Express): void {
     },
   ];
 
+  const pinnedReadChain: RequestHandler[] = [
+    authMiddleware as RequestHandler,
+    (req, res, next) => {
+      requirePortalUser(req, res, next, req.get("X-Portal-Account") !== undefined).catch(next);
+    },
+  ];
+  const pinnedWriteChain: RequestHandler[] = [
+    authMiddleware as RequestHandler,
+    (req, res, next) => {
+      requirePortalUser(req, res, next, true).catch(next);
+    },
+  ];
+
   app.get(
     "/api/client-portal/company",
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      const { company, contact } = scopeOf(req);
+      const { company, contact, accountId } = scopeOf(req);
       // The accounting firm serving this client (active engagement), for the portal header.
       const [firm] = await db
         .select({ name: firms.name })
@@ -178,6 +196,7 @@ export function registerClientPortalRoutes(app: Express): void {
         .where(and(eq(firmClientLinks.companyId, company.id), eq(firmClientLinks.status, "active")))
         .limit(1);
       res.json({
+        accountId,
         firmName: firm?.name ?? null,
         id: company.id,
         name: company.name,
@@ -330,7 +349,7 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.get(
     "/api/client-portal/documents",
-    ...chain,
+    ...pinnedReadChain,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, contact } = scopeOf(req);
       res.json(await listVaultDocuments(companyId, { contactId: contact.id }));
@@ -339,10 +358,13 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.post(
     "/api/client-portal/documents",
-    ...chain,
+    ...pinnedWriteChain,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, contact, userId } = scopeOf(req);
+      const { companyId, contact, userId, accountId } = scopeOf(req);
       const { meta, file } = await readValidatedUpload(req);
+      if (!(await portalAccountForUser(userId, accountId, true))) {
+        throw new DomainError("PORTAL_ACCESS_REVOKED", 403);
+      }
       const doc = await createVaultDocument({
         companyId,
         uploadedBy: userId,
@@ -392,7 +414,7 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.get(
     "/api/client-portal/messages",
-    ...chain,
+    ...pinnedReadChain,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, contact } = scopeOf(req);
       const rows = await db
@@ -412,10 +434,10 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.post(
     "/api/client-portal/messages",
-    ...chain,
+    ...pinnedWriteChain,
     strictBody(portalMessageBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, contact, userId } = scopeOf(req);
+      const { companyId, contact, userId, accountId } = scopeOf(req);
       const body = parsedBody<PortalMessageBody>(req);
       if (body.threadId) {
         const [thread] = await db
@@ -431,6 +453,9 @@ export function registerClientPortalRoutes(app: Express): void {
           )
           .limit(1);
         if (!thread) throw new DomainError("THREAD_NOT_FOUND", 404, undefined, "Thread not found");
+      }
+      if (!(await portalAccountForUser(userId, accountId, true))) {
+        throw new DomainError("PORTAL_ACCESS_REVOKED", 403);
       }
       const [message] = await db
         .insert(messages)

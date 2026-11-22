@@ -2,7 +2,7 @@
 // Handlers moved from firm.routes.ts (R20-09); the route registrations (paths and
 // middleware order) stay in firm.routes.ts.
 import type { Request, Response } from "express";
-import { and, count, eq, inArray, lt, lte, max, ne, or, sql } from "drizzle-orm";
+import { and, count, eq, inArray, lt, lte, max, not, sql } from "drizzle-orm";
 import {
   bankTransactions,
   companies,
@@ -12,6 +12,7 @@ import {
 } from "../../../shared/schema";
 import { firmReceivablesAed, sumReceivables } from "../../services/firm/receivables.service";
 import { buildBookkeeperDashboard } from "./bookkeeper-dashboard";
+import { vatFilingRecordedFilter } from "../../tax/vat-filing-filter";
 import { db } from "../../db";
 import { aed, ledgerBalanceCheckByCompany } from "../../reporting";
 import { getAccessibleCompanyIds } from "../../middleware/rbac";
@@ -87,6 +88,7 @@ export const handleGetFirmHealth = async (req: Request, res: Response) => {
     .select({
       companyId: vatReturns.companyId,
       status: vatReturns.status,
+      ftaReferenceNumber: vatReturns.ftaReferenceNumber,
       dueDate: vatReturns.dueDate,
       periodEnd: vatReturns.periodEnd,
       submittedAt: vatReturns.submittedAt,
@@ -108,12 +110,7 @@ export const handleGetFirmHealth = async (req: Request, res: Response) => {
       lastFiledDate: sql<Date | null>`max(coalesce(${vatReturns.submittedAt}, ${vatReturns.updatedAt}))`,
     })
     .from(vatReturns)
-    .where(
-      and(
-        inArray(vatReturns.companyId, clientIds),
-        or(eq(vatReturns.status, "filed"), eq(vatReturns.status, "submitted"))
-      )
-    )
+    .where(and(inArray(vatReturns.companyId, clientIds), vatFilingRecordedFilter))
     .groupBy(vatReturns.companyId)) as LastFiledVatRow[];
 
   // AR health per company: total open AR plus overdue count/value.
@@ -174,6 +171,7 @@ export const handleGetFirmHealth = async (req: Request, res: Response) => {
   type VatRow = {
     companyId: string;
     status: string;
+    ftaReferenceNumber: string | null;
     dueDate: Date;
     periodEnd: Date;
     submittedAt: Date | null;
@@ -284,8 +282,7 @@ export const handleGetFirmHealthDeadlines = async (req: Request, res: Response) 
   const ninetyDaysOut = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
 
   const whereClause = and(
-    ne(vatReturns.status, "filed"),
-    ne(vatReturns.status, "submitted"),
+    not(vatFilingRecordedFilter),
     lte(vatReturns.dueDate, ninetyDaysOut),
     ...(accessibleIds !== null ? [inArray(vatReturns.companyId, accessibleIds)] : [])
   );
@@ -408,8 +405,7 @@ export const handleGetFirmOverview = async (req: Request, res: Response) => {
     .where(
       and(
         inArray(vatReturns.companyId, clientIds),
-        ne(vatReturns.status, "filed"),
-        ne(vatReturns.status, "submitted"),
+        not(vatFilingRecordedFilter),
         lt(vatReturns.dueDate, now)
       )
     )

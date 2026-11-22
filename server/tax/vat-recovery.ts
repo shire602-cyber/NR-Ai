@@ -8,7 +8,8 @@
  *   entertainment            0%
  *   motor vehicle (personal) 0%
  */
-import { pool } from "../db";
+import { sql } from "drizzle-orm";
+import { db, pool } from "../db";
 import { DomainError } from "../errors";
 
 export interface RecoveryRule {
@@ -152,27 +153,15 @@ export interface ReceiptVatTreatment {
 }
 
 /** Persist how a posted receipt's VAT was treated; the VAT engine reads it for Box 9/10. */
-export async function saveReceiptVatTreatment(t: ReceiptVatTreatment): Promise<void> {
+export async function saveReceiptVatTreatment(t: ReceiptVatTreatment, tx = db): Promise<void> {
   const f = (n: number) => (n / 100).toFixed(2);
-  await pool.query(
-    `INSERT INTO receipt_vat_treatments
+  await tx.execute(sql`INSERT INTO receipt_vat_treatments
        (receipt_id, company_id, supply_type, vat_base, recoverable_vat, non_recoverable_vat, net_base, rule_label, lines)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+     VALUES (${t.receiptId},${t.companyId},${t.supplyType},${f(t.vatBaseFils)},${f(t.recoverableVatFils)},
+             ${f(t.nonRecoverableVatFils)},${f(t.netBaseFils)},${t.ruleLabel},${JSON.stringify(t.lines)}::jsonb)
      ON CONFLICT (receipt_id) DO UPDATE SET
        supply_type = EXCLUDED.supply_type, vat_base = EXCLUDED.vat_base,
        recoverable_vat = EXCLUDED.recoverable_vat, non_recoverable_vat = EXCLUDED.non_recoverable_vat,
        net_base = EXCLUDED.net_base, rule_label = EXCLUDED.rule_label, lines = EXCLUDED.lines,
-       updated_at = now()`,
-    [
-      t.receiptId,
-      t.companyId,
-      t.supplyType,
-      f(t.vatBaseFils),
-      f(t.recoverableVatFils),
-      f(t.nonRecoverableVatFils),
-      f(t.netBaseFils),
-      t.ruleLabel,
-      JSON.stringify(t.lines),
-    ]
-  );
+       updated_at = now()`);
 }

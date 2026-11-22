@@ -78,6 +78,16 @@ describe("E3 (J3-r3) VAT periods and deadlines follow the return lifecycle", () 
     expect(prepared.status, prepared.text).toBe(200);
     expect((await q3()).lifecycle).toMatchObject({ stage: "ready", filed: false });
     expect((await card()).periodEnd.slice(0, 10)).toBe("2026-09-30");
+    const bank = await accountByCode(t, "1020");
+    const payment = { date: "2026-10-27", paymentAccountId: bank.id };
+    const blocked = await t.as.post(`/api/vat-returns/${id}/settlement`, payment);
+    expect(blocked.status, blocked.text).toBe(409);
+    expect(blocked.body.code).toBe("VAT_RETURN_NOT_SUBMITTED");
+    const journals = await h.sql(
+      `SELECT id FROM journal_entries WHERE source_id = $1 AND source = 'vat_return_settlement'`,
+      [id]
+    );
+    expect(journals).toHaveLength(0);
     const filed = await t.as.post(`/api/vat-returns/${id}/submit`, {
       ftaReferenceNumber: "ET-2026-Q3-77",
       filedOn: "2026-10-20",
@@ -85,21 +95,17 @@ describe("E3 (J3-r3) VAT periods and deadlines follow the return lifecycle", () 
     expect(filed.status, filed.text).toBe(200);
 
     const afterFiling = await q3();
-    expect(afterFiling.status).toBe("submitted");
+    expect(afterFiling.status).toBe("filed");
     expect(afterFiling.lifecycle).toMatchObject({ stage: "filed", filed: true });
     expect(afterFiling.deadline).toMatchObject({ isOverdue: false, level: "ok" });
 
-    const bank = await accountByCode(t, "1020");
-    const paid = await t.as.post(`/api/vat-returns/${id}/settlement`, {
-      date: "2026-10-27",
-      paymentAccountId: bank.id,
-    });
+    const paid = await t.as.post(`/api/vat-returns/${id}/settlement`, payment);
     expect(paid.status, paid.text).toBe(201);
 
     const done = await q3();
-    expect(done.status).toBe("accepted");
+    expect(done.status).toBe("paid");
     expect(done.lifecycle).toMatchObject({ stage: "paid", filed: true });
-    expect(String(done.lifecycle.paymentDate).slice(0, 10)).toBe("2026-10-27");
+    expect(done.lifecycle.paymentDate).toBe("2026-10-27");
     expect(done.deadline.isOverdue).toBe(false);
     expect(done.outputVat).toBe(1500);
     expect(done.inputVat).toBe(200);

@@ -40,7 +40,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { ServiceScopeBadges } from "./portfolio/badges";
+import { ServiceScopeBadges, VatStatusBadge } from "./portfolio/badges";
 import { ClientDocumentsTab } from "./client-profile/ClientDocumentsTab";
 import { ClientTasksTab } from "./client-profile/ClientTasksTab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -75,6 +75,7 @@ interface ClientStats {
   lastBankActivityDate: string | null;
   vatStatus: {
     status: string;
+    filingRecorded?: boolean;
     dueDate: string;
     periodEnd: string;
   } | null;
@@ -428,20 +429,7 @@ export default function ClientProfile() {
                 </p>
                 {stats.vatStatus ? (
                   <div className="mt-0.5">
-                    <Badge
-                      className={
-                        stats.vatStatus.status === "filed"
-                          ? "bg-success-subtle text-success-subtle-foreground border-success/30"
-                          : "bg-warning-subtle text-warning-subtle-foreground border-warning/30"
-                      }
-                    >
-                      {statusLabel(t, stats.vatStatus.status)}
-                    </Badge>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {formatMessage(t["firmOps.chaseDue"], {
-                        date: formatDate(stats.vatStatus.dueDate, locale),
-                      })}
-                    </p>
+                    <VatStatusBadge vatStatus={stats.vatStatus} />
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground mt-0.5">

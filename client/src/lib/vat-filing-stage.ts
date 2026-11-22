@@ -29,7 +29,7 @@ export function vatFilingStage(r: VatReturnStageInput): VatFilingStage {
     if (r.paymentStatus === "paid") return net < 0 ? "refunded" : "paid";
     return "filed";
   }
-  if (r.status === "submitted") return "submitted";
+  if (["submitted", "filed", "paid", "accepted"].includes(r.status)) return "submitted";
   if (r.status === "ready") return "ready";
   return "draft";
 }

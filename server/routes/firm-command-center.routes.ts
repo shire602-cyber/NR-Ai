@@ -110,6 +110,7 @@ function snapshotToHealthScore(snap: ClientSnapshot): ClientHealthScore {
     overdueBalance: snap.overdueBalance,
     overdueInvoiceCount: snap.overdueInvoiceCount,
     vatStatus: snap.vatStatus,
+    vatReference: snap.vatReference,
     vatDueDate: snap.vatDueDate,
     receiptBacklog: snap.receiptBacklog,
     lastActivityAt: snap.lastActivityAt,

@@ -1,5 +1,7 @@
-import { and, count, desc, eq, gte, inArray, lt, lte, max, ne, sql, sum } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, lt, lte, max, ne, not, sql, sum } from "drizzle-orm";
 
+import { isVatFilingRecorded } from "../../shared/vat-filing-status";
+import { vatFilingRecordedFilter } from "../tax/vat-filing-filter";
 import { db } from "../db";
 import { aed, ledgerBalanceCheckByCompany } from "../reporting";
 import {
@@ -67,6 +69,7 @@ export interface ValueOpsClient {
   };
   status: {
     latestVatStatus: string | null;
+    vatFilingRecorded: boolean;
     vatDueDate: Date | null;
     daysToVatDue: number | null;
     lastBankActivity: Date | null;
@@ -308,8 +311,7 @@ function briefPriority(client: ValueOpsClient): Priority {
   if (
     client.status.daysToVatDue !== null &&
     client.status.daysToVatDue < 0 &&
-    client.status.latestVatStatus !== "filed" &&
-    client.status.latestVatStatus !== "submitted"
+    !client.status.vatFilingRecorded
   ) {
     return "critical";
   }
@@ -368,7 +370,7 @@ function clientWhyNow(client: ValueOpsClient): string {
     signals.push(`${client.workload.reviewerQueueItems} review items`);
   if (client.workload.missingDocuments > 0)
     signals.push(`${client.workload.missingDocuments} missing documents`);
-  if (!client.status.hasBankFeedData) signals.push("no bank feed evidence");
+  if (!client.status.hasBankFeedData) signals.push("no bank CSV imports");
   return signals.slice(0, 4).join(" · ") || "ready for proactive advisory touchpoint";
 }
 
@@ -605,6 +607,7 @@ export async function buildFirmValueOps(
     companyId: string;
     id: string;
     status: string;
+    ftaReferenceNumber: string | null;
     dueDate: Date;
     periodStart: Date;
     periodEnd: Date;
@@ -615,6 +618,7 @@ export async function buildFirmValueOps(
       companyId: vatReturns.companyId,
       id: vatReturns.id,
       status: vatReturns.status,
+      ftaReferenceNumber: vatReturns.ftaReferenceNumber,
       dueDate: vatReturns.dueDate,
       periodStart: vatReturns.periodStart,
       periodEnd: vatReturns.periodEnd,
@@ -723,7 +727,7 @@ export async function buildFirmValueOps(
     const criticalAnomalies = asNumber(anomaly?.critical);
     const overdueTasks = asNumber(comp?.overdueTasks) + asNumber(cal?.overdue);
     const daysToVatDue = daysUntil(vat?.dueDate, now);
-    const vatOpen = vat ? vat.status !== "filed" && vat.status !== "submitted" : true;
+    const vatOpen = !isVatFilingRecorded(vat?.status ?? "", vat?.ftaReferenceNumber);
     const vatOverdue = vatOpen && daysToVatDue !== null && daysToVatDue < 0;
     const vatDueSoon = vatOpen && daysToVatDue !== null && daysToVatDue <= 14;
     const trialDiscrepancy = aed(trial?.differenceFils ?? 0);
@@ -829,6 +833,7 @@ export async function buildFirmValueOps(
       },
       status: {
         latestVatStatus: vat?.status ?? null,
+        vatFilingRecorded: !vatOpen,
         vatDueDate: vat?.dueDate ?? null,
         daysToVatDue,
         lastBankActivity: bank?.lastBankAt ?? null,
@@ -978,7 +983,7 @@ export async function buildFirmValueOps(
     },
     {
       lane: "bank_close",
-      title: "Bank-feed close autopilot",
+      title: "Bank CSV reconciliation",
       valueMetric: `${clients.filter((c) => c.scores.closeReadiness >= 80).length} close-ready`,
       count: clients.filter((c) => c.scores.closeReadiness < 80).length,
       impactAed: 0,
@@ -1447,6 +1452,7 @@ export async function buildClientCfoPack(
         payableTax: vatReturns.box14PayableTax,
         dueDate: vatReturns.dueDate,
         status: vatReturns.status,
+        ftaReferenceNumber: vatReturns.ftaReferenceNumber,
       })
       .from(vatReturns)
       .where(eq(vatReturns.companyId, companyId))
@@ -1474,7 +1480,7 @@ export async function buildClientCfoPack(
     ...(overdueAr > 0
       ? [`Prioritize collections on AED ${overdueAr.toLocaleString("en-AE")} overdue AR.`]
       : []),
-    ...(vatRow[0] && vatRow[0].status !== "filed" && vatRow[0].status !== "submitted"
+    ...(vatRow[0] && !isVatFilingRecorded(vatRow[0].status, vatRow[0].ftaReferenceNumber)
       ? [`Review VAT return due ${vatRow[0].dueDate.toISOString().slice(0, 10)}.`]
       : []),
     ...(revenue === 0 && expenses === 0
@@ -1625,8 +1631,7 @@ export async function buildFirmReviewQueue(
     .where(
       and(
         inArray(vatReturns.companyId, companyIds),
-        ne(vatReturns.status, "filed"),
-        ne(vatReturns.status, "submitted"),
+        not(vatFilingRecordedFilter),
         lte(vatReturns.dueDate, dueSoon)
       )
     )

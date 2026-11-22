@@ -525,7 +525,8 @@ export async function scanVatDeadlines(now: Date = new Date()): Promise<number> 
   const { rows } = await pool.query(
     `SELECT id, company_id, due_date::date::text AS due, period_end::date::text AS period_end
        FROM vat_returns
-      WHERE status NOT IN ('filed', 'amended', 'paid', 'accepted')
+      WHERE NOT (status IN ('filed', 'amended', 'paid', 'accepted')
+        AND NULLIF(BTRIM(fta_reference_number), '') IS NOT NULL)
         AND due_date::date <= ($1::date + 14)`,
     [now.toISOString().slice(0, 10)]
   );

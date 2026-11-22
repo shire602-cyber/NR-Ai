@@ -90,13 +90,16 @@ export class ReceiptStorage extends SalesStorage {
    * so concurrent posts produce one entry and a failure leaves the receipt unposted (R05-02).
    */
   async postReceiptAtomic(
-    args: PostReceiptAtomicArgs
+    args: PostReceiptAtomicArgs,
+    outer?: typeof db
   ): Promise<{ receipt: Receipt; entry: JournalEntry }> {
     return await withLedgerTx(async (tx: typeof db) => {
       const [claimed] = await tx
         .update(receipts)
         .set({
           posted: true,
+          exchangeRate: args.exchangeRate,
+          baseCurrencyAmount: args.baseCurrencyAmount,
           accountId: args.accountId,
           paymentAccountId: args.paymentAccountId,
         })
@@ -142,7 +145,7 @@ export class ReceiptStorage extends SalesStorage {
         .where(eq(receipts.id, args.receiptId))
         .returning();
       return { receipt, entry };
-    });
+    }, outer);
   }
 
   /**

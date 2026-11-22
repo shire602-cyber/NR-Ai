@@ -75,6 +75,34 @@ async function returnRow(t: Tenant, id: string) {
 }
 
 describe("E2 (J3-r2) VAT return: ready -> filed -> paid", () => {
+  it("records one piece of filing evidence when several submissions race", async () => {
+    const t = await vatTenant();
+    const id = await readyReturn(t);
+    const attempt = (reference: string) =>
+      t.as.post(`/api/vat-returns/${id}/submit`, {
+        ftaReferenceNumber: reference,
+        filedOn: "2026-04-20",
+      });
+    const attempts = await Promise.all([
+      attempt("EMT-A"),
+      attempt("EMT-B"),
+      attempt("EMT-A"),
+      attempt("EMT-B"),
+    ]);
+    const recorded = await returnRow(t, id);
+    expect(["EMT-A", "EMT-B"]).toContain(recorded.ftaReferenceNumber);
+    const winner = recorded.ftaReferenceNumber === "EMT-A" ? [0, 2] : [1, 3];
+    for (const [index, attempt] of attempts.entries()) {
+      expect(attempt.status, attempt.text).toBe(winner.includes(index) ? 200 : 409);
+      if (winner.includes(index)) expect(attempt.body.updatedAt).toBe(recorded.updatedAt);
+    }
+    const audits = await h.sql(
+      `SELECT id FROM audit_logs WHERE resource_id = $1 AND action = 'vat_return.filed'`,
+      [id]
+    );
+    expect(audits).toHaveLength(1);
+  });
+
   it("records the filing with the EmaraTax reference and date, then the payment, then reverses it", async () => {
     const t = await vatTenant();
     const bank = await accountByCode(t, "1020");
@@ -97,6 +125,17 @@ describe("E2 (J3-r2) VAT return: ready -> filed -> paid", () => {
     expect(filed.status, filed.text).toBe(200);
     expect(filed.body).toMatchObject({ status: "filed", ftaReferenceNumber: "ET-2026-Q1-001" });
     expect(String(filed.body.submittedAt).slice(0, 10)).toBe("2026-04-20");
+    const retry = await submit({ ftaReferenceNumber: " ET-2026-Q1-001 ", filedOn: "2026-04-20" });
+    expect(retry.status, retry.text).toBe(200);
+    expect(retry.body.updatedAt).toBe(filed.body.updatedAt);
+    for (const evidence of [
+      { ftaReferenceNumber: "ET-OTHER", filedOn: "2026-04-20" },
+      { ftaReferenceNumber: "ET-2026-Q1-001", filedOn: "2026-04-21" },
+    ]) {
+      const conflict = await submit(evidence);
+      expect(conflict.status, conflict.text).toBe(409);
+      expect(conflict.body.code).toBe("VAT_FILING_EVIDENCE_CONFLICT");
+    }
     expect(filed.body.paymentStatus ?? "unpaid").toBe("unpaid");
 
     // Payment status follows the settlement only.

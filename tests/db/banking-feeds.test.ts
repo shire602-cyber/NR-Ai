@@ -4,12 +4,13 @@
  * allow-listed, tokens are encrypted at rest and never returned, sync dedupes by provider id.
  * Provider HTTP is a recorded sandbox-shaped fixture; nothing calls a real bank.
  */
+import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import type { FetchLike } from "../../server/services/bank-feeds/types";
 
 const h = useHarness();
-const REDIRECT = "https://app.example.test/bank-feeds/callback";
+const REDIRECT = "https://app.example.test/integrations/bank/callback";
 const ENTITY_SECRET = "lean-entity-7f1c2d9e-secret";
 
 function leanFixture(calls: string[]): FetchLike {
@@ -106,6 +107,27 @@ describe("W3-C bank feeds", () => {
         ar: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
       });
     }
+  });
+
+  it("does not advertise or authorize the retired callback even when it is configured", async () => {
+    await clearEnv();
+    const t = await tenant();
+    const retired = "https://app.example.test/bank-feeds/callback";
+    process.env.LEAN_APP_TOKEN = randomUUID();
+    const defaults = await t.as.get("/api/bank/providers");
+    expect(defaults.body.redirectUris).toEqual([]);
+    process.env.BANK_FEED_REDIRECT_URIS = `${retired},${REDIRECT}`;
+    const explicit = await t.as.get("/api/bank/providers");
+    expect(explicit.body.redirectUris).toEqual([REDIRECT]);
+    const rejected = await t.as.post(`/api/companies/${t.company.id}/bank-connections/connect`, {
+      provider: "lean",
+      redirectUrl: retired,
+    });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.code).toBe("REDIRECT_URI_NOT_ALLOWED");
+    expect(
+      await h.sql(`SELECT id FROM bank_feed_oauth_states WHERE company_id = $1`, [t.company.id])
+    ).toEqual([]);
   });
 
   it("[R06-14] the redirect URI must be allow-listed and the callback state must match", async () => {

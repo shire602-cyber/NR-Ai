@@ -1,4 +1,5 @@
 {
+  "banking.import.companyChanged": "The active company changed. Select a file for this company.",
   "banking.import.csvRequired": "Choose a CSV file exported from your bank.",
   "banking.import.fileUnreadable": "We couldn’t read this CSV. Choose the file again or export a fresh copy from your bank.",
   "banking.accounts.title": "Bank accounts",

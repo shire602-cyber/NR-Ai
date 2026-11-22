@@ -62,14 +62,20 @@ export function coerceExportSheets(data: ExportData[]): ExportData[] {
   }));
 }
 
-export async function exportToExcel(data: ExportData[], filename: string) {
+export async function exportToExcel(
+  data: ExportData[],
+  filename: string,
+  assertActive?: () => void
+) {
   // E1: the workbook follows the language of the user who exports (labels, codes, dates, RTL).
   const sheets = await localizeExportSheets(coerceExportSheets(data));
   const { blob, filename: downloadedFilename } = await postForBlob(
     "/api/export/excel",
     { sheets, filename },
-    `${filename}.xlsx`
+    `${filename}.xlsx`,
+    assertActive
   );
+  assertActive?.();
   await triggerBlobDownload(blob, downloadedFilename);
 }
 
@@ -130,7 +136,8 @@ export async function triggerBlobDownload(blob: Blob, filename: string): Promise
 async function postForBlob(
   url: string,
   body: unknown,
-  fallbackFilename: string
+  fallbackFilename: string,
+  assertActive?: () => void
 ): Promise<{ blob: Blob; filename: string }> {
   let headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -140,6 +147,7 @@ async function postForBlob(
     headers = await withCsrfHeader("POST", headers);
   }
 
+  assertActive?.();
   const res = await fetch(apiUrl(url), {
     method: "POST",
     credentials: "include",
@@ -173,13 +181,15 @@ async function postForBlob(
 // totals row) stays consistent across in-flight and bulk exports.
 export async function downloadOcrExcel(
   rows: OcrExportRow[],
-  options: { filename?: string } = {}
+  options: { filename?: string; assertActive?: () => void } = {}
 ): Promise<void> {
   const { blob, filename } = await postForBlob(
     "/api/ocr/export-excel",
     { rows, filename: options.filename },
-    "muhasib-ocr-receipts.xlsx"
+    "muhasib-ocr-receipts.xlsx",
+    options.assertActive
   );
+  options.assertActive?.();
   await triggerBlobDownload(blob, filename);
 }
 
@@ -187,13 +197,15 @@ export async function downloadOcrExcel(
 // `ids` to filter to a subset, or omit it to export every saved receipt.
 export async function downloadReceiptsExcel(
   companyId: string,
-  options: { ids?: string[] } = {}
+  options: { ids?: string[]; assertActive?: () => void } = {}
 ): Promise<void> {
   const { blob, filename } = await postForBlob(
     `/api/companies/${companyId}/receipts/export-excel`,
     options.ids ? { ids: options.ids } : {},
-    "muhasib-receipts.xlsx"
+    "muhasib-receipts.xlsx",
+    options.assertActive
   );
+  options.assertActive?.();
   await triggerBlobDownload(blob, filename);
 }
 

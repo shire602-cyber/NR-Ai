@@ -1,4 +1,5 @@
 {
+  "banking.import.companyChanged": "تغيّرت الشركة النشطة. اختر ملفًا لهذه الشركة.",
   "banking.import.csvRequired": "اختر ملف CSV صدّرته من مصرفك.",
   "banking.import.fileUnreadable": "تعذّرت قراءة ملف CSV. اختر الملف مجددًا أو صدّر نسخة جديدة من مصرفك.",
   "banking.accounts.title": "الحسابات البنكية",

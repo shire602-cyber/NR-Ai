@@ -1,4 +1,5 @@
 {
+  "pageLabels.receiptAmountsInvalid": "Enter a receipt total greater than VAT and check the subtotal and VAT amounts.",
   "pageLabels.receiptDraftCompanyChanged": "This draft belongs to another company. Switch back to that company to save it.",
   "pageLabels.receiptVatCurrency": "VAT amount ({currency})",
   "pageLabels.receiptIssueMissingConfidence": "The receipt reader did not report a confidence score.",

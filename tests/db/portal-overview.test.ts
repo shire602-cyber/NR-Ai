@@ -54,10 +54,45 @@ describe("portal overview", () => {
     const pdf = await customer.as.get(`${url}?format=pdf`, { headers });
     expect(pdf.status, pdf.text).toBe(200);
     expect(pdf.headers.get("content-type")).toContain("application/pdf");
+    const messageUrl = "/api/client-portal/messages";
+    const sent = await customer.as.post(
+      messageUrl,
+      { content: "For the displayed supplier" },
+      { headers }
+    );
+    expect(sent.status, sent.text).toBe(201);
+    expect(sent.body).toMatchObject({ companyId: first.company.id, contactId: a.contactId });
+
+    const upload = (accountId: string) => {
+      const form = new FormData();
+      form.append("name", "Scoped document");
+      form.append("file", new Blob(["first supplier only"], { type: "text/plain" }), "scope.txt");
+      return fetch(h.baseUrl + "/api/client-portal/documents", {
+        method: "POST",
+        body: form,
+        headers: { Authorization: `Bearer ${customer.token}`, "X-Portal-Account": accountId },
+      });
+    };
+    const doc = await upload(older.id);
+    expect(doc.status).toBe(201);
+    expect(await doc.json()).toMatchObject({ companyId: first.company.id, contactId: a.contactId });
+
     await h.sql(`UPDATE customer_portal_accounts SET revoked_at = now() WHERE id = $1`, [older.id]);
     const removed = await customer.as.get(`${url}?format=pdf`, { headers });
     expect(removed.status).toBe(403);
     expect(removed.body.code).toBe("PORTAL_ACCESS_REVOKED");
+    const rejected = await customer.as.post(
+      messageUrl,
+      { content: "Should not reach supplier B" },
+      { headers }
+    );
+    expect(rejected.status).toBe(403);
+    expect(
+      (await customer.as.post(messageUrl, { content: "Missing pinned supplier" })).status
+    ).toBe(403);
+    expect((await upload(older.id)).status).toBe(403);
+    expect((await customer.as.get(messageUrl)).body).toEqual([]);
+    expect((await customer.as.get("/api/client-portal/documents")).body).toEqual([]);
   });
 
   it("returns info and invoices that equal the separate routes, with no caching", async () => {

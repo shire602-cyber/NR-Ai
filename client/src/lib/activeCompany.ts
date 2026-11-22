@@ -11,6 +11,13 @@ export function getActiveCompanyId(): string | null {
   }
 }
 
+export function resolveActiveCompany<T extends { id: string }>(
+  companies: readonly T[],
+  selectedId: string | null
+): T | undefined {
+  return companies.find((company) => company.id === selectedId) ?? companies[0];
+}
+
 export function setActiveCompanyIdRaw(companyId: string | null): void {
   if (typeof window === "undefined") return;
   try {

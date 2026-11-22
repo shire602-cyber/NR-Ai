@@ -351,6 +351,7 @@
   "forms.budget.totalIncome": "Total income",
   "forms.budget.totalExpenses": "Total expenses",
   "forms.budget.netTotal": "Net (income less expenses)",
+  "forms.serverErrors.VAT_FILING_EVIDENCE_CONFLICT": "This return already has different filing details. Review the recorded EmaraTax reference and date.",
   "forms.serverErrors.VAT_FILED_ON_FUTURE": "The filing date cannot be in the future.",
   "forms.serverErrors.VAT_FILED_ON_IN_PERIOD": "A VAT return is filed after its tax period ends. Choose a later filing date.",
   "forms.serverErrors.VAT_SETTLEMENT_DATE_IN_PERIOD": "The VAT payment or refund is dated after the end of the return period.",

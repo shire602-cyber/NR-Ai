@@ -348,7 +348,7 @@ Muhasib scored on what I could make it do today, not what it intends to do.
 | VAT figures internally consistent | ❌ **two engines, 75 vs 50** | ✅ | ✅ | ✅ | ✅ | n/a |
 | Corporate Tax | ⚠️ workpaper export only | taxable income only | tracking + humans file | ❌ none | ✅ module (Professional+) | ❌ |
 | Arabic + RTL | ⚠️ **382 keys / 1,004 hardcoded strings** | ✅ strong, Arabic-default | ✅ full | ❌ **none** | ⚠️ UI yes, **no Arabic CoA** | ❌ none |
-| UAE bank feeds | ❌ **none — CSV only** | Wio only | ❌ CSV only | ✅ **ADCB, DIB, ENBD, FAB, RAKBANK** | Yodlee + Wio | ❌ no UAE |
+| UAE banking workflows | **CSV reconciliation** | Wio only | ❌ CSV only | ✅ **ADCB, DIB, ENBD, FAB, RAKBANK** | Yodlee + Wio | ❌ no UAE |
 | WPS SIF payroll | ✅ **generator present** | ❌ | ❌ (Bayzat partner) | ❌ | ✅ (separate paid product) | ❌ |
 | Period lock / month-end | ❌ **500, broken** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Money stored as decimal | ⚠️ **ledger yes, VAT return no** | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -365,7 +365,7 @@ Muhasib scored on what I could make it do today, not what it intends to do.
 
 **Wafeq is the one you can beat, and the mechanism is the emirate split.** Wafeq has no emirate concept anywhere in its data model — one mention of "emirate" across 1,013 help articles, no field on contacts or branches. Its custom tax rates *"cannot be included in VAT reports at all"*, which makes reverse-charge and Designated Zone treatment unworkable. Its TASR entry expires this month. Its 18,000-customer claim rests on 4 incentivised Capterra reviews and 0 on G2, and ~90% of its volume is Saudi. **You have the emirate boxes modelled and Wafeq doesn't — that is a real wedge, and it is currently sabotaged by defaulting to Dubai and by a VAT report that disagrees with your own ledger.**
 
-**QuickBooks is beatable on localisation and nothing else.** No Arabic. No RTL. No corporate tax. Intuit stated on the record in December 2025 and again in April 2026 that UAE e-invoicing is unsupported with no roadmap. Its UAE VAT marketing page is **recycled Malaysian GST content**; its FAQ still references Windows XP and Internet Explorer; zero UAE testimonials. But it has the best UAE bank feed coverage in the market (ADCB, DIB, ENBD, FAB, RAKBANK) and that alone keeps accountants on it.
+**QuickBooks is beatable on localisation and nothing else.** No Arabic. No RTL. No corporate tax. Intuit stated on the record in December 2025 and again in April 2026 that UAE e-invoicing is unsupported with no roadmap. Its UAE VAT marketing page is **recycled Malaysian GST content**; its FAQ still references Windows XP and Internet Explorer; zero UAE testimonials. But it has the best UAE bank integration coverage in the market (ADCB, DIB, ENBD, FAB, RAKBANK) and that alone keeps accountants on it.
 
 **mazeed is your closest structural analogue** — Dubai, founded 2018 (formerly McLedger), 4,000+ businesses, full Arabic, AED 170/month unlimited users, and channel distribution through Dubai SME, Sharjah, Hub71, Meydan and e& that you cannot match. It is software *plus* an outsourced accounting service in one app. Its weakness is that its own e-invoicing page still says "Phase 1 — Q2 2026" against the real 30 Oct 2026 dates — stale compliance content from a compliance vendor.
 

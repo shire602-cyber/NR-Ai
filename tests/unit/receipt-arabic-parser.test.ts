@@ -162,6 +162,9 @@ describe("R05-23 receipt review helpers (en + ar)", () => {
     };
     expect(receiptReviewDecision(original, { ...original })).toBe("accepted");
     expect(receiptReviewDecision(original, { ...original, total: 106 })).toBe("corrected");
+    expect(receiptReviewDecision(original, { ...original, invoiceNumber: "POS-721" })).toBe(
+      "corrected"
+    );
     expect(receiptReviewDecision(original, { ...original, category: "Other" })).toBe("corrected");
     expect(receiptReviewDecision(undefined, original)).toBe("corrected");
   });

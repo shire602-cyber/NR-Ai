@@ -263,7 +263,7 @@ export function clientNeedsAttention(c: ClientWithStats): boolean {
   // The list endpoint doesn't expose per-invoice due dates, so outstandingAr>0
   // is used as the AR proxy (slightly broader than server's overdue-only count).
   if (c.outstandingAr > 0) return true;
-  if (c.vatStatus && c.vatStatus.status !== "filed" && c.vatStatus.status !== "submitted") {
+  if (c.vatStatus && !c.vatStatus.filingRecorded) {
     const due = new Date(c.vatStatus.dueDate);
     if (due < new Date()) return true;
   }
@@ -272,7 +272,7 @@ export function clientNeedsAttention(c: ClientWithStats): boolean {
 
 export function vatDueSoon(c: ClientWithStats): boolean {
   if (!c.vatStatus) return false;
-  if (c.vatStatus.status === "filed" || c.vatStatus.status === "submitted") return false;
+  if (c.vatStatus.filingRecorded) return false;
   const due = new Date(c.vatStatus.dueDate);
   const now = new Date();
   const days = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);

@@ -80,7 +80,7 @@ both languages, each on its own new owner (table at the end).
 Viewports: desktop 1440 px unless marked (mobile = 390 px, mobile-more = the phone More sheet,
 palette = command palette entry, file = file link checked for a download).
 Out of scope: none. Saudi ZATCA was removed in STEP2 (`/settings/zatca` is the not-found page).
-Not run: live provider calls (e-invoicing transmission, Stripe checkout, bank feeds,
+Not run: live provider calls (e-invoicing transmission, Stripe checkout,
 e-mail delivery), which stay behind their configured boundaries.
 
 | Route                                                       | Persona(s)                                                  | en   | ar   | Result                                               |

@@ -1,4 +1,5 @@
 {
+  "portal.doc.draftAccountChanged": "This draft belongs to another supplier. Open that supplier’s portal to send it.",
   "portal.accept": "Accept",
   "portal.aging30": "1–30 days",
   "portal.aging60": "31–60 days",

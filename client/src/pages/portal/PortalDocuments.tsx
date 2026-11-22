@@ -14,14 +14,15 @@ import { apiRequest } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { withCsrfHeader } from "@/lib/csrf";
+import { failedResponseMessage } from "@/lib/validation-messages";
 
 /** W4-D (R16-09): real multipart upload; the server sniffs the bytes and stores them. */
-async function uploadDocument(file: File) {
+async function uploadDocument({ file, accountId }: { file: File; accountId: string }) {
   const form = new FormData();
   form.append("name", file.name.replace(/\.[^.]+$/, ""));
   form.append("category", "other");
   form.append("file", file, file.name);
-  let headers: Record<string, string> = { ...getAuthHeaders() };
+  let headers: Record<string, string> = { ...getAuthHeaders(), "X-Portal-Account": accountId };
   if (!headers.Authorization) headers = await withCsrfHeader("POST", headers);
   const res = await fetch(apiUrl("/api/client-portal/documents"), {
     method: "POST",
@@ -30,7 +31,7 @@ async function uploadDocument(file: File) {
     credentials: "include",
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(await failedResponseMessage(res.status, body, `HTTP ${res.status}`));
   return body;
 }
 import { useToast } from "@/hooks/use-toast";
@@ -65,19 +66,30 @@ export default function PortalDocuments() {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const uploadAccount = useRef<string | undefined>(undefined);
+  const { data: company } = useQuery<{ accountId: string }>({
+    queryKey: ["portal-company"],
+    queryFn: () => apiRequest("GET", "/api/client-portal/company"),
+    staleTime: 5 * 60 * 1000,
+  });
 
+  const accountId = company?.accountId;
   const {
     data: documents = [],
     isLoading,
     isLoadingError,
     refetch,
   } = useQuery<any[]>({
-    queryKey: ["portal-documents"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/documents"),
+    queryKey: ["portal-documents", accountId],
+    enabled: !!accountId,
+    queryFn: () =>
+      apiRequest("GET", "/api/client-portal/documents", undefined, {
+        "X-Portal-Account": accountId!,
+      }),
   });
 
   const uploadMutation = useMutation({
-    mutationFn: (file: File) => uploadDocument(file),
+    mutationFn: uploadDocument,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-documents"] });
       toast({
@@ -95,17 +107,24 @@ export default function PortalDocuments() {
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) return;
+    const accountId = uploadAccount.current;
+    uploadAccount.current = undefined;
+    if (!file || !accountId) return;
     setUploading(true);
     try {
-      await uploadMutation.mutateAsync(file);
+      await uploadMutation.mutateAsync({ file, accountId });
+    } catch {
+      // The mutation displays the localized error.
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
     }
   }
 
-  const pick = () => fileRef.current?.click();
+  const pick = () => {
+    uploadAccount.current = company?.accountId;
+    if (uploadAccount.current) fileRef.current?.click();
+  };
 
   return (
     <div className="mx-auto max-w-[960px] space-y-6">
@@ -120,7 +139,11 @@ export default function PortalDocuments() {
         title={t["pages.documents"]}
         description={t["portal.doc.documentsHint"]}
         primaryAction={
-          <Button onClick={pick} disabled={uploading} data-testid="button-portal-upload">
+          <Button
+            onClick={pick}
+            disabled={!company?.accountId || uploading}
+            data-testid="button-portal-upload"
+          >
             {uploading ? (
               <Loader2 className="h-4 w-4 me-2 animate-spin" aria-hidden />
             ) : (

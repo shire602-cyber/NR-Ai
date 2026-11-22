@@ -209,6 +209,47 @@ describe("R14-16 / R11-18 foreign-currency bank balances", () => {
   });
 });
 
+it("posts a USD receipt at the booked USD-to-EUR rate for a EUR company", async () => {
+  const t = await h.createTenant({ name: "EUR Receipt" });
+  await h.sql(`UPDATE companies SET base_currency = 'EUR' WHERE id = $1`, [t.company.id]);
+  await rate(t, { toCurrency: "EUR", rate: 0.9, effectiveDate: daysAgo(10) });
+  const expense = await accountByCode(t, "5010");
+  const bank = await accountByCode(t, "1020");
+  const draft = await t.as.post(`/api/companies/${t.company.id}/receipts`, {
+    merchant: "USD vendor",
+    date: daysAgo(3),
+    currency: "USD",
+    amount: 100,
+    vatAmount: 5,
+    invoiceNumber: "USD-105",
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const url = `/api/receipts/${draft.body.id}/post`;
+  const bad = await t.as.post(url, { accountId: expense.id, paymentAccountId: expense.id });
+  expect(bad.status).toBe(400);
+  const [unposted] = await h.sql(`SELECT exchange_rate, posted FROM receipts WHERE id = $1`, [
+    draft.body.id,
+  ]);
+  expect(Number(unposted.exchange_rate)).toBe(1);
+  expect(unposted.posted).toBe(false);
+
+  const posted = await t.as.post(url, { accountId: expense.id, paymentAccountId: bank.id });
+  expect(posted.status, posted.text).toBe(200);
+  expect(posted.body).toMatchObject({
+    exchangeRate: 0.9,
+    baseCurrencyAmount: 94.5,
+    invoiceNumber: "USD-105",
+  });
+  const [line] = await h.sql(
+    `SELECT credit, foreign_credit, foreign_currency, exchange_rate FROM journal_lines WHERE entry_id = $1 AND account_id = $2`,
+    [posted.body.journalEntryId, bank.id]
+  );
+  expect(Number(line.credit)).toBe(94.5);
+  expect(Number(line.foreign_credit)).toBe(105);
+  expect(line.foreign_currency).toBe("USD");
+  expect(Number(line.exchange_rate)).toBe(0.9);
+});
+
 describe("R14-14 rate feed routes", () => {
   it("R14-14: an admin-ingested ECB/CBUAE payload writes system rows only; non-admins 403; unconfigured fetch 503", async () => {
     const admin = await h.createTenant({ name: "FeedAdmin", isAdmin: true });

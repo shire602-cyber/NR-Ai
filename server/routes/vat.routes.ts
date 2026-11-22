@@ -719,9 +719,6 @@ export function registerVATRoutes(app: Express) {
       const body = parsedBody<Body<typeof submitVatReturnBody>>(req);
       const reference = body.ftaReferenceNumber?.trim() ? body.ftaReferenceNumber.trim() : null;
       const target = reference ? "filed" : "submitted";
-      if (!vatReturnMachine.can(existing.status, target) && existing.status !== target) {
-        throw new DomainError("INVALID_TRANSITION", 409, { from: existing.status, to: target });
-      }
       // E2 (J3-r2): the EmaraTax filing date. Only with a reference; never in the future and
       // never before the tax period has ended (EmaraTax opens the return after the period).
       const filedOn = body.filedOn ?? null;
@@ -752,7 +749,36 @@ export function registerVATRoutes(app: Express) {
           );
         }
       }
-      // Submitting the return finalises the VAT settlement against periodEnd.
+      function matchesFiling(row: typeof existing) {
+        return (
+          !!reference &&
+          row.ftaReferenceNumber?.trim() === reference &&
+          (!filedOn || (row.declarationDate && isoDateOf(row.declarationDate) === filedOn)) &&
+          (body.declarantName === undefined || body.declarantName === row.declarantName) &&
+          (body.declarantPosition === undefined || body.declarantPosition === row.declarantPosition)
+        );
+      }
+      function sendFiling(row: typeof existing) {
+        res.json({
+          ...row,
+          filing: {
+            transmittedByMuhasib: false,
+            channel: reference ? "manual-emaratax" : "none",
+            message: reference
+              ? "Filing recorded with the EmaraTax reference you entered."
+              : "Ready to file. Submit your return in EmaraTax, then record the FTA reference number here.",
+          },
+        });
+      }
+      if (existing.ftaReferenceNumber?.trim()) {
+        if (!matchesFiling(existing)) throw new DomainError("VAT_FILING_EVIDENCE_CONFLICT", 409);
+        return sendFiling(existing);
+      }
+      if (existing.status !== target && !vatReturnMachine.can(existing.status, target)) {
+        throw new DomainError("INVALID_TRANSITION", 409, { from: existing.status, to: target });
+      }
+
+      // Preparing the return finalises its figures for this tax period.
       await assertPeriodNotLocked(existing.companyId, existing.periodEnd);
       // A1 (C6): irrecoverable input VAT (partial exemption) is in the GL before the return is final.
       if (existing.status !== "submitted") await postReturnApportionment(existing, userId);
@@ -766,18 +792,29 @@ export function registerVATRoutes(app: Express) {
         });
       }
 
-      const vatReturn = await storage.updateVatReturn(existing.id, {
-        status: target,
-        notes: body.notes ?? existing.notes ?? null,
-        ftaReferenceNumber: reference,
-        submittedBy: reference ? userId : null,
-        submittedAt: reference ? (filedOn ? new Date(`${filedOn}T08:00:00Z`) : new Date()) : null,
-        // D2 (N13): the filing date the user stated (the VAT 201 declaration date); the
-        // settlement of the filed return cannot predate it.
-        ...(filedOn ? { declarationDate: new Date(`${filedOn}T08:00:00Z`) } : {}),
-        declarantName: body.declarantName ?? existing.declarantName ?? null,
-        declarantPosition: body.declarantPosition ?? existing.declarantPosition ?? null,
-      });
+      const vatReturn = await storage.recordVatReturnFiling(
+        existing.companyId,
+        existing.id,
+        existing.status,
+        {
+          status: target,
+          notes: body.notes ?? existing.notes ?? null,
+          ftaReferenceNumber: reference,
+          submittedBy: reference ? userId : null,
+          submittedAt: reference ? (filedOn ? new Date(`${filedOn}T08:00:00Z`) : new Date()) : null,
+          // D2 (N13): the filing date the user stated (the VAT 201 declaration date); the
+          // settlement of the filed return cannot predate it.
+          ...(filedOn ? { declarationDate: new Date(`${filedOn}T08:00:00Z`) } : {}),
+          declarantName: body.declarantName ?? existing.declarantName ?? null,
+          declarantPosition: body.declarantPosition ?? existing.declarantPosition ?? null,
+        }
+      );
+      if (!vatReturn) {
+        const current = await storage.getVatReturn(existing.id);
+        if (current?.companyId === existing.companyId && matchesFiling(current))
+          return sendFiling(current);
+        throw new DomainError("VAT_FILING_EVIDENCE_CONFLICT", 409);
+      }
       await recordAudit({
         userId,
         companyId: existing.companyId,
@@ -789,16 +826,7 @@ export function registerVATRoutes(app: Express) {
         req,
       });
 
-      res.json({
-        ...vatReturn,
-        filing: {
-          transmittedByMuhasib: false,
-          channel: reference ? "manual-emaratax" : "none",
-          message: reference
-            ? `Recorded as filed with FTA reference ${reference}. Muhasib did not transmit this return; this is your record of a filing you made through the official channel.`
-            : "Ready to file. Submit your return in EmaraTax, then record the FTA reference number here.",
-        },
-      });
+      sendFiling(vatReturn);
     })
   );
 

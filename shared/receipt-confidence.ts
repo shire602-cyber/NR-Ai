@@ -92,6 +92,7 @@ export function bandRequiresReview(band: ConfidenceBand | undefined | null): boo
 export interface ReviewSnapshot {
   merchant?: string | null;
   date?: string | null;
+  invoiceNumber?: string | null;
   total?: number | null;
   vatAmount?: number | null;
   category?: string | null;
@@ -107,6 +108,7 @@ export function receiptReviewDecision(
   const same =
     (original.merchant ?? "").trim() === (final.merchant ?? "").trim() &&
     (original.date ?? "") === (final.date ?? "") &&
+    (original.invoiceNumber ?? "").trim() === (final.invoiceNumber ?? "").trim() &&
     cents(original.total) === cents(final.total) &&
     cents(original.vatAmount) === cents(final.vatAmount) &&
     (original.category ?? "") === (final.category ?? "");
