@@ -688,7 +688,7 @@ Then rebuild `firm-command-center`, `value-ops` and `growth-opportunities` **onl
 | WPS SIF payroll | Built in | Wafeq ✗ · QuickBooks ✗ · FreshBooks ✗ · Zoho = separate paid product |
 | Arabic depth | Full UI + **Arabic CoA** + bilingual invoices | Zoho has **no Arabic chart of accounts**. QuickBooks and FreshBooks have no Arabic at all |
 | E-invoicing | ASP white-label, real transmission | Only SAP and Tally are accredited |
-| UAE bank feeds | **Weakest point** — CSV only | QuickBooks wins here: ADCB, DIB, ENBD, FAB, RAKBANK |
+| UAE bank transaction import | CSV statement upload and reconciliation | QuickBooks supports direct imports from ADCB, DIB, ENBD, FAB, and RAKBANK |
 
 ### The wedge: "the return files itself, and it's right"
 

@@ -196,19 +196,31 @@ describe("server copy templates", () => {
     });
   });
 
-  it("offers a retry and CSV upload in both locales for an existing bank statement notice", () => {
-    const row = withNotificationCopy({
-      eventKey: "bank.sync_failed:legacy-notice",
-      title: "Previous title",
-      message: "Previous message",
+  it("guides customers to CSV statement import after a bank transaction import fails", async () => {
+    const row = await notificationForEvent({
+      type: "bank.sync_failed",
+      payload: {
+        companyId: "c1",
+        entityId: "e1",
+        provider: "wio",
+        reason: "internal-provider-error",
+        occurredAt: "2026-11-16T00:00:00.000Z",
+      },
+    } as never);
+    const english = {
+      title: "Import a CSV bank statement",
+      message:
+        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.",
+    };
+    expect(row).toMatchObject({
+      ...english,
+      actionUrl: "/bank-reconciliation?import=1",
     });
-
-    expect(row.title).toBe("Review your bank statements");
-    expect(row.message).toContain("retry the transaction refresh");
-    expect(row.message).toContain("upload a CSV statement");
-    expect(localizeNotification(row, ar, "ar")).toEqual({
-      title: "راجع كشوف حسابك البنكي",
-      message: "افتح صفحة البنوك لإعادة محاولة تحديث المعاملات، أو ارفع كشف حساب بصيغة CSV للتسوية البنكية.",
+    const notification = withNotificationCopy(row!);
+    expect(localizeNotification(notification, en, "en")).toEqual(english);
+    expect(localizeNotification(notification, ar, "ar")).toEqual({
+      title: "استورد كشف حساب بنكي بصيغة CSV",
+      message: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك.",
     });
   });
 

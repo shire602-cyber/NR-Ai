@@ -368,6 +368,24 @@ describe("D1 public site", () => {
     }
   });
 
+  it.each([
+    ["en", "CSV statement import"],
+    ["ar", "استيراد كشف الحساب بصيغة CSV"],
+  ] as const)(
+    "shows only the CSV import label in the %s demo banking tab",
+    async (locale, label) => {
+      await setLocale(locale);
+      await render("DemoWorkspace");
+      const tab = container.querySelector('[role="tab"][aria-controls$="-content-banking"]');
+      expect(tab).not.toBeNull();
+      await act(async () => {
+        tab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      });
+      const panel = container.querySelector('[role="tabpanel"][data-state="active"]');
+      expect(panel?.querySelector("p")?.textContent).toBe(label);
+    }
+  );
+
   it("[D1b] the product preview shows the post-D2 dashboard strip with shared money and status components", async () => {
     await render("MuhasibLanding");
     const preview = container.querySelector("figure.mk-app");

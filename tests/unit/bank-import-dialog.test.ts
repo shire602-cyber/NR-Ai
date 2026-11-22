@@ -125,7 +125,14 @@ describe("CSV bank statement import page", () => {
       expect(importLink?.getAttribute("href")).toBe("/bank-reconciliation?import=1");
 
       const { serverErrorCopy } = await import("../../client/src/lib/validation-messages");
-      expect(serverErrorCopy(locale, "BANK_FEED_NOT_CONFIGURED")).toBe(`${workflow}.`);
+      for (const code of [
+        "BANK_FEED_NOT_CONFIGURED",
+        "BANK_FEED_RECONNECT_REQUIRED",
+        "BANK_FEED_NOT_SUPPORTED",
+        "BANK_FEED_BALANCE_UNAVAILABLE",
+      ]) {
+        expect(serverErrorCopy(locale, code), code).toBe(`${workflow}.`);
+      }
     }
   );
 });

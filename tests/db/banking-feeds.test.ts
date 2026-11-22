@@ -153,6 +153,26 @@ describe("W3-C bank feeds", () => {
     );
   });
 
+  it("guides customers to CSV import when statement-only sync or balance is unavailable", async () => {
+    const t = await tenant();
+    const connection = await t.as.post(`/api/companies/${t.company.id}/bank-connections`, {
+      bankName: "CSV Statement Account",
+    });
+    expect(connection.status, connection.text).toBe(201);
+    const path = `/api/bank-connections/${connection.body.id}`;
+    const csvMessage =
+      "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.";
+    const sync = await t.as.post(`${path}/sync`, {});
+    expect(sync.status, sync.text).toBe(400);
+    expect(sync.body).toMatchObject({ code: "BANK_FEED_NOT_SUPPORTED", message: csvMessage });
+    const balance = await t.as.get(`${path}/balance`);
+    expect(balance.status, balance.text).toBe(503);
+    expect(balance.body).toMatchObject({
+      code: "BANK_FEED_BALANCE_UNAVAILABLE",
+      message: csvMessage,
+    });
+  });
+
   it("[R06-14] connect with an unconfigured provider is 503 BANK_FEED_NOT_CONFIGURED", async () => {
     await clearEnv();
     const t = await tenant();
@@ -288,6 +308,15 @@ describe("W3-C bank feeds", () => {
       { amount: "-105.50", external_id: "tx-1", bank_statement_account_id: ba.body.id },
       { amount: "2000.00", external_id: "tx-2", bank_statement_account_id: ba.body.id },
     ]);
+
+    await h.sql("UPDATE bank_connections SET access_token = NULL WHERE id = $1", [conn.id]);
+    const unavailable = await t.as.post(`/api/bank-connections/${conn.id}/sync`, {});
+    expect(unavailable.status, unavailable.text).toBe(409);
+    expect(unavailable.body).toMatchObject({
+      code: "BANK_FEED_RECONNECT_REQUIRED",
+      message:
+        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.",
+    });
   });
 
   it("[R06-19] an authorized retry restores a connection after a provider failure", async () => {
