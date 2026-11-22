@@ -944,7 +944,9 @@ export function registerBillPayRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      await assertCompanyAccess(req, companyId);
+      // For /companies/:companyId paths the central policy resolves membership from
+      // this URL parameter. Keep the route check when that policy did not prove access.
+      if (!req.companyRole) await assertCompanyAccess(req, companyId);
       const asOf = parseReportDate(req.query.as_of ?? req.query.asOf, "as_of") ?? todayIso();
       const report = await payablesAging(companyId, asOf);
       const count = (b: string) => report.documents.filter((d) => d.bucket === b).length;

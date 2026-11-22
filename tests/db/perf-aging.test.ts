@@ -1,6 +1,6 @@
 /**
  * PERF-AGING: GET /bills/aging (and the other aged receivables / payables reads) got faster
- * (every independent read runs together, the vendor lookup rides the same round) with
+ * (payables use one query and independent receivable reads run together) with
  * byte-identical output.
  *
  * The golden file was written by the code before the change (commit 97ffb62) on the books seeded
@@ -296,7 +296,18 @@ describe("PERF-AGING aging output is unchanged", () => {
     expect(ap.reconciliation.controlAccountName).toBe("Accounts Payable");
   });
 
-  it("one bills/aging request reads the database at most 4 times (was 8)", async () => {
+  it("checks membership against the company in the bill aging path", async () => {
+    const allowed = await a.as.get(`/api/companies/${a.company.id}/bills/aging`);
+    expect(allowed.status).toBe(200);
+
+    const denied = await a.as.get(
+      `/api/companies/${b.company.id}/bills/aging?companyId=${a.company.id}`
+    );
+    expect(denied.status).toBe(403);
+    expect(denied.body.code).toBe("COMPANY_ACCESS_DENIED");
+  });
+
+  it("loads the bills/aging report with one database query per company", async () => {
     if (WRITE) return;
     const { pool } = await import("../../server/db");
     const { payablesAging } = await import("../../server/services/vendor.service");
@@ -305,9 +316,7 @@ describe("PERF-AGING aging output is unchanged", () => {
       const spy = vi.spyOn(pool, "query");
       try {
         await payablesAging(t.company.id, "2026-11-15");
-        expect(spy.mock.calls.length).toBeLessThanOrEqual(4);
-        const keys = spy.mock.calls.map((c) => `${String(c[0])}|${JSON.stringify(c[1] ?? [])}`);
-        expect(new Set(keys).size).toBe(keys.length);
+        expect(spy).toHaveBeenCalledTimes(1);
         spy.mockClear();
         await agedReceivables({ companyId: t.company.id, asOf: "2026-11-15" });
         expect(spy.mock.calls.length).toBeLessThanOrEqual(5);
