@@ -41,7 +41,7 @@ import {
   companyScopedTables,
   createCompanyBackup,
   exclusionReason,
-  openSnapshot,
+  exportSnapshot,
   restoreBackupIntoCompany,
   restoreCompanyBackup,
   runScheduledBackups,
@@ -101,7 +101,15 @@ interface BackupRow {
 }
 
 function present(row: BackupRow) {
-  return { ...row, tableCounts: row.tableCounts ? JSON.parse(row.tableCounts) : null };
+  const counts: Record<string, number> | null = row.tableCounts
+    ? JSON.parse(row.tableCounts)
+    : null;
+  return {
+    ...row,
+    tableCounts: counts
+      ? Object.fromEntries(Object.entries(counts).filter(([table]) => !exclusionReason(table)))
+      : null,
+  };
 }
 
 /** Load a backup and require backups.manage in its company (404 for non-members). */
@@ -307,7 +315,7 @@ export function registerBackupRoutes(app: Express) {
         throw new DomainError("BACKUP_NOT_COMPLETE", 409, undefined, "Backup is not complete");
       }
       const encrypted = req.query.format === "encrypted";
-      const body = encrypted ? stored : openSnapshot(stored, rows[0].checksum).json;
+      const { body, contentDigest } = exportSnapshot(stored, rows[0].checksum, encrypted);
       await storage.createActivityLog({
         companyId: backup.companyId,
         userId: req.user!.id,
@@ -318,6 +326,11 @@ export function registerBackupRoutes(app: Express) {
       });
       const safe = backup.name.replace(/[^a-z0-9]/gi, "_").slice(0, 80);
       res.setHeader("Content-Type", encrypted ? "application/octet-stream" : "application/json");
+      if (contentDigest) {
+        res.setHeader("Content-Digest", contentDigest);
+        // The digest covers the exported bytes. Keep compression from changing them.
+        res.append("Cache-Control", "no-transform");
+      }
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${safe}_${backup.id.slice(0, 8)}.${encrypted ? "muhbak" : "json"}"`

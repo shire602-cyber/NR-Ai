@@ -39,9 +39,8 @@ that runs in CI or locally, not by assertion._
 2. **Stripe** — keys + 8 price IDs, test a checkout, then flip
    `BILLING_ENFORCEMENT=true` **last**. Enforcement behavior is already
    tested.
-3. **CSV bank statements** — upload an exported statement and verify reconciliation.
-4. **Push** — `npx web-push generate-vapid-keys`, paste both keys.
-5. **Domain** — buy, point DNS at Railway, set `FRONTEND_URL` (now also
+3. **Push** — `npx web-push generate-vapid-keys`, paste both keys.
+4. **Domain** — buy, point DNS at Railway, set `FRONTEND_URL` (now also
    feeds CORS and password-reset links).
 5. **Live ASP/FTA e-invoicing provider** — when UAE accreditation lists
    firm up; XML generation/validation is ready and marked "not connected".

@@ -1503,7 +1503,7 @@ export default function Receipts() {
     });
   }, [receipts, dateRange.from, dateRange.to]);
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (!filteredReceipts.length) {
       toast({
         variant: "destructive",
@@ -1518,14 +1518,28 @@ export default function Receipts() {
         ? `_${format(dateRange.from, "yyyy-MM-dd")}_to_${format(dateRange.to, "yyyy-MM-dd")}`
         : "";
 
-    exportToExcel([prepareReceiptsForExport(filteredReceipts, locale)], `expenses${dateRangeStr}`);
-    toast({
-      title: tr("Export successful", "تم التصدير بنجاح"),
-      description: tr(
-        `${filteredReceipts.length} expenses exported to Excel`,
-        `تم تصدير ${filteredReceipts.length} من المصروفات إلى Excel`
-      ),
-    });
+    setIsExporting(true);
+    try {
+      await exportToExcel(
+        [prepareReceiptsForExport(filteredReceipts, locale)],
+        `expenses${dateRangeStr}`
+      );
+      toast({
+        title: tr("Export successful", "تم التصدير بنجاح"),
+        description: tr(
+          `${filteredReceipts.length} expenses exported to Excel`,
+          `تم تصدير ${filteredReceipts.length} من المصروفات إلى Excel`
+        ),
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: t["toasts.exportFailed"],
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleExportGoogleSheets = async () => {

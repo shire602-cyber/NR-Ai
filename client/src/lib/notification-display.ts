@@ -7,6 +7,7 @@
  */
 import { EMAIL_SETUP_HREF, isEmailNotSetUpMessage } from "@shared/notification-copy";
 import {
+  bankStatementUpdateFailureCopy,
   describeNotificationCopy,
   renderDescriptor,
   type NotificationCopyDescriptor,
@@ -45,6 +46,7 @@ function localizeAmounts(text: string): string {
 type NotificationLike = {
   title: string;
   message: string;
+  eventKey?: string | null;
   copy?: NotificationCopyDescriptor | null;
 };
 
@@ -83,7 +85,16 @@ export function localizeNotification(
   n: NotificationLike,
   t: Record<string, string | undefined>,
   locale: "en" | "ar" = "en"
-): { title: string; message: string; setupEmailHref?: string } {
+): { title: string; message: string; actionUrl?: string; setupEmailHref?: string } {
+  const bankFailure = bankStatementUpdateFailureCopy(n);
+  if (bankFailure) {
+    const copy = describeNotificationCopy(bankFailure);
+    return {
+      title: renderDescriptor(copy.titleKey, {}, bankFailure.title, t),
+      message: renderDescriptor(copy.messageKey, {}, bankFailure.message, t),
+      actionUrl: bankFailure.actionUrl,
+    };
+  }
   const copy = n.copy ?? describeNotificationCopy(n);
   const titleParams = localizeDateParams({ ...copy.titleParams }, locale);
   if (titleParams.title) {

@@ -5,9 +5,10 @@ import { getAuthHeaders } from "./auth";
 import { withCsrfHeader } from "./csrf";
 import { failedResponseMessage } from "./validation-messages";
 import { formatDate, formatDateRange, formatEmbeddedDates, parseCalendarDate } from "./format-date";
-import { t as catalogs } from "./i18n";
+import { t as catalogs, translateNow } from "./i18n";
 import { currentExportLocale, localizeExportSheets } from "./export-localize";
 import { localizeServerText } from "@shared/server-copy";
+import { EXCEL_EXPORT_LIMITS, supportsExcelWorkbookSize } from "@shared/excel-export";
 import { budgetCategoryLabel } from "./budget-categories";
 import { activityActionLabel, activityEntityLabel, activitySentence } from "./activity-log-labels";
 import { localizeJournalLine } from "./journal-memo";
@@ -62,13 +63,17 @@ export function coerceExportSheets(data: ExportData[]): ExportData[] {
   }));
 }
 
-export async function exportToExcel(data: ExportData[], filename: string) {
+export async function exportToExcel(data: ExportData[], filename: string, reportPack = false) {
+  if (!supportsExcelWorkbookSize(data)) {
+    throw new Error(translateNow("toasts.excelExportTooLarge"));
+  }
   // E1: the workbook follows the language of the user who exports (labels, codes, dates, RTL).
-  const sheets = await localizeExportSheets(coerceExportSheets(data));
+  const sheets = await localizeExportSheets(coerceExportSheets(data), undefined, reportPack);
   const { blob, filename: downloadedFilename } = await postForBlob(
     "/api/export/excel",
     { sheets, filename },
-    `${filename}.xlsx`
+    `${filename}.xlsx`,
+    EXCEL_EXPORT_LIMITS.requestBytes
   );
   await triggerBlobDownload(blob, downloadedFilename);
 }
@@ -76,10 +81,11 @@ export async function exportToExcel(data: ExportData[], filename: string) {
 export async function exportToGoogleSheets(
   data: ExportData[],
   title: string,
-  companyId: string
+  companyId: string,
+  reportPack = false
 ): Promise<{ success: boolean; spreadsheetUrl?: string; error?: string }> {
   try {
-    const sheetsData = (await localizeExportSheets(data)).map((sheet) => ({
+    const sheetsData = (await localizeExportSheets(data, undefined, reportPack)).map((sheet) => ({
       name: sheet.sheetName || "Sheet1",
       headers: sheet.columns.map((col) => col.header),
       rows: sheet.rows.map((row) =>
@@ -130,8 +136,16 @@ export async function triggerBlobDownload(blob: Blob, filename: string): Promise
 async function postForBlob(
   url: string,
   body: unknown,
-  fallbackFilename: string
+  fallbackFilename: string,
+  maxRequestBytes?: number
 ): Promise<{ blob: Blob; filename: string }> {
+  const payload = JSON.stringify(body);
+  if (
+    maxRequestBytes !== undefined &&
+    new TextEncoder().encode(payload).byteLength > maxRequestBytes
+  ) {
+    throw new Error(translateNow("toasts.excelExportTooLarge"));
+  }
   let headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...getAuthHeaders(),
@@ -144,7 +158,7 @@ async function postForBlob(
     method: "POST",
     credentials: "include",
     headers,
-    body: JSON.stringify(body),
+    body: payload,
   });
 
   if (!res.ok) {

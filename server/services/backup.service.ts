@@ -31,13 +31,14 @@ import crypto from "node:crypto";
 import zlib from "node:zlib";
 import { pool } from "../db";
 import { pq, type Queryable } from "./connectors/pq";
-import { decryptSecret, encryptSecret } from "./secret-vault";
+import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secret-vault";
 import { DomainError } from "../errors";
 import { createLogger } from "../config/logger";
 
 const log = createLogger("backup-service");
 
 export const BACKUP_FORMAT_VERSION = "2.0";
+const BANK_GL_MIGRATION_FINDINGS = "bank_gl_migration_findings";
 
 /** Company-scoped tables deliberately NOT in a backup, and why. */
 export const BACKUP_EXCLUDED_TABLES: Readonly<Record<string, string>> = {
@@ -49,6 +50,8 @@ export const BACKUP_EXCLUDED_TABLES: Readonly<Record<string, string>> = {
   company_invitations: "access control",
   api_keys: "credentials: a restore must never revive a revoked key",
   bank_feed_oauth_states: "short-lived OAuth state",
+  [BANK_GL_MIGRATION_FINDINGS]:
+    "operator-only migration diagnostics can contain references to other companies and must survive tenant restores",
   portal_login_codes: "short-lived credentials",
   portal_access_tokens: "credentials",
   payslip_tokens: "credentials",
@@ -308,6 +311,11 @@ export async function captureSnapshot(
   return { version: BACKUP_FORMAT_VERSION, createdAt: new Date().toISOString(), companyId, tables };
 }
 
+function sealSnapshotJson(json: string): string {
+  const gz = zlib.gzipSync(Buffer.from(json, "utf8")).toString("base64");
+  return encryptSecret(`gz1:${gz}`)!;
+}
+
 export function sealSnapshot(snapshot: CompanySnapshot): {
   sealed: string;
   checksum: string;
@@ -316,8 +324,7 @@ export function sealSnapshot(snapshot: CompanySnapshot): {
 } {
   const json = JSON.stringify(snapshot);
   const checksum = crypto.createHash("sha256").update(json).digest("hex");
-  const gz = zlib.gzipSync(Buffer.from(json, "utf8")).toString("base64");
-  const sealed = encryptSecret(`gz1:${gz}`)!;
+  const sealed = sealSnapshotJson(json);
   const counts = Object.fromEntries(Object.entries(snapshot.tables).map(([k, v]) => [k, v.length]));
   return { sealed, checksum, sizeBytes: Buffer.byteLength(sealed, "utf8"), counts };
 }
@@ -328,7 +335,7 @@ export function openSnapshot(
   checksum: string | null
 ): { json: string; snapshot: CompanySnapshot | LegacySnapshot } {
   let json: string;
-  if (stored.startsWith("enc:v1:")) {
+  if (isEncryptedSecret(stored)) {
     const plain = decryptSecret(stored) ?? "";
     json = plain.startsWith("gz1:")
       ? zlib.gunzipSync(Buffer.from(plain.slice(4), "base64")).toString("utf8")
@@ -348,6 +355,25 @@ export function openSnapshot(
     }
   }
   return { json, snapshot: JSON.parse(json) };
+}
+
+/** Export legacy plaintext as sealed JSON whenever encryption is requested. */
+export function exportSnapshot(
+  stored: string,
+  checksum: string | null,
+  encrypted: boolean
+): { body: string; contentDigest?: string } {
+  const { json, snapshot } = openSnapshot(stored, checksum);
+  const tables = "tables" in snapshot ? snapshot.tables : snapshot.data;
+  const filtered = tables && Object.hasOwn(tables, BANK_GL_MIGRATION_FINDINGS);
+  if (filtered) delete tables[BANK_GL_MIGRATION_FINDINGS];
+  const body = filtered ? JSON.stringify(snapshot) : json;
+  if (encrypted) {
+    return { body: !filtered && isEncryptedSecret(stored) ? stored : sealSnapshotJson(body) };
+  }
+  if (!filtered) return { body };
+  const digest = crypto.createHash("sha256").update(body).digest("base64");
+  return { body, contentDigest: `sha-256=:${digest}:` };
 }
 
 interface LegacySnapshot {

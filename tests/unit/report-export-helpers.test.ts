@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { collectInvoiceExportRows } from "../../client/src/lib/invoice-filters";
+import { describe, expect, it, vi } from "vitest";
+import { loadLocale, translateNow, useI18n } from "../../client/src/lib/i18n";
 import {
+  reportAutomationStarters,
+  reportPersonaWorkspaces,
+} from "../../client/src/lib/reportCatalog";
+import {
+  exportToExcel,
   prepareAgingReportsForExport,
   prepareAuditTrailForExport,
   prepareBalanceSummaryReportsForExport,
@@ -13,8 +20,137 @@ import {
   preparePeriodComparisonForExport,
   preparePlanningReportsForExport,
 } from "../../client/src/lib/export";
+import { useReportsWorkspacePack } from "../../client/src/pages/reports/hooks/useReportsWorkspacePack";
+import { localizeExportSheets } from "../../client/src/lib/export-localize";
+import { EXCEL_EXPORT_LIMITS, supportsExcelWorkbookSize } from "../../shared/excel-export";
 
 describe("report export helpers", () => {
+  it("collects all status-filtered pages and exports only invoices in the date range", async () => {
+    const november = Array.from({ length: 51 }, (_, id) => ({
+      id,
+      date: "2026-11-10",
+      status: id === 50 ? "sent" : "draft",
+    }));
+    const source = [
+      ...november.slice(0, 48),
+      { id: 51, date: "2021-01-01", status: "draft" },
+      { id: 52, date: "2021-01-02", status: "draft" },
+      ...november.slice(48),
+    ];
+    const range = { from: new Date(2026, 10, 1), to: new Date(2026, 10, 30) };
+    const downloadRows = (status?: string) =>
+      collectInvoiceExportRows(async (cursor) => {
+        const filtered = source.filter((row) => !status || row.status === status);
+        const offset = Number(cursor ?? 0);
+        return {
+          items: filtered.slice(offset, offset + 50),
+          nextCursor: filtered.length > offset + 50 ? String(offset + 50) : null,
+        };
+      }, range);
+    expect(await downloadRows()).toEqual(november);
+    expect(await downloadRows("draft")).toEqual(november.slice(0, 50));
+  });
+
+  it.each([
+    [
+      "en",
+      "Automation Starters",
+      "Setup Steps",
+      "Review invoices and upload a CSV bank statement",
+      "Launch cash autopilot",
+    ],
+    [
+      "ar",
+      "بدايات الأتمتة",
+      "خطوات الإعداد",
+      "راجع الفواتير وارفع كشف حساب بنكي بصيغة CSV",
+      "إطلاق الأتمتة الذاتية للنقد",
+    ],
+  ] as const)(
+    "exports the %s owner automation checklist in the workbook",
+    async (locale, name, setupHeader, step, action) => {
+      const previous = useI18n.getState().locale;
+      await loadLocale(locale);
+      useI18n.getState().setLocale(locale);
+      try {
+        const workspace = {
+          ...reportPersonaWorkspaces.find((item) => item.persona === "owner"),
+          reports: [],
+          readyReports: 0,
+        };
+        const starter = reportAutomationStarters.find(
+          (item) => item.id === "owner-cash-control-autopilot"
+        );
+        const { buildWorkspaceReportPack } = useReportsWorkspacePack({
+          dateRange: {},
+          vatReturns: [],
+          automationQueue: [],
+          comparisonRows: [],
+          personaReportRecommendations: [],
+          reportAccountantHandoffSummaries: [],
+          reportAutomationOperationSummaries: [],
+          reportAutomationRules: [],
+          reportAutomationStarterSummaries: [
+            {
+              ...starter,
+              reports: [],
+              playbooks: [],
+              queueSignals: [],
+              readyCount: 0,
+              openWorkItemCount: 0,
+              amountAtRisk: 0,
+            },
+          ],
+          reportAutomationTriggerRuleSummaries: [],
+          reportComparisonPresetSummaries: [],
+          reportDecisionShortcutSummaries: [],
+          reportDeliverySubscriptionSummaries: [],
+          reportPackDeliveryReadiness: [],
+          reportPackTemplateSummaries: [],
+          reportRoadmap: [],
+        } as Parameters<typeof useReportsWorkspacePack>[0]);
+        const sheets = buildWorkspaceReportPack(
+          workspace as Parameters<typeof buildWorkspaceReportPack>[0]
+        );
+        const starters = (await localizeExportSheets(sheets, undefined, true)).find(
+          (sheet) => sheet.sheetName === name
+        );
+        expect(starters?.columns).toContainEqual(
+          expect.objectContaining({ key: "setupSteps", header: setupHeader })
+        );
+        expect(String(starters?.rows[0]?.setupSteps).split(" | ")[0]).toBe(step);
+        expect(starters?.rows[0]?.primaryAction).toBe(action);
+      } finally {
+        useI18n.getState().setLocale(previous);
+      }
+    }
+  );
+
+  it("includes headers and empty cells in the shared workbook budget", () => {
+    const columns = Array(EXCEL_EXPORT_LIMITS.columnsPerWorksheet).fill({});
+    const rowsAtLimit = EXCEL_EXPORT_LIMITS.renderedCells / columns.length - 1;
+    expect(supportsExcelWorkbookSize([{ columns, rows: Array(rowsAtLimit).fill({}) }])).toBe(true);
+    expect(supportsExcelWorkbookSize([{ columns, rows: Array(rowsAtLimit + 1).fill({}) }])).toBe(
+      false
+    );
+  });
+
+  it("blocks an over-limit UTF-8 workbook before sending an export request", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    try {
+      const value = "€".repeat(Math.ceil(EXCEL_EXPORT_LIMITS.requestBytes / 3));
+      const sheets = [{ columns: [{ header: "Value", key: "value" }], rows: [{ value }] }];
+      expect(JSON.stringify(sheets).length).toBeLessThan(EXCEL_EXPORT_LIMITS.requestBytes);
+      await expect(exportToExcel(sheets, "test_workbook")).rejects.toThrow(
+        translateNow("toasts.excelExportTooLarge")
+      );
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("builds workbook sheets for advanced cash, aging, comparison, and FX reports", () => {
     const cashSheets = prepareCashFlowStatementForExport([
       {

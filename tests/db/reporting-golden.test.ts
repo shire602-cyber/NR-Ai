@@ -7,6 +7,7 @@ import ExcelJS from "exceljs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { postJournalEntry, useHarness, type Tenant } from "./harness";
 import { GOLDEN_EXPECTED as G, seedGoldenBooksFY2025_2026 } from "./golden/seed";
+import { EXCEL_EXPORT_LIMITS } from "../../shared/excel-export";
 
 const h = useHarness();
 let t: Tenant;
@@ -323,30 +324,82 @@ describe("general ledger and exports", () => {
     expect(row.getCell(2).value).toBe(112_200);
   });
 
-  it("[STEP1-C] generic Excel export takes the 15-sheet Balance Reports workbook, Arabic and RTL", async () => {
-    // Customer balances, inventory and fixed assets download one workbook of 15 sheets; the
-    // route used to refuse more than 10 ("Array must contain at most 10 element(s)").
-    const sheets = Array.from({ length: 15 }, (_, i) => ({
-      sheetName: `ورقة ${i + 1}`,
-      rtl: true,
-      columns: [
-        { header: "المقياس", key: "metric" },
-        { header: "القيمة", key: "value" },
-      ],
-      rows: [{ metric: "الإجمالي", value: "10.50" }],
+  it.each([15, 66, 82, EXCEL_EXPORT_LIMITS.worksheets])(
+    "generic Excel export accepts %i Arabic RTL worksheets",
+    async (count) => {
+      const sheets = Array.from({ length: count }, (_, i) => ({
+        sheetName: `ورقة ${i + 1}`,
+        rtl: true,
+        columns: [
+          { header: "المقياس", key: "metric" },
+          { header: "القيمة", key: "value" },
+        ],
+        rows: [{ metric: "الإجمالي", value: "10.50" }],
+      }));
+      const res = await fetch(`${h.baseUrl}/api/export/excel`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${t.token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ sheets }),
+      });
+      expect(res.status).toBe(200);
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(Buffer.from(await res.arrayBuffer()) as unknown as ArrayBuffer);
+      expect(wb.worksheets).toHaveLength(count);
+      expect(wb.worksheets[count - 1].name).toBe("ورقة " + count);
+      expect(wb.worksheets.every((sheet) => sheet.views[0]?.rightToLeft === true)).toBe(true);
+      expect(wb.worksheets[0].getRow(2).getCell(2).value).toBe(10.5);
+    }
+  );
+
+  it("rejects an Excel export above the shared worksheet limit", async () => {
+    const sheets = Array.from({ length: EXCEL_EXPORT_LIMITS.worksheets + 1 }, (_, i) => ({
+      sheetName: "Sheet " + (i + 1),
+      columns: [{ header: "Value", key: "value" }],
+      rows: [],
     }));
-    const res = await fetch(`${h.baseUrl}/api/export/excel`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${t.token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ sheets }),
-    });
-    expect(res.status).toBe(200);
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(Buffer.from(await res.arrayBuffer()) as unknown as ArrayBuffer);
-    expect(wb.worksheets).toHaveLength(15);
-    expect(wb.worksheets[14].name).toBe("ورقة 15");
-    expect(wb.worksheets.every((sheet) => sheet.views[0]?.rightToLeft === true)).toBe(true);
-    expect(wb.worksheets[0].getRow(2).getCell(2).value).toBe(10.5);
+    const res = await t.as.post("/api/export/excel", { sheets });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a sparse workbook that exceeds the total rendered cell limit", async () => {
+    const columns = Array.from({ length: EXCEL_EXPORT_LIMITS.columnsPerWorksheet }, (_, i) => ({
+      header: "Value " + i,
+      key: "value" + i,
+    }));
+    // Even absent values need cell normalization and styling in the workbook.
+    const rows = Array.from(
+      { length: EXCEL_EXPORT_LIMITS.renderedCells / columns.length },
+      () => ({})
+    );
+    const res = await t.as.post("/api/export/excel", { sheets: [{ columns, rows }] });
+    expect(res.status).toBe(400);
+    expect(res.text).toContain("workbook cell limit");
+  });
+
+  it("enforces the shared Excel UTF-8 byte boundary at the transport layer", async () => {
+    const input = {
+      sheets: [{ columns: [{ header: "Value", key: "value" }], rows: [] }],
+      padding: "",
+    };
+    const paddingBytes =
+      EXCEL_EXPORT_LIMITS.requestBytes - Buffer.byteLength(JSON.stringify(input));
+    // Extra JSON fields are stripped by validation so byte accounting can be tested
+    // independently of the size of the generated workbook.
+    input.padding = "€".repeat(Math.floor(paddingBytes / 3)) + " ".repeat(paddingBytes % 3);
+    const payload = JSON.stringify(input);
+    expect(Buffer.byteLength(payload)).toBe(EXCEL_EXPORT_LIMITS.requestBytes);
+    const post = (body: string) =>
+      fetch(h.baseUrl + "/api/export/excel", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + t.token, "Content-Type": "application/json" },
+        body,
+      });
+    const atLimit = await post(payload);
+    expect(atLimit.status).toBe(200);
+    await atLimit.arrayBuffer();
+    const aboveLimit = await post(payload + " ");
+    expect(aboveLimit.status).toBe(413);
+    expect((await aboveLimit.json()).code).toBe("PAYLOAD_TOO_LARGE");
   });
 });
 

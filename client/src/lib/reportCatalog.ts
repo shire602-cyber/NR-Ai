@@ -3439,7 +3439,7 @@ export const reportAutomationStarters: ReportAutomationStarter[] = [
     playbookIds: ["owner-cash-collections"],
     queueIds: ["collections", "planning-risk", "sales-mix"],
     setupSteps: [
-      bankStatementCopy.en,
+      "Review invoices and upload a CSV bank statement",
       "Schedule the owner weekly command pack.",
       "Route overdue balances to payment chasing.",
     ],

@@ -17,7 +17,7 @@ _Snapshot + prioritized roadmap. Living doc._
 
 **Built and tested, dormant until you flip a switch:**
 - **Email document intake pilot** — end to end: clients email docs → inbound
-  webhook → OCR → autopilot drafts the books → completeness check against an uploaded CSV statement →
+  webhook → OCR → autopilot drafts the books → reconcile imported bank CSV statements →
   document chasing → firm review UI. Needs a provider + secret to go live (Phase 1).
 
 ---

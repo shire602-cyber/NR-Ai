@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { isCapabilityLive } from "../../shared/capabilities";
 import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import { authMiddleware, adminMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -82,7 +83,7 @@ export function registerIntegrationStatusRoutes(app: Express) {
         },
         {
           key: "openBanking",
-          name: "Existing bank connections",
+          name: "Transaction refresh recovery",
           configured: isOpenBankingConfigured(),
           detail: null,
           requiredEnv: [
@@ -93,7 +94,7 @@ export function registerIntegrationStatusRoutes(app: Express) {
         {
           key: "bankStatementUpload",
           name: "Bank statement upload",
-          configured: true,
+          configured: isCapabilityLive("bank_statement_csv"),
           detail: bankStatementCopy.en,
           requiredEnv: [],
           unlocks: "Upload CSV bank statements for reconciliation",

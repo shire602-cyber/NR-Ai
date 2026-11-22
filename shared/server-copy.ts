@@ -1498,19 +1498,29 @@ export function isBankStatementReview(eventKey: string | null | undefined): bool
   return eventKey?.startsWith("bank.sync_failed:") ?? false;
 }
 
-export function normalizeNotificationCopy<
-  T extends { title: string; message: string; eventKey?: string | null },
->(n: T): T {
-  if (isBankStatementReview(n.eventKey)) {
-    return {
-      ...n,
-      actionUrl: BANK_STATEMENT_IMPORT_HREF,
-      ...notificationCopy(
-        "notification.bankSyncFailed.title",
-        "notification.bankSyncFailed.message"
-      ),
-    };
-  }
+type StoredNotificationText = {
+  title: string;
+  message: string;
+  eventKey?: string | null;
+  copy?: NotificationCopyDescriptor | null;
+};
+
+export function bankStatementUpdateFailureCopy(n: StoredNotificationText) {
+  if (
+    !isBankStatementReview(n.eventKey) &&
+    n.copy?.titleKey !== "notification.bankSyncFailed.title" &&
+    !/^bank feed sync failed$/i.test(n.title)
+  ) return null;
+
+  return {
+    actionUrl: BANK_STATEMENT_IMPORT_HREF,
+    ...notificationCopy("notification.bankSyncFailed.title", "notification.bankSyncFailed.message"),
+  };
+}
+
+export function normalizeNotificationCopy<T extends StoredNotificationText>(n: T): T {
+  const bankReview = bankStatementUpdateFailureCopy(n);
+  if (bankReview) return { ...n, ...bankReview };
   const legacy = legacyStatementImportCopy(n);
   return legacy ? { ...n, message: renderServerCopy(legacy.key, legacy.params) } : n;
 }

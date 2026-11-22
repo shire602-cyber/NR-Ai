@@ -26,6 +26,7 @@ export type CapabilityId =
   | "ai"
   | "stripe_billing"
   | "invoice_payments"
+  | "bank_statement_csv"
   | "bank_feed_lean"
   | "bank_feed_tarabut"
   | "bank_feed_wio"
@@ -168,6 +169,17 @@ const DEFS: readonly CapabilityDef[] = [
       if (!set(env, "STRIPE_SECRET_KEY") || !flag(env, "INVOICE_PAYMENTS_ENABLED")) return null;
       return (env.STRIPE_SECRET_KEY ?? "").startsWith("sk_live_") ? "live" : "sandbox";
     },
+  },
+  {
+    id: "bank_statement_csv",
+    label: { en: "CSV bank statement import", ar: "استيراد كشوف الحساب بصيغة CSV" },
+    externalAction: {
+      en: "Upload a CSV exported from your bank.",
+      ar: "ارفع كشف حساب بصيغة CSV صادرًا عن بنكك.",
+    },
+    envVars: [],
+    whenUnconfigured: "disabled",
+    detect: () => "live",
   },
   {
     id: "bank_feed_lean",

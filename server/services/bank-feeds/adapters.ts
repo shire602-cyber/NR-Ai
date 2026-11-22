@@ -1,8 +1,7 @@
 /**
- * Lean, Tarabut and Wio adapters (W3-C, R06-19). Each is configured only by env credentials;
- * an adapter without credentials reports isConfigured() = false and the service refuses to use
- * it (503 BANK_FEED_NOT_CONFIGURED). Endpoints follow each provider's sandbox shape; production
- * use needs a provider contract (see shared/capabilities.ts).
+ * Provider API adapters for Lean, Tarabut and Wio (W3-C, R06-19).
+ * Configuration comes from the environment. An unconfigured adapter reports
+ * isConfigured() = false and the service returns 503 BANK_FEED_NOT_CONFIGURED.
  */
 import type { BankFeedAdapter, FeedAccount, FeedTokens, FeedTransaction } from "./types";
 import { amountFils, collect, env, isoDay, requestJson, str } from "./http";

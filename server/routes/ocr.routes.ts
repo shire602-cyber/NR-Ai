@@ -2,6 +2,7 @@ import { type Express, type Request, type Response } from "express";
 import { parsedBody } from "../http/parsed-body";
 import { strictBody } from "../http/strict-body";
 import { ocrProcessBody } from "../../shared/validators/route-bodies";
+import { EXCEL_EXPORT_LIMITS, excelWorkbookCellCount } from "../../shared/excel-export";
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
 import { z } from "zod";
@@ -442,12 +443,18 @@ const genericExportSchema = z.object({
       z.object({
         sheetName: z.string().max(80).optional(),
         rtl: z.boolean().optional(),
-        columns: z.array(genericExportColumnSchema).min(1).max(100),
-        rows: z.array(z.record(z.string(), z.unknown())).max(5000),
+        columns: z
+          .array(genericExportColumnSchema)
+          .min(1)
+          .max(EXCEL_EXPORT_LIMITS.columnsPerWorksheet),
+        rows: z.array(z.record(z.string(), z.unknown())).max(EXCEL_EXPORT_LIMITS.rowsPerWorksheet),
       })
     )
     .min(1)
-    .max(30),
+    .max(EXCEL_EXPORT_LIMITS.worksheets)
+    .refine((sheets) => excelWorkbookCellCount(sheets) <= EXCEL_EXPORT_LIMITS.renderedCells, {
+      message: "Excel export exceeds the workbook cell limit",
+    }),
   filename: z.string().max(80).optional(),
 });
 

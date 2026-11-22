@@ -1,6 +1,7 @@
 // Workspace report-pack workbook builder covering every live report (buildWorkspaceReportPack).
 // Stage of the Reports page state; useReportsPage composes the stages in order (R20-09).
 import { translateNow } from "@/lib/i18n";
+import { catalogTextNow, cxNow } from "@/lib/reportCatalogText";
 import {
   type ExportData,
   prepareAgingReportsForExport,
@@ -408,7 +409,7 @@ export function useReportsWorkspacePack({
         automation: report.automation,
         delivery: workbookReportIds.has(report.id)
           ? translateNow("reportCenter.includedInWorkbook")
-          : "Open workflow",
+          : translateNow("reportCenter.openWorkflow"),
         workflow: reportPersonaHref(report, workspace.persona) ?? reportWorkspaceHref(workspace),
       })),
     };
@@ -641,7 +642,7 @@ export function useReportsWorkspacePack({
         { header: "Automation Hooks", key: "automationHooks", width: 72 },
         { header: "Personas", key: "personas", width: 30 },
         { header: "Report List", key: "reportList", width: 72 },
-        { header: "Decision Questions", key: "decisionQuestions", width: 90 },
+        { header: "Decision Questions", key: "decisionQuestions", width: 80 },
       ],
       rows: packCoverageMap.map((coverage) => ({
         category: coverage.category,
@@ -731,19 +732,30 @@ export function useReportsWorkspacePack({
         { header: "Workflow", key: "workflow", width: 42 },
       ],
       rows: packAutomationStarters.map((starter) => ({
-        starter: starter.title,
-        audience: starter.audience,
-        outcome: starter.outcome,
-        setupTime: starter.setupTime,
-        trigger: starter.trigger,
+        starter: catalogTextNow("starter", starter.id, "title", starter.title),
+        audience: catalogTextNow("starter", starter.id, "audience", starter.audience),
+        outcome: catalogTextNow("starter", starter.id, "outcome", starter.outcome),
+        setupTime: catalogTextNow("starter", starter.id, "setupTime", starter.setupTime),
+        trigger: catalogTextNow("starter", starter.id, "trigger", starter.trigger),
         readyReports: `${starter.readyCount}/${starter.reports.length}`,
-        reports: starter.reports.map((report) => report.name).join(", "),
-        playbooks: starter.playbooks.map((playbook) => playbook.title).join(", "),
-        queueSignals: starter.queueSignals.map((signal) => signal.title).join(", "),
+        reports: starter.reports
+          .map((report) => catalogTextNow("report", report.id, "name", report.name))
+          .join(", "),
+        playbooks: starter.playbooks
+          .map((playbook) => catalogTextNow("playbook", playbook.id, "title", playbook.title))
+          .join(", "),
+        queueSignals: starter.queueSignals.map((signal) => cxNow(signal.title)).join(", "),
         openWorkItemCount: starter.openWorkItemCount,
         amountAtRisk: `AED ${starter.amountAtRisk.toFixed(2)}`,
-        setupSteps: starter.setupSteps.join(" | "),
-        primaryAction: starter.primaryAction,
+        setupSteps: starter.setupSteps
+          .map((step, index) => catalogTextNow("starter", starter.id, `setupSteps.${index}`, step))
+          .join(" | "),
+        primaryAction: catalogTextNow(
+          "starter",
+          starter.id,
+          "primaryAction",
+          starter.primaryAction
+        ),
         workflow: starter.href,
       })),
     };

@@ -1417,7 +1417,17 @@ export function getPoolStats(): {
 /** Drain and close the pool. Bounded by `timeoutMs` so shutdown is never stuck. */
 export async function closePool(timeoutMs = 10_000): Promise<void> {
   if (!pool?.end) return;
-  await Promise.race([pool.end(), new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      pool.end(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export { pool, db };

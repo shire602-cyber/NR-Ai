@@ -8,6 +8,7 @@ import {
   jsonb,
   date as pgDate,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -169,6 +170,24 @@ export const insertBankTransactionSchema = createInsertSchema(bankTransactions).
 
 export type InsertBankTransaction = z.infer<typeof insertBankTransactionSchema>;
 export type BankTransaction = typeof bankTransactions.$inferSelect;
+
+/** Ownership defects found by the bank GL migration and retained for operator review. */
+export const bankGlMigrationFindings = pgTable(
+  "bank_gl_migration_findings",
+  {
+    bankTransactionId: uuid("bank_transaction_id").notNull(),
+    companyId: uuid("company_id").notNull(),
+    kind: text("kind").notNull(),
+    details: jsonb("details").notNull(),
+    foundAt: timestamp("found_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    transactionKindPk: primaryKey({
+      name: "bank_gl_migration_findings_pkey",
+      columns: [table.bankTransactionId, table.kind],
+    }),
+  })
+);
 
 // ===========================
 // W3-C banking (migration 0097)

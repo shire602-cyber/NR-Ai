@@ -133,6 +133,7 @@ then STOP while I set them. Order:
 3. **Web push** — `npx web-push generate-vapid-keys`, I paste both keys.
 4. **Domain** — point DNS at Railway, set `FRONTEND_URL` (also feeds CORS + reset
    links).
+5. **Bank reconciliation.** Verify CSV statement import and suggested matches.
 Never enter these values yourself — prepare and pause.
 
 ### Task 7 — DB-backed golden-ledger tests (T2)

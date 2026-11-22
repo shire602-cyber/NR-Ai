@@ -20,6 +20,7 @@ import {
   prepareProfitLossForExport,
   prepareTrialBalanceForExport,
   prepareVATSummaryForExport,
+  type ExportData,
 } from "@/lib/export";
 import { format } from "date-fns";
 import type { ReportsWorkspaceStateState } from "./useReportsWorkspaceState";
@@ -105,7 +106,8 @@ export function useReportsExports({
     try {
       await exportToExcel(
         buildWorkspaceReportPack(workspace),
-        `${workspace.persona}_report_pack${exportDateRangeSuffix}`
+        `${workspace.persona}_report_pack${exportDateRangeSuffix}`,
+        true
       );
       toast({
         title: translateNow("toasts.reportPackExported"),
@@ -137,7 +139,8 @@ export function useReportsExports({
     const result = await exportToGoogleSheets(
       buildWorkspaceReportPack(workspace),
       `${workspace.title}${dateRangeTitle}`,
-      selectedCompanyId
+      selectedCompanyId,
+      true
     );
 
     setIsExporting(false);
@@ -160,125 +163,115 @@ export function useReportsExports({
       });
     }
   };
-  const handleExportExcel = () => {
-    const dateRangeStr =
-      dateRange.from && dateRange.to
-        ? `_${format(dateRange.from, "yyyy-MM-dd")}_to_${format(dateRange.to, "yyyy-MM-dd")}`
-        : "";
+  const handleExportExcel = async () => {
+    setIsExporting(true);
+    try {
+      const dateRangeStr =
+        dateRange.from && dateRange.to
+          ? `_${format(dateRange.from, "yyyy-MM-dd")}_to_${format(dateRange.to, "yyyy-MM-dd")}`
+          : "";
 
-    if (activeTab === "pl" && profitLoss) {
-      exportToExcel([prepareProfitLossForExport(profitLoss)], `profit_loss${dateRangeStr}`);
-      toast({
-        title: translateNow("toasts.exportSuccessful"),
-        description: translateNow("toasts.profitLossExportedToExcel"),
-      });
-    } else if (activeTab === "bs" && balanceSheet) {
-      exportToExcel([prepareBalanceSheetForExport(balanceSheet)], `balance_sheet${dateRangeStr}`);
-      toast({
-        title: translateNow("toasts.exportSuccessful"),
-        description: translateNow("reportCenter.exportedBalanceSheet"),
-      });
-    } else if (activeTab === "vat" && vatSummary) {
-      exportToExcel([prepareVATSummaryForExport(vatSummary)], `vat_summary${dateRangeStr}`);
-      toast({
-        title: translateNow("toasts.exportSuccessful"),
-        description: translateNow("toasts.vatSummaryExportedToExcel"),
-      });
-    } else if (activeTab === "tax" && corporateTaxEstimate) {
-      exportToExcel(
-        prepareCorporateTaxEstimateForExport(corporateTaxEstimate),
-        `corporate_tax_estimate${dateRangeStr}`
-      );
-      toast({
-        title: translateNow("toasts.exportSuccessful"),
-        description: translateNow("toasts.corporateTaxEstimateExportedToExcel"),
-      });
-    } else if (activeTab === "trial" && trialBalance) {
-      exportToExcel([prepareTrialBalanceForExport(trialBalance)], `trial_balance${dateRangeStr}`);
-      toast({
-        title: translateNow("toasts.exportSuccessful"),
-        description: translateNow("reportCenter.exportedTrialBalance"),
-      });
-    } else if (activeTab === "sales") {
-      if (selectedReportId === "ar-aging") {
-        exportToExcel(receivableAgingExportSheets, `ar_aging${dateRangeStr}`);
+      const download = async (sheets: ExportData[], filename: string, descriptionKey: string) => {
+        await exportToExcel(sheets, `${filename}${dateRangeStr}`);
         toast({
           title: translateNow("toasts.exportSuccessful"),
-          description: translateNow("toasts.aRAgingExportedToExcel"),
+          description: translateNow(descriptionKey),
         });
-      } else {
-        exportToExcel(
-          prepareInvoiceStatusForExport(invoiceStatusReport),
-          `invoice_status${dateRangeStr}`
+      };
+
+      if (activeTab === "pl" && profitLoss) {
+        await download(
+          [prepareProfitLossForExport(profitLoss)],
+          "profit_loss",
+          "toasts.profitLossExportedToExcel"
         );
-        toast({
-          title: translateNow("toasts.exportSuccessful"),
-          description: translateNow("reportCenter.exportedInvoiceStatus"),
-        });
-      }
-    } else if (activeTab === "balances") {
-      if (selectedReportId === "ap-aging") {
-        exportToExcel(payableAgingExportSheets, `ap_aging${dateRangeStr}`);
-        toast({
-          title: translateNow("toasts.exportSuccessful"),
-          description: translateNow("toasts.aPAgingExportedToExcel"),
-        });
-      } else {
-        exportToExcel(
-          prepareBalanceSummaryReportsForExport(balanceReport),
-          `balance_reports${dateRangeStr}`
+      } else if (activeTab === "bs" && balanceSheet) {
+        await download(
+          [prepareBalanceSheetForExport(balanceSheet)],
+          "balance_sheet",
+          "reportCenter.exportedBalanceSheet"
         );
-        toast({
-          title: translateNow("toasts.exportSuccessful"),
-          description: translateNow("reportCenter.exportedBalanceReports"),
-        });
+      } else if (activeTab === "vat" && vatSummary) {
+        await download(
+          [prepareVATSummaryForExport(vatSummary)],
+          "vat_summary",
+          "toasts.vatSummaryExportedToExcel"
+        );
+      } else if (activeTab === "tax" && corporateTaxEstimate) {
+        await download(
+          prepareCorporateTaxEstimateForExport(corporateTaxEstimate),
+          "corporate_tax_estimate",
+          "toasts.corporateTaxEstimateExportedToExcel"
+        );
+      } else if (activeTab === "trial" && trialBalance) {
+        await download(
+          [prepareTrialBalanceForExport(trialBalance)],
+          "trial_balance",
+          "reportCenter.exportedTrialBalance"
+        );
+      } else if (activeTab === "sales") {
+        if (selectedReportId === "ar-aging") {
+          await download(receivableAgingExportSheets, "ar_aging", "toasts.aRAgingExportedToExcel");
+        } else {
+          await download(
+            prepareInvoiceStatusForExport(invoiceStatusReport),
+            "invoice_status",
+            "reportCenter.exportedInvoiceStatus"
+          );
+        }
+      } else if (activeTab === "balances") {
+        if (selectedReportId === "ap-aging") {
+          await download(payableAgingExportSheets, "ap_aging", "toasts.aPAgingExportedToExcel");
+        } else {
+          await download(
+            prepareBalanceSummaryReportsForExport(balanceReport),
+            "balance_reports",
+            "reportCenter.exportedBalanceReports"
+          );
+        }
+      } else if (activeTab === "expenses") {
+        await download(
+          prepareExpenseReportsForExport(expenseReport),
+          "expense_reports",
+          "reportCenter.exportedExpenseReports"
+        );
+      } else if (activeTab === "payroll") {
+        await download(
+          preparePayrollReportsForExport(payrollReport),
+          "payroll_reports",
+          "reportCenter.exportedPayrollReports"
+        );
+      } else if (activeTab === "ledger") {
+        await download(
+          prepareLedgerReportsForExport(ledgerReport),
+          "general_ledger",
+          "reportCenter.exportedGeneralLedger"
+        );
+      } else if (activeTab === "close") {
+        await download(
+          [
+            ...prepareMonthEndCloseStatusForExport(monthEndCloseExportReport),
+            ...prepareAuditTrailForExport(auditTrailReport),
+            ...prepareConsolidatedStatementsForExport(consolidatedStatementsReport),
+          ],
+          `close_reports_${monthEndPeriod}`,
+          "toasts.closeReportsExportedToExcel"
+        );
+      } else if (activeTab === "planning") {
+        await download(
+          preparePlanningReportsForExport(planningReport),
+          "planning_reports",
+          "reportCenter.exportedPlanningReports"
+        );
       }
-    } else if (activeTab === "expenses") {
-      exportToExcel(
-        prepareExpenseReportsForExport(expenseReport),
-        `expense_reports${dateRangeStr}`
-      );
+    } catch (error) {
       toast({
-        title: translateNow("toasts.exportSuccessful"),
-        description: translateNow("reportCenter.exportedExpenseReports"),
+        variant: "destructive",
+        title: translateNow("toasts.exportFailed"),
+        description: error instanceof Error ? error.message : undefined,
       });
-    } else if (activeTab === "payroll") {
-      exportToExcel(
-        preparePayrollReportsForExport(payrollReport),
-        `payroll_reports${dateRangeStr}`
-      );
-      toast({
-        title: translateNow("toasts.exportSuccessful"),
-        description: translateNow("reportCenter.exportedPayrollReports"),
-      });
-    } else if (activeTab === "ledger") {
-      exportToExcel(prepareLedgerReportsForExport(ledgerReport), `general_ledger${dateRangeStr}`);
-      toast({
-        title: translateNow("toasts.exportSuccessful"),
-        description: translateNow("reportCenter.exportedGeneralLedger"),
-      });
-    } else if (activeTab === "close") {
-      exportToExcel(
-        [
-          ...prepareMonthEndCloseStatusForExport(monthEndCloseExportReport),
-          ...prepareAuditTrailForExport(auditTrailReport),
-          ...prepareConsolidatedStatementsForExport(consolidatedStatementsReport),
-        ],
-        `close_reports_${monthEndPeriod}${dateRangeStr}`
-      );
-      toast({
-        title: translateNow("toasts.exportSuccessful"),
-        description: translateNow("toasts.closeReportsExportedToExcel"),
-      });
-    } else if (activeTab === "planning") {
-      exportToExcel(
-        preparePlanningReportsForExport(planningReport),
-        `planning_reports${dateRangeStr}`
-      );
-      toast({
-        title: translateNow("toasts.exportSuccessful"),
-        description: translateNow("reportCenter.exportedPlanningReports"),
-      });
+    } finally {
+      setIsExporting(false);
     }
   };
   const handleExportGoogleSheets = async () => {

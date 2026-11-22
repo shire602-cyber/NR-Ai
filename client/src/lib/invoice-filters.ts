@@ -1,3 +1,6 @@
+import { endOfDay, startOfDay } from "date-fns";
+import { parseCalendarDate } from "./format-date";
+
 /**
  * Invoice list filters from the URL (R13-21, S1 regression cover). Dashboard tiles link to
  * /invoices?status=open|overdue|<status> (server/services/dashboard-stats.service.ts `links`);
@@ -33,4 +36,37 @@ export function parseInvoiceStatusFilter(
 /** The list API query string for a filter (empty when none). */
 export function invoiceStatusQuery(filter: string | null | undefined): string {
   return filter ? `&status=${encodeURIComponent(filter)}` : "";
+}
+
+type InvoiceDateRange = { from?: Date; to?: Date };
+
+export function filterInvoiceDates<T extends { date?: string | Date | null }>(
+  rows: T[],
+  range: InvoiceDateRange
+): T[] {
+  if (!range.from && !range.to) return rows;
+  const from = range.from ? startOfDay(range.from).getTime() : -Infinity;
+  const to = range.to ? endOfDay(range.to).getTime() : Infinity;
+  return rows.filter(({ date }) => {
+    if (!date) return false;
+    const time = parseCalendarDate(date).getTime();
+    return time >= from && time <= to;
+  });
+}
+
+export async function collectInvoiceExportRows<T extends { date?: string | Date | null }>(
+  fetchPage: (cursor: string | null) => Promise<{ items: T[]; nextCursor: string | null }>,
+  range: InvoiceDateRange
+): Promise<T[]> {
+  let cursor: string | null = null;
+  const rows: T[] = [];
+  const seen = new Set<string>();
+  do {
+    const page = await fetchPage(cursor);
+    rows.push(...filterInvoiceDates(page.items, range));
+    cursor = page.nextCursor;
+    if (cursor && seen.has(cursor)) throw new Error("Invoice pagination did not advance");
+    if (cursor) seen.add(cursor);
+  } while (cursor);
+  return rows;
 }

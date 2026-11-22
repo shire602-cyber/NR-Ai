@@ -7,7 +7,7 @@ import { useForm, useFieldArray, type UseFormReturn } from "react-hook-form";
 import type { TermsFormShape } from "@/components/invoices/InvoiceTermsFields";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
-import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
+import { format, startOfDay } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -162,6 +162,8 @@ import {
   isVatRegisteredCompany,
 } from "@/lib/invoice-defaults";
 import {
+  collectInvoiceExportRows,
+  filterInvoiceDates,
   invoiceStatusQuery,
   parseInvoiceStatusFilter,
   type InvoiceStatusFilter,
@@ -471,7 +473,15 @@ export default function Invoices() {
   };
 
   // R20-05: cursor-paginated list (50 per page) with infinite scroll; exports
-  // fetch the full list explicitly with all=true.
+  // walk the same status and source filters through every page.
+  const invoicePageFilters = `${invoiceStatusQuery(statusFilter)}${sourceFilter !== "all" ? `&source=${encodeURIComponent(sourceFilter)}` : ""}`;
+  const fetchInvoicePage = (
+    cursor?: string | null
+  ): Promise<{ items: Invoice[]; nextCursor: string | null }> =>
+    apiRequest(
+      "GET",
+      `/api/companies/${selectedCompanyId}/invoices?limit=50${invoicePageFilters}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+    );
   const invoicePages = useInfiniteQuery<{ items: Invoice[]; nextCursor: string | null }>({
     queryKey: [
       "/api/companies",
@@ -481,11 +491,7 @@ export default function Invoices() {
       statusFilter ?? "all",
       sourceFilter,
     ],
-    queryFn: ({ pageParam }) =>
-      apiRequest(
-        "GET",
-        `/api/companies/${selectedCompanyId}/invoices?limit=50${invoiceStatusQuery(statusFilter)}${sourceFilter !== "all" ? `&source=${encodeURIComponent(sourceFilter)}` : ""}${pageParam ? `&cursor=${encodeURIComponent(String(pageParam))}` : ""}`
-      ),
+    queryFn: ({ pageParam }) => fetchInvoicePage(typeof pageParam === "string" ? pageParam : null),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
     enabled: !!selectedCompanyId,
@@ -511,8 +517,6 @@ export default function Invoices() {
     observer.observe(el);
     return () => observer.disconnect();
   }, [invoicePages]);
-  const fetchAllInvoices = async (): Promise<Invoice[]> =>
-    apiRequest("GET", `/api/companies/${selectedCompanyId}/invoices?all=true`);
 
   const { data: contacts = [] } = useQuery<
     Array<{
@@ -1323,61 +1327,46 @@ export default function Invoices() {
     finalise();
   };
 
-  const filteredInvoices = useMemo(() => {
-    if (!invoices || invoices.length === 0) return [];
-    if (!dateRange.from && !dateRange.to) return invoices;
+  const filteredInvoices = useMemo(
+    () => filterInvoiceDates(invoices, dateRange),
+    [invoices, dateRange]
+  );
 
-    const fromDate = dateRange.from ? startOfDay(dateRange.from) : null;
-    const toDate = dateRange.to ? endOfDay(dateRange.to) : null;
-
-    return invoices.filter((invoice) => {
-      if (!invoice.date) return false;
-
-      const invoiceDate =
-        typeof invoice.date === "string"
-          ? parseCalendarDate(invoice.date)
-          : parseCalendarDate(invoice.date);
-
-      if (fromDate && toDate) {
-        return isWithinInterval(invoiceDate, { start: fromDate, end: toDate });
-      }
-      if (fromDate) {
-        return invoiceDate >= fromDate;
-      }
-      if (toDate) {
-        return invoiceDate <= toDate;
-      }
-      return true;
-    });
-  }, [invoices, dateRange.from, dateRange.to]);
-
-  const handleExportExcel = () => {
-    if (!filteredInvoices.length) {
-      toast({
-        variant: "destructive",
-        title: t["invoices.toastNoData"],
-        description: t["invoices.noInvoicesToExport"],
-      });
-      return;
-    }
+  const handleExportExcel = async () => {
+    if (!selectedCompanyId) return;
 
     const dateRangeStr =
       dateRange.from && dateRange.to
         ? `_${format(dateRange.from, "yyyy-MM-dd")}_to_${format(dateRange.to, "yyyy-MM-dd")}`
         : "";
 
-    exportToExcel([prepareInvoicesForExport(filteredInvoices, locale)], `invoices${dateRangeStr}`);
-    if (invoicePages.hasNextPage) {
-      void fetchAllInvoices().then((all) =>
-        exportToExcel([prepareInvoicesForExport(all, locale)], `invoices-all${dateRangeStr}`)
-      );
+    setIsExporting(true);
+    try {
+      const matching = await collectInvoiceExportRows(fetchInvoicePage, dateRange);
+      if (!matching.length) {
+        toast({
+          variant: "destructive",
+          title: t["invoices.toastNoData"],
+          description: t["invoices.noInvoicesToExport"],
+        });
+        return;
+      }
+      await exportToExcel([prepareInvoicesForExport(matching, locale)], `invoices${dateRangeStr}`);
+      toast({
+        title: t["invoices.toastExportOk"],
+        description: formatMessage(t["invoices.toastExportExcelBody"], {
+          count: matching.length,
+        }),
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: t["invoices.toastExportFailed"],
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setIsExporting(false);
     }
-    toast({
-      title: t["invoices.toastExportOk"],
-      description: formatMessage(t["invoices.toastExportExcelBody"], {
-        count: filteredInvoices.length,
-      }),
-    });
   };
 
   const handleExportGoogleSheets = async () => {
