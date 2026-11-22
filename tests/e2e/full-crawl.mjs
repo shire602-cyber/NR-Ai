@@ -118,6 +118,27 @@ const FAIL_TEXT = /something went wrong|an error occurred|failed to load|unexpec
 const NOT_FOUND = (t) =>
   /not found/i.test(t) && t.trim().length < 300 && !/no [a-z ]*found/i.test(t);
 
+/** A mounted workspace can show its header while its records are still loading. */
+async function renderedMainText(page) {
+  await page.waitForFunction(
+    () => {
+      const main = document.querySelector("main");
+      if (!main || main.innerText.trim().length < 40) return false;
+      const loading = '[aria-busy="true"], .skeleton-shimmer';
+      return (
+        !main.matches(loading) &&
+        !Array.from(main.querySelectorAll(loading)).some(
+          (element) =>
+            element.getClientRects().length && getComputedStyle(element).visibility === "visible"
+        )
+      );
+    },
+    null,
+    { timeout: 15000 }
+  );
+  return page.locator("main").innerText();
+}
+
 /** Poll the page's <main> until it shows `text` (client render after a fetch is not instant). */
 async function mainShows(page, text, timeoutMs = 20000) {
   const end = Date.now() + timeoutMs;
@@ -256,12 +277,8 @@ async function main() {
     apiFailures = [];
     try {
       await page.goto(`${BASE}${route}`, { timeout: 45000 });
-      await page.waitForTimeout(1700);
+      const mainText = await renderedMainText(page);
       const finalUrl = page.url().replace(BASE, "");
-      const mainText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
       const failText =
         mainText.match(FAIL_TEXT)?.[0] ?? (NOT_FOUND(mainText) ? "not-found screen" : null);
       const blank = mainText.trim().length < 40;
@@ -1255,18 +1272,8 @@ async function main() {
       mApi = [];
       try {
         await mPage.goto(`${BASE}${route}`, { timeout: 45000 });
-        await mPage.waitForTimeout(1500);
+        const bodyText = await renderedMainText(mPage);
         const finalUrl = mPage.url().replace(BASE, "");
-        const mainText = await mPage
-          .locator("main")
-          .innerText()
-          .catch(() => "");
-        const bodyText =
-          mainText ||
-          (await mPage
-            .locator("body")
-            .innerText()
-            .catch(() => ""));
         const failText = bodyText.match(FAIL_TEXT)?.[0] ?? null;
         const blank = bodyText.trim().length < 40;
         if (mErrors.length || mApi.length || failText || blank) {
@@ -1321,19 +1328,29 @@ async function main() {
     const qStart = new Date(Date.UTC(now.getUTCFullYear(), qStartMonth, 1));
     const qEnd = new Date(Date.UTC(qStart.getUTCFullYear(), qStart.getUTCMonth() + 3, 0));
     const ymd = (d) => d.toISOString().slice(0, 10);
-    await page.request.post(`${BASE}/api/companies/${companyId}/vat-returns/generate`, {
-      headers: { "x-csrf-token": csrfToken ?? "" },
-      data: { periodStart: ymd(qStart), periodEnd: ymd(qEnd) },
-    });
+    const generated = await page.request.post(
+      `${BASE}/api/companies/${companyId}/vat-returns/generate`,
+      {
+        headers: { "x-csrf-token": csrfToken ?? "" },
+        data: { periodStart: ymd(qStart), periodEnd: ymd(qEnd) },
+      }
+    );
+    const vatReturn = await generated.json();
+    if (!generated.ok() || !vatReturn.id) {
+      throw new Error(
+        `VAT fixture failed with ${generated.status()}: ${vatReturn.code ?? "missing return ID"}`
+      );
+    }
     const DATE_TEXT = /\b\d{1,2}(?:[–-]\d{1,2})? [A-Z][a-z]{2} \d{4}\b|\b[A-Z][a-z]{2} \d{4}\b/g;
     const datesOn = async (p) => {
       await p.goto(`${BASE}/vat-filing`, { timeout: 45000 });
-      await p.waitForTimeout(2500);
-      const text = await p
-        .locator("main")
-        .innerText()
-        .catch(() => "");
-      return [...new Set(text.match(DATE_TEXT) ?? [])].sort();
+      const row = p.getByTestId(`row-return-${vatReturn.id}`);
+      await row.waitFor();
+      const text = await renderedMainText(p);
+      return {
+        dates: [...new Set(text.match(DATE_TEXT) ?? [])].sort(),
+        period: await row.getByRole("cell").first().innerText(),
+      };
     };
     const utcCtx = await browser.newContext({
       viewport: { width: 1440, height: 900 },
@@ -1344,13 +1361,18 @@ async function main() {
     const utcDates = await datesOn(utcPage);
     await utcCtx.close();
     const localDates = await datesOn(page);
-    const endLabel = `${qEnd.getUTCDate()} ${qEnd.toLocaleString("en-GB", { month: "short", timeZone: "UTC" }).slice(0, 3)} ${qEnd.getUTCFullYear()}`;
-    const shown = localDates.some((d) => d.includes(endLabel.split(" ").slice(1).join(" ")));
-    if (JSON.stringify(utcDates) !== JSON.stringify(localDates) || !shown) {
+    const monthLabel = (date) =>
+      date.toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+    const expectedPeriod = `${monthLabel(qStart)} - ${monthLabel(qEnd)}`;
+    if (
+      JSON.stringify(utcDates) !== JSON.stringify(localDates) ||
+      utcDates.period !== expectedPeriod ||
+      localDates.period !== expectedPeriod
+    ) {
       await fail(`timezone probe /vat-filing (${BROWSER_TIMEZONE})`, {
-        utc: utcDates.slice(0, 12),
-        local: localDates.slice(0, 12),
-        expectedPeriodEnd: endLabel,
+        utc: utcDates,
+        local: localDates,
+        expectedPeriod,
       });
     }
   } catch (e) {
@@ -1374,25 +1396,11 @@ async function main() {
       routeErrors = [];
       apiFailures = [];
       await page.goto(`${BASE}${route}`, { timeout: 45000 });
-      await page.waitForTimeout(1700);
-      // The document direction flips once the locale store hydrates; wait for it (and for the
-      // route to render) instead of racing a fixed delay.
-      await page
-        .waitForFunction(() => document.documentElement.getAttribute("dir") === "rtl", null, {
-          timeout: 15000,
-        })
-        .catch(() => {});
+      await page.locator('html[lang="ar"][dir="rtl"]').waitFor();
+      const mainText = await renderedMainText(page);
       const dir = await page.evaluate(() => document.documentElement.getAttribute("dir"));
-      let mainText = "";
-      for (let i = 0; i < 30 && mainText.trim().length < 40; i++) {
-        mainText = await page
-          .locator("main")
-          .innerText()
-          .catch(() => "");
-        if (mainText.trim().length < 40) await page.waitForTimeout(500);
-      }
       const blank = mainText.trim().length < 40;
-      if (dir !== "rtl" || routeErrors.length || blank) {
+      if (dir !== "rtl" || routeErrors.length || apiFailures.length || blank) {
         await fail(`rtl route ${route}`, {
           dir,
           blank: blank || undefined,

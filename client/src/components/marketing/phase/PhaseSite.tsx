@@ -101,7 +101,7 @@ function Picture({
       width={1280}
       height={800}
       loading={high ? "eager" : "lazy"}
-      fetchPriority={high ? "high" : undefined}
+      {...(high ? { fetchpriority: "high" } : {})}
     />
   );
 }

@@ -12,6 +12,7 @@ import { fromFils, mulRate } from "../../../shared/money";
 import { emitDomainEvent } from "../../platform/domain-events";
 import { withLedgerTx, type LedgerTx } from "../../ledger";
 import { allocateInvoiceNumber } from "../invoice-numbering.service";
+import { assertPeriodNotLocked, lockPeriodPolicy } from "../period-lock.service";
 import {
   dueDateFromTerms,
   prepareSalesLines,
@@ -92,6 +93,8 @@ export async function createDraftInvoice(
     });
   };
   const invoice = await withLedgerTx(async (tx, { afterCommit }) => {
+    await lockPeriodPolicy(tx, companyId, "shared");
+    await assertPeriodNotLocked(companyId, date, tx);
     const number = await allocateInvoiceNumber(companyId, "invoice", date, tx);
     const [inserted] = await tx
       .insert(invoices)

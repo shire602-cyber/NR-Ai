@@ -23,6 +23,15 @@ vi.mock("../../server/integrations/googleSheets", () => ({
   isGoogleSheetsConnected: vi.fn(async () => true),
   importExpensesFromSheet: vi.fn(async () => sheets.rows),
 }));
+vi.mock("../../server/db", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../server/db")>();
+  const transaction = async (run: (tx: unknown) => Promise<unknown>) => run({ transaction });
+  return { ...real, db: { ...real.db, transaction } };
+});
+vi.mock("../../server/services/period-lock.service", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../server/services/period-lock.service")>();
+  return { ...real, lockPeriodPolicy: vi.fn(), assertPeriodNotLocked: vi.fn() };
+});
 vi.mock("../../server/storage", () => ({
   storage: {
     createReceipt: vi.fn(async (input: Record<string, unknown>) => {
@@ -38,7 +47,13 @@ vi.mock("../../server/storage", () => ({
   },
 }));
 
-import { errorCode, errorMessage, errorProperty, errorStatus, errorStatusCode } from "../../server/errors";
+import {
+  errorCode,
+  errorMessage,
+  errorProperty,
+  errorStatus,
+  errorStatusCode,
+} from "../../server/errors";
 import { resolveSelectedId } from "../../client/src/lib/selection";
 import { registerIntegrationRoutes } from "../../server/routes/integrations.routes";
 

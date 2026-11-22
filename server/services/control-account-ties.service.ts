@@ -25,7 +25,16 @@
  * A tie with no activity on either side is reported as `applicable: false`.
  */
 import { pool } from "../db";
-import { accountTotals, agedPayables, agedReceivables, loadAccounts } from "../reporting";
+import { ledgerQueryable } from "../ledger/tx";
+import type { LedgerTx } from "../ledger/types";
+import {
+  accountTotals,
+  agedPayables,
+  agedReceivables,
+  loadAccounts,
+  runReportReads,
+  type Queryable,
+} from "../reporting";
 import { computeVat201 } from "../tax/vat-engine";
 import { assetRegister } from "./fixed-assets";
 
@@ -55,10 +64,15 @@ const aed = (f: number) => (Object.is(f / 100, -0) ? 0 : f / 100);
 const fils = (v: unknown) => Math.round((Number(v) || 0) * 100);
 const LOCAL = (col: string) => `((${col} + interval '4 hours')::date)`;
 
-async function glCredit(companyId: string, code: string, asOf: string): Promise<number | null> {
-  const acct = (await loadAccounts(companyId)).find((a) => a.code === code);
+async function glCredit(
+  companyId: string,
+  code: string,
+  asOf: string,
+  q: Queryable
+): Promise<number | null> {
+  const acct = (await loadAccounts(companyId, q)).find((a) => a.code === code);
   if (!acct) return null;
-  const t = (await accountTotals(companyId, { to: asOf })).get(acct.id);
+  const t = (await accountTotals(companyId, { to: asOf }, q)).get(acct.id);
   return t ? t.credit - t.debit : 0;
 }
 
@@ -88,8 +102,8 @@ function tie(
  * read from the stock records, never from the GL. An opening balance on 1070 with no stock behind
  * it (S8) is a difference here.
  */
-async function inventoryTie(companyId: string, asOf: string): Promise<ControlTie> {
-  const { rows } = await pool.query(
+async function inventoryTie(companyId: string, asOf: string, q: Queryable): Promise<ControlTie> {
+  const { rows } = await q.query(
     `SELECT
        (SELECT COALESCE(SUM(ROUND(COALESCE(p.stock_value, 0) * 100)), 0)
           FROM products p
@@ -106,10 +120,10 @@ async function inventoryTie(companyId: string, asOf: string): Promise<ControlTie
     [companyId, asOf]
   );
   const r = rows[0] as { current_fils: string; later_fils: string; account_ids: string[] | null };
-  const accounts = await loadAccounts(companyId);
+  const accounts = await loadAccounts(companyId, q);
   const ids = new Set<string>(r.account_ids ?? []);
   for (const a of accounts) if (a.code === "1070") ids.add(a.id);
-  const totals = await accountTotals(companyId, { to: asOf });
+  const totals = await accountTotals(companyId, { to: asOf }, q);
   let glFils = 0;
   for (const id of ids) {
     const t = totals.get(id);
@@ -131,8 +145,8 @@ async function inventoryTie(companyId: string, asOf: string): Promise<ControlTie
  * (grni_clear movements and their reversals) dated after it. A GRNI credit with no receipt
  * behind it (a manual stock purchase credited to 2015 before D1) is a difference here.
  */
-async function grniTie(companyId: string, asOf: string): Promise<ControlTie | null> {
-  const { rows } = await pool.query(
+async function grniTie(companyId: string, asOf: string, q: Queryable): Promise<ControlTie | null> {
+  const { rows } = await q.query(
     `SELECT
        (SELECT COALESCE(SUM(ROUND((COALESCE(g.received_value, 0) - COALESCE(g.cleared_value, 0)) * 100)), 0)
           FROM inventory_grni g WHERE g.company_id = $1)::bigint AS open_fils,
@@ -158,7 +172,7 @@ async function grniTie(companyId: string, asOf: string): Promise<ControlTie | nu
     Number(r.received_after) +
     Number(r.cleared_after) -
     Number(r.unclear_after);
-  const gl = await glCredit(companyId, "2015", asOf);
+  const gl = await glCredit(companyId, "2015", asOf, q);
   if (gl === null) return null;
   return tie(
     "grni",
@@ -175,22 +189,22 @@ async function grniTie(companyId: string, asOf: string): Promise<ControlTie | nu
  * impairment). PPE on the GL with no asset behind it (an opening balance never imported into the
  * register) or an asset whose capitalisation is not on the GL is a difference here.
  */
-async function fixedAssetsTie(companyId: string, asOf: string): Promise<ControlTie> {
-  const { rows } = await pool.query(
+async function fixedAssetsTie(companyId: string, asOf: string, q: Queryable): Promise<ControlTie> {
+  const { rows } = await q.query(
     `SELECT id FROM accounts WHERE company_id = $1 AND sub_type = 'fixed_asset'
      UNION SELECT cost_account_id FROM fixed_assets WHERE company_id = $1 AND cost_account_id IS NOT NULL
      UNION SELECT accumulated_account_id FROM fixed_assets
       WHERE company_id = $1 AND accumulated_account_id IS NOT NULL`,
     [companyId]
   );
-  const totals = await accountTotals(companyId, { to: asOf });
+  const totals = await accountTotals(companyId, { to: asOf }, q);
   let glFils = 0;
   for (const r of rows as Array<{ id: string }>) {
     const t = totals.get(r.id);
     if (t) glFils += t.debit - t.credit;
   }
   let subFils = 0;
-  for (const a of await assetRegister(companyId, asOf)) {
+  for (const a of await assetRegister(companyId, asOf, q)) {
     if (a.capitalized) subFils += Math.round(a.bookNetBookValue * 100);
   }
   return tie(
@@ -202,21 +216,24 @@ async function fixedAssetsTie(companyId: string, asOf: string): Promise<ControlT
   );
 }
 
-async function payrollTablesExist(): Promise<boolean> {
-  const r = await pool.query(`SELECT to_regclass('public.payroll_runs') IS NOT NULL AS ok`);
+async function payrollTablesExist(q: Queryable): Promise<boolean> {
+  const r = await q.query(`SELECT to_regclass('public.payroll_runs') IS NOT NULL AS ok`);
   return r.rows[0]?.ok === true;
 }
 
 export async function controlAccountTies(
   companyId: string,
   periodStart: string,
-  periodEnd: string
+  periodEnd: string,
+  tx?: LedgerTx
 ): Promise<ControlTie[]> {
+  const q = tx ? ledgerQueryable(tx) : pool;
   const out: ControlTie[] = [];
-  const [ar, ap] = await Promise.all([
-    agedReceivables({ companyId, asOf: periodEnd }),
-    agedPayables({ companyId, asOf: periodEnd }),
-  ]);
+  const [ar, ap] = await runReportReads(
+    q,
+    () => agedReceivables({ companyId, asOf: periodEnd }, q),
+    () => agedPayables({ companyId, asOf: periodEnd }, q)
+  );
   out.push(
     tie(
       "receivables",
@@ -234,18 +251,21 @@ export async function controlAccountTies(
     )
   );
 
-  out.push(await inventoryTie(companyId, periodEnd));
-  const grni = await grniTie(companyId, periodEnd);
+  out.push(await inventoryTie(companyId, periodEnd, q));
+  const grni = await grniTie(companyId, periodEnd, q);
   if (grni) out.push(grni);
-  out.push(await fixedAssetsTie(companyId, periodEnd));
+  out.push(await fixedAssetsTie(companyId, periodEnd, q));
 
   try {
-    const vat = await computeVat201({
+    const vatInput = {
       companyId,
       from: periodStart,
       to: periodEnd,
       allowIncomplete: true,
-    });
+    };
+    const vat = tx
+      ? await tx.transaction((savepoint) => computeVat201(vatInput, savepoint))
+      : await computeVat201(vatInput);
     const r = vat.reconciliation;
     // Both sides as net VAT payable for the period; the difference is the unexplained part.
     const ledgerNet = r.ledgerOutputVatFils - r.ledgerInputVatFils;
@@ -263,10 +283,10 @@ export async function controlAccountTies(
     // No VAT configuration (unregistered company): nothing to tie.
   }
 
-  if (!(await payrollTablesExist())) return out;
+  if (!(await payrollTablesExist(q))) return out;
 
-  const pensionGl = await glCredit(companyId, "2032", periodEnd);
-  const pension = await pool.query(
+  const pensionGl = await glCredit(companyId, "2032", periodEnd, q);
+  const pension = await q.query(
     `SELECT
        (SELECT COALESCE(SUM(pi.pension_employee + pi.pension_employer), 0)
           FROM payroll_items pi
@@ -290,8 +310,8 @@ export async function controlAccountTies(
     );
   }
 
-  const gratuityGl = await glCredit(companyId, "2036", periodEnd);
-  const gratuity = await pool.query(
+  const gratuityGl = await glCredit(companyId, "2036", periodEnd, q);
+  const gratuity = await q.query(
     `SELECT
        (SELECT COALESCE(SUM(opening_gratuity_provision), 0) FROM employees
          WHERE company_id = $1 AND opening_gratuity_provision IS NOT NULL
@@ -324,9 +344,9 @@ export async function controlAccountTies(
     );
   }
 
-  const salariesGl = await glCredit(companyId, "2030", periodEnd);
+  const salariesGl = await glCredit(companyId, "2030", periodEnd, q);
   if (salariesGl !== null) {
-    const fromPayroll = await pool.query(
+    const fromPayroll = await q.query(
       `SELECT COALESCE(SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100)), 0)::bigint AS f
          FROM journal_lines jl
          JOIN journal_entries je ON je.id = jl.entry_id

@@ -8,6 +8,23 @@ import { useHarness } from "./harness";
 const h = useHarness();
 
 describe("STEP1 F6 admin integrations", () => {
+  it("lists manual statement import as available without provider setup", async () => {
+    const admin = await h.createTenant({ name: "BankStatementAdmin", isAdmin: true });
+    const status = await admin.as.get("/api/admin/integration-status");
+    expect(status.status, status.text).toBe(200);
+    expect(status.body.integrations).toContainEqual({
+      key: "bankStatementUpload",
+      name: "Bank statement upload",
+      configured: true,
+      detail: null,
+      requiredEnv: [],
+      unlocks: "Upload CSV bank statements for reconciliation",
+    });
+    expect(status.body.integrations).toContainEqual(
+      expect.objectContaining({ key: "openBanking", name: "Existing bank connections" })
+    );
+  });
+
   it("[F6-status] an admin reads configured/not configured; a customer is refused", async () => {
     const admin = await h.createTenant({ name: "IntegrationsAdmin", isAdmin: true });
     const customer = await h.createTenant({ name: "IntegrationsCustomer" });

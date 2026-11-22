@@ -739,5 +739,6 @@
   "marketing.signupTrialCaps": "During the trial: up to {companies, plural, one {# company} other {# companies}}, {credits} AI credits and {storage} of storage.",
   "marketing.prPlanPhrase_starter": "Starter",
   "marketing.prPlanPhrase_professional": "Professional",
-  "marketing.prPlanPhrase_enterprise": "Enterprise"
+  "marketing.prPlanPhrase_enterprise": "Enterprise",
+  "marketing.demoBankTitle": "CSV statement import"
 }

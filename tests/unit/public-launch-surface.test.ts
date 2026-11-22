@@ -2,11 +2,12 @@
 // legal and help copy. It scans the shipped source/catalog text for banned compliance and security
 // claims across pages that cannot all be rendered without API data.
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
+import { findBankFeedMention, findUnsupportedBankFeedClaim } from "../e2e/lib/bank-feed-claims.mjs";
 
 const repoRoot = process.cwd();
 
@@ -30,6 +31,7 @@ const publicLaunchFiles = [
   "client/src/components/marketing/phase/content.ts",
   "client/src/components/marketing/phase/Forms.tsx",
   "client/src/components/auth/AuthLayout.tsx",
+  "client/src/dev/UiGallery.tsx",
   "client/src/pages/Register.tsx",
   "client/src/pages/Services.tsx",
   "client/src/pages/Pricing.tsx",
@@ -136,47 +138,11 @@ describe("Public SaaS launch surface", () => {
       for (const bannedClaim of bannedLaunchClaims) {
         expect(source, `${file} contains ${bannedClaim}`).not.toMatch(bannedClaim);
       }
+      expect(
+        findBankFeedMention(source),
+        `${file} contains an unsupported bank feed claim`
+      ).toBeNull();
     }
-  });
-
-  it("describes CSV statement upload and reconciliation in both locales", () => {
-    for (const locale of ["en", "ar"]) {
-      const prefix = `client/src/locales/${locale}`;
-      const keys = [
-        ["marketing", "marketing.faq3A"],
-        ["banking", "banking.statementUpload.title"],
-        ["banking", "banking.statementUpload.description"],
-        ["banking", "banking.statementUpload.cta"],
-        ["serverErrors", "serverErrors.BANK_FEED_NOT_CONFIGURED"],
-      ];
-      for (const [catalog, key] of keys) {
-        const source = JSON.parse(readRepoFile(`${prefix}/${catalog}.json`));
-        expect(source[key], `${locale} ${key}`).toMatch(/CSV/);
-      }
-    }
-  });
-
-  it("omits unsupported banking claims from tracked source and documentation", () => {
-    const claims = [
-      /\blive[\s-]*bank[\s-]*feeds?\b/i,
-      /\bautomatic\s+bank\s+transaction\s+sync\b/i,
-      /\bbank[\s-]+feeds?\b[^\n.]{0,60}\b(?:coming|later|soon)\b/i,
-      /الربط\s+البنكي\s+المباشر|(?:الربط|المزامنة)\s+البنكي(?:ة)?[^\n.]{0,60}(?:قريب|لاحق)/,
-    ];
-    const files = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
-      .split("\0")
-      .filter((file) => /\.(?:md|tsx?|json|mjs|cjs|js|html|txt|ya?ml)$/i.test(file));
-    const matches = files.flatMap((file) => {
-      const source = readRepoFile(file);
-      const rules = file.startsWith("client/src/locales/")
-        ? [...claims, /\bbank\s+feeds?\b|الربط\s+البنكي/i]
-        : claims;
-      return rules.flatMap((rule) => {
-        const match = rule.exec(source);
-        return match ? [`${file}:${source.slice(0, match.index).split("\n").length}`] : [];
-      });
-    });
-    expect(matches).toEqual([]);
   });
 
   it("keeps authenticated SaaS chrome and dashboard copy claim-safe", () => {
@@ -207,6 +173,10 @@ describe("Public SaaS launch surface", () => {
       for (const bannedClaim of bannedLaunchClaims) {
         expect(source, `${file} contains ${bannedClaim}`).not.toMatch(bannedClaim);
       }
+      expect(
+        findUnsupportedBankFeedClaim(source),
+        `${file} contains an unsupported bank feed claim`
+      ).toBeNull();
     }
   });
 
@@ -352,6 +322,153 @@ describe("Public SaaS launch surface", () => {
     ]) {
       expect(demoSource).toContain(expectedDemoSignal);
     }
+  });
+
+  it.each([
+    "Connect your bank in seconds",
+    "Review transactions via encrypted feeds",
+    "Live bank feeds are available now.",
+    "Live bank feeds are coming later.",
+    "Bank feeds are coming soon.",
+    "We will support live bank feeds.",
+    "اربط حسابك البنكي واستورد المعاملات.",
+    "يمكنك ربط حسابك البنكي مباشرة.",
+    "زامن معاملاتك البنكية تلقائيًا.",
+    "الربط البنكي المباشر متاح الآن.",
+    "سيتوفر الربط البنكي المباشر لاحقًا.",
+    "سنربط حسابك بالبنك قريباً.",
+  ])("flags an unsupported bank feed claim: %s", (copy) => {
+    expect(findUnsupportedBankFeedClaim(copy)).not.toBeNull();
+  });
+
+  it.each(["Can it connect to my bank directly?", "هل يتصل مباشرة بحسابي البنكي؟"])(
+    "rejects the former banking FAQ question: %s",
+    (copy) => {
+      expect(findUnsupportedBankFeedClaim(copy)).not.toBeNull();
+      expect(findBankFeedMention(copy)).not.toBeNull();
+    }
+  );
+
+  it.each([
+    "CSV statement import, no live feed needed",
+    "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.",
+    "Live bank feeds are not supported.",
+    "UAE bank feeds are not supported.",
+    "We don't support UAE bank feeds.",
+    "Do not connect your bank; upload a CSV statement.",
+    "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك.",
+    "الربط البنكي المباشر غير متاح.",
+    "لا يمكنك ربط حسابك البنكي مباشرة.",
+  ])("accepts manual CSV or an honest negation: %s", (copy) => {
+    expect(findUnsupportedBankFeedClaim(copy)).toBeNull();
+  });
+
+  it("does not let an honest negation mask a later positive claim", () => {
+    const copy = "UAE bank feeds are not supported. Securely link your bank account today.";
+    expect(findUnsupportedBankFeedClaim(copy)).toBe("Securely link your bank account");
+  });
+
+  it.each([
+    "Bank feeds",
+    "Live syncing is not available for it.",
+    "A bank-feed connection is unavailable.",
+    "Try open-banking next month.",
+    "الربط البنكي",
+    "المزامنة المباشرة غير متاحة له.",
+    "لا يوجد ربطٌ مصرفيّ.",
+    "الخدمات المصرفية المفتوحة",
+    "ربط مباشر",
+    "تفعيل الربط المباشر قريبًا",
+    "سنربط حسابك بالبنك قريباً",
+  ])("rejects a mention on statement-import surfaces: %s", (copy) => {
+    expect(findBankFeedMention(copy)).not.toBeNull();
+  });
+
+  it.each(["en", "ar"])(
+    "uses statement-import wording across signed-in banking in %s",
+    (locale) => {
+      const readCatalog = (name: string) =>
+        JSON.parse(readRepoFile(`client/src/locales/${locale}/${name}.json`));
+      const banking = readCatalog("banking");
+      const errors = readCatalog("serverErrors");
+      const shell = readCatalog("shell");
+      const onboarding = readCatalog("onboarding");
+      expect(banking["banking.statementUpload.title"]).toContain("CSV");
+      expect(banking["banking.statementUpload.cta"]).toContain("CSV");
+      expect(banking["banking.feeds.never"]).toBe(locale === "en" ? "Never" : "أبدًا");
+      expect(onboarding["onboarding.bankCardDesc"]).toBe(
+        banking["banking.statementUpload.description"].replace(/\.$/, "")
+      );
+      for (const copy of [
+        ...Object.entries(banking)
+          .filter(([key]) => /^banking\.(feeds|statementUpload|recovery)\./.test(key))
+          .map(([, value]) => String(value)),
+        ...Object.entries(errors)
+          .filter(([key]) => /^serverErrors\.BANK_(?:FEED|CONNECTION)_/.test(key))
+          .map(([, value]) => String(value)),
+        shell["shell.nav.banking"],
+      ]) {
+        expect(findBankFeedMention(copy), copy).toBeNull();
+      }
+      expect(errors["serverErrors.BANK_FEED_NOT_SUPPORTED"]).toContain("CSV");
+    }
+  );
+
+  it.each(["en", "ar"])("keeps all %s catalog values free of bank feed wording", (locale) => {
+    const directory = `client/src/locales/${locale}`;
+    const mentions: string[] = [];
+    for (const file of readdirSync(join(repoRoot, directory))) {
+      if (!file.endsWith(".json")) continue;
+      const catalog = JSON.parse(readRepoFile(`${directory}/${file}`)) as Record<string, unknown>;
+      for (const [key, value] of Object.entries(catalog)) {
+        if (typeof value === "string" && findBankFeedMention(value)) {
+          mentions.push(`${file}: ${key}`);
+        }
+      }
+    }
+    expect(mentions).toEqual([]);
+  });
+
+  it.each([
+    "docs/EMAIL_INTAKE_PILOT.md",
+    "docs/EXTERNAL_DEPENDENCIES.md",
+    "docs/archive/2026-06/AUDIT.md",
+    "docs/archive/2026-06/COMPETITIVE_ROADMAP.md",
+    "docs/archive/2026-06/DEVELOPMENT_STATUS.md",
+    "docs/archive/2026-06/LAUNCH_READINESS.md",
+    "docs/archive/2026-06/NEXT_STEPS.md",
+    "docs/archive/2026-06/PRODUCTION_HARDENING.md",
+    "docs/archive/codex/CODEX_TASK_PROMPT.md",
+    "docs/archive/root/COMPETITIVE_AUDIT_2026.md",
+  ])("keeps first-party launch and rollout guidance free of bank feed wording in %s", (file) => {
+    expect(findBankFeedMention(readRepoFile(file))).toBeNull();
+  });
+
+  it.each(["en", "ar"])("keeps %s unavailable banking states focused on CSV import", (locale) => {
+    const banking = JSON.parse(readRepoFile(`client/src/locales/${locale}/banking.json`));
+    const errors = JSON.parse(readRepoFile(`client/src/locales/${locale}/serverErrors.json`));
+    for (const copy of [
+      banking["banking.statementUpload.title"],
+      banking["banking.statementUpload.description"],
+      errors["serverErrors.BANK_FEED_NOT_CONFIGURED"],
+      errors["serverErrors.REDIRECT_URI_NOT_ALLOWED"],
+    ]) {
+      expect(copy).toContain("CSV");
+      expect(findUnsupportedBankFeedClaim(copy)).toBeNull();
+    }
+  });
+
+  it("keeps unsupported banking wording out of tracked copy and scheduler metadata", () => {
+    const files = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
+      .split("\0")
+      .filter(
+        (file) => !file.startsWith("tests/") && /\.(?:md|html|tsx?|json|mjs|txt|ya?ml)$/i.test(file)
+      );
+    const claims = /\blive[\s-]+bank[\s-]+feeds?\b|sync configured open[- ]banking feeds/i;
+    expect(files.filter((file) => claims.test(readRepoFile(file)))).toEqual([]);
+    expect(readRepoFile("server/services/bank-feeds/index.ts")).toContain(
+      'description: "Refresh transactions for existing configured connections"'
+    );
   });
 
   // X6b: the old test here compared advertised free-plan limits with source text. Pricing, the

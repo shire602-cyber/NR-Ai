@@ -1,9 +1,9 @@
+import { portalInviteLogPath } from "../http/portal-invite-privacy";
 import helmet from "helmet";
 import cors from "cors";
 import type { Express, Request, Response, NextFunction } from "express";
 import { getEnv, isProduction } from "../config/env";
 import { createLogger } from "../config/logger";
-import { portalInviteLogPath } from "../http/portal-invite-privacy";
 import { buildLimiter, clientIp, limiterProfiles } from "./rateLimit";
 import {
   cspNonce,
@@ -30,7 +30,8 @@ const CREDENTIAL_AUTH_PATHS = [
 ];
 
 export function isCredentialAuthPath(path: string): boolean {
-  return CREDENTIAL_AUTH_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
+  const normalized = path.toLowerCase();
+  return CREDENTIAL_AUTH_PATHS.some((p) => normalized === p || normalized.startsWith(`${p}/`));
 }
 
 /**
@@ -40,7 +41,7 @@ export function isCredentialAuthPath(path: string): boolean {
  * the budget (it used to 429 after 30 loads and the social buttons vanished).
  */
 export function isOAuthLimiterExempt(path: string): boolean {
-  return path === "/providers" || path === "/providers/";
+  return /^\/providers\/?$/i.test(path);
 }
 
 const log = createLogger("security");
@@ -208,7 +209,7 @@ export function applySecurityMiddleware(app: Express): void {
           return callback(null, true);
         }
 
-        log.warn({ origin }, "Blocked CORS request from unauthorized origin");
+        log.warn("Blocked CORS request from unauthorized origin");
         callback(new Error("Not allowed by CORS"));
       },
       credentials: true,
@@ -229,7 +230,7 @@ export function applySecurityMiddleware(app: Express): void {
   // ─── Rate Limiting (sliding window, configurable per route) ──
   // Each limiter has its own in-memory sliding-window store, sized via
   // env vars (RL_*). Requests carrying a valid access token count against
-  // `userId:companyId`; anonymous traffic counts against the client IP
+  // the user; anonymous traffic counts against the client IP
   // (R01-10). Requests rejected with 429 are not counted (R17-06).
   // Order matters: more specific paths must be registered before /api/.
   app.use(
@@ -324,7 +325,7 @@ export function applySecurityMiddleware(app: Express): void {
     for (const pattern of suspiciousPatterns) {
       if (pattern.test(fullUrl) || pattern.test(JSON.stringify(req.body || ""))) {
         log.warn(
-          { ip: req.ip, method: req.method, url: portalInviteLogPath(fullUrl) ?? fullUrl },
+          { requestId: req.id, method: req.method, url: portalInviteLogPath(fullUrl) ?? undefined },
           "Suspicious request detected"
         );
         break;

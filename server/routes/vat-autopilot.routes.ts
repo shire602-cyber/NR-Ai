@@ -16,6 +16,7 @@ import { AppError, DomainError, errorMessage } from "../errors";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { recordAudit } from "../services/audit.service";
+import { zUuid } from "../../shared/validators/primitives";
 import { vatAutopilotStatusBody } from "../../shared/validators/vat";
 import { assertAlignedPeriod, frequencyOf } from "../tax/vat-periods";
 import { loadVatCompany } from "../tax/vat-engine";
@@ -52,18 +53,18 @@ const calculateQuerySchema = z.object({
 // can't blow up downstream numeric columns. NaN/Infinity are rejected by the
 // `.finite()` clause.
 const adjustmentBodySchema = z.strictObject({
-  companyId: z.string().guid(),
-  periodId: z.string().guid(),
+  companyId: zUuid,
+  periodId: zUuid,
   box: z.string().refine(isValidVat201BoxKey, { message: "Unknown VAT 201 box key" }),
   amount: z.number().finite().min(-1e12).max(1e12),
   reason: z.string().min(1).max(2000),
 });
 
 const dueDatesQuerySchema = z.object({
-  companyId: z.string().guid().optional(),
+  companyId: zUuid.optional(),
 });
 
-const companyIdParamSchema = z.object({ companyId: z.string().guid() });
+const companyIdParamSchema = z.object({ companyId: zUuid });
 
 /**
  * An explicit period must be exactly one tax period of the company's stagger (R07-07): a
@@ -173,8 +174,8 @@ export function registerVATAutopilotRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const params = z
         .object({
-          companyId: z.string().guid(),
-          periodId: z.string().guid(),
+          companyId: zUuid,
+          periodId: zUuid,
         })
         .safeParse(req.params);
       if (!params.success) return badRequest(res, params.error);
@@ -224,12 +225,10 @@ export function registerVATAutopilotRoutes(app: Express) {
         });
         res.status(201).json(adjustment);
       } catch (err: unknown) {
-        res
-          .status(400)
-          .json({
-            message: errorMessage(err) || "Could not add adjustment",
-            code: "VAT_ADJUSTMENT_FAILED",
-          });
+        res.status(400).json({
+          message: errorMessage(err) || "Could not add adjustment",
+          code: "VAT_ADJUSTMENT_FAILED",
+        });
       }
     })
   );
@@ -240,7 +239,7 @@ export function registerVATAutopilotRoutes(app: Express) {
     authMiddleware,
     strictBody(vatAutopilotStatusBody, { allowServerOwned: ["companyId", "status"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const params = z.object({ periodId: z.string().guid() }).safeParse(req.params);
+      const params = z.object({ periodId: zUuid }).safeParse(req.params);
       if (!params.success) return badRequest(res, params.error);
 
       const { periodId } = params.data;

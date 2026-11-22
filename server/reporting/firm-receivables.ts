@@ -14,8 +14,9 @@ import { pool } from "../db";
 import type { IsoDate } from "./dates";
 import { uaeToday } from "./dates";
 import {
+  documentAmountBaseFilsSql,
   localDateSql,
-  receivableOpenBaseFilsSql,
+  localDateOnOrBeforeSql,
   receivableOpenSql,
   receivableStatusSql,
 } from "./settlement";
@@ -45,19 +46,21 @@ export async function receivablesByCompany(
   const out = new Map<string, CompanyReceivables>();
   if (companyIds.length === 0) return out;
   const due = `COALESCE(${localDateSql("i.due_date")}, ${localDateSql("i.date")} + 30)`;
-  const open = receivableOpenBaseFilsSql("i", AS_OF);
+  const openFils = documentAmountBaseFilsSql("balance.open", "i");
   const { rows } = await q.query(
     `SELECT i.company_id, co.base_currency,
-            COALESCE(SUM(${open}), 0)::text AS open_fils,
-            COALESCE(SUM(CASE WHEN ${due} < $2::date THEN ${open} ELSE 0 END), 0)::text AS overdue_fils,
-            COUNT(*) FILTER (WHERE ${receivableOpenSql("i", AS_OF)} > 0)::int AS open_count,
-            COUNT(*) FILTER (WHERE ${receivableOpenSql("i", AS_OF)} > 0 AND ${due} < $2::date)::int AS overdue_count
+            COALESCE(SUM(${openFils}), 0)::text AS open_fils,
+            COALESCE(SUM(${openFils}) FILTER (WHERE ${due} < $2::date), 0)::text AS overdue_fils,
+            COUNT(*) FILTER (WHERE balance.open > 0)::int AS open_count,
+            COUNT(*) FILTER (WHERE balance.open > 0 AND ${due} < $2::date)::int AS overdue_count
        FROM invoices i
        JOIN companies co ON co.id = i.company_id
+       -- Keep the settlement subqueries in the lateral plan so each runs only once per invoice.
+       CROSS JOIN LATERAL (SELECT ${receivableOpenSql("i", AS_OF)} AS open OFFSET 0) balance
       WHERE i.company_id = ANY($1::uuid[])
         AND ${receivableStatusSql("i")}
         AND COALESCE(i.invoice_type, 'invoice') <> 'credit_note'
-        AND ${localDateSql("i.date")} <= $2::date
+        AND ${localDateOnOrBeforeSql("i.date", AS_OF.asOf)}
       GROUP BY i.company_id, co.base_currency`,
     [companyIds, asOf]
   );
