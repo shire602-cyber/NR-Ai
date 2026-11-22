@@ -8,7 +8,7 @@
  * POST /firm/command-center/staff/assign, GET /firm/command-center/staff/workload)
  * goes through this module.
  */
-import { and, eq, inArray, ne, notInArray } from "drizzle-orm";
+import { and, eq, inArray, ne, notExists, notInArray } from "drizzle-orm";
 import { db } from "../../db";
 import { DomainError } from "../../errors";
 import {
@@ -37,8 +37,10 @@ import {
   grantCompanyAccess,
   isFirmClient,
   listFirmMembers,
+  reconcileCompanyMembershipOrigin,
   lockFirmClientAccess,
   lockFirmTimerUser,
+  lockFirmLinkAuthority,
   resolveFirmContext,
   revokeCompanyAccess,
   settleFirmTimersAtAccessLoss,
@@ -155,12 +157,15 @@ export async function assignStaff(
   const role = input.role ?? "accountant";
   await db.transaction(async (tx) => {
     await lockFirmTimerUser(tx, staffUserId);
+    await lockFirmMembership(tx, ctx.firmId);
     await lockFirmClientAccess(tx, companyId);
+    await lockFirmLinkAuthority(ctx, "firm.staff.manage", tx);
     if (!(await isFirmClient(ctx, companyId, tx))) throw new DomainError("CLIENT_NOT_FOUND", 404);
     const [staffUser] = await tx
       .select({ firmRole: users.firmRole, userType: users.userType })
       .from(users)
-      .where(eq(users.id, staffUserId));
+      .where(eq(users.id, staffUserId))
+      .for("update");
     if (!staffUser) throw new DomainError("STAFF_NOT_FOUND", 404);
     const staff = await resolveFirmContext({ id: staffUserId, ...staffUser, isAdmin: false }, tx);
     if (!staff || staff.firmId !== ctx.firmId) {
@@ -219,13 +224,15 @@ function memberTimerScope(ctx: FirmContext, userId: string) {
 }
 
 async function lockMemberClients(tx: FirmTransaction, ctx: FirmContext, userId: string) {
-  const grants = await tx
-    .select({
-      companyId: firmCompanyGrants.companyId,
-      membershipId: firmCompanyGrants.membershipId,
-    })
-    .from(firmCompanyGrants)
-    .where(and(eq(firmCompanyGrants.firmId, ctx.firmId), eq(firmCompanyGrants.userId, userId)));
+  const readGrants = () =>
+    tx
+      .select({
+        companyId: firmCompanyGrants.companyId,
+        membershipId: firmCompanyGrants.membershipId,
+      })
+      .from(firmCompanyGrants)
+      .where(and(eq(firmCompanyGrants.firmId, ctx.firmId), eq(firmCompanyGrants.userId, userId)));
+  const grants = await readGrants();
   const assignments = await tx
     .select({ companyId: firmStaffAssignments.companyId })
     .from(firmStaffAssignments)
@@ -241,7 +248,9 @@ async function lockMemberClients(tx: FirmTransaction, ctx: FirmContext, userId: 
     ),
   ].sort();
   for (const id of ids) await lockFirmClientAccess(tx, id);
-  return { grants, assignments, timerCompanyId: timer?.companyId };
+  await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
+  for (const { companyId } of grants) await reconcileCompanyMembershipOrigin(companyId, userId, tx);
+  return { grants: await readGrants(), assignments, timerCompanyId: timer?.companyId };
 }
 
 /** Only the existing running timer can accrue time at the role or access change. */
@@ -422,6 +431,28 @@ export async function removeFirmMember(ctx: FirmContext, userId: string): Promis
         await revokeCompanyAccess({ firmId: ctx.firmId, isNr: ctx.isNr, companyId, userId }, tx);
       }
     }
+    // A departing platform admin with a direct role must keep that role's provenance.
+    // Otherwise scoped provider routes would fall back to platform-wide authority.
+    const retainedAdminMembership = tx
+      .select({ id: companyUsers.id })
+      .from(companyUsers)
+      .innerJoin(users, eq(users.id, companyUsers.userId))
+      .where(
+        and(
+          eq(companyUsers.companyId, firmCompanyGrants.companyId),
+          eq(companyUsers.userId, userId),
+          eq(users.isAdmin, true)
+        )
+      );
+    await tx
+      .delete(firmCompanyGrants)
+      .where(
+        and(
+          eq(firmCompanyGrants.firmId, ctx.firmId),
+          eq(firmCompanyGrants.userId, userId),
+          notExists(retainedAdminMembership)
+        )
+      );
     await tx
       .delete(firmMembers)
       .where(and(eq(firmMembers.userId, userId), eq(firmMembers.firmId, ctx.firmId)));

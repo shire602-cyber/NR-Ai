@@ -6,15 +6,19 @@
  * einvoice_document_events row per track that changed, so the status drawer can show the full
  * story: validated, handed to A-Cube, delivered, reported, or where it failed and why.
  */
-import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "../../db";
 import {
   einvoiceDocumentEvents,
-  einvoiceDocuments,
   type EInvoiceDocument,
   type EInvoiceDocumentEvent,
 } from "../../../shared/schema";
-import { getEInvoiceDocument, upsertEInvoiceDocument, type EInvoiceDocumentPatch } from "./store";
+import {
+  getEInvoiceDocument,
+  upsertEInvoiceDocument,
+  type EInvoiceDb,
+  type EInvoiceDocumentPatch,
+} from "./store";
 import type { DeliveryStatus, ReportingStatus } from "./tracks";
 
 export type HistorySource = "user" | "webhook" | "poll" | "job" | "system";
@@ -36,16 +40,21 @@ export interface TrackMeta {
   now?: Date;
   /** Extra document-row fields written in the same upsert (legacy status, attempts ...). */
   document?: EInvoiceDocumentPatch;
+  /** A resend or recovery attempt can enter the same delivery state as the preceding attempt. */
+  recordDelivery?: boolean;
+  /** Provider confirmation can establish an outcome that an earlier snapshot only inferred. */
+  recordReporting?: boolean;
 }
 
 export async function applyTracks(
   companyId: string,
   invoiceId: string,
   patch: TrackPatch,
-  meta: TrackMeta
+  meta: TrackMeta,
+  conn: EInvoiceDb = db
 ): Promise<EInvoiceDocument> {
   const now = meta.now ?? new Date();
-  const current = await getEInvoiceDocument(companyId, invoiceId);
+  const current = await getEInvoiceDocument(companyId, invoiceId, conn);
   const row: EInvoiceDocumentPatch = { ...(meta.document ?? {}) };
   const events: Array<typeof einvoiceDocumentEvents.$inferInsert> = [];
   const base = {
@@ -60,11 +69,13 @@ export async function applyTracks(
   const errorChanged =
     patch.errorCode !== undefined && (patch.errorCode ?? null) !== (current?.lastErrorCode ?? null);
 
-  if (patch.delivery && (patch.delivery !== current?.deliveryStatus || errorChanged)) {
+  if (
+    patch.delivery &&
+    (patch.delivery !== current?.deliveryStatus || errorChanged || meta.recordDelivery)
+  ) {
     row.deliveryStatus = patch.delivery;
     row.deliveryStatusAt = now;
     if (patch.delivery === "delivered" && !current?.deliveredAt) row.deliveredAt = now;
-    if (patch.delivery === "queued" && !current?.submittedAt) row.submittedAt = now;
     events.push({
       ...base,
       track: "delivery",
@@ -74,10 +85,13 @@ export async function applyTracks(
       message: patch.errorCode ? (patch.errorMessage ?? null) : null,
     });
   }
-  if (patch.reporting && patch.reporting !== current?.reportingStatus) {
+  if (row.providerMessageId && !current?.submittedAt && row.submittedAt === undefined)
+    row.submittedAt = now;
+  if (patch.reporting && (patch.reporting !== current?.reportingStatus || meta.recordReporting)) {
     row.reportingStatus = patch.reporting;
     row.reportingStatusAt = now;
-    if (patch.reporting === "reported" && !current?.reportedAt) row.reportedAt = now;
+    if (patch.reporting === "reported" && (!current?.reportedAt || meta.recordReporting))
+      row.reportedAt = now;
     events.push({
       ...base,
       track: "reporting",
@@ -91,8 +105,8 @@ export async function applyTracks(
   if (patch.errorCode !== undefined) row.lastErrorCode = patch.errorCode;
   if (patch.reportBy !== undefined) row.reportBy = patch.reportBy;
 
-  const doc = await upsertEInvoiceDocument(companyId, invoiceId, row);
-  if (events.length) await db.insert(einvoiceDocumentEvents).values(events);
+  const doc = await upsertEInvoiceDocument(companyId, invoiceId, row, conn);
+  if (events.length) await conn.insert(einvoiceDocumentEvents).values(events);
   return doc;
 }
 
@@ -101,9 +115,10 @@ export async function recordValidationEvent(
   companyId: string,
   invoiceId: string,
   valid: boolean,
-  meta: { source: HistorySource; message?: string | null; now?: Date }
+  meta: { source: HistorySource; message?: string | null; now?: Date },
+  conn: EInvoiceDb = db
 ): Promise<void> {
-  await db.insert(einvoiceDocumentEvents).values({
+  await conn.insert(einvoiceDocumentEvents).values({
     companyId,
     invoiceId,
     track: "validation",
@@ -130,47 +145,4 @@ export async function listDocumentEvents(
     )
     .orderBy(desc(einvoiceDocumentEvents.createdAt))
     .limit(Math.min(Math.max(limit, 1), 500));
-}
-
-// ─── Double-submit guard ────────────────────────────────────────────────
-
-const CLAIM_TTL_MS = 2 * 60 * 1000;
-
-/**
- * Claim the right to hand this invoice to the ASP. Exactly one concurrent caller wins; the claim
- * expires after two minutes so a crashed request cannot block the invoice for ever. The winner
- * re-reads the invoice before sending, so a caller that lost the race to a finished submission
- * sees it as already submitted.
- */
-export async function claimSubmission(
-  companyId: string,
-  invoiceId: string,
-  now: Date = new Date()
-): Promise<boolean> {
-  await db
-    .insert(einvoiceDocuments)
-    .values({ companyId, invoiceId, status: "generated", updatedAt: now })
-    .onConflictDoNothing();
-  const stale = new Date(now.getTime() - CLAIM_TTL_MS);
-  const rows = await db
-    .update(einvoiceDocuments)
-    .set({ submitClaimedAt: now })
-    .where(
-      and(
-        eq(einvoiceDocuments.companyId, companyId),
-        eq(einvoiceDocuments.invoiceId, invoiceId),
-        or(isNull(einvoiceDocuments.submitClaimedAt), lt(einvoiceDocuments.submitClaimedAt, stale))
-      )
-    )
-    .returning({ id: einvoiceDocuments.id });
-  return rows.length === 1;
-}
-
-export async function releaseSubmission(companyId: string, invoiceId: string): Promise<void> {
-  await db
-    .update(einvoiceDocuments)
-    .set({ submitClaimedAt: null })
-    .where(
-      and(eq(einvoiceDocuments.companyId, companyId), eq(einvoiceDocuments.invoiceId, invoiceId))
-    );
 }

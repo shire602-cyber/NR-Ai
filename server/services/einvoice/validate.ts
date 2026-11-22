@@ -231,9 +231,7 @@ export function validateWithRules(xml: string): ValidationLayer {
 }
 
 /**
- * Full validation. `valid` requires every available layer to pass; a layer
- * whose artefacts are missing does not count as a pass — it is reported as
- * unavailable so the UI can say "schematron not run".
+ * Full validation requires every layer to pass. Missing artefacts block submission.
  */
 export async function validateEInvoiceXml(
   xml: string,
@@ -249,7 +247,7 @@ export async function validateEInvoiceXml(
         { available: false, valid: false, errors: [], warnings: [], version: null },
       ];
   const valid =
-    rules.valid && (!xsd.available || xsd.valid) && (!schematron.available || schematron.valid);
+    rules.valid && xsd.available && xsd.valid && schematron.available && schematron.valid;
   return {
     valid,
     documentType: rootName(xml),

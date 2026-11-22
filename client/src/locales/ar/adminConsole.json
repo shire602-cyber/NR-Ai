@@ -165,6 +165,8 @@
   "activityLog.action.invoice.debit_note": "صدر إشعار مدين على الفاتورة",
   "activityLog.action.invoice.delete": "حُذفت الفاتورة",
   "activityLog.action.invoice.einvoice_cancel": "أُلغيت الفاتورة الإلكترونية",
+  "activityLog.action.invoice.einvoice_environment_verified": "تم التحقق من بيئة مزوّد الفوترة الإلكترونية",
+  "activityLog.action.invoice.einvoice_refusal_verified": "تم التحقق من رفض الفاتورة الإلكترونية الأصلية عند التحقق من صحتها",
   "activityLog.action.invoice.einvoice_resubmit": "أُعيد تقديم الفاتورة الإلكترونية",
   "activityLog.action.firm.handoff_requested": "أُرسل طلب إلى مكتب المحاسبة",
   "activityLog.action.invoice.einvoice_submit": "قُدمت الفاتورة الإلكترونية",

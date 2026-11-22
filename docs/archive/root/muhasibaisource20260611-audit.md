@@ -17,7 +17,7 @@ Wafeq, Zoho Books, QuickBooks, Xero, and all other AI/non-AI accounting
 software." That claim is too broad and the zip has concrete blockers:
 dependency vulnerabilities, failing lint, a broken formatting script, a
 cross-user notification mutation bug, likely webhook SSRF exposure, incomplete
-e-invoicing, no direct EmaraTax filing, no third-party
+e-invoicing, no direct EmaraTax filing, CSV-only banking, no third-party
 security/compliance certification, and no production customer evidence.
 
 Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.

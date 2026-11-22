@@ -9,6 +9,7 @@
 export type EInvoiceStatus =
   | "not_generated"
   | "generated" // compliant XML produced and stored, not yet sent
+  | "queued" // validated and durably waiting for the submission worker
   | "submitted" // handed to the ASP, awaiting its validation
   | "accepted" // validated and transmitted by the ASP, FTA report pending
   | "cleared" // ASP confirmed the tax data was reported to the FTA (terminal)
@@ -19,6 +20,7 @@ export type EInvoiceStatus =
 export const EINVOICE_STATUSES: EInvoiceStatus[] = [
   "not_generated",
   "generated",
+  "queued",
   "submitted",
   "accepted",
   "cleared",
@@ -32,11 +34,12 @@ export const EINVOICE_STATUSES: EInvoiceStatus[] = [
 // be corrected by issuing a credit note.
 const TRANSITIONS: Record<EInvoiceStatus, EInvoiceStatus[]> = {
   not_generated: ["generated"],
-  generated: ["submitted", "failed", "generated", "cancelled"], // regenerate allowed
+  generated: ["queued", "submitted", "failed", "generated", "cancelled"], // regenerate allowed
+  queued: ["submitted", "accepted", "cleared", "rejected", "failed"],
   submitted: ["accepted", "cleared", "rejected", "failed", "cancelled"],
   accepted: ["cleared", "rejected"],
-  rejected: ["generated", "submitted"],
-  failed: ["generated", "submitted", "cancelled"],
+  rejected: ["generated", "queued", "submitted"],
+  failed: ["generated", "queued", "submitted", "accepted", "cleared", "rejected", "cancelled"],
   cleared: [],
   cancelled: [],
 };
@@ -51,7 +54,7 @@ export function isEInvoiceTerminal(s: string): boolean {
 
 /** True once the ASP has taken the document (no new submission allowed). */
 export function isEInvoiceInFlight(s: string): boolean {
-  return s === "submitted" || s === "accepted" || s === "cleared";
+  return s === "queued" || s === "submitted" || s === "accepted" || s === "cleared";
 }
 
 /** Pure guard: may the e-invoice move from `from` to `to`? */

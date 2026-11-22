@@ -36,10 +36,13 @@
  *   COMPLYANCE_WEBHOOK_ALGORITHM     sha256 (default) | sha512
  *   COMPLYANCE_WEBHOOK_MAX_AGE_SECONDS  timestamp window (default 3600)
  */
+import { createHmac } from "node:crypto";
 import type {
   EInvoiceDocumentRef,
+  EInvoiceOutboundIdentity,
   EInvoiceProvider,
   EInvoiceProviderCapabilities,
+  EInvoiceProviderContext,
   EInvoiceProviderEnvironment,
   EInvoiceProviderResult,
   EInvoiceSubmission,
@@ -50,9 +53,17 @@ import type {
 } from "../../einvoice-provider";
 import type { EInvoiceRejectionReason } from "../../einvoice-status";
 import { createLogger } from "../../../config/logger";
-import { legacyFromTracks, type DeliveryStatus, type ReportingStatus } from "../tracks";
+import { first, parseXml, partyPeppolEndpoint, partyVatTrn } from "../dom";
+import {
+  isUaeTin,
+  normalizedVatTrn,
+  PEPPOL_SCHEME_UAE_TIN,
+  tinFromTrn,
+} from "../pint-ae-codes";
+import { legacyFromProviderTracks, type DeliveryStatus, type ReportingStatus } from "../tracks";
 import type { EInvoiceProviderModule } from "./types";
 import { ublToGets, unifyXmlRequest } from "./complyance-gets";
+import { providerObject, providerString, readProviderResponse } from "./response";
 
 const log = createLogger("einvoice-complyance");
 
@@ -95,7 +106,7 @@ export function readComplyanceConfig(env: NodeJS.ProcessEnv = process.env): Comp
     sourcePrefix: (env.COMPLYANCE_SOURCE_PREFIX || "muhasib").replace(/[^A-Za-z0-9._-]/g, ""),
     sourceVersion: env.COMPLYANCE_SOURCE_VERSION || "v1",
     userAgent: env.COMPLYANCE_USER_AGENT || "Muhasib-EInvoicing/1.0",
-    timeoutMs: timeout > 0 ? timeout : 30_000,
+    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? Math.min(timeout, 60_000) : 30_000,
     pollDays: Number.isInteger(days) && days > 0 && days <= 31 ? days : 3,
   };
 }
@@ -172,59 +183,181 @@ export interface ComplyanceSellerIdentity {
   connectCompanyId: string | null;
   /** The company's invoice source name (provider_details.sourceName). */
   sourceName: string | null;
+  /** The full identifier frozen on the original document, when available. */
+  endpoint?: { scheme: string; value: string } | null;
 }
 
-const digits = (v: unknown) => (str(v) ?? "").replace(/^0235:/, "").replace(/\D/g, "");
+function sourceNameFromReference(value: unknown): unknown {
+  if (typeof value === "string") return value.split(":", 1)[0];
+  // A nonempty but invalid source must not disappear behind a matching alternate field.
+  return providerObject(value)?.name ?? value;
+}
+
+function sourceVersionFromReference(value: unknown): unknown {
+  if (typeof value === "string") {
+    const colon = value.indexOf(":");
+    return colon < 0 ? null : value.slice(colon + 1);
+  }
+  return providerObject(value)?.version;
+}
+
+/** Only evidence carried by the sales resource can establish its original source. */
+function matchesSalesSource(
+  data: Record<string, unknown>,
+  envelope: Record<string, unknown>,
+  expected: ComplyanceSource,
+  requireProof: boolean
+) {
+  const documentEvidence = [data, providerObject(data.attribution)];
+  const outerEvidence = [envelope, providerObject(envelope.attribution)];
+  let nameProven = false;
+  let versionProven = false;
+  for (const evidence of [...documentEvidence, ...outerEvidence]) {
+    if (!evidence) continue;
+    const names = [evidence.sourceName, sourceNameFromReference(evidence.source)].filter(
+      (value) => value != null
+    );
+    const versions = [evidence.sourceVersion, sourceVersionFromReference(evidence.source)].filter(
+      (value) => value != null
+    );
+    if (names.some((name) => name !== expected.name)) return false;
+    if (versions.some((version) => version !== expected.version)) return false;
+    if (documentEvidence.includes(evidence)) {
+      nameProven ||= names.length > 0;
+      versionProven ||= versions.length > 0;
+    }
+  }
+  return !requireProof || (nameProven && versionProven);
+}
+
+type PartyEndpoint = { scheme: string; value: string };
+type PartyTaxIdentity = {
+  endpoint: PartyEndpoint | null;
+  tin: string | null;
+  trn: string | null;
+};
+
+/** A bare value may agree with other evidence, but cannot prove ownership without a scheme. */
+function endpointProof(
+  value: unknown,
+  schemes: unknown[],
+  expected: PartyEndpoint | null
+): boolean | null {
+  if (schemes.some((scheme) => scheme !== expected?.scheme)) return false;
+  if (value == null) return null;
+  if (typeof value !== "string" || !value || !expected) return false;
+  const colon = value.indexOf(":");
+  const id = colon < 0 ? value : value.slice(colon + 1);
+  const suppliedSchemes = colon < 0 ? schemes : [...schemes, value.slice(0, colon)];
+  if (id !== expected.value || suppliedSchemes.some((scheme) => scheme !== expected.scheme))
+    return false;
+  return suppliedSchemes.length > 0 ? true : null;
+}
+
+function comparePartyTaxIdentity(
+  party: Record<string, unknown>,
+  schemes: unknown[],
+  expected: PartyTaxIdentity,
+  compare: (label: string, value: unknown, matches: boolean) => void
+) {
+  const endpoint = endpointProof(
+    party.peppolId,
+    [...schemes, party.peppolIdScheme].filter((value) => value != null),
+    expected.endpoint
+  );
+  if (endpoint !== null) compare("peppolEndpoint", true, endpoint);
+  const matchesTin = (value: unknown) =>
+    typeof value === "string" && isUaeTin(value) && value === expected.tin;
+  const expectedTrn = normalizedVatTrn(expected.trn);
+  const matchesTrn = (value: unknown) =>
+    expectedTrn !== null && normalizedVatTrn(value) === expectedTrn;
+  compare("taxpayerTin", party.tin, matchesTin(party.tin));
+  for (const value of [party.trn, party.vatTrn, party.vatNumber])
+    compare("vatTrn", value, matchesTrn(value));
+  const matchesTaxId = (value: unknown, type?: unknown) => {
+    if (type === "VAT") return matchesTrn(value);
+    if (type === "TIN") return matchesTin(value);
+    return type == null && (matchesTin(value) || matchesTrn(value));
+  };
+  compare("taxId", party.taxId, matchesTaxId(party.taxId));
+  if (!Array.isArray(party.taxIds)) {
+    compare("taxId", party.taxIds, false);
+    return;
+  }
+  for (const taxId of party.taxIds) {
+    const entry = providerObject(taxId);
+    if (entry && (entry.value != null || entry.id != null)) {
+      for (const value of [entry.value, entry.id])
+        compare("taxId", value, matchesTaxId(value, entry.type));
+    } else {
+      compare("taxId", taxId, matchesTaxId(taxId));
+    }
+  }
+}
 
 /**
- * X6a (before e-invoicing goes on, item 2): one Complyance platform key serves every tenant and
- * invoice numbers repeat across tenants, so a document id typed by a user must be proven to be
- * THIS company's document before we track it: its source, Connect company or seller TIN/TRN must
- * match what onboarding recorded. Every identity the document carries must match, and it must
- * carry at least one; a document that names no seller cannot be linked (confirm the field names
- * in the live sandbox: docs/einvoicing-complyance.md).
+ * Invoice numbers can repeat across sellers. An authenticated sales read for a recovery must carry
+ * at least one verified owner marker. Check each source, Connect company and seller TIN/TRN
+ * independently so a matching alias cannot hide contradictory ownership.
  */
 export function complyanceDocumentBelongsTo(
   data: Record<string, unknown>,
   me: ComplyanceSellerIdentity
 ): { ok: boolean; checked: string[]; mismatched: string[] } {
-  const checked: string[] = [];
-  const mismatched: string[] = [];
-  const check = (label: string, theirs: string | null, ours: string | null) => {
-    if (!theirs) return;
-    checked.push(label);
-    if (!ours || theirs !== ours) mismatched.push(label);
+  const checked = new Set<string>();
+  const mismatched = new Set<string>();
+  const present = (v: unknown) => v != null;
+  const compare = (label: string, value: unknown, matches: boolean) => {
+    if (!present(value)) return;
+    checked.add(label);
+    if (!matches) mismatched.add(label);
   };
-  const obj = (v: unknown) =>
-    v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
-  // Source: "name:version" (as we submit it) or { name }.
-  const rawSource = typeof data.source === "string" ? data.source : str(obj(data.source).name);
-  const sourceName = rawSource ? rawSource.split(":")[0] : str(data.sourceName);
-  check("source", sourceName, me.sourceName);
+  const attribution = providerObject(data.attribution);
+  if (present(data.attribution) && !attribution) mismatched.add("attribution");
+  for (const owner of [data, attribution]) {
+    if (!owner) continue;
+    compare("source", owner.source, sourceNameFromReference(owner.source) === me.sourceName);
+    compare("source", owner.sourceName, owner.sourceName === me.sourceName);
+    for (const companyId of [owner.companyId, owner.connectCompanyId]) {
+      compare("connectCompanyId", companyId, companyId === me.connectCompanyId);
+    }
+  }
 
-  const attribution = obj(data.attribution);
-  check("connectCompanyId", str(attribution.companyId) ?? str(data.companyId), me.connectCompanyId);
-
-  // Seller tax ids, in GETS (invoice/payload.parties.seller) or a flat seller block.
-  const seller = {
-    ...obj(data.seller),
-    ...obj(obj(obj(data.invoice).parties).seller),
-    ...obj(obj(obj(data.payload).parties).seller),
+  const nestedSeller = (body: Record<string, unknown> | null) => {
+    const parties = body?.parties;
+    if (present(parties) && !providerObject(parties)) mismatched.add("seller");
+    return providerObject(parties)?.seller;
   };
-  const ids: string[] = [];
-  for (const v of [seller.tin, seller.trn, seller.taxId, seller.vatNumber, seller.peppolId])
-    if (str(v)) ids.push(digits(v));
-  if (Array.isArray(seller.taxIds)) {
-    for (const t of seller.taxIds)
-      ids.push(digits(typeof t === "object" ? (obj(t).value ?? obj(t).id) : t));
+  const expected = {
+    tin: me.tin,
+    trn: me.trn,
+    endpoint:
+      me.endpoint === undefined && me.tin
+        ? { scheme: PEPPOL_SCHEME_UAE_TIN, value: me.tin }
+        : (me.endpoint ?? null),
+  };
+  for (const body of [data, providerObject(data.invoice), providerObject(data.payload)]) {
+    if (!body) continue;
+    const value = body === data ? data.seller : nestedSeller(body);
+    const seller = providerObject(value);
+    if (present(value) && !seller) mismatched.add("seller");
+    if (!seller) continue;
+    comparePartyTaxIdentity(
+      seller,
+      [
+        providerObject(body.extensions)?.peppol_seller_peppolIdScheme,
+        providerObject(data.extensions)?.peppol_seller_peppolIdScheme,
+      ],
+      expected,
+      compare
+    );
   }
-  for (const id of ids.filter(Boolean)) {
-    checked.push("sellerTaxId");
-    const ours = [digits(me.tin), digits(me.trn)].filter(Boolean);
-    if (!ours.includes(id)) mismatched.push("sellerTaxId");
-  }
-  return { ok: checked.length > 0 && mismatched.length === 0, checked, mismatched };
+  return {
+    ok: checked.size > 0 && mismatched.size === 0,
+    checked: [...checked],
+    mismatched: [...mismatched],
+  };
 }
 
 // ─── Status mapping (two tracks) ─────────────────────────────────────────
@@ -250,6 +383,41 @@ export function complyanceReasons(errors: unknown): EInvoiceRejectionReason[] {
   });
 }
 
+function isCorrectableSalesState(data: Record<string, unknown>): boolean {
+  const stage = providerString(data.validationStage)?.toLowerCase();
+  if (
+    providerString(data.state)?.toLowerCase() !== "rejected" ||
+    data.isTerminal !== true ||
+    (data.validationStage != null && stage !== "gets")
+  )
+    return false;
+  const compliance = providerObject(data.compliance);
+  const approval = providerString(compliance?.ftaApprovedStatus)?.toUpperCase();
+  const errorSources = (Array.isArray(data.errors) ? data.errors : []).map((item) =>
+    providerString(providerObject(item)?.source)?.toLowerCase()
+  );
+  // The sales API also uses REJECTED for the FTA field on documents that failed GETS validation
+  // before reporting. A separate government or delivery result rules out that interpretation.
+  if (errorSources.some((source) => source === "government" || source === "delivery")) return false;
+  if (
+    compliance?.ftaApprovedStatus != null &&
+    approval !== "PENDING" &&
+    !(approval === "REJECTED" && (stage === "gets" || errorSources.includes("validation")))
+  )
+    return false;
+  const delivery = [data.deliveryStatus, compliance?.peppolStatus, data.mlsStatus];
+  const final = [
+    "APPROVED",
+    "ACCEPTED",
+    "DELIVERED",
+    "DELIVERY_SUCCESS",
+    "FINAL_VALID",
+    "FINAL_INVALID",
+    "REJECTED",
+  ];
+  return !delivery.some((value) => final.includes(providerString(value)?.toUpperCase() ?? ""));
+}
+
 /**
  * Complyance document status -> our two tracks (docs /api-reference/unify/documents/, UAE):
  *   submitted          passed validation, delivery not started    -> queued / pending
@@ -258,59 +426,59 @@ export function complyanceReasons(errors: unknown): EInvoiceRejectionReason[] {
  *   delivery_failed    an attempt failed, NOT final in the UAE: Complyance keeps trying and
  *                      says not to resend under a new number      -> sending / pending
  *                      (terminal only if isTerminal says so)      -> delivery_failed
- *   final_valid        buyer's ASP and the FTA both accepted      -> delivered / reported
- *   final_invalid      buyer's ASP or the FTA rejected            -> by the errors' source:
- *                      government -> delivered / report_failed; otherwise rejected / pending
+ *   final_valid        final recipient outcome                   -> delivered; FTA approval
+ *                      comes from the explicit compliance field
+ *   final_invalid      buyer's ASP or the FTA rejected            -> by explicit error sources
  *   rejected           failed validation (Needs Correction)       -> rejected / pending
  * Unknown states never read as success: delivery_failed with COMPLYANCE_UNKNOWN_STATE.
  */
 export function mapComplyanceStatus(data: Record<string, unknown>): ComplyanceTrackOutcome {
-  const state = String(data.state ?? "")
-    .trim()
-    .toLowerCase();
+  const state = providerString(data.state)?.toLowerCase();
   const terminal = data.isTerminal === true;
   const reasons = complyanceReasons(data.errors);
-  const compliance = (data.compliance ?? {}) as Record<string, unknown>;
-  const steps = (((data.validationResults ?? {}) as Record<string, unknown>).validationSteps ??
-    []) as Array<Record<string, unknown>>;
-  const delivered = steps.some(
-    (s) => /delivery success/i.test(String(s.name ?? "")) && String(s.status) === "Valid"
-  );
+  const approval = providerString(providerObject(data.compliance)?.ftaApprovedStatus);
+  const reporting = approval === "APPROVED" ? "reported" : "pending";
   switch (state) {
     case "submitted":
-      return { delivery: "queued", reporting: "pending", errorCode: null, reasons: [] };
+      return { delivery: "queued", reporting, errorCode: null, reasons: [] };
     case "processing":
-      return { delivery: "sending", reporting: "pending", errorCode: null, reasons: [] };
+      return { delivery: "sending", reporting, errorCode: null, reasons: [] };
     case "delivery_success":
-      return { delivery: "delivered", reporting: "pending", errorCode: null, reasons: [] };
+      return { delivery: "delivered", reporting, errorCode: null, reasons: [] };
     case "delivery_failed":
       return terminal
         ? {
             delivery: "delivery_failed",
-            reporting: "pending",
+            reporting,
             errorCode: "COMPLYANCE_DELIVERY_FAILED",
             reasons,
           }
-        : { delivery: "sending", reporting: "pending", errorCode: null, reasons: [] };
+        : { delivery: "sending", reporting, errorCode: null, reasons: [] };
     case "final_valid":
-      return { delivery: "delivered", reporting: "reported", errorCode: null, reasons: [] };
+      return {
+        delivery: "delivered",
+        reporting,
+        errorCode: null,
+        reasons: [],
+      };
     case "final_invalid": {
       const sources = new Set(
         (Array.isArray(data.errors) ? data.errors : []).map((e) =>
-          String((e as Record<string, unknown>)?.source ?? "").toLowerCase()
+          providerString(providerObject(e)?.source)?.toLowerCase()
         )
       );
-      if (sources.has("government") || (delivered && !sources.has("delivery"))) {
+      if (sources.has("government")) {
+        const buyerRejected = sources.has("delivery");
         return {
-          delivery: "delivered",
+          delivery: buyerRejected ? "rejected" : "delivered",
           reporting: "report_failed",
-          errorCode: "EINVOICE_REPORT_FAILED",
+          errorCode: buyerRejected ? "COMPLYANCE_FINAL_INVALID" : "EINVOICE_REPORT_FAILED",
           reasons,
         };
       }
       return {
         delivery: "rejected",
-        reporting: "pending",
+        reporting,
         errorCode: "COMPLYANCE_FINAL_INVALID",
         reasons,
       };
@@ -323,9 +491,6 @@ export function mapComplyanceStatus(data: Record<string, unknown>): ComplyanceTr
         reasons,
       };
     default:
-      if (String(compliance.ftaApprovedStatus ?? "") === "APPROVED") {
-        return { delivery: "delivered", reporting: "reported", errorCode: null, reasons: [] };
-      }
       return {
         delivery: "delivery_failed",
         reporting: "pending",
@@ -386,13 +551,20 @@ type SourceResolver = (
   environment: ComplyanceEnvironment
 ) => Promise<ComplyanceSource | null>;
 
+function sourceFromLegalEntity(
+  legalEntity: EInvoiceProviderContext["legalEntity"]
+): ComplyanceSource | null {
+  const details = providerObject(legalEntity?.providerDetails);
+  const name = providerString(details?.sourceName);
+  return name ? { name, version: providerString(details?.sourceVersion) ?? "v1" } : null;
+}
+
 /** Default: the source recorded at onboarding (einvoice_legal_entities.provider_details). */
 const dbSourceResolver: SourceResolver = async (companyId, environment) => {
   const { getLegalEntity } = await import("../legal-entities");
-  const le = await getLegalEntity(companyId, COMPLYANCE_PROVIDER_NAME, environment);
-  const d = (le?.providerDetails ?? null) as Record<string, unknown> | null;
-  const name = str(d?.sourceName);
-  return name ? { name, version: str(d?.sourceVersion) ?? "v1" } : null;
+  return sourceFromLegalEntity(
+    (await getLegalEntity(companyId, COMPLYANCE_PROVIDER_NAME, environment)) ?? null
+  );
 };
 
 export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
@@ -450,23 +622,25 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
         method,
         headers,
         body: opts.xml ?? (opts.json === undefined ? undefined : JSON.stringify(opts.json)),
+        redirect: "error",
         signal: controller.signal,
       });
-      const text = await res.text();
-      let json: unknown = null;
-      try {
-        json = text ? JSON.parse(text) : null;
-      } catch {
-        /* plain-text 401 ("Authentication required") or XML */
-      }
+      const parsed = await readProviderResponse(res, [this.cfg.apiKey]);
       const ra = Number(res.headers.get("retry-after"));
       return {
         ok: res.ok,
         status: res.status,
-        json,
-        text,
+        ...parsed,
         retryAfter: Number.isFinite(ra) && ra > 0 ? ra : null,
       };
+    } catch {
+      throw new ComplyanceApiError(
+        502,
+        "TRANSPORT_ERROR",
+        "Could not contact Complyance.",
+        undefined,
+        true
+      );
     } finally {
       clearTimeout(timer);
     }
@@ -477,13 +651,58 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     reporting: ReportingStatus,
     extra: Partial<EInvoiceProviderResult> & { providerMessageId: string }
   ): EInvoiceProviderResult {
-    return { status: legacyFromTracks(delivery, reporting), delivery, reporting, ...extra };
+    const status = legacyFromProviderTracks(this.name, extra.providerStatus, delivery, reporting);
+    return { status, delivery, reporting, ...extra };
+  }
+
+  /** Bind a retry to the original workspace credential, source and environment. */
+  async getSubmissionScope(
+    companyId: string,
+    context?: EInvoiceProviderContext
+  ): Promise<string | null> {
+    const source = await this.resolveSource(companyId, context);
+    return source ? this.submissionScope(companyId, source) : null;
+  }
+
+  private async resolveSource(
+    companyId: string,
+    context?: EInvoiceProviderContext
+  ): Promise<ComplyanceSource | null> {
+    if (context) return sourceFromLegalEntity(context.legalEntity);
+    return this.sourceFor(companyId, this.cfg.environment);
+  }
+
+  private submissionScope(companyId: string, source: ComplyanceSource): string {
+    return createHmac("sha256", this.cfg.apiKey)
+      .update(
+        JSON.stringify([
+          "einvoice-complyance-submission",
+          this.cfg.baseUrl,
+          this.cfg.environment,
+          this.cfg.submitFormat,
+          companyId,
+          source.name,
+          source.version,
+        ])
+      )
+      .digest("hex");
   }
 
   async submit(submission: EInvoiceSubmission): Promise<EInvoiceProviderResult> {
-    const source = submission.companyId
-      ? await this.sourceFor(submission.companyId, this.cfg.environment)
-      : null;
+    const companyId = submission.companyId;
+    const source = companyId ? await this.resolveSource(companyId, submission.context) : null;
+    if (
+      submission.scopeFingerprint &&
+      (!source ||
+        !companyId ||
+        this.submissionScope(companyId, source) !== submission.scopeFingerprint)
+    ) {
+      return this.outcome("delivery_failed", "pending", {
+        providerMessageId: "",
+        detail: "The Complyance submission source changed after this e-invoice was queued.",
+        errorCode: "COMPLYANCE_SOURCE_AMBIGUOUS",
+      });
+    }
     if (!source) {
       return this.outcome("rejected", "pending", {
         providerMessageId: "",
@@ -530,20 +749,18 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
                 payload: gets.payload,
               },
             });
-    } catch (err) {
+    } catch {
       // Ambiguous: Complyance may have stored it. A retry answers GETS-HEAD-010 if it did.
-      const msg = (err as Error)?.message ?? "unknown";
-      log.error({ err: msg, invoiceId: submission.invoiceId }, "Complyance submit transport error");
       return this.outcome("delivery_failed", "pending", {
         providerMessageId: "",
-        detail: `Transport error contacting Complyance: ${msg}`,
+        detail: "Could not contact Complyance.",
         errorCode: "TRANSPORT_ERROR",
       });
     }
 
-    const body = (r.json ?? {}) as Record<string, unknown>;
+    const body = providerObject(r.json) ?? {};
     if (r.status === 200 || r.status === 201) {
-      const id = str(body.documentId);
+      const id = providerString(body.documentId);
       if (!id) {
         return this.outcome("delivery_failed", "pending", {
           providerMessageId: "",
@@ -570,6 +787,8 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     );
     if (r.status === 422) {
       const reasons = complyanceReasons(body.errors);
+      const documentId =
+        body.documentNumber === submission.invoiceNumber ? providerString(body.documentId) : null;
       if (reasons.some((x) => x.code === "GETS-HEAD-010")) {
         // The number is already used: an earlier attempt was stored, or this is a resend after a
         // final rejection. Complyance does not return the id here and has no sales listing.
@@ -586,7 +805,7 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
       }
       if (str(body.validationStage) === "xml") {
         return this.outcome("rejected", "pending", {
-          providerMessageId: "",
+          providerMessageId: documentId ?? "",
           detail: str(body.message) ?? "Complyance could not produce the e-invoice.",
           errorCode: "COMPLYANCE_XML_FAILED",
           reasons: [
@@ -600,7 +819,9 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
         });
       }
       return this.outcome("rejected", "pending", {
-        providerMessageId: "",
+        providerMessageId: documentId ?? "",
+        providerStatus: documentId ? "rejected" : null,
+        correctableRejection: !!documentId && body.validationStage === "gets",
         detail: reasons.map((x) => x.message).join("; ") || str(body.message) || "HTTP 422",
         errorCode: "COMPLYANCE_VALIDATION",
         reasons: reasons.length
@@ -649,18 +870,164 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     });
   }
 
-  async getStatus(providerMessageId: string): Promise<EInvoiceProviderResult> {
+  private salesDocumentPath(providerMessageId: string): string {
+    return `/api/v3/documents/${encodeURIComponent(providerMessageId)}?type=sales`;
+  }
+
+  async verifyOutboundDocument(
+    providerMessageId: string,
+    identity: EInvoiceOutboundIdentity
+  ): Promise<boolean> {
+    return (await this.checkOutboundDocument(providerMessageId, identity)) === "verified";
+  }
+
+  /** Verify one exact outbound resource, keeping temporary failures distinct from bad proof. */
+  async checkOutboundDocument(
+    providerMessageId: string,
+    identity: EInvoiceOutboundIdentity
+  ): Promise<"verified" | "mismatch" | "unavailable"> {
+    return (await this.readOwnedSalesDocument(providerMessageId, identity)).verdict;
+  }
+
+  async checkCorrectableRejection(
+    providerMessageId: string,
+    identity: EInvoiceOutboundIdentity,
+    context?: EInvoiceProviderContext
+  ) {
+    const proof = await this.checkOutboundRecovery(providerMessageId, identity, context);
+    if (proof.verdict !== "verified") return proof.verdict;
+    return proof.correctionReasons ? "verified" : "mismatch";
+  }
+
+  /** A single sales lookup can establish ownership and, separately, readiness for correction. */
+  async checkOutboundRecovery(
+    providerMessageId: string,
+    identity: EInvoiceOutboundIdentity,
+    context?: EInvoiceProviderContext
+  ) {
+    const proof = await this.readOwnedSalesDocument(providerMessageId, identity);
+    if (proof.verdict !== "verified") return proof;
+    const tracking = {
+      verdict: "verified" as const,
+      correctionReasons: null,
+      correctionSource: null,
+    };
+    const source = sourceFromLegalEntity(context?.legalEntity ?? null);
+    if (
+      !source ||
+      source.name !== identity.sourceName ||
+      (identity.sourceVersion != null && source.version !== identity.sourceVersion) ||
+      !matchesSalesSource(proof.data, proof.envelope, source, true)
+    )
+      return tracking;
+    return isCorrectableSalesState(proof.data)
+      ? {
+          ...tracking,
+          correctionReasons: complyanceReasons(proof.data.errors),
+          correctionSource: source,
+        }
+      : tracking;
+  }
+
+  private async readOwnedSalesDocument(
+    providerMessageId: string,
+    identity: EInvoiceOutboundIdentity
+  ): Promise<
+    | { verdict: "verified"; data: Record<string, unknown>; envelope: Record<string, unknown> }
+    | { verdict: "mismatch" | "unavailable" }
+  > {
+    try {
+      const response = await this.call("GET", this.salesDocumentPath(providerMessageId));
+      if (response.status >= 500 || [401, 403, 408, 429].includes(response.status)) {
+        return { verdict: "unavailable" };
+      }
+      const envelope = providerObject(response.json);
+      const data = response.ok && this.provenSalesData(envelope, providerMessageId, identity);
+      return data && envelope ? { verdict: "verified", data, envelope } : { verdict: "mismatch" };
+    } catch {
+      return { verdict: "unavailable" };
+    }
+  }
+
+  private provenSalesData(
+    payload: unknown,
+    providerMessageId: string,
+    identity: EInvoiceOutboundIdentity,
+    knownCredentialScope = false
+  ) {
+    const envelope = providerObject(payload);
+    const data = providerObject(envelope?.data);
+    if (
+      !envelope ||
+      !data ||
+      (envelope.success != null && envelope.success !== true) ||
+      data.documentId !== providerMessageId ||
+      (!knownCredentialScope && data.documentNumber == null) ||
+      [envelope, data].some(
+        (value) =>
+          (value.documentId != null && value.documentId !== providerMessageId) ||
+          (value.documentNumber != null && value.documentNumber !== identity.documentNumber) ||
+          (value.country != null && value.country !== "AE") ||
+          (value.environment != null && value.environment !== this.environment)
+      )
+    )
+      return null;
+    if (
+      identity.sourceName &&
+      identity.sourceVersion &&
+      !matchesSalesSource(
+        data,
+        envelope,
+        {
+          name: identity.sourceName,
+          version: identity.sourceVersion,
+        },
+        false
+      )
+    )
+      return null;
+    for (const body of [data.invoice, data.payload]) {
+      const header = providerObject(body)?.header;
+      const number = providerObject(header)?.documentNumber;
+      if (
+        (body != null && !providerObject(body)) ||
+        (header != null && !providerObject(header)) ||
+        (number != null && number !== identity.documentNumber)
+      )
+        return null;
+    }
+    const [outerOwner, documentOwner] = [envelope, data].map((value) =>
+      complyanceDocumentBelongsTo(value, {
+        tin: identity.supplierTin,
+        trn: identity.supplierTrn,
+        connectCompanyId: identity.legalEntityId,
+        sourceName: identity.sourceName,
+        endpoint: identity.supplierEndpoint,
+      })
+    );
+    if (outerOwner.mismatched.length || documentOwner.mismatched.length) return null;
+    return knownCredentialScope || documentOwner.ok ? data : null;
+  }
+
+  async getStatus(
+    providerMessageId: string,
+    ref?: EInvoiceDocumentRef
+  ): Promise<EInvoiceProviderResult> {
+    const invalid = {
+      providerMessageId,
+      status: "failed" as const,
+      detail: "Complyance could not verify the original e-invoice status response.",
+      errorCode: "COMPLYANCE_UNAVAILABLE",
+    };
+    if (!ref?.outboundIdentity) return invalid;
     let r: RawResponse;
     try {
-      r = await this.call(
-        "GET",
-        `/api/v3/documents/${encodeURIComponent(providerMessageId)}?type=sales`
-      );
-    } catch (err) {
+      r = await this.call("GET", this.salesDocumentPath(providerMessageId));
+    } catch {
       return {
         providerMessageId,
         status: "failed",
-        detail: `Transport error polling Complyance: ${(err as Error)?.message ?? "unknown"}`,
+        detail: "Could not read the document status from Complyance.",
         errorCode: "TRANSPORT_ERROR",
       };
     }
@@ -678,16 +1045,20 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
         raw: r.json ?? null,
       };
     }
-    const data = (((r.json ?? {}) as Record<string, unknown>).data ?? {}) as Record<
-      string,
-      unknown
-    >;
-    const providerStatus = str(data.state) ?? "";
+    const data = this.provenSalesData(
+      r.json,
+      providerMessageId,
+      ref.outboundIdentity,
+      ref.knownCredentialScope
+    );
+    const providerStatus = providerString(data?.state);
+    if (!data || !providerStatus) return invalid;
     const m = mapComplyanceStatus(data);
     const failed = m.errorCode !== null;
     return this.outcome(m.delivery, m.reporting, {
       providerMessageId,
       providerStatus,
+      correctableRejection: isCorrectableSalesState(data),
       detail: failed
         ? m.reasons.map((x) => x.message).join("; ") || `Complyance state: ${providerStatus}`
         : null,
@@ -720,10 +1091,20 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
         r.status >= 500 || r.status === 429
       );
     }
-    const data = (((r.json ?? {}) as Record<string, unknown>).data ?? {}) as Record<
-      string,
-      unknown
-    >;
+    const data = providerObject(providerObject(r.json)?.data);
+    if (
+      !data ||
+      providerString(data.documentId) !== documentId ||
+      (data.environment != null && providerString(data.environment) !== this.environment)
+    ) {
+      throw new ComplyanceApiError(
+        502,
+        "COMPLYANCE_UNAVAILABLE",
+        "Complyance returned an invalid purchase",
+        undefined,
+        true
+      );
+    }
     this.purchaseCache.set(documentId, data);
     return data;
   }
@@ -767,7 +1148,7 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
             providerMessageId: id,
             documentType: null,
             documentNumber: str(raw.invoiceNumber),
-            legalEntityId: companyId,
+            legalEntityId: str(providerObject(raw.attribution)?.companyId) ?? companyId,
             ownerFiscalId: null,
           });
         }
@@ -796,26 +1177,67 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     );
   }
 
-  /**
-   * Which company the purchase belongs to: the Connect company id the webhook (attribution) or the
-   * per-company listing gave, else the buyer's Peppol id (0235:TIN) read from the document.
-   */
+  /** Re-read the authenticated purchase before treating webhook or list attribution as valid. */
   async inboundOwner(
     providerMessageId: string,
     _ref: EInvoiceDocumentRef,
-    payload: Record<string, unknown>
+    _payload?: Record<string, unknown>
   ): Promise<InboundOwner> {
-    const fromPayload = str(payload.complyanceCompanyId) ?? str(payload.ownerLegalEntityId);
-    if (fromPayload) return { legalEntityId: fromPayload, tin: null };
     const data = await this.purchase(providerMessageId);
-    const invoice = (data.invoice ?? {}) as Record<string, unknown>;
-    const buyer = (((invoice.parties ?? {}) as Record<string, unknown>).buyer ?? {}) as Record<
-      string,
-      unknown
-    >;
-    const peppol = str(buyer.peppolId);
-    const tin = peppol ? peppol.replace(/^0235:/, "") : null;
-    return { legalEntityId: null, tin: tin && /^\d{10}$/.test(tin) ? tin : null };
+    const attribution = providerObject(data.attribution);
+    const companyIds = [attribution?.companyId, data.companyId, data.connectCompanyId].filter(
+      (value) => value != null
+    );
+    const legalEntityId = providerString(companyIds[0]);
+    let identityConflict = companyIds.some((id) => id !== legalEntityId);
+    let buyer: PartyTaxIdentity | null = null;
+    try {
+      // GETS can return a bare Peppol value. Only the original UBL establishes its scheme.
+      const root = parseXml(await this.fetchSource(providerMessageId)).documentElement;
+      const party = first(root, "cac:AccountingCustomerParty/cac:Party");
+      if (party) {
+        const endpoint = partyPeppolEndpoint(party);
+        const rawTrn = partyVatTrn(party);
+        const trn = normalizedVatTrn(rawTrn);
+        const tin = endpoint?.scheme === PEPPOL_SCHEME_UAE_TIN ? endpoint.value : tinFromTrn(trn);
+        identityConflict ||=
+          (!endpoint && first(party, "cbc:EndpointID") !== null) ||
+          (tin != null && !isUaeTin(tin)) ||
+          (rawTrn != null && (!tin || tinFromTrn(trn) !== tin));
+        buyer = { tin, trn, endpoint };
+      }
+    } catch {
+      // Missing archive data is retried by receipt processing. It does not supply ownership proof.
+    }
+    if (buyer) {
+      for (const body of [providerObject(data.invoice), providerObject(data.payload)]) {
+        if (!body) continue;
+        const parties = providerObject(body.parties);
+        if (body.parties != null && !parties) identityConflict = true;
+        const value = parties?.buyer;
+        const party = providerObject(value);
+        if (value != null && !party) identityConflict = true;
+        if (party) {
+          comparePartyTaxIdentity(
+            party,
+            [
+              providerObject(body.extensions)?.peppol_buyer_peppolIdScheme,
+              providerObject(data.extensions)?.peppol_buyer_peppolIdScheme,
+            ],
+            buyer,
+            (_label, value, matches) => {
+              if (value != null && !matches) identityConflict = true;
+            }
+          );
+        }
+      }
+    }
+    return {
+      legalEntityId,
+      tin: buyer?.tin ?? null,
+      ...(buyer?.trn ? { vatTrn: buyer.trn } : {}),
+      ...(identityConflict ? { identityConflict: true } : {}),
+    };
   }
 
   async receive(): Promise<InboundEInvoice[]> {
@@ -946,9 +1368,16 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
   }
 
   /** Inbox hook: a company/Peppol event -> the company as Complyance holds it now. */
-  async legalEntityPatch(legalEntityId: string): Promise<LegalEntityPatch | null> {
+  async legalEntityPatch(
+    legalEntityId: string,
+    _payload: Record<string, unknown>,
+    expectedTin: string
+  ): Promise<LegalEntityPatch | null> {
     const c = await this.findCompany({ companyId: legalEntityId });
-    return c ? patchFromComplyance(c) : null;
+    if (!c) return null;
+    const { assertProviderTin } = await import("../legal-entities");
+    assertProviderTin(expectedTin, c.tin);
+    return patchFromComplyance(c);
   }
 }
 

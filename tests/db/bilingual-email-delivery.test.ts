@@ -99,14 +99,11 @@ describe("customer email delivery for an Arabic company", () => {
     expect(inviteToken).toBeDefined();
     const csrf = await h.anon.get("/api/csrf-token");
     expect(csrf.status, csrf.text).toBe(200);
-    const cookie = csrf.headers
-      .getSetCookie()
-      .map((value) => value.split(";")[0])
-      .join("; ");
+    const cookies = csrf.headers.getSetCookie().map((value) => value.split(";")[0]);
     const publicInvite = await h.anon.post(
       "/api/portal-invitations/lookup",
       { token: inviteToken },
-      { headers: { cookie, "x-csrf-token": csrf.body.csrfToken } }
+      { headers: { cookie: cookies.join("; "), "x-csrf-token": csrf.body.csrfToken } }
     );
     expect(publicInvite.status, publicInvite.text).toBe(200);
     expect(publicInvite.body.language).toBe(expected);

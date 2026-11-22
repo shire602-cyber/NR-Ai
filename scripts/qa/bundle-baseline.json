@@ -491,8 +491,8 @@
       "gzipBytes": 1699
     },
     "einvoicing.js": {
-      "bytes": 69109,
-      "gzipBytes": 16817
+      "bytes": 80326,
+      "gzipBytes": 19262
     },
     "EInvoicingApprove.js": {
       "bytes": 5723,
@@ -1375,8 +1375,8 @@
       "gzipBytes": 717
     },
     "use-einvoice.js": {
-      "bytes": 4152,
-      "gzipBytes": 1471
+      "bytes": 8410,
+      "gzipBytes": 2877
     },
     "use-open-invoice-param.js": {
       "bytes": 704,

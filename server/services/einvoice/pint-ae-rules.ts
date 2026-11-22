@@ -39,7 +39,7 @@ interface Rule {
   check: (c: RuleCtx) => string[];
 }
 
-const ALIGNED_CATEGORIES = ["S", "Z", "E", "O", "AE"];
+const ALIGNED_CATEGORIES = ["S", "Z", "E", "O", "AE", "N"];
 const fail = (cond: boolean, loc = "/"): string[] => (cond ? [loc] : []);
 const lineCategory = (line: XNode) => textAt(line, "cac:Item/cac:ClassifiedTaxCategory/cbc:ID");
 const lineLoc = (line: XNode) => `line ${textAt(line, "cbc:ID") ?? "?"}`;
@@ -124,9 +124,9 @@ export const PINT_AE_RULES: readonly Rule[] = [
     message: "A credit note MUST reference the preceding invoice (IBG-03) unless the reason is VD.",
     check: (c) =>
       fail(
-        c.typeCode === "381" &&
-          textAt(c.root, "cac:DiscrepancyResponse/cbc:ResponseCode") !== "VD" &&
-          !textAt(c.root, "cac:BillingReference/cac:InvoiceDocumentReference/cbc:ID")
+        c.isCredit &&
+          !!textAt(c.root, "cac:BillingReference/cac:InvoiceDocumentReference/cbc:ID") ===
+            (textAt(c.root, "cac:DiscrepancyResponse/cbc:ResponseCode") === "VD")
       ),
   },
   {
@@ -356,7 +356,7 @@ export const PINT_AE_RULES: readonly Rule[] = [
   {
     id: "ibr-139-ae",
     flag: "fatal",
-    message: "Tax category codes must be from the aligned code list (S, Z, E, O, AE).",
+    message: "Tax category codes must be from the aligned code list (S, Z, E, O, AE, N).",
     check: (c) => {
       const codes = [
         ...c.lines.map((l) => lineCategory(l)),

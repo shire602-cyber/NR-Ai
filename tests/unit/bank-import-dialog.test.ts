@@ -1,21 +1,21 @@
 // @vitest-environment jsdom
 /**
  * Step 1 / F4: the bank statement import dialog is catalog copy in both languages. In Arabic it
- * has no English outside user data and brand names (the CSV requirements and the Import
+ * has no English outside user data and brand names (the "Supported formats" lines and the Import
  * button used to stay English), and its content is allowed to shrink to the phone width.
  */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { clearAuthHint, setAuthHint } from "../../client/src/lib/authHint";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
-import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
+import { click, pickOption } from "./helpers/form-harness";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let container: HTMLDivElement;
 let root: Root;
-let validRows = 1;
 
 const json = (body: unknown) =>
   new Response(JSON.stringify(body), {
@@ -35,37 +35,14 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-  validRows = 1;
-  localStorage.setItem("muhasib_auth_hint", "1");
+  setAuthHint();
   window.history.pushState({}, "", "/bank-reconciliation?import=1");
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : String(input);
       if (url.includes("/api/csrf-token")) return json({ csrfToken: "x" });
-      if (url.endsWith("/bank/providers")) return json({ isConfigured: false, statuses: [] });
       if (/\/api\/companies$/.test(url)) return json([{ id: "c-1", name: "شركة الواحة" }]);
-      if (url.endsWith("/bank-statements/preview"))
-        return json({
-          kind: "camt053",
-          detectedFormat: "camt053",
-          detectedFormatLabel: "CAMT.053",
-          headers: [],
-          totalRows: 1,
-          validRows,
-          errorRows: 1 - validRows,
-          warnings: [],
-          sampleRows: [
-            {
-              rowIndex: 1,
-              date: "2026-11-20",
-              description: "Sample transaction",
-              debit: 10,
-              credit: 0,
-              errors: [],
-            },
-          ],
-        });
       if (url.endsWith("/bank-accounts"))
         return json([
           {
@@ -88,11 +65,11 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  clearAuthHint();
   act(() => root.unmount());
   container.remove();
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
-  localStorage.removeItem("muhasib_auth_hint");
   const { useI18n } = await import("../../client/src/lib/i18n");
   useI18n.getState().setLocale("en");
 });
@@ -104,13 +81,13 @@ async function mountPage(locale: "en" | "ar") {
   queryClient.clear();
   const { ActiveCompanyProvider } =
     await import("../../client/src/components/ActiveCompanyProvider");
-  const { default: Page } = await import("../../client/src/pages/BankReconciliation");
+  const { default: BankReconciliation } = await import("../../client/src/pages/BankReconciliation");
   await act(async () => {
     root.render(
       createElement(
         QueryClientProvider,
         { client: queryClient },
-        createElement(ActiveCompanyProvider, null, createElement(Page))
+        createElement(ActiveCompanyProvider, null, createElement(BankReconciliation))
       )
     );
   });
@@ -118,27 +95,65 @@ async function mountPage(locale: "en" | "ar") {
 }
 
 const dialog = () => document.querySelector('[role="dialog"]') as HTMLElement | null;
-const retiredLabels = [
-  ["Bank", "feeds"].join(" "),
-  ["الربط", "البنكي"].join(" "),
-  "Sync now",
-  "Lean Technologies",
-  "مزامنة الآن",
-];
+const action = () =>
+  dialog()!.querySelector<HTMLButtonElement>('[data-testid="button-confirm-import"]')!;
+const mapper = () => dialog()!.querySelector('[data-testid="panel-statement-mapper"]');
 
-async function chooseStatement() {
-  const sample = "Date,Description,Amount\n2026-11-20,Sample transaction,20";
-  const file = new File([sample], "statement.csv", { type: "text/csv" });
+async function chooseStatement(body: string, name = "statement.csv") {
+  const input = dialog()!.querySelector<HTMLInputElement>(
+    '[data-testid="input-bank-statement-file"]'
+  )!;
+  const file = new File([body], name, { type: "text/csv" });
   Object.defineProperty(file, "arrayBuffer", {
-    value: async () => new TextEncoder().encode(sample).buffer,
+    value: async () => new TextEncoder().encode(body).buffer,
   });
-  const input = dialog()?.querySelector('[data-testid="input-bank-statement-file"]');
-  expect(input).not.toBeNull();
-  Object.defineProperty(input, "files", { value: [file] });
-  await act(async () => input!.dispatchEvent(new Event("change", { bubbles: true })));
+  Object.defineProperty(input, "files", { configurable: true, value: [file] });
+  await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
 }
+
+function recordStatementRequests() {
+  const previews: Array<{ payload: unknown; respond: (value: Response) => void }> = [];
+  const imports: unknown[] = [];
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/bank-statements/preview")) {
+      return new Promise<Response>((respond) =>
+        previews.push({ payload: JSON.parse(String(init?.body)), respond })
+      );
+    }
+    if (url.endsWith("/bank-statements/import")) {
+      imports.push(JSON.parse(String(init?.body)));
+      return json({ imported: 1 });
+    }
+    return original(input, init);
+  });
+  return { previews, imports };
+}
+
+function previewResponse(description: string, requiresChoice = false) {
+  return json({
+    kind: "csv",
+    detectedFormat: "generic",
+    decimalSeparator: ".",
+    dateOrder: requiresChoice ? "DMY" : "YMD",
+    headers: [],
+    mapping: {},
+    totalRows: 1,
+    validRows: 1,
+    errorRows: 0,
+    sampleRows: [{ rowIndex: 1, date: "2026-11-13", description, debit: 0, credit: 0, errors: [] }],
+    warnings: [],
+    requiresChoice,
+  });
+}
+
+async function selectImportAccount() {
+  await pickOption(dialog()!.querySelector('[data-testid="select-import-bank-account"]'), /الحساب/);
+}
+
 describe("bank statement import dialog", () => {
-  it("in Arabic: shows the approved CSV guidance and an Arabic Import button", async () => {
+  it("in Arabic: every line is Arabic, including the supported formats and the Import button", async () => {
     await mountPage("ar");
     const d = dialog();
     expect(d).not.toBeNull();
@@ -152,65 +167,113 @@ describe("bank statement import dialog", () => {
     const text = d!.textContent ?? "";
     expect(text).toContain("استيراد");
     expect(text).toContain("متطلبات ملف CSV");
-    expect(text).toContain(BANK_RECONCILIATION_COPY.ar);
-    for (const label of retiredLabels)
-      expect(text.toLowerCase()).not.toContain(label.toLowerCase());
-    expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT\.053|OFX/i);
-    expect(d!.querySelector('[data-testid="button-download-sample-bank-csv"]')).not.toBeNull();
+    expect(text).toContain("CSV");
+    expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT|OFX/);
     expect(d!.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
       "استيراد"
     );
   });
 
-  it("in English: shows the approved CSV guidance and the sample download", async () => {
+  it("in English: the same lines come from the catalog", async () => {
     await mountPage("en");
     const text = dialog()?.textContent ?? "";
-    expect(text).toContain(BANK_RECONCILIATION_COPY.en);
-    for (const label of retiredLabels)
-      expect(text.toLowerCase()).not.toContain(label.toLowerCase());
     expect(text).toContain("CSV files can use commas, semicolons, or tabs");
-    expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT\.053|OFX/i);
-    expect(
-      dialog()?.querySelector('[data-testid="button-download-sample-bank-csv"]')
-    ).not.toBeNull();
+    expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT|OFX/);
     expect(dialog()?.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
       "Import"
     );
   });
 
   it.each([
-    ["en", "Statement recognized", "ltr"],
-    ["ar", "تم التعرّف على كشف الحساب", "rtl"],
-  ] as const)(
-    "shows a localized label for a populated statement preview in %s",
-    async (locale, label, dir) => {
+    ["en", "Choose a CSV file exported from your bank."],
+    ["ar", "اختر ملف CSV صدّرته من مصرفك."],
+  ] as const)("rejects a non-CSV selection without calling preview in %s", async (locale, copy) => {
+    await mountPage(locale);
+    const input = dialog()?.querySelector<HTMLInputElement>(
+      '[data-testid="input-bank-statement-file"]'
+    );
+    expect(input?.getAttribute("accept")).toBe(".csv,text/csv");
+    Object.defineProperty(input, "files", { value: [new File(["report"], "statement.xlsx")] });
+    await act(async () => {
+      input?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const error = dialog()?.querySelector('[data-testid="text-statement-preview-error"]');
+    expect(error?.textContent).toBe(copy);
+    expect(
+      vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("/bank-statements/preview"))
+    ).toBe(false);
+  });
+
+  it.each(["en", "ar"] as const)(
+    "only imports the bytes from the latest successful preview in %s",
+    async (locale) => {
+      const { previews, imports } = recordStatementRequests();
       await mountPage(locale);
-      await chooseStatement();
-      await vi.waitFor(() => {
-        const mapper = dialog()?.querySelector('[data-testid="panel-statement-mapper"]');
-        expect(mapper?.getAttribute("dir")).toBe(dir);
-        expect(mapper?.querySelector('[data-testid="statement-recognized"]')?.textContent).toBe(
-          label
-        );
-        expect(mapper?.textContent).toContain("Sample transaction");
-        expect(mapper?.textContent).not.toMatch(/MT940|CAMT\.053|OFX|QFX/);
-      });
+      await selectImportAccount();
+
+      await chooseStatement("first CSV");
+      await chooseStatement("different CSV with the same name");
+      await vi.waitFor(() => expect(previews).toHaveLength(2));
+      await act(async () => previews[0].respond(previewResponse("old sample")));
+      expect(action().disabled).toBe(true);
+      expect(mapper()).toBeNull();
+
+      await act(async () => previews[1].respond(previewResponse("current sample")));
+      expect(action().disabled).toBe(false);
+      expect(mapper()?.textContent).toContain("current sample");
+      await click(action());
+      expect(imports).toEqual([
+        {
+          ...(previews[1].payload as object),
+          bankAccountId: "b-1",
+          acknowledgeAmbiguity: false,
+        },
+      ]);
     }
   );
 
-  it.each(["en", "ar"] as const)(
-    "shows row errors without a recognition badge in %s",
-    async (locale) => {
-      validRows = 0;
-      await mountPage(locale);
-      await chooseStatement();
-      await vi.waitFor(() => {
-        const mapper = dialog()?.querySelector('[data-testid="panel-statement-mapper"]');
-        expect(mapper).not.toBeNull();
-        expect(mapper?.querySelector('[data-testid="statement-recognized"]')).toBeNull();
-      });
-    }
-  );
+  it("keeps a failed newer preview blocked when an older request finishes afterwards", async () => {
+    const { previews, imports } = recordStatementRequests();
+    await mountPage("en");
+    await selectImportAccount();
+    await chooseStatement("first CSV");
+    await chooseStatement("unreadable CSV");
+    await vi.waitFor(() => expect(previews).toHaveLength(2));
+
+    await act(async () =>
+      previews[1].respond(
+        new Response(JSON.stringify({ message: "Unreadable CSV" }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        })
+      )
+    );
+    expect(action().disabled).toBe(true);
+    await act(async () => previews[0].respond(previewResponse("old sample")));
+    expect(action().disabled).toBe(true);
+    expect(mapper()).toBeNull();
+    expect(dialog()?.querySelector('[data-testid="text-statement-preview-error"]')).toBeTruthy();
+    expect(imports).toEqual([]);
+  });
+
+  it("ignores a result from the previous dialog after close and reopen", async () => {
+    const { previews, imports } = recordStatementRequests();
+    await mountPage("en");
+    await selectImportAccount();
+    await chooseStatement("first CSV");
+    await vi.waitFor(() => expect(previews).toHaveLength(1));
+
+    await click([...dialog()!.querySelectorAll("button")].find((b) => b.textContent === "Cancel")!);
+    await click(document.querySelector('[data-testid="button-import-transactions"]'));
+    await chooseStatement("new CSV");
+    await vi.waitFor(() => expect(previews).toHaveLength(2));
+
+    await act(async () => previews[1].respond(previewResponse("current sample", true)));
+    await act(async () => previews[0].respond(previewResponse("closed dialog sample")));
+    expect(mapper()?.textContent).toContain("current sample");
+    expect(action().disabled).toBe(true);
+    expect(imports).toEqual([]);
+  });
 
   it("lets the dialog content shrink to a phone (single minmax(0,1fr) column, no min-content growth)", async () => {
     await mountPage("en");

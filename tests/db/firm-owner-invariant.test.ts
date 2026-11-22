@@ -43,7 +43,8 @@ async function waitForOwnerChanges(count: number, settled: () => boolean) {
       const [row] = await h.sql<{ waiting: number }>(`SELECT count(*)::int AS waiting
       FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'
       AND (query ILIKE '%insert into "firm_members"%' OR query ILIKE '%update "users"%'
-        OR query ILIKE '%delete from "users"%' OR query ILIKE '%firm_membership%')`);
+        OR query ILIKE '%delete from "users"%' OR query ILIKE '%firm_membership%'
+        OR query ILIKE '%from "users"%for update%')`);
       expect(row.waiting === count || settled()).toBe(true);
     },
     { timeout: 5000 }

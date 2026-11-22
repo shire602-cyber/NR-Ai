@@ -1,13 +1,17 @@
+import { execFileSync } from "node:child_process";
 // Source inspection is intentional: this is the unsupported-claims guard for public marketing,
 // legal and help copy. It scans the shipped source/catalog text for banned compliance and security
 // claims across pages that cannot all be rendered without API data.
-import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
+import { DOMParser } from "@xmldom/xmldom";
+import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 import { findBankFeedMention, findUnsupportedBankFeedClaim } from "../e2e/lib/bank-feed-claims.mjs";
 import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
+import { pdfToText } from "./pdf-test-helpers";
+import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 
 const repoRoot = process.cwd();
 
@@ -75,12 +79,15 @@ const bannedLaunchClaims = [
   /all data automatically/i,
   /reports generated automatically/i,
   /Untouched/i,
-  /Connect Your Bank/i,
   /Securely link your.*bank account/i,
   /via encrypted feeds/i,
-  /\b(?:live|bank)\s+feeds?\b/i,
-  /الربط (?:البنكي|المصرفي) المباشر/,
+  /\blive\s+bank\s+feeds?\b/i,
+  /الربط\s+البنكي\s+المباشر/,
+  /accredited provider (?:per deployment|configured for your deployment)/i,
+  /لكل\s+نسخة\s+من\s+التطبيق/,
+  /Photo,\s+email\s+forward,\s+or\s+bank\s+feed/i,
   /sync a bank line/i,
+  unsupportedStatementCopy,
   /compliant with FTA/i,
   /SOC 2 Type II/i,
   /Trusted by 500\+ UAE businesses/i,
@@ -103,6 +110,51 @@ const bannedLaunchClaims = [
 ];
 
 describe("Public SaaS launch surface", () => {
+  it("describes CSV import in both copies of the archived roadmap", async () => {
+    // Read the document contents because the Word and PDF assets are shipped as binaries.
+    const roadmap = join(
+      repoRoot,
+      "docs/archive/root/Muhasib-Netmara-Audit-and-Competitive-Roadmap"
+    );
+    const word = await JSZip.loadAsync(readFileSync(`${roadmap}.docx`));
+    const xml = await word.file("word/document.xml")!.async("string");
+    const document = new DOMParser().parseFromString(xml, "application/xml");
+    const wordText = Array.from(document.getElementsByTagName("w:p"), (p) => p.textContent).join(
+      "\n"
+    );
+
+    const pdfText = await pdfToText(readFileSync(`${roadmap}.pdf`));
+    for (const [format, text] of [
+      ["Word", wordText],
+      ["PDF", pdfText],
+    ]) {
+      const words = text.replace(/\s+/g, " ");
+      expect(
+        words.includes(BANK_RECONCILIATION_COPY.en),
+        format
+      ).toBe(true);
+      expect(/\bbank\s+feeds?\b|\bopen\s+banking\b/i.test(words), format).toBe(false);
+    }
+  });
+
+  it("keeps obsolete receipt and banking wording out of the catalogs and intake copy", () => {
+    for (const locale of ["en", "ar"]) {
+      const forms = JSON.parse(readRepoFile(`client/src/locales/${locale}/forms.json`));
+      expect(forms).not.toHaveProperty(["forms.claim.receiptUrlHint"]);
+      const pageLabels = JSON.parse(readRepoFile(`client/src/locales/${locale}/pageLabels.json`));
+      expect(pageLabels, locale).not.toHaveProperty([
+        "pageLabels.automaticTransactionImportEliminatesManualDataEntry",
+      ]);
+      const banking = JSON.parse(readRepoFile(`client/src/locales/${locale}/banking.json`));
+      const toasts = JSON.parse(readRepoFile(`client/src/locales/${locale}/toasts.json`));
+      expect(banking).not.toHaveProperty(["banking.rulesDescription"]);
+      expect(banking["banking.rulesCreateDesc"]).toContain("CSV");
+      expect(toasts).not.toHaveProperty(["toasts.newsletterFeatureWillBeAvailableSoonConfigure"]);
+    }
+    expect(readRepoFile("server/services/email-intake.ts")).not.toMatch(/\bbank\s+feeds?\b/i);
+    expect(readRepoFile("shared/server-copy.ts")).not.toMatch(/\bReconnect it under Banking\b/i);
+  });
+
   it("keeps the core launch, auth, and legal pages publicly routable", () => {
     const appSource = readRepoFile("client/src/App.tsx");
 
@@ -152,8 +204,14 @@ describe("Public SaaS launch surface", () => {
     }
   });
 
-  it("describes CSV statement upload and reconciliation in both locales", () => {
-    for (const locale of ["en", "ar"] as const) {
+  it("documents a CSV upload and removes the retired transaction setting from both catalogs", () => {
+    // The archived teardown and unused catalog entries have no runtime surface to render.
+    const teardown = readRepoFile("docs/archive/root/Muhasib-Teardown-2026-08-07.md");
+    expect(teardown).toContain(BANK_RECONCILIATION_COPY.en);
+    expect(teardown).not.toMatch(/add (?:direct )?bank \w+ later/i);
+    for (const locale of ["en", "ar"]) {
+      const labels = JSON.parse(readRepoFile(`client/src/locales/${locale}/pageLabels.json`));
+      expect(labels).not.toHaveProperty(["pageLabels.syncNewTransactionsEveryHour"]);
       const prefix = `client/src/locales/${locale}`;
       const onboarding = JSON.parse(readRepoFile(`${prefix}/onboarding.json`));
       expect(onboarding).not.toHaveProperty(["onboarding.bankConnectedDescription"]);

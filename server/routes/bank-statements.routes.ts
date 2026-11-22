@@ -20,12 +20,15 @@ import { notificationCopy } from "../../shared/server-copy";
 import { bankStatementCopy, statementRecognized } from "../../shared/bank-statement-copy";
 import {
   parseBankCsvText,
-  parseBankStatement,
   toLegacyTransactions,
   type BankParseResult,
   type ParseOptions,
 } from "../services/bank-statement-parser.service";
-import { importStatementRows } from "../services/bank-import.service";
+import {
+  importStatementRows,
+  parseStatementCsv,
+  statementImportChoice,
+} from "../services/bank-import.service";
 import {
   applyMatch,
   assertLinkableGlAccount,
@@ -80,6 +83,7 @@ const statementSourceShape = {
   csvContent: z.string().optional(),
   fileBase64: z.string().optional(),
   fileName: z.string().max(255).optional(),
+  expectedKind: z.literal("csv").optional(),
   delimiter: z.enum([",", ";", "\t", "|"]).optional(),
   decimalSeparator: z.enum([".", ","]).optional(),
   dateOrder: z.enum(["DMY", "MDY", "YMD"]).optional(),
@@ -392,8 +396,9 @@ export function registerBankStatementRoutes(app: Express) {
 
       let parsed: BankParseResult;
       try {
-        parsed = await parseBankStatement(statementBytes(req.body), statementOptions(req.body));
+        parsed = parseStatementCsv(statementBytes(req.body), statementOptions(req.body));
       } catch (err) {
+        if (err instanceof DomainError) throw err;
         log.warn({ err: (err as Error).message }, "Bank statement preview failed to parse");
         return res
           .status(400)
@@ -441,7 +446,7 @@ export function registerBankStatementRoutes(app: Express) {
   );
 
   /**
-   * Import a statement (CSV / XLSX / MT940 / CAMT.053 / OFX) into a managed bank account.
+   * Import a CSV statement into a managed bank account.
    * Every import is a batch (history + undo) with an opening-balance continuity check.
    */
   app.post(
@@ -458,8 +463,9 @@ export function registerBankStatementRoutes(app: Express) {
 
       let parsedFile: BankParseResult;
       try {
-        parsedFile = await parseBankStatement(statementBytes(req.body), statementOptions(req.body));
+        parsedFile = parseStatementCsv(statementBytes(req.body), statementOptions(req.body));
       } catch (err) {
+        if (err instanceof DomainError) throw err;
         log.warn({ err: (err as Error).message }, "Bank statement import failed to parse");
         return res
           .status(400)
@@ -479,18 +485,8 @@ export function registerBankStatementRoutes(app: Express) {
         });
       }
 
-      const unresolved = parsedFile.warnings.filter((w) => w.requiresChoice);
-      if (unresolved.length > 0 && !acknowledgeAmbiguity) {
-        return res.status(409).json({
-          code: "CHOICE_REQUIRED",
-          message:
-            "The statement is ambiguous. Confirm the date order, decimal separator or column mapping and retry.",
-          warnings: parsedFile.warnings,
-          dateOrder: parsedFile.dateOrder,
-          decimalSeparator: parsedFile.decimalSeparator,
-          detectedFormat: format,
-        });
-      }
+      const choice = statementImportChoice(parsedFile, acknowledgeAmbiguity);
+      if (choice) return res.status(409).json(choice);
 
       const result = await importStatementRows({
         companyId,

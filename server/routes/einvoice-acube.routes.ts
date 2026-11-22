@@ -5,7 +5,7 @@
  *   POST /api/companies/:companyId/einvoicing/acube/reserve    reserve the company's TIN
  *   POST /api/companies/:companyId/einvoicing/acube/sync       re-read the legal entity
  *   POST /api/companies/:companyId/einvoicing/acube/webhooks   register event destinations
- *   POST /api/webhooks/einvoice/acube/:environment             A-Cube events (Ed25519-signed)
+ *   POST /api/webhooks/einvoice/acube/:environment/:companyId  A-Cube events (Ed25519-signed)
  *
  * Without A-Cube configured every call answers 503 EINVOICE_PROVIDER_NOT_CONFIGURED and the card
  * says so; nothing claims a connection that does not exist.
@@ -16,7 +16,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { requirePermission } from "../middleware/companyRolePolicy";
+import { requireScopedCompanyPermission } from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
 import { DomainError } from "../errors";
 import { createLogger } from "../config/logger";
@@ -29,7 +29,6 @@ import {
   AcubeApiError,
   AcubeEInvoiceProvider,
   MOF_ASP_REGISTER_URL,
-  acubeConfigured,
   acubeEnvironment,
 } from "../services/einvoice/providers/acube";
 import {
@@ -41,7 +40,7 @@ import {
   ACUBE_POLL_JOB,
   PROVIDER_EVENTS_JOB,
   canonicalEventType,
-  enqueueProviderEvent,
+  enqueueVerifiedProviderCallback,
   providerEventKey,
   providerEventSummary,
   runAcubePoll,
@@ -49,10 +48,19 @@ import {
 } from "../services/einvoice/provider-events";
 import {
   companyTin,
+  currentOnboardingEntity,
   getLegalEntity,
-  patchFromAcube,
-  upsertLegalEntity,
+  requireCompanyTin,
 } from "../services/einvoice/legal-entities";
+import { companyProviderConfiguration } from "../services/einvoice/providers/company-provider";
+import {
+  reserveAcubeCompany,
+  syncAcubeCompany,
+} from "../services/einvoice/providers/acube-onboarding";
+import {
+  providerCallbackOrigin,
+  providerCallbackUrl,
+} from "../services/einvoice/providers/callback-url";
 import { EINVOICE_TIMELINE, einvoicingScope } from "../services/einvoice/scope";
 import { reportWindowDays } from "../services/einvoice/tracks";
 
@@ -77,46 +85,36 @@ const DEFAULT_WEBHOOK_EVENTS = [
   "legal_entity.synchronized",
 ];
 
-function acubeSelected(env: NodeJS.ProcessEnv = process.env): boolean {
-  return (env.EINVOICE_PROVIDER ?? "").toLowerCase() === ACUBE_PROVIDER_NAME;
+async function acubeConfiguration(company: Company) {
+  return company.einvoicePartner === ACUBE_PROVIDER_NAME
+    ? companyProviderConfiguration(company.id, ACUBE_PROVIDER_NAME)
+    : null;
 }
 
-function acubeProvider(): AcubeEInvoiceProvider {
-  if (!acubeSelected() || !acubeConfigured()) {
-    throw new DomainError(
-      "EINVOICE_PROVIDER_NOT_CONFIGURED",
-      503,
-      undefined,
-      "A-Cube is not connected: set EINVOICE_PROVIDER=acube with ACUBE_EMAIL and ACUBE_PASSWORD."
-    );
-  }
-  return new AcubeEInvoiceProvider();
-}
-
-function webhookBaseUrl(): string | null {
-  const base = process.env.ACUBE_WEBHOOK_BASE_URL || process.env.AUTH_PUBLIC_URL || "";
-  return base ? base.replace(/\/+$/, "") : null;
-}
-
-function webhookPath(environment: string): string {
-  return `/api/webhooks/einvoice/acube/${environment}`;
+async function acubeProvider(company: Company) {
+  const config = await acubeConfiguration(company);
+  if (!config) throw new DomainError("EINVOICE_PROVIDER_NOT_CONFIGURED", 503);
+  return { provider: new AcubeEInvoiceProvider(config.env), webhookToken: config.webhookSecret };
 }
 
 type StepState = "done" | "current" | "todo" | "failed";
 
-export function acubeConnectionView(
+export async function acubeConnectionView(
   company: Company & Record<string, unknown>,
-  le: Awaited<ReturnType<typeof getLegalEntity>>
+  storedEntity: Awaited<ReturnType<typeof getLegalEntity>>
 ) {
-  const configured = acubeSelected() && acubeConfigured();
+  const config = await acubeConfiguration(company);
+  const configured = !!config;
   const environment = acubeEnvironment();
+  const le = currentOnboardingEntity(company, storedEntity, ACUBE_PROVIDER_NAME, environment);
   const status = le?.status ?? null;
   const steps: Array<{ key: "reserve" | "approve" | "synced"; state: StepState }> = [
-    { key: "reserve", state: le ? "done" : configured ? "current" : "todo" },
+    { key: "reserve", state: le?.legalEntityId ? "done" : configured ? "current" : "todo" },
     {
       key: "approve",
-      state:
-        status === "active"
+      state: !le?.legalEntityId
+        ? "todo"
+        : status === "active"
           ? "done"
           : status === "inactive"
             ? "failed"
@@ -127,10 +125,13 @@ export function acubeConnectionView(
     {
       key: "synced",
       state:
-        status === "active" ? (le?.registrySyncAt || le?.smpSyncAt ? "done" : "current") : "todo",
+        le?.legalEntityId && status === "active"
+          ? le.registrySyncAt || le.smpSyncAt
+            ? "done"
+            : "current"
+          : "todo",
     },
   ];
-  const base = webhookBaseUrl();
   const scope = einvoicingScope({
     einvoiceScope: (company.einvoiceScope as string | null) ?? null,
     einvoiceTurnoverBand: (company.einvoiceTurnoverBand as string | null) ?? null,
@@ -165,7 +166,7 @@ export function acubeConnectionView(
           activatedAt: le.activatedAt,
         }
       : null,
-    canSend: configured && status === "active",
+    canSend: configured && !!le?.legalEntityId?.trim() && status === "active",
     steps,
     goLive: {
       ...scope,
@@ -174,8 +175,8 @@ export function acubeConnectionView(
       reportWindowDays: reportWindowDays(),
     },
     webhook: {
-      url: base ? `${base}${webhookPath(environment)}` : null,
-      tokenConfigured: !!process.env.ACUBE_WEBHOOK_TOKEN,
+      url: providerCallbackUrl(ACUBE_PROVIDER_NAME, environment, company.id),
+      tokenConfigured: !!config?.webhookSecret,
       signaturePinned: !!process.env.ACUBE_SIGNATURE_PUBLIC_KEY,
     },
   };
@@ -203,11 +204,45 @@ const emptyBody = z.object({}).strict();
 /** Any JSON object: A-Cube's payloads are small and are re-read from the API before use. */
 const webhookPayload = z.record(z.string(), z.unknown());
 
+function webhookIdentifier(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+/** Read A-Cube's native resource UUID fields alongside the canonical prose payloads. */
+function normaliseAcubeEvent(payload: Record<string, unknown>) {
+  const type = canonicalEventType(payload);
+  if (!type) return null;
+  if (type === "legal_entity.synchronized") {
+    const legalEntityId =
+      webhookIdentifier(payload.legalEntityUuid) ?? webhookIdentifier(payload.legalEntityId);
+    if (!legalEntityId && !webhookIdentifier(payload.tin)) return null;
+    return { type, payload: { ...payload, legalEntityId } };
+  }
+
+  const declared = String(payload.eventType ?? payload.event ?? "").toLowerCase();
+  const creditNote = declared.startsWith("credit_note.");
+  const nativeId = creditNote ? payload.creditNoteUuid : payload.invoiceUuid;
+  const documentId = webhookIdentifier(nativeId) ?? webhookIdentifier(payload.documentId);
+  if (!documentId) return null;
+  return {
+    type,
+    payload: {
+      ...payload,
+      documentId,
+      ...(creditNote ? { documentType: "credit-note" } : {}),
+    },
+  };
+}
+
 function tokenMatches(given: string | undefined, expected: string): boolean {
   if (!given) return false;
   const a = Buffer.from(given, "utf8");
   const b = Buffer.from(expected, "utf8");
   return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function webhookTokenHeaderName(): string {
+  return process.env.ACUBE_WEBHOOK_TOKEN_HEADER?.trim() || "X-Acube-Token";
 }
 
 export function registerEInvoiceAcubeRoutes(app: Express) {
@@ -236,13 +271,13 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/acube",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
       const le = await getLegalEntity(company.id, ACUBE_PROVIDER_NAME, acubeEnvironment());
       res.json({
-        ...acubeConnectionView(company as Company & Record<string, unknown>, le),
+        ...(await acubeConnectionView(company as Company & Record<string, unknown>, le)),
         events: await providerEventSummary(company.id),
       });
     })
@@ -251,43 +286,30 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/einvoicing/acube/reserve",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     strictBody(reserveBody),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
-      const provider = acubeProvider();
+      const { provider } = await acubeProvider(company);
       const body = validated<ReserveBody>(req);
-      const tin = companyTin(company as Company & { peppolParticipantId?: string | null });
-      if (!tin) {
-        throw new DomainError(
-          "EINVOICE_TIN_MISSING",
-          422,
-          { field: "company.trnVatNumber" },
-          "Add the company's 15-digit TRN (its first 10 digits are the TIN) before connecting."
-        );
-      }
-      let reserved;
+      const tin = requireCompanyTin(company);
+      let reservation;
       try {
-        reserved = await provider.reserveLegalEntity(tin);
+        reservation = await reserveAcubeCompany({ company, provider, ...body });
       } catch (err) {
         if (err instanceof AcubeApiError) {
-          throw new DomainError(err.code, err.status >= 500 ? 502 : 422, undefined, err.message);
+          throw new DomainError(err.code, err.status >= 500 ? 502 : 422);
         }
         throw err;
       }
-      const le = await upsertLegalEntity(
-        company.id,
-        ACUBE_PROVIDER_NAME,
-        provider.environment,
-        tin,
-        {
-          ...patchFromAcube(reserved),
-          approver: body.approver,
-          approverEmail: body.approver === "someone_else" ? (body.approverEmail ?? null) : null,
-          lastError: null,
-        }
-      );
+      const le = reservation.row;
+      if (reservation.pending) {
+        res
+          .status(202)
+          .json(await acubeConnectionView(company as Company & Record<string, unknown>, le));
+        return;
+      }
       await recordAudit({
         userId: userOf(req),
         companyId: company.id,
@@ -297,63 +319,46 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
         after: { tin, status: le.status, approver: body.approver, environment: le.environment },
         req,
       });
-      res.json(acubeConnectionView(company as Company & Record<string, unknown>, le));
+      res.json(await acubeConnectionView(company as Company & Record<string, unknown>, le));
     })
   );
 
   app.post(
     "/api/companies/:companyId/einvoicing/acube/sync",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     strictBody(emptyBody),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
-      const provider = acubeProvider();
-      const le = await getLegalEntity(company.id, ACUBE_PROVIDER_NAME, provider.environment);
-      if (!le?.legalEntityId) {
-        throw new DomainError(
-          "EINVOICE_LEGAL_ENTITY_NOT_RESERVED",
-          409,
-          undefined,
-          "Reserve the TIN first."
-        );
-      }
-      let current;
+      const { provider } = await acubeProvider(company);
+      let row;
       try {
-        current = await provider.getLegalEntity(le.legalEntityId);
+        row = await syncAcubeCompany(company, provider);
       } catch (err) {
-        if (err instanceof AcubeApiError)
-          throw new DomainError(err.code, 502, undefined, err.message);
+        if (err instanceof AcubeApiError) throw new DomainError(err.code, 502);
         throw err;
       }
-      const patch = patchFromAcube({ ...current, action: "SYNC" });
-      if (patch.status === "active" && le.status !== "active") patch.activatedAt = new Date();
-      const row = await upsertLegalEntity(
-        company.id,
-        ACUBE_PROVIDER_NAME,
-        provider.environment,
-        le.tin,
-        patch
-      );
-      res.json(acubeConnectionView(company as Company & Record<string, unknown>, row));
+      res.json(await acubeConnectionView(company as Company & Record<string, unknown>, row));
     })
   );
 
   app.post(
     "/api/companies/:companyId/einvoicing/acube/webhooks",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     strictBody(emptyBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const provider = acubeProvider();
-      const base = webhookBaseUrl();
-      if (!base || !base.startsWith("https://")) {
+      const company = await storage.getCompany(req.params.companyId);
+      if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
+      const { provider, webhookToken } = await acubeProvider(company);
+      const target = providerCallbackUrl(ACUBE_PROVIDER_NAME, provider.environment, company.id);
+      if (!target) {
         throw new DomainError(
           "EINVOICE_WEBHOOK_URL_NOT_CONFIGURED",
           409,
           undefined,
-          "Set ACUBE_WEBHOOK_BASE_URL to the public https address of this app."
+          "Set ACUBE_WEBHOOK_BASE_URL to the public HTTPS origin of this app."
         );
       }
       const events = (process.env.ACUBE_WEBHOOK_EVENTS ?? "")
@@ -361,10 +366,10 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
         .map((s) => s.trim())
         .filter(Boolean);
       const out = await provider.ensureEventDestinations({
-        target: `${base}${webhookPath(provider.environment)}`,
+        target,
         events: events.length ? events : DEFAULT_WEBHOOK_EVENTS,
-        authKey: process.env.ACUBE_WEBHOOK_TOKEN_HEADER || "X-Acube-Token",
-        authToken: process.env.ACUBE_WEBHOOK_TOKEN || null,
+        authKey: webhookTokenHeaderName(),
+        authToken: webhookToken,
       });
       res.json(out);
     })
@@ -373,14 +378,18 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
   // ─── Webhook (A-Cube → us) ─────────────────────────────────────────
 
   app.post(
-    "/api/webhooks/einvoice/acube/:environment",
+    "/api/webhooks/einvoice/acube/:environment/:companyId?",
     express.raw({ type: "*/*", limit: "256kb" }),
     asyncHandler(async (req: Request, res: Response) => {
       const environment = req.params.environment;
       if (environment !== "sandbox" && environment !== "production") {
         return res.status(404).json({ code: "NOT_FOUND", message: "Unknown environment" });
       }
-      if (!acubeSelected() || !acubeConfigured() || acubeEnvironment() !== environment) {
+      const companyId = req.params.companyId?.toLowerCase();
+      const config = companyId
+        ? await companyProviderConfiguration(companyId, ACUBE_PROVIDER_NAME, { environment })
+        : null;
+      if (!config) {
         return res.status(503).json({
           code: "EINVOICE_PROVIDER_NOT_CONFIGURED",
           message: "A-Cube is not connected for this environment.",
@@ -388,12 +397,9 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
       }
       const raw: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
 
-      const token = process.env.ACUBE_WEBHOOK_TOKEN;
+      const token = config.webhookSecret;
       if (token) {
-        const header = (process.env.ACUBE_WEBHOOK_TOKEN_HEADER || "X-Acube-Token").toLowerCase();
-        const given =
-          req.get(header) ?? (typeof req.query.token === "string" ? req.query.token : undefined);
-        if (!tokenMatches(given, token)) {
+        if (!tokenMatches(req.get(webhookTokenHeaderName()), token)) {
           return res
             .status(401)
             .json({ code: "EINVOICE_WEBHOOK_BAD_TOKEN", message: "Invalid webhook token" });
@@ -402,7 +408,8 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
 
       // @target-uri is the URL A-Cube called: the configured public base when set (behind a
       // proxy), else this request's own scheme and host.
-      const base = webhookBaseUrl() ?? `${req.protocol}://${req.get("host")}`;
+      const base =
+        providerCallbackOrigin(ACUBE_PROVIDER_NAME) ?? `${req.protocol}://${req.get("host")}`;
       const request = {
         method: req.method,
         targetUri: `${base}${req.originalUrl}`,
@@ -412,7 +419,7 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
       let verdict = verifyAcubeSignature({
         raw,
         request,
-        publicKey: await getAcubePublicKey(environment),
+        publicKey: await getAcubePublicKey(environment, config.env),
         maxAgeSeconds,
       });
       if (
@@ -424,7 +431,7 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
         verdict = verifyAcubeSignature({
           raw,
           request,
-          publicKey: await getAcubePublicKey(environment, process.env, { refresh: true }),
+          publicKey: await getAcubePublicKey(environment, config.env, { refresh: true }),
           maxAgeSeconds,
         });
       }
@@ -447,24 +454,26 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
       if (!parsed.success) {
         return res.status(400).json({ code: "VALIDATION_ERROR", message: "Expected an object" });
       }
-      const payload = parsed.data;
-      const type = canonicalEventType(payload);
-      if (!type) {
+      const event = normaliseAcubeEvent(parsed.data);
+      if (!event) {
         return res.status(202).json({ received: true, ignored: true });
       }
-      const queued = await enqueueProviderEvent({
+      const { type, payload } = event;
+      const queued = await enqueueVerifiedProviderCallback({
         provider: ACUBE_PROVIDER_NAME,
         environment,
         type,
         eventId: providerEventKey(type, payload),
+        companyId,
         payload,
       });
+      if (queued.ignored) return res.status(200).json({ received: true, ignored: true });
       // Answer fast; the job retries anything this immediate run does not finish.
       if (queued.id && process.env.ACUBE_WEBHOOK_INLINE !== "false") {
         const id = queued.id;
         setImmediate(() => {
-          runProviderEvents({ id, limit: 1 }).catch((err) =>
-            log.warn({ err: (err as Error).message }, "immediate event processing failed")
+          runProviderEvents({ id, limit: 1 }).catch(() =>
+            log.warn("immediate event processing failed")
           );
         });
       }

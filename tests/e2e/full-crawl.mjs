@@ -154,6 +154,40 @@ async function mainShows(page, text, timeoutMs = 20000) {
   return false;
 }
 
+async function signInFixture(page, email, label) {
+  const login = await page.request.post(`${BASE}/api/auth/login`, {
+    data: { email, password: "Password123!" },
+  });
+  if (!login.ok()) throw new Error(`${label} login failed with HTTP ${login.status()}`);
+}
+
+/** Sign in a fresh company owner and finish the real three-step wizard before crawling. */
+async function completeExpressOnboarding(page, email, label) {
+  const timeout = 45000;
+  await signInFixture(page, email, label);
+
+  try {
+    await page.goto(`${BASE}/dashboard`, { timeout });
+    await page.waitForURL((url) => url.pathname === "/onboarding", { timeout });
+    await page.getByTestId("onboarding-express").click({ timeout });
+    await page.getByTestId("onboarding-skip").click({ timeout });
+    const [completion] = await Promise.all([
+      page.waitForResponse(
+        (res) =>
+          res.request().method() === "POST" &&
+          /^\/api\/companies\/[^/]+\/onboarding\/complete$/.test(new URL(res.url()).pathname),
+        { timeout }
+      ),
+      page.getByTestId("onboarding-task-explore").click({ timeout }),
+    ]);
+    if (!completion.ok())
+      throw new Error(`Onboarding completion returned HTTP ${completion.status()}`);
+    await page.waitForURL((url) => url.pathname === "/dashboard", { timeout });
+  } catch (cause) {
+    throw new Error(`${label} express onboarding did not finish at ${page.url()}`, { cause });
+  }
+}
+
 async function resolveExecutablePath() {
   if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
   try {
@@ -161,19 +195,6 @@ async function resolveExecutablePath() {
   } catch {
     return undefined;
   }
-}
-
-async function openDashboard(page) {
-  await page.goto(`${BASE}/dashboard`);
-  const express = page.getByTestId("onboarding-express");
-  const dashboard = page.getByTestId("dashboard-title");
-  await express.or(dashboard).filter({ visible: true }).first().waitFor({ timeout: 30000 });
-  if (await express.isVisible()) {
-    await express.click();
-    await page.getByTestId("onboarding-skip").click({ timeout: 20000 });
-    await page.getByTestId("onboarding-task-explore").click({ timeout: 20000 });
-  }
-  await dashboard.waitFor({ timeout: 20000 });
 }
 
 async function main() {
@@ -224,15 +245,7 @@ async function main() {
     await fail("register", { detail: `status ${reg.status()}` });
     throw new Error(`register failed: ${reg.status()}`);
   }
-  // W5-E: registration returns no session; sign in (sets the auth cookies).
-  await page.request.post(`${BASE}/api/auth/login`, { data: { email, password: "Password123!" } });
-
-  try {
-    await openDashboard(page);
-  } catch (error) {
-    await fail("express-onboarding", { detail: `ended on ${page.url()}` });
-    throw error;
-  }
+  await completeExpressOnboarding(page, email, "Owner");
 
   // Promote to admin + firm owner so the crawl covers admin and firm suites.
   const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
@@ -1179,61 +1192,74 @@ async function main() {
   // (a) 'client' userType: flat workspace sidebar — dashboard, documents,
   //     reports must render with no admin/firm assumptions leaking in.
   // (b) 'client_portal' userType: the separate portal layout.
-  async function crawlAs(label, userType, matrixRoutes) {
-    const mCtx = await browser.newContext({
+  async function openMatrixPage() {
+    const context = await browser.newContext({
       viewport: { width: 1440, height: 900 },
       timezoneId: BROWSER_TIMEZONE,
     });
-    await mCtx.addInitScript(() => {
+    await context.addInitScript(() => {
       // The client only probes the cookie session when this non-secret sign-in hint is set (R18-04).
       localStorage.setItem("muhasib_auth_hint", "1");
     });
-    const mPage = await mCtx.newPage();
-    let mErrors = [];
-    let mApi = [];
-    mPage.on("pageerror", (e) => mErrors.push(`JS: ${e.message.slice(0, 200)}`));
-    mPage.on("response", (r) => {
+    const page = await context.newPage();
+    const js = [];
+    const api = [];
+    page.on("pageerror", (e) => js.push(`JS: ${e.message.slice(0, 200)}`));
+    page.on("response", (r) => {
       const url = r.url();
       if (!url.includes("/api/") || r.status() < 400 || r.status() === 401 || r.status() === 403)
         return;
       const cleanPath = url.replace(BASE, "").split("?")[0];
       if (TOLERATED_API.some((re) => re.test(cleanPath))) return;
-      mApi.push(`${r.request().method()} ${cleanPath} -> ${r.status()}`);
+      api.push(`${r.request().method()} ${cleanPath} -> ${r.status()}`);
     });
+    return { context, page, js, api };
+  }
 
+  async function crawlAs(label, userType, matrixRoutes) {
     const mEmail = `e2e-${label}+${Date.now()}@test.local`;
-    const mReg = await mPage.request.post(`${BASE}/api/auth/register`, {
-      data: {
-        email: mEmail,
-        password: "Password123!",
-        name: `E2E ${label}`,
-        companyName: `${label} Co LLC`,
-      },
-    });
-    if (mReg.status() >= 300) {
-      await fail(`${label} register`, { detail: `status ${mReg.status()}` });
-      await mCtx.close();
-      return;
-    }
-    // W5-E: registration returns no session; sign in (sets the auth cookies).
-    await mPage.request.post(`${BASE}/api/auth/login`, {
-      data: { email: mEmail, password: "Password123!" },
-    });
-    // Complete onboarding via express so the dashboard doesn't redirect.
+    const setup = await openMatrixPage();
     try {
-      await openDashboard(mPage);
-    } catch (error) {
-      await fail(`${label} express-onboarding`, { detail: error.message.slice(0, 150) });
-      await mCtx.close();
-      return;
+      const registration = await setup.page.request.post(`${BASE}/api/auth/register`, {
+        data: {
+          email: mEmail,
+          password: "Password123!",
+          name: `E2E ${label}`,
+          companyName: `${label} Co LLC`,
+        },
+      });
+      if (!registration.ok()) {
+        await fail(`${label} register`, { detail: `status ${registration.status()}` });
+        return;
+      }
+      await completeExpressOnboarding(setup.page, mEmail, label);
+      await setup.page.waitForLoadState("networkidle", { timeout: 45000 });
+    } finally {
+      // Retire the customer dashboard and its cookie session before changing the fixture's role.
+      await setup.context.close();
     }
+    if (setup.js.length || setup.api.length) {
+      await fail(`${label} onboarding setup`, {
+        js: setup.js.slice(0, 3),
+        api: [...new Set(setup.api)].slice(0, 5),
+      });
+    }
+
     const mDb = new pg.Client({ connectionString: process.env.DATABASE_URL });
     await mDb.connect();
-    await mDb.query(`UPDATE users SET user_type = $1, email_verified = true WHERE email = $2`, [
-      userType,
-      mEmail,
-    ]);
-    await mDb.end();
+    try {
+      const update = await mDb.query(
+        `UPDATE users SET user_type = $1, email_verified = true WHERE email = $2`,
+        [userType, mEmail]
+      );
+      if (update.rowCount !== 1)
+        throw new Error(`${label} fixture role update did not find its user`);
+    } finally {
+      await mDb.end();
+    }
+
+    const { context: mCtx, page: mPage, js: mErrors, api: mApi } = await openMatrixPage();
+    await signInFixture(mPage, mEmail, label);
 
     // Access boundary: an ordinary account must be rejected on every NRA /
     // admin surface even when guessing URLs directly. 401/403 both prove the
@@ -1255,8 +1281,8 @@ async function main() {
     }
 
     for (const route of matrixRoutes) {
-      mErrors = [];
-      mApi = [];
+      mErrors.length = 0;
+      mApi.length = 0;
       try {
         await mPage.goto(`${BASE}${route}`, { timeout: 45000 });
         const bodyText = await renderedMainText(mPage);
@@ -1322,18 +1348,21 @@ async function main() {
         data: { periodStart: ymd(qStart), periodEnd: ymd(qEnd) },
       }
     );
-    const vatReturn = await generated.json();
-    if (!generated.ok() || !vatReturn.id) {
-      throw new Error(
-        `VAT fixture failed with ${generated.status()}: ${vatReturn.code ?? "missing return ID"}`
-      );
-    }
+    if (!generated.ok())
+      throw new Error(`VAT fixture generation returned HTTP ${generated.status()}`);
+    const { id: returnId, dueDate } = await generated.json();
+    if (!returnId || !dueDate) throw new Error("VAT fixture is missing its return ID or due date");
     const datesOn = async (p) => {
-      await p.goto(`${BASE}/vat-filing?tab=returns`, { timeout: 45000 });
-      const row = p.getByTestId(`row-return-${vatReturn.id}`);
-      await row.waitFor({ state: "visible", timeout: 18000 });
-      const cells = row.getByRole("cell");
-      return { period: await cells.nth(0).innerText(), dueDate: await cells.nth(1).innerText() };
+      await p.goto(`${BASE}/vat-filing`, { timeout: 45000 });
+      await p.getByTestId(`button-view-${returnId}`).click({ timeout: 20000 });
+      const workbook = p.getByTestId("vat201-workbook");
+      const value = (label) =>
+        workbook
+          .locator("dl > div")
+          .filter({ has: p.getByText(label, { exact: true }) })
+          .locator("dd")
+          .innerText({ timeout: 15000 });
+      return { period: await value("Return period"), due: await value("Return due date") };
     };
     const utcCtx = await browser.newContext({
       viewport: { width: 1440, height: 900 },
@@ -1347,21 +1376,20 @@ async function main() {
       await utcCtx.close();
     }
     const localDates = await datesOn(page);
-    const month = new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      year: "numeric",
-      timeZone: "UTC",
-    });
-    const expectedPeriod = `${month.format(qStart)} - ${month.format(qEnd)}`;
+    const dateLabel = (d) =>
+      `${d.getUTCDate()} ${d.toLocaleString("en-GB", { month: "short", timeZone: "UTC" }).slice(0, 3)} ${d.getUTCFullYear()}`;
+    const expected = {
+      period: `${dateLabel(qStart)} – ${dateLabel(qEnd)}`,
+      due: dateLabel(new Date(dueDate)),
+    };
     if (
-      JSON.stringify(utcDates) !== JSON.stringify(localDates) ||
-      utcDates.period !== expectedPeriod ||
-      localDates.period !== expectedPeriod
+      JSON.stringify(utcDates) !== JSON.stringify(expected) ||
+      JSON.stringify(localDates) !== JSON.stringify(expected)
     ) {
       await fail(`timezone probe /vat-filing (${BROWSER_TIMEZONE})`, {
         utc: utcDates,
         local: localDates,
-        expectedPeriod,
+        expected,
       });
     }
   } catch (e) {

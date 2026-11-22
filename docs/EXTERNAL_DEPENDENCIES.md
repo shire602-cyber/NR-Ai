@@ -1,7 +1,8 @@
 # External Dependencies — Owner Action List
 
-Log in as an admin and call `GET /api/admin/integration-status` to see which
-integrations are configured and which environment variables they require.
+Log in as an admin and call `GET /api/admin/integration-status` to check
+configuration and see which environment variables an integration uses. Provider
+access and setup depend on the integration.
 
 | #   | Item                  | Software status                                                                                                                                                                                                                              | What the owner inputs (Railway env vars)                                                                                                                                                                   | What happens when set                                                             |
 | --- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |

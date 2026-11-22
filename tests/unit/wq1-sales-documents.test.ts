@@ -207,7 +207,7 @@ describe("WQ1 pure rules", () => {
     ];
     const active = einvoiceChecks(issues, true);
     expect(blockingCount(active)).toBe(2);
-    expect(active[0].href).toBe("/company-profile");
+    expect(active[0].href).toBe("/settings/company");
     expect(active[1].field).toBe("lines.0.description");
     expect(blockingCount(einvoiceChecks(issues, false))).toBe(0);
   });

@@ -11,12 +11,16 @@ import { storage } from "../storage";
 import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { manualBankConnectionBody } from "../../shared/validators/banking";
 import {
-  linkConnection,
   retireAutomaticBanking,
   retiredBankingError,
   sanitizeConnection,
 } from "../services/bank-feeds";
-import { importBankStatement, parseCSVBankStatement } from "../services/bank-import.service";
+import {
+  importConnectionStatement,
+  linkConnectionStatement,
+  parseStatementCsv,
+  statementImportChoice,
+} from "../services/bank-import.service";
 import { z } from "zod";
 import { zUuid } from "../../shared/validators/primitives";
 import { parseReportDate, uaeToday } from "../reporting";
@@ -43,7 +47,12 @@ async function ownedConnection(req: Request, id: string, companyId?: string) {
   return connection;
 }
 
-const connectionImportBody = z.object({ csvContent: z.string().min(1).max(5_000_000) }).strict();
+const connectionImportBody = z
+  .object({
+    csvContent: z.string().min(1).max(5_000_000),
+    acknowledgeAmbiguity: z.boolean().optional(),
+  })
+  .strict();
 const connectionLinkBody = z.object({ bankAccountId: zUuid }).strict();
 
 export async function registerBankRoutes(app: Express) {
@@ -140,7 +149,9 @@ export async function registerBankRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, id } = req.params;
       await ownedConnection(req, id, companyId);
-      const updated = await linkConnection(companyId, id, req.body.bankAccountId);
+      const { bankAccountId } = parsedBody<z.output<typeof connectionLinkBody>>(req);
+      const updated = await linkConnectionStatement(companyId, id, bankAccountId, userId(req));
+      if (!updated) throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404);
       res.json(sanitizeConnection(updated));
     })
   );
@@ -155,11 +166,17 @@ export async function registerBankRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, id } = req.params;
       await assertAccess(req, companyId);
-      const connection = await ownedConnection(req, id, companyId);
+      await ownedConnection(req, id, companyId);
+      const { csvContent, acknowledgeAmbiguity } =
+        parsedBody<z.output<typeof connectionImportBody>>(req);
       let parsed;
       try {
-        parsed = await parseCSVBankStatement(req.body.csvContent);
-      } catch {
+        parsed = parseStatementCsv(Buffer.from(csvContent, "utf8"));
+        if (parsed.rows.length === 0 && parsed.ignored.length === 0) {
+          throw new Error("CSV file must contain a header row and at least one data row");
+        }
+      } catch (err) {
+        if (err instanceof DomainError) throw err;
         throw new DomainError(
           "STATEMENT_UNREADABLE",
           400,
@@ -167,22 +184,20 @@ export async function registerBankRoutes(app: Express) {
           "Could not read the statement"
         );
       }
-      if (parsed.length === 0)
+      if (!parsed.rows.some((row) => row.date && row.errors.length === 0))
         throw new DomainError(
           "NO_VALID_TRANSACTIONS",
           400,
           undefined,
           "No valid transactions found"
         );
-      const result = await importBankStatement(companyId, connection.id, parsed, {
-        bankAccountId: connection.bankAccountId,
-        actorId: userId(req),
-      });
+      const choice = statementImportChoice(parsed, acknowledgeAmbiguity);
+      if (choice) return res.status(409).json(choice);
+      const result = await importConnectionStatement(companyId, id, parsed, userId(req));
       res.json(result);
     })
   );
 
-  // Legacy routes stay explicit so old clients receive the CSV fallback.
   app.get(
     "/api/bank/providers",
     authMiddleware,

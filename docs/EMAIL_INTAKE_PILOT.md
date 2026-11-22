@@ -84,8 +84,8 @@ intake documents just point at the receipt they produced.
 - **Routing.** `sender_email → company_id` via `client_email_sources`. Unmatched
   senders are logged and skipped (never auto-created — prevents poisoning a ledger).
 - **De-dup.** SHA-256 of each attachment; a repeat hash for the same company is
-  flagged `is_duplicate` and skipped before posting. This catches attachments
-  sent more than once for the same company.
+  flagged `is_duplicate` and skipped, not posted. Guards against the client
+  emailing the same invoice twice. Statement reconciliation ties the document to its payment.
 - **Completeness — the most important control.** OCR can't flag a document that
   never arrived, and a VAT return is only correct if *all* sales and purchases are
   captured. Pair intake with bank reconciliation. Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.

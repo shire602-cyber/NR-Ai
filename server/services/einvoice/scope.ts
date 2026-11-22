@@ -8,6 +8,8 @@
  * adoption, or a revised FTA date) which overrides the band.
  */
 
+import { calendarDateKey, uaeToday } from "../../../shared/uae-date";
+
 export type EInvoiceScope = "b2b" | "b2g" | "b2b_b2g" | "none";
 export type TurnoverBand = "large" | "standard" | "government";
 
@@ -54,9 +56,6 @@ export interface ScopeStatus {
   daysToGoLive: number | null;
 }
 
-const iso = (d: string | Date) =>
-  typeof d === "string" ? d.slice(0, 10) : d.toISOString().slice(0, 10);
-
 export function einvoicingScope(company: ScopeInput, today: Date = new Date()): ScopeStatus {
   const scope = (["b2b", "b2g", "b2b_b2g", "none"] as const).includes(
     company.einvoiceScope as EInvoiceScope
@@ -68,9 +67,9 @@ export function einvoicingScope(company: ScopeInput, today: Date = new Date()): 
   )
     ? (company.einvoiceTurnoverBand as TurnoverBand)
     : null;
-  const override = company.einvoiceGoLiveDate ? iso(company.einvoiceGoLiveDate) : null;
+  const override = calendarDateKey(company.einvoiceGoLiveDate) || null;
   const goLiveDate = override ?? (band ? EINVOICE_TIMELINE[band].goLive : null);
-  const todayIso = iso(today);
+  const todayIso = uaeToday(today);
   const daysToGoLive = goLiveDate
     ? Math.round((Date.parse(goLiveDate) - Date.parse(todayIso)) / 86_400_000)
     : null;

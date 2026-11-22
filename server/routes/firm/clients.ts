@@ -455,7 +455,14 @@ export const handleDeleteFirmClients = async (req: Request, res: Response) => {
   if (company.companyType !== "client") {
     // A client organisation that joined by invitation owns its books: the
     // firm can only end its own link, never archive the company.
-    await endClientLink(ctx, companyId, userId, "Archived by firm");
+    await endClientLink(
+      ctx,
+      companyId,
+      userId,
+      "Archived by firm",
+      undefined,
+      "firm.clients.archive"
+    );
     return res.json({ success: true, linkEnded: true, archivedAt: null });
   }
 

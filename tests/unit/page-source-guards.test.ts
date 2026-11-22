@@ -241,6 +241,7 @@ describe("Mobile launch UX guards", () => {
         const catalog = JSON.parse(readFileSync(`client/src/locales/${loc}/banking.json`, "utf8"));
         expect(catalog["banking.import.columnMapping"]).toBe(text);
       }
+      expect(source).toContain('accept=".csv,text/csv"');
     });
 
     it("R06-11 ambiguity must be confirmed before importing", () => {

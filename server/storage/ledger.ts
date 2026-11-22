@@ -101,35 +101,29 @@ export class LedgerStorage extends ReportDeliveryStorage {
 
   async createBulkAccounts(
     accountsData: InsertAccount[],
-    exec?: Pick<AppDatabase, "insert">
+    tx?: Pick<AppDatabase, "insert">
   ): Promise<Account[]> {
     if (accountsData.length === 0) return [];
-
+    if (!tx) return db.transaction((conn) => this.createBulkAccounts(accountsData, conn));
     const expectedCount = accountsData.length;
-    const insertAccounts = async (executor: Pick<AppDatabase, "insert">) => {
-      const inserted = await executor
-        .insert(accounts)
-        .values(accountsData)
-        .onConflictDoNothing()
-        .returning();
-
-      if (inserted.length < expectedCount) {
-        throw new Error(
-          `PARTIAL_INSERT: Only ${inserted.length}/${expectedCount} accounts were created. Some accounts already exist.`
-        );
-      }
-
-      return inserted;
-    };
-
-    return exec ? insertAccounts(exec) : db.transaction(insertAccounts);
+    const inserted = await tx
+      .insert(accounts)
+      .values(accountsData)
+      .onConflictDoNothing()
+      .returning();
+    if (inserted.length < expectedCount) {
+      throw new Error(
+        `PARTIAL_INSERT: Only ${inserted.length}/${expectedCount} accounts were created. Some accounts already exist.`
+      );
+    }
+    return inserted;
   }
 
   async companyHasAccounts(
     companyId: string,
-    exec: Pick<AppDatabase, "select"> = db
+    conn: Pick<AppDatabase, "select"> = db
   ): Promise<boolean> {
-    const existingAccounts = await exec
+    const existingAccounts = await conn
       .select({ id: accounts.id })
       .from(accounts)
       .where(eq(accounts.companyId, companyId))

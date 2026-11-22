@@ -30,6 +30,24 @@ export interface EInvoiceSubmission {
   documentType?: string;
   /** E2: our company id, for providers that address each submission to a per-company source. */
   companyId?: string;
+  /** When set, verify that the routed request uses this exact provider deduplication scope. */
+  scopeFingerprint?: string;
+  context?: EInvoiceProviderContext;
+}
+
+/** Local routing data read under the same lock as the handoff authorization. */
+export interface EInvoiceProviderContext {
+  legalEntity: Pick<typeof einvoiceLegalEntities.$inferSelect, "providerDetails"> | null;
+}
+
+export interface EInvoiceOutboundIdentity {
+  documentNumber: string;
+  supplierEndpoint?: { scheme: string; value: string } | null;
+  supplierTin: string | null;
+  supplierTrn: string | null;
+  legalEntityId: string | null;
+  sourceName: string | null;
+  sourceVersion?: string | null;
 }
 
 export interface EInvoiceProviderResult {
@@ -53,15 +71,22 @@ export interface EInvoiceProviderResult {
    * invoice, so the workflow records "needs link" instead of a rejection.
    */
   numberAlreadyHeld?: boolean;
+  /** The exact document can be corrected under its original number and source. */
+  correctableRejection?: boolean;
 }
 
 /** Options for a status/source call: credit notes live under a separate resource at some ASPs. */
 export interface EInvoiceDocumentRef {
   documentType?: string | null;
+  outboundIdentity?: EInvoiceOutboundIdentity;
+  /** The current connection matches the recorded submission scope. */
+  knownCredentialScope?: boolean;
+  /** The provider collection that exposed the document, when known. */
+  documentCollection?: "invoice" | "credit-note";
 }
 
 /** A document listed in the ASP's incoming collection (fetch its XML with fetchSource). */
-export interface InboundListing {
+export interface InboundListing extends EInvoiceDocumentRef {
   providerMessageId: string;
   documentType: string | null;
   documentNumber?: string | null;
@@ -73,9 +98,16 @@ export interface InboundListing {
 export interface InboundOwner {
   legalEntityId: string | null;
   tin: string | null;
+  vatTrn?: string | null;
+  identityConflict?: boolean;
 }
 
-export type LegalEntityPatch = Partial<typeof einvoiceLegalEntities.$inferInsert>;
+export type LegalEntityPatch = Partial<
+  Omit<
+    typeof einvoiceLegalEntities.$inferInsert,
+    "id" | "companyId" | "provider" | "environment" | "tin" | "createdAt"
+  >
+>;
 
 /** A supplier e-invoice the ASP received for us (Peppol corner 3). */
 export interface InboundEInvoice {
@@ -112,6 +144,18 @@ export interface EInvoiceProvider {
   ): Promise<{ reporting: ReportingStatus; detail?: string | null }>;
   /** E1: find a document we may already have handed over (ambiguous transport failure). */
   lookupSubmission?(submission: EInvoiceSubmission): Promise<EInvoiceProviderResult | null>;
+  /** Opaque identity of the current provider account and outbound routing configuration. */
+  getSubmissionScope?(companyId: string, context?: EInvoiceProviderContext): Promise<string | null>;
+  /** Read-only verification of a tracked provider reference after credential rotation. */
+  verifyOutboundDocument?(
+    providerMessageId: string,
+    identity: EInvoiceOutboundIdentity
+  ): Promise<boolean>;
+  checkCorrectableRejection?(
+    providerMessageId: string,
+    identity: EInvoiceOutboundIdentity,
+    context?: EInvoiceProviderContext
+  ): Promise<"verified" | "mismatch" | "unavailable">;
   /**
    * E1: list incoming documents (two-step receive: list, then fetchSource). E2: providers whose
    * inbox is listed per company receive the provider legal-entity ids to list.
@@ -135,7 +179,8 @@ export interface EInvoiceProvider {
    */
   legalEntityPatch?(
     legalEntityId: string,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
+    expectedTin: string
   ): Promise<LegalEntityPatch | null>;
   /** Map an inbound ASP status webhook payload to a normalised status update. */
   parseWebhook(
