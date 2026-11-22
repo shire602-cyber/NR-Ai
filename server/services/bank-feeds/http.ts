@@ -1,4 +1,4 @@
-/** Shared HTTP + parsing helpers for bank-feed adapters (injectable fetch for contract tests). */
+/** Shared HTTP and parsing helpers for bank adapters (injectable fetch for contract tests). */
 import { toFils } from "../../../shared/money";
 import { BankFeedProviderError, type FetchLike, type FeedTransaction } from "./types";
 

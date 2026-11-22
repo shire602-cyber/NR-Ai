@@ -4,6 +4,8 @@
  */
 import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
+import { BANK_SYNC_FAILED_NOTIFICATION } from "../../shared/notification-copy";
 import { useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -368,6 +370,13 @@ describe("W4-D notification engine", () => {
     const d = await h.createSecondTenant();
     await d.as.put("/api/notification-preferences", { digestFrequency: "daily" });
     await emit("bank.sync_failed", { companyId: d.company.id, entityId: crypto.randomUUID() });
+    // A digest can include rows written before the banking copy changed.
+    await h.sql(
+      `UPDATE notifications SET title = 'Bank feed sync failed',
+         message = 'The bank feed (Test Provider) could not sync: HTTP 502. Reconnect it under Banking.'
+       WHERE user_id = $1 AND event_key LIKE 'bank.sync_failed:%'`,
+      [d.user.id]
+    );
     await emit("task.due", {
       companyId: d.company.id,
       entityId: crypto.randomUUID(),
@@ -382,13 +391,75 @@ describe("W4-D notification engine", () => {
     await sendDailyDigests();
     await sendDailyDigests();
     const digest = await h.sql(
-      `SELECT subject FROM email_outbox WHERE category = 'digest' AND to_address = $1`,
+      `SELECT subject, html, text_body FROM email_outbox WHERE category = 'digest' AND to_address = $1`,
       [d.email.toLowerCase()]
     );
     expect(digest.length).toBe(1);
     expect(digest[0].subject).toContain("2 update(s)");
+    for (const locale of ["en", "ar"] as const) {
+      const title = BANK_SYNC_FAILED_NOTIFICATION.title[locale];
+      const message = BANK_RECONCILIATION_COPY[locale];
+      expect(digest[0].html).toContain(`<strong>${title}</strong> — ${message}</p>`);
+      expect(digest[0].text_body.split("\n")).toContain(`${title} — ${message}`);
+    }
+    for (const body of [digest[0].html, digest[0].text_body]) {
+      expect(body).not.toMatch(/Test Provider|HTTP 502|Reconnect/);
+    }
     expect(
       (await t.as.put("/api/notification-preferences", { digestFrequency: "hourly" })).status
     ).toBe(400);
+  });
+
+  it("routes bank sync failures to CSV reconciliation and queues the guidance in both languages", async () => {
+    const t = await h.createTenant();
+    const eventId = crypto.randomUUID();
+    await emit("bank.sync_failed", {
+      companyId: t.company.id,
+      entityId: eventId,
+      provider: "test-internal-provider",
+      reason: "HTTP 502",
+    });
+
+    const copy = BANK_SYNC_FAILED_NOTIFICATION;
+    const response = await t.as.get("/api/notifications");
+    expect(response.status).toBe(200);
+    expect(response.body.notifications).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventKey: expect.stringContaining(`bank.sync_failed:${eventId}`),
+          title: copy.title.en,
+          message: BANK_RECONCILIATION_COPY.en,
+          actionUrl: "/bank-reconciliation?import=1",
+          copy: {
+            titleKey: copy.titleKey,
+            titleParams: {},
+            messageKey: copy.messageKey,
+            messageParams: {},
+          },
+        }),
+      ])
+    );
+
+    const [mail] = await h.sql(
+      `SELECT status, subject, html, text_body FROM email_outbox
+       WHERE category = 'notification' AND to_address = $1`,
+      [t.email.toLowerCase()]
+    );
+    expect(mail.status).toBe("blocked_no_provider");
+    expect(mail.subject).toContain(copy.title.en);
+    expect(mail.subject).toContain(copy.title.ar);
+    for (const message of Object.values(BANK_RECONCILIATION_COPY)) {
+      expect(mail.html).toContain(`>${message}</p>`);
+    }
+    const [emailContent] = mail.text_body.split("\n\n--\n");
+    expect(emailContent).toBe(
+      [
+        `${copy.title.en}\n\n${BANK_RECONCILIATION_COPY.en}`,
+        `${copy.title.ar}\n\n${BANK_RECONCILIATION_COPY.ar}`,
+      ].join("\n\n---\n\n")
+    );
+    for (const body of [mail.html, mail.text_body]) {
+      expect(body).not.toMatch(/test-internal-provider|HTTP 502|Reconnect/);
+    }
   });
 });

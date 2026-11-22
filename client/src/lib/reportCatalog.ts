@@ -3418,7 +3418,8 @@ export const reportAutomationStarters: ReportAutomationStarter[] = [
     outcome:
       "Turns cash forecast pressure, overdue customers, and sales-mix changes into a weekly command pack.",
     setupTime: "10-minute setup",
-    trigger: "Run after invoices, payments, bank activity, and sales lines refresh.",
+    trigger:
+      "Run after updating invoices, payments, and sales lines and importing the bank statement.",
     reportIds: [
       "bank-reconciliation-report",
       "balance-sheet",
@@ -3436,7 +3437,7 @@ export const reportAutomationStarters: ReportAutomationStarter[] = [
     playbookIds: ["owner-cash-collections"],
     queueIds: ["collections", "planning-risk", "sales-mix"],
     setupSteps: [
-      "Connect invoice and bank refreshes.",
+      "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
       "Schedule the owner weekly command pack.",
       "Route overdue balances to payment chasing.",
     ],

@@ -1,12 +1,16 @@
 /**
- * W3-C bank feeds to the external boundary (R06-14, R06-19): connect is impossible without
+ * W3-C bank adapter operations to the external boundary (R06-14, R06-19): connect is impossible without
  * provider credentials (503), the OAuth state is verified on callback, the redirect URI is
  * allow-listed, tokens are encrypted at rest and never returned, sync dedupes by provider id.
  * Provider HTTP is a recorded sandbox-shaped fixture; nothing calls a real bank.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import type { FetchLike } from "../../server/services/bank-feeds/types";
+import {
+  BANK_RECONCILIATION_COPY,
+  BANK_RECONCILIATION_LABEL,
+} from "../../shared/bank-reconciliation-copy";
 
 const h = useHarness();
 const REDIRECT = "https://app.example.test/bank-feeds/callback";
@@ -74,6 +78,7 @@ async function setBankFeedFetch(fn: FetchLike | null): Promise<void> {
 }
 
 async function clearEnv() {
+  vi.unstubAllEnvs();
   delete process.env.LEAN_APP_TOKEN;
   delete process.env.BANK_FEED_REDIRECT_URIS;
   await setBankFeedFetch(null);
@@ -85,7 +90,7 @@ async function tenant(): Promise<Tenant> {
   return h.createTenant({ name: "Feeds" });
 }
 
-describe("W3-C bank feeds", () => {
+describe("W3-C bank adapter operations", () => {
   it("reports CSV upload separately from existing provider configuration", async () => {
     await clearEnv();
     const admin = await h.createTenant({ isAdmin: true });
@@ -124,13 +129,54 @@ describe("W3-C bank feeds", () => {
       });
       expect(r.status, r.text).toBe(503);
       expect(r.body.code).toBe("BANK_FEED_NOT_CONFIGURED");
+      expect(r.body.message).toBe(BANK_RECONCILIATION_COPY.en);
     }
-    const status = await t.as.get(`/api/bank/providers`);
-    expect(status.body.isConfigured).toBe(false);
-    for (const s of status.body.statuses) {
-      expect(s).toMatchObject({ configured: false, status: "requires_external" });
-      expect(s.message.en).toBe("Not connected — requires provider contract");
-    }
+  });
+
+  it("keeps customer CSV status invariant and restricts adapter diagnostics to operators", async () => {
+    const customer = await tenant();
+    const admin = await h.createSecondTenant({ isAdmin: true });
+    const customerRoute = "/api/bank/providers";
+    const operatorRoute = "/api/admin/integration-status";
+    const expectedCustomerStatus = {
+      statuses: [
+        {
+          id: "bank_reconciliation",
+          label: BANK_RECONCILIATION_LABEL,
+          status: "available",
+          message: BANK_RECONCILIATION_COPY,
+        },
+      ],
+    };
+    vi.stubEnv("LEAN_APP_TOKEN", "");
+    vi.stubEnv("LEAN_API_BASE_URL", "https://sandbox.example.test");
+    vi.stubEnv("BANK_FEED_REDIRECT_URIS", REDIRECT);
+
+    const before = await customer.as.get(customerRoute);
+    expect(before.status).toBe(200);
+    expect(before.body).toEqual(expectedCustomerStatus);
+    const unconfiguredDiagnostics = await admin.as.get(operatorRoute);
+    expect(unconfiguredDiagnostics.status).toBe(200);
+    expect(unconfiguredDiagnostics.body.bankProviderDiagnostics.statuses).toContainEqual({
+      id: "lean",
+      configured: false,
+      status: "requires_external",
+    });
+
+    vi.stubEnv("LEAN_APP_TOKEN", "sandbox-app-token");
+    const after = await customer.as.get(customerRoute);
+    expect(after.status).toBe(200);
+    expect(after.body).toEqual(expectedCustomerStatus);
+
+    const denied = await customer.as.get(operatorRoute);
+    expect(denied.status).toBe(403);
+    expect(denied.body.code).toBe("ADMIN_REQUIRED");
+    const configuredDiagnostics = await admin.as.get(operatorRoute);
+    expect(configuredDiagnostics.status).toBe(200);
+    expect(configuredDiagnostics.body.bankProviderDiagnostics).toMatchObject({
+      statuses: expect.arrayContaining([{ id: "lean", configured: true, status: "sandbox" }]),
+      redirectUris: [REDIRECT],
+    });
   });
 
   it("[R06-14] the redirect URI must be allow-listed and the callback state must match", async () => {
@@ -143,6 +189,7 @@ describe("W3-C bank feeds", () => {
     });
     expect(evil.status).toBe(400);
     expect(evil.body.code).toBe("REDIRECT_URI_NOT_ALLOWED");
+    expect(evil.body.message).toBe(BANK_RECONCILIATION_COPY.en);
 
     const ok = await t.as.post(`/api/companies/${t.company.id}/bank-connections/connect`, {
       provider: "lean",
@@ -164,6 +211,7 @@ describe("W3-C bank feeds", () => {
     });
     expect(wrong.status).toBe(400);
     expect(wrong.body.code).toBe("INVALID_OAUTH_STATE");
+    expect(wrong.body.message).toBe(BANK_RECONCILIATION_COPY.en);
 
     // Another tenant cannot redeem this tenant's state.
     const other = await h.createSecondTenant();
@@ -205,6 +253,13 @@ describe("W3-C bank feeds", () => {
     const conn = cb.body.connections[0];
     expect(conn.accessToken).toBeUndefined();
     expect(conn.bankAccountId).toBe(ba.body.id);
+
+    const balance = await t.as.get(`/api/bank-connections/${conn.id}/balance`);
+    expect(balance.status).toBe(503);
+    expect(balance.body).toMatchObject({
+      code: "BANK_FEED_BALANCE_UNAVAILABLE",
+      message: BANK_RECONCILIATION_COPY.en,
+    });
 
     const raw = await h.sql<{ access_token: string }>(
       `SELECT access_token FROM bank_connections WHERE id = $1`,
@@ -284,14 +339,30 @@ describe("W3-C bank feeds", () => {
     const r = await t.as.post(`/api/bank-connections/${id}/sync`, {});
     expect(r.status).toBe(502);
     expect(r.body.code).toBe("BANK_FEED_PROVIDER_ERROR");
+    expect(r.body.message).toBe(BANK_RECONCILIATION_COPY.en);
     await new Promise((res) => setTimeout(res, 50));
     expect(seen).toContain(id);
     if (typeof off === "function") off();
-    const row = await h.sql<{ status: string }>(
-      `SELECT status FROM bank_connections WHERE id = $1`,
+    const row = await h.sql<{ status: string; last_error: string }>(
+      `SELECT status, last_error FROM bank_connections WHERE id = $1`,
       [id]
     );
-    expect(row[0].status).toBe("error");
+    expect(row[0]).toEqual({ status: "error", last_error: "HTTP 500" });
+    const path = `/api/companies/${t.company.id}/bank-connections`;
+    const current = await t.as.get<{ id: string; lastError: string | null }[]>(path);
+    expect(current.body.find((connection) => connection.id === id)?.lastError).toBe(
+      BANK_RECONCILIATION_COPY.en
+    );
+
+    await h.sql("UPDATE bank_connections SET last_error = $2 WHERE id = $1", [
+      id,
+      "Sync failed (HTTP 500). Reconnect if this persists.",
+    ]);
+    const legacy = await t.as.get<{ id: string; lastError: string | null }[]>(path);
+    expect(legacy.body.find((connection) => connection.id === id)?.lastError).toBe(
+      BANK_RECONCILIATION_COPY.en
+    );
+    expect(current.body).toContainEqual(expect.objectContaining({ id, refreshConfigured: true }));
 
     const calls: string[] = [];
     await setBankFeedFetch(leanFixture(calls));

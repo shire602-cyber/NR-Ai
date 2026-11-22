@@ -11,7 +11,7 @@
  * when any parameter inside it is missing or empty.
  */
 
-import { EMAIL_NOT_SET_UP_RUN_ERROR } from "./notification-copy";
+import { BANK_SYNC_FAILED_NOTIFICATION, EMAIL_NOT_SET_UP_RUN_ERROR } from "./notification-copy";
 
 export interface CopyDescriptor {
   key: string;
@@ -45,7 +45,7 @@ export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billApproved.title", "Bill approved {label}"),
   T("notification.billPaid.title", "Bill paid {label}"),
   T("notification.payrollApproved.title", "Payroll approved"),
-  T("notification.bankSyncFailed.title", "Review your bank statements"),
+  T(BANK_SYNC_FAILED_NOTIFICATION.titleKey, BANK_SYNC_FAILED_NOTIFICATION.title.en),
   T("notification.deadlineDue.title", "Deadline due[ {dueDate}]"),
   T("notification.taskDue.title", "Task due[ {dueDate}]"),
   T("notification.invoiceOverdue.title", "Invoice {number} is overdue"),
@@ -85,10 +85,7 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billApproved.message", "Bill {label} was approved for payment."),
   T("notification.billPaid.message", "Bill {label} was paid."),
   T("notification.payrollApproved.message", "Payroll for {month}/{year} was approved."),
-  T(
-    "notification.bankSyncFailed.message",
-    "Open Banking to retry the transaction refresh, or upload a CSV statement for reconciliation."
-  ),
+  T(BANK_SYNC_FAILED_NOTIFICATION.messageKey, BANK_SYNC_FAILED_NOTIFICATION.message.en),
   T("notification.deadlineDueGeneric.message", "A compliance obligation is due[ on {dueDate}]."),
   T("notification.taskDue.message", "A task is due[ on {dueDate}]."),
   T("notification.invoiceOverdue.message", "Invoice {number} for {customer} was due on {dueDate}."),
@@ -176,12 +173,21 @@ export const REPORT_DELIVERY_TEMPLATES: readonly CopyTemplate[] = [
 
 /** Older stored sentences that map onto a current key (parse only, never rendered or catalogued). */
 export const LEGACY_NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
+  T(BANK_SYNC_FAILED_NOTIFICATION.titleKey, "Bank feed sync failed"),
   // AI drafts notice stored before it was catalog copy (broken-path sweep).
   T("notification.aiDraftsReview.title", "{count} AI draft journal entries need review"),
   T("notification.aiDraftsReview.title", "{count} AI draft journal entry need review"),
 ];
 
 export const LEGACY_NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
+  T(
+    BANK_SYNC_FAILED_NOTIFICATION.messageKey,
+    "The bank feed[ ({provider})] could not sync[: {reason}]. Reconnect it under Banking."
+  ),
+  T(
+    BANK_SYNC_FAILED_NOTIFICATION.messageKey,
+    "The bank connection could not sync. Upload a CSV exported from your bank, review suggested matches, and reconcile against your books."
+  ),
   T(
     "notification.aiDraftsReview.message",
     "The AI categorized {count} bank transactions with high confidence. Review and approve each draft journal entry before it posts to the GL."
@@ -362,7 +368,8 @@ export function describeNotificationCopy(n: {
     titleKey: title?.key ?? null,
     titleParams: title?.params ?? {},
     messageKey: message?.key ?? null,
-    messageParams: message?.params ?? {},
+    messageParams:
+      message?.key === BANK_SYNC_FAILED_NOTIFICATION.messageKey ? {} : (message?.params ?? {}),
   };
 }
 
@@ -1500,8 +1507,21 @@ export function currentNotificationText({
 export function withNotificationCopy<T extends StoredNotificationText>(
   n: T
 ): T & { copy: NotificationCopyDescriptor } {
-  const current = currentNotificationText(n);
-  return { ...n, ...current, copy: describeNotificationCopy(current) };
+  const copy = describeNotificationCopy(currentNotificationText(n));
+  // Keep legacy provider details and reconnect instructions out of API fallback text as well.
+  return {
+    ...n,
+    ...(copy.titleKey === BANK_SYNC_FAILED_NOTIFICATION.titleKey
+      ? { title: BANK_SYNC_FAILED_NOTIFICATION.title.en }
+      : {}),
+    ...(copy.messageKey === BANK_SYNC_FAILED_NOTIFICATION.messageKey
+      ? {
+          message: BANK_SYNC_FAILED_NOTIFICATION.message.en,
+          ...("actionUrl" in n ? { actionUrl: BANK_SYNC_FAILED_NOTIFICATION.actionUrl } : {}),
+        }
+      : {}),
+    copy,
+  };
 }
 
 /** Key + params for a stored report-delivery run error or handoff sentence, or null. */

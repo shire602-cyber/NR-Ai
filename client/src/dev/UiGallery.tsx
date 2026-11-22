@@ -80,7 +80,7 @@ const SERIES = [
 ];
 
 export default function UiGallery() {
-  const { locale } = useTranslation();
+  const { locale, t } = useTranslation();
   const ar = locale === "ar";
   const L = (en: string, arText: string) => (ar ? arText : en);
   const params = new URLSearchParams(useSearch());
@@ -291,13 +291,10 @@ export default function UiGallery() {
           className="mt-4"
           size="lg"
           icon={Landmark}
-          title={L("Connect your bank to start reconciling", "اربط حسابك البنكي لتبدأ التسوية")}
-          description={L(
-            "Import a statement or add an account. Matches appear here as soon as transactions arrive.",
-            "استورد كشف حساب أو أضف حسابًا. تظهر المطابقات هنا فور وصول الحركات."
-          )}
-          action={{ label: L("Add bank account", "إضافة حساب بنكي"), onClick: () => {} }}
-          secondaryAction={{ label: L("Import statement", "استيراد كشف"), onClick: () => {} }}
+          title={t.bankReconciliation}
+          description={t["banking.emptyTransactionsDescription"]}
+          action={{ label: t["banking.feeds.importStatement"], onClick: () => {} }}
+          secondaryAction={{ label: t["banking.accounts.add"], onClick: () => {} }}
         />
       </Section>
 

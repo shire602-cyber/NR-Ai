@@ -204,7 +204,7 @@ export const tarabutAdapter: BankFeedAdapter = {
   },
 };
 
-// ─── Wio Business (direct open banking) ────────────────────────────────────
+// ─── Wio Business adapter ──────────────────────────────────────────────────
 
 function wioBase(): string {
   return env("WIO_API_BASE_URL") || "https://sandbox.api.business.wio.io";

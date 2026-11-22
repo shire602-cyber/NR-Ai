@@ -74,6 +74,8 @@ const bannedLaunchClaims = [
   /Securely link your.*bank account/i,
   /via encrypted feeds/i,
   /UAE bank feeds/i,
+  /\blive\s+(?:bank\s+)?feeds?\b/i,
+  /الربط البنكي المباشر/,
   /Photo, email forward, or bank feed/i,
   /sync a bank line/i,
   /compliant with FTA/i,
@@ -167,9 +169,18 @@ describe("Public SaaS launch surface", () => {
       /\bbank[\s-]+feeds?\b[^\n.]{0,60}\b(?:coming|later|soon)\b/i,
       /الربط\s+البنكي\s+المباشر|(?:الربط|المزامنة)\s+البنكي(?:ة)?[^\n.]{0,60}(?:قريب|لاحق)/,
     ];
+    // These tests contain the literal examples and regexes used to reject retired copy.
+    const wordingFixtures = new Set([
+      "tests/unit/bank-docs-wording.test.ts",
+      "tests/unit/bank-reconciliation-notification-copy.test.ts",
+      "tests/unit/public-launch-surface.test.ts",
+    ]);
     const files = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
       .split("\0")
-      .filter((file) => /\.(?:md|tsx?|json|mjs|cjs|js|html|txt|ya?ml)$/i.test(file));
+      .filter(
+        (file) =>
+          !wordingFixtures.has(file) && /\.(?:md|tsx?|json|mjs|cjs|js|html|txt|ya?ml)$/i.test(file)
+      );
     const matches = files.flatMap((file) => {
       const source = readRepoFile(file);
       const rules = file.startsWith("client/src/locales/")
@@ -351,11 +362,13 @@ describe("Public SaaS launch surface", () => {
     for (const expectedDemoSignal of [
       "Sample company workspace",
       "Pearl Trading LLC",
-      "CSV statement import, no live feed needed",
+      "CSV statement import",
+      "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
       "Export VAT 201 workbook",
     ]) {
       expect(demoSource).toContain(expectedDemoSignal);
     }
+    expect(demoSource).not.toMatch(/\blive\s+(?:bank\s+)?feeds?\b/i);
   });
 
   // X6b: the old test here compared advertised free-plan limits with source text. Pricing, the

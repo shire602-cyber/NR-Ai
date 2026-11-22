@@ -5,6 +5,17 @@
  * detail goes to the server log only.
  */
 
+import { BANK_RECONCILIATION_COPY } from "./bank-reconciliation-copy";
+
+/** Bank sync failure copy for in-app notifications and staff emails. */
+export const BANK_SYNC_FAILED_NOTIFICATION = {
+  titleKey: "notification.bankSyncFailed.title",
+  messageKey: "notification.bankSyncFailed.message",
+  actionUrl: "/bank-reconciliation?import=1",
+  title: { en: "Continue bank reconciliation", ar: "تابع التسوية البنكية" },
+  message: BANK_RECONCILIATION_COPY,
+} as const;
+
 /** Body of a report-delivery notification when no email provider is configured. */
 export const EMAIL_NOT_SET_UP_MESSAGE =
   "Email isn't set up yet, so nothing was sent. The report pack is ready to download.";

@@ -224,7 +224,7 @@ Raj reads Ahmed's memo, then independently walks through the SAME workflows. He'
 1. Memorised transactions / recurring templates
 2. Class or location tracking (multi-segment reporting)
 3. Customer & vendor centres (single pane: balance, history, contacts, notes)
-4. Bank feeds with rules (auto-categorise repeating txns)
+4. Bank statement reconciliation and rules for recurring transactions
 5. Batch enter transactions (matrix entry)
 6. Multi-currency revaluation at period end
 7. UAE FTA quarterly + annual reporting equivalent

@@ -7,7 +7,10 @@ import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
-import { getCapabilitySnapshot } from "../../shared/capabilities";
+import {
+  BANK_RECONCILIATION_COPY,
+  BANK_RECONCILIATION_LABEL,
+} from "../../shared/bank-reconciliation-copy";
 import {
   bankFeedCallbackBody,
   bankFeedConnectBody,
@@ -15,7 +18,6 @@ import {
   manualBankConnectionBody,
 } from "../../shared/validators/banking";
 import {
-  allowedRedirectUris,
   completeCallback,
   linkConnection,
   providerStatuses,
@@ -24,7 +26,6 @@ import {
   startConnect,
   syncConnection,
 } from "../services/bank-feeds";
-import { getAvailableProviders, isOpenBankingConfigured } from "../services/open-banking.service";
 import { importBankStatement, parseCSVBankStatement } from "../services/bank-import.service";
 import { createLogger } from "../config/logger";
 import { z } from "zod";
@@ -47,9 +48,9 @@ async function assertAccess(req: Request, companyId: string): Promise<void> {
 async function ownedConnection(req: Request, id: string, companyId?: string) {
   const connection = await storage.getBankConnection(id);
   if (!connection || (companyId && connection.companyId !== companyId))
-    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, "Bank connection not found");
+    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, BANK_RECONCILIATION_COPY.en);
   if (!(await storage.hasCompanyAccess(userId(req), connection.companyId)))
-    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, "Bank connection not found");
+    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, BANK_RECONCILIATION_COPY.en);
   return connection;
 }
 
@@ -98,11 +99,21 @@ export function registerBankRoutes(app: Express) {
       const { companyId } = req.params;
       await assertAccess(req, companyId);
       const connections = await storage.getBankConnectionsByCompanyId(companyId);
-      res.json(connections.map(sanitizeConnection));
+      const configuredProviders = new Set<string>(
+        providerStatuses()
+          .filter(({ configured }) => configured)
+          .map(({ id }) => id)
+      );
+      res.json(
+        connections.map((connection) => ({
+          ...sanitizeConnection(connection),
+          refreshConfigured: configuredProviders.has(connection.provider),
+        }))
+      );
     })
   );
 
-  // Manual (statement-only) connection record. Open-banking connections come only from callback.
+  // Manual statement records use this route. Adapter connections come through the callback.
   app.post(
     "/api/companies/:companyId/bank-connections",
     authMiddleware,
@@ -138,7 +149,7 @@ export function registerBankRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const connection = await ownedConnection(req, req.params.id);
       await storage.deleteBankConnection(connection.id);
-      res.json({ message: "Bank connection deleted" });
+      res.json({ message: "Record removed" });
     })
   );
 
@@ -193,23 +204,26 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
-  // ─── Open banking (to the external boundary) ────────────────────────────
-
+  // Compatibility URL for deployment-level CSV availability. Import routes still enforce company permissions.
   app.get(
     "/api/bank/providers",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (_req: Request, res: Response) => {
-      const snapshot = getCapabilitySnapshot();
       res.json({
-        providers: getAvailableProviders(),
-        isConfigured: isOpenBankingConfigured(),
-        statuses: providerStatuses(),
-        redirectUris: allowedRedirectUris(),
-        capabilities: snapshot.capabilities.filter((c) => c.id.startsWith("bank_feed_")),
+        statuses: [
+          {
+            id: "bank_reconciliation",
+            label: BANK_RECONCILIATION_LABEL,
+            status: "available",
+            message: BANK_RECONCILIATION_COPY,
+          },
+        ],
       });
     })
   );
+
+  // ─── Bank adapter authorization and imports ─────────────────────────────
 
   app.post(
     "/api/companies/:companyId/bank-connections/connect",
@@ -251,7 +265,10 @@ export function registerBankRoutes(app: Express) {
         code: body.code,
         state: body.state,
       });
-      logger.info({ companyId, count: result.connections.length }, "Bank feed connected");
+      logger.info(
+        { companyId, count: result.connections.length },
+        "Bank adapter callback completed"
+      );
       res.status(201).json(result);
     })
   );
@@ -269,7 +286,7 @@ export function registerBankRoutes(app: Express) {
           "BANK_FEED_NOT_SUPPORTED",
           400,
           undefined,
-          "This connection is statement-only"
+          BANK_RECONCILIATION_COPY.en
         );
       const result = await syncConnection(connection, {
         from: req.body.fromDate,
@@ -291,7 +308,7 @@ export function registerBankRoutes(app: Express) {
         "BANK_FEED_BALANCE_UNAVAILABLE",
         503,
         undefined,
-        "To review a bank balance, upload a CSV statement for reconciliation"
+        BANK_RECONCILIATION_COPY.en
       );
     })
   );

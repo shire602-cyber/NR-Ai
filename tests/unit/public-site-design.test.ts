@@ -124,7 +124,7 @@ it.each([
 
 const recoveryConnection = {
   id: "linked-account",
-  provider: "lean",
+  refreshConfigured: true,
   status: "error",
   hasToken: true,
   bankAccountId: "bank-account",
@@ -140,10 +140,9 @@ function recoveryClient(
   const client = new QueryClient({ defaultOptions: { queries: { queryFn, staleTime: Infinity } } });
   client.setQueryData(["/api/companies"], [{ id: "workspace" }]);
   client.setQueryData(["/api/companies", "workspace", "team", "me"], { permissions });
-  client.setQueryData(["/api/bank/providers"], { providers });
   client.setQueryData(recoveryQueryKey, [
-    recoveryConnection,
-    { ...recoveryConnection, id: "csv-only", provider: "manual" },
+    { ...recoveryConnection, refreshConfigured: providers.includes("lean") },
+    { ...recoveryConnection, id: "csv-only", refreshConfigured: false },
     { ...recoveryConnection, id: "disconnected", status: "disconnected" },
   ]);
   return client;

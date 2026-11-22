@@ -202,6 +202,9 @@ jobs:
       - name: Public launch crawl
         run: npm run e2e:customer:public
 
+      - name: Bilingual bank CSV guidance
+        run: node tests/e2e/bank-csv-copy.mjs
+
       - name: Server log on failure
         if: failure()
         run: tail -100 /tmp/server.log || true

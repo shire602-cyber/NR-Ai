@@ -172,7 +172,7 @@
   "banking.recon.moreActions": "More actions",
   "banking.statementUpload.title": "CSV bank statements",
   "banking.statementUpload.reconcileTitle": "Reconcile with a bank statement",
-  "banking.statementUpload.description": "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.",
+  "banking.statementUpload.description": "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
   "banking.statementUpload.cta": "Upload a CSV statement",
   "banking.recovery.title": "Transaction refresh needs attention",
   "banking.recovery.account": "Existing account",
@@ -201,7 +201,7 @@
   "banking.import.colDescription": "Description",
   "banking.import.colDebit": "Debit",
   "banking.import.colCredit": "Credit",
-  "banking.import.formats": "CSV, XLSX, MT940, CAMT.053, OFX — Emirates NBD, ADCB, FAB, Mashreq, Mashreq Neo, RAKBANK, CBD, Wio",
+  "banking.import.formats": "Upload a CSV exported from your bank",
   "banking.import.field.date": "Date",
   "banking.import.field.description": "Description",
   "banking.import.field.reference": "Reference",
@@ -211,10 +211,12 @@
   "banking.import.field.direction": "Dr/Cr or Type",
   "banking.import.field.balance": "Balance",
   "banking.import.formatCsv": "CSV — Emirates NBD, ADCB, FAB, Mashreq, Arabic/English generic",
-  "banking.import.formatDelimiters": "Comma, semicolon, and tab-delimited Excel exports are supported",
+  "banking.import.formatDelimiters": "CSV files can use commas, semicolons, or tabs",
   "banking.import.formatDrCr": "Amount + Dr/Cr type columns are supported",
   "banking.import.importAction": "Import",
   "banking.rules.category": "Category (optional)",
   "banking.rules.categoryPlaceholder": "e.g. Rent, Salary, Utilities",
-  "banking.rules.memo": "Memo (optional)"
+  "banking.rules.memo": "Memo (optional)",
+  "banking.feeds.unavailableTitle": "Import a bank CSV",
+  "banking.feeds.returningToReconciliation": "Returning to bank reconciliation"
 }

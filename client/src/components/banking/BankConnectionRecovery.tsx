@@ -9,7 +9,7 @@ import { apiRequest } from "@/lib/queryClient";
 
 interface BankConnection {
   id: string;
-  provider: string;
+  refreshConfigured: boolean;
   status: string;
   hasToken: boolean;
   bankAccountId: string | null;
@@ -25,13 +25,9 @@ export function BankConnectionRecovery() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const canRetry = !!companyId && known && can("documents.write");
-  const { data: providers } = useQuery<{ providers: string[] }>({
-    queryKey: ["/api/bank/providers"],
-    enabled: canRetry,
-  });
   const { data: connections } = useQuery<BankConnection[]>({
     queryKey: ["/api/companies", companyId, "bank-connections"],
-    enabled: canRetry && !!providers?.providers.length,
+    enabled: canRetry,
   });
   const retry = useMutation({
     mutationFn: ({ id }: { id: string; companyId: string }) =>
@@ -47,13 +43,13 @@ export function BankConnectionRecovery() {
     onError: () => toast({ variant: "destructive", title: t["banking.recovery.failed"] }),
   });
 
-  if (!companyId || !canRetry || !providers) return null;
+  if (!companyId || !canRetry) return null;
   const failedConnections = (connections ?? []).filter(
     (connection) =>
       connection.status === "error" &&
       connection.hasToken &&
       connection.bankAccountId &&
-      providers.providers.includes(connection.provider)
+      connection.refreshConfigured
   );
   if (failedConnections.length === 0) return null;
 

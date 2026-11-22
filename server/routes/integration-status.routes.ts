@@ -2,10 +2,10 @@ import type { Express, Request, Response } from "express";
 import { authMiddleware, adminMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/email.service";
+import { allowedRedirectUris, providerStatuses } from "../services/bank-feeds";
 import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
 import { isObjectStorageConfigured, objectStorageBackend } from "../services/fileStorage";
 import { connectorStatuses } from "../services/connectors/oauth";
-import { isOpenBankingConfigured } from "../services/open-banking.service";
 
 /**
  * The "what do I paste where" surface: each integration with its live
@@ -18,6 +18,7 @@ export function registerIntegrationStatusRoutes(app: Express) {
     authMiddleware,
     adminMiddleware,
     asyncHandler(async (_req: Request, res: Response) => {
+      const adapterStatuses = providerStatuses();
       const integrations = [
         {
           key: "email",
@@ -82,7 +83,7 @@ export function registerIntegrationStatusRoutes(app: Express) {
         {
           key: "openBanking",
           name: "Existing bank connections",
-          configured: isOpenBankingConfigured(),
+          configured: adapterStatuses.some(({ configured }) => configured),
           detail: null,
           requiredEnv: [
             "LEAN_APP_TOKEN — or TARABUT_CLIENT_ID + TARABUT_CLIENT_SECRET — or WIO_CLIENT_ID + WIO_CLIENT_SECRET",
@@ -157,7 +158,13 @@ export function registerIntegrationStatusRoutes(app: Express) {
           unlocks: c.purpose.en,
         })),
       ];
-      res.json({ integrations });
+      res.json({
+        integrations,
+        bankProviderDiagnostics: {
+          statuses: adapterStatuses,
+          redirectUris: allowedRedirectUris(),
+        },
+      });
     })
   );
 }

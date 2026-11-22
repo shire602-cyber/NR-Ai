@@ -172,7 +172,7 @@
   "banking.recon.moreActions": "إجراءات أخرى",
   "banking.statementUpload.title": "كشوف الحساب البنكي بصيغة CSV",
   "banking.statementUpload.reconcileTitle": "طابق حسابك البنكي باستخدام كشف الحساب",
-  "banking.statementUpload.description": "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك.",
+  "banking.statementUpload.description": "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
   "banking.statementUpload.cta": "ارفع كشف حساب بصيغة CSV",
   "banking.recovery.title": "تعذّر تحديث المعاملات",
   "banking.recovery.account": "حساب حالي",
@@ -201,7 +201,7 @@
   "banking.import.colDescription": "البيان",
   "banking.import.colDebit": "مدين",
   "banking.import.colCredit": "دائن",
-  "banking.import.formats": "CSV وXLSX وMT940 وCAMT.053 وOFX — بنك الإمارات دبي الوطني، أبوظبي التجاري، أبوظبي الأول، مشرق، مشرق نيو، راك بنك، التجاري دبي، ويو",
+  "banking.import.formats": "ارفع كشف حساب بصيغة CSV صدّرته من مصرفك",
   "banking.import.field.date": "التاريخ",
   "banking.import.field.description": "البيان",
   "banking.import.field.reference": "المرجع",
@@ -211,10 +211,12 @@
   "banking.import.field.direction": "مدين/دائن أو النوع",
   "banking.import.field.balance": "الرصيد",
   "banking.import.formatCsv": "CSV — بنك الإمارات دبي الوطني، أبوظبي التجاري، أبوظبي الأول، مشرق، وملفات عامة بالعربية والإنجليزية",
-  "banking.import.formatDelimiters": "تُدعم ملفات Excel المفصولة بفاصلة أو فاصلة منقوطة أو علامة جدولة",
+  "banking.import.formatDelimiters": "يمكن فصل أعمدة ملف CSV بفاصلة أو فاصلة منقوطة أو علامة جدولة",
   "banking.import.formatDrCr": "تُدعم أعمدة المبلغ مع نوع مدين/دائن",
   "banking.import.importAction": "استيراد",
   "banking.rules.category": "التصنيف (اختياري)",
   "banking.rules.categoryPlaceholder": "مثال: إيجار، رواتب، مرافق",
-  "banking.rules.memo": "ملاحظة (اختياري)"
+  "banking.rules.memo": "ملاحظة (اختياري)",
+  "banking.feeds.unavailableTitle": "استورد كشفًا بنكيًا بصيغة CSV",
+  "banking.feeds.returningToReconciliation": "جارٍ الرجوع إلى التسوية البنكية"
 }

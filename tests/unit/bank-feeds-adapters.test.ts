@@ -1,5 +1,5 @@
 /**
- * Contract tests for the Lean / Tarabut / Wio bank-feed adapters (W3-C, R06-19) against recorded
+ * Contract tests for the Lean / Tarabut / Wio bank transaction adapters (W3-C, R06-19) against recorded
  * sandbox-shaped fixtures. No live calls: fetch is injected.
  */
 import { afterEach, describe, expect, it } from "vitest";
@@ -38,7 +38,7 @@ function recorded(
   };
 }
 
-describe("bank-feed adapters [R06-19]", () => {
+describe("bank transaction adapters [R06-19]", () => {
   it("are unconfigured without credentials", () => {
     for (const a of Object.values(BANK_FEED_ADAPTERS)) expect(a.isConfigured()).toBe(false);
     process.env.TARABUT_CLIENT_ID = "id";

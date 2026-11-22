@@ -145,6 +145,7 @@ const Onboarding = lazyWithReload(() => import("@/pages/Onboarding"));
 const BankReconciliation = lazyWithReload(() => import("@/pages/BankReconciliation"));
 const BankAccounts = lazyWithReload(() => import("@/pages/BankAccounts"));
 const BankFeeds = lazyWithReload(() => import("@/pages/BankFeeds"));
+const BankFeedCallback = lazyWithReload(() => import("@/pages/BankFeedCallback"));
 const EvidenceCenter = lazyWithReload(() => import("@/pages/EvidenceCenter"));
 const VATFiling = lazyWithReload(() => import("@/pages/VATFiling"));
 const VATAutopilot = lazyWithReload(() => import("@/pages/VATAutopilot"));
@@ -763,7 +764,7 @@ function Router() {
             <Route path="/analytics" component={AnalyticsHub} />
             <Route path="/bank-reconciliation" component={BankReconciliation} />
             <Route path="/bank-accounts" component={BankAccounts} />
-            <Route path="/bank-feeds/callback" component={BankFeeds} />
+            <Route path="/bank-feeds/callback" component={BankFeedCallback} />
             <Route path="/bank-feeds" component={BankFeeds} />
             <Route path="/evidence-center" component={EvidenceCenter} />
             <Route path="/vat-filing" component={VATFiling} />

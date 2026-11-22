@@ -11,8 +11,8 @@
  *   disabled          optional feature, not configured
  *
  * Pure and isomorphic: computeCapabilities(env) takes an env record so it can
- * be unit-tested and evaluated on the server; the client receives the
- * serialisable `CapabilitySnapshot` (no secrets, only statuses and copy).
+ * be unit-tested and evaluated on the server. Routes select which capabilities
+ * to expose. Bank adapter readiness is reserved for operator diagnostics.
  * This module adds no routes.
  */
 
@@ -49,7 +49,7 @@ export interface Capability {
   id: CapabilityId;
   status: CapabilityStatus;
   label: LocalizedText;
-  /** What must happen externally for the capability to be live. */
+  /** External setup instructions or the supported workflow when unconfigured. */
   externalAction: LocalizedText;
   /** Env vars that configure it (names only, never values). */
   envVars: readonly string[];
@@ -72,6 +72,11 @@ interface CapabilityDef {
   /** Returns null when not configured, else live/sandbox. */
   detect: (env: EnvLike) => Extract<CapabilityStatus, "live" | "sandbox"> | null;
 }
+
+const BANK_ADAPTER_DIAGNOSTIC_GUIDANCE = {
+  en: "Review adapter configuration in operator diagnostics.",
+  ar: "راجع إعدادات المحوّل في تشخيصات التشغيل.",
+};
 
 const set = (env: EnvLike, name: string): boolean => {
   const v = env[name];
@@ -169,11 +174,8 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_lean",
-    label: { en: "Lean integration", ar: "تكامل Lean" },
-    externalAction: {
-      en: "Sign a Lean Technologies contract and obtain a production app token.",
-      ar: "وقّع عقداً مع Lean Technologies واحصل على رمز تطبيق إنتاجي.",
-    },
+    label: { en: "Lean adapter diagnostics", ar: "تشخيص محوّل Lean" },
+    externalAction: BANK_ADAPTER_DIAGNOSTIC_GUIDANCE,
     envVars: ["LEAN_APP_TOKEN", "LEAN_API_BASE_URL"],
     whenUnconfigured: "requires_external",
     detect: (env) =>
@@ -185,11 +187,8 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_tarabut",
-    label: { en: "Tarabut integration", ar: "تكامل Tarabut" },
-    externalAction: {
-      en: "Sign a Tarabut Gateway contract and obtain production client credentials.",
-      ar: "وقّع عقداً مع Tarabut Gateway واحصل على بيانات اعتماد إنتاجية.",
-    },
+    label: { en: "Tarabut adapter diagnostics", ar: "تشخيص محوّل Tarabut" },
+    externalAction: BANK_ADAPTER_DIAGNOSTIC_GUIDANCE,
     envVars: ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET", "TARABUT_API_BASE_URL"],
     whenUnconfigured: "requires_external",
     detect: (env) =>
@@ -201,11 +200,8 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_wio",
-    label: { en: "Wio integration", ar: "تكامل Wio" },
-    externalAction: {
-      en: "Register with Wio Business open-banking and obtain production client credentials.",
-      ar: "سجّل في الخدمات المصرفية المفتوحة لدى Wio Business واحصل على بيانات اعتماد إنتاجية.",
-    },
+    label: { en: "Wio adapter diagnostics", ar: "تشخيص محوّل Wio" },
+    externalAction: BANK_ADAPTER_DIAGNOSTIC_GUIDANCE,
     envVars: ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET", "WIO_API_BASE_URL"],
     whenUnconfigured: "requires_external",
     detect: (env) =>
