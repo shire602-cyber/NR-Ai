@@ -8,7 +8,7 @@
  * POST /firm/command-center/staff/assign, GET /firm/command-center/staff/workload)
  * goes through this module.
  */
-import { and, eq, inArray, ne, notInArray } from "drizzle-orm";
+import { and, eq, inArray, ne, notExists, notInArray } from "drizzle-orm";
 import { db } from "../../db";
 import { DomainError } from "../../errors";
 import {
@@ -431,9 +431,28 @@ export async function removeFirmMember(ctx: FirmContext, userId: string): Promis
         await revokeCompanyAccess({ firmId: ctx.firmId, isNr: ctx.isNr, companyId, userId }, tx);
       }
     }
+    // A departing platform admin with a direct role must keep that role's provenance.
+    // Otherwise scoped provider routes would fall back to platform-wide authority.
+    const retainedAdminMembership = tx
+      .select({ id: companyUsers.id })
+      .from(companyUsers)
+      .innerJoin(users, eq(users.id, companyUsers.userId))
+      .where(
+        and(
+          eq(companyUsers.companyId, firmCompanyGrants.companyId),
+          eq(companyUsers.userId, userId),
+          eq(users.isAdmin, true)
+        )
+      );
     await tx
       .delete(firmCompanyGrants)
-      .where(and(eq(firmCompanyGrants.firmId, ctx.firmId), eq(firmCompanyGrants.userId, userId)));
+      .where(
+        and(
+          eq(firmCompanyGrants.firmId, ctx.firmId),
+          eq(firmCompanyGrants.userId, userId),
+          notExists(retainedAdminMembership)
+        )
+      );
     await tx
       .delete(firmMembers)
       .where(and(eq(firmMembers.userId, userId), eq(firmMembers.firmId, ctx.firmId)));
