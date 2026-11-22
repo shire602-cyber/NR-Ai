@@ -16,8 +16,7 @@
  * created by other code paths keep working). A revoked link, or a link to
  * another firm, always removes the company from NR's set.
  */
-import { and, eq, inArray, isNull, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
-import { databaseUtcNow } from "../../config/database-time";
+import { and, eq, inArray, isNull, ne, not, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import { db } from "../../db";
 import { DomainError } from "../../errors";
 import {
@@ -27,6 +26,7 @@ import {
   firmCompanyGrants,
   firmMembers,
   firmStaffAssignments,
+  firmTimeEntries,
   firms,
   users,
 } from "../../../shared/schema";
@@ -39,7 +39,11 @@ import {
   type FirmPermission,
   type FirmRole,
 } from "../../../shared/access";
-import { COMPANY_ROLES, normalizeCompanyRole } from "../../../shared/permissions";
+import {
+  COMPANY_ROLES,
+  normalizeCompanyRole,
+  permissionsForRole,
+} from "../../../shared/permissions";
 
 /** Seeded by migration 0108. */
 export const NR_FIRM_ID = "00000000-0000-4000-8000-000000000001";
@@ -48,6 +52,7 @@ export interface FirmActor {
   id: string;
   isAdmin?: boolean | null;
   firmRole?: string | null;
+  userType?: string;
 }
 
 export interface FirmContext {
@@ -66,16 +71,17 @@ export async function resolveFirmContext(
   actor: FirmActor | null | undefined,
   conn: Pick<Executor, "select"> = db
 ): Promise<FirmContext | null> {
-  if (!actor?.id) return null;
+  if (!actor?.id || actor.userType === "client_portal") return null;
   let firmRole = actor.firmRole;
   if (firmRole === undefined) {
     const [u] = await conn
-      .select({ firmRole: users.firmRole, isAdmin: users.isAdmin })
+      .select({ firmRole: users.firmRole, isAdmin: users.isAdmin, userType: users.userType })
       .from(users)
       .where(eq(users.id, actor.id))
       .limit(1);
-    firmRole = u?.firmRole ?? null;
-    if (actor.isAdmin === undefined) actor = { ...actor, isAdmin: u?.isAdmin === true };
+    if (!u || u.userType === "client_portal") return null;
+    firmRole = u.firmRole;
+    if (actor.isAdmin === undefined) actor = { ...actor, isAdmin: u.isAdmin };
   }
   if (isFirmRole(firmRole)) {
     return {
@@ -477,6 +483,11 @@ export function accessibleClientCondition(ctx: FirmContext): SQL {
   return and(base, assignedCondition(ctx)) as SQL;
 }
 
+/** Reuse the client scope in row-id queries without loading every client ID. */
+export function accessibleClientsQuery(ctx: FirmContext) {
+  return db.select({ id: companies.id }).from(companies).where(accessibleClientCondition(ctx));
+}
+
 export async function listAccessibleClientIds(ctx: FirmContext): Promise<string[]> {
   const rows = (await db
     .select({ id: companies.id })
@@ -597,7 +608,7 @@ export async function listFirmMembers(
     .select({ userId: users.id, name: users.name, email: users.email, role: firmMembers.role })
     .from(firmMembers)
     .innerJoin(users, eq(users.id, firmMembers.userId))
-    .where(eq(firmMembers.firmId, firmId))) as Array<{
+    .where(and(eq(firmMembers.firmId, firmId), ne(users.userType, "client_portal")))) as Array<{
     userId: string;
     name: string;
     email: string;
@@ -608,7 +619,9 @@ export async function listFirmMembers(
     const legacy = (await conn
       .select({ userId: users.id, name: users.name, email: users.email, role: users.firmRole })
       .from(users)
-      .where(inArray(users.firmRole, [...FIRM_ROLES]))) as Array<{
+      .where(
+        and(inArray(users.firmRole, [...FIRM_ROLES]), ne(users.userType, "client_portal"))
+      )) as Array<{
       userId: string;
       name: string;
       email: string;
@@ -669,7 +682,7 @@ export async function markCompanyMembershipDirect(
 ): Promise<void> {
   await exec
     .update(firmCompanyGrants)
-    .set({ createdMembership: false })
+    .set({ createdMembership: false, membershipId: null })
     .where(
       and(
         eq(firmCompanyGrants.companyId, companyId),
@@ -715,9 +728,20 @@ export async function reconcileCompanyMembershipOrigin(
     await markCompanyMembershipDirect(companyId, userId, exec);
     return;
   }
+  const [membership] = await exec
+    .select({ id: companyUsers.id })
+    .from(companyUsers)
+    .where(
+      and(
+        eq(companyUsers.companyId, companyId),
+        eq(companyUsers.userId, userId),
+        ne(companyUsers.role, "owner")
+      )
+    );
+  if (!membership) return;
   await exec
     .update(firmCompanyGrants)
-    .set({ createdMembership: true })
+    .set({ createdMembership: true, membershipId: membership.id })
     .where(
       and(
         eq(firmCompanyGrants.companyId, companyId),
@@ -728,10 +752,105 @@ export async function reconcileCompanyMembershipOrigin(
     );
 }
 
+/** Serialize starting a timer against changes that remove access to its client or firm. */
+export async function lockFirmClientAccess(exec: Pick<Executor, "execute">, companyId: string) {
+  await exec.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtext('firm_client_access'), hashtext(${companyId.toLowerCase()}))`
+  );
+}
+
+export async function lockFirmTimerUser(exec: Pick<Executor, "execute">, userId: string) {
+  await exec.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtext('firm_timer_user'), hashtext(${userId.toLowerCase()}))`
+  );
+}
+
+/** Keep tracked time up to the access change, using the same daily cap as a manual stop. */
+export async function finalizeRunningFirmTimers(
+  exec: Pick<Executor, "update">,
+  scope: SQL | undefined,
+  endedAt: Date
+) {
+  if (!scope) throw new Error("A firm timer scope is required");
+  await exec
+    .update(firmTimeEntries)
+    .set({
+      status: "logged",
+      stoppedAt: endedAt,
+      updatedAt: endedAt,
+      minutes: sql`LEAST(1440, GREATEST(0, CEIL(EXTRACT(EPOCH FROM
+        (${endedAt.toISOString()}::timestamp - ${firmTimeEntries.startedAt})) / 60)))::integer`,
+    })
+    .where(and(scope, eq(firmTimeEntries.status, "running")));
+}
+
+/** Release a timer whose authorized end time is unknown without adding billable time. */
+export async function writeOffRunningFirmTimers(
+  exec: Pick<Executor, "update">,
+  scope: SQL | undefined,
+  endedAt: Date
+) {
+  if (!scope) throw new Error("A firm timer scope is required");
+  await exec
+    .update(firmTimeEntries)
+    .set({
+      status: "written_off",
+      minutes: 0,
+      billable: false,
+      stoppedAt: endedAt,
+      updatedAt: endedAt,
+    })
+    .where(and(scope, eq(firmTimeEntries.status, "running")));
+}
+
+export async function settleFirmTimersAtAccessLoss(
+  exec: Pick<Executor, "update">,
+  scope: SQL,
+  authorizedBefore: SQL,
+  endedAt: Date
+) {
+  await finalizeRunningFirmTimers(exec, and(scope, authorizedBefore), endedAt);
+  await writeOffRunningFirmTimers(exec, and(scope, not(authorizedBefore)), endedAt);
+}
+
+/** Settle known client access loss while the company access lock is held. */
+export async function settleClientTimersAtAccessLoss(
+  exec: Pick<Executor, "select" | "update">,
+  companyId: string,
+  endedAt: Date,
+  firmId?: string
+) {
+  const scope = and(
+    eq(firmTimeEntries.companyId, companyId),
+    firmId ? eq(firmTimeEntries.firmId, firmId) : undefined
+  )!;
+  const running = await exec
+    .select({
+      id: firmTimeEntries.id,
+      userId: firmTimeEntries.userId,
+      firmId: firmTimeEntries.firmId,
+    })
+    .from(firmTimeEntries)
+    .where(and(scope, eq(firmTimeEntries.status, "running")));
+  if (running.length === 0) return;
+  const authorized: string[] = [];
+  for (const timer of running) {
+    const member = await resolveFirmContext({ id: timer.userId }, exec);
+    if (
+      member?.firmId === timer.firmId &&
+      firmRoleHasPermission(member.role, "firm.time.track") &&
+      (await canAccessFirmClient(member, companyId, exec))
+    ) {
+      authorized.push(timer.id);
+    }
+  }
+  await settleFirmTimersAtAccessLoss(exec, scope, inArray(firmTimeEntries.id, authorized), endedAt);
+}
+
 /**
  * Give a firm member a company_users row in a client's books (the core company
- * RBAC then governs what they may do there). Records whether the row was
- * created by the firm so revocation removes exactly what the firm added.
+ * RBAC then governs what they may do there). Record the exact membership row
+ * created by the firm so that replacing it cannot transfer provenance.
  */
 export async function grantCompanyAccess(
   input: { firmId: string; userId: string; companyId: string; role: FirmRole },
@@ -755,16 +874,120 @@ export async function grantCompanyAccess(
     userId: input.userId,
     companyId: input.companyId,
     createdMembership: !!created,
+    membershipId: created?.id ?? null,
   });
   if (created) {
     await grant.onConflictDoUpdate({
       target: [firmCompanyGrants.firmId, firmCompanyGrants.userId, firmCompanyGrants.companyId],
-      set: { createdMembership: true, createdAt: sql`excluded.created_at` },
+      set: {
+        createdMembership: true,
+        membershipId: created.id,
+        createdAt: sql`excluded.created_at`,
+      },
     });
   } else {
     await grant.onConflictDoNothing();
     await reconcileCompanyMembershipOrigin(input.companyId, input.userId, exec);
   }
+}
+
+function unresolvedFirmGrant(companyId: string) {
+  return and(
+    eq(firmCompanyGrants.companyId, companyId),
+    eq(firmCompanyGrants.createdMembership, true),
+    isNull(firmCompanyGrants.membershipId)
+  );
+}
+
+function unresolvedMemberships(exec: Pick<Executor, "select">, companyId: string, filter?: SQL) {
+  const unresolvedUsers = exec
+    .select({ userId: firmCompanyGrants.userId })
+    .from(firmCompanyGrants)
+    .where(and(unresolvedFirmGrant(companyId), filter));
+  return exec
+    .select({ membershipId: companyUsers.id, userId: companyUsers.userId, role: companyUsers.role })
+    .from(companyUsers)
+    .where(
+      and(eq(companyUsers.companyId, companyId), inArray(companyUsers.userId, unresolvedUsers))
+    );
+}
+
+export async function assertNoUnresolvedFirmAccess(
+  exec: Pick<Executor, "select">,
+  companyId: string,
+  grantWhere: SQL | undefined,
+  allowedRole?: string
+): Promise<void> {
+  const unresolved = await unresolvedMemberships(exec, companyId, grantWhere);
+  const allowed = permissionsForRole(allowedRole);
+  const blocked = unresolved.filter(
+    ({ role }) =>
+      allowedRole === undefined ||
+      permissionsForRole(role).some((permission) => !allowed.includes(permission))
+  );
+  if (blocked.length) {
+    throw new DomainError("UNRESOLVED_FIRM_ACCESS", 409, {
+      companyId,
+      membershipIds: blocked.map(({ membershipId }) => membershipId),
+    });
+  }
+}
+
+async function assertCompanyOwner(
+  exec: Pick<Executor, "select">,
+  companyId: string,
+  userId: string,
+  lock = false
+) {
+  const query = exec
+    .select({ role: companyUsers.role })
+    .from(companyUsers)
+    .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, userId)))
+    .limit(1);
+  const [actor] = await (lock ? query.for("share") : query);
+  if (!actor || normalizeCompanyRole(actor.role) !== "owner") {
+    throw new DomainError("COMPANY_OWNER_REQUIRED", 403);
+  }
+}
+
+export async function listUnresolvedFirmAccess(companyId: string, actorId: string) {
+  await assertCompanyOwner(db, companyId, actorId);
+  return unresolvedMemberships(db, companyId);
+}
+
+export async function resolveUnverifiedFirmAccess(
+  companyId: string,
+  actorId: string,
+  membershipId: string,
+  decision: "independent" | "revoke"
+) {
+  return db.transaction(async (tx) => {
+    await lockFirmClientAccess(tx, companyId);
+    await assertCompanyOwner(tx, companyId, actorId, true);
+    const [member] = await tx
+      .select({ userId: companyUsers.userId, role: companyUsers.role })
+      .from(companyUsers)
+      .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.id, membershipId)))
+      .for("update");
+    if (!member) throw new DomainError("NOT_FOUND", 404);
+    const predicate = and(
+      unresolvedFirmGrant(companyId),
+      eq(firmCompanyGrants.userId, member.userId)
+    );
+    const [updated] = await tx
+      .update(firmCompanyGrants)
+      .set({ createdMembership: false, membershipId: null })
+      .where(predicate)
+      .returning({ id: firmCompanyGrants.id });
+    if (!updated) throw new DomainError("NOT_FOUND", 404);
+    if (decision === "revoke") {
+      if (normalizeCompanyRole(member.role) === "owner")
+        throw new DomainError("ROLE_NOT_GRANTABLE", 403);
+      await tx
+        .delete(companyUsers)
+        .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.id, membershipId)));
+    }
+  });
 }
 
 /**
@@ -788,6 +1011,7 @@ export async function revokeCompanyAccess(
   exec?: Executor
 ): Promise<{ removedMemberships: number }> {
   if (!exec) return db.transaction((tx) => revokeCompanyAccess(input, tx));
+  await lockFirmClientAccess(exec, input.companyId);
   if (input.disconnect) await lockClientCompany(input.companyId, exec);
   const grantWhere = and(
     eq(firmCompanyGrants.firmId, input.firmId),
@@ -818,19 +1042,24 @@ export async function revokeCompanyAccess(
     if (authority === "client_owner") {
       await assertClientOwner(actorId, input.companyId, exec);
     } else {
-      await lockFirmLinkAuthority(
+      const actor = await lockFirmLinkAuthority(
         { firmId: input.firmId, isNr: input.isNr, userId: actorId },
         authority,
         exec
       );
+      if (!(await canAccessFirmClient(actor, input.companyId, exec))) {
+        throw new DomainError("CLIENT_NOT_FOUND", 404);
+      }
     }
+    const endedAt = new Date();
+    await settleClientTimersAtAccessLoss(exec, input.companyId, endedAt, input.firmId);
     const [link] = await exec
       .update(firmClientLinks)
       .set({
         status: "revoked",
         revokedBy: actorId,
-        revokedAt: databaseUtcNow,
-        updatedAt: databaseUtcNow,
+        revokedAt: endedAt,
+        updatedAt: endedAt,
         revokeReason: reason,
       })
       .where(
@@ -851,16 +1080,24 @@ export async function revokeCompanyAccess(
   for (const { userId } of grants) {
     await reconcileCompanyMembershipOrigin(input.companyId, userId, exec);
   }
+  await assertNoUnresolvedFirmAccess(exec, input.companyId, grantWhere);
   const generated = await exec
-    .select({ userId: firmCompanyGrants.userId })
+    .select({ id: firmCompanyGrants.id, membershipId: firmCompanyGrants.membershipId })
     .from(firmCompanyGrants)
     .where(and(grantWhere, eq(firmCompanyGrants.createdMembership, true)));
-  const toRemove = new Set(generated.map((g) => g.userId));
+  const toRemove = generated.flatMap(({ membershipId }) => (membershipId ? [membershipId] : []));
   // An NR assignment predating provenance can still identify a legacy generated row.
   if (input.isNr && memberIds.length) {
     const assignments = await exec
-      .select({ userId: firmStaffAssignments.userId })
+      .select({ membershipId: companyUsers.id })
       .from(firmStaffAssignments)
+      .innerJoin(
+        companyUsers,
+        and(
+          eq(companyUsers.companyId, firmStaffAssignments.companyId),
+          eq(companyUsers.userId, firmStaffAssignments.userId)
+        )
+      )
       .where(
         and(
           eq(firmStaffAssignments.companyId, input.companyId),
@@ -870,25 +1107,28 @@ export async function revokeCompanyAccess(
           sql`not exists (select 1 from firm_company_grants fcg where fcg.company_id = ${input.companyId} and fcg.user_id = ${firmStaffAssignments.userId})`
         )
       );
-    for (const { userId } of assignments) toRemove.add(userId);
+    toRemove.push(...assignments.map(({ membershipId }) => membershipId));
   }
   let removed = 0;
-  if (toRemove.size > 0) {
+  if (toRemove.length > 0) {
     const del = (await exec
       .delete(companyUsers)
       .where(
         and(
           eq(companyUsers.companyId, input.companyId),
-          inArray(companyUsers.userId, [...toRemove]),
+          inArray(companyUsers.id, toRemove),
           sql`${companyUsers.role} <> 'owner'`
         )
       )
       .returning({ id: companyUsers.id })) as Array<{ id: string }>;
     removed = del.length;
   }
-  await exec
-    .delete(firmCompanyGrants)
-    .where(and(grantWhere, eq(firmCompanyGrants.createdMembership, true)));
+  await exec.delete(firmCompanyGrants).where(
+    inArray(
+      firmCompanyGrants.id,
+      generated.map(({ id }) => id)
+    )
+  );
   if (memberIds.length > 0) {
     await exec
       .delete(firmStaffAssignments)

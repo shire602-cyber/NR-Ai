@@ -10,8 +10,26 @@ import { DomainError } from "../errors";
 import { baseCurrencyOf } from "../ledger/currency";
 import { addDays, type IsoDate } from "./dates";
 
+const POOL_READS = Symbol("pool reads");
+
 export interface Queryable {
   query: (text: string, params?: unknown[]) => Promise<{ rows: QueryResultRow[] }>;
+  [POOL_READS]?: boolean;
+}
+
+function supportsConcurrentReads(q: Queryable): boolean {
+  return q === pool || q[POOL_READS] === true;
+}
+
+/** The pool can run independent reads in parallel; a caller's transaction has one connection. */
+export async function runReportReads<T extends unknown[]>(
+  q: Queryable,
+  ...reads: { [K in keyof T]: () => Promise<T[K]> }
+): Promise<T> {
+  if (supportsConcurrentReads(q)) return (await Promise.all(reads.map((read) => read()))) as T;
+  const results: unknown[] = [];
+  for (const read of reads) results.push(await read());
+  return results as T;
 }
 
 /**
@@ -24,6 +42,7 @@ export interface Queryable {
 export function memoQueryable(q: Queryable = pool): Queryable {
   const cache = new Map<string, Promise<{ rows: QueryResultRow[] }>>();
   return {
+    [POOL_READS]: supportsConcurrentReads(q),
     query(text: string, params?: unknown[]) {
       const key = `${text}\u0000${JSON.stringify(params ?? [])}`;
       let hit = cache.get(key);

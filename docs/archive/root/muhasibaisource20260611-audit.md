@@ -293,8 +293,8 @@ Assessment:
 
 Current public positioning from QuickBooks:
 
-- Broad small-business accounting with invoicing, payments, expenses, bank
-  connections, reports, budgeting, payroll/time/inventory/project features.
+- Broad small-business accounting with invoicing, payments, expenses,
+  financial-institution connections, reports, budgeting, payroll/time/inventory/project features.
 - Public page now emphasizes Accounting AI: automated workflows, AI
   reconciliation, profit/loss insights, error finding, sales-tax automation,
   finance/project/customer AI, and chat insights.

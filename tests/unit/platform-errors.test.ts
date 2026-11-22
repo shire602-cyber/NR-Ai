@@ -39,6 +39,7 @@ function buildApp() {
       z.object({ name: z.string() }).parse(req.body);
     })
   );
+  app.get("/api/resource/:id", (_req, res) => res.sendStatus(204));
   app.use(globalErrorHandler);
   return app;
 }
@@ -66,6 +67,12 @@ async function call(path: string, init: RequestInit = {}) {
 }
 
 describe("R17-12 transport errors over HTTP", () => {
+  it("returns 400 when a route parameter cannot be decoded", async () => {
+    const result = await call("/api/resource/%FF");
+    expect(result.status).toBe(400);
+    expect(result.json).toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("R17-12: malformed JSON body → 400 INVALID_JSON (not 500)", async () => {
     const r = await call("/api/echo", {
       method: "POST",
@@ -157,6 +164,7 @@ describe("R17-12 transport errors over HTTP", () => {
 function mockRes() {
   const res = {
     statusCode: 0,
+    setHeader: vi.fn(),
     body: undefined as unknown,
     status: vi.fn(function (this: typeof res, c: number) {
       res.statusCode = c;
@@ -181,6 +189,8 @@ const pgError = (code: string, message: string) => Object.assign(new Error(messa
 
 describe("R17-12 Postgres error mapping (no SQL in responses)", () => {
   it.each([
+    ["40001", 409, "TRANSACTION_CONFLICT", "serialization failure"],
+    ["40P01", 409, "TRANSACTION_CONFLICT", "deadlock detected"],
     ["22P02", 400, "INVALID_IDENTIFIER", 'invalid input syntax for type uuid: "x"'],
     ["22007", 400, "INVALID_DATE", 'invalid input syntax for type date: "garbage"'],
     ["22008", 400, "INVALID_DATE", "date/time field value out of range"],
@@ -203,8 +213,26 @@ describe("R17-12 Postgres error mapping (no SQL in responses)", () => {
     expect(JSON.stringify(res.body)).not.toContain("Failed query");
   });
 
+  it("returns a retry interval for a database restart", () => {
+    const res = handle(new Error("query failed", { cause: pgError("57P01", "shutdown detail") }));
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toMatchObject({ code: "DATABASE_UNAVAILABLE" });
+    expect(res.setHeader).toHaveBeenCalledWith("Retry-After", "1");
+  });
+
+  it("delegates once the response has started", () => {
+    const req = {} as Request;
+    const res = { headersSent: true } as Response;
+    const error = new Error("stream failed");
+    const next = vi.fn();
+    globalErrorHandler(error, req, res, next);
+    expect(next).toHaveBeenCalledWith(error);
+  });
+
   it("server-side pg errors (e.g. undefined column 42703) stay 500", () => {
-    expect(handle(pgError("42703", 'column "x" does not exist')).statusCode).toBe(500);
+    const response = handle(pgError("42703", 'column "x" does not exist'));
+    expect(response.statusCode).toBe(500);
+    expect(response.body).toEqual({ code: "INTERNAL_ERROR", message: "Internal Server Error" });
   });
 
   it("AppError codes are not mistaken for SQLSTATEs", () => {

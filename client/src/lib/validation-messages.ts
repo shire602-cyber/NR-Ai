@@ -251,6 +251,17 @@ export function localizeApiError(body: Record<string, unknown> | undefined): str
   if (!body) return undefined;
   const { locale } = useI18n.getState();
   const code = typeof body.code === "string" ? body.code : undefined;
+  // These responses can carry legacy provider details or reconnect steps for API callers.
+  if (
+    code &&
+    (code.startsWith("BANK_FEED_") ||
+      code === "BANK_CONNECTION_NOT_FOUND" ||
+      code === "INVALID_OAUTH_STATE" ||
+      code === "REDIRECT_URI_NOT_ALLOWED")
+  ) {
+    const copy = serverErrorCopy(locale, code);
+    if (copy) return copy;
+  }
   if (locale !== "ar") {
     if (!code) return undefined;
     const hasFields = !!body.fields && typeof body.fields === "object";

@@ -157,7 +157,7 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
   ) {
     const target = invoice;
     const { written, open } = await withLedgerTx(async (tx) => ({
-      written: await invoiceWrittenOffFils(tx, target.id),
+      written: await invoiceWrittenOffFils(tx, target.companyId, target.id),
       open: await invoiceOpenFils(tx, target),
     }));
     const wanted = toFils(input.amount, { rounding: "halfUp" });
@@ -816,10 +816,15 @@ async function ensureReceivableAccount(companyId: string, code: "5120" | "1045")
 }
 
 /** Written-off amount (document-currency fils) still standing on an invoice. */
-export async function invoiceWrittenOffFils(tx: LedgerTx, invoiceId: string): Promise<number> {
+export async function invoiceWrittenOffFils(
+  tx: LedgerTx,
+  companyId: string,
+  invoiceId: string
+): Promise<number> {
   const res = await tx.execute(
     sql`SELECT COALESCE(SUM(ROUND(amount * 100)), 0)::text AS f FROM invoice_payments
-         WHERE invoice_id = ${invoiceId} AND method = ${WRITE_OFF_METHOD}`
+         WHERE company_id = ${companyId} AND invoice_id = ${invoiceId}
+           AND method = ${WRITE_OFF_METHOD}`
   );
   const rows = ((res as { rows?: unknown[] }).rows ?? res) as Array<{ f: string }>;
   return Number(rows[0]?.f ?? 0);

@@ -18,7 +18,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import pg from "pg";
-import { waitForRouteText } from "./lib/route-readiness.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 // Fable N1: browse in UAE time so a business date formatted as a browser-zone instant (a 30 Sep
@@ -118,6 +117,27 @@ const TOLERATED_API = [];
 const FAIL_TEXT = /something went wrong|an error occurred|failed to load|unexpected error/i;
 const NOT_FOUND = (t) =>
   /not found/i.test(t) && t.trim().length < 300 && !/no [a-z ]*found/i.test(t);
+
+/** A mounted workspace can show its header while its records are still loading. */
+async function renderedMainText(page) {
+  await page.waitForFunction(
+    () => {
+      const main = document.querySelector("main");
+      if (!main || main.innerText.trim().length < 40) return false;
+      const loading = '[aria-busy="true"], .skeleton-shimmer';
+      return (
+        !main.matches(loading) &&
+        !Array.from(main.querySelectorAll(loading)).some(
+          (element) =>
+            element.getClientRects().length && getComputedStyle(element).visibility === "visible"
+        )
+      );
+    },
+    null,
+    { timeout: 15000 }
+  );
+  return page.locator("main").innerText();
+}
 
 /** Poll the page's <main> until it shows `text` (client render after a fetch is not instant). */
 async function mainShows(page, text, timeoutMs = 20000) {
@@ -267,8 +287,9 @@ async function main() {
     apiFailures = [];
     try {
       await page.goto(`${BASE}${route}`, { timeout: 45000 });
-      await page.waitForTimeout(1700);
-      const mainText = await waitForRouteText(page, "main");
+      const main = page.locator("main");
+      await main.getByRole("heading").filter({ visible: true }).first().waitFor({ timeout: 18000 });
+      const mainText = await renderedMainText(page);
       const finalUrl = page.url().replace(BASE, "");
       const failText =
         mainText.match(FAIL_TEXT)?.[0] ?? (NOT_FOUND(mainText) ? "not-found screen" : null);
@@ -1264,8 +1285,7 @@ async function main() {
       mApi.length = 0;
       try {
         await mPage.goto(`${BASE}${route}`, { timeout: 45000 });
-        await mPage.waitForTimeout(1500);
-        const bodyText = await waitForRouteText(mPage, "main", "body");
+        const bodyText = await renderedMainText(mPage);
         const finalUrl = mPage.url().replace(BASE, "");
         const failText = bodyText.match(FAIL_TEXT)?.[0] ?? null;
         const blank = bodyText.trim().length < 40;
@@ -1393,18 +1413,11 @@ async function main() {
       routeErrors = [];
       apiFailures = [];
       await page.goto(`${BASE}${route}`, { timeout: 45000 });
-      await page.waitForTimeout(1700);
-      // The document direction flips once the locale store hydrates; wait for it (and for the
-      // route to render) instead of racing a fixed delay.
-      await page
-        .waitForFunction(() => document.documentElement.getAttribute("dir") === "rtl", null, {
-          timeout: 15000,
-        })
-        .catch(() => {});
+      await page.locator('html[lang="ar"][dir="rtl"]').waitFor();
+      const mainText = await renderedMainText(page);
       const dir = await page.evaluate(() => document.documentElement.getAttribute("dir"));
-      const mainText = await waitForRouteText(page, "main");
       const blank = mainText.trim().length < 40;
-      if (dir !== "rtl" || routeErrors.length || blank) {
+      if (dir !== "rtl" || routeErrors.length || apiFailures.length || blank) {
         await fail(`rtl route ${route}`, {
           dir,
           blank: blank || undefined,

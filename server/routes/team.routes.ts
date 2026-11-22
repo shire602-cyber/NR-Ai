@@ -24,7 +24,7 @@ import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { isPlaceholderPasswordHash, passwordPolicySchema } from "../auth";
 import { issueAuthTokens } from "./auth.routes";
-import { zEmail, zText } from "../../shared/validators/primitives";
+import { zEmail, zText, zUuid } from "../../shared/validators/primitives";
 import {
   COMPANY_ROLES,
   grantableRoles,
@@ -56,6 +56,10 @@ import {
 } from "../services/firm/scope";
 import { isFirmRole } from "../../shared/access";
 import { zCompanyRole } from "../../shared/validators/company-role";
+
+import { listUnresolvedFirmAccess, resolveUnverifiedFirmAccess } from "../services/firm/scope";
+import { requireRecentMfa } from "../services/security/policy";
+import { parsedBody } from "../http/parsed-body";
 
 const log = createLogger("team");
 
@@ -632,6 +636,43 @@ export function registerTeamRoutes(app: Express) {
         req,
       });
       res.json({ invitation: publicInvitation(updated) });
+    })
+  );
+
+  const firmAccessReviewPath = "/api/companies/:companyId/team/firm-access-review";
+  const firmAccessReviewBody = z.object({
+    membershipId: zUuid,
+    decision: z.enum(["independent", "revoke"]),
+  });
+  app.get(
+    firmAccessReviewPath,
+    authMiddleware,
+    requirePermission("team.manage"),
+    asyncHandler(async (req, res) => {
+      const memberships = await listUnresolvedFirmAccess(req.params.companyId, req.user!.id);
+      res.json({ memberships });
+    })
+  );
+  app.post(
+    firmAccessReviewPath,
+    authMiddleware,
+    requirePermission("team.manage"),
+    requireRecentMfa(),
+    strictBody(firmAccessReviewBody),
+    asyncHandler(async (req, res) => {
+      const { companyId } = req.params;
+      const { membershipId, decision } = parsedBody<z.output<typeof firmAccessReviewBody>>(req);
+      await resolveUnverifiedFirmAccess(companyId, req.user!.id, membershipId, decision);
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "team.firm_access_review",
+        entityType: "company_user",
+        entityId: membershipId,
+        after: { decision },
+        req,
+      });
+      res.json({ success: true });
     })
   );
 

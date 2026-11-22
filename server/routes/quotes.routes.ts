@@ -58,6 +58,7 @@ import {
   type PreparedSalesLine,
 } from "../services/invoice-lifecycle";
 import { assertPlaceOfSupply, resolveCustomerHeader } from "../services/invoice-posting.service";
+import { assertPeriodNotLocked, lockPeriodPolicy } from "../services/period-lock.service";
 import { documentCurrency, loadBaseCurrency } from "../ledger";
 import { transitionQuote, type QuoteStatus } from "../services/quote-state.service";
 import { fromFils, mulRate, toFils } from "../../shared/money";
@@ -589,10 +590,13 @@ export async function convertQuoteAtomically(
     await assertPlaceOfSupply(
       quote.companyId,
       quote.placeOfSupplyEmirate,
-      rows.map((r) => r.vatSupplyType)
+      rows.map((r) => r.vatSupplyType),
+      tx
     );
 
     const invoiceDate = toDate(dateIso);
+    await lockPeriodPolicy(tx, quote.companyId, "shared");
+    await assertPeriodNotLocked(quote.companyId, invoiceDate, tx);
     const number = await allocateInvoiceNumber(quote.companyId, "invoice", invoiceDate, tx);
     const terms = quote.paymentTerms ?? "net30";
     const due = dueDateFromTerms(dateIso, terms);

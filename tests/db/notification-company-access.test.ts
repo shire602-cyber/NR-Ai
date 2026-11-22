@@ -2,10 +2,16 @@ import { describe, expect, it } from "vitest";
 import { useHarness } from "./harness";
 import type { OutgoingEmail } from "../../server/outbox/providers";
 import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
+import { BANK_STATEMENT_REVIEW_TITLE } from "../../shared/notification-copy";
 
 const h = useHarness();
 const retiredArabicTitle = ["الربط", "البنكي"].join(" ");
 const retiredEnglishTitle = ["Bank", "feed", "sync", "failed"].join(" ");
+const legacyBankNotice = {
+  title: "Continue bank reconciliation",
+  message:
+    "The bank connection could not sync. Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.",
+};
 
 async function memberWithNotifications() {
   const owner = await h.createTenant({ name: "Notification company owner" });
@@ -278,6 +284,106 @@ describe("Notification access after team removal", () => {
         /Revoked company detail|Retired English detail|Retired Arabic detail|Personal detail/
       );
     }
+  });
+
+  it.each([false, true])(
+    "replaces a stored reconciliation notice in the digest body and inbox preview (retry: %s)",
+    async (retry) => {
+      const tenant = await h.createTenant();
+      const { enqueueEmail } = await import("../../server/outbox/outbox");
+      const { renderBilingualEmail } = await import("../../server/services/email-layout");
+      const day = new Date().toISOString().slice(0, 10);
+      await h.sql(
+        `INSERT INTO notifications (user_id, company_id, type, title, message, event_key)
+       VALUES ($1, $2, 'system', $3, $4, 'bank.sync_failed:legacy-csv-reminder')`,
+        [tenant.user.id, tenant.company.id, legacyBankNotice.title, legacyBankNotice.message]
+      );
+      const oldHtml = renderBilingualEmail(
+        {
+          brandName: "Muhasib.ai",
+          heading: { en: "Daily summary", ar: "الملخص اليومي" },
+          paragraphs: {
+            en: [`<strong>${legacyBankNotice.title}</strong> — ${legacyBankNotice.message}`],
+            ar: [],
+          },
+        },
+        "bilingual"
+      );
+      const queued = await enqueueEmail({
+        to: tenant.email,
+        subject: "Old daily summary",
+        category: "digest",
+        idempotencyKey: `digest:${tenant.user.id}:${day}`,
+        html: oldHtml,
+        text: legacyBankNotice.message,
+      });
+      if (retry) {
+        const { setEmailTransportOverride } = await import("../../server/outbox/providers");
+        const { processOutbox } = await import("../../server/outbox/outbox");
+        setEmailTransportOverride({
+          name: "test",
+          send: async () => {
+            throw new Error("Temporary mail provider error");
+          },
+        });
+        try {
+          await processOutbox();
+        } finally {
+          setEmailTransportOverride(null);
+        }
+        const [failed] = await h.sql<{ status: string }>(
+          "UPDATE email_outbox SET next_attempt_at = now() WHERE id = $1 RETURNING status",
+          [queued.id]
+        );
+        expect(failed.status).toBe("retrying");
+      }
+
+      const delivered = await deliverPendingEmail(queued.id);
+      expect(delivered).toHaveLength(1);
+      const { html, text } = delivered[0];
+      const preview = html.match(/mso-hide:all[^>]*>([^<]*)<\/div>/)?.[1];
+      expect(preview).toContain(BANK_RECONCILIATION_COPY.en);
+      expect(html).toContain(
+        `<strong>${BANK_STATEMENT_REVIEW_TITLE.en}</strong> — ${BANK_RECONCILIATION_COPY.en}`
+      );
+      for (const body of [html, text]) {
+        expect(body).toContain(BANK_RECONCILIATION_COPY.ar);
+        expect(body).not.toContain("The bank connection could not sync");
+      }
+    }
+  );
+
+  it("preserves Arabic in a queued bank notice through delivery refresh", async () => {
+    const tenant = await h.createTenant();
+    const { notify } = await import("../../server/services/notification-engine.service");
+    const prefs = await tenant.as.put("/api/notification-preferences", {
+      emailEnabled: true,
+      typePreferences: { "task.due": { email: true } },
+    });
+    expect(prefs.status, prefs.text).toBe(200);
+    await notify({
+      companyId: tenant.company.id,
+      type: "task.due",
+      entityId: crypto.randomUUID(),
+      title: BANK_STATEMENT_REVIEW_TITLE.en,
+      message: BANK_RECONCILIATION_COPY.en,
+    });
+    const [queued] = await h.sql<{ id: string; subject: string; html: string; text: string }>(
+      `SELECT id, subject, html, text_body AS text FROM email_outbox
+       WHERE company_id = $1 AND category = 'notification'`,
+      [tenant.company.id]
+    );
+    expect(queued.subject).toContain(BANK_STATEMENT_REVIEW_TITLE.ar);
+    expect(queued.html).toContain(BANK_RECONCILIATION_COPY.ar);
+    expect(queued.text).toContain(BANK_RECONCILIATION_COPY.ar);
+
+    const delivered = await deliverPendingEmail(queued.id);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toMatchObject({
+      subject: queued.subject,
+      html: queued.html,
+      text: queued.text,
+    });
   });
 
   it("cancels and clears a queued digest if its last company becomes inaccessible", async () => {

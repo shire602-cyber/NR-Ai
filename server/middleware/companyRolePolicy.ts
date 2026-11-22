@@ -54,8 +54,8 @@ import {
 } from "../services/firm/scope";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
-import { portalInviteLogPath } from "../http/portal-invite-privacy";
 import { DomainError } from "../errors";
+import { RAW_WEBHOOK_PREFIXES } from "../http/body-limits";
 import { authenticateRequest } from "./auth";
 import {
   FIRM_ROLE_COMPANY_ROLE,
@@ -63,6 +63,7 @@ import {
   isFirmRole,
   isNraFirmRole,
 } from "../../shared/access";
+import { zUuid } from "../../shared/validators/primitives";
 import {
   normalizeCompanyRole,
   roleHasAnyPermission,
@@ -320,7 +321,8 @@ const SKIP_PREFIXES = [
 ];
 
 function splitPath(path: string): string[] {
-  return path.split("?")[0].split("/").filter(Boolean);
+  // Express matches literal route segments case-insensitively.
+  return path.split("?")[0].toLowerCase().split("/").filter(Boolean);
 }
 
 function matchSegments(pattern: string[], segs: string[]): boolean {
@@ -354,7 +356,7 @@ export function isPolicyExempt(path: string): boolean {
  * "/companies/<id>/team/<memberId>"). Returns null for exempt paths.
  */
 export function resolvePermission(method: string, path: string): readonly Permission[] | null {
-  if (isPolicyExempt(path)) return null;
+  if (isPolicyExempt(path) || isSignedProviderCallback(method, path)) return null;
   const m = method.toUpperCase();
   const segs = splitPath(path);
   for (const rule of COMPILED) {
@@ -367,7 +369,19 @@ export function resolvePermission(method: string, path: string): readonly Permis
 
 // ─── Company resolution ──────────────────────────────────────────────────
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function requireId(value: unknown, parameter: "companyId" | "id"): string {
+  const parsed = zUuid.safeParse(value);
+  if (!parsed.success) throw new DomainError("INVALID_ID", 400, { parameter });
+  return parsed.data;
+}
+
+function decodePathSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    throw new DomainError("INVALID_ID", 400);
+  }
+}
 
 /** First path segment → SQL resolving the owning company of row $1. */
 const RESOURCES: Record<string, string> = {
@@ -430,15 +444,11 @@ const COMPANY_PARAM_PREFIXES: string[][] = [
   ["vat", "autopilot", "calculate"],
 ];
 
-async function lookupCompany(sqlText: string, id: string): Promise<string | null> {
-  try {
-    const result = await pool.query(sqlText, [id]);
-    const row = result?.rows?.[0] as { company_id?: string | null } | undefined;
-    return row?.company_id ?? null;
-  } catch (err) {
-    log.warn({ err: (err as Error).message }, "company lookup failed");
-    return null;
-  }
+async function lookupCompany(sqlText: string, id: string): Promise<string> {
+  const result = await pool.query<{ company_id: string | null }>(sqlText, [id]);
+  const companyId = result.rows[0]?.company_id;
+  if (!companyId) throw new DomainError("NOT_FOUND", 404, undefined, "Not found");
+  return companyId;
 }
 
 function startsWith(segs: string[], prefix: string[]): boolean {
@@ -452,48 +462,127 @@ function startsWith(segs: string[], prefix: string[]): boolean {
  */
 export type CompanySource = "named" | "row";
 
-/** The company a request acts on (and how it was found), or null. */
+// Literal endpoints that share a prefix with parameterized company or row routes.
+const NON_COMPANY_READS = new Set([
+  "api-keys/scopes",
+  "corporate-tax/returns/template",
+  "reports/catalog",
+  "webhooks/events",
+]);
+
+const REQUIRED_COMPANY_INPUT = new Map<string, "body" | "query">([
+  ["GET integrations/ecommerce", "query"],
+  ["POST integrations/ecommerce/connect", "body"],
+  ["GET integrations/ecommerce/transactions", "query"],
+  ["GET period-lock/list", "query"],
+  ["POST period-lock/unlock", "body"],
+  ["POST vat/autopilot/adjustments", "body"],
+]);
+
+const SIGNED_CALLBACK_PATHS = new Set([
+  "webhooks/email-intake",
+  "webhooks/email-events/resend",
+  "webhooks/email-events/smtp-dsn",
+  "webhooks/stripe",
+]);
+
+/** These POST requests authenticate at the provider boundary, outside company roles. */
+export function isSignedProviderCallback(method: string, path: string): boolean {
+  if (method.toUpperCase() !== "POST") return false;
+  const segs = splitPath(path);
+  return (
+    SIGNED_CALLBACK_PATHS.has(segs.join("/")) ||
+    (segs[0] === "webhooks" &&
+      ((segs[1] === "einvoice" &&
+        segs.length === 4 &&
+        (segs[3] === "inbound" ||
+          RAW_WEBHOOK_PREFIXES.includes(`/api/${segs.slice(0, 3).join("/")}`))) ||
+        (segs[1] === "invoice-payments" && segs.length === 3)))
+  );
+}
+
+function namedInput(bodyId: unknown, queryId: unknown): string | null {
+  const body = bodyId === undefined ? null : requireId(bodyId, "companyId");
+  const query = queryId === undefined ? null : requireId(queryId, "companyId");
+  if (body && query && body !== query) {
+    throw new DomainError("INVALID_ID", 400, { parameter: "companyId" }, "Conflicting company IDs");
+  }
+  return body ?? query;
+}
+
+/** Null means the request is not scoped to one company. Invalid or missing targets throw. */
 export async function resolveRequestCompanyWithSource(
   req: Request,
   path: string
 ): Promise<{ companyId: string; source: CompanySource } | null> {
-  const named = (id: string | null) => (id ? { companyId: id, source: "named" as const } : null);
-  const row = (id: string | null) => (id ? { companyId: id, source: "row" as const } : null);
+  const named = (value: string) => ({
+    companyId: requireId(decodePathSegment(value), "companyId"),
+    source: "named" as const,
+  });
+  const row = async (sqlText: string, value: string) => ({
+    companyId: await lookupCompany(sqlText, requireId(decodePathSegment(value), "id")),
+    source: "row" as const,
+  });
   const segs = splitPath(path);
-  if (segs[0] === "companies" && segs[1]) {
-    return named(UUID_RE.test(segs[1]) ? segs[1].toLowerCase() : null);
+  const route = segs.join("/");
+  const method = req.method?.toUpperCase() ?? "GET";
+  if (
+    isPolicyExempt(path) ||
+    (READ_METHODS.has(method) && NON_COMPANY_READS.has(route)) ||
+    isSignedProviderCallback(method, path)
+  ) {
+    return null;
   }
+
+  if (segs[0] === "companies" && segs[1]) return named(segs[1]);
   for (const prefix of COMPANY_PARAM_PREFIXES) {
-    const id = segs[prefix.length];
-    if (startsWith(segs, prefix) && id && UUID_RE.test(id)) return named(id.toLowerCase());
+    if (startsWith(segs, prefix) && segs[prefix.length]) return named(segs[prefix.length]);
   }
-  // A period's status route addresses a row, while list/detail routes name the company first.
-  if (startsWith(segs, ["vat", "autopilot", "periods"]) && segs[3] && segs[4] !== "status") {
-    return named(UUID_RE.test(segs[3]) ? segs[3].toLowerCase() : null);
+  // A period's PATCH status route addresses a row. Its GET routes name the company first.
+  if (
+    startsWith(segs, ["vat", "autopilot", "periods"]) &&
+    segs[3] &&
+    !(method === "PATCH" && segs[4] === "status")
+  ) {
+    return named(segs[3]);
   }
   for (const [prefix, sqlText] of NESTED_RESOURCES) {
-    const id = segs[prefix.length];
-    if (startsWith(segs, prefix) && id && UUID_RE.test(id)) {
-      return row(await lookupCompany(sqlText, id));
-    }
+    if (!startsWith(segs, prefix) || !segs[prefix.length]) continue;
+    if (
+      (method === "POST" && route === "integrations/ecommerce/connect") ||
+      (READ_METHODS.has(method) && route === "integrations/ecommerce/transactions")
+    )
+      continue;
+    return row(sqlText, segs[prefix.length]);
   }
-  const resource = RESOURCES[segs[0]];
-  if (resource && segs[1] && UUID_RE.test(segs[1])) {
-    return row(await lookupCompany(resource, segs[1]));
-  }
+  if (segs[1] && Object.hasOwn(RESOURCES, segs[0])) return row(RESOURCES[segs[0]], segs[1]);
 
-  const fromBody = (req.body as Record<string, unknown> | undefined)?.companyId;
-  if (typeof fromBody === "string" && UUID_RE.test(fromBody)) return named(fromBody.toLowerCase());
-  const fromQuery = (req.query as Record<string, unknown> | undefined)?.companyId;
-  if (typeof fromQuery === "string" && UUID_RE.test(fromQuery)) {
-    return named(fromQuery.toLowerCase());
+  const input = {
+    body: (req.body as Record<string, unknown> | undefined)?.companyId,
+    query: (req.query as Record<string, unknown> | undefined)?.companyId,
+  };
+  const requiredSource = REQUIRED_COMPANY_INPUT.get(
+    `${method === "HEAD" ? "GET" : method} ${route}`
+  );
+  if (requiredSource && input[requiredSource] === undefined) {
+    throw new DomainError("INVALID_ID", 400, { parameter: "companyId" }, "Company ID required");
   }
-  return null;
+  const companyId = namedInput(input.body, input.query);
+  return companyId ? { companyId, source: "named" } : null;
 }
 
-/** The company a request acts on, or null if it cannot be determined. */
+function isUnresolvedTarget(err: unknown): err is DomainError {
+  return err instanceof DomainError && (err.code === "INVALID_ID" || err.code === "NOT_FOUND");
+}
+
+/** Context for downstream policy/observers, which cannot authorize or reject a resource lookup. */
 export async function resolveRequestCompany(req: Request, path: string): Promise<string | null> {
-  return (await resolveRequestCompanyWithSource(req, path))?.companyId ?? null;
+  try {
+    return (await resolveRequestCompanyWithSource(req, path))?.companyId ?? null;
+  } catch (err) {
+    if (isUnresolvedTarget(err)) return null;
+    throw err;
+  }
 }
 
 // ─── Membership ──────────────────────────────────────────────────────────
@@ -533,8 +622,8 @@ export async function companyRolePolicy(
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  const mode = rbacMode();
   try {
-    const mode = rbacMode();
     if (mode === "off") return next();
     const permissions = resolvePermission(req.method, req.path);
     if (!permissions) return next();
@@ -542,17 +631,14 @@ export async function companyRolePolicy(
     const auth = await authenticateRequest(req);
     if (!auth || "code" in auth) return next(); // route's authMiddleware answers 401
     const user = auth.user;
-    if (bypassesCompanyRoles(user)) return next();
-
     const resolved = await resolveRequestCompanyWithSource(req, req.path);
-    if (!resolved) return next();
+    if (!resolved || bypassesCompanyRoles(user)) return next();
     const { companyId } = resolved;
-    const logPath = portalInviteLogPath(req.originalUrl || req.url) ?? req.path;
 
     // Defence in depth (STEP5): a portal customer never reaches company routes. The membership
     // lookup below already finds no role for them (storage.getUserRole ignores client_portal).
     if (user.userType === "client_portal") {
-      log.info({ userId: user.id, method: req.method, path: logPath }, "Portal user denied");
+      log.info({ requestId: req.id, method: req.method }, "Portal user denied");
       res.status(403).json({
         message: "Customer portal accounts cannot use the company app",
         code: "PORTAL_USER_APP_DENIED",
@@ -569,19 +655,25 @@ export async function companyRolePolicy(
     const details = { permission: permissions[0], permissions, role, companyId };
     if (mode === "report") {
       log.warn(
-        { userId: user.id, method: req.method, path: logPath, ...details },
+        { requestId: req.id, method: req.method, permissions, role },
         "RBAC (report mode): request would be denied"
       );
       return next();
     }
-    log.info({ userId: user.id, method: req.method, path: logPath, ...details }, "RBAC denied");
+    log.info({ requestId: req.id, method: req.method, permissions, role }, "RBAC denied");
     if (!role && resolved.source === "row") {
       // Another tenant's row id: answer like a missing row (tenant-scoped 404).
-      res.status(404).json({ message: "Not found", code: "NOT_FOUND" });
-      return;
+      throw new DomainError("NOT_FOUND", 404, undefined, "Not found");
     }
     deny(res, role ? "PERMISSION_DENIED" : "COMPANY_ACCESS_DENIED", details);
   } catch (err) {
+    if (mode === "report" && isUnresolvedTarget(err)) {
+      log.warn(
+        { requestId: req.id, method: req.method, code: err.code },
+        "RBAC (report mode): target could not be resolved"
+      );
+      return next();
+    }
     next(err);
   }
 }
@@ -598,17 +690,21 @@ export function requirePermission(...permissions: [Permission, ...Permission[]])
         res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
         return;
       }
-      if (bypassesCompanyRoles(req.user)) return next();
-      const raw =
-        req.params?.companyId ??
-        (req.body as Record<string, unknown> | undefined)?.companyId ??
-        (req.query as Record<string, unknown> | undefined)?.companyId;
-      if (typeof raw !== "string" || !UUID_RE.test(raw)) {
+      const pathCompanyId = req.params?.companyId;
+      const companyId =
+        pathCompanyId === undefined
+          ? namedInput(
+              (req.body as Record<string, unknown> | undefined)?.companyId,
+              (req.query as Record<string, unknown> | undefined)?.companyId
+            )
+          : requireId(pathCompanyId, "companyId");
+      if (!companyId) {
         res.status(400).json({ message: "Company ID required", code: "COMPANY_REQUIRED" });
         return;
       }
-      const role = await getCompanyRole(req.user.id, raw.toLowerCase());
-      if (!role) return deny(res, "COMPANY_ACCESS_DENIED", { companyId: raw });
+      if (bypassesCompanyRoles(req.user)) return next();
+      const role = await getCompanyRole(req.user.id, companyId);
+      if (!role) return deny(res, "COMPANY_ACCESS_DENIED", { companyId });
       if (!roleHasAnyPermission(role, permissions)) {
         return deny(res, "PERMISSION_DENIED", { permission: permissions[0], permissions, role });
       }
@@ -773,7 +869,7 @@ export async function assertScopedCompanyPermission(
   permission: Permission
 ): Promise<void> {
   if (!user) throw new DomainError("AUTH_REQUIRED", 401);
-  if (!companyId || !UUID_RE.test(companyId)) throw new DomainError("COMPANY_REQUIRED", 400);
+  if (!companyId || !zUuid.safeParse(companyId).success) throw new DomainError("COMPANY_REQUIRED", 400);
   const failure = await scopedCompanyPermissionFailure(user, companyId, permission);
   if (!failure) return;
   const details = { companyId, permission, role: "role" in failure ? failure.role : null };

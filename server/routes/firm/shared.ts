@@ -67,12 +67,12 @@ export async function denyClientAccess(res: Response, companyId: string): Promis
 
 export async function seedChartOfAccounts(
   companyId: string,
-  tx?: Pick<AppDatabase, "select" | "insert">
+  exec: Pick<AppDatabase, "select" | "insert">
 ): Promise<void> {
-  const hasAccounts = await storage.companyHasAccounts(companyId, tx);
+  const hasAccounts = await storage.companyHasAccounts(companyId, exec);
   if (hasAccounts) return;
   const defaultAccounts = createDefaultAccountsForCompany(companyId);
-  await storage.createBulkAccounts(defaultAccounts, tx);
+  await storage.createBulkAccounts(defaultAccounts, exec);
 }
 
 export interface ClientStats {
@@ -587,13 +587,13 @@ export async function upsertClientServicePlan(
   companyId: string,
   userId: string,
   services: readonly ClientServiceCode[],
-  conn: Pick<AppDatabase, "select" | "insert" | "update"> = db
+  exec: Pick<AppDatabase, "select" | "insert" | "update"> = db
 ): Promise<ClientServicePlan> {
   const normalizedServices = normalizeClientServices(services);
   const servicePayload = JSON.stringify(normalizedServices);
   const engagementType = engagementTypeForServices(normalizedServices);
 
-  const [existing] = await conn
+  const [existing] = await exec
     .select()
     .from(engagements)
     .where(and(eq(engagements.companyId, companyId), eq(engagements.status, "active")))
@@ -601,7 +601,7 @@ export async function upsertClientServicePlan(
     .limit(1);
 
   if (existing) {
-    const [updated] = await conn
+    const [updated] = await exec
       .update(engagements)
       .set({
         engagementType,
@@ -614,7 +614,7 @@ export async function upsertClientServicePlan(
     return servicePlanFromEngagement(updated as EngagementSummaryRow);
   }
 
-  const [created] = await conn
+  const [created] = await exec
     .insert(engagements)
     .values({
       companyId,
