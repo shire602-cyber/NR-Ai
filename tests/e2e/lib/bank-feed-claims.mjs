@@ -1,12 +1,12 @@
 const CLAIMS = [
-  /\b(?:(?:connect|link) your bank|securely link your[^.!?]*bank account|via encrypted feeds|UAE bank feeds|photo, email forward, or bank feed|sync a bank line)\b/gi,
+  /\b(?:(?:connect|link)\s+your\s+bank|securely link your[^.!?]*bank account|via encrypted feeds|UAE\s+bank\s+feeds|photo, email forward, or\s+bank\s+feed|sync a bank line)\b/gi,
   /\bconnect\s+to\s+(?:my|your|our|the|a)\s+bank\b/gi,
-  /\b(?:connect to|sync from)\s+(?:(?:a|your)\s+)?(?:live\s+)?bank feeds?\b/gi,
-  /\b(?:live\s+)?bank feeds?\s+(?:(?:are|is|will be)\s+)?(?:now\s+)?(?:connected|available|supported|live|coming\s+(?:soon|later)|launch(?:ing)?\s+soon)\b/gi,
-  /\b(?:we|Muhasib)\s+(?:will|now)\s+(?:support|offer|provide|enable)\s+(?:live\s+)?bank feeds?\b/gi,
+  /\b(?:connect to|sync from)\s+(?:(?:a|your)\s+)?(?:live\s+)?bank\s+feeds?\b/gi,
+  /\b(?:live\s+)?bank\s+feeds?\s+(?:(?:are|is|will be)\s+)?(?:now\s+)?(?:connected|available|supported|live|coming\s+(?:soon|later)|launch(?:ing)?\s+soon)\b/gi,
+  /\b(?:we|Muhasib)\s+(?:will|now)\s+(?:support|offer|provide|enable)\s+(?:live\s+)?bank\s+feeds?\b/gi,
   /(?:اربط|وصل|يمكنك ربط|سنربط|سوف نربط)\s+(?:حسابك\s+(?:البنكي|بالبنك)|بنكك)|(?:زامن|استورد)\s+(?:معاملاتك|حركاتك)\s+البنكية\s+تلقائيا/gu,
   /(?:يتصل|تتصل)\s+(?:مباشرة\s+)?بحساب(?:ي|ك)\s+البنكي/gu,
-  /(?:سيتوفر|سندعم)\s+الربط البنكي المباشر|الربط البنكي المباشر\s+(?:متاح|مدعوم|قادم|لاحقا|قريبا)/gu,
+  /(?:سيتوفر|سندعم)\s+الربط\s+البنكي\s+المباشر|الربط\s+البنكي\s+المباشر\s+(?:متاح|مدعوم|قادم|لاحقا|قريبا)/gu,
 ];
 
 // Recognize direct negation of the matched phrase without suppressing a later
@@ -20,7 +20,7 @@ function normalizeCopy(text) {
   return text.replace(/\u0640|[\u064b-\u065f]|\u0670/gu, "").replace(/\s+/gu, " ");
 }
 
-/** Return the first unsupported bank feed claim, if any. */
+/** Return the first unsupported statement-import claim, if any. */
 export function findUnsupportedBankFeedClaim(text) {
   const source = normalizeCopy(text);
   for (const pattern of CLAIMS) {

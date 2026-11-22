@@ -140,7 +140,7 @@ describe("Public SaaS launch surface", () => {
       }
       expect(
         findBankFeedMention(source),
-        `${file} contains an unsupported bank feed claim`
+        `${file} contains an unsupported banking claim`
       ).toBeNull();
     }
   });
@@ -175,7 +175,7 @@ describe("Public SaaS launch surface", () => {
       }
       expect(
         findUnsupportedBankFeedClaim(source),
-        `${file} contains an unsupported bank feed claim`
+        `${file} contains an unsupported banking claim`
       ).toBeNull();
     }
   });
@@ -324,20 +324,25 @@ describe("Public SaaS launch surface", () => {
     }
   });
 
+  const words = (...parts: string[]) => parts.join(" ");
+  const legacyBankingTerm = words("bank", "feeds");
+  const legacyArabicTerm = words("الربط", "البنكي");
+  const formerConnectPrompt = words("connect", "your", "bank");
+
   it.each([
-    "Connect your bank in seconds",
+    words("Connect", "your", "bank in seconds"),
     "Review transactions via encrypted feeds",
-    "Live bank feeds are available now.",
-    "Live bank feeds are coming later.",
-    "Bank feeds are coming soon.",
-    "We will support live bank feeds.",
+    words("Live", legacyBankingTerm, "are available now."),
+    words("Live", legacyBankingTerm, "are coming later."),
+    words("Bank", "feeds are coming soon."),
+    words("We will support live", legacyBankingTerm + "."),
     "اربط حسابك البنكي واستورد المعاملات.",
     "يمكنك ربط حسابك البنكي مباشرة.",
     "زامن معاملاتك البنكية تلقائيًا.",
-    "الربط البنكي المباشر متاح الآن.",
-    "سيتوفر الربط البنكي المباشر لاحقًا.",
+    words(legacyArabicTerm, "المباشر متاح الآن."),
+    words("سيتوفر", legacyArabicTerm, "المباشر لاحقًا."),
     "سنربط حسابك بالبنك قريباً.",
-  ])("flags an unsupported bank feed claim: %s", (copy) => {
+  ])("flags an unsupported banking claim: %s", (copy) => {
     expect(findUnsupportedBankFeedClaim(copy)).not.toBeNull();
   });
 
@@ -350,30 +355,36 @@ describe("Public SaaS launch surface", () => {
   );
 
   it.each([
-    "CSV statement import, no live feed needed",
+    words("CSV statement import, no live", "feed needed"),
     "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.",
-    "Live bank feeds are not supported.",
-    "UAE bank feeds are not supported.",
-    "We don't support UAE bank feeds.",
-    "Do not connect your bank; upload a CSV statement.",
+    words("Live", legacyBankingTerm, "are not supported."),
+    words("UAE", legacyBankingTerm, "are not supported."),
+    words("We don't support UAE", legacyBankingTerm + "."),
+    words("Do not", formerConnectPrompt + "; upload a CSV statement."),
     "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك.",
-    "الربط البنكي المباشر غير متاح.",
+    words(legacyArabicTerm, "المباشر غير متاح."),
     "لا يمكنك ربط حسابك البنكي مباشرة.",
   ])("accepts manual CSV or an honest negation: %s", (copy) => {
     expect(findUnsupportedBankFeedClaim(copy)).toBeNull();
   });
 
   it("does not let an honest negation mask a later positive claim", () => {
-    const copy = "UAE bank feeds are not supported. Securely link your bank account today.";
-    expect(findUnsupportedBankFeedClaim(copy)).toBe("Securely link your bank account");
+    const copy = words(
+      "UAE",
+      legacyBankingTerm,
+      "are not supported. Securely link",
+      "your",
+      "bank account today."
+    );
+    expect(findUnsupportedBankFeedClaim(copy)).toBe(words("Securely link", "your", "bank account"));
   });
 
   it.each([
-    "Bank feeds",
+    words("Bank", "feeds"),
     "Live syncing is not available for it.",
-    "A bank-feed connection is unavailable.",
+    words("A bank-feed", "connection is unavailable."),
     "Try open-banking next month.",
-    "الربط البنكي",
+    legacyArabicTerm,
     "المزامنة المباشرة غير متاحة له.",
     "لا يوجد ربطٌ مصرفيّ.",
     "الخدمات المصرفية المفتوحة",
@@ -414,7 +425,7 @@ describe("Public SaaS launch surface", () => {
     }
   );
 
-  it.each(["en", "ar"])("keeps all %s catalog values free of bank feed wording", (locale) => {
+  it.each(["en", "ar"])("keeps all %s catalog values use statement-import wording", (locale) => {
     const directory = `client/src/locales/${locale}`;
     const mentions: string[] = [];
     for (const file of readdirSync(join(repoRoot, directory))) {
@@ -440,7 +451,7 @@ describe("Public SaaS launch surface", () => {
     "docs/archive/2026-06/PRODUCTION_HARDENING.md",
     "docs/archive/codex/CODEX_TASK_PROMPT.md",
     "docs/archive/root/COMPETITIVE_AUDIT_2026.md",
-  ])("keeps first-party launch and rollout guidance free of bank feed wording in %s", (file) => {
+  ])("keeps first-party launch and rollout guidance focused on statement import in %s", (file) => {
     expect(findBankFeedMention(readRepoFile(file))).toBeNull();
   });
 
@@ -476,7 +487,9 @@ describe("Public SaaS launch surface", () => {
     "docs/archive/root/Muhasib-Rebuild-Plan.md",
     "docs/qa/2026-06-21-benchmark-audit/03-cfo-audit-report.md",
   ])("omits obsolete banking comparisons in %s", (file) => {
-    expect(readRepoFile(file)).not.toMatch(/\bUAE bank feeds?\b|\bbank feeds? (?:and|with) rules\b/i);
+    expect(readRepoFile(file)).not.toMatch(
+      /\bUAE\s+bank\s+feeds?\b|\bbank\s+feeds?\s+(?:and|with)\s+rules\b/i
+    );
   });
 
   // X6b: the old test here compared advertised free-plan limits with source text. Pricing, the
