@@ -1080,11 +1080,12 @@ async function main() {
     const companyId = companies?.[0]?.id;
 
     const status = await (await page.request.get(`${BASE}/api/admin/integration-status`)).json();
-    const keys = (status?.integrations ?? []).map((i) => i.key).sort();
+    const integrations = status?.integrations ?? [];
+    const keys = integrations.map((i) => i.key).sort();
     for (const expected of [
       "apiKeys",
+      "bankStatementUpload",
       "email",
-      "openBanking",
       "push",
       "stripe",
       "tokenEncryption",
@@ -1094,6 +1095,11 @@ async function main() {
         await fail("integration-status", { detail: `missing ${expected} in ${keys.join(",")}` });
         break;
       }
+    }
+
+    const bankUpload = integrations.find((integration) => integration.key === "bankStatementUpload");
+    if (!bankUpload?.configured || bankUpload.requiredEnv?.length || keys.includes("openBanking")) {
+      await fail("integration-status-bank-csv", { detail: "expected CSV upload without setup" });
     }
 
     // API key lifecycle: create returns the raw key exactly once.
