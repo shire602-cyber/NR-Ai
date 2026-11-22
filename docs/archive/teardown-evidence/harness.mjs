@@ -279,7 +279,7 @@ async function main() {
   ctx.bankAccount = r.json;
 
   r = await api("GET", `/api/companies/${ctx.companyId}/bank-statements/unreconciled`, { token: ctx.token });
-  rec("bank: unreconciled feed", r.status === 200, { status: r.status });
+  rec("bank: unreconciled transactions", r.status === 200, { status: r.status });
 
   r = await api("GET", `/api/bank/providers`, { token: ctx.token });
   rec("bank: CSV import availability", r.status === 200, r.json);

@@ -17,9 +17,8 @@ import { getSuggestionsForTransaction } from "../services/auto-reconcile.service
 import { createLogger } from "../config/logger";
 import { createAndEmitNotification } from "../services/socket.service";
 import { notificationCopy } from "../../shared/server-copy";
+import { bankStatementCopy, statementRecognized } from "../../shared/bank-statement-copy";
 import {
-  BANK_FORMAT_LABELS,
-  importFormatLabel,
   parseBankCsvText,
   parseBankStatement,
   toLegacyTransactions,
@@ -78,8 +77,8 @@ const log = createLogger("bank-statements");
 const columnIndex = z.number().int().min(0).max(200).nullable().optional();
 
 const statementSourceShape = {
-  csvContent: z.string().min(1, "csvContent (raw statement text) is required").optional(),
-  fileBase64: z.string().min(1).optional(),
+  csvContent: z.string().optional(),
+  fileBase64: z.string().optional(),
   fileName: z.string().max(255).optional(),
   delimiter: z.enum([",", ";", "\t", "|"]).optional(),
   decimalSeparator: z.enum([".", ","]).optional(),
@@ -114,10 +113,9 @@ const statementSourceShape = {
 };
 
 const hasStatementSource = (v: { csvContent?: string; fileBase64?: string }) =>
-  Boolean(v.csvContent || v.fileBase64);
+  Boolean(v.csvContent?.trim() || v.fileBase64?.trim());
 const statementSourceMessage = {
-  message: "csvContent (raw statement text) or fileBase64 (XLSX/other file) is required",
-  path: ["csvContent"],
+  message: bankStatementCopy.en,
 };
 
 const bankStatementImportSchema = z
@@ -162,7 +160,7 @@ type StatementRequestBody = {
 };
 
 function statementBytes(body: StatementRequestBody): Buffer {
-  return body.fileBase64
+  return body.fileBase64?.trim()
     ? Buffer.from(body.fileBase64, "base64")
     : Buffer.from(body.csvContent ?? "", "utf8");
 }
@@ -403,10 +401,11 @@ export function registerBankStatementRoutes(app: Express) {
       }
 
       const errorRows = parsed.rows.filter((r) => r.errors.length > 0);
+      const validRows = parsed.rows.length - errorRows.length;
       res.json({
         kind: parsed.kind,
         detectedFormat: parsed.format,
-        detectedFormatLabel: BANK_FORMAT_LABELS[parsed.format],
+        detectedFormatLabel: validRows > 0 ? statementRecognized.en : null,
         delimiter: parsed.delimiter,
         decimalSeparator: parsed.decimalSeparator,
         dateOrder: parsed.dateOrder,
@@ -417,7 +416,7 @@ export function registerBankStatementRoutes(app: Express) {
         accountHint: parsed.accountHint,
         currency: parsed.currency,
         totalRows: parsed.rows.length,
-        validRows: parsed.rows.length - errorRows.length,
+        validRows,
         errorRows: errorRows.length,
         ignoredRows: parsed.ignored.length,
         sampleRows: parsed.rows.slice(0, 10).map((r) => ({
@@ -521,13 +520,10 @@ export function registerBankStatementRoutes(app: Express) {
             : skippedDuplicates > 0
               ? "notification.bankStatementImportedSkipped.message"
               : "notification.bankStatementImported.message",
-          // Sweep: the raw format id ("generic") showed in the Arabic notification; the
-          // label is a proper name or a file-format acronym.
           {
             count: created.length,
             skipped: skippedDuplicates,
             bank: bankAccount.bankName,
-            format: importFormatLabel(format),
           }
         ),
         priority: "normal",

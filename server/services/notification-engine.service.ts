@@ -24,9 +24,10 @@ import {
 import { createLogger } from "../config/logger";
 import { onDomainEvent, type DomainEvent } from "../platform/domain-events";
 import { listJobs, registerJob } from "../platform/job-registry";
-import { escapeHtml, renderBilingualEmail, sendEmail } from "./email.service";
+import { sendEmail } from "./email.service";
+import { renderNotificationEmail } from "./notification-email-copy";
 import { isCapabilityLive } from "../../shared/capabilities";
-import { notificationCopy, renderServerCopy } from "../../shared/server-copy";
+import { normalizeNotificationCopy, notificationCopy, renderServerCopy } from "../../shared/server-copy";
 import { customerVisibleNotification } from "../storage/notification-visibility";
 import { deliverOutboxMessage, enqueueEmail } from "../outbox/outbox";
 import { DIGEST_WINDOW_MS, renderNotificationDigest } from "./notification-digest";
@@ -238,17 +239,9 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
       }
     }
     if (ch.email && user.email) {
-      const html = renderBilingualEmail(
-        {
-          brandName: "Muhasib.ai",
-          heading: { en: input.title, ar: input.title },
-          paragraphs: { en: [escapeHtml(input.message)], ar: [] },
-          footer: "Muhasib.ai notifications — manage them under Settings → Notifications",
-        },
-        "en"
-      );
-      const r = await sendEmail(user.email, input.title, input.message, {
-        html,
+      const { title, message } = normalizeNotificationCopy(input);
+      const r = await sendEmail(user.email, title, message, {
+        html: renderNotificationEmail(title, message),
         companyId: input.companyId,
         category: "notification",
         relatedEntityType: input.relatedEntityType ?? null,

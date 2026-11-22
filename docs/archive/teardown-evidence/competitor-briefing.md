@@ -98,7 +98,7 @@ B2C out of scope pending further decision. **Penalties (Cabinet Decision 106/202
 
 **Finanshels** — services firm on a software cost curve: *"AI drafts. A human signs."* FTA-registered tax agency; plugs into QBO/Xero/Zoho. 7,000+ UAE businesses self-reported. **Funding UNVERIFIED.**
 
-**Wio Business** — a bank, functionally competitive: 120,000+ business clients (*soft source*); AED 99/249 per month; built-in invoicing and payment links; its own banking API with **Zoho Books, Fiskl, Wafeq and Xero** as partners. **Wio is the single most important integration partner in this market.** **Mashreq NeoBiz** is the highest-leverage GTM slot for Zoho Books.
+**Wio Business** — a bank, functionally competitive: 120,000+ business clients (*soft source*); AED 99/249 per month; built-in invoicing and payment links. [Historical comparison excerpt redacted.] **Mashreq NeoBiz** is the highest-leverage GTM slot for Zoho Books.
 
 **Also:** SAP (ASP #30, enterprise) · Focus Softnet (largest Dubai-HQ ERP, **not an ASP**, TASR expired Apr 2024) · Daftra/IZAM (Arabic-first, TASR to May 2027, **disputed false ASP claim**) · Microsoft D365 BC (partner Techventures is ASP #39) · ERPNext/Frappe (Corner 1 only) · Bayzat (owns the UAE payroll/WPS layer — partner, not competitor) · **Rewaa** (Saudi, $45m Series B — likeliest future entrant, **UNVERIFIED**). **Ignore:** Sage (TASR expired 2020), Zybra (Indian GST), Elate/Emerald/Peniel/QuickDice/Naqood (SEO reseller shops).
 

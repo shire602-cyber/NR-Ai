@@ -15,6 +15,7 @@ import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy"
 
 let container: HTMLDivElement;
 let root: Root;
+let validRows = 1;
 
 const json = (body: unknown) =>
   new Response(JSON.stringify(body), {
@@ -34,13 +35,37 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  validRows = 1;
+  localStorage.setItem("muhasib_auth_hint", "1");
   window.history.pushState({}, "", "/bank-reconciliation?import=1");
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : String(input);
       if (url.includes("/api/csrf-token")) return json({ csrfToken: "x" });
+      if (url.endsWith("/bank/providers")) return json({ isConfigured: false, statuses: [] });
       if (/\/api\/companies$/.test(url)) return json([{ id: "c-1", name: "شركة الواحة" }]);
+      if (url.endsWith("/bank-statements/preview"))
+        return json({
+          kind: "camt053",
+          detectedFormat: "camt053",
+          detectedFormatLabel: "CAMT.053",
+          headers: [],
+          totalRows: 1,
+          validRows,
+          errorRows: 1 - validRows,
+          warnings: [],
+          sampleRows: [
+            {
+              rowIndex: 1,
+              date: "2026-11-20",
+              description: "Sample transaction",
+              debit: 10,
+              credit: 0,
+              errors: [],
+            },
+          ],
+        });
       if (url.endsWith("/bank-accounts"))
         return json([
           {
@@ -67,6 +92,7 @@ afterEach(async () => {
   container.remove();
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
+  localStorage.removeItem("muhasib_auth_hint");
   const { useI18n } = await import("../../client/src/lib/i18n");
   useI18n.getState().setLocale("en");
 });
@@ -78,13 +104,13 @@ async function mountPage(locale: "en" | "ar") {
   queryClient.clear();
   const { ActiveCompanyProvider } =
     await import("../../client/src/components/ActiveCompanyProvider");
-  const { default: BankReconciliation } = await import("../../client/src/pages/BankReconciliation");
+  const { default: Page } = await import("../../client/src/pages/BankReconciliation");
   await act(async () => {
     root.render(
       createElement(
         QueryClientProvider,
         { client: queryClient },
-        createElement(ActiveCompanyProvider, null, createElement(BankReconciliation))
+        createElement(ActiveCompanyProvider, null, createElement(Page))
       )
     );
   });
@@ -100,6 +126,16 @@ const retiredLabels = [
   "مزامنة الآن",
 ];
 
+async function chooseStatement() {
+  const file = new File(["<Document/>"], "statement.xml");
+  Object.defineProperty(file, "arrayBuffer", {
+    value: async () => new Uint8Array([60, 62]).buffer,
+  });
+  const input = dialog()?.querySelector('[data-testid="input-bank-statement-file"]');
+  expect(input).not.toBeNull();
+  Object.defineProperty(input, "files", { value: [file] });
+  await act(async () => input!.dispatchEvent(new Event("change", { bubbles: true })));
+}
 describe("bank statement import dialog", () => {
   it("in Arabic: shows the approved CSV guidance and an Arabic Import button", async () => {
     await mountPage("ar");
@@ -140,6 +176,40 @@ describe("bank statement import dialog", () => {
       "Import"
     );
   });
+
+  it.each([
+    ["en", "Statement recognized", "ltr"],
+    ["ar", "تم التعرّف على كشف الحساب", "rtl"],
+  ] as const)(
+    "shows a localized label for a populated statement preview in %s",
+    async (locale, label, dir) => {
+      await mountPage(locale);
+      await chooseStatement();
+      await vi.waitFor(() => {
+        const mapper = dialog()?.querySelector('[data-testid="panel-statement-mapper"]');
+        expect(mapper?.getAttribute("dir")).toBe(dir);
+        expect(mapper?.querySelector('[data-testid="statement-recognized"]')?.textContent).toBe(
+          label
+        );
+        expect(mapper?.textContent).toContain("Sample transaction");
+        expect(mapper?.textContent).not.toMatch(/MT940|CAMT\.053|OFX|QFX/);
+      });
+    }
+  );
+
+  it.each(["en", "ar"] as const)(
+    "shows row errors without a recognition badge in %s",
+    async (locale) => {
+      validRows = 0;
+      await mountPage(locale);
+      await chooseStatement();
+      await vi.waitFor(() => {
+        const mapper = dialog()?.querySelector('[data-testid="panel-statement-mapper"]');
+        expect(mapper).not.toBeNull();
+        expect(mapper?.querySelector('[data-testid="statement-recognized"]')).toBeNull();
+      });
+    }
+  );
 
   it("lets the dialog content shrink to a phone (single minmax(0,1fr) column, no min-content growth)", async () => {
     await mountPage("en");

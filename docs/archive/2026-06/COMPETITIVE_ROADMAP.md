@@ -47,6 +47,10 @@ sold to serious UAE businesses by 2027.** This is the highest-leverage investmen
 - **Price + unlimited users** — match Wafeq's unlimited-users model, undercut Zoho's
   per-user creep.
 
+## Statement reconciliation
+
+Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
+
 ## Phased roadmap
 
 ### P0 — Stop the bleeding (correctness & security) — weeks 0–6

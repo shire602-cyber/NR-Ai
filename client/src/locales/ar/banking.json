@@ -173,6 +173,7 @@
   "banking.imports.sourceImport": "استيراد {format}",
   "banking.import.detected": "تم اكتشاف",
   "banking.import.genericFormat": "عام (عربي/إنجليزي)",
+  "banking.import.statementRecognized": "تم التعرّف على كشف الحساب",
   "banking.import.reviewTitle": "مراجعة قبل الاستيراد",
   "banking.import.rows": "صفوف",
   "banking.import.valid": "صالحة",

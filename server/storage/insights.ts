@@ -225,7 +225,7 @@ export class InsightStorage extends OperationsStorage {
       .insert(ecommerceIntegrations)
       .values({
         ...insertIntegration,
-        // Same at-rest encryption as bank connection tokens.
+        // Use the shared at-rest encryption for external processor tokens.
         apiKey: encryptSecret(insertIntegration.apiKey ?? null),
         accessToken: encryptSecret(insertIntegration.accessToken ?? null),
         refreshToken: encryptSecret(insertIntegration.refreshToken ?? null),

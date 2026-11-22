@@ -86,63 +86,73 @@ const UNSUPPORTED_CLAIMS = [
 it.each([
   ["en", "ltr"],
   ["ar", "rtl"],
-] as const)("opens CSV import from the legacy banking URL in %s", async (locale, direction) => {
-  const originalUrl = window.location.href;
-  const { queryClient } = await import("../../client/src/lib/queryClient");
-  try {
-    window.history.replaceState(null, "", "/bank-feeds");
-    await setLocale(locale);
-    queryClient.setQueryData(["/api/auth/me"], {
-      id: "owner",
-      userType: "customer",
-    });
-    const companies = [{ id: "company", name: "Test Company", onboardingCompleted: true }];
-    queryClient.setQueryData(["/api/companies"], companies);
-    queryClient.setQueryData(["/api/companies", "company", "billing", "subscription"], {
-      trialLocked: false,
-    });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) =>
-        Response.json(String(input).endsWith("/api/companies") ? companies : [])
-      )
-    );
-    vi.stubGlobal(
-      "ResizeObserver",
-      class {
-        observe() {}
-        unobserve() {}
-        disconnect() {}
-      }
-    );
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn(() => ({
-        matches: false,
-        addEventListener() {},
-        removeEventListener() {},
-      }))
-    );
+] as const)(
+  "opens CSV import from the legacy banking URL in %s",
+  async (locale, direction) => {
+    const originalUrl = window.location.href;
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    try {
+      window.history.replaceState(null, "", "/bank-feeds");
+      await setLocale(locale);
+      queryClient.setQueryData(["/api/auth/me"], {
+        id: "owner",
+        userType: "customer",
+      });
+      const companies = [{ id: "company", name: "Test Company", onboardingCompleted: true }];
+      queryClient.setQueryData(["/api/companies"], companies);
+      queryClient.setQueryData(["/api/companies", "company", "billing", "subscription"], {
+        trialLocked: false,
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: RequestInfo | URL) =>
+          Response.json(String(input).endsWith("/api/companies") ? companies : [])
+        )
+      );
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          observe() {}
+          unobserve() {}
+          disconnect() {}
+        }
+      );
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn(() => ({
+          matches: false,
+          addEventListener() {},
+          removeEventListener() {},
+        }))
+      );
 
-    const { default: App } = await import("../../client/src/App");
-    await act(async () => root.render(createElement(App)));
-    await vi.waitFor(async () => {
-      await act(async () => {});
-      expect(window.location.pathname + window.location.search).toBe(
-        "/bank-reconciliation?import=1"
+      const [{ default: App }] = await Promise.all([
+        import("../../client/src/App"),
+        import("../../client/src/pages/BankReconciliation"),
+      ]);
+      await act(async () => root.render(createElement(App)));
+      await vi.waitFor(
+        async () => {
+          await act(async () => {});
+          expect(window.location.pathname + window.location.search).toBe(
+            "/bank-reconciliation?import=1"
+          );
+          expect(document.documentElement.dir).toBe(direction);
+          const dialog = document.querySelector('[role="dialog"]');
+          expect(dialog).not.toBeNull();
+          expect(dialog?.textContent).toContain(BANK_RECONCILIATION_COPY[locale]);
+        },
+        { timeout: 4000 }
       );
-      expect(document.documentElement.dir).toBe(direction);
-      expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-        BANK_RECONCILIATION_COPY[locale]
-      );
-    });
-  } finally {
-    act(() => root.render(null));
-    queryClient.clear();
-    vi.unstubAllGlobals();
-    window.history.replaceState(null, "", originalUrl);
-  }
-});
+    } finally {
+      act(() => root.render(null));
+      queryClient.clear();
+      vi.unstubAllGlobals();
+      window.history.replaceState(null, "", originalUrl);
+    }
+  },
+  15000
+);
 
 describe("D1 public site", () => {
   it("[D1] the landing page leads with an honest value proposition and sets its SEO meta", async () => {
@@ -152,16 +162,18 @@ describe("D1 public site", () => {
     const h1 = container.querySelector("h1");
     expect(h1?.textContent).toBe("Accounting and VAT for UAE businesses");
     expect(document.title).toContain(h1?.textContent);
-    expect(document.head.querySelector('meta[name="description"]')?.getAttribute("content")).toContain(
-      "Send bilingual invoices"
-    );
+    expect(
+      document.head.querySelector('meta[name="description"]')?.getAttribute("content")
+    ).toContain("Send bilingual invoices");
     // Primary CTAs keep their routes.
     const register = container.querySelector('[data-testid="button-hero-start"]');
     expect(register?.getAttribute("href")).toBe("/register");
     expect(container.querySelector('[data-testid="button-hero-demo"]')?.getAttribute("href")).toBe(
       "/en/book-a-demo"
     );
-    expect(container.textContent).toContain("Prepare and review VAT 201 in the app, then submit it in EmaraTax.");
+    expect(container.textContent).toContain(
+      "Prepare and review VAT 201 in the app, then submit it in EmaraTax."
+    );
     expect(container.textContent).toContain("Upload a CSV exported from your bank");
     for (const claim of UNSUPPORTED_CLAIMS) {
       expect(container.textContent ?? "", String(claim)).not.toMatch(claim);

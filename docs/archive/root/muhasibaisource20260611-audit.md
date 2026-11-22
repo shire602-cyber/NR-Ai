@@ -106,7 +106,7 @@ Strong foundations observed:
 - Password reset tokens are hashed in the database.
 - Login rate limiting is scoped to credential paths.
 - Company-access middleware exists and is covered by tests.
-- Bank connection tokens are encrypted via AES-256-GCM in `secret-vault.ts`.
+- Stored financial-data authorization tokens are encrypted via AES-256-GCM in `secret-vault.ts`.
 - Historical migration backdoor accounts are revoked by migration 0051 and new
   bcrypt/user-row seed patterns are blocked by `check:migrations`.
 
@@ -208,7 +208,7 @@ Required mitigation:
 
 ### P2 - Secrets Are Not Uniformly Vaulted
 
-Bank connections use `encryptSecret`/`decryptSecret`. However, e-commerce
+Stored financial-data authorization tokens use `encryptSecret`/`decryptSecret`. However, e-commerce
 integration fields such as `apiKey`, `accessToken`, `refreshToken`, and
 `webhookSecret` are stored through `analytics.routes.ts`/storage without clear
 encryption in the inspected code.
@@ -363,7 +363,7 @@ ecosystem scale and avoids fighting Digits on pure AI-native ledger automation.
 5. Add `prettier` and make `format:check` pass.
 6. Make lint exit 0; warnings can be tracked separately, but errors must be gone.
 7. Implement actual production password reset email delivery.
-8. Encrypt every credential-bearing DB column, not only bank connections.
+8. Encrypt every credential-bearing DB column, including stored financial-data authorization tokens.
 9. Implement UAE e-invoicing/PINT AE validation and ASP adapter.
 10. Add or integrate direct EmaraTax VAT filing if the goal is to beat Zoho in UAE compliance.
 11. Verify the bank reconciliation workflow. Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.

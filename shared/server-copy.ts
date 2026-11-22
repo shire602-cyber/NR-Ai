@@ -65,6 +65,19 @@ export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.aiDraftsReview.title", "AI draft journal entries to review: {count}"),
 ];
 
+// Duplicate notices are more specific than the normal import completion message.
+const STATEMENT_IMPORT_MESSAGES = [
+  T(
+    "notification.bankStatementImportedSkipped.message",
+    "{count} transaction(s) imported[ from {bank}]; {skipped} already imported"
+  ),
+  T(
+    "notification.bankStatementNothingNew.message",
+    "No new transactions[ from {bank}]; {skipped} already imported"
+  ),
+  T("notification.bankStatementImported.message", "{count} transaction(s) imported[ from {bank}]"),
+];
+
 /** Notification messages, most specific first. `prefix` messages carry trailing catalog text. */
 export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   T(
@@ -109,19 +122,7 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
     "notification.whatsappLogged.message",
     "WhatsApp draft logged for {phone}; no provider delivery occurred."
   ),
-  // Step 1 / F4: re-imports say what was skipped; the Arabic catalog entries use ICU plurals.
-  T(
-    "notification.bankStatementImportedSkipped.message",
-    "{count} transaction(s) imported from {bank} ({format} format); {skipped} already imported"
-  ),
-  T(
-    "notification.bankStatementNothingNew.message",
-    "No new transactions from {bank} ({format} format); {skipped} already imported"
-  ),
-  T(
-    "notification.bankStatementImported.message",
-    "{count} transaction(s) imported from {bank} ({format} format)"
-  ),
+  ...STATEMENT_IMPORT_MESSAGES,
   T(
     "notification.receiptUploadedUnknown.message",
     "New receipt from unknown merchant[ for {amount}]"
@@ -340,6 +341,18 @@ export interface NotificationCopyDescriptor {
   messageParams: Record<string, string>;
 }
 
+// Earlier renderers appended these file or parser-profile labels after the bank's name.
+const LEGACY_STATEMENT_FORMAT_SUFFIX =
+  / \((?:CSV|XLSX|MT940|CAMT\.?053|OFX(?:\/QFX)?|QFX|Generic(?: \(Arabic\/English\))?|Emirates ?NBD|ADCB|FAB|Mashreq(?: ?Neo)?|RAKBANK|CBD|Commercial Bank of Dubai|Wio) format\)(?=(?:; \d+ already imported)?$)/i;
+
+function legacyStatementImportCopy(n: { title: string; message: string }): CopyDescriptor | null {
+  if (!/^Bank statement imported$/i.test(n.title)) return null;
+  const withoutFormat = n.message.replace(LEGACY_STATEMENT_FORMAT_SUFFIX, "");
+  if (withoutFormat === n.message) return null;
+  const wording = withoutFormat.replace(/ from[ \t]+(?=(?:; \d+ already imported)?$)/i, "");
+  return parseServerCopy(wording, STATEMENT_IMPORT_MESSAGES);
+}
+
 /** Keys + params for a stored notification (old or new rows alike). */
 export function describeNotificationCopy(n: {
   title: string;
@@ -349,10 +362,12 @@ export function describeNotificationCopy(n: {
     ...NOTIFICATION_TITLE_TEMPLATES,
     ...LEGACY_NOTIFICATION_TITLE_TEMPLATES,
   ]);
-  const message = parseServerCopy(n.message, [
-    ...NOTIFICATION_MESSAGE_TEMPLATES,
-    ...LEGACY_NOTIFICATION_MESSAGE_TEMPLATES,
-  ]);
+  const message =
+    legacyStatementImportCopy(n) ??
+    parseServerCopy(n.message, [
+      ...NOTIFICATION_MESSAGE_TEMPLATES,
+      ...LEGACY_NOTIFICATION_MESSAGE_TEMPLATES,
+    ]);
   return {
     titleKey: title?.key ?? null,
     titleParams: title?.params ?? {},
@@ -1474,11 +1489,16 @@ export function notificationCopy(
   };
 }
 
+export function normalizeNotificationCopy<T extends { title: string; message: string }>(n: T): T {
+  const legacy = legacyStatementImportCopy(n);
+  return legacy ? { ...n, message: renderServerCopy(legacy.key, legacy.params) } : n;
+}
+
 /** Attach stable keys and parameters to stored notification text. */
 export function withNotificationCopy<T extends { title: string; message: string }>(
   n: T
 ): T & { copy: NotificationCopyDescriptor } {
-  return { ...n, copy: describeNotificationCopy(n) };
+  return { ...normalizeNotificationCopy(n), copy: describeNotificationCopy(n) };
 }
 
 /** Key + params for a stored report-delivery run error or handoff sentence, or null. */

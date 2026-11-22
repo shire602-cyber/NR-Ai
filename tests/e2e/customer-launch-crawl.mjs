@@ -23,6 +23,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 import { fileURLToPath } from "node:url";
 import { chromium, request } from "playwright-core";
 
@@ -348,7 +349,9 @@ async function main() {
         await fail(`localized homepage ${route}`, { expected: homepage, actual });
       }
     }
-    const unsupportedClaim = bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ?? null;
+    const unsupportedClaim =
+      bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ??
+      bodyText.match(unsupportedStatementCopy)?.[0];
     if (unsupportedClaim) {
       await fail(`public claim ${route}`, { unsupportedClaim });
     }
@@ -576,7 +579,7 @@ async function main() {
         }
       );
       if (connRes.status() >= 300) {
-        await fail("customer-bank connection", {
+        await fail("customer-statement association", {
           detail: `status ${connRes.status()}: ${(await connRes.text()).slice(0, 200)}`,
         });
       } else {

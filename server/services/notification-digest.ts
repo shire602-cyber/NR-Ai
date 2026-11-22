@@ -1,6 +1,7 @@
 import { and, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { notifications, users, type EmailOutboxRow } from "../../shared/schema";
+import { normalizeNotificationCopy } from "../../shared/server-copy";
 import { marketingBrand } from "../../shared/marketing-brand";
 import { customerVisibleNotification } from "../storage/notification-visibility";
 import { escapeHtml, renderBilingualEmail, renderEmailText } from "./email-layout";
@@ -27,7 +28,7 @@ export function renderNotificationDigest(day: string, rows: readonly DigestItem[
     brandName: marketingBrand,
     heading: { en: `Your daily summary (${day})`, ar: `ملخصك اليومي (${day})` },
     paragraphs: {
-      en: rows.map(digestItemHtml),
+      en: rows.map((row) => digestItemHtml(normalizeNotificationCopy(row))),
       ar: [`لديك ${rows.length} إشعارات جديدة.`],
     },
   };

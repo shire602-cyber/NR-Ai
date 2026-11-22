@@ -45,6 +45,8 @@ that runs in CI or locally, not by assertion._
 5. **Live ASP/FTA e-invoicing provider** — when UAE accreditation lists
    firm up; XML generation/validation is ready and marked "not connected".
 
+Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
+
 ## Competitive claim discipline
 
 The defensible claim remains: **strongest UAE-first workflow coverage**

@@ -27,6 +27,7 @@ import { createLogger } from "../../config/logger";
 import { has, resolve } from "../../platform/service-registry";
 import { postJournal } from "../../ledger";
 import { fromFils } from "../../../shared/money";
+import { marketingBrand as PRODUCT_NAME } from "../../../shared/marketing-brand";
 import { invoiceOpenFils, isIssuedStatus } from "../invoice-posting.service";
 import { buildReceiptEmail, sendEmail } from "../email.service";
 import { resolveEmailLanguage } from "../email-layout";
@@ -100,6 +101,23 @@ export function paymentsAvailability(): PaymentsAvailability {
           en: `Complete merchant onboarding with a payment gateway: Stripe (STRIPE_SECRET_KEY, INVOICE_PAYMENTS_ENABLED, STRIPE_INVOICE_WEBHOOK_SECRET), ${UAE_GATEWAY_ACTIONS.telr.en}`,
           ar: `أكمل تسجيل التاجر لدى بوابة دفع: Stripe أو ${UAE_GATEWAY_ACTIONS.telr.ar}`,
         },
+  };
+}
+
+export function sharedInvoicePayment(
+  invoice: Pick<Invoice, "status" | "invoiceType">,
+  openFils: number
+) {
+  const payments = paymentsAvailability();
+  return {
+    available:
+      payments.available &&
+      openFils > 0 &&
+      invoice.status !== "void" &&
+      invoice.status !== "paid" &&
+      invoice.invoiceType !== "credit_note",
+    status: payments.status,
+    provider: payments.available ? payments.provider : null,
   };
 }
 
@@ -622,7 +640,7 @@ async function emailReceipt(link: PaymentLink, amountFils: number) {
   if (!contact?.email) return;
   const [company] = await db.select().from(companies).where(eq(companies.id, link.companyId));
   const built = buildReceiptEmail({
-    company: company ?? { name: "Muhasib.ai", businessAddress: null, contactEmail: null },
+    company: company ?? { name: PRODUCT_NAME, businessAddress: null, contactEmail: null },
     customerName: contact.name,
     customerNameAr: contact.nameAr ?? null,
     invoiceNumber: invoice.number,

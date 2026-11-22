@@ -4,6 +4,7 @@
  * failures retry with backoff and dead-letter after max attempts.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { useHarness, type Tenant } from "./harness";
 
 const resendSend = vi.fn();
@@ -34,6 +35,33 @@ async function issued(t: Tenant) {
 }
 
 describe("W4-D email outbox", () => {
+  it("shows normalized subjects for legacy notification events while preserving delivery history", async () => {
+    const t = await h.createTenant();
+    const subject = "Old review notification";
+    const key = `notif:bank.sync_failed:fixture:${t.user.id}`;
+    const [legacy] = await h.sql<{ id: string }>(
+      `INSERT INTO email_outbox (company_id, to_address, subject, category, status, idempotency_key, sent_at)
+       VALUES ($1, $2, $3, 'notification', 'delivered', $4, now()) RETURNING id`,
+      [t.company.id, t.email, subject, key]
+    );
+    const [unrelated] = await h.sql<{ id: string }>(
+      `INSERT INTO email_outbox (company_id, to_address, subject, category, status, idempotency_key, sent_at)
+       VALUES ($1, $2, 'Task due tomorrow', 'notification', 'sent', $3, now()) RETURNING id`,
+      [t.company.id, t.email, `notif:task.due:fixture:${t.user.id}`]
+    );
+    const reply = await t.as.get(`/api/companies/${t.company.id}/email-outbox`);
+    expect(reply.status, reply.text).toBe(200);
+    const visible = reply.body.find((row: { id: string }) => row.id === legacy.id);
+    expect(visible).toMatchObject({ subject: BANK_RECONCILIATION_COPY.en, status: "delivered" });
+    expect(visible).not.toHaveProperty("idempotencyKey");
+    expect(reply.body.find((row: { id: string }) => row.id === unrelated.id)?.subject).toBe(
+      "Task due tomorrow"
+    );
+    expect(
+      await h.sql(`SELECT subject, status FROM email_outbox WHERE id = $1`, [legacy.id])
+    ).toEqual([{ subject, status: "delivered" }]);
+  });
+
   it("[R16-08] no provider: send-email is queued as blocked_no_provider with the PDF, never reported sent", async () => {
     const t = await h.createTenant();
     const id = await issued(t);

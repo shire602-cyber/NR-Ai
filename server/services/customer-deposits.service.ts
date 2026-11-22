@@ -40,7 +40,7 @@ import {
 } from "../../shared/schema";
 import { defaultChartOfAccounts } from "../defaultChartOfAccounts";
 import { DomainError } from "../errors";
-import { findFiledVatPeriod, vatPeriodFiledError } from "../ledger/vat-lock";
+import { findFiledVatPeriod, lockVatReturns, vatPeriodFiledError } from "../ledger/vat-lock";
 import {
   loadBaseCurrency,
   postJournal,
@@ -334,6 +334,7 @@ export async function depositConsumptionLines(
   // A1 (C1) x A4 (M1): applying or refunding an advance changes the VAT 201 of the period it is
   // dated in (even a zero-rated / exempt one that posts no VAT line), so it is refused in a
   // submitted / filed VAT period like any other VAT posting.
+  await lockVatReturns(tx, credit.companyId, "shared");
   const filed = await findFiledVatPeriod(tx, credit.companyId, dateIso);
   if (filed) throw vatPeriodFiledError(filed, dateIso);
   const [deposit] = await tx

@@ -187,6 +187,7 @@
   "compliance.vatFlow.confirmFiling": "تحديد كمقدَّم",
   "compliance.vatFlow.filedDone": "سُجّل الإقرار كمقدَّم",
   "compliance.vatFlow.filingFailed": "تعذر تسجيل التقديم",
+  "compliance.vatFlow.reconciliationOverrideReason": "اشرح الفرق لسجل التدقيق",
   "compliance.vatFlow.noTransmit": "هذا سجلّك لتقديم تم عبر إمارات تاكس. محاسب لم يرسل الإقرار.",
   "compliance.vatFlow.recordPayment": "تسجيل الدفع",
   "compliance.vatFlow.recordRefund": "تسجيل الاسترداد",

@@ -7,10 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateSync } from "otplib";
 import type { OutgoingEmail } from "../../server/outbox";
 import { useHarness } from "./harness";
+import { BANK_STATEMENT_ENTRY } from "../../shared/bank-statement-routes";
 import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 
 const profiles: Array<Record<string, unknown>> = [];
 const sent: OutgoingEmail[] = [];
+const request = vi.hoisted(() => ({ nextPath: "/dashboard" }));
 
 vi.mock("../../server/services/oauth.service", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../server/services/oauth.service")>();
@@ -24,7 +26,7 @@ vi.mock("../../server/services/oauth.service", async (importOriginal) => {
       provider,
       codeVerifier: "v",
       nonce: "n",
-      nextPath: "/dashboard",
+      nextPath: request.nextPath,
     })),
     exchangeOAuthCallback: vi.fn(async () => {
       const next = profiles.shift();
@@ -54,10 +56,13 @@ afterEach(async () => {
   profiles.length = 0;
 });
 
-function profile(subject: string, email: string) {
+function profile(subject: string, email: string, provider = "google") {
   return {
-    provider: "google",
-    issuer: "https://accounts.google.com",
+    provider,
+    issuer:
+      provider === "google"
+        ? "https://accounts.google.com"
+        : "https://login.microsoftonline.com/common/v2.0",
     subject,
     email,
     emailVerified: true,
@@ -170,6 +175,58 @@ describe("R01-15 OAuth flow with a mocked provider", () => {
       "sub-link-1",
     ]);
     expect(links).toEqual([{ user_id: t.user.id }]);
+  });
+
+  it.each(["google", "microsoft"])(
+    "sends legacy banking returns to statement import through %s sign-in and MFA",
+    async (provider) => {
+      const tenant = await h.createTenant({ name: "OAuth Return" });
+      request.nextPath = `/banking/callback?code=fixture&state=fixture`;
+      try {
+        const account = profile(`return-${provider}`, tenant.email, provider);
+        profiles.push(account);
+        const signedIn = await callback(provider);
+        expect(signedIn.r.status).toBe(302);
+        expect(signedIn.access).toBeTruthy();
+        const success = new URL(signedIn.r.headers.get("location")!);
+        expect(success.pathname).toBe("/auth/callback");
+        expect(success.searchParams.get("next")).toBe(BANK_STATEMENT_ENTRY);
+
+        const enrollment = await tenant.as.post("/api/auth/mfa/enroll", {});
+        expect(enrollment.status, enrollment.text).toBe(200);
+        const confirmed = await tenant.as.post("/api/auth/mfa/enroll/confirm", {
+          code: generateSync({ secret: enrollment.body.secret }),
+        });
+        expect(confirmed.status, confirmed.text).toBe(200);
+        profiles.push(account);
+        const challenged = await callback(provider);
+        expect(challenged.r.status).toBe(302);
+        const mfa = new URL(challenged.r.headers.get("location")!);
+        expect(mfa.pathname).toBe("/login");
+        expect(mfa.searchParams.get("mfa")).toBe("1");
+        expect(mfa.searchParams.get("next")).toBe(BANK_STATEMENT_ENTRY);
+      } finally {
+        request.nextPath = "/dashboard";
+      }
+    }
+  );
+
+  it("resumes statement import after Microsoft mailbox proof", async () => {
+    const tenant = await h.createTenant();
+    request.nextPath = `/banking/callback?code=fixture&state=fixture`;
+    try {
+      profiles.push(microsoft("statement-return-mailbox", tenant.email));
+      const pending = await callback("microsoft");
+      expect(pending.r.headers.get("location")).toContain("microsoft_mailbox=1");
+      expect(pending.access).toBeFalsy();
+      const verified = await verifyMailbox(codeFor(tenant.email), pending.mailboxCookie);
+      expect(verified.status, verified.text).toBe(200);
+      const destination = new URL(verified.body.redirectTo);
+      expect(destination.pathname).toBe("/auth/callback");
+      expect(destination.searchParams.get("next")).toBe(BANK_STATEMENT_ENTRY);
+    } finally {
+      request.nextPath = "/dashboard";
+    }
   });
 
   it("R01-15: SSO status reports OAuth configuration and SAML as requires_external", async () => {

@@ -15,6 +15,10 @@
   "company": null,
   "created": {},
   "fixtureProbes": [],
+  "bankStatementEvidence": {
+    "reconciliationPageVisit": "pass",
+    "uploadAndReconcile": "not-run"
+  },
   "fixtureWarnings": [],
   "fixtureMode": {
     "runFixture": false,

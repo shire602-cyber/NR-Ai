@@ -173,6 +173,7 @@
   "banking.imports.sourceImport": "{format} import",
   "banking.import.detected": "Detected",
   "banking.import.genericFormat": "Generic (Arabic/English)",
+  "banking.import.statementRecognized": "Statement recognized",
   "banking.import.reviewTitle": "Review before importing",
   "banking.import.rows": "rows",
   "banking.import.valid": "valid",

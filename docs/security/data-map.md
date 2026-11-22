@@ -13,9 +13,18 @@ opinion and has not been reviewed by counsel or an auditor.
 | Company membership           | role per company, invitations (email, role)                                                      | `company_users`, `company_invitations`, `invitations`           | access control                                   |
 | Customer and vendor contacts | names, emails, phones, TRNs, addresses                                                           | `customer_contacts`, `vendors`, invoice/bill rows               | bookkeeping, invoicing                           |
 | Employees (payroll)          | name, Emirates ID / passport numbers, IBAN, salary, leave                                        | `employees`, `payroll_*`                                        | payroll and WPS files                            |
-| Financial documents          | invoices, receipts (images + OCR text), bank statements and transactions                         | `invoices`, `receipts`, `bank_transactions`, object storage     | accounting, VAT, corporate tax                   |
+| Financial documents          | invoices, receipts (images + OCR text)                                                            | `invoices`, `receipts`, object storage                          | accounting, VAT, corporate tax                   |
+| CSV statement uploads         | transaction dates, descriptions, references, debit/credit amounts, balances and bank account association | `bank_import_batches`, `bank_transactions`                    | in-app statement import, suggested matches and reconciliation |
+| Financial-data authorizations | provider account and consent IDs, account identifiers, and encrypted access and refresh credentials | `bank_connections`, `bank_feed_oauth_states`                    | authorize optional financial-data processing     |
 | Communications               | outbound email bodies/attachments (sensitive messages flagged), WhatsApp messages (NR firm only) | `email_outbox`, `email_outbox_attachments`, `whatsapp_messages` | delivery and retries                             |
 | Backups                      | JSON snapshots of the books above                                                                | `backups.data_snapshot` (AES-256-GCM)                           | recovery                                         |
+
+An authorization return and any exchange data needed for retry are encrypted in the server session
+store. They become unusable when the original state expires within ten minutes. The return is bound
+to the browser's HttpOnly CSRF cookie and an opaque reference in its originating tab. After
+completion, the application attempts to replace the saved return and exchange data with a receipt
+and record IDs. It attempts to delete the receipt after the tab acknowledges it. The session store
+prunes expired records separately.
 
 ## Processors and sub-processors (only when configured)
 

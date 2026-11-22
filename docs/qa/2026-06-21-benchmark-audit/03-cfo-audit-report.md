@@ -11,7 +11,7 @@ Production read-only evidence is useful for deployment confidence, but the full 
 | Memorized/saved reports |Review |Report catalog and saved-view behavior require manual verification. |
 | Class/location/project tracking |Review |Cost center P&L exists; multi-dimensional drilldown depth must be scored from screenshots. |
 | Customer/vendor centers |Review |Balances and contacts routes are crawled; single-pane depth must be reviewed. |
-| CSV statement import and reconciliation |Review |Manual import and reconciliation are tested. |
+| Bank statements and rules | Visit only | The crawl opened Bank reconciliation. CSV upload and reconciliation require a functional run. |
 | Multi-currency revaluation |Review |Fixture probes FX exposure; historical revaluation depth needs reviewer scoring. |
 | UAE tax reporting |Review |VAT/CT fixture and route evidence are captured when local DB is available. |
 | Report drilldown/export |Review |Report shell grid marks missing controls explicitly. |

@@ -412,7 +412,7 @@ describe("W4-D notification engine", () => {
     await sendDailyDigests();
     await sendDailyDigests();
     const digest = await h.sql(
-      `SELECT subject FROM email_outbox WHERE category = 'digest' AND to_address = $1`,
+      `SELECT subject, html FROM email_outbox WHERE category = 'digest' AND to_address = $1`,
       [d.email.toLowerCase()]
     );
     expect(digest.length).toBe(1);

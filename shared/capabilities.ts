@@ -46,7 +46,7 @@ export interface Capability {
   id: CapabilityId;
   status: CapabilityStatus;
   label: LocalizedText;
-  /** What must happen externally for the capability to be live. */
+  /** Setup instructions or the available workflow. */
   externalAction: LocalizedText;
   /** Env vars that configure it (names only, never values). */
   envVars: readonly string[];

@@ -75,7 +75,7 @@ Organized visually by workflow category: Sales, Customers, Vendors, Employees, B
 | 3 | **Bill Pay** | Pending approval, awaiting payment, scheduled bills, paid bills. Drag-and-drop upload with OCR auto-population, approval flows, ACH/check payment |
 | 4 | **Reconciliations** | Account reconciliation histories, unfinished reconciliation tracking, status overview |
 | 5 | **Financials** (tab) | Balance Sheet, Profit & Loss, Cash Flow, A/R Aging, A/P Aging — interactive, presentation-ready |
-| 6 | **Documents** (tab) | Automatic bank statement fetching (Plaid), secure document storage |
+| 6 | **Documents** (tab) | Secure document storage [historical comparison excerpt redacted] |
 
 **Additional Sections:**
 - **Dashboard** — Drag-and-drop customizable widgets: revenue, burn rate, runway, cash flow, KPIs
