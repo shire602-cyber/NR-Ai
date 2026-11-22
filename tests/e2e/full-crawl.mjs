@@ -256,12 +256,10 @@ async function main() {
     apiFailures = [];
     try {
       await page.goto(`${BASE}${route}`, { timeout: 45000 });
-      await page.waitForTimeout(1700);
+      const main = page.locator("main");
+      await main.getByRole("heading").filter({ visible: true }).first().waitFor({ timeout: 18000 });
       const finalUrl = page.url().replace(BASE, "");
-      const mainText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
+      const mainText = await main.innerText();
       const failText =
         mainText.match(FAIL_TEXT)?.[0] ?? (NOT_FOUND(mainText) ? "not-found screen" : null);
       const blank = mainText.trim().length < 40;

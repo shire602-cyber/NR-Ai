@@ -197,7 +197,7 @@ describe("capability registry", () => {
   it("covers every integration with en+ar copy and an external action", () => {
     const caps = computeCapabilities({});
     expect(caps.map((c) => c.id)).toEqual(CAPABILITY_IDS);
-    expect(CAPABILITY_IDS.length).toBe(20);
+    expect(CAPABILITY_IDS.length).toBe(17);
     for (const c of caps) {
       expect(c.label.en && c.label.ar && c.externalAction.en && c.externalAction.ar).toBeTruthy();
       expect(/[؀-ۿ]/.test(c.label.ar)).toBe(true);
@@ -215,18 +215,6 @@ describe("capability registry", () => {
       status({ STRIPE_SECRET_KEY: "sk_live_1", STRIPE_WEBHOOK_SECRET: "w" }, "stripe_billing")
     ).toBe("live");
     expect(
-      status(
-        { LEAN_APP_TOKEN: "t", LEAN_API_BASE_URL: "https://sandbox.leantech.me" },
-        "bank_feed_lean"
-      )
-    ).toBe("sandbox");
-    expect(
-      status(
-        { LEAN_APP_TOKEN: "t", LEAN_API_BASE_URL: "https://api.leantech.me" },
-        "bank_feed_lean"
-      )
-    ).toBe("live");
-    expect(
       status({ EINVOICE_ASP_API_KEY: "k", EINVOICE_ASP_BASE_URL: "https://asp" }, "einvoicing_asp")
     ).toBe("sandbox");
     expect(status({}, "einvoicing_asp")).toBe("requires_external");
@@ -234,6 +222,20 @@ describe("capability registry", () => {
     expect(status({ SMTP_HOST: "  " }, "email")).toBe("disabled");
     expect(isCapabilityLive("ai", { OPENAI_API_KEY: "sk" })).toBe(true);
     expect(isCapabilityLive("ai", {})).toBe(false);
+  });
+
+  it("does not advertise retired providers with production credentials", () => {
+    const caps = computeCapabilities({
+      LEAN_APP_TOKEN: "fixture",
+      LEAN_API_BASE_URL: "https://api.leantech.me",
+      TARABUT_CLIENT_ID: "fixture",
+      TARABUT_CLIENT_SECRET: "fixture",
+      TARABUT_API_BASE_URL: "https://api.tarabut.com",
+      WIO_CLIENT_ID: "fixture",
+      WIO_CLIENT_SECRET: "fixture",
+      WIO_API_BASE_URL: "https://api.wio.io",
+    });
+    expect(caps.filter((c) => c.id.startsWith("bank_feed_"))).toEqual([]);
   });
 
   it("[S5] news_feed is registered and push needs external VAPID keys (requires_external)", () => {

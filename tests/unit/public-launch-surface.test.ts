@@ -333,6 +333,7 @@ describe("Public SaaS launch surface", () => {
     const gallery = readRepoFile("client/src/dev/UiGallery.tsx");
 
     expect(marketing["marketing.faq3Q"]).toBe(faq);
+    expect(marketing).not.toHaveProperty(["marketing.prRowAiReceiptsNote"]);
     expect(phase).toContain(faq);
     expect(gallery).toContain(
       "description={L(BANK_RECONCILIATION_COPY.en, BANK_RECONCILIATION_COPY.ar)}"
@@ -358,7 +359,7 @@ describe("Public SaaS launch surface", () => {
 
   it("documents CSV reconciliation without an availability claim about bank providers", () => {
     const audit = readRepoFile("docs/archive/root/muhasibaisource20260611-audit.md");
-    expect(audit).not.toMatch(/no live bank feeds/i);
+    expect(audit).not.toMatch(/no\s+live\s+bank\s+feeds/i);
     expect(audit).toContain(BANK_RECONCILIATION_COPY.en);
   });
 

@@ -16,8 +16,6 @@
  * This module adds no routes.
  */
 
-import { BANK_RECONCILIATION_COPY } from "./bank-reconciliation-copy";
-
 export type CapabilityStatus = "live" | "sandbox" | "requires_external" | "disabled";
 
 export type CapabilityId =
@@ -26,9 +24,6 @@ export type CapabilityId =
   | "ai"
   | "stripe_billing"
   | "invoice_payments"
-  | "bank_feed_lean"
-  | "bank_feed_tarabut"
-  | "bank_feed_wio"
   | "einvoicing_asp"
   | "shopify"
   | "stripe_payouts"
@@ -168,45 +163,6 @@ const DEFS: readonly CapabilityDef[] = [
       if (!set(env, "STRIPE_SECRET_KEY") || !flag(env, "INVOICE_PAYMENTS_ENABLED")) return null;
       return (env.STRIPE_SECRET_KEY ?? "").startsWith("sk_live_") ? "live" : "sandbox";
     },
-  },
-  {
-    id: "bank_feed_lean",
-    label: { en: "Lean Technologies", ar: "لين تكنولوجيز" },
-    externalAction: BANK_RECONCILIATION_COPY,
-    envVars: ["LEAN_APP_TOKEN", "LEAN_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      set(env, "LEAN_APP_TOKEN")
-        ? looksSandbox(env.LEAN_API_BASE_URL) || !set(env, "LEAN_API_BASE_URL")
-          ? "sandbox"
-          : "live"
-        : null,
-  },
-  {
-    id: "bank_feed_tarabut",
-    label: { en: "Tarabut Gateway", ar: "بوابة ترابط" },
-    externalAction: BANK_RECONCILIATION_COPY,
-    envVars: ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET", "TARABUT_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      all(env, ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET"])
-        ? looksSandbox(env.TARABUT_API_BASE_URL) || !set(env, "TARABUT_API_BASE_URL")
-          ? "sandbox"
-          : "live"
-        : null,
-  },
-  {
-    id: "bank_feed_wio",
-    label: { en: "Wio Business", ar: "ويو للأعمال" },
-    externalAction: BANK_RECONCILIATION_COPY,
-    envVars: ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET", "WIO_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      all(env, ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET"])
-        ? looksSandbox(env.WIO_API_BASE_URL) || !set(env, "WIO_API_BASE_URL")
-          ? "sandbox"
-          : "live"
-        : null,
   },
   {
     id: "einvoicing_asp",

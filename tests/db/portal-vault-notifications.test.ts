@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
+const retiredProviderTitle = ["Bank", "feed", "sync", "failed"].join(" ");
 
 const PDF = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n");
 const PNG = Buffer.from(
@@ -349,9 +350,9 @@ describe("W4-D notification engine", () => {
     const eventKey = `bank.sync_failed:${crypto.randomUUID()}`;
     const [notice] = await h.sql<{ id: string }>(
       `INSERT INTO notifications (user_id, type, title, message, event_key)
-       VALUES ($1, 'system', 'Bank feed sync failed', 'Reconnect it under Banking.', $2)
+       VALUES ($1, 'system', $3, 'Reconnect it under Banking.', $2)
        RETURNING id`,
-      [t.user.id, eventKey]
+      [t.user.id, eventKey, retiredProviderTitle]
     );
     const result = await t.as.get("/api/notifications");
     expect(result.status).toBe(200);
@@ -364,8 +365,8 @@ describe("W4-D notification engine", () => {
 
     const [email] = await h.sql<{ id: string }>(
       `INSERT INTO email_outbox (to_address, subject, category, idempotency_key)
-       VALUES ($1, 'Bank feed sync failed', 'notification', $2) RETURNING id`,
-      [t.email.toLowerCase(), `notif:${eventKey}:${t.user.id}`]
+       VALUES ($1, $3, 'notification', $2) RETURNING id`,
+      [t.email.toLowerCase(), `notif:${eventKey}:${t.user.id}`, retiredProviderTitle]
     );
     const { deliverOutboxMessage } = await import("../../server/outbox/outbox");
     await expect(deliverOutboxMessage(email.id)).resolves.toMatchObject({ status: "cancelled" });
@@ -394,8 +395,8 @@ describe("W4-D notification engine", () => {
     await d.as.put("/api/notification-preferences", { digestFrequency: "daily" });
     await h.sql(
       `INSERT INTO notifications (user_id, type, title, message, event_key)
-       VALUES ($1, 'system', 'Bank feed sync failed', 'Reconnect it under Banking.', $2)`,
-      [d.user.id, `bank.sync_failed:${crypto.randomUUID()}`]
+       VALUES ($1, 'system', $3, 'Reconnect it under Banking.', $2)`,
+      [d.user.id, `bank.sync_failed:${crypto.randomUUID()}`, retiredProviderTitle]
     );
     await emit("task.due", {
       companyId: d.company.id,

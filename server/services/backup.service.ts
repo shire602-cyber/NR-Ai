@@ -31,7 +31,7 @@ import crypto from "node:crypto";
 import zlib from "node:zlib";
 import { pool } from "../db";
 import { pq, type Queryable } from "./connectors/pq";
-import { decryptSecret, encryptSecret } from "./secret-vault";
+import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secret-vault";
 import { DomainError } from "../errors";
 import { createLogger } from "../config/logger";
 
@@ -337,6 +337,15 @@ function withoutRetiredBankCredentials(snapshot: CompanySnapshot): CompanySnapsh
     : snapshot;
 }
 
+function snapshotChecksum(content: string): string {
+  return crypto.createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+function sealSnapshotJson(json: string): string {
+  const gz = zlib.gzipSync(Buffer.from(json, "utf8")).toString("base64");
+  return encryptSecret(`gz1:${gz}`)!;
+}
+
 export function sealSnapshot(snapshot: CompanySnapshot): {
   sealed: string;
   checksum: string;
@@ -344,9 +353,8 @@ export function sealSnapshot(snapshot: CompanySnapshot): {
   counts: Record<string, number>;
 } {
   const json = JSON.stringify(withoutRetiredBankCredentials(snapshot));
-  const checksum = crypto.createHash("sha256").update(json).digest("hex");
-  const gz = zlib.gzipSync(Buffer.from(json, "utf8")).toString("base64");
-  const sealed = encryptSecret(`gz1:${gz}`)!;
+  const checksum = snapshotChecksum(json);
+  const sealed = sealSnapshotJson(json);
   const counts = Object.fromEntries(Object.entries(snapshot.tables).map(([k, v]) => [k, v.length]));
   return { sealed, checksum, sizeBytes: Buffer.byteLength(sealed, "utf8"), counts };
 }
@@ -366,8 +374,7 @@ export function openSnapshot(
     json = stored;
   }
   if (checksum) {
-    const actual = crypto.createHash("sha256").update(json).digest("hex");
-    if (actual !== checksum) {
+    if (snapshotChecksum(json) !== checksum) {
       throw new DomainError(
         "BACKUP_INTEGRITY_FAILED",
         409,
@@ -383,6 +390,17 @@ export function openSnapshot(
       return { json: JSON.stringify(redacted), snapshot: redacted, redacted };
   }
   return { json, snapshot };
+}
+
+export function exportBackupSnapshot(
+  stored: string,
+  checksum: string | null,
+  encrypted: boolean
+): { body: string; exportChecksum: string } {
+  const { json, redacted } = openSnapshot(stored, checksum);
+  let body = json;
+  if (encrypted) body = !redacted && isEncryptedSecret(stored) ? stored : sealSnapshotJson(json);
+  return { body, exportChecksum: snapshotChecksum(body) };
 }
 
 interface LegacySnapshot {

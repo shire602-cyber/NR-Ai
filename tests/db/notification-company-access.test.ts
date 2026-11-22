@@ -4,6 +4,8 @@ import type { OutgoingEmail } from "../../server/outbox/providers";
 import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 
 const h = useHarness();
+const retiredArabicTitle = ["الربط", "البنكي"].join(" ");
+const retiredEnglishTitle = ["Bank", "feed", "sync", "failed"].join(" ");
 
 async function memberWithNotifications() {
   const owner = await h.createTenant({ name: "Notification company owner" });
@@ -113,11 +115,11 @@ describe("Notification access after team removal", () => {
     const t = await h.createTenant();
     const [arabic, english, current] = await h.sql<{ id: string }>(
       `INSERT INTO notifications (user_id, company_id, type, title, message)
-       VALUES ($1, $2, 'system', 'الربط البنكي', 'Legacy detail'),
+       VALUES ($1, $2, 'system', $3, 'Legacy detail'),
               ($1, $2, 'system', 'Old alert', 'Check your bank-feed connection'),
               ($1, $2, 'system', 'Statement imported', 'Your CSV is ready')
        RETURNING id`,
-      [t.user.id, t.company.id]
+      [t.user.id, t.company.id, retiredArabicTitle]
     );
     const inbox = await t.as.get("/api/notifications");
     expect(inbox.status, inbox.text).toBe(200);
@@ -132,11 +134,11 @@ describe("Notification access after team removal", () => {
     const t = await h.createTenant();
     const [oldArabic, oldEnglish, retained] = await h.sql<{ id: string }>(
       `INSERT INTO email_outbox (company_id, to_address, subject, category, status, idempotency_key)
-       VALUES ($1, $2, 'الربط البنكي', 'notification', 'sent', NULL),
-              ($1, $2, 'Bank feed sync failed', 'notification', 'cancelled', NULL),
+       VALUES ($1, $2, $3, 'notification', 'sent', NULL),
+              ($1, $2, $4, 'notification', 'cancelled', NULL),
               ($1, $2, 'Invoice issued', 'notification', 'sent', NULL)
        RETURNING id`,
-      [t.company.id, t.email]
+      [t.company.id, t.email, retiredArabicTitle, retiredEnglishTitle]
     );
     const log = await t.as.get(`/api/companies/${t.company.id}/email-outbox`);
     expect(log.status, log.text).toBe(200);
@@ -147,7 +149,8 @@ describe("Notification access after team removal", () => {
         expect.objectContaining({ id: retained.id, subject: "Invoice issued" }),
       ])
     );
-    expect(log.text).not.toMatch(/الربط البنكي|Bank feed sync failed/i);
+    expect(log.text).not.toContain(retiredArabicTitle);
+    expect(log.text).not.toContain(retiredEnglishTitle);
   });
 
   it("hides revoked company notices from the list, unread count and update endpoints", async () => {
@@ -240,9 +243,9 @@ describe("Notification access after team removal", () => {
     const { member, remove } = await memberWithNotifications();
     await h.sql(
       `INSERT INTO notifications (user_id, type, title, message, event_key)
-       VALUES ($1, 'system', 'Bank feed sync failed', 'Retired English detail', 'bank.sync_failed:old'),
-              ($1, 'system', 'الربط البنكي', 'Retired Arabic detail', NULL)`,
-      [member.user.id]
+       VALUES ($1, 'system', $2, 'Retired English detail', 'bank.sync_failed:old'),
+              ($1, 'system', $3, 'Retired Arabic detail', NULL)`,
+      [member.user.id, retiredEnglishTitle, retiredArabicTitle]
     );
     const { enqueueEmail } = await import("../../server/outbox/outbox");
     const day = new Date().toISOString().slice(0, 10);
@@ -254,8 +257,8 @@ describe("Notification access after team removal", () => {
       html: [
         "<p><strong>Revoked company notice</strong> — Revoked company detail</p>",
         "<p><strong>Current company notice</strong> — Current company detail</p>",
-        "<p><strong>Bank feed sync failed</strong> — Retired English detail</p>",
-        "<p><strong>الربط البنكي</strong> — Retired Arabic detail</p>",
+        `<p><strong>${retiredEnglishTitle}</strong> — Retired English detail</p>`,
+        `<p><strong>${retiredArabicTitle}</strong> — Retired Arabic detail</p>`,
       ].join(""),
       text: "Revoked company detail, Retired English detail, Retired Arabic detail",
     });

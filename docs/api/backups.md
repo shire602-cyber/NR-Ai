@@ -1,7 +1,9 @@
 # Company backups and restore
 
 Implementation: `server/services/backup.service.ts`, routes in `server/routes/backups.routes.ts`.
-All backup routes need the `backups.manage` permission (owners and admins).
+Backup routes require the company’s `backups.manage` permission (owners and admins).
+For NR firm owners and admins, client companies must also be within their firm scope.
+The same checks apply to both the source and the target when loading a backup into another company.
 
 ## What a backup contains
 
@@ -21,7 +23,9 @@ The snapshot is the JSON rendering of each row (`to_jsonb`), gzip-compressed and
 AES-256-GCM through the secret vault (key from `TOKEN_ENCRYPTION_KEY`, else derived from
 `SESSION_SECRET`). A SHA-256 checksum of the plaintext is stored and verified before every restore.
 `GET /api/backups/{id}/download` returns the decrypted JSON export (full-company data portability);
-`?format=encrypted` returns the sealed file.
+`?format=encrypted` returns a sealed file, including for legacy plaintext snapshots.
+Both formats return `X-Backup-Export-SHA256`, the hex SHA-256 digest of the downloaded file.
+Backup metadata reports the checksum of the stored plaintext used for restore verification.
 
 ## Restore
 

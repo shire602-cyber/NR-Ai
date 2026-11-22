@@ -74,7 +74,7 @@ function arabicModeEnglishLines(): string[] {
 const UNSUPPORTED_CLAIMS = [
   /FTA[-\s]?(accredited|compliant|registered|approved)/i,
   /submits? (your|the) (VAT )?return(s)? (to|with) the FTA automatically/i,
-  /(?:connect to|sync from) (?:a |your )?(?:live )?bank feeds?/i,
+  /(?:connect to|sync from) (?:a |your )?(?:live )?bank\s+feeds?/i,
   /money-back/i,
   /UAE-hosted/i,
   // "Most popular" is a plan-card highlight the owner asked for (X6b); it states no user count.

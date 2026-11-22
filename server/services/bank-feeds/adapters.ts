@@ -28,7 +28,6 @@ function expiresIn(seconds: unknown): Date | null {
 
 export const leanAdapter: BankFeedAdapter = {
   id: "lean",
-  capability: "bank_feed_lean",
   label: "Lean Technologies",
   isConfigured: () => env("LEAN_APP_TOKEN").length > 0,
   authorizeUrl({ state, redirectUri }) {
@@ -134,7 +133,6 @@ async function tarabutToken(body: Record<string, string>): Promise<FeedTokens> {
 
 export const tarabutAdapter: BankFeedAdapter = {
   id: "tarabut",
-  capability: "bank_feed_tarabut",
   label: "Tarabut Gateway",
   isConfigured: () =>
     env("TARABUT_CLIENT_ID").length > 0 && env("TARABUT_CLIENT_SECRET").length > 0,
@@ -234,7 +232,6 @@ async function wioToken(body: Record<string, string>): Promise<FeedTokens> {
 
 export const wioAdapter: BankFeedAdapter = {
   id: "wio",
-  capability: "bank_feed_wio",
   label: "Wio Bank",
   isConfigured: () => env("WIO_CLIENT_ID").length > 0 && env("WIO_CLIENT_SECRET").length > 0,
   authorizeUrl({ state, redirectUri }) {

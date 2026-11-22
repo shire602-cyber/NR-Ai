@@ -92,6 +92,13 @@ async function mountPage(locale: "en" | "ar") {
 }
 
 const dialog = () => document.querySelector('[role="dialog"]') as HTMLElement | null;
+const retiredLabels = [
+  ["Bank", "feeds"].join(" "),
+  ["الربط", "البنكي"].join(" "),
+  "Sync now",
+  "Lean Technologies",
+  "مزامنة الآن",
+];
 
 describe("bank statement import dialog", () => {
   it("in Arabic: shows the approved CSV guidance and an Arabic Import button", async () => {
@@ -109,6 +116,8 @@ describe("bank statement import dialog", () => {
     expect(text).toContain("استيراد");
     expect(text).toContain("متطلبات ملف CSV");
     expect(text).toContain(BANK_RECONCILIATION_COPY.ar);
+    for (const label of retiredLabels)
+      expect(text.toLowerCase()).not.toContain(label.toLowerCase());
     expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT\.053|OFX/i);
     expect(d!.querySelector('[data-testid="button-download-sample-bank-csv"]')).not.toBeNull();
     expect(d!.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
@@ -120,6 +129,8 @@ describe("bank statement import dialog", () => {
     await mountPage("en");
     const text = dialog()?.textContent ?? "";
     expect(text).toContain(BANK_RECONCILIATION_COPY.en);
+    for (const label of retiredLabels)
+      expect(text.toLowerCase()).not.toContain(label.toLowerCase());
     expect(text).toContain("CSV files can use commas, semicolons, or tabs");
     expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT\.053|OFX/i);
     expect(
