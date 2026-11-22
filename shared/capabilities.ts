@@ -16,8 +16,6 @@
  * This module adds no routes.
  */
 
-const adapterAction = { en: "Review adapter credentials", ar: "راجع بيانات اعتماد المهايئ" };
-
 export type CapabilityStatus = "live" | "sandbox" | "requires_external" | "disabled";
 
 export type CapabilityId =
@@ -26,10 +24,6 @@ export type CapabilityId =
   | "ai"
   | "stripe_billing"
   | "invoice_payments"
-  | "bank_statement_csv"
-  | "bank_feed_lean"
-  | "bank_feed_tarabut"
-  | "bank_feed_wio"
   | "einvoicing_asp"
   | "shopify"
   | "stripe_payouts"
@@ -171,56 +165,6 @@ const DEFS: readonly CapabilityDef[] = [
     },
   },
   {
-    id: "bank_statement_csv",
-    label: { en: "CSV bank statement import", ar: "استيراد كشوف الحساب بصيغة CSV" },
-    externalAction: {
-      en: "Upload a CSV exported from your bank.",
-      ar: "ارفع كشف حساب بصيغة CSV صادرًا عن بنكك.",
-    },
-    envVars: [],
-    whenUnconfigured: "disabled",
-    detect: () => "live",
-  },
-  {
-    id: "bank_feed_lean",
-    label: { en: "Lean adapter", ar: "مهايئ لين" },
-    externalAction: adapterAction,
-    envVars: ["LEAN_APP_TOKEN", "LEAN_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      set(env, "LEAN_APP_TOKEN")
-        ? looksSandbox(env.LEAN_API_BASE_URL) || !set(env, "LEAN_API_BASE_URL")
-          ? "sandbox"
-          : "live"
-        : null,
-  },
-  {
-    id: "bank_feed_tarabut",
-    label: { en: "Tarabut adapter", ar: "مهايئ ترابط" },
-    externalAction: adapterAction,
-    envVars: ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET", "TARABUT_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      all(env, ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET"])
-        ? looksSandbox(env.TARABUT_API_BASE_URL) || !set(env, "TARABUT_API_BASE_URL")
-          ? "sandbox"
-          : "live"
-        : null,
-  },
-  {
-    id: "bank_feed_wio",
-    label: { en: "Wio adapter", ar: "مهايئ ويو" },
-    externalAction: adapterAction,
-    envVars: ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET", "WIO_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      all(env, ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET"])
-        ? looksSandbox(env.WIO_API_BASE_URL) || !set(env, "WIO_API_BASE_URL")
-          ? "sandbox"
-          : "live"
-        : null,
-  },
-  {
     id: "einvoicing_asp",
     label: {
       en: "UAE e-invoicing (Accredited Service Provider)",
@@ -354,7 +298,7 @@ const DEFS: readonly CapabilityDef[] = [
       ar: "اضبط FX_RATE_FEED (cbuae أو ecb أو كلاهما) وروابط المزود (FX_RATE_FEED_CBUAE_URL و FX_RATE_FEED_ECB_URL) المتفق عليها مع مزود الأسعار.",
     },
     envVars: ["FX_RATE_FEED", "FX_RATE_FEED_CBUAE_URL", "FX_RATE_FEED_ECB_URL", "FX_RATE_API_KEY"],
-    // W5-C (R14-14): adapter health is separate from CSV availability.
+    // W5-C (R14-14): adapter status depends on provider configuration.
     whenUnconfigured: "requires_external",
     detect: (env) => (set(env, "FX_RATE_FEED") ? "live" : null),
   },

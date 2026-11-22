@@ -26,10 +26,10 @@ import { parsedBody } from "../http/parsed-body";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { getCompanyRole, requirePermission } from "../middleware/companyRolePolicy";
+import { getCompanyRole } from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
 import { DomainError } from "../errors";
-import { roleHasAnyPermission } from "../../shared/permissions";
+import { roleHasPermission } from "../../shared/permissions";
 import { isNraFirmRole } from "../../shared/access";
 import { zText, zUuid } from "../../shared/validators/primitives";
 import { storage } from "../storage";
@@ -41,11 +41,12 @@ import {
   companyScopedTables,
   createCompanyBackup,
   exclusionReason,
-  exportSnapshot,
+  exportBackupSnapshot,
   restoreBackupIntoCompany,
   restoreCompanyBackup,
   runScheduledBackups,
 } from "../services/backup.service";
+import { canAccessFirmClientOrUnlinkedCustomer, NR_FIRM_ID } from "../services/firm/scope";
 import { listJobs, registerJob } from "../platform/job-registry";
 import { hasRecentMfa } from "../services/security/policy";
 
@@ -112,37 +113,43 @@ function present(row: BackupRow) {
   };
 }
 
+/** Backup access requires a company permission even for users with platform or firm roles. */
+async function companyForBackup(req: Request, companyId: string, conceal: boolean) {
+  const company = zUuid.safeParse(companyId).success ? await storage.getCompany(companyId) : null;
+  const user = req.user!;
+  const role = company ? await getCompanyRole(user.id, companyId) : null;
+  const firmClientInScope =
+    !company ||
+    !isNraFirmRole(user.firmRole) ||
+    (await canAccessFirmClientOrUnlinkedCustomer(
+      {
+        firmId: NR_FIRM_ID,
+        isNr: true,
+        role: user.firmRole,
+        userId: user.id,
+        platformAdmin: false,
+      },
+      companyId
+    ));
+  if (!company || !role || !firmClientInScope) {
+    if (conceal) throw new DomainError("NOT_FOUND", 404);
+    throw new DomainError("COMPANY_ACCESS_DENIED", 403);
+  }
+  if (!roleHasPermission(role, "backups.manage")) {
+    throw new DomainError("PERMISSION_DENIED", 403, { permission: "backups.manage", role });
+  }
+  return company;
+}
+
 /** Load a backup and require backups.manage in its company (404 for non-members). */
 async function backupFor(req: Request): Promise<BackupRow> {
   const id = req.params.id;
-  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new DomainError("NOT_FOUND", 404);
+  if (!zUuid.safeParse(id).success) throw new DomainError("NOT_FOUND", 404);
   const { rows } = await pq<BackupRow>(`SELECT ${BACKUP_COLUMNS} FROM backups WHERE id = $1`, [id]);
   const backup = rows[0];
   if (!backup) throw new DomainError("NOT_FOUND", 404, undefined, "Backup not found");
-  const user = req.user!;
-  if (!user.isAdmin && !isNraFirmRole(user.firmRole)) {
-    const role = await getCompanyRole(user.id, backup.companyId);
-    if (!role) throw new DomainError("NOT_FOUND", 404, undefined, "Backup not found");
-    if (!roleHasAnyPermission(role, ["backups.manage"])) {
-      throw new DomainError("PERMISSION_DENIED", 403, { permission: "backups.manage", role });
-    }
-  }
+  await companyForBackup(req, backup.companyId, true);
   return backup;
-}
-
-/** backups.manage in the clone target too (404 for non-members). Returns the target's name. */
-async function cloneTargetFor(req: Request, targetCompanyId: string): Promise<{ name: string }> {
-  const company = await storage.getCompany(targetCompanyId);
-  if (!company) throw new DomainError("NOT_FOUND", 404, undefined, "Company not found");
-  const user = req.user!;
-  if (!user.isAdmin && !isNraFirmRole(user.firmRole)) {
-    const role = await getCompanyRole(user.id, targetCompanyId);
-    if (!role) throw new DomainError("NOT_FOUND", 404, undefined, "Company not found");
-    if (!roleHasAnyPermission(role, ["backups.manage"])) {
-      throw new DomainError("PERMISSION_DENIED", 403, { permission: "backups.manage", role });
-    }
-  }
-  return { name: company.name };
 }
 
 /**
@@ -185,7 +192,13 @@ export function registerBackupRoutes(app: Express) {
     });
   }
 
-  const manage = [authMiddleware, requirePermission("backups.manage")];
+  const manage = [
+    authMiddleware,
+    asyncHandler(async (req: Request, _res: Response, next) => {
+      await companyForBackup(req, req.params.companyId, false);
+      next();
+    }),
+  ];
 
   app.get(
     "/api/companies/:companyId/backups",
@@ -315,7 +328,7 @@ export function registerBackupRoutes(app: Express) {
         throw new DomainError("BACKUP_NOT_COMPLETE", 409, undefined, "Backup is not complete");
       }
       const encrypted = req.query.format === "encrypted";
-      const { body, contentDigest } = exportSnapshot(stored, rows[0].checksum, encrypted);
+      const { body, exportChecksum, contentDigest } = exportBackupSnapshot(stored, rows[0].checksum, encrypted);
       await storage.createActivityLog({
         companyId: backup.companyId,
         userId: req.user!.id,
@@ -326,6 +339,7 @@ export function registerBackupRoutes(app: Express) {
       });
       const safe = backup.name.replace(/[^a-z0-9]/gi, "_").slice(0, 80);
       res.setHeader("Content-Type", encrypted ? "application/octet-stream" : "application/json");
+      res.setHeader("X-Backup-Export-SHA256", exportChecksum);
       if (contentDigest) {
         res.setHeader("Content-Digest", contentDigest);
         // The digest covers the exported bytes. Keep compression from changing them.
@@ -432,7 +446,7 @@ export function registerBackupRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const backup = await backupFor(req);
       const { targetCompanyId } = parsedBody<z.output<typeof clonePreviewBody>>(req);
-      const target = await cloneTargetFor(req, targetCompanyId);
+      const target = await companyForBackup(req, targetCompanyId, true);
       const result = await restoreBackupIntoCompany({
         backupId: backup.id,
         sourceCompanyId: backup.companyId,
@@ -457,7 +471,7 @@ export function registerBackupRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const backup = await backupFor(req);
       const body = parsedBody<z.output<typeof cloneBody>>(req);
-      const target = await cloneTargetFor(req, body.targetCompanyId);
+      const target = await companyForBackup(req, body.targetCompanyId, true);
       await requireFreshMfaEnrolled(req);
       if (body.confirmTargetName !== target.name) {
         throw new DomainError(

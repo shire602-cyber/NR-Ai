@@ -26,7 +26,9 @@ const previousBankAudit = "0139_audit_bank_match_links";
 const previousReceiptRepair = "0140_repair_bank_receipt_provenance";
 // Preserve the exact versions from a5e75c2104c846ed5eae71dd0b247161413057b7 so an
 // already-applied database carries the original hashes even in a shallow checkout.
+const historicalPurchases = "0127_wq2_purchases";
 const historicalHashes = {
+  [historicalPurchases]: "107cfd37aac37b878018ca0c5ef1d2f964bb982436e5f0771a11ca3d1b73dcde",
   "0089_platform_foundation": "3da08352369f0ec61e21f218165042af1e762b2092a56d60461623593ab2c011",
   [banking]: "fc545f83c7470e6624251c1d4492a9f6f6a842d2fd20b4afb94fb28e0fbdc7be",
   "0130_cash_sale_numbering": "e4b974423afc431ded0b306efec71f046109ff6dc57d1142f4d41047f8acd8ef",
@@ -332,7 +334,9 @@ function stageMigrations(
     const destination = path.join(folder, file);
     if (historical[tag]) {
       const source = path.join(here, "historical", historical[tag] + ".sql");
-      const sql = tag === banking ? gunzipSync(readFileSync(source + ".gz")) : readFileSync(source);
+      const sql = tag === banking || tag === historicalPurchases
+        ? gunzipSync(readFileSync(source + ".gz"))
+        : readFileSync(source);
       if (knownHashes[tag]) {
         assert.equal(
           createHash("sha256").update(sql).digest("hex"),
@@ -512,7 +516,10 @@ async function stageReleaseSchema(database) {
 }
 
 async function applyPublishedBankHead(database, { ref, count, digest, historical }) {
-  const folder = stageMigrations(database, count, historical, {}, previewEntries.slice(0, count));
+  const folder = stageMigrations(
+    database, count, { [historicalPurchases]: historicalPurchases, ...historical },
+    { [historicalPurchases]: historicalHashes[historicalPurchases] }, previewEntries.slice(0, count)
+  );
   const originalFiles = readMigrationFiles({ migrationsFolder: folder });
   const hash = createHash("sha256");
   for (const { folderMillis, hash: fileHash } of originalFiles) {

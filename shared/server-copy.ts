@@ -11,9 +11,14 @@
  * when any parameter inside it is missing or empty.
  */
 
-import { EMAIL_NOT_SET_UP_RUN_ERROR } from "./notification-copy";
-import { bankStatementCopy } from "./bank-statement-copy";
-import { BANK_STATEMENT_IMPORT_HREF } from "./app-links";
+import {
+  BANK_STATEMENT_REVIEW_TITLE,
+  EMAIL_NOT_SET_UP_RUN_ERROR,
+  LEGACY_BANK_RECONCILIATION_NOTICE,
+  RETIRED_BANK_NOTIFICATION_PREFIX,
+} from "./notification-copy";
+import { BANK_STATEMENT_ENTRY } from "./bank-statement-routes";
+import { BANK_RECONCILIATION_COPY } from "./bank-reconciliation-copy";
 
 export interface CopyDescriptor {
   key: string;
@@ -47,7 +52,6 @@ export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billApproved.title", "Bill approved {label}"),
   T("notification.billPaid.title", "Bill paid {label}"),
   T("notification.payrollApproved.title", "Payroll approved"),
-  T("notification.bankSyncFailed.title", "Import a CSV bank statement"),
   T("notification.deadlineDue.title", "Deadline due[ {dueDate}]"),
   T("notification.taskDue.title", "Task due[ {dueDate}]"),
   T("notification.invoiceOverdue.title", "Invoice {number} is overdue"),
@@ -100,7 +104,6 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billApproved.message", "Bill {label} was approved for payment."),
   T("notification.billPaid.message", "Bill {label} was paid."),
   T("notification.payrollApproved.message", "Payroll for {month}/{year} was approved."),
-  T("notification.bankSyncFailed.message", bankStatementCopy.en),
   T("notification.deadlineDueGeneric.message", "A compliance obligation is due[ on {dueDate}]."),
   T("notification.taskDue.message", "A task is due[ on {dueDate}]."),
   T("notification.invoiceOverdue.message", "Invoice {number} for {customer} was due on {dueDate}."),
@@ -355,6 +358,33 @@ function legacyStatementImportCopy(n: { title: string; message: string }): CopyD
   if (withoutFormat === n.message) return null;
   const wording = withoutFormat.replace(/ from[ \t]+(?=(?:; \d+ already imported)?$)/i, "");
   return parseServerCopy(wording, STATEMENT_IMPORT_MESSAGES);
+}
+
+// Historical titles and messages are matched together so unrelated notices keep their wording.
+const LEGACY_BANK_REVIEW_TITLES = [
+  T("statementReview", LEGACY_BANK_RECONCILIATION_NOTICE.title),
+  T("statementReview", ["Bank", "feed", "sync", "failed"].join(" ")),
+];
+const LEGACY_BANK_REVIEW_MESSAGES = [
+  T("statementReview", LEGACY_BANK_RECONCILIATION_NOTICE.message),
+  T(
+    "statementReview",
+    ["The bank", "feed[ ({provider})] could not sync[: {reason}]. Reconnect it under Banking."].join(" ")
+  ),
+];
+
+export function isBankStatementReviewCopy({
+  title,
+  message,
+}: {
+  title: string;
+  message: string;
+}): boolean {
+  return (
+    (title === BANK_STATEMENT_REVIEW_TITLE.en && message === BANK_RECONCILIATION_COPY.en) ||
+    (parseServerCopy(title, LEGACY_BANK_REVIEW_TITLES) !== null &&
+      parseServerCopy(message, LEGACY_BANK_REVIEW_MESSAGES) !== null)
+  );
 }
 
 /** Keys + params for a stored notification (old or new rows alike). */
@@ -1493,11 +1523,6 @@ export function notificationCopy(
   };
 }
 
-/** Retain the stable event key for notifications already stored before the copy changed. */
-export function isBankStatementReview(eventKey: string | null | undefined): boolean {
-  return eventKey?.startsWith("bank.sync_failed:") ?? false;
-}
-
 type StoredNotificationText = {
   title: string;
   message: string;
@@ -1507,14 +1532,14 @@ type StoredNotificationText = {
 
 export function bankStatementUpdateFailureCopy(n: StoredNotificationText) {
   if (
-    !isBankStatementReview(n.eventKey) &&
+    !n.eventKey?.startsWith(RETIRED_BANK_NOTIFICATION_PREFIX) &&
     n.copy?.titleKey !== "notification.bankSyncFailed.title" &&
-    !/^bank\x20feed\x20sync\x20failed$/i.test(n.title)
+    !isBankStatementReviewCopy(n)
   ) return null;
-
   return {
-    actionUrl: BANK_STATEMENT_IMPORT_HREF,
-    ...notificationCopy("notification.bankSyncFailed.title", "notification.bankSyncFailed.message"),
+    actionUrl: BANK_STATEMENT_ENTRY,
+    title: BANK_STATEMENT_REVIEW_TITLE.en,
+    message: BANK_RECONCILIATION_COPY.en,
   };
 }
 
@@ -1525,12 +1550,11 @@ export function normalizeNotificationCopy<T extends StoredNotificationText>(n: T
   return legacy ? { ...n, message: renderServerCopy(legacy.key, legacy.params) } : n;
 }
 
-/** Attach `copy` (stable keys + params) to a notification for API/socket responses. */
-export function withNotificationCopy<
-  T extends { title: string; message: string; eventKey?: string | null },
->(n: T): T & { copy: NotificationCopyDescriptor } {
-  const wording = normalizeNotificationCopy(n);
-  return { ...wording, copy: describeNotificationCopy(wording) };
+/** Attach stable keys and parameters to stored notification text. */
+export function withNotificationCopy<T extends { title: string; message: string }>(
+  n: T
+): T & { copy: NotificationCopyDescriptor } {
+  return { ...normalizeNotificationCopy(n), copy: describeNotificationCopy(n) };
 }
 
 /** Key + params for a stored report-delivery run error or handoff sentence, or null. */

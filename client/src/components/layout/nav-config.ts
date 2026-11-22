@@ -153,13 +153,15 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
         url: "/bank-accounts",
         icon: Landmark,
         testId: "banking.accounts.title",
+        // The bank connection route highlights Accounts and offers CSV import when unconfigured.
+        matches: ["/bank-feeds"],
       },
       {
         titleKey: "shell.nav.reconciliation",
         url: "/bank-reconciliation",
         icon: ArrowLeftRight,
         testId: "bankReconciliation",
-        matches: ["/reconciliation-rules", "/auto-reconcile", "/bank-feeds"],
+        matches: ["/bank-feeds", "/reconciliation-rules", "/auto-reconcile"],
       },
     ],
   },

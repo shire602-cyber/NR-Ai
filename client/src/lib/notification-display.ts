@@ -5,7 +5,8 @@
  * shared templates. Configuration problems are phrased for users with a "Set up email" link
  * instead of environment variable names.
  */
-import { EMAIL_SETUP_HREF, isEmailNotSetUpMessage } from "@shared/notification-copy";
+import { BANK_STATEMENT_REVIEW_TITLE, EMAIL_SETUP_HREF, isEmailNotSetUpMessage } from "@shared/notification-copy";
+import { BANK_RECONCILIATION_COPY } from "@shared/bank-reconciliation-copy";
 import {
   bankStatementUpdateFailureCopy,
   describeNotificationCopy,
@@ -88,10 +89,9 @@ export function localizeNotification(
 ): { title: string; message: string; actionUrl?: string; setupEmailHref?: string } {
   const bankFailure = bankStatementUpdateFailureCopy(n);
   if (bankFailure) {
-    const copy = describeNotificationCopy(bankFailure);
     return {
-      title: renderDescriptor(copy.titleKey, {}, bankFailure.title, t),
-      message: renderDescriptor(copy.messageKey, {}, bankFailure.message, t),
+      title: BANK_STATEMENT_REVIEW_TITLE[locale],
+      message: BANK_RECONCILIATION_COPY[locale],
       actionUrl: bankFailure.actionUrl,
     };
   }

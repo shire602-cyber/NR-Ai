@@ -122,7 +122,6 @@
   "toasts.reportGenerated": "Report generated",
   "toasts.usageReportIsBeingGenerated": "Usage report is being generated...",
   "toasts.generatingReport": "Generating report",
-  "toasts.newsletterFeatureWillBeAvailableSoonConfigure": "Newsletter feature will be available soon. Configure email settings first.",
   "toasts.newsletter": "Newsletter",
   "toasts.databaseHasBeenBackedUpSuccessfully": "Database has been backed up successfully.",
   "toasts.backupComplete": "Backup complete",

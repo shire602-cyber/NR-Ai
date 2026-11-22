@@ -304,7 +304,7 @@ export const bankReconciliations = pgTable(
 );
 export type BankReconciliation = typeof bankReconciliations.$inferSelect;
 
-/** Single-use state for the financial-data authorization return (R06-14). */
+/** OAuth state issued on provider authorization, verified once on return (R06-14). */
 export const bankFeedOauthStates = pgTable("bank_feed_oauth_states", {
   id: uuid("id")
     .primaryKey()

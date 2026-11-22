@@ -55,9 +55,9 @@ export async function assertPeriodNotLocked(
   await mod.assertPeriodNotLocked(companyId, date, tx);
 }
 
-async function isPeriodLocked(companyId: string, isoDate: string): Promise<boolean> {
-  const mod = await import("../services/month-end.service");
-  return mod.isPeriodLocked(companyId, isoDate);
+async function isPeriodLocked(companyId: string, isoDate: string, tx?: LedgerTx): Promise<boolean> {
+  const mod = await import("../services/period-lock.service");
+  return mod.isPeriodLocked(companyId, isoDate, tx);
 }
 
 /** Options only the kernel's own flows (reversal, legacy adapter) may set. */
@@ -642,7 +642,7 @@ async function resolveReversalDate(
     await assertPeriodNotLocked(original.companyId, at, tx);
     return iso === origIso ? new Date(original.date) : at;
   }
-  if (!(await isPeriodLocked(original.companyId, origIso))) return new Date(original.date);
+  if (!(await isPeriodLocked(original.companyId, origIso, tx))) return new Date(original.date);
   const today = todayIso();
   const at = new Date(`${today}T00:00:00.000Z`);
   await assertPeriodNotLocked(original.companyId, at, tx);
@@ -895,8 +895,8 @@ export async function updateDraftEntry(
     status: "draft",
     source: pre.source,
   });
-  await assertPeriodNotLocked(pre.companyId, pre.date);
-  await assertPeriodNotLocked(pre.companyId, n.dateAt);
+  await assertPeriodNotLocked(pre.companyId, pre.date, ctx.tx);
+  await assertPeriodNotLocked(pre.companyId, n.dateAt, ctx.tx);
   return withLedgerTx(async (tx) => {
     await assertAccountsUsable(tx, pre.companyId, n.lines, false);
     // B1 (NC1) / C1: an edited draft is held to the control-account rule like a new entry,

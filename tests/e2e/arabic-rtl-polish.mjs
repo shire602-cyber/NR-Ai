@@ -53,10 +53,12 @@ const hardLoadRoutes = new Set([
   "/settings/company",
   "/client-portal/account",
 ]);
+const csvImportPage = "/bank-reconciliation?import=1";
 const redirects = {
   "/company-profile": "/settings/company",
   "/accounts": "/chart-of-accounts",
-  "/banking": "/bank-feeds",
+  "/banking": csvImportPage,
+  "/bank-feeds": csvImportPage,
   "/compliance": "/compliance-calendar",
   "/settings": "/settings/company",
   "/journal-entries": "/journal",
@@ -93,6 +95,7 @@ function routeMatrix(fixtures) {
     href: route,
     expected: redirects[route] ?? route,
     persona: "owner",
+    probe: redirects[route] === csvImportPage ? "button-download-sample-bank-csv" : undefined,
   }));
   const parameterScreens = [
     ["/accounts/:id/ledger", "accountId", "owner"],

@@ -11,7 +11,7 @@
  * legacy per-category flags) plus per-type overrides in type_preferences. A user on the daily
  * digest gets non-urgent emails batched into one message by "notifications.dailyDigest".
  */
-import { BANK_STATEMENT_IMPORT_HREF, billHref, invoiceHref } from "../../shared/app-links";
+import { billHref, invoiceHref } from "../../shared/app-links";
 import { and, eq, gte, isNull, sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import {
@@ -24,15 +24,13 @@ import {
 import { createLogger } from "../config/logger";
 import { onDomainEvent, type DomainEvent } from "../platform/domain-events";
 import { listJobs, registerJob } from "../platform/job-registry";
-import { renderBilingualEmail, sendEmail } from "./email.service";
-import { renderDigestItem, renderNotificationEmail } from "./notification-email-copy";
-import { marketingBrand } from "../../shared/marketing-brand";
+import { sendEmail } from "./email.service";
+import { renderQueuedNotificationEmail } from "./notification-email-copy";
 import { isCapabilityLive } from "../../shared/capabilities";
-import {
-  normalizeNotificationCopy,
-  notificationCopy,
-  renderServerCopy,
-} from "../../shared/server-copy";
+import { notificationCopy, renderServerCopy } from "../../shared/server-copy";
+import { customerVisibleNotification } from "../storage/notification-visibility";
+import { deliverOutboxMessage, enqueueEmail } from "../outbox/outbox";
+import { DIGEST_WINDOW_MS, renderNotificationDigest } from "./notification-digest";
 
 const log = createLogger("notification-engine");
 
@@ -44,7 +42,6 @@ export const NOTIFICATION_EVENT_TYPES = [
   "bill.approved",
   "bill.paid",
   "payroll.approved",
-  "bank.sync_failed",
   "compliance.deadline_due",
   "task.due",
 ] as const;
@@ -84,7 +81,6 @@ const TYPE_RULES: Record<
   "bill.approved": { category: null, emailByDefault: false, notificationType: "system" },
   "bill.paid": { category: null, emailByDefault: false, notificationType: "system" },
   "payroll.approved": { category: null, emailByDefault: true, notificationType: "system" },
-  "bank.sync_failed": { category: null, emailByDefault: true, notificationType: "system" },
   "compliance.deadline_due": {
     category: "vatDeadlines",
     emailByDefault: true,
@@ -243,9 +239,9 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
       }
     }
     if (ch.email && user.email) {
-      const { title, message } = normalizeNotificationCopy({ ...input, eventKey: key });
-      const r = await sendEmail(user.email, title, message, {
-        html: renderNotificationEmail(title, message),
+      const { subject, html, textBody } = renderQueuedNotificationEmail(input);
+      const r = await sendEmail(user.email, subject, textBody, {
+        html,
         companyId: input.companyId,
         category: "notification",
         relatedEntityType: input.relatedEntityType ?? null,
@@ -377,20 +373,6 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
         relatedEntityType: "payroll_run",
         actionUrl: "/payroll",
       };
-    case "bank.sync_failed":
-      return {
-        ...base,
-        type: "bank.sync_failed",
-        ...notificationCopy(
-          "notification.bankSyncFailed.title",
-          "notification.bankSyncFailed.message"
-        ),
-        priority: "high",
-        relatedEntityType: "bank_connection",
-        actionUrl: BANK_STATEMENT_IMPORT_HREF,
-        // One notification per failure day, not per retry.
-        eventKey: `${p.entityId}:${String(p.occurredAt).slice(0, 10)}`,
-      };
     case "compliance.deadline_due":
       return {
         ...base,
@@ -439,7 +421,6 @@ export function registerNotificationEngine(): void {
       "bill.approved",
       "bill.paid",
       "payroll.approved",
-      "bank.sync_failed",
       "compliance.deadline_due",
       "task.due",
     ] as const) {
@@ -542,7 +523,7 @@ export async function scanVatDeadlines(now: Date = new Date()): Promise<number> 
 
 /** One digest email per opted-in user with the undigested notifications of the last day. */
 export async function sendDailyDigests(now: Date = new Date()): Promise<number> {
-  const since = new Date(now.getTime() - 26 * 3_600_000);
+  const since = new Date(now.getTime() - DIGEST_WINDOW_MS);
   const optedIn = await db
     .select({ userId: notificationPreferences.userId, email: users.email })
     .from(notificationPreferences)
@@ -561,49 +542,35 @@ export async function sendDailyDigests(now: Date = new Date()): Promise<number> 
       .where(
         and(
           eq(notifications.userId, u.userId),
+          customerVisibleNotification(),
           isNull(notifications.digestedAt),
           gte(notifications.createdAt, since)
         )
       )
+      .orderBy(notifications.createdAt, notifications.id)
       .limit(100);
     if (!rows.length || !u.email) continue;
     const day = now.toISOString().slice(0, 10);
-    const items = rows.map((r: typeof notifications.$inferSelect) =>
-      renderDigestItem(normalizeNotificationCopy(r))
-    );
-    const html = renderBilingualEmail(
-      {
-        brandName: marketingBrand,
-        heading: { en: `Your daily summary (${day})`, ar: `ملخصك اليومي (${day})` },
-        paragraphs: { en: items, ar: [`لديك ${rows.length} إشعارات جديدة.`] },
-      },
-      "bilingual"
-    );
-    const r = await sendEmail(
-      u.email,
-      `${marketingBrand} daily summary — ${rows.length} update(s)`,
-      "",
-      {
+    const { subject, html, textBody } = renderNotificationDigest(day, rows);
+    try {
+      const queued = await enqueueEmail({
+        to: u.email,
+        subject,
         html,
+        text: textBody,
         category: "digest",
         idempotencyKey: `digest:${u.userId}:${day}`,
-      }
-    );
-    if (r.queued) {
-      await db
-        .update(notifications)
-        .set({ digestedAt: now })
-        .where(
-          sql`${notifications.id} IN (${sql.join(
-            rows.map((x: { id: string }) => sql`${x.id}`),
-            sql`, `
-          )})`
-        );
+        notificationDigest: { userId: u.userId, notificationIds: rows.map(({ id }) => id) },
+      });
+      if (queued.duplicate) continue;
       await db
         .update(notificationPreferences)
         .set({ lastDigestAt: now })
         .where(eq(notificationPreferences.userId, u.userId));
       sent++;
+      if (queued.status === "queued") await deliverOutboxMessage(queued.id);
+    } catch (err) {
+      log.error({ err, userId: u.userId }, "Could not queue or deliver notification digest");
     }
   }
   return sent;

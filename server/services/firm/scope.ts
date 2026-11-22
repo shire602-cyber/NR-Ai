@@ -112,11 +112,13 @@ export async function resolveFirmContext(
   return null;
 }
 
+const noFirmLinkHistory = sql`not exists (select 1 from firm_client_links fcl where fcl.company_id = ${companies.id})`;
+
 /** SQL predicate on `companies`: the company belongs to the firm's client set. */
 export function firmClientCondition(firmId: string, isNr: boolean): SQL {
   const activeLink = sql`exists (select 1 from firm_client_links fcl where fcl.company_id = ${companies.id} and fcl.firm_id = ${firmId} and fcl.status = 'active')`;
   if (!isNr) return and(isNull(companies.deletedAt), activeLink) as SQL;
-  const legacy = sql`(${companies.companyType} = 'client' and not exists (select 1 from firm_client_links fcl2 where fcl2.company_id = ${companies.id}))`;
+  const legacy = and(eq(companies.companyType, "client"), noFirmLinkHistory);
   return and(isNull(companies.deletedAt), or(activeLink, legacy)) as SQL;
 }
 
@@ -157,6 +159,29 @@ export async function canAccessFirmClient(ctx: FirmContext, companyId: string): 
     .select({ id: companies.id })
     .from(companies)
     .where(and(eq(companies.id, companyId), accessibleClientCondition(ctx)))
+    .limit(1);
+  return !!row;
+}
+
+/** Company permissions can stand on their own for customers with no firm-link history. */
+export async function canAccessFirmClientOrUnlinkedCustomer(
+  ctx: FirmContext,
+  companyId: string
+): Promise<boolean> {
+  if (!isUuid(companyId)) return false;
+  const [row] = await db
+    .select({ id: companies.id })
+    .from(companies)
+    .where(
+      and(
+        eq(companies.id, companyId),
+        isNull(companies.deletedAt),
+        or(
+          accessibleClientCondition(ctx),
+          and(eq(companies.companyType, "customer"), noFirmLinkHistory)
+        )
+      )
+    )
     .limit(1);
   return !!row;
 }

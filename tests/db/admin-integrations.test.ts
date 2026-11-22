@@ -13,13 +13,13 @@ describe("STEP1 F6 admin integrations", () => {
     const banking = async () => {
       const response = await admin.as.get("/api/admin/integration-status");
       expect(response.status, response.text).toBe(200);
-      return response.body.integrations.find((item: { key: string }) => item.key === "bankStatementUpload");
+      return response.body.integrations.find((item: { key: string }) => item.key === "bankStatementCsvImport");
     };
     try {
       vi.stubEnv("LEAN_APP_TOKEN", undefined);
       const before = await banking();
-      expect(before).toMatchObject({ name: "Bank statement upload", configured: true, requiredEnv: [] });
-      expect(before.unlocks).toContain("CSV");
+      expect(before).toMatchObject({ name: "CSV statement import", configured: true, requiredEnv: [] });
+      expect(before.detail).toContain("CSV");
       vi.stubEnv("LEAN_APP_TOKEN", "sandbox-fixture");
       expect(await banking()).toEqual(before);
     } finally {
