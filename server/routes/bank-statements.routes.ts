@@ -120,7 +120,6 @@ const hasStatementSource = (v: { csvContent?: string; fileBase64?: string }) =>
   Boolean(v.csvContent?.trim() || v.fileBase64?.trim());
 const statementSourceMessage = {
   message: bankStatementCopy.en,
-  path: ["csvContent"],
 };
 
 const bankStatementImportSchema = z

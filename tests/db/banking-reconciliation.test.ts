@@ -144,19 +144,30 @@ describe("statement import copy", () => {
     }
   });
 
-  it("parses a legacy file and keeps the completion and duplicate notices format-neutral", async () => {
+  it("rejects a non-CSV upload and keeps CSV import and duplicate notices format-neutral", async () => {
     const t = await vatTenant();
     const ba = await bankAccount(t);
-    const upload = {
+    const importPath = `${base(t)}/bank-statements/import`;
+    const unsupported = await t.as.post(importPath, {
       bankAccountId: ba.id,
       fileName: "statement.sta",
       fileBase64: readFileSync("tests/fixtures/bank-statements/statement.sta", "base64"),
+    });
+    expect(unsupported.status, unsupported.text).toBe(400);
+    expect(unsupported.body.code).toBe("STATEMENT_CSV_REQUIRED");
+    expect(await lines(t, ba.id)).toEqual([]);
+
+    const upload = {
+      bankAccountId: ba.id,
+      fileName: "statement.csv",
+      fileBase64: Buffer.from("Date,Description,Debit,Credit\n2026-10-03,Test,0,12.50").toString(
+        "base64"
+      ),
     };
-    const first = await t.as.post(`${base(t)}/bank-statements/import`, upload);
-    const duplicate = await t.as.post(`${base(t)}/bank-statements/import`, upload);
+    const first = await t.as.post(importPath, upload);
+    const duplicate = await t.as.post(importPath, upload);
     expect(first.status, first.text).toBe(201);
-    expect(first.body.detectedFormat).toBe("mt940");
-    expect(first.body.imported).toBeGreaterThan(0);
+    expect(first.body.imported).toBe(1);
     expect(duplicate.status, duplicate.text).toBe(201);
     expect(duplicate.body.imported).toBe(0);
     expect(duplicate.body.skippedDuplicates).toBe(first.body.imported);
