@@ -5,7 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { loadNamespace } from "../../client/src/lib/i18n";
 import { EInvoiceHeaderStrip } from "../../client/src/components/einvoice/EInvoiceHeaderStrip";
-import { EInvoiceTrackBadges } from "../../client/src/components/einvoice/EInvoiceStatus";
+import { EInvoiceListCell } from "../../client/src/components/einvoice/EInvoiceListCell";
+import { EInvoiceTrackBadges } from "../../client/src/components/einvoice/EInvoiceTrackBadges";
 import {
   deliveryFromLegacyStatus,
   isReportingOnlyFailure,
@@ -16,6 +17,65 @@ import { einvoiceStatusKey } from "../../client/src/components/einvoice/use-einv
 
 // F15 N2/N3: the invoice header strip shows the rejection reason and the FTA chip label.
 describe("e-invoice header strip", () => {
+  it("keeps the queue label when a worker has claimed but not handed off the invoice", async () => {
+    await loadNamespace("en", "einvoicing");
+    const html = renderToStaticMarkup(
+      createElement(EInvoiceTrackBadges, {
+        delivery: "sending",
+        reporting: "pending",
+        queuedForSubmission: true,
+      })
+    );
+    expect(html).toContain('title="Delivery to customer: Queued for submission"');
+    expect(html).not.toContain('title="Delivery to customer: Sending"');
+  });
+  it.each(["accepted", "cleared"])(
+    "never implies delivery from a bare %s list record",
+    async (status) => {
+      await loadNamespace("en", "einvoicing");
+      const html = renderToStaticMarkup(
+        createElement(EInvoiceListCell, {
+          invoice: { id: "historical-acube", einvoiceStatus: status },
+        })
+      );
+      expect(html).toContain("Delivery unconfirmed");
+      expect(html).not.toContain("Delivered");
+      expect(html).not.toContain("Delivery failed");
+    }
+  );
+  it.each([false, true])(
+    "qualifies a sandbox rejection on the list (reporting required: %s)",
+    async (reportingRequired) => {
+      await loadNamespace("en", "einvoicing");
+      const html = renderToStaticMarkup(
+        createElement(EInvoiceListCell, {
+          invoice: { id: "rejected-in-sandbox", einvoiceStatus: "rejected" },
+          evidence: {
+            doc: {
+              invoiceId: "rejected-in-sandbox",
+              provider: "acube",
+              providerStatus: "rejected",
+              providerMessageId: "sandbox-document",
+              status: "rejected",
+              environment: "sandbox",
+              deliveryStatus: "rejected",
+              reportingStatus: "pending",
+              reportBy: null,
+            },
+            pill: {
+              invoiceId: "rejected-in-sandbox",
+              delivery: "rejected",
+              reporting: "pending",
+              reportBy: null,
+              overdue: false,
+              reportingRequired,
+            },
+          },
+        })
+      );
+      expect(html).toContain("Rejected · Sandbox");
+    }
+  );
   it.each([
     ["sandbox", "FTA: reported · Sandbox"],
     [null, "FTA: reported · Environment unverified"],

@@ -978,7 +978,7 @@ export async function buildFirmValueOps(
     },
     {
       lane: "bank_close",
-      title: "Bank-feed close autopilot",
+      title: "Bank statement review",
       valueMetric: `${clients.filter((c) => c.scores.closeReadiness >= 80).length} close-ready`,
       count: clients.filter((c) => c.scores.closeReadiness < 80).length,
       impactAed: 0,

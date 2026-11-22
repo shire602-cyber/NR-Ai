@@ -68,6 +68,7 @@ export function documentSubmissionMetadata(
   const metadata = documentSubmissionSnapshot(doc);
   const environment = metadata?.environment;
   if (environment !== "sandbox" && environment !== "production" && environment !== "mock") return;
+  const priorReporting = metadata?.correctionOriginalReporting;
   return {
     environment: environment as EInvoiceProviderEnvironment,
     operationId: typeof metadata?.operationId === "string" ? metadata.operationId : null,
@@ -94,6 +95,15 @@ export function documentSubmissionMetadata(
       metadata?.correctionOriginalValidation &&
       typeof metadata.correctionOriginalValidation === "object"
         ? metadata.correctionOriginalValidation
+        : null,
+    correctionOriginalReporting:
+      priorReporting &&
+      typeof priorReporting === "object" &&
+      "required" in priorReporting &&
+      (typeof priorReporting.required === "boolean" || priorReporting.required === null) &&
+      "reportBy" in priorReporting &&
+      (typeof priorReporting.reportBy === "string" || priorReporting.reportBy === null)
+        ? { required: priorReporting.required, reportBy: priorReporting.reportBy }
         : null,
     correctionUncertain: metadata?.correctionUncertain === true,
     correctionCandidateHash:

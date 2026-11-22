@@ -3,7 +3,7 @@
 // validate it locally (UBL 2.1 XSD + PINT AE schematron + rule list), then submit it to the
 // SANDBOX of each accredited ASP (A-Cube, Complyance) whose credentials are present.
 //
-// - No credentials for a provider: it is SKIPPED (exit 0 when nothing ran). Nothing is asked for.
+// - No credentials for a provider: it is SKIPPED. --status fails if nothing can be verified.
 // - A production setting (ACUBE_ENV / COMPLYANCE_ENV other than "sandbox") is REFUSED: this
 //   script only ever talks to a sandbox.
 // - Secrets are read from the environment only and never printed; output lists outcome fields.
@@ -20,6 +20,8 @@
 // ASP_DRYRUN_BUYER_TRN, COMPLYANCE_DRYRUN_SOURCE (the sandbox invoice source name),
 // COMPLYANCE_SOURCE_VERSION (default v1).
 import { randomUUID } from "node:crypto";
+import type { EInvoiceDocumentRef } from "../../server/services/einvoice-provider";
+import { tinFromTrn } from "../../server/services/einvoice/pint-ae-codes";
 
 type ProviderName = "acube" | "complyance";
 
@@ -37,6 +39,10 @@ if (only && only !== "acube" && only !== "complyance") {
 }
 const validateOnly = flag("--validate-only");
 const pollStatus = flag("--status");
+if (validateOnly && pollStatus) {
+  console.error("Choose either --validate-only or --status.");
+  process.exit(2);
+}
 
 /** Required (secret) credentials and the environment switch for each ASP. Names only. */
 export const ASP_REQUIREMENTS: Record<
@@ -137,6 +143,7 @@ async function runProvider(
     companyId: doc.company.id,
   };
   let provider;
+  const statusRef: EInvoiceDocumentRef = { documentType: submission.documentType };
   if (name === "acube") {
     const { AcubeEInvoiceProvider } =
       await import("../../server/services/einvoice/providers/acube");
@@ -151,6 +158,15 @@ async function runProvider(
     };
     console.log(`${req.label}: invoice source ${source.name}:${source.version}`);
     provider = new ComplyanceEInvoiceProvider(env, { sourceFor: async () => source });
+    statusRef.outboundIdentity = {
+      documentNumber: submission.invoiceNumber,
+      supplierTin: tinFromTrn(doc.company.trnVatNumber),
+      supplierTrn: doc.company.trnVatNumber ?? null,
+      legalEntityId: null,
+      sourceName: source.name,
+    };
+    // This is the ID from a fresh submission using the very same credentials and source.
+    statusRef.knownCredentialScope = true;
   }
   console.log(`${req.label}: submitting ${doc.invoice.number} (uuid ${doc.uuid}) to the sandbox`);
   const res = await provider.submit(submission);
@@ -166,14 +182,17 @@ async function runProvider(
     reasons: res.reasons ?? [],
   };
   console.log(JSON.stringify(summary, null, 2));
-  if (pollStatus && res.providerMessageId) {
-    const s = await provider.getStatus(res.providerMessageId, {
-      uuid: doc.uuid,
-      documentType: "380",
-    } as never);
+  if (pollStatus) {
+    if (!res.providerMessageId) {
+      console.error(`${req.label} status: submission did not return a document ID to verify.`);
+      return "failed";
+    }
+    const s = await provider.getStatus(res.providerMessageId, statusRef);
     console.log(
-      `${req.label} status: ${JSON.stringify({ status: s.status, delivery: s.delivery ?? null, reporting: s.reporting ?? null, errorCode: s.errorCode ?? null })}`
+      `${req.label} status: ${JSON.stringify({ status: s.status, delivery: s.delivery ?? null, reporting: s.reporting ?? null, providerStatus: s.providerStatus ?? null, errorCode: s.errorCode ?? null })}`
     );
+    if (s.status === "failed" || s.status === "rejected" || s.errorCode || !s.providerStatus)
+      return "failed";
   }
   return res.status === "failed" || res.status === "rejected" ? "failed" : "ok";
 }
@@ -192,6 +211,10 @@ const names: ProviderName[] = only ? [only as ProviderName] : ["acube", "complya
 const results: string[] = [];
 for (const n of names) results.push(await runProvider(n, doc));
 if (results.every((r) => r === "skipped")) {
+  if (pollStatus) {
+    console.error("No ASP status could be verified because sandbox credentials are missing.");
+    process.exit(1);
+  }
   console.log("no ASP sandbox credentials present: nothing was submitted (this is not an error)");
   process.exit(0);
 }

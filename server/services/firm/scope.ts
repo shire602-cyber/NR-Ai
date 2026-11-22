@@ -17,7 +17,9 @@
  * another firm, always removes the company from NR's set.
  */
 import { and, eq, inArray, isNull, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
+import { databaseUtcNow } from "../../config/database-time";
 import { db } from "../../db";
+import { DomainError } from "../../errors";
 import {
   companies,
   companyUsers,
@@ -607,7 +609,13 @@ export async function grantCompanyAccess(
  * independent origin remain so repeated revocations can distinguish those company roles.
  */
 export async function revokeCompanyAccess(
-  input: { firmId: string; isNr: boolean; companyId: string; userId?: string },
+  input: {
+    firmId: string;
+    isNr: boolean;
+    companyId: string;
+    userId?: string;
+    disconnect?: { linkId?: string; actorId: string; reason: string | null };
+  },
   exec?: Executor
 ): Promise<{ removedMemberships: number }> {
   if (!exec) return db.transaction((tx) => revokeCompanyAccess(input, tx));
@@ -623,14 +631,39 @@ export async function revokeCompanyAccess(
     .select({ userId: firmCompanyGrants.userId })
     .from(firmCompanyGrants)
     .where(grantWhere);
-  const affected = [...new Set([...memberIds, ...recorded.map((row) => row.userId)])];
-  if (affected.length) {
+  const affected = new Set([...memberIds, ...recorded.map((row) => row.userId)]);
+  if (input.disconnect) affected.add(input.disconnect.actorId);
+  if (affected.size) {
     await exec
       .select({ id: users.id })
       .from(users)
-      .where(inArray(users.id, affected))
+      .where(inArray(users.id, [...affected]))
       .orderBy(users.id)
       .for("update");
+  }
+  if (input.disconnect) {
+    // Staff assignment locks the user before the link. Keep this order while committing the
+    // link change, grants and assignments together.
+    const { linkId, actorId, reason } = input.disconnect;
+    const [link] = await exec
+      .update(firmClientLinks)
+      .set({
+        status: "revoked",
+        revokedBy: actorId,
+        revokedAt: databaseUtcNow,
+        updatedAt: databaseUtcNow,
+        revokeReason: reason,
+      })
+      .where(
+        and(
+          eq(firmClientLinks.firmId, input.firmId),
+          eq(firmClientLinks.companyId, input.companyId),
+          eq(firmClientLinks.status, "active"),
+          linkId ? eq(firmClientLinks.id, linkId) : undefined
+        )
+      )
+      .returning({ id: firmClientLinks.id });
+    if (linkId && !link) throw new DomainError("LINK_NOT_FOUND", 404);
   }
   const grants = await exec
     .select({ userId: firmCompanyGrants.userId })
@@ -653,7 +686,8 @@ export async function revokeCompanyAccess(
         and(
           eq(firmStaffAssignments.companyId, input.companyId),
           inArray(firmStaffAssignments.userId, memberIds),
-          sql`not (${recordedCompanyAcceptance(input.companyId, firmStaffAssignments.userId)})`,
+          // A receipt from an earlier membership cannot preserve a later firm assignment.
+          sql`not (${acceptedCompanyInvite(input.companyId, firmStaffAssignments.userId)})`,
           sql`not exists (select 1 from firm_company_grants fcg where fcg.company_id = ${input.companyId} and fcg.user_id = ${firmStaffAssignments.userId})`
         )
       );

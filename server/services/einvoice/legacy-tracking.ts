@@ -20,6 +20,7 @@ import { attr, first, parseXml, text, textAt } from "./dom";
 import {
   assertLegalEntityCanSend,
   companyTin,
+  currentOnboardingEntity,
   getLegalEntity,
   requireCompanyTin,
 } from "./legal-entities";
@@ -36,6 +37,7 @@ import {
   documentSubmissionMetadata,
   documentSubmissionSnapshot,
   getEInvoiceDocument,
+  hasUnverifiedComplyanceCorrection,
   lockEInvoiceInvoice,
   sha256Hex,
   SUBMISSION_LEASE_MS,
@@ -87,6 +89,7 @@ export function correctableComplyanceReference(
     invoice.einvoiceProviderMessageId === id &&
     (pin?.environment === "sandbox" || pin?.environment === "production") &&
     pin.correctableRejection &&
+    !pin.correctionBlocked &&
     !pin.correctionUncertain &&
     !!pin.scope &&
     !!pin.supplierTin &&
@@ -170,6 +173,31 @@ function recoveryPlan(invoice: Invoice, doc: EInvoiceDocument | undefined) {
   };
 }
 
+function historicalComplyanceRejection(invoice: Invoice, doc: EInvoiceDocument | undefined) {
+  const snapshot = documentSubmissionSnapshot(doc);
+  return (
+    originalProvider(invoice, doc) === "complyance" &&
+    (doc?.status ?? invoice.einvoiceStatus) === "rejected" &&
+    (!doc?.providerStatus || doc.providerStatus === "rejected") &&
+    (!doc?.lastErrorCode || doc.lastErrorCode === "COMPLYANCE_VALIDATION") &&
+    !doc?.nextRetryAt &&
+    !doc?.submitClaimedAt &&
+    !snapshot?.correctionBlocked &&
+    !snapshot?.correctionUncertain &&
+    (!snapshot?.scope || snapshot.correctableRejection == null)
+  );
+}
+
+function completeStoredTracking(invoice: Invoice, doc: EInvoiceDocument | undefined) {
+  return (
+    documentProviderEnvironment(doc) &&
+    invoice.einvoiceProviderMessageId &&
+    doc?.providerMessageId &&
+    !historicalComplyanceRejection(invoice, doc) &&
+    (doc.status !== "cleared" || (invoice.einvoiceXml && invoice.einvoiceHash && doc.xmlHash))
+  );
+}
+
 /** Advertise local configuration only. Opening the invoice makes no provider request. */
 export async function legacyTrackingAvailability(
   invoice: Invoice,
@@ -192,7 +220,7 @@ export async function legacyTrackingAvailability(
   }
   const plan = recoveryPlan(invoice, doc);
   const pin = documentProviderEnvironment(doc);
-  if (!plan || (pin && invoice.einvoiceProviderMessageId && doc?.providerMessageId)) return null;
+  if (!plan || completeStoredTracking(invoice, doc)) return null;
   const configuration = await companyProviderConfiguration(invoice.companyId, plan.provider);
   return {
     provider: plan.provider,
@@ -257,31 +285,39 @@ async function savedSource(
 ) {
   const needsArchive = !invoice.einvoiceXml || (!invoice.einvoiceHash && !doc?.xmlHash);
   const snapshot = documentSubmissionSnapshot(doc);
-  const archives = needsArchive
-    ? await db
-        .select({
-          xml: einvoiceArchive.xml,
-          hash: einvoiceArchive.sha256,
-          number: einvoiceArchive.documentNumber,
-        })
-        .from(einvoiceArchive)
-        .where(
-          and(
-            eq(einvoiceArchive.companyId, invoice.companyId),
-            eq(einvoiceArchive.invoiceId, invoice.id),
-            eq(einvoiceArchive.direction, "outbound"),
-            eq(einvoiceArchive.kind, "submitted"),
-            eq(einvoiceArchive.provider, reference.provider),
-            reference.messageId
-              ? eq(einvoiceArchive.providerMessageId, reference.messageId)
-              : eq(
-                  einvoiceArchive.documentNumber,
-                  stringValue(snapshot?.invoiceNumber) ?? invoice.number
-                )
-          )
+  const pinnedHash = invoice.einvoiceHash ?? doc?.xmlHash;
+  const loadArchive = (kind: "submitted" | "cleared") =>
+    db
+      .select({
+        xml: einvoiceArchive.xml,
+        hash: einvoiceArchive.sha256,
+        number: einvoiceArchive.documentNumber,
+        uuid: einvoiceArchive.uuid,
+      })
+      .from(einvoiceArchive)
+      .where(
+        and(
+          eq(einvoiceArchive.companyId, invoice.companyId),
+          eq(einvoiceArchive.invoiceId, invoice.id),
+          eq(einvoiceArchive.direction, "outbound"),
+          eq(einvoiceArchive.kind, kind),
+          eq(einvoiceArchive.provider, reference.provider),
+          reference.messageId
+            ? eq(einvoiceArchive.providerMessageId, reference.messageId)
+            : eq(
+                einvoiceArchive.documentNumber,
+                stringValue(snapshot?.invoiceNumber) ?? invoice.number
+              ),
+          pinnedHash ? eq(einvoiceArchive.sha256, pinnedHash) : undefined
         )
-        .limit(2)
-    : [];
+      )
+      .limit(2);
+  const hasClearance =
+    reference.messageId &&
+    (doc?.status ?? invoice.einvoiceStatus) === "cleared" &&
+    !hasUnverifiedComplyanceCorrection(doc);
+  const cleared = needsArchive && hasClearance ? await loadArchive("cleared") : [];
+  const archives = needsArchive && cleared.length === 0 ? await loadArchive("submitted") : cleared;
   if (archives.length > 1) throw mismatch();
   const [archive] = archives;
   const xml = invoice.einvoiceXml ?? archive?.xml;
@@ -297,7 +333,8 @@ async function savedSource(
     throw mismatch();
   }
   const documentNumber = stringValue(snapshot?.invoiceNumber) ?? archive?.number ?? invoice.number;
-  if (textAt(root, "cbc:ID") !== documentNumber) throw mismatch();
+  if (textAt(root, "cbc:ID") !== documentNumber || (archive && archive.number !== documentNumber))
+    throw mismatch();
   const seller = first(root, "cac:AccountingSupplierParty/cac:Party");
   if (!seller) throw mismatch();
   const endpoint = first(seller, "cbc:EndpointID");
@@ -314,7 +351,10 @@ async function savedSource(
   )
     throw mismatch();
   const xmlUuid = textAt(root, "cbc:UUID");
-  if (xmlUuid && [doc?.uuid, invoice.einvoiceUuid].some((uuid) => uuid && uuid !== xmlUuid)) {
+  if (
+    xmlUuid &&
+    [doc?.uuid, invoice.einvoiceUuid, archive?.uuid].some((uuid) => uuid && uuid !== xmlUuid)
+  ) {
     throw mismatch();
   }
   return {
@@ -325,8 +365,22 @@ async function savedSource(
     supplierTin,
     supplierTrn,
     documentType: readEInvoiceDocumentType(xml) ?? doc?.documentType ?? null,
-    uuid: xmlUuid ?? doc?.uuid ?? invoice.einvoiceUuid,
+    uuid: xmlUuid ?? doc?.uuid ?? invoice.einvoiceUuid ?? archive?.uuid ?? null,
   };
+}
+
+/** The invoice route can recover immutable bytes even when its legacy mirror is empty. */
+export async function archivedEInvoiceXmlForDownload(invoice: Invoice): Promise<string | null> {
+  const doc = await getEInvoiceDocument(invoice.companyId, invoice.id);
+  const reference = legacyTrackingReference(invoice, doc);
+  if (!reference) return null;
+  try {
+    return (await savedSource(invoice, doc, reference)).xml;
+  } catch (err) {
+    if (err instanceof DomainError && err.code === "EINVOICE_ENVIRONMENT_PROOF_MISMATCH")
+      return null;
+    throw err;
+  }
 }
 
 async function verifyAtProvider(
@@ -336,7 +390,8 @@ async function verifyAtProvider(
   environment: ProviderEnvironment,
   source: Awaited<ReturnType<typeof savedSource>>,
   snapshot: ReturnType<typeof documentSubmissionSnapshot>,
-  configuration: NonNullable<Awaited<ReturnType<typeof companyProviderConfiguration>>>
+  configuration: NonNullable<Awaited<ReturnType<typeof companyProviderConfiguration>>>,
+  verifyCorrection: boolean
 ) {
   const entity = await getLegalEntity(company.id, plan.provider, environment);
   const matchingEntity = entity?.tin === source.supplierTin ? entity : null;
@@ -360,10 +415,31 @@ async function verifyAtProvider(
     const messageId = plan.messageId ?? suppliedId;
     if (!messageId) throw mismatch();
     const provider = new ComplyanceEInvoiceProvider(configuration.env);
-    const result = await provider.checkOutboundDocument(messageId, identity);
-    if (result === "unavailable") throw new DomainError("EINVOICE_PROVIDER_UNAVAILABLE", 502);
-    if (result !== "verified") throw mismatch();
-    return { identity, reference: { provider: plan.provider, messageId } };
+    const active = currentOnboardingEntity(company, entity, plan.provider, environment);
+    const context =
+      verifyCorrection &&
+      source.uuid &&
+      active?.status === "active" &&
+      active.tin === identity.supplierTin &&
+      active.legalEntityId === identity.legalEntityId
+        ? { legalEntity: active }
+        : undefined;
+    const result = await provider.checkOutboundRecovery(messageId, identity, context);
+    if (result.verdict === "unavailable")
+      throw new DomainError("EINVOICE_PROVIDER_UNAVAILABLE", 502);
+    if (result.verdict !== "verified") throw mismatch();
+    const scope =
+      context && result.correctionReasons
+        ? await provider.getSubmissionScope(company.id, context)
+        : null;
+    return {
+      identity,
+      reference: { provider: plan.provider, messageId },
+      correction:
+        scope && result.correctionReasons && (!snapshot?.scope || snapshot.scope === scope)
+          ? { scope, reasons: result.correctionReasons }
+          : null,
+    };
   }
   const provider = new AcubeEInvoiceProvider(configuration.env);
   const ref = { documentType: source.documentType };
@@ -401,7 +477,7 @@ async function verifyAtProvider(
   }
   const remoteXml = await provider.fetchSource(messageId, ref).catch(translateAcubeProofError);
   if (remoteXml !== source.xml) throw mismatch();
-  return { identity, reference: { provider: plan.provider, messageId } };
+  return { identity, reference: { provider: plan.provider, messageId }, correction: null };
 }
 
 function translateAcubeProofError(err: unknown): never {
@@ -668,7 +744,8 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
     throw mismatch();
   const existingEnvironment = documentProviderEnvironment(doc);
   assertSameEnvironment(existingEnvironment, environment);
-  if (existingEnvironment && invoice.einvoiceProviderMessageId && doc?.providerMessageId) {
+  const verifyCorrection = historicalComplyanceRejection(invoice, doc);
+  if (completeStoredTracking(invoice, doc)) {
     return { provider: plan.provider, environment, verified: true as const };
   }
 
@@ -679,14 +756,15 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
   if (!configuration) throw cannotVerify();
   const source = await savedSource(invoice, doc, plan);
   const snapshot = documentSubmissionSnapshot(doc);
-  const { identity, reference } = await verifyAtProvider(
+  const { identity, reference, correction } = await verifyAtProvider(
     company,
     plan,
     documentId,
     environment,
     source,
     snapshot,
-    configuration
+    configuration,
+    verifyCorrection
   );
   const recovered = plan.messageId === null;
   const response = {
@@ -708,7 +786,7 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
     const current = await lockEInvoiceInvoice(company.id, invoice.id, tx);
     if (!current) throw new DomainError("INVOICE_NOT_FOUND", 404);
     const [currentCompany] = await tx
-      .select({ deletedAt: companies.deletedAt })
+      .select()
       .from(companies)
       .where(eq(companies.id, company.id))
       .for("share");
@@ -725,7 +803,8 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
     }
     const pinned = documentProviderEnvironment(stored);
     assertSameEnvironment(pinned, environment);
-    if (pinned && current.einvoiceProviderMessageId && stored?.providerMessageId) return response;
+    const preserveRejection = historicalComplyanceRejection(current, stored);
+    if (completeStoredTracking(current, stored)) return response;
     const [duplicate] = await tx
       .select({ id: einvoiceDocuments.id })
       .from(einvoiceDocuments)
@@ -745,8 +824,10 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
       current.einvoiceXml !== invoice.einvoiceXml ||
       current.einvoiceHash !== invoice.einvoiceHash ||
       current.einvoiceUuid !== invoice.einvoiceUuid ||
+      current.einvoiceStatus !== invoice.einvoiceStatus ||
       current.number !== invoice.number ||
       stored?.id !== doc?.id ||
+      stored?.updatedAt?.getTime() !== doc?.updatedAt?.getTime() ||
       stored?.attempts !== doc?.attempts ||
       stored?.submitClaimedAt?.getTime() !== doc?.submitClaimedAt?.getTime() ||
       stored?.xmlHash !== doc?.xmlHash ||
@@ -754,6 +835,28 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
       JSON.stringify(documentSubmissionSnapshot(stored)) !== JSON.stringify(snapshot)
     )
       throw mismatch();
+
+    if (correction && preserveRejection) {
+      const entity = currentOnboardingEntity(
+        currentCompany,
+        await getLegalEntity(company.id, "complyance", environment, tx, "share"),
+        "complyance",
+        environment
+      );
+      const credentials = await companyProviderConfiguration(company.id, "complyance", {
+        environment,
+      });
+      if (
+        entity?.status !== "active" ||
+        entity.legalEntityId !== identity.legalEntityId ||
+        entity.tin !== identity.supplierTin ||
+        !credentials ||
+        (await new ComplyanceEInvoiceProvider(credentials.env).getSubmissionScope(company.id, {
+          legalEntity: entity,
+        })) !== correction.scope
+      )
+        throw mismatch();
+    }
 
     const now = new Date();
     const required = recordedReportingRequired(stored);
@@ -763,12 +866,14 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
       !Array.isArray(stored.validation)
         ? stored.validation
         : {};
-    const status = recovered
-      ? "submitted"
-      : (stored?.status ??
-        (HELD_STATUSES.includes(current.einvoiceStatus ?? "")
-          ? current.einvoiceStatus!
-          : "submitted"));
+    const status = preserveRejection
+      ? "rejected"
+      : recovered
+        ? "submitted"
+        : (stored?.status ??
+          (HELD_STATUSES.includes(current.einvoiceStatus ?? "")
+            ? current.einvoiceStatus!
+            : "submitted"));
     const { documentNumber, ...owner } = identity;
     const document = {
       status,
@@ -787,15 +892,41 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
           environmentVerifiedAt: now.toISOString(),
           providerAttempted: true,
           ...(required === null ? {} : { reportingRequired: required }),
+          ...(correction && preserveRejection
+            ? { scope: correction.scope, correctableRejection: true }
+            : {}),
           ...(stored?.lastErrorCode === "COMPLYANCE_XML_FAILED" ? { correctionBlocked: true } : {}),
         },
       },
     };
-    if (recovered) {
+    if (recovered || (correction && preserveRejection)) {
+      const providerStatus = preserveRejection
+        ? correction
+          ? "rejected"
+          : (stored?.providerStatus ?? null)
+        : null;
+      const errorCode = preserveRejection
+        ? correction
+          ? "COMPLYANCE_VALIDATION"
+          : (stored?.lastErrorCode ?? null)
+        : null;
+      const rejectionReasons = preserveRejection
+        ? (stored?.rejectionReasons ?? correction?.reasons ?? null)
+        : null;
+      const lastError = preserveRejection
+        ? (stored?.lastError ??
+          correction?.reasons.map(({ message }) => message).join("; ") ??
+          null)
+        : null;
       await applyTracks(
         company.id,
         invoice.id,
-        { delivery: "queued", errorCode: null, providerStatus: null },
+        {
+          delivery: preserveRejection ? "rejected" : "queued",
+          errorCode,
+          errorMessage: lastError,
+          providerStatus,
+        },
         {
           source: "user",
           now,
@@ -805,12 +936,16 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
             ...document,
             nextRetryAt: null,
             submitClaimedAt: null,
-            lastError: null,
-            rejectionReasons: null,
+            lastError,
+            rejectionReasons,
           },
         },
         tx
       );
+    } else {
+      await upsertEInvoiceDocument(company.id, invoice.id, document, tx);
+    }
+    if (recovered) {
       await archiveEInvoiceXml(
         {
           companyId: company.id,
@@ -827,8 +962,6 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
         },
         tx
       );
-    } else {
-      await upsertEInvoiceDocument(company.id, invoice.id, document, tx);
     }
     // Fill only the missing legacy mirrors needed by the existing polling and XML paths.
     await tx
@@ -841,8 +974,8 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
         einvoiceUuid: current.einvoiceUuid ?? source.uuid,
         ...(recovered
           ? {
-              einvoiceStatus: "submitted",
-              einvoiceStatusDetail: null,
+              einvoiceStatus: status,
+              einvoiceStatusDetail: preserveRejection ? current.einvoiceStatusDetail : null,
               einvoiceSubmittedAt: current.einvoiceSubmittedAt ?? now,
             }
           : {}),
@@ -862,6 +995,7 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
           provider: reference.provider,
           environment,
           providerMessageId: reference.messageId,
+          ...(correction && preserveRejection ? { correctableRejection: true } : {}),
         },
       }),
     });

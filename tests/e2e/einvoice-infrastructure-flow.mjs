@@ -55,12 +55,20 @@ const appEnv = {
 const copies = {
   en: {
     title: "UAE e-invoicing",
+    paymentMeans: "Payment means",
+    chooseCardType: "Choose credit or debit card",
+    creditCard: "Credit card",
+    debitCard: "Debit card",
+    unspecifiedCard: "Bank card",
+    save: "Save",
     delivery: "Delivery to customer",
     notConfigured: "Not configured",
     queued: "Queued for submission",
     sent: "Sending",
     recipientReceived: "Received by the buyer’s provider",
     accepted: "Accepted by the buyer’s provider",
+    rejected: "Rejected",
+    deliveryUnconfirmed: "Delivery unconfirmed",
     reporting: "FTA reporting",
     reported: "Reported",
     reportedChip: "FTA: reported",
@@ -81,12 +89,20 @@ const copies = {
   },
   ar: {
     title: "الفوترة الإلكترونية في الإمارات",
+    paymentMeans: "وسيلة الدفع",
+    chooseCardType: "اختر بطاقة ائتمان أو بطاقة خصم",
+    creditCard: "بطاقة ائتمان",
+    debitCard: "بطاقة خصم",
+    unspecifiedCard: "بطاقة بنكية",
+    save: "حفظ",
     delivery: "التسليم إلى العميل",
     notConfigured: "غير مهيّأ",
     queued: "في قائمة انتظار الإرسال",
     sent: "لدى مزود الخدمة",
     recipientReceived: "استلمها مزود خدمة المشتري",
     accepted: "قبلها مزود خدمة المشتري",
+    rejected: "مرفوضة",
+    deliveryUnconfirmed: "التسليم غير مؤكّد",
     reporting: "الإبلاغ إلى الهيئة الاتحادية للضرائب",
     reported: "تم الإبلاغ",
     reportedChip: "الهيئة: تم الإبلاغ",
@@ -560,6 +576,9 @@ async function expectFrame(page, lang) {
 
 async function selectProviders(browser, persona) {
   const { lang, providers, token, clients } = persona;
+  await db.query("UPDATE companies SET einvoice_payment_means_code = '48' WHERE id = $1", [
+    clients[0].id,
+  ]);
   await inBrowser(browser, persona, async (page, navigate) => {
     for (const [index, provider] of providers.entries()) {
       await openBooks(page, navigate, persona, index);
@@ -605,6 +624,30 @@ async function selectProviders(browser, persona) {
       await selected.getAttribute("data-testid"),
       `einvoice-partner-option-${providers[0]}`
     );
+    const copy = copies[lang];
+    const paymentMeans = page.getByRole("combobox", { name: copy.paymentMeans, exact: true });
+    await paymentMeans.getByText(copy.chooseCardType, { exact: true }).waitFor();
+    await paymentMeans.click();
+    const creditCard = page.getByRole("option", { name: copy.creditCard, exact: true });
+    const debitCard = page.getByRole("option", { name: copy.debitCard, exact: true });
+    await Promise.all([creditCard.waitFor(), debitCard.waitFor()]);
+    assert.equal(
+      await page.getByRole("option", { name: copy.unspecifiedCard, exact: true }).count(),
+      0
+    );
+    await (lang === "ar" ? debitCard : creditCard).click();
+    const paymentSaved = page.waitForResponse(
+      (res) =>
+        res.request().method() === "PUT" &&
+        new URL(res.url()).pathname === `/api/companies/${clients[0].id}/einvoicing/settings`
+    );
+    await page.getByRole("button", { name: copy.save, exact: true }).click();
+    const saved = await paymentSaved;
+    assert.ok(saved.ok(), "payment means settings save");
+    assert.equal(
+      (await saved.json()).identity.einvoicePaymentMeansCode,
+      lang === "ar" ? "55" : "54"
+    );
     await navigate("/bank-feeds");
     const importTitle = copies[lang].bankStatementImport;
     const importHeading = page.getByRole("heading", { name: importTitle, level: 1, exact: true });
@@ -618,6 +661,16 @@ async function selectProviders(browser, persona) {
     await navigate("/banking", "/bank-feeds");
     await importHeading.waitFor();
     await page.waitForFunction((title) => document.title === title, importTitle);
+    const bankAccount = await request(
+      token,
+      "POST",
+      `/api/companies/${clients[0].id}/bank-accounts`,
+      {
+        nameEn: "حساب الاختبار",
+        bankName: "بنك الاختبار",
+        currency: "AED",
+      }
+    );
     const importStatement = page.getByTestId("button-feeds-import-statement");
     assert.equal(await importStatement.getAttribute("href"), "/bank-reconciliation?import=1");
     await importStatement.click();
@@ -634,6 +687,26 @@ async function selectProviders(browser, persona) {
       .getByTestId("text-statement-preview-error")
       .and(page.getByText(copies[lang].csvRequired, { exact: true }))
       .waitFor();
+    await page.getByTestId("select-import-bank-account").click();
+    await page.getByRole("option", { name: /حساب الاختبار/ }).click();
+    const statement = "Date,Description,Debit,Credit\n2026-11-13,حركة اختبار,42.00,0.00\n";
+    await statementFile.setInputFiles({
+      name: "statement.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(statement),
+    });
+    await page.getByTestId("table-statement-sample").getByText("حركة اختبار").waitFor();
+    const imported = page.waitForResponse(
+      (res) =>
+        new URL(res.url()).pathname === `/api/companies/${clients[0].id}/bank-statements/import`
+    );
+    await page.getByTestId("button-confirm-import").click();
+    const response = await imported;
+    assert.equal(response.status(), 201);
+    assert.equal((await response.json()).imported, 1);
+    const verifiedPayload = response.request().postDataJSON();
+    assert.equal(verifiedPayload.bankAccountId, bankAccount.id);
+    assert.equal(Buffer.from(verifiedPayload.fileBase64, "base64").toString(), statement);
   });
   console.log(
     `${lang}: two client books stayed isolated and missing credentials rendered gracefully`
@@ -910,21 +983,45 @@ async function verifyRejection(browser, persona) {
   const { invoiceId } = await seedOutbound(persona, persona.contactId);
   const documentId = randomUUID();
   const scope = randomBytes(32).toString("hex");
+  const providerReason = "Fixture buyer endpoint does not match its VAT number.";
+  const reasons = JSON.stringify([
+    {
+      code: "EINVOICE_BUYER_ENDPOINT_MISMATCH",
+      field: "customer.endpointId",
+      message: providerReason,
+    },
+  ]);
   await db.query(
     `UPDATE invoices SET einvoice_status = 'rejected', einvoice_provider = 'complyance',
        einvoice_provider_message_id = $2 WHERE id = $1`,
     [invoiceId, documentId]
   );
+  await db.query(
+    `INSERT INTO einvoice_document_events
+       (company_id, invoice_id, track, from_status, to_status, provider, provider_status, source)
+     VALUES ($1, $2, 'delivery', 'sending', 'rejected', 'complyance', 'final_invalid', 'poll')`,
+    [persona.clients[0].id, invoiceId]
+  );
   for (const environment of ["sandbox", null, "production"]) {
     await db.query(
       `UPDATE einvoice_documents SET status = 'rejected', provider = 'complyance',
          provider_message_id = $2, delivery_status = 'rejected', provider_status = 'final_invalid',
-         last_error_code = 'COMPLYANCE_FINAL_INVALID',
+         last_error_code = 'COMPLYANCE_FINAL_INVALID', rejection_reasons = $4::jsonb,
          validation = jsonb_set(validation, '{submission}', $3::jsonb) WHERE invoice_id = $1`,
-      [invoiceId, documentId, { environment, scope, providerAttempted: true }]
+      [invoiceId, documentId, { environment, scope, providerAttempted: true }, reasons]
     );
     await inBrowser(browser, { ...persona, width: 360 }, async (page, navigate) => {
       await openBooks(page, navigate, persona, 0);
+      const labels = copies[lang];
+      const rejectedInSandbox = `${labels.rejected} · ${labels.sandbox}`;
+      if (environment === "sandbox") {
+        await navigate("/invoices");
+        const list = page.getByTestId(`einvoice-cell-${invoiceId}`).filter({ visible: true });
+        await assertUnclippedOutcome(
+          list.getByText(rejectedInSandbox, { exact: false }),
+          `${lang} issuer sandbox rejection at 360px`
+        );
+      }
       await navigate(`/invoices/${invoiceId}/edit`);
       const qualifier =
         environment === "sandbox"
@@ -934,6 +1031,11 @@ async function verifyRejection(browser, persona) {
             : null;
       const header = page.getByTestId("einvoice-header-rejection");
       if (qualifier) await header.getByText(qualifier, { exact: false }).waitFor();
+      const headerReason =
+        lang === "ar"
+          ? "يجب أن يطابق عنوان المشتري على شبكة Peppol بالمخطط 0235 أول 10 أرقام من رقم تسجيله الضريبي."
+          : providerReason;
+      await header.getByText(headerReason, { exact: true }).waitFor();
       await header.getByTestId("einvoice-header-resubmit").click();
       const rejection = page.getByTestId("einvoice-rejection");
       await rejection.waitFor();
@@ -948,9 +1050,66 @@ async function verifyRejection(browser, persona) {
       const creditNote = lang === "ar" ? /إشعارًا دائنًا/gu : /credit note/gi;
       assert.equal(text.match(creditNote)?.length ?? 0, environment === "production" ? 1 : 0);
       assert.equal(await rejection.getByTestId("einvoice-resubmit").count(), 0);
+      if (environment === "sandbox") {
+        await page.getByTestId("einvoice-history-open").click();
+        await page
+          .getByTestId("einvoice-history")
+          .getByText(`${labels.delivery}: ${rejectedInSandbox}`, { exact: true })
+          .waitFor();
+      }
       await expectFrame(page, lang);
     });
   }
+  console.log(`${lang}: issuer rejection, reason and history matched the submission environment`);
+}
+
+async function verifyUnconfirmedDelivery(browser, persona) {
+  const { lang } = persona;
+  const { invoiceId } = await seedOutbound(persona, persona.contactId);
+  const documentId = randomUUID();
+  await db.query(
+    `UPDATE invoices SET einvoice_status = 'accepted', einvoice_provider = 'acube',
+       einvoice_provider_message_id = $2 WHERE id = $1`,
+    [invoiceId, documentId]
+  );
+  await db.query(
+    `UPDATE einvoice_documents SET status = 'accepted', provider = 'acube',
+       provider_message_id = $2, delivery_status = 'delivered' WHERE invoice_id = $1`,
+    [invoiceId, documentId]
+  );
+  await db.query(
+    `INSERT INTO einvoice_document_events
+       (company_id, invoice_id, track, from_status, to_status, provider, source)
+     VALUES ($1, $2, 'delivery', 'sending', 'delivered', 'acube', 'poll')`,
+    [persona.clients[0].id, invoiceId]
+  );
+  await inBrowser(browser, { ...persona, width: 360 }, async (page, navigate) => {
+    await openBooks(page, navigate, persona, 0);
+    // Exercise the list fallback separately from the full evidence read in the drawer.
+    await page.route(/\/einvoicing\/compliance\?invoiceIds=/, (route) =>
+      route.fulfill({ json: { mandateApplies: true, items: [], documents: [] } })
+    );
+    await navigate("/invoices");
+    const labels = copies[lang];
+    const list = page.getByTestId(`einvoice-cell-${invoiceId}`).filter({ visible: true });
+    await assertUnclippedOutcome(
+      list.getByTitle(`${labels.delivery}: ${labels.deliveryUnconfirmed}`, { exact: true }),
+      `${lang} issuer unconfirmed delivery at 360px`
+    );
+    await list.click();
+    const sheet = page.getByTestId("einvoice-sheet");
+    await sheet
+      .getByTestId("einvoice-track-delivery")
+      .getByText(labels.deliveryUnconfirmed, { exact: true })
+      .waitFor();
+    await sheet.getByTestId("einvoice-history-open").click();
+    await page
+      .getByTestId("einvoice-history")
+      .getByText(`${labels.delivery}: ${labels.deliveryUnconfirmed}`, { exact: true })
+      .waitFor();
+    await expectFrame(page, lang);
+  });
+  console.log(`${lang}: missing A-Cube delivery evidence remained unconfirmed at 360px`);
 }
 
 async function verifyLegacyRefusal(browser, persona, invoiceId, lang) {
@@ -1171,7 +1330,13 @@ try {
       await verifyLegacyRefusal(browser, persona, persona.refusals[1], "ar");
     }
   };
-  for (const flow of [verifyCallbackClipboard, recover, sendInvoice, verifyRejection]) {
+  for (const flow of [
+    verifyCallbackClipboard,
+    recover,
+    sendInvoice,
+    verifyRejection,
+    verifyUnconfirmedDelivery,
+  ]) {
     const results = await Promise.allSettled(personas.map((persona) => flow(browser, persona)));
     for (const result of results) if (result.status === "rejected") throw result.reason;
   }

@@ -12,7 +12,7 @@ import {
   DELIVERY_TONE,
   REPORTING_TONE,
   deliveryFromLegacyStatus,
-  deliveryLabelKey,
+  deliveryOutcomeLabel,
   recipientAcknowledgement,
   reportingLabelKey,
   trackOutcomeLabel,
@@ -20,7 +20,8 @@ import {
   type EInvoiceListEvidence,
   type ReportingStatus,
 } from "./einvoice-meta";
-import { EInvoiceSheet, EInvoiceTrackBadges } from "./EInvoiceStatus";
+import { EInvoiceSheet } from "./EInvoiceSheet";
+import { EInvoiceTrackBadges } from "./EInvoiceTrackBadges";
 
 export function EInvoiceListCell({
   invoice,
@@ -36,16 +37,19 @@ export function EInvoiceListCell({
   const { pill, doc } = evidence ?? {};
   const showPills = !!pill?.reportingRequired;
   if (!doc && !invoice.einvoiceStatus && !showPills) return null;
+  const storedStatus = doc?.status ?? invoice.einvoiceStatus;
+  const projectedDelivery = pill?.delivery ?? doc?.deliveryStatus;
   const storedDelivery: DeliveryStatus =
-    pill?.delivery ??
-    doc?.deliveryStatus ??
-    deliveryFromLegacyStatus(doc?.status ?? invoice.einvoiceStatus);
-  const queuedForSubmission = (doc?.status ?? invoice.einvoiceStatus) === "queued";
-  const acknowledgement = recipientAcknowledgement(doc?.provider, doc?.providerStatus);
-  const delivery =
-    doc?.provider === "acube" && storedDelivery === "delivered" && !acknowledgement
-      ? "queued"
-      : storedDelivery;
+    projectedDelivery ?? deliveryFromLegacyStatus(storedStatus);
+  const queuedForSubmission = storedStatus === "queued";
+  const providerAcknowledgement = recipientAcknowledgement(doc?.provider, doc?.providerStatus);
+  const deliveryConfirmationUnavailable =
+    pill?.deliveryConfirmationUnavailable ||
+    doc?.deliveryConfirmationUnavailable ||
+    (!projectedDelivery && (storedStatus === "accepted" || storedStatus === "cleared")) ||
+    (doc?.provider === "acube" && storedDelivery === "delivered" && !providerAcknowledgement);
+  const delivery = deliveryConfirmationUnavailable ? "queued" : storedDelivery;
+  const acknowledgement = delivery === "delivered" ? providerAcknowledgement : null;
   const storedReporting: ReportingStatus =
     pill?.reporting ?? (doc?.reportingStatus as ReportingStatus | null) ?? "pending";
   const confirmationUnavailable =
@@ -93,17 +97,23 @@ export function EInvoiceListCell({
             )}
             <StatusBadge
               className="einvoice-status-badge"
-              tone={acknowledgement === "received" ? "info" : DELIVERY_TONE[delivery]}
+              tone={
+                deliveryConfirmationUnavailable
+                  ? "neutral"
+                  : acknowledgement === "received"
+                    ? "info"
+                    : DELIVERY_TONE[delivery]
+              }
               data-testid={`einvoice-delivery-${invoice.id}`}
             >
               {delivery === "validated"
                 ? t["einvoicing.delivery_validated_short"]
-                : trackOutcomeLabel(
-                    t,
-                    deliveryLabelKey(delivery, queuedForSubmission, acknowledgement),
-                    delivery === "delivered",
-                    doc?.environment
-                  )}
+                : deliveryOutcomeLabel(t, delivery, {
+                    queuedForSubmission,
+                    acknowledgement,
+                    confirmationUnavailable: deliveryConfirmationUnavailable,
+                    environment: doc?.environment,
+                  })}
             </StatusBadge>
           </span>
         ) : (
@@ -112,6 +122,7 @@ export function EInvoiceListCell({
             reporting={reporting}
             queuedForSubmission={queuedForSubmission}
             acknowledgement={acknowledgement}
+            deliveryConfirmationUnavailable={deliveryConfirmationUnavailable}
             confirmationUnavailable={confirmationUnavailable}
             obligationKnown={obligationKnown}
             environment={doc?.environment}

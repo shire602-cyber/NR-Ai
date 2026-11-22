@@ -24,6 +24,7 @@ export interface CompliancePill {
   reportingRequired: boolean;
   reportingObligationKnown: boolean;
   delivery: DeliveryStatus;
+  deliveryConfirmationUnavailable: boolean;
   reporting: ReportingStatus;
 }
 
@@ -36,6 +37,7 @@ type DocumentEvidence = Pick<
   | "environment"
   | "providerMessageId"
   | "deliveryStatus"
+  | "deliveryConfirmationUnavailable"
   | "reportingStatus"
   | "reportingRequired"
   | "reportingObligationKnown"
@@ -96,6 +98,7 @@ export async function listCompliancePills(
         environment,
         providerMessageId,
         deliveryStatus,
+        deliveryConfirmationUnavailable,
         reportingStatus,
         reportingRequired,
         reportingObligationKnown,
@@ -109,6 +112,7 @@ export async function listCompliancePills(
         environment,
         providerMessageId,
         deliveryStatus,
+        deliveryConfirmationUnavailable,
         reportingStatus,
         reportingRequired,
         reportingObligationKnown,
@@ -130,6 +134,7 @@ export async function listCompliancePills(
       reportingRequired: t.reportingRequired,
       reportingObligationKnown: t.reportingObligationKnown,
       delivery: t.delivery,
+      deliveryConfirmationUnavailable: t.deliveryConfirmationUnavailable,
       reporting: t.reporting,
     });
   }

@@ -1,7 +1,7 @@
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { accountDisplayName } from "@/lib/account-name";
 import { localizeServerWarning } from "@/lib/validation-messages";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -255,6 +255,21 @@ interface StatementOverrides {
   mapping?: Partial<Record<MapperField, number | null>>;
 }
 
+type StatementPreviewPayload = StatementOverrides & {
+  fileBase64: string;
+  fileName: string;
+  expectedKind: "csv";
+  headerRow?: number;
+};
+
+interface ReviewedStatement {
+  requestId: number;
+  companyId: string;
+  file: File;
+  payload: StatementPreviewPayload;
+  preview: StatementPreview;
+}
+
 async function fileToBase64(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   let binary = "";
@@ -307,7 +322,8 @@ export default function BankReconciliation() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showReconciled, setShowReconciled] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [statementPreview, setStatementPreview] = useState<StatementPreview | null>(null);
+  const latestPreviewRequest = useRef(0);
+  const [reviewedStatement, setReviewedStatement] = useState<ReviewedStatement | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [statementOverrides, setStatementOverrides] = useState<StatementOverrides>({});
@@ -320,6 +336,19 @@ export default function BankReconciliation() {
     queryKey: ["/api/companies", companyId, "bank-accounts"],
     enabled: !!companyId,
   });
+
+  const statementPreview =
+    reviewedStatement?.file === importFile && reviewedStatement.companyId === companyId
+      ? reviewedStatement.preview
+      : null;
+  const canConfirmImport = Boolean(
+    statementPreview &&
+    bankAccounts?.some((account) => account.id === selectedBankAccount) &&
+    !isImporting &&
+    !previewLoading &&
+    statementPreview.validRows > 0 &&
+    (!statementPreview.requiresChoice || acknowledgeAmbiguity)
+  );
 
   const { data: transactions, isLoading: isLoadingTransactions } = useQuery<BankTransaction[]>({
     queryKey: ["/api/companies", companyId, "bank-statements", "transactions"],
@@ -403,19 +432,18 @@ export default function BankReconciliation() {
   // ─── Mutations ────────────────────────────────────────────────────────────
 
   const importMutation = useMutation({
-    mutationFn: async (payload: {
+    mutationFn: async ({
+      companyId: reviewedCompanyId,
+      ...payload
+    }: StatementPreviewPayload & {
+      companyId: string;
       bankAccountId: string;
-      fileBase64: string;
-      fileName?: string;
-      expectedKind: "csv";
-      dateOrder?: "DMY" | "MDY";
-      decimalSeparator?: "." | ",";
-      mapping?: Partial<Record<MapperField, number | null>>;
-      headerRow?: number;
-      acknowledgeAmbiguity?: boolean;
-    }) => apiRequest("POST", `/api/companies/${companyId}/bank-statements/import`, payload),
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
+      acknowledgeAmbiguity: boolean;
+    }) => apiRequest("POST", `/api/companies/${reviewedCompanyId}/bank-statements/import`, payload),
+    onSuccess: (data: any, { companyId: reviewedCompanyId }) => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", reviewedCompanyId, "bank-statements"],
+      });
       toast({
         title: translateNow("toasts.importSuccessful"),
         description:
@@ -599,8 +627,10 @@ export default function BankReconciliation() {
   };
 
   const resetStatementPreview = () => {
+    latestPreviewRequest.current += 1;
     setImportFile(null);
-    setStatementPreview(null);
+    setReviewedStatement(null);
+    setPreviewLoading(false);
     setPreviewError(null);
     setStatementOverrides({});
     setAcknowledgeAmbiguity(false);
@@ -612,32 +642,38 @@ export default function BankReconciliation() {
     headerRow?: number
   ) => {
     if (!companyId) return;
+    // A later file, mapping or dialog reset invalidates every earlier response.
+    const requestId = ++latestPreviewRequest.current;
     setPreviewLoading(true);
     setPreviewError(null);
+    setAcknowledgeAmbiguity(false);
     try {
+      const payload: StatementPreviewPayload = {
+        fileBase64: await fileToBase64(file),
+        fileName: file.name,
+        expectedKind: "csv",
+        ...overrides,
+        ...(overrides.mapping && headerRow ? { headerRow } : {}),
+      };
+      if (requestId !== latestPreviewRequest.current) return;
       const preview = (await apiRequest(
         "POST",
         `/api/companies/${companyId}/bank-statements/preview`,
-        {
-          fileBase64: await fileToBase64(file),
-          fileName: file.name,
-          expectedKind: "csv",
-          ...overrides,
-          ...(overrides.mapping && headerRow ? { headerRow } : {}),
-        }
+        payload
       )) as StatementPreview;
-      setStatementPreview(preview);
+      if (requestId !== latestPreviewRequest.current) return;
+      setReviewedStatement({ requestId, companyId, file, payload, preview });
     } catch (error: any) {
-      setStatementPreview(null);
+      if (requestId !== latestPreviewRequest.current) return;
+      setReviewedStatement(null);
       setPreviewError(error?.message || strings.previewFailed);
     } finally {
-      setPreviewLoading(false);
+      if (requestId === latestPreviewRequest.current) setPreviewLoading(false);
     }
   };
 
   const updateOverrides = (next: StatementOverrides) => {
     setStatementOverrides(next);
-    setAcknowledgeAmbiguity(false);
     if (importFile)
       void runStatementPreview(importFile, next, statementPreview?.headerRow ?? undefined);
   };
@@ -658,36 +694,28 @@ export default function BankReconciliation() {
     }
     if (file) {
       setImportFile(file);
-      setStatementPreview(null);
+      setReviewedStatement(null);
       setStatementOverrides({});
-      setAcknowledgeAmbiguity(false);
       void runStatementPreview(file, {});
     }
   };
 
   const handleImport = async () => {
-    if (!importFile || !selectedBankAccount) {
-      toast({
-        variant: "destructive",
-        title: translateNow("toasts.missingInformation"),
-        description: translateNow("toasts.selectABankAccountAndUploadA"),
-      });
+    if (
+      !canConfirmImport ||
+      !reviewedStatement ||
+      reviewedStatement.requestId !== latestPreviewRequest.current
+    ) {
       return;
     }
 
     setIsImporting(true);
 
     try {
-      // Keep the original CSV bytes and the user's confirmed import choices.
       await importMutation.mutateAsync({
+        ...reviewedStatement.payload,
+        companyId: reviewedStatement.companyId,
         bankAccountId: selectedBankAccount,
-        fileBase64: await fileToBase64(importFile),
-        fileName: importFile.name,
-        expectedKind: "csv",
-        ...statementOverrides,
-        ...(statementOverrides.mapping && statementPreview?.headerRow
-          ? { headerRow: statementPreview.headerRow }
-          : {}),
         acknowledgeAmbiguity,
       });
     } catch (error: any) {
@@ -1330,6 +1358,7 @@ export default function BankReconciliation() {
       <Dialog
         open={importDialogOpen}
         onOpenChange={(open) => {
+          if (isImporting) return;
           setImportDialogOpen(open);
           if (!open) resetStatementPreview();
         }}
@@ -1443,6 +1472,7 @@ export default function BankReconciliation() {
                     <div className="space-y-1">
                       <Label className="text-xs">{strings.dateOrder}</Label>
                       <Select
+                        disabled={previewLoading || isImporting}
                         value={statementOverrides.dateOrder ?? statementPreview.dateOrder}
                         onValueChange={(value) =>
                           updateOverrides({
@@ -1464,6 +1494,7 @@ export default function BankReconciliation() {
                   <div className="space-y-1">
                     <Label className="text-xs">{strings.decimalSeparator}</Label>
                     <Select
+                      disabled={previewLoading || isImporting}
                       value={
                         statementOverrides.decimalSeparator ?? statementPreview.decimalSeparator
                       }
@@ -1497,6 +1528,7 @@ export default function BankReconciliation() {
                           <div key={field} className="space-y-1">
                             <Label className="text-xs">{strings.fields[field]}</Label>
                             <Select
+                              disabled={previewLoading || isImporting}
                               value={current == null ? "__none" : String(current)}
                               onValueChange={(value) => handleMappingChange(field, value)}
                             >
@@ -1564,6 +1596,7 @@ export default function BankReconciliation() {
                     <Checkbox
                       id="ack-statement-ambiguity"
                       checked={acknowledgeAmbiguity}
+                      disabled={previewLoading || isImporting}
                       onCheckedChange={(checked) => setAcknowledgeAmbiguity(checked === true)}
                       data-testid="checkbox-acknowledge-ambiguity"
                     />
@@ -1619,15 +1652,7 @@ export default function BankReconciliation() {
             </Button>
             <Button
               onClick={handleImport}
-              disabled={
-                isImporting ||
-                !importFile ||
-                !selectedBankAccount ||
-                previewLoading ||
-                (!!statementPreview &&
-                  (statementPreview.validRows === 0 ||
-                    (statementPreview.requiresChoice && !acknowledgeAmbiguity)))
-              }
+              disabled={!canConfirmImport}
               data-testid="button-confirm-import"
             >
               {isImporting && <Loader2 className="w-4 h-4 animate-spin" />}

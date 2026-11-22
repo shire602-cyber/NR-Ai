@@ -812,7 +812,6 @@
   "pageLabels.supportedFormats": "Supported formats",
   "pageLabels.supportedImportFiles": "Supported import files",
   "pageLabels.syncAllIntegrations": "Sync all integrations",
-  "pageLabels.syncNewTransactionsEveryHour": "Sync new transactions every hour",
   "pageLabels.syncSettings": "Sync settings",
   "pageLabels.syncedToday": "Synced today",
   "pageLabels.systemPrompt": "System prompt",

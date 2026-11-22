@@ -286,14 +286,26 @@ export function complyanceReasons(errors: unknown): EInvoiceRejectionReason[] {
 }
 
 function isCorrectableSalesState(data: Record<string, unknown>): boolean {
+  const stage = providerString(data.validationStage)?.toLowerCase();
   if (
-    data.state !== "rejected" ||
+    providerString(data.state)?.toLowerCase() !== "rejected" ||
     data.isTerminal !== true ||
-    (data.validationStage != null && data.validationStage !== "gets")
+    (data.validationStage != null && stage !== "gets")
   )
     return false;
   const compliance = providerObject(data.compliance);
-  if (compliance?.ftaApprovedStatus != null && compliance.ftaApprovedStatus !== "PENDING")
+  const approval = providerString(compliance?.ftaApprovedStatus)?.toUpperCase();
+  const errorSources = (Array.isArray(data.errors) ? data.errors : []).map((item) =>
+    providerString(providerObject(item)?.source)?.toLowerCase()
+  );
+  // The sales API also uses REJECTED for the FTA field on documents that failed GETS validation
+  // before reporting. A separate government or delivery result rules out that interpretation.
+  if (errorSources.some((source) => source === "government" || source === "delivery")) return false;
+  if (
+    compliance?.ftaApprovedStatus != null &&
+    approval !== "PENDING" &&
+    !(approval === "REJECTED" && (stage === "gets" || errorSources.includes("validation")))
+  )
     return false;
   const delivery = [data.deliveryStatus, compliance?.peppolStatus, data.mlsStatus];
   const final = [
@@ -305,16 +317,7 @@ function isCorrectableSalesState(data: Record<string, unknown>): boolean {
     "FINAL_INVALID",
     "REJECTED",
   ];
-  if (delivery.some((value) => final.includes(providerString(value)?.toUpperCase() ?? "")))
-    return false;
-  return (
-    !Array.isArray(data.errors) ||
-    !data.errors.some((item) =>
-      ["delivery", "government"].includes(
-        providerString(providerObject(item)?.source)?.toLowerCase() ?? ""
-      )
-    )
-  );
+  return !delivery.some((value) => final.includes(providerString(value)?.toUpperCase() ?? ""));
 }
 
 /**
@@ -793,10 +796,22 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     identity: EInvoiceOutboundIdentity,
     context?: EInvoiceProviderContext
   ) {
-    const proof = await this.readOwnedSalesDocument(providerMessageId, identity);
+    const proof = await this.checkOutboundRecovery(providerMessageId, identity, context);
     if (proof.verdict !== "verified") return proof.verdict;
+    return proof.correctionReasons ? "verified" : "mismatch";
+  }
+
+  /** A single sales lookup can establish ownership and, separately, readiness for correction. */
+  async checkOutboundRecovery(
+    providerMessageId: string,
+    identity: EInvoiceOutboundIdentity,
+    context?: EInvoiceProviderContext
+  ) {
+    const proof = await this.readOwnedSalesDocument(providerMessageId, identity);
+    if (proof.verdict !== "verified") return proof;
+    const tracking = { verdict: "verified" as const, correctionReasons: null };
     const source = sourceFromLegalEntity(context?.legalEntity ?? null);
-    if (!source || source.name !== identity.sourceName) return "mismatch";
+    if (!source || source.name !== identity.sourceName) return tracking;
     for (const aliases of [proof.data, providerObject(proof.data.attribution)]) {
       if (!aliases) continue;
       const reference = aliases.source;
@@ -807,9 +822,11 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
       if (
         [version, aliases.sourceVersion].some((value) => value != null && value !== source.version)
       )
-        return "mismatch";
+        return tracking;
     }
-    return isCorrectableSalesState(proof.data) ? "verified" : "mismatch";
+    return isCorrectableSalesState(proof.data)
+      ? { ...tracking, correctionReasons: complyanceReasons(proof.data.errors) }
+      : tracking;
   }
 
   private async readOwnedSalesDocument(

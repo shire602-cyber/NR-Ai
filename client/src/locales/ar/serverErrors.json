@@ -234,7 +234,7 @@
   "serverErrors.EINVOICE_TIN_MISSING": "أدخل رقم التعريف الضريبي للشركة المكوّن من ١٠ أرقام أو رقم التسجيل الضريبي الإماراتي المكوّن من ١٥ رقمًا في إعدادات الشركة أولًا.",
   "serverErrors.EINVOICE_BUYER_ENDPOINT_MISMATCH": "يجب أن يطابق عنوان المشتري على شبكة Peppol بالمخطط 0235 أول 10 أرقام من رقم تسجيله الضريبي.",
   "serverErrors.EINVOICE_INBOUND_SOURCE_CONFLICT": "يتطابق المورد ورقم المستند الوارد مع مستند مستلَم سابقًا، لكن محتوى ملف XML مختلف.",
-  "serverErrors.EINVOICE_PAYMENT_CARD_TYPE_REQUIRED": "راجع سجل الدفع واستخدم نوع البطاقة المؤكّد، ائتمانية أو خصم مباشر، للفوترة الإلكترونية.",
+  "serverErrors.EINVOICE_PAYMENT_CARD_TYPE_REQUIRED": "راجع سجل الدفع واستخدم نوع البطاقة المؤكّد للفوترة الإلكترونية، سواء كانت بطاقة ائتمان أو بطاقة خصم.",
   "serverErrors.EINVOICE_SUPPLIER_ENDPOINT_MISMATCH": "عنوان الفوترة الإلكترونية للمورّد على الفاتورة لا يطابق رقمك الضريبي المسجّل.",
   "serverErrors.EINVOICE_VALIDATION_FAILED": "الفاتورة غير جاهزة للفوترة الإلكترونية. أصلح المشكلات المذكورة وحاول مرة أخرى.",
   "serverErrors.EINVOICE_VALIDATION_UNAVAILABLE": "التحقق من الفواتير الإلكترونية غير متاح. يمكن إرسال الفاتورة بعد اجتياز التحقق فقط.",

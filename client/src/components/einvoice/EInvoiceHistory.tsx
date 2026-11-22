@@ -9,7 +9,7 @@ import { formatDate } from "@/lib/format-date";
 import { useTranslation } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import {
-  deliveryLabelKey,
+  deliveryOutcomeLabel,
   errorKey,
   reportingLabelKey,
   trackOutcomeLabel,
@@ -23,22 +23,22 @@ function eventLabel(e: EInvoiceStatusView["events"][number], t: Record<string, s
   if (e.track === "validation") {
     return e.to === "passed" ? t["einvoicing.historyValidated"] : t["einvoicing.historyInvalid"];
   }
-  const key =
-    e.track === "delivery"
-      ? deliveryLabelKey(
-          e.to as DeliveryStatus,
-          e.to === "queued" && e.providerStatus === null,
-          e.recipientAcknowledgement
-        )
-      : reportingLabelKey(e.to as ReportingStatus, e.confirmationUnavailable);
   const track =
     e.track === "delivery" ? t["einvoicing.trackDelivery"] : t["einvoicing.trackReporting"];
-  const label = trackOutcomeLabel(
-    t,
-    key,
-    e.to === "reported" || e.to === "delivered",
-    e.environment
-  );
+  const label =
+    e.track === "delivery"
+      ? deliveryOutcomeLabel(t, e.to as DeliveryStatus, {
+          queuedForSubmission: e.to === "queued" && e.providerStatus === null,
+          acknowledgement: e.recipientAcknowledgement,
+          confirmationUnavailable: e.confirmationUnavailable,
+          environment: e.environment,
+        })
+      : trackOutcomeLabel(
+          t,
+          reportingLabelKey(e.to as ReportingStatus, e.confirmationUnavailable),
+          e.to === "reported" || e.to === "report_failed",
+          e.environment
+        );
   return `${track}: ${label ?? e.to}`;
 }
 

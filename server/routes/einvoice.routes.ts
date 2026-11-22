@@ -20,6 +20,7 @@ import {
   type Invoice,
 } from "../../shared/schema";
 import { getCapability } from "../../shared/capabilities";
+import { EINVOICE_SETTINGS_PAYMENT_MEANS_CODES } from "../../shared/einvoice-payment-means";
 import { zDate, zIbanAE, zText, zUuid } from "../../shared/validators/primitives";
 import { preflightEInvoice } from "../services/einvoice-submit.service";
 import { EInvoiceProviderError, type EInvoiceProvider } from "../services/einvoice-provider";
@@ -57,6 +58,7 @@ import { listCompliancePills } from "../services/einvoice/compliance-pills";
 import { computeEInvoiceReadiness } from "../services/einvoice/readiness";
 import { currentOnboardingEntity, getLegalEntity } from "../services/einvoice/legal-entities";
 import {
+  archivedEInvoiceXmlForDownload,
   confirmLegacyEInvoiceEnvironment,
   needsLegacySubmissionRecovery,
 } from "../services/einvoice/legacy-tracking";
@@ -87,7 +89,6 @@ import { NEW_DOCUMENT_REQUIRED_CODES } from "../services/einvoice/tracks";
 import { runProviderEvents, runProviderPoll } from "../services/einvoice/provider-events";
 import {
   LEGAL_ID_TYPES,
-  PAYMENT_MEANS,
   PEPPOL_SCHEME_UAE_TIN,
   isUaeTin,
   tinFromTrn,
@@ -175,7 +176,6 @@ async function loadInvoiceAndCompany(
 
 // ─── Validators ─────────────────────────────────────────────────────────
 
-const PAYMENT_MEANS_CODES = Object.keys(PAYMENT_MEANS) as [string, ...string[]];
 const LEGAL_ID_TYPE_CODES = Object.keys(LEGAL_ID_TYPES) as [string, ...string[]];
 
 const settingsBody = z
@@ -189,7 +189,7 @@ const settingsBody = z
     tradeLicenceNo: zText(64).nullable().optional(),
     tradeLicenceAuthority: zText(200).nullable().optional(),
     einvoicePayeeIban: zIbanAE.nullable().optional(),
-    einvoicePaymentMeansCode: z.enum(PAYMENT_MEANS_CODES).nullable().optional(),
+    einvoicePaymentMeansCode: z.enum(EINVOICE_SETTINGS_PAYMENT_MEANS_CODES).nullable().optional(),
     einvoiceScope: z.enum(["b2b", "b2g", "b2b_b2g", "none"]).nullable().optional(),
     einvoiceTurnoverBand: z.enum(["large", "standard", "government"]).nullable().optional(),
     einvoiceGoLiveDate: zDate.nullable().optional(),
@@ -487,7 +487,8 @@ export function registerEInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { invoice } = await loadInvoiceAndCompany(req);
-      if (!invoice.einvoiceXml) {
+      const xml = invoice.einvoiceXml ?? (await archivedEInvoiceXmlForDownload(invoice));
+      if (!xml) {
         return res.status(404).json({
           message: "E-invoice has not been generated for this invoice",
           code: "EINVOICE_NOT_GENERATED",
@@ -495,7 +496,7 @@ export function registerEInvoiceRoutes(app: Express) {
       }
       res.set("Content-Type", "application/xml");
       res.set("Content-Disposition", `attachment; filename="einvoice-${invoice.number}.xml"`);
-      res.send(invoice.einvoiceXml);
+      res.send(xml);
     })
   );
 

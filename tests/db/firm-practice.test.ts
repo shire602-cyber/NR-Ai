@@ -463,6 +463,159 @@ describe("W5-D firm practice management", () => {
     expect([403, 404]).toContain((await owner.as.get(`/api/companies/${c.id}/accounts`)).status);
   });
 
+  it.each(["current", "removed"] as const)(
+    "[R15-12] revoking an NR link preserves only a direct invitation for the %s membership",
+    async (directMembership) => {
+      const firm = await nrOwner();
+      const client = await h.createTenant();
+      const staff = await nrStaff("firm_admin");
+      const companyId = client.company.id;
+      const accounts = `/api/companies/${companyId}/accounts`;
+
+      const link = await firm.as.post("/api/firm/client-links", { inviteeEmail: client.email });
+      expect(link.status, link.text).toBe(201);
+      const linked = await client.as.post(`/api/firm-invitations/${link.body.link.id}/accept`, {
+        companyId,
+      });
+      expect(linked.status, linked.text).toBe(200);
+      const invited = await client.as.post(`/api/companies/${companyId}/team/invite`, {
+        email: staff.email,
+        role: "viewer",
+      });
+      expect(invited.status, invited.text).toBe(201);
+      const token = new URL(invited.body.inviteUrl).searchParams.get("teamInvite");
+      const accepted = await staff.as.post(`/api/team-invitations/${token}/accept`, {});
+      expect(accepted.status, accepted.text).toBe(200);
+
+      const membershipQuery =
+        "SELECT id, role FROM company_users WHERE company_id = $1 AND user_id = $2";
+      const membershipKey = [companyId, staff.user.id];
+      const [direct] = await h.sql<{ id: string; role: string }>(membershipQuery, membershipKey);
+      expect(direct.role).toBe("viewer");
+      if (directMembership === "removed") {
+        const removed = await client.as.delete(`/api/companies/${companyId}/team/${direct.id}`);
+        expect(removed.status, removed.text).toBe(204);
+      }
+
+      const assigned = await firm.as.post(`/api/firm/clients/${companyId}/assign-staff`, {
+        staffUserId: staff.user.id,
+        action: "assign",
+      });
+      expect(assigned.status, assigned.text).toBe(200);
+      const [assignedMembership] = await h.sql<{ id: string; role: string }>(
+        membershipQuery,
+        membershipKey
+      );
+      if (directMembership === "removed") {
+        expect(assignedMembership.id).not.toBe(direct.id);
+        expect(assignedMembership.role).toBe("accountant");
+      } else {
+        expect(assignedMembership).toEqual(direct);
+      }
+      // Mimic an assignment from before grant provenance was recorded.
+      await h.sql(
+        "DELETE FROM firm_company_grants WHERE company_id = $1 AND user_id = $2",
+        membershipKey
+      );
+      expect((await staff.as.get(accounts)).status).toBe(200);
+      const revoked = await client.as.post(
+        `/api/companies/${companyId}/firm-links/${link.body.link.id}/revoke`,
+        {}
+      );
+      expect(revoked.status, revoked.text).toBe(200);
+      const remaining = await h.sql(membershipQuery, membershipKey);
+      expect(remaining).toEqual(directMembership === "current" ? [direct] : []);
+      const response = await staff.as.get(accounts);
+      if (directMembership === "current") expect(response.status, response.text).toBe(200);
+      else expect([403, 404]).toContain(response.status);
+      expect((await client.as.get(accounts)).status).toBe(200);
+    }
+  );
+
+  it("[R15-12] rolls back link revocation if removing a firm membership fails", async () => {
+    const firm = await nrOwner();
+    const client = await h.createTenant();
+    const staff = await nrStaff("firm_admin");
+    const companyId = client.company.id;
+    const link = await firm.as.post("/api/firm/client-links", { inviteeEmail: client.email });
+    expect(link.status, link.text).toBe(201);
+    const linked = await client.as.post(`/api/firm-invitations/${link.body.link.id}/accept`, {
+      companyId,
+    });
+    expect(linked.status, linked.text).toBe(200);
+    const assigned = await firm.as.post(`/api/firm/clients/${companyId}/assign-staff`, {
+      staffUserId: staff.user.id,
+      action: "assign",
+    });
+    expect(assigned.status, assigned.text).toBe(200);
+    const revoke = () =>
+      client.as.post(`/api/companies/${companyId}/firm-links/${link.body.link.id}/revoke`, {});
+    await h.sql(`
+      CREATE FUNCTION test_fail_firm_company_user_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'injected cleanup failure';
+      END
+      $$;
+      CREATE TRIGGER test_fail_firm_company_user_delete BEFORE DELETE ON company_users
+        FOR EACH ROW EXECUTE FUNCTION test_fail_firm_company_user_delete();
+    `);
+    try {
+      expect((await revoke()).status).toBe(500);
+      expect(
+        await h.sql("SELECT status FROM firm_client_links WHERE id = $1", [link.body.link.id])
+      ).toEqual([{ status: "active" }]);
+    } finally {
+      await h.sql("DROP TRIGGER test_fail_firm_company_user_delete ON company_users");
+      await h.sql("DROP FUNCTION test_fail_firm_company_user_delete()");
+    }
+
+    const succeeded = await revoke();
+    expect(succeeded.status, succeeded.text).toBe(200);
+    expect([403, 404]).toContain(
+      (await staff.as.get(`/api/companies/${companyId}/accounts`)).status
+    );
+  });
+
+  it("[R15-12] does not activate an external firm link before its grants commit", async () => {
+    const { owner, firmId } = await firmB();
+    const client = await h.createTenant();
+    const companyId = client.company.id;
+    const [link] = await h.sql<{ id: string }>(
+      "INSERT INTO firm_client_links (firm_id, invitee_email, status) VALUES ($1, $2, 'invited') RETURNING id",
+      [firmId, client.email]
+    );
+    const accept = () => client.as.post(`/api/firm-invitations/${link.id}/accept`, { companyId });
+    await h.sql(`
+      CREATE FUNCTION test_fail_firm_company_user_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'injected grant failure';
+      END
+      $$;
+      CREATE TRIGGER test_fail_firm_company_user_insert BEFORE INSERT ON company_users
+        FOR EACH ROW EXECUTE FUNCTION test_fail_firm_company_user_insert();
+    `);
+    try {
+      expect((await accept()).status).toBe(500);
+      expect(await h.sql("SELECT status FROM firm_client_links WHERE id = $1", [link.id])).toEqual([
+        { status: "invited" },
+      ]);
+    } finally {
+      await h.sql("DROP TRIGGER test_fail_firm_company_user_insert ON company_users");
+      await h.sql("DROP FUNCTION test_fail_firm_company_user_insert()");
+    }
+
+    const accepted = await accept();
+    expect(accepted.status, accepted.text).toBe(200);
+    const revoked = await client.as.post(
+      `/api/companies/${companyId}/firm-links/${link.id}/revoke`,
+      {}
+    );
+    expect(revoked.status, revoked.text).toBe(200);
+    expect([403, 404]).toContain(
+      (await owner.as.get(`/api/companies/${companyId}/accounts`)).status
+    );
+  });
+
   it("[R15-15] the VAT template generates a task per stagger period for a quarterly VAT client, idempotently", async () => {
     const owner = await nrOwner();
     const c = await createClient(owner, "Quarterly Stagger LLC", {

@@ -11,11 +11,13 @@ import { Button } from "@/components/ui/button";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
 import { einvoiceFieldHint } from "@/lib/einvoice-issues";
-import { EInvoiceSheet, EInvoiceTrackBadges } from "./EInvoiceStatus";
+import { EInvoiceSheet } from "./EInvoiceSheet";
+import { EInvoiceTrackBadges } from "./EInvoiceTrackBadges";
 import {
   errorKey,
   fieldLabelKey,
   isReportingOnlyFailure,
+  issueTextKey,
   rejectionSummary,
   trackOutcomeLabel,
 } from "./einvoice-meta";
@@ -62,11 +64,16 @@ export function EInvoiceHeaderStrip({
         )
       : null;
   const rejection = rejectionSummary(view.rejection);
+  const rejectionReasonKey = rejection
+    ? (issueTextKey(rejection.rule ?? undefined) ??
+      errorKey(rejection.rule) ??
+      errorKey(rejection.errorCode))
+    : null;
+  const localizedRejection = rejectionReasonKey ? t[rejectionReasonKey] : null;
   const rejectionText = rejection
-    ? rejection.message ||
-      (errorKey(rejection.errorCode)
-        ? t[errorKey(rejection.errorCode) as string]
-        : t["einvoicing.err_unknown"])
+    ? (locale === "ar"
+        ? localizedRejection || rejection.message
+        : rejection.message || localizedRejection) || t["einvoicing.err_unknown"]
     : null;
   const target = first ? focusTargetFor(first.field) : null;
   const fixHref = first ? einvoiceFieldHint(first.field, { contactId: view.contactId }).href : null;
@@ -94,6 +101,7 @@ export function EInvoiceHeaderStrip({
           reporting={reporting.status}
           queuedForSubmission={view.submissionState === "queued"}
           acknowledgement={view.transmission.recipientAcknowledgement}
+          deliveryConfirmationUnavailable={delivery.confirmationUnavailable}
           confirmationUnavailable={reporting.confirmationUnavailable}
           obligationKnown={reporting.obligationKnown}
           environment={view.transmission.environment}

@@ -1,11 +1,9 @@
 /**
  * E1: per-invoice UAE e-invoice status.
  *
- * - `EInvoiceTrackBadges`  compact two-track cell for the invoice list.
  * - `EInvoicePanel`        the full status: Delivery and FTA reporting tracks, report-by date,
  *                          named missing fields with Re-check, the rejection state with
  *                          "Fix and resubmit", the finalize checklist and the history drawer.
- * - `EInvoiceSheet`        the panel in a side sheet, opened from the invoice row.
  *
  * Self-contained (data via /api/invoices/:id/einvoice/*) so invoice screens mount it with one
  * line. Nothing here claims a transmission that did not happen: without a provider the panel
@@ -21,7 +19,6 @@ import {
   CircleDashed,
   Download,
   History,
-  Landmark,
   Loader2,
   Lock,
   MinusCircle,
@@ -33,14 +30,7 @@ import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { StatusBadge } from "@/components/ui/status-badge";
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { SheetClose } from "@/components/ui/sheet";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   einvoiceFieldHint,
@@ -57,7 +47,7 @@ import {
   blockKey,
   checklistLabelKey,
   checklistStateKey,
-  deliveryLabelKey,
+  deliveryOutcomeLabel,
   errorKey,
   fieldLabelKey,
   issueTextKey,
@@ -66,101 +56,13 @@ import {
   reportingObligationUnknown,
   trackOutcomeLabel,
   type ChecklistState,
-  type DeliveryStatus,
   type EInvoiceStatusView,
-  type RecipientAcknowledgement,
-  type ReportingStatus,
 } from "./einvoice-meta";
 import { einvoiceStatusKey, useEInvoiceStatus } from "./use-einvoice";
 import "./einvoice-theme.css";
 
 const EInvoiceHistory = lazy(() => import("./EInvoiceHistory"));
 const EInvoiceTrackingNotice = lazy(() => import("./EInvoiceTrackingNotice"));
-
-// ─── Compact list cell ─────────────────────────────────────────────────
-
-export function EInvoiceTrackBadges({
-  delivery,
-  reporting,
-  className,
-  testId,
-  showReportingLabel = false,
-  queuedForSubmission = false,
-  acknowledgement = null,
-  confirmationUnavailable = false,
-  obligationKnown,
-  environment,
-}: {
-  delivery: DeliveryStatus;
-  reporting: ReportingStatus;
-  className?: string;
-  testId?: string;
-  queuedForSubmission?: boolean;
-  acknowledgement?: RecipientAcknowledgement;
-  confirmationUnavailable?: boolean;
-  obligationKnown?: boolean;
-  environment?: string | null;
-  /** Spell the FTA reporting state out ("FTA: Pending") instead of the icon-only mark. */
-  showReportingLabel?: boolean;
-}) {
-  const { t } = useTranslation();
-  // The list cell is narrow: "Validated, not sent" reads "Not sent" there.
-  const deliveryText =
-    delivery === "validated"
-      ? t["einvoicing.delivery_validated_short"]
-      : trackOutcomeLabel(
-          t,
-          deliveryLabelKey(delivery, queuedForSubmission, acknowledgement),
-          delivery === "delivered",
-          environment
-        );
-  const reportingConfirmed = reporting === "reported" && !confirmationUnavailable;
-  const obligationUnknown = reportingObligationUnknown(reporting, obligationKnown);
-  const reportingKey = reportingLabelKey(reporting, confirmationUnavailable, obligationKnown);
-  const reportingText = trackOutcomeLabel(t, reportingKey, reportingConfirmed, environment);
-  const reportingChipKey =
-    obligationUnknown || confirmationUnavailable
-      ? reportingKey
-      : reporting === "pending" &&
-          (delivery === "draft" || delivery === "validated" || queuedForSubmission)
-        ? "einvoicing.ftaChip_not_sent"
-        : `einvoicing.ftaChip_${reporting}`;
-  const showReportingText =
-    showReportingLabel || obligationUnknown || (reportingConfirmed && environment !== "production");
-  return (
-    <span
-      className={cn("inline-flex min-w-0 max-w-full flex-wrap items-center gap-1", className)}
-      data-testid={testId}
-    >
-      <StatusBadge
-        className="einvoice-status-badge"
-        tone={acknowledgement === "received" ? "info" : DELIVERY_TONE[delivery]}
-        title={`${t["einvoicing.trackDelivery"]}: ${deliveryText}`}
-      >
-        <span className="sr-only">{t["einvoicing.trackDelivery"]}: </span>
-        {deliveryText}
-      </StatusBadge>
-      {(reporting !== "not_required" || obligationUnknown) && (
-        <StatusBadge
-          tone={obligationUnknown ? "neutral" : REPORTING_TONE[reporting]}
-          title={`${t["einvoicing.trackReporting"]}: ${reportingText}`}
-          className={showReportingText ? "einvoice-status-badge" : "px-1.5"}
-          data-testid={showReportingLabel ? "einvoice-fta-chip" : undefined}
-        >
-          {/* Always keep a test environment or unknown obligation visible on the badge. */}
-          <Landmark aria-hidden className="h-3 w-3" />
-          {showReportingText ? (
-            <span>{trackOutcomeLabel(t, reportingChipKey, reportingConfirmed, environment)}</span>
-          ) : (
-            <span className="sr-only">
-              {t["einvoicing.trackReporting"]}: {reportingText}
-            </span>
-          )}
-        </StatusBadge>
-      )}
-    </span>
-  );
-}
 
 // ─── Checklist ─────────────────────────────────────────────────────────
 
@@ -439,15 +341,21 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
           badge={
             <StatusBadge
               className="einvoice-status-badge"
-              tone={acknowledgement === "received" ? "info" : DELIVERY_TONE[delivery.status]}
+              tone={
+                delivery.confirmationUnavailable
+                  ? "neutral"
+                  : acknowledgement === "received"
+                    ? "info"
+                    : DELIVERY_TONE[delivery.status]
+              }
               data-testid={queuedForSubmission ? "einvoice-queued" : undefined}
             >
-              {trackOutcomeLabel(
-                t,
-                deliveryLabelKey(delivery.status, queuedForSubmission, acknowledgement),
-                delivery.status === "delivered",
-                transmission.environment
-              )}
+              {deliveryOutcomeLabel(t, delivery.status, {
+                queuedForSubmission,
+                acknowledgement,
+                confirmationUnavailable: delivery.confirmationUnavailable,
+                environment: transmission.environment,
+              })}
             </StatusBadge>
           }
         />
@@ -927,46 +835,5 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
         </Suspense>
       )}
     </div>
-  );
-}
-
-export function EInvoiceSheet({
-  invoiceId,
-  invoiceNumber,
-  open,
-  onOpenChange,
-  onEdit,
-}: {
-  invoiceId: string | null;
-  invoiceNumber?: string | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onEdit?: () => void;
-}) {
-  const { t, locale } = useTranslation();
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side={locale === "ar" ? "left" : "right"}
-        className="einvoice-surface w-full overflow-y-auto sm:max-w-lg"
-        data-testid="einvoice-sheet"
-      >
-        <SheetHeader className="mb-5">
-          <SheetTitle>
-            {t["einvoicing.sheetTitle"]}
-            {invoiceNumber ? (
-              <>
-                {" · "}
-                <span dir="ltr" className="[unicode-bidi:isolate]">
-                  {invoiceNumber}
-                </span>
-              </>
-            ) : null}
-          </SheetTitle>
-          <SheetDescription>{t["einvoicing.sheetDescription"]}</SheetDescription>
-        </SheetHeader>
-        {invoiceId && <EInvoicePanel invoiceId={invoiceId} onEdit={onEdit} />}
-      </SheetContent>
-    </Sheet>
   );
 }

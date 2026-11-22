@@ -181,6 +181,7 @@ export function deriveInvoiceTracks(args: {
   now?: Date;
 }): {
   delivery: DeliveryStatus;
+  deliveryConfirmationUnavailable: boolean;
   reporting: ReportingStatus;
   reportingRequired: boolean;
   reportingObligationKnown: boolean;
@@ -203,13 +204,14 @@ export function deriveInvoiceTracks(args: {
     args.legacyStatus,
     reporting
   );
-  let delivery: DeliveryStatus = isDeliveryStatus(doc?.deliveryStatus)
-    ? doc.deliveryStatus
-    : deliveryFromLegacy(legacy);
-  if (provider === "acube" && delivery === "delivered") {
-    if (providerStatus === "processed") delivery = "sending";
-    else if (providerStatus !== "accepted" && providerStatus !== "delivered") delivery = "queued";
-  }
+  const storedDelivery = isDeliveryStatus(doc?.deliveryStatus) ? doc.deliveryStatus : null;
+  const legacyClaimedDelivery = args.legacyStatus === "accepted" || args.legacyStatus === "cleared";
+  const acubeDelivery =
+    provider === "acube" &&
+    (storedDelivery === "delivered" || (!storedDelivery && legacyClaimedDelivery))
+      ? projectAcubeDeliveryEvidence(providerStatus)
+      : null;
+  const delivery = acubeDelivery?.status ?? storedDelivery ?? deliveryFromLegacy(legacy);
   const invoiceStatus = String(args.invoiceStatus ?? "").toLowerCase();
   const isDraft = invoiceStatus === "draft";
   const inactive = isDraft || invoiceStatus === "void" || invoiceStatus === "cancelled";
@@ -217,6 +219,7 @@ export function deriveInvoiceTracks(args: {
   const today = uaeToday(now);
   return {
     delivery,
+    deliveryConfirmationUnavailable: acubeDelivery?.confirmationUnavailable ?? false,
     reporting,
     reportingRequired: obligation.required,
     reportingObligationKnown: obligation.known,
@@ -275,6 +278,10 @@ export function legacyFromProviderTracks(
  * https://docs.acubeapi.com/documentation/gov-ae/documents/lifecycle
  */
 export function mapAcubeDeliveryStatus(raw: unknown): DeliveryStatus {
+  return knownAcubeDeliveryStatus(raw) ?? "delivery_failed";
+}
+
+function knownAcubeDeliveryStatus(raw: unknown): DeliveryStatus | null {
   const s = String(raw ?? "")
     .trim()
     .toLowerCase();
@@ -299,8 +306,19 @@ export function mapAcubeDeliveryStatus(raw: unknown): DeliveryStatus {
     case "action_required":
       return "delivery_failed";
     default:
-      return "delivery_failed";
+      return null;
   }
+}
+
+/** Older successful A-Cube snapshots need the provider's actual delivery status to be conclusive. */
+export function projectAcubeDeliveryEvidence(raw: string | null | undefined): {
+  status: DeliveryStatus;
+  confirmationUnavailable: boolean;
+} {
+  const status = knownAcubeDeliveryStatus(raw);
+  return status
+    ? { status, confirmationUnavailable: false }
+    : { status: "queued", confirmationUnavailable: true };
 }
 
 /** Stable error code for a provider delivery status that is a failure, else null. */

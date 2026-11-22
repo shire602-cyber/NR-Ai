@@ -97,13 +97,25 @@ describe("W3-C bank feeds", () => {
       expect(r.status, r.text).toBe(503);
       expect(r.body.code).toBe("BANK_FEED_NOT_CONFIGURED");
     }
-    const status = await t.as.get(`/api/bank/providers`);
-    expect(status.body.isConfigured).toBe(false);
-    for (const s of status.body.statuses) {
-      expect(s).toMatchObject({ configured: false, status: "requires_external" });
-      expect(s.message.en).toBe("Not connected — requires provider contract");
-    }
   });
+
+  it.each([false, true])(
+    "only advertises CSV statement import (adapter configured: %s)",
+    async (configured) => {
+      if (configured) process.env.LEAN_APP_TOKEN = "sandbox-app-token";
+      const t = await tenant();
+      const status = await t.as.get(`/api/bank/providers`);
+      expect(status.status, status.text).toBe(200);
+      expect(status.body).toEqual({
+        providers: [],
+        isConfigured: false,
+        statuses: [],
+        redirectUris: [],
+        capabilities: [],
+        statementImport: { format: "csv", href: "/bank-reconciliation?import=1" },
+      });
+    }
+  );
 
   it("[R06-14] the redirect URI must be allow-listed and the callback state must match", async () => {
     process.env.LEAN_APP_TOKEN = "sandbox-app-token";

@@ -37,8 +37,8 @@ import {
 import {
   deriveInvoiceTracks,
   isReportingObservation,
-  mapAcubeDeliveryStatus,
   NEW_DOCUMENT_REQUIRED_CODES,
+  projectAcubeDeliveryEvidence,
   projectEInvoiceLegacyStatus,
   providerRecipientAcknowledgement,
   reportingEvidenceAt,
@@ -91,6 +91,7 @@ export function projectEInvoiceDocument(
     environment: pinned === "sandbox" || pinned === "production" ? pinned : null,
     deliveryStatus: tracks.delivery,
     deliveryStatusAt: tracks.delivery === doc.deliveryStatus ? doc.deliveryStatusAt : null,
+    deliveryConfirmationUnavailable: tracks.deliveryConfirmationUnavailable,
     reportingStatus: tracks.reporting,
     reportingRequired: tracks.reportingRequired,
     reportingObligationKnown: tracks.reportingObligationKnown,
@@ -291,7 +292,11 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     detail: invoice.einvoiceStatusDetail ?? null,
     document: doc ? projectEInvoiceDocument(doc, tracks) : null,
     tracks: {
-      delivery: { status: delivery, at: iso(doc?.deliveryStatusAt) },
+      delivery: {
+        status: delivery,
+        at: delivery === doc?.deliveryStatus ? iso(doc.deliveryStatusAt) : null,
+        confirmationUnavailable: tracks.deliveryConfirmationUnavailable,
+      },
       reporting: {
         status: reporting,
         at: reporting === doc?.reportingStatus ? iso(doc.reportingStatusAt) : null,
@@ -359,13 +364,15 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
         const confirmedAt = reportingEvidenceAt(doc?.validation, outcome);
         return !confirmedAt || e.createdAt.getTime() < Date.parse(confirmedAt);
       };
-      const confirmationUnavailable = unconfirmed(e.toStatus);
       // Old A-Cube rows recorded provider processing as delivery to the recipient.
-      const to = confirmationUnavailable
-        ? "pending"
-        : e.track === "delivery" && e.toStatus === "delivered" && eventProvider === "acube"
-          ? mapAcubeDeliveryStatus(e.providerStatus)
-          : e.toStatus;
+      const acubeDelivery =
+        e.track === "delivery" && e.toStatus === "delivered" && eventProvider === "acube"
+          ? projectAcubeDeliveryEvidence(e.providerStatus)
+          : null;
+      const unconfirmedReporting = unconfirmed(e.toStatus);
+      const confirmationUnavailable =
+        unconfirmedReporting || acubeDelivery?.confirmationUnavailable;
+      const to = unconfirmedReporting ? "pending" : (acubeDelivery?.status ?? e.toStatus);
       return {
         id: e.id,
         track: e.track,

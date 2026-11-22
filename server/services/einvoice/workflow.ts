@@ -190,6 +190,23 @@ function frozenEInvoice(invoice: Invoice, doc: EInvoiceDocument): PreparedSubmis
     : null;
 }
 
+async function frozenCorrectionSource(
+  invoice: Invoice,
+  doc: EInvoiceDocument,
+  provider: EInvoiceProvider,
+  conn: EInvoiceDb
+) {
+  const locallyValidated = frozenEInvoice(invoice, doc);
+  if (locallyValidated) return locallyValidated;
+  // Historical provider proof lets us retain the old rejected bytes. The new candidate still
+  // passes full local preflight and the worker rechecks the provider before sending.
+  if (!documentSubmissionMetadata(doc)?.environmentVerifiedAt) return null;
+  const source = await frozenComplyanceSource(invoice, doc, provider, conn);
+  return source?.uuid
+    ? { ...source, documentType: doc.documentType, validation: documentValidation(doc) }
+    : null;
+}
+
 function needsLink(): EInvoiceProviderResult {
   return {
     providerMessageId: "",
@@ -418,7 +435,8 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
 
     const generated = { ...invoice, einvoiceXml: built.xml };
     const currentRequirement = invoiceReportingRequired(generated, company, now);
-    const originalXml = correctionOf && existing ? frozenEInvoice(fresh, existing) : null;
+    const originalXml =
+      correctionOf && existing ? await frozenCorrectionSource(fresh, existing, provider, tx) : null;
     if (correctionOf && !originalXml) return retryProviderChanged();
     if (correctionOf && originalXml) {
       const archive = await archiveEInvoiceXml(
@@ -444,10 +462,21 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
       )
         return retryProviderChanged();
     }
-    const keepOriginalReporting = triedProvider && !definitiveAcubeRefusal;
+    // A correctable refusal permits a new XML revision under the same number and provider ID.
+    // Only a retry of the existing attempt keeps its previous reporting obligation.
+    const keepOriginalReporting = triedProvider && !correctionOf && !definitiveAcubeRefusal;
     const required = keepOriginalReporting
       ? recordedReportingRequired(existing)
       : currentRequirement;
+    const reportBy = keepOriginalReporting
+      ? (existing?.reportBy ?? null)
+      : required
+        ? invoiceReportingDeadline(generated)
+        : null;
+    const correctionOriginalReporting =
+      correctionOf && existing
+        ? { required: recordedReportingRequired(existing), reportBy: existing.reportBy }
+        : null;
     await updateInvoiceInTransaction(tx, invoice, {
       einvoiceUuid: built.uuid,
       einvoiceXml: built.xml,
@@ -467,11 +496,7 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         reporting: required === false ? "not_required" : "pending",
         providerStatus: null,
         errorCode: null,
-        reportBy: keepOriginalReporting
-          ? (existing?.reportBy ?? null)
-          : required
-            ? invoiceReportingDeadline(generated)
-            : null,
+        reportBy,
       },
       {
         source,
@@ -511,6 +536,7 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
               verifiedEmailRequired,
               correctionOriginalHash: originalXml?.hash ?? null,
               correctionOriginalValidation: originalXml?.validation ?? null,
+              correctionOriginalReporting,
             },
           },
           validatedAt: now,
@@ -526,10 +552,16 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         action: args.regenerate ? "invoice.einvoice_resubmit" : "invoice.einvoice_submit",
         entityType: "invoice",
         entityId: invoice.id,
+        ...(correctionOriginalReporting
+          ? { before: { ...correctionOriginalReporting, xmlHash: originalXml?.hash } }
+          : {}),
         after: {
           provider: provider.name,
           environment: provider.environment,
           status: "queued",
+          reportingRequired: required,
+          reportBy,
+          xmlHash: built.hash,
           ...(correctionOf ? { correctionOf } : {}),
         },
         tx,
@@ -801,6 +833,7 @@ async function stopQueuedSubmission(
   const pin = documentSubmissionMetadata(current);
   if (pin?.correctionOf) {
     const original = await correctionSource(tx, invoice, current?.provider, pin);
+    const originalReporting = pin.correctionOriginalReporting;
     await updateInvoiceInTransaction(tx, invoice, {
       einvoiceStatus: "submitted",
       einvoiceProviderMessageId: pin.correctionOf,
@@ -811,7 +844,16 @@ async function stopQueuedSubmission(
     await applyTracks(
       invoice.companyId,
       invoice.id,
-      { delivery: "queued", errorCode: code },
+      {
+        delivery: "queued",
+        errorCode: code,
+        ...(originalReporting
+          ? {
+              reporting: originalReporting.required === false ? "not_required" : "pending",
+              reportBy: originalReporting.reportBy,
+            }
+          : {}),
+      },
       {
         source: "job",
         now,
@@ -827,9 +869,13 @@ async function stopQueuedSubmission(
             ...pin.correctionOriginalValidation,
             submission: {
               ...pin,
+              reportingRequired: originalReporting
+                ? originalReporting.required
+                : pin.reportingRequired,
               correctionOf: null,
               correctionOriginalHash: null,
               correctionOriginalValidation: null,
+              correctionOriginalReporting: null,
               correctionUncertain: ambiguous,
               correctionCandidateHash: ambiguous ? (current?.xmlHash ?? null) : null,
             },
@@ -960,7 +1006,10 @@ async function persistSubmissionOutcome(args: {
         errorCode: dispatch.result.errorCode,
       }
     : dispatch.result;
-  const required = recordedReportingRequired(current);
+  const originalReporting = originalStillTracked ? metadata?.correctionOriginalReporting : null;
+  const required = originalReporting
+    ? originalReporting.required
+    : recordedReportingRequired(current);
   const delivery: DeliveryStatus = r.delivery ?? deliveryFromLegacy(r.status);
   const reporting = reportingForResult(
     provider.name,
@@ -1001,12 +1050,13 @@ async function persistSubmissionOutcome(args: {
           ...metadata,
           providerAttempted:
             dispatch.providerAttempted || submissionTriedProvider(current) || result.handedOver,
-          ...(required === null ? {} : { reportingRequired: required }),
+          reportingRequired: required,
           correctableRejection: r.correctableRejection === true,
           correctionBlocked: r.errorCode === "COMPLYANCE_XML_FAILED",
           correctionOf: null,
           correctionOriginalHash: null,
           correctionOriginalValidation: null,
+          correctionOriginalReporting: null,
           correctionUncertain,
           correctionCandidateHash: correctionUncertain ? built.hash : null,
         },
@@ -1040,6 +1090,7 @@ async function persistSubmissionOutcome(args: {
     {
       delivery,
       reporting,
+      reportBy: originalReporting?.reportBy,
       providerStatus: r.providerStatus ?? null,
       errorCode: failed || delivery === "needs_link" ? errorCode : null,
       errorMessage: failed ? (r.detail ?? null) : null,
@@ -1312,7 +1363,8 @@ async function canReadTrackedEInvoice(
 async function frozenComplyanceSource(
   invoice: Invoice,
   doc: EInvoiceDocument,
-  provider: EInvoiceProvider
+  provider: EInvoiceProvider,
+  conn: EInvoiceDb = db
 ) {
   const pin = documentSubmissionMetadata(doc);
   const id = invoice.einvoiceProviderMessageId;
@@ -1333,13 +1385,16 @@ async function frozenComplyanceSource(
   const hasMirrors = !!invoice.einvoiceXml && !!invoice.einvoiceHash && !!doc.xmlHash;
   const archive = hasMirrors
     ? null
-    : await getSubmittedArchiveSource({
-        companyId: invoice.companyId,
-        invoiceId: invoice.id,
-        provider: provider.name,
-        providerMessageId: id,
-        sha256: pinnedHash,
-      });
+    : await getSubmittedArchiveSource(
+        {
+          companyId: invoice.companyId,
+          invoiceId: invoice.id,
+          provider: provider.name,
+          providerMessageId: id,
+          sha256: pinnedHash,
+        },
+        conn
+      );
   const xml = hasMirrors ? invoice.einvoiceXml : archive?.xml;
   const hash = pinnedHash ?? archive?.sha256;
   if (!xml || !hash || (invoice.einvoiceXml && invoice.einvoiceXml !== xml)) return;

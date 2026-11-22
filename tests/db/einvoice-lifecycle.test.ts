@@ -106,6 +106,26 @@ describe("W4-C settings are honest about the ASP boundary", () => {
     });
   });
 
+  it("replaces an ambiguous legacy card setting with an explicit credit or debit card", async () => {
+    const t = await readyTenant();
+    const settings = `/api/companies/${t.company.id}/einvoicing/settings`;
+    await h.sql("UPDATE companies SET einvoice_payment_means_code = '48' WHERE id = $1", [
+      t.company.id,
+    ]);
+    const unrelatedEdit = await t.as.put(settings, { tradeLicenceNo: "CN-9876543" });
+    expect(unrelatedEdit.status, unrelatedEdit.text).toBe(200);
+    expect(unrelatedEdit.body.identity.einvoicePaymentMeansCode).toBe("48");
+
+    for (const code of ["54", "55"]) {
+      const saved = await t.as.put(settings, { einvoicePaymentMeansCode: code });
+      expect(saved.status, saved.text).toBe(200);
+      expect((await t.as.get(settings)).body.identity.einvoicePaymentMeansCode).toBe(code);
+    }
+    const ambiguous = await t.as.put(settings, { einvoicePaymentMeansCode: "48" });
+    expect(ambiguous.status, ambiguous.text).toBe(400);
+    expect((await t.as.get(settings)).body.identity.einvoicePaymentMeansCode).toBe("55");
+  });
+
   it("[R07-13] a viewer cannot change e-invoicing settings and another tenant cannot read them", async () => {
     const t = await readyTenant();
     const viewer = await h.createTenant({ role: "viewer" });

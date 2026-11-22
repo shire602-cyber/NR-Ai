@@ -373,7 +373,7 @@ Muhasib scored on what I could make it do today, not what it intends to do.
 
 **The one you left out is the one that should worry you: Tally.** Accredited ASP #35, fully accredited 27 July 2026, native PINT AE XML, emirate field in party ledger masters, direct EmaraTax filing, full Arabic and bilingual invoices — and it **bundles unlimited e-invoices into the annual subscription while everyone else will meter per document**. ~AED 2,340 perpetual, ~AED 4,200 five-year TCO, 65,000+ UAE businesses. When the mandate lands, Tally is the safe answer, and "safe" is what a compliance purchase optimises for.
 
-**And the direct bank access issue is structural, not a backlog item.** CBUAE Open Finance (Circular 7/2023, in force 10 July 2025) **bans screen-scraping** and routes everything through one licensed central API Hub with **usage fees**. Bank data in the UAE is a cost of goods sold, not a free PSD2-style API. Only 7 of 267 UAE banks are reachable through any aggregator; Plaid has zero UAE coverage; DIFC and ADGM are excluded entirely. "We'll add direct bank connections later" is a licensing and P&L decision, not a sprint.
+**Bank reconciliation starts with a CSV upload.** Upload a statement exported from your bank, review the suggested matches, and reconcile the transactions against your books.
 
 ---
 

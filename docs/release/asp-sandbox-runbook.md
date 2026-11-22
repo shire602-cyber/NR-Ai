@@ -117,10 +117,10 @@ npx tsx scripts/ops/asp-sandbox-dryrun.ts --provider complyance --status
 
 | Situation                                                    | Result                                                                                                                                                                               |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| No credentials for a provider                                | `SKIP <ASP>: not configured (missing ...)`. Exit 0 if nothing ran. Nothing is prompted for.                                                                                          |
+| No credentials for a provider                                | `SKIP <ASP>: not configured (missing ...)`. Exit 1 with `--status` if no provider could be checked. Exit 0 if nothing ran without `--status`. Nothing is prompted for. |
 | `ACUBE_ENV` / `COMPLYANCE_ENV` set to anything but `sandbox` | `REFUSED`, exit 2. The script never talks to production.                                                                                                                             |
 | Sample fails local validation                                | Findings printed, exit 1, nothing sent                                                                                                                                               |
-| Submitted                                                    | One JSON line per ASP: `status`, `delivery`, `reporting`, `providerMessageId`, `providerStatus`, `errorCode`, `reasons`. `--status` polls once. Exit 1 if an ASP rejected or failed. |
+| Submitted                                                    | The result includes `status`, `delivery`, `reporting`, `providerMessageId`, `providerStatus`, `errorCode`, and `reasons`. `--status` checks the returned document ID once. Exit 1 on rejection, failure, or an unverified status check. |
 
 The script needs no database and prints no secret. Each run uses a fresh invoice number
 (`DRYRUN-<timestamp>`) and UUID, so a re-run is not refused as a duplicate.

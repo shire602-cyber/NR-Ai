@@ -87,7 +87,7 @@ export interface EInvoiceStatusView {
   detail: string | null;
   contactId: string | null;
   tracks: {
-    delivery: { status: DeliveryStatus; at: string | null };
+    delivery: { status: DeliveryStatus; at: string | null; confirmationUnavailable?: boolean };
     reporting: {
       status: ReportingStatus;
       at: string | null;
@@ -146,6 +146,7 @@ export interface EInvoiceDocumentRow {
   environment?: "sandbox" | "production" | null;
   providerMessageId: string | null;
   deliveryStatus: DeliveryStatus | null;
+  deliveryConfirmationUnavailable?: boolean;
   reportingStatus: ReportingStatus | null;
   reportingObligationKnown?: boolean;
   reportBy: string | null;
@@ -159,6 +160,7 @@ export interface EInvoiceCompliancePill {
   reportingRequired: boolean;
   reportingObligationKnown?: boolean;
   delivery: DeliveryStatus;
+  deliveryConfirmationUnavailable?: boolean;
   reporting: ReportingStatus;
 }
 
@@ -216,7 +218,7 @@ export const REPORTING_TONE: Record<ReportingStatus, StatusTone> = {
 };
 
 export const deliveryLabelKey = (
-  s: DeliveryStatus,
+  status: DeliveryStatus,
   queuedForSubmission = false,
   acknowledgement: RecipientAcknowledgement = null
 ) =>
@@ -226,7 +228,26 @@ export const deliveryLabelKey = (
       ? "einvoicing.recipientReceived"
       : queuedForSubmission
         ? "einvoicing.submissionQueued"
-        : `einvoicing.delivery_${s}`;
+        : `einvoicing.delivery_${status}`;
+
+export function deliveryOutcomeLabel(
+  t: Record<string, string>,
+  status: DeliveryStatus,
+  options: {
+    queuedForSubmission?: boolean;
+    acknowledgement?: RecipientAcknowledgement;
+    confirmationUnavailable?: boolean;
+    environment?: string | null;
+  }
+) {
+  if (options.confirmationUnavailable) return t["einvoicing.deliveryUnconfirmed"];
+  return trackOutcomeLabel(
+    t,
+    deliveryLabelKey(status, options.queuedForSubmission, options.acknowledgement),
+    status === "delivered" || status === "rejected" || status === "delivery_failed",
+    options.environment
+  );
+}
 
 export function recipientAcknowledgement(
   provider: string | null | undefined,
@@ -344,10 +365,9 @@ export function deliveryFromLegacyStatus(status: string | null | undefined): Del
       return "validated";
     case "queued":
     case "submitted":
-      return "queued";
     case "accepted":
     case "cleared":
-      return "delivered";
+      return "queued";
     case "rejected":
     case "cancelled":
       return "rejected";
@@ -401,9 +421,7 @@ export function fieldLabelKey(field: string): string | null {
   return null;
 }
 
-/** One-line rejection reason for the header strip: the first provider reason (with its field or
- * rule), else the localised error code, else the stored message. `code`/`field` are returned so the
- * caller can render them as LTR isolates. */
+/** The first provider reason and fallback message. The header localizes known codes. */
 export function rejectionSummary(rejection: EInvoiceStatusView["rejection"]): {
   message: string | null;
   field: string | null;

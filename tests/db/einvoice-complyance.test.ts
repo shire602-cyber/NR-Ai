@@ -1020,6 +1020,83 @@ describe("E2 submit, two tracks and history", () => {
     ]);
   });
 
+  it.each([
+    { outcome: "200", originalRequiresReport: false, correctedRequiresReport: true },
+    { outcome: "network", originalRequiresReport: true, correctedRequiresReport: false },
+    {
+      outcome: "configuration-unavailable",
+      originalRequiresReport: false,
+      correctedRequiresReport: true,
+    },
+  ] as const)(
+    "freezes the obligation for the tracked XML revision after correction ($outcome)",
+    async ({ outcome, originalRequiresReport, correctedRequiresReport }) => {
+      const t = await readyTenant();
+      await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+      const inv = await issuedInvoice(t);
+      const [buyer] = await h.sql(
+        "UPDATE invoices SET customer_trn = NULL, date = '2026-03-01' WHERE id = $1 RETURNING contact_id",
+        [inv.id]
+      );
+      const setBuyerVat = (required: boolean) =>
+        h.sql("UPDATE customer_contacts SET trn_number = $2 WHERE id = $1", [
+          buyer.contact_id,
+          required ? "100765432100003" : null,
+        ]);
+      await setBuyerVat(originalRequiresReport);
+      const endpoint = await t.as.put(
+        `/api/companies/${t.company.id}/einvoicing/buyer-endpoints/${buyer.contact_id}`,
+        { scheme: "0235", participantId: "1007654321" }
+      );
+      expect(endpoint.status, endpoint.text).toBe(200);
+      const prefix = `/api/invoices/${inv.id}/einvoice`;
+      fake.nextSubmit = ["422"];
+      const submitted = await t.as.post(`${prefix}/submit`, {});
+      expect(submitted.status, submitted.text).toBe(202);
+      await runEInvoiceRetries();
+      const rejected = await statusOf(t, inv.id);
+      const expectedReporting = (required: boolean) => ({
+        required,
+        obligationKnown: true,
+        reportBy: required ? "2026-03-15" : null,
+      });
+      expect(rejected.tracks.reporting).toMatchObject(expectedReporting(originalRequiresReport));
+
+      await setBuyerVat(correctedRequiresReport);
+      const correction = await t.as.post(`${prefix}/resubmit`, {});
+      expect(correction.status, correction.text).toBe(202);
+      expect(correction.body.tracks.reporting).toMatchObject(
+        expectedReporting(correctedRequiresReport)
+      );
+      const correctedHash = correction.body.document.xmlHash;
+      expect(correctedHash).not.toBe(rejected.document.xmlHash);
+
+      const configured = outcome !== "configuration-unavailable";
+      if (configured) {
+        fake.nextSubmit = [outcome];
+        await runEInvoiceRetries();
+      } else {
+        const credential = credentialVariable!;
+        const savedCredential = process.env[credential]!;
+        delete process.env[credential];
+        try {
+          await runEInvoiceRetries();
+        } finally {
+          process.env[credential] = savedCredential;
+        }
+      }
+      const current = await statusOf(t, inv.id);
+      expect(fake.posts).toBe(configured ? 2 : 1);
+      const originalIsTracked = outcome !== "200";
+      expect(current.document.xmlHash).toBe(
+        originalIsTracked ? rejected.document.xmlHash : correctedHash
+      );
+      expect(current.tracks.reporting).toMatchObject(
+        expectedReporting(originalIsTracked ? originalRequiresReport : correctedRequiresReport)
+      );
+    }
+  );
+
   it("rechecks terminal Needs Correction and never switches provider identity on an unexpected resend response", async () => {
     const t = await readyTenant();
     await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
@@ -1689,6 +1766,141 @@ describe("E2 + F16: no FTA reporting before the mandate applies", () => {
 });
 
 describe("Legacy Complyance environment verification", () => {
+  it.each(["unverified reference", "partially verified", "missing reference"])(
+    "restores a doc-derived terminal Needs Correction without dispatching it (%s)",
+    async (legacy) => {
+      const t = await readyTenant();
+      await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+      const inv = await issuedInvoice(t);
+      const path = `/api/invoices/${inv.id}/einvoice`;
+      fake.nextSubmit = ["422"];
+      expect((await t.as.post(`${path}/submit`, {})).status).toBe(202);
+      await runEInvoiceRetries();
+      const held = docOf(t, inv.number)!;
+      // The published Needs Correction example uses REJECTED for FTA approval while
+      // explicitly attributing the failure to validation, before any delivery.
+      held.ftaApproval = "REJECTED";
+      held.errors = [{ code: "IBR-132-AE", source: "validation", message: "Invalid buyer TRN" }];
+      held.response = { validationResults: { status: "Invalid", validationSteps: [] } };
+      const validation =
+        legacy === "partially verified"
+          ? {
+              submission: {
+                environment: "sandbox",
+                environmentVerifiedAt: new Date().toISOString(),
+              },
+            }
+          : {};
+      await h.sql(
+        `UPDATE einvoice_documents SET validation = $2, provider_message_id = $3 WHERE invoice_id = $1`,
+        [inv.id, JSON.stringify(validation), legacy === "missing reference" ? null : held.id]
+      );
+      if (legacy === "missing reference") {
+        await h.sql("UPDATE invoices SET einvoice_provider_message_id = NULL WHERE id = $1", [
+          inv.id,
+        ]);
+      }
+      expect((await statusOf(t, inv.id)).transmission.environmentVerification).toMatchObject({
+        provider: "complyance",
+        environments: ["sandbox"],
+        reference: legacy === "missing reference" ? "manual" : "stored",
+      });
+      const verifyBody = {
+        environment: "sandbox",
+        ...(legacy === "missing reference" ? { documentId: held.id } : {}),
+      };
+      held.errors.push({ code: "WRONG_STAGE", source: "government", message: "Already reported" });
+      const contradictory = await t.as.post(`${path}/confirm-environment`, verifyBody);
+      expect(contradictory.status, contradictory.text).toBe(200);
+      expect((await t.as.post(`${path}/resubmit`, {})).status).toBe(409);
+      expect(fake.posts).toBe(1);
+      held.errors.pop();
+
+      const verified = await t.as.post(`${path}/confirm-environment`, { environment: "sandbox" });
+      expect(verified.status, verified.text).toBe(200);
+      expect(await statusOf(t, inv.id)).toMatchObject({
+        status: "rejected",
+        transmission: { providerDocumentId: held.id, environmentVerification: null },
+        rejection: { code: "COMPLYANCE_VALIDATION", resubmittable: true },
+      });
+      expect(fake.posts).toBe(1);
+      const correction = await t.as.post(`${path}/resubmit`, {});
+      expect(correction.status, correction.text).toBe(202);
+      await runEInvoiceRetries();
+      expect(fake.posts).toBe(2);
+      expect(fake.docs.size).toBe(1);
+      expect(docOf(t, inv.number)?.id).toBe(held.id);
+    }
+  );
+
+  it.each([false, true])(
+    "downloads and verifies byte-identical cleared-only XML with missing legacy mirrors (previously verified: %s)",
+    async (previouslyVerified) => {
+      const t = await readyTenant();
+      const inv = await issuedInvoice(t);
+      const invoicePath = `/api/invoices/${inv.id}`;
+      expect((await t.as.post(`${invoicePath}/generate-einvoice`, {})).status).toBe(200);
+      const [source] = await h.sql(
+        "SELECT einvoice_xml AS xml, einvoice_uuid AS uuid FROM invoices WHERE id = $1",
+        [inv.id]
+      );
+      const held = {
+        id: "01K5EXAMPLE00000000000142",
+        number: inv.number,
+        source: `${fake.sourceName}:v1`,
+        body: {},
+        state: "final_valid",
+        isTerminal: true,
+        errors: [],
+      };
+      fake.docs.set(held.id, held);
+      const { archiveEInvoiceXml } = await import("../../server/services/einvoice/store");
+      await archiveEInvoiceXml({
+        companyId: t.company.id,
+        invoiceId: inv.id,
+        direction: "outbound",
+        kind: "cleared",
+        documentNumber: inv.number,
+        documentType: "380",
+        uuid: source.uuid,
+        xml: source.xml,
+        provider: "complyance",
+        providerMessageId: held.id,
+      });
+      if (previouslyVerified) {
+        await h.sql(
+          `UPDATE einvoice_documents SET status = 'cleared', provider = 'complyance',
+          provider_message_id = $2, xml_hash = NULL,
+          validation = '{"submission":{"environment":"sandbox"}}' WHERE invoice_id = $1`,
+          [inv.id, held.id]
+        );
+      } else {
+        await h.sql("DELETE FROM einvoice_documents WHERE invoice_id = $1", [inv.id]);
+      }
+      await h.sql(
+        `UPDATE invoices SET einvoice_status = 'cleared', einvoice_provider = 'complyance',
+        einvoice_provider_message_id = $2, einvoice_xml = NULL, einvoice_hash = NULL, einvoice_uuid = NULL WHERE id = $1`,
+        [inv.id, held.id]
+      );
+      const foreign = await h.createTenant({ name: "Unrelated cleared XML company" });
+      expect((await foreign.as.get(`${invoicePath}/einvoice-xml`)).status).toBe(404);
+      const download = await t.as.get(`${invoicePath}/einvoice-xml`);
+      expect(download.status, download.text).toBe(200);
+      expect(download.text).toBe(source.xml);
+      expect(download.headers.get("content-type")).toContain("application/xml");
+      await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+      const proof = await t.as.post(`${invoicePath}/einvoice/confirm-environment`, {
+        environment: "sandbox",
+      });
+      expect(proof.status, proof.text).toBe(200);
+      const [restored] = await h.sql("SELECT einvoice_xml AS xml FROM invoices WHERE id = $1", [
+        inv.id,
+      ]);
+      expect(restored.xml).toBe(source.xml);
+      expect(fake.posts).toBe(0);
+    }
+  );
+
   it("verifies a user-supplied original document ID for a legacy ambiguous attempt", async () => {
     const t = await readyTenant();
     await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);

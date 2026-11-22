@@ -1,5 +1,5 @@
 import { TrialBanner } from "@/components/TrialBanner";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -35,6 +35,10 @@ import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { EInvoiceProviderCard } from "@/components/einvoice/EInvoiceProviderCard";
 import { EInvoicePartnerCard } from "@/components/einvoice/EInvoicePartnerCard";
+import {
+  EINVOICE_SETTINGS_PAYMENT_MEANS_CODES,
+  UNSPECIFIED_CARD_PAYMENT_MEANS_CODE,
+} from "@shared/einvoice-payment-means";
 import "@/components/einvoice/einvoice-theme.css";
 
 // UAE e-invoicing (PINT AE) settings: identity, scope, ASP status, per-invoice
@@ -71,12 +75,6 @@ const COPY = {
     tradeLicenceAuthority: "Issuing authority",
     iban: "Payee IBAN",
     paymentMeans: "Payment means",
-    pmUndefined: "Not specified",
-    pmCash: "Cash",
-    pmTransfer: "Credit transfer",
-    pmBank: "Payment to bank account",
-    pmCard: "Bank card",
-    pmDebit: "Direct debit",
     save: "Save",
     saved: "E-invoicing settings saved",
     saveFailed: "Could not save settings",
@@ -161,12 +159,6 @@ const COPY = {
     tradeLicenceAuthority: "جهة الإصدار",
     iban: "رقم الآيبان للمستفيد",
     paymentMeans: "وسيلة الدفع",
-    pmUndefined: "غير محدد",
-    pmCash: "نقداً",
-    pmTransfer: "تحويل دائن",
-    pmBank: "دفع إلى حساب بنكي",
-    pmCard: "بطاقة بنكية",
-    pmDebit: "خصم مباشر",
     save: "حفظ",
     saved: "تم حفظ إعدادات الفوترة الإلكترونية",
     saveFailed: "تعذّر حفظ الإعدادات",
@@ -320,13 +312,15 @@ interface FormState {
 }
 
 function formFromView(view: SettingsView | undefined): FormState {
+  const paymentMeans = view?.identity.einvoicePaymentMeansCode;
   return {
     peppolParticipantId: view?.identity.peppolParticipantId ?? "",
     peppolScheme: view?.identity.peppolScheme ?? "0235",
     tradeLicenceNo: view?.identity.tradeLicenceNo ?? "",
     tradeLicenceAuthority: view?.identity.tradeLicenceAuthority ?? "",
     einvoicePayeeIban: view?.identity.einvoicePayeeIban ?? "",
-    einvoicePaymentMeansCode: view?.identity.einvoicePaymentMeansCode ?? NONE,
+    einvoicePaymentMeansCode:
+      paymentMeans === UNSPECIFIED_CARD_PAYMENT_MEANS_CODE ? "" : (paymentMeans ?? NONE),
     einvoiceScope: view?.scope.scope ?? NONE,
     einvoiceTurnoverBand: view?.scope.band ?? NONE,
     einvoiceGoLiveDate: "",
@@ -369,7 +363,7 @@ function CompanyEInvoicingSettings({
   companyId: string | undefined;
   companyName: string | undefined;
 }) {
-  const { locale } = useTranslation();
+  const { locale, t } = useTranslation();
   const s: Copy = COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
 
@@ -411,7 +405,10 @@ function CompanyEInvoicingSettings({
         tradeLicenceNo: blank(form.tradeLicenceNo),
         tradeLicenceAuthority: blank(form.tradeLicenceAuthority),
         einvoicePayeeIban: blank(form.einvoicePayeeIban.replace(/\s+/g, "")),
-        einvoicePaymentMeansCode: blank(form.einvoicePaymentMeansCode),
+        // Omit an unchanged legacy card default so that other fields can be saved independently.
+        ...(form.einvoicePaymentMeansCode
+          ? { einvoicePaymentMeansCode: blank(form.einvoicePaymentMeansCode) }
+          : {}),
         einvoiceScope: blank(form.einvoiceScope),
         einvoiceTurnoverBand: blank(form.einvoiceTurnoverBand),
         ...(form.einvoiceGoLiveDate ? { einvoiceGoLiveDate: form.einvoiceGoLiveDate } : {}),
@@ -424,18 +421,6 @@ function CompanyEInvoicingSettings({
     },
     onError: () => toast({ title: s.saveFailed, variant: "destructive" }),
   });
-
-  const paymentOptions = useMemo(
-    () => [
-      ["1", s.pmUndefined],
-      ["10", s.pmCash],
-      ["30", s.pmTransfer],
-      ["42", s.pmBank],
-      ["48", s.pmCard],
-      ["49", s.pmDebit],
-    ],
-    [s]
-  );
 
   const set = (k: keyof FormState) => (v: string) => setEdits((e) => ({ ...e, [k]: v }));
 
@@ -593,15 +578,16 @@ function CompanyEInvoicingSettings({
                   <Select
                     value={form.einvoicePaymentMeansCode}
                     onValueChange={set("einvoicePaymentMeansCode")}
+                    dir={locale === "ar" ? "rtl" : "ltr"}
                   >
                     <SelectTrigger aria-label={s.paymentMeans}>
-                      <SelectValue />
+                      <SelectValue placeholder={t["settingsPages.eInvoiceChooseCardType"]} />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={NONE}>—</SelectItem>
-                      {paymentOptions.map(([code, label]) => (
+                      {EINVOICE_SETTINGS_PAYMENT_MEANS_CODES.map((code) => (
                         <SelectItem key={code} value={code}>
-                          {label}
+                          {t[`settingsPages.eInvoicePaymentMeans.${code}`]}
                         </SelectItem>
                       ))}
                     </SelectContent>

@@ -146,6 +146,19 @@ describe("Public SaaS launch surface", () => {
     }
   });
 
+  it("documents a CSV upload and removes the retired transaction setting from both catalogs", () => {
+    // The archived teardown and unused catalog entries have no runtime surface to render.
+    const teardown = readRepoFile("docs/archive/root/Muhasib-Teardown-2026-08-07.md");
+    expect(teardown).toContain("Bank reconciliation starts with a CSV upload.");
+    expect(teardown).not.toMatch(/add (?:direct )?bank \w+ later/i);
+    for (const locale of ["en", "ar"]) {
+      const labels = JSON.parse(readRepoFile(`client/src/locales/${locale}/pageLabels.json`));
+      expect(labels).not.toHaveProperty(["pageLabels.syncNewTransactionsEveryHour"]);
+      const banking = JSON.parse(readRepoFile(`client/src/locales/${locale}/banking.json`));
+      expect(banking["banking.feeds.manualImportBody"]).toContain("CSV");
+    }
+  });
+
   it("keeps authenticated SaaS chrome and dashboard copy claim-safe", () => {
     const appSource = readRepoFile("client/src/App.tsx");
     const dashboardSource = readDashboardSource();

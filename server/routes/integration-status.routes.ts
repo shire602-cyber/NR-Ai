@@ -2,7 +2,6 @@ import type { Express, Request, Response } from "express";
 import { authMiddleware, adminMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/email.service";
-import { isOpenBankingConfigured } from "../services/open-banking.service";
 import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
 import { isObjectStorageConfigured, objectStorageBackend } from "../services/fileStorage";
 import { connectorStatuses } from "../services/connectors/oauth";
@@ -18,7 +17,6 @@ export function registerIntegrationStatusRoutes(app: Express) {
     authMiddleware,
     adminMiddleware,
     asyncHandler(async (_req: Request, res: Response) => {
-      const bankFeedsConfigured = isOpenBankingConfigured();
       const integrations = [
         {
           key: "email",
@@ -82,15 +80,12 @@ export function registerIntegrationStatusRoutes(app: Express) {
         },
         {
           key: "openBanking",
-          name: "Bank connections",
-          configured: bankFeedsConfigured,
-          detail: bankFeedsConfigured
-            ? null
-            : "Not configured. Manual statement import is available.",
-          requiredEnv: [
-            "LEAN_APP_TOKEN, TARABUT_CLIENT_ID + TARABUT_CLIENT_SECRET, or WIO_CLIENT_ID + WIO_CLIENT_SECRET",
-          ],
-          unlocks: "Provider connections and transaction import through a configured adapter",
+          name: "Bank statement CSV upload",
+          configured: true,
+          detail: null,
+          requiredEnv: [],
+          unlocks:
+            "Upload a bank statement CSV, review suggested matches, and reconcile transactions",
         },
         {
           key: "push",

@@ -55,6 +55,54 @@ async function fixture() {
 
 afterEach(() => vi.unstubAllEnvs());
 
+it.each([
+  { rawStatus: null, delivery: "queued", unconfirmed: true },
+  { rawStatus: " ", delivery: "queued", unconfirmed: true },
+  { rawStatus: "historical_unrecognized_value", delivery: "queued", unconfirmed: true },
+  { rawStatus: "delivery_error", delivery: "delivery_failed", unconfirmed: false },
+  { rawStatus: "accepted", delivery: "delivered", unconfirmed: false },
+])(
+  "projects historical A-Cube delivery with provider status $rawStatus consistently",
+  async ({ rawStatus, delivery, unconfirmed }) => {
+    const { tenant, invoiceId, companyId, statusPath } = await fixture();
+    const docId = randomUUID();
+    await h.sql(
+      `UPDATE invoices SET status = 'sent', einvoice_status = 'accepted', einvoice_provider = 'acube',
+       einvoice_provider_message_id = $2 WHERE id = $1`,
+      [invoiceId, docId]
+    );
+    await h.sql(
+      `INSERT INTO einvoice_documents
+       (company_id, invoice_id, status, provider, provider_message_id, delivery_status,
+        provider_status, validation)
+     VALUES ($1, $2, 'accepted', 'acube', $3, 'delivered', $4, $5::jsonb)`,
+      [companyId, invoiceId, docId, rawStatus, { submission: { environment: "sandbox" } }]
+    );
+    await h.sql(
+      `INSERT INTO einvoice_document_events
+      (company_id, invoice_id, track, from_status, to_status, provider, provider_status, source)
+     VALUES ($1, $2, 'delivery', 'sending', 'delivered', 'acube', $3, 'poll')`,
+      [companyId, invoiceId, rawStatus]
+    );
+    const [batch, status] = await Promise.all([
+      tenant.as.get(`/api/companies/${companyId}/einvoicing/compliance?invoiceIds=${invoiceId}`),
+      tenant.as.get(statusPath),
+    ]);
+    expect(batch.status, batch.text).toBe(200);
+    expect(status.status, status.text).toBe(200);
+    expect(batch.body.documents).toMatchObject([{ invoiceId, deliveryStatus: delivery }]);
+    expect(batch.body.items).toMatchObject([{ invoiceId, delivery }]);
+    expect(status.body.tracks.delivery.status).toBe(delivery);
+    expect(status.body.events).toMatchObject([{ track: "delivery", to: delivery }]);
+    if (unconfirmed) {
+      expect(batch.body.documents[0].deliveryConfirmationUnavailable).toBe(true);
+      expect(batch.body.items[0].deliveryConfirmationUnavailable).toBe(true);
+      expect(status.body.tracks.delivery.confirmationUnavailable).toBe(true);
+      expect(status.body.events[0].confirmationUnavailable).toBe(true);
+    }
+  }
+);
+
 it("tracks a prior A-Cube receipt through its original configuration, not the selected provider", async () => {
   const { tenant, invoiceId, companyId, statusPath } = await fixture();
   const docId = randomUUID();

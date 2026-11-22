@@ -13,6 +13,7 @@
   "einvoicing.recipientAccepted": "Accepted by the buyer’s provider",
   "einvoicing.delivery_sending": "Sending",
   "einvoicing.delivery_delivered": "Delivered",
+  "einvoicing.deliveryUnconfirmed": "Delivery unconfirmed",
   "einvoicing.delivery_delivery_failed": "Delivery failed",
   "einvoicing.delivery_rejected": "Rejected",
   "einvoicing.delivery_needs_link": "Needs link",

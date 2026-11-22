@@ -52,7 +52,7 @@ function assertConfigured(adapter: BankFeedAdapter): void {
       "BANK_FEED_NOT_CONFIGURED",
       503,
       { provider: adapter.id, capability: adapter.capability },
-      `${adapter.label} is not connected — it requires a provider contract and credentials`
+      "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books."
     );
   }
 }
@@ -118,7 +118,7 @@ function assertAllowedRedirect(uri: string): void {
       "REDIRECT_URI_NOT_ALLOWED",
       400,
       { allowed },
-      "The redirect URI is not on the bank-feed allow-list"
+      "This link is unavailable. Open Bank Reconciliation to upload a CSV statement."
     );
   }
 }
@@ -235,7 +235,7 @@ function providerFailure(adapter: BankFeedAdapter, err: unknown): DomainError {
   const status = err instanceof BankFeedProviderError ? err.status : 0;
   log.warn(
     { provider: adapter.id, status, err: (err as Error).message },
-    "Bank feed provider call failed"
+    "Transaction import provider call failed"
   );
   return new DomainError(
     "BANK_FEED_PROVIDER_ERROR",
@@ -408,7 +408,7 @@ export async function runScheduledBankFeedSync(): Promise<{ synced: number; fail
       failed++;
       log.warn(
         { connectionId: raw.id, err: (err as Error).message },
-        "Scheduled bank feed sync failed"
+        "Scheduled transaction import failed"
       );
     }
   }

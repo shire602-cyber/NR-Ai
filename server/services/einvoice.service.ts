@@ -15,9 +15,10 @@
 import crypto from "crypto";
 import Decimal from "decimal.js";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
+import { UNSPECIFIED_CARD_PAYMENT_MEANS_CODE } from "../../shared/einvoice-payment-means";
 import { classifySupply, type SupplyClassification } from "../../shared/vat-classification";
 import { fromFils, toFils, tryToFils } from "../../shared/money";
-import { calendarDateKey } from "../../shared/uae-date";
+import { calendarDateKey, calendarTimeKey } from "../../shared/uae-date";
 import { computeSalesDocument, storedLineToTotalsInput } from "./document-totals.service";
 import { dueDateFromTerms } from "./invoice-lifecycle";
 import { comment, el, opt, serializeXml, type XmlElement } from "./einvoice/xml";
@@ -101,7 +102,7 @@ export interface EInvoiceLineExtra {
 
 export interface EInvoiceOptions {
   uuid?: string;
-  /** HH:MM:SS (UTC+4 local business time is the caller's choice). */
+  /** An explicit UAE business clock time (HH:MM:SS). */
   issueTime?: string;
   originalInvoice?: { number: string; date: Date | string } | null;
   creditNoteReasonCode?: CreditNoteReasonCode | null;
@@ -140,10 +141,6 @@ function formatDate(date: Date | string): string {
   if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== day)
     throw new RangeError("Invalid e-invoice calendar date");
   return day;
-}
-
-function formatTime(date: Date): string {
-  return date.toISOString().slice(11, 19);
 }
 
 const COUNTRY_ALIASES: Record<string, string> = {
@@ -474,7 +471,7 @@ export function generateEInvoiceXML(
   };
 
   const issueDate = formatDate(inv.date);
-  const issueTime = opts.issueTime ?? formatTime(new Date(inv.date));
+  const issueTime = opts.issueTime ?? calendarTimeKey(inv.date);
   const supplyDate = inv.supplyDate ? formatDate(inv.supplyDate) : null;
   const dueDate = resolveDueDate(inv);
   const payableFils = totals.totalFils;
@@ -791,7 +788,11 @@ export function frozenEInvoiceDispatchIssue(xml: string): string | null {
         return BUYER_ENDPOINT_MISMATCH;
       }
     }
-    if (all(root, "cac:PaymentMeans/cbc:PaymentMeansCode").some((code) => text(code) === "48")) {
+    if (
+      all(root, "cac:PaymentMeans/cbc:PaymentMeansCode").some(
+        (code) => text(code) === UNSPECIFIED_CARD_PAYMENT_MEANS_CODE
+      )
+    ) {
       return PAYMENT_CARD_TYPE_REQUIRED;
     }
     return null;
@@ -1023,7 +1024,7 @@ export function validateForEInvoicing(
 
   const iban = options?.payeeIban ?? co.einvoicePayeeIban;
   const meansCode = options?.paymentMeansCode ?? co.einvoicePaymentMeansCode;
-  if (meansCode === "48") {
+  if (meansCode === UNSPECIFIED_CARD_PAYMENT_MEANS_CODE) {
     add(
       "invoice.paymentMeans",
       PAYMENT_CARD_TYPE_REQUIRED,

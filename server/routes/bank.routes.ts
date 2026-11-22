@@ -7,7 +7,6 @@ import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
-import { getCapabilitySnapshot } from "../../shared/capabilities";
 import {
   bankFeedCallbackBody,
   bankFeedConnectBody,
@@ -15,16 +14,13 @@ import {
   manualBankConnectionBody,
 } from "../../shared/validators/banking";
 import {
-  allowedRedirectUris,
   completeCallback,
   linkConnection,
-  providerStatuses,
   registerBankFeedJobs,
   sanitizeConnection,
   startConnect,
   syncConnection,
 } from "../services/bank-feeds";
-import { getAvailableProviders, isOpenBankingConfigured } from "../services/open-banking.service";
 import { importBankStatement, parseCSVBankStatement } from "../services/bank-import.service";
 import { createLogger } from "../config/logger";
 import { z } from "zod";
@@ -193,20 +189,19 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
-  // ─── Open banking (to the external boundary) ────────────────────────────
-
   app.get(
     "/api/bank/providers",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (_req: Request, res: Response) => {
-      const snapshot = getCapabilitySnapshot();
+      // Older clients can still read this shape and discover the CSV upload destination.
       res.json({
-        providers: getAvailableProviders(),
-        isConfigured: isOpenBankingConfigured(),
-        statuses: providerStatuses(),
-        redirectUris: allowedRedirectUris(),
-        capabilities: snapshot.capabilities.filter((c) => c.id.startsWith("bank_feed_")),
+        providers: [],
+        isConfigured: false,
+        statuses: [],
+        redirectUris: [],
+        capabilities: [],
+        statementImport: { format: "csv", href: "/bank-reconciliation?import=1" },
       });
     })
   );
@@ -251,7 +246,7 @@ export function registerBankRoutes(app: Express) {
         code: body.code,
         state: body.state,
       });
-      logger.info({ companyId, count: result.connections.length }, "Bank feed connected");
+      logger.info({ companyId, count: result.connections.length }, "Bank authorization completed");
       res.status(201).json(result);
     })
   );

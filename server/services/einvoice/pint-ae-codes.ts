@@ -4,6 +4,10 @@
  * schematron (release 2026.5, vendored under server/assets/einvoice/) — the
  * rule id that checks each list is noted next to it.
  */
+import type {
+  EInvoiceSettingsPaymentMeansCode,
+  UNSPECIFIED_CARD_PAYMENT_MEANS_CODE,
+} from "../../../shared/einvoice-payment-means";
 
 /** Peppol participant identifier scheme for the UAE (TIN based). */
 export const PEPPOL_SCHEME_UAE_TIN = "0235";
@@ -109,20 +113,10 @@ export function isCreditNoteDocumentType(value?: string | null): boolean {
   return isPintAeCreditNoteType(value) || value === "261" || value === "credit-note";
 }
 
-/** UNCL4461 payment means codes offered in settings. */
-export const PAYMENT_MEANS = {
-  "1": "Instrument not defined",
-  "10": "In cash",
-  "20": "Cheque",
-  "30": "Credit transfer",
-  "42": "Payment to bank account",
-  "48": "Bank card",
-  "49": "Direct debit",
-  "54": "Credit card",
-  "55": "Debit card",
-  "68": "Online payment service",
-} as const;
-export type PaymentMeansCode = keyof typeof PAYMENT_MEANS;
+/** Keep the legacy code readable so preflight can identify an unspecified card. */
+export type PaymentMeansCode =
+  | EInvoiceSettingsPaymentMeansCode
+  | typeof UNSPECIFIED_CARD_PAYMENT_MEANS_CODE;
 
 /** Human text for the stored payment-terms code (BT-20). */
 export function paymentTermsText(terms: string | null | undefined): string | null {
