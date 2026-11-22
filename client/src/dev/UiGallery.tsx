@@ -293,7 +293,7 @@ export default function UiGallery() {
           icon={Landmark}
           title={t.bankReconciliation}
           description={t["banking.emptyTransactionsDescription"]}
-          action={{ label: t["banking.feeds.importStatement"], onClick: () => {} }}
+          action={{ label: t["banking.statementUpload.cta"], onClick: () => {} }}
           secondaryAction={{ label: t["banking.accounts.add"], onClick: () => {} }}
         />
       </Section>
