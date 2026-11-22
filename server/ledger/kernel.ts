@@ -19,6 +19,7 @@ import { DomainError } from "../errors";
 import {
   assertPeriodNotLocked,
   getEffectiveLock,
+  lockDraftPeriod,
   lockPeriodPolicy,
 } from "../services/period-lock.service";
 import {
@@ -863,7 +864,10 @@ export async function updateDraftEntry(
 ): Promise<PostJournalResult> {
   const actorId = actorOf(ctx);
   return withLedgerTx(async (tx) => {
-    const pre = await loadEntry(tx, entryId, ctx.companyId, true);
+    const located = await loadEntry(tx, entryId, ctx.companyId);
+    if (!located) throw notFound(entryId);
+    await lockDraftPeriod(tx, located.companyId);
+    const pre = await loadEntry(tx, entryId, located.companyId, true);
     if (!pre) throw notFound(entryId);
     if (pre.status !== "draft") {
       throw new DomainError(
@@ -879,7 +883,6 @@ export async function updateDraftEntry(
       status: "draft",
       source: pre.source,
     });
-    await lockPeriodPolicy(tx, pre.companyId, "shared");
     await assertPeriodNotLocked(pre.companyId, pre.date, tx);
     if (entryIso(pre) !== n.dateIso) await assertPeriodNotLocked(pre.companyId, n.dateAt, tx);
     await assertAccountsUsable(tx, pre.companyId, n.lines, false);

@@ -108,6 +108,19 @@ export async function lockPeriodPolicy(
 ): Promise<void> {
   // VAT mutations can post journals. Always acquire the VAT lock before the period lock.
   await lockVatReturns(tx, companyId, "shared");
+  await acquirePeriodLock(tx, companyId, mode);
+}
+
+/** A draft edit changes no VAT figures, but must still wait for a hard close. */
+export async function lockDraftPeriod(tx: LedgerTx, companyId: string): Promise<void> {
+  await acquirePeriodLock(tx, companyId, "shared");
+}
+
+async function acquirePeriodLock(
+  tx: LedgerTx,
+  companyId: string,
+  mode: "shared" | "exclusive"
+): Promise<void> {
   const key = sql`hashtextextended('ledger-period:' || ${companyId.toLowerCase()}, 0)`;
   await tx.execute(
     mode === "shared"
