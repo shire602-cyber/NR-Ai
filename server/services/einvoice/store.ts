@@ -78,6 +78,7 @@ export function documentSubmissionMetadata(
     supplierTrn: typeof metadata?.supplierTrn === "string" ? metadata.supplierTrn : null,
     legalEntityId: typeof metadata?.legalEntityId === "string" ? metadata.legalEntityId : null,
     sourceName: typeof metadata?.sourceName === "string" ? metadata.sourceName : null,
+    sourceVersion: typeof metadata?.sourceVersion === "string" ? metadata.sourceVersion : null,
     scope: typeof metadata?.scope === "string" ? metadata.scope : null,
     reportingRequired:
       typeof metadata?.reportingRequired === "boolean" ? metadata.reportingRequired : null,
@@ -110,6 +111,9 @@ export function documentSubmissionMetadata(
       typeof metadata?.correctionCandidateHash === "string"
         ? metadata.correctionCandidateHash
         : null,
+    confirmedRevisionHash:
+      typeof metadata?.confirmedRevisionHash === "string" ? metadata.confirmedRevisionHash : null,
+    correctionCandidate: metadata?.correctionCandidate,
   };
 }
 
@@ -123,6 +127,26 @@ export function hasUnverifiedComplyanceCorrection(
     pin?.correctionUncertain === true &&
     (!doc.xmlHash || doc.xmlHash !== pin.correctionCandidateHash)
   );
+}
+
+/** Read a correction's original filing snapshot only when it matches proven archive bytes. */
+export function correctionCandidateReporting(doc: EInvoiceDocument | undefined, hash: string) {
+  const candidate = documentSubmissionMetadata(doc)?.correctionCandidate;
+  if (
+    !candidate ||
+    typeof candidate !== "object" ||
+    !("hash" in candidate) ||
+    candidate.hash !== hash ||
+    !("xml" in candidate) ||
+    typeof candidate.xml !== "string" ||
+    sha256Hex(candidate.xml) !== hash ||
+    !("reportingRequired" in candidate) ||
+    (typeof candidate.reportingRequired !== "boolean" && candidate.reportingRequired !== null) ||
+    !("reportBy" in candidate) ||
+    (typeof candidate.reportBy !== "string" && candidate.reportBy !== null)
+  )
+    return null;
+  return { reportingRequired: candidate.reportingRequired, reportBy: candidate.reportBy };
 }
 
 /** A recorded due date is evidence of an obligation even on older, inconsistent rows. */
@@ -323,17 +347,19 @@ export interface ArchiveInput {
   now?: Date;
 }
 
-/** Retrieve the exact submitted bytes pinned to a tenant's tracked provider document. */
-export async function getSubmittedArchiveSource(
-  reference: Pick<
-    EInvoiceArchiveRow,
-    "companyId" | "invoiceId" | "provider" | "providerMessageId"
-  > & { sha256?: string | null },
+type OutboundArchiveReference = Pick<
+  EInvoiceArchiveRow,
+  "companyId" | "invoiceId" | "provider" | "providerMessageId"
+> & { sha256?: string | null };
+
+export async function outboundArchiveRevisions(
+  reference: OutboundArchiveReference,
+  kind: "submitted" | "cleared",
   conn: EInvoiceDb = db
-): Promise<EInvoiceArchiveRow | null> {
+): Promise<EInvoiceArchiveRow[]> {
   const { companyId, invoiceId, provider, providerMessageId, sha256 } = reference;
-  if (!invoiceId || !provider || !providerMessageId) return null;
-  const entries = await conn
+  if (!invoiceId || !provider || !providerMessageId) return [];
+  return conn
     .select()
     .from(einvoiceArchive)
     .where(
@@ -341,15 +367,61 @@ export async function getSubmittedArchiveSource(
         eq(einvoiceArchive.companyId, companyId),
         eq(einvoiceArchive.invoiceId, invoiceId),
         eq(einvoiceArchive.direction, "outbound"),
-        eq(einvoiceArchive.kind, "submitted"),
+        eq(einvoiceArchive.kind, kind),
         eq(einvoiceArchive.provider, provider),
         eq(einvoiceArchive.providerMessageId, providerMessageId),
         sha256 ? eq(einvoiceArchive.sha256, sha256) : undefined
       )
     )
+    .orderBy(desc(einvoiceArchive.createdAt))
     .limit(2);
+}
+
+/** Retrieve the exact submitted bytes pinned to a tenant's tracked provider document. */
+export async function getSubmittedArchiveSource(
+  reference: OutboundArchiveReference,
+  conn: EInvoiceDb = db
+): Promise<EInvoiceArchiveRow | null> {
+  const entries = await outboundArchiveRevisions(reference, "submitted", conn);
   const [entry] = entries;
   return entries.length === 1 && sha256Hex(entry.xml) === entry.sha256 ? entry : null;
+}
+
+export function conflictingClearanceRevision() {
+  return new DomainError(
+    "EINVOICE_CORRECTION_REVISION_UNVERIFIED",
+    409,
+    undefined,
+    "The evidence does not identify a single cleared revision of this e-invoice."
+  );
+}
+
+/** An older submitted hash cannot stand in for a second acknowledged handoff of the same ID. */
+export async function assertSubmittedArchiveRevision(
+  reference: OutboundArchiveReference,
+  invoice: Pick<Invoice, "einvoiceHash" | "einvoiceSubmittedAt">,
+  doc: EInvoiceDocument | undefined,
+  conn: EInvoiceDb = db
+) {
+  const pinnedHash = doc?.xmlHash ?? invoice.einvoiceHash;
+  if (!pinnedHash) return;
+  const confirmedHash = documentSubmissionMetadata(doc)?.confirmedRevisionHash;
+  const [latest, previous] = await outboundArchiveRevisions(reference, "submitted", conn);
+  const handoffAt = doc?.submittedAt?.getTime() ?? invoice.einvoiceSubmittedAt?.getTime();
+  if (
+    (confirmedHash && confirmedHash !== pinnedHash) ||
+    (latest && sha256Hex(latest.xml) !== latest.sha256) ||
+    // A newly acknowledged correction may reuse bytes already in the archive. The current
+    // acknowledged timestamp, not the first insertion timestamp of those bytes, orders it.
+    (latest &&
+      latest.sha256 !== pinnedHash &&
+      (!confirmedHash || handoffAt == null || handoffAt <= latest.createdAt.getTime())) ||
+    (previous &&
+      !confirmedHash &&
+      (latest.createdAt.getTime() === previous.createdAt.getTime() ||
+        handoffAt !== latest.createdAt.getTime()))
+  )
+    throw conflictingClearanceRevision();
 }
 
 /**

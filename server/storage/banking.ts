@@ -18,7 +18,7 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { decryptSecret, encryptSecret } from "../services/secret-vault";
+import { encryptSecret } from "../services/secret-vault";
 import { IntegrationStorage } from "./integrations";
 
 export class BankingStorage extends IntegrationStorage {
@@ -105,23 +105,13 @@ export class BankingStorage extends IntegrationStorage {
       .orderBy(desc(bankTransactions.transactionDate));
   }
 
-  // Bank connections
-  private decryptBankConnection<T extends BankConnection | undefined>(connection: T): T {
-    if (!connection) return connection;
-    return {
-      ...connection,
-      accessToken: decryptSecret(connection.accessToken),
-      refreshToken: decryptSecret(connection.refreshToken),
-    } as T;
-  }
-
+  // Compatibility records are read without opening historical credentials.
   async getBankConnectionsByCompanyId(companyId: string): Promise<BankConnection[]> {
-    const rows = await db
+    return db
       .select()
       .from(bankConnections)
       .where(eq(bankConnections.companyId, companyId))
       .orderBy(desc(bankConnections.createdAt));
-    return rows.map((row: BankConnection) => this.decryptBankConnection(row));
   }
 
   async getBankConnection(id: string): Promise<BankConnection | undefined> {
@@ -130,7 +120,7 @@ export class BankingStorage extends IntegrationStorage {
       .from(bankConnections)
       .where(eq(bankConnections.id, id))
       .limit(1);
-    return this.decryptBankConnection(connection);
+    return connection;
   }
 
   async createBankConnection(data: InsertBankConnection): Promise<BankConnection> {
@@ -142,7 +132,7 @@ export class BankingStorage extends IntegrationStorage {
         refreshToken: encryptSecret(data.refreshToken ?? null),
       })
       .returning();
-    return this.decryptBankConnection(connection);
+    return connection;
   }
 
   async updateBankConnection(
@@ -157,7 +147,7 @@ export class BankingStorage extends IntegrationStorage {
       .set({ ...patch, updatedAt: new Date() })
       .where(eq(bankConnections.id, id))
       .returning();
-    return this.decryptBankConnection(connection);
+    return connection;
   }
 
   async updateBankConnectionTokens(

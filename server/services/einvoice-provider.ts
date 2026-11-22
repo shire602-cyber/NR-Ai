@@ -42,10 +42,12 @@ export interface EInvoiceProviderContext {
 
 export interface EInvoiceOutboundIdentity {
   documentNumber: string;
+  supplierEndpoint?: { scheme: string; value: string } | null;
   supplierTin: string | null;
   supplierTrn: string | null;
   legalEntityId: string | null;
   sourceName: string | null;
+  sourceVersion?: string | null;
 }
 
 export interface EInvoiceProviderResult {
@@ -96,6 +98,8 @@ export interface InboundListing extends EInvoiceDocumentRef {
 export interface InboundOwner {
   legalEntityId: string | null;
   tin: string | null;
+  vatTrn?: string | null;
+  identityConflict?: boolean;
 }
 
 export type LegalEntityPatch = Partial<

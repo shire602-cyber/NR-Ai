@@ -1315,6 +1315,68 @@ function incomingXml(fixture: PintAeFixture, documentNumber = fixture.invoice.nu
 }
 
 describe("E1 inbound: document.received -> draft bill tagged e-invoice", () => {
+  it("stores a signed receipt for the current taxpayer until its registration activates", async () => {
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "acube" },
+    });
+    await useAcube(t);
+    const id = documentUuid();
+    const number = "SUP-CURRENT-ACUBE-BEFORE-LINK";
+    fake.incoming.push({
+      id,
+      kind: "invoices",
+      number,
+      xml: incomingXml(PINT_AE_FIXTURES[0], number),
+    });
+    const receipt = await webhook(t, { eventType: "invoice.inbound", invoiceUuid: id });
+    expect(receipt.status, receipt.text).toBe(200);
+    expect(receipt.body).toEqual({ received: true, duplicate: false });
+    expect(await runProviderEvents({ companyId: t.company.id })).toMatchObject({ claimed: 0 });
+    const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
+    await upsertLegalEntity(t.company.id, "acube", "sandbox", TIN, {
+      status: "active",
+      legalEntityId: fake.leId,
+    });
+    expect(await runProviderEvents({ companyId: t.company.id })).toMatchObject({ processed: 1 });
+    expect(
+      await h.sql("SELECT bill_number FROM vendor_bills WHERE company_id = $1", [t.company.id])
+    ).toEqual([{ bill_number: number }]);
+  });
+
+  it.each(["retired provider", "former taxpayer"])(
+    "acknowledges a signed receipt for a %s without accepting it",
+    async (scope) => {
+      const t = await linkedTenant();
+      const id = documentUuid();
+      const number = "SUP-RETIRED-ACUBE";
+      fake.incoming.push({
+        id,
+        kind: "invoices",
+        number,
+        xml: incomingXml(PINT_AE_FIXTURES[0], number),
+      });
+      await h.sql(
+        scope === "retired provider"
+          ? "UPDATE companies SET einvoice_partner = 'complyance' WHERE id = $1"
+          : "UPDATE companies SET einvoice_tin = '1009999999', trn_vat_number = '100999999900003' WHERE id = $1",
+        [t.company.id]
+      );
+      const receipt = await webhook(t, { eventType: "invoice.inbound", invoiceUuid: id });
+      expect(receipt.status, receipt.text).toBe(200);
+      expect(receipt.body).toEqual({ received: true, ignored: true });
+      await runProviderEvents();
+      expect(
+        await h.sql("SELECT id FROM vendor_bills WHERE company_id = $1", [t.company.id])
+      ).toEqual([]);
+      expect(
+        await h.sql(
+          "SELECT id FROM einvoice_provider_events WHERE company_id = $1 AND event_type = 'document.received'",
+          [t.company.id]
+        )
+      ).toEqual([]);
+    }
+  );
+
   it.each(["prose", "native"])(
     "deduplicates the %s webhook and poll and creates one draft bill",
     async (shape) => {

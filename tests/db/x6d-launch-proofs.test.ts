@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { useHarness } from "./harness";
+import { fixtureCompany, PINT_AE_FIXTURES } from "../fixtures/pint-ae/fixtures";
 
 const h = useHarness();
 const today = () => new Date().toISOString().slice(0, 10);
@@ -341,6 +342,40 @@ describe("X6d invoice-list compliance pills", () => {
     });
     expect(view.pill).toMatchObject({ reportingRequired: true, reportBy: "2026-05-19" });
     expect(view.document).toMatchObject({ reportingRequired: true, reportBy: "2026-05-19" });
+  });
+
+  it("ignores stale generated XML when projecting the current buyer in list and detail", async () => {
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER, einvoice_scope: "b2b", einvoice_go_live_date: "2025-01-01" },
+    });
+    const inv = await issued(t);
+    const contact = await t.as.post(`/api/companies/${t.company.id}/customer-contacts`, {
+      name: "Updated VAT Buyer",
+      trnNumber: "100765432100003",
+    });
+    expect(contact.status, contact.text).toBeLessThan(300);
+    const { generateEInvoiceXML } = await import("../../server/services/einvoice.service");
+    const source = PINT_AE_FIXTURES[0];
+    const draftXml = generateEInvoiceXML(
+      { ...source.invoice, customerTrn: null },
+      source.lines,
+      fixtureCompany,
+      { ...source.customer, trn: null },
+      source.opts
+    ).xml;
+    await h.sql(
+      `UPDATE invoices SET customer_trn = NULL, contact_id = $2, einvoice_status = 'generated',
+         einvoice_xml = $3, date = '2026-05-05' WHERE id = $1`,
+      [inv.id, contact.body.id, draftXml]
+    );
+    await h.sql(
+      `INSERT INTO einvoice_documents (company_id, invoice_id, status) VALUES ($1, $2, 'generated')`,
+      [t.company.id, inv.id]
+    );
+    const view = await projections(t, inv.id);
+    expect(view.pill).toMatchObject({ reportingRequired: true, reportBy: "2026-05-19" });
+    expect(view.document).toMatchObject({ reportingRequired: true, reportBy: "2026-05-19" });
+    expect(view.status).toMatchObject({ required: true, reportBy: "2026-05-19" });
   });
 
   it("retains an explicit historic report-by date across company and buyer changes", async () => {

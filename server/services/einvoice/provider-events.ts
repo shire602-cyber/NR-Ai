@@ -18,7 +18,7 @@
  *   legal_entity.synchronized                                    -> update the legal entity
  */
 import { createHash } from "node:crypto";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { databaseUtcNow } from "../../config/database-time";
 import { rowsOf } from "../../ledger/tx";
@@ -27,6 +27,7 @@ import {
   einvoiceDocuments,
   einvoiceLegalEntities,
   einvoiceProviderEvents,
+  type EInvoiceLegalEntity,
   type EInvoiceProviderEvent,
 } from "../../../shared/schema";
 import { storage } from "../../storage";
@@ -36,9 +37,18 @@ import {
   type EInvoiceDocumentRef,
   type EInvoiceProvider,
 } from "../einvoice-provider";
-import { InboundLegalEntityChangedError, processInboundEInvoice } from "./inbound";
+import {
+  InboundLegalEntityChangedError,
+  InboundTaxpayerChangedError,
+  currentProviderReceiptTin,
+  isCurrentReceiptEnvironment,
+  processInboundEInvoice,
+  readInboundCompany,
+  sameInboundRegistration,
+} from "./inbound";
 import { refreshAndPersist } from "./workflow";
 import {
+  currentOnboardingEntity,
   getLegalEntity,
   lockOnboardingCompany,
   matchesOnboardingCompany,
@@ -49,7 +59,13 @@ import {
 import { getCompanyEInvoiceProvider } from "./providers/company-provider";
 import { providerModule } from "./providers/registry";
 import { isCreditNoteDocumentType, isUaeTin } from "./pint-ae-codes";
-import { projectEInvoiceLegacyStatus, storedReportingEvidence } from "./tracks";
+import { recordedReportingRequired } from "./store";
+import {
+  canReadComplyanceReporting,
+  isReportingObservation,
+  projectEInvoiceLegacyStatus,
+  storedReportingEvidence,
+} from "./tracks";
 
 const log = createLogger("einvoice-provider-events");
 
@@ -65,6 +81,7 @@ const CALLBACK_WAIT_CONFIG = "Provider event is waiting for provider configurati
 const INBOUND_FAILURE = "Inbound receipt could not be processed";
 const INBOUND_WAIT_CONFIG = "Inbound receipt is waiting for provider configuration";
 const INBOUND_WAIT_ENTITY = "Inbound receipt is waiting for legal entity activation";
+const INBOUND_INACTIVE_TAXPAYER = "Receipt does not match the current provider and taxpayer";
 const LEGAL_ENTITY_WAIT_RESERVATION = "Provider event is waiting for verified reservation";
 const LEGAL_ENTITY_UNRESERVED = "legal entity not reserved by us";
 const LEGACY_INBOUND_RECHECK = "Legacy inbound receipt requires reconciliation";
@@ -109,15 +126,17 @@ export function providerEventKey(type: CanonicalEventType, payload: Record<strin
   return `doc:${String(payload.documentId)}:${String(payload.status ?? type)}`;
 }
 
+type ProviderEventInput = {
+  provider: string;
+  environment: string;
+  type: CanonicalEventType;
+  eventId: string;
+  payload: Record<string, unknown>;
+  companyId: string;
+};
+
 export async function enqueueProviderEvent(
-  args: {
-    provider: string;
-    environment: string;
-    type: CanonicalEventType;
-    eventId: string;
-    payload: Record<string, unknown>;
-    companyId: string;
-  },
+  args: ProviderEventInput,
   conn: Pick<typeof db, "insert"> = db
 ): Promise<{ id: string | null; duplicate: boolean }> {
   const rows = await conn
@@ -135,6 +154,57 @@ export async function enqueueProviderEvent(
     .onConflictDoNothing()
     .returning({ id: einvoiceProviderEvents.id });
   return { id: rows[0]?.id ?? null, duplicate: rows.length === 0 };
+}
+
+function matchesReceiptEntityIds(entity: EInvoiceLegalEntity, payload: Record<string, unknown>) {
+  return (
+    !entity.legalEntityId ||
+    [
+      payload.ownerLegalEntityId,
+      payload.legalEntityUuid,
+      payload.legalEntityId,
+      payload.complyanceCompanyId,
+    ].every((legalEntityId) => matchesProviderEntityOwner(entity, { legalEntityId }))
+  );
+}
+
+/** Called only after a callback has passed the provider's signature and environment checks. */
+export async function enqueueVerifiedProviderCallback(
+  args: ProviderEventInput
+): Promise<{ id: string | null; duplicate: boolean; ignored?: boolean }> {
+  // Historical outbound tracking continues for the provider that holds the sent document.
+  if (args.type !== "document.received") return enqueueProviderEvent(args);
+  return db.transaction(async (tx) => {
+    const ignored = { id: null, duplicate: false, ignored: true };
+    const company = await readInboundCompany(args.companyId, tx);
+    const tin = currentProviderReceiptTin(company, args.provider);
+    if (
+      !company ||
+      !tin ||
+      !isCurrentReceiptEnvironment(args.provider, args.environment) ||
+      (args.payload.ownerFiscalId != null && args.payload.ownerFiscalId !== tin)
+    )
+      return ignored;
+    const entity = await getLegalEntity(
+      args.companyId,
+      args.provider,
+      args.environment,
+      tx,
+      "share"
+    );
+    if (
+      entity &&
+      (!currentOnboardingEntity(company, entity, args.provider, args.environment) ||
+        !matchesReceiptEntityIds(entity, args.payload))
+    )
+      return ignored;
+    // A current taxpayer's early receipts may wait for onboarding. The reserved TIN must
+    // still match when the worker eventually obtains the XML and writes its draft bill.
+    return enqueueProviderEvent(
+      { ...args, payload: { ...args.payload, receiptTaxpayerTin: tin } },
+      tx
+    );
+  });
 }
 
 async function claimEvents(opts: {
@@ -302,11 +372,32 @@ async function handleDelivered(row: CompanyEvent, provider: EInvoiceProvider): P
   return { status: "processed", companyId: company.id };
 }
 
-async function handleReceived(row: CompanyEvent, provider: EInvoiceProvider): Promise<Outcome> {
+async function handleReceived(row: CompanyEvent, override?: EInvoiceProvider): Promise<Outcome> {
+  const payload = row.payload as Record<string, unknown>;
+  const company = await readInboundCompany(row.companyId);
+  const tin = currentProviderReceiptTin(company, row.provider);
+  if (
+    !company ||
+    !tin ||
+    (payload.receiptTaxpayerTin != null && payload.receiptTaxpayerTin !== tin) ||
+    (payload.ownerFiscalId != null && payload.ownerFiscalId !== tin)
+  )
+    return { status: "ignored", note: INBOUND_INACTIVE_TAXPAYER };
+  if (!isCurrentReceiptEnvironment(row.provider, row.environment)) {
+    throw new EInvoiceProviderError(
+      "EINVOICE_PROVIDER_NOT_CONFIGURED",
+      "Receipt environment changed"
+    );
+  }
+  const le = await getLegalEntity(row.companyId, row.provider, row.environment);
+  if (le && !currentOnboardingEntity(company, le, row.provider, row.environment)) {
+    return { status: "ignored", note: INBOUND_INACTIVE_TAXPAYER };
+  }
+  if (le?.status !== "active") return { status: "awaiting-onboarding" };
+  const provider = override ?? (await getCompanyEInvoiceProvider(row.companyId, row));
   if (!provider.inboundOwner || !provider.fetchSource) {
     return { status: "ignored", note: "provider has no document API" };
   }
-  const payload = row.payload as Record<string, unknown>;
   const documentId = typeof payload.documentId === "string" ? payload.documentId : "";
   if (!documentId.trim()) return { status: "ignored", note: "callback has no document ID" };
   const rawCode = String(payload.documentTypeCode ?? "");
@@ -324,25 +415,18 @@ async function handleReceived(row: CompanyEvent, provider: EInvoiceProvider): Pr
         ? "381"
         : "380",
   };
+  if (!matchesReceiptEntityIds(le, payload)) {
+    return { status: "ignored", note: "document does not match the linked legal entity" };
+  }
   const owner = await provider.inboundOwner(documentId, ref, payload);
-  const le = await getLegalEntity(row.companyId, row.provider, row.environment);
-  if (le?.status !== "active" || !isUaeTin(le.tin)) return { status: "awaiting-onboarding" };
   if (
     !matchesProviderEntityOwner(le, owner) ||
-    ![
-      payload.ownerLegalEntityId,
-      payload.legalEntityUuid,
-      payload.legalEntityId,
-      payload.complyanceCompanyId,
-    ].every((legalEntityId) => matchesProviderEntityOwner(le, { legalEntityId })) ||
-    !matchesProviderEntityOwner(le, { tin: payload.ownerFiscalId })
+    (owner.vatTrn != null && company.trnVatNumber && owner.vatTrn !== company.trnVatNumber.trim())
   ) {
     return { status: "ignored", note: "document does not match the linked legal entity" };
   }
-  if (!owner.legalEntityId && !owner.tin)
+  if (!owner.legalEntityId && !owner.tin && !owner.vatTrn)
     throw new Error("Provider did not confirm inbound ownership");
-  const company = await storage.getCompany(le.companyId);
-  if (!company) return { status: "ignored", note: "company gone" };
   const xml = await provider.fetchSource(documentId, ref);
   const legacyRecovery = row.lastError?.startsWith(LEGACY_INBOUND_RECHECK) ?? false;
   try {
@@ -382,6 +466,8 @@ async function handleReceived(row: CompanyEvent, provider: EInvoiceProvider): Pr
   } catch (err) {
     // A rejected document is final. Operational errors (including an unavailable draft owner
     // or a locked accounting period) remain visible to the inbox retry job.
+    if (err instanceof InboundTaxpayerChangedError)
+      return { status: "ignored", note: INBOUND_INACTIVE_TAXPAYER };
     if (err instanceof InboundLegalEntityChangedError) return { status: "awaiting-onboarding" };
     const code = (err as { code?: string } | null)?.code;
     if (
@@ -494,12 +580,12 @@ async function handleLegalEntity(row: CompanyEvent, provider: EInvoiceProvider):
   return { status: "processed", companyId: entity.companyId };
 }
 
-async function processRow(row: CompanyEvent, provider: EInvoiceProvider) {
+async function processRow(row: CompanyEvent, override?: EInvoiceProvider): Promise<Outcome> {
+  if (row.eventType === "document.received") return handleReceived(row, override);
+  const provider = override ?? (await getCompanyEInvoiceProvider(row.companyId, row));
   switch (row.eventType as CanonicalEventType) {
     case "document.delivered":
       return handleDelivered(row, provider);
-    case "document.received":
-      return handleReceived(row, provider);
     case "legal_entity.synchronized":
       return handleLegalEntity(row, provider);
     default:
@@ -526,14 +612,7 @@ async function settle(row: EInvoiceProviderEvent, provider?: EInvoiceProvider) {
   try {
     const { companyId } = row;
     const out: Outcome = companyId
-      ? await processRow(
-          { ...row, companyId },
-          provider ??
-            (await getCompanyEInvoiceProvider(companyId, {
-              provider: row.provider,
-              environment: row.environment,
-            }))
-        )
+      ? await processRow({ ...row, companyId }, provider)
       : { status: "ignored", note: "event had no verified company scope" };
     if (out.status === "awaiting-onboarding") {
       await db
@@ -638,30 +717,28 @@ export async function runProviderPoll(
              OR (${einvoiceDocuments.status} IN ('accepted', 'cleared')
                  AND lower(btrim(${einvoiceDocuments.providerStatus})) IS DISTINCT FROM 'accepted'))`
       : sql`lower(btrim(${einvoiceDocuments.providerStatus})) = 'delivery_success'`;
-  // The buyer decision and the tax authority's decision are independent. Limit this path to
-  // verified provider lifecycle states after handoff; Needs Correction never entered delivery.
-  const pendingGovernment =
-    providerName === "complyance"
-      ? sql`OR (${einvoiceDocuments.deliveryStatus} IN ('delivered', 'rejected', 'delivery_failed')
-          AND lower(btrim(${einvoiceDocuments.providerStatus})) IN ('delivery_success', 'delivery_failed', 'final_valid', 'final_invalid')
-          AND (${einvoiceDocuments.reportingStatus} = 'pending'
-            OR (${einvoiceDocuments.reportingStatus} IS NULL
-                AND ${einvoiceDocuments.validation}->'submission'->>'reportingRequired' IS DISTINCT FROM 'false')
-            OR (${einvoiceDocuments.reportingStatus} = 'not_required'
-                AND (${einvoiceDocuments.reportBy} IS NOT NULL
-                     OR lower(btrim(${einvoiceDocuments.providerStatus})) = 'final_valid'))))`
-      : sql``;
+  const hasIndependentReporting = providerName === "complyance";
   const retryableDeliveryFailure =
     providerName === "acube"
       ? sql`OR ${einvoiceDocuments.deliveryStatus} = 'delivery_failed'`
       : sql``;
-  const unverifiedReporting =
-    providerName === "complyance"
-      ? sql`OR (${einvoiceDocuments.reportingStatus} IN ('reported', 'report_failed')
-        AND ${einvoiceDocuments.validation}->'submission'->'reportingEvidence'->>${einvoiceDocuments.reportingStatus} IS NULL)`
-      : sql``;
+  const awaitingDelivery = sql<boolean>`(${einvoiceDocuments.deliveryStatus} IN ('queued', 'sending')
+    ${retryableDeliveryFailure}
+    OR (${einvoiceDocuments.deliveryStatus} IS NULL
+        AND (${einvoiceDocuments.status} IN ('submitted', 'accepted') OR ${awaitingFollowUp}))
+    OR (${einvoiceDocuments.deliveryStatus} = 'delivered' AND ${awaitingFollowUp}))`;
   const inFlight = await db
-    .select()
+    .select({
+      invoiceId: einvoiceDocuments.invoiceId,
+      companyId: einvoiceDocuments.companyId,
+      providerMessageId: einvoiceDocuments.providerMessageId,
+      providerStatus: einvoiceDocuments.providerStatus,
+      lastErrorCode: einvoiceDocuments.lastErrorCode,
+      validation: einvoiceDocuments.validation,
+      reportBy: einvoiceDocuments.reportBy,
+      reportingStatus: einvoiceDocuments.reportingStatus,
+      awaitingDelivery,
+    })
     .from(einvoiceDocuments)
     .where(
       and(
@@ -669,25 +746,28 @@ export async function runProviderPoll(
         opts.companyId ? eq(einvoiceDocuments.companyId, opts.companyId) : undefined,
         sql`${einvoiceDocuments.validation}->'submission'->>'environment' = ${environment}`,
         sql`${einvoiceDocuments.providerMessageId} IS NOT NULL`,
-        providerName === "complyance"
+        hasIndependentReporting
           ? sql`(
           ${einvoiceDocuments.validation}->'submission'->>'correctionUncertain' IS DISTINCT FROM 'true'
           OR ${einvoiceDocuments.validation}->'submission'->>'correctionCandidateHash' = ${einvoiceDocuments.xmlHash}
         )`
-          : undefined,
-        sql`(${einvoiceDocuments.deliveryStatus} IN ('queued', 'sending')
-             ${retryableDeliveryFailure}
-             ${unverifiedReporting}
-             ${pendingGovernment}
-             OR (${einvoiceDocuments.deliveryStatus} IS NULL
-                 AND (${einvoiceDocuments.status} IN ('submitted', 'accepted') OR ${awaitingFollowUp}))
-             OR (${einvoiceDocuments.deliveryStatus} = 'delivered'
-                 AND ${awaitingFollowUp}))`
+          : awaitingDelivery
       )
     )
     .orderBy(asc(einvoiceDocuments.updatedAt), asc(einvoiceDocuments.id));
   let refreshed = 0;
   for (const doc of inFlight) {
+    // Legacy delivery stages can be absent or obsolete. Use the same recorded obligation and
+    // evidence as the status view before deciding to read the separate government outcome.
+    const awaitingReporting =
+      hasIndependentReporting &&
+      canReadComplyanceReporting(doc.providerStatus, doc.lastErrorCode) &&
+      !storedReportingEvidence(doc, providerName) &&
+      (recordedReportingRequired(doc) !== false ||
+        // A voluntary submission can still have a separate outcome to confirm.
+        doc.providerStatus?.trim().toLowerCase() === "final_valid" ||
+        isReportingObservation(doc.reportingStatus));
+    if (!doc.awaitingDelivery && !awaitingReporting) continue;
     const provider = await resolve(doc.companyId);
     if (!provider?.capabilities.getStatus) continue;
     try {
@@ -701,12 +781,9 @@ export async function runProviderPoll(
     }
   }
 
+  if (!isCurrentReceiptEnvironment(providerName, environment)) return { refreshed, enqueued: 0 };
   const linked = await db
-    .select({
-      companyId: einvoiceLegalEntities.companyId,
-      legalEntityId: einvoiceLegalEntities.legalEntityId,
-      tin: einvoiceLegalEntities.tin,
-    })
+    .select({ company: companies, entity: einvoiceLegalEntities })
     .from(einvoiceLegalEntities)
     .innerJoin(companies, eq(companies.id, einvoiceLegalEntities.companyId))
     .where(
@@ -715,31 +792,43 @@ export async function runProviderPoll(
         eq(einvoiceLegalEntities.environment, environment),
         eq(einvoiceLegalEntities.status, "active"),
         eq(companies.einvoicePartner, providerName),
+        isNull(companies.deletedAt),
         opts.companyId ? eq(einvoiceLegalEntities.companyId, opts.companyId) : undefined
       )
     );
   let enqueued = 0;
-  for (const entity of linked) {
-    if (!entity.legalEntityId) continue;
+  for (const { company, entity } of linked) {
+    if (
+      !entity.legalEntityId ||
+      !currentOnboardingEntity(company, entity, providerName, environment)
+    )
+      continue;
     const provider = await resolve(entity.companyId);
     if (!provider?.listInbound) continue;
     try {
       const items = await provider.listInbound({ legalEntityIds: [entity.legalEntityId] });
       if (!items.length) continue;
       const fresh = await db.transaction(async (tx) => {
-        // A provider change during listing takes effect before any newly discovered receipt.
-        const [selected] = await tx
-          .select({ id: companies.id })
-          .from(companies)
-          .where(
-            and(eq(companies.id, entity.companyId), eq(companies.einvoicePartner, providerName))
-          )
-          .for("share");
-        if (!selected) return 0;
+        // Provider, taxpayer and registration changes take effect before accepting new receipts.
+        const selected = await readInboundCompany(entity.companyId, tx);
+        if (!selected || !isCurrentReceiptEnvironment(providerName, environment)) return 0;
+        const current = await getLegalEntity(
+          entity.companyId,
+          providerName,
+          environment,
+          tx,
+          "share"
+        );
+        if (
+          !current ||
+          !currentOnboardingEntity(selected, current, providerName, environment) ||
+          !sameInboundRegistration(current, entity)
+        )
+          return 0;
         let added = 0;
         for (const item of items) {
           if (
-            !matchesProviderEntityOwner(entity, {
+            !matchesProviderEntityOwner(current, {
               legalEntityId: item.legalEntityId,
               tin: item.ownerFiscalId,
             })
@@ -756,6 +845,7 @@ export async function runProviderPoll(
             documentTypeCode: item.documentType,
             status: "received",
             source: "poll",
+            receiptTaxpayerTin: current.tin,
           };
           if (item.legalEntityId) payload.ownerLegalEntityId = item.legalEntityId;
           if (item.ownerFiscalId) payload.ownerFiscalId = item.ownerFiscalId;

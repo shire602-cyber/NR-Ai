@@ -54,6 +54,7 @@ import {
   isReportingOnlyFailure,
   reportingLabelKey,
   reportingObligationUnknown,
+  reportingOutcomeConfirmed,
   trackOutcomeLabel,
   type ChecklistState,
   type EInvoiceStatusView,
@@ -380,7 +381,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
                   reporting.confirmationUnavailable,
                   reporting.obligationKnown
                 ),
-                reporting.status === "reported" && !reporting.confirmationUnavailable,
+                reportingOutcomeConfirmed(reporting.status, reporting.confirmationUnavailable),
                 transmission.environment
               )}
             </StatusBadge>

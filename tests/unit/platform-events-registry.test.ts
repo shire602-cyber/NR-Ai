@@ -197,7 +197,7 @@ describe("capability registry", () => {
   it("covers every integration with en+ar copy and an external action", () => {
     const caps = computeCapabilities({});
     expect(caps.map((c) => c.id)).toEqual(CAPABILITY_IDS);
-    expect(CAPABILITY_IDS.length).toBe(20);
+    expect(CAPABILITY_IDS.length).toBe(17);
     for (const c of caps) {
       expect(c.label.en && c.label.ar && c.externalAction.en && c.externalAction.ar).toBeTruthy();
       expect(/[؀-ۿ]/.test(c.label.ar)).toBe(true);
@@ -215,18 +215,6 @@ describe("capability registry", () => {
       status({ STRIPE_SECRET_KEY: "sk_live_1", STRIPE_WEBHOOK_SECRET: "w" }, "stripe_billing")
     ).toBe("live");
     expect(
-      status(
-        { LEAN_APP_TOKEN: "t", LEAN_API_BASE_URL: "https://sandbox.leantech.me" },
-        "bank_feed_lean"
-      )
-    ).toBe("sandbox");
-    expect(
-      status(
-        { LEAN_APP_TOKEN: "t", LEAN_API_BASE_URL: "https://api.leantech.me" },
-        "bank_feed_lean"
-      )
-    ).toBe("live");
-    expect(
       status({ EINVOICE_ASP_API_KEY: "k", EINVOICE_ASP_BASE_URL: "https://asp" }, "einvoicing_asp")
     ).toBe("sandbox");
     expect(status({}, "einvoicing_asp")).toBe("requires_external");
@@ -234,6 +222,19 @@ describe("capability registry", () => {
     expect(status({ SMTP_HOST: "  " }, "email")).toBe("disabled");
     expect(isCapabilityLive("ai", { OPENAI_API_KEY: "sk" })).toBe(true);
     expect(isCapabilityLive("ai", {})).toBe(false);
+  });
+
+  it("keeps CSV upload independent of retired adapter configuration", () => {
+    expect(
+      computeCapabilities({
+        LEAN_APP_TOKEN: "fake-adapter-token",
+        LEAN_API_BASE_URL: "https://adapter.example.test",
+        TARABUT_CLIENT_ID: "fake-client-id",
+        TARABUT_CLIENT_SECRET: "fake-client-secret",
+        WIO_CLIENT_ID: "fake-client-id",
+        WIO_CLIENT_SECRET: "fake-client-secret",
+      })
+    ).toEqual(computeCapabilities({}));
   });
 
   it("[S5] news_feed is registered and push needs external VAPID keys (requires_external)", () => {

@@ -216,7 +216,7 @@ export const bankTransactionMatches = pgTable(
 );
 export type BankTransactionMatch = typeof bankTransactionMatches.$inferSelect;
 
-/** One statement file (or feed sync / AI import) per row, with undo (R06-22). */
+/** One bank transaction import per row, with undo (R06-22). */
 export const bankImportBatches = pgTable(
   "bank_import_batches",
   {

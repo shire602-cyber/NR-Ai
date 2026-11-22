@@ -390,7 +390,7 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
         ),
         priority: "high",
         relatedEntityType: "bank_connection",
-        actionUrl: "/bank-feeds",
+        actionUrl: "/bank-reconciliation?import=1",
         // One notification per failure day, not per retry.
         eventKey: `${p.entityId}:${String(p.occurredAt).slice(0, 10)}`,
       };

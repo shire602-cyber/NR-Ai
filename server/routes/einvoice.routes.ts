@@ -487,7 +487,7 @@ export function registerEInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { invoice } = await loadInvoiceAndCompany(req);
-      const xml = invoice.einvoiceXml ?? (await archivedEInvoiceXmlForDownload(invoice));
+      const xml = await archivedEInvoiceXmlForDownload(invoice);
       if (!xml) {
         return res.status(404).json({
           message: "E-invoice has not been generated for this invoice",
@@ -927,14 +927,25 @@ export function registerEInvoiceRoutes(app: Express) {
         const run = await runProviderEvents({ provider, companyId: company.id, limit: 50 });
         return res.json({ received: poll.enqueued, results: [], processed: run.processed });
       }
+      const entity = currentOnboardingEntity(
+        company,
+        await getLegalEntity(company.id, provider.name, provider.environment),
+        provider.name,
+        provider.environment
+      );
+      if (entity?.status !== "active") {
+        throw new DomainError("EINVOICE_LEGAL_ENTITY_NOT_ACTIVE", 409);
+      }
       const items = await provider.receive(null);
       const results = [];
       for (const item of items) {
         try {
           const r = await processInboundEInvoice({
-            company: company as Company & { peppolParticipantId?: string | null },
+            company,
             xml: item.xml,
+            provider: provider.name,
             providerMessageId: item.providerMessageId,
+            onboardedEntity: entity,
           });
           results.push({ providerMessageId: item.providerMessageId, status: r.status, ...r.body });
         } catch (err) {

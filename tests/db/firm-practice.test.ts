@@ -7,7 +7,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { unzipSync, strFromU8 } from "fflate";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ledgerTotals, useHarness, type Tenant } from "./harness";
 
 // X6b: firm sign-up is closed by default (NR-internal); these tests onboard a second firm on purpose.
@@ -113,6 +113,40 @@ describe("W5-D firm practice management", () => {
     });
     expect(imported.body.created).toHaveLength(0);
     expect(imported.body.errors[0].error).toMatch(/already exists/);
+  });
+
+  it("rolls back the client and its setup when provisioning the firm link fails", async () => {
+    const owner = await nrOwner();
+    const single = "Single client link rollback";
+    const bulk = "Bulk client link rollback";
+    await h.sql(`CREATE FUNCTION fail_provisioning_link() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM companies WHERE id = NEW.company_id AND
+          name IN ('Single client link rollback', 'Bulk client link rollback')) THEN
+          RAISE EXCEPTION 'test link insert failure';
+        END IF;
+        RETURN NEW;
+      END; $$`);
+    await h.sql(`CREATE TRIGGER fail_provisioning_link BEFORE INSERT ON firm_client_links
+      FOR EACH ROW EXECUTE FUNCTION fail_provisioning_link()`);
+    try {
+      const failed = await owner.as.post("/api/firm/clients", { name: single });
+      expect(failed.status, failed.text).toBe(500);
+      const imported = await owner.as.post("/api/firm/clients/import", { rows: [{ name: bulk }] });
+      expect(imported.status, imported.text).toBe(200);
+      expect(imported.body.created).toHaveLength(0);
+      expect(imported.body.errors).toHaveLength(1);
+      expect(
+        await h.sql("SELECT id FROM companies WHERE name IN ($1, $2)", [single, bulk])
+      ).toEqual([]);
+    } finally {
+      await h.sql("DROP TRIGGER fail_provisioning_link ON firm_client_links");
+      await h.sql("DROP FUNCTION fail_provisioning_link()");
+    }
+    const retried = await createClient(owner, single);
+    expect(
+      await h.sql("SELECT status FROM firm_client_links WHERE company_id = $1", [retried.id])
+    ).toEqual([{ status: "active" }]);
   });
 
   it("[R15-05] TRN '123' is 400 on create/update and a per-row error on import", async () => {
@@ -442,6 +476,155 @@ describe("W5-D firm practice management", () => {
     // The client's own owner membership is untouched.
     expect((await client.as.get(`/api/companies/${client.company.id}/accounts`)).status).toBe(200);
   });
+
+  it.each(["accept", "revoke"] as const)(
+    "does not %s a firm link after the authorizing client owner is demoted",
+    async (action) => {
+      if (!h.concurrencySupported) return;
+      const firm = await nrOwner();
+      const client = await h.createTenant();
+      const companyId = client.company.id;
+      const invitation = await firm.as.post("/api/firm/client-links", {
+        inviteeEmail: client.email,
+      });
+      const linkId = invitation.body.link.id;
+      const acceptPath = `/api/firm-invitations/${linkId}/accept`;
+      if (action === "revoke")
+        expect((await client.as.post(acceptPath, { companyId })).status).toBe(200);
+      const { db } = await import("../../server/db");
+      const { and, eq, sql } = await import("drizzle-orm");
+      const { companyUsers } = await import("../../shared/schema");
+      const request = await db.transaction(async (tx) => {
+        const {
+          rows: [backend],
+        } = await tx.execute<{ pid: number }>(sql`select pg_backend_pid() as pid`);
+        await tx
+          .update(companyUsers)
+          .set({ role: "viewer" })
+          .where(
+            and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, client.user.id))
+          );
+        const write =
+          action === "accept"
+            ? client.as.post(acceptPath, { companyId })
+            : client.as.post(`/api/companies/${companyId}/firm-links/${linkId}/revoke`, {});
+        await Promise.race([
+          write,
+          vi.waitFor(
+            async () => {
+              expect(
+                await h.sql(
+                  "SELECT pid FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))",
+                  [backend.pid]
+                )
+              ).not.toHaveLength(0);
+            },
+            { timeout: 6000 }
+          ),
+        ]);
+        return { write };
+      });
+      const rejected = await request.write;
+      expect(rejected.status, rejected.text).toBe(403);
+      expect(rejected.body.code).toBe("COMPANY_OWNER_REQUIRED");
+      expect(await h.sql("SELECT status FROM firm_client_links WHERE id = $1", [linkId])).toEqual([
+        { status: action === "accept" ? "invited" : "active" },
+      ]);
+    }
+  );
+
+  it("revalidates firm authority before withdrawing a client invitation", async () => {
+    const firm = await nrOwner();
+    const client = await h.createTenant();
+    const { resolveFirmContext } = await import("../../server/services/firm/scope");
+    const { withdrawFirmLink } = await import("../../server/services/firm/clients.service");
+    const snapshot = (await resolveFirmContext({ id: firm.user.id }))!;
+    const invitation = await firm.as.post("/api/firm/client-links", { inviteeEmail: client.email });
+    await h.sql("UPDATE users SET firm_role = 'viewer' WHERE id = $1", [firm.user.id]);
+    await expect(withdrawFirmLink(snapshot, invitation.body.link.id)).rejects.toMatchObject({
+      code: "FIRM_PERMISSION_DENIED",
+    });
+    expect(
+      await h.sql("SELECT status FROM firm_client_links WHERE id = $1", [invitation.body.link.id])
+    ).toEqual([{ status: "invited" }]);
+  });
+
+  it.each([
+    "demoted after acceptance",
+    "demoted before acceptance",
+    "removed after acceptance",
+  ] as const)(
+    "reconstructs a historical direct grant from the inviter's role at acceptance (%s)",
+    async (history) => {
+      const firm = await firmB();
+      const client = await h.createTenant();
+      const inviter = await h.createTenant();
+      const companyId = client.company.id;
+      // Existing external firm invitations may predate the NR-only staff surface.
+      const [link] = await h.sql<{ id: string }>(
+        "INSERT INTO firm_client_links (firm_id, invitee_email, status) VALUES ($1, $2, 'invited') RETURNING id",
+        [firm.firmId, client.email]
+      );
+      expect(
+        (await client.as.post(`/api/firm-invitations/${link.id}/accept`, { companyId })).status
+      ).toBe(200);
+      const [admin] = await h.sql<{ id: string }>(
+        "INSERT INTO company_users (company_id,user_id,role) VALUES ($1,$2,'admin') RETURNING id",
+        [companyId, inviter.user.id]
+      );
+      const teamPath = `/api/companies/${companyId}/team`;
+      const invited = await inviter.as.post(`${teamPath}/invite`, {
+        email: firm.owner.email,
+        role: "viewer",
+      });
+      expect(invited.status, invited.text).toBe(201);
+      const demote = async () =>
+        expect((await client.as.put(`${teamPath}/${admin.id}`, { role: "viewer" })).status).toBe(
+          200
+        );
+      if (history === "demoted before acceptance") await demote();
+      if (history === "removed after acceptance") {
+        // A role audit establishes the retired membership's ID before acceptance.
+        expect((await client.as.put(`${teamPath}/${admin.id}`, { role: "admin" })).status).toBe(
+          200
+        );
+      }
+      // Older acceptance recorded the invite but left the existing firm accountant role unchanged.
+      await h.sql(
+        "UPDATE company_invitations SET status = 'accepted', accepted_user_id = $1, accepted_at = now() WHERE id = $2",
+        [firm.owner.user.id, invited.body.invitation.id]
+      );
+      const { recordAudit } = await import("../../server/services/audit.service");
+      await recordAudit({
+        userId: firm.owner.user.id,
+        companyId,
+        action: "team.invite_accept",
+        entityType: "company_invitation",
+        entityId: invited.body.invitation.id,
+        after: { role: "viewer" },
+      });
+      if (history === "demoted after acceptance") await demote();
+      if (history === "demoted before acceptance") {
+        expect((await client.as.put(`${teamPath}/${admin.id}`, { role: "admin" })).status).toBe(
+          200
+        );
+      }
+      if (history === "removed after acceptance") {
+        expect((await client.as.delete(`${teamPath}/${admin.id}`)).status).toBe(204);
+      }
+      const revoked = await client.as.post(
+        `/api/companies/${companyId}/firm-links/${link.id}/revoke`,
+        {}
+      );
+      expect(revoked.status, revoked.text).toBe(200);
+      expect(
+        await h.sql("SELECT role FROM company_users WHERE company_id = $1 AND user_id = $2", [
+          companyId,
+          firm.owner.user.id,
+        ])
+      ).toEqual(history === "demoted before acceptance" ? [] : [{ role: "viewer" }]);
+    }
+  );
 
   it("[R15-12] an NR client whose link is revoked leaves the NR firm_owner's scope", async () => {
     const owner = await nrOwner();

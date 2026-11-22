@@ -38,8 +38,8 @@ import {
   deriveInvoiceTracks,
   isReportingObservation,
   NEW_DOCUMENT_REQUIRED_CODES,
-  projectAcubeDeliveryEvidence,
   projectEInvoiceLegacyStatus,
+  projectRecipientDeliveryEvidence,
   providerRecipientAcknowledgement,
   reportingEvidenceAt,
 } from "./tracks";
@@ -364,15 +364,13 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
         const confirmedAt = reportingEvidenceAt(doc?.validation, outcome);
         return !confirmedAt || e.createdAt.getTime() < Date.parse(confirmedAt);
       };
-      // Old A-Cube rows recorded provider processing as delivery to the recipient.
-      const acubeDelivery =
-        e.track === "delivery" && e.toStatus === "delivered" && eventProvider === "acube"
-          ? projectAcubeDeliveryEvidence(e.providerStatus)
+      const receipt =
+        e.track === "delivery" && e.toStatus === "delivered"
+          ? projectRecipientDeliveryEvidence(eventProvider, e.providerStatus, providerDocumentId)
           : null;
       const unconfirmedReporting = unconfirmed(e.toStatus);
-      const confirmationUnavailable =
-        unconfirmedReporting || acubeDelivery?.confirmationUnavailable;
-      const to = unconfirmedReporting ? "pending" : (acubeDelivery?.status ?? e.toStatus);
+      const confirmationUnavailable = unconfirmedReporting || receipt?.confirmationUnavailable;
+      const to = unconfirmedReporting ? "pending" : (receipt?.status ?? e.toStatus);
       return {
         id: e.id,
         track: e.track,

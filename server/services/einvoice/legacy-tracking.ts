@@ -16,7 +16,7 @@ import { DomainError } from "../../errors";
 import { scopedCompanyPermissionFailure } from "../../middleware/companyRolePolicy";
 import type { EInvoiceOutboundIdentity } from "../einvoice-provider";
 import { readEInvoiceDocumentType } from "../einvoice.service";
-import { attr, first, parseXml, text, textAt } from "./dom";
+import { first, parseXml, partyPeppolEndpoint, partyVatTrn, textAt } from "./dom";
 import {
   assertLegalEntityCanSend,
   companyTin,
@@ -32,6 +32,8 @@ import type { ProviderEnvironment } from "./providers/types";
 import { applyTracks } from "./history";
 import {
   archiveEInvoiceXml,
+  assertSubmittedArchiveRevision,
+  conflictingClearanceRevision,
   documentProviderEnvironment,
   recordedReportingRequired,
   documentSubmissionMetadata,
@@ -39,6 +41,7 @@ import {
   getEInvoiceDocument,
   hasUnverifiedComplyanceCorrection,
   lockEInvoiceInvoice,
+  outboundArchiveRevisions,
   sha256Hex,
   SUBMISSION_LEASE_MS,
   upsertEInvoiceDocument,
@@ -94,6 +97,8 @@ export function correctableComplyanceReference(
     !!pin.scope &&
     !!pin.supplierTin &&
     !!pin.sourceName &&
+    // An environment verification must include proof of the original source version.
+    (!pin.environmentVerifiedAt || !!pin.sourceVersion) &&
     pin.invoiceNumber === invoice.number
     ? id
     : null;
@@ -184,7 +189,9 @@ function historicalComplyanceRejection(invoice: Invoice, doc: EInvoiceDocument |
     !doc?.submitClaimedAt &&
     !snapshot?.correctionBlocked &&
     !snapshot?.correctionUncertain &&
-    (!snapshot?.scope || snapshot.correctableRejection == null)
+    (!snapshot?.scope ||
+      snapshot.correctableRejection == null ||
+      (!!snapshot.environmentVerifiedAt && !stringValue(snapshot.sourceVersion)))
   );
 }
 
@@ -283,41 +290,50 @@ async function savedSource(
   doc: EInvoiceDocument | undefined,
   reference: { provider: Provider; messageId: string | null }
 ) {
+  const authoritative = await clearedEInvoiceSource(invoice, doc, reference);
+  if (authoritative) return authoritative;
+  if (reference.provider === "complyance" && reference.messageId) {
+    await assertSubmittedArchiveRevision(
+      {
+        companyId: invoice.companyId,
+        invoiceId: invoice.id,
+        provider: reference.provider,
+        providerMessageId: reference.messageId,
+      },
+      invoice,
+      doc
+    );
+  }
   const needsArchive = !invoice.einvoiceXml || (!invoice.einvoiceHash && !doc?.xmlHash);
   const snapshot = documentSubmissionSnapshot(doc);
   const pinnedHash = invoice.einvoiceHash ?? doc?.xmlHash;
-  const loadArchive = (kind: "submitted" | "cleared") =>
-    db
-      .select({
-        xml: einvoiceArchive.xml,
-        hash: einvoiceArchive.sha256,
-        number: einvoiceArchive.documentNumber,
-        uuid: einvoiceArchive.uuid,
-      })
-      .from(einvoiceArchive)
-      .where(
-        and(
-          eq(einvoiceArchive.companyId, invoice.companyId),
-          eq(einvoiceArchive.invoiceId, invoice.id),
-          eq(einvoiceArchive.direction, "outbound"),
-          eq(einvoiceArchive.kind, kind),
-          eq(einvoiceArchive.provider, reference.provider),
-          reference.messageId
-            ? eq(einvoiceArchive.providerMessageId, reference.messageId)
-            : eq(
-                einvoiceArchive.documentNumber,
-                stringValue(snapshot?.invoiceNumber) ?? invoice.number
-              ),
-          pinnedHash ? eq(einvoiceArchive.sha256, pinnedHash) : undefined
+  const archives = needsArchive
+    ? await db
+        .select({
+          xml: einvoiceArchive.xml,
+          hash: einvoiceArchive.sha256,
+          number: einvoiceArchive.documentNumber,
+          uuid: einvoiceArchive.uuid,
+        })
+        .from(einvoiceArchive)
+        .where(
+          and(
+            eq(einvoiceArchive.companyId, invoice.companyId),
+            eq(einvoiceArchive.invoiceId, invoice.id),
+            eq(einvoiceArchive.direction, "outbound"),
+            eq(einvoiceArchive.kind, "submitted"),
+            eq(einvoiceArchive.provider, reference.provider),
+            reference.messageId
+              ? eq(einvoiceArchive.providerMessageId, reference.messageId)
+              : eq(
+                  einvoiceArchive.documentNumber,
+                  stringValue(snapshot?.invoiceNumber) ?? invoice.number
+                ),
+            pinnedHash ? eq(einvoiceArchive.sha256, pinnedHash) : undefined
+          )
         )
-      )
-      .limit(2);
-  const hasClearance =
-    reference.messageId &&
-    (doc?.status ?? invoice.einvoiceStatus) === "cleared" &&
-    !hasUnverifiedComplyanceCorrection(doc);
-  const cleared = needsArchive && hasClearance ? await loadArchive("cleared") : [];
-  const archives = needsArchive && cleared.length === 0 ? await loadArchive("submitted") : cleared;
+        .limit(2)
+    : [];
   if (archives.length > 1) throw mismatch();
   const [archive] = archives;
   const xml = invoice.einvoiceXml ?? archive?.xml;
@@ -325,6 +341,17 @@ async function savedSource(
   if (!xml || !hashes.length) throw mismatch();
   const hash = sha256Hex(xml);
   if (hashes.some((candidate) => candidate !== hash)) throw mismatch();
+  return sourceIdentity(invoice, doc, { xml, hash, number: archive?.number, uuid: archive?.uuid });
+}
+
+function sourceIdentity(
+  invoice: Invoice,
+  doc: EInvoiceDocument | undefined,
+  source: { xml: string; hash: string; number?: string; uuid?: string | null },
+  authoritative = false
+) {
+  const { xml, hash } = source;
+  const snapshot = documentSubmissionSnapshot(doc);
 
   let root: Element;
   try {
@@ -332,16 +359,21 @@ async function savedSource(
   } catch {
     throw mismatch();
   }
-  const documentNumber = stringValue(snapshot?.invoiceNumber) ?? archive?.number ?? invoice.number;
-  if (textAt(root, "cbc:ID") !== documentNumber || (archive && archive.number !== documentNumber))
+  const documentNumber =
+    stringValue(snapshot?.invoiceNumber) ??
+    (authoritative ? invoice.number : (source.number ?? invoice.number));
+  if (
+    textAt(root, "cbc:ID") !== documentNumber ||
+    (source.number && source.number !== documentNumber)
+  )
     throw mismatch();
   const seller = first(root, "cac:AccountingSupplierParty/cac:Party");
   if (!seller) throw mismatch();
-  const endpoint = first(seller, "cbc:EndpointID");
-  const supplierTrn = textAt(seller, "cac:PartyTaxScheme/cbc:CompanyID");
+  const supplierEndpoint = partyPeppolEndpoint(seller);
+  const supplierTrn = partyVatTrn(seller);
   const taxTin = tinFromTrn(supplierTrn);
   const supplierTin =
-    attr(endpoint, "schemeID") === PEPPOL_SCHEME_UAE_TIN ? text(endpoint) : taxTin;
+    supplierEndpoint?.scheme === PEPPOL_SCHEME_UAE_TIN ? supplierEndpoint.value : taxTin;
   if (
     !supplierTin ||
     !isUaeTin(supplierTin) ||
@@ -351,10 +383,10 @@ async function savedSource(
   )
     throw mismatch();
   const xmlUuid = textAt(root, "cbc:UUID");
-  if (
-    xmlUuid &&
-    [doc?.uuid, invoice.einvoiceUuid, archive?.uuid].some((uuid) => uuid && uuid !== xmlUuid)
-  ) {
+  const expectedUuids = authoritative
+    ? [source.uuid]
+    : [doc?.uuid, invoice.einvoiceUuid, source.uuid];
+  if (xmlUuid && expectedUuids.some((uuid) => uuid && uuid !== xmlUuid)) {
     throw mismatch();
   }
   return {
@@ -362,18 +394,101 @@ async function savedSource(
     xml,
     hash,
     documentNumber,
+    supplierEndpoint,
     supplierTin,
     supplierTrn,
     documentType: readEInvoiceDocumentType(xml) ?? doc?.documentType ?? null,
-    uuid: xmlUuid ?? doc?.uuid ?? invoice.einvoiceUuid ?? archive?.uuid ?? null,
+    uuid:
+      xmlUuid ??
+      (authoritative ? source.uuid : (doc?.uuid ?? invoice.einvoiceUuid)) ??
+      source.uuid ??
+      null,
   };
 }
 
-/** The invoice route can recover immutable bytes even when its legacy mirror is empty. */
+/** Clearance is proven by the scoped archive, independently of a legacy mirror's revision. */
+export async function clearedEInvoiceSource(
+  invoice: Invoice,
+  doc: EInvoiceDocument | undefined,
+  reference: { provider: Provider; messageId: string | null },
+  conn: EInvoiceDb = db
+) {
+  if (!reference.messageId) return null;
+  const archives = await outboundArchiveRevisions(
+    {
+      companyId: invoice.companyId,
+      invoiceId: invoice.id,
+      provider: reference.provider,
+      providerMessageId: reference.messageId,
+    },
+    "cleared",
+    conn
+  );
+  if (!archives.length) return null;
+  const [archive] = archives;
+  if (
+    archives.length !== 1 ||
+    sha256Hex(archive.xml) !== archive.sha256 ||
+    (hasUnverifiedComplyanceCorrection(doc) &&
+      documentSubmissionMetadata(doc)?.correctionCandidateHash !== archive.sha256)
+  ) {
+    throw conflictingClearanceRevision();
+  }
+  try {
+    const source = sourceIdentity(
+      invoice,
+      doc,
+      {
+        xml: archive.xml,
+        hash: archive.sha256,
+        number: archive.documentNumber,
+        uuid: archive.uuid,
+      },
+      true
+    );
+    if (archive.documentType && source.documentType !== archive.documentType)
+      throw conflictingClearanceRevision();
+    return { ...source, clearanceId: archive.id, clearedAt: archive.createdAt };
+  } catch (err) {
+    if (err instanceof DomainError && err.code === "EINVOICE_ENVIRONMENT_PROOF_MISMATCH")
+      throw conflictingClearanceRevision();
+    throw err;
+  }
+}
+
+function mirrorsMatchClearance(
+  invoice: Invoice,
+  doc: EInvoiceDocument | undefined,
+  clearance: NonNullable<Awaited<ReturnType<typeof clearedEInvoiceSource>>>
+) {
+  return (
+    invoice.einvoiceXml === clearance.xml &&
+    invoice.einvoiceHash === clearance.hash &&
+    doc?.xmlHash === clearance.hash
+  );
+}
+
+/** A cleared archive is preferred even when the ordinary invoice XML mirror is populated. */
 export async function archivedEInvoiceXmlForDownload(invoice: Invoice): Promise<string | null> {
   const doc = await getEInvoiceDocument(invoice.companyId, invoice.id);
   const reference = legacyTrackingReference(invoice, doc);
-  if (!reference) return null;
+  if (!reference) {
+    if (
+      (doc?.providerMessageId &&
+        invoice.einvoiceProviderMessageId &&
+        doc.providerMessageId !== invoice.einvoiceProviderMessageId) ||
+      ((doc?.providerMessageId || invoice.einvoiceProviderMessageId) &&
+        doc?.provider &&
+        invoice.einvoiceProvider &&
+        doc.provider !== invoice.einvoiceProvider)
+    )
+      throw conflictingClearanceRevision();
+    return invoice.einvoiceXml;
+  }
+  const clearance = await clearedEInvoiceSource(invoice, doc, reference);
+  if (clearance) return clearance.xml;
+  if (invoice.einvoiceXml && doc?.status !== "cleared" && invoice.einvoiceStatus !== "cleared")
+    return invoice.einvoiceXml;
   try {
     return (await savedSource(invoice, doc, reference)).xml;
   } catch (err) {
@@ -405,10 +520,12 @@ async function verifyAtProvider(
   const details = matchingEntity?.providerDetails as Record<string, unknown> | null;
   const identity: EInvoiceOutboundIdentity = {
     documentNumber: source.documentNumber,
+    supplierEndpoint: source.supplierEndpoint,
     supplierTin: source.supplierTin,
     supplierTrn: source.supplierTrn,
     legalEntityId: stringValue(snapshot?.legalEntityId) ?? matchingEntity?.legalEntityId ?? null,
     sourceName: stringValue(snapshot?.sourceName) ?? stringValue(details?.sourceName),
+    sourceVersion: stringValue(snapshot?.sourceVersion),
   };
 
   if (plan.provider === "complyance") {
@@ -419,6 +536,8 @@ async function verifyAtProvider(
     const context =
       verifyCorrection &&
       source.uuid &&
+      source.supplierEndpoint?.scheme === PEPPOL_SCHEME_UAE_TIN &&
+      source.supplierEndpoint.value === identity.supplierTin &&
       active?.status === "active" &&
       active.tin === identity.supplierTin &&
       active.legalEntityId === identity.legalEntityId
@@ -428,16 +547,18 @@ async function verifyAtProvider(
     if (result.verdict === "unavailable")
       throw new DomainError("EINVOICE_PROVIDER_UNAVAILABLE", 502);
     if (result.verdict !== "verified") throw mismatch();
+    const correctionSource = result.correctionSource;
     const scope =
-      context && result.correctionReasons
-        ? await provider.getSubmissionScope(company.id, context)
-        : null;
+      context && correctionSource ? await provider.getSubmissionScope(company.id, context) : null;
     return {
       identity,
       reference: { provider: plan.provider, messageId },
       correction:
-        scope && result.correctionReasons && (!snapshot?.scope || snapshot.scope === scope)
-          ? { scope, reasons: result.correctionReasons }
+        scope &&
+        correctionSource &&
+        result.correctionReasons &&
+        (!snapshot?.scope || snapshot.scope === scope)
+          ? { scope, source: correctionSource, reasons: result.correctionReasons }
           : null,
     };
   }
@@ -745,7 +866,11 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
   const existingEnvironment = documentProviderEnvironment(doc);
   assertSameEnvironment(existingEnvironment, environment);
   const verifyCorrection = historicalComplyanceRejection(invoice, doc);
-  if (completeStoredTracking(invoice, doc)) {
+  const clearance = await clearedEInvoiceSource(invoice, doc, plan);
+  if (
+    completeStoredTracking(invoice, doc) &&
+    (!clearance || mirrorsMatchClearance(invoice, doc, clearance))
+  ) {
     return { provider: plan.provider, environment, verified: true as const };
   }
 
@@ -754,7 +879,7 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
     environment,
   });
   if (!configuration) throw cannotVerify();
-  const source = await savedSource(invoice, doc, plan);
+  const source = clearance ?? (await savedSource(invoice, doc, plan));
   const snapshot = documentSubmissionSnapshot(doc);
   const { identity, reference, correction } = await verifyAtProvider(
     company,
@@ -804,7 +929,14 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
     const pinned = documentProviderEnvironment(stored);
     assertSameEnvironment(pinned, environment);
     const preserveRejection = historicalComplyanceRejection(current, stored);
-    if (completeStoredTracking(current, stored)) return response;
+    const currentClearance = await clearedEInvoiceSource(current, stored, reference, tx);
+    if (currentClearance?.clearanceId !== clearance?.clearanceId)
+      throw conflictingClearanceRevision();
+    if (
+      completeStoredTracking(current, stored) &&
+      (!clearance || mirrorsMatchClearance(current, stored, clearance))
+    )
+      return response;
     const [duplicate] = await tx
       .select({ id: einvoiceDocuments.id })
       .from(einvoiceDocuments)
@@ -893,7 +1025,12 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
           providerAttempted: true,
           ...(required === null ? {} : { reportingRequired: required }),
           ...(correction && preserveRejection
-            ? { scope: correction.scope, correctableRejection: true }
+            ? {
+                scope: correction.scope,
+                sourceName: correction.source.name,
+                sourceVersion: correction.source.version,
+                correctableRejection: true,
+              }
             : {}),
           ...(stored?.lastErrorCode === "COMPLYANCE_XML_FAILED" ? { correctionBlocked: true } : {}),
         },
@@ -969,9 +1106,9 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
       .set({
         einvoiceProvider: current.einvoiceProvider ?? reference.provider,
         einvoiceProviderMessageId: current.einvoiceProviderMessageId ?? reference.messageId,
-        einvoiceXml: current.einvoiceXml ?? source.xml,
-        einvoiceHash: current.einvoiceHash ?? source.hash,
-        einvoiceUuid: current.einvoiceUuid ?? source.uuid,
+        einvoiceXml: clearance ? source.xml : (current.einvoiceXml ?? source.xml),
+        einvoiceHash: clearance ? source.hash : (current.einvoiceHash ?? source.hash),
+        einvoiceUuid: clearance ? source.uuid : (current.einvoiceUuid ?? source.uuid),
         ...(recovered
           ? {
               einvoiceStatus: status,
@@ -995,7 +1132,13 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
           provider: reference.provider,
           environment,
           providerMessageId: reference.messageId,
-          ...(correction && preserveRejection ? { correctableRejection: true } : {}),
+          ...(correction && preserveRejection
+            ? {
+                correctableRejection: true,
+                sourceName: correction.source.name,
+                sourceVersion: correction.source.version,
+              }
+            : {}),
         },
       }),
     });

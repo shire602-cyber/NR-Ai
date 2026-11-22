@@ -24,9 +24,6 @@ export type CapabilityId =
   | "ai"
   | "stripe_billing"
   | "invoice_payments"
-  | "bank_feed_lean"
-  | "bank_feed_tarabut"
-  | "bank_feed_wio"
   | "einvoicing_asp"
   | "shopify"
   | "stripe_payouts"
@@ -166,54 +163,6 @@ const DEFS: readonly CapabilityDef[] = [
       if (!set(env, "STRIPE_SECRET_KEY") || !flag(env, "INVOICE_PAYMENTS_ENABLED")) return null;
       return (env.STRIPE_SECRET_KEY ?? "").startsWith("sk_live_") ? "live" : "sandbox";
     },
-  },
-  {
-    id: "bank_feed_lean",
-    label: { en: "Bank connection via Lean", ar: "ربط الحسابات البنكية عبر Lean" },
-    externalAction: {
-      en: "Sign a Lean Technologies contract and obtain a production app token.",
-      ar: "وقّع عقداً مع Lean Technologies واحصل على رمز تطبيق إنتاجي.",
-    },
-    envVars: ["LEAN_APP_TOKEN", "LEAN_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      set(env, "LEAN_APP_TOKEN")
-        ? looksSandbox(env.LEAN_API_BASE_URL) || !set(env, "LEAN_API_BASE_URL")
-          ? "sandbox"
-          : "live"
-        : null,
-  },
-  {
-    id: "bank_feed_tarabut",
-    label: { en: "Bank connection via Tarabut", ar: "ربط الحسابات البنكية عبر Tarabut" },
-    externalAction: {
-      en: "Sign a Tarabut Gateway contract and obtain production client credentials.",
-      ar: "وقّع عقداً مع Tarabut Gateway واحصل على بيانات اعتماد إنتاجية.",
-    },
-    envVars: ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET", "TARABUT_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      all(env, ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET"])
-        ? looksSandbox(env.TARABUT_API_BASE_URL) || !set(env, "TARABUT_API_BASE_URL")
-          ? "sandbox"
-          : "live"
-        : null,
-  },
-  {
-    id: "bank_feed_wio",
-    label: { en: "Wio Bank connection", ar: "ربط الحساب مع بنك Wio" },
-    externalAction: {
-      en: "Register with Wio Business open-banking and obtain production client credentials.",
-      ar: "سجّل في الخدمات المصرفية المفتوحة لدى Wio Business واحصل على بيانات اعتماد إنتاجية.",
-    },
-    envVars: ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET", "WIO_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      all(env, ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET"])
-        ? looksSandbox(env.WIO_API_BASE_URL) || !set(env, "WIO_API_BASE_URL")
-          ? "sandbox"
-          : "live"
-        : null,
   },
   {
     id: "einvoicing_asp",

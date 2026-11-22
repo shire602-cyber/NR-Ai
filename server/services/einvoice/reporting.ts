@@ -94,7 +94,12 @@ export function projectReportingObligation(
       reportBy: doc?.reportBy ?? null,
     };
   }
-  const required = invoiceReportingRequired(invoice, company, now, resolvedBuyerTrn);
+  // Generate can leave XML behind before submission. Only a queued revision freezes the buyer.
+  const required = invoiceReportingRequired(
+    { customerTrn: resolvedBuyerTrn ?? null },
+    company,
+    now
+  );
   return { required, known: true, reportBy: required ? reportByDate(invoice.date) : null };
 }
 
@@ -109,6 +114,7 @@ export function projectInvoiceTracks(
     invoiceStatus: invoice?.status,
     legacyStatus: invoice?.einvoiceStatus ?? doc?.status,
     provider: invoice?.einvoiceProvider,
+    providerMessageId: invoice?.einvoiceProviderMessageId,
     doc: doc ?? null,
     obligation: projectReportingObligation(invoice, doc, company, now, resolvedBuyerTrn),
     now,

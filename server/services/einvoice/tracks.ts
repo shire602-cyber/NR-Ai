@@ -73,6 +73,16 @@ export function isReportingObservation(status: unknown): status is ReportingObse
   return status === "reported" || status === "report_failed";
 }
 
+/** Needs Correction keeps a provider reference without entering the government track. */
+export function canReadComplyanceReporting(
+  providerStatus: string | null | undefined,
+  errorCode: string | null | undefined
+) {
+  return (
+    providerStatus?.trim().toLowerCase() !== "rejected" && errorCode !== "COMPLYANCE_VALIDATION"
+  );
+}
+
 export function reportingEvidenceAt(
   validation: unknown,
   outcome: ReportingObservation
@@ -170,8 +180,10 @@ export function deriveInvoiceTracks(args: {
   invoiceStatus: string | null | undefined;
   legacyStatus: string | null | undefined;
   provider?: string | null;
+  providerMessageId?: string | null;
   doc: {
     provider?: string | null;
+    providerMessageId?: string | null;
     providerStatus?: string | null;
     deliveryStatus?: string | null;
     reportingStatus?: string | null;
@@ -206,12 +218,15 @@ export function deriveInvoiceTracks(args: {
   );
   const storedDelivery = isDeliveryStatus(doc?.deliveryStatus) ? doc.deliveryStatus : null;
   const legacyClaimedDelivery = args.legacyStatus === "accepted" || args.legacyStatus === "cleared";
-  const acubeDelivery =
-    provider === "acube" &&
-    (storedDelivery === "delivered" || (!storedDelivery && legacyClaimedDelivery))
-      ? projectAcubeDeliveryEvidence(providerStatus)
+  const projectedReceipt =
+    storedDelivery === "delivered" || (!storedDelivery && legacyClaimedDelivery)
+      ? projectRecipientDeliveryEvidence(
+          provider,
+          providerStatus,
+          doc?.providerMessageId ?? args.providerMessageId
+        )
       : null;
-  const delivery = acubeDelivery?.status ?? storedDelivery ?? deliveryFromLegacy(legacy);
+  const delivery = projectedReceipt?.status ?? storedDelivery ?? deliveryFromLegacy(legacy);
   const invoiceStatus = String(args.invoiceStatus ?? "").toLowerCase();
   const isDraft = invoiceStatus === "draft";
   const inactive = isDraft || invoiceStatus === "void" || invoiceStatus === "cancelled";
@@ -219,7 +234,7 @@ export function deriveInvoiceTracks(args: {
   const today = uaeToday(now);
   return {
     delivery,
-    deliveryConfirmationUnavailable: acubeDelivery?.confirmationUnavailable ?? false,
+    deliveryConfirmationUnavailable: projectedReceipt?.confirmationUnavailable ?? false,
     reporting,
     reportingRequired: obligation.required,
     reportingObligationKnown: obligation.known,
@@ -318,6 +333,19 @@ export function projectAcubeDeliveryEvidence(raw: string | null | undefined): {
   const status = knownAcubeDeliveryStatus(raw);
   return status
     ? { status, confirmationUnavailable: false }
+    : { status: "queued", confirmationUnavailable: true };
+}
+
+/** A legacy or persisted success is a projection, not a receipt from the recipient. */
+export function projectRecipientDeliveryEvidence(
+  provider: string | null | undefined,
+  rawStatus: string | null | undefined,
+  reference: string | null | undefined
+): { status: DeliveryStatus; confirmationUnavailable: boolean } {
+  const acube = provider === "acube" ? projectAcubeDeliveryEvidence(rawStatus) : null;
+  if (acube && acube.status !== "delivered") return acube;
+  return reference && providerRecipientAcknowledgement(provider, rawStatus)
+    ? { status: "delivered", confirmationUnavailable: false }
     : { status: "queued", confirmationUnavailable: true };
 }
 

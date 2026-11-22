@@ -31,7 +31,7 @@ import {
   type FirmContext,
 } from "../../services/firm/scope";
 import { createDefaultAccountsForCompany } from "../../defaultChartOfAccounts";
-import { db } from "../../db";
+import { db, type AppDatabase } from "../../db";
 import { firmContextOf } from "../../middleware/rbac";
 import { firmReceivablesAed } from "../../services/firm/receivables.service";
 import { storage } from "../../storage";
@@ -65,11 +65,14 @@ export async function denyClientAccess(res: Response, companyId: string): Promis
   return res.status(404).json({ message: "Client not found", code: "CLIENT_NOT_FOUND" });
 }
 
-export async function seedChartOfAccounts(companyId: string): Promise<void> {
-  const hasAccounts = await storage.companyHasAccounts(companyId);
+export async function seedChartOfAccounts(
+  companyId: string,
+  tx?: Pick<AppDatabase, "select" | "insert">
+): Promise<void> {
+  const hasAccounts = await storage.companyHasAccounts(companyId, tx);
   if (hasAccounts) return;
   const defaultAccounts = createDefaultAccountsForCompany(companyId);
-  await storage.createBulkAccounts(defaultAccounts);
+  await storage.createBulkAccounts(defaultAccounts, tx);
 }
 
 export interface ClientStats {
@@ -583,13 +586,14 @@ export async function loadActiveServicePlans(
 export async function upsertClientServicePlan(
   companyId: string,
   userId: string,
-  services: readonly ClientServiceCode[]
+  services: readonly ClientServiceCode[],
+  conn: Pick<AppDatabase, "select" | "insert" | "update"> = db
 ): Promise<ClientServicePlan> {
   const normalizedServices = normalizeClientServices(services);
   const servicePayload = JSON.stringify(normalizedServices);
   const engagementType = engagementTypeForServices(normalizedServices);
 
-  const [existing] = await db
+  const [existing] = await conn
     .select()
     .from(engagements)
     .where(and(eq(engagements.companyId, companyId), eq(engagements.status, "active")))
@@ -597,7 +601,7 @@ export async function upsertClientServicePlan(
     .limit(1);
 
   if (existing) {
-    const [updated] = await db
+    const [updated] = await conn
       .update(engagements)
       .set({
         engagementType,
@@ -610,7 +614,7 @@ export async function upsertClientServicePlan(
     return servicePlanFromEngagement(updated as EngagementSummaryRow);
   }
 
-  const [created] = await db
+  const [created] = await conn
     .insert(engagements)
     .values({
       companyId,

@@ -8,6 +8,7 @@
 import crypto from "node:crypto";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
+  companies,
   einvoiceArchive,
   einvoiceInboundDocuments,
   type EInvoiceLegalEntity,
@@ -16,10 +17,11 @@ import {
 } from "../../../shared/schema";
 import { allocate } from "../../../shared/money";
 import { DomainError } from "../../errors";
-import { db, pool } from "../../db";
+import { db, pool, type AppDatabase } from "../../db";
 import { rowsOf, withLedgerTx } from "../../ledger/tx";
 import type { LedgerTx } from "../../ledger/types";
 import { has, resolve } from "../../platform/service-registry";
+import { EInvoiceProviderError } from "../einvoice-provider";
 import {
   attr,
   children,
@@ -32,11 +34,15 @@ import {
   type XNode,
 } from "./dom";
 import {
+  companyTin,
+  currentOnboardingEntity,
   getLegalEntity,
   matchesCompanyTaxpayer,
   matchesOnboardedTaxpayer,
+  matchesOnboardingCompany,
   type CompanyTinSource,
 } from "./legal-entities";
+import { providerModule } from "./providers/registry";
 import { summariseValidation, validateEInvoiceXml } from "./validate";
 import {
   archiveEInvoiceXml,
@@ -423,9 +429,76 @@ async function findLegacyInboundCredit(
 }
 
 export class InboundLegalEntityChangedError extends Error {}
+export class InboundTaxpayerChangedError extends Error {}
 
-async function assertOnboardedEntityCurrent(entity: EInvoiceLegalEntity | undefined, tx: LedgerTx) {
-  if (!entity) return;
+/** Read the current company before consulting its provider, or hold its identity through a write. */
+export async function readInboundCompany(companyId: string, tx?: Pick<AppDatabase, "select">) {
+  const query = (tx ?? db)
+    .select()
+    .from(companies)
+    .where(and(eq(companies.id, companyId), isNull(companies.deletedAt)))
+    .limit(1);
+  const [company] = await (tx ? query.for("share") : query);
+  return company;
+}
+
+export function currentProviderReceiptTin(
+  company: (CompanyTinSource & { einvoicePartner: string | null }) | undefined,
+  provider: string
+) {
+  const tin = company && companyTin(company);
+  return tin && matchesOnboardingCompany(company, provider, tin) ? tin : null;
+}
+
+export function isCurrentReceiptEnvironment(provider: string, environment: string): boolean {
+  return providerModule(provider)?.environment(process.env) === environment;
+}
+
+export function sameInboundRegistration(a: EInvoiceLegalEntity, b: EInvoiceLegalEntity): boolean {
+  return (
+    a.id === b.id &&
+    a.status === b.status &&
+    a.tin === b.tin &&
+    a.legalEntityId === b.legalEntityId &&
+    a.peppolAddress === b.peppolAddress &&
+    a.vatTrn === b.vatTrn
+  );
+}
+
+function wrongRecipient() {
+  return new DomainError(
+    "EINVOICE_INBOUND_WRONG_RECIPIENT",
+    422,
+    undefined,
+    "The document's buyer TRN / endpoint does not match this company"
+  );
+}
+
+async function assertInboundOwnershipCurrent(
+  companyId: string,
+  entity: EInvoiceLegalEntity | undefined,
+  buyer: Parameters<typeof matchesCompanyTaxpayer>[1],
+  tx: LedgerTx
+) {
+  // Onboarding and identity edits take the company lock before writing the legal-entity row.
+  const company = await readInboundCompany(companyId, tx);
+  if (!entity) {
+    if (!company || !matchesCompanyTaxpayer(company, buyer)) throw wrongRecipient();
+    return;
+  }
+  if (
+    !company ||
+    currentProviderReceiptTin(company, entity.provider) !== entity.tin ||
+    !matchesCompanyTaxpayer(company, buyer)
+  ) {
+    throw new InboundTaxpayerChangedError("The provider or taxpayer changed during receipt");
+  }
+  if (!isCurrentReceiptEnvironment(entity.provider, entity.environment)) {
+    throw new EInvoiceProviderError(
+      "EINVOICE_PROVIDER_NOT_CONFIGURED",
+      "Receipt environment changed"
+    );
+  }
   const current = await getLegalEntity(
     entity.companyId,
     entity.provider,
@@ -435,14 +508,13 @@ async function assertOnboardedEntityCurrent(entity: EInvoiceLegalEntity | undefi
   );
   if (
     !current ||
+    !currentOnboardingEntity(company, current, entity.provider, entity.environment) ||
     current.status !== "active" ||
-    current.id !== entity.id ||
-    current.tin !== entity.tin ||
-    current.legalEntityId !== entity.legalEntityId ||
-    current.peppolAddress !== entity.peppolAddress
+    !sameInboundRegistration(current, entity)
   ) {
     throw new InboundLegalEntityChangedError("The active legal entity changed during receipt");
   }
+  if (!matchesOnboardedTaxpayer(current, buyer, company.trnVatNumber)) throw wrongRecipient();
 }
 
 export async function processInboundEInvoice(args: {
@@ -472,16 +544,9 @@ export async function processInboundEInvoice(args: {
   };
   const addressedToUs = args.onboardedEntity
     ? args.onboardedEntity.companyId === company.id &&
-      matchesOnboardedTaxpayer(args.onboardedEntity, buyer)
+      matchesOnboardedTaxpayer(args.onboardedEntity, buyer, company.trnVatNumber)
     : matchesCompanyTaxpayer(company, buyer);
-  if (!addressedToUs) {
-    throw new DomainError(
-      "EINVOICE_INBOUND_WRONG_RECIPIENT",
-      422,
-      undefined,
-      "The document's buyer TRN / endpoint does not match this company"
-    );
-  }
+  if (!addressedToUs) throw wrongRecipient();
 
   const isCredit = parsed.root === "CreditNote";
   const hash = sha256Hex(xml);
@@ -501,7 +566,7 @@ export async function processInboundEInvoice(args: {
   // Persist the inbound receipt and archive first. Failed bill preparation can then be retried
   // against the same immutable source, and a finished credit note stays available for review.
   const captured = await withLedgerTx(async (tx): Promise<InboundResult | { id: string }> => {
-    await assertOnboardedEntityCurrent(args.onboardedEntity, tx);
+    await assertInboundOwnershipCurrent(company.id, args.onboardedEntity, buyer, tx);
     const prior = await find(tx);
     if (args.legacyRecovery && !prior) return { status: 200, body: { status: "unmatched" } };
     const row =
@@ -655,7 +720,7 @@ export async function processInboundEInvoice(args: {
     const prepare = resolve<PrepareDraft>("bills.prepareDraftFromInbound");
     const write = await prepare(company.id, actorId, toInboundBill(parsed));
     return await withLedgerTx(async (tx) => {
-      await assertOnboardedEntityCurrent(args.onboardedEntity, tx);
+      await assertInboundOwnershipCurrent(company.id, args.onboardedEntity, buyer, tx);
       const row = await find(tx);
       if (!row) throw new Error("Inbound receipt no longer exists.");
       assertSameInboundSource(row, hash);

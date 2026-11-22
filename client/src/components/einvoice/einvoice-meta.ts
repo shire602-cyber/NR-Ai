@@ -269,6 +269,9 @@ export function recipientAcknowledgement(
 export const reportingObligationUnknown = (status: ReportingStatus, known?: boolean) =>
   known === false && status !== "reported" && status !== "report_failed";
 
+export const reportingOutcomeConfirmed = (status: ReportingStatus, unavailable?: boolean) =>
+  !unavailable && (status === "reported" || status === "report_failed");
+
 export const reportingLabelKey = (
   status: ReportingStatus,
   confirmationUnavailable = false,

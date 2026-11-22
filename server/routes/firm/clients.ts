@@ -1,7 +1,7 @@
 // Firm client handlers: list, summary, create, update, assign staff, staff list, switch, archive and import.
 // Handlers moved from firm.routes.ts (R20-09); the route registrations (paths and
 // middleware order) stay in firm.routes.ts.
-import { DEFAULT_CLIENT_SERVICE_CODES } from "@shared/client-services";
+import { DEFAULT_CLIENT_SERVICE_CODES, type ClientServiceCode } from "@shared/client-services";
 import type { Request, Response } from "express";
 import { matchesSearchText } from "../../../shared/arabic-text";
 import { assignStaff, listFirmStaff } from "../../services/firm/staff.service";
@@ -12,15 +12,17 @@ import {
   vatPeriodStartMonthForNrClientName,
   withNrClientVatGroup,
 } from "../../services/firm-clients.service";
-import { companies, invoices, receipts } from "../../../shared/schema";
+import { companies, invoices, receipts, type InsertCompany } from "../../../shared/schema";
 import { db } from "../../db";
 import { desc, eq, inArray } from "drizzle-orm";
 import {
   endClientLink,
   findDuplicateClient,
   linkNewClientToFirm,
+  lockFirmClientProvisioning,
 } from "../../services/firm/clients.service";
-import { errorMessage } from "../../errors";
+import type { FirmContext } from "../../services/firm/scope";
+import { DomainError, errorMessage } from "../../errors";
 import { firmContextOf, getAccessibleCompanyIds } from "../../middleware/rbac";
 import { parseSpreadsheet } from "../../services/spreadsheet.service";
 import { parsedBody } from "../../http/parsed-body";
@@ -235,61 +237,81 @@ export const handleGetFirmClientsSummary = async (req: Request, res: Response) =
   });
 };
 
+async function provisionFirmClient(
+  ctx: FirmContext,
+  input: InsertCompany,
+  serviceScope: readonly ClientServiceCode[] | undefined,
+  action: "Firm created" | "Bulk-imported firm"
+) {
+  return db.transaction(async (tx) => {
+    const actor = await lockFirmClientProvisioning(ctx, tx);
+    const duplicate = await findDuplicateClient(actor, input.name, undefined, tx);
+    if (duplicate) {
+      throw new DomainError(
+        "CLIENT_DUPLICATE",
+        409,
+        {
+          existingCompanyId: duplicate.id,
+          existingName: duplicate.name,
+        },
+        "A client with this name already exists"
+      );
+    }
+    const company = await storage.createCompany(input, tx);
+    const servicePlan = await upsertClientServicePlan(
+      company.id,
+      actor.userId,
+      serviceScope ?? DEFAULT_CLIENT_SERVICE_CODES,
+      tx
+    );
+    await seedChartOfAccounts(company.id, tx);
+    await linkNewClientToFirm(actor, company.id, tx);
+    await storage.createActivityLog(
+      {
+        userId: actor.userId,
+        companyId: company.id,
+        action: "create",
+        entityType: "company",
+        entityId: company.id,
+        description: `${action} client: ${company.name}`,
+      },
+      tx
+    );
+    return { company, servicePlan };
+  });
+}
+
 /** POST /firm/clients */
 export const handlePostFirmClients = async (req: Request, res: Response) => {
-  const { id: userId } = req.user!;
   const ctx = firmContextOf(res);
   const validated = parsedBody<z.output<typeof createClientSchema>>(req);
   const { serviceScope, ...companyInput } = validated;
-
-  // R15-04: case-insensitive duplicate check within the firm's clients.
-  const duplicate = await findDuplicateClient(ctx, companyInput.name);
-  if (duplicate) {
-    return res.status(409).json({
-      message: "A client with this name already exists",
-      code: "CLIENT_DUPLICATE",
-      details: { existingCompanyId: duplicate.id, existingName: duplicate.name },
-    });
-  }
-
-  const company = await storage.createCompany({
-    name: companyInput.name,
-    baseCurrency: "AED",
-    locale: "en",
-    companyType: "client",
-    trnVatNumber: companyInput.trnVatNumber,
-    legalStructure: companyInput.legalStructure,
-    industry: companyInput.industry,
-    registrationNumber: companyInput.registrationNumber,
-    businessAddress: companyInput.businessAddress,
-    contactPhone: companyInput.contactPhone,
-    contactEmail: companyInput.contactEmail || undefined,
-    websiteUrl: companyInput.websiteUrl,
-    emirate: companyInput.emirate || "dubai",
-    vatFilingFrequency: companyInput.vatFilingFrequency || "quarterly",
-    vatPeriodStartMonth:
-      companyInput.vatPeriodStartMonth ?? vatPeriodStartMonthForNrClientName(companyInput.name),
-    fiscalYearStartMonth: companyInput.fiscalYearStartMonth,
-    taxRegistrationType: companyInput.taxRegistrationType,
-    corporateTaxId: companyInput.corporateTaxId,
-  });
-  const servicePlan = await upsertClientServicePlan(
-    company.id,
-    userId,
-    serviceScope ?? DEFAULT_CLIENT_SERVICE_CODES
+  const { company, servicePlan } = await provisionFirmClient(
+    ctx,
+    {
+      name: companyInput.name,
+      baseCurrency: "AED",
+      locale: "en",
+      companyType: "client",
+      trnVatNumber: companyInput.trnVatNumber,
+      legalStructure: companyInput.legalStructure,
+      industry: companyInput.industry,
+      registrationNumber: companyInput.registrationNumber,
+      businessAddress: companyInput.businessAddress,
+      contactPhone: companyInput.contactPhone,
+      contactEmail: companyInput.contactEmail || undefined,
+      websiteUrl: companyInput.websiteUrl,
+      emirate: companyInput.emirate || "dubai",
+      vatFilingFrequency: companyInput.vatFilingFrequency || "quarterly",
+      vatPeriodStartMonth:
+        companyInput.vatPeriodStartMonth ?? vatPeriodStartMonthForNrClientName(companyInput.name),
+      fiscalYearStartMonth: companyInput.fiscalYearStartMonth,
+      taxRegistrationType: companyInput.taxRegistrationType,
+      corporateTaxId: companyInput.corporateTaxId,
+    },
+    serviceScope,
+    "Firm created"
   );
-
-  await seedChartOfAccounts(company.id);
-  await linkNewClientToFirm(ctx, company.id);
-
-  await storage.createActivityLog({
-    userId,
-    companyId: company.id,
-    action: "create",
-    entityType: "company",
-    entityId: company.id,
-    description: `Firm created client: ${company.name}`,
-  });
 
   res.status(201).json({
     ...company,
@@ -420,7 +442,14 @@ export const handleDeleteFirmClients = async (req: Request, res: Response) => {
   if (company.companyType !== "client") {
     // A client organisation that joined by invitation owns its books: the
     // firm can only end its own link, never archive the company.
-    await endClientLink(ctx, companyId, userId, "Archived by firm");
+    await endClientLink(
+      ctx,
+      companyId,
+      userId,
+      "Archived by firm",
+      undefined,
+      "firm.clients.archive"
+    );
     return res.json({ success: true, linkEnded: true, archivedAt: null });
   }
 
@@ -443,7 +472,6 @@ export const handleDeleteFirmClients = async (req: Request, res: Response) => {
 
 /** POST /firm/clients/import */
 export const handlePostFirmClientsImport = async (req: Request, res: Response) => {
-  const { id: userId } = req.user!;
   const ctx = firmContextOf(res);
 
   // Accept either pre-parsed rows or a base64-encoded file.
@@ -509,55 +537,30 @@ export const handlePostFirmClientsImport = async (req: Request, res: Response) =
     seenNames.add(key);
 
     try {
-      // R15-04: case-insensitive, within the firm's clients.
-      const existing = await findDuplicateClient(ctx, validated.value.name);
-      if (existing) {
-        results.errors.push({
-          row: i + 1,
+      const { company } = await provisionFirmClient(
+        ctx,
+        {
           name: validated.value.name,
-          error: "A client with this name already exists",
-          field: "name",
-        });
-        continue;
-      }
-
-      const company = await storage.createCompany({
-        name: validated.value.name,
-        baseCurrency: "AED",
-        locale: "en",
-        companyType: "client",
-        trnVatNumber: validated.value.trnVatNumber || undefined,
-        industry: validated.value.industry || undefined,
-        legalStructure: validated.value.legalStructure || undefined,
-        contactEmail: validated.value.contactEmail || undefined,
-        contactPhone: validated.value.contactPhone || undefined,
-        businessAddress: validated.value.businessAddress || undefined,
-        emirate: validated.value.emirate || "dubai",
-        vatFilingFrequency: validated.value.vatFilingFrequency || "quarterly",
-        vatPeriodStartMonth: validated.value.vatPeriodStartMonth,
-        fiscalYearStartMonth: validated.value.fiscalYearStartMonth,
-        corporateTaxId: validated.value.corporateTaxId || undefined,
-        registrationNumber: validated.value.registrationNumber || undefined,
-        websiteUrl: validated.value.websiteUrl || undefined,
-      });
-
-      await upsertClientServicePlan(
-        company.id,
-        userId,
-        validated.value.serviceScope ?? DEFAULT_CLIENT_SERVICE_CODES
+          baseCurrency: "AED",
+          locale: "en",
+          companyType: "client",
+          trnVatNumber: validated.value.trnVatNumber || undefined,
+          industry: validated.value.industry || undefined,
+          legalStructure: validated.value.legalStructure || undefined,
+          contactEmail: validated.value.contactEmail || undefined,
+          contactPhone: validated.value.contactPhone || undefined,
+          businessAddress: validated.value.businessAddress || undefined,
+          emirate: validated.value.emirate || "dubai",
+          vatFilingFrequency: validated.value.vatFilingFrequency || "quarterly",
+          vatPeriodStartMonth: validated.value.vatPeriodStartMonth,
+          fiscalYearStartMonth: validated.value.fiscalYearStartMonth,
+          corporateTaxId: validated.value.corporateTaxId || undefined,
+          registrationNumber: validated.value.registrationNumber || undefined,
+          websiteUrl: validated.value.websiteUrl || undefined,
+        },
+        validated.value.serviceScope,
+        "Bulk-imported firm"
       );
-
-      await seedChartOfAccounts(company.id);
-      await linkNewClientToFirm(ctx, company.id);
-
-      await storage.createActivityLog({
-        userId,
-        companyId: company.id,
-        action: "create",
-        entityType: "company",
-        entityId: company.id,
-        description: `Bulk-imported firm client: ${company.name}`,
-      });
 
       results.created.push({ id: company.id, name: company.name });
     } catch (err: unknown) {
@@ -565,6 +568,7 @@ export const handlePostFirmClientsImport = async (req: Request, res: Response) =
         row: i + 1,
         name: validated.value.name,
         error: errorMessage(err) ?? "Unknown error",
+        ...(err instanceof DomainError && err.code === "CLIENT_DUPLICATE" ? { field: "name" } : {}),
       });
     }
   }

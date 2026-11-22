@@ -42,12 +42,31 @@ describe("X6d compliance tracks (shared by status view and list pills)", () => {
     expect(none.reportBy).toBeNull();
     expect(none.reporting).toBe("not_required");
   });
-  it("prefers the stored document tracks", () => {
+  it("shows delivered only when the stored track includes a recipient receipt", () => {
     const t = deriveInvoiceTracks({
       ...base,
-      doc: { deliveryStatus: "delivered", reportingStatus: "reported" },
+      doc: {
+        provider: "complyance",
+        providerMessageId: "provider-document",
+        providerStatus: "delivery_success",
+        deliveryStatus: "delivered",
+        reportingStatus: "reported",
+        validation: { submission: { reportingEvidence: { reported: "2026-03-04T09:00:00Z" } } },
+      },
     });
     expect(t).toMatchObject({ delivery: "delivered", reporting: "reported", overdue: false });
+    const missingReference = deriveInvoiceTracks({
+      ...base,
+      doc: {
+        provider: "complyance",
+        providerStatus: "delivery_success",
+        deliveryStatus: "delivered",
+      },
+    });
+    expect(missingReference).toMatchObject({
+      delivery: "queued",
+      deliveryConfirmationUnavailable: true,
+    });
   });
 });
 

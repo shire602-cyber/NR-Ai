@@ -2,7 +2,6 @@
  * Bank-feed provider adapter contract (W3-C, R06-19). Adapters are pure HTTP clients: they never
  * touch the database. Amounts are integer fils (shared/money.ts), dates are YYYY-MM-DD.
  */
-import type { CapabilityId } from "../../../shared/capabilities";
 import type { BankFeedProviderId } from "../../../shared/validators/banking";
 
 export interface FeedTokens {
@@ -44,7 +43,6 @@ export type FetchLike = (
 
 export interface BankFeedAdapter {
   id: BankFeedProviderId;
-  capability: CapabilityId;
   label: string;
   /** Env vars present (names only). */
   isConfigured(): boolean;

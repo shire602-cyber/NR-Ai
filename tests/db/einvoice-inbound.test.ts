@@ -100,6 +100,34 @@ describe("W4-C inbound e-invoices → draft bills", () => {
     ).toEqual([]);
   });
 
+  it("compares the entire buyer VAT TRN independently of a matching 0235 number", async () => {
+    process.env.EINVOICE_INBOUND_WEBHOOK_SECRET = SECRET;
+    const t = await tenant();
+    const xml = supplierInvoice({ buyerTrn: BUYER_TRN.slice(0, 10) + "99903" });
+    const result = await deliver(t, xml);
+    expect(result.status).toBe(422);
+    expect(result.body.code).toBe("EINVOICE_INBOUND_WRONG_RECIPIENT");
+  });
+
+  it("matches an explicitly configured Peppol scheme and value without treating it as the TIN", async () => {
+    process.env.EINVOICE_INBOUND_WEBHOOK_SECRET = SECRET;
+    const endpoint = "9876543210128";
+    const t = await h.createTenant({
+      companyColumns: {
+        trn_vat_number: BUYER_TRN,
+        peppol_scheme: "0088",
+        peppol_participant_id: endpoint,
+      },
+    });
+    const xml = supplierInvoice().replace(
+      `schemeID="0235">${BUYER_TRN.slice(0, 10)}`,
+      `schemeID="0088">${endpoint}`
+    );
+    const result = await deliver(t, xml);
+    expect(result.status, result.text).toBe(201);
+    expect(result.body.status).toBe("bill_created");
+  });
+
   it("[R04-23] is disabled (503) without a webhook secret", async () => {
     const t = await tenant();
     const r = await deliver(t, supplierInvoice());

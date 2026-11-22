@@ -33,11 +33,13 @@ import {
 import {
   FIRM_ROLE_COMPANY_ROLE,
   FIRM_ROLES,
+  firmRoleHasPermission,
   firmRoleSeesAllClients,
   isFirmRole,
+  type FirmPermission,
   type FirmRole,
 } from "../../../shared/access";
-import { COMPANY_ROLES } from "../../../shared/permissions";
+import { COMPANY_ROLES, normalizeCompanyRole } from "../../../shared/permissions";
 
 /** Seeded by migration 0108. */
 export const NR_FIRM_ID = "00000000-0000-4000-8000-000000000001";
@@ -116,6 +118,70 @@ export async function resolveFirmContext(
   return null;
 }
 
+/** Re-read middleware's firm context while holding the actor and selected firm membership. */
+export async function lockFirmLinkAuthority(
+  expected: Pick<FirmContext, "firmId" | "userId" | "isNr">,
+  permission: FirmPermission,
+  tx: Pick<Executor, "select">
+): Promise<FirmContext> {
+  await tx.select({ id: users.id }).from(users).where(eq(users.id, expected.userId)).for("share");
+  await tx
+    .select({ id: firmMembers.id })
+    .from(firmMembers)
+    .where(eq(firmMembers.userId, expected.userId))
+    .for("share");
+  const [firm] = await tx
+    .select({ status: firms.status })
+    .from(firms)
+    .where(eq(firms.id, expected.firmId))
+    .for("share");
+  const current = await resolveFirmContext({ id: expected.userId }, tx);
+  if (
+    !current ||
+    current.firmId !== expected.firmId ||
+    current.isNr !== expected.isNr ||
+    firm?.status !== "active" ||
+    (!current.platformAdmin && !firmRoleHasPermission(current.role, permission))
+  ) {
+    throw new DomainError("FIRM_PERMISSION_DENIED", 403, { permission });
+  }
+  return current;
+}
+
+/** Serialize company-scoped link changes with Team membership writes. */
+export async function lockClientCompany(companyId: string, tx: Pick<Executor, "select">) {
+  const [company] = await tx
+    .select({ id: companies.id })
+    .from(companies)
+    .where(and(eq(companies.id, companyId), isNull(companies.deletedAt)))
+    .for("no key update");
+  if (!company) throw new DomainError("CLIENT_NOT_FOUND", 404);
+}
+
+export async function assertClientOwner(
+  userId: string,
+  companyId: string,
+  tx: Pick<Executor, "select">
+) {
+  const [account] = await tx
+    .select({ userType: users.userType })
+    .from(users)
+    .where(eq(users.id, userId))
+    .for("share");
+  const [membership] = await tx
+    .select({ role: companyUsers.role })
+    .from(companyUsers)
+    .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, userId)))
+    .for("share");
+  if (
+    !account ||
+    account.userType === "client_portal" ||
+    normalizeCompanyRole(membership?.role) !== "owner"
+  ) {
+    throw new DomainError("COMPANY_OWNER_REQUIRED", 403);
+  }
+}
+
 /** SQL predicate on `companies`: the company belongs to the firm's client set. */
 export function firmClientCondition(firmId: string, isNr: boolean): SQL {
   const activeLink = sql`exists (select 1 from firm_client_links fcl where fcl.company_id = ${companies.id} and fcl.firm_id = ${firmId} and fcl.status = 'active')`;
@@ -148,7 +214,8 @@ function legacyTeamRoleSave(companyId: SqlValue, userId: SqlValue, createdAt: Sq
       and change.resource_type = 'company_user' and change.action = 'team.role_change'
       and change.created_at >= edited.created_at
       and ${details} #>> '{after,userId}' = edited.user_id::text
-      and ${details} #>> '{after,role}' = edited.role
+      and ${details} #>> '{before,userId}' = edited.user_id::text
+      and ${details} #>> '{after,role}' in ('admin', 'accountant', 'bookkeeper', 'viewer')
       and ${details} #>> '{before,role}' in ('accountant', 'bookkeeper', 'viewer'))`;
 }
 
@@ -202,12 +269,7 @@ function verifiedDirectAcceptance(companyId: SqlValue, userId: SqlValue) {
       )})`;
 }
 
-function directInviteGrantor(
-  companyId: SqlValue,
-  actorId: SqlValue,
-  role: SqlValue,
-  history?: SQL
-) {
+function directInviteGrantor(companyId: SqlValue, actorId: SqlValue, role: SqlValue) {
   return sql`exists (
     select 1 from company_users grantor
     join users grantor_user on grantor_user.id = grantor.user_id
@@ -220,7 +282,6 @@ function directInviteGrantor(
             ${legacyTeamRoleSave(sql`origin.company_id`, sql`origin.user_id`, sql`origin.created_at`)}
             and not (${verifiedDirectAcceptance(sql`origin.company_id`, sql`origin.user_id`)})
           )))
-      ${history ?? sql``}
   )`;
 }
 
@@ -244,6 +305,65 @@ export async function canAuthorizeDirectCompanyInvite(
   return !!company;
 }
 
+/** The column pair is ordered within an audit chain even for events in the same millisecond. */
+function eventAfterAcceptance(eventTime: SQL, eventSequence: SQL): SQL {
+  return sql`(case when ${eventSequence} is not null and accepted.seq is not null
+    then ${eventSequence} > accepted.seq else ${eventTime} > accepted.created_at end)`;
+}
+
+/**
+ * Reconstruct the inviter's authority on the exact membership at consent. A later edit's
+ * previous role is evidence about the acceptance, while today's role only applies if the
+ * lifetime has no later edit. A removed member needs a pre-acceptance audit naming its ID.
+ * This query runs inside the accepted invitation's company audit chain.
+ */
+function historicalInviteGrantor() {
+  const changed = auditDetails(sql`changed.details`);
+  const retired = auditDetails(sql`retired.details`);
+  const known = auditDetails(sql`known.details`);
+  return sql`exists (
+    select 1 from (
+      select member.id::text as id, member.created_at as started_at, member.role as last_role,
+        true as current_lifetime
+      from company_users member
+      where member.company_id = ci.company_id and member.user_id = ci.invited_by
+        and member.created_at <= ci.accepted_at and member.created_at <= accepted.created_at
+      union all
+      select retired.resource_id, null, ${retired} #>> '{before,role}', false
+      from audit_logs retired
+      where retired.company_id = ci.company_id and retired.resource_type = 'company_user'
+        and retired.action = 'team.remove' and ${retired} #>> '{before,userId}' = ci.invited_by::text
+        and ${eventAfterAcceptance(sql`retired.created_at`, sql`retired.seq`)}
+        and exists (select 1 from audit_logs known
+          where known.company_id = ci.company_id and known.resource_type = 'company_user'
+            and known.resource_id = retired.resource_id and known.action = 'team.role_change'
+            and ${known} #>> '{after,userId}' = ci.invited_by::text
+            and not ${eventAfterAcceptance(sql`known.created_at`, sql`known.seq`)}
+        )
+    ) grantor
+    join users account on account.id = ci.invited_by and account.user_type <> 'client_portal'
+    left join lateral (
+      select ${changed} #>> '{before,role}' as before_role
+      from audit_logs changed
+      where changed.company_id = ci.company_id and changed.resource_type = 'company_user'
+        and changed.resource_id = grantor.id and changed.action = 'team.role_change'
+        and ${changed} #>> '{before,userId}' = ci.invited_by::text
+        and ${eventAfterAcceptance(sql`changed.created_at`, sql`changed.seq`)}
+      order by (case when accepted.seq is not null then changed.seq end) nulls last, changed.created_at
+      limit 1
+    ) next_change on true
+    where (coalesce(next_change.before_role, grantor.last_role) = 'owner' or (
+      coalesce(next_change.before_role, grantor.last_role) = 'admin' and ci.role <> 'owner'
+    ))
+    and not exists (select 1 from firm_company_grants origin
+      where origin.company_id = ci.company_id and origin.user_id = ci.invited_by
+        and origin.created_at <= ci.accepted_at
+        and (not grantor.current_lifetime or origin.created_at >= grantor.started_at)
+        and (origin.created_membership or ${legacyTeamRoleSave(sql`origin.company_id`, sql`origin.user_id`, sql`origin.created_at`)})
+    )
+  )`;
+}
+
 function provenCompanyInvite(companyId: SqlValue, userId: SqlValue) {
   const details = auditDetails(sql`accepted.details`);
   return sql`select ci.role from company_invitations ci
@@ -261,17 +381,7 @@ function provenCompanyInvite(companyId: SqlValue, userId: SqlValue) {
       and lower(invitee.email) = lower(ci.email)
       and ${details} #>> '{after,role}' = ci.role
       and ${acceptanceMatchesMembership(details, sql`target.id`, sql`target.created_at`, sql`ci.accepted_at`, sql`accepted.created_at`)}
-      and ${directInviteGrantor(
-        sql`ci.company_id`,
-        sql`ci.invited_by`,
-        sql`ci.role`,
-        sql`
-        and grantor.created_at <= ci.created_at
-        and not exists (select 1 from audit_logs role_change
-          where role_change.company_id = ci.company_id and role_change.resource_id = grantor.id::text
-            and role_change.action = 'team.role_change' and role_change.created_at >= ci.created_at)
-      `
-      )}
+      and ${historicalInviteGrantor()}
       and exists (select 1 from audit_logs issued
         where issued.company_id = ci.company_id and issued.resource_id = ci.id::text
           and issued.resource_type = 'company_invitation' and issued.user_id = ci.invited_by
@@ -595,7 +705,7 @@ export async function grantCompanyAccess(
   if (created) {
     await grant.onConflictDoUpdate({
       target: [firmCompanyGrants.firmId, firmCompanyGrants.userId, firmCompanyGrants.companyId],
-      set: { createdMembership: true },
+      set: { createdMembership: true, createdAt: sql`excluded.created_at` },
     });
   } else {
     await grant.onConflictDoNothing();
@@ -614,11 +724,17 @@ export async function revokeCompanyAccess(
     isNr: boolean;
     companyId: string;
     userId?: string;
-    disconnect?: { linkId?: string; actorId: string; reason: string | null };
+    disconnect?: {
+      linkId?: string;
+      actorId: string;
+      reason: string | null;
+      authority: "client_owner" | "firm.clients.link" | "firm.clients.archive";
+    };
   },
   exec?: Executor
 ): Promise<{ removedMemberships: number }> {
   if (!exec) return db.transaction((tx) => revokeCompanyAccess(input, tx));
+  if (input.disconnect) await lockClientCompany(input.companyId, exec);
   const grantWhere = and(
     eq(firmCompanyGrants.firmId, input.firmId),
     eq(firmCompanyGrants.companyId, input.companyId),
@@ -644,7 +760,16 @@ export async function revokeCompanyAccess(
   if (input.disconnect) {
     // Staff assignment locks the user before the link. Keep this order while committing the
     // link change, grants and assignments together.
-    const { linkId, actorId, reason } = input.disconnect;
+    const { linkId, actorId, reason, authority } = input.disconnect;
+    if (authority === "client_owner") {
+      await assertClientOwner(actorId, input.companyId, exec);
+    } else {
+      await lockFirmLinkAuthority(
+        { firmId: input.firmId, isNr: input.isNr, userId: actorId },
+        authority,
+        exec
+      );
+    }
     const [link] = await exec
       .update(firmClientLinks)
       .set({
@@ -725,8 +850,8 @@ export async function revokeCompanyAccess(
 }
 
 /** Active link of a company (any firm), if any. */
-export async function activeLinkForCompany(companyId: string) {
-  const [row] = await db
+export async function activeLinkForCompany(companyId: string, conn: Pick<Executor, "select"> = db) {
+  const [row] = await conn
     .select()
     .from(firmClientLinks)
     .where(and(eq(firmClientLinks.companyId, companyId), eq(firmClientLinks.status, "active")))

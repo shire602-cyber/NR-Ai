@@ -21,12 +21,11 @@ import {
   BANK_FORMAT_LABELS,
   importFormatLabel,
   parseBankCsvText,
-  parseBankStatement,
   toLegacyTransactions,
   type BankParseResult,
   type ParseOptions,
 } from "../services/bank-statement-parser.service";
-import { importStatementRows } from "../services/bank-import.service";
+import { importStatementRows, parseStatementCsv } from "../services/bank-import.service";
 import {
   applyMatch,
   assertLinkableGlAccount,
@@ -177,12 +176,6 @@ function statementOptions(body: StatementRequestBody): ParseOptions {
   if (body.format) options.format = body.format;
   if (body.mapping) options.mapping = body.mapping;
   return options;
-}
-
-function assertStatementKind(parsed: BankParseResult, expectedKind?: "csv"): void {
-  if (expectedKind && parsed.kind !== expectedKind) {
-    throw new DomainError("STATEMENT_CSV_REQUIRED", 400);
-  }
 }
 
 function summarizeRowErrors(parsed: BankParseResult): string[] {
@@ -401,15 +394,15 @@ export function registerBankStatementRoutes(app: Express) {
 
       let parsed: BankParseResult;
       try {
-        parsed = await parseBankStatement(statementBytes(req.body), statementOptions(req.body));
+        parsed = parseStatementCsv(statementBytes(req.body), statementOptions(req.body));
       } catch (err) {
+        if (err instanceof DomainError) throw err;
         log.warn({ err: (err as Error).message }, "Bank statement preview failed to parse");
         return res
           .status(400)
           .json({ message: "Could not read the statement file", code: "STATEMENT_UNREADABLE" });
       }
 
-      assertStatementKind(parsed, req.body.expectedKind);
       const errorRows = parsed.rows.filter((r) => r.errors.length > 0);
       res.json({
         kind: parsed.kind,
@@ -450,7 +443,7 @@ export function registerBankStatementRoutes(app: Express) {
   );
 
   /**
-   * Import a statement (CSV / XLSX / MT940 / CAMT.053 / OFX) into a managed bank account.
+   * Import a CSV statement into a managed bank account.
    * Every import is a batch (history + undo) with an opening-balance continuity check.
    */
   app.post(
@@ -467,14 +460,14 @@ export function registerBankStatementRoutes(app: Express) {
 
       let parsedFile: BankParseResult;
       try {
-        parsedFile = await parseBankStatement(statementBytes(req.body), statementOptions(req.body));
+        parsedFile = parseStatementCsv(statementBytes(req.body), statementOptions(req.body));
       } catch (err) {
+        if (err instanceof DomainError) throw err;
         log.warn({ err: (err as Error).message }, "Bank statement import failed to parse");
         return res
           .status(400)
           .json({ message: "Could not read the statement file", code: "STATEMENT_UNREADABLE" });
       }
-      assertStatementKind(parsedFile, req.body.expectedKind);
       const format = parsedFile.format;
       const parseErrors = summarizeRowErrors(parsedFile);
       const validRows = parsedFile.rows.filter((r) => r.errors.length === 0 && r.date);

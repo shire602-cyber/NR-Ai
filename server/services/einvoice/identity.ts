@@ -32,6 +32,7 @@ import {
 } from "../../../shared/validators/einvoice-identity";
 import { providerModule, registeredProviderIds } from "./providers/registry";
 import { companyProviderHealth } from "./providers/company-provider";
+import { currentOnboardingEntity, getLegalEntity } from "./legal-entities";
 
 type CompanyRow = Company;
 
@@ -217,7 +218,7 @@ export interface PartnerView {
   chosen: string | null;
   /** Configured provider id for this company, if any. */
   liveProvider: string | null;
-  /** "Verify with partner" runs only when the chosen partner is the live one. */
+  /** "Verify with partner" runs only for a current taxpayer registration. */
   verifyAvailable: boolean;
   appointment: {
     state: "not_started" | "awaiting_approval" | "approver_done" | "self_confirmed" | "verified";
@@ -241,31 +242,22 @@ function partnerOptions(live: string | null): PartnerOption[] {
   });
 }
 
-async function legalEntityStatusFor(companyId: string, provider: string, environment: string) {
-  const rows = await db
-    .select({ status: einvoiceLegalEntities.status })
-    .from(einvoiceLegalEntities)
-    .where(
-      and(
-        eq(einvoiceLegalEntities.companyId, companyId),
-        eq(einvoiceLegalEntities.provider, provider),
-        eq(einvoiceLegalEntities.environment, environment)
-      )
-    )
-    .limit(1);
-  return rows[0]?.status ?? null;
-}
-
 export async function partnerView(company: CompanyRow): Promise<PartnerView> {
   const health = await companyProviderHealth(company);
   const live = health.provider?.id ?? null;
   const partners = partnerOptions(live);
   const chosen = health.chosenProvider;
-  const verifyAvailable = live !== null;
-  const leStatus =
+  const entity =
     live && health.environment
-      ? await legalEntityStatusFor(company.id, live, health.environment)
-      : null;
+      ? currentOnboardingEntity(
+          company,
+          await getLegalEntity(company.id, live, health.environment),
+          live,
+          health.environment
+        )
+      : undefined;
+  const verifyAvailable = Boolean(entity);
+  const leStatus = entity?.status ?? null;
   const links = await listApproverLinks(company.id);
   const openLink = links.some((l) => approverLinkState(l) === "active");
   // The approver ticked "Done" in EmaraTax: the client's next step is to verify with the partner.
@@ -505,7 +497,7 @@ export type FirmEInvoicingState =
 
 /**
  * One state per client for the NR firm console. "connected" needs the live, configured
- * provider AND an active legal entity there, so with no provider it never appears.
+ * provider AND an active legal entity for the current taxpayer in that environment.
  */
 export async function firmEInvoicingStates(
   companyIds: string[]
@@ -516,6 +508,7 @@ export async function firmEInvoicingStates(
   >();
   if (companyIds.length === 0) return out;
   const rows = await db.select().from(companies).where(inArray(companies.id, companyIds));
+  const companyById = new Map(rows.map((company) => [company.id, company]));
   const healthByCompany = new Map(
     await Promise.all(
       rows.map(async (company) => [company.id, await companyProviderHealth(company)] as const)
@@ -528,17 +521,19 @@ export async function firmEInvoicingStates(
     .map((company) => company.id);
   if (configuredIds.length) {
     const les = await db
-      .select({
-        companyId: einvoiceLegalEntities.companyId,
-        provider: einvoiceLegalEntities.provider,
-        environment: einvoiceLegalEntities.environment,
-        status: einvoiceLegalEntities.status,
-      })
+      .select()
       .from(einvoiceLegalEntities)
       .where(inArray(einvoiceLegalEntities.companyId, configuredIds));
     for (const le of les) {
       const health = healthByCompany.get(le.companyId);
-      if (health?.provider?.id !== le.provider || health.environment !== le.environment) continue;
+      const company = companyById.get(le.companyId);
+      if (
+        !company ||
+        health?.provider?.id !== le.provider ||
+        health.environment !== le.environment ||
+        !currentOnboardingEntity(company, le, le.provider, le.environment)
+      )
+        continue;
       if (le.status === "active") active.add(le.companyId);
       else if (le.status === "reserved" || le.status === "pending") pending.add(le.companyId);
     }

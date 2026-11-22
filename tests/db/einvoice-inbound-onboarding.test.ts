@@ -7,6 +7,8 @@ const h = useHarness();
 const BUYER_TRN = "100765432100003";
 const BUYER_TIN = "1007654321";
 const OWNER = "inbound-example-legal-entity";
+const REPLACEMENT_TIN = "1009999999";
+const REPLACEMENT_TRN = "100999999900003";
 
 function simulatedProvider(xml: string, owner = OWNER, incoming: InboundListing[] = []) {
   const inboundOwner = vi.fn(async () => ({ legalEntityId: owner, tin: null }));
@@ -60,7 +62,9 @@ async function enqueueReceived(companyId: string, payload: Record<string, unknow
 
 describe("e-invoice inbox onboarding", () => {
   it("holds an event without using its retry budget and processes it once after scoped activation", async () => {
-    const t = await h.createTenant({ companyColumns: { trn_vat_number: BUYER_TRN } });
+    const t = await h.createTenant({
+      companyColumns: { trn_vat_number: BUYER_TRN, einvoice_partner: "acube" },
+    });
     const other = await h.createSecondTenant();
     const { runProviderEvents } = await import("../../server/services/einvoice/provider-events");
     const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
@@ -113,7 +117,9 @@ describe("e-invoice inbox onboarding", () => {
   ])(
     "recovers an event previously ignored before activation ($note)",
     async ({ note, hasActivationTimestamp }) => {
-      const t = await h.createTenant({ companyColumns: { trn_vat_number: BUYER_TRN } });
+      const t = await h.createTenant({
+        companyColumns: { trn_vat_number: BUYER_TRN, einvoice_partner: "acube" },
+      });
       const { runProviderEvents } = await import("../../server/services/einvoice/provider-events");
       const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
       const receipt = await enqueueReceived(t.company.id, { documentId: "legacy-waiting-event" });
@@ -166,7 +172,10 @@ describe("e-invoice inbox onboarding", () => {
   });
 
   it("rechecks previously ignored receipt validation only with independent ownership and correct buyer", async () => {
-    const t = await h.createTenant({ companyColumns: { einvoice_tin: BUYER_TIN } });
+    const t = await h.createTenant({
+      vatRegistered: false,
+      companyColumns: { einvoice_tin: BUYER_TIN, einvoice_partner: "acube" },
+    });
     const { runProviderEvents } = await import("../../server/services/einvoice/provider-events");
     const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
     await upsertLegalEntity(t.company.id, "acube", "sandbox", BUYER_TIN, {
@@ -210,7 +219,9 @@ describe("e-invoice inbox onboarding", () => {
   });
 
   it("keeps receipts queued without configuration and recovers a formerly dead receipt", async () => {
-    const t = await h.createTenant({ companyColumns: { trn_vat_number: BUYER_TRN } });
+    const t = await h.createTenant({
+      companyColumns: { trn_vat_number: BUYER_TRN, einvoice_partner: "acube" },
+    });
     const { runProviderEvents } = await import("../../server/services/einvoice/provider-events");
     const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
     await upsertLegalEntity(t.company.id, "acube", "sandbox", BUYER_TIN, {
@@ -251,7 +262,10 @@ describe("e-invoice inbox onboarding", () => {
   });
 
   it("rechecks a legacy active link without an activation timestamp against authenticated ownership", async () => {
-    const t = await h.createTenant({ companyColumns: { einvoice_tin: BUYER_TIN } });
+    const t = await h.createTenant({
+      vatRegistered: false,
+      companyColumns: { einvoice_tin: BUYER_TIN, einvoice_partner: "acube" },
+    });
     const { runProviderEvents } = await import("../../server/services/einvoice/provider-events");
     const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
     await upsertLegalEntity(t.company.id, "acube", "sandbox", BUYER_TIN, {
@@ -287,7 +301,10 @@ describe("e-invoice inbox onboarding", () => {
   });
 
   it("checks each provider ownership marker and the scheme-qualified source buyer", async () => {
-    const t = await h.createTenant({ companyColumns: { einvoice_tin: BUYER_TIN } });
+    const t = await h.createTenant({
+      vatRegistered: false,
+      companyColumns: { einvoice_tin: BUYER_TIN, einvoice_partner: "acube" },
+    });
     const { runProviderEvents, runProviderPoll } =
       await import("../../server/services/einvoice/provider-events");
     const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
@@ -339,7 +356,9 @@ describe("e-invoice inbox onboarding", () => {
   });
 
   it("settles a confirmed owner mismatch without fetching source or replaying on later activation", async () => {
-    const t = await h.createTenant({ companyColumns: { trn_vat_number: BUYER_TRN } });
+    const t = await h.createTenant({
+      companyColumns: { trn_vat_number: BUYER_TRN, einvoice_partner: "acube" },
+    });
     const { runProviderEvents } = await import("../../server/services/einvoice/provider-events");
     const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
     await upsertLegalEntity(t.company.id, "acube", "sandbox", BUYER_TIN, {
@@ -363,7 +382,10 @@ describe("e-invoice inbox onboarding", () => {
   });
 
   it("parks a receipt if the verified legal entity is deactivated during the source fetch", async () => {
-    const t = await h.createTenant({ companyColumns: { einvoice_tin: BUYER_TIN } });
+    const t = await h.createTenant({
+      vatRegistered: false,
+      companyColumns: { einvoice_tin: BUYER_TIN, einvoice_partner: "acube" },
+    });
     const { runProviderEvents } = await import("../../server/services/einvoice/provider-events");
     const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
     const setStatus = (status: "active" | "inactive") =>
@@ -396,8 +418,43 @@ describe("e-invoice inbox onboarding", () => {
 });
 
 describe("e-invoice poll resource selection", () => {
-  it("stops inbound discovery for the retired provider while processing its existing receipts", async () => {
+  it.each(["before listing", "during listing"])(
+    "does not discover receipts after the registered taxpayer changes %s",
+    async (when) => {
+      const t = await h.createTenant({
+        companyColumns: { trn_vat_number: BUYER_TRN, einvoice_partner: "acube" },
+      });
+      const { runProviderPoll } = await import("../../server/services/einvoice/provider-events");
+      const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
+      await upsertLegalEntity(t.company.id, "acube", "sandbox", BUYER_TIN, {
+        status: "active",
+        legalEntityId: OWNER,
+      });
+      const changeTaxpayer = () =>
+        h.sql("UPDATE companies SET trn_vat_number = $2 WHERE id = $1", [
+          t.company.id,
+          REPLACEMENT_TRN,
+        ]);
+      if (when === "before listing") await changeTaxpayer();
+      const listInbound = vi.fn(async (): Promise<InboundListing[]> => {
+        await changeTaxpayer();
+        return [{ providerMessageId: "old-taxpayer", documentType: "380", legalEntityId: OWNER }];
+      });
+      const provider = { ...simulatedProvider(await incomingXml("SUP-OLD-TAXPAYER")), listInbound };
+      expect(await runProviderPoll("acube", { companyId: t.company.id, provider })).toEqual({
+        refreshed: 0,
+        enqueued: 0,
+      });
+      expect(listInbound).toHaveBeenCalledTimes(when === "before listing" ? 0 : 1);
+      expect(
+        await h.sql("SELECT id FROM einvoice_provider_events WHERE company_id = $1", [t.company.id])
+      ).toEqual([]);
+    }
+  );
+
+  it("stops discovery across a provider switch and preserves its queued receipt without writing a bill", async () => {
     const t = await h.createTenant({
+      vatRegistered: false,
       companyColumns: { einvoice_tin: BUYER_TIN, einvoice_partner: "acube" },
     });
     const { runProviderEvents, runProviderPoll } =
@@ -426,6 +483,13 @@ describe("e-invoice poll resource selection", () => {
       processed: 1,
       failed: 0,
     });
+    expect(provider.inboundOwner).not.toHaveBeenCalled();
+    expect(
+      await h.sql("SELECT status FROM einvoice_provider_events WHERE id = $1", [queued.id])
+    ).toEqual([{ status: "ignored" }]);
+    expect(
+      await h.sql("SELECT id FROM vendor_bills WHERE company_id = $1", [t.company.id])
+    ).toEqual([]);
     expect(
       await h.sql(
         "SELECT COUNT(*)::int AS count FROM einvoice_provider_events WHERE company_id = $1",
@@ -533,7 +597,9 @@ describe("e-invoice inbox recovers incomplete purchases", () => {
   async function purchase(number: string, documentId: string, includeUuid = true) {
     const { runProviderEvents } = await import("../../server/services/einvoice/provider-events");
     const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
-    const t = await h.createTenant({ companyColumns: { trn_vat_number: BUYER_TRN } });
+    const t = await h.createTenant({
+      companyColumns: { trn_vat_number: BUYER_TRN, einvoice_partner: "acube" },
+    });
     await upsertLegalEntity(t.company.id, "acube", "sandbox", BUYER_TIN, {
       status: "active",
       legalEntityId: OWNER,
@@ -550,6 +616,42 @@ describe("e-invoice inbox recovers incomplete purchases", () => {
       );
     return { t, id, xml, run, bills };
   }
+
+  it("keeps the archived receipt but never writes a bill after taxpayer re-selection during preparation", async () => {
+    const { t, id, run, bills } = await purchase("SUP-CHANGED-BEFORE-POST", "taxpayer-write-race");
+    const registry = await import("../../server/platform/service-registry");
+    type Prepare =
+      typeof import("../../server/services/bill-payment.service").prepareDraftFromInbound;
+    const prepare = registry.resolve<Prepare>("bills.prepareDraftFromInbound");
+    registry.provide(
+      "bills.prepareDraftFromInbound",
+      (async (...args) => {
+        const write = await prepare(...args);
+        await h.sql("UPDATE companies SET einvoice_tin = $2, trn_vat_number = $3 WHERE id = $1", [
+          t.company.id,
+          REPLACEMENT_TIN,
+          REPLACEMENT_TRN,
+        ]);
+        return write;
+      }) satisfies Prepare,
+      { replace: true }
+    );
+    try {
+      await run();
+    } finally {
+      registry.provide("bills.prepareDraftFromInbound", prepare, { replace: true });
+    }
+    expect(await bills()).toEqual([]);
+    expect(
+      await h.sql(
+        "SELECT archive_id, bill_id FROM einvoice_inbound_documents WHERE company_id = $1",
+        [t.company.id]
+      )
+    ).toEqual([{ archive_id: expect.any(String), bill_id: null }]);
+    expect(await h.sql("SELECT status FROM einvoice_provider_events WHERE id = $1", [id])).toEqual([
+      { status: "ignored" },
+    ]);
+  });
 
   it("rolls back a partially written bill and finishes exactly one purchase on retry", async () => {
     const { t, id, run, bills } = await purchase("SUP-RETRY-ROLLBACK", "retry-rollback");
@@ -739,7 +841,9 @@ describe("e-invoice inbox recovers incomplete purchases", () => {
   });
 
   it("reattaches a legacy credit only to the debit note recorded for this receipt", async () => {
-    const t = await h.createTenant({ companyColumns: { trn_vat_number: BUYER_TRN } });
+    const t = await h.createTenant({
+      companyColumns: { trn_vat_number: BUYER_TRN, einvoice_partner: "acube" },
+    });
     const { runProviderEvents } = await import("../../server/services/einvoice/provider-events");
     const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
     const { createVendorCreditFromInbound } =
@@ -781,7 +885,9 @@ describe("e-invoice inbox recovers incomplete purchases", () => {
   });
 
   it("preserves an unverifiable legacy credit without enabling a second conversion", async () => {
-    const t = await h.createTenant({ companyColumns: { trn_vat_number: BUYER_TRN } });
+    const t = await h.createTenant({
+      companyColumns: { trn_vat_number: BUYER_TRN, einvoice_partner: "acube" },
+    });
     const { runProviderEvents } = await import("../../server/services/einvoice/provider-events");
     const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
     await upsertLegalEntity(t.company.id, "acube", "sandbox", BUYER_TIN, {

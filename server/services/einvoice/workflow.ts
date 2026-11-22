@@ -25,6 +25,7 @@ import { db } from "../../db";
 import {
   assertCanVerifyEInvoiceTracking,
   canRetryOriginalRejectedNumber,
+  clearedEInvoiceSource,
   correctableComplyanceReference,
   needsLegacySubmissionRecovery,
 } from "./legacy-tracking";
@@ -60,8 +61,12 @@ import { invoiceReportingDeadline, invoiceReportingRequired } from "./reporting"
 import { frozenEInvoiceDispatchIssue } from "../einvoice.service";
 import {
   archiveEInvoiceXml,
+  assertSubmittedArchiveRevision,
+  conflictingClearanceRevision,
+  correctionCandidateReporting,
   recordedReportingRequired,
   documentSubmissionMetadata,
+  documentSubmissionSnapshot,
   documentValidation,
   dueEInvoiceRetries,
   getEInvoiceDocument,
@@ -78,6 +83,7 @@ import {
 } from "./store";
 import { applyTracks, recordValidationEvent, type HistorySource } from "./history";
 import {
+  canReadComplyanceReporting,
   deliveryFromLegacy,
   isReportingObservation,
   legacyFromProviderTracks,
@@ -91,7 +97,7 @@ import {
 } from "./tracks";
 import { assertLegalEntityCanSend, getLegalEntity, requireCompanyTin } from "./legal-entities";
 import { isUaeTin, PEPPOL_SCHEME_UAE_TIN, tinFromTrn } from "./pint-ae-codes";
-import { attr, first, parseXml, text, textAt } from "./dom";
+import { first, parseXml, partyPeppolEndpoint, partyVatTrn, textAt } from "./dom";
 
 const log = createLogger("einvoice-workflow");
 
@@ -138,9 +144,12 @@ function providerContext(legalEntity: EInvoiceLegalEntity | null): EInvoiceProvi
   return { legalEntity: legalEntity ? { providerDetails: legalEntity.providerDetails } : null };
 }
 
-function entitySourceName(entity: EInvoiceLegalEntity | null | undefined): string | null {
+function entitySourceField(
+  entity: EInvoiceLegalEntity | null | undefined,
+  field: "sourceName" | "sourceVersion"
+): string | null {
   const details = entity?.providerDetails as Record<string, unknown> | null;
-  return typeof details?.sourceName === "string" ? details.sourceName : null;
+  return typeof details?.[field] === "string" ? details[field] : null;
 }
 
 const AMBIGUOUS_CODES: ReadonlySet<string> = new Set([
@@ -217,6 +226,14 @@ function needsLink(): EInvoiceProviderResult {
   };
 }
 
+function correctionRevision(
+  built: PreparedSubmission,
+  reportingRequired: boolean | null,
+  reportBy: string | null
+) {
+  return { xml: built.xml, hash: built.hash, uuid: built.uuid, reportingRequired, reportBy };
+}
+
 function transportFailure(): EInvoiceProviderResult {
   return {
     providerMessageId: "",
@@ -279,6 +296,22 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
       return { ok: false, status: 404, code: "NOT_FOUND", message: "Company not found." };
     const existing = await getEInvoiceDocument(company.id, fresh.id, tx);
     const correctionOf = args.regenerate ? correctableComplyanceReference(fresh, existing) : null;
+    if (
+      correctionOf &&
+      (await clearedEInvoiceSource(
+        fresh,
+        existing,
+        { provider: "complyance", messageId: correctionOf },
+        tx
+      ))
+    ) {
+      return {
+        ok: false,
+        status: 409,
+        code: "EINVOICE_ALREADY_SUBMITTED",
+        message: "A cleared revision of this e-invoice is already archived.",
+      };
+    }
     const definitiveAcubeRefusal = canRetryOriginalRejectedNumber(fresh, existing);
     const verifiedEmailRequired = !!correctionOf || definitiveAcubeRefusal;
     if (NEW_DOCUMENT_REQUIRED_CODES.has(existing?.lastErrorCode ?? "")) {
@@ -366,7 +399,7 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
       verifiedEmailRequired &&
       (entity?.tin !== original?.supplierTin ||
         (entity?.legalEntityId ?? null) !== original?.legalEntityId ||
-        entitySourceName(entity) !== original?.sourceName)
+        entitySourceField(entity, "sourceName") !== original?.sourceName)
     )
       return retryProviderChanged();
     const scope =
@@ -484,7 +517,7 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
       einvoiceStatus: "queued",
       einvoiceProvider: provider.name,
       einvoiceProviderMessageId: null,
-      einvoiceSubmittedAt: null,
+      einvoiceSubmittedAt: correctionOf ? fresh.einvoiceSubmittedAt : null,
       einvoiceStatusDetail: null,
     });
     await recordValidationEvent(company.id, invoice.id, true, { source, now }, tx);
@@ -509,7 +542,7 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
           clearedAt: null,
           deliveredAt: null,
           reportedAt: null,
-          submittedAt: null,
+          submittedAt: correctionOf ? existing?.submittedAt : null,
           lastError: null,
           nextRetryAt: now,
           rejectionReasons: null,
@@ -527,7 +560,8 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
               supplierTin: entity?.tin ?? null,
               supplierTrn: company.trnVatNumber ?? null,
               legalEntityId: entity?.legalEntityId ?? null,
-              sourceName: entitySourceName(entity),
+              sourceName: entitySourceField(entity, "sourceName"),
+              sourceVersion: entitySourceField(entity, "sourceVersion"),
               scope,
               actorId: args.actorId ?? null,
               providerAttempted: triedProvider,
@@ -537,6 +571,10 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
               correctionOriginalHash: originalXml?.hash ?? null,
               correctionOriginalValidation: originalXml?.validation ?? null,
               correctionOriginalReporting,
+              confirmedRevisionHash: original?.confirmedRevisionHash ?? originalXml?.hash ?? null,
+              correctionCandidate: correctionOf
+                ? correctionRevision(built, required, reportBy)
+                : null,
             },
           },
           validatedAt: now,
@@ -639,7 +677,27 @@ async function claimQueuedSubmission(
         provider: provider.name,
         now,
         recordDelivery: true,
-        document: { attempts: attempt, submitClaimedAt: now },
+        document: {
+          attempts: attempt,
+          submitClaimedAt: now,
+          // A correction queued before this field was introduced still freezes the candidate
+          // in the claim transaction, which commits before any provider request.
+          ...(metadata.correctionOf && !metadata.correctionCandidate
+            ? {
+                validation: {
+                  ...documentValidation(doc),
+                  submission: {
+                    ...documentSubmissionSnapshot(doc),
+                    correctionCandidate: correctionRevision(
+                      built,
+                      recordedReportingRequired(doc),
+                      doc.reportBy
+                    ),
+                  },
+                },
+              }
+            : {}),
+        },
       },
       tx
     );
@@ -802,6 +860,7 @@ async function dispatchQueuedSubmission(
             supplierTrn: metadata.supplierTrn,
             legalEntityId: metadata.legalEntityId,
             sourceName: metadata.sourceName,
+            sourceVersion: metadata.sourceVersion,
           },
           context
         )
@@ -860,6 +919,7 @@ async function stopQueuedSubmission(
         document: {
           status: "submitted",
           providerMessageId: pin.correctionOf,
+          submittedAt: current?.submittedAt ?? null,
           nextRetryAt: null,
           submitClaimedAt: null,
           uuid: original.uuid,
@@ -878,6 +938,7 @@ async function stopQueuedSubmission(
               correctionOriginalReporting: null,
               correctionUncertain: ambiguous,
               correctionCandidateHash: ambiguous ? (current?.xmlHash ?? null) : null,
+              correctionCandidate: ambiguous ? pin.correctionCandidate : null,
             },
           },
         },
@@ -1059,6 +1120,11 @@ async function persistSubmissionOutcome(args: {
           correctionOriginalReporting: null,
           correctionUncertain,
           correctionCandidateHash: correctionUncertain ? built.hash : null,
+          correctionCandidate: correctionUncertain ? metadata.correctionCandidate : null,
+          confirmedRevisionHash:
+            provider.name === "complyance" && result.handedOver && !originalStillTracked
+              ? built.hash
+              : metadata.confirmedRevisionHash,
         },
       }
     : current.validation;
@@ -1075,11 +1141,13 @@ async function persistSubmissionOutcome(args: {
       einvoiceXml: original.xml,
       einvoiceHash: original.sha256,
       einvoiceUuid: original.uuid,
+      einvoiceSubmittedAt: invoice.einvoiceSubmittedAt,
     });
     Object.assign(result.document, {
       xmlHash: original.sha256,
       uuid: original.uuid,
       documentType: original.documentType,
+      submittedAt: current.submittedAt,
       validation: null,
     });
   }
@@ -1368,7 +1436,6 @@ async function frozenComplyanceSource(
 ) {
   const pin = documentSubmissionMetadata(doc);
   const id = invoice.einvoiceProviderMessageId;
-  const pinnedHash = doc.xmlHash || invoice.einvoiceHash;
   if (
     doc.companyId !== invoice.companyId ||
     doc.invoiceId !== invoice.id ||
@@ -1376,25 +1443,51 @@ async function frozenComplyanceSource(
     (invoice.einvoiceProvider && invoice.einvoiceProvider !== provider.name) ||
     pin?.environment !== provider.environment ||
     doc.providerMessageId !== id ||
-    !id ||
+    !id
+  )
+    return;
+
+  const clearance = await clearedEInvoiceSource(
+    invoice,
+    doc,
+    { provider: "complyance", messageId: id },
+    conn
+  );
+  if (clearance) {
+    return {
+      ...clearance,
+      identity: {
+        documentNumber: clearance.documentNumber,
+        supplierEndpoint: clearance.supplierEndpoint,
+        supplierTin: clearance.supplierTin,
+        supplierTrn: clearance.supplierTrn,
+        legalEntityId: pin.legalEntityId,
+        sourceName: pin.sourceName,
+      },
+    };
+  }
+
+  const pinnedHash = doc.xmlHash || invoice.einvoiceHash;
+  if (
     (doc.xmlHash && invoice.einvoiceHash && doc.xmlHash !== invoice.einvoiceHash) ||
     (pinnedHash && invoice.einvoiceXml && pinnedHash !== sha256Hex(invoice.einvoiceXml))
   )
     return;
 
+  // A resource ID is shared by every correction. Do not treat a stale mirror of an older
+  // submission as the latest handoff when the immutable archive records another revision.
+  const reference = {
+    companyId: invoice.companyId,
+    invoiceId: invoice.id,
+    provider: provider.name,
+    providerMessageId: id,
+  };
+  await assertSubmittedArchiveRevision(reference, invoice, doc, conn);
+
   const hasMirrors = !!invoice.einvoiceXml && !!invoice.einvoiceHash && !!doc.xmlHash;
   const archive = hasMirrors
     ? null
-    : await getSubmittedArchiveSource(
-        {
-          companyId: invoice.companyId,
-          invoiceId: invoice.id,
-          provider: provider.name,
-          providerMessageId: id,
-          sha256: pinnedHash,
-        },
-        conn
-      );
+    : await getSubmittedArchiveSource({ ...reference, sha256: pinnedHash }, conn);
   const xml = hasMirrors ? invoice.einvoiceXml : archive?.xml;
   const hash = pinnedHash ?? archive?.sha256;
   if (!xml || !hash || (invoice.einvoiceXml && invoice.einvoiceXml !== xml)) return;
@@ -1405,11 +1498,11 @@ async function frozenComplyanceSource(
     const uuid = textAt(root, "cbc:UUID");
     const party = first(root, "cac:AccountingSupplierParty/cac:Party");
     if (!documentNumber || !party) return;
-    const endpoint = first(party, "cbc:EndpointID");
-    const supplierTrn = textAt(party, "cac:PartyTaxScheme/cbc:CompanyID");
+    const supplierEndpoint = partyPeppolEndpoint(party);
+    const supplierTrn = partyVatTrn(party);
     const taxTin = tinFromTrn(supplierTrn);
     const supplierTin =
-      attr(endpoint, "schemeID") === PEPPOL_SCHEME_UAE_TIN ? text(endpoint) : taxTin;
+      supplierEndpoint?.scheme === PEPPOL_SCHEME_UAE_TIN ? supplierEndpoint.value : taxTin;
     if (
       !supplierTin ||
       !isUaeTin(supplierTin) ||
@@ -1427,14 +1520,18 @@ async function frozenComplyanceSource(
     return {
       identity: {
         documentNumber,
+        supplierEndpoint,
         supplierTin,
         supplierTrn,
         legalEntityId: pin.legalEntityId,
         sourceName: pin.sourceName,
+        sourceVersion: pin.sourceVersion,
       },
       xml,
       uuid,
       hash,
+      clearanceId: null,
+      clearedAt: null,
     };
   } catch {
     return;
@@ -1467,6 +1564,7 @@ export async function frozenEInvoiceOwner(
       supplierTrn: metadata.supplierTrn,
       legalEntityId: metadata.legalEntityId,
       sourceName: metadata.sourceName,
+      sourceVersion: metadata.sourceVersion,
     };
   }
   const built = frozenEInvoice(invoice, doc);
@@ -1483,10 +1581,10 @@ export async function frozenEInvoiceOwner(
     const root = parseXml(built.xml).documentElement;
     const party = first(root, "cac:AccountingSupplierParty/cac:Party");
     if (!party) return null;
-    const endpoint = first(party, "cbc:EndpointID");
+    const supplierEndpoint = partyPeppolEndpoint(party);
     const supplierTin =
       metadata.supplierTin ??
-      (attr(endpoint, "schemeID") === PEPPOL_SCHEME_UAE_TIN ? text(endpoint) : null);
+      (supplierEndpoint?.scheme === PEPPOL_SCHEME_UAE_TIN ? supplierEndpoint.value : null);
     const entity = await getLegalEntity(invoice.companyId, provider.name, provider.environment);
     const matchingEntity =
       entity &&
@@ -1497,10 +1595,12 @@ export async function frozenEInvoiceOwner(
         : null;
     return {
       documentNumber: metadata.invoiceNumber ?? invoice.number,
+      supplierEndpoint,
       supplierTin,
-      supplierTrn: metadata.supplierTrn ?? textAt(party, "cac:PartyTaxScheme/cbc:CompanyID"),
+      supplierTrn: metadata.supplierTrn ?? partyVatTrn(party),
       legalEntityId: metadata.legalEntityId ?? matchingEntity?.legalEntityId ?? null,
-      sourceName: metadata.sourceName ?? entitySourceName(matchingEntity),
+      sourceName: metadata.sourceName ?? entitySourceField(matchingEntity, "sourceName"),
+      sourceVersion: metadata.sourceVersion,
     };
   } catch {
     return null;
@@ -1518,17 +1618,12 @@ export async function refreshAndPersist(args: {
   const { invoice, company, provider } = args;
   const now = args.now ?? new Date();
   const existing = await getEInvoiceDocument(company.id, invoice.id);
-  if (hasUnverifiedComplyanceCorrection(existing))
-    return {
-      ok: false as const,
-      status: 409,
-      code: "EINVOICE_CORRECTION_REVISION_UNVERIFIED",
-      message: "The provider document ID does not establish which correction revision it accepted.",
-    };
   const outboundSource =
     provider.name === "complyance" && existing
       ? await frozenComplyanceSource(invoice, existing, provider)
       : undefined;
+  if (hasUnverifiedComplyanceCorrection(existing) && !outboundSource?.clearanceId)
+    throw conflictingClearanceRevision();
   const outboundIdentity = outboundSource?.identity;
   if (
     invoice.einvoiceProviderMessageId &&
@@ -1555,10 +1650,12 @@ export async function refreshAndPersist(args: {
     storedReportingEvidence(existing)
   );
   // An incomplete subsequent final_valid response cannot erase a verified reporting result.
-  const statusForProviderRead =
-    provider.name === "complyance" &&
-    verifiedCurrentStatus === "cleared" &&
-    storedReportingEvidence(existing) === "reported"
+  const recoveringClearance = !!outboundSource?.clearanceId && verifiedCurrentStatus === "rejected";
+  const statusForProviderRead = recoveringClearance
+    ? "submitted"
+    : provider.name === "complyance" &&
+        verifiedCurrentStatus === "cleared" &&
+        storedReportingEvidence(existing) === "reported"
       ? "accepted"
       : verifiedCurrentStatus;
   const result = await refreshEInvoiceStatus({
@@ -1568,23 +1665,41 @@ export async function refreshAndPersist(args: {
     ref,
   });
   if (!result.ok) return result;
-  const required = recordedReportingRequired(existing);
+  const candidateReporting = outboundSource?.clearanceId
+    ? correctionCandidateReporting(existing, outboundSource.hash)
+    : null;
+  const recordedRevision = existing?.xmlHash ?? invoice.einvoiceHash;
+  const replacesRevision = !!(
+    outboundSource?.clearanceId &&
+    recordedRevision &&
+    recordedRevision !== outboundSource.hash
+  );
+  const required = candidateReporting
+    ? candidateReporting.reportingRequired
+    : replacesRevision
+      ? null
+      : recordedReportingRequired(existing);
+  const reportBy = candidateReporting
+    ? candidateReporting.reportBy
+    : replacesRevision
+      ? null
+      : undefined;
   const r = result.result;
   const delivery: DeliveryStatus = r.delivery ?? deliveryFromLegacy(r.status);
   let reporting = reportingForResult(
     provider.name,
     required !== false,
     r,
-    storedReportingEvidence(existing)
+    replacesRevision ? null : storedReportingEvidence(existing)
   );
   let observedReporting =
     provider.name === "complyance" && isReportingObservation(r.reporting) ? r.reporting : null;
   if (
     required !== false &&
-    delivery === "delivered" &&
     reporting === "pending" &&
     provider.getReportingStatus &&
-    invoice.einvoiceProviderMessageId
+    invoice.einvoiceProviderMessageId &&
+    (provider.name !== "complyance" || canReadComplyanceReporting(r.providerStatus, r.errorCode))
   ) {
     try {
       const observed = await provider.getReportingStatus(invoice.einvoiceProviderMessageId, ref);
@@ -1625,7 +1740,10 @@ export async function refreshAndPersist(args: {
       current?.providerStatus !== existing?.providerStatus ||
       documentSubmissionMetadata(current)?.operationId !==
         documentSubmissionMetadata(existing)?.operationId ||
-      !canTransitionEInvoice(verifiedCurrentStatus, legacy)
+      !(
+        canTransitionEInvoice(verifiedCurrentStatus, legacy) ||
+        (recoveringClearance && legacy === "cleared")
+      )
     ) {
       return {
         ok: false as const,
@@ -1634,12 +1752,21 @@ export async function refreshAndPersist(args: {
         message: "The e-invoice changed during this status check. Refresh and try again.",
       };
     }
+    if (outboundSource) {
+      const verified = current && (await frozenComplyanceSource(fresh, current, provider, tx));
+      if (
+        verified?.hash !== outboundSource.hash ||
+        verified.clearanceId !== outboundSource.clearanceId
+      )
+        throw conflictingClearanceRevision();
+    }
     const doc = await applyTracks(
       company.id,
       invoice.id,
       {
         delivery,
         reporting,
+        reportBy,
         providerStatus: r.providerStatus ?? null,
         errorCode: failed ? (r.errorCode ?? "EINVOICE_DELIVERY_FAILED") : null,
         errorMessage: failed ? (r.detail ?? null) : null,
@@ -1650,14 +1777,27 @@ export async function refreshAndPersist(args: {
         providerEventId: args.providerEventId ?? null,
         recordDelivery: !!r.providerStatus && r.providerStatus !== current?.providerStatus,
         recordReporting:
-          !!observedReporting && !reportingEvidenceAt(current?.validation, observedReporting),
+          !!observedReporting &&
+          (replacesRevision || !reportingEvidenceAt(current?.validation, observedReporting)),
         now,
         document: {
           ...result.document,
           status: legacy,
           ...(outboundSource ? { xmlHash: outboundSource.hash, uuid: outboundSource.uuid } : {}),
           validation: (() => {
-            const pinned = pinDocumentReporting(current, required, observedReporting, now);
+            const reportingSource = replacesRevision
+              ? {
+                  validation: {
+                    ...documentValidation(current),
+                    submission: {
+                      ...documentSubmissionSnapshot(current),
+                      reportingEvidence: null,
+                      reportingRequired: required,
+                    },
+                  },
+                }
+              : current;
+            const pinned = pinDocumentReporting(reportingSource, required, observedReporting, now);
             const correction = documentSubmissionMetadata(current);
             if (provider.name !== "complyance" || !correction?.scope) return pinned;
             return {
@@ -1668,13 +1808,25 @@ export async function refreshAndPersist(args: {
                   r.correctableRejection === true &&
                   !correction.correctionBlocked &&
                   !correction.correctionUncertain,
+                ...(outboundSource && legacy === "cleared"
+                  ? {
+                      confirmedRevisionHash: outboundSource.hash,
+                      correctionUncertain: false,
+                      correctionCandidateHash: null,
+                      correctionCandidate: null,
+                      ...(candidateReporting
+                        ? { reportingRequired: candidateReporting.reportingRequired }
+                        : {}),
+                    }
+                  : {}),
               },
             };
           })(),
-          ...(acube && reporting !== "reported" ? { reportedAt: null } : {}),
+          ...((acube || replacesRevision) && reporting !== "reported" ? { reportedAt: null } : {}),
           clearedAt:
             legacy === "cleared"
-              ? ((storedReportingEvidence(current) === "reported" ? current?.clearedAt : null) ??
+              ? (outboundSource?.clearedAt ??
+                (storedReportingEvidence(current) === "reported" ? current?.clearedAt : null) ??
                 now)
               : result.document.clearedAt,
         },
@@ -1694,7 +1846,7 @@ export async function refreshAndPersist(args: {
     };
     await updateInvoiceInTransaction(tx, fresh, update);
     const clearedXml = outboundSource?.xml ?? fresh.einvoiceXml;
-    if (legacy === "cleared" && clearedXml) {
+    if (legacy === "cleared" && clearedXml && !outboundSource?.clearanceId) {
       await archiveEInvoiceXml(
         {
           companyId: company.id,

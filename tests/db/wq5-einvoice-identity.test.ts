@@ -448,6 +448,56 @@ describe("WQ5 unified contacts", () => {
 });
 
 describe("WQ5 firm console e-invoicing column", () => {
+  it("projects readiness for the current taxpayer in both the company and firm views", async () => {
+    const { clientEInvoicingStates } =
+      await import("../../server/services/firm-command-center.service");
+    const { companyCredentialVariable, sealCompanyCredentials } =
+      await import("../../server/services/einvoice/providers/company-credentials");
+    const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
+    const { randomUUID } = await import("node:crypto");
+    const t = await h.createTenant({ companyColumns: { ...SELLER, einvoice_partner: "acube" } });
+    const context = { companyId: t.company.id, provider: "acube", environment: "sandbox" } as const;
+    const envVar = companyCredentialVariable(context);
+    process.env[envVar] = sealCompanyCredentials(context, {
+      email: "sandbox@example.test",
+      password: randomUUID(),
+    });
+    try {
+      const setup = async (tin: string) =>
+        upsertLegalEntity(t.company.id, "acube", "sandbox", tin, {
+          status: "active",
+          legalEntityId: `entity-${tin}`,
+        });
+      const partner = async () => (await t.as.get(`${base(t)}/partner`)).body;
+      const firm = async () => (await clientEInvoicingStates([t.company.id])).get(t.company.id);
+
+      await setup("1001234567");
+      expect(await partner()).toMatchObject({
+        verifyAvailable: true,
+        appointment: { state: "verified", legalEntityStatus: "active" },
+      });
+      expect(await firm()).toMatchObject({ state: "connected" });
+
+      await h.sql("UPDATE companies SET trn_vat_number = '100999999900003' WHERE id = $1", [
+        t.company.id,
+      ]);
+      expect(await partner()).toMatchObject({
+        verifyAvailable: false,
+        appointment: { state: "not_started", legalEntityStatus: null },
+      });
+      expect(await firm()).toMatchObject({ state: "appoint_partner" });
+
+      await setup("1009999999");
+      expect(await partner()).toMatchObject({
+        verifyAvailable: true,
+        appointment: { state: "verified", legalEntityStatus: "active" },
+      });
+      expect(await firm()).toMatchObject({ state: "connected" });
+    } finally {
+      delete process.env[envVar];
+    }
+  });
+
   it("one state per client, and never 'connected' without a configured provider", async () => {
     const { clientEInvoicingStates } =
       await import("../../server/services/firm-command-center.service");

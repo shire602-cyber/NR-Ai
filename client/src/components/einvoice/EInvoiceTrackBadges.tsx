@@ -8,6 +8,7 @@ import {
   deliveryOutcomeLabel,
   reportingLabelKey,
   reportingObligationUnknown,
+  reportingOutcomeConfirmed,
   trackOutcomeLabel,
   type DeliveryStatus,
   type RecipientAcknowledgement,
@@ -52,7 +53,7 @@ export function EInvoiceTrackBadges({
           confirmationUnavailable: deliveryConfirmationUnavailable,
           environment,
         });
-  const reportingConfirmed = reporting === "reported" && !confirmationUnavailable;
+  const reportingConfirmed = reportingOutcomeConfirmed(reporting, confirmationUnavailable);
   const obligationUnknown = reportingObligationUnknown(reporting, obligationKnown);
   const reportingKey = reportingLabelKey(reporting, confirmationUnavailable, obligationKnown);
   const reportingText = trackOutcomeLabel(t, reportingKey, reportingConfirmed, environment);
@@ -87,7 +88,11 @@ export function EInvoiceTrackBadges({
       {(reporting !== "not_required" || obligationUnknown) && (
         <StatusBadge
           tone={obligationUnknown ? "neutral" : REPORTING_TONE[reporting]}
-          title={`${t["einvoicing.trackReporting"]}: ${reportingText}`}
+          title={
+            obligationUnknown
+              ? reportingText
+              : `${t["einvoicing.trackReporting"]}: ${reportingText}`
+          }
           className={showReportingText ? "einvoice-status-badge" : "px-1.5"}
           data-testid={showReportingLabel ? "einvoice-fta-chip" : undefined}
         >

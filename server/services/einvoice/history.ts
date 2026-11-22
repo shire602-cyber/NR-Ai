@@ -85,7 +85,8 @@ export async function applyTracks(
       message: patch.errorCode ? (patch.errorMessage ?? null) : null,
     });
   }
-  if (row.providerMessageId && !current?.submittedAt) row.submittedAt = now;
+  if (row.providerMessageId && !current?.submittedAt && row.submittedAt === undefined)
+    row.submittedAt = now;
   if (patch.reporting && (patch.reporting !== current?.reportingStatus || meta.recordReporting)) {
     row.reportingStatus = patch.reporting;
     row.reportingStatusAt = now;

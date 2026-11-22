@@ -126,6 +126,118 @@ it("verifies recovery using the exact sales resource and rejects contradictory o
   expect(await provider.checkOutboundDocument(documentId, identity)).toBe("mismatch");
 });
 
+it.each([
+  [{}, false],
+  [{ source: SOURCE.name }, false],
+  [{ sourceVersion: SOURCE.version }, false],
+  [{ source: `${SOURCE.name}:old` }, false],
+  [{ source: `${SOURCE.name}:${SOURCE.version}`, sourceVersion: "old" }, false],
+  [{ source: { name: SOURCE.name, version: SOURCE.version } }, true],
+  [
+    {
+      attribution: {
+        sourceName: SOURCE.name,
+        sourceVersion: SOURCE.version,
+        companyId: "connect-case",
+      },
+    },
+    true,
+  ],
+  [{ source: `${SOURCE.name}:${SOURCE.version}` }, true],
+] as const)(
+  "requires documented original source and version to enable correction (%j)",
+  async (source, enabled) => {
+    const documentId = "01KCorrectionProof";
+    const identity = {
+      documentNumber: "INV-001",
+      supplierTin: "1001234567",
+      supplierTrn: "100123456700003",
+      legalEntityId: "connect-case",
+      sourceName: SOURCE.name,
+    };
+    const adapter = new ComplyanceEInvoiceProvider(ENV, {
+      fetch: async () =>
+        Response.json({
+          success: true,
+          data: {
+            documentId,
+            documentNumber: identity.documentNumber,
+            companyId: identity.legalEntityId,
+            state: "rejected",
+            isTerminal: true,
+            errors: [{ code: "IBR-132-AE", source: "validation", message: "Invalid VAT TRN" }],
+            validationResults: { status: "Invalid" },
+            ...source,
+          },
+        }),
+    });
+    const proof = await adapter.checkOutboundRecovery(documentId, identity, {
+      legalEntity: { providerDetails: { sourceName: SOURCE.name, sourceVersion: SOURCE.version } },
+    });
+    expect(proof.verdict).toBe("verified");
+    expect(!!("correctionReasons" in proof && proof.correctionReasons)).toBe(enabled);
+  }
+);
+
+it("requires a qualified endpoint on the sales read when it is the only ownership evidence", async () => {
+  const documentId = "01KPeppolProof";
+  const identity = {
+    documentNumber: "INV-001",
+    supplierEndpoint: { scheme: "0088", value: "9876543210128" },
+    supplierTin: "1001234567",
+    supplierTrn: "100123456700003",
+    legalEntityId: null,
+    sourceName: null,
+  };
+  let peppolId = identity.supplierEndpoint.value;
+  const adapter = new ComplyanceEInvoiceProvider(ENV, {
+    fetch: async () =>
+      Response.json({
+        success: true,
+        data: {
+          documentId,
+          documentNumber: identity.documentNumber,
+          invoice: { parties: { seller: { peppolId } } },
+        },
+      }),
+  });
+  expect(await adapter.checkOutboundDocument(documentId, identity)).toBe("mismatch");
+  peppolId = `0088:${peppolId}`;
+  expect(await adapter.checkOutboundDocument(documentId, identity)).toBe("verified");
+});
+
+it.each([
+  [{ peppolId: "1001234567" }, { peppol_seller_peppolIdScheme: "0088" }],
+  [{ peppolId: "0235:1001234567" }, { peppol_seller_peppolIdScheme: "0088" }],
+  [{ peppolId: "0235:1001234567", taxIds: [{ type: "VAT", value: "1001234567" }] }, {}],
+  [{ peppolId: "0235:1001234567", taxIds: [{ type: "VAT", value: "100123456799903" }] }, {}],
+] as const)(
+  "rejects conflicting scheme or independent VAT evidence (%j, %j)",
+  async (seller, extensions) => {
+    const documentId = "01KOwnerProof";
+    const identity = {
+      documentNumber: "INV-001",
+      supplierTin: "1001234567",
+      supplierTrn: "100123456700003",
+      legalEntityId: "connect-case",
+      sourceName: SOURCE.name,
+    };
+    const adapter = new ComplyanceEInvoiceProvider(ENV, {
+      fetch: async () =>
+        Response.json({
+          success: true,
+          data: {
+            documentId,
+            documentNumber: identity.documentNumber,
+            companyId: identity.legalEntityId,
+            invoice: { parties: { seller }, extensions },
+          },
+        }),
+    });
+    expect(await adapter.checkOutboundDocument(documentId, identity)).toBe("mismatch");
+  }
+);
+
 interface Sent {
   url: string;
   method: string;
@@ -338,6 +450,17 @@ describe("E2 Complyance submit", () => {
 });
 
 describe("E2 Complyance status -> two tracks", () => {
+  it.each([
+    ["submitted", "queued"],
+    ["processing", "sending"],
+  ])("retains FTA approval while recipient delivery is %s", (state, delivery) => {
+    expect(
+      mapComplyanceStatus({ state, compliance: { ftaApprovedStatus: "APPROVED" } })
+    ).toMatchObject({
+      delivery,
+      reporting: "reported",
+    });
+  });
   const cases: Array<[string, string, string, string, string | null]> = [
     ["status_submitted", "queued", "pending", "submitted", null],
     ["status_processing", "sending", "pending", "submitted", null],
@@ -432,6 +555,38 @@ describe("E2 Complyance status -> two tracks", () => {
 });
 
 describe("E2 Complyance inbound (purchases)", () => {
+  it.each([
+    [{}, {}, false],
+    [{ peppolId: "0235:1007654321" }, { peppol_buyer_peppolIdScheme: "0088" }, true],
+    [{ peppolId: "1007654321", vatTrn: "100765432199903" }, {}, true],
+  ] as const)(
+    "checks provider purchase scheme and VAT against the original UBL (%j, %j)",
+    async (fields, extensions, conflict) => {
+      const documentId = "01KPurchaseProof";
+      const p = new ComplyanceEInvoiceProvider(ENV, {
+        fetch: async () =>
+          Response.json({
+            success: true,
+            data: {
+              documentId,
+              environment: "sandbox",
+              xml: xmlOf(0),
+              invoice: {
+                parties: { buyer: { peppolId: "1007654321", ...fields } },
+                extensions,
+              },
+            },
+          }),
+      });
+      expect(await p.inboundOwner(documentId, {})).toEqual({
+        legalEntityId: null,
+        tin: "1007654321",
+        vatTrn: "100765432100003",
+        ...(conflict ? { identityConflict: true } : {}),
+      });
+    }
+  );
+
   it("lists purchases per company, then reads owner and XML from one GET", async () => {
     const { p, sent } = provider(["purchases_list", "purchase_get"]);
     const items = await p.listInbound({ legalEntityIds: ["66b9f0a1c2d3e4f567890123"] });
@@ -445,10 +600,10 @@ describe("E2 Complyance inbound (purchases)", () => {
     const q = new URL(sent[0].url).searchParams;
     expect(q.get("companyId")).toBe("66b9f0a1c2d3e4f567890123");
     expect(q.get("from")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    // No attribution in the payload: the buyer's Peppol id decides; XML comes from the same read.
+    // The fixture's bare Peppol value has no qualified buyer in its stub XML.
     expect(await p.inboundOwner("01JEXAMPLE0000000000000142", {}, {})).toEqual({
       legalEntityId: null,
-      tin: "1001234567",
+      tin: null,
     });
     expect(await p.fetchSource("01JEXAMPLE0000000000000142")).toMatch(/^<Invoice /);
     expect(sent).toHaveLength(2);
@@ -462,7 +617,7 @@ describe("E2 Complyance inbound (purchases)", () => {
         {},
         { complyanceCompanyId: "unrelated-company" }
       )
-    ).toEqual({ legalEntityId: null, tin: "1001234567" });
+    ).toEqual({ legalEntityId: null, tin: null });
     expect(sent).toHaveLength(1);
   });
 });

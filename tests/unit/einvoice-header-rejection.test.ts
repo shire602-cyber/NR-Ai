@@ -1,9 +1,11 @@
+// @vitest-environment jsdom
 import { readFileSync } from "node:fs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createElement } from "react";
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { loadNamespace } from "../../client/src/lib/i18n";
+import { loadNamespace, useI18n } from "../../client/src/lib/i18n";
 import { EInvoiceHeaderStrip } from "../../client/src/components/einvoice/EInvoiceHeaderStrip";
 import { EInvoiceListCell } from "../../client/src/components/einvoice/EInvoiceListCell";
 import { EInvoiceTrackBadges } from "../../client/src/components/einvoice/EInvoiceTrackBadges";
@@ -41,6 +43,96 @@ describe("e-invoice header strip", () => {
       expect(html).toContain("Delivery unconfirmed");
       expect(html).not.toContain("Delivered");
       expect(html).not.toContain("Delivery failed");
+      expect(html).toContain('title="Reporting requirement unknown"');
+      expect(html).not.toContain("FTA reporting: Pending");
+    }
+  );
+  it("requires recipient evidence even when a projected track claims delivery", async () => {
+    await loadNamespace("en", "einvoicing");
+    const html = renderToStaticMarkup(
+      createElement(EInvoiceListCell, {
+        invoice: { id: "historical-complyance", einvoiceStatus: "accepted" },
+        evidence: {
+          doc: {
+            invoiceId: "historical-complyance",
+            provider: "complyance",
+            providerStatus: "final_invalid",
+            providerMessageId: "sandbox-document",
+            status: "accepted",
+            environment: "sandbox",
+            deliveryStatus: "delivered",
+            reportingStatus: "pending",
+            reportBy: null,
+          },
+        },
+      })
+    );
+    expect(html).toContain("Delivery unconfirmed");
+    expect(html).not.toContain("Delivered");
+  });
+  it.each([
+    ["en", "FTA: report failed", "Report failed", "Sandbox", "Reporting requirement unknown"],
+    ["ar", "الهيئة: تعذّر الإبلاغ", "تعذّر الإبلاغ", "بيئة تجريبية", "متطلبات الإبلاغ غير معروفة"],
+  ] as const)(
+    "qualifies sandbox reporting failures and exposes unknown obligations in %s",
+    async (locale, chip, failure, sandbox, unknown) => {
+      await loadNamespace(locale, "einvoicing");
+      const node = document.createElement("div");
+      const root = createRoot(node);
+      const priorActEnvironment = (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
+        .IS_REACT_ACT_ENVIRONMENT;
+      (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+      try {
+        useI18n.setState({ locale });
+        const invoiceId = "sandbox-report-failed";
+        const doc = {
+          invoiceId,
+          provider: "complyance",
+          providerStatus: "final_invalid",
+          providerMessageId: "sandbox-document",
+          status: "submitted",
+          environment: "sandbox" as const,
+          deliveryStatus: "queued" as const,
+          reportingStatus: "report_failed" as const,
+          reportBy: null,
+        };
+        for (const reportingRequired of [false, true]) {
+          await act(async () => {
+            root.render(
+              createElement(EInvoiceListCell, {
+                invoice: { id: invoiceId },
+                evidence: {
+                  doc,
+                  pill: {
+                    invoiceId,
+                    delivery: "queued",
+                    reporting: "report_failed",
+                    reportBy: null,
+                    overdue: false,
+                    reportingRequired,
+                  },
+                },
+              })
+            );
+          });
+          expect(node.textContent).toContain(`${reportingRequired ? failure : chip} · ${sandbox}`);
+        }
+        await act(async () => {
+          root.render(
+            createElement(EInvoiceTrackBadges, {
+              delivery: "queued",
+              reporting: "pending",
+              obligationKnown: false,
+            })
+          );
+        });
+        expect(node.querySelector(`[title="${unknown}"]`)?.textContent).toBe(unknown);
+      } finally {
+        await act(async () => root.unmount());
+        (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
+          priorActEnvironment;
+        useI18n.setState({ locale: "en" });
+      }
     }
   );
   it.each([false, true])(

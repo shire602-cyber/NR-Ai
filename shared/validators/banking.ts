@@ -384,7 +384,7 @@ export const aiStatementImportBody = z
   .strict();
 export type AiStatementImportBody = z.output<typeof aiStatementImportBody>;
 
-// ─── Bank feeds (R06-14, R06-19) ────────────────────────────────────────────
+// ─── Compatibility request shapes (R06-14, R06-19) ────────────────────────
 
 export const BANK_FEED_PROVIDERS = ["lean", "tarabut", "wio"] as const;
 export type BankFeedProviderId = (typeof BANK_FEED_PROVIDERS)[number];

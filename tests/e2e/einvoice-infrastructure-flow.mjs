@@ -72,6 +72,9 @@ const copies = {
     reporting: "FTA reporting",
     reported: "Reported",
     reportedChip: "FTA: reported",
+    reportFailed: "Report failed",
+    reportFailedChip: "FTA: report failed",
+    reportingUnknown: "Reporting requirement unknown",
     bankStatementImport: "Import bank statements",
     verifyTracking: "Verify and save",
     trackingVerified: "Tracking environment verified",
@@ -106,6 +109,9 @@ const copies = {
     reporting: "الإبلاغ إلى الهيئة الاتحادية للضرائب",
     reported: "تم الإبلاغ",
     reportedChip: "الهيئة: تم الإبلاغ",
+    reportFailed: "تعذّر الإبلاغ",
+    reportFailedChip: "الهيئة: تعذّر الإبلاغ",
+    reportingUnknown: "متطلبات الإبلاغ غير معروفة",
     bankStatementImport: "استيراد كشوف الحسابات البنكية",
     verifyTracking: "تحقّق واحفظ",
     trackingVerified: "تم التحقق من بيئة المتابعة",
@@ -1007,8 +1013,25 @@ async function verifyRejection(browser, persona) {
       `UPDATE einvoice_documents SET status = 'rejected', provider = 'complyance',
          provider_message_id = $2, delivery_status = 'rejected', provider_status = 'final_invalid',
          last_error_code = 'COMPLYANCE_FINAL_INVALID', rejection_reasons = $4::jsonb,
+         reporting_status = $5,
          validation = jsonb_set(validation, '{submission}', $3::jsonb) WHERE invoice_id = $1`,
-      [invoiceId, documentId, { environment, scope, providerAttempted: true }, reasons]
+      [
+        invoiceId,
+        documentId,
+        {
+          environment,
+          scope,
+          providerAttempted: true,
+          ...(environment === "sandbox"
+            ? {
+                reportingRequired: true,
+                reportingEvidence: { report_failed: new Date().toISOString() },
+              }
+            : {}),
+        },
+        reasons,
+        environment === "sandbox" ? "report_failed" : "pending",
+      ]
     );
     await inBrowser(browser, { ...persona, width: 360 }, async (page, navigate) => {
       await openBooks(page, navigate, persona, 0);
@@ -1021,8 +1044,20 @@ async function verifyRejection(browser, persona) {
           list.getByText(rejectedInSandbox, { exact: false }),
           `${lang} issuer sandbox rejection at 360px`
         );
+        await assertUnclippedOutcome(
+          list.getByText(`${labels.reportFailed} · ${labels.sandbox}`, { exact: true }),
+          `${lang} issuer sandbox reporting failure at 360px`
+        );
       }
       await navigate(`/invoices/${invoiceId}/edit`);
+      if (environment === "sandbox") {
+        await assertUnclippedOutcome(
+          page
+            .getByTestId("einvoice-fta-chip")
+            .getByText(`${labels.reportFailedChip} · ${labels.sandbox}`, { exact: true }),
+          `${lang} issuer sandbox reporting badge at 360px`
+        );
+      }
       const qualifier =
         environment === "sandbox"
           ? copies[lang].sandbox
@@ -1067,28 +1102,28 @@ async function verifyUnconfirmedDelivery(browser, persona) {
   const { lang } = persona;
   const { invoiceId } = await seedOutbound(persona, persona.contactId);
   const documentId = randomUUID();
+  const provider = lang === "ar" ? "complyance" : "acube";
+  const rawStatus = provider === "complyance" ? "final_invalid" : null;
   await db.query(
-    `UPDATE invoices SET einvoice_status = 'accepted', einvoice_provider = 'acube',
+    `UPDATE invoices SET einvoice_status = 'accepted', einvoice_provider = $3,
        einvoice_provider_message_id = $2 WHERE id = $1`,
-    [invoiceId, documentId]
+    [invoiceId, documentId, provider]
   );
   await db.query(
-    `UPDATE einvoice_documents SET status = 'accepted', provider = 'acube',
-       provider_message_id = $2, delivery_status = 'delivered' WHERE invoice_id = $1`,
-    [invoiceId, documentId]
+    `UPDATE einvoice_documents SET status = 'accepted', provider = $3,
+       provider_message_id = $2, delivery_status = 'delivered', provider_status = $4,
+       reporting_status = 'pending', report_by = NULL,
+       validation = validation #- '{submission,reportingRequired}' WHERE invoice_id = $1`,
+    [invoiceId, documentId, provider, rawStatus]
   );
   await db.query(
     `INSERT INTO einvoice_document_events
-       (company_id, invoice_id, track, from_status, to_status, provider, source)
-     VALUES ($1, $2, 'delivery', 'sending', 'delivered', 'acube', 'poll')`,
-    [persona.clients[0].id, invoiceId]
+       (company_id, invoice_id, track, from_status, to_status, provider, provider_status, source)
+     VALUES ($1, $2, 'delivery', 'sending', 'delivered', $3, $4, 'poll')`,
+    [persona.clients[0].id, invoiceId, provider, rawStatus]
   );
   await inBrowser(browser, { ...persona, width: 360 }, async (page, navigate) => {
     await openBooks(page, navigate, persona, 0);
-    // Exercise the list fallback separately from the full evidence read in the drawer.
-    await page.route(/\/einvoicing\/compliance\?invoiceIds=/, (route) =>
-      route.fulfill({ json: { mandateApplies: true, items: [], documents: [] } })
-    );
     await navigate("/invoices");
     const labels = copies[lang];
     const list = page.getByTestId(`einvoice-cell-${invoiceId}`).filter({ visible: true });
@@ -1096,6 +1131,11 @@ async function verifyUnconfirmedDelivery(browser, persona) {
       list.getByTitle(`${labels.delivery}: ${labels.deliveryUnconfirmed}`, { exact: true }),
       `${lang} issuer unconfirmed delivery at 360px`
     );
+    const unknown = list.getByTitle(labels.reportingUnknown, { exact: true });
+    await assertUnclippedOutcome(unknown, `${lang} issuer unknown reporting requirement at 360px`);
+    await list
+      .and(page.getByRole("button", { name: new RegExp(labels.reportingUnknown) }))
+      .waitFor();
     await list.click();
     const sheet = page.getByTestId("einvoice-sheet");
     await sheet
@@ -1109,7 +1149,9 @@ async function verifyUnconfirmedDelivery(browser, persona) {
       .waitFor();
     await expectFrame(page, lang);
   });
-  console.log(`${lang}: missing A-Cube delivery evidence remained unconfirmed at 360px`);
+  console.log(
+    `${lang}: missing ${provider} delivery and reporting evidence stayed unconfirmed at 360px`
+  );
 }
 
 async function verifyLegacyRefusal(browser, persona, invoiceId, lang) {

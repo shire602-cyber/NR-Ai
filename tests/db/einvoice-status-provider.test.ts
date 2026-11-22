@@ -56,33 +56,46 @@ async function fixture() {
 afterEach(() => vi.unstubAllEnvs());
 
 it.each([
-  { rawStatus: null, delivery: "queued", unconfirmed: true },
-  { rawStatus: " ", delivery: "queued", unconfirmed: true },
-  { rawStatus: "historical_unrecognized_value", delivery: "queued", unconfirmed: true },
-  { rawStatus: "delivery_error", delivery: "delivery_failed", unconfirmed: false },
-  { rawStatus: "accepted", delivery: "delivered", unconfirmed: false },
+  { provider: "acube", rawStatus: null, delivery: "queued", unconfirmed: true },
+  { provider: "acube", rawStatus: " ", delivery: "queued", unconfirmed: true },
+  {
+    provider: "acube",
+    rawStatus: "historical_unrecognized_value",
+    delivery: "queued",
+    unconfirmed: true,
+  },
+  {
+    provider: "acube",
+    rawStatus: "delivery_error",
+    delivery: "delivery_failed",
+    unconfirmed: false,
+  },
+  { provider: "acube", rawStatus: "accepted", delivery: "delivered", unconfirmed: false },
+  { provider: "complyance", rawStatus: null, delivery: "queued", unconfirmed: true },
+  { provider: "complyance", rawStatus: "final_invalid", delivery: "queued", unconfirmed: true },
+  { provider: "complyance", rawStatus: "final_valid", delivery: "delivered", unconfirmed: false },
 ])(
-  "projects historical A-Cube delivery with provider status $rawStatus consistently",
-  async ({ rawStatus, delivery, unconfirmed }) => {
+  "projects historical $provider delivery with provider status $rawStatus consistently",
+  async ({ provider, rawStatus, delivery, unconfirmed }) => {
     const { tenant, invoiceId, companyId, statusPath } = await fixture();
     const docId = randomUUID();
     await h.sql(
-      `UPDATE invoices SET status = 'sent', einvoice_status = 'accepted', einvoice_provider = 'acube',
+      `UPDATE invoices SET status = 'sent', einvoice_status = 'accepted', einvoice_provider = $3,
        einvoice_provider_message_id = $2 WHERE id = $1`,
-      [invoiceId, docId]
+      [invoiceId, docId, provider]
     );
     await h.sql(
       `INSERT INTO einvoice_documents
        (company_id, invoice_id, status, provider, provider_message_id, delivery_status,
         provider_status, validation)
-     VALUES ($1, $2, 'accepted', 'acube', $3, 'delivered', $4, $5::jsonb)`,
-      [companyId, invoiceId, docId, rawStatus, { submission: { environment: "sandbox" } }]
+     VALUES ($1, $2, 'accepted', $6, $3, 'delivered', $4, $5::jsonb)`,
+      [companyId, invoiceId, docId, rawStatus, { submission: { environment: "sandbox" } }, provider]
     );
     await h.sql(
       `INSERT INTO einvoice_document_events
       (company_id, invoice_id, track, from_status, to_status, provider, provider_status, source)
-     VALUES ($1, $2, 'delivery', 'sending', 'delivered', 'acube', $3, 'poll')`,
-      [companyId, invoiceId, rawStatus]
+     VALUES ($1, $2, 'delivery', 'sending', 'delivered', $4, $3, 'poll')`,
+      [companyId, invoiceId, rawStatus, provider]
     );
     const [batch, status] = await Promise.all([
       tenant.as.get(`/api/companies/${companyId}/einvoicing/compliance?invoiceIds=${invoiceId}`),

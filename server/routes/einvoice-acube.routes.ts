@@ -40,7 +40,7 @@ import {
   ACUBE_POLL_JOB,
   PROVIDER_EVENTS_JOB,
   canonicalEventType,
-  enqueueProviderEvent,
+  enqueueVerifiedProviderCallback,
   providerEventKey,
   providerEventSummary,
   runAcubePoll,
@@ -459,7 +459,7 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
         return res.status(202).json({ received: true, ignored: true });
       }
       const { type, payload } = event;
-      const queued = await enqueueProviderEvent({
+      const queued = await enqueueVerifiedProviderCallback({
         provider: ACUBE_PROVIDER_NAME,
         environment,
         type,
@@ -467,6 +467,7 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
         companyId,
         payload,
       });
+      if (queued.ignored) return res.status(200).json({ received: true, ignored: true });
       // Answer fast; the job retries anything this immediate run does not finish.
       if (queued.id && process.env.ACUBE_WEBHOOK_INLINE !== "false") {
         const id = queued.id;

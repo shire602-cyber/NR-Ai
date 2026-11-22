@@ -249,7 +249,7 @@ export interface IStorage {
   ownerHasCompanyNamed(userId: string, name: string, excludeCompanyId?: string): Promise<boolean>;
   companyHasPostedJournal(companyId: string): Promise<boolean>;
   getCompaniesByUserId(userId: string): Promise<Company[]>;
-  createCompany(company: InsertCompany): Promise<Company>;
+  createCompany(company: InsertCompany, conn?: Pick<AppDatabase, "insert">): Promise<Company>;
   updateCompany(id: string, data: Partial<InsertCompany>): Promise<Company>;
 
   // Company Users
@@ -737,7 +737,10 @@ export interface IStorage {
   getActivityLogs(limit?: number): Promise<ActivityLog[]>;
   getActivityLogsByCompany(companyId: string, limit?: number): Promise<ActivityLog[]>;
   getActivityLogsByUser(userId: string, limit?: number): Promise<ActivityLog[]>;
-  createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
+  createActivityLog(
+    log: InsertActivityLog,
+    conn?: Pick<AppDatabase, "insert">
+  ): Promise<ActivityLog>;
 
   // Client Notes (Admin internal notes)
   getClientNotes(companyId: string): Promise<ClientNote[]>;

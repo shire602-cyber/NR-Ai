@@ -53,6 +53,8 @@ import type {
 } from "../../einvoice-provider";
 import type { EInvoiceRejectionReason } from "../../einvoice-status";
 import { createLogger } from "../../../config/logger";
+import { first, parseXml, partyPeppolEndpoint, partyVatTrn } from "../dom";
+import { isPintAeTrn, isUaeTin, PEPPOL_SCHEME_UAE_TIN, tinFromTrn } from "../pint-ae-codes";
 import { legacyFromProviderTracks, type DeliveryStatus, type ReportingStatus } from "../tracks";
 import type { EInvoiceProviderModule } from "./types";
 import { ublToGets, unifyXmlRequest } from "./complyance-gets";
@@ -176,20 +178,115 @@ export interface ComplyanceSellerIdentity {
   connectCompanyId: string | null;
   /** The company's invoice source name (provider_details.sourceName). */
   sourceName: string | null;
+  /** The full identifier frozen on the original document, when available. */
+  endpoint?: { scheme: string; value: string } | null;
 }
-
-const uaeTin = (value: unknown): string | null =>
-  typeof value === "string" && /^(?:0235:)?1\d{9}$/.test(value)
-    ? value.replace(/^0235:/, "")
-    : null;
-
-const uaeTrn = (value: unknown): string | null =>
-  typeof value === "string" && /^1\d{14}$/.test(value) ? value : null;
 
 function sourceNameFromReference(value: unknown): unknown {
   if (typeof value === "string") return value.split(":", 1)[0];
   // A nonempty but invalid source must not disappear behind a matching alternate field.
   return providerObject(value)?.name ?? value;
+}
+
+function sourceVersionFromReference(value: unknown): unknown {
+  if (typeof value === "string") {
+    const colon = value.indexOf(":");
+    return colon < 0 ? null : value.slice(colon + 1);
+  }
+  return providerObject(value)?.version;
+}
+
+/** Only evidence carried by the sales resource can establish its original source. */
+function matchesSalesSource(
+  data: Record<string, unknown>,
+  envelope: Record<string, unknown>,
+  expected: ComplyanceSource,
+  requireProof: boolean
+) {
+  const documentEvidence = [data, providerObject(data.attribution)];
+  const outerEvidence = [envelope, providerObject(envelope.attribution)];
+  let nameProven = false;
+  let versionProven = false;
+  for (const evidence of [...documentEvidence, ...outerEvidence]) {
+    if (!evidence) continue;
+    const names = [evidence.sourceName, sourceNameFromReference(evidence.source)].filter(
+      (value) => value != null
+    );
+    const versions = [evidence.sourceVersion, sourceVersionFromReference(evidence.source)].filter(
+      (value) => value != null
+    );
+    if (names.some((name) => name !== expected.name)) return false;
+    if (versions.some((version) => version !== expected.version)) return false;
+    if (documentEvidence.includes(evidence)) {
+      nameProven ||= names.length > 0;
+      versionProven ||= versions.length > 0;
+    }
+  }
+  return !requireProof || (nameProven && versionProven);
+}
+
+type PartyEndpoint = { scheme: string; value: string };
+type PartyTaxIdentity = {
+  endpoint: PartyEndpoint | null;
+  tin: string | null;
+  trn: string | null;
+};
+
+/** A bare value may agree with other evidence, but cannot prove ownership without a scheme. */
+function endpointProof(
+  value: unknown,
+  schemes: unknown[],
+  expected: PartyEndpoint | null
+): boolean | null {
+  if (schemes.some((scheme) => scheme !== expected?.scheme)) return false;
+  if (value == null) return null;
+  if (typeof value !== "string" || !value || !expected) return false;
+  const colon = value.indexOf(":");
+  const id = colon < 0 ? value : value.slice(colon + 1);
+  const suppliedSchemes = colon < 0 ? schemes : [...schemes, value.slice(0, colon)];
+  if (id !== expected.value || suppliedSchemes.some((scheme) => scheme !== expected.scheme))
+    return false;
+  return suppliedSchemes.length > 0 ? true : null;
+}
+
+function comparePartyTaxIdentity(
+  party: Record<string, unknown>,
+  schemes: unknown[],
+  expected: PartyTaxIdentity,
+  compare: (label: string, value: unknown, matches: boolean) => void
+) {
+  const endpoint = endpointProof(
+    party.peppolId,
+    [...schemes, party.peppolIdScheme].filter((value) => value != null),
+    expected.endpoint
+  );
+  if (endpoint !== null) compare("peppolEndpoint", true, endpoint);
+  const matchesTin = (value: unknown) =>
+    typeof value === "string" && isUaeTin(value) && value === expected.tin;
+  const matchesTrn = (value: unknown) =>
+    typeof value === "string" && isPintAeTrn(value) && value === expected.trn;
+  compare("taxpayerTin", party.tin, matchesTin(party.tin));
+  for (const value of [party.trn, party.vatTrn, party.vatNumber])
+    compare("vatTrn", value, matchesTrn(value));
+  const matchesTaxId = (value: unknown, type?: unknown) => {
+    if (type === "VAT") return matchesTrn(value);
+    if (type === "TIN") return matchesTin(value);
+    return type == null && (matchesTin(value) || matchesTrn(value));
+  };
+  compare("taxId", party.taxId, matchesTaxId(party.taxId));
+  if (!Array.isArray(party.taxIds)) {
+    compare("taxId", party.taxIds, false);
+    return;
+  }
+  for (const taxId of party.taxIds) {
+    const entry = providerObject(taxId);
+    if (entry && (entry.value != null || entry.id != null)) {
+      for (const value of [entry.value, entry.id])
+        compare("taxId", value, matchesTaxId(value, entry.type));
+    } else {
+      compare("taxId", taxId, matchesTaxId(taxId));
+    }
+  }
 }
 
 /**
@@ -221,39 +318,34 @@ export function complyanceDocumentBelongsTo(
     }
   }
 
-  const nestedSeller = (body: unknown) => {
-    const parties = providerObject(body)?.parties;
+  const nestedSeller = (body: Record<string, unknown> | null) => {
+    const parties = body?.parties;
     if (present(parties) && !providerObject(parties)) mismatched.add("seller");
     return providerObject(parties)?.seller;
   };
-  const tin = uaeTin(me.tin);
-  const trn = uaeTrn(me.trn);
-  const matchesTin = (value: unknown) => !!tin && uaeTin(value) === tin;
-  const matchesTrn = (value: unknown) => !!trn && uaeTrn(value) === trn;
-  const checkTaxId = (value: unknown) =>
-    compare("sellerTaxId", value, matchesTin(value) || matchesTrn(value));
-  for (const value of [data.seller, nestedSeller(data.invoice), nestedSeller(data.payload)]) {
+  const expected = {
+    tin: me.tin,
+    trn: me.trn,
+    endpoint:
+      me.endpoint === undefined && me.tin
+        ? { scheme: PEPPOL_SCHEME_UAE_TIN, value: me.tin }
+        : (me.endpoint ?? null),
+  };
+  for (const body of [data, providerObject(data.invoice), providerObject(data.payload)]) {
+    if (!body) continue;
+    const value = body === data ? data.seller : nestedSeller(body);
     const seller = providerObject(value);
     if (present(value) && !seller) mismatched.add("seller");
     if (!seller) continue;
-    for (const value of [seller.tin, seller.peppolId])
-      compare("sellerTaxId", value, matchesTin(value));
-    for (const value of [seller.trn, seller.vatTrn, seller.vatNumber])
-      compare("sellerTaxId", value, matchesTrn(value));
-    checkTaxId(seller.taxId);
-    if (!Array.isArray(seller.taxIds)) {
-      compare("sellerTaxId", seller.taxIds, false);
-      continue;
-    }
-    for (const taxId of seller.taxIds) {
-      const entry = providerObject(taxId);
-      if (entry && (present(entry.value) || present(entry.id))) {
-        checkTaxId(entry.value);
-        checkTaxId(entry.id);
-      } else {
-        checkTaxId(taxId);
-      }
-    }
+    comparePartyTaxIdentity(
+      seller,
+      [
+        providerObject(body.extensions)?.peppol_seller_peppolIdScheme,
+        providerObject(data.extensions)?.peppol_seller_peppolIdScheme,
+      ],
+      expected,
+      compare
+    );
   }
   return {
     ok: checked.size > 0 && mismatched.size === 0,
@@ -342,9 +434,9 @@ export function mapComplyanceStatus(data: Record<string, unknown>): ComplyanceTr
   const reporting = approval === "APPROVED" ? "reported" : "pending";
   switch (state) {
     case "submitted":
-      return { delivery: "queued", reporting: "pending", errorCode: null, reasons: [] };
+      return { delivery: "queued", reporting, errorCode: null, reasons: [] };
     case "processing":
-      return { delivery: "sending", reporting: "pending", errorCode: null, reasons: [] };
+      return { delivery: "sending", reporting, errorCode: null, reasons: [] };
     case "delivery_success":
       return { delivery: "delivered", reporting, errorCode: null, reasons: [] };
     case "delivery_failed":
@@ -809,23 +901,25 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
   ) {
     const proof = await this.readOwnedSalesDocument(providerMessageId, identity);
     if (proof.verdict !== "verified") return proof;
-    const tracking = { verdict: "verified" as const, correctionReasons: null };
+    const tracking = {
+      verdict: "verified" as const,
+      correctionReasons: null,
+      correctionSource: null,
+    };
     const source = sourceFromLegalEntity(context?.legalEntity ?? null);
-    if (!source || source.name !== identity.sourceName) return tracking;
-    for (const aliases of [proof.data, providerObject(proof.data.attribution)]) {
-      if (!aliases) continue;
-      const reference = aliases.source;
-      const version =
-        typeof reference === "string" && reference.includes(":")
-          ? reference.slice(reference.indexOf(":") + 1)
-          : providerObject(reference)?.version;
-      if (
-        [version, aliases.sourceVersion].some((value) => value != null && value !== source.version)
-      )
-        return tracking;
-    }
+    if (
+      !source ||
+      source.name !== identity.sourceName ||
+      (identity.sourceVersion != null && source.version !== identity.sourceVersion) ||
+      !matchesSalesSource(proof.data, proof.envelope, source, true)
+    )
+      return tracking;
     return isCorrectableSalesState(proof.data)
-      ? { ...tracking, correctionReasons: complyanceReasons(proof.data.errors) }
+      ? {
+          ...tracking,
+          correctionReasons: complyanceReasons(proof.data.errors),
+          correctionSource: source,
+        }
       : tracking;
   }
 
@@ -833,15 +927,17 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     providerMessageId: string,
     identity: EInvoiceOutboundIdentity
   ): Promise<
-    { verdict: "verified"; data: Record<string, unknown> } | { verdict: "mismatch" | "unavailable" }
+    | { verdict: "verified"; data: Record<string, unknown>; envelope: Record<string, unknown> }
+    | { verdict: "mismatch" | "unavailable" }
   > {
     try {
       const response = await this.call("GET", this.salesDocumentPath(providerMessageId));
       if (response.status >= 500 || [401, 403, 408, 429].includes(response.status)) {
         return { verdict: "unavailable" };
       }
-      const data = response.ok && this.provenSalesData(response.json, providerMessageId, identity);
-      return data ? { verdict: "verified", data } : { verdict: "mismatch" };
+      const envelope = providerObject(response.json);
+      const data = response.ok && this.provenSalesData(envelope, providerMessageId, identity);
+      return data && envelope ? { verdict: "verified", data, envelope } : { verdict: "mismatch" };
     } catch {
       return { verdict: "unavailable" };
     }
@@ -870,6 +966,20 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
       )
     )
       return null;
+    if (
+      identity.sourceName &&
+      identity.sourceVersion &&
+      !matchesSalesSource(
+        data,
+        envelope,
+        {
+          name: identity.sourceName,
+          version: identity.sourceVersion,
+        },
+        false
+      )
+    )
+      return null;
     for (const body of [data.invoice, data.payload]) {
       const header = providerObject(body)?.header;
       const number = providerObject(header)?.documentNumber;
@@ -886,6 +996,7 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
         trn: identity.supplierTrn,
         connectCompanyId: identity.legalEntityId,
         sourceName: identity.sourceName,
+        endpoint: identity.supplierEndpoint,
       })
     );
     if (outerOwner.mismatched.length || documentOwner.mismatched.length) return null;
@@ -1067,12 +1178,58 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     _payload?: Record<string, unknown>
   ): Promise<InboundOwner> {
     const data = await this.purchase(providerMessageId);
-    const invoice = providerObject(data.invoice);
-    const buyer = providerObject(providerObject(invoice?.parties)?.buyer);
-    const peppol = providerString(buyer?.peppolId);
+    const attribution = providerObject(data.attribution);
+    const companyIds = [attribution?.companyId, data.companyId, data.connectCompanyId].filter(
+      (value) => value != null
+    );
+    const legalEntityId = providerString(companyIds[0]);
+    let identityConflict = companyIds.some((id) => id !== legalEntityId);
+    let buyer: PartyTaxIdentity | null = null;
+    try {
+      // GETS can return a bare Peppol value. Only the original UBL establishes its scheme.
+      const root = parseXml(await this.fetchSource(providerMessageId)).documentElement;
+      const party = first(root, "cac:AccountingCustomerParty/cac:Party");
+      if (party) {
+        const endpoint = partyPeppolEndpoint(party);
+        const trn = partyVatTrn(party);
+        const tin = endpoint?.scheme === PEPPOL_SCHEME_UAE_TIN ? endpoint.value : tinFromTrn(trn);
+        identityConflict ||=
+          (!endpoint && first(party, "cbc:EndpointID") !== null) ||
+          (tin != null && !isUaeTin(tin)) ||
+          (trn != null && (!tin || tinFromTrn(trn) !== tin));
+        buyer = { tin, trn, endpoint };
+      }
+    } catch {
+      // Missing archive data is retried by receipt processing. It does not supply ownership proof.
+    }
+    if (buyer) {
+      for (const body of [providerObject(data.invoice), providerObject(data.payload)]) {
+        if (!body) continue;
+        const parties = providerObject(body.parties);
+        if (body.parties != null && !parties) identityConflict = true;
+        const value = parties?.buyer;
+        const party = providerObject(value);
+        if (value != null && !party) identityConflict = true;
+        if (party) {
+          comparePartyTaxIdentity(
+            party,
+            [
+              providerObject(body.extensions)?.peppol_buyer_peppolIdScheme,
+              providerObject(data.extensions)?.peppol_buyer_peppolIdScheme,
+            ],
+            buyer,
+            (_label, value, matches) => {
+              if (value != null && !matches) identityConflict = true;
+            }
+          );
+        }
+      }
+    }
     return {
-      legalEntityId: providerString(providerObject(data.attribution)?.companyId),
-      tin: peppol?.replace(/^0235:/, "") ?? null,
+      legalEntityId,
+      tin: buyer?.tin ?? null,
+      ...(buyer?.trn ? { vatTrn: buyer.trn } : {}),
+      ...(identityConflict ? { identityConflict: true } : {}),
     };
   }
 

@@ -50,7 +50,7 @@ import {
 } from "../services/einvoice/providers/complyance-onboarding";
 import {
   PROVIDER_EVENTS_JOB,
-  enqueueProviderEvent,
+  enqueueVerifiedProviderCallback,
   providerEventKey,
   providerEventSummary,
   runProviderEvents,
@@ -449,7 +449,7 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
       }
       const event = normaliseComplyanceEvent(parsed.data);
       if (!event) return res.status(200).json({ received: true, ignored: true });
-      const queued = await enqueueProviderEvent({
+      const queued = await enqueueVerifiedProviderCallback({
         provider: COMPLYANCE_PROVIDER_NAME,
         environment,
         type: event.type,
@@ -457,6 +457,7 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
         companyId,
         payload: event.payload,
       });
+      if (queued.ignored) return res.status(200).json({ received: true, ignored: true });
       if (queued.id && process.env.COMPLYANCE_WEBHOOK_INLINE !== "false") {
         const id = queued.id;
         setImmediate(() => {

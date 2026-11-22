@@ -689,40 +689,40 @@ describe("W3-C banking: split, transfer, VAT, fee", () => {
 });
 
 describe("W3-C banking: statement and transactions", () => {
-  it("requires CSV when requested by the banking page and preserves existing parser clients", async () => {
-    const t = await vatTenant();
-    const account = await bankAccount(t);
-    const endpoint = `${base(t)}/bank-statements`;
-    const renamed = {
-      fileName: "renamed.csv",
-      fileBase64: Buffer.from(
-        ":20:REF\n:25:AE400000000\n:28C:00001/001\n:60F:C261001AED100,00\n:61:2610011001D10,00NTRFREF\n:86:Payment\n:62F:C261001AED90,00"
-      ).toString("base64"),
-    };
-    const legacyPreview = await t.as.post(`${endpoint}/preview`, renamed);
-    expect(legacyPreview.status, legacyPreview.text).toBe(200);
-    expect(legacyPreview.body.kind).toBe("mt940");
-    for (const path of ["preview", "import"]) {
-      const refused = await t.as.post(`${endpoint}/${path}`, {
-        ...renamed,
+  it.each([false, true])(
+    "requires actual CSV content (format hint present: %s)",
+    async (withHint) => {
+      const t = await vatTenant();
+      const account = await bankAccount(t);
+      const endpoint = `${base(t)}/bank-statements`;
+      const renamed = {
+        fileName: "renamed.csv",
+        fileBase64: Buffer.from(
+          ":20:REF\n:25:AE400000000\n:28C:00001/001\n:60F:C261001AED100,00\n:61:2610011001D10,00NTRFREF\n:86:Payment\n:62F:C261001AED90,00"
+        ).toString("base64"),
+      };
+      for (const path of ["preview", "import"]) {
+        const refused = await t.as.post(`${endpoint}/${path}`, {
+          ...renamed,
+          bankAccountId: account.id,
+          ...(withHint ? { expectedKind: "csv" } : {}),
+        });
+        expect(refused.status, refused.text).toBe(400);
+        expect(refused.body.code).toBe("STATEMENT_CSV_REQUIRED");
+      }
+      expect(await lines(t, account.id)).toEqual([]);
+      const accepted = await t.as.post(`${endpoint}/import`, {
         bankAccountId: account.id,
-        expectedKind: "csv",
+        fileName: "actual.csv",
+        ...(withHint ? { expectedKind: "csv" } : {}),
+        fileBase64: Buffer.from("Date,Description,Debit,Credit\n2026-10-01,Payment,10,0").toString(
+          "base64"
+        ),
       });
-      expect(refused.status, refused.text).toBe(400);
-      expect(refused.body.code).toBe("STATEMENT_CSV_REQUIRED");
+      expect(accepted.status, accepted.text).toBe(201);
+      expect(accepted.body.imported).toBe(1);
     }
-    expect(await lines(t, account.id)).toEqual([]);
-    const accepted = await t.as.post(`${endpoint}/import`, {
-      bankAccountId: account.id,
-      fileName: "actual.csv",
-      expectedKind: "csv",
-      fileBase64: Buffer.from("Date,Description,Debit,Credit\n2026-10-01,Payment,10,0").toString(
-        "base64"
-      ),
-    });
-    expect(accepted.status, accepted.text).toBe(201);
-    expect(accepted.body.imported).toBe(1);
-  });
+  );
 
   it("[R06-20] reconciliation statement difference is 0 on a fixture, then sign-off and export", async () => {
     const t = await vatTenant();
@@ -864,6 +864,85 @@ describe("W3-C banking: statement and transactions", () => {
     expect(
       (await t.as.post(`${base(t)}/bank-statements/imports/${first.batchId}/undo`, {})).status
     ).toBe(409);
+  });
+});
+
+describe("CSV statement import isolation", () => {
+  it("serializes concurrent imports without losing genuinely repeated rows", async () => {
+    const t = await vatTenant();
+    const ba = await bankAccount(t);
+    const otherAccount = await bankAccount(t);
+    const rows: Row[] = [
+      ["2026-10-03", "REPEATED POS", "10.00", ""],
+      ["2026-10-03", "REPEATED POS", "10.00", ""],
+    ];
+    // Hold batch creation so both requests can reach the old pre-transaction duplicate read.
+    await h.sql(`CREATE FUNCTION test_delay_csv_batch() RETURNS trigger AS $$
+      BEGIN PERFORM pg_sleep(0.5); RETURN NEW; END; $$ LANGUAGE plpgsql`);
+    await h.sql(`CREATE TRIGGER test_delay_csv_batch BEFORE INSERT ON bank_import_batches
+      FOR EACH ROW EXECUTE FUNCTION test_delay_csv_batch()`);
+    try {
+      const [a, b, independent] = await Promise.all([
+        importCsv(t, ba.id, rows),
+        importCsv(t, ba.id, rows),
+        importCsv(t, otherAccount.id, rows),
+      ]);
+      expect([a.imported, b.imported].sort()).toEqual([0, 2]);
+      expect([a.batchId, b.batchId].filter(Boolean)).toHaveLength(1);
+      expect(independent.imported).toBe(2);
+      expect(await lines(t, ba.id)).toHaveLength(2);
+      expect(await lines(t, otherAccount.id)).toHaveLength(2);
+    } finally {
+      await h.sql("DROP TRIGGER test_delay_csv_batch ON bank_import_batches");
+      await h.sql("DROP FUNCTION test_delay_csv_batch()");
+    }
+  });
+
+  it("rolls back the batch with the rows when the database rejects a CSV import", async () => {
+    const t = await vatTenant();
+    const ba = await bankAccount(t);
+    const path = `${base(t)}/bank-statements/import`;
+    const csvContent = "Date,Description,Amount\n2026-10-03,RETRY ATOMIC IMPORT,-25.00";
+    await h.sql(`CREATE FUNCTION test_reject_csv_row() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'fixture rejected insert'; END; $$ LANGUAGE plpgsql`);
+    await h.sql(`CREATE TRIGGER test_reject_csv_row BEFORE INSERT ON bank_transactions
+      FOR EACH ROW EXECUTE FUNCTION test_reject_csv_row()`);
+    try {
+      const failed = await t.as.post(path, { bankAccountId: ba.id, csvContent });
+      expect(failed.status).toBe(500);
+      expect(
+        await h.sql("SELECT id FROM bank_import_batches WHERE bank_account_id = $1", [ba.id])
+      ).toHaveLength(0);
+      expect(await lines(t, ba.id)).toHaveLength(0);
+    } finally {
+      await h.sql("DROP TRIGGER test_reject_csv_row ON bank_transactions");
+      await h.sql("DROP FUNCTION test_reject_csv_row()");
+    }
+    const retry = await t.as.post(path, { bankAccountId: ba.id, csvContent });
+    expect(retry.status, retry.text).toBe(201);
+    expect(retry.body.imported).toBe(1);
+  });
+
+  it("deduplicates across the account and compatibility CSV endpoints", async () => {
+    const t = await vatTenant();
+    const ba = await bankAccount(t);
+    const connection = await t.as.post(`${base(t)}/bank-connections`, {
+      bankName: "Emirates NBD",
+      bankAccountId: ba.id,
+    });
+    expect(connection.status, connection.text).toBe(201);
+    const csvContent = "Date,Description,Debit,Credit\n2026-10-03,ONE ACCOUNT LINE,10.00,";
+    const [current, compatibility] = await Promise.all([
+      t.as.post(`${base(t)}/bank-statements/import`, { bankAccountId: ba.id, csvContent }),
+      t.as.post(`${base(t)}/bank-connections/${connection.body.id}/import`, { csvContent }),
+    ]);
+    expect(current.status, current.text).toBe(201);
+    expect(compatibility.status, compatibility.text).toBe(200);
+    expect([current.body.imported, compatibility.body.imported].sort()).toEqual([0, 1]);
+    expect(await lines(t, ba.id)).toHaveLength(1);
+    expect(
+      await h.sql("SELECT id FROM bank_import_batches WHERE bank_account_id = $1", [ba.id])
+    ).toHaveLength(1);
   });
 });
 

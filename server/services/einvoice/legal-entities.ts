@@ -24,12 +24,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, type AppDatabase } from "../../db";
 import { companies, einvoiceLegalEntities, type EInvoiceLegalEntity } from "../../../shared/schema";
 import { DomainError } from "../../errors";
-import {
-  PEPPOL_SCHEME_UAE_TIN,
-  isUaeTin,
-  tinFromTrn,
-  uaePeppolEndpointIssue,
-} from "./pint-ae-codes";
+import { PEPPOL_SCHEME_UAE_TIN, isUaeTin, tinFromTrn } from "./pint-ae-codes";
 import {
   effectiveTin,
   tinProblem,
@@ -64,37 +59,60 @@ export const peppolAddressFor = (tin: string) => `${PEPPOL_SCHEME_UAE_TIN}:${tin
 
 /** Every identifier supplied by a provider must agree with the scoped legal entity. */
 export function matchesProviderEntityOwner(
-  entity: Pick<EInvoiceLegalEntity, "legalEntityId" | "tin">,
-  owner: { legalEntityId?: unknown; tin?: unknown }
+  entity: Pick<EInvoiceLegalEntity, "legalEntityId" | "tin"> & { vatTrn?: string | null },
+  owner: { legalEntityId?: unknown; tin?: unknown; vatTrn?: unknown; identityConflict?: boolean }
 ): boolean {
   return (
+    !owner.identityConflict &&
     (owner.legalEntityId == null || owner.legalEntityId === entity.legalEntityId) &&
-    (owner.tin == null || owner.tin === entity.tin)
+    (owner.tin == null || owner.tin === entity.tin) &&
+    (owner.vatTrn == null ||
+      (typeof owner.vatTrn === "string" &&
+        matchesTaxpayerVat(entity.tin, entity.vatTrn, owner.vatTrn)))
   );
 }
 
 type InboundTaxpayer = { endpoint: string | null; scheme: string | null; vatTrn: string | null };
 
-function matchesTaxpayerTin(tin: string, buyer: InboundTaxpayer): boolean {
+function matchesTaxpayerVat(tin: string, expected: string | null | undefined, actual: string) {
+  return tinFromTrn(actual) === tin && (!expected || actual === expected.replace(/[\s-]/g, ""));
+}
+
+function matchesTaxpayer(
+  tin: string,
+  vatTrn: string | null | undefined,
+  endpoint: { scheme: string; value: string } | null,
+  buyer: InboundTaxpayer
+): boolean {
   return (
     isUaeTin(tin) &&
     Boolean(buyer.endpoint || buyer.vatTrn) &&
-    (buyer.endpoint == null ||
-      (buyer.scheme === PEPPOL_SCHEME_UAE_TIN &&
-        uaePeppolEndpointIssue(buyer.scheme, buyer.endpoint, tin) === null)) &&
-    (buyer.vatTrn == null || tinFromTrn(buyer.vatTrn) === tin)
+    ((buyer.endpoint == null && buyer.scheme == null) ||
+      (endpoint !== null &&
+        buyer.scheme === endpoint.scheme &&
+        buyer.endpoint === endpoint.value)) &&
+    (buyer.vatTrn == null || matchesTaxpayerVat(tin, vatTrn, buyer.vatTrn))
   );
 }
 
 /** Provider receipts use the registered taxpayer even if company VAT registration is absent. */
 export function matchesOnboardedTaxpayer(
-  entity: Pick<EInvoiceLegalEntity, "status" | "tin" | "peppolAddress">,
-  buyer: InboundTaxpayer
+  entity: Pick<EInvoiceLegalEntity, "status" | "tin" | "peppolAddress" | "vatTrn">,
+  buyer: InboundTaxpayer,
+  currentVatTrn?: string | null
 ): boolean {
   return (
     entity.status === "active" &&
-    (entity.peppolAddress === null || entity.peppolAddress === peppolAddressFor(entity.tin)) &&
-    matchesTaxpayerTin(entity.tin, buyer)
+    (entity.peppolAddress === null ||
+      entity.peppolAddress === entity.tin ||
+      entity.peppolAddress === peppolAddressFor(entity.tin)) &&
+    matchesTaxpayer(
+      entity.tin,
+      entity.vatTrn,
+      { scheme: PEPPOL_SCHEME_UAE_TIN, value: entity.tin },
+      buyer
+    ) &&
+    (buyer.vatTrn == null || matchesTaxpayerVat(entity.tin, currentVatTrn, buyer.vatTrn))
   );
 }
 
@@ -235,7 +253,11 @@ export function companyTin(company: CompanyTinSource): string | null {
 /** Signed XML uses the same statutory company identity as the provider onboarding workflow. */
 export function matchesCompanyTaxpayer(company: CompanyTinSource, buyer: InboundTaxpayer): boolean {
   const tin = companyTin(company);
-  return tin !== null && !companyTinConflict(tin, company) && matchesTaxpayerTin(tin, buyer);
+  if (!tin || companyTinConflict(tin, company)) return false;
+  const scheme = company.peppolScheme?.trim() || PEPPOL_SCHEME_UAE_TIN;
+  const value =
+    company.peppolParticipantId?.trim() || (scheme === PEPPOL_SCHEME_UAE_TIN ? tin : null);
+  return matchesTaxpayer(tin, company.trnVatNumber, value ? { scheme, value } : null, buyer);
 }
 
 function companyTinConflict(tin: string, company: CompanyTinSource): boolean {

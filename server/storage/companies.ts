@@ -121,8 +121,11 @@ export class CompanyStorage extends UserStorage {
     return out;
   }
 
-  async createCompany(insertCompany: InsertCompany): Promise<Company> {
-    const [company] = await db.insert(companies).values(insertCompany).returning();
+  async createCompany(
+    insertCompany: InsertCompany,
+    conn: Pick<AppDatabase, "insert"> = db
+  ): Promise<Company> {
+    const [company] = await conn.insert(companies).values(insertCompany).returning();
     return company;
   }
 
