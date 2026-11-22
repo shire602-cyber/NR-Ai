@@ -1231,6 +1231,144 @@ describe("E2 submit, two tracks and history", () => {
     expect((await statusOf(t, inv.id)).document.xmlHash).toBe(corrected.einvoice_hash);
   });
 
+  it("does not transfer an older revision's filing evidence during archive repair", async () => {
+    const t = await readyTenant();
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+    const invoice = await issuedInvoice(t);
+    const path = `/api/invoices/${invoice.id}`;
+    fake.nextSubmit = ["422"];
+    expect((await t.as.post(`${path}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const [original] = await h.sql(
+      "SELECT einvoice_xml, einvoice_hash, einvoice_uuid FROM invoices WHERE id = $1",
+      [invoice.id]
+    );
+    await h.sql("UPDATE invoice_lines SET description = 'Revised supply' WHERE invoice_id = $1", [
+      invoice.id,
+    ]);
+    expect((await t.as.post(`${path}/einvoice/resubmit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const held = docOf(t, invoice.number)!;
+    held.state = "final_valid";
+    held.isTerminal = true;
+    held.ftaApproval = "APPROVED";
+    expect((await poll()).refreshed).toBe(1);
+    const [corrected] = await h.sql("SELECT einvoice_hash FROM invoices WHERE id = $1", [
+      invoice.id,
+    ]);
+    await h.sql(
+      "UPDATE invoices SET einvoice_xml = $2, einvoice_hash = $3, einvoice_uuid = $4 WHERE id = $1",
+      [invoice.id, original.einvoice_xml, original.einvoice_hash, original.einvoice_uuid]
+    );
+    await h.sql(
+      `UPDATE einvoice_documents SET xml_hash = $2, uuid = $3, report_by = '2026-03-15',
+        reporting_status = 'report_failed', reported_at = '2026-03-15',
+        validation = jsonb_set(validation, '{submission,reportingEvidence}', '{"report_failed":"2026-03-15T00:00:00.000Z"}')
+      WHERE invoice_id = $1`,
+      [invoice.id, original.einvoice_hash, original.einvoice_uuid]
+    );
+
+    const proof = await t.as.post(`${path}/einvoice/confirm-environment`, {
+      environment: "sandbox",
+    });
+    expect(proof.status, proof.text).toBe(200);
+    const [repaired] = await h.sql(
+      `SELECT xml_hash, report_by, reported_at, validation->'submission'->'reportingEvidence' AS evidence
+       FROM einvoice_documents WHERE invoice_id = $1`,
+      [invoice.id]
+    );
+    expect(repaired).toMatchObject({
+      xml_hash: corrected.einvoice_hash,
+      report_by: null,
+      reported_at: null,
+    });
+    expect(repaired.evidence).toBeNull();
+    expect(await statusOf(t, invoice.id)).toMatchObject({
+      tracks: { reporting: { status: "pending", obligationKnown: false, reportBy: null } },
+    });
+  });
+
+  it("uses one submitted revision decision for download, status, verification and polling", async () => {
+    const t = await readyTenant();
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+    const invoice = await issuedInvoice(t);
+    const path = `/api/invoices/${invoice.id}`;
+    fake.nextSubmit = ["422"];
+    expect((await t.as.post(`${path}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const [original] = await h.sql(
+      "SELECT einvoice_xml, einvoice_hash, einvoice_uuid FROM invoices WHERE id = $1",
+      [invoice.id]
+    );
+    await h.sql(
+      "UPDATE invoice_lines SET description = 'New submitted revision' WHERE invoice_id = $1",
+      [invoice.id]
+    );
+    expect((await t.as.post(`${path}/einvoice/resubmit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    await h.sql(
+      "UPDATE invoices SET einvoice_xml = $2, einvoice_hash = $3, einvoice_uuid = $4 WHERE id = $1",
+      [invoice.id, original.einvoice_xml, original.einvoice_hash, original.einvoice_uuid]
+    );
+    await h.sql("UPDATE einvoice_documents SET xml_hash = $2, uuid = $3 WHERE invoice_id = $1", [
+      invoice.id,
+      original.einvoice_hash,
+      original.einvoice_uuid,
+    ]);
+
+    const download = await t.as.get(`${path}/einvoice-xml`);
+    expect(download.status).toBe(409);
+    expect(download.text).not.toContain(original.einvoice_xml);
+    const proof = await t.as.post(`${path}/einvoice/confirm-environment`, {
+      environment: "sandbox",
+    });
+    expect(proof.status, proof.text).toBe(409);
+    expect(await statusOf(t, invoice.id)).toMatchObject({
+      submissionState: "needs_reconciliation",
+      transmission: { correctionRevisionUnverified: true, canRefresh: false },
+    });
+    const held = docOf(t, invoice.number)!;
+    held.state = "final_valid";
+    held.isTerminal = true;
+    held.ftaApproval = "APPROVED";
+    expect((await poll()).refreshed).toBe(0);
+    expect(
+      await h.sql("SELECT id FROM einvoice_archive WHERE invoice_id = $1 AND kind = 'cleared'", [
+        invoice.id,
+      ])
+    ).toEqual([]);
+  });
+
+  it("keeps the original rejection when correction proof fails before dispatch", async () => {
+    const t = await readyTenant();
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
+    const invoice = await issuedInvoice(t);
+    const path = `/api/invoices/${invoice.id}`;
+    fake.nextSubmit = ["422"];
+    expect((await t.as.post(`${path}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const original = await statusOf(t, invoice.id);
+    expect(original).toMatchObject({ status: "rejected", rejection: { resubmittable: true } });
+    await h.sql(
+      "UPDATE invoice_lines SET description = 'Unsent revised supply' WHERE invoice_id = $1",
+      [invoice.id]
+    );
+    expect((await t.as.post(`${path}/einvoice/resubmit`, {})).status).toBe(202);
+    fake.nextSalesReads = ["unavailable"];
+    expect((await runEInvoiceRetries()).submitted).toBe(0);
+    expect(fake.posts).toBe(1);
+    expect(await statusOf(t, invoice.id)).toMatchObject({
+      status: "rejected",
+      submissionState: "rejected",
+      transmission: { correctionRevisionUnverified: false },
+      document: { xmlHash: original.document.xmlHash, submittedAt: original.document.submittedAt },
+      rejection: { resubmittable: true, reasons: original.rejection.reasons },
+    });
+    expect(
+      await h.sql("SELECT sha256 FROM einvoice_archive WHERE invoice_id = $1", [invoice.id])
+    ).toEqual([{ sha256: original.document.xmlHash }]);
+  });
+
   it("never marks the rejected XML cleared after a response-lost correction with different XML", async () => {
     const t = await readyTenant();
     await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [t.user.id]);
@@ -1312,8 +1450,10 @@ describe("E2 submit, two tracks and history", () => {
       provider: "complyance",
       providerMessageId: held.id,
     });
-    const verified = await t.as.post(`${prefix}/refresh-status`, {});
-    expect(verified.status, verified.text).toBe(200);
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      transmission: { correctionRevisionUnverified: false, canRefresh: true },
+    });
+    expect((await poll()).refreshed).toBe(1);
     expect(await readRevision()).toMatchObject({
       einvoice_hash: corrected.einvoice_hash,
       einvoice_xml: corrected.einvoice_xml,
@@ -1642,6 +1782,163 @@ describe("E2 inbound: purchase.invoice.stored -> draft bill tagged e-invoice", (
 });
 
 describe("E2 + F16: no FTA reporting before the mandate applies", () => {
+  it("records verified FTA approval even when the provider's delivery transition returns 409", async () => {
+    const t = await readyTenant();
+    const inv = await issuedInvoice(t);
+    const path = `/api/invoices/${inv.id}/einvoice`;
+    expect((await t.as.post(`${path}/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const held = docOf(t, inv.number)!;
+    held.state = "final_valid";
+    held.isTerminal = true;
+    held.ftaApproval = "PENDING";
+    expect((await t.as.post(`${path}/refresh-status`, {})).status).toBe(200);
+    expect(await statusOf(t, inv.id)).toMatchObject({
+      status: "accepted",
+      tracks: { delivery: { status: "delivered" }, reporting: { status: "pending" } },
+    });
+
+    held.state = "delivery_failed";
+    held.ftaApproval = "APPROVED";
+    const receipt = await t.as.post(`${path}/refresh-status`, {});
+    expect(receipt.status, receipt.text).toBe(409);
+    expect(receipt.body.code).toBe("EINVOICE_INVALID_TRANSITION");
+    const status = await statusOf(t, inv.id);
+    expect(status).toMatchObject({
+      status: "accepted",
+      tracks: { delivery: { status: "delivered" }, reporting: { status: "reported" } },
+      transmission: { recipientAcknowledgement: "accepted" },
+    });
+    expect(
+      status.events.filter(
+        (event: { track: string; to: string }) =>
+          event.track === "reporting" && event.to === "reported"
+      )
+    ).toHaveLength(1);
+    expect((await t.as.post(`${path}/refresh-status`, {})).status).toBe(409);
+    const after = await statusOf(t, inv.id);
+    expect(
+      after.events.filter(
+        (event: { track: string; to: string }) =>
+          event.track === "reporting" && event.to === "reported"
+      )
+    ).toHaveLength(1);
+  });
+
+  it.each(["delivery", "revision", "environment"] as const)(
+    "records a raced FTA approval only when tracking still identifies the original %s",
+    async (changed) => {
+      const t = await readyTenant();
+      const inv = await issuedInvoice(t);
+      const path = `/api/invoices/${inv.id}/einvoice`;
+      expect((await t.as.post(`${path}/submit`, {})).status).toBe(202);
+      await runEInvoiceRetries();
+      const held = docOf(t, inv.number)!;
+      held.state = "final_valid";
+      held.ftaApproval = "APPROVED";
+      const getStatus = Provider.prototype.getStatus;
+      const spy = vi.spyOn(Provider.prototype, "getStatus").mockImplementationOnce(async function (
+        this: InstanceType<typeof Provider>,
+        ...args
+      ) {
+        const result = await getStatus.call(this, ...args);
+        if (changed === "revision") {
+          await h.sql("UPDATE einvoice_documents SET xml_hash = $2 WHERE invoice_id = $1", [
+            inv.id,
+            "a".repeat(64),
+          ]);
+        } else if (changed === "environment") {
+          await h.sql(
+            `UPDATE einvoice_documents SET validation = jsonb_set(validation,
+                 '{submission,environment}', '"production"') WHERE invoice_id = $1`,
+            [inv.id]
+          );
+        } else {
+          await h.sql(
+            `UPDATE einvoice_documents SET delivery_status = 'rejected',
+                 provider_status = 'final_invalid', status = 'rejected' WHERE invoice_id = $1`,
+            [inv.id]
+          );
+          await h.sql("UPDATE invoices SET einvoice_status = 'rejected' WHERE id = $1", [inv.id]);
+        }
+        return result;
+      });
+      try {
+        const receipt = await t.as.post(`${path}/refresh-status`, {});
+        expect(receipt.status, receipt.text).toBe(409);
+        expect(receipt.body.code).toBe("EINVOICE_INVALID_TRANSITION");
+      } finally {
+        spy.mockRestore();
+      }
+      const status = await statusOf(t, inv.id);
+      expect(status.tracks.reporting.status).toBe(changed === "delivery" ? "reported" : "pending");
+      if (changed === "delivery") {
+        expect(status).toMatchObject({
+          status: "rejected",
+          tracks: { delivery: { status: "rejected" } },
+          document: { providerStatus: "final_invalid" },
+        });
+      }
+    }
+  );
+
+  it("selects only eligible Complyance delivery and FTA candidates from PostgreSQL", async () => {
+    const t = await readyTenant();
+    const ready = [];
+    for (const outcome of ["pending", "malformed", "already-confirmed", "needs-correction"]) {
+      const inv = await issuedInvoice(t);
+      expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(202);
+      await runEInvoiceRetries();
+      const held = docOf(t, inv.number)!;
+      const rejected = outcome === "needs-correction";
+      const approved = outcome === "already-confirmed";
+      held.state = rejected ? "rejected" : approved ? "final_valid" : "final_invalid";
+      held.isTerminal = true;
+      held.ftaApproval = "APPROVED";
+      if (!rejected && !approved)
+        held.errors = [{ code: "BUYER", message: "Rejected", source: "delivery" }];
+      const state = approved ? "cleared" : "rejected";
+      await h.sql("UPDATE invoices SET einvoice_status = $2 WHERE id = $1", [inv.id, state]);
+      await h.sql(
+        `UPDATE einvoice_documents SET status = $2, provider_status = $3, delivery_status = $4,
+           reporting_status = $5, last_error_code = $6, report_by = '2026-05-19',
+           validation = validation || jsonb_build_object('submission', validation->'submission'
+             || jsonb_build_object('reportingEvidence', jsonb_build_object('reported', $7::text)))
+         WHERE invoice_id = $1`,
+        [
+          inv.id,
+          state,
+          held.state,
+          approved ? "delivered" : "rejected",
+          approved || outcome === "malformed" ? "reported" : "pending",
+          rejected ? "COMPLYANCE_VALIDATION" : null,
+          approved ? "2026-05-01T09:12:00.000Z" : "2026-19-99T00:00:00.000Z",
+        ]
+      );
+      if (outcome === "pending" || outcome === "malformed") ready.push(inv.id);
+    }
+    const { pool } = await import("../../server/db");
+    const query = vi.spyOn(pool, "query");
+    try {
+      expect(
+        (await events.runProviderPoll("complyance", { companyId: t.company.id })).refreshed
+      ).toBe(2);
+      const candidates = query.mock.calls.findIndex(([config]) => {
+        const text = typeof config === "string" ? config : config?.text;
+        return (
+          text?.includes('from "einvoice_documents"') &&
+          text.includes('order by "einvoice_documents"."updated_at" asc')
+        );
+      });
+      expect(candidates).toBeGreaterThanOrEqual(0);
+      const selection = await query.mock.results[candidates].value;
+      expect(selection.rows).toHaveLength(ready.length);
+      expect(selection.rows.flat()).toEqual(expect.arrayContaining(ready));
+    } finally {
+      query.mockRestore();
+    }
+  });
+
   it.each([
     ["stored obligation", "final_invalid", "rejected", "not_required", true, null],
     ["deadline overrides a flag", "delivery_failed", "delivery_failed", null, false, "2026-05-19"],

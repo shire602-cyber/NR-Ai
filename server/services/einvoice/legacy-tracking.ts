@@ -42,8 +42,10 @@ import {
   hasUnverifiedComplyanceCorrection,
   lockEInvoiceInvoice,
   outboundArchiveRevisions,
+  resetRevisionReporting,
   sha256Hex,
   SUBMISSION_LEASE_MS,
+  trackedRevisionReporting,
   upsertEInvoiceDocument,
   type EInvoiceDb,
 } from "./store";
@@ -209,7 +211,8 @@ function completeStoredTracking(invoice: Invoice, doc: EInvoiceDocument | undefi
 export async function legacyTrackingAvailability(
   invoice: Invoice,
   doc: EInvoiceDocument | undefined,
-  company?: Pick<Company, "einvoicePartner">
+  company?: Pick<Company, "einvoicePartner">,
+  revision?: { unresolved: boolean; canRepairClearance: boolean }
 ) {
   const refusal = await legacyRefusalProof(invoice, doc);
   if (refusal) {
@@ -227,7 +230,12 @@ export async function legacyTrackingAvailability(
   }
   const plan = recoveryPlan(invoice, doc);
   const pin = documentProviderEnvironment(doc);
-  if (!plan || completeStoredTracking(invoice, doc)) return null;
+  if (
+    !plan ||
+    revision?.unresolved ||
+    (completeStoredTracking(invoice, doc) && !revision?.canRepairClearance)
+  )
+    return null;
   const configuration = await companyProviderConfiguration(invoice.companyId, plan.provider);
   return {
     provider: plan.provider,
@@ -288,11 +296,13 @@ function cannotVerify() {
 async function savedSource(
   invoice: Invoice,
   doc: EInvoiceDocument | undefined,
-  reference: { provider: Provider; messageId: string | null }
+  reference: { provider: Provider; messageId: string | null },
+  conn: EInvoiceDb = db
 ) {
-  const authoritative = await clearedEInvoiceSource(invoice, doc, reference);
+  const authoritative = await clearedEInvoiceSource(invoice, doc, reference, conn);
   if (authoritative) return authoritative;
   if (reference.provider === "complyance" && reference.messageId) {
+    if (hasUnverifiedComplyanceCorrection(doc)) throw conflictingClearanceRevision();
     await assertSubmittedArchiveRevision(
       {
         companyId: invoice.companyId,
@@ -301,14 +311,15 @@ async function savedSource(
         providerMessageId: reference.messageId,
       },
       invoice,
-      doc
+      doc,
+      conn
     );
   }
   const needsArchive = !invoice.einvoiceXml || (!invoice.einvoiceHash && !doc?.xmlHash);
   const snapshot = documentSubmissionSnapshot(doc);
   const pinnedHash = invoice.einvoiceHash ?? doc?.xmlHash;
   const archives = needsArchive
-    ? await db
+    ? await conn
         .select({
           xml: einvoiceArchive.xml,
           hash: einvoiceArchive.sha256,
@@ -341,7 +352,52 @@ async function savedSource(
   if (!xml || !hashes.length) throw mismatch();
   const hash = sha256Hex(xml);
   if (hashes.some((candidate) => candidate !== hash)) throw mismatch();
-  return sourceIdentity(invoice, doc, { xml, hash, number: archive?.number, uuid: archive?.uuid });
+  return {
+    ...sourceIdentity(invoice, doc, { xml, hash, number: archive?.number, uuid: archive?.uuid }),
+    clearanceId: null,
+    clearedAt: null,
+  };
+}
+
+/** Download, verification and provider refresh must select the same bytes for a held reference. */
+export async function resolveTrackedEInvoiceSource(
+  invoice: Invoice,
+  doc: EInvoiceDocument | undefined,
+  reference: TrackedReference,
+  conn: EInvoiceDb = db
+) {
+  try {
+    return await savedSource(invoice, doc, reference, conn);
+  } catch (err) {
+    if (
+      reference.provider === "complyance" &&
+      err instanceof DomainError &&
+      err.code === "EINVOICE_ENVIRONMENT_PROOF_MISMATCH"
+    )
+      throw conflictingClearanceRevision();
+    throw err;
+  }
+}
+
+/** Status reads are local and cannot turn contradictory XML evidence into a provider claim. */
+export async function inspectComplyanceRevision(
+  invoice: Invoice,
+  doc: EInvoiceDocument | undefined
+) {
+  const unresolved = hasUnverifiedComplyanceCorrection(doc);
+  const reference = legacyTrackingReference(invoice, doc);
+  if (reference?.provider !== "complyance") return { unresolved, canRepairClearance: false };
+  try {
+    const source = await resolveTrackedEInvoiceSource(invoice, doc, reference);
+    return {
+      unresolved: false,
+      canRepairClearance: !!source.clearanceId && !mirrorsMatchSource(invoice, doc, source),
+    };
+  } catch (err) {
+    if (err instanceof DomainError && err.code === "EINVOICE_CORRECTION_REVISION_UNVERIFIED")
+      return { unresolved: true, canRepairClearance: false };
+    throw err;
+  }
 }
 
 function sourceIdentity(
@@ -359,9 +415,7 @@ function sourceIdentity(
   } catch {
     throw mismatch();
   }
-  const documentNumber =
-    stringValue(snapshot?.invoiceNumber) ??
-    (authoritative ? invoice.number : (source.number ?? invoice.number));
+  const documentNumber = stringValue(snapshot?.invoiceNumber) ?? invoice.number;
   if (
     textAt(root, "cbc:ID") !== documentNumber ||
     (source.number && source.number !== documentNumber)
@@ -456,15 +510,15 @@ export async function clearedEInvoiceSource(
   }
 }
 
-function mirrorsMatchClearance(
+function mirrorsMatchSource(
   invoice: Invoice,
   doc: EInvoiceDocument | undefined,
-  clearance: NonNullable<Awaited<ReturnType<typeof clearedEInvoiceSource>>>
+  source: { xml: string; hash: string }
 ) {
   return (
-    invoice.einvoiceXml === clearance.xml &&
-    invoice.einvoiceHash === clearance.hash &&
-    doc?.xmlHash === clearance.hash
+    invoice.einvoiceXml === source.xml &&
+    invoice.einvoiceHash === source.hash &&
+    doc?.xmlHash === source.hash
   );
 }
 
@@ -473,24 +527,17 @@ export async function archivedEInvoiceXmlForDownload(invoice: Invoice): Promise<
   const doc = await getEInvoiceDocument(invoice.companyId, invoice.id);
   const reference = legacyTrackingReference(invoice, doc);
   if (!reference) {
-    if (
-      (doc?.providerMessageId &&
-        invoice.einvoiceProviderMessageId &&
-        doc.providerMessageId !== invoice.einvoiceProviderMessageId) ||
-      ((doc?.providerMessageId || invoice.einvoiceProviderMessageId) &&
-        doc?.provider &&
-        invoice.einvoiceProvider &&
-        doc.provider !== invoice.einvoiceProvider)
-    )
+    const providerHeldDocument =
+      [invoice.einvoiceProvider, doc?.provider].some(
+        (provider) => provider === "acube" || provider === "complyance"
+      ) &&
+      (invoice.einvoiceProviderMessageId || doc?.providerMessageId);
+    if (documentSubmissionMetadata(doc)?.correctionOf || providerHeldDocument)
       throw conflictingClearanceRevision();
     return invoice.einvoiceXml;
   }
-  const clearance = await clearedEInvoiceSource(invoice, doc, reference);
-  if (clearance) return clearance.xml;
-  if (invoice.einvoiceXml && doc?.status !== "cleared" && invoice.einvoiceStatus !== "cleared")
-    return invoice.einvoiceXml;
   try {
-    return (await savedSource(invoice, doc, reference)).xml;
+    return (await resolveTrackedEInvoiceSource(invoice, doc, reference)).xml;
   } catch (err) {
     if (err instanceof DomainError && err.code === "EINVOICE_ENVIRONMENT_PROOF_MISMATCH")
       return null;
@@ -865,11 +912,13 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
     throw mismatch();
   const existingEnvironment = documentProviderEnvironment(doc);
   assertSameEnvironment(existingEnvironment, environment);
-  const verifyCorrection = historicalComplyanceRejection(invoice, doc);
-  const clearance = await clearedEInvoiceSource(invoice, doc, plan);
+  const storedSource = plan.messageId
+    ? await resolveTrackedEInvoiceSource(invoice, doc, { ...plan, messageId: plan.messageId })
+    : null;
   if (
     completeStoredTracking(invoice, doc) &&
-    (!clearance || mirrorsMatchClearance(invoice, doc, clearance))
+    storedSource &&
+    mirrorsMatchSource(invoice, doc, storedSource)
   ) {
     return { provider: plan.provider, environment, verified: true as const };
   }
@@ -879,7 +928,8 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
     environment,
   });
   if (!configuration) throw cannotVerify();
-  const source = clearance ?? (await savedSource(invoice, doc, plan));
+  const source = storedSource ?? (await savedSource(invoice, doc, plan));
+  const verifyCorrection = !source.clearanceId && historicalComplyanceRejection(invoice, doc);
   const snapshot = documentSubmissionSnapshot(doc);
   const { identity, reference, correction } = await verifyAtProvider(
     company,
@@ -928,14 +978,14 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
     }
     const pinned = documentProviderEnvironment(stored);
     assertSameEnvironment(pinned, environment);
-    const preserveRejection = historicalComplyanceRejection(current, stored);
-    const currentClearance = await clearedEInvoiceSource(current, stored, reference, tx);
-    if (currentClearance?.clearanceId !== clearance?.clearanceId)
+    const preserveRejection = !source.clearanceId && historicalComplyanceRejection(current, stored);
+    const currentSource = plan.messageId
+      ? await resolveTrackedEInvoiceSource(current, stored, reference, tx)
+      : ((await clearedEInvoiceSource(current, stored, reference, tx)) ??
+        (await savedSource(current, stored, plan, tx)));
+    if (currentSource.hash !== source.hash || currentSource.clearanceId !== source.clearanceId)
       throw conflictingClearanceRevision();
-    if (
-      completeStoredTracking(current, stored) &&
-      (!clearance || mirrorsMatchClearance(current, stored, clearance))
-    )
+    if (completeStoredTracking(current, stored) && mirrorsMatchSource(current, stored, source))
       return response;
     const [duplicate] = await tx
       .select({ id: einvoiceDocuments.id })
@@ -991,16 +1041,17 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
     }
 
     const now = new Date();
-    const required = recordedReportingRequired(stored);
-    const validation =
-      stored?.validation &&
-      typeof stored.validation === "object" &&
-      !Array.isArray(stored.validation)
-        ? stored.validation
-        : {};
+    const { replacesRevision, required, reportBy } = trackedRevisionReporting(
+      current,
+      stored,
+      source
+    );
+    const validation = replacesRevision
+      ? resetRevisionReporting(stored, required)
+      : stored?.validation;
     const status = preserveRejection
       ? "rejected"
-      : recovered
+      : recovered || replacesRevision
         ? "submitted"
         : (stored?.status ??
           (HELD_STATUSES.includes(current.einvoiceStatus ?? "")
@@ -1015,15 +1066,26 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
       xmlHash: source.hash,
       uuid: source.uuid,
       validation: {
-        ...validation,
+        ...(validation && typeof validation === "object" && !Array.isArray(validation)
+          ? validation
+          : {}),
         submission: {
-          ...snapshot,
+          ...documentSubmissionSnapshot({ validation }),
           ...owner,
           invoiceNumber: documentNumber,
           environment,
           environmentVerifiedAt: now.toISOString(),
           providerAttempted: true,
           ...(required === null ? {} : { reportingRequired: required }),
+          ...(replacesRevision
+            ? {
+                confirmedRevisionHash: source.hash,
+                correctableRejection: false,
+                correctionUncertain: false,
+                correctionCandidateHash: null,
+                correctionCandidate: null,
+              }
+            : {}),
           ...(correction && preserveRejection
             ? {
                 scope: correction.scope,
@@ -1036,7 +1098,7 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
         },
       },
     };
-    if (recovered || (correction && preserveRejection)) {
+    if (recovered || replacesRevision || (correction && preserveRejection)) {
       const providerStatus = preserveRejection
         ? correction
           ? "rejected"
@@ -1063,6 +1125,12 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
           errorCode,
           errorMessage: lastError,
           providerStatus,
+          ...(replacesRevision
+            ? {
+                reporting: required === false ? ("not_required" as const) : ("pending" as const),
+                reportBy,
+              }
+            : {}),
         },
         {
           source: "user",
@@ -1075,6 +1143,7 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
             submitClaimedAt: null,
             lastError,
             rejectionReasons,
+            ...(replacesRevision ? { reportedAt: null, deliveredAt: null } : {}),
           },
         },
         tx
@@ -1106,14 +1175,16 @@ export async function confirmLegacyEInvoiceEnvironment(args: {
       .set({
         einvoiceProvider: current.einvoiceProvider ?? reference.provider,
         einvoiceProviderMessageId: current.einvoiceProviderMessageId ?? reference.messageId,
-        einvoiceXml: clearance ? source.xml : (current.einvoiceXml ?? source.xml),
-        einvoiceHash: clearance ? source.hash : (current.einvoiceHash ?? source.hash),
-        einvoiceUuid: clearance ? source.uuid : (current.einvoiceUuid ?? source.uuid),
-        ...(recovered
+        einvoiceXml: source.clearanceId ? source.xml : (current.einvoiceXml ?? source.xml),
+        einvoiceHash: source.clearanceId ? source.hash : (current.einvoiceHash ?? source.hash),
+        einvoiceUuid: source.clearanceId ? source.uuid : (current.einvoiceUuid ?? source.uuid),
+        ...(recovered || replacesRevision
           ? {
               einvoiceStatus: status,
               einvoiceStatusDetail: preserveRejection ? current.einvoiceStatusDetail : null,
-              einvoiceSubmittedAt: current.einvoiceSubmittedAt ?? now,
+              einvoiceSubmittedAt: recovered
+                ? (current.einvoiceSubmittedAt ?? now)
+                : current.einvoiceSubmittedAt,
             }
           : {}),
       })

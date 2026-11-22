@@ -194,6 +194,60 @@ it("tracks a prior A-Cube receipt through its original configuration, not the se
   });
 });
 
+it.each([
+  ["different receipt IDs", "acube", "acube"],
+  ["different providers for the same receipt ID", "acube", "complyance"],
+] as const)(
+  "keeps delivery unconfirmed when tracking has %s",
+  async (reason, recorded, observed) => {
+    const { tenant, invoiceId, companyId, statusPath } = await fixture();
+    const docId = randomUUID();
+    const invoiceDocId = recorded === observed ? randomUUID() : docId;
+    const raw = observed === "acube" ? "accepted" : "final_valid";
+    await h.sql(
+      `UPDATE invoices SET status = 'sent', einvoice_status = 'accepted', einvoice_provider = $2,
+         einvoice_provider_message_id = $3 WHERE id = $1`,
+      [invoiceId, recorded, invoiceDocId]
+    );
+    await h.sql(
+      `INSERT INTO einvoice_documents (company_id, invoice_id, status, provider, provider_message_id,
+       delivery_status, provider_status, validation)
+     VALUES ($1, $2, 'accepted', $3, $4, 'delivered', $5, '{"submission":{"environment":"sandbox"}}')`,
+      [companyId, invoiceId, observed, docId, raw]
+    );
+    await h.sql(
+      `INSERT INTO einvoice_document_events (company_id, invoice_id, track, from_status, to_status,
+       provider, provider_status, source) VALUES ($1, $2, 'delivery', 'sending', 'delivered', $3, $4, 'poll')`,
+      [companyId, invoiceId, observed, raw]
+    );
+    const [batch, status] = await Promise.all([
+      tenant.as.get(`/api/companies/${companyId}/einvoicing/compliance?invoiceIds=${invoiceId}`),
+      tenant.as.get(statusPath),
+    ]);
+    expect(batch.status, batch.text).toBe(200);
+    expect(status.status, status.text).toBe(200);
+    expect(batch.body.documents).toMatchObject([
+      { invoiceId, deliveryStatus: "queued", deliveryConfirmationUnavailable: true },
+    ]);
+    expect(batch.body.items).toMatchObject([
+      { invoiceId, delivery: "queued", deliveryConfirmationUnavailable: true },
+    ]);
+    expect(status.body, reason).toMatchObject({
+      submissionState: "needs_reconciliation",
+      tracks: { delivery: { status: "queued", confirmationUnavailable: true } },
+      transmission: { recipientAcknowledgement: null, canSubmit: false, canRefresh: false },
+      events: [
+        {
+          track: "delivery",
+          to: "queued",
+          recipientAcknowledgement: null,
+          confirmationUnavailable: true,
+        },
+      ],
+    });
+  }
+);
+
 it("keeps a not-yet-sent queue pinned and shows that the original selection must be restored", async () => {
   const { tenant, invoiceId, companyId, statusPath } = await fixture();
   await h.sql(

@@ -14,7 +14,11 @@ import {
   manualBankConnectionBody,
 } from "../../shared/validators/banking";
 import type { BankConnection } from "../../shared/schema";
-import { importConnectionStatement, parseStatementCsv } from "../services/bank-import.service";
+import {
+  importConnectionStatement,
+  linkConnectionStatement,
+  parseStatementCsv,
+} from "../services/bank-import.service";
 import { createLogger } from "../config/logger";
 import { z } from "zod";
 import { zUuid } from "../../shared/validators/primitives";
@@ -174,9 +178,7 @@ export function registerBankRoutes(app: Express) {
       const { companyId, id } = req.params;
       await ownedConnection(req, id, companyId);
       const { bankAccountId } = parsedBody<z.output<typeof connectionLinkBody>>(req);
-      if (!(await storage.getBankAccountById(bankAccountId, companyId)))
-        throw new DomainError("BANK_ACCOUNT_NOT_FOUND", 404);
-      const updated = await storage.updateBankConnection(id, { bankAccountId });
+      const updated = await linkConnectionStatement(companyId, id, bankAccountId, userId(req));
       if (!updated) throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404);
       res.json(sanitizeConnection(updated));
     })

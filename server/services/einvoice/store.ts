@@ -69,6 +69,7 @@ export function documentSubmissionMetadata(
   const environment = metadata?.environment;
   if (environment !== "sandbox" && environment !== "production" && environment !== "mock") return;
   const priorReporting = metadata?.correctionOriginalReporting;
+  const priorRejection = metadata?.correctionOriginalRejection;
   return {
     environment: environment as EInvoiceProviderEnvironment,
     operationId: typeof metadata?.operationId === "string" ? metadata.operationId : null,
@@ -105,6 +106,21 @@ export function documentSubmissionMetadata(
       "reportBy" in priorReporting &&
       (typeof priorReporting.reportBy === "string" || priorReporting.reportBy === null)
         ? { required: priorReporting.required, reportBy: priorReporting.reportBy }
+        : null,
+    correctionOriginalRejection:
+      priorRejection && typeof priorRejection === "object" && "lastError" in priorRejection
+        ? {
+            lastError:
+              typeof priorRejection.lastError === "string" ? priorRejection.lastError : null,
+            reasons:
+              "reasons" in priorRejection && Array.isArray(priorRejection.reasons)
+                ? priorRejection.reasons
+                : null,
+            detail:
+              "detail" in priorRejection && typeof priorRejection.detail === "string"
+                ? priorRejection.detail
+                : null,
+          }
         : null,
     correctionUncertain: metadata?.correctionUncertain === true,
     correctionCandidateHash:
@@ -147,6 +163,38 @@ export function correctionCandidateReporting(doc: EInvoiceDocument | undefined, 
   )
     return null;
   return { reportingRequired: candidate.reportingRequired, reportBy: candidate.reportBy };
+}
+
+/** Only the filing snapshot proven to belong to the selected revision can survive repair. */
+export function trackedRevisionReporting(
+  invoice: Pick<Invoice, "einvoiceHash">,
+  doc: EInvoiceDocument | undefined,
+  source?: { hash: string; clearanceId: string | null }
+) {
+  const recordedHash = doc?.xmlHash ?? invoice.einvoiceHash;
+  const replacesRevision = Boolean(source?.clearanceId && recordedHash !== source.hash);
+  const candidate = source?.clearanceId ? correctionCandidateReporting(doc, source.hash) : null;
+  const required = candidate
+    ? candidate.reportingRequired
+    : replacesRevision
+      ? null
+      : recordedReportingRequired(doc);
+  const reportBy = candidate ? candidate.reportBy : replacesRevision ? null : undefined;
+  return { replacesRevision, required, reportBy };
+}
+
+export function resetRevisionReporting(
+  doc: EInvoiceDocument | undefined,
+  required: boolean | null
+) {
+  return {
+    ...documentValidation(doc),
+    submission: {
+      ...documentSubmissionSnapshot(doc),
+      reportingEvidence: null,
+      reportingRequired: required,
+    },
+  };
 }
 
 /** A recorded due date is evidence of an obligation even on older, inconsistent rows. */

@@ -1,10 +1,11 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
 import { db, type AppDatabase } from "../db";
 import { DomainError } from "../errors";
 import {
   bankAccounts,
   bankConnections,
   bankImportBatches,
+  bankTransactionMatches,
   bankTransactions,
   type BankAccount,
   type BankTransaction,
@@ -12,6 +13,7 @@ import {
 import { filsToNumber, tryToFils } from "../../shared/money";
 import { parseIsoDate } from "../../shared/validators/primitives";
 import {
+  bankRowKey,
   decodeStatementBytes,
   detectBankFileKind,
   fingerprintBytes,
@@ -44,7 +46,7 @@ export interface ImportStatementRowsInput {
   rows: ParsedBankRow[];
   kind: BankFileKind;
   fileFingerprint: string;
-  /** Stored on each row (e.g. "csv:<fp>", "pdf_ai:<fp>"). Default importSourceFor(kind, fp). */
+  /** Stored on each row. Defaults to importSourceFor(kind, fileFingerprint). */
   importSource?: string;
   source: string;
   fileName?: string | null;
@@ -64,6 +66,30 @@ type BankImportTx = Parameters<Parameters<AppDatabase["transaction"]>[0]>[0];
 type ImportScope =
   | { account: BankAccount; connectionId?: string }
   | { account: null; connectionId: string };
+
+// Bound each insert below PostgreSQL's parameter limit, including future row columns. Await
+// each batch so an import retains its order and all rows commit or roll back together.
+const WRITE_BATCH_SIZE = 1000;
+
+function* writeBatches<T>(rows: T[]) {
+  for (let i = 0; i < rows.length; i += WRITE_BATCH_SIZE) {
+    yield rows.slice(i, i + WRITE_BATCH_SIZE);
+  }
+}
+
+function connectionScope(companyId: string, connectionId: string) {
+  return and(eq(bankConnections.companyId, companyId), eq(bankConnections.id, connectionId));
+}
+
+async function lockConnection(tx: BankImportTx, companyId: string, connectionId: string) {
+  const [connection] = await tx
+    .select({ bankAccountId: bankConnections.bankAccountId })
+    .from(bankConnections)
+    .where(connectionScope(companyId, connectionId))
+    .for("update");
+  if (!connection) throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404);
+  return connection;
+}
 
 async function lockBankAccount(tx: BankImportTx, companyId: string, accountId: string) {
   // The account row serializes imports even when no statement rows exist yet. READ COMMITTED
@@ -98,7 +124,26 @@ async function importWithinScope(
         eq(bankTransactions.companyId, input.companyId),
         isNull(bankTransactions.deletedAt),
         account
-          ? eq(bankTransactions.bankStatementAccountId, account.id)
+          ? or(
+              eq(bankTransactions.bankStatementAccountId, account.id),
+              and(
+                // Older links updated only the connection. Include those rows before they
+                // are adopted, so a direct CSV retry also cannot insert a second copy.
+                isNull(bankTransactions.bankStatementAccountId),
+                inArray(
+                  bankTransactions.bankConnectionId,
+                  tx
+                    .select({ id: bankConnections.id })
+                    .from(bankConnections)
+                    .where(
+                      and(
+                        eq(bankConnections.companyId, input.companyId),
+                        eq(bankConnections.bankAccountId, account.id)
+                      )
+                    )
+                )
+              )
+            )
           : eq(bankTransactions.bankConnectionId, connectionId)
       )
     );
@@ -153,27 +198,31 @@ async function importWithinScope(
     })
     .returning({ id: bankImportBatches.id });
   const importSource = input.importSource ?? importSourceFor(input.kind, input.fileFingerprint);
-  const imported = await tx
-    .insert(bankTransactions)
-    .values(
-      plan.toInsert.map((row) => ({
-        companyId: input.companyId,
-        // Cached copy of the account's current GL link; reconcile resolves it again (R06-01).
-        bankAccountId: account?.glAccountId ?? null,
-        bankStatementAccountId: account?.id ?? null,
-        bankConnectionId: connectionId ?? null,
-        transactionDate: row.date as Date,
-        description: row.description,
-        amount: row.amount,
-        balance: row.balance,
-        reference: row.reference,
-        matchStatus: "unmatched",
-        isReconciled: false,
-        importSource,
-        importBatchId: batch.id,
-      }))
-    )
-    .returning();
+  const imported: BankTransaction[] = [];
+  for (const chunk of writeBatches(plan.toInsert)) {
+    const inserted = await tx
+      .insert(bankTransactions)
+      .values(
+        chunk.map((row) => ({
+          companyId: input.companyId,
+          // Cached copy of the account's current GL link; reconcile resolves it again (R06-01).
+          bankAccountId: account?.glAccountId ?? null,
+          bankStatementAccountId: account?.id ?? null,
+          bankConnectionId: connectionId ?? null,
+          transactionDate: row.date as Date,
+          description: row.description,
+          amount: row.amount,
+          balance: row.balance,
+          reference: row.reference,
+          matchStatus: "unmatched",
+          isReconciled: false,
+          importSource,
+          importBatchId: batch.id,
+        }))
+      )
+      .returning();
+    imported.push(...inserted);
+  }
   return { batchId: batch.id, imported, plan, continuityWarning: warning };
 }
 
@@ -189,6 +238,172 @@ export async function importStatementRows(
   );
 }
 
+/** Adopt old statement rows using the same connection → account lock order as imports. */
+async function adoptConnectionStatementRows(
+  tx: BankImportTx,
+  companyId: string,
+  connectionId: string,
+  account: BankAccount,
+  actorId: string
+) {
+  const source = and(
+    eq(bankTransactions.companyId, companyId),
+    eq(bankTransactions.bankConnectionId, connectionId),
+    isNull(bankTransactions.deletedAt)
+  );
+  const [assigned] = await tx
+    .select({ id: bankTransactions.id })
+    .from(bankTransactions)
+    .where(
+      and(
+        source,
+        isNotNull(bankTransactions.bankStatementAccountId),
+        ne(bankTransactions.bankStatementAccountId, account.id)
+      )
+    )
+    .limit(1);
+  const unassigned = and(source, isNull(bankTransactions.bankStatementAccountId));
+  const rows = await tx
+    .select({
+      id: bankTransactions.id,
+      date: bankTransactions.transactionDate,
+      amount: bankTransactions.amount,
+      description: bankTransactions.description,
+      reference: bankTransactions.reference,
+      glAccountId: bankTransactions.bankAccountId,
+      batchId: bankTransactions.importBatchId,
+      isReconciled: bankTransactions.isReconciled,
+      matchedJournalEntryId: bankTransactions.matchedJournalEntryId,
+      matchedReceiptId: bankTransactions.matchedReceiptId,
+      matchedInvoiceId: bankTransactions.matchedInvoiceId,
+      matchedType: bankTransactions.matchedType,
+      excludedAt: bankTransactions.excludedAt,
+    })
+    .from(bankTransactions)
+    .where(unassigned)
+    .orderBy(bankTransactions.createdAt, bankTransactions.id)
+    .for("update");
+  const [protectedMatch] = rows.length
+    ? await tx
+        .select({ id: bankTransactionMatches.id })
+        .from(bankTransactionMatches)
+        .innerJoin(
+          bankTransactions,
+          eq(bankTransactions.id, bankTransactionMatches.bankTransactionId)
+        )
+        .where(
+          and(
+            unassigned,
+            eq(bankTransactionMatches.companyId, companyId),
+            inArray(bankTransactionMatches.status, ["pending", "active"])
+          )
+        )
+        .limit(1)
+    : [];
+  if (
+    assigned ||
+    protectedMatch ||
+    rows.some(
+      (row) =>
+        row.isReconciled ||
+        row.matchedJournalEntryId ||
+        row.matchedReceiptId ||
+        row.matchedInvoiceId ||
+        row.matchedType ||
+        row.excludedAt ||
+        (row.glAccountId && row.glAccountId !== account.glAccountId)
+    )
+  ) {
+    throw new DomainError(
+      "BANK_STATEMENT_LINK_CONFLICT",
+      409,
+      undefined,
+      "Review the existing statement rows before changing their bank account."
+    );
+  }
+  if (!rows.length) return;
+
+  const existing = await tx
+    .select({
+      date: bankTransactions.transactionDate,
+      amount: bankTransactions.amount,
+      description: bankTransactions.description,
+      reference: bankTransactions.reference,
+    })
+    .from(bankTransactions)
+    .where(
+      and(
+        eq(bankTransactions.companyId, companyId),
+        eq(bankTransactions.bankStatementAccountId, account.id),
+        isNull(bankTransactions.deletedAt)
+      )
+    );
+  const counts = new Map<string, number>();
+  for (const row of existing) {
+    const key = bankRowKey({ ...row, amount: Number(row.amount) });
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const duplicates: string[] = [];
+  const batches = new Set<string>();
+  for (const row of rows) {
+    const key = bankRowKey({ ...row, amount: Number(row.amount) });
+    const remaining = counts.get(key) ?? 0;
+    if (remaining > 0) {
+      counts.set(key, remaining - 1);
+      duplicates.push(row.id);
+    }
+    if (row.batchId) batches.add(row.batchId);
+  }
+  await tx
+    .update(bankTransactions)
+    .set({ bankStatementAccountId: account.id, bankAccountId: account.glAccountId })
+    .where(unassigned);
+  for (const ids of writeBatches(duplicates)) {
+    await tx
+      .update(bankTransactions)
+      .set({
+        deletedAt: new Date(),
+        deletedBy: actorId,
+        excludeReason: "Duplicate on statement link",
+      })
+      .where(and(source, inArray(bankTransactions.id, ids)));
+  }
+  for (const ids of writeBatches([...batches])) {
+    await tx
+      .update(bankImportBatches)
+      .set({ bankAccountId: account.id })
+      .where(
+        and(
+          eq(bankImportBatches.companyId, companyId),
+          inArray(bankImportBatches.id, ids),
+          isNull(bankImportBatches.bankAccountId)
+        )
+      );
+  }
+}
+
+export async function linkConnectionStatement(
+  companyId: string,
+  connectionId: string,
+  bankAccountId: string,
+  actorId: string
+) {
+  return db.transaction(
+    async (tx) => {
+      await lockConnection(tx, companyId, connectionId);
+      const account = await lockBankAccount(tx, companyId, bankAccountId);
+      await adoptConnectionStatementRows(tx, companyId, connectionId, account, actorId);
+      const [updated] = await tx
+        .update(bankConnections)
+        .set({ bankAccountId, updatedAt: new Date() })
+        .where(connectionScope(companyId, connectionId))
+        .returning();
+      return updated;
+    },
+    { isolationLevel: "read committed" }
+  );
+}
+
 /** Older CSV callers join the same account lock. Unlinked records still serialize on their own row. */
 export async function importConnectionStatement(
   companyId: string,
@@ -198,19 +413,12 @@ export async function importConnectionStatement(
 ): Promise<{ imported: number; duplicates: number; errors: string[] }> {
   return db.transaction(
     async (tx) => {
-      const owned = and(
-        eq(bankConnections.companyId, companyId),
-        eq(bankConnections.id, connectionId)
-      );
-      const [connection] = await tx
-        .select({ bankAccountId: bankConnections.bankAccountId })
-        .from(bankConnections)
-        .where(owned)
-        .for("update");
-      if (!connection) throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404);
+      const connection = await lockConnection(tx, companyId, connectionId);
       const account = connection.bankAccountId
         ? await lockBankAccount(tx, companyId, connection.bankAccountId)
         : null;
+      if (account)
+        await adoptConnectionStatementRows(tx, companyId, connectionId, account, actorId);
       const result = await importWithinScope(
         tx,
         {
@@ -225,7 +433,10 @@ export async function importConnectionStatement(
         { account, connectionId }
       );
       const now = new Date();
-      await tx.update(bankConnections).set({ lastSyncedAt: now, updatedAt: now }).where(owned);
+      await tx
+        .update(bankConnections)
+        .set({ lastSyncedAt: now, updatedAt: now })
+        .where(connectionScope(companyId, connectionId));
       return {
         imported: result.imported.length,
         duplicates: result.plan.skipped.filter((row) => row.reason !== "invalid_row").length,

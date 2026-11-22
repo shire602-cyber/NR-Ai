@@ -41,14 +41,13 @@ import {
   type CompanyTaxIdentityBody,
 } from "../../shared/validators/einvoice-identity";
 import {
-  approverLinkState,
   approverLinkView,
   approverNotifyRecipients,
   choosePartner,
   completeApproverLink,
   createApproverLink,
   findApproverLinkByToken,
-  listApproverLinks,
+  listApproverLinkViews,
   markTaxReadyPrompted,
   partnerView,
   publicApproverView,
@@ -196,8 +195,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
     authMiddleware,
     requireScopedCompanyPermission("settings.company"),
     asyncHandler(async (req: Request, res: Response) => {
-      const rows = await listApproverLinks(req.params.companyId);
-      res.json(rows.map(approverLinkView));
+      res.json(await listApproverLinkViews(await loadCompany(req.params.companyId)));
     })
   );
 
@@ -297,12 +295,13 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
       res.setHeader("Referrer-Policy", "no-referrer");
       const link = await resolveToken(req, res);
       if (!link) return;
-      const state = approverLinkState(link);
+      const view = await publicApproverView(link);
+      const { state } = view;
       if (state === "expired" || state === "revoked") {
         return res.status(410).json({ code: `LINK_${state.toUpperCase()}`, state });
       }
       if (state === "active") await touchApproverLink(link.id);
-      res.json(await publicApproverView(link));
+      res.json(view);
     })
   );
 
@@ -314,13 +313,14 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
       res.setHeader("Cache-Control", "no-store");
       const link = await resolveToken(req, res);
       if (!link) return;
-      const state = approverLinkState(link);
+      const { link: done, state, completedNow } = await completeApproverLink(link);
       if (state === "expired" || state === "revoked") {
         return res.status(410).json({ code: `LINK_${state.toUpperCase()}`, state });
       }
-      const done = state === "completed" ? link : await completeApproverLink(link);
-      if (state === "active") {
-        const view = await publicApproverView(done);
+      const view = await publicApproverView(done);
+      if (view.state === "revoked")
+        return res.status(410).json({ code: "LINK_REVOKED", state: "revoked" });
+      if (completedNow) {
         for (const to of await approverNotifyRecipients(done)) {
           try {
             const built = buildApproverDoneEmail({
@@ -354,7 +354,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
           req,
         });
       }
-      res.json(await publicApproverView(done));
+      res.json(view);
     })
   );
 }

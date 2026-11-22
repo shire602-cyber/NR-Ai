@@ -4,7 +4,10 @@
 import { readFileSync } from "node:fs";
 import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
+import { DOMParser } from "@xmldom/xmldom";
+import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
+import { pdfToText } from "./pdf-test-helpers";
 
 const repoRoot = process.cwd();
 
@@ -101,6 +104,42 @@ const bannedLaunchClaims = [
 ];
 
 describe("Public SaaS launch surface", () => {
+  it("describes CSV import in both copies of the archived roadmap", async () => {
+    // Read the document contents because the Word and PDF assets are shipped as binaries.
+    const roadmap = join(
+      repoRoot,
+      "docs/archive/root/Muhasib-Netmara-Audit-and-Competitive-Roadmap"
+    );
+    const word = await JSZip.loadAsync(readFileSync(`${roadmap}.docx`));
+    const xml = await word.file("word/document.xml")!.async("string");
+    const document = new DOMParser().parseFromString(xml, "application/xml");
+    const wordText = Array.from(document.getElementsByTagName("w:p"), (p) => p.textContent).join(
+      "\n"
+    );
+
+    const pdfText = await pdfToText(readFileSync(`${roadmap}.pdf`));
+    for (const [format, text] of [
+      ["Word", wordText],
+      ["PDF", pdfText],
+    ]) {
+      const words = text.replace(/\s+/g, " ");
+      expect(
+        words.includes("Upload bank CSVs, review matches, and reconcile transactions"),
+        format
+      ).toBe(true);
+      expect(/\bbank\s+feeds?\b|\bopen\s+banking\b/i.test(words), format).toBe(false);
+    }
+  });
+
+  it("keeps obsolete receipt and banking wording out of the catalogs and intake copy", () => {
+    for (const locale of ["en", "ar"]) {
+      const forms = JSON.parse(readRepoFile(`client/src/locales/${locale}/forms.json`));
+      expect(forms).not.toHaveProperty(["forms.claim.receiptUrlHint"]);
+    }
+    expect(readRepoFile("server/services/email-intake.ts")).not.toMatch(/\bbank\s+feeds?\b/i);
+    expect(readRepoFile("shared/server-copy.ts")).not.toMatch(/\bReconnect it under Banking\b/i);
+  });
+
   it("keeps the core launch, auth, and legal pages publicly routable", () => {
     const appSource = readRepoFile("client/src/App.tsx");
 

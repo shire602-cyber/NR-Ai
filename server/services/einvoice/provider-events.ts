@@ -24,9 +24,11 @@ import { databaseUtcNow } from "../../config/database-time";
 import { rowsOf } from "../../ledger/tx";
 import {
   companies,
+  einvoiceArchive,
   einvoiceDocuments,
   einvoiceLegalEntities,
   einvoiceProviderEvents,
+  invoices,
   type EInvoiceLegalEntity,
   type EInvoiceProviderEvent,
 } from "../../../shared/schema";
@@ -39,6 +41,7 @@ import {
 } from "../einvoice-provider";
 import {
   InboundLegalEntityChangedError,
+  InboundProviderChangedError,
   InboundTaxpayerChangedError,
   currentProviderReceiptTin,
   isCurrentReceiptEnvironment,
@@ -48,22 +51,23 @@ import {
 } from "./inbound";
 import { refreshAndPersist } from "./workflow";
 import {
+  companyTin,
   currentOnboardingEntity,
   getLegalEntity,
   lockOnboardingCompany,
+  matchesCompanyTin,
   matchesOnboardingCompany,
   matchesProviderEntityOwner,
+  matchesTaxpayerVat,
   peppolAddressFor,
   updateLegalEntityRowIfCurrent,
 } from "./legal-entities";
 import { getCompanyEInvoiceProvider } from "./providers/company-provider";
 import { providerModule } from "./providers/registry";
 import { isCreditNoteDocumentType, isUaeTin } from "./pint-ae-codes";
-import { recordedReportingRequired } from "./store";
 import {
-  canReadComplyanceReporting,
-  isReportingObservation,
   projectEInvoiceLegacyStatus,
+  REPORTING_EVIDENCE_TIMESTAMP,
   storedReportingEvidence,
 } from "./tracks";
 
@@ -81,7 +85,9 @@ const CALLBACK_WAIT_CONFIG = "Provider event is waiting for provider configurati
 const INBOUND_FAILURE = "Inbound receipt could not be processed";
 const INBOUND_WAIT_CONFIG = "Inbound receipt is waiting for provider configuration";
 const INBOUND_WAIT_ENTITY = "Inbound receipt is waiting for legal entity activation";
-const INBOUND_INACTIVE_TAXPAYER = "Receipt does not match the current provider and taxpayer";
+const INBOUND_LEGACY_INACTIVE_SCOPE = "Receipt does not match the current provider and taxpayer";
+const INBOUND_INACTIVE_TAXPAYER = "Receipt does not match the current taxpayer";
+const INBOUND_WAIT_PROVIDER = "Inbound receipt is waiting for its original provider selection";
 const LEGAL_ENTITY_WAIT_RESERVATION = "Provider event is waiting for verified reservation";
 const LEGAL_ENTITY_UNRESERVED = "legal entity not reserved by us";
 const LEGACY_INBOUND_RECHECK = "Legacy inbound receipt requires reconciliation";
@@ -263,6 +269,15 @@ async function claimEvents(opts: {
                    AND candidate.last_error IN ('document belongs to no company of ours',
                                                 'legal entity is not active')
                    AND (entity.activated_at IS NULL OR entity.activated_at > candidate.processed_at))
+               OR (candidate.event_type = 'document.received'
+                   AND ((candidate.status = 'ignored' AND candidate.last_error = ${INBOUND_LEGACY_INACTIVE_SCOPE})
+                        OR (candidate.status = 'pending' AND candidate.last_error = ${INBOUND_WAIT_PROVIDER}))
+                   AND candidate.payload->>'receiptTaxpayerTin' = entity.tin
+                   AND EXISTS (
+                     SELECT 1 FROM companies company
+                      WHERE company.id = candidate.company_id AND company.deleted_at IS NULL
+                        AND company.einvoice_partner = candidate.provider
+                   ))
                OR (candidate.event_type = 'document.received' AND candidate.status = 'processed'
                    AND candidate.last_error IS DISTINCT FROM ${LEGACY_INBOUND_CHECKED}
                    AND EXISTS (
@@ -321,7 +336,7 @@ async function claimEvents(opts: {
 
 type Outcome =
   | { status: "processed" | "ignored"; companyId?: string | null; note?: string }
-  | { status: "awaiting-onboarding"; note?: string };
+  | { status: "awaiting-onboarding"; note?: string; receiptTaxpayerTin?: string };
 type CompanyEvent = EInvoiceProviderEvent & { companyId: string };
 
 async function handleDelivered(row: CompanyEvent, provider: EInvoiceProvider): Promise<Outcome> {
@@ -375,14 +390,22 @@ async function handleDelivered(row: CompanyEvent, provider: EInvoiceProvider): P
 async function handleReceived(row: CompanyEvent, override?: EInvoiceProvider): Promise<Outcome> {
   const payload = row.payload as Record<string, unknown>;
   const company = await readInboundCompany(row.companyId);
-  const tin = currentProviderReceiptTin(company, row.provider);
+  const tin = company && companyTin(company);
   if (
     !company ||
     !tin ||
+    !matchesCompanyTin(company, tin) ||
     (payload.receiptTaxpayerTin != null && payload.receiptTaxpayerTin !== tin) ||
     (payload.ownerFiscalId != null && payload.ownerFiscalId !== tin)
   )
     return { status: "ignored", note: INBOUND_INACTIVE_TAXPAYER };
+  if (company.einvoicePartner !== row.provider) {
+    // Only callbacks/polls admitted under this taxpayer can use the original provider
+    // after it is selected again. Unscoped legacy events may only be read while current.
+    return payload.receiptTaxpayerTin === tin
+      ? { status: "awaiting-onboarding", note: INBOUND_WAIT_PROVIDER }
+      : { status: "ignored", note: INBOUND_INACTIVE_TAXPAYER };
+  }
   if (!isCurrentReceiptEnvironment(row.provider, row.environment)) {
     throw new EInvoiceProviderError(
       "EINVOICE_PROVIDER_NOT_CONFIGURED",
@@ -421,7 +444,7 @@ async function handleReceived(row: CompanyEvent, override?: EInvoiceProvider): P
   const owner = await provider.inboundOwner(documentId, ref, payload);
   if (
     !matchesProviderEntityOwner(le, owner) ||
-    (owner.vatTrn != null && company.trnVatNumber && owner.vatTrn !== company.trnVatNumber.trim())
+    (owner.vatTrn != null && !matchesTaxpayerVat(tin, company.trnVatNumber, owner.vatTrn))
   ) {
     return { status: "ignored", note: "document does not match the linked legal entity" };
   }
@@ -468,6 +491,12 @@ async function handleReceived(row: CompanyEvent, override?: EInvoiceProvider): P
     // or a locked accounting period) remain visible to the inbox retry job.
     if (err instanceof InboundTaxpayerChangedError)
       return { status: "ignored", note: INBOUND_INACTIVE_TAXPAYER };
+    if (err instanceof InboundProviderChangedError)
+      return {
+        status: "awaiting-onboarding",
+        note: INBOUND_WAIT_PROVIDER,
+        receiptTaxpayerTin: tin,
+      };
     if (err instanceof InboundLegalEntityChangedError) return { status: "awaiting-onboarding" };
     const code = (err as { code?: string } | null)?.code;
     if (
@@ -623,6 +652,14 @@ async function settle(row: EInvoiceProviderEvent, provider?: EInvoiceProvider) {
           lockedUntil: null,
           lastError: inboundNote(out.note ?? INBOUND_WAIT_ENTITY),
           nextAttemptAt: retryAt,
+          ...(out.receiptTaxpayerTin
+            ? {
+                payload: {
+                  ...(row.payload as Record<string, unknown>),
+                  receiptTaxpayerTin: out.receiptTaxpayerTin,
+                },
+              }
+            : {}),
         })
         .where(claim);
       return "deferred";
@@ -727,17 +764,50 @@ export async function runProviderPoll(
     OR (${einvoiceDocuments.deliveryStatus} IS NULL
         AND (${einvoiceDocuments.status} IN ('submitted', 'accepted') OR ${awaitingFollowUp}))
     OR (${einvoiceDocuments.deliveryStatus} = 'delivered' AND ${awaitingFollowUp}))`;
+  const metadata = sql`(${einvoiceDocuments.validation}->'submission')`;
+  const providerStatus = sql`lower(btrim(${einvoiceDocuments.providerStatus}))`;
+  const reportingOutcome = sql`${einvoiceDocuments.reportingStatus} IN ('reported', 'report_failed')`;
+  const evidence = sql`${metadata}->'reportingEvidence'->>${einvoiceDocuments.reportingStatus}`;
+  // This is the SQL counterpart of recordedReportingRequired and storedReportingEvidence: only
+  // eligible documents reach the application or initiate further reads from a provider.
+  const awaitingReporting = sql`(
+    ${providerStatus} IS DISTINCT FROM 'rejected'
+    AND ${einvoiceDocuments.lastErrorCode} IS DISTINCT FROM 'COMPLYANCE_VALIDATION'
+    AND NOT COALESCE((${reportingOutcome}
+      AND ${evidence} ~ ${REPORTING_EVIDENCE_TIMESTAMP}
+      AND pg_input_is_valid(${evidence}, 'timestamp with time zone')), false)
+    AND (
+      ${einvoiceDocuments.reportBy} IS NOT NULL
+      OR CASE
+        WHEN jsonb_typeof(${metadata}->'reportingRequired') = 'boolean'
+          THEN ${metadata}->'reportingRequired' = 'true'::jsonb
+        ELSE ${einvoiceDocuments.reportingStatus} IS DISTINCT FROM 'not_required'
+      END
+      OR ${providerStatus} = 'final_valid'
+      OR ${reportingOutcome}
+    )
+  )`;
+  const unresolvedCorrection = sql`(${metadata}->'correctionUncertain' = 'true'::jsonb
+    AND (${einvoiceDocuments.xmlHash} IS NULL
+      OR (${metadata}->>'correctionCandidateHash') IS DISTINCT FROM ${einvoiceDocuments.xmlHash}))`;
+  const repairableClearance = sql`EXISTS (
+    SELECT 1 FROM ${einvoiceArchive}
+    INNER JOIN ${invoices} ON ${invoices.id} = ${einvoiceArchive.invoiceId}
+      AND ${invoices.companyId} = ${einvoiceArchive.companyId}
+    WHERE ${einvoiceArchive.companyId} = ${einvoiceDocuments.companyId}
+      AND ${einvoiceArchive.invoiceId} = ${einvoiceDocuments.invoiceId}
+      AND ${einvoiceArchive.provider} = ${einvoiceDocuments.provider}
+      AND ${einvoiceArchive.providerMessageId} = ${einvoiceDocuments.providerMessageId}
+      AND ${einvoiceArchive.direction} = 'outbound' AND ${einvoiceArchive.kind} = 'cleared'
+      AND (${unresolvedCorrection}
+        OR ${einvoiceArchive.sha256} IS DISTINCT FROM ${einvoiceDocuments.xmlHash}
+        OR ${einvoiceArchive.sha256} IS DISTINCT FROM ${invoices.einvoiceHash}
+        OR ${invoices.einvoiceXml} IS NULL)
+  )`;
   const inFlight = await db
     .select({
       invoiceId: einvoiceDocuments.invoiceId,
       companyId: einvoiceDocuments.companyId,
-      providerMessageId: einvoiceDocuments.providerMessageId,
-      providerStatus: einvoiceDocuments.providerStatus,
-      lastErrorCode: einvoiceDocuments.lastErrorCode,
-      validation: einvoiceDocuments.validation,
-      reportBy: einvoiceDocuments.reportBy,
-      reportingStatus: einvoiceDocuments.reportingStatus,
-      awaitingDelivery,
     })
     .from(einvoiceDocuments)
     .where(
@@ -748,26 +818,15 @@ export async function runProviderPoll(
         sql`${einvoiceDocuments.providerMessageId} IS NOT NULL`,
         hasIndependentReporting
           ? sql`(
-          ${einvoiceDocuments.validation}->'submission'->>'correctionUncertain' IS DISTINCT FROM 'true'
-          OR ${einvoiceDocuments.validation}->'submission'->>'correctionCandidateHash' = ${einvoiceDocuments.xmlHash}
-        )`
+              (NOT COALESCE(${unresolvedCorrection}, false) AND (${awaitingDelivery} OR ${awaitingReporting}))
+              OR ${repairableClearance}
+            )`
           : awaitingDelivery
       )
     )
     .orderBy(asc(einvoiceDocuments.updatedAt), asc(einvoiceDocuments.id));
   let refreshed = 0;
   for (const doc of inFlight) {
-    // Legacy delivery stages can be absent or obsolete. Use the same recorded obligation and
-    // evidence as the status view before deciding to read the separate government outcome.
-    const awaitingReporting =
-      hasIndependentReporting &&
-      canReadComplyanceReporting(doc.providerStatus, doc.lastErrorCode) &&
-      !storedReportingEvidence(doc, providerName) &&
-      (recordedReportingRequired(doc) !== false ||
-        // A voluntary submission can still have a separate outcome to confirm.
-        doc.providerStatus?.trim().toLowerCase() === "final_valid" ||
-        isReportingObservation(doc.reportingStatus));
-    if (!doc.awaitingDelivery && !awaitingReporting) continue;
     const provider = await resolve(doc.companyId);
     if (!provider?.capabilities.getStatus) continue;
     try {

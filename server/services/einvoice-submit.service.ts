@@ -369,7 +369,7 @@ export async function refreshEInvoiceStatus(args: {
       document: EInvoiceDocumentUpdate;
       result: EInvoiceProviderResult;
     }
-  | SubmitErr
+  | (SubmitErr & { verifiedReportingApproval?: true })
 > {
   const { invoice, provider } = args;
   const now = args.now ?? new Date();
@@ -402,6 +402,9 @@ export async function refreshEInvoiceStatus(args: {
       status: 409,
       code: "EINVOICE_INVALID_TRANSITION",
       message: `The provider reported ${result.status} for a document that is ${current}.`,
+      ...(provider.name === "complyance" && result.reporting === "reported"
+        ? { verifiedReportingApproval: true as const }
+        : {}),
     };
   }
   const reasons = result.reasons && result.reasons.length > 0 ? result.reasons : null;

@@ -946,45 +946,112 @@ describe("CSV statement import isolation", () => {
   });
 });
 
-describe("W3-C banking: PDF / AI statement import", () => {
-  it("[R06-12] the PDF/AI import requires a bank account, rejects bad rows and dedupes", async () => {
-    const t = await vatTenant();
-    const ba = await bankAccount(t);
-    const url = `${base(t)}/bank-transactions/import`;
-    const rows = [
-      { date: "2026-10-03", description: "POS CARREFOUR", amount: "-105.00", reference: null },
-      { date: "2026-10-04", description: "SALARY", amount: 2000 },
-      { date: "31/13/2026", description: "BAD DATE", amount: "1.00" },
-      { date: "2026-10-05", description: "NAN", amount: "abc" },
-    ];
-    expect((await t.as.post(url, { transactions: rows })).status).toBe(400);
-    const r = await t.as.post(url, { bankAccountId: ba.id, transactions: rows });
-    expect(r.status, r.text).toBe(201);
-    expect(r.body.imported).toBe(2);
-    expect(
-      r.body.skipped.filter((s: { reason: string }) => s.reason === "invalid_row")
-    ).toHaveLength(2);
-    const stored = await h.sql<{
-      amount: string;
+describe("CSV statement import regressions", () => {
+  it("links prior statement rows to the managed account without duplicating overlapping CSV rows", async () => {
+    const t = await h.createTenant();
+    const account = await bankAccount(t);
+    const connections = `${base(t)}/bank-connections`;
+    const connection = await t.as.post(connections, { bankName: "Emirates NBD" });
+    expect(connection.status, connection.text).toBe(201);
+    const prefix = `${connections}/${connection.body.id}`;
+    const repeated = "2026-10-03,Identical card purchase,17.25,0.00";
+    const separate = "2026-10-04,Separate card purchase,52.10,0.00";
+    const csv = (...rows: string[]) => ["Date,Description,Debit,Credit", ...rows].join("\n");
+    const original = csv(repeated, repeated, separate);
+    const imported = await t.as.post(`${prefix}/import`, { csvContent: original });
+    expect(imported.status, imported.text).toBe(200);
+    expect(imported.body.imported).toBe(3);
+
+    const overlap = await t.as.post(`${base(t)}/bank-statements/import`, {
+      bankAccountId: account.id,
+      csvContent: csv(repeated),
+    });
+    expect(overlap.status, overlap.text).toBe(201);
+    const linked = await t.as.post(`${prefix}/link`, { bankAccountId: account.id });
+    expect(linked.status, linked.text).toBe(200);
+
+    expect((await lines(t, account.id)).map((row) => row.description).sort()).toEqual([
+      "Identical card purchase",
+      "Identical card purchase",
+      "Separate card purchase",
+    ]);
+    const legacyRows = await h.sql<{
       bank_statement_account_id: string;
       bank_account_id: string;
+      deleted: boolean;
+      deleted_by: string | null;
+      import_batch_id: string;
     }>(
-      `SELECT amount::text, bank_statement_account_id, bank_account_id FROM bank_transactions WHERE company_id = $1 ORDER BY amount`,
-      [t.company.id]
+      `SELECT bank_statement_account_id, bank_account_id, deleted_at IS NOT NULL AS deleted,
+              deleted_by, import_batch_id
+         FROM bank_transactions WHERE company_id = $1 AND bank_connection_id = $2`,
+      [t.company.id, connection.body.id]
     );
-    expect(stored.map((s) => s.amount)).toEqual(["-105.00", "2000.00"]);
+    expect(legacyRows).toHaveLength(3);
+    expect(legacyRows.filter((row) => !row.deleted)).toHaveLength(2);
+    expect(legacyRows.find((row) => row.deleted)?.deleted_by).toBe(t.user.id);
+    expect(legacyRows.every((row) => row.bank_statement_account_id === account.id)).toBe(true);
+    expect(legacyRows.every((row) => row.bank_account_id === account.glAccountId)).toBe(true);
     expect(
-      stored.every(
-        (s) => s.bank_statement_account_id === ba.id && s.bank_account_id === ba.glAccountId
+      await h.sql("SELECT bank_account_id FROM bank_import_batches WHERE id = $1", [
+        legacyRows[0].import_batch_id,
+      ])
+    ).toEqual([{ bank_account_id: account.id }]);
+
+    const replay = await t.as.post(`${prefix}/import`, { csvContent: original });
+    expect(replay.status, replay.text).toBe(200);
+    expect(replay.body).toMatchObject({ imported: 0, duplicates: 3 });
+  });
+
+  it("imports and replays all 6000 valid rows shown by CSV preview", async () => {
+    const t = await h.createTenant();
+    const account = await bankAccount(t);
+    const csvContent = [
+      "Date,Description,Debit,Credit,Reference",
+      ...Array.from({ length: 6000 }, (_, i) => `2026-10-03,Payment ${i},5.00,0.00,ref-${i}`),
+    ].join("\n");
+    const url = `${base(t)}/bank-statements`;
+    const preview = await t.as.post(`${url}/preview`, { csvContent });
+    expect(preview.status, preview.text).toBe(200);
+    expect(preview.body.validRows).toBe(6000);
+    const request = { bankAccountId: account.id, csvContent, acknowledgeAmbiguity: true };
+    const imported = await t.as.post(`${url}/import`, request);
+    expect(imported.status, imported.status >= 400 ? imported.text : "").toBe(201);
+    expect(imported.body.imported).toBe(6000);
+    expect(
+      await h.sql(
+        `SELECT count(*)::int AS total, count(DISTINCT reference)::int AS unique_refs
+           FROM bank_transactions WHERE company_id = $1 AND import_batch_id = $2`,
+        [t.company.id, imported.body.batchId]
       )
-    ).toBe(true);
-    const again = await t.as.post(url, { bankAccountId: ba.id, transactions: rows });
-    expect(again.body.imported).toBe(0);
-    const otherAccount = await h.createSecondTenant();
-    const foreign = await t.as.post(url, {
-      bankAccountId: (await bankAccount(otherAccount)).id,
-      transactions: rows,
-    });
-    expect(foreign.status).toBe(404);
+    ).toEqual([{ total: 6000, unique_refs: 6000 }]);
+    const replay = await t.as.post(`${url}/import`, request);
+    expect(replay.status, replay.status >= 400 ? replay.text : "").toBe(201);
+    expect(replay.body).toMatchObject({ imported: 0, batchId: null, skippedDuplicates: 6000 });
+  });
+
+  it("directs retired statement extraction and row import to CSV without writing a batch", async () => {
+    const t = await h.createTenant();
+    const account = await bankAccount(t);
+    const legacyRequests = [
+      ["/api/ai/parse-bank-statement", { companyId: t.company.id, text: "2026-10-03 CARD 17.25" }],
+      [
+        `${base(t)}/bank-transactions/import`,
+        {
+          bankAccountId: account.id,
+          transactions: [{ date: "2026-10-03", description: "CARD", amount: -17.25 }],
+        },
+      ],
+    ] as const;
+    for (const [url, body] of legacyRequests) {
+      const response = await t.as.post(url, body);
+      expect(response.status, response.text).toBe(410);
+      expect(response.body).toMatchObject({ code: "STATEMENT_CSV_REQUIRED" });
+      expect(response.body.message).toContain("CSV");
+    }
+    expect(await lines(t, account.id)).toHaveLength(0);
+    expect(
+      await h.sql("SELECT id FROM bank_import_batches WHERE company_id = $1", [t.company.id])
+    ).toHaveLength(0);
   });
 });

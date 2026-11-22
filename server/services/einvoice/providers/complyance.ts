@@ -54,7 +54,12 @@ import type {
 import type { EInvoiceRejectionReason } from "../../einvoice-status";
 import { createLogger } from "../../../config/logger";
 import { first, parseXml, partyPeppolEndpoint, partyVatTrn } from "../dom";
-import { isPintAeTrn, isUaeTin, PEPPOL_SCHEME_UAE_TIN, tinFromTrn } from "../pint-ae-codes";
+import {
+  isUaeTin,
+  normalizedVatTrn,
+  PEPPOL_SCHEME_UAE_TIN,
+  tinFromTrn,
+} from "../pint-ae-codes";
 import { legacyFromProviderTracks, type DeliveryStatus, type ReportingStatus } from "../tracks";
 import type { EInvoiceProviderModule } from "./types";
 import { ublToGets, unifyXmlRequest } from "./complyance-gets";
@@ -263,8 +268,9 @@ function comparePartyTaxIdentity(
   if (endpoint !== null) compare("peppolEndpoint", true, endpoint);
   const matchesTin = (value: unknown) =>
     typeof value === "string" && isUaeTin(value) && value === expected.tin;
+  const expectedTrn = normalizedVatTrn(expected.trn);
   const matchesTrn = (value: unknown) =>
-    typeof value === "string" && isPintAeTrn(value) && value === expected.trn;
+    expectedTrn !== null && normalizedVatTrn(value) === expectedTrn;
   compare("taxpayerTin", party.tin, matchesTin(party.tin));
   for (const value of [party.trn, party.vatTrn, party.vatNumber])
     compare("vatTrn", value, matchesTrn(value));
@@ -1191,12 +1197,13 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
       const party = first(root, "cac:AccountingCustomerParty/cac:Party");
       if (party) {
         const endpoint = partyPeppolEndpoint(party);
-        const trn = partyVatTrn(party);
+        const rawTrn = partyVatTrn(party);
+        const trn = normalizedVatTrn(rawTrn);
         const tin = endpoint?.scheme === PEPPOL_SCHEME_UAE_TIN ? endpoint.value : tinFromTrn(trn);
         identityConflict ||=
           (!endpoint && first(party, "cbc:EndpointID") !== null) ||
           (tin != null && !isUaeTin(tin)) ||
-          (trn != null && (!tin || tinFromTrn(trn) !== tin));
+          (rawTrn != null && (!tin || tinFromTrn(trn) !== tin));
         buyer = { tin, trn, endpoint };
       }
     } catch {

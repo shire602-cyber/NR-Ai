@@ -24,7 +24,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, type AppDatabase } from "../../db";
 import { companies, einvoiceLegalEntities, type EInvoiceLegalEntity } from "../../../shared/schema";
 import { DomainError } from "../../errors";
-import { PEPPOL_SCHEME_UAE_TIN, isUaeTin, tinFromTrn } from "./pint-ae-codes";
+import { PEPPOL_SCHEME_UAE_TIN, isUaeTin, normalizedVatTrn, tinFromTrn } from "./pint-ae-codes";
 import {
   effectiveTin,
   tinProblem,
@@ -74,8 +74,13 @@ export function matchesProviderEntityOwner(
 
 type InboundTaxpayer = { endpoint: string | null; scheme: string | null; vatTrn: string | null };
 
-function matchesTaxpayerVat(tin: string, expected: string | null | undefined, actual: string) {
-  return tinFromTrn(actual) === tin && (!expected || actual === expected.replace(/[\s-]/g, ""));
+export function matchesTaxpayerVat(
+  tin: string,
+  expected: string | null | undefined,
+  actual: unknown
+) {
+  const normalized = normalizedVatTrn(actual);
+  return tinFromTrn(normalized) === tin && (!expected || normalized === normalizedVatTrn(expected));
 }
 
 function matchesTaxpayer(
@@ -270,6 +275,10 @@ function companyTinConflict(tin: string, company: CompanyTinSource): boolean {
   );
 }
 
+export function matchesCompanyTin(company: CompanyTinSource, tin: string): boolean {
+  return companyTin(company) === tin && !companyTinConflict(tin, company);
+}
+
 /** Resolve the taxpayer to register and send as, refusing conflicting company identity fields. */
 export function requireCompanyTin(company: CompanyTinSource): string {
   const tin = companyTin(company);
@@ -297,12 +306,7 @@ export function matchesOnboardingCompany(
   provider: string,
   tin: string
 ): boolean {
-  return (
-    !!company &&
-    company.einvoicePartner === provider &&
-    companyTin(company) === tin &&
-    !companyTinConflict(tin, company)
-  );
+  return !!company && company.einvoicePartner === provider && matchesCompanyTin(company, tin);
 }
 
 /** Settings project only the entity for the currently selected taxpayer and environment. */

@@ -477,6 +477,52 @@ describe("W5-D firm practice management", () => {
     expect((await client.as.get(`/api/companies/${client.company.id}/accounts`)).status).toBe(200);
   });
 
+  it.each(["list", "accept", "decline"] as const)(
+    "rejects a case-ambiguous firm invitation on %s",
+    async (action) => {
+      const firm = await nrOwner();
+      const intended = await h.createTenant();
+      const duplicate = await h.createTenant();
+      const invite = await firm.as.post("/api/firm/client-links", { inviteeEmail: intended.email });
+      expect(invite.status, invite.text).toBe(201);
+      const path = `/api/firm-invitations/${invite.body.link.id}`;
+
+      // 0092 leaves the index absent when an older database already has case-only duplicates.
+      await h.sql("DROP INDEX users_email_lower_unique");
+      try {
+        await h.sql("UPDATE users SET email = $1 WHERE id = $2", [
+          intended.email.toUpperCase(),
+          duplicate.user.id,
+        ]);
+        for (const recipient of [intended, duplicate]) {
+          const response =
+            action === "list"
+              ? await recipient.as.get("/api/firm-invitations")
+              : await recipient.as.post(`${path}/${action}`, {
+                  ...(action === "accept" ? { companyId: recipient.company.id } : {}),
+                });
+          expect(response.status, response.text).toBe(409);
+          expect(response.body.code).toBe("INVITATION_EMAIL_AMBIGUOUS");
+        }
+        expect(
+          await h.sql(
+            "SELECT status, company_id, accepted_by FROM firm_client_links WHERE id = $1",
+            [invite.body.link.id]
+          )
+        ).toEqual([{ status: "invited", company_id: null, accepted_by: null }]);
+      } finally {
+        await h.sql("UPDATE users SET email = $1 WHERE id = $2", [
+          duplicate.email,
+          duplicate.user.id,
+        ]);
+        await h.sql("CREATE UNIQUE INDEX users_email_lower_unique ON users (lower(email))");
+      }
+      expect(
+        (await intended.as.post(`${path}/accept`, { companyId: intended.company.id })).status
+      ).toBe(200);
+    }
+  );
+
   it.each(["accept", "revoke"] as const)(
     "does not %s a firm link after the authorizing client owner is demoted",
     async (action) => {
@@ -553,6 +599,7 @@ describe("W5-D firm practice management", () => {
     "demoted after acceptance",
     "demoted before acceptance",
     "removed after acceptance",
+    "removed after their own direct acceptance",
   ] as const)(
     "reconstructs a historical direct grant from the inviter's role at acceptance (%s)",
     async (history) => {
@@ -568,11 +615,27 @@ describe("W5-D firm practice management", () => {
       expect(
         (await client.as.post(`/api/firm-invitations/${link.id}/accept`, { companyId })).status
       ).toBe(200);
+      const teamPath = `/api/companies/${companyId}/team`;
+      const retiredDirectInvite = history === "removed after their own direct acceptance";
+      if (retiredDirectInvite) {
+        const direct = await client.as.post(`${teamPath}/invite`, {
+          email: inviter.email,
+          role: "admin",
+        });
+        expect(direct.status, direct.text).toBe(201);
+        const token = new URL(direct.body.inviteUrl).searchParams.get("teamInvite");
+        const accepted = await inviter.as.post(`/api/team-invitations/${token}/accept`, {});
+        expect(accepted.status, accepted.text).toBe(200);
+      } else {
+        await h.sql("INSERT INTO company_users (company_id,user_id,role) VALUES ($1,$2,'admin')", [
+          companyId,
+          inviter.user.id,
+        ]);
+      }
       const [admin] = await h.sql<{ id: string }>(
-        "INSERT INTO company_users (company_id,user_id,role) VALUES ($1,$2,'admin') RETURNING id",
+        "SELECT id FROM company_users WHERE company_id = $1 AND user_id = $2",
         [companyId, inviter.user.id]
       );
-      const teamPath = `/api/companies/${companyId}/team`;
       const invited = await inviter.as.post(`${teamPath}/invite`, {
         email: firm.owner.email,
         role: "viewer",
@@ -609,7 +672,7 @@ describe("W5-D firm practice management", () => {
           200
         );
       }
-      if (history === "removed after acceptance") {
+      if (history === "removed after acceptance" || retiredDirectInvite) {
         expect((await client.as.delete(`${teamPath}/${admin.id}`)).status).toBe(204);
       }
       const revoked = await client.as.post(
@@ -625,6 +688,54 @@ describe("W5-D firm practice management", () => {
       ).toEqual(history === "demoted before acceptance" ? [] : [{ role: "viewer" }]);
     }
   );
+
+  it("keeps the later direct role of an explicitly adopted membership when a legacy firm marker is stale", async () => {
+    const firm = await firmB();
+    const client = await h.createTenant();
+    const inviter = await h.createTenant();
+    const companyId = client.company.id;
+    const team = `/api/companies/${companyId}/team`;
+    const [link] = await h.sql<{ id: string }>(
+      "INSERT INTO firm_client_links (firm_id, invitee_email, status) VALUES ($1, $2, 'invited') RETURNING id",
+      [firm.firmId, client.email]
+    );
+    expect(
+      (await client.as.post(`/api/firm-invitations/${link.id}/accept`, { companyId })).status
+    ).toBe(200);
+    const [admin] = await h.sql<{ id: string }>(
+      "INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'admin') RETURNING id",
+      [companyId, inviter.user.id]
+    );
+    const invitation = await inviter.as.post(`${team}/invite`, {
+      email: firm.owner.email,
+      role: "viewer",
+    });
+    expect(invitation.status, invitation.text).toBe(201);
+    const token = new URL(invitation.body.inviteUrl).searchParams.get("teamInvite");
+    const adoption = await firm.owner.as.post(`/api/team-invitations/${token}/accept`, {});
+    expect(adoption.status, adoption.text).toBe(200);
+    const membershipQuery =
+      "SELECT id, role FROM company_users WHERE company_id = $1 AND user_id = $2";
+    const key = [companyId, firm.owner.user.id];
+    const [membership] = await h.sql<{ id: string; role: string }>(membershipQuery, key);
+    expect(membership.role).toBe("viewer");
+    expect((await client.as.put(`${team}/${membership.id}`, { role: "bookkeeper" })).status).toBe(
+      200
+    );
+    expect((await client.as.delete(`${team}/${admin.id}`)).status).toBe(204);
+    // Recreate a stale flag without changing the membership lifetime or the later direct role.
+    await h.sql(
+      "UPDATE firm_company_grants SET created_membership = true WHERE company_id = $1 AND user_id = $2",
+      key
+    );
+    const revoked = await client.as.post(
+      `/api/companies/${companyId}/firm-links/${link.id}/revoke`,
+      {}
+    );
+    expect(revoked.status, revoked.text).toBe(200);
+    expect(await h.sql(membershipQuery, key)).toEqual([{ id: membership.id, role: "bookkeeper" }]);
+    expect((await firm.owner.as.get(`/api/companies/${companyId}/accounts`)).status).toBe(200);
+  });
 
   it("[R15-12] an NR client whose link is revoked leaves the NR firm_owner's scope", async () => {
     const owner = await nrOwner();

@@ -10,7 +10,7 @@
  */
 import crypto from "crypto";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
-import { db, pool } from "../../db";
+import { db, pool, type AppDatabase } from "../../db";
 import { DomainError } from "../../errors";
 import {
   companies,
@@ -32,7 +32,19 @@ import {
 } from "../../../shared/validators/einvoice-identity";
 import { providerModule, registeredProviderIds } from "./providers/registry";
 import { companyProviderHealth } from "./providers/company-provider";
-import { currentOnboardingEntity, getLegalEntity } from "./legal-entities";
+import {
+  currentOnboardingEntity,
+  getLegalEntity,
+  lockOnboardingCompany,
+  requireCompanyTin,
+} from "./legal-entities";
+import {
+  applyCompanyApprovalScopeUpdate,
+  appointmentEvidence,
+  appointmentScope,
+  hasAppointmentEvidence,
+  recordAppointmentScope,
+} from "./appointment-scope";
 
 type CompanyRow = Company;
 
@@ -91,11 +103,7 @@ export function taxIdentityView(company: CompanyRow): TaxIdentityView {
   };
 }
 
-/** Validate and store the identity fields. Throws 422 with a stable code on a bad TIN or ID. */
-export async function saveTaxIdentity(
-  company: CompanyRow,
-  body: CompanyTaxIdentityBody
-): Promise<CompanyRow> {
+function taxIdentityPatch(company: CompanyRow, body: CompanyTaxIdentityBody) {
   const patch: Partial<typeof companies.$inferInsert> = {};
   const set = <K extends keyof CompanyTaxIdentityBody>(
     key: K,
@@ -162,13 +170,22 @@ export async function saveTaxIdentity(
     if (derived) patch.einvoiceTin = derived;
   }
 
-  if (Object.keys(patch).length === 0) return company;
-  const [row] = await db
-    .update(companies)
-    .set(patch)
-    .where(eq(companies.id, company.id))
-    .returning();
-  return row;
+  return patch;
+}
+
+/** Validate and store the taxpayer identity and withdraw approvals for a superseded taxpayer. */
+export async function saveTaxIdentity(
+  company: CompanyRow,
+  body: CompanyTaxIdentityBody
+): Promise<CompanyRow> {
+  return db.transaction(async (tx) => {
+    const current = await lockOnboardingCompany(company.id, tx);
+    if (!current || current.deletedAt) throw new DomainError("COMPANY_NOT_FOUND", 404);
+    const patch = taxIdentityPatch(current, body);
+    return Object.keys(patch).length
+      ? applyCompanyApprovalScopeUpdate(current, patch, tx)
+      : current;
+  });
 }
 
 // ─── Tax-ready prompt ───────────────────────────────────────────────────
@@ -258,12 +275,16 @@ export async function partnerView(company: CompanyRow): Promise<PartnerView> {
       : undefined;
   const verifyAvailable = Boolean(entity);
   const leStatus = entity?.status ?? null;
-  const links = await listApproverLinks(company.id);
-  const openLink = links.some((l) => approverLinkState(l) === "active");
+  const [links, approvals] = await Promise.all([
+    listApproverLinks(company.id),
+    appointmentEvidence([company.id]),
+  ]);
+  const states = links.map((link) => scopedApproverState(link, company, approvals));
+  const openLink = states.includes("active");
   // The approver ticked "Done" in EmaraTax: the client's next step is to verify with the partner.
-  const approverDone = !!chosen && links.some((l) => approverLinkState(l) === "completed");
-  const confirmedAt = company.einvoiceAppointmentConfirmedAt
-    ? new Date(company.einvoiceAppointmentConfirmedAt).toISOString()
+  const approverDone = states.includes("completed");
+  const confirmedAt = hasAppointmentEvidence(company, approvals)
+    ? (company.einvoiceAppointmentConfirmedAt?.toISOString() ?? null)
     : null;
   const state: PartnerView["appointment"]["state"] =
     leStatus === "active"
@@ -290,27 +311,30 @@ export async function choosePartner(companyId: string, partner: string | null): 
   }
   // Changing partners withdraws approvals for the previous EmaraTax appointment.
   await db.transaction(async (tx) => {
-    const [current] = await tx
-      .select({ partner: companies.einvoicePartner })
-      .from(companies)
-      .where(eq(companies.id, companyId))
-      .for("update");
-    if (!current || (current.partner ?? null) === partner) return;
-    await tx
-      .update(einvoiceApproverLinks)
-      .set({ revokedAt: new Date() })
-      .where(
-        and(eq(einvoiceApproverLinks.companyId, companyId), isNull(einvoiceApproverLinks.revokedAt))
-      );
-    await tx
-      .update(companies)
-      .set({
-        einvoicePartner: partner,
-        einvoiceAppointmentConfirmedAt: null,
-        einvoiceAppointmentConfirmedBy: null,
-      })
-      .where(eq(companies.id, companyId));
+    const current = await lockOnboardingCompany(companyId, tx);
+    if (!current || current.deletedAt) throw new DomainError("COMPANY_NOT_FOUND", 404);
+    if ((current.einvoicePartner ?? null) === partner) return;
+    await applyCompanyApprovalScopeUpdate(current, { einvoicePartner: partner }, tx);
   });
+}
+
+async function lockAppointmentCompany(expected: Company, tx: Pick<AppDatabase, "select">) {
+  const current = await lockOnboardingCompany(expected.id, tx);
+  if (!current || current.deletedAt) throw new DomainError("COMPANY_NOT_FOUND", 404);
+  if (
+    current.einvoicePartner !== expected.einvoicePartner ||
+    appointmentScope(current) !== appointmentScope(expected)
+  )
+    throw new DomainError("EINVOICE_TAXPAYER_CHANGED", 409);
+  return current;
+}
+
+function requireAppointmentScope(company: Company) {
+  if (!company.einvoicePartner) {
+    throw new DomainError("EINVOICE_PARTNER_REQUIRED", 409, undefined, "Choose a partner first.");
+  }
+  requireCompanyTin(company);
+  return appointmentScope(company)!;
 }
 
 /** "Confirmed by you, not yet verified": used when the partner offers no check. */
@@ -319,16 +343,25 @@ export async function selfConfirmAppointment(
   userId: string,
   confirmed: boolean
 ): Promise<void> {
-  if (confirmed && !company.einvoicePartner) {
-    throw new DomainError("EINVOICE_PARTNER_REQUIRED", 409, undefined, "Choose a partner first.");
-  }
-  await db
-    .update(companies)
-    .set({
-      einvoiceAppointmentConfirmedAt: confirmed ? new Date() : null,
-      einvoiceAppointmentConfirmedBy: confirmed ? userId : null,
-    })
-    .where(eq(companies.id, company.id));
+  await db.transaction(async (tx) => {
+    const current = await lockAppointmentCompany(company, tx);
+    const at = confirmed ? new Date() : null;
+    if (at) {
+      await recordAppointmentScope(tx, {
+        companyId: current.id,
+        userId,
+        at,
+        scope: requireAppointmentScope(current),
+      });
+    }
+    await tx
+      .update(companies)
+      .set({
+        einvoiceAppointmentConfirmedAt: at,
+        einvoiceAppointmentConfirmedBy: confirmed ? userId : null,
+      })
+      .where(eq(companies.id, current.id));
+  });
 }
 
 // ─── Approver links ─────────────────────────────────────────────────────
@@ -346,12 +379,22 @@ export function approverLinkState(link: EInvoiceApproverLink, now = new Date()):
   return "active";
 }
 
-export function approverLinkView(link: EInvoiceApproverLink) {
+function scopedApproverState(
+  link: EInvoiceApproverLink,
+  company: Company | undefined,
+  approvals: Set<string>
+): ApproverLinkState {
+  return company && !company.deletedAt && hasAppointmentEvidence(company, approvals, link.id)
+    ? approverLinkState(link)
+    : "revoked";
+}
+
+export function approverLinkView(link: EInvoiceApproverLink, state = approverLinkState(link)) {
   return {
     id: link.id,
     approverName: link.approverName,
     approverEmail: link.approverEmail,
-    state: approverLinkState(link),
+    state,
     expiresAt: new Date(link.expiresAt).toISOString(),
     completedAt: link.completedAt ? new Date(link.completedAt).toISOString() : null,
     revokedAt: link.revokedAt ? new Date(link.revokedAt).toISOString() : null,
@@ -368,6 +411,14 @@ export async function listApproverLinks(companyId: string): Promise<EInvoiceAppr
     .orderBy(desc(einvoiceApproverLinks.createdAt));
 }
 
+export async function listApproverLinkViews(company: Company) {
+  const [links, approvals] = await Promise.all([
+    listApproverLinks(company.id),
+    appointmentEvidence([company.id]),
+  ]);
+  return links.map((link) => approverLinkView(link, scopedApproverState(link, company, approvals)));
+}
+
 export async function createApproverLink(args: {
   company: CompanyRow;
   userId: string;
@@ -375,28 +426,31 @@ export async function createApproverLink(args: {
   approverEmail?: string | null;
   now?: Date;
 }): Promise<{ link: EInvoiceApproverLink; token: string }> {
-  if (!args.company.einvoicePartner) {
-    throw new DomainError(
-      "EINVOICE_PARTNER_REQUIRED",
-      409,
-      undefined,
-      "Choose your e-invoicing partner before you ask someone to approve it."
-    );
-  }
   const token = crypto.randomBytes(32).toString("base64url");
   const now = args.now ?? new Date();
-  const [link] = await db
-    .insert(einvoiceApproverLinks)
-    .values({
-      companyId: args.company.id,
-      tokenHash: hashApproverToken(token),
-      approverName: args.approverName ?? null,
-      approverEmail: args.approverEmail ?? null,
-      createdBy: args.userId,
-      expiresAt: new Date(now.getTime() + APPROVER_LINK_TTL_DAYS * 86_400_000),
-    })
-    .returning();
-  return { link, token };
+  return db.transaction(async (tx) => {
+    const current = await lockAppointmentCompany(args.company, tx);
+    const scope = requireAppointmentScope(current);
+    const [link] = await tx
+      .insert(einvoiceApproverLinks)
+      .values({
+        companyId: current.id,
+        tokenHash: hashApproverToken(token),
+        approverName: args.approverName ?? null,
+        approverEmail: args.approverEmail ?? null,
+        createdBy: args.userId,
+        expiresAt: new Date(now.getTime() + APPROVER_LINK_TTL_DAYS * 86_400_000),
+      })
+      .returning();
+    await recordAppointmentScope(tx, {
+      companyId: current.id,
+      userId: args.userId,
+      scope,
+      at: now,
+      linkId: link.id,
+    });
+    return { link, token };
+  });
 }
 
 /** Revoke one of the company's links; another company's link id is a 404. */
@@ -434,13 +488,11 @@ export async function findApproverLinkByToken(raw: string) {
 
 /** What the no-login page may show: display name, partner, steps. No TRN, TIN or address. */
 export async function publicApproverView(link: EInvoiceApproverLink) {
-  const [company] = await db
-    .select({ name: companies.name, partner: companies.einvoicePartner, locale: companies.locale })
-    .from(companies)
-    .where(eq(companies.id, link.companyId));
-  const m = providerModule(company?.partner ?? null);
+  const [company] = await db.select().from(companies).where(eq(companies.id, link.companyId));
+  const approvals = await appointmentEvidence([link.companyId], db, link.id);
+  const m = providerModule(company?.einvoicePartner ?? null);
   return {
-    state: approverLinkState(link),
+    state: scopedApproverState(link, company, approvals),
     companyName: company?.name ?? "",
     locale: company?.locale ?? "en",
     approverName: link.approverName,
@@ -458,12 +510,28 @@ export async function publicApproverView(link: EInvoiceApproverLink) {
 }
 
 export async function completeApproverLink(link: EInvoiceApproverLink) {
-  const [row] = await db
-    .update(einvoiceApproverLinks)
-    .set({ completedAt: new Date() })
-    .where(and(eq(einvoiceApproverLinks.id, link.id), isNull(einvoiceApproverLinks.completedAt)))
-    .returning();
-  return row ?? link;
+  return db.transaction(async (tx) => {
+    const company = await lockOnboardingCompany(link.companyId, tx);
+    const [current] = await tx
+      .select()
+      .from(einvoiceApproverLinks)
+      .where(
+        and(
+          eq(einvoiceApproverLinks.id, link.id),
+          eq(einvoiceApproverLinks.companyId, link.companyId)
+        )
+      )
+      .for("update");
+    const approvals = await appointmentEvidence([link.companyId], tx, link.id);
+    const state = current ? scopedApproverState(current, company, approvals) : "revoked";
+    if (state !== "active") return { link: current ?? link, state, completedNow: false };
+    const [done] = await tx
+      .update(einvoiceApproverLinks)
+      .set({ completedAt: new Date() })
+      .where(eq(einvoiceApproverLinks.id, current.id))
+      .returning();
+    return { link: done, state: "completed" as const, completedNow: true };
+  });
 }
 
 export async function touchApproverLink(linkId: string) {
@@ -538,13 +606,16 @@ export async function firmEInvoicingStates(
       else if (le.status === "reserved" || le.status === "pending") pending.add(le.companyId);
     }
   }
-  const links = await db
-    .select()
-    .from(einvoiceApproverLinks)
-    .where(inArray(einvoiceApproverLinks.companyId, companyIds));
+  const [links, approvals] = await Promise.all([
+    db
+      .select()
+      .from(einvoiceApproverLinks)
+      .where(inArray(einvoiceApproverLinks.companyId, companyIds)),
+    appointmentEvidence(companyIds),
+  ]);
   const approved = new Set<string>();
   for (const l of links) {
-    const st = approverLinkState(l);
+    const st = scopedApproverState(l, companyById.get(l.companyId), approvals);
     if (st === "active") pending.add(l.companyId);
     else if (st === "completed") approved.add(l.companyId);
   }
@@ -555,7 +626,7 @@ export async function firmEInvoicingStates(
     const state: FirmEInvoicingState =
       partner && active.has(c.id)
         ? "connected"
-        : c.einvoiceAppointmentConfirmedAt && partner
+        : hasAppointmentEvidence(c, approvals)
           ? "self_confirmed"
           : partner && approved.has(c.id)
             ? "approver_done"

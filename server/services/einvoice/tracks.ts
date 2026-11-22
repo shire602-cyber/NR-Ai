@@ -83,6 +83,11 @@ export function canReadComplyanceReporting(
   );
 }
 
+/** Reporting evidence is written as an ISO UTC timestamp when the provider confirms it. */
+export const REPORTING_EVIDENCE_TIMESTAMP =
+  "^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([.][0-9]{3})?Z$";
+const reportingEvidenceTimestamp = new RegExp(REPORTING_EVIDENCE_TIMESTAMP);
+
 export function reportingEvidenceAt(
   validation: unknown,
   outcome: ReportingObservation
@@ -91,9 +96,10 @@ export function reportingEvidenceAt(
     submission?: { reportingEvidence?: Partial<Record<ReportingObservation, unknown>> };
   } | null;
   const observedAt = value?.submission?.reportingEvidence?.[outcome];
-  return typeof observedAt === "string" && !Number.isNaN(Date.parse(observedAt))
-    ? observedAt
-    : null;
+  if (typeof observedAt !== "string" || !reportingEvidenceTimestamp.test(observedAt)) return null;
+  const parsed = new Date(observedAt);
+  const iso = observedAt.length === 20 ? `${observedAt.slice(0, -1)}.000Z` : observedAt;
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === iso ? observedAt : null;
 }
 
 /** The old Complyance projection inferred reporting outcomes without storing their proof. */
@@ -176,6 +182,18 @@ export function projectEInvoiceLegacyStatus<T extends string>(
  * document (if any), its legacy status and whether FTA reporting is required. Shared by the
  * per-invoice status view and the invoice-list compliance pills so both always agree (X6d).
  */
+/** Receipt authority must agree across the invoice and the provider document. */
+export function conflictingProviderReceipt(
+  invoice: { einvoiceProvider?: string | null; einvoiceProviderMessageId?: string | null },
+  doc?: { provider?: string | null; providerMessageId?: string | null } | null
+): boolean {
+  const { einvoiceProvider: provider, einvoiceProviderMessageId: id } = invoice;
+  return Boolean(
+    (id && doc?.providerMessageId && id !== doc.providerMessageId) ||
+    ((id || doc?.providerMessageId) && provider && doc?.provider && provider !== doc.provider)
+  );
+}
+
 export function deriveInvoiceTracks(args: {
   invoiceStatus: string | null | undefined;
   legacyStatus: string | null | undefined;
@@ -218,8 +236,13 @@ export function deriveInvoiceTracks(args: {
   );
   const storedDelivery = isDeliveryStatus(doc?.deliveryStatus) ? doc.deliveryStatus : null;
   const legacyClaimedDelivery = args.legacyStatus === "accepted" || args.legacyStatus === "cleared";
-  const projectedReceipt =
-    storedDelivery === "delivered" || (!storedDelivery && legacyClaimedDelivery)
+  const conflict = conflictingProviderReceipt(
+    { einvoiceProvider: args.provider, einvoiceProviderMessageId: args.providerMessageId },
+    doc
+  );
+  const projectedReceipt = conflict
+    ? { status: "queued" as const, confirmationUnavailable: true }
+    : storedDelivery === "delivered" || (!storedDelivery && legacyClaimedDelivery)
       ? projectRecipientDeliveryEvidence(
           provider,
           providerStatus,

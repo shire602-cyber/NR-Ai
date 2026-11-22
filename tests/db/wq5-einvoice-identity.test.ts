@@ -173,6 +173,60 @@ describe("WQ5 partner choice and the provider gate", () => {
 });
 
 describe("WQ5 no-login approver link", () => {
+  it("withdraws both types of approval when the taxpayer's full VAT registration changes", async () => {
+    const t = await h.createTenant({ companyColumns: { ...SELLER, einvoice_partner: "acube" } });
+    const create = async () => {
+      const link = await t.as.post(`${base(t)}/approver-links`, {});
+      expect(link.status, link.text).toBe(201);
+      return String(link.body.url).split("/portal/einvoicing-approve/")[1];
+    };
+    const portal = (token: string) => `/api/portal/einvoicing-approve/${token}`;
+    const completed = await create();
+    const pending = await create();
+    expect((await h.anon.post(`${portal(completed)}/done`, {})).body.state).toBe("completed");
+    expect(
+      (await t.as.post(`${base(t)}/partner/self-confirm`, { confirmed: true })).body.appointment
+        .state
+    ).toBe("self_confirmed");
+
+    // The TIN and selected provider are unchanged. The full VAT registration is not.
+    const { storage } = await import("../../server/storage");
+    await storage.updateCompany(t.company.id, { trnVatNumber: "100123456710003" });
+    const { firmEInvoicingStates } = await import("../../server/services/einvoice/identity");
+    expect((await t.as.get(`${base(t)}/partner`)).body.appointment).toMatchObject({
+      state: "not_started",
+      confirmedAt: null,
+    });
+    expect((await firmEInvoicingStates([t.company.id])).get(t.company.id)?.state).toBe(
+      "appoint_partner"
+    );
+    expect(
+      (await t.as.get(`${base(t)}/approver-links`)).body.map((l: { state: string }) => l.state)
+    ).toEqual(["revoked", "revoked"]);
+    expect((await h.anon.get(portal(completed))).status).toBe(410);
+    expect((await h.anon.post(`${portal(pending)}/done`, {})).status).toBe(410);
+    await storage.updateCompany(t.company.id, { trnVatNumber: SELLER.trn_vat_number });
+    expect((await h.anon.get(portal(completed))).status).toBe(410);
+    expect((await t.as.get(`${base(t)}/partner`)).body.appointment.state).toBe("not_started");
+    await h.sql("UPDATE companies SET trn_vat_number = '100123456710003' WHERE id = $1", [
+      t.company.id,
+    ]);
+
+    const current = await create();
+    expect((await h.anon.post(`${portal(current)}/done`, {})).body.state).toBe("completed");
+    expect((await t.as.get(`${base(t)}/partner`)).body.appointment.state).toBe("approver_done");
+    expect((await firmEInvoicingStates([t.company.id])).get(t.company.id)?.state).toBe(
+      "approver_done"
+    );
+    // A read must verify the scope even if the restoration bypassed the application write path.
+    await h.sql("UPDATE companies SET trn_vat_number = $2 WHERE id = $1", [
+      t.company.id,
+      SELLER.trn_vat_number,
+    ]);
+    expect((await h.anon.get(portal(current))).status).toBe(410);
+    expect((await t.as.get(`${base(t)}/partner`)).body.appointment.state).toBe("not_started");
+  });
+
   it("works without login, shows no TRN, notifies the owner, expires and can be revoked", async () => {
     const t = await h.createTenant({ companyColumns: SELLER });
     const noPartner = await t.as.post(`${base(t)}/approver-links`, { approverName: "Huda" });

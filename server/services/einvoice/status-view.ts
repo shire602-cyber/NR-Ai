@@ -20,7 +20,6 @@ import {
   documentSubmissionMetadata,
   documentValidation,
   getEInvoiceDocument,
-  hasUnverifiedComplyanceCorrection,
   isQueuedEInvoiceDocument,
   sha256Hex,
   submissionProviderPin,
@@ -30,11 +29,13 @@ import { getLegalEntity } from "./legal-entities";
 import {
   canRetryOriginalRejectedNumber,
   correctableComplyanceReference,
+  inspectComplyanceRevision,
   legacyTrackingAvailability,
   legacyTrackingReference,
   needsLegacySubmissionRecovery,
 } from "./legacy-tracking";
 import {
+  conflictingProviderReceipt,
   deriveInvoiceTracks,
   isReportingObservation,
   NEW_DOCUMENT_REQUIRED_CODES,
@@ -105,15 +106,20 @@ export function projectEInvoiceDocument(
 
 export async function einvoiceStatusView(invoice: Invoice, company: Company, now = new Date()) {
   const doc = await getEInvoiceDocument(company.id, invoice.id);
-  const correctionRevisionUnverified = hasUnverifiedComplyanceCorrection(doc);
+  const revision = await inspectComplyanceRevision(invoice, doc);
+  const correctionRevisionUnverified = revision.unresolved;
   const events = await listDocumentEvents(company.id, invoice.id, 100);
   const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
   const ctx = await loadEInvoiceContext(invoice, company, lines);
   const issues = validateForEInvoicing(invoice, lines, company, ctx);
-  const providerDocumentId =
-    invoice.einvoiceProviderMessageId ?? legacyTrackingReference(invoice, doc)?.messageId ?? null;
+  const receiptConflict = conflictingProviderReceipt(invoice, doc);
+  const providerDocumentId = receiptConflict
+    ? null
+    : (invoice.einvoiceProviderMessageId ??
+      legacyTrackingReference(invoice, doc)?.messageId ??
+      null);
   const handedOver = !!providerDocumentId;
-  const providerHoldsDocument = handedOver || !!doc?.providerMessageId;
+  const providerHoldsDocument = handedOver || receiptConflict || !!doc?.providerMessageId;
   const correctableComplyance = !!correctableComplyanceReference(invoice, doc);
   const legacyRecovery = needsLegacySubmissionRecovery(invoice, doc);
   const pinnedEnvironment = documentProviderEnvironment(doc);
@@ -185,7 +191,7 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
 
   const validation = documentValidation(doc) as { valid?: boolean } | null;
   const submissionState =
-    legacyRecovery || correctionRevisionUnverified
+    legacyRecovery || correctionRevisionUnverified || receiptConflict
       ? "needs_reconciliation"
       : delivery === "rejected" || reporting === "report_failed"
         ? "rejected"
@@ -313,7 +319,7 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
       provider: providerId,
       providerDisplayName: module?.displayName ?? null,
       environment,
-      environmentVerification: await legacyTrackingAvailability(invoice, doc, company),
+      environmentVerification: await legacyTrackingAvailability(invoice, doc, company, revision),
       connected: block === null,
       block,
       providerDocumentId,
@@ -321,9 +327,10 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
       recipientAcknowledgement: acknowledgement,
       canSubmit: maySubmit && submissionState === "draft" && !legacyRecovery,
       canRefresh:
+        !receiptConflict &&
         !correctionRevisionUnverified &&
         configuration !== null &&
-        ((handedOver && legacy !== "cleared") ||
+        ((handedOver && (legacy !== "cleared" || revision.canRepairClearance)) ||
           (!legacyRecovery && canRecoverAcubeSubmission(invoice, doc))),
     },
     issues,

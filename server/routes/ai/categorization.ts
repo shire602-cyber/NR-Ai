@@ -11,7 +11,6 @@ import {
 } from "../../services/ai/grounding";
 import type { Request, Response } from "express";
 import { aiErrorBody } from "../../services/ai/usage-meter";
-import { aiRowsToParsedRows } from "../../services/bank-import.service";
 import { categorizationRequestSchema } from "../../../shared/schema";
 import { classifyOcrReceipt } from "../../services/receipt-autopilot.service";
 import { errorMessage, errorStatus, errorStatusCode } from "../../errors";
@@ -152,104 +151,12 @@ Amount: ${validated.amount} ${validated.currency}`,
   };
 }
 
-/** POST /api/ai/parse-bank-statement */
-export function handlePostAiParseBankStatement({ getAI }: Pick<AiHandlerContext, "getAI">) {
-  return async (req: Request, res: Response) => {
-    try {
-      const { text } = req.body;
-
-      if (!text || text.trim().length < 10) {
-        return res
-          .status(400)
-          .json({ code: "STATEMENT_TEXT_REQUIRED", message: "Bank statement text is required" });
-      }
-
-      // Use OpenAI to parse bank statement transactions
-      const completion = await getAI(req, "ocr").chat.completions.create({
-        model: resolveModel("ocr"),
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert at parsing bank statements from UAE banks. Extract transaction data from the provided text which was extracted from a PDF bank statement.
-
-Your task is to identify and extract all financial transactions found in the text. For each transaction, extract:
-- date: The transaction date in YYYY-MM-DD format (convert from any format found)
-- description: A clean description of the transaction
-- amount: The transaction amount as a number (negative for debits/withdrawals, positive for credits/deposits)
-- reference: Any reference number if available, otherwise null
-
-Important notes:
-- The text may be OCR output so expect some errors - try to interpret the data intelligently
-- UAE banks include: ENBD, Mashreq, FAB, ADCB, RAKBANK, Dubai Islamic Bank, etc.
-- Common patterns: ATM withdrawals, POS purchases, salary credits, transfers, utility payments (DEWA, du, Etisalat)
-- If amounts are in parentheses or marked DR/CR, interpret correctly (DR = debit = negative)
-- Dates may be in various formats: DD/MM/YYYY, DD-MMM-YYYY, etc.
-
-Respond with a JSON object containing:
-{
-  "transactions": [
-    { "date": "YYYY-MM-DD", "description": "...", "amount": number, "reference": "..." or null },
-    ...
-  ]
-}
-
-If no valid transactions can be found, return { "transactions": [] }
-
-${DATA_BLOCK_INSTRUCTION}`,
-          },
-          {
-            role: "user",
-            content: `Parse the following bank statement text and extract all transactions:\n\n${wrapUserData("bank_statement", text, 15000)}`,
-          },
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.2,
-      });
-
-      const aiResponse = JSON.parse(
-        completion.choices[0].message.content || '{"transactions": []}'
-      );
-
-      // W3-C (R06-12/R06-24): model output goes through the same strict row validation as the
-      // import pipeline — a bad date or amount is reported, never turned into NaN or a guess.
-      const rawRows: unknown[] = Array.isArray(aiResponse?.transactions)
-        ? aiResponse.transactions
-        : [];
-      const candidates = rawRows
-        .filter((t): t is Record<string, unknown> => !!t && typeof t === "object")
-        .map((t) => ({
-          date: typeof t.date === "string" ? t.date : "",
-          description: typeof t.description === "string" ? t.description : "",
-          amount: typeof t.amount === "number" || typeof t.amount === "string" ? t.amount : "",
-          reference: typeof t.reference === "string" ? t.reference : null,
-        }));
-      const parsedRows = aiRowsToParsedRows(candidates);
-      const validTransactions = parsedRows
-        .filter((r) => r.errors.length === 0)
-        .map((r) => ({
-          date: (r.date as Date).toISOString().slice(0, 10),
-          description: r.description.substring(0, 200),
-          amount: r.amount.toFixed(2),
-          reference: r.reference,
-        }));
-      const rejected = parsedRows
-        .filter((r) => r.errors.length > 0)
-        .map((r) => ({ rowIndex: r.rowIndex, errors: r.errors }));
-
-      log.info(
-        { count: validTransactions.length, rejected: rejected.length },
-        "Parsed bank statement"
-      );
-
-      res.json({ transactions: validTransactions, rejected });
-    } catch (error: unknown) {
-      log.error({ err: error }, "AI bank statement parsing error");
-      res.status(errorStatus(error) || errorStatusCode(error) || 500).json({
-        message: errorMessage(error) || "Failed to parse bank statement",
-        ...aiErrorBody(error),
-      });
-    }
-  };
+/** Keep saved clients pointed at the supported upload flow. */
+export async function handlePostAiParseBankStatement(_req: Request, res: Response) {
+  res.status(410).json({
+    code: "STATEMENT_CSV_REQUIRED",
+    message: "Choose a bank CSV export.",
+  });
 }
 
 /** POST /api/ai/cfo-advice */

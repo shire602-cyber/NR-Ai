@@ -334,12 +334,23 @@ function historicalInviteGrantor() {
       where retired.company_id = ci.company_id and retired.resource_type = 'company_user'
         and retired.action = 'team.remove' and ${retired} #>> '{before,userId}' = ci.invited_by::text
         and ${eventAfterAcceptance(sql`retired.created_at`, sql`retired.seq`)}
-        and exists (select 1 from audit_logs known
+        and (exists (select 1 from audit_logs known
           where known.company_id = ci.company_id and known.resource_type = 'company_user'
             and known.resource_id = retired.resource_id and known.action = 'team.role_change'
             and ${known} #>> '{after,userId}' = ci.invited_by::text
             and not ${eventAfterAcceptance(sql`known.created_at`, sql`known.seq`)}
-        )
+        ) or exists (select 1 from company_invitations own_invite
+          join audit_logs own_accept on own_accept.company_id = own_invite.company_id
+            and own_accept.resource_id = own_invite.id::text
+          where own_invite.company_id = ci.company_id and own_invite.status = 'accepted'
+            and own_invite.accepted_user_id = ci.invited_by
+            and own_accept.user_id = ci.invited_by
+            and own_accept.resource_type = 'company_invitation'
+            and own_accept.action = 'team.invite_accept'
+            and ${auditDetails(sql`own_accept.details`)} #>> '{after,membershipId}' = retired.resource_id
+            and ${auditDetails(sql`own_accept.details`)} #>> '{after,directCompanyGrant}' = 'true'
+            and not ${eventAfterAcceptance(sql`own_accept.created_at`, sql`own_accept.seq`)}
+        ))
     ) grantor
     join users account on account.id = ci.invited_by and account.user_type <> 'client_portal'
     left join lateral (
@@ -646,6 +657,20 @@ export async function reconcileCompanyMembershipOrigin(
   exec: Pick<Executor, "select" | "update">
 ) {
   if (!(await hasFirmCreatedCompanyMembership(companyId, userId, exec))) return;
+  const [direct] = await exec
+    .select({ id: companyUsers.id })
+    .from(companyUsers)
+    .where(
+      and(
+        eq(companyUsers.companyId, companyId),
+        eq(companyUsers.userId, userId),
+        verifiedDirectAcceptance(companyId, userId)
+      )
+    );
+  if (direct) {
+    await markCompanyMembershipDirect(companyId, userId, exec);
+    return;
+  }
   const role = await historicDirectCompanyRole(companyId, userId, exec);
   if (role) {
     await exec

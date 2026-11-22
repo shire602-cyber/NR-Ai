@@ -36,6 +36,9 @@ const T = (
   defaults?: Record<string, string>
 ): CopyTemplate => ({ key, en, prefix, ...(defaults ? { defaults } : {}) });
 
+const BANK_IMPORT_TITLE_KEY = "notification.bankSyncFailed.title";
+const BANK_IMPORT_MESSAGE_KEY = "notification.bankSyncFailed.message";
+
 /** Notification titles, most specific first. */
 export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.invoiceIssued.title", "Invoice {number} issued"),
@@ -45,7 +48,7 @@ export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billApproved.title", "Bill approved {label}"),
   T("notification.billPaid.title", "Bill paid {label}"),
   T("notification.payrollApproved.title", "Payroll approved"),
-  T("notification.bankSyncFailed.title", "Bank transaction import failed"),
+  T(BANK_IMPORT_TITLE_KEY, "Bank transaction import failed"),
   T("notification.deadlineDue.title", "Deadline due[ {dueDate}]"),
   T("notification.taskDue.title", "Task due[ {dueDate}]"),
   T("notification.invoiceOverdue.title", "Invoice {number} is overdue"),
@@ -86,7 +89,7 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billPaid.message", "Bill {label} was paid."),
   T("notification.payrollApproved.message", "Payroll for {month}/{year} was approved."),
   T(
-    "notification.bankSyncFailed.message",
+    BANK_IMPORT_MESSAGE_KEY,
     "Some transactions could not be imported[ from {provider}][: {reason}]. Upload a bank CSV to review and reconcile them."
   ),
   T("notification.deadlineDueGeneric.message", "A compliance obligation is due[ on {dueDate}]."),
@@ -176,21 +179,12 @@ export const REPORT_DELIVERY_TEMPLATES: readonly CopyTemplate[] = [
 
 /** Older stored sentences that map onto a current key (parse only, never rendered or catalogued). */
 export const LEGACY_NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
-  T("notification.bankSyncFailed.title", "Bank feed sync failed"),
   // AI drafts notice stored before it was catalog copy (broken-path sweep).
   T("notification.aiDraftsReview.title", "{count} AI draft journal entries need review"),
   T("notification.aiDraftsReview.title", "{count} AI draft journal entry need review"),
 ];
 
 export const LEGACY_NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
-  T(
-    "notification.bankSyncFailed.message",
-    "The bank connection[ ({provider})] could not import transactions[: {reason}]."
-  ),
-  T(
-    "notification.bankSyncFailed.message",
-    "The bank feed[ ({provider})] could not sync[: {reason}]. Reconnect it under Banking."
-  ),
   T(
     "notification.aiDraftsReview.message",
     "The AI categorized {count} bank transactions with high confidence. Review and approve each draft journal entry before it posts to the GL."
@@ -354,25 +348,52 @@ export interface NotificationCopyDescriptor {
   messageParams: Record<string, string>;
 }
 
+/** Recognize retired notice formats so historical rows can be displayed as current guidance. */
+const legacyBankImportTitle = /^Bank\s+feed\s+sync\s+failed$/i;
+const legacyBankImportMessage =
+  /^The bank\s+(?:feed|connection)(?: \((?<provider>.+?)\))? could not (?:sync|import transactions)(?:: (?<reason>.+?))?\.(?:\s+Reconnect\s+it\s+under\s+Banking\.)?$/is;
+
+function parseLegacyBankImportMessage(message: string): CopyDescriptor | null {
+  const match = legacyBankImportMessage.exec(message);
+  if (!match) return null;
+  const { provider, reason } = match.groups ?? {};
+  return {
+    key: BANK_IMPORT_MESSAGE_KEY,
+    params: { ...(provider ? { provider } : {}), ...(reason ? { reason } : {}) },
+  };
+}
+
 /** Keys + params for a stored notification (old or new rows alike). */
 export function describeNotificationCopy(n: {
   title: string;
   message: string;
 }): NotificationCopyDescriptor {
-  const title = parseServerCopy(n.title, [
-    ...NOTIFICATION_TITLE_TEMPLATES,
-    ...LEGACY_NOTIFICATION_TITLE_TEMPLATES,
-  ]);
-  const message = parseServerCopy(n.message, [
-    ...NOTIFICATION_MESSAGE_TEMPLATES,
-    ...LEGACY_NOTIFICATION_MESSAGE_TEMPLATES,
-  ]);
+  const title =
+    parseServerCopy(n.title, [
+      ...NOTIFICATION_TITLE_TEMPLATES,
+      ...LEGACY_NOTIFICATION_TITLE_TEMPLATES,
+    ]) ?? (legacyBankImportTitle.test(n.title) ? { key: BANK_IMPORT_TITLE_KEY, params: {} } : null);
+  const message =
+    parseServerCopy(n.message, [
+      ...NOTIFICATION_MESSAGE_TEMPLATES,
+      ...LEGACY_NOTIFICATION_MESSAGE_TEMPLATES,
+    ]) ?? parseLegacyBankImportMessage(n.message);
   return {
     titleKey: title?.key ?? null,
     titleParams: title?.params ?? {},
     messageKey: message?.key ?? null,
     messageParams: message?.params ?? {},
   };
+}
+
+function currentBankImportText(
+  key: string | null,
+  params: Record<string, string>,
+  fallback: string
+): string {
+  return key === BANK_IMPORT_TITLE_KEY || key === BANK_IMPORT_MESSAGE_KEY
+    ? renderServerCopy(key, params)
+    : fallback;
 }
 
 /** Render a descriptor with catalog strings; falls back to the English source on a miss. */
@@ -384,7 +405,9 @@ export function renderDescriptor(
 ): string {
   if (!key) return fallback;
   const template = catalog[serverCopyCatalogKey(key)];
-  return template ? renderCopyTemplate(template, params) : fallback;
+  return template
+    ? renderCopyTemplate(template, params)
+    : currentBankImportText(key, params, fallback);
 }
 
 // ─── Anomaly checks and categorisation reasons ───────────────────────────────
@@ -1492,7 +1515,13 @@ export function notificationCopy(
 export function withNotificationCopy<T extends { title: string; message: string }>(
   n: T
 ): T & { copy: NotificationCopyDescriptor } {
-  return { ...n, copy: describeNotificationCopy(n) };
+  const copy = describeNotificationCopy(n);
+  return {
+    ...n,
+    title: currentBankImportText(copy.titleKey, copy.titleParams, n.title),
+    message: currentBankImportText(copy.messageKey, copy.messageParams, n.message),
+    copy,
+  };
 }
 
 /** Key + params for a stored report-delivery run error or handoff sentence, or null. */

@@ -61,6 +61,89 @@ async function enqueueReceived(companyId: string, payload: Record<string, unknow
 }
 
 describe("e-invoice inbox onboarding", () => {
+  it.each(["parked during the switch", "previously ignored"])(
+    "resumes a signed receipt after a temporary provider switch (%s)",
+    async (state) => {
+      const t = await h.createTenant({
+        companyColumns: { trn_vat_number: BUYER_TRN, einvoice_partner: "acube" },
+      });
+      const { enqueueVerifiedProviderCallback, runProviderEvents } =
+        await import("../../server/services/einvoice/provider-events");
+      const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
+      await upsertLegalEntity(t.company.id, "acube", "sandbox", BUYER_TIN, {
+        status: "active",
+        legalEntityId: OWNER,
+      });
+      const callback = (documentId: string) =>
+        enqueueVerifiedProviderCallback({
+          provider: "acube",
+          environment: "sandbox",
+          companyId: t.company.id,
+          type: "document.received",
+          eventId: documentId,
+          payload: { documentId, ownerLegalEntityId: OWNER },
+        });
+      const { id } = await callback("accepted-before-switch");
+      expect(id).toBeTruthy();
+      const provider = simulatedProvider(await incomingXml("SUP-RESUME-ORIGINAL"));
+      const run = () => runProviderEvents({ id: id!, provider });
+      const select = (partner: string) =>
+        t.as.put(`/api/companies/${t.company.id}/einvoicing/partner`, { partner });
+      expect((await select("complyance")).status).toBe(200);
+      expect(await callback("arrived-after-switch")).toMatchObject({ id: null, ignored: true });
+      if (state === "previously ignored") {
+        await h.sql(
+          "UPDATE einvoice_provider_events SET status = 'ignored', last_error = $2 WHERE id = $1",
+          [id, "Receipt does not match the current provider and taxpayer"]
+        );
+      } else {
+        expect(await run()).toEqual({ claimed: 1, processed: 0, failed: 0 });
+        expect(provider.fetchSource).not.toHaveBeenCalled();
+        expect(
+          await h.sql("SELECT status FROM einvoice_provider_events WHERE id = $1", [id])
+        ).toEqual([{ status: "pending" }]);
+      }
+
+      expect((await select("acube")).status).toBe(200);
+      expect(await run()).toEqual({ claimed: 1, processed: 1, failed: 0 });
+      expect(await run()).toEqual({ claimed: 0, processed: 0, failed: 0 });
+      expect(
+        await h.sql("SELECT bill_number FROM vendor_bills WHERE company_id = $1", [t.company.id])
+      ).toEqual([{ bill_number: "SUP-RESUME-ORIGINAL" }]);
+    }
+  );
+
+  it("matches formatted VAT numbers without accepting a different full VAT registration", async () => {
+    const formattedTrn = "100 7654321 00003";
+    const t = await h.createTenant({
+      companyColumns: { trn_vat_number: formattedTrn, einvoice_partner: "acube" },
+    });
+    const { runProviderEvents } = await import("../../server/services/einvoice/provider-events");
+    const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
+    await upsertLegalEntity(t.company.id, "acube", "sandbox", BUYER_TIN, {
+      status: "active",
+      legalEntityId: OWNER,
+      vatTrn: formattedTrn,
+    });
+    const run = async (documentId: string, vatTrn: string, billNumber: string) => {
+      const { id } = await enqueueReceived(t.company.id, { documentId });
+      const provider: EInvoiceProvider = {
+        ...simulatedProvider(await incomingXml(billNumber)),
+        inboundOwner: async () => ({ legalEntityId: OWNER, tin: BUYER_TIN, vatTrn }),
+      };
+      expect(await runProviderEvents({ id: id!, provider })).toEqual({
+        claimed: 1,
+        processed: 1,
+        failed: 0,
+      });
+    };
+    await run("mismatched-vat", "100 7654321 01003", "SUP-OTHER-VAT");
+    await run("formatted-vat", "1007654 32100003", "SUP-FORMATTED-VAT");
+    expect(
+      await h.sql("SELECT bill_number FROM vendor_bills WHERE company_id = $1", [t.company.id])
+    ).toEqual([{ bill_number: "SUP-FORMATTED-VAT" }]);
+  });
+
   it("holds an event without using its retry budget and processes it once after scoped activation", async () => {
     const t = await h.createTenant({
       companyColumns: { trn_vat_number: BUYER_TRN, einvoice_partner: "acube" },
@@ -616,6 +699,44 @@ describe("e-invoice inbox recovers incomplete purchases", () => {
       );
     return { t, id, xml, run, bills };
   }
+
+  it("resumes an archived purchase when the provider switched during draft preparation", async () => {
+    const { t, id, run, bills } = await purchase("SUP-SWITCH-BEFORE-POST", "provider-write-race");
+    const registry = await import("../../server/platform/service-registry");
+    type Prepare =
+      typeof import("../../server/services/bill-payment.service").prepareDraftFromInbound;
+    const prepare = registry.resolve<Prepare>("bills.prepareDraftFromInbound");
+    const select = (partner: string) =>
+      t.as.put(`/api/companies/${t.company.id}/einvoicing/partner`, { partner });
+    registry.provide(
+      "bills.prepareDraftFromInbound",
+      (async (...args) => {
+        const write = await prepare(...args);
+        expect((await select("complyance")).status).toBe(200);
+        return write;
+      }) satisfies Prepare,
+      { replace: true }
+    );
+    try {
+      expect(await run()).toEqual({ claimed: 1, processed: 0, failed: 0 });
+    } finally {
+      registry.provide("bills.prepareDraftFromInbound", prepare, { replace: true });
+    }
+    expect(await bills()).toEqual([]);
+    expect(
+      await h.sql(
+        "SELECT archive_id, status FROM einvoice_inbound_documents WHERE company_id = $1",
+        [t.company.id]
+      )
+    ).toEqual([{ archive_id: expect.any(String), status: "received" }]);
+    expect(await h.sql("SELECT status FROM einvoice_provider_events WHERE id = $1", [id])).toEqual([
+      { status: "pending" },
+    ]);
+
+    expect((await select("acube")).status).toBe(200);
+    expect(await run()).toEqual({ claimed: 1, processed: 1, failed: 0 });
+    expect(await bills()).toHaveLength(1);
+  });
 
   it("keeps the archived receipt but never writes a bill after taxpayer re-selection during preparation", async () => {
     const { t, id, run, bills } = await purchase("SUP-CHANGED-BEFORE-POST", "taxpayer-write-race");

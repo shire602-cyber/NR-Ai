@@ -12,7 +12,6 @@ import {
 import { strictBody } from "../http/strict-body";
 import { DomainError } from "../errors";
 import {
-  companies,
   customerContacts,
   invoiceLines,
   invoices,
@@ -746,11 +745,7 @@ export function registerEInvoiceRoutes(app: Express) {
       const body = validated<SettingsBody>(req);
       const patch: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(body)) if (v !== undefined) patch[k] = v;
-      const [updated] = await db
-        .update(companies)
-        .set(patch)
-        .where(eq(companies.id, companyId))
-        .returning();
+      const updated = await storage.updateCompany(companyId, patch);
       if (!updated) throw new DomainError("COMPANY_NOT_FOUND", 404);
       await recordAudit({
         userId: userOf(req),

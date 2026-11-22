@@ -146,6 +146,13 @@ export function isPintAeTrn(value: string | null | undefined): boolean {
   return typeof value === "string" && /^1\d{12}03$/.test(value);
 }
 
+/** Normalize display separators for ownership comparisons, while checking the entire VAT TRN. */
+export function normalizedVatTrn(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const digits = value.replace(/[\s-]/g, "");
+  return isPintAeTrn(digits) ? digits : null;
+}
+
 /** TRN → TIN (the first 10 digits), the TRN-based fallback participant id. */
 export function tinFromTrn(trn: string | null | undefined): string | null {
   return trn && isPintAeTrn(trn) ? trn.slice(0, 10) : null;

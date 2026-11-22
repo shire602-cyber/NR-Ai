@@ -160,6 +160,8 @@ describe("server copy templates", () => {
         "Some transactions could not be imported from Wio: HTTP 502. Upload a bank CSV to review and reconcile them.",
     };
     expect(current).toMatchObject(english);
+    expect(withNotificationCopy(legacy)).toMatchObject(english);
+    expect(localizeNotification(legacy, {})).toEqual(english);
     expect(localizeNotification(legacy, en)).toEqual(english);
     expect(localizeNotification(legacy, ar, "ar")).toEqual({
       title: "تعذّر استيراد الحركات البنكية",

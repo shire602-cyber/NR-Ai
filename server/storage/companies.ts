@@ -20,6 +20,7 @@ import {
   reconcileCompanyMembershipOrigin,
   type FirmContext,
 } from "../services/firm/scope";
+import { updateCompanyWithApprovalScope } from "../services/einvoice/appointment-scope";
 import { db, type AppDatabase } from "../db";
 import { DomainError } from "../errors";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
@@ -130,8 +131,7 @@ export class CompanyStorage extends UserStorage {
   }
 
   async updateCompany(id: string, data: Partial<InsertCompany>): Promise<Company> {
-    const [company] = await db.update(companies).set(data).where(eq(companies.id, id)).returning();
-    return company;
+    return updateCompanyWithApprovalScope(id, data);
   }
 
   // Company Users

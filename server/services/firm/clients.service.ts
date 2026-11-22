@@ -243,7 +243,28 @@ async function isCompanyOwner(userId: string, companyId: string): Promise<boolea
   return !!m && normalizeCompanyRole(m.role) === "owner";
 }
 
+function unambiguousInvitationRecipient(userId: string, email: string) {
+  return sql`exists (select 1 from users recipient where recipient.id = ${userId}
+    and lower(btrim(recipient.email)) = ${email}
+    and not exists (select 1 from users other where other.id <> recipient.id
+      and lower(btrim(other.email)) = ${email}))`;
+}
+
+async function assertUnambiguousInvitationRecipient(
+  user: { id: string; email: string },
+  conn: Pick<AppDatabase, "select"> = db
+) {
+  const email = user.email.trim().toLowerCase();
+  const [recipient] = await conn
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.id, user.id), unambiguousInvitationRecipient(user.id, email)));
+  if (!recipient) throw new DomainError("INVITATION_EMAIL_AMBIGUOUS", 409);
+  return email;
+}
+
 export async function listInvitationsForUser(user: { id: string; email: string }) {
+  const email = await assertUnambiguousInvitationRecipient(user);
   const invitations = await db
     .select({
       id: firmClientLinks.id,
@@ -258,7 +279,8 @@ export async function listInvitationsForUser(user: { id: string; email: string }
       and(
         eq(firmClientLinks.status, "invited"),
         eq(firms.status, "active"),
-        sql`lower(${firmClientLinks.inviteeEmail}) = ${user.email.trim().toLowerCase()}`
+        sql`lower(btrim(${firmClientLinks.inviteeEmail})) = ${email}`,
+        unambiguousInvitationRecipient(user.id, email)
       )
     )
     .orderBy(desc(firmClientLinks.invitedAt));
@@ -276,10 +298,11 @@ export async function listInvitationsForUser(user: { id: string; email: string }
 }
 
 async function loadInvitation(
-  user: { email: string },
+  user: { id: string; email: string },
   linkId: string,
   conn: Pick<AppDatabase, "select"> = db
 ) {
+  const email = await assertUnambiguousInvitationRecipient(user, conn);
   const [link] = await conn
     .select({ link: firmClientLinks, firmIsNr: firms.isNr, firmStatus: firms.status })
     .from(firmClientLinks)
@@ -288,7 +311,7 @@ async function loadInvitation(
       and(
         eq(firmClientLinks.id, linkId),
         eq(firmClientLinks.status, "invited"),
-        sql`lower(${firmClientLinks.inviteeEmail}) = ${user.email.trim().toLowerCase()}`
+        sql`lower(btrim(${firmClientLinks.inviteeEmail})) = ${email}`
       )
     )
     .limit(1);
@@ -313,7 +336,7 @@ async function lockInvitationRecipient(
     .where(eq(firms.id, firmId))
     .for("share");
   if (!recipient || firm?.status !== "active") throw new DomainError("INVITATION_NOT_FOUND", 404);
-  const current = await loadInvitation(recipient, linkId, tx);
+  const current = await loadInvitation({ id: userId, email: recipient.email }, linkId, tx);
   if (current.link.firmId !== firmId) throw new DomainError("INVITATION_NOT_FOUND", 404);
   return recipient.email.trim().toLowerCase();
 }
@@ -351,7 +374,8 @@ export async function acceptInvitation(
           eq(firmClientLinks.id, link.id),
           eq(firmClientLinks.firmId, link.firmId),
           eq(firmClientLinks.status, "invited"),
-          sql`lower(${firmClientLinks.inviteeEmail}) = ${email}`
+          sql`lower(btrim(${firmClientLinks.inviteeEmail})) = ${email}`,
+          unambiguousInvitationRecipient(user.id, email)
         )
       )
       .returning();
@@ -391,7 +415,8 @@ export async function declineInvitation(
           eq(firmClientLinks.id, link.id),
           eq(firmClientLinks.firmId, link.firmId),
           eq(firmClientLinks.status, "invited"),
-          sql`lower(${firmClientLinks.inviteeEmail}) = ${email}`
+          sql`lower(btrim(${firmClientLinks.inviteeEmail})) = ${email}`,
+          unambiguousInvitationRecipient(user.id, email)
         )
       )
       .returning({ id: firmClientLinks.id });

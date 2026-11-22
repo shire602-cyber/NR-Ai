@@ -430,6 +430,7 @@ async function findLegacyInboundCredit(
 
 export class InboundLegalEntityChangedError extends Error {}
 export class InboundTaxpayerChangedError extends Error {}
+export class InboundProviderChangedError extends Error {}
 
 /** Read the current company before consulting its provider, or hold its identity through a write. */
 export async function readInboundCompany(companyId: string, tx?: Pick<AppDatabase, "select">) {
@@ -486,13 +487,11 @@ async function assertInboundOwnershipCurrent(
     if (!company || !matchesCompanyTaxpayer(company, buyer)) throw wrongRecipient();
     return;
   }
-  if (
-    !company ||
-    currentProviderReceiptTin(company, entity.provider) !== entity.tin ||
-    !matchesCompanyTaxpayer(company, buyer)
-  ) {
-    throw new InboundTaxpayerChangedError("The provider or taxpayer changed during receipt");
+  if (!company || companyTin(company) !== entity.tin || !matchesCompanyTaxpayer(company, buyer)) {
+    throw new InboundTaxpayerChangedError("The taxpayer changed during receipt");
   }
+  if (company.einvoicePartner !== entity.provider)
+    throw new InboundProviderChangedError("The selected provider changed during receipt");
   if (!isCurrentReceiptEnvironment(entity.provider, entity.environment)) {
     throw new EInvoiceProviderError(
       "EINVOICE_PROVIDER_NOT_CONFIGURED",
@@ -744,6 +743,7 @@ export async function processInboundEInvoice(args: {
       };
     });
   } catch (err) {
+    if (err instanceof InboundProviderChangedError) throw err;
     const note =
       err instanceof DomainError && err.code === "EINVOICE_INBOUND_NO_OWNER"
         ? "Company has no member to own the draft bill"
