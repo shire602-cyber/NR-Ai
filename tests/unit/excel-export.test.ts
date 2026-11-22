@@ -4,6 +4,7 @@ import {
   buildGenericWorkbook,
   buildOcrReceiptsWorkbook,
   buildExportFilename,
+  normalizeGenericCell,
   receiptToExportRow,
   type OcrExportRow,
 } from "../../server/services/excel-export.service";
@@ -195,4 +196,61 @@ describe("excel-export.service", () => {
     expect(wb.worksheets[1].name).toBe("VAT Summary");
     expect(wb.title).toBe("Report Export");
   });
+  it("preserves receipt references and formats incomplete OCR exports", async () => {
+    const workbook = await loadWorkbook(
+      await buildOcrReceiptsWorkbook(
+        [
+          { ...sampleRows[0], date: "April 15, 2026 UTC", amount: "1,050.25", currency: "" },
+          { date: new Date(Number.NaN), vendor: null, invoiceNumber: "00021", amount: NaN, vat: "" },
+          { date: "Unreadable", vendor: "Source image", invoiceNumber: null, amount: undefined, vat: null },
+          { date: null, vendor: null, invoiceNumber: null, amount: null, vat: undefined },
+        ],
+        { title: "Reviewed receipts", sheetName: "Receipt review" }
+      )
+    );
+    const sheet = workbook.getWorksheet("Receipt review")!;
+    expect(workbook.title).toBe("Reviewed receipts");
+    expect(sheet.getCell("A2").value).toBe("2026-04-15");
+    expect(sheet.getCell("D2").value).toBe(1050.25);
+    expect(sheet.getCell("D2").numFmt).toContain("AED");
+    expect(sheet.getCell("C3").value).toBe("00021");
+    expect(sheet.getCell("D3").value).toBeNull();
+    expect(sheet.getCell("E3").value).toBeNull();
+    expect(sheet.getCell("A4").value).toBe("Unreadable");
+  });
+
+  it("uses Arabic worksheet direction and safely names generic export sheets", async () => {
+    const columns = [{ header: "المبلغ", key: "amount" }, { header: "مرجع", key: "reference" }];
+    const wb = await loadWorkbook(
+      await buildGenericWorkbook([
+        { columns, rtl: true, rows: [{ amount: " 15.20 ", reference: "0012" }, { amount: false }] },
+        { columns, sheetName: "[]*?", rows: [] },
+      ])
+    );
+    const [arabic, sanitized] = wb.worksheets;
+    expect(wb.title).toBe("Muhasib Export");
+    expect(arabic.name).toBe("Sheet 1");
+    expect(arabic.views[0].rightToLeft).toBe(true);
+    expect(arabic.getCell("A1").alignment.horizontal).toBe("right");
+    expect(arabic.getCell("A2").value).toBe(15.2);
+    expect(arabic.getCell("B2").value).toBe("0012");
+    expect(arabic.getCell("A3").value).toBe(false);
+    expect(sanitized.name).toBe("Sheet");
+  });
+
+  it("omits invalid generic amounts and keeps dates, booleans, and account labels", () => {
+    const date = new Date("2026-04-15T00:00:00.000Z");
+    expect(normalizeGenericCell(date)).toBe(date);
+    expect(normalizeGenericCell(Infinity)).toBe("");
+    expect(normalizeGenericCell(0)).toBe(0);
+    expect(normalizeGenericCell(false)).toBe(false);
+    expect(normalizeGenericCell(null)).toBe("");
+    expect(normalizeGenericCell(undefined)).toBe("");
+    expect(normalizeGenericCell(["1200"])).toBe("1200");
+    expect(receiptToExportRow({ invoiceNumber: "00021", total: "10.50" })).toMatchObject({
+      invoiceNumber: "00021",
+      amount: 10.5,
+    });
+  });
+
 });
