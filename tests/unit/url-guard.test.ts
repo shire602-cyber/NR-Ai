@@ -116,12 +116,13 @@ describe("validateOutboundUrl", () => {
   });
 
   it("rejects unresolvable hostnames", async () => {
+    // Force the resolver's failure locally so the unit test does not depend on DNS timeouts.
     __setOutboundGuardForTests({
       resolve: async () => {
-        throw new Error("Name resolution failed");
+        throw Object.assign(new Error("Host not found"), { code: "ENOTFOUND" });
       },
     });
-    const verdict = await validateOutboundUrl("https://unresolvable.invalid/hook");
+    const verdict = await validateOutboundUrl("https://definitely-not-a-real-host.invalid/hook");
     expect(verdict).toEqual({ ok: false, reason: "Hostname could not be resolved" });
   });
 

@@ -98,6 +98,7 @@ describe("customer email delivery for an Arabic company", () => {
     const inviteToken = inviteMail.text!.match(/\/portal\/join#t=([0-9a-f]{64})/)?.[1];
     expect(inviteToken).toBeDefined();
     const csrf = await h.anon.get("/api/csrf-token");
+    expect(csrf.status, csrf.text).toBe(200);
     const cookie = csrf.headers
       .getSetCookie()
       .map((value) => value.split(";")[0])

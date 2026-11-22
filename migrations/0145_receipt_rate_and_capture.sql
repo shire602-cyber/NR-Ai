@@ -1,4 +1,4 @@
--- 0142_receipt_rate_and_capture (S2): Track receipt rate provenance and deduplicate capture requests.
+-- 0145_receipt_rate_and_capture (S2): Track receipt rate provenance and deduplicate capture requests.
 -- Idempotent: existing receipts retain their rates and can be resolved when next edited.
 ALTER TABLE receipts ADD COLUMN IF NOT EXISTS exchange_rate_source text;
 ALTER TABLE receipts ADD COLUMN IF NOT EXISTS capture_id uuid;

@@ -25,6 +25,7 @@ import {
   NOT_CLOSING_SQL,
   aed,
   reportCurrencyOf,
+  runReportReads,
   type Fils,
   type Queryable,
 } from "./ledger-query";
@@ -330,9 +331,11 @@ export async function agedReceivables(
   q: Queryable = pool
 ): Promise<AgingReport> {
   const { companyId, asOf } = args;
-  const [{ rows }, control, unapplied, allowance, reportCurrency] = await Promise.all([
-    q.query(
-      `SELECT i.id, i.number, COALESCE(NULLIF(TRIM(i.customer_name), ''), 'Unknown Customer') AS name,
+  const [{ rows }, control, unapplied, allowance, reportCurrency] = await runReportReads(
+    q,
+    () =>
+      q.query(
+        `SELECT i.id, i.number, COALESCE(NULLIF(TRIM(i.customer_name), ''), 'Unknown Customer') AS name,
               ${LOCAL("i.date")}::text AS date,
               COALESCE(${LOCAL("i.due_date")}, ${LOCAL("i.date")} + 30)::text AS due,
               COALESCE(i.currency, co.base_currency) AS currency,
@@ -345,13 +348,13 @@ export async function agedReceivables(
           AND COALESCE(i.invoice_type, 'invoice') <> 'credit_note'
           AND ${LOCAL("i.date")} <= $2::date
         ORDER BY i.date, i.number`,
-      [companyId, asOf]
-    ),
-    controlBalance(companyId, asOf, "receivable", q),
-    unappliedFils(unappliedReceivableCreditsFilsSql("$1", AS_OF), companyId, asOf, q),
-    allowanceForDoubtfulDebtsFils(companyId, asOf, q),
-    reportCurrencyOf(companyId, q),
-  ]);
+        [companyId, asOf]
+      ),
+    () => controlBalance(companyId, asOf, "receivable", q),
+    () => unappliedFils(unappliedReceivableCreditsFilsSql("$1", AS_OF), companyId, asOf, q),
+    () => allowanceForDoubtfulDebtsFils(companyId, asOf, q),
+    () => reportCurrencyOf(companyId, q)
+  );
   return build(
     "receivable",
     asOf,

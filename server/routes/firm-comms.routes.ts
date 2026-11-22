@@ -23,6 +23,8 @@ import { createAndEmitNotification } from "../services/socket.service";
 import { notificationCopy } from "../../shared/server-copy";
 import { recordAudit } from "../services/audit.service";
 import { calendarDateKey } from "../../shared/uae-date";
+import { zUuid } from "../../shared/validators/primitives";
+import { requireFirmCompanyMfa } from "../services/security/policy";
 
 /** "30 September 2026": the calendar day of a business date in any server TZ (N1). */
 function longCalendarDate(value: Date | string): string {
@@ -105,14 +107,8 @@ export function registerFirmCommsRoutes(app: Express): void {
     "/firm/comms/log",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = req.user!;
-      const {
-        companyId,
-        channel,
-        from,
-        to,
-        page = "1",
-        limit = "50",
-      } = req.query as Record<string, string>;
+      const companyId = zUuid.optional().parse(req.query.companyId);
+      const { channel, from, to, page = "1", limit = "50" } = req.query as Record<string, string>;
 
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
@@ -127,10 +123,14 @@ export function registerFirmCommsRoutes(app: Express): void {
       const pageNum = Math.max(1, parseInt(page, 10) || 1);
       const limitNum = Math.min(100, parseInt(limit, 10) || 50);
       const offset = (pageNum - 1) * limitNum;
+      if (companyId && accessibleIds !== null && !accessibleIds.includes(companyId)) {
+        return res.json({ data: [], total: 0, page: pageNum, limit: limitNum });
+      }
+      const companyIds = companyId ? [companyId] : accessibleIds;
+      if (!(await requireFirmCompanyMfa(req.user!, res, companyIds ?? []))) return;
 
       const whereClause = and(
-        accessibleIds !== null ? inArray(clientCommunications.companyId, accessibleIds) : undefined,
-        companyId ? eq(clientCommunications.companyId, companyId) : undefined,
+        companyIds === null ? undefined : inArray(clientCommunications.companyId, companyIds),
         channel ? eq(clientCommunications.channel, channel) : undefined,
         from ? gte(clientCommunications.sentAt, new Date(from)) : undefined,
         to ? lte(clientCommunications.sentAt, new Date(to)) : undefined
@@ -175,7 +175,8 @@ export function registerFirmCommsRoutes(app: Express): void {
   router.get(
     "/firm/comms/log/:companyId",
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
+      const companyId = zUuid.safeParse(req.params.companyId).data;
+      if (!companyId) return denyClientAccess(res, req.params.companyId);
       const { id: userId, firmRole } = req.user!;
 
       const accessibleIds = await getAccessibleCompanyIds(
@@ -186,6 +187,7 @@ export function registerFirmCommsRoutes(app: Express): void {
       if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
         return denyClientAccess(res, companyId);
       }
+      if (!(await requireFirmCompanyMfa(req.user!, res, [companyId]))) return;
 
       const rows = await db
         .select()

@@ -26,6 +26,7 @@ import {
 import { createLogger } from "../config/logger";
 import { RETIRED_BANK_NOTIFICATION_PREFIX } from "../../shared/notification-copy";
 import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
+import { refreshQueuedNotificationEmail } from "../services/notification-email-copy";
 import {
   canDeliverCompanyNotification,
   containsRetiredNotificationCopy,
@@ -249,12 +250,15 @@ async function claim(ids: string[] | null, limit: number): Promise<EmailOutboxRo
 }
 
 async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
-  if (row.idempotencyKey?.startsWith(`notif:${RETIRED_BANK_NOTIFICATION_PREFIX}`)) {
-    return cancelPendingEmail(row.id);
-  }
+  let refreshed =
+    row.category === "notification"
+      ? refreshQueuedNotificationEmail(row.subject, row.textBody)
+      : null;
   if (
-    row.category === "notification" &&
-    containsRetiredNotificationCopy(`${row.subject} ${row.textBody ?? ""} ${row.html ?? ""}`)
+    !refreshed &&
+    (row.idempotencyKey?.startsWith(`notif:${RETIRED_BANK_NOTIFICATION_PREFIX}`) ||
+      (row.category === "notification" &&
+        containsRetiredNotificationCopy(`${row.subject} ${row.textBody ?? ""} ${row.html ?? ""}`)))
   ) {
     return cancelPendingEmail(row.id);
   }
@@ -291,7 +295,6 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     .from(emailOutboxAttachments)
     .where(eq(emailOutboxAttachments.outboxId, row.id));
   const attempts = row.attempts + 1;
-  let digest: Awaited<ReturnType<typeof rebuildNotificationDigest>> | undefined;
   try {
     if (row.category === "notification") {
       // Historical and new notification keys end in the intended user id.
@@ -304,9 +307,11 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
         return await cancelPendingEmail(row.id);
       }
     }
-    if (row.category === "digest") digest = await rebuildNotificationDigest(row);
-    if (digest === null) return await cancelPendingEmail(row.id);
-    const content = digest ?? row;
+    if (row.category === "digest") {
+      refreshed = await rebuildNotificationDigest(row);
+      if (!refreshed) return await cancelPendingEmail(row.id);
+    }
+    const content = refreshed ?? row;
     const { providerMessageId } = await transport.send({
       outboxId: row.id,
       to: row.toAddress,
@@ -325,7 +330,7 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     const [sent] = await db
       .update(emailOutbox)
       .set({
-        ...digest,
+        ...refreshed,
         status: "sent",
         attempts,
         provider: transport.name,
@@ -350,7 +355,7 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     const [failed] = await db
       .update(emailOutbox)
       .set({
-        ...digest,
+        ...refreshed,
         status: dead ? "dead" : "retrying",
         attempts,
         provider: transport.name,

@@ -13,7 +13,7 @@ import {
   type JournalEntry,
   type JournalLine,
 } from "@shared/schema";
-import { db } from "../db";
+import { db, type AppDatabase } from "../db";
 import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
 import { createJournalEntryCompat } from "../ledger/legacy";
 import { previewEntryNumber } from "../ledger/numbering";
@@ -99,12 +99,15 @@ export class LedgerStorage extends ReportDeliveryStorage {
       .where(and(eq(accounts.companyId, companyId), eq(accounts.isVatAccount, true)));
   }
 
-  async createBulkAccounts(accountsData: InsertAccount[]): Promise<Account[]> {
+  async createBulkAccounts(
+    accountsData: InsertAccount[],
+    exec?: Pick<AppDatabase, "insert">
+  ): Promise<Account[]> {
     if (accountsData.length === 0) return [];
 
     const expectedCount = accountsData.length;
-    const createdAccounts = await db.transaction(async (tx) => {
-      const inserted = await tx
+    const insertAccounts = async (executor: Pick<AppDatabase, "insert">) => {
+      const inserted = await executor
         .insert(accounts)
         .values(accountsData)
         .onConflictDoNothing()
@@ -117,13 +120,16 @@ export class LedgerStorage extends ReportDeliveryStorage {
       }
 
       return inserted;
-    });
+    };
 
-    return createdAccounts;
+    return exec ? insertAccounts(exec) : db.transaction(insertAccounts);
   }
 
-  async companyHasAccounts(companyId: string): Promise<boolean> {
-    const existingAccounts = await db
+  async companyHasAccounts(
+    companyId: string,
+    exec: Pick<AppDatabase, "select"> = db
+  ): Promise<boolean> {
+    const existingAccounts = await exec
       .select({ id: accounts.id })
       .from(accounts)
       .where(eq(accounts.companyId, companyId))

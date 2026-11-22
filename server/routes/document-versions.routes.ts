@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { strictBody } from "../http/strict-body";
@@ -46,6 +47,13 @@ const SOURCES: Record<DocType, { sql: string; lines?: string }> = {
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const versionNumber = z
+  .string()
+  .regex(/^[1-9]\d{0,9}$/)
+  .transform(Number)
+  .pipe(z.number().int().max(2147483647));
+const diffQuery = z.strictObject({ from: versionNumber.optional(), to: versionNumber.optional() });
 
 /** Server-side snapshot of a document of the company, or 404. */
 export async function snapshotDocument(
@@ -126,6 +134,7 @@ export function registerDocumentVersionRoutes(app: Express) {
   const access = async (req: Request) => {
     const userId = req.user!.id;
     const { companyId, documentType } = req.params;
+    if (!UUID_RE.test(companyId)) throw new DomainError("INVALID_ID", 400, { param: "companyId" });
     if (!(await storage.hasCompanyAccess(userId, companyId))) {
       throw new DomainError("COMPANY_ACCESS_DENIED", 403, undefined, "Access denied");
     }
@@ -161,13 +170,18 @@ export function registerDocumentVersionRoutes(app: Express) {
       const companyId = await access(req);
       const { documentType, documentId } = req.params;
       if (!UUID_RE.test(documentId)) throw new DomainError("DOCUMENT_NOT_FOUND", 404);
-      const versions = await storage.getDocumentVersions(companyId, documentType, documentId);
-      const pick = (n: unknown, fallback: number) => {
-        const v = Number(n);
-        return versions.find((x) => x.version === (Number.isInteger(v) && v > 0 ? v : fallback));
-      };
-      const to = pick(req.query.to, versions[0]?.version ?? 0);
-      const from = pick(req.query.from, versions[1]?.version ?? 0);
+      const query = diffQuery.parse(req.query);
+      const versions = (options: { version?: number; limit: number }) =>
+        storage.getDocumentVersions(companyId, documentType, documentId, options);
+      // The unique (company, type, document, version) index supports targeted lookups
+      // and a backward scan for the two defaults, even with large snapshot histories.
+      const [latest, explicitFrom, explicitTo] = await Promise.all([
+        query.from === undefined || query.to === undefined ? versions({ limit: 2 }) : [],
+        query.from === undefined ? [] : versions({ version: query.from, limit: 1 }),
+        query.to === undefined ? [] : versions({ version: query.to, limit: 1 }),
+      ]);
+      const from = query.from === undefined ? latest[1] : explicitFrom[0];
+      const to = query.to === undefined ? latest[0] : explicitTo[0];
       if (!to || !from)
         throw new DomainError("VERSION_NOT_FOUND", 404, undefined, "Version not found");
       const parse = (s: string | null) => {

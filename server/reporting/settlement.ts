@@ -33,6 +33,10 @@ export interface SettlementOptions {
 /** Gulf-local calendar date of a timestamp column (the kernel's date convention). */
 export const localDateSql = (col: string) => `((${col} + interval '4 hours')::date)`;
 
+/** UAE date cutoff on a UTC timestamp, leaving the indexed column unmodified. */
+export const localDateOnOrBeforeSql = (col: string, date: string) =>
+  `${col} < ((${date}) + interval '20 hours')`;
+
 const upTo = (col: string, opts: SettlementOptions) =>
   opts.asOf ? ` AND ${localDateSql(col)} <= ${opts.asOf}` : "";
 
@@ -61,9 +65,13 @@ export const payableStatusSql = (b: string) =>
 export function receivableSettlementPartsSql(i: string, opts: SettlementOptions = {}) {
   return {
     paid: `COALESCE((SELECT SUM(sp.amount) FROM invoice_payments sp
-                      WHERE sp.invoice_id = ${i}.id${upTo("sp.date", opts)}), 0)`,
+                      WHERE sp.invoice_id = ${i}.id AND sp.company_id = ${i}.company_id${upTo(
+                        "sp.date",
+                        opts
+                      )}), 0)`,
     credited: `(COALESCE((SELECT SUM(-scn.total) FROM invoices scn
                            WHERE scn.original_invoice_id = ${i}.id
+                             AND scn.company_id = ${i}.company_id
                              AND scn.invoice_type = 'credit_note'
                              AND scn.status NOT IN (${list(NON_RECEIVABLE_INVOICE_STATUSES)})${upTo(
                                "scn.date",
@@ -71,17 +79,17 @@ export function receivableSettlementPartsSql(i: string, opts: SettlementOptions 
                              )}), 0)
               + COALESCE((SELECT SUM(ABS(slc.total)) FROM credit_notes slc
                            WHERE slc.invoice_id = ${i}.id AND slc.status = 'issued'
+                             AND slc.company_id = ${i}.company_id
                              AND slc.journal_entry_id IS NOT NULL
                              AND NOT EXISTS (SELECT 1 FROM invoices sm
-                                              WHERE sm.legacy_credit_note_id = slc.id)${upTo(
-                                                "slc.date",
-                                                opts
-                                              )}), 0))`,
+                                              WHERE sm.legacy_credit_note_id = slc.id
+                                                AND sm.company_id = slc.company_id)${upTo(
+                                                  "slc.date",
+                                                  opts
+                                                )}), 0))`,
     applied: `COALESCE((SELECT SUM(sa.amount) FROM customer_credit_allocations sa
-                         WHERE sa.invoice_id = ${i}.id AND sa.kind = 'apply'${upTo(
-                           "sa.date",
-                           opts
-                         )}), 0)`,
+                         WHERE sa.invoice_id = ${i}.id AND sa.company_id = ${i}.company_id
+                           AND sa.kind = 'apply'${upTo("sa.date", opts)}), 0)`,
   };
 }
 
@@ -100,9 +108,13 @@ export function receivableOpenSql(i: string, opts: SettlementOptions = {}): stri
 /** Booking rate of a document alias (1 when missing). */
 export const docRateSql = (alias: string) => `COALESCE(NULLIF(${alias}.exchange_rate, 0), 1)`;
 
+/** Convert a document-currency expression to base fils at the document's booking rate. */
+export const documentAmountBaseFilsSql = (amount: string, alias: string) =>
+  `ROUND((${amount}) * ${docRateSql(alias)} * 100)::bigint`;
+
 /** Open balance of invoice `i` in base-currency fils (bigint), rounded per document. */
 export function receivableOpenBaseFilsSql(i: string, opts: SettlementOptions = {}): string {
-  return `ROUND(${receivableOpenSql(i, opts)} * ${docRateSql(i)} * 100)::bigint`;
+  return documentAmountBaseFilsSql(receivableOpenSql(i, opts), i);
 }
 
 /**
@@ -128,10 +140,11 @@ export function unappliedReceivableCreditsFilsSql(
                        WHERE l.company_id = ${companyParam} AND l.invoice_id IS NULL
                          AND l.status = 'issued' AND l.journal_entry_id IS NOT NULL
                          AND NOT EXISTS (SELECT 1 FROM invoices lm
-                                          WHERE lm.legacy_credit_note_id = l.id)${upTo(
-                                            "l.date",
-                                            opts
-                                          )}), 0))`;
+                                          WHERE lm.legacy_credit_note_id = l.id
+                                            AND lm.company_id = l.company_id)${upTo(
+                                              "l.date",
+                                              opts
+                                            )}), 0))`;
 }
 
 /** Total settled on bill `b` (document currency): Σ bill_payments.amount (reversals are negative). */
@@ -147,21 +160,7 @@ export function payableOpenSql(b: string, opts: SettlementOptions = {}): string 
 
 /** Open balance of bill `b` in base-currency fils (bigint), rounded per document. */
 export function payableOpenBaseFilsSql(b: string, opts: SettlementOptions = {}): string {
-  return `ROUND(${payableOpenSql(b, opts)} * ${docRateSql(b)} * 100)::bigint`;
-}
-
-/**
- * Unapplied remainder of vendor debit note `n` (document currency): total less its active
- * applications to bills (vendor-credit rows net of their reversal rows).
- */
-export function vendorCreditUnappliedSql(n: string, opts: SettlementOptions = {}): string {
-  return `GREATEST(COALESCE(${n}.total_amount, 0)
-            - COALESCE((SELECT SUM(va.amount) FROM bill_payments va
-                         WHERE va.source_document_id = ${n}.id
-                           AND va.kind IN ('vendor_credit', 'reversal')${upTo(
-                             "va.payment_date",
-                             opts
-                           )}), 0), 0)`;
+  return documentAmountBaseFilsSql(payableOpenSql(b, opts), b);
 }
 
 /** Base-currency fils of unapplied vendor debit notes of company `companyParam`. */
@@ -169,10 +168,19 @@ export function unappliedPayableCreditsFilsSql(
   companyParam: string,
   opts: SettlementOptions = {}
 ): string {
-  return `COALESCE((SELECT SUM(ROUND(${vendorCreditUnappliedSql("vn", opts)} * ${docRateSql("vn")} * 100))::bigint
+  const unapplied = "GREATEST(COALESCE(vn.total_amount, 0) - COALESCE(apps.applied, 0), 0)";
+  // Aggregate once per company, using the bill indexes. Looking up payments by
+  // source_document_id alone would scan bill_payments for every debit note.
+  return `COALESCE((SELECT SUM(${documentAmountBaseFilsSql(unapplied, "vn")})::bigint
                      FROM vendor_debit_notes vn
-                    WHERE vn.company_id = ${companyParam} AND vn.status <> 'void'${upTo(
-                      "vn.note_date",
-                      opts
-                    )}), 0)`;
+                     LEFT JOIN (
+                       SELECT va.source_document_id, SUM(va.amount) AS applied
+                         FROM vendor_bills vb
+                         JOIN bill_payments va ON va.bill_id = vb.id
+                        WHERE vb.company_id = ${companyParam}
+                          AND va.source_document_id IS NOT NULL
+                          AND va.kind IN ('vendor_credit', 'reversal')${upTo("va.payment_date", opts)}
+                        GROUP BY va.source_document_id
+                     ) apps ON apps.source_document_id = vn.id
+                    WHERE vn.company_id = ${companyParam} AND vn.status <> 'void'${upTo("vn.note_date", opts)}), 0)`;
 }

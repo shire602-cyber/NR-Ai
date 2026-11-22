@@ -1,4 +1,6 @@
 {
+  "serverErrors.AUTHORIZATION_RETRY": "تعذّر إكمال التفويض. أعد المحاولة.",
+  "serverErrors.AUTHORIZATION_RESTART": "انتهت صلاحية التفويض. أعد بدءه من الصفحة التي بدأت منها، أو ارفع كشف حساب بصيغة CSV.",
   "serverErrors.ACCESS_DENIED": "ليس لديك صلاحية الوصول إلى هذا التقرير.",
   "serverErrors.ACCESS_RESTRICTED": "هذه المنطقة غير متاحة لنوع حسابك.",
   "serverErrors.ACCOUNT_HAS_CHILDREN": "لهذا الحساب حسابات فرعية. انقلها أو احذفها أولًا.",
@@ -1050,6 +1052,9 @@
   "serverErrors.VAT_GROUP_MEMBERSHIP_VERIFICATION_REQUIRED": "يجب التحقق من عضوية المجموعة الضريبية لهذه الفترة قبل تسجيل تغييرات ضريبة القيمة المضافة.",
   "serverErrors.VAT_GROUP_MEMBER_AUTHORIZATION_REQUIRED": "يجب أن يوافق مالك كل شركة أو مسؤولها على عضويتها في المجموعة الضريبية.",
   "serverErrors.VAT_RETURN_SCOPE_OVERLAP": "لدى إحدى الشركات التي يشملها هذا الإقرار إقرار ضريبة قيمة مضافة مقدّم لفترة متداخلة.",
-  "serverErrors.AUTHORIZATION_RETRY": "تعذّر إكمال التفويض. أعد المحاولة.",
-  "serverErrors.AUTHORIZATION_RESTART": "انتهت صلاحية التفويض. أعد بدءه من الصفحة التي بدأت منها، أو ارفع كشف حساب بصيغة CSV."
+  "serverErrors.DATABASE_UNAVAILABLE": "الخدمة غير متاحة مؤقتًا. حاول مرة أخرى بعد قليل.",
+  "serverErrors.FIRM_MEMBER_INELIGIBLE": "لا يمكن لحسابات بوابة العملاء الانضمام إلى المكتب.",
+  "serverErrors.LAST_FIRM_OWNER": "يجب أن يكون للمكتب مالك واحد على الأقل. عيّن مالكًا آخر أولًا.",
+  "serverErrors.TRANSACTION_CONFLICT": "تعارض تحديث آخر مع هذه العملية. أعد تحميل الصفحة وحاول مرة أخرى.",
+  "serverErrors.UNRESOLVED_FIRM_ACCESS": "يجب أن يراجع مالك الشركة صلاحية الوصول المتبقية قبل إتمام تغيير الصلاحيات."
 }

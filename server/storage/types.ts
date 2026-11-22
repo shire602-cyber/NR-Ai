@@ -129,7 +129,8 @@ import type {
   WhatsappConfig,
   WhatsappMessage,
 } from "@shared/schema";
-import type { db } from "../db";
+import type { AppDatabase, db } from "../db";
+import type { FirmContext } from "../services/firm/scope";
 
 export type JournalLineInsert = Omit<InsertJournalLine, "entryId">;
 
@@ -410,7 +411,7 @@ export interface IStorage {
     companyId: string,
     opts?: { limit?: number; offset?: number }
   ): Promise<InvoiceSummary[]>;
-  createInvoice(invoice: InsertInvoice): Promise<Invoice>;
+  createInvoice(invoice: InsertInvoice, exec?: Pick<AppDatabase, "insert">): Promise<Invoice>;
   updateInvoice(id: string, companyId: string, data: Partial<InsertInvoice>): Promise<Invoice>;
   updateInvoiceStatus(id: string, companyId: string, status: string): Promise<Invoice>;
   deleteInvoice(id: string, companyId: string): Promise<void>;
@@ -429,7 +430,7 @@ export interface IStorage {
 
   // Receipts
   getReceipt(id: string, companyId: string): Promise<Receipt | undefined>;
-  createReceipt(receipt: InsertReceipt): Promise<Receipt>;
+  createReceipt(receipt: InsertReceipt, exec?: Pick<AppDatabase, "insert">): Promise<Receipt>;
   getCapturedReceipt(companyId: string, captureId: string): Promise<Receipt | undefined>;
   createCapturedReceipt(
     data: InsertReceipt,
@@ -484,7 +485,10 @@ export interface IStorage {
   getWaitlistByEmail(email: string): Promise<Waitlist | undefined>;
 
   // Integration Syncs
-  createIntegrationSync(sync: InsertIntegrationSync): Promise<IntegrationSync>;
+  createIntegrationSync(
+    sync: InsertIntegrationSync,
+    exec?: Pick<AppDatabase, "insert">
+  ): Promise<IntegrationSync>;
   getIntegrationSyncsByCompanyId(companyId: string): Promise<IntegrationSync[]>;
   getIntegrationSyncsByType(companyId: string, integrationType: string): Promise<IntegrationSync[]>;
 
@@ -768,7 +772,10 @@ export interface IStorage {
   deleteUser(id: string): Promise<void>;
 
   // Admin Company Management
-  deleteCompany(id: string): Promise<void>;
+  deleteCompany(
+    id: string,
+    firmActor?: Pick<FirmContext, "userId" | "firmId">
+  ): Promise<Date | null>;
 
   // Client Engagements
   getEngagements(): Promise<Engagement[]>;

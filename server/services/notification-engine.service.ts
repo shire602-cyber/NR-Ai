@@ -25,9 +25,9 @@ import { createLogger } from "../config/logger";
 import { onDomainEvent, type DomainEvent } from "../platform/domain-events";
 import { listJobs, registerJob } from "../platform/job-registry";
 import { sendEmail } from "./email.service";
-import { renderNotificationEmail } from "./notification-email-copy";
+import { renderQueuedNotificationEmail } from "./notification-email-copy";
 import { isCapabilityLive } from "../../shared/capabilities";
-import { normalizeNotificationCopy, notificationCopy, renderServerCopy } from "../../shared/server-copy";
+import { notificationCopy, renderServerCopy } from "../../shared/server-copy";
 import { VAT_RECORDED_STATUSES } from "../../shared/vat-filing-status";
 import { customerVisibleNotification } from "../storage/notification-visibility";
 import { deliverOutboxMessage, enqueueEmail } from "../outbox/outbox";
@@ -240,9 +240,9 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
       }
     }
     if (ch.email && user.email) {
-      const { title, message } = normalizeNotificationCopy(input);
-      const r = await sendEmail(user.email, title, message, {
-        html: renderNotificationEmail(title, message),
+      const { subject, html, textBody } = renderQueuedNotificationEmail(input);
+      const r = await sendEmail(user.email, subject, textBody, {
+        html,
         companyId: input.companyId,
         category: "notification",
         relatedEntityType: input.relatedEntityType ?? null,

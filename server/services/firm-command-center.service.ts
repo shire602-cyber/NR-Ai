@@ -26,6 +26,7 @@ import {
   lt,
   max,
   notInArray,
+  or,
   sql,
   sum,
 } from "drizzle-orm";
@@ -968,23 +969,27 @@ export async function resolveAccessibleClientIds(
  * health scores, and alert counts in one pass, applying caching when possible.
  */
 export async function buildFirmDashboard(
-  firmId: string,
-  firmRole: string | null,
+  userId: string,
+  companyIds: string[],
   options: { skipCache?: boolean } = {}
 ): Promise<{
   summary: FirmDashboardSummary;
   healthScores: ClientHealthScore[];
 }> {
   const cacheKey = "dashboard_summary";
+  // Scope may change while a per-user dashboard is still fresh.
+  const scope = [...companyIds].sort().join(",");
   if (!options.skipCache) {
     const cached = await readMetricsCache<{
+      scope: string;
       summary: FirmDashboardSummary;
       healthScores: ClientHealthScore[];
-    }>(firmId, cacheKey);
-    if (cached) return cached;
+    }>(userId, cacheKey);
+    if (cached?.scope === scope) {
+      return { summary: cached.summary, healthScores: cached.healthScores };
+    }
   }
 
-  const companyIds = await resolveAccessibleClientIds(firmId, firmRole);
   const [summary, snapshots] = await Promise.all([
     buildDashboardSummary(companyIds),
     buildClientSnapshots(companyIds),
@@ -1018,7 +1023,12 @@ export async function buildFirmDashboard(
       warning: sql<number>`sum(case when ${firmAlerts.severity} = 'warning' and ${firmAlerts.resolvedAt} is null then 1 else 0 end)`,
     })
     .from(firmAlerts)
-    .where(eq(firmAlerts.firmId, firmId));
+    .where(
+      and(
+        eq(firmAlerts.firmId, userId),
+        or(isNull(firmAlerts.companyId), inArray(firmAlerts.companyId, companyIds))
+      )
+    );
 
   const enrichedSummary: FirmDashboardSummary = {
     ...summary,
@@ -1029,7 +1039,7 @@ export async function buildFirmDashboard(
 
   const result = { summary: enrichedSummary, healthScores };
   if (!options.skipCache) {
-    await writeMetricsCache(firmId, cacheKey, result);
+    await writeMetricsCache(userId, cacheKey, { scope, ...result });
   }
   return result;
 }

@@ -142,7 +142,19 @@ describe("E1 compliance obligations and the Periods tab (J3-r2)", () => {
 
   it("the Periods tab cannot mark a period submitted or accepted (one state machine)", async () => {
     const t = await h.createTenant({ name: "PeriodsReadOnly" });
-    const url = `/api/vat/autopilot/periods/00000000-0000-4000-8000-000000000001/status`;
+    const missing = await t.as.patch(
+      "/api/vat/autopilot/periods/00000000-0000-4000-8000-000000000001/status",
+      { companyId: t.company.id, status: "submitted" }
+    );
+    expect(missing.status).toBe(404);
+    expect(missing.body.code).toBe("NOT_FOUND");
+
+    const [period] = await h.sql(
+      `INSERT INTO vat_return_periods (company_id, period_start, period_end, due_date)
+       VALUES ($1, '2026-07-01', '2026-09-30', '2026-10-28') RETURNING id`,
+      [t.company.id]
+    );
+    const url = `/api/vat/autopilot/periods/${period.id}/status`;
     const res = await t.as.patch(url, { companyId: t.company.id, status: "submitted" });
     expect(res.status, res.text).toBe(409);
     expect(res.body.code).toBe("USE_VAT_RETURN_FLOW");

@@ -1,4 +1,6 @@
 {
+  "serverErrors.AUTHORIZATION_RETRY": "Could not finish authorization. Try again.",
+  "serverErrors.AUTHORIZATION_RESTART": "Authorization expired. Start again from where you began, or upload a CSV statement.",
   "serverErrors.ACCESS_DENIED": "You do not have access to this report.",
   "serverErrors.ACCESS_RESTRICTED": "This area is not available for your account type.",
   "serverErrors.ACCOUNT_HAS_CHILDREN": "This account has child accounts. Move or delete them first.",
@@ -1050,6 +1052,9 @@
   "serverErrors.VAT_GROUP_MEMBERSHIP_VERIFICATION_REQUIRED": "VAT group membership for this period must be verified before VAT changes can be recorded.",
   "serverErrors.VAT_GROUP_MEMBER_AUTHORIZATION_REQUIRED": "A company owner or administrator must authorize VAT group membership for each member.",
   "serverErrors.VAT_RETURN_SCOPE_OVERLAP": "A company covered by this VAT return already has a submitted or filed return for an overlapping period.",
-  "serverErrors.AUTHORIZATION_RETRY": "Could not finish authorization. Try again.",
-  "serverErrors.AUTHORIZATION_RESTART": "Authorization expired. Start again from where you began, or upload a CSV statement."
+  "serverErrors.DATABASE_UNAVAILABLE": "The service is temporarily unavailable. Try again in a moment.",
+  "serverErrors.FIRM_MEMBER_INELIGIBLE": "Customer portal accounts cannot become firm members.",
+  "serverErrors.LAST_FIRM_OWNER": "A firm must have at least one owner. Make someone else an owner first.",
+  "serverErrors.TRANSACTION_CONFLICT": "Another update conflicted with this operation. Reload the page and try again.",
+  "serverErrors.UNRESOLVED_FIRM_ACCESS": "A company owner must review the remaining client access before this access change can finish."
 }

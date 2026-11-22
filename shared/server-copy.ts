@@ -11,7 +11,12 @@
  * when any parameter inside it is missing or empty.
  */
 
-import { EMAIL_NOT_SET_UP_RUN_ERROR } from "./notification-copy";
+import {
+  BANK_STATEMENT_REVIEW_TITLE,
+  EMAIL_NOT_SET_UP_RUN_ERROR,
+  LEGACY_BANK_RECONCILIATION_NOTICE,
+} from "./notification-copy";
+import { BANK_RECONCILIATION_COPY } from "./bank-reconciliation-copy";
 
 export interface CopyDescriptor {
   key: string;
@@ -351,6 +356,33 @@ function legacyStatementImportCopy(n: { title: string; message: string }): CopyD
   if (withoutFormat === n.message) return null;
   const wording = withoutFormat.replace(/ from[ \t]+(?=(?:; \d+ already imported)?$)/i, "");
   return parseServerCopy(wording, STATEMENT_IMPORT_MESSAGES);
+}
+
+// Historical titles and messages are matched together so unrelated notices keep their wording.
+const LEGACY_BANK_REVIEW_TITLES = [
+  T("statementReview", LEGACY_BANK_RECONCILIATION_NOTICE.title),
+  T("statementReview", "Bank feed sync failed"),
+];
+const LEGACY_BANK_REVIEW_MESSAGES = [
+  T("statementReview", LEGACY_BANK_RECONCILIATION_NOTICE.message),
+  T(
+    "statementReview",
+    "The bank feed[ ({provider})] could not sync[: {reason}]. Reconnect it under Banking."
+  ),
+];
+
+export function isBankStatementReviewCopy({
+  title,
+  message,
+}: {
+  title: string;
+  message: string;
+}): boolean {
+  return (
+    (title === BANK_STATEMENT_REVIEW_TITLE.en && message === BANK_RECONCILIATION_COPY.en) ||
+    (parseServerCopy(title, LEGACY_BANK_REVIEW_TITLES) !== null &&
+      parseServerCopy(message, LEGACY_BANK_REVIEW_MESSAGES) !== null)
+  );
 }
 
 /** Keys + params for a stored notification (old or new rows alike). */
@@ -1490,6 +1522,9 @@ export function notificationCopy(
 }
 
 export function normalizeNotificationCopy<T extends { title: string; message: string }>(n: T): T {
+  if (isBankStatementReviewCopy(n)) {
+    return { ...n, title: BANK_STATEMENT_REVIEW_TITLE.en, message: BANK_RECONCILIATION_COPY.en };
+  }
   const legacy = legacyStatementImportCopy(n);
   return legacy ? { ...n, message: renderServerCopy(legacy.key, legacy.params) } : n;
 }

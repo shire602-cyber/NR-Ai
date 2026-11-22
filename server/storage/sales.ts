@@ -34,7 +34,7 @@ import {
   type QuoteLine,
   type RecurringInvoice,
 } from "@shared/schema";
-import { db, rowsFromResult } from "../db";
+import { db, rowsFromResult, type AppDatabase } from "../db";
 import { and, desc, eq, getTableColumns, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { DomainError } from "../errors";
 import Decimal from "decimal.js";
@@ -202,8 +202,11 @@ export class SalesStorage extends LedgerStorage {
     return { items, nextCursor };
   }
 
-  async createInvoice(insertInvoice: InsertInvoice): Promise<Invoice> {
-    const [invoice] = await db.insert(invoices).values(insertInvoice).returning();
+  async createInvoice(
+    insertInvoice: InsertInvoice,
+    exec: Pick<AppDatabase, "insert"> = db
+  ): Promise<Invoice> {
+    const [invoice] = await exec.insert(invoices).values(insertInvoice).returning();
     return invoice;
   }
 
@@ -606,7 +609,7 @@ export class SalesStorage extends LedgerStorage {
         SELECT ${sql.raw(parts.paid)} AS paid,
                ${sql.raw(parts.credited)} AS credited,
                ${sql.raw(parts.applied)} AS applied
-          FROM (SELECT ${input.invoiceId}::uuid AS id) si
+          FROM (SELECT ${input.invoiceId}::uuid AS id, ${lockedInvoice.company_id}::uuid AS company_id) si
       `);
       const sumRows = rowsFromResult<{
         paid: number | string;

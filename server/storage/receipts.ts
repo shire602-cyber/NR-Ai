@@ -3,7 +3,7 @@
 // server/storage.ts (R20-09); import `storage` from "./storage", not these classes.
 
 import { receipts, type InsertReceipt, type JournalEntry, type Receipt } from "@shared/schema";
-import { db } from "../db";
+import { db, type AppDatabase } from "../db";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { DomainError } from "../errors";
 import { legacyLinesToInput } from "../ledger/legacy";
@@ -31,8 +31,11 @@ export class ReceiptStorage extends SalesStorage {
     return receipt || undefined;
   }
 
-  async createReceipt(insertReceipt: InsertReceipt): Promise<Receipt> {
-    const [receipt] = await db.insert(receipts).values(insertReceipt).returning();
+  async createReceipt(
+    insertReceipt: InsertReceipt,
+    exec: Pick<AppDatabase, "insert"> = db
+  ): Promise<Receipt> {
+    const [receipt] = await exec.insert(receipts).values(insertReceipt).returning();
     return receipt;
   }
 

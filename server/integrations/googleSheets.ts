@@ -470,7 +470,7 @@ export async function importInvoicesFromSheet(spreadsheetId: string) {
       customerName: cellText(row[1]) || "",
       customerEmail: cellText(row[2]) || "",
       customerTrn: cellText(row[3]) || "",
-      issueDate: cellText(row[4]) || new Date().toISOString().split("T")[0],
+      issueDate: cellText(row[4]),
       dueDate: cellText(row[5]) || new Date().toISOString().split("T")[0],
       subtotal: parseFloat(row[6] as string) || 0,
       vatAmount: parseFloat(row[7] as string) || 0,
@@ -507,54 +507,15 @@ export async function importExpensesFromSheet(spreadsheetId: string) {
   const rows = data.slice(1);
 
   return rows
-    .map((row) => {
-      let date = new Date().toISOString().split("T")[0];
-      const dateStr = cellText(row[0]).trim();
-      if (dateStr) {
-        try {
-          // Try to parse various date formats
-          // Handles: DD/MM/YY, DD/MM/YYYY, YYYY-MM-DD, DD-MM-YYYY
-          let parsedDate: Date | null = null;
-
-          if (dateStr.includes("/")) {
-            const parts = dateStr.split("/");
-            if (parts.length === 3) {
-              const day = parseInt(parts[0], 10);
-              const month = parseInt(parts[1], 10);
-              let year = parseInt(parts[2], 10);
-
-              // Handle 2-digit year
-              if (year < 100) {
-                year += year < 50 ? 2000 : 1900;
-              }
-
-              parsedDate = new Date(year, month - 1, day);
-            }
-          } else if (dateStr.includes("-")) {
-            parsedDate = new Date(dateStr);
-          } else {
-            // Try generic parsing
-            parsedDate = new Date(dateStr);
-          }
-
-          if (parsedDate && !isNaN(parsedDate.getTime())) {
-            date = parsedDate.toISOString().split("T")[0];
-          }
-        } catch (_e) {
-          // Fall back to today's date
-        }
-      }
-
-      return {
-        date,
-        merchant: cellText(row[1]) || "",
-        description: cellText(row[2]) || "",
-        category: cellText(row[3]) || "",
-        amount: parseFloat(row[4] as string) || 0,
-        vatAmount: parseFloat(row[5] as string) || 0,
-        paymentMethod: cellText(row[6]) || "",
-        status: cellText(row[7]) || "pending",
-      };
-    })
+    .map((row) => ({
+      date: cellText(row[0]),
+      merchant: cellText(row[1]) || "",
+      description: cellText(row[2]) || "",
+      category: cellText(row[3]) || "",
+      amount: parseFloat(row[4] as string) || 0,
+      vatAmount: parseFloat(row[5] as string) || 0,
+      paymentMethod: cellText(row[6]) || "",
+      status: cellText(row[7]) || "pending",
+    }))
     .filter((exp) => exp.amount > 0);
 }

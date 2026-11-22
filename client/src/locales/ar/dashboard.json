@@ -178,7 +178,7 @@
   "dashboard.cashIn": "النقد الداخل",
   "dashboard.cashOut": "النقد الخارج",
   "dashboard.bankVsGlTitle": "كشف البنك مقابل دفتر الأستاذ",
-  "dashboard.bankVsGlNoAccounts": "لم يُربط أي حساب بنكي بعد. أضف حسابًا من صفحة البنوك لمقارنة الكشوف بدفتر الأستاذ.",
+  "dashboard.bankVsGlNoAccounts": "أضف حسابًا بنكيًا من صفحة البنوك لمقارنة الكشوف بدفتر الأستاذ.",
   "dashboard.bankColStatement": "الكشف",
   "dashboard.bankColLedger": "الدفتر",
   "dashboard.bankColDifference": "الفرق",

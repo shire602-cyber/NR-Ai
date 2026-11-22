@@ -3,6 +3,8 @@ import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
+import { withLedgerTx, type LedgerTx } from "../ledger";
+import { ledgerQueryable } from "../ledger/tx";
 import { DomainError } from "../errors";
 import { strictBody } from "../http/strict-body";
 import { zText, zUuid } from "../../shared/validators/primitives";
@@ -35,6 +37,7 @@ import {
   canManageClose,
   getLockThroughDate,
   isFirmOrAdmin,
+  lockPeriodPolicy,
   resolveCloseActor,
   type CloseActor,
 } from "../services/period-lock.service";
@@ -98,11 +101,12 @@ async function requireCloseRole(req: Request, companyId: string): Promise<CloseA
 async function enforceChecklist(
   companyId: string,
   periodEnd: string,
-  override: { overrideChecklist?: boolean; reason?: string | null }
+  override: { overrideChecklist?: boolean; reason?: string | null },
+  tx: LedgerTx
 ): Promise<{ checklist: ChecklistItem[]; overridden: boolean }> {
-  const settings = await getCloseSettings(companyId);
+  const settings = await getCloseSettings(companyId, ledgerQueryable(tx));
   // W4-A: a judgment step signed off by a preparer counts as complete.
-  const checklist = await getChecklistWithSignOffs(companyId, monthStart(periodEnd), periodEnd);
+  const checklist = await getChecklistWithSignOffs(companyId, monthStart(periodEnd), periodEnd, tx);
   const incomplete = checklist.filter((c) => (c.effectiveStatus ?? c.status) !== "complete");
   if (!settings.requireChecklistToLock || incomplete.length === 0) {
     return { checklist, overridden: false };
@@ -304,20 +308,31 @@ export function registerMonthEndRoutes(app: Express) {
           "periodEnd is required (YYYY-MM-DD)"
         );
       await requireCloseRole(req, companyId);
-      const { checklist, overridden } = await enforceChecklist(companyId, periodEnd, body);
-      const snapshot = checklist.map((c) => ({
-        id: c.id,
-        title: c.title,
-        status: c.status,
-        details: c.details,
-        signOff: c.signOff ?? null,
-      }));
-      const record = await lockPeriod(companyId, periodEnd, userId, {
-        lockType: body.lockType ?? "hard",
-        lockScope: body.lockScope ?? "through",
-        reason: body.reason ?? null,
-        checklistOverride: overridden,
-        checklistSnapshot: snapshot,
+      const { record, snapshot, overridden } = await withLedgerTx(async (tx) => {
+        await lockPeriodPolicy(tx, companyId, "exclusive");
+        const { checklist, overridden } = await enforceChecklist(companyId, periodEnd, body, tx);
+        const snapshot = checklist.map((c) => ({
+          id: c.id,
+          title: c.title,
+          status: c.status,
+          details: c.details,
+          signOff: c.signOff ?? null,
+        }));
+        const record = await lockPeriod(
+          companyId,
+          periodEnd,
+          userId,
+          {
+            lockType: body.lockType ?? "hard",
+            lockScope: body.lockScope ?? "through",
+            reason: body.reason ?? null,
+            checklistOverride: overridden,
+            checklistSnapshot: snapshot,
+          },
+          tx
+        );
+
+        return { record, snapshot, overridden };
       });
 
       const { recordAudit } = await import("../services/audit.service");
@@ -464,20 +479,28 @@ export function registerMonthEndRoutes(app: Express) {
         allowSingleOwner: single || isFirmOrAdmin(actor),
       });
       const note = (req.body.note as string | undefined) ?? null;
-      const decided = await decideReopenRequest(
-        companyId,
-        requestId,
-        decision === "approve" ? "approved" : "rejected",
-        req.user!.id,
-        note
-      );
+      const { decided, unlocked } = await withLedgerTx(async (tx) => {
+        const decided = await decideReopenRequest(
+          companyId,
+          requestId,
+          decision === "approve" ? "approved" : "rejected",
+          req.user!.id,
+          note,
+          ledgerQueryable(tx)
+        );
+        const unlocked =
+          decided.status === "approved"
+            ? await unlockPeriod(
+                companyId,
+                decided.periodEnd,
+                { userId: req.user!.id, reason: `Reopen approved: ${decided.reason}` },
+                tx
+              )
+            : null;
+        return { decided, unlocked };
+      });
       const { recordAudit } = await import("../services/audit.service");
-      let unlocked = null;
       if (decided.status === "approved") {
-        unlocked = await unlockPeriod(companyId, decided.periodEnd, {
-          userId: req.user!.id,
-          reason: `Reopen approved: ${decided.reason}`,
-        });
         await recordAudit({
           userId: req.user!.id,
           companyId,
@@ -617,14 +640,37 @@ export function registerMonthEndRoutes(app: Express) {
       const fye = parseReportDate(body.fiscalYearEnd, "fiscalYearEnd");
       if (!fye) throw new DomainError("FISCAL_YEAR_END_REQUIRED", 400);
       await requireCloseRole(req, companyId);
-      await assertFiscalYearEnd(companyId, fye);
-      const { checklist, overridden } = await enforceChecklist(companyId, fye, body);
-      const snapshot = checklist.map((c) => ({ id: c.id, title: c.title, status: c.status }));
-      const result = await closeFiscalYear(companyId, fye, req.user!.id, {
-        hardClose: body.hardClose === true,
-        reason: body.reason ?? null,
-        checklistOverride: overridden,
-        checklistSnapshot: snapshot,
+      const { result, overridden, snapshot } = await withLedgerTx(async (tx) => {
+        await lockPeriodPolicy(tx, companyId, "exclusive");
+        await assertFiscalYearEnd(companyId, fye, ledgerQueryable(tx));
+        const { checklist, overridden } = await enforceChecklist(companyId, fye, body, tx);
+        const snapshot = checklist.map(({ id, title, status, effectiveStatus, signOff }) => ({
+          id,
+          title,
+          status,
+          effectiveStatus: effectiveStatus ?? status,
+          signOff: signOff
+            ? {
+                stepKey: signOff.stepKey,
+                signedOffBy: signOff.signedOffBy,
+                signedOffAt: signOff.signedOffAt,
+                note: signOff.note,
+              }
+            : null,
+        }));
+        const result = await closeFiscalYear(
+          companyId,
+          fye,
+          req.user!.id,
+          {
+            hardClose: body.hardClose === true,
+            reason: body.reason ?? null,
+            checklistOverride: overridden,
+            checklistSnapshot: snapshot,
+          },
+          tx
+        );
+        return { result, overridden, snapshot };
       });
       const { recordAudit } = await import("../services/audit.service");
       await recordAudit({
@@ -642,6 +688,7 @@ export function registerMonthEndRoutes(app: Express) {
           netIncome: result.summary.netIncome,
           checklistOverride: overridden,
           reason: body.reason ?? null,
+          checklist: snapshot,
         },
         req,
       });
@@ -660,7 +707,9 @@ export function registerMonthEndRoutes(app: Express) {
       const fye = parseReportDate(body.fiscalYearEnd, "fiscalYearEnd");
       if (!fye) throw new DomainError("FISCAL_YEAR_END_REQUIRED", 400);
       const actor = await authorizeUnlock(req, companyId, fye, body.reason);
-      const record = await reopenFiscalYear(companyId, fye, req.user!.id, body.reason);
+      const record = await reopenFiscalYear(companyId, fye, req.user!.id, body.reason, {
+        canReopenHardClose: isFirmOrAdmin(actor),
+      });
       const { recordAudit } = await import("../services/audit.service");
       await recordAudit({
         userId: req.user!.id,
@@ -686,7 +735,7 @@ export function registerMonthEndRoutes(app: Express) {
     authMiddleware,
     strictBody(unlockBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
+      const companyId = zUuid.parse(req.params.companyId);
       const periodEnd = resolveUnlockPeriodEnd(req.body);
       await doUnlock(req, res, companyId, periodEnd, req.body.reason);
     })
@@ -697,7 +746,7 @@ export function registerMonthEndRoutes(app: Express) {
     "/api/companies/:companyId/period-lock",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
+      const companyId = zUuid.parse(req.params.companyId);
       await requireAccess(req, companyId);
       const company = await loadCompany(companyId);
       const [lockThroughDate, locks, fiscalYears] = await Promise.all([
@@ -742,8 +791,8 @@ export function registerMonthEndRoutes(app: Express) {
     "/api/period-lock/list",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const companyId = req.query.companyId;
-      if (typeof companyId !== "string" || !/^[0-9a-f-]{36}$/i.test(companyId)) {
+      const company = zUuid.safeParse(req.query.companyId);
+      if (!company.success) {
         throw new DomainError(
           "COMPANY_ID_REQUIRED",
           400,
@@ -751,8 +800,8 @@ export function registerMonthEndRoutes(app: Express) {
           "companyId query parameter is required"
         );
       }
-      await requireAccess(req, companyId);
-      res.json(await listLockedPeriods(companyId));
+      await requireAccess(req, company.data);
+      res.json(await listLockedPeriods(company.data));
     })
   );
 }
