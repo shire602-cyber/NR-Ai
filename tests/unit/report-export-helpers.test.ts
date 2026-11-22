@@ -13,6 +13,8 @@ import {
   reportPersonaWorkspaces,
 } from "../../client/src/lib/reportCatalog";
 import {
+  downloadOcrExcel,
+  downloadReceiptsExcel,
   exportToExcel,
   prepareAgingReportsForExport,
   prepareAuditTrailForExport,
@@ -176,6 +178,103 @@ describe("report export helpers", () => {
       );
       expect(request).toHaveBeenCalledTimes(2);
       expect(assertActive).toHaveBeenCalledTimes(2);
+      expect(download).not.toHaveBeenCalled();
+    } finally {
+      clearCsrfToken();
+      download.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([
+    {
+      label: "a selected receipt",
+      run: () => downloadReceiptsExcel("company", { ids: ["receipt"] }),
+      path: "/api/companies/company/receipts/export-excel",
+      body: { ids: ["receipt"] },
+      disposition: "attachment; filename*=UTF-8''June%20receipts.xlsx",
+      name: "June receipts.xlsx",
+    },
+    {
+      label: "all receipts",
+      run: () => downloadReceiptsExcel("company"),
+      path: "/api/companies/company/receipts/export-excel",
+      body: {},
+      disposition: "attachment",
+      name: "muhasib-receipts.xlsx",
+    },
+    {
+      label: "OCR rows",
+      run: () => downloadOcrExcel([], { filename: "June" }),
+      path: "/api/ocr/export-excel",
+      body: { rows: [], filename: "June" },
+      disposition: null,
+      name: "muhasib-ocr-receipts.xlsx",
+    },
+    {
+      label: "an untitled OCR export",
+      run: () => downloadOcrExcel([]),
+      path: "/api/ocr/export-excel",
+      body: { rows: [] },
+      disposition: null,
+      name: "muhasib-ocr-receipts.xlsx",
+    },
+    {
+      label: "a standard workbook",
+      run: () => exportToExcel([{ columns: [{ header: "Value", key: "value" }], rows: [] }], "ledger"),
+      path: "/api/export/excel",
+      body: { sheets: [{ columns: [{ header: "Value", key: "value" }], rows: [] }], filename: "ledger" },
+      disposition: 'attachment; filename="ledger-export.xlsx"',
+      name: "ledger-export.xlsx",
+    },
+  ])("downloads $label from the expected endpoint", async ({ run, path, body, disposition, name }) => {
+    clearCsrfToken();
+    const request = vi.fn()
+      .mockResolvedValueOnce(Response.json({ csrfToken: "test-token" }))
+      .mockResolvedValueOnce(new Response("workbook", {
+        headers: disposition ? { "Content-Disposition": disposition } : {},
+      }));
+    const anchor = { href: "", download: "", click: vi.fn() };
+    const revoke = vi.spyOn(URL, "revokeObjectURL");
+
+    vi.stubGlobal("fetch", request);
+    vi.stubGlobal("document", {
+      createElement: () => anchor,
+      body: { appendChild: vi.fn(), removeChild: vi.fn() },
+    });
+
+    try {
+      await run();
+      expect(request).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining(path),
+        expect.objectContaining({ method: "POST", body: JSON.stringify(body) })
+      );
+      expect(anchor.download).toBe(name);
+      expect(anchor.click).toHaveBeenCalledOnce();
+      expect(revoke).toHaveBeenCalledWith(anchor.href);
+    } finally {
+      clearCsrfToken();
+      revoke.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([
+    [() => Response.json({ error: "Workbook unavailable" }, { status: 422 }), "Workbook unavailable"],
+    [() => Response.json({ message: "Try another workbook" }, { status: 422 }), "Try another workbook"],
+    [() => Response.json({}, { status: 418, statusText: "Unavailable" }), "418 Unavailable"],
+    [() => new Response("unavailable", { status: 418, statusText: "Unavailable" }), "418 Unavailable"],
+  ] as const)("reports a rejected workbook response without downloading", async (response, message) => {
+    clearCsrfToken();
+    const request = vi.fn()
+      .mockResolvedValueOnce(Response.json({ csrfToken: "test-token" }))
+      .mockResolvedValueOnce(response());
+    const download = vi.spyOn(URL, "createObjectURL");
+    vi.stubGlobal("fetch", request);
+
+    try {
+      await expect(downloadReceiptsExcel("company")).rejects.toThrow(message);
       expect(download).not.toHaveBeenCalled();
     } finally {
       clearCsrfToken();
