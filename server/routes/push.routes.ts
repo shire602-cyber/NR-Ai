@@ -119,7 +119,6 @@ export function registerPushRoutes(app: Express) {
         push: { status: push.status, externalAction: push.externalAction },
         email: { status: email.status, externalAction: email.externalAction },
       };
-      const eventTypes = NOTIFICATION_EVENT_TYPES.filter((type) => type !== "bank.sync_failed");
       if (!preferences) {
         return res.json({
           userId,
@@ -132,7 +131,7 @@ export function registerPushRoutes(app: Express) {
           weeklyDigest: false,
           digestFrequency: "none",
           typePreferences: {},
-          eventTypes,
+          eventTypes: NOTIFICATION_EVENT_TYPES,
           channels,
         });
       }
