@@ -153,8 +153,6 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
         url: "/bank-accounts",
         icon: Landmark,
         testId: "banking.accounts.title",
-        // The legacy route stays reachable and highlights Accounts.
-        matches: ["/bank-feeds"],
       },
       {
         titleKey: "shell.nav.reconciliation",

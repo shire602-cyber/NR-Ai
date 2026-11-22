@@ -8,7 +8,8 @@ The invoice email comes from the real local outbox. The test verifies the provid
 
 ## Verification results
 
-- The customer experience matrix passed 120 checks across the four locale and viewport combinations.
+- The customer experience matrix passed 124 checks across the four locale and viewport combinations.
+- Report screenshots wait for the catalogue, selected report, or financial statement to render.
 - The Arabic text audit reported zero English lines on 14 Arabic workspace routes.
 - The build, type and contract checks, changed-file lint, and 144 focused unit tests passed.
 - All four bill-editor DOM tests passed on Node 22.23.5, the version used by CI. The browser checks cover the bill list, editor, payments and summary.

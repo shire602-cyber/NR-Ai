@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { FileDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,8 @@ import {
   type StatementSectionView,
 } from "@/components/documents/StatementOfAccount";
 import { apiRequest } from "@/lib/queryClient";
-import { apiUrl } from "@/lib/api";
+import { downloadPortalFile } from "@/lib/portal-download";
+import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/format-date";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 
@@ -23,6 +24,7 @@ import { formatMessage, useTranslation } from "@/lib/i18n";
  * their currency (no separate currency heading for a single-currency statement).
  */
 interface Statement {
+  accountId: string;
   asOf: string;
   party: { name: string };
   company: { name: string };
@@ -31,9 +33,22 @@ interface Statement {
 
 export default function PortalStatements() {
   const { t, locale } = useTranslation();
+  const { toast } = useToast();
   const { data, isLoading, error, refetch } = useQuery<Statement>({
     queryKey: ["portal-statements"],
     queryFn: () => apiRequest("GET", "/api/client-portal/statements"),
+  });
+
+  const download = useMutation({
+    mutationFn: async (statement: Statement) => {
+      const ok = await downloadPortalFile(
+        `/api/client-portal/statements?format=pdf&asOf=${encodeURIComponent(statement.asOf)}`,
+        `statement-${statement.asOf}.pdf`,
+        statement.accountId
+      );
+      if (!ok) throw new Error("Statement download failed");
+    },
+    onError: () => toast({ title: t["portal.doc.downloadFailed"], variant: "destructive" }),
   });
 
   const sections = data?.sections ?? [];
@@ -47,12 +62,11 @@ export default function PortalStatements() {
             : t["portal.doc.statementsHint"]
         }
         primaryAction={
-          sections.length > 0 ? (
+          data && sections.length > 0 ? (
             <Button
               variant="outline"
-              onClick={() =>
-                window.open(apiUrl("/api/client-portal/statements?format=pdf"), "_blank")
-              }
+              disabled={download.isPending}
+              onClick={() => download.mutate(data)}
             >
               <FileDown className="h-4 w-4 me-2" aria-hidden />
               <T k="portal.doc.downloadPdf" />

@@ -770,8 +770,8 @@ export function registerVATRoutes(app: Express) {
         status: target,
         notes: body.notes ?? existing.notes ?? null,
         ftaReferenceNumber: reference,
-        submittedBy: userId,
-        submittedAt: filedOn ? new Date(`${filedOn}T08:00:00Z`) : new Date(),
+        submittedBy: reference ? userId : null,
+        submittedAt: reference ? (filedOn ? new Date(`${filedOn}T08:00:00Z`) : new Date()) : null,
         // D2 (N13): the filing date the user stated (the VAT 201 declaration date); the
         // settlement of the filed return cannot predate it.
         ...(filedOn ? { declarationDate: new Date(`${filedOn}T08:00:00Z`) } : {}),
@@ -796,7 +796,7 @@ export function registerVATRoutes(app: Express) {
           channel: reference ? "manual-emaratax" : "none",
           message: reference
             ? `Recorded as filed with FTA reference ${reference}. Muhasib did not transmit this return; this is your record of a filing you made through the official channel.`
-            : "Finalised for review. Muhasib does NOT file with the FTA — you must still submit this return through EmaraTax, then record the FTA reference number here.",
+            : "Ready to file. Submit your return in EmaraTax, then record the FTA reference number here.",
         },
       });
     })

@@ -91,6 +91,8 @@ describe("stored in-app links resolve to client routes", () => {
     for (const legacy of [
       "/invoices/3f2b8c1e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
       "/banking",
+      "/bank-feeds",
+      "/bank-feeds/callback",
       "/compliance",
       "/settings",
       "/journal-entries?status=draft",

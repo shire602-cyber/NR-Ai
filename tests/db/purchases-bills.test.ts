@@ -233,6 +233,34 @@ describe("W3-B bills: state machine", () => {
 });
 
 describe("W3-B bills: payments", () => {
+  it("pages vendor payment history in bill currency without leaking another company's rows", async () => {
+    const t = await h.createTenant();
+    const bill = await approvedBill(t, { currency: "USD", exchange_rate: "3.6725" });
+    const paymentIds = [];
+    for (const amount of [10, 20]) {
+      const payment = await t.as.post(`/api/bills/${bill.id}/payments`, {
+        payment_date: "2026-02-01",
+        amount,
+        exchange_rate: "3.6725",
+      });
+      expect(payment.status, payment.text).toBe(200);
+      paymentIds.push(payment.body.payment.id);
+    }
+    const url = `${billsUrl(t)}/all-payments?limit=1`;
+    const first = await t.as.get(url);
+    expect(first.status, first.text).toBe(200);
+    expect(first.body.items).toHaveLength(1);
+    expect(first.body.items[0]).toMatchObject({ bill_id: bill.id, currency: "USD" });
+    const second = await t.as.get(`${url}&cursor=${first.body.nextCursor}`);
+    expect(second.status, second.text).toBe(200);
+    expect(second.body.items).toHaveLength(1);
+    expect(second.body.items[0]).toMatchObject({ bill_id: bill.id, currency: "USD" });
+    expect(second.body.nextCursor).toBeNull();
+    expect([first.body.items[0].id, second.body.items[0].id]).toEqual(paymentIds.sort().reverse());
+    const another = await h.createSecondTenant();
+    expect([403, 404]).toContain((await another.as.get(url)).status);
+  });
+
   it("[R04-14] exact fils: overpaying by 0.01 is 400; the chosen bank account is credited", async () => {
     const t = await h.createTenant();
     const bill = await approvedBill(t);

@@ -158,6 +158,8 @@ export function buildInvoiceEmail(
       ar: [
         greeting(invoice.customerName, opts.customerNameAr).ar,
         `تجدون مرفقاً الفاتورة رقم <strong>${number}</strong> من <strong>${co}</strong> بمبلغ <strong>${escapeHtml(total.ar)}</strong>.`,
+        ...custom,
+        ...(opts.einvoiceUrl ? [`حالة الفوترة الإلكترونية: ${escapeHtml(opts.einvoiceUrl)}`] : []),
         ...(contact ? [`للاستفسار يرجى التواصل عبر ${contact}.`] : []),
       ],
     },

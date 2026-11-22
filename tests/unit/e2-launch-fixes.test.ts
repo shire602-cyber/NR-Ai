@@ -113,6 +113,19 @@ describe("[E2][J3-r2] VAT filing stage", () => {
       "refunded"
     );
     expect(vatChecklist({ status: "ready" })).toMatchObject({ ready: true, filed: false });
+    expect(vatChecklist({ status: "submitted", box14PayableTax: 0 })).toMatchObject({
+      ready: true,
+      filed: false,
+      settled: false,
+      nothingToSettle: true,
+    });
+    expect(
+      vatChecklist({ status: "submitted", paymentStatus: "paid", box14PayableTax: 80 })
+    ).toMatchObject({
+      ready: true,
+      filed: false,
+      settled: false,
+    });
     expect(vatChecklist({ status: "filed", box14PayableTax: 0 })).toMatchObject({
       filed: true,
       settled: true,

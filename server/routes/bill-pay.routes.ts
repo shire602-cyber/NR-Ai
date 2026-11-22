@@ -208,6 +208,37 @@ export function registerBillPayRoutes(app: Express) {
     })
   );
 
+  app.get(
+    "/api/companies/:companyId/bills/all-payments",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      const { cursor, limit } = z
+        .object({
+          cursor: zUuid.optional(),
+          limit: z.coerce.number().int().min(1).max(100).default(50),
+        })
+        .parse(req.query);
+      const { rows } = await pool.query(
+        `SELECT p.id, p.bill_id, p.payment_date, p.amount, p.payment_method, p.reference,
+                b.vendor_name, b.bill_number, b.currency
+           FROM bill_payments p JOIN vendor_bills b ON b.id = p.bill_id
+          WHERE b.company_id = $1 AND b.status IN ('paid', 'partial')
+            AND ($2::uuid IS NULL OR (p.payment_date, p.id) < (
+              SELECT pivot.payment_date, pivot.id
+                FROM bill_payments pivot JOIN vendor_bills owner ON owner.id = pivot.bill_id
+               WHERE pivot.id = $2 AND owner.company_id = $1
+            ))
+          ORDER BY p.payment_date DESC, p.id DESC LIMIT $3`,
+        [companyId, cursor ?? null, limit + 1]
+      );
+      const items = rows.slice(0, limit);
+      res.json({ items, nextCursor: rows.length > limit ? items[items.length - 1].id : null });
+    })
+  );
+
   // ── Read one ────────────────────────────────────────────────────────────
   app.get(
     "/api/bills/:id",

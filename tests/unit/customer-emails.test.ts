@@ -172,7 +172,11 @@ describe("layout and formatters", () => {
 });
 
 describe.each(LANGS)("invoice email (%s)", (language) => {
-  const e = buildInvoiceEmail(invoice, company, "Thank you for your business.\nSee you soon.", {
+  const note =
+    language === "ar"
+      ? "يرجى ذكر رقم الفاتورة عند التحويل البنكي."
+      : "Thank you for your business.\nSee you soon.";
+  const e = buildInvoiceEmail(invoice, company, note, {
     payUrl: PAY,
     language,
   });
@@ -210,7 +214,7 @@ describe.each(LANGS)("invoice email (%s)", (language) => {
     }
   });
 
-  it("never prints the seller TRN or the customer's message in Arabic", () => {
+  it("includes sender contact details and omits the seller TRN", () => {
     expect(e.html).not.toContain("100123456700003");
     expect(e.text).not.toContain("100123456700003");
     expect(e.html).toContain("Business Bay, Dubai");
@@ -219,6 +223,12 @@ describe.each(LANGS)("invoice email (%s)", (language) => {
 });
 
 describe("invoice email details", () => {
+  it("includes the sender’s payment instruction in Arabic HTML and plain text", () => {
+    const instruction = "يرجى ذكر رقم الفاتورة عند التحويل البنكي.";
+    const email = buildInvoiceEmail(invoice, company, instruction, { language: "ar" });
+    expect(email.html).toContain(instruction);
+    expect(email.text).toContain(instruction);
+  });
   it("Arabic copy has no leaked English words", () => {
     const e = buildInvoiceEmail(invoice, company, undefined, { portalUrl: PAY, language: "ar" });
     const text = stripAllowedLatin(arabicText(e.html));

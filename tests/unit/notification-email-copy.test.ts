@@ -18,6 +18,21 @@ import {
   parseReportDeliveryTitle,
 } from "../../shared/notification-copy";
 import { localizeNotification } from "../../client/src/lib/notification-display";
+import { withNotificationCopy } from "../../shared/server-copy";
+
+it("uses CSV instructions in both languages for stored banking notices", () => {
+  const notice = withNotificationCopy({
+    title: "Former provider notification",
+    message: "Former provider instructions",
+    eventKey: "bank.sync_failed:fixture",
+  });
+  expect(localizeNotification(notice, en, "en").message).toBe(
+    "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books"
+  );
+  expect(localizeNotification(notice, ar, "ar").message).toBe(
+    "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك"
+  );
+});
 
 const repo = process.cwd();
 const read = (p: string) => readFileSync(join(repo, p), "utf8");

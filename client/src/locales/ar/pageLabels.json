@@ -1,4 +1,8 @@
 {
+  "pageLabels.receiptDraftCompanyChanged": "تنتمي هذه المسودة إلى شركة أخرى. عد إلى تلك الشركة لحفظها.",
+  "pageLabels.receiptVatCurrency": "مبلغ ضريبة القيمة المضافة ({currency})",
+  "pageLabels.receiptIssueMissingConfidence": "لم تُبلغ أداة قراءة الإيصال عن درجة الثقة.",
+  "pageLabels.receiptIssueClassifierDisagreement": "تختلف الفئات المقترحة. تحقّق من فئة المصروف.",
   "pageLabels.receiptCategoryRule": "قواعد شركتك",
   "pageLabels.receiptCategoryKeyword": "الكلمات الواردة في الإيصال",
   "pageLabels.receiptCategoryHistory": "التصنيفات التي استخدمتها سابقًا",

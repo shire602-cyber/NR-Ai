@@ -207,10 +207,12 @@ async function main() {
     // submit with no FTA reference -> finalised only, explicitly NOT transmitted
     const s1 = await api("POST", `/api/vat-returns/${id}/submit`, { token, body: { notes: "review" } });
     ok("H2 submit without an FTA reference does not claim to have filed",
-      s1.status === 200 && s1.json?.status === "submitted" && s1.json?.filing?.transmittedByMuhasib === false,
+      s1.status === 200 && s1.json?.status === "submitted" && s1.json?.submittedAt === null &&
+      s1.json?.filing?.channel === "none" && s1.json?.filing?.transmittedByMuhasib === false,
       { status: s1.json?.status, filing: s1.json?.filing?.channel });
-    ok("H2 response states Muhasib does not file with the FTA",
-      /does NOT file|did not transmit/i.test(s1.json?.filing?.message || ""), { msg: s1.json?.filing?.message });
+    ok("H2 response tells the customer to submit in EmaraTax and record the reference",
+      /Ready to file\. Submit your return in EmaraTax.*record the FTA reference number/i.test(s1.json?.filing?.message || ""),
+      { msg: s1.json?.filing?.message });
     // submit WITH a reference -> recorded as filed, still not transmitted by us
     const s2 = await api("POST", `/api/vat-returns/${id}/submit`, { token, body: { ftaReferenceNumber: "FTA-REF-99887766" } });
     ok("H2 an FTA reference promotes the return to filed",

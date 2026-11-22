@@ -18,6 +18,7 @@ import { DomainError } from "../../errors";
 import { storage } from "../../storage";
 import { createLogger } from "../../config/logger";
 import { getCapability, type CapabilityStatus } from "../../../shared/capabilities";
+import { bankCsvWorkflow } from "../../../shared/banking-copy";
 import { fromFils } from "../../../shared/money";
 import {
   bankAccounts,
@@ -52,7 +53,7 @@ function assertConfigured(adapter: BankFeedAdapter): void {
       "BANK_FEED_NOT_CONFIGURED",
       503,
       { provider: adapter.id, capability: adapter.capability },
-      `${adapter.label} is not connected — it requires a provider contract and credentials`
+      bankCsvWorkflow.en
     );
   }
 }
@@ -83,10 +84,7 @@ export function providerStatuses(): ProviderStatus[] {
               ar: "بيانات اعتماد تجريبية — بيانات اختبار فقط",
             }
           : { en: "Configured", ar: "مُعد" }
-        : {
-            en: "Not connected — requires provider contract",
-            ar: "غير متصل — يتطلب عقداً مع مزود الخدمة",
-          },
+        : bankCsvWorkflow,
       externalAction: cap.externalAction,
     };
   });
@@ -241,7 +239,7 @@ function providerFailure(adapter: BankFeedAdapter, err: unknown): DomainError {
     "BANK_FEED_PROVIDER_ERROR",
     502,
     { provider: adapter.id, providerStatus: status },
-    `${adapter.label} did not respond as expected`
+    bankCsvWorkflow.en
   );
 }
 

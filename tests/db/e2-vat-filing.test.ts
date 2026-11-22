@@ -169,28 +169,44 @@ describe("E2 (J3-r2) VAT return: ready -> filed -> paid", () => {
 });
 
 describe("INTEGRATE-G: the compliance calendar follows the filed VAT return", () => {
-  it("filing the Q1 return (period end 31 Mar) completes the vat:2026-03-31 obligation", async () => {
-    const t = await vatTenant();
-    await activity(t, 2000, 400);
-    const id = await readyReturn(t);
-    const calRow = async () => {
-      const cal = await t.as.get(`${base(t)}/compliance-calendar?from=2026-01-01&to=2026-12-31`);
-      expect(cal.status, cal.text).toBe(200);
-      return (cal.body as Array<Record<string, unknown>>).find(
-        (r) => r.obligationKey === "vat:2026-03-31"
-      );
-    };
-    // Before filing the return is matched to its own period (not 1 Apr) and is not completed.
-    const before = await calRow();
-    expect(before, "obligation for the 31 Mar period").toBeTruthy();
-    expect(before).toMatchObject({ periodEnd: "2026-03-31", relatedEntityId: id });
-    expect(before!.status).not.toBe("completed");
-    const filed = await t.as.post(`/api/vat-returns/${id}/submit`, {
-      ftaReferenceNumber: "ET-2026-Q1-CAL",
-      filedOn: "2026-04-20",
-    });
-    expect(filed.status, filed.text).toBe(200);
-    const after = await calRow();
-    expect(after).toMatchObject({ status: "completed", statusDerived: true, relatedEntityId: id });
-  });
+  it.each([false, true])(
+    "keeps the deadline until EmaraTax filing is recorded (nil return: %s)",
+    async (nil) => {
+      const t = await vatTenant();
+      if (!nil) await activity(t, 2000, 400);
+      const id = await readyReturn(t);
+      const calRow = async () => {
+        const cal = await t.as.get(`${base(t)}/compliance-calendar?from=2026-01-01&to=2026-12-31`);
+        expect(cal.status, cal.text).toBe(200);
+        return (cal.body as Array<Record<string, unknown>>).find(
+          (r) => r.obligationKey === "vat:2026-03-31"
+        );
+      };
+      // Before filing the return is matched to its own period (not 1 Apr) and is not completed.
+      const before = await calRow();
+      expect(before, "obligation for the 31 Mar period").toBeTruthy();
+      expect(before).toMatchObject({ periodEnd: "2026-03-31", relatedEntityId: id });
+      expect(before!.status).not.toBe("completed");
+      const prepared = await t.as.post(`/api/vat-returns/${id}/submit`, {});
+      expect(prepared.status, prepared.text).toBe(200);
+      expect(prepared.body).toMatchObject({
+        status: "submitted",
+        submittedAt: null,
+        filing: { channel: "none" },
+      });
+      expect(Number(prepared.body.box14PayableTax) === 0).toBe(nil);
+      expect((await calRow())?.status).not.toBe("completed");
+      const filed = await t.as.post(`/api/vat-returns/${id}/submit`, {
+        ftaReferenceNumber: "ET-2026-Q1-CAL",
+        filedOn: "2026-04-20",
+      });
+      expect(filed.status, filed.text).toBe(200);
+      const after = await calRow();
+      expect(after).toMatchObject({
+        status: "completed",
+        statusDerived: true,
+        relatedEntityId: id,
+      });
+    }
+  );
 });

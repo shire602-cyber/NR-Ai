@@ -23,6 +23,7 @@ let root: Root;
 let calls: string[] = [];
 let me: { status: number; body: unknown } = { status: 200, body: {} };
 let pdfStatus = 200;
+let statementDownloadAccount: string | null;
 
 const INVOICES = [
   {
@@ -40,7 +41,7 @@ const INVOICES = [
 function stub() {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (url: string) => {
+    vi.fn(async (url: string, init?: RequestInit) => {
       const u = String(url);
       calls.push(u);
       const json = (status: number, body: unknown) =>
@@ -66,6 +67,27 @@ function stub() {
           overdueByCurrency: [{ currency: "AED", amount: "13125.00", fils: 1312500, count: 1 }],
           nextDue: null,
         });
+      if (u.includes("/api/client-portal/statements")) {
+        if (u.includes("format=pdf")) {
+          statementDownloadAccount = new Headers(init?.headers).get("X-Portal-Account");
+          return json(403, {});
+        }
+        return json(200, {
+          accountId: "supplier-one",
+          asOf: "2026-10-31",
+          party: { name: "Desert Rose" },
+          company: { name: "Al Noor Trading LLC" },
+          sections: [
+            {
+              currency: "AED",
+              openingBalance: 0,
+              closingBalance: 0,
+              lines: [],
+              aging: { current: 0, days30: 0, days60: 0, days90: 0, over90: 0 },
+            },
+          ],
+        });
+      }
       if (u.includes("/pdf")) return pdfStatus === 200 ? new Response("%PDF") : json(pdfStatus, {});
       if (u.includes("/api/client-portal/invoices")) return json(200, INVOICES);
       if (u.includes("/api/client-portal/documents")) return json(200, []);
@@ -102,6 +124,7 @@ beforeAll(async () => {
     import("../../client/src/pages/portal/PortalDashboard"),
     import("../../client/src/pages/portal/PortalInvoices"),
     import("../../client/src/pages/portal/PortalDocuments"),
+    import("../../client/src/pages/portal/PortalStatements"),
   ]);
 });
 
@@ -110,6 +133,7 @@ beforeEach(async () => {
   localStorage.setItem("muhasib_auth_hint", "1");
   calls = [];
   pdfStatus = 200;
+  statementDownloadAccount = null;
   me = { status: 200, body: { id: "u1", email: "c@example.com", userType: "client_portal" } };
   const { useI18n } = await import("../../client/src/lib/i18n");
   const { queryClient } = await import("../../client/src/lib/queryClient");
@@ -169,6 +193,20 @@ describe("client portal light root", () => {
     await waitForRender(() => expect(download()).toBeDefined());
     await act(async () => download()!.click());
     await waitForRender(() => expect(document.body.textContent).toContain("تعذّر تنزيل ملف PDF"));
+  });
+
+  it("downloads from the supplier shown in the statement after the selection changes", async () => {
+    const { setSelectedPortalAccount } = await import("../../client/src/lib/auth");
+    setSelectedPortalAccount("supplier-one");
+    await mountAt("/client-portal/statements");
+    const download = () =>
+      [...container.querySelectorAll("button")].find((button) =>
+        /Download PDF/.test(button.textContent ?? "")
+      );
+    await waitForRender(() => expect(download()).toBeDefined());
+    setSelectedPortalAccount("supplier-two");
+    await act(async () => download()!.click());
+    await waitForRender(() => expect(statementDownloadAccount).toBe("supplier-one"));
   });
 
   it("hands the page to the full app for a signed-out visitor and for staff", async () => {

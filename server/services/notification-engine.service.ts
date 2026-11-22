@@ -26,7 +26,11 @@ import { onDomainEvent, type DomainEvent } from "../platform/domain-events";
 import { listJobs, registerJob } from "../platform/job-registry";
 import { escapeHtml, renderBilingualEmail, sendEmail } from "./email.service";
 import { isCapabilityLive } from "../../shared/capabilities";
-import { notificationCopy, renderServerCopy } from "../../shared/server-copy";
+import {
+  bankingNotificationCopy,
+  notificationCopy,
+  renderServerCopy,
+} from "../../shared/server-copy";
 
 const log = createLogger("notification-engine");
 
@@ -390,7 +394,7 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
         ),
         priority: "high",
         relatedEntityType: "bank_connection",
-        actionUrl: "/bank-feeds",
+        actionUrl: "/bank-reconciliation",
         // One notification per failure day, not per retry.
         eventKey: `${p.entityId}:${String(p.occurredAt).slice(0, 10)}`,
       };
@@ -516,12 +520,12 @@ export async function scanOverdueInvoices(now: Date = new Date()): Promise<numbe
   return n;
 }
 
-/** VAT returns not yet submitted that are due within 14 days (or overdue). */
+/** VAT returns with an outstanding external filing that are due within 14 days (or overdue). */
 export async function scanVatDeadlines(now: Date = new Date()): Promise<number> {
   const { rows } = await pool.query(
     `SELECT id, company_id, due_date::date::text AS due, period_end::date::text AS period_end
        FROM vat_returns
-      WHERE status NOT IN ('submitted', 'filed', 'amended')
+      WHERE status NOT IN ('filed', 'amended', 'paid', 'accepted')
         AND due_date::date <= ($1::date + 14)`,
     [now.toISOString().slice(0, 10)]
   );
@@ -571,10 +575,10 @@ export async function sendDailyDigests(now: Date = new Date()): Promise<number> 
       .limit(100);
     if (!rows.length || !u.email) continue;
     const day = now.toISOString().slice(0, 10);
-    const items = rows.map(
-      (r: typeof notifications.$inferSelect) =>
-        `<strong>${escapeHtml(r.title)}</strong> — ${escapeHtml(r.message)}`
-    );
+    const items = rows.map((row: typeof notifications.$inferSelect) => {
+      const { title, message } = bankingNotificationCopy(row);
+      return `<strong>${escapeHtml(title)}</strong> — ${escapeHtml(message)}`;
+    });
     const html = renderBilingualEmail(
       {
         brandName: "Muhasib.ai",

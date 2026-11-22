@@ -688,9 +688,15 @@ export default function BankReconciliation() {
 
     setIsImporting(true);
     try {
+      const fileBase64 = await fileToBase64(importFile).catch(() => null);
+      if (fileBase64 === null) {
+        setStatementPreview(null);
+        setPreviewError(t["banking.import.fileUnreadable"]);
+        return;
+      }
       await importMutation.mutateAsync({
         bankAccountId: selectedBankAccount,
-        fileBase64: await fileToBase64(importFile),
+        fileBase64,
         fileName: importFile.name,
         ...statementOverrides,
         ...(statementOverrides.mapping && statementPreview.headerRow

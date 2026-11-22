@@ -101,7 +101,10 @@ describe("W3-C bank feeds", () => {
     expect(status.body.isConfigured).toBe(false);
     for (const s of status.body.statuses) {
       expect(s).toMatchObject({ configured: false, status: "requires_external" });
-      expect(s.message.en).toBe("Not connected — requires provider contract");
+      expect(s.message).toEqual({
+        en: "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
+        ar: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
+      });
     }
   });
 

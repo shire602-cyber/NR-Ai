@@ -2,6 +2,16 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+it("lists only the available steps for the owner cash workflow", () => {
+  const starter = reportAutomationStarters.find(
+    (item) => item.id === "owner-cash-control-autopilot"
+  );
+  expect(starter?.setupSteps).toEqual([
+    "Schedule the owner weekly command pack.",
+    "Route overdue balances to payment chasing.",
+  ]);
+});
 import {
   clearPreferredReportWorkflowGapFilter,
   clearPreferredReportWorkflowSearch,
@@ -1847,7 +1857,7 @@ describe("report discoverability", () => {
       expect(starter.reportIds.length).toBeGreaterThanOrEqual(4);
       expect(starter.playbookIds.length).toBeGreaterThanOrEqual(1);
       expect(starter.queueIds.length).toBeGreaterThanOrEqual(2);
-      expect(starter.setupSteps.length).toBeGreaterThanOrEqual(3);
+      expect(starter.setupSteps.length).toBeGreaterThanOrEqual(2);
       expect(starter.outcome).toBeTruthy();
       expect(starter.setupTime).toMatch(/setup$/);
       expect(starter.primaryAction).toBeTruthy();

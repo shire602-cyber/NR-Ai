@@ -97,6 +97,8 @@ import { ReceiptLinesDialog, type ReceiptForSplit } from "@/components/receipts/
 import { SiGooglesheets } from "react-icons/si";
 import { VirtualList } from "@/components/VirtualList";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { currencyLabel } from "@/lib/format-money";
+import { getActiveCompanyId } from "@/lib/activeCompany";
 import { Money } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import {
@@ -139,6 +141,7 @@ interface ExtractedData {
   // Confidence banding and review routing (R05-23)
   confidenceBand?: ConfidenceBand;
   reviewReasons?: string[];
+  reviewReasonCodes?: string[];
   validationIssues?: Pick<ValidationIssue, "code">[];
   reviewed?: boolean;
   original?: ReviewSnapshot;
@@ -174,6 +177,8 @@ function withReviewMeta(data: ExtractedData): ExtractedData {
 }
 
 interface ProcessedReceipt {
+  id: string;
+  companyId: string;
   file: File;
   preview: string;
   status: "pending" | "processing" | "completed" | "saved" | "error" | "save_error";
@@ -182,6 +187,20 @@ interface ProcessedReceipt {
   error?: string;
   /** True when the server rejected the save as an exact duplicate (409). */
   duplicate?: boolean;
+}
+
+interface ManualReceiptDraft {
+  companyId: string;
+  source: ProcessedReceipt | null;
+}
+
+type ReceiptToSave = ProcessedReceipt & { data: ExtractedData };
+
+function isReceiptReadyToSave(receipt: ProcessedReceipt): receipt is ReceiptToSave {
+  return (
+    !!receipt.data &&
+    (receipt.status === "completed" || (receipt.status === "save_error" && !receipt.duplicate))
+  );
 }
 
 function isOcrRetryable(receipt: ProcessedReceipt): boolean {
@@ -373,6 +392,8 @@ const CLASSIFIER_METHOD_LABELS: Record<string, string> = {
 };
 
 const OCR_REVIEW_ISSUE_LABELS: Record<string, string> = {
+  MISSING_CONFIDENCE: "pageLabels.receiptIssueMissingConfidence",
+  CLASSIFIER_DISAGREEMENT: "pageLabels.receiptIssueClassifierDisagreement",
   MISSING_AMOUNT: "pageLabels.receiptIssueMissingAmount",
   AMOUNT_MISMATCH: "pageLabels.receiptIssueAmounts",
   DATE_FORMAT: "pageLabels.receiptIssueDate",
@@ -389,9 +410,8 @@ function receiptReviewNotes(data: ExtractedData, locale: string, t: Record<strin
   if (locale !== "ar" || reasons.length === 0) return reasons;
 
   const fallback = "pageLabels.receiptIssueGeneral";
-  const keys = (data.validationIssues ?? []).map(
-    ({ code }) => OCR_REVIEW_ISSUE_LABELS[code] ?? fallback
-  );
+  const codes = data.reviewReasonCodes ?? data.validationIssues?.map(({ code }) => code) ?? [];
+  const keys = codes.map((code) => OCR_REVIEW_ISSUE_LABELS[code] ?? fallback);
   return keys.length ? Array.from(new Set(keys), (key) => t[key]) : [t[fallback]];
 }
 
@@ -423,7 +443,13 @@ export default function Receipts() {
   const accountLabel = (a?: { nameEn: string; nameAr?: string | null }) =>
     a ? accountDisplayName(a, locale) : "";
   const { toast } = useToast();
-  const { companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
+  const { companyId, companies, isLoading: _isLoadingCompany } = useDefaultCompany();
+  const assertDraftCompany = (origin: string) => {
+    const active = getActiveCompanyId() ?? companies?.[0]?.id ?? companyId;
+    if (origin !== companyId || origin !== active) {
+      throw new Error(t["pageLabels.receiptDraftCompanyChanged"]);
+    }
+  };
   // Spec 3.8: automation settings are a tab here (`/receipt-autopilot` redirects to it).
   const [receiptsTab, setReceiptsTab] = useState(() =>
     typeof window !== "undefined" &&
@@ -455,12 +481,12 @@ export default function Receipts() {
   const [newAccountName, setNewAccountName] = useState("");
   const [similarWarningOpen, setSimilarWarningOpen] = useState(false);
   const [similarTransactions, setSimilarTransactions] = useState<any[]>([]);
-  const [pendingSaveData, setPendingSaveData] = useState<any>(null);
+  const [pendingSaveData, setPendingSaveData] = useState<ReceiptToSave[] | null>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [isExporting, setIsExporting] = useState(false);
   const [isOcrExporting, setIsOcrExporting] = useState(false);
-  const [manualExpenseDialogOpen, setManualExpenseDialogOpen] = useState(false);
-  const [manualSource, setManualSource] = useState<ProcessedReceipt | null>(null);
+  const [manualDraft, setManualDraft] = useState<ManualReceiptDraft | null>(null);
+  const manualSource = manualDraft?.source;
   const [imagePreview, setImagePreview] = useState<{ src: string; merchant?: string } | null>(null);
   // R05-19b (S2): split lines / revise a posted receipt / split one upload into receipts.
   const [linesDialog, setLinesDialog] = useState<{
@@ -589,27 +615,22 @@ export default function Receipts() {
   });
 
   const manualExpenseMutation = useMutation({
-    mutationFn: async ({
-      data,
-      source,
-    }: {
-      data: ReceiptFormData;
-      source: ProcessedReceipt | null;
-    }) => {
-      return apiRequest("POST", `/api/companies/${companyId}/receipts`, {
+    mutationFn: async ({ data, draft }: { data: ReceiptFormData; draft: ManualReceiptDraft }) => {
+      assertDraftCompany(draft.companyId);
+      return apiRequest("POST", `/api/companies/${draft.companyId}/receipts`, {
         merchant: data.merchant,
         date: data.date,
         amount: data.amount,
         vatAmount: data.vatAmount,
         category: data.category,
         currency: data.currency,
-        ...(source ? { imageData: source.preview } : {}),
+        ...(draft.source ? { imageData: draft.source.preview } : {}),
       });
     },
-    onSuccess: (_created, { source }) => {
-      if (source) setProcessedReceipts((previous) => previous.filter((row) => row !== source));
-      setManualSource(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
+    onSuccess: (_created, { draft }) => {
+      if (draft.source) removeReceipt(draft.source.id);
+      setManualDraft(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", draft.companyId, "receipts"] });
       toast({
         title: tr("Expense created successfully", "تم إنشاء المصروف"),
         description: tr(
@@ -617,8 +638,6 @@ export default function Receipts() {
           "تمت إضافة المصروف. يمكنك الآن ترحيله إلى دفتر اليومية."
         ),
       });
-      setManualExpenseDialogOpen(false);
-      manualExpenseForm.reset();
     },
     onError: (error: any) => {
       toast({
@@ -792,8 +811,9 @@ export default function Receipts() {
   };
 
   const onManualExpenseSubmit = (data: ReceiptFormData) => {
+    if (!manualDraft || manualExpenseMutation.isPending) return;
     manualExpenseMutation.mutate({
-      source: manualSource,
+      draft: manualDraft,
       data: {
         ...data,
         amount: Number(data.amount),
@@ -848,6 +868,7 @@ export default function Receipts() {
 
   const handleFilesSelect = useCallback(
     async (files: FileList | File[]) => {
+      if (!companyId) return;
       const fileArray = Array.from(files);
 
       for (const file of fileArray) {
@@ -882,6 +903,8 @@ export default function Receipts() {
             const { pages, total, rendered } = await convertPdfToImages(file);
             const baseName = file.name.replace(/\.pdf$/i, "");
             const newReceipts = pages.map((p, i) => ({
+              id: crypto.randomUUID(),
+              companyId,
               file: new File(
                 [p.blob],
                 pages.length > 1 ? `${baseName} (p${i + 1}).png` : `${baseName}.png`,
@@ -937,9 +960,12 @@ export default function Receipts() {
           const reader = new FileReader();
           reader.onload = (e) => {
             const preview = e.target?.result as string;
+            const id = crypto.randomUUID();
             setProcessedReceipts((prev) => [
               ...prev,
               {
+                id,
+                companyId,
                 file: imageFile,
                 preview,
                 status: "pending",
@@ -951,7 +977,7 @@ export default function Receipts() {
         }
       }
     },
-    [toast, tr, locale]
+    [companyId, toast, tr, locale]
   );
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -972,13 +998,28 @@ export default function Receipts() {
     }
   };
 
-  const removeReceipt = (index: number) => {
-    setProcessedReceipts((prev) => prev.filter((_, i) => i !== index));
+  const removeReceipt = (id: string) => {
+    setProcessedReceipts((prev) => prev.filter((receipt) => receipt.id !== id));
   };
 
   const openManualExpense = (source: ProcessedReceipt | null) => {
-    setManualSource(source);
-    setManualExpenseDialogOpen(true);
+    const origin = source?.companyId ?? companyId;
+    if (!origin) return;
+    manualExpenseForm.reset({
+      merchant: "",
+      date: new Date().toISOString().slice(0, 10),
+      amount: 0,
+      vatAmount: null,
+      category: "",
+      currency: "AED",
+    });
+    setManualDraft({ source, companyId: origin });
+  };
+
+  const patchReceipt = (id: string, patch: Partial<ProcessedReceipt>) => {
+    setProcessedReceipts((prev) =>
+      prev.map((receipt) => (receipt.id === id ? { ...receipt, ...patch } : receipt))
+    );
   };
 
   const explainAutoReadUnavailable = (source: ProcessedReceipt) => {
@@ -1000,13 +1041,10 @@ export default function Receipts() {
       return;
     }
 
-    setProcessedReceipts((prev) => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], status: "processing", progress: 10, error: undefined };
-      return updated;
-    });
+    patchReceipt(receipt.id, { status: "processing", progress: 10, error: undefined });
 
     try {
+      assertDraftCompany(receipt.companyId);
       // Strategy 1: Backend AI Vision OCR (GPT-4o)
       const toBase64 = (file: File): Promise<string> =>
         new Promise((resolve, reject) => {
@@ -1018,11 +1056,7 @@ export default function Receipts() {
 
       const imageData = await toBase64(receipt.file);
 
-      setProcessedReceipts((prev) => {
-        const updated = [...prev];
-        updated[index] = { ...updated[index], progress: 40 };
-        return updated;
-      });
+      patchReceipt(receipt.id, { progress: 40 });
 
       let parsed: ExtractedData | null = null;
       let backendErrorMessage: string | null = null;
@@ -1068,7 +1102,7 @@ export default function Receipts() {
             ...getAuthHeaders(),
           }),
           credentials: "include",
-          body: JSON.stringify({ imageData, companyId }),
+          body: JSON.stringify({ imageData, companyId: receipt.companyId }),
         });
 
       try {
@@ -1101,6 +1135,9 @@ export default function Receipts() {
             reviewReasons: Array.isArray(result.reviewReasons)
               ? result.reviewReasons.filter((reason: unknown) => typeof reason === "string")
               : [],
+            reviewReasonCodes: Array.isArray(result.reviewReasonCodes)
+              ? result.reviewReasonCodes.filter((code: unknown) => typeof code === "string")
+              : undefined,
             validationIssues: Array.isArray(result.validationIssues)
               ? result.validationIssues.filter(
                   (issue: unknown) =>
@@ -1116,11 +1153,7 @@ export default function Receipts() {
             simplifiedInvoice: Boolean(result.simplifiedInvoice),
             reverseChargeSuggested: Boolean(result.reverseChargeSuggested),
           };
-          setProcessedReceipts((prev) => {
-            const updated = [...prev];
-            updated[index] = { ...updated[index], progress: 90 };
-            return updated;
-          });
+          patchReceipt(receipt.id, { progress: 90 });
         } else {
           backendErrorStatus = response.status;
           // Capture the server-provided message so we can surface it if Tesseract
@@ -1179,14 +1212,7 @@ export default function Receipts() {
           const result = await Tesseract.recognize(receipt.file, "eng+ara", {
             logger: (m) => {
               if (m.status === "recognizing text") {
-                setProcessedReceipts((prev) => {
-                  const updated = [...prev];
-                  updated[index] = {
-                    ...updated[index],
-                    progress: 40 + Math.round(m.progress * 50),
-                  };
-                  return updated;
-                });
+                patchReceipt(receipt.id, { progress: 40 + Math.round(m.progress * 50) });
               }
             },
           });
@@ -1219,7 +1245,7 @@ export default function Receipts() {
 
         if (parsed.merchant || parsed.total) {
           try {
-            const category = await categorizeWithAI(parsed);
+            const category = await categorizeWithAI(parsed, receipt.companyId);
             if (category) parsed.category = category;
           } catch (aiError) {
             console.error("AI categorization failed, continuing without it:", aiError);
@@ -1227,29 +1253,18 @@ export default function Receipts() {
         }
       }
 
-      setProcessedReceipts((prev) => {
-        const updated = [...prev];
-        updated[index] = {
-          ...updated[index],
-          status: "completed",
-          data: withReviewMeta(parsed!),
-          progress: 100,
-        };
-        return updated;
+      patchReceipt(receipt.id, {
+        status: "completed",
+        data: withReviewMeta(parsed),
+        progress: 100,
       });
     } catch (error: any) {
-      console.error("OCR processing error:", error);
-      setProcessedReceipts((prev) => {
-        const updated = [...prev];
-        updated[index] = {
-          ...updated[index],
-          status: "error",
-          error:
-            error?.message ||
-            tr("Reading failed. Try a clearer image.", "تعذّرت القراءة. جرّب صورة أوضح."),
-          progress: 0,
-        };
-        return updated;
+      patchReceipt(receipt.id, {
+        status: "error",
+        error:
+          error?.message ||
+          tr("Reading failed. Try a clearer image.", "تعذّرت القراءة. جرّب صورة أوضح."),
+        progress: 0,
       });
     }
   };
@@ -1281,7 +1296,7 @@ export default function Receipts() {
     return { ...parseReceiptOcrText(text), ocrSource: "browser-ocr" };
   };
 
-  const categorizeWithAI = async (data: ExtractedData): Promise<string | null> => {
+  const categorizeWithAI = async (data: ExtractedData, origin: string): Promise<string | null> => {
     if (!companyId) return null;
 
     try {
@@ -1292,7 +1307,7 @@ export default function Receipts() {
           ...getAuthHeaders(),
         },
         body: JSON.stringify({
-          companyId,
+          companyId: origin,
           description: `${data.merchant || "Unknown"} - ${data.total} ${data.currency}`,
           amount: data.total,
           currency: data.currency || "AED",
@@ -1309,29 +1324,23 @@ export default function Receipts() {
     return null;
   };
 
-  const updateReceiptData = (index: number, updates: Partial<ExtractedData>) => {
-    setProcessedReceipts((prev) => {
-      const updated = [...prev];
-      if (updated[index].data) {
-        updated[index] = {
-          ...updated[index],
-          data: { ...updated[index].data!, ...updates },
-        };
-      }
-      return updated;
-    });
+  const updateReceiptData = (id: string, updates: Partial<ExtractedData>) => {
+    setProcessedReceipts((prev) =>
+      prev.map((receipt) =>
+        receipt.id === id && receipt.data
+          ? { ...receipt, data: { ...receipt.data, ...updates } }
+          : receipt
+      )
+    );
   };
 
   const saveAllReceipts = async () => {
-    const completed = processedReceipts
-      .map((r, i) => ({ receipt: r, index: i }))
-      .filter(({ receipt }) => receipt.status === "completed" && receipt.data);
+    const completed = processedReceipts.filter(isReceiptReadyToSave);
     // Confidence routing: low-confidence extractions need an explicit review click first.
-    const completedIndices = completed.filter(
-      ({ receipt }) =>
-        !bandRequiresReview(receipt.data!.confidenceBand) || receipt.data!.reviewed === true
+    const ready = completed.filter(
+      ({ data }) => !bandRequiresReview(data.confidenceBand) || data.reviewed === true
     );
-    const heldForReview = completed.length - completedIndices.length;
+    const heldForReview = completed.length - ready.length;
     if (heldForReview > 0) {
       toast({
         title: tr("Review required", "المراجعة مطلوبة"),
@@ -1343,7 +1352,7 @@ export default function Receipts() {
       });
     }
 
-    if (completedIndices.length === 0 && completed.length === 0) {
+    if (completed.length === 0) {
       toast({
         title: tr("No receipts to save", "لا توجد إيصالات للحفظ"),
         description: tr("Please process receipts before saving", "يرجى معالجة الإيصالات قبل الحفظ"),
@@ -1364,13 +1373,13 @@ export default function Receipts() {
       return;
     }
 
-    if (completedIndices.length === 0) return;
+    if (ready.length === 0) return;
 
     // Proceed with save directly - similar check removed for better UX
-    await performSave(completedIndices);
+    await performSave(ready);
   };
 
-  const performSave = async (completedIndices: any[]) => {
+  const performSave = async (drafts: ReceiptToSave[]) => {
     if (!companyId) {
       toast({
         title: tr("Error", "خطأ"),
@@ -1384,7 +1393,7 @@ export default function Receipts() {
     }
 
     // Capture total count before starting to prevent denominator from shrinking
-    const total = completedIndices.length;
+    const total = drafts.length;
     setTotalToSave(total);
     setIsSavingAll(true);
     let successCount = 0;
@@ -1392,8 +1401,9 @@ export default function Receipts() {
     let firstSaveError: string | undefined;
 
     // Save each receipt sequentially with status updates
-    for (const { receipt, index } of completedIndices) {
+    for (const receipt of drafts) {
       try {
+        assertDraftCompany(receipt.companyId);
         // The server derives companyId/uploader from the session and URL and rejects unknown
         // fields (W2-D), so only the fields the receipt contract accepts are sent.
         const receiptData = {
@@ -1415,7 +1425,7 @@ export default function Receipts() {
 
         const created = await apiRequest(
           "POST",
-          `/api/companies/${companyId}/receipts`,
+          `/api/companies/${receipt.companyId}/receipts`,
           receiptData
         );
 
@@ -1432,29 +1442,27 @@ export default function Receipts() {
 
         // Record the human decision on the AI extraction for audit (non-fatal).
         if (created?.id && receipt.data!.confidenceBand) {
-          apiRequest("POST", `/api/companies/${companyId}/receipts/${created.id}/review-decision`, {
-            decision: receiptReviewDecision(receipt.data!.original, {
-              merchant: receipt.data!.merchant,
-              date: receipt.data!.date,
-              total: receipt.data!.total,
-              vatAmount: receipt.data!.vatAmount,
-              category: receipt.data!.category,
-            }),
-            band: receipt.data!.confidenceBand,
-          }).catch(() => {});
+          apiRequest(
+            "POST",
+            `/api/companies/${receipt.companyId}/receipts/${created.id}/review-decision`,
+            {
+              decision: receiptReviewDecision(receipt.data!.original, {
+                merchant: receipt.data!.merchant,
+                date: receipt.data!.date,
+                total: receipt.data!.total,
+                vatAmount: receipt.data!.vatAmount,
+                category: receipt.data!.category,
+              }),
+              band: receipt.data!.confidenceBand,
+            }
+          ).catch(() => {});
         }
 
         // Mark this receipt as saved
-        setProcessedReceipts((prev) => {
-          const updated = [...prev];
-          updated[index] = { ...updated[index], status: "saved" };
-          return updated;
-        });
+        patchReceipt(receipt.id, { status: "saved" });
 
         successCount++;
       } catch (error: any) {
-        console.error("Failed to save receipt:", error);
-
         // Extract error message
         const isDuplicate = error?.status === 409;
         const errorMessage = isDuplicate
@@ -1463,15 +1471,10 @@ export default function Receipts() {
         if (!firstSaveError) firstSaveError = errorMessage;
 
         // Mark this receipt as failed to save
-        setProcessedReceipts((prev) => {
-          const updated = [...prev];
-          updated[index] = {
-            ...updated[index],
-            status: "save_error",
-            error: errorMessage,
-            duplicate: isDuplicate,
-          };
-          return updated;
+        patchReceipt(receipt.id, {
+          status: "save_error",
+          error: errorMessage,
+          duplicate: isDuplicate,
         });
 
         errorCount++;
@@ -1492,13 +1495,7 @@ export default function Receipts() {
         ),
       });
 
-      // Only clear successfully saved receipts
-      if (errorCount === 0) {
-        resetForm();
-      } else {
-        // Remove only the saved ones, keep the failed ones for retry
-        setProcessedReceipts((prev) => prev.filter((r) => r.status !== "saved"));
-      }
+      setProcessedReceipts((prev) => prev.filter((r) => r.status !== "saved"));
     } else {
       toast({
         title: tr("Save Failed", "فشل الحفظ"),
@@ -1528,7 +1525,7 @@ export default function Receipts() {
 
   const pendingCount = processedReceipts.filter((r) => r.status === "pending").length;
   const processingCount = processedReceipts.filter((r) => r.status === "processing").length;
-  const completedCount = processedReceipts.filter((r) => r.status === "completed").length;
+  const completedCount = processedReceipts.filter(isReceiptReadyToSave).length;
   const savedCount = processedReceipts.filter((r) => r.status === "saved").length;
   const errorCount = processedReceipts.filter((r) => r.status === "error").length;
   const saveErrorCount = processedReceipts.filter((r) => r.status === "save_error").length;
@@ -1723,7 +1720,12 @@ export default function Receipts() {
         }
         actions={
           <Button
-            onClick={() => openManualExpense(null)}
+            onClick={() => {
+              const images = processedReceipts.filter(
+                (receipt) => receipt.companyId === companyId && isOcrRetryable(receipt)
+              );
+              openManualExpense(images.length === 1 ? images[0] : null);
+            }}
             className="w-full sm:w-auto"
             data-testid="button-add-manual-expense"
           >
@@ -1959,7 +1961,7 @@ export default function Receipts() {
           {processedReceipts.length > 0 && (
             <div className="space-y-3">
               {processedReceipts.map((receipt, index) => (
-                <Card key={index} data-testid={`receipt-card-${index}`}>
+                <Card key={receipt.id} data-testid={`receipt-card-${index}`}>
                   <CardContent className="p-4">
                     <div className="flex flex-col gap-4 sm:flex-row">
                       {/* Thumbnail — click to view source image alongside extracted data */}
@@ -1989,8 +1991,8 @@ export default function Receipts() {
                           variant="destructive"
                           size="icon"
                           className="absolute -top-2 -end-2 h-6 w-6"
-                          onClick={() => removeReceipt(index)}
-                          disabled={isProcessingBulk}
+                          onClick={() => removeReceipt(receipt.id)}
+                          disabled={isProcessingBulk || isSavingAll}
                           aria-label={t["components.ui.fileDropRemove"]}
                           data-testid={`button-remove-${index}`}
                         >
@@ -2015,8 +2017,7 @@ export default function Receipts() {
                           </div>
                         )}
 
-                        {((autoReadUnavailable && receipt.status === "pending") ||
-                          receipt.status === "error") && (
+                        {isOcrRetryable(receipt) && (
                           <Button
                             type="button"
                             variant="outline"
@@ -2108,7 +2109,7 @@ export default function Receipts() {
                                 dir="auto"
                                 value={receipt.data.merchant || ""}
                                 onChange={(e) =>
-                                  updateReceiptData(index, { merchant: e.target.value })
+                                  updateReceiptData(receipt.id, { merchant: e.target.value })
                                 }
                                 className="min-h-10"
                                 data-testid={`input-merchant-${index}`}
@@ -2120,7 +2121,7 @@ export default function Receipts() {
                               <DatePicker
                                 id={`ocr-date-${index}`}
                                 value={receipt.data.date || ""}
-                                onChange={(value) => updateReceiptData(index, { date: value })}
+                                onChange={(value) => updateReceiptData(receipt.id, { date: value })}
                                 className="min-h-10"
                                 data-testid={`input-date-${index}`}
                               />
@@ -2136,7 +2137,7 @@ export default function Receipts() {
                                   dir="ltr"
                                   value={receipt.data.invoiceNumber || ""}
                                   onChange={(e) =>
-                                    updateReceiptData(index, { invoiceNumber: e.target.value })
+                                    updateReceiptData(receipt.id, { invoiceNumber: e.target.value })
                                   }
                                   className="min-h-10"
                                 />
@@ -2153,7 +2154,9 @@ export default function Receipts() {
                                 id={`ocr-subtotal-${index}`}
                                 value={receipt.data.subtotal ?? receipt.data.total ?? ""}
                                 onChange={(e) =>
-                                  updateReceiptData(index, { subtotal: parseFloat(e.target.value) })
+                                  updateReceiptData(receipt.id, {
+                                    subtotal: parseFloat(e.target.value),
+                                  })
                                 }
                                 className="min-h-10"
                               />
@@ -2161,7 +2164,9 @@ export default function Receipts() {
 
                             <div className="space-y-1">
                               <Label htmlFor={`ocr-vat-${index}`}>
-                                {t["screens.vatAmountAed"]}
+                                {formatMessage(t["pageLabels.receiptVatCurrency"], {
+                                  currency: currencyLabel(receipt.data.currency, locale),
+                                })}
                               </Label>
                               <Input
                                 type="number"
@@ -2169,7 +2174,7 @@ export default function Receipts() {
                                 id={`ocr-vat-${index}`}
                                 value={receipt.data.vatAmount ?? ""}
                                 onChange={(e) =>
-                                  updateReceiptData(index, {
+                                  updateReceiptData(receipt.id, {
                                     vatAmount: parseFloat(e.target.value),
                                   })
                                 }
@@ -2187,7 +2192,9 @@ export default function Receipts() {
                                 id={`ocr-total-${index}`}
                                 value={receipt.data.total ?? ""}
                                 onChange={(e) =>
-                                  updateReceiptData(index, { total: parseFloat(e.target.value) })
+                                  updateReceiptData(receipt.id, {
+                                    total: parseFloat(e.target.value),
+                                  })
                                 }
                                 className="h-8 font-semibold"
                                 data-testid={`input-amount-${index}`}
@@ -2201,7 +2208,7 @@ export default function Receipts() {
                               <Select
                                 value={receipt.data.category}
                                 onValueChange={(value) =>
-                                  updateReceiptData(index, { category: value })
+                                  updateReceiptData(receipt.id, { category: value })
                                 }
                               >
                                 <SelectTrigger
@@ -2328,7 +2335,7 @@ export default function Receipts() {
                                     size="sm"
                                     data-testid={`button-mark-reviewed-${index}`}
                                     onClick={() =>
-                                      updateReceiptData(index, {
+                                      updateReceiptData(receipt.id, {
                                         reviewed: !receipt.data!.reviewed,
                                       })
                                     }
@@ -2872,7 +2879,11 @@ export default function Receipts() {
                       )}
                     </div>
                     <p className="font-semibold">
-                      {formatCurrency(transaction.amount || 0, "AED", locale)}
+                      {formatCurrency(
+                        transaction.amount || 0,
+                        transaction.currency || "AED",
+                        locale
+                      )}
                     </p>
                   </div>
                 </div>
@@ -3022,7 +3033,7 @@ export default function Receipts() {
                     <p className="font-semibold text-lg">
                       {formatCurrency(
                         (postingReceipt.amount || 0) + (postingReceipt.vatAmount || 0),
-                        "AED",
+                        postingReceipt.currency || "AED",
                         locale
                       )}
                     </p>
@@ -3030,8 +3041,16 @@ export default function Receipts() {
                     {(postingReceipt.vatAmount || 0) > 0 && (
                       <p className="text-xs text-muted-foreground" data-testid="text-post-net-vat">
                         {formatMessage(t["pages.receiptsNetPlusVat"], {
-                          net: formatCurrency(postingReceipt.amount || 0, "AED", locale),
-                          vat: formatCurrency(postingReceipt.vatAmount || 0, "AED", locale),
+                          net: formatCurrency(
+                            postingReceipt.amount || 0,
+                            postingReceipt.currency || "AED",
+                            locale
+                          ),
+                          vat: formatCurrency(
+                            postingReceipt.vatAmount || 0,
+                            postingReceipt.currency || "AED",
+                            locale
+                          ),
                         })}
                       </p>
                     )}
@@ -3130,12 +3149,24 @@ export default function Receipts() {
                     {accountLabel(accounts?.find((a) => a.id === selectedExpenseAccount)) ||
                       tr("Expense account", "حساب المصروف")}
                   </span>
-                  <span>{formatCurrency(postingReceipt?.amount || 0, "AED", locale)}</span>
+                  <span>
+                    {formatCurrency(
+                      postingReceipt?.amount || 0,
+                      postingReceipt?.currency || "AED",
+                      locale
+                    )}
+                  </span>
                 </div>
                 {(postingReceipt?.vatAmount || 0) > 0 && (
                   <div className="flex justify-between" data-testid="preview-input-vat">
                     <span>{t["pages.receiptsInputVatRecoverable"]}</span>
-                    <span>{formatCurrency(postingReceipt?.vatAmount || 0, "AED", locale)}</span>
+                    <span>
+                      {formatCurrency(
+                        postingReceipt?.vatAmount || 0,
+                        postingReceipt?.currency || "AED",
+                        locale
+                      )}
+                    </span>
                   </div>
                 )}
                 <div className="flex justify-between ps-4">
@@ -3147,7 +3178,7 @@ export default function Receipts() {
                   <span>
                     {formatCurrency(
                       (postingReceipt?.amount || 0) + (postingReceipt?.vatAmount || 0),
-                      "AED",
+                      postingReceipt?.currency || "AED",
                       locale
                     )}
                   </span>
@@ -3187,11 +3218,10 @@ export default function Receipts() {
 
       {/* Manual Expense Entry Dialog */}
       <Dialog
-        open={manualExpenseDialogOpen}
+        open={!!manualDraft}
         onOpenChange={(open) => {
           if (manualExpenseMutation.isPending) return;
-          setManualExpenseDialogOpen(open);
-          if (!open) setManualSource(null);
+          if (!open) setManualDraft(null);
         }}
       >
         <DialogContent size="md" data-testid="dialog-manual-expense">
@@ -3314,10 +3344,7 @@ export default function Receipts() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => {
-                    setManualSource(null);
-                    setManualExpenseDialogOpen(false);
-                  }}
+                  onClick={() => setManualDraft(null)}
                   disabled={manualExpenseMutation.isPending}
                 >
                   <T k="banking.common.cancel" />

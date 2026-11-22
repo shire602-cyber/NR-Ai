@@ -39,7 +39,6 @@ beforeEach(() => {
     vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : String(input);
       if (url.includes("/api/csrf-token")) return json({ csrfToken: "x" });
-      if (url.endsWith("/api/bank/providers")) return json({ statuses: [], redirectUris: [] });
       if (/\/api\/companies$/.test(url)) return json([{ id: "c-1", name: "شركة الواحة" }]);
       if (url.endsWith("/bank-accounts"))
         return json([
@@ -71,17 +70,14 @@ afterEach(async () => {
   useI18n.getState().setLocale("en");
 });
 
-async function mountPage(locale: "en" | "ar", page: "reconciliation" | "feeds" = "reconciliation") {
+async function mountPage(locale: "en" | "ar") {
   const i18n = await import("../../client/src/lib/i18n");
   await act(async () => i18n.useI18n.getState().setLocale(locale));
   const { queryClient } = await import("../../client/src/lib/queryClient");
   queryClient.clear();
   const { ActiveCompanyProvider } =
     await import("../../client/src/components/ActiveCompanyProvider");
-  const { default: Page } =
-    page === "feeds"
-      ? await import("../../client/src/pages/BankFeeds")
-      : await import("../../client/src/pages/BankReconciliation");
+  const { default: Page } = await import("../../client/src/pages/BankReconciliation");
   await act(async () => {
     root.render(
       createElement(
@@ -140,17 +136,10 @@ it.each([
   ],
   ["ar", "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك"],
 ] as const)(
-  "offers CSV reconciliation in %s when no bank provider is configured",
+  "uses the approved CSV wording in %s in the import dialog and legacy provider error",
   async (locale, copy) => {
-    window.history.replaceState(null, "", "/bank-feeds");
-    await mountPage(locale, "feeds");
-    expect(container.textContent).toContain(copy);
-    expect(container.textContent).not.toMatch(
-      /bank feeds?|coming (?:soon|later)|الربط البنكي|قريب|لاحق/i
-    );
-    expect(
-      container.querySelector('[data-testid="button-feeds-import-statement"]')?.getAttribute("href")
-    ).toBe("/bank-reconciliation?import=1");
+    await mountPage(locale);
+    expect(dialog()?.textContent).toContain(copy);
     const { serverErrorCopy } = await import("../../client/src/lib/validation-messages");
     expect(serverErrorCopy(locale, "BANK_FEED_NOT_CONFIGURED")).toBe(copy);
   }

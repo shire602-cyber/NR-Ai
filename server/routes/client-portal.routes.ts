@@ -365,8 +365,13 @@ export function registerClientPortalRoutes(app: Express): void {
     "/api/client-portal/statements",
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, contact } = scopeOf(req);
+      const { companyId, contact, accountId } = scopeOf(req);
       const q = statementQuery.parse(req.query);
+      const selected = req.get("X-Portal-Account");
+      // A download must not fall back to another supplier when its displayed binding was removed.
+      if (q.format === "pdf" && selected && selected.toLowerCase() !== accountId) {
+        throw new DomainError("PORTAL_ACCESS_REVOKED", 403);
+      }
       const st = await buildCustomerStatement({
         companyId,
         contactId: contact.id,
@@ -381,7 +386,7 @@ export function registerClientPortalRoutes(app: Express): void {
         });
         return res.send(pdf);
       }
-      res.json(st);
+      res.json({ ...st, accountId });
     })
   );
 

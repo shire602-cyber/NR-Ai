@@ -17,7 +17,7 @@ Wafeq, Zoho Books, QuickBooks, Xero, and all other AI/non-AI accounting
 software." That claim is too broad and the zip has concrete blockers:
 dependency vulnerabilities, failing lint, a broken formatting script, a
 cross-user notification mutation bug, likely webhook SSRF exposure, incomplete
-e-invoicing, no direct EmaraTax filing, no live bank feeds, no third-party
+e-invoicing, no direct EmaraTax filing, no third-party
 security/compliance certification, and no production customer evidence.
 
 Best honest positioning:
@@ -331,7 +331,7 @@ They are not user-research scores.
 | UAE e-invoicing readiness | 3/10 | Planned, not implemented. Wafeq markets e-invoicing now. |
 | AI bookkeeping automation | 5/10 | Many AI surfaces, but Digits/QBO market deeper AI-native automation. |
 | Firm/accountant operations | 8/10 | Strong differentiator if UX and security are fixed. |
-| Bank feeds and reconciliation | 4/10 | CSV/import exists; live feeds require credentials/provider. Digits/QBO/Xero lead. |
+| Bank reconciliation | 4/10 | Upload a CSV exported from your bank, review suggested matches, and reconcile against your books. |
 | Security engineering | 6/10 | Good foundation, but vuln audit, SSRF, notification scoping, cert gaps hurt. |
 | Compliance/certification proof | 3/10 | No SOC 2/ISO/FTA accreditation evidence in repo; Wafeq/Zoho claim stronger proof. |
 | Test automation | 8/10 | 509 unit tests and build/check pass; E2E claim not locally verified here. |

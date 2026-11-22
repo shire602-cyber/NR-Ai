@@ -12,6 +12,7 @@
  */
 
 import { EMAIL_NOT_SET_UP_RUN_ERROR } from "./notification-copy";
+import { bankCsvWorkflow } from "./banking-copy";
 
 export interface CopyDescriptor {
   key: string;
@@ -45,7 +46,7 @@ export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billApproved.title", "Bill approved {label}"),
   T("notification.billPaid.title", "Bill paid {label}"),
   T("notification.payrollApproved.title", "Payroll approved"),
-  T("notification.bankSyncFailed.title", "Bank feed sync failed"),
+  T("notification.bankSyncFailed.title", "Bank reconciliation"),
   T("notification.deadlineDue.title", "Deadline due[ {dueDate}]"),
   T("notification.taskDue.title", "Task due[ {dueDate}]"),
   T("notification.invoiceOverdue.title", "Invoice {number} is overdue"),
@@ -85,10 +86,7 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billApproved.message", "Bill {label} was approved for payment."),
   T("notification.billPaid.message", "Bill {label} was paid."),
   T("notification.payrollApproved.message", "Payroll for {month}/{year} was approved."),
-  T(
-    "notification.bankSyncFailed.message",
-    "The bank feed[ ({provider})] could not sync[: {reason}]. Reconnect it under Banking."
-  ),
+  T("notification.bankSyncFailed.message", bankCsvWorkflow.en),
   T("notification.deadlineDueGeneric.message", "A compliance obligation is due[ on {dueDate}]."),
   T("notification.taskDue.message", "A task is due[ on {dueDate}]."),
   T("notification.invoiceOverdue.message", "Invoice {number} for {customer} was due on {dueDate}."),
@@ -1480,10 +1478,19 @@ export function notificationCopy(
 }
 
 /** Attach `copy` (stable keys + params) to a notification for API/socket responses. */
-export function withNotificationCopy<T extends { title: string; message: string }>(
-  n: T
-): T & { copy: NotificationCopyDescriptor } {
-  return { ...n, copy: describeNotificationCopy(n) };
+export function bankingNotificationCopy<
+  T extends { title: string; message: string; eventKey?: string | null },
+>(n: T): T {
+  return n.eventKey?.startsWith("bank.sync_failed:")
+    ? { ...n, title: "Bank reconciliation", message: bankCsvWorkflow.en }
+    : n;
+}
+
+export function withNotificationCopy<
+  T extends { title: string; message: string; eventKey?: string | null },
+>(n: T): T & { copy: NotificationCopyDescriptor } {
+  const display = bankingNotificationCopy(n);
+  return { ...display, copy: describeNotificationCopy(display) };
 }
 
 /** Key + params for a stored report-delivery run error or handoff sentence, or null. */

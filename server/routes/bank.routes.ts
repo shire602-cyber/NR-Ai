@@ -8,6 +8,7 @@ import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
 import { getCapabilitySnapshot } from "../../shared/capabilities";
+import { bankCsvWorkflow } from "../../shared/banking-copy";
 import {
   bankFeedCallbackBody,
   bankFeedConnectBody,
@@ -287,12 +288,7 @@ export function registerBankRoutes(app: Express) {
     requireFeature("bankImport"),
     asyncHandler(async (req: Request, _res: Response) => {
       await ownedConnection(req, req.params.id);
-      throw new DomainError(
-        "BANK_FEED_BALANCE_UNAVAILABLE",
-        503,
-        undefined,
-        "Live balances need a configured bank feed; use the reconciliation statement instead"
-      );
+      throw new DomainError("BANK_FEED_BALANCE_UNAVAILABLE", 503, undefined, bankCsvWorkflow.en);
     })
   );
 }

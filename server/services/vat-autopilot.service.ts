@@ -185,7 +185,7 @@ export async function loadReturnLifecycle(
   // period_end is stored as the period's last instant in UTC (vat-returns.service toEndTs), so
   // the calendar date is its UTC date part (as in compliance-obligations.service).
   const r = await pool.query(
-    `SELECT id, company_id, (period_end::date)::text AS period_end, status, payment_status,
+    `SELECT id, company_id, (period_end::date)::text AS period_end, status, payment_status, fta_reference_number,
             payment_date, box12_total_due_tax::numeric AS output_vat,
             box13_recoverable_tax::numeric AS input_vat,
             box14_payable_tax::numeric AS net_vat
@@ -199,12 +199,18 @@ export async function loadReturnLifecycle(
     const byEnd = out.get(cid) ?? new Map<string, ReturnLifecycle>();
     out.set(cid, byEnd);
     const status = String(row.status);
-    const filed = isFiledReturnStatus(status);
+    const filed = isFiledReturnStatus(status, row.fta_reference_number as string | null);
     const paid = filed && row.payment_status === "paid";
     const entry: ReturnLifecycle = {
       returnId: String(row.id),
       returnStatus: status,
-      stage: paid ? "paid" : filed ? "filed" : status === "ready" ? "ready" : "draft",
+      stage: paid
+        ? "paid"
+        : filed
+          ? "filed"
+          : ["ready", "submitted"].includes(status)
+            ? "ready"
+            : "draft",
       filed,
       paymentDate: row.payment_date ? new Date(row.payment_date as string).toISOString() : null,
       outputVat: Number(row.output_vat) || 0,

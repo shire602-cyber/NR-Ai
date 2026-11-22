@@ -1,4 +1,5 @@
 {
+  "screens.loadMorePayments": "Load more payments",
   "screens.statusAccepted": "Accepted",
   "screens.statusExpired": "Expired",
   "screens.statusConverted": "Converted",

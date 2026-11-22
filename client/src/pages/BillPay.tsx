@@ -16,7 +16,7 @@ import { EditorShell } from "@/components/ui/editor-shell";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { useEditorRoute } from "@/hooks/useEditorRoute";
 import { useState, useMemo, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
@@ -306,6 +306,11 @@ interface BillDetail extends VendorBill {
   payments: BillPayment[];
 }
 
+interface BillPaymentPage {
+  items: Array<BillPayment & Pick<VendorBill, "vendor_name" | "bill_number" | "currency">>;
+  nextCursor: string | null;
+}
+
 interface BillSummary {
   pending: { count: number; total: number };
   approved: { count: number; total: number };
@@ -510,32 +515,18 @@ export default function BillPay() {
     retry: false,
   });
 
-  // Collect payments from bills for the Payments tab
-  const {
-    data: paymentsData = [],
-    isLoading: paymentsLoading,
-    isLoadingError: paymentsFailed,
-    refetch: refetchPayments,
-  } = useQuery<any[]>({
+  const paymentPages = useInfiniteQuery({
     queryKey: ["/api/companies", companyId, "bills", "all-payments"],
-    queryFn: async () => {
-      if (!bills || bills.length === 0) return [];
-      const paidBills = bills.filter((b) => b.status === "paid" || b.status === "partial");
-      const paymentPromises = paidBills.map(async (bill) => {
-        const detail: BillDetail = await apiRequest("GET", `/api/bills/${bill.id}`);
-        return (detail.payments || []).map((p) => ({
-          ...p,
-          vendor_name: bill.vendor_name,
-          bill_number: bill.bill_number,
-        }));
-      });
-      const results = await Promise.all(paymentPromises);
-      return results
-        .flat()
-        .sort((a, b) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime());
-    },
-    enabled: !!companyId && activeTab === "payments" && bills.length > 0,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }): Promise<BillPaymentPage> =>
+      apiRequest(
+        "GET",
+        `/api/companies/${companyId}/bills/all-payments${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ""}`
+      ),
+    getNextPageParam: (page) => page.nextCursor,
+    enabled: !!companyId && activeTab === "payments",
   });
+  const paymentsData = paymentPages.data?.pages.flatMap((page) => page.items) ?? [];
 
   // ===========================
   // Filtered bills
@@ -2078,15 +2069,15 @@ export default function BillPay() {
           </div>
           <DataTableCard
             status={
-              billsLoading || paymentsLoading
+              paymentPages.isLoading
                 ? "loading"
-                : billsFailed || paymentsFailed
+                : paymentPages.isLoadingError
                   ? "error"
                   : paymentsData.length === 0
                     ? "empty"
                     : "ready"
             }
-            error={{ onRetry: () => void (billsFailed ? refetchBills() : refetchPayments()) }}
+            error={{ onRetry: () => void paymentPages.refetch() }}
             empty={{
               icon: Receipt,
               title: t["pages.noPaymentsYet"],
@@ -2113,7 +2104,7 @@ export default function BillPay() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paymentsData.map((payment: any) => (
+                {paymentsData.map((payment) => (
                   <TableRow key={payment.id}>
                     <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
                       {formatDate(payment.payment_date, locale)}
@@ -2133,6 +2124,7 @@ export default function BillPay() {
                     </TableCell>
                     <MoneyCell
                       amount={Number(payment.amount)}
+                      currency={payment.currency || "AED"}
                       className="font-medium"
                       data-cell="amount"
                     />
@@ -2149,6 +2141,19 @@ export default function BillPay() {
               </TableBody>
             </Table>
           </DataTableCard>
+          {paymentPages.isFetchNextPageError ? (
+            <ErrorState compact onRetry={() => void paymentPages.fetchNextPage()} />
+          ) : paymentPages.hasNextPage ? (
+            <Button
+              variant="outline"
+              disabled={paymentPages.isFetchingNextPage}
+              onClick={() => void paymentPages.fetchNextPage()}
+            >
+              {paymentPages.isFetchingNextPage
+                ? t["components.ui.loading"]
+                : t["screens.loadMorePayments"]}
+            </Button>
+          ) : null}
         </TabsContent>
 
         {/* ================================== */}

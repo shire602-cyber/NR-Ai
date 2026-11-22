@@ -561,7 +561,7 @@ async function main() {
       await fail("customer-invoice", { crash: e.message.slice(0, 150) });
     }
 
-    // Bank import: exercises the polished no-live-feed path with a realistic CSV.
+    // Bank import: exercises statement upload with a realistic CSV.
     try {
       const connRes = await page.request.post(
         `${BASE}/api/companies/${companyId}/bank-connections`,

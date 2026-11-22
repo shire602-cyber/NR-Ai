@@ -20,8 +20,7 @@ import { useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { DateText } from "@/components/documents/DateText";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { getAuthHeaders } from "@/lib/auth";
-import { apiUrl } from "@/lib/api";
+import { downloadPortalFile as download } from "@/lib/portal-download";
 import { formatInteger } from "@/lib/format";
 import { isolateLtrText } from "@/lib/format-bidi";
 import { formatMessage, useTranslation } from "@/lib/i18n";
@@ -66,21 +65,6 @@ const matches = (inv: PortalInvoice, f: Filter): boolean =>
         : f === "paid"
           ? inv.paymentStatus === "paid"
           : inv.paymentStatus === "credit";
-
-async function download(path: string, filename: string): Promise<boolean> {
-  const res = await fetch(apiUrl(path), { credentials: "include", headers: getAuthHeaders() });
-  if (!res.ok) return false;
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  return true;
-}
 
 /**
  * The customer's invoices and credit notes: filter tabs with counts, search by number, a table on

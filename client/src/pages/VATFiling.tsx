@@ -327,8 +327,7 @@ export default function VATFiling() {
       pending: vatReturns.filter((r) => r.status === "draft" || r.status === "pending_review")
         .length,
       submitted: vatReturns.filter((r) => r.status === "submitted").length,
-      // E2: "Filed" counts every return filed on EmaraTax (submitted or filed, paid or not).
-      filed: vatReturns.filter((r) => r.status === "filed" || r.status === "submitted").length,
+      filed: vatReturns.filter((r) => r.status !== "amended" && vatChecklist(r).filed).length,
       totalPayable: vatReturns.reduce((sum, r) => sum + (r.box14PayableTax || 0), 0),
     };
   }, [vatReturns]);
@@ -430,8 +429,8 @@ export default function VATFiling() {
       case "submitted":
         return (
           <Badge variant="default" className="bg-info-subtle text-info-subtle-foreground">
-            <Send className="w-3 h-3 me-1" />
-            <T k="pages.submitted" />
+            <Clock className="w-3 h-3 me-1" />
+            {t["compliance.vatFlow.statusReady"]}
           </Badge>
         );
       case "filed":
@@ -1218,8 +1217,7 @@ export default function VATFiling() {
             </p>
             {(() => {
               const d = currentFiling.daysUntilDue;
-              const filed =
-                currentFiling.status === "filed" || currentFiling.status === "submitted";
+              const filed = vatChecklist(currentFiling.return).filed;
               const tone = filed ? "success" : d < 0 ? "danger" : d <= 7 ? "warning" : "neutral";
               const label = filed
                 ? locale === "ar"

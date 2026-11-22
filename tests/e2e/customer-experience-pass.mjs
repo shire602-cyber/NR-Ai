@@ -88,6 +88,12 @@ async function open(page, route, lang, finalRoute = route) {
   await page.waitForURL(`${base}${finalRoute}`);
   await page.getByRole("heading", { level: 1 }).first().waitFor();
   await page.waitForLoadState("networkidle");
+  if (route.startsWith("/reports")) {
+    await page.getByTestId("report-panel-loading").waitFor({ state: "hidden" });
+    if (route.includes("report=")) await page.getByTestId("button-back-to-report-center").waitFor();
+    else await page.getByTestId("report-catalogue").waitFor();
+  }
+  if (route === "/financial-statements") await page.getByTestId("pl-total-revenue").waitFor();
   assert.equal(await page.getByTestId("page-not-found").count(), 0);
   const layout = await page.evaluate(() => {
     const root = document.documentElement;
@@ -126,13 +132,29 @@ async function bankFlow(page, lang, name) {
     lang === "ar"
       ? `التاريخ,الوصف,المبلغ\n2026-10-14,${description},1050\n`
       : `Date,Description,Amount\n2026-10-14,${description},1050\n`;
-  await file.setInputFiles({
+  const statement = {
     name: "statement.csv",
     mimeType: "text/csv",
     buffer: Buffer.from(csv),
-  });
+  };
+  await file.setInputFiles(statement);
   await page.getByTestId("panel-statement-mapper").waitFor();
   assert.ok(await confirm.isEnabled());
+  await page.evaluate(() => {
+    const read = File.prototype.arrayBuffer;
+    File.prototype.arrayBuffer = function () {
+      File.prototype.arrayBuffer = read;
+      return Promise.reject(new Error("Fixture file cannot be read again"));
+    };
+  });
+  await confirm.click();
+  assert.match(
+    await page.getByTestId("text-statement-preview-error").innerText(),
+    lang === "ar" ? /تعذّرت قراءة ملف CSV/ : /couldn’t read this CSV/
+  );
+  assert.ok(await confirm.isDisabled());
+  await file.setInputFiles(statement);
+  await page.getByTestId("panel-statement-mapper").waitFor();
   await capture(page, `${name}-bank-csv-preview`);
   await confirm.click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
@@ -154,10 +176,49 @@ async function manualReceiptFlow(page, companyId, token, lang, name) {
     mimeType: "image/png",
     buffer: image,
   });
-  await page.getByTestId("button-manual-receipt-0").click();
+  await page.getByTestId("receipt-card-0").waitFor();
+  await page.getByTestId("button-add-manual-expense").click();
+  await page.getByTestId("input-manual-merchant").fill("Discard this unsaved entry");
+  await page.keyboard.press("Escape");
+  await page.getByTestId("dialog-manual-expense").waitFor({ state: "hidden" });
+  await page.getByTestId("input-file").setInputFiles({
+    name: "other-receipt.png",
+    mimeType: "image/png",
+    buffer: await sharp({ create: { width: 40, height: 40, channels: 3, background: "#ddddee" } })
+      .png()
+      .toBuffer(),
+  });
+  await page.getByTestId("button-manual-receipt-1").click();
+  assert.equal(await page.getByTestId("input-manual-merchant").inputValue(), "");
   await page.getByTestId("input-manual-merchant").fill(merchant);
   await page.getByTestId("input-manual-amount").fill("125");
   await capture(page, `${name}-receipt-manual`);
+  const receiptWrites = [];
+  const watch = (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/receipts")) {
+      receiptWrites.push(request.url());
+    }
+  };
+  page.on("request", watch);
+  await page.evaluate(() => {
+    const key = "muhasib_active_company_id";
+    localStorage.setItem(key, crypto.randomUUID());
+    window.dispatchEvent(new StorageEvent("storage", { key }));
+  });
+  await page.getByTestId("button-submit-manual-expense").click();
+  await page
+    .getByText(
+      lang === "ar" ? /تنتمي هذه المسودة إلى شركة أخرى/ : /This draft belongs to another company/
+    )
+    .first()
+    .waitFor();
+  assert.deepEqual(receiptWrites, []);
+  await page.evaluate((origin) => {
+    const key = "muhasib_active_company_id";
+    localStorage.setItem(key, origin);
+    window.dispatchEvent(new StorageEvent("storage", { key }));
+  }, companyId);
+  page.off("request", watch);
   await page.getByTestId("button-submit-manual-expense").click();
   await page.getByTestId("dialog-manual-expense").waitFor({ state: "hidden" });
   const receipts = await checked(token, "GET", `/api/companies/${companyId}/receipts`);
@@ -182,11 +243,16 @@ async function ocrReview(page, lang, name) {
         subtotal: 100,
         vatAmount: 5,
         total: 105,
-        currency: "AED",
+        currency: "USD",
         category: "Office Supplies",
         confidence: 0.85,
         confidenceBand: name.endsWith("-phone") ? "future-band" : "review",
-        reviewReasons: ["VAT rate 8% is not a UAE standard (0% or 5%)"],
+        reviewReasons: [
+          "Model reported no confidence",
+          "AI and internal classifier disagree on the category",
+          "VAT rate 8% is not a UAE standard (0% or 5%)",
+        ],
+        reviewReasonCodes: ["MISSING_CONFIDENCE", "CLASSIFIER_DISAGREEMENT", "VAT_RATE_UNUSUAL"],
         validationIssues: [{ code: "VAT_RATE_UNUSUAL", severity: "warning" }],
         classifier: { method: "rule", confidence: 0.8 },
         ocrSource: "ai",
@@ -218,6 +284,15 @@ async function ocrReview(page, lang, name) {
       await page.getByTestId("confidence-band-0").innerText(),
       lang === "ar" ? /تحقّق من نسبة الضريبة/ : /VAT rate 8%/
     );
+    assert.match(
+      await page.getByTestId("confidence-band-0").innerText(),
+      lang === "ar" ? /لم تُبلغ أداة قراءة الإيصال عن درجة الثقة/ : /Model reported no confidence/
+    );
+    assert.match(
+      await page.getByTestId("confidence-band-0").innerText(),
+      lang === "ar" ? /تختلف الفئات المقترحة/ : /classifier disagree/
+    );
+    assert.match(await page.locator('label[for="ocr-vat-0"]').innerText(), /USD|دولار|US\$/);
     const review = page.getByTestId("button-mark-reviewed-0");
     if (name.endsWith("-phone")) {
       await review.waitFor();
@@ -229,6 +304,17 @@ async function ocrReview(page, lang, name) {
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     await page.getByTestId("receipt-card-0").scrollIntoViewIfNeeded();
     await capture(page, `${name}-receipt-ocr-review`);
+    await page.getByTestId("input-file").setInputFiles({
+      name: "keep-pending.png",
+      mimeType: "image/png",
+      buffer: await sharp({ create: { width: 40, height: 40, channels: 3, background: "#eeddee" } })
+        .png()
+        .toBuffer(),
+    });
+    await page.getByTestId("receipt-card-1").waitFor();
+    await page.getByTestId("button-save-all").click();
+    await page.getByTestId("receipt-card-1").waitFor({ state: "hidden" });
+    assert.ok(await page.getByTestId("button-manual-receipt-0").isVisible());
   } finally {
     await page.unroute(statusPattern);
     await page.unroute(processPattern);
@@ -373,13 +459,13 @@ async function run(browser, lang, device) {
   const page = await context.newPage();
   const assertClean = monitor(page);
 
-  async function screen(route, label, body) {
+  async function screen(route, label, body, finalRoute = route) {
     try {
       await open(
         page,
         route,
         lang,
-        label === "portal-dashboard" ? "/client-portal/dashboard" : route
+        label === "portal-dashboard" ? "/client-portal/dashboard" : finalRoute
       );
       if (body) await body();
       await capture(page, `${name}-${label}`);
@@ -449,17 +535,32 @@ async function run(browser, lang, device) {
       await page.getByText(copy[lang].bank, { exact: true }).first().waitFor();
       await bankFlow(page, lang, name);
     });
-    await screen("/bank-feeds", "bank-csv-fallback", async () => {
-      await page.getByText(copy[lang].bank, { exact: true }).waitFor();
-      assert.equal(
-        await page.getByTestId("button-feeds-import-statement").getAttribute("href"),
-        "/bank-reconciliation?import=1"
-      );
-      assert.doesNotMatch(
-        await page.locator("main").innerText(),
-        /bank feeds?|coming (?:soon|later)|الربط البنكي|قريب|لاحق/i
-      );
+    let providerRequests = 0;
+    const providerUrl = "**/api/bank/providers";
+    await page.route(providerUrl, async (route) => {
+      providerRequests++;
+      if (device === "phone") await new Promise((resolve) => setTimeout(resolve, 1000));
+      await route.fulfill({
+        json: { statuses: [{ id: "fixture", configured: device === "desktop" }] },
+      });
     });
+    await screen(
+      "/banking",
+      "bank-csv-fallback",
+      async () => {
+        await page.getByText(copy[lang].bank, { exact: true }).waitFor();
+        for (const alias of ["/bank-feeds", "/bank-feeds/callback?code=fixture&state=fixture"]) {
+          await open(page, alias, lang, "/bank-reconciliation");
+        }
+        assert.equal(providerRequests, 0);
+        assert.doesNotMatch(
+          await page.locator("main").innerText(),
+          /bank feeds?|coming (?:soon|later)|الربط البنكي|قريب|لاحق/i
+        );
+      },
+      "/bank-reconciliation"
+    );
+    await page.unroute(providerUrl);
     await screen("/vat-filing", "vat-201", async () => {
       await page.getByText(copy[lang].vat, { exact: true }).waitFor();
     });

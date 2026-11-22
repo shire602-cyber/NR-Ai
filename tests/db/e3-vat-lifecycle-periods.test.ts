@@ -74,6 +74,10 @@ describe("E3 (J3-r3) VAT periods and deadlines follow the return lifecycle", () 
     expect(lateCard.periodEnd.slice(0, 10)).toBe("2026-09-30");
 
     expect((await t.as.post(`/api/vat-returns/${id}/ready`, {})).status).toBe(200);
+    const prepared = await t.as.post(`/api/vat-returns/${id}/submit`, {});
+    expect(prepared.status, prepared.text).toBe(200);
+    expect((await q3()).lifecycle).toMatchObject({ stage: "ready", filed: false });
+    expect((await card()).periodEnd.slice(0, 10)).toBe("2026-09-30");
     const filed = await t.as.post(`/api/vat-returns/${id}/submit`, {
       ftaReferenceNumber: "ET-2026-Q3-77",
       filedOn: "2026-10-20",

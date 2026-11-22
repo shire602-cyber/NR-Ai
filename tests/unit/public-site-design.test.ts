@@ -169,7 +169,7 @@ describe("D1 public site", () => {
         });
         expect(container.querySelector(".phase-lead")?.textContent).toBe(copy);
         expect(container.querySelector(".phase-product-detail ol")?.textContent).not.toMatch(
-          /bank feeds?|coming (?:soon|later)|الربط البنكي المباشر|قريب|لاحق/i
+          /bank feeds?|coming (?:soon|later)|الربط (?:البنكي|المصرفي) المباشر|قريب|لاحق/i
         );
       } finally {
         window.history.replaceState(null, "", previousUrl);

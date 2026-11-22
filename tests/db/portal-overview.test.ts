@@ -34,6 +34,32 @@ async function portalFor(t: Tenant, name: string) {
 }
 
 describe("portal overview", () => {
+  it("honors the selected supplier on statement downloads and rejects a revoked selection", async () => {
+    const first = await h.createTenant();
+    const second = await h.createSecondTenant();
+    const customer = await h.createSecondTenant();
+    const a = await portalFor(first, "First Customer");
+    const b = await portalFor(second, "Second Customer");
+    const [older, newer] = await h.sql(
+      `INSERT INTO customer_portal_accounts (user_id, company_id, contact_id, created_at)
+       VALUES ($1, $2, $3, now() - interval '1 day'), ($1, $4, $5, now()) RETURNING id`,
+      [customer.user.id, first.company.id, a.contactId, second.company.id, b.contactId]
+    );
+    const url = "/api/client-portal/statements";
+    const unscoped = await customer.as.get(url);
+    expect(unscoped.body.accountId).toBe(newer.id);
+    const headers = { "X-Portal-Account": older.id };
+    const selected = await customer.as.get(url, { headers });
+    expect(selected.body).toMatchObject({ accountId: older.id, party: { id: a.contactId } });
+    const pdf = await customer.as.get(`${url}?format=pdf`, { headers });
+    expect(pdf.status, pdf.text).toBe(200);
+    expect(pdf.headers.get("content-type")).toContain("application/pdf");
+    await h.sql(`UPDATE customer_portal_accounts SET revoked_at = now() WHERE id = $1`, [older.id]);
+    const removed = await customer.as.get(`${url}?format=pdf`, { headers });
+    expect(removed.status).toBe(403);
+    expect(removed.body.code).toBe("PORTAL_ACCESS_REVOKED");
+  });
+
   it("returns info and invoices that equal the separate routes, with no caching", async () => {
     const t = await h.createTenant();
     const p = await portalFor(t, "Gulf Retail");

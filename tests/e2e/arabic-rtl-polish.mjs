@@ -56,7 +56,7 @@ const hardLoadRoutes = new Set([
 const redirects = {
   "/company-profile": "/settings/company",
   "/accounts": "/chart-of-accounts",
-  "/banking": "/bank-feeds",
+  "/banking": "/bank-reconciliation",
   "/compliance": "/compliance-calendar",
   "/settings": "/settings/company",
   "/journal-entries": "/journal",

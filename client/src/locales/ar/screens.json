@@ -1,4 +1,5 @@
 {
+  "screens.loadMorePayments": "عرض المزيد من المدفوعات",
   "screens.statusAccepted": "مقبول",
   "screens.statusExpired": "منتهي الصلاحية",
   "screens.statusConverted": "محوّل إلى فاتورة",

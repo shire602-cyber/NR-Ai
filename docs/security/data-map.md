@@ -29,7 +29,6 @@ capability report (`shared/capabilities.ts`, `/api/integrations/status`) shows w
 | AI providers (OpenAI, Anthropic)              | receipt images/text, transaction descriptions for classification and assistants | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`       |
 | Email (Resend or SMTP provider)               | recipient address, message body, attachments                                    | `RESEND_API_KEY`, `SMTP_*`                  |
 | Payments (Stripe)                             | billing contact, invoice amount, payer details                                  | `STRIPE_*`                                  |
-| Bank feeds (Lean, Tarabut, Wio)               | bank account and transaction data (inbound)                                     | provider env vars                           |
 | E-invoicing ASP                               | e-invoice XML (buyer/seller identifiers)                                        | `EINVOICE_ASP_*`, `ACUBE_*`, `COMPLYANCE_*` |
 | SMS / WhatsApp (Twilio, Meta)                 | phone numbers, message text                                                     | `TWILIO_*`, `WHATSAPP_*`                    |
 | Error monitoring (Sentry)                     | stack traces, request metadata                                                  | `SENTRY_DSN`                                |
@@ -38,6 +37,8 @@ capability report (`shared/capabilities.ts`, `/api/integrations/status`) shows w
 | Google / Microsoft OAuth                      | identity assertion (email, name)                                                | `GOOGLE_*`, `MICROSOFT_*`                   |
 
 ## Storage locations
+
+Customers supply bank transaction data by uploading a CSV exported from their bank. The customer banking screens route uploads and reconciliation through the application. The server retains optional provider adapters, which require separate configuration and are outside the customer CSV workflow.
 
 Data residency depends on the regions chosen for the hosting, database and storage
 providers at deployment time. The application does not pin a region itself. See
