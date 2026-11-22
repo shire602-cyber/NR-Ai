@@ -67,6 +67,7 @@
   "onboarding.saveContinue": "حفظ ومتابعة",
   "onboarding.accountsReadyDescription": "تم إعداد دليل الحسابات وفق المعايير الإماراتية مسبقًا وهو جاهز للاستخدام.",
   "onboarding.looksGoodContinue": "يبدو جيدًا، تابع",
+  "onboarding.bankConnectedDescription": "حسابك البنكي مُعدّ لاستيراد الكشوف وتسويتها.",
   "onboarding.bankAddDescription": "أضف حسابك البنكي لتفعيل استيراد كشوف الحساب والمطابقة.",
   "onboarding.bankNamePlaceholder": "الحساب الجاري - بنك الإمارات دبي الوطني",
   "onboarding.selectBank": "اختر البنك",

@@ -1,4 +1,6 @@
 {
+  "serverErrors.AUTHORIZATION_RETRY": "تعذّر إكمال التفويض. أعد المحاولة.",
+  "serverErrors.AUTHORIZATION_RESTART": "انتهت صلاحية التفويض. أعد بدءه من الصفحة التي بدأت منها، أو ارفع كشف حساب بصيغة CSV.",
   "serverErrors.ACCESS_DENIED": "ليس لديك صلاحية الوصول إلى هذا التقرير.",
   "serverErrors.ACCESS_RESTRICTED": "هذه المنطقة غير متاحة لنوع حسابك.",
   "serverErrors.ACCOUNT_HAS_CHILDREN": "لهذا الحساب حسابات فرعية. انقلها أو احذفها أولًا.",

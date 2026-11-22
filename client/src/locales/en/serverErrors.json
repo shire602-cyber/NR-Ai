@@ -1,4 +1,6 @@
 {
+  "serverErrors.AUTHORIZATION_RETRY": "Could not finish authorization. Try again.",
+  "serverErrors.AUTHORIZATION_RESTART": "Authorization expired. Start again from where you began, or upload a CSV statement.",
   "serverErrors.ACCESS_DENIED": "You do not have access to this report.",
   "serverErrors.ACCESS_RESTRICTED": "This area is not available for your account type.",
   "serverErrors.ACCOUNT_HAS_CHILDREN": "This account has child accounts. Move or delete them first.",

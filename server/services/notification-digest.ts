@@ -1,7 +1,9 @@
 import { and, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { notifications, users, type EmailOutboxRow } from "../../shared/schema";
-import { normalizeNotificationCopy } from "../../shared/server-copy";
+import { isBankStatementReviewCopy, normalizeNotificationCopy } from "../../shared/server-copy";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
+import { BANK_STATEMENT_REVIEW_TITLE } from "../../shared/notification-copy";
 import { marketingBrand } from "../../shared/marketing-brand";
 import { customerVisibleNotification } from "../storage/notification-visibility";
 import { escapeHtml, renderBilingualEmail, renderEmailText } from "./email-layout";
@@ -29,7 +31,15 @@ export function renderNotificationDigest(day: string, rows: readonly DigestItem[
     heading: { en: `Your daily summary (${day})`, ar: `ملخصك اليومي (${day})` },
     paragraphs: {
       en: rows.map((row) => digestItemHtml(normalizeNotificationCopy(row))),
-      ar: [`لديك ${rows.length} إشعارات جديدة.`],
+      ar: [
+        `لديك ${rows.length} إشعارات جديدة.`,
+        ...rows.filter(isBankStatementReviewCopy).map(() =>
+          digestItemHtml({
+            title: BANK_STATEMENT_REVIEW_TITLE.ar,
+            message: BANK_RECONCILIATION_COPY.ar,
+          })
+        ),
+      ],
     },
   };
   return {
@@ -74,14 +84,19 @@ export async function rebuildNotificationDigest(row: EmailOutboxRow) {
         eq(notifications.userId, userId),
         sql`lower(${users.email}) = lower(${row.toAddress})`,
         batch,
-        customerVisibleNotification()
+        customerVisibleNotification({ refreshingDigest: true })
       )
     )
     .orderBy(notifications.createdAt, notifications.id);
   const legacyItems = exactBatch ? null : legacyDigestItems(row.html ?? "");
   const items = candidates.filter((item) => {
     if (!legacyItems) return true;
-    const html = digestItemHtml(item);
+    const original = digestItemHtml(item);
+    // A failed delivery can persist a refreshed snapshot while the source keeps its old wording.
+    const html =
+      (legacyItems.get(original) ?? 0) > 0
+        ? original
+        : digestItemHtml(normalizeNotificationCopy(item));
     const remaining = legacyItems.get(html) ?? 0;
     if (remaining === 0) return false;
     legacyItems.set(html, remaining - 1);

@@ -45,6 +45,8 @@ allocation) · Financial Statements · Reconciliation Rules · Invoice
 Templates · CSV Bank Statement Import and Reconciliation. Employee management lives in
 **Payroll** (the old duplicate module/page was deleted).
 
+Upload a CSV exported from your bank, review suggested matches, and reconcile against your books
+
 Premium UI system (Geist/Instrument Serif, editorial PageHeader on ~65 pages,
 split-screen auth, Filing Pulse with fix-it actions, express onboarding,
 ⌘K search) and the **VAT workpaper Excel round-trip** (pull-from-books, .xlsx
