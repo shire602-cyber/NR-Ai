@@ -75,7 +75,7 @@ const copies = {
     reportFailed: "Report failed",
     reportFailedChip: "FTA: report failed",
     reportingUnknown: "Reporting requirement unknown",
-    bankStatementImport: "Import bank statements",
+    bankStatementImport: "CSV bank statements",
     verifyTracking: "Verify and save",
     trackingVerified: "Tracking environment verified",
     refusalVerified:
@@ -112,7 +112,7 @@ const copies = {
     reportFailed: "تعذّر الإبلاغ",
     reportFailedChip: "الهيئة: تعذّر الإبلاغ",
     reportingUnknown: "متطلبات الإبلاغ غير معروفة",
-    bankStatementImport: "استيراد كشوف الحسابات البنكية",
+    bankStatementImport: "كشوف الحساب البنكي بصيغة CSV",
     verifyTracking: "تحقّق واحفظ",
     trackingVerified: "تم التحقق من بيئة المتابعة",
     refusalVerified: "تم التحقّق من البيئة الأصلية. يمكنك الآن تصحيح هذه الفاتورة وإعادة إرسالها.",
