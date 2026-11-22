@@ -7,7 +7,7 @@ import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
-import { getCapabilitySnapshot } from "../../shared/capabilities";
+import { getCapabilities } from "../../shared/capabilities";
 import {
   bankFeedCallbackBody,
   bankFeedConnectBody,
@@ -200,13 +200,14 @@ export function registerBankRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     asyncHandler(async (_req: Request, res: Response) => {
-      const snapshot = getCapabilitySnapshot();
       res.json({
         providers: getAvailableProviders(),
         isConfigured: isOpenBankingConfigured(),
         statuses: providerStatuses(),
         redirectUris: allowedRedirectUris(),
-        capabilities: snapshot.capabilities.filter((c) => c.id.startsWith("bank_feed_")),
+        capabilities: getCapabilities()
+          .filter(({ id }) => id.startsWith("bank_feed_"))
+          .map(({ id, status }) => ({ id, status })),
       });
     })
   );

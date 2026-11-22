@@ -52,7 +52,7 @@ function assertConfigured(adapter: BankFeedAdapter): void {
       "BANK_FEED_NOT_CONFIGURED",
       503,
       { provider: adapter.id, capability: adapter.capability },
-      `${adapter.label} is not connected — it requires a provider contract and credentials`
+      "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books."
     );
   }
 }
@@ -62,11 +62,9 @@ export interface ProviderStatus {
   label: string;
   configured: boolean;
   status: CapabilityStatus;
-  message: { en: string; ar: string };
-  externalAction: { en: string; ar: string };
 }
 
-/** Honest status per provider, from shared/capabilities.ts. */
+/** Customer readiness fields for each provider. */
 export function providerStatuses(): ProviderStatus[] {
   return Object.values(BANK_FEED_ADAPTERS).map((a) => {
     const cap = getCapability(a.capability);
@@ -76,18 +74,6 @@ export function providerStatuses(): ProviderStatus[] {
       label: a.label,
       configured,
       status: configured ? cap.status : "requires_external",
-      message: configured
-        ? cap.status === "sandbox"
-          ? {
-              en: "Sandbox credentials — test data only",
-              ar: "بيانات اعتماد تجريبية — بيانات اختبار فقط",
-            }
-          : { en: "Configured", ar: "مُعد" }
-        : {
-            en: "Not connected — requires provider contract",
-            ar: "غير متصل — يتطلب عقداً مع مزود الخدمة",
-          },
-      externalAction: cap.externalAction,
     };
   });
 }

@@ -89,7 +89,7 @@ function arabicModeEnglishLines(): string[] {
 const UNSUPPORTED_CLAIMS = [
   /FTA[-\s]?(accredited|compliant|registered|approved)/i,
   /submits? (your|the) (VAT )?return(s)? (to|with) the FTA automatically/i,
-  /(?:connect to|sync from) (?:a |your )?(?:live )?bank feeds?/i,
+  /(?:connect to|sync from) (?:a |your )?(?:live )?bank\b/i,
   /money-back/i,
   /UAE-hosted/i,
   // "Most popular" is a plan-card highlight the owner asked for (X6b); it states no user count.
@@ -194,19 +194,28 @@ it.each([
 
 describe("D1 public site", () => {
   it.each([
-    [
-      "en",
-      "How do I reconcile my bank account?",
-      "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
-    ],
-    [
-      "ar",
-      "كيف أطابق حسابي البنكي؟",
-      "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
-    ],
+    {
+      locale: "en",
+      question: "How do I reconcile my bank account?",
+      workflow:
+        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
+      steps: [
+        "Choose the account and preview the CSV before importing.",
+        "Review suggestions and resolve unmatched entries.",
+      ],
+    },
+    {
+      locale: "ar",
+      question: "كيف أطابق حسابي البنكي؟",
+      workflow: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
+      steps: [
+        "اختر الحساب وعاين ملف CSV قبل استيراده.",
+        "راجع المطابقات المقترحة وعالج الحركات غير المطابقة.",
+      ],
+    },
   ])(
-    "describes bank reconciliation as CSV import on the %s public site",
-    async (locale, question, workflow) => {
+    "describes bank reconciliation as CSV import on the $locale public site",
+    async ({ locale, question, workflow, steps }) => {
       const { default: PhaseRoot } =
         await import("../../client/src/components/marketing/phase/PhaseRoot");
       const previousUrl = window.location.href;
@@ -222,10 +231,12 @@ describe("D1 public site", () => {
         root = createRoot(container);
         window.history.replaceState(null, "", `/${locale}/product/bank-reconciliation`);
         await act(async () => root.render(createElement(PhaseRoot)));
-        expect(container.querySelector("main")?.textContent).toContain(workflow);
-        expect(container.querySelector("main")?.textContent).not.toMatch(
-          /live bank feeds|الربط البنكي المباشر/i
-        );
+        expect(container.querySelector("main .phase-lead")?.textContent).toBe(workflow);
+        expect(
+          [...container.querySelectorAll("main .phase-product-detail ol > li")].map(
+            (step) => step.textContent
+          )
+        ).toEqual(steps);
       } finally {
         window.history.replaceState(null, "", previousUrl);
       }

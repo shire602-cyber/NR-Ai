@@ -96,31 +96,33 @@ async function mountPage(locale: "en" | "ar", page: "reconciliation" | "feeds" =
 
 const dialog = () => document.querySelector('[role="dialog"]') as HTMLElement | null;
 
-describe("bank statements without a feed provider", () => {
+describe("CSV bank statement import page", () => {
   it.each([
     {
       locale: "en" as const,
       title: "Import a CSV bank statement",
+      action: "Import a statement",
       workflow:
         "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
     },
     {
       locale: "ar" as const,
       title: "استورد كشف حساب بنكي بصيغة CSV",
+      action: "استيراد كشف",
       workflow: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
     },
   ])(
-    "points to the CSV import and localizes the provider error in $locale",
-    async ({ locale, title, workflow }) => {
+    "shows the CSV heading and import action, and localizes the unavailable-provider error in $locale",
+    async ({ locale, title, action, workflow }) => {
       window.history.replaceState(null, "", "/bank-feeds");
       await mountPage(locale, "feeds");
-      expect(container.textContent).toContain(title);
+      expect([...container.querySelectorAll("h1")].map((heading) => heading.textContent)).toEqual([
+        title,
+      ]);
       expect(container.textContent).toContain(workflow);
-      expect(
-        container
-          .querySelector('[data-testid="button-feeds-import-statement"]')
-          ?.getAttribute("href")
-      ).toBe("/bank-reconciliation?import=1");
+      const importLink = container.querySelector('[data-testid="button-feeds-import-statement"]');
+      expect(importLink?.textContent).toBe(action);
+      expect(importLink?.getAttribute("href")).toBe("/bank-reconciliation?import=1");
 
       const { serverErrorCopy } = await import("../../client/src/lib/validation-messages");
       expect(serverErrorCopy(locale, "BANK_FEED_NOT_CONFIGURED")).toBe(`${workflow}.`);

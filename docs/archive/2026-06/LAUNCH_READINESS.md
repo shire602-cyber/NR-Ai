@@ -28,7 +28,7 @@ that runs in CI or locally, not by assertion._
 | Locked periods respected by VAT/CT/journal/AI posting                                                 | `assertPeriodNotLocked` call sites + E2E month-end flow                                                                                                                                                                        |
 | AI cannot mutate books without approval/audit                                                         | PR #52; autopilot threshold floor 0.8, draft-only AI GL queue, `ai_autopost_receipt` audit rows (`receipt-autopilot.test.ts`, 33 tests)                                                                                        |
 | Unpaid plan cannot access paid endpoints by changing frontend state                                   | `tests/unit/billing-enforcement.test.ts` — server-side 403 TIER_LOCKED with `BILLING_ENFORCEMENT=true`; gates mounted in 10+ route modules                                                                                     |
-| Provider-less bank environments show manual import only                                               | Open-banking adapter reports unconfigured; manual statement import is the fallback path                                                                                                                                        |
+| Bank reconciliation works through CSV statement import                                                | Customers upload a statement, review suggested matches, and reconcile transactions.                                                                                                                                            |
 | Trust documentation                                                                                   | `docs/TRUST.md` (security, retention, backup proof, audit coverage, incident checklist)                                                                                                                                        |
 | No real-company data used                                                                             | All tests run against freshly seeded fixtures; E2E registers throwaway accounts per run                                                                                                                                        |
 
@@ -43,7 +43,7 @@ that runs in CI or locally, not by assertion._
 4. **Push** — `npx web-push generate-vapid-keys`, paste both keys.
 5. **Domain** — buy, point DNS at Railway, set `FRONTEND_URL` (now also
    feeds CORS and password-reset links).
-6. **Live ASP/FTA e-invoicing provider** — when UAE accreditation lists
+5. **Live ASP/FTA e-invoicing provider** — when UAE accreditation lists
    firm up; XML generation/validation is ready and marked "not connected".
 
 ## Competitive claim discipline

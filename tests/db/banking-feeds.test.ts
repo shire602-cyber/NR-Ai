@@ -4,7 +4,7 @@
  * allow-listed, tokens are encrypted at rest and never returned, sync dedupes by provider id.
  * Provider HTTP is a recorded sandbox-shaped fixture; nothing calls a real bank.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import type { FetchLike } from "../../server/services/bank-feeds/types";
 
@@ -80,12 +80,51 @@ async function clearEnv() {
 }
 
 afterEach(clearEnv);
+afterEach(() => vi.unstubAllEnvs());
 
 async function tenant(): Promise<Tenant> {
   return h.createTenant({ name: "Feeds" });
 }
 
 describe("W3-C bank feeds", () => {
+  it.each(["en", "ar"])("exposes only customer readiness fields in %s", async (locale) => {
+    vi.stubEnv("LEAN_APP_TOKEN", undefined);
+    vi.stubEnv("TARABUT_CLIENT_ID", undefined);
+    vi.stubEnv("TARABUT_CLIENT_SECRET", undefined);
+    vi.stubEnv("WIO_CLIENT_ID", undefined);
+    vi.stubEnv("WIO_CLIENT_SECRET", undefined);
+    vi.stubEnv("WIO_API_BASE_URL", "https://sandbox.example.test");
+    vi.stubEnv("BANK_FEED_REDIRECT_URIS", REDIRECT);
+    const t = await tenant();
+    const getProviders = () =>
+      t.as.get("/api/bank/providers", { headers: { "Accept-Language": locale } });
+    const labels = [
+      { id: "lean", label: "Lean Technologies" },
+      { id: "tarabut", label: "Tarabut Gateway" },
+      { id: "wio", label: "Wio Bank" },
+    ];
+
+    for (const enabled of [false, true]) {
+      if (enabled) {
+        vi.stubEnv("WIO_CLIENT_ID", "sandbox-wio-client");
+        vi.stubEnv("WIO_CLIENT_SECRET", "sandbox-wio-secret");
+      }
+      const statuses = labels.map((provider) => {
+        const configured = enabled && provider.id === "wio";
+        return { ...provider, configured, status: configured ? "sandbox" : "requires_external" };
+      });
+      const result = await getProviders();
+      expect(result.status, result.text).toBe(200);
+      expect(result.body).toEqual({
+        providers: enabled ? ["wio"] : [],
+        isConfigured: enabled,
+        statuses,
+        redirectUris: [REDIRECT],
+        capabilities: statuses.map(({ id, status }) => ({ id: `bank_feed_${id}`, status })),
+      });
+    }
+  });
+
   it("reports CSV upload separately from existing provider configuration", async () => {
     await clearEnv();
     const admin = await h.createTenant({ isAdmin: true });
@@ -124,12 +163,14 @@ describe("W3-C bank feeds", () => {
       });
       expect(r.status, r.text).toBe(503);
       expect(r.body.code).toBe("BANK_FEED_NOT_CONFIGURED");
+      expect(r.body.message).toBe(
+        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books."
+      );
     }
     const status = await t.as.get(`/api/bank/providers`);
     expect(status.body.isConfigured).toBe(false);
     for (const s of status.body.statuses) {
       expect(s).toMatchObject({ configured: false, status: "requires_external" });
-      expect(s.message.en).toBe("Not connected — requires provider contract");
     }
   });
 
