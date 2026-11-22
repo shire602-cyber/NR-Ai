@@ -992,61 +992,68 @@
   {
    "idx": 141,
    "version": "7",
+   "when": 1781430565000,
+   "tag": "0144_prepare_preview_firm_membership",
+   "breakpoints": false
+  },
+  {
+   "idx": 142,
+   "version": "7",
    "when": 1781430570000,
    "tag": "0142_recover_firm_membership_provenance",
    "breakpoints": false
   },
   {
-   "idx": 142,
+   "idx": 143,
    "version": "7",
    "when": 1781430580000,
    "tag": "0143_preserve_firm_grant_review",
    "breakpoints": false
   },
   {
-   "idx": 143,
+   "idx": 144,
    "version": "7",
    "when": 1781430630000,
    "tag": "0138_repair_bank_gl_links",
    "breakpoints": false
   },
   {
-   "idx": 144,
+   "idx": 145,
    "version": "7",
    "when": 1781430640000,
    "tag": "0139_audit_bank_match_links",
    "breakpoints": false
   },
   {
-   "idx": 145,
+   "idx": 146,
    "version": "7",
    "when": 1781430650000,
    "tag": "0140_repair_bank_receipt_provenance",
    "breakpoints": false
   },
   {
-   "idx": 146,
+   "idx": 147,
    "version": "7",
    "when": 1781430660000,
    "tag": "0141_restore_legacy_invoice_bank_provenance",
    "breakpoints": false
   },
   {
-   "idx": 147,
+   "idx": 148,
    "version": "7",
    "when": 1781430670000,
    "tag": "0146_reconcile_preview_portal_migration_slots",
    "breakpoints": false
   },
   {
-   "idx": 148,
+   "idx": 149,
    "version": "7",
    "when": 1781430680000,
    "tag": "0147_reconcile_preview_reminder_language",
    "breakpoints": false
   },
   {
-   "idx": 149,
+   "idx": 150,
    "version": "7",
    "when": 1781430690000,
    "tag": "0148_reconcile_preview_firm_membership",

@@ -22,13 +22,13 @@ recovery procedures are in the release runbook. [Deploy runbook](release/DEPLOY-
 
 ## What the rehearsal checks
 
-1. **Empty database.** Run the Railway release migration entry point through all 150 registered
+1. **Empty database.** Run the Railway release migration entry point through all 151 registered
    files, from `0000_workable_fixer` through `0148_reconcile_preview_firm_membership`. Verify the ledger
    timestamps and file hashes in journal order. Number `0052` is absent from the active chain.
    Historical SQL under `migrations/_orphaned` is outside the Drizzle journal.
 2. **Seeded upgrade.** Apply the first 88 entries through `0088_emirate_no_default`, insert the
    fixture, and take a custom-format `pg_dump`. Read the archive with `pg_restore --list`, restore
-   it to a fresh database, and compare schema, table contents, and sequence state. Apply the 62
+   it to a fresh database, and compare schema, table contents, and sequence state. Apply the 63
    pending files from `0089` through `0148` with the release entry point. Run Drizzle Kit and a
    per-file timing pass on separate copies and compare their resulting schema and preserved rows.
    Stop another copy after `0097` to verify payment selection, journal provenance, ownership,
@@ -39,7 +39,7 @@ recovery procedures are in the release runbook. [Deploy runbook](release/DEPLOY-
 3. **Previously migrated database.** Apply the historically shipped SQL through `0137` to a copy
    of the seeded baseline. Verify the original `0097` ledger hash and confirm the legacy GL
    states. Apply the remaining release migrations and verify the repair, findings, and original ledger entries.
-   Repeat the release migration, replay the forward files directly, then replay all 62 files in
+   Repeat the release migration, replay the forward files directly, then replay all 63 files in
    journal order with the live allocations and legacy references still present. Check both
    legacy invoice match paths on this older baseline as well.
 4. **Exact earlier review heads.** Verify the entire ledger against the published migration
@@ -153,7 +153,8 @@ use existing records and require no migration ledger changes.
 The release journal retains the portal security entries from PR #71. Its bank entries use
 timestamps above the last historical preview timestamp. Catch-up migrations apply the portal
 security schema from PR #71 and the reminder language change from PR #75, and the firm membership provenance changes
-from PR #74 on preview ledgers that occupied the original slots. Historical journal entries and compressed SQL fixtures
+from PR #74 on preview ledgers that occupied the original slots. A prerequisite entry installs the
+firm membership column before the release backfill when a preview ledger skips the original entry. Historical journal entries and compressed SQL fixtures
 reproduce their original hashes on replay. The rehearsal verifies the exact `d6d0c35c`
 and `0be21c6d` ledgers, applies the catch-up migrations, and compares the
 resulting schema and seeded business records.
@@ -201,7 +202,7 @@ resulting schema and seeded business records.
   [Pool shutdown](../server/db.ts)
 
 Drizzle selects pending entries using the recorded journal timestamps. The original ledger entries
-remain valid. The base lane verifies the original `0097` SHA-262
+remain valid. The base lane verifies the original `0097` SHA-263
 `fc545f83c7470e6624251c1d4492a9f6f6a842d2fd20b4afb94fb28e0fbdc7be`. The exact review-head
 lanes verify 138, 139, or 140 historical entries before and after upgrade, including the
 `1c266ae5` hashes for `0089`, `0097`, `0130`, and `0138` and the `48b878ba` hashes for `0097`,
@@ -238,9 +239,9 @@ diagnostics. Full database archives retain them.
 ## Results
 
 The latest local rehearsal passed with PostgreSQL 16.16 and Node 22.22.2. The clean and
-upgraded release databases had identical schemas and 150 ordered ledger entries. The `0137`
+upgraded release databases had identical schemas and 151 ordered ledger entries. The `0137`
 copy applied the remaining release entries, repaired eligible GL links, and recorded the expected
-ownership and eligibility findings. The ordered 62-file replays preserved the checked schema,
+ownership and eligibility findings. The ordered 63-file replays preserved the checked schema,
 rows, and sequences on each copy.
 
 The `1c266ae5` copy applied `0139` through `0141` and the `29e9a1fa` copy applied `0140` and
