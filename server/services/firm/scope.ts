@@ -397,7 +397,8 @@ function provenCompanyInvite(companyId: SqlValue, userId: SqlValue) {
         where issued.company_id = ci.company_id and issued.resource_id = ci.id::text
           and issued.resource_type = 'company_invitation' and issued.user_id = ci.invited_by
           and issued.action in ('team.invite', 'team.invite_resend')
-          and issued.created_at between ci.created_at and accepted.created_at)
+          -- Audit rows are truncated to milliseconds even when the invite retains microseconds.
+          and issued.created_at between date_trunc('milliseconds', ci.created_at) and accepted.created_at)
     order by accepted.created_at desc, ci.id desc limit 1`;
 }
 

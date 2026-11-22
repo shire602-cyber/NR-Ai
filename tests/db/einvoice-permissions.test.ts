@@ -551,6 +551,14 @@ describe("Company-scoped e-invoicing permissions", () => {
     });
     expect(invited.status, invited.text).toBe(201);
     const invitationId = invited.body.invitation.id;
+    // The audit chain floors timestamps to milliseconds, while invitation rows retain microseconds.
+    await h.sql(
+      `UPDATE company_invitations ci
+          SET created_at = issued.created_at + interval '250 microseconds'
+         FROM audit_logs issued
+        WHERE ci.id = $1 AND issued.resource_id = ci.id::text AND issued.action = 'team.invite'`,
+      [invitationId]
+    );
     // Legacy acceptance recorded consent but left the already-present accountant role intact.
     await h.sql(
       "UPDATE company_invitations SET status = 'accepted', accepted_user_id = $1, accepted_at = now() WHERE id = $2",
