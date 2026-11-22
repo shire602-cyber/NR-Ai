@@ -80,8 +80,7 @@ vi.mock("../../server/storage", () => ({
         ? { id: "user-1", email, passwordHash: "x", name: "User" }
         : undefined
     ),
-    deletePasswordResetTokensForUser: vi.fn(async () => {}),
-    createPasswordResetToken: vi.fn(async () => ({})),
+    replacePasswordResetToken: vi.fn(async () => true),
   },
 }));
 

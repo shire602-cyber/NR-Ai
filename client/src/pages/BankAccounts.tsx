@@ -229,6 +229,7 @@ export default function BankAccounts() {
         }
       />
 
+
       <DataTableCard
         status={isLoading ? "loading" : !accounts || accounts.length === 0 ? "empty" : "ready"}
         empty={{

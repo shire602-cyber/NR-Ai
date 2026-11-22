@@ -161,7 +161,7 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
         url: "/bank-reconciliation",
         icon: ArrowLeftRight,
         testId: "bankReconciliation",
-        matches: ["/reconciliation-rules", "/auto-reconcile"],
+        matches: ["/reconciliation-rules", "/auto-reconcile", "/bank-feeds"],
       },
     ],
   },

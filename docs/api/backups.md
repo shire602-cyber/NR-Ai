@@ -46,7 +46,7 @@ and counts) is written after the transaction commits; a failed restore (checksum
 conflict) changes nothing and writes no success entry.
 
 A clone checks that the target is empty under its restore lock and creates a safety backup in the same
-transaction. Target webhook endpoints, messaging credentials and firm access are preserved.
+transaction. The clone retains the target’s webhook endpoints, messaging credentials, report delivery settings and firm access. During clone apply, PostgreSQL queues writes to tables the clone replaces until it commits or rolls back.
 
 ## Schedules
 

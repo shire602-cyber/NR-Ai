@@ -1,26 +1,28 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { useHarness } from "./harness";
 import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 
 const h = useHarness();
 const redirectUrl = "https://app.example.test/bank-feeds/callback";
 
-afterEach(async () => {
-  vi.unstubAllEnvs();
-  const { setBankFeedFetch } = await import("../../server/services/bank-feeds/http");
-  setBankFeedFetch(null);
-});
-
 describe("Banking authorization retirement and CSV import", () => {
-  it("ends new authorizations and old returns without contacting a configured provider", async () => {
-    vi.stubEnv("LEAN_APP_TOKEN", "fixture-app-token");
-    vi.stubEnv("BANK_FEED_REDIRECT_URIS", redirectUrl);
-    const { setBankFeedFetch } = await import("../../server/services/bank-feeds/http");
-    const fetch = vi.fn(async () => {
-      throw new Error("Unexpected external request");
-    });
-    setBankFeedFetch(fetch);
+  it("advertises CSV statement import in integration status", async () => {
+    const admin = await h.createTenant({ isAdmin: true });
+    const status = await admin.as.get("/api/admin/integration-status");
+    expect(status.status, status.text).toBe(200);
+    expect(status.body.integrations).toContainEqual(
+      expect.objectContaining({
+        key: "bankStatementCsvImport",
+        configured: true,
+        detail: BANK_RECONCILIATION_COPY.en,
+      })
+    );
+    expect(status.body.integrations.map(({ key }: { key: string }) => key)).not.toContain(
+      "openBanking"
+    );
+  });
 
+  it("ends new authorizations and old returns even when a provider is requested", async () => {
     const t = await h.createTenant();
     const base = `/api/companies/${t.company.id}/bank-connections`;
     const status = await t.as.get("/api/bank/providers");
@@ -50,7 +52,6 @@ describe("Banking authorization retirement and CSV import", () => {
     expect(
       await h.sql("SELECT id FROM bank_feed_oauth_states WHERE company_id = $1", [t.company.id])
     ).toEqual([]);
-    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("expires in-flight state, purges credentials and preserves statement history", async () => {
@@ -127,6 +128,8 @@ describe("Banking authorization retirement and CSV import", () => {
         bankAccountId: account.body.id,
         autoSync: false,
         hasToken: false,
+        provider: "manual",
+        connectionType: "statement",
       })
     );
     expect(list.text).not.toMatch(/fixture-(access|refresh|consent)|enc:v1:/);

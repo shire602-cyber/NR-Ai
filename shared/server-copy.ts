@@ -1474,7 +1474,7 @@ export function notificationCopy(
   };
 }
 
-/** Attach `copy` (stable keys + params) to a notification for API/socket responses. */
+/** Attach stable keys and parameters to stored notification text. */
 export function withNotificationCopy<T extends { title: string; message: string }>(
   n: T
 ): T & { copy: NotificationCopyDescriptor } {

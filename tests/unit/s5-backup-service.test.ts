@@ -136,7 +136,7 @@ function answer(text: string, params: unknown[] = []) {
       { id: TARGET, base_currency: "AED" },
     ]);
   if (
-    /^SELECT count\(\*\) AS n FROM "(journal_entries|invoices|receipts|vendor_bills|bank_transactions|payroll_runs|credit_notes)" WHERE company_id = \$1$/.test(
+    /^SELECT count\(\*\) AS n FROM "(journal_entries|invoices|receipts|vendor_bills|bank_transactions|payroll_runs|credit_notes|quotes|purchase_orders|expense_claims|recurring_invoices|inventory_movements|vat_returns|corporate_tax_returns)" WHERE company_id = \$1$/.test(
       sql
     )
   )

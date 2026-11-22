@@ -19,6 +19,7 @@ import pg from "pg";
 import { createHmac } from "node:crypto";
 import { withRegisterLogin } from "./register-compat.mjs";
 import { throttledFetch } from "./_http.mjs";
+import { readPortalInviteMail } from "../e2e/lib/portal-invite-mail.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 const STRIPE_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
@@ -286,19 +287,17 @@ async function main() {
       `/api/companies/${A.companyId}/customer-contacts/${contact.json?.id}/portal-invitations`,
       { token: A.token, body: { language: "en" } }
     );
-    const inviteUrl = invited.json?.inviteUrl;
     ok(
       "portal: staff creates the invitation (201)",
-      invited.status === 201 && !!inviteUrl,
+      invited.status === 201 && !!invited.json?.invitation?.id,
       invited.status
     );
-    const inviteToken = inviteUrl
-      ? new URLSearchParams(new URL(inviteUrl).hash.slice(1)).get("t")
-      : null;
-    if (inviteToken) {
-      const accepted = await api("POST", `/api/portal-invitations/${inviteToken}/accept`, {
+    if (invited.status === 201) {
+      const { token } = await readPortalInviteMail(invited.json.invitation.id);
+      await q("UPDATE users SET email_verified = true WHERE lower(email) = $1", [pu.email]);
+      const accepted = await api("POST", "/api/portal-invitations/accept", {
         token: puT.token,
-        body: { acceptTerms: true },
+        body: { token, email: pu.email, acceptTerms: true },
       });
       ok("portal: the invited user accepts (200)", accepted.status === 200, accepted.status);
     }

@@ -57,6 +57,8 @@ export function sanitizeConnection(connection: BankConnection) {
   void _consent;
   return {
     ...rest,
+    provider: "manual",
+    connectionType: "statement",
     hasToken: false,
     autoSync: false,
     lastError: rest.lastError ? BANK_RECONCILIATION_COPY.en : null,

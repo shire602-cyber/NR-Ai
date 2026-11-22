@@ -80,7 +80,7 @@ export function registerIntegrationStatusRoutes(app: Express) {
           unlocks: "Subscriptions, checkout, plan upgrades, tier enforcement",
         },
         {
-          key: "openBanking",
+          key: "bankStatementCsvImport",
           name: "CSV statement import",
           configured: true,
           detail: BANK_RECONCILIATION_COPY.en,

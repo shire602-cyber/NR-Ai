@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ui/page-header";
 import { PortalInvoiceList, type PortalInvoice } from "@/components/portal/PortalInvoiceList";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { portalQuery } from "@/lib/queryClient";
 import { useTranslation } from "@/lib/i18n";
 
 export default function PortalInvoices() {
@@ -11,13 +11,11 @@ export default function PortalInvoices() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: invoices = [], isLoading } = useQuery<PortalInvoice[]>({
-    queryKey: ["portal-invoices"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/invoices"),
+    ...portalQuery("/api/client-portal/invoices"),
     staleTime: 60_000,
   });
   const { data: dashboard } = useQuery<{ onlinePayment?: { available: boolean } }>({
-    queryKey: ["portal-dashboard"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/dashboard"),
+    ...portalQuery("/api/client-portal/dashboard"),
     staleTime: 60_000,
   });
 

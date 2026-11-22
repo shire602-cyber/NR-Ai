@@ -761,6 +761,7 @@ export const CLONE_SKIPPED_TABLES: Readonly<Record<string, string>> = {
   ecommerce_integrations: "store connections are credentials of the source company",
   webhook_endpoints: "outbound destinations and signing secrets belong to each company",
   whatsapp_configs: "messaging credentials and settings belong to each company",
+  company_report_delivery_subscriptions: "report delivery recipients belong to each company",
   einvoice_archive: "immutable legal archive of the source company's transmissions",
   tax_return_archive: "immutable legal archive of the source company's filings",
   einvoice_documents: "transmission state belongs to the source company",
@@ -783,6 +784,13 @@ const CLONE_TARGET_ACTIVITY_TABLES = [
   "bank_transactions",
   "payroll_runs",
   "credit_notes",
+  "quotes",
+  "purchase_orders",
+  "expense_claims",
+  "recurring_invoices",
+  "inventory_movements",
+  "vat_returns",
+  "corporate_tax_returns",
 ] as const;
 
 /** Skipped tables plus child tables reached only through skipped parents (to a fixed point). */
@@ -919,6 +927,27 @@ export async function restoreBackupIntoCompany(args: {
         "The target company must use the same base currency as the backup's company."
       );
     }
+    const full = await buildBackupManifest(client);
+    const skip = cloneSkipReasons(full.tables);
+    const skippedTables = full.tables
+      .filter((t) => skip.has(t.name))
+      .map((t) => ({
+        table: t.name,
+        reason: skip.get(t.name)!,
+        rows: (snapshot.tables[t.name] ?? []).length,
+      }));
+    const manifest = full.tables.filter((t) => !skip.has(t.name));
+
+    if (!args.dryRun) {
+      // Ordinary writers already take PostgreSQL relation locks, including writers
+      // outside the HTTP app. Freeze the rewritten tables before inspecting the target.
+      const lockedTables = manifest
+        .map(({ name }) => name)
+        .sort()
+        .map(q)
+        .join(", ");
+      await client.query(`LOCK TABLE ${lockedTables} IN EXCLUSIVE MODE`);
+    }
     for (const table of CLONE_TARGET_ACTIVITY_TABLES) {
       const { rows: n } = await pq<{ n: string }>(
         `SELECT count(*) AS n FROM ${q(table)} WHERE company_id = $1`,
@@ -935,7 +964,6 @@ export async function restoreBackupIntoCompany(args: {
       }
     }
 
-    const full = await buildBackupManifest(client);
     let preRestoreBackupId: string | null = null;
     if (!args.dryRun) {
       const pre = await createCompanyBackup(
@@ -950,15 +978,6 @@ export async function restoreBackupIntoCompany(args: {
       );
       preRestoreBackupId = pre.id;
     }
-    const skip = cloneSkipReasons(full.tables);
-    const skippedTables = full.tables
-      .filter((t) => skip.has(t.name))
-      .map((t) => ({
-        table: t.name,
-        reason: skip.get(t.name)!,
-        rows: (snapshot.tables[t.name] ?? []).length,
-      }));
-    const manifest = full.tables.filter((t) => !skip.has(t.name));
     const { tables } = remapSnapshotForClone(
       snapshot.tables,
       manifest,
