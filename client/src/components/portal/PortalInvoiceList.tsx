@@ -20,8 +20,7 @@ import { useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { DateText } from "@/components/documents/DateText";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { getAuthHeaders } from "@/lib/auth";
-import { apiUrl } from "@/lib/api";
+import { downloadPortalFile } from "@/lib/portal-files";
 import { formatInteger } from "@/lib/format";
 import { isolateLtrText } from "@/lib/format-bidi";
 import { customerEInvoiceLabel, type CustomerEInvoiceOutcome } from "@/lib/einvoice-outcome";
@@ -67,21 +66,6 @@ const matches = (inv: PortalInvoice, f: Filter): boolean =>
         : f === "paid"
           ? inv.paymentStatus === "paid"
           : inv.paymentStatus === "credit";
-
-async function download(path: string, filename: string): Promise<boolean> {
-  const res = await fetch(apiUrl(path), { credentials: "include", headers: getAuthHeaders() });
-  if (!res.ok) return false;
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  return true;
-}
 
 /**
  * The customer's invoices and credit notes: filter tabs with counts, search by number, a table on
@@ -313,7 +297,7 @@ export function PortalInvoiceList({
                             aria-label={`${t["portal.doc.downloadPdf"]} ${isolateLtrText(inv.number)}`}
                             onClick={() =>
                               void run(`pdf:${inv.id}`, () =>
-                                download(
+                                downloadPortalFile(
                                   `/api/client-portal/invoices/${inv.id}/pdf`,
                                   `invoice-${inv.number}.pdf`
                                 )
@@ -337,7 +321,7 @@ export function PortalInvoiceList({
                               aria-label={`${t["portal.list.einvoiceXml"]} ${isolateLtrText(inv.number)}`}
                               onClick={() =>
                                 void run(`xml:${inv.id}`, () =>
-                                  download(
+                                  downloadPortalFile(
                                     `/api/client-portal/invoices/${inv.id}/einvoice`,
                                     `einvoice-${inv.number}.xml`
                                   )

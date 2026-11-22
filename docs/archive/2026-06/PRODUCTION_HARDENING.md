@@ -121,4 +121,4 @@
 _Last updated: 2026-06 — Phases S, O, R, T1, and L1 (legal/support pages) done. All
 code-side hardening that can run in-sandbox is complete. Remaining is owner-/live-DB-
 gated only: O3 (wire Sentry once a DSN is chosen), T2 (DB golden-ledger tests in CI),
-L2 (email/Stripe/bank/domain env), L3 (pilot protocol + backup drill execution)._
+L2 (email/Stripe/push/domain env), L3 (pilot protocol + backup drill execution)._

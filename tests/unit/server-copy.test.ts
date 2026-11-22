@@ -227,6 +227,17 @@ describe("server copy templates", () => {
     });
   });
 
+  it("directs stored statement notices to CSV upload in both locales", () => {
+    const row = withNotificationCopy({
+      eventKey: "bank.sync_failed:legacy-notice",
+      title: "Previous title",
+      message: "Previous message",
+    });
+    expect(row.title).toBe("Bank transaction import failed");
+    expect(row.message).toContain("CSV");
+    expect(localizeNotification(row, ar, "ar").message).toContain("CSV");
+  });
+
   it("localises report delivery names and outcomes", () => {
     const n = buildReportDeliveryNotificationForPlan({
       userId: "u",

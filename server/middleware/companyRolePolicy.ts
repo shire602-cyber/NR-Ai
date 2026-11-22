@@ -54,6 +54,7 @@ import {
 } from "../services/firm/scope";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
+import { portalInviteLogPath } from "../http/portal-invite-privacy";
 import { DomainError } from "../errors";
 import { authenticateRequest } from "./auth";
 import {
@@ -546,11 +547,12 @@ export async function companyRolePolicy(
     const resolved = await resolveRequestCompanyWithSource(req, req.path);
     if (!resolved) return next();
     const { companyId } = resolved;
+    const logPath = portalInviteLogPath(req.originalUrl || req.url) ?? req.path;
 
     // Defence in depth (STEP5): a portal customer never reaches company routes. The membership
     // lookup below already finds no role for them (storage.getUserRole ignores client_portal).
     if (user.userType === "client_portal") {
-      log.info({ userId: user.id, method: req.method, path: req.path }, "Portal user denied");
+      log.info({ userId: user.id, method: req.method, path: logPath }, "Portal user denied");
       res.status(403).json({
         message: "Customer portal accounts cannot use the company app",
         code: "PORTAL_USER_APP_DENIED",
@@ -567,12 +569,12 @@ export async function companyRolePolicy(
     const details = { permission: permissions[0], permissions, role, companyId };
     if (mode === "report") {
       log.warn(
-        { userId: user.id, method: req.method, path: req.path, ...details },
+        { userId: user.id, method: req.method, path: logPath, ...details },
         "RBAC (report mode): request would be denied"
       );
       return next();
     }
-    log.info({ userId: user.id, method: req.method, path: req.path, ...details }, "RBAC denied");
+    log.info({ userId: user.id, method: req.method, path: logPath, ...details }, "RBAC denied");
     if (!role && resolved.source === "row") {
       // Another tenant's row id: answer like a missing row (tenant-scoped 404).
       res.status(404).json({ message: "Not found", code: "NOT_FOUND" });

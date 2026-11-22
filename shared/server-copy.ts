@@ -1511,17 +1511,29 @@ export function notificationCopy(
   };
 }
 
+type StoredNotificationText = { title: string; message: string; eventKey?: string | null };
+
+/** Apply current wording when rendering a stored notification. */
+export function currentNotificationText({ title, message, eventKey }: StoredNotificationText): {
+  title: string;
+  message: string;
+} {
+  const copy = describeNotificationCopy({ title, message });
+  if (eventKey?.startsWith("bank.sync_failed:")) {
+    return notificationCopy(BANK_IMPORT_TITLE_KEY, BANK_IMPORT_MESSAGE_KEY, copy.messageParams);
+  }
+  return {
+    title: currentBankImportText(copy.titleKey, copy.titleParams, title),
+    message: currentBankImportText(copy.messageKey, copy.messageParams, message),
+  };
+}
+
 /** Attach `copy` (stable keys + params) to a notification for API/socket responses. */
-export function withNotificationCopy<T extends { title: string; message: string }>(
+export function withNotificationCopy<T extends StoredNotificationText>(
   n: T
 ): T & { copy: NotificationCopyDescriptor } {
-  const copy = describeNotificationCopy(n);
-  return {
-    ...n,
-    title: currentBankImportText(copy.titleKey, copy.titleParams, n.title),
-    message: currentBankImportText(copy.messageKey, copy.messageParams, n.message),
-    copy,
-  };
+  const current = currentNotificationText(n);
+  return { ...n, ...current, copy: describeNotificationCopy(current) };
 }
 
 /** Key + params for a stored report-delivery run error or handoff sentence, or null. */

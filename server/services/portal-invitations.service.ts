@@ -3,22 +3,23 @@
  * customer_contacts row) to the authenticated portal.
  *
  * - The invitation holds a random 256-bit token; only its SHA-256 is stored. It expires after 7
- *   days and is single-use: opening the link (GET) never consumes it, only the accept POST does,
+ *   days and is single-use: only the accept request consumes it,
  *   inside one transaction that locks the row, so two parallel accepts produce one binding.
- * - Delivery goes through the durable email outbox. Nothing is reported as sent without a
- *   provider: with no provider the inviter gets the link to share.
+ * - Delivery goes through the durable email outbox directly to the invited address.
  * - Portal access is the customer_portal_accounts binding, never company membership.
  * - Every read and write is scoped by companyId (server/tenancy); another tenant's row is a 404.
  */
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
-import type { Request, Response } from "express";
+import type { Request } from "express";
 import { and, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "../db";
 import { storage } from "../storage";
 import { DomainError } from "../errors";
 import { createLogger } from "../config/logger";
 import { scopedGet, scopedUpdate } from "../tenancy";
+import { lockPortalInviteEmail } from "../storage/portal-invite-email";
+import { zEmail } from "../../shared/validators/primitives";
 import {
   customerContacts,
   customerPortalAccounts,
@@ -46,7 +47,7 @@ import {
   listPortalLinks,
   logPortalAccess,
 } from "./portal-access.service";
-import { hasEmailProvider, sendEmail } from "./email.service";
+import { deliverOutboxMessage, enqueueEmail, type OutboxResult } from "../outbox";
 import { renderPortalInviteEmail, normaliseInviteLanguage } from "./portal-invite-email";
 import { paymentsAvailability, publicBaseUrl } from "./payments";
 import { recordAudit } from "./audit.service";
@@ -55,13 +56,11 @@ import { notificationCopy } from "../../shared/server-copy";
 
 const log = createLogger("portal-invitations");
 
-export type InviteDelivery = "email" | "queued" | "link";
+export type InviteDelivery = "email" | "queued";
 
 export interface InviteResult {
   invitation: PublicInvitation;
   delivery: InviteDelivery;
-  /** Only when no email provider is configured: the link for the inviter to share. */
-  inviteUrl?: string;
 }
 
 /** An invitation as the staff sheet sees it: never the token or its hash. */
@@ -83,6 +82,22 @@ export interface PublicInvitation {
 }
 
 const normEmail = (e: string) => e.trim().toLowerCase();
+const contactEmail = (contact: CustomerContact) => normEmail(contact.email ?? "") || null;
+
+async function lockContact(tx: typeof db, companyId: string, contactId: string) {
+  const [contact] = await tx
+    .select()
+    .from(customerContacts)
+    .where(and(eq(customerContacts.companyId, companyId), eq(customerContacts.id, contactId)))
+    .for("update");
+  return contact;
+}
+
+function checkInvitedContact(invitation: CustomerPortalInvitation, contact?: CustomerContact) {
+  if (!contact?.isActive || contactEmail(contact) !== invitation.contactEmailAtIssue) {
+    throw inviteStateError("revoked");
+  }
+}
 const iso = (d: Date | null | undefined) => (d ? new Date(d).toISOString() : null);
 
 export function publicInvitation(inv: CustomerPortalInvitation): PublicInvitation {
@@ -107,11 +122,16 @@ export function publicInvitation(inv: CustomerPortalInvitation): PublicInvitatio
 
 function newToken(): { raw: string; hash: string } {
   const raw = crypto.randomBytes(32).toString("hex");
-  return { raw, hash: hashPortalToken(raw) };
+  return { raw, hash: inviteTokenHash(raw) };
 }
 
-export function portalInviteUrl(rawToken: string): string {
-  // The token rides in the fragment: never sent to a server, a proxy log or a Referer header.
+function inviteTokenHash(raw: string): string {
+  // Invalidate legacy links, including ones issued during a rolling deploy.
+  return hashPortalToken(`customer-portal-invite:v2:${raw.toLowerCase()}`);
+}
+
+function portalInviteUrl(rawToken: string): string {
+  // The join page submits the fragment token in a JSON body.
   return `${publicBaseUrl()}/portal/join#t=${rawToken}`;
 }
 
@@ -138,49 +158,66 @@ async function loadCompany(companyId: string): Promise<Company> {
 
 // ─── Delivery ───────────────────────────────────────────────────────────────
 
-async function deliverInvitation(
+function deliveryFailed(): DomainError {
+  return new DomainError(
+    "PORTAL_INVITE_DELIVERY_FAILED",
+    503,
+    undefined,
+    "Could not deliver the invitation email"
+  );
+}
+
+async function enqueueInvitation(
+  tx: typeof db,
   inv: CustomerPortalInvitation,
   rawToken: string,
   company: Company,
   contact: CustomerContact
-): Promise<{ delivery: InviteDelivery; inviteUrl?: string; updated: CustomerPortalInvitation }> {
-  const url = portalInviteUrl(rawToken);
-  const sendNo = inv.sendCount + 1;
+): Promise<{ invitation: CustomerPortalInvitation; outbox: OutboxResult }> {
   const mail = renderPortalInviteEmail({
     company,
     contact,
     invitation: inv,
-    url,
+    url: portalInviteUrl(rawToken),
     onlinePayment: paymentsAvailability().available,
   });
-  const result = await sendEmail(inv.email, mail.subject, mail.text, {
-    html: mail.html,
-    fromName: company.name,
-    companyId: inv.companyId,
-    category: "portal_invite",
-    sensitive: true,
-    relatedEntityType: "customer_portal_invitation",
-    relatedEntityId: inv.id,
-    idempotencyKey: `portal-invite:${inv.id}:${sendNo}`,
-    replyTo: company.contactEmail ?? null,
-  });
-  const providerOn = hasEmailProvider();
-  const delivery: InviteDelivery = result.sent ? "email" : providerOn ? "queued" : "link";
-  const [updated] = await db
-    .update(customerPortalInvitations)
-    .set({
-      lastSentAt: new Date(),
-      sendCount: sendNo,
-      lastOutboxId: result.id ?? null,
-      updatedAt: new Date(),
-    })
-    .where(eq(customerPortalInvitations.id, inv.id))
-    .returning();
-  return {
-    delivery,
-    ...(delivery === "link" ? { inviteUrl: url } : {}),
-    updated: updated ?? inv,
-  };
+  try {
+    const outbox = await enqueueEmail(
+      {
+        to: inv.email,
+        subject: mail.subject,
+        text: mail.text,
+        html: mail.html,
+        fromName: company.name,
+        companyId: inv.companyId,
+        category: "portal_invite",
+        sensitive: true,
+        relatedEntityType: "customer_portal_invitation",
+        relatedEntityId: inv.id,
+        idempotencyKey: `portal-invite:${inv.id}:${inv.sendCount}`,
+        replyTo: company.contactEmail ?? null,
+      },
+      tx
+    );
+    const [invitation] = await tx
+      .update(customerPortalInvitations)
+      .set({ lastOutboxId: outbox.id })
+      .where(eq(customerPortalInvitations.id, inv.id))
+      .returning();
+    return { invitation, outbox };
+  } catch {
+    // Roll back the email reservation with the outbox write. Driver errors can contain mail bodies.
+    throw deliveryFailed();
+  }
+}
+
+async function deliverInvitation(outbox: OutboxResult): Promise<InviteDelivery> {
+  const result = outbox.status === "queued" ? await deliverOutboxMessage(outbox.id) : outbox;
+  if (result?.status === "sent" || result?.status === "delivered") return "email";
+  if (result && ["queued", "sending", "retrying", "blocked_no_provider"].includes(result.status)) {
+    return "queued";
+  }
+  throw deliveryFailed();
 }
 
 // ─── Staff operations ───────────────────────────────────────────────────────
@@ -219,7 +256,7 @@ export async function createInvitation(args: {
     throw new DomainError("CONTACT_NOT_FOUND", 404, undefined, "Contact not found");
   }
   const email = normEmail(body.email ?? contact.email ?? "");
-  if (!email) {
+  if (!zEmail.safeParse(email).success) {
     throw new DomainError(
       "CONTACT_EMAIL_REQUIRED",
       400,
@@ -285,25 +322,46 @@ export async function createInvitation(args: {
   }
   await enforceInviteRate(companyId);
 
+  const company = await loadCompany(companyId);
   const token = newToken();
-  let inv: CustomerPortalInvitation;
-  try {
-    [inv] = await db
+  const { invitation, outbox } = await db.transaction(async (tx) => {
+    await lockPortalInviteEmail(tx, email);
+    const lockedContact = await lockContact(tx, companyId, contact.id);
+    if (!lockedContact?.isActive || contactEmail(lockedContact) !== contactEmail(contact)) {
+      throw new DomainError(
+        "CONTACT_NOT_FOUND",
+        404,
+        undefined,
+        "The contact has changed. Reload and try again."
+      );
+    }
+    const saveEmail = body.saveEmailToContact && !lockedContact.email;
+    if (saveEmail) {
+      await tx
+        .update(customerContacts)
+        .set({ email })
+        .where(eq(customerContacts.id, lockedContact.id));
+    }
+    const now = new Date();
+    const [inv] = await tx
       .insert(customerPortalInvitations)
       .values({
         companyId,
-        contactId: contact.id,
+        contactId: lockedContact.id,
         email,
-        name: body.name || contact.contactPerson || null,
+        contactEmailAtIssue: saveEmail ? email : contactEmail(lockedContact),
+        name: body.name || lockedContact.contactPerson || null,
         language: body.language,
         message: body.message || null,
         tokenHash: token.hash,
-        expiresAt: new Date(Date.now() + PORTAL_INVITE_TTL_DAYS * 86_400_000),
+        expiresAt: new Date(now.getTime() + PORTAL_INVITE_TTL_DAYS * 86_400_000),
+        lastSentAt: now,
+        sendCount: 1,
         invitedBy: args.invitedBy,
       })
+      .onConflictDoNothing()
       .returning();
-  } catch (err) {
-    if ((err as { code?: string })?.code === "23505") {
+    if (!inv) {
       throw new DomainError(
         "INVITATION_PENDING",
         409,
@@ -311,28 +369,23 @@ export async function createInvitation(args: {
         "An invitation is already pending"
       );
     }
-    throw err;
-  }
-  if (body.saveEmailToContact && !contact.email) {
-    await scopedUpdate(customerContacts, companyId, contact.id, { email });
-  }
+    return enqueueInvitation(tx, inv, token.raw, company, lockedContact);
+  });
 
-  const company = await loadCompany(companyId);
-  const sent = await deliverInvitation(inv, token.raw, company, contact);
+  const delivery = await deliverInvitation(outbox);
   await recordAudit({
     userId: args.invitedBy,
     companyId,
     action: "portal.invite",
     entityType: "customer_portal_invitation",
-    entityId: inv.id,
+    entityId: invitation.id,
     before: null,
-    after: { contactId: contact.id, email, language: body.language, delivery: sent.delivery },
+    after: { contactId: contact.id, email, language: body.language, delivery },
     req: args.req,
   });
   return {
-    invitation: publicInvitation(sent.updated),
-    delivery: sent.delivery,
-    ...(sent.inviteUrl ? { inviteUrl: sent.inviteUrl } : {}),
+    invitation: publicInvitation(invitation),
+    delivery,
   };
 }
 
@@ -373,30 +426,42 @@ export async function resendInvitation(args: {
       "This invitation was resent too many times today"
     );
   }
-  const contact = await loadContact(args.companyId, inv.contactId);
   const company = await loadCompany(args.companyId);
-  // Rotate the token (the old link dies) and extend the expiry.
   const token = newToken();
-  const [rotated] = await db
-    .update(customerPortalInvitations)
-    .set({
-      tokenHash: token.hash,
-      status: "pending",
-      expiresAt: new Date(Date.now() + PORTAL_INVITE_TTL_DAYS * 86_400_000),
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(customerPortalInvitations.id, inv.id),
-        eq(customerPortalInvitations.companyId, args.companyId),
-        inArray(customerPortalInvitations.status, ["pending", "expired"])
+  const { invitation, outbox } = await db.transaction(async (tx) => {
+    await lockPortalInviteEmail(tx, inv.email);
+    const contact = await lockContact(tx, inv.companyId, inv.contactId);
+    checkInvitedContact(inv, contact);
+    const now = new Date();
+    const [rotated] = await tx
+      .update(customerPortalInvitations)
+      .set({
+        tokenHash: token.hash,
+        status: "pending",
+        expiresAt: new Date(now.getTime() + PORTAL_INVITE_TTL_DAYS * 86_400_000),
+        lastSentAt: now,
+        sendCount: inv.sendCount + 1,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(customerPortalInvitations.id, inv.id),
+          eq(customerPortalInvitations.tokenHash, inv.tokenHash),
+          inArray(customerPortalInvitations.status, ["pending", "expired"])
+        )
       )
-    )
-    .returning();
-  if (!rotated) {
-    throw new DomainError("INVITATION_NOT_RESENDABLE", 409, undefined, "This invitation is closed");
-  }
-  const sent = await deliverInvitation(rotated, token.raw, company, contact);
+      .returning();
+    if (!rotated) {
+      throw new DomainError(
+        "INVITATION_NOT_RESENDABLE",
+        409,
+        undefined,
+        "This invitation is closed"
+      );
+    }
+    return enqueueInvitation(tx, rotated, token.raw, company, contact);
+  });
+  const delivery = await deliverInvitation(outbox);
   await recordAudit({
     userId: args.actorId,
     companyId: args.companyId,
@@ -404,13 +469,12 @@ export async function resendInvitation(args: {
     entityType: "customer_portal_invitation",
     entityId: inv.id,
     before: null,
-    after: { delivery: sent.delivery, sendCount: sent.updated.sendCount },
+    after: { delivery, sendCount: invitation.sendCount },
     req: args.req,
   });
   return {
-    invitation: publicInvitation(sent.updated),
-    delivery: sent.delivery,
-    ...(sent.inviteUrl ? { inviteUrl: sent.inviteUrl } : {}),
+    invitation: publicInvitation(invitation),
+    delivery,
   };
 }
 
@@ -648,7 +712,7 @@ export async function resolveInvitation(rawToken: string): Promise<InviteResolut
   const [invitation] = await db
     .select()
     .from(customerPortalInvitations)
-    .where(eq(customerPortalInvitations.tokenHash, hashPortalToken(rawToken.toLowerCase())));
+    .where(eq(customerPortalInvitations.tokenHash, inviteTokenHash(rawToken)));
   if (!invitation) return { status: "invalid" };
   const company = (await storage.getCompany(invitation.companyId)) ?? null;
   if (invitation.status === "accepted") return { status: "accepted", invitation, company };
@@ -661,6 +725,7 @@ export async function resolveInvitation(rawToken: string): Promise<InviteResolut
         .where(
           and(
             eq(customerPortalInvitations.id, invitation.id),
+            eq(customerPortalInvitations.tokenHash, invitation.tokenHash),
             eq(customerPortalInvitations.status, "pending")
           )
         );
@@ -668,7 +733,7 @@ export async function resolveInvitation(rawToken: string): Promise<InviteResolut
     return { status: "expired", invitation, company };
   }
   const contact = await scopedGet(customerContacts, invitation.companyId, invitation.contactId);
-  if (!company || !contact || !contact.isActive) {
+  if (!company || !contact?.isActive || contactEmail(contact) !== invitation.contactEmailAtIssue) {
     // The supplier or the customer went away: indistinguishable from a revoked invitation.
     return { status: "revoked", invitation, company };
   }
@@ -687,7 +752,29 @@ export async function accountCaseFor(
       : "signed_in_other";
   }
   const existing = await storage.getUserByEmail(invitation.email);
-  return existing && !isPlaceholderPasswordHash(existing.passwordHash) ? "existing" : "new";
+  return existing ? "existing" : "new";
+}
+
+function invalidInvitation() {
+  return new DomainError("PORTAL_INVITE_INVALID", 404, undefined, "This link is not valid");
+}
+
+function emailMismatch() {
+  return new DomainError(
+    "INVITATION_EMAIL_MISMATCH",
+    403,
+    undefined,
+    "This invitation was sent to a different email address"
+  );
+}
+
+function loginRequired() {
+  return new DomainError(
+    "LOGIN_REQUIRED",
+    409,
+    undefined,
+    "An account already exists for this email. Sign in, then accept the invitation."
+  );
 }
 
 export interface AcceptOutcome {
@@ -699,42 +786,27 @@ export interface AcceptOutcome {
 }
 
 /**
- * Accept an invitation. One transaction: the invitation row is locked, re-checked, the login is
+ * Accept an invitation. One transaction: the invitation row is locked, rechecked, the login is
  * created (or reused) and bound, and the invitation is closed. A second parallel accept waits on
  * the lock and then sees `accepted`.
  */
 export async function acceptInvitation(args: {
   rawToken: string;
+  email: string;
   signedIn: { id: string; email: string } | null;
   name?: string;
   password?: string;
   req: Request;
-  res: Response;
 }): Promise<AcceptOutcome> {
   const resolved = await resolveInvitation(args.rawToken);
-  if (resolved.status === "invalid") {
-    throw new DomainError("PORTAL_INVITE_INVALID", 404, undefined, "This link is not valid");
-  }
+  if (resolved.status === "invalid") throw invalidInvitation();
   if (resolved.status !== "ok") throw inviteStateError(resolved.status);
   const inv = resolved.invitation;
+  const email = normEmail(inv.email);
+  if (email !== normEmail(args.email)) throw emailMismatch();
   const kind = await accountCaseFor(inv, args.signedIn);
+  if (kind === "signed_in_other") throw emailMismatch();
 
-  if (kind === "signed_in_other") {
-    throw new DomainError(
-      "INVITATION_EMAIL_MISMATCH",
-      403,
-      undefined,
-      "This invitation was sent to a different email address"
-    );
-  }
-  if (kind === "existing") {
-    throw new DomainError(
-      "LOGIN_REQUIRED",
-      409,
-      undefined,
-      "An account already exists for this email. Sign in, then accept the invitation."
-    );
-  }
   let passwordHash: string | null = null;
   if (kind === "new") {
     const parsed = passwordPolicySchema.safeParse(args.password ?? "");
@@ -749,62 +821,66 @@ export async function acceptInvitation(args: {
     passwordHash = await bcrypt.hash(parsed.data, 10);
   }
 
-  const outcome = await db.transaction(async (tx: typeof db) => {
-    await tx.execute(
-      sql`SELECT id FROM customer_portal_invitations WHERE id = ${inv.id} FOR UPDATE`
-    );
+  const outcome = await db.transaction(async (tx) => {
+    await lockPortalInviteEmail(tx, email);
+    // Contact updates revoke invitations while holding the contact row lock.
+    const contact = await lockContact(tx, inv.companyId, inv.contactId);
     const [locked] = await tx
       .select()
       .from(customerPortalInvitations)
-      .where(eq(customerPortalInvitations.id, inv.id));
-    if (!locked || locked.status !== "pending") {
-      throw inviteStateError(locked?.status === "revoked" ? "revoked" : "accepted");
+      .where(eq(customerPortalInvitations.id, inv.id))
+      .for("update");
+    if (
+      !locked ||
+      locked.tokenHash !== inviteTokenHash(args.rawToken) ||
+      normEmail(locked.email) !== email
+    ) {
+      throw invalidInvitation();
+    }
+    if (
+      locked.status === "accepted" ||
+      locked.status === "expired" ||
+      locked.status === "revoked"
+    ) {
+      throw inviteStateError(locked.status);
     }
     if (locked.expiresAt.getTime() <= Date.now()) throw inviteStateError("expired");
+    checkInvitedContact(locked, contact);
 
+    const [existing] = await tx
+      .select()
+      .from(users)
+      .where(sql`lower(${users.email}) = ${email}`)
+      .for("update");
     let userId: string;
-    let createdUser = false;
-    let existingUserType: string | null = null;
-    if (kind === "signed_in") {
-      userId = args.signedIn!.id;
-      const [u] = await tx
-        .select({ userType: users.userType })
-        .from(users)
-        .where(eq(users.id, userId));
-      existingUserType = u?.userType ?? null;
-    } else {
-      const displayName = (args.name || locked.name || resolved.contact.name).trim();
-      const existing = await storage.getUserByEmail(locked.email);
-      if (existing && isPlaceholderPasswordHash(existing.passwordHash)) {
-        // A placeholder account (no credential) is claimed by the real owner of the address.
-        await tx
-          .update(users)
-          .set({
-            passwordHash: passwordHash!,
-            name: displayName,
-            emailVerified: true,
-            emailVerifiedAt: new Date(),
-          })
-          .where(eq(users.id, existing.id));
-        userId = existing.id;
-        existingUserType = existing.userType;
-      } else {
-        const [created] = await tx
-          .insert(users)
-          .values({
-            name: displayName,
-            email: locked.email,
-            userType: "client_portal",
-            isAdmin: false,
-            passwordHash: passwordHash!,
-            // The link reached the inbox: the address is proven.
-            emailVerified: true,
-            emailVerifiedAt: new Date(),
-          })
-          .returning({ id: users.id });
-        userId = created.id;
+    if (args.signedIn) {
+      if (existing?.id !== args.signedIn.id) throw emailMismatch();
+      if (!existing.emailVerified || isPlaceholderPasswordHash(existing.passwordHash)) {
+        throw new DomainError(
+          "PORTAL_INVITE_EMAIL_UNVERIFIED",
+          403,
+          undefined,
+          "Verify your email before accepting this invitation"
+        );
       }
-      createdUser = true;
+      userId = existing.id;
+    } else {
+      if (existing || !passwordHash) throw loginRequired();
+      const [created] = await tx
+        .insert(users)
+        .values({
+          name: (args.name || locked.name || contact.name).trim(),
+          email,
+          userType: "client_portal",
+          isAdmin: false,
+          passwordHash,
+          emailVerified: true,
+          emailVerifiedAt: new Date(),
+        })
+        .onConflictDoNothing()
+        .returning({ id: users.id });
+      if (!created) throw loginRequired();
+      userId = created.id;
     }
     const portalAccountId = await bindPortalUser(
       {
@@ -828,7 +904,13 @@ export async function acceptInvitation(args: {
       })
       .where(eq(customerPortalInvitations.id, locked.id))
       .returning();
-    return { userId, portalAccountId, createdUser, existingUserType, invitation: closed };
+    return {
+      userId,
+      portalAccountId,
+      createdUser: !existing,
+      existingUserType: existing?.userType ?? null,
+      invitation: closed,
+    };
   });
 
   await recordAudit({

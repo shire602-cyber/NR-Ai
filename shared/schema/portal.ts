@@ -160,6 +160,7 @@ export const customerPortalInvitations = pgTable(
       .notNull()
       .references(() => customerContacts.id, { onDelete: "cascade" }),
     email: text("email").notNull(),
+    contactEmailAtIssue: text("contact_email_at_issue"),
     name: text("name"),
     language: text("language").notNull().default("en"), // en | ar | bilingual
     message: text("message"),
@@ -191,6 +192,9 @@ export const customerPortalInvitations = pgTable(
     ),
     pendingUnique: uniqueIndex("uq_customer_portal_invitations_pending")
       .on(table.companyId, table.contactId, sql`lower(${table.email})`)
+      .where(sql`status = 'pending'`),
+    pendingEmailIdx: index("idx_customer_portal_invitations_pending_email")
+      .on(sql`lower(${table.email})`, table.expiresAt)
       .where(sql`status = 'pending'`),
   })
 );

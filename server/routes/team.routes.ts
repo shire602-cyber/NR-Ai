@@ -3,6 +3,10 @@ import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
 import { z } from "zod";
 import { storage, normalizeEmail } from "../storage";
+import {
+  assertPortalInviteEmailAvailable,
+  lockPortalInviteEmail,
+} from "../storage/portal-invite-email";
 import { authMiddleware, optionalAuthUser } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import {
@@ -701,6 +705,7 @@ export function registerTeamRoutes(app: Express) {
         role,
         createdUser,
       } = await db.transaction(async (tx) => {
+        if (!signedIn) await lockPortalInviteEmail(tx, email);
         await lockTeamCompany(inv.companyId, tx, "share");
         // Serialize with assignment, company roles, and a competing invitation or account claim.
         const accounts = await tx
@@ -727,6 +732,7 @@ export function registerTeamRoutes(app: Express) {
         if (!signedIn && (!passwordHash || !body.name)) {
           z.object({ name: zText(100, { min: 1 }), password: passwordPolicySchema }).parse(body);
         }
+        if (!signedIn) await assertPortalInviteEmailAvailable(tx, email);
         const claimPlaceholder = !signedIn && !!user;
         const grantor = accounts.find((account) => account.id === inv.invitedBy);
         await assertTeamInviteAuthority(inv.companyId, grantor, user, inv.role, tx, "share");
@@ -769,7 +775,7 @@ export function registerTeamRoutes(app: Express) {
 
         // Placeholder credentials and portal conversion are committed with the invitation and role.
         if (claimPlaceholder || user.userType === "client_portal") {
-          [user] = await tx
+          const [updated] = await tx
             .update(users)
             .set({
               ...(claimPlaceholder
@@ -781,8 +787,16 @@ export function registerTeamRoutes(app: Express) {
                 : {}),
               ...(user.userType === "client_portal" ? { userType: "customer" } : {}),
             })
-            .where(eq(users.id, user.id))
+            .where(
+              and(
+                eq(users.id, user.id),
+                claimPlaceholder ? eq(users.email, user.email) : undefined,
+                claimPlaceholder ? eq(users.passwordHash, user.passwordHash) : undefined
+              )
+            )
             .returning();
+          if (!updated) throw new DomainError("LOGIN_REQUIRED", 409);
+          user = updated;
         }
         const [membership] = await tx
           .select({ id: companyUsers.id, role: companyUsers.role })

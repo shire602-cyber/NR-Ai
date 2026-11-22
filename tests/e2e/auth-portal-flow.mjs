@@ -34,6 +34,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { chromium, devices, request } from "playwright-core";
 import { classifyLines } from "./lib/latin-text.mjs";
+import { readPortalInviteMail } from "./lib/portal-invite-mail.mjs";
 
 const BASE = (process.env.BASE_URL || "http://localhost:5000").replace(/\/$/, "");
 const SHOT_DIR = process.env.SHOT_DIR || "";
@@ -147,20 +148,24 @@ async function seed() {
     token,
     { email: member, language: "en" }
   );
-  const inviteUrl = invited.json?.inviteUrl;
-  if (invited.status !== 201 || !inviteUrl) {
+  if (invited.status !== 201) {
     throw new Error(
-      `Portal invitation setup failed (${invited.status}, ${invited.json?.code ?? invited.json?.delivery ?? "no link"}). Use a local app without an outbound email provider.`
+      `Portal invitation setup failed (${invited.status}, ${invited.json?.code ?? "unknown error"}).`
     );
   }
-  const inviteToken = new URLSearchParams(new URL(inviteUrl).hash.slice(1)).get("t");
-  if (!inviteToken) throw new Error("Portal invitation is missing its token.");
+  const mail = await readPortalInviteMail(invited.json.invitation.id);
   const guest = await request.newContext({ baseURL: BASE });
   try {
     const { csrfToken } = await (await guest.get("/api/csrf-token")).json();
-    const accepted = await guest.post(`/api/portal-invitations/${inviteToken}/accept`, {
+    const accepted = await guest.post("/api/portal-invitations/accept", {
       headers: { "X-CSRF-Token": csrfToken },
-      data: { name: "Layla Al Hashimi", password: PW, acceptTerms: true },
+      data: {
+        token: mail.token,
+        email: member,
+        name: "Layla Al Hashimi",
+        password: PW,
+        acceptTerms: true,
+      },
     });
     if (!accepted.ok())
       throw new Error(`Portal invitation acceptance failed: ${accepted.status()}`);

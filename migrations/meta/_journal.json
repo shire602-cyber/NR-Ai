@@ -960,6 +960,20 @@
    "when": 1781430520000,
    "tag": "0137_combine_portal_invitations_and_settlement_indexes",
    "breakpoints": false
+  },
+  {
+   "idx": 137,
+   "version": "7",
+   "when": 1781430530000,
+   "tag": "0138_secure_portal_invitations",
+   "breakpoints": false
+  },
+  {
+   "idx": 138,
+   "version": "7",
+   "when": 1781430540000,
+   "tag": "0139_bind_portal_invite_and_verification_lifecycle",
+   "breakpoints": false
   }
  ]
 }
