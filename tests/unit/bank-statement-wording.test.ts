@@ -26,7 +26,7 @@ import {
 } from "../../shared/bank-authorization-paths";
 import { bankStatementCopy, bankStatementTitle } from "../../shared/bank-statement-copy";
 import { withNotificationCopy } from "../../shared/server-copy";
-import { bankFeedCallbackBody } from "../../shared/validators/banking";
+import { bankAuthorizationHandoffBody } from "../../shared/validators/banking";
 import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 
 vi.mock("@/components/layout/SettingsLayout", () => ({
@@ -41,11 +41,13 @@ function ReturnRoute({ protectedRoute = false }: { protectedRoute?: boolean }) {
   const [pathname] = useLocation();
   const authorization = useBankAuthorizationReturn(pathname);
   if (pathname === "/bank-feeds") return createElement(BankFeeds);
-  if (authorization.cleaning || !authorization.isCallback) return null;
-  const page = createElement(BankFeeds, {
-    initialReturn: authorization.returned,
-    onReturnClaimed: authorization.clear,
-  });
+  if (authorization.cleaning) {
+    return authorization.failed
+      ? createElement("button", { onClick: authorization.retry }, "Retry")
+      : null;
+  }
+  if (!authorization.isCallback) return null;
+  const page = createElement(BankFeeds, { resumeAuthorization: true });
   return protectedRoute
     ? createElement(ProtectedRoute, { replaceOnLoginRedirect: true, children: page })
     : page;
@@ -87,22 +89,29 @@ describe("signed-in CSV statement wording", () => {
   it("captures a legacy return without adding history or putting its query on the replacement URL", async () => {
     const state = randomBytes(32).toString("base64url");
     const search = `?code=return%252F%2b%20value&state=${state}&provider=lean`;
-    const post = vi.spyOn(queryApi, "apiRequest").mockImplementation(() => new Promise(() => {}));
+    const post = vi
+      .spyOn(queryApi, "apiRequest")
+      .mockResolvedValueOnce({ staged: true })
+      .mockResolvedValue(null);
     window.history.replaceState({}, "", `${LEGACY_BANK_AUTHORIZATION_RETURN_PATH}${search}`);
     const entries = window.history.length;
     await act(async () => root.render(createElement(ReturnRoute)));
     expect(window.location.pathname).toBe(BANK_AUTHORIZATION_RETURN_PATH);
     expect(window.location.search).toBe("");
-    expect(post.mock.calls[0][2]).toEqual({ code: "return%2F+ value", state });
+    expect(post.mock.calls[0][1]).toBe("/api/bank-connections/handoff");
+    expect(post.mock.calls[0][2]).toEqual({ search });
     expect(window.history.length).toBe(entries);
   });
 
   it.each([BANK_AUTHORIZATION_RETURN_PATH, LEGACY_BANK_AUTHORIZATION_RETURN_PATH])(
-    "resumes %s after sign-in without restoring the query on Back",
+    "resumes %s after sign-in and a fresh app mount without restoring the query on Back",
     async (callbackPath) => {
       const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
       client.setQueryData(currentUserQueryKey, null);
-      const post = vi.spyOn(queryApi, "apiRequest").mockResolvedValue({ connections: [{}] });
+      const post = vi
+        .spyOn(queryApi, "apiRequest")
+        .mockResolvedValueOnce({ staged: true })
+        .mockResolvedValueOnce({ connections: [{}] });
       const state = randomBytes(32).toString("base64url");
       const code = "resume%2F+ sample";
       window.history.replaceState({}, "", "/previous-page");
@@ -118,14 +127,25 @@ describe("signed-in CSV statement wording", () => {
       );
       const loginPath = `/login?next=${encodeURIComponent(BANK_AUTHORIZATION_RETURN_PATH)}`;
       expect(window.location.pathname + window.location.search).toBe(loginPath);
-      expect(post).not.toHaveBeenCalled();
+      expect(post.mock.calls.map(([, url]) => url)).toEqual(["/api/bank-connections/handoff"]);
 
-      await act(async () => {
-        client.setQueryData(currentUserQueryKey, { userType: "customer" });
-        window.history.replaceState({}, "", BANK_AUTHORIZATION_RETURN_PATH);
-      });
-      expect(post).toHaveBeenCalledOnce();
-      expect(post.mock.calls[0][2]).toEqual({ code, state });
+      act(() => root.unmount());
+      root = createRoot(container);
+      client.setQueryData(currentUserQueryKey, { userType: "customer" });
+      window.history.replaceState({}, "", BANK_AUTHORIZATION_RETURN_PATH);
+      await act(async () =>
+        root.render(
+          createElement(
+            QueryClientProvider,
+            { client },
+            createElement(ReturnRoute, { protectedRoute: true })
+          )
+        )
+      );
+      expect(post.mock.calls[1].slice(1, 3)).toEqual([
+        "/api/bank-connections/callback/resume",
+        { resume: true },
+      ]);
       expect(window.location.pathname).toBe("/bank-feeds");
 
       await act(async () => {
@@ -135,10 +155,30 @@ describe("signed-in CSV statement wording", () => {
         });
       });
       expect(window.location.pathname + window.location.search).toBe("/previous-page");
-      expect(post).toHaveBeenCalledOnce();
+      expect(post).toHaveBeenCalledTimes(2);
       client.clear();
     }
   );
+
+  it("retries staging before cleaning the original URL", async () => {
+    const search = `?code=fixture&state=${randomBytes(32).toString("base64url")}`;
+    const post = vi
+      .spyOn(queryApi, "apiRequest")
+      .mockRejectedValueOnce(new TypeError("Fixture connection closed"))
+      .mockResolvedValueOnce({ staged: true })
+      .mockResolvedValueOnce({ connections: [{}] });
+    window.history.replaceState({}, "", `${BANK_AUTHORIZATION_RETURN_PATH}${search}`);
+    await act(async () => root.render(createElement(ReturnRoute)));
+    expect(window.location.search).toBe(search);
+    expect(post).toHaveBeenCalledOnce();
+    await act(async () => container.querySelector("button")!.click());
+    expect(post.mock.calls.map(([, url, body]) => [url, body])).toEqual([
+      ["/api/bank-connections/handoff", { search }],
+      ["/api/bank-connections/handoff", { search }],
+      ["/api/bank-connections/callback/resume", { resume: true }],
+    ]);
+    expect(window.location.pathname + window.location.search).toBe("/bank-feeds");
+  });
 
   it("reloads an active workspace query that failed before sign-in", async () => {
     const user = { id: "fixture-user", userType: "customer" };
@@ -187,10 +227,13 @@ describe("signed-in CSV statement wording", () => {
   );
 
   it.each(["en", "ar"] as const)(
-    "posts the original encoded authorization code once and clears the URL in %s",
+    "stages the original query once and resumes by reference in %s",
     async (locale) => {
       await setLocale(locale);
-      const post = vi.spyOn(queryApi, "apiRequest").mockResolvedValue({ connections: [{}] });
+      const post = vi
+        .spyOn(queryApi, "apiRequest")
+        .mockResolvedValueOnce({ staged: true })
+        .mockResolvedValueOnce({ connections: [{}] });
       const codeField = locale === "ar" ? "entity_id" : "code";
       const code = "return%2F+sample%252F/";
       const state = randomBytes(32).toString("base64url");
@@ -202,17 +245,18 @@ describe("signed-in CSV statement wording", () => {
       await act(async () =>
         root.render(createElement(StrictMode, null, createElement(ReturnRoute)))
       );
-      expect(post).toHaveBeenCalledExactlyOnceWith(
+      expect(post).toHaveBeenCalledTimes(2);
+      expect(post.mock.calls[0].slice(0, 3)).toEqual([
         "POST",
-        "/api/bank-connections/callback",
-        { code, state },
-        undefined,
-        { queueWhenOffline: false }
-      );
-      expect(bankFeedCallbackBody.parse(post.mock.calls[0][2])).toEqual({
-        code,
-        state,
-      });
+        "/api/bank-connections/handoff",
+        { search: `?${new URLSearchParams({ [codeField]: code, state, provider: "lean" })}` },
+      ]);
+      expect(bankAuthorizationHandoffBody.safeParse(post.mock.calls[0][2]).success).toBe(true);
+      expect(post.mock.calls[1].slice(0, 3)).toEqual([
+        "POST",
+        "/api/bank-connections/callback/resume",
+        { resume: true },
+      ]);
       expect(window.location.pathname + window.location.search).toBe("/bank-feeds");
       expect(container.textContent).toContain(bankStatementCopy[locale]);
     }
@@ -228,8 +272,7 @@ describe("signed-in CSV statement wording", () => {
         .mockRejectedValueOnce(new TypeError("Fixture network failure"))
         .mockResolvedValueOnce(Response.json({ csrfToken: "fixture-csrf" }))
         .mockResolvedValueOnce(Response.json({ connections: [{}] }, { status: 201 }));
-      const state = randomBytes(32).toString("base64url");
-      window.history.replaceState({}, "", `/bank-feeds/callback?code=fixture-code&state=${state}`);
+      window.history.replaceState({}, "", BANK_AUTHORIZATION_RETURN_PATH);
       await act(async () =>
         root.render(createElement(StrictMode, null, createElement(ReturnRoute)))
       );
@@ -244,15 +287,12 @@ describe("signed-in CSV statement wording", () => {
       expect(fetch.mock.calls.map(([url]) => url)).toEqual([
         "/api/csrf-token",
         "/api/csrf-token",
-        "/api/bank-connections/callback",
+        "/api/bank-connections/callback/resume",
       ]);
       const request = fetch.mock.calls[2][1];
       expect(request?.method).toBe("POST");
       expect(request?.headers).toMatchObject({ "x-csrf-token": "fixture-csrf" });
-      expect(bankFeedCallbackBody.parse(JSON.parse(String(request?.body)))).toEqual({
-        code: "fixture-code",
-        state,
-      });
+      expect(JSON.parse(String(request?.body))).toEqual({ resume: true });
       expect(window.location.pathname + window.location.search).toBe("/bank-feeds");
     }
   );
@@ -262,7 +302,7 @@ describe("signed-in CSV statement wording", () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
     await expect(
-      queryApi.apiRequest("POST", "/api/bank-connections/callback", {}, undefined, {
+      queryApi.apiRequest("POST", "/api/bank-connections/callback/resume", {}, undefined, {
         queueWhenOffline: false,
       })
     ).rejects.toBeInstanceOf(queryApi.ApiRequestNotSentError);
@@ -273,7 +313,10 @@ describe("signed-in CSV statement wording", () => {
     "shows localized cancellation and cleans the URL in %s",
     async (locale) => {
       await setLocale(locale);
-      const post = vi.spyOn(queryApi, "apiRequest");
+      const post = vi
+        .spyOn(queryApi, "apiRequest")
+        .mockResolvedValueOnce({ staged: true })
+        .mockResolvedValueOnce({ outcome: "cancelled" });
       window.history.replaceState(
         {},
         "",
@@ -285,7 +328,10 @@ describe("signed-in CSV statement wording", () => {
       );
       expect(window.location.pathname + window.location.search).toBe("/bank-feeds/callback");
       expect(container.textContent).toContain(bankStatementCopy[locale]);
-      expect(post).not.toHaveBeenCalled();
+      expect(post.mock.calls.map(([, url]) => url)).toEqual([
+        "/api/bank-connections/handoff",
+        "/api/bank-connections/callback/resume",
+      ]);
     }
   );
 
@@ -298,12 +344,11 @@ describe("signed-in CSV statement wording", () => {
       fetch
         .mockResolvedValueOnce(Response.json({ csrfToken: "fixture-csrf" }))
         .mockRejectedValueOnce(new TypeError("Fixture connection lost after submission"));
-      const state = randomBytes(32).toString("base64url");
-      window.history.replaceState({}, "", `/bank-feeds/callback?code=fixture-code&state=${state}`);
+      window.history.replaceState({}, "", BANK_AUTHORIZATION_RETURN_PATH);
       await act(async () => root.render(createElement(ReturnRoute)));
       expect(fetch.mock.calls.map(([url]) => url)).toEqual([
         "/api/csrf-token",
-        "/api/bank-connections/callback",
+        "/api/bank-connections/callback/resume",
       ]);
       expect(container.querySelector('[role="status"]')?.textContent).toBe(
         t[locale]["banking.feeds.returnError"]
@@ -442,7 +487,12 @@ it("keeps superseded banking terms out of tracked prose, comments, and fixtures"
   const wording = [
     "(bank|live)[[:blank:]]+feeds?",
     "open[[:blank:]]+banking",
-    "connect[[:blank:]]+your[[:blank:]]+bank",
+    "(re)?connect(s|ing)?[[:blank:]]+(a|their|your|the)[[:blank:]]+bank",
+    "link(s|ing)?[[:blank:]]+(a|their|your)[[:blank:]]+bank",
+    "feeds?[[:blank:]]+(sync|connection)",
+    "bank[[:blank:]]+sync",
+    "sync(s|ing)?[[:blank:]]+(a|the)[[:blank:]]+feed",
+    "banking[[:blank:]]+embedded",
     "bank[[:blank:]]+connection[[:blank:]]+(deleted|created)",
     "الربط[[:blank:]]+(البنكي|المصرفي)",
     "مزامنة[[:blank:]]+(الحساب|الخلاصة)[[:blank:]]+البنكي",

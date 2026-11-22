@@ -102,6 +102,7 @@ import {
   linkAuthIdentity,
   markOAuthLogin,
   oauthCallbackFailureUrl,
+  oauthCallbackMfaUrl,
   oauthCallbackSuccessUrl,
   oauthRedirectUri,
   type OAuthIdentityProfile,
@@ -799,7 +800,7 @@ export function registerAuthRoutes(app: Express): void {
         return res.redirect(redirectTo.toString());
       } catch (err) {
         log.warn({ err, provider, ip: req.ip }, "OAuth login start failed");
-        return res.redirect(oauthCallbackFailureUrl());
+        return res.redirect(oauthCallbackFailureUrl(req.query.next));
       }
     })
   );
@@ -812,8 +813,10 @@ export function registerAuthRoutes(app: Express): void {
         return res.redirect(oauthCallbackFailureUrl());
       }
 
+      let nextPath: string | undefined;
       try {
         const state = await consumeOAuthState(provider, req.query.state);
+        nextPath = state.nextPath;
         const profile = await exchangeOAuthCallback(
           provider,
           callbackUrlFromRequest(req, provider),
@@ -833,7 +836,7 @@ export function registerAuthRoutes(app: Express): void {
             ...authCookieBaseOptions(),
             maxAge: 5 * 60 * 1000,
           });
-          return res.redirect(oauthCallbackFailureUrl().replace("oauth_error=1", "mfa=1"));
+          return res.redirect(oauthCallbackMfaUrl(state.nextPath));
         }
 
         await issueAuthTokens(req, res, user);
@@ -848,7 +851,7 @@ export function registerAuthRoutes(app: Express): void {
       } catch (err) {
         log.warn({ err, provider, ip: req.ip }, "OAuth login callback failed");
         clearAuthCookies(res);
-        return res.redirect(oauthCallbackFailureUrl());
+        return res.redirect(oauthCallbackFailureUrl(nextPath));
       }
     })
   );

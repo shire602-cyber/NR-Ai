@@ -298,7 +298,7 @@ describe("W4-D notification engine", () => {
     ).toBe(0);
   });
 
-  it("[R13-32] payment received, bank sync failure, task due and overdue invoices all notify staff", async () => {
+  it("[R13-32] payment received, statement review, task due and overdue invoices all notify staff", async () => {
     const t = await h.createTenant();
     const inv = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
       customerName: "Notify Co",

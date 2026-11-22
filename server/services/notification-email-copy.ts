@@ -61,7 +61,7 @@ export function refreshQueuedNotificationEmail({
     // Earlier digests stored the rendered snapshot and did not record which rows it included.
     // Match the old renderer's escaped paragraphs, leaving other notifications in place.
     const legacyItem =
-      /<strong>(Bank[ -]feed sync failed|Bank statement imported)<\/strong> — ([^<]*)(?=<\/p>)/gi;
+      /<strong>(Bank[ -]feed\s+sync\s+failed|Bank statement imported)<\/strong> — ([^<]*)(?=<\/p>)/gi;
     let firstReplacement: { old: string; updated: string } | undefined;
     const refreshed = html.replace(legacyItem, (old, title: string, message: string) => {
       const original = {

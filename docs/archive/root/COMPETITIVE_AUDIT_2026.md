@@ -337,7 +337,7 @@ This audit analyzed **40+ AI bookkeeping and accounting platforms** worldwide ac
 #### Pennylane (France)
 - **AI**: ComptAssistant AI for accountants, document processing, smart categorization, cash flow forecasting
 - **Pricing**: Custom
-- **What they have that Muhasib.ai doesn't**: Deep French accounting integration, banking embedded in platform, $4.25B valuation ecosystem
+- **What they have that Muhasib.ai doesn't**: Deep French accounting integration, $4.25B valuation ecosystem. [Historical comparison excerpt redacted.]
 - **What Muhasib.ai has that they don't**: Arabic RTL, UAE compliance, HR/payroll, WPS, WhatsApp, PWA/offline (Pennylane is France-only)
 
 #### Holded (Spain)

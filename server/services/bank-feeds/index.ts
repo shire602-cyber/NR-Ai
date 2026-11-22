@@ -1,15 +1,15 @@
 /**
  * Financial-data adapter processing (W3-C: R06-14, R06-19).
  *
- *  - connect refuses with 503 BANK_FEED_NOT_CONFIGURED when the provider has no credentials
+ *  - authorization requires processor configuration (503 BANK_FEED_NOT_CONFIGURED otherwise)
  *  - the OAuth state is random, stored as a SHA-256 hash, single-use, 10-minute expiry, bound to
  *    company + user + provider, and verified on callback (400 INVALID_OAUTH_STATE otherwise)
  *  - the redirect URI must be on an allow-list (BANK_FEED_REDIRECT_URIS, else FRONTEND_URL /
  *    AUTH_PUBLIC_URL + the registered authorization return paths)
  *  - tokens are stored only through storage.createBankConnection / updateBankConnectionTokens,
  *    which encrypt with server/services/secret-vault.ts; API responses never include them
- *  - scheduled sync (job "bankFeeds.sync") dedupes by provider transaction id and emits
- *    bank.sync_failed on failure
+ *  - scheduled processing (job "bankFeeds.sync") deduplicates by external transaction ID
+ *    and emits bank.sync_failed on failure
  */
 import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
@@ -164,13 +164,28 @@ type CallbackStateScope = {
   state: string;
 };
 
-function activeCallbackState(input: CallbackStateScope) {
+function pendingCallbackState(state: string) {
   return and(
-    eq(bankFeedOauthStates.stateHash, hashState(input.state)),
-    eq(bankFeedOauthStates.userId, input.userId),
-    input.provider ? eq(bankFeedOauthStates.provider, input.provider) : undefined,
+    eq(bankFeedOauthStates.stateHash, hashState(state)),
     isNull(bankFeedOauthStates.usedAt),
     gt(bankFeedOauthStates.expiresAt, new Date())
+  );
+}
+
+export async function pendingCallbackExpiry(state: string): Promise<Date | undefined> {
+  const [row] = await db
+    .select({ expiresAt: bankFeedOauthStates.expiresAt })
+    .from(bankFeedOauthStates)
+    .where(pendingCallbackState(state))
+    .limit(1);
+  return row?.expiresAt;
+}
+
+function activeCallbackState(input: CallbackStateScope) {
+  return and(
+    pendingCallbackState(input.state),
+    eq(bankFeedOauthStates.userId, input.userId),
+    input.provider ? eq(bankFeedOauthStates.provider, input.provider) : undefined
   );
 }
 
@@ -259,7 +274,7 @@ function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** Sync one connection. Duplicates (same provider transaction id) are skipped. */
+/** Process statement transactions, deduplicating by external transaction ID. */
 export async function syncConnection(
   connection: BankConnection,
   opts: { from?: string; to?: string; actorId?: string | null } = {}
@@ -423,7 +438,7 @@ export function registerBankFeedJobs(): void {
   });
 }
 
-/** Link a feed connection to a managed bank account of the same company. */
+/** Associate an import source with an account in the same company. */
 export async function linkConnection(
   companyId: string,
   connectionId: string,

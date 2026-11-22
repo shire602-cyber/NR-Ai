@@ -10,6 +10,7 @@ import { DomainError } from "../errors";
 import { storage } from "../storage";
 import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import {
+  bankAuthorizationHandoffBody,
   bankFeedCallbackBody,
   bankFeedConnectBody,
   bankFeedSyncBody,
@@ -26,6 +27,12 @@ import {
   startConnect,
   syncConnection,
 } from "../services/bank-feeds";
+import {
+  clearReturnCookie,
+  clearReturnHandoff,
+  readReturnHandoff,
+  stageReturnHandoff,
+} from "../services/bank-feeds/return-handoff";
 import { getAvailableProviders, isOpenBankingConfigured } from "../services/open-banking.service";
 import { importBankStatement, parseCSVBankStatement } from "../services/bank-import.service";
 import { createLogger } from "../config/logger";
@@ -58,6 +65,7 @@ async function ownedConnection(req: Request, id: string, companyId?: string) {
 
 const connectionImportBody = z.object({ csvContent: z.string().min(1).max(5_000_000) }).strict();
 const connectionLinkBody = z.object({ bankAccountId: zUuid }).strict();
+type CallbackBody = z.output<typeof bankFeedCallbackBody>;
 
 export function registerBankRoutes(app: Express) {
   registerBankFeedJobs();
@@ -235,37 +243,75 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
+  // This accepts the processor's return before sign-in. The resume route authenticates and
+  // authorizes the initiating user before consuming the saved state or contacting the processor.
+  app.post(
+    "/api/bank-connections/handoff",
+    strictBody(bankAuthorizationHandoffBody),
+    asyncHandler(async (req, res) => {
+      const { search } = parsedBody<z.output<typeof bankAuthorizationHandoffBody>>(req);
+      await stageReturnHandoff(req, res, search);
+      res.set("Cache-Control", "no-store").json({ staged: true });
+    })
+  );
+
   const finishAuthorization = asyncHandler(async (req, res) => {
     const { companyId } = req.params;
     await assertAccess(req, companyId);
-    const body = parsedBody<z.output<typeof bankFeedCallbackBody>>(req);
-    const result = await completeCallback({
-      ...body,
-      companyId,
-      userId: userId(req),
-    });
+    const body: CallbackBody = res.locals.statementCallback ?? parsedBody<CallbackBody>(req);
+    const storeKey: string | undefined = res.locals.statementReturnKey;
+    const result = await completeCallback({ ...body, companyId, userId: userId(req) }).finally(
+      () => storeKey && clearReturnHandoff(req, res, storeKey)
+    );
     logger.info({ companyId, count: result.connections.length }, "Authorization return processed");
     res.status(201).json(result);
   });
+
+  const resolveOrigin = asyncHandler(async (req, res, next) => {
+    const body: CallbackBody = res.locals.statementCallback ?? parsedBody<CallbackBody>(req);
+    const companyId = await resolveCallbackCompany({ ...body, userId: userId(req) });
+    // Apply the workspace guards using the company bound to the authenticated user's state.
+    await assertAccess(req, companyId);
+    await assertTrialAccess(companyId, req.user!);
+    req.params.companyId = companyId;
+    next();
+  });
+  const finishForOrigin = [
+    resolveOrigin,
+    requireCompanyMfaEnrollment,
+    requireFeature("bankImport"),
+    requirePermission("settings.company"),
+    finishAuthorization,
+  ];
+
+  app.post(
+    "/api/bank-connections/callback/resume",
+    authMiddleware,
+    requireCustomer,
+    strictBody(z.object({ resume: z.literal(true) }).strict()),
+    asyncHandler(async (req, res, next) => {
+      res.set("Cache-Control", "no-store");
+      const handoff = await readReturnHandoff(req);
+      if (handoff.kind === "empty") {
+        res.status(204).end();
+      } else if (handoff.kind === "pending") {
+        res.locals.statementCallback = handoff.callback;
+        res.locals.statementReturnKey = handoff.storeKey;
+        next();
+      } else {
+        clearReturnCookie(res);
+        res.json({ outcome: handoff.kind });
+      }
+    }),
+    ...finishForOrigin
+  );
 
   app.post(
     "/api/bank-connections/callback",
     authMiddleware,
     requireCustomer,
     strictBody(bankFeedCallbackBody),
-    asyncHandler(async (req, _res, next) => {
-      const body = parsedBody<z.output<typeof bankFeedCallbackBody>>(req);
-      const companyId = await resolveCallbackCompany({ ...body, userId: userId(req) });
-      // Apply the same workspace guards using the company bound to the authenticated user's state.
-      await assertAccess(req, companyId);
-      await assertTrialAccess(companyId, req.user!);
-      req.params.companyId = companyId;
-      next();
-    }),
-    requireCompanyMfaEnrollment,
-    requireFeature("bankImport"),
-    requirePermission("settings.company"),
-    finishAuthorization
+    ...finishForOrigin
   );
 
   app.post(

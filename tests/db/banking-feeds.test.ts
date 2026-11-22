@@ -5,7 +5,7 @@
  * Provider HTTP is a recorded sandbox-shaped fixture; nothing calls a real bank.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useHarness, type Tenant } from "./harness";
+import { freezeTime, useHarness, type Tenant } from "./harness";
 import type { FetchLike } from "../../server/services/bank-feeds/types";
 import { bankStatementCopy, bankStatementTitle } from "../../shared/bank-statement-copy";
 import { LEGACY_BANK_AUTHORIZATION_RETURN_PATH } from "../../shared/bank-authorization-paths";
@@ -88,7 +88,122 @@ async function tenant(): Promise<Tenant> {
   return h.createTenant({ name: "Feeds" });
 }
 
+async function stageReturn(search: string) {
+  const csrf = await h.anon.get("/api/csrf-token");
+  const headers = {
+    cookie: csrf.headers
+      .getSetCookie()
+      .map((header) => header.split(";")[0])
+      .join("; "),
+    "x-csrf-token": csrf.body.csrfToken,
+  };
+  const reply = await h.anon.post("/api/bank-connections/handoff", { search }, { headers });
+  expect(reply.status, reply.text).toBe(200);
+  expect(reply.body).toEqual({ staged: true });
+  const handoff = reply.headers
+    .getSetCookie()
+    .find((header) => header.startsWith("statement-return="));
+  expect(handoff).toBeDefined();
+  return {
+    handoff: handoff!,
+    headers: { ...headers, cookie: `${headers.cookie}; ${handoff!.split(";")[0]}` },
+  };
+}
+
 describe("W3-C financial-data authorization", () => {
+  it("stages an anonymous return and resumes it once for its initiating user after signing in", async () => {
+    vi.stubEnv("LEAN_APP_TOKEN", "sandbox-app-token");
+    vi.stubEnv("BANK_FEED_REDIRECT_URIS", REDIRECT);
+    const calls: string[] = [];
+    const code = "return%2F+sample%252F/";
+    await setBankFeedFetch(leanFixture(calls, code));
+    const owner = await tenant();
+    const other = await h.createSecondTenant();
+    const started = await owner.as.post(
+      `/api/companies/${owner.company.id}/bank-connections/connect`,
+      {
+        provider: "lean",
+        redirectUrl: REDIRECT,
+      }
+    );
+    expect(started.status, started.text).toBe(200);
+    const state = new URL(started.body.authUrl).searchParams.get("state")!;
+    const search = `?${new URLSearchParams({ entity_id: code, state })}`;
+    const withoutCsrf = await h.anon.post("/api/bank-connections/handoff", { search });
+    expect(withoutCsrf.status).toBe(403);
+
+    const { handoff, headers } = await stageReturn(search);
+    expect(handoff).toMatch(/; HttpOnly/i);
+    expect(handoff).toMatch(/; Path=\/api\/bank-connections\/callback\/resume/i);
+    expect(Number(/Max-Age=(\d+)/i.exec(handoff)?.[1])).toBeGreaterThan(0);
+    expect(Number(/Max-Age=(\d+)/i.exec(handoff)?.[1])).toBeLessThanOrEqual(600);
+    expect(decodeURIComponent(handoff)).not.toContain(code);
+    expect(decodeURIComponent(handoff)).not.toContain(state);
+    const endpoint = "/api/bank-connections/callback/resume";
+    expect((await h.anon.post(endpoint, { resume: true }, { headers })).status).toBe(401);
+    expect((await other.as.post(endpoint, { resume: true }, { headers })).body.code).toBe(
+      "INVALID_OAUTH_STATE"
+    );
+    expect((await owner.as.post(endpoint, { resume: true })).status).toBe(204);
+    expect(calls).toEqual([]);
+
+    const login = await h.anon.post("/api/auth/login", {
+      email: owner.email,
+      password: owner.password,
+    });
+    expect(login.status, login.text).toBe(200);
+    const access = login.headers
+      .getSetCookie()
+      .find((header) => header.startsWith("muhasib-access="));
+    expect(access).toBeDefined();
+    headers.cookie += `; ${access!.split(";")[0]}`;
+    const replies = await Promise.all([
+      h.anon.post(endpoint, { resume: true }, { headers }),
+      h.anon.post(endpoint, { resume: true }, { headers }),
+    ]);
+    const completed = replies.filter((reply) => reply.status === 201);
+    expect(completed).toHaveLength(1);
+    expect(completed[0].body.connections).toMatchObject([
+      { companyId: owner.company.id, provider: "lean" },
+    ]);
+    expect(completed[0].headers.getSetCookie().join(" ")).toContain("statement-return=;");
+    const replay = await h.anon.post(endpoint, { resume: true }, { headers });
+    expect(replay.body).toEqual({ outcome: "failed" });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("expires the handoff with the original state and preserves a cancellation outcome", async () => {
+    vi.stubEnv("LEAN_APP_TOKEN", "sandbox-app-token");
+    vi.stubEnv("BANK_FEED_REDIRECT_URIS", REDIRECT);
+    const calls: string[] = [];
+    await setBankFeedFetch(leanFixture(calls));
+    const owner = await tenant();
+    const started = await owner.as.post(
+      `/api/companies/${owner.company.id}/bank-connections/connect`,
+      {
+        provider: "lean",
+        redirectUrl: REDIRECT,
+      }
+    );
+    expect(started.status, started.text).toBe(200);
+    const state = new URL(started.body.authUrl).searchParams.get("state")!;
+    const saved = await stageReturn(`?${new URLSearchParams({ code: ENTITY_SECRET, state })}`);
+    const endpoint = "/api/bank-connections/callback/resume";
+    const restore = freezeTime(new Date(started.body.expiresAt).getTime() + 1000);
+    try {
+      const expired = await owner.as.post(endpoint, { resume: true }, { headers: saved.headers });
+      expect(expired.status, expired.text).toBe(200);
+      expect(expired.body).toEqual({ outcome: "failed" });
+    } finally {
+      restore();
+    }
+    const cancelled = await stageReturn("?error=access_denied&error_description=fixture");
+    expect(
+      (await owner.as.post(endpoint, { resume: true }, { headers: cancelled.headers })).body
+    ).toEqual({ outcome: "cancelled" });
+    expect(calls).toEqual([]);
+  });
+
   it("[R06-14] connect with an unconfigured provider is 503 BANK_FEED_NOT_CONFIGURED", async () => {
     await clearEnv();
     const t = await tenant();
@@ -261,11 +376,14 @@ describe("W3-C financial-data authorization", () => {
       redirectUrl: REDIRECT,
     });
     expect(started.status, started.text).toBe(200);
-    const state = new URL(started.body.authUrl).searchParams.get("state");
-    const payload = { code: ENTITY_SECRET, state };
+    const state = new URL(started.body.authUrl).searchParams.get("state")!;
+    const { headers } = await stageReturn(
+      `?${new URLSearchParams({ code: ENTITY_SECRET, state })}`
+    );
+    const endpoint = "/api/bank-connections/callback/resume";
 
     await setCompanyMfaPolicy(company.id, "owners_admins", user.id);
-    const denied = await as.post("/api/bank-connections/callback", payload);
+    const denied = await as.post(endpoint, { resume: true }, { headers });
     expect(denied.status, denied.text).toBe(403);
     expect(denied.body).toMatchObject({
       code: "MFA_ENROLLMENT_REQUIRED",
@@ -279,7 +397,7 @@ describe("W3-C financial-data authorization", () => {
     expect(authorization.used_at).toBeNull();
 
     await setCompanyMfaPolicy(company.id, "none", user.id);
-    const completed = await as.post("/api/bank-connections/callback", payload);
+    const completed = await as.post(endpoint, { resume: true }, { headers });
     expect(completed.status, completed.text).toBe(201);
     expect(calls).toHaveLength(1);
   });

@@ -499,6 +499,17 @@ function FirmRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function AuthorizationCapture({ failed, retry }: { failed: boolean; retry: () => void }) {
+  if (!failed) return <PageLoader variant="form" />;
+  return (
+    <main className="mx-auto w-full max-w-3xl p-4 sm:p-8">
+      <Suspense fallback={<PageLoader variant="form" />}>
+        <BankFeeds retryCapture={retry} />
+      </Suspense>
+    </main>
+  );
+}
+
 function Router() {
   const [location, setLocation] = useLocation();
   const { data: user, isLoading: userLoading } = useCurrentUser();
@@ -574,19 +585,16 @@ function Router() {
     return (
       <Switch>
         <Route path="/banking/callback">
-          <PageLoader variant="form" />
+          <AuthorizationCapture failed={authorization.failed} retry={authorization.retry} />
         </Route>
         <Route path="/bank-feeds/callback">
           {authorization.cleaning ? (
-            <PageLoader variant="form" />
+            <AuthorizationCapture failed={authorization.failed} retry={authorization.retry} />
           ) : (
             <ProtectedRoute replaceOnLoginRedirect>
               <main className="mx-auto w-full max-w-3xl p-4 sm:p-8">
                 <Suspense fallback={<PageLoader variant="form" />}>
-                  <BankFeeds
-                    initialReturn={authorization.returned}
-                    onReturnClaimed={authorization.clear}
-                  />
+                  <BankFeeds resumeAuthorization />
                 </Suspense>
               </main>
             </ProtectedRoute>

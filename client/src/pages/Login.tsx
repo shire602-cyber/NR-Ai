@@ -134,8 +134,10 @@ function SignIn() {
   );
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("oauth_error") === "1") {
-      window.history.replaceState({}, "", "/login");
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("oauth_error") === "1") {
+      params.delete("oauth_error");
+      window.history.replaceState({}, "", params.size ? `/login?${params}` : "/login");
     }
 
     fetchCurrentUser()

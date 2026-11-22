@@ -409,6 +409,10 @@ export const bankFeedCallbackBody = z
   })
   .strict();
 
+export const bankAuthorizationHandoffBody = z
+  .object({ search: z.string().min(1).max(24_000) })
+  .strict();
+
 export const bankFeedSyncBody = z
   .object({
     fromDate: zDate.optional(),

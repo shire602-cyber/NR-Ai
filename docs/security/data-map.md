@@ -19,6 +19,10 @@ opinion and has not been reviewed by counsel or an auditor.
 | Communications               | outbound email bodies/attachments (sensitive messages flagged), WhatsApp messages (NR firm only) | `email_outbox`, `email_outbox_attachments`, `whatsapp_messages` | delivery and retries                             |
 | Backups                      | JSON snapshots of the books above                                                                | `backups.data_snapshot` (AES-256-GCM)                           | recovery                                         |
 
+An authorization return received before sign-in is encrypted in the server session store and
+expires with its original state within ten minutes. The browser keeps a signed, opaque HttpOnly
+reference. The application deletes the stored return after processing.
+
 ## Processors and sub-processors (only when configured)
 
 The application calls a third party only when its environment variables are set; the

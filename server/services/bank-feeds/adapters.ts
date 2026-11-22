@@ -23,8 +23,7 @@ function expiresIn(seconds: unknown): Date | null {
 }
 
 // ─── Lean Technologies ─────────────────────────────────────────────────────
-// Link SDK flow: the customer links a bank in Lean's widget; the "code" returned to the
-// callback is the entity_id. Data API calls carry the app token header.
+// The widget returns entity_id as the authorization code. Data API calls carry an app token.
 
 export const leanAdapter: BankFeedAdapter = {
   id: "lean",
