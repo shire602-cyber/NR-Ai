@@ -405,6 +405,7 @@
   "serverErrors.LINE_HAS_BOTH_SIDES": "Each journal line must be either a debit or a credit, not both.",
   "serverErrors.LINKED_REQUIREMENT_NOT_FOUND": "The linked requirement could not be found.",
   "serverErrors.LINK_EXPIRED": "This link has expired. Ask the sender for a new one.",
+  "serverErrors.LINK_REVOKED": "This link was withdrawn. Ask the sender for a new one.",
   "serverErrors.LOGIN_REQUIRED": "An account already exists for this email. Sign in, then accept the invitation.",
   "serverErrors.LOGO_NOT_FOUND": "No logo has been uploaded for this company.",
   "serverErrors.LOGO_TOO_LARGE": "The logo must be 1 MB or smaller.",

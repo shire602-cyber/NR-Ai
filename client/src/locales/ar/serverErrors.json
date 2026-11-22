@@ -405,6 +405,7 @@
   "serverErrors.LINE_HAS_BOTH_SIDES": "يجب أن يكون كل بند في القيد مدينًا أو دائنًا، وليس كليهما.",
   "serverErrors.LINKED_REQUIREMENT_NOT_FOUND": "تعذّر العثور على المتطلب المرتبط.",
   "serverErrors.LINK_EXPIRED": "انتهت صلاحية هذا الرابط. اطلب رابطًا جديدًا من المرسل.",
+  "serverErrors.LINK_REVOKED": "تم إلغاء هذا الرابط. اطلب رابطًا جديدًا من المرسل.",
   "serverErrors.LOGIN_REQUIRED": "يوجد حساب بهذا البريد بالفعل. سجّل الدخول ثم اقبل الدعوة.",
   "serverErrors.LOGO_NOT_FOUND": "لم يُرفع شعار لهذه الشركة.",
   "serverErrors.LOGO_TOO_LARGE": "يجب ألا يتجاوز حجم الشعار 1 ميغابايت.",
