@@ -8,12 +8,12 @@
 import { BANK_STATEMENT_IMPORT_HREF } from "./app-links";
 import { BANK_RECONCILIATION_COPY } from "./bank-reconciliation-copy";
 
-/** Bank sync failure copy for in-app notifications and staff emails. */
+/** Statement review copy for in-app notifications and staff emails. */
 export const BANK_SYNC_FAILED_NOTIFICATION = {
   titleKey: "notification.bankSyncFailed.title",
   messageKey: "notification.bankSyncFailed.message",
   actionUrl: BANK_STATEMENT_IMPORT_HREF,
-  title: { en: "Continue bank reconciliation", ar: "تابع التسوية البنكية" },
+  title: { en: "Import a CSV bank statement", ar: "استورد كشف حساب بنكي بصيغة CSV" },
   message: BANK_RECONCILIATION_COPY,
 } as const;
 

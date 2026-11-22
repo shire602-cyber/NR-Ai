@@ -75,7 +75,8 @@ describe("CSV bank reconciliation guidance", () => {
             key: "bankStatementUpload",
             name: "Bank statement upload",
             configured: true,
-            detail: null,
+            detail:
+              "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
             requiredEnv: [],
             unlocks: "Upload CSV bank statements for reconciliation",
           },

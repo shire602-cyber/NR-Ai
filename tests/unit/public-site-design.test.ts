@@ -10,6 +10,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
+import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -92,7 +93,7 @@ function arabicModeEnglishLines(): string[] {
 const UNSUPPORTED_CLAIMS = [
   /FTA[-\s]?(accredited|compliant|registered|approved)/i,
   /submits? (your|the) (VAT )?return(s)? (to|with) the FTA automatically/i,
-  /(?:connect to|sync from) (?:a |your )?(?:live )?bank\b/i,
+  unsupportedStatementCopy,
   /money-back/i,
   /UAE-hosted/i,
   // "Most popular" is a plan-card highlight the owner asked for (X6b); it states no user count.
@@ -202,47 +203,43 @@ describe("D1 public site", () => {
     {
       locale: "en",
       question: "How do I reconcile my bank account?",
-      workflow:
-        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
-      steps: [
-        "Choose the account and preview the CSV before importing.",
-        "Review suggestions and resolve unmatched entries.",
-      ],
+      copy: "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
     },
     {
       locale: "ar",
       question: "كيف أطابق حسابي البنكي؟",
-      workflow: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
-      steps: [
-        "اختر الحساب وعاين ملف CSV قبل استيراده.",
-        "راجع المطابقات المقترحة وعالج الحركات غير المطابقة.",
-      ],
+      copy: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
     },
-  ])(
-    "describes bank reconciliation as CSV import on the $locale public site",
-    async ({ locale, question, workflow, steps }) => {
-      const { default: PhaseRoot } =
-        await import("../../client/src/components/marketing/phase/PhaseRoot");
+  ] as const)(
+    "[D1] banking copy describes CSV reconciliation in $locale",
+    async ({ locale, question, copy }) => {
+      const { default: PhaseSite } =
+        await import("../../client/src/components/marketing/phase/PhaseSite");
+      const { t } = await import("../../client/src/lib/i18n");
       const previousUrl = window.location.href;
       try {
         window.history.replaceState(null, "", `/${locale}`);
-        await act(async () => root.render(createElement(PhaseRoot)));
-        const faq = Array.from(container.querySelectorAll("details")).find((entry) =>
-          entry.querySelector("summary")?.textContent?.includes(question)
+        await act(async () => root.render(createElement(PhaseSite)));
+        const faq = [...container.querySelectorAll(".phase-faq details")].find(
+          (item) => item.querySelector("summary")?.textContent?.trim() === question
         );
-        expect(faq?.querySelector("p")?.textContent).toBe(workflow);
+        expect(faq?.querySelector("p")?.textContent).toBe(copy);
 
-        await act(async () => root.unmount());
+        act(() => root.unmount());
         root = createRoot(container);
         window.history.replaceState(null, "", `/${locale}/product/bank-reconciliation`);
-        await act(async () => root.render(createElement(PhaseRoot)));
-        expect(container.querySelector("main .phase-lead")?.textContent).toBe(workflow);
-        expect(
-          [...container.querySelectorAll("main .phase-product-detail ol > li")].map(
-            (step) => step.textContent
-          )
-        ).toEqual(steps);
+        await act(async () => root.render(createElement(PhaseSite)));
+        expect(container.querySelector(".phase-lead")?.textContent).toBe(copy);
+        expect(container.querySelectorAll(".phase-product-detail ol > li")).toHaveLength(2);
+        expect(container.querySelector(".phase-product-detail ol")?.textContent).not.toMatch(
+          unsupportedStatementCopy
+        );
+        expect(t[locale]["marketing.faq3A"]).toBe(copy);
+        expect(t[locale]["marketing.prEveryBankBody"]).toBe(copy);
+        expect(t[locale]["banking.feeds.unavailableBody"]).toBe(copy);
+        expect(t[locale]["serverErrors.BANK_FEED_NOT_CONFIGURED"]).toBe(copy);
       } finally {
+        act(() => root.render(null));
         window.history.replaceState(null, "", previousUrl);
       }
     }

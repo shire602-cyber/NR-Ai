@@ -10,7 +10,6 @@ import arErrors from "../../client/src/locales/ar/serverErrors.json";
 import enBanking from "../../client/src/locales/en/banking.json";
 import enOnboarding from "../../client/src/locales/en/onboarding.json";
 import enErrors from "../../client/src/locales/en/serverErrors.json";
-import BankFeedCallback from "../../client/src/pages/BankFeedCallback";
 import BankFeeds from "../../client/src/pages/BankFeeds";
 
 const { request, toast } = vi.hoisted(() => ({ request: vi.fn(), toast: vi.fn() }));
@@ -32,9 +31,8 @@ const languages = [
   {
     locale: "en",
     heading: "CSV bank statements",
-    callbackHeading: "Returning to bank reconciliation",
     copy: "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
-    uploadHint: "Upload a CSV exported from your bank",
+    uploadHint: "CSV files can use commas, semicolons, or tabs",
     banking: enBanking,
     onboarding: enOnboarding,
     errors: enErrors,
@@ -42,9 +40,8 @@ const languages = [
   {
     locale: "ar",
     heading: "كشوف الحساب البنكي بصيغة CSV",
-    callbackHeading: "جارٍ الرجوع إلى التسوية البنكية",
     copy: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
-    uploadHint: "ارفع كشف حساب بصيغة CSV صدّرته من مصرفك",
+    uploadHint: "يمكن فصل أعمدة ملف CSV بفاصلة أو فاصلة منقوطة أو علامة جدولة",
     banking: arBanking,
     onboarding: arOnboarding,
     errors: arErrors,
@@ -146,89 +143,7 @@ describe.each(languages)(
     it("uses the approved CSV guidance for setup, errors and upload help", () => {
       expect(errors["serverErrors.BANK_FEED_NOT_CONFIGURED"]).toBe(copy);
       expect(onboarding["onboarding.bankCardDesc"]).toBe(copy);
-      expect(banking["banking.import.formats"]).toBe(uploadHint);
+      expect(banking["banking.import.formatDelimiters"]).toBe(uploadHint);
     });
   }
 );
-
-describe("bank connection callback", () => {
-  it.each([
-    {
-      ...languages[0],
-      query: "?provider=lean&code=provider-code&state=provider-state",
-      sessionProvider: null,
-    },
-    {
-      ...languages[1],
-      query: "?entity_id=provider-code&state=provider-state",
-      sessionProvider: "lean",
-    },
-  ])(
-    "completes the callback once with the reconciliation status in $locale",
-    async ({ locale, callbackHeading, query, sessionProvider }) => {
-      useI18n.setState({ locale });
-      window.history.replaceState(null, "", "/bank-feeds/callback" + query);
-      if (sessionProvider) sessionStorage.setItem("bankFeedProvider", sessionProvider);
-      let complete!: (result: object) => void;
-      request.mockImplementationOnce(
-        () =>
-          new Promise<object>((resolve) => {
-            complete = resolve;
-          })
-      );
-
-      await render(BankFeedCallback);
-
-      expect(window.location.pathname).toBe("/bank-feeds/callback");
-      expect(element.querySelector('[role="status"] h1')?.textContent).toBe(callbackHeading);
-      expect(element.textContent).not.toMatch(bankClaim);
-      expect(request).toHaveBeenCalledExactlyOnceWith(
-        "POST",
-        "/api/companies/company-1/bank-connections/callback",
-        { provider: "lean", code: "provider-code", state: "provider-state" }
-      );
-
-      await act(async () => {
-        complete({});
-        await vi.waitFor(() => expect(window.location.pathname).toBe("/bank-feeds"));
-      });
-      expect(window.location.search).toBe("");
-      expect(request).toHaveBeenCalledTimes(1);
-      expect(toast).not.toHaveBeenCalled();
-    }
-  );
-
-  it("shows the CSV route without submitting an incomplete callback", async () => {
-    useI18n.setState({ locale: "en" });
-    window.history.replaceState(null, "", "/bank-feeds/callback?code=provider-code");
-
-    await render(BankFeedCallback);
-
-    expect(request).not.toHaveBeenCalled();
-    expect(element.querySelector("h1")?.textContent).toBe("CSV bank statements");
-    expect(
-      element.querySelector('[data-testid="button-feeds-import-statement"]')?.getAttribute("href")
-    ).toBe("/bank-reconciliation?import=1");
-  });
-
-  it("reports a failed callback and clears its query parameters", async () => {
-    useI18n.setState({ locale: "en" });
-    window.history.replaceState(
-      null,
-      "",
-      "/bank-feeds/callback?provider=lean&code=provider-code&state=provider-state"
-    );
-    request.mockRejectedValueOnce(new Error("Invalid callback state"));
-
-    await render(BankFeedCallback);
-    await act(async () => {
-      await vi.waitFor(() => expect(window.location.pathname).toBe("/bank-feeds"));
-    });
-
-    expect(window.location.search).toBe("");
-    expect(request).toHaveBeenCalledTimes(1);
-    expect(toast).toHaveBeenCalledWith(
-      expect.objectContaining({ variant: "destructive", description: "Invalid callback state" })
-    );
-  });
-});

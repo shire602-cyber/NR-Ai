@@ -11,6 +11,7 @@
  * when any parameter inside it is missing or empty.
  */
 
+import { BANK_STATEMENT_IMPORT_HREF } from "./app-links";
 import { BANK_SYNC_FAILED_NOTIFICATION, EMAIL_NOT_SET_UP_RUN_ERROR } from "./notification-copy";
 
 export interface CopyDescriptor {
@@ -66,6 +67,19 @@ export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.aiDraftsReview.title", "AI draft journal entries to review: {count}"),
 ];
 
+// Duplicate notices are more specific than the normal import completion message.
+const STATEMENT_IMPORT_MESSAGES = [
+  T(
+    "notification.bankStatementImportedSkipped.message",
+    "{count} transaction(s) imported[ from {bank}]; {skipped} already imported"
+  ),
+  T(
+    "notification.bankStatementNothingNew.message",
+    "No new transactions[ from {bank}]; {skipped} already imported"
+  ),
+  T("notification.bankStatementImported.message", "{count} transaction(s) imported[ from {bank}]"),
+];
+
 /** Notification messages, most specific first. `prefix` messages carry trailing catalog text. */
 export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   T(
@@ -111,19 +125,7 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
     "notification.whatsappLogged.message",
     "WhatsApp draft logged for {phone}; no provider delivery occurred."
   ),
-  // Step 1 / F4: re-imports say what was skipped; the Arabic catalog entries use ICU plurals.
-  T(
-    "notification.bankStatementImportedSkipped.message",
-    "{count} transaction(s) imported from {bank} ({format} format); {skipped} already imported"
-  ),
-  T(
-    "notification.bankStatementNothingNew.message",
-    "No new transactions from {bank} ({format} format); {skipped} already imported"
-  ),
-  T(
-    "notification.bankStatementImported.message",
-    "{count} transaction(s) imported from {bank} ({format} format)"
-  ),
+  ...STATEMENT_IMPORT_MESSAGES,
   T(
     "notification.receiptUploadedUnknown.message",
     "New receipt from unknown merchant[ for {amount}]"
@@ -174,6 +176,7 @@ export const REPORT_DELIVERY_TEMPLATES: readonly CopyTemplate[] = [
 /** Older stored sentences that map onto a current key (parse only, never rendered or catalogued). */
 export const LEGACY_NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T(BANK_SYNC_FAILED_NOTIFICATION.titleKey, "Bank feed sync failed"),
+  T(BANK_SYNC_FAILED_NOTIFICATION.titleKey, "Continue bank reconciliation"),
   // AI drafts notice stored before it was catalog copy (broken-path sweep).
   T("notification.aiDraftsReview.title", "{count} AI draft journal entries need review"),
   T("notification.aiDraftsReview.title", "{count} AI draft journal entry need review"),
@@ -351,6 +354,18 @@ export interface NotificationCopyDescriptor {
   messageParams: Record<string, string>;
 }
 
+// Earlier renderers appended these file or parser-profile labels after the bank's name.
+const LEGACY_STATEMENT_FORMAT_SUFFIX =
+  / \((?:CSV|XLSX|MT940|CAMT\.?053|OFX(?:\/QFX)?|QFX|Generic(?: \(Arabic\/English\))?|Emirates ?NBD|ADCB|FAB|Mashreq(?: ?Neo)?|RAKBANK|CBD|Commercial Bank of Dubai|Wio) format\)(?=(?:; \d+ already imported)?$)/i;
+
+function legacyStatementImportCopy(n: { title: string; message: string }): CopyDescriptor | null {
+  if (!/^Bank statement imported$/i.test(n.title)) return null;
+  const withoutFormat = n.message.replace(LEGACY_STATEMENT_FORMAT_SUFFIX, "");
+  if (withoutFormat === n.message) return null;
+  const wording = withoutFormat.replace(/ from[ \t]+(?=(?:; \d+ already imported)?$)/i, "");
+  return parseServerCopy(wording, STATEMENT_IMPORT_MESSAGES);
+}
+
 /** Keys + params for a stored notification (old or new rows alike). */
 export function describeNotificationCopy(n: {
   title: string;
@@ -360,10 +375,12 @@ export function describeNotificationCopy(n: {
     ...NOTIFICATION_TITLE_TEMPLATES,
     ...LEGACY_NOTIFICATION_TITLE_TEMPLATES,
   ]);
-  const message = parseServerCopy(n.message, [
-    ...NOTIFICATION_MESSAGE_TEMPLATES,
-    ...LEGACY_NOTIFICATION_MESSAGE_TEMPLATES,
-  ]);
+  const message =
+    legacyStatementImportCopy(n) ??
+    parseServerCopy(n.message, [
+      ...NOTIFICATION_MESSAGE_TEMPLATES,
+      ...LEGACY_NOTIFICATION_MESSAGE_TEMPLATES,
+    ]);
   return {
     titleKey: title?.key ?? null,
     titleParams: title?.params ?? {},
@@ -1486,26 +1503,37 @@ export function notificationCopy(
   };
 }
 
-/** Show the current CSV guidance for stored bank sync alerts. */
-export function normalizeNotificationCopy<T extends { eventKey?: string | null }>(n: T): T {
-  return n.eventKey?.startsWith("bank.sync_failed:")
-    ? {
-        ...n,
-        title: BANK_SYNC_FAILED_NOTIFICATION.title.en,
-        message: BANK_SYNC_FAILED_NOTIFICATION.message.en,
-        actionUrl: BANK_SYNC_FAILED_NOTIFICATION.actionUrl,
-      }
-    : n;
+/** Retain the stable event key for notifications already stored before the copy changed. */
+export function isBankStatementReview(eventKey: string | null | undefined): boolean {
+  return eventKey?.startsWith("bank.sync_failed:") ?? false;
+}
+
+export function normalizeNotificationCopy<
+  T extends { title: string; message: string; eventKey?: string | null },
+>(n: T): T {
+  if (isBankStatementReview(n.eventKey)) {
+    return {
+      ...n,
+      actionUrl: BANK_STATEMENT_IMPORT_HREF,
+      ...notificationCopy(
+        "notification.bankSyncFailed.title",
+        "notification.bankSyncFailed.message"
+      ),
+    };
+  }
+  const legacy = legacyStatementImportCopy(n);
+  return legacy ? { ...n, message: renderServerCopy(legacy.key, legacy.params) } : n;
 }
 
 /** Attach `copy` (stable keys + params) to a notification for API/socket responses. */
 export function withNotificationCopy<
   T extends { title: string; message: string; eventKey?: string | null },
 >(n: T): T & { copy: NotificationCopyDescriptor } {
-  const copy = describeNotificationCopy(normalizeNotificationCopy(n));
-  // Keep legacy provider details and reconnect instructions out of API fallback text as well.
+  const normalized = normalizeNotificationCopy(n);
+  const copy = describeNotificationCopy(normalized);
+  // Keep historic adapter details out of API fallback text.
   return {
-    ...n,
+    ...normalized,
     ...(copy.titleKey === BANK_SYNC_FAILED_NOTIFICATION.titleKey
       ? { title: BANK_SYNC_FAILED_NOTIFICATION.title.en }
       : {}),

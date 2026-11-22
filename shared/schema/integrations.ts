@@ -1,4 +1,4 @@
-// Cost centers, reconciliation rules, templates, bank connections, API keys, webhooks, push.
+// Cost centers, reconciliation rules, templates, statement associations, API keys, webhooks, push.
 // Part of the shared/schema.ts barrel (R20-09); import from "@shared/schema".
 
 import {
@@ -143,7 +143,7 @@ export type InsertInvoiceTemplate = z.infer<typeof insertInvoiceTemplateSchema>;
 export type InvoiceTemplate = typeof invoiceTemplates.$inferSelect;
 
 // ===========================
-// Bank connections for configured accounts and manual statement imports
+// Statement associations and authorized processing records
 // ===========================
 export const bankConnections = pgTable(
   "bank_connections",

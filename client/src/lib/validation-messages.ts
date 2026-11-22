@@ -10,6 +10,7 @@
  *   dotted field paths) into Arabic text that keeps the field names.
  */
 import type { z } from "zod";
+import { bankStatementCopy } from "@shared/bank-statement-copy";
 import { formatMessage, loadNamespaces, t, useI18n } from "./i18n";
 
 type RawIssue = z.core.$ZodRawIssue;
@@ -149,6 +150,7 @@ export function issueSlug(message: string): string {
 }
 
 export function localizeServerIssue(message: string): string {
+  if (message === bankStatementCopy.en) return bankStatementCopy.ar;
   const issue = dict("ar")[`serverErrors.issue.${issueSlug(message)}`];
   if (issue) return issue;
   const shared = SHARED_MESSAGE_KEYS[message];

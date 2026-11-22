@@ -14,20 +14,17 @@ const locales = [
     locale: "en",
     dir: "ltr",
     heading: "Bank reconciliation",
-    callbackHeading: "Returning to bank reconciliation",
     copy: "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
-    uploadHelp: "Upload a CSV exported from your bank",
+    uploadHelp: "CSV files can use commas, semicolons, or tabs",
   },
   {
     locale: "ar",
     dir: "rtl",
     heading: "التسوية البنكية",
-    callbackHeading: "جارٍ الرجوع إلى التسوية البنكية",
     copy: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
-    uploadHelp: "ارفع كشف حساب بصيغة CSV صدّرته من مصرفك",
+    uploadHelp: "يمكن فصل أعمدة ملف CSV بفاصلة أو فاصلة منقوطة أو علامة جدولة",
   },
 ];
-const connectionClaim = /\bconnect(?:ed|ing|ion)?\b|\bsync(?: now)?\b|ربط|مزامنة/iu;
 const otherFormats = /\b(?:XLSX|MT940|CAMT\.053|OFX)\b/u;
 
 const api = apiClient(base);
@@ -62,7 +59,7 @@ assert.deepEqual(customerBankStatus, {
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
 try {
-  for (const { locale, dir, callbackHeading, copy, uploadHelp } of locales) {
+  for (const { locale, dir, copy, uploadHelp } of locales) {
     const context = await browser.newContext({ locale: locale + "-AE", timezoneId: "Asia/Dubai" });
     try {
       await context.addInitScript((activeLocale) => {
@@ -108,43 +105,10 @@ try {
       assert.doesNotMatch(await dialog.innerText(), otherFormats);
       assert.equal(findBankLaunchClaim(await dialog.innerText()), undefined);
       const filePicker = dialog.getByTestId("input-bank-statement-file");
-      assert.match(await filePicker.getAttribute("accept"), /\.ofx\b/u);
+      assert.match(await filePicker.getAttribute("accept"), /\.csv\b/u);
       assert.deepEqual(providerRequests, []);
 
-      // Simulate completion locally so no provider receives the synthetic OAuth payload.
-      const callbackPath = companyPath + "/bank-connections/callback";
-      const payload = { provider: "lean", code: "review-code", state: "review-state" };
-      let releaseCallback;
-      const waitForRelease = new Promise((resolve) => {
-        releaseCallback = resolve;
-      });
-      await page.route(base + callbackPath, async (route) => {
-        await waitForRelease;
-        await route.fulfill({ status: 200, json: {} });
-      });
-      try {
-        const [callbackRequest] = await Promise.all([
-          page.waitForRequest((request) => request.url() === base + callbackPath),
-          page.goto(base + "/bank-feeds/callback?" + new URLSearchParams(payload)),
-        ]);
-        assert.equal(callbackRequest.method(), "POST");
-        assert.deepEqual(callbackRequest.postDataJSON(), payload);
-        const pending = page.getByRole("status").filter({
-          has: page.getByRole("heading", { name: callbackHeading, exact: true }),
-        });
-        await pending.waitFor();
-        assert.equal(await pending.innerText(), callbackHeading);
-        assert.equal(findBankLaunchClaim(await pending.innerText()), undefined);
-        assert.doesNotMatch(await pending.innerText(), connectionClaim);
-        releaseCallback();
-        await page.waitForURL(base + "/bank-feeds");
-        await page.getByText(copy, { exact: true }).waitFor();
-        assert.equal(await page.locator("[toast-close]").count(), 0);
-        assert.deepEqual(providerRequests, [callbackPath]);
-      } finally {
-        releaseCallback();
-      }
-      console.log(locale + " FAQ, product, bank landing, CSV dialog, and callback passed");
+      console.log(locale + " FAQ, product, bank landing, CSV dialog passed");
     } finally {
       await context.close();
     }

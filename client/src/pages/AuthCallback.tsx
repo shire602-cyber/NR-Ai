@@ -9,6 +9,10 @@ import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { AuthState } from "@/components/auth/AuthBlocks";
+import {
+  BANK_AUTHORIZATION_RETURN_PATH,
+  isBankAuthorizationReturnPath,
+} from "@shared/bank-authorization-paths";
 
 function safeNextPath(value: string | null): string {
   if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
@@ -17,6 +21,7 @@ function safeNextPath(value: string | null): string {
   try {
     const parsed = new URL(value, "https://muhasib.local");
     if (parsed.origin !== "https://muhasib.local") return "/dashboard";
+    if (isBankAuthorizationReturnPath(parsed.pathname)) return BANK_AUTHORIZATION_RETURN_PATH;
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {
     return "/dashboard";
@@ -31,14 +36,18 @@ export default function AuthCallback() {
   const [, setLocation] = useLocation();
   const { t } = useTranslation();
   const [failed, setFailed] = useState(false);
+  const [requestedNext] = useState(() =>
+    safeNextPath(
+      new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("next")
+    )
+  );
+  const returning = requestedNext === BANK_AUTHORIZATION_RETURN_PATH;
 
   useEffect(() => {
     let cancelled = false;
 
     const finish = async () => {
       try {
-        const params = new URLSearchParams(window.location.search);
-        const requestedNext = safeNextPath(params.get("next"));
         const user = await probeCurrentUser();
         if (!user) throw new Error("Session was not established");
 
@@ -47,7 +56,9 @@ export default function AuthCallback() {
 
         if (cancelled) return;
         const fallback = landingPathFor(user);
-        setLocation(requestedNext === "/dashboard" ? fallback : requestedNext);
+        setLocation(requestedNext === "/dashboard" ? fallback : requestedNext, {
+          replace: returning,
+        });
       } catch {
         if (!cancelled) setFailed(true);
       }
@@ -57,7 +68,7 @@ export default function AuthCallback() {
     return () => {
       cancelled = true;
     };
-  }, [setLocation]);
+  }, [requestedNext, returning, setLocation]);
 
   return (
     <AuthLayout variant="login">
@@ -70,7 +81,10 @@ export default function AuthCallback() {
           body={t["marketing.authCallbackFailedBody"]}
           actions={
             <Button asChild className="h-11">
-              <Link href="/login" data-testid="button-callback-sign-in">
+              <Link
+                href={returning ? `/login?next=${encodeURIComponent(requestedNext)}` : "/login"}
+                data-testid="button-callback-sign-in"
+              >
                 {t["marketing.authBackToSignIn"]}
               </Link>
             </Button>

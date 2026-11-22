@@ -3,6 +3,7 @@
 // (client/src/lib/reportCatalogText.ts); tests/unit/report-catalog-arabic.test.ts enforces coverage
 // of every field the launcher and dashboard render.
 import { registerDeliverySubscriptions } from "./deliveryTitleRegistry";
+import { bankStatementCopy } from "@shared/bank-statement-copy";
 
 export const reportTabs = [
   "pl",
@@ -547,7 +548,8 @@ export const reportPersonaWorkspaces: ReportPersonaWorkspace[] = [
       cadence: "Weekly Monday morning plus month-end close",
       delivery: "Excel or Google Sheets pack",
       recipients: "Business owner, solo entrepreneur, and finance admin",
-      trigger: "Refresh after bank, invoices, bills, receipts, and VAT reports are updated.",
+      trigger:
+        "Refresh after reconciling imported statements and updating invoices, bills, receipts, and VAT reports.",
       automation: "Send when collections, VAT, or cash warnings are open.",
     },
     setupChecklist: [
@@ -4400,7 +4402,7 @@ export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
     persona: "owner",
     title: "Owner weekly executive delivery",
     audience: "Business owner, solo entrepreneur, and finance admin",
-    cadence: "Every Monday at 8:00 AM after bank, invoice, and receipt refresh",
+    cadence: "Mondays at 8:00 AM after statement reconciliation and invoice and receipt updates",
     channel: "Email with PDF and Excel attachments",
     googleSheetsCopy: true,
     format: "Management pack workbook",

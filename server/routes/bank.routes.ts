@@ -3,6 +3,7 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
 import { requirePermission } from "../middleware/companyRolePolicy";
+import { assertTrialAccess } from "../middleware/trialAccessPolicy";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
@@ -11,7 +12,10 @@ import {
   BANK_RECONCILIATION_COPY,
   BANK_RECONCILIATION_LABEL,
 } from "../../shared/bank-reconciliation-copy";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import {
+  bankAuthorizationHandoffBody,
+  bankAuthorizationResumeBody,
   bankFeedCallbackBody,
   bankFeedConnectBody,
   bankFeedSyncBody,
@@ -22,16 +26,25 @@ import {
   linkConnection,
   providerStatuses,
   registerBankFeedJobs,
+  resolveCallbackCompany,
   sanitizeConnection,
   startConnect,
   syncConnection,
 } from "../services/bank-feeds";
+import {
+  clearCompletedReturn,
+  recordReturnReceipt,
+  type ReturnHandoff,
+  readReturnHandoff,
+  stageReturnHandoff,
+} from "../services/bank-feeds/return-handoff";
 import { importBankStatement, parseCSVBankStatement } from "../services/bank-import.service";
 import { createLogger } from "../config/logger";
 import { z } from "zod";
 import { zUuid } from "../../shared/validators/primitives";
 import { parseReportDate, uaeToday } from "../reporting";
 import { bankAccountBalances } from "../services/fx/bank-balances";
+import { requireCompanyMfaEnrollment } from "../services/security/policy";
 
 const logger = createLogger("bank-routes");
 
@@ -48,14 +61,16 @@ async function assertAccess(req: Request, companyId: string): Promise<void> {
 async function ownedConnection(req: Request, id: string, companyId?: string) {
   const connection = await storage.getBankConnection(id);
   if (!connection || (companyId && connection.companyId !== companyId))
-    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, BANK_RECONCILIATION_COPY.en);
+    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, bankStatementCopy.en);
   if (!(await storage.hasCompanyAccess(userId(req), connection.companyId)))
-    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, BANK_RECONCILIATION_COPY.en);
+    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, bankStatementCopy.en);
   return connection;
 }
 
 const connectionImportBody = z.object({ csvContent: z.string().min(1).max(5_000_000) }).strict();
 const connectionLinkBody = z.object({ bankAccountId: zUuid }).strict();
+type CallbackBody = z.output<typeof bankFeedCallbackBody>;
+type ReadyReturn = Extract<ReturnHandoff, { kind: "pending" | "completed" }>;
 
 export function registerBankRoutes(app: Express) {
   registerBankFeedJobs();
@@ -113,7 +128,7 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
-  // Manual statement records use this route. Adapter connections come through the callback.
+  // Manual statement association. External authorizations are recorded by the callback.
   app.post(
     "/api/companies/:companyId/bank-connections",
     authMiddleware,
@@ -137,7 +152,7 @@ export function registerBankRoutes(app: Express) {
         autoSync: false,
         status: "active",
       });
-      logger.info({ connectionId: connection.id, companyId }, "Bank connection created");
+      logger.info({ connectionId: connection.id, companyId }, "Statement association created");
       res.status(201).json(sanitizeConnection(connection));
     })
   );
@@ -149,7 +164,7 @@ export function registerBankRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const connection = await ownedConnection(req, req.params.id);
       await storage.deleteBankConnection(connection.id);
-      res.json({ message: "Record removed" });
+      res.json({ message: "Record deleted" });
     })
   );
 
@@ -204,7 +219,8 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
-  // Compatibility URL for deployment-level CSV availability. Import routes still enforce company permissions.
+  // ─── Financial-data authorization and processing ────────────────────────
+
   app.get(
     "/api/bank/providers",
     authMiddleware,
@@ -247,6 +263,101 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
+  // This accepts the processor's return before sign-in. The resume route authenticates and
+  // authorizes the initiating user before consuming the saved state or contacting the processor.
+  app.post(
+    "/api/bank-connections/handoff",
+    strictBody(bankAuthorizationHandoffBody),
+    asyncHandler(async (req, res) => {
+      const { search, returnId, tabKey } =
+        parsedBody<z.output<typeof bankAuthorizationHandoffBody>>(req);
+      await stageReturnHandoff(req, { returnId, tabKey }, search);
+      res.set("Cache-Control", "no-store").json({ returnId });
+    })
+  );
+
+  const finishAuthorization = asyncHandler(async (req, res) => {
+    const { companyId } = req.params;
+    await assertAccess(req, companyId);
+    const handoff: ReadyReturn | undefined = res.locals.statementReturn;
+    if (res.locals.acknowledgeStatementReturn) {
+      if (handoff?.kind !== "completed") {
+        throw new DomainError("AUTHORIZATION_RETRY", 409, undefined, bankStatementCopy.en);
+      }
+      await clearCompletedReturn(req, handoff);
+      res.json({ acknowledged: true });
+      return;
+    }
+    if (handoff?.kind === "completed") {
+      res.status(200).json(handoff.receipt.result);
+      return;
+    }
+    const body = handoff?.callback ?? parsedBody<CallbackBody>(req);
+    const result = await completeCallback(
+      { ...body, companyId, userId: userId(req) },
+      req.sessionStore,
+      Boolean(handoff)
+    );
+    if (handoff)
+      await recordReturnReceipt(req, handoff, { companyId, userId: userId(req), result });
+    logger.info({ companyId, count: result.connections.length }, "Authorization return processed");
+    res.status(201).json(result);
+  });
+
+  const resolveOrigin = asyncHandler(async (req, res, next) => {
+    const handoff: ReadyReturn | undefined = res.locals.statementReturn;
+    let companyId: string;
+    if (handoff?.kind === "completed") {
+      if (handoff.receipt.userId !== userId(req)) {
+        throw new DomainError("INVALID_OAUTH_STATE", 400, undefined, bankStatementCopy.en);
+      }
+      companyId = handoff.receipt.companyId;
+    } else {
+      const body = handoff?.callback ?? parsedBody<CallbackBody>(req);
+      companyId = await resolveCallbackCompany({ ...body, userId: userId(req) });
+    }
+    await assertAccess(req, companyId);
+    await assertTrialAccess(companyId, req.user!);
+    req.params.companyId = companyId;
+    next();
+  });
+  const finishForOrigin = [
+    resolveOrigin,
+    requireCompanyMfaEnrollment,
+    requireFeature("bankImport"),
+    requirePermission("settings.company"),
+    finishAuthorization,
+  ];
+
+  app.post(
+    "/api/bank-connections/callback/resume",
+    authMiddleware,
+    requireCustomer,
+    strictBody(bankAuthorizationResumeBody),
+    asyncHandler(async (req, res, next) => {
+      res.set("Cache-Control", "no-store");
+      const { returnId, tabKey, acknowledge } =
+        parsedBody<z.output<typeof bankAuthorizationResumeBody>>(req);
+      const handoff = await readReturnHandoff(req, { returnId, tabKey });
+      if (handoff.kind === "pending" || handoff.kind === "completed") {
+        res.locals.statementReturn = handoff;
+        res.locals.acknowledgeStatementReturn = acknowledge;
+        next();
+      } else {
+        res.json({ outcome: handoff.kind });
+      }
+    }),
+    ...finishForOrigin
+  );
+
+  app.post(
+    "/api/bank-connections/callback",
+    authMiddleware,
+    requireCustomer,
+    strictBody(bankFeedCallbackBody),
+    ...finishForOrigin
+  );
+
   app.post(
     "/api/companies/:companyId/bank-connections/callback",
     authMiddleware,
@@ -254,23 +365,7 @@ export function registerBankRoutes(app: Express) {
     requireFeature("bankImport"),
     requirePermission("settings.company"),
     strictBody(bankFeedCallbackBody),
-    asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
-      await assertAccess(req, companyId);
-      const body = parsedBody<z.output<typeof bankFeedCallbackBody>>(req);
-      const result = await completeCallback({
-        companyId,
-        userId: userId(req),
-        provider: body.provider,
-        code: body.code,
-        state: body.state,
-      });
-      logger.info(
-        { companyId, count: result.connections.length },
-        "Bank adapter callback completed"
-      );
-      res.status(201).json(result);
-    })
+    finishAuthorization
   );
 
   app.post(
@@ -282,12 +377,7 @@ export function registerBankRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const connection = await ownedConnection(req, req.params.id);
       if (connection.provider === "manual")
-        throw new DomainError(
-          "BANK_FEED_NOT_SUPPORTED",
-          400,
-          undefined,
-          BANK_RECONCILIATION_COPY.en
-        );
+        throw new DomainError("BANK_FEED_NOT_SUPPORTED", 400, undefined, bankStatementCopy.en);
       const result = await syncConnection(connection, {
         from: req.body.fromDate,
         to: req.body.toDate,
@@ -304,12 +394,7 @@ export function registerBankRoutes(app: Express) {
     requireFeature("bankImport"),
     asyncHandler(async (req: Request, _res: Response) => {
       await ownedConnection(req, req.params.id);
-      throw new DomainError(
-        "BANK_FEED_BALANCE_UNAVAILABLE",
-        503,
-        undefined,
-        BANK_RECONCILIATION_COPY.en
-      );
+      throw new DomainError("BANK_FEED_BALANCE_UNAVAILABLE", 503, undefined, bankStatementCopy.en);
     })
   );
 }

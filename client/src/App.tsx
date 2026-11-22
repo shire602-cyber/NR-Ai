@@ -17,6 +17,7 @@ import { AppSidebar } from "@/components/layout/AppSidebar";
 import { PortalLayout } from "@/components/layout/PortalLayout";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { isAppSectionPath } from "@/components/layout/app-sections";
+import { useBankAuthorizationReturn } from "@/lib/bank-authorization-return";
 import { ErrorBoundary, SectionBoundary } from "@/components/ErrorBoundary";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -145,7 +146,6 @@ const Onboarding = lazyWithReload(() => import("@/pages/Onboarding"));
 const BankReconciliation = lazyWithReload(() => import("@/pages/BankReconciliation"));
 const BankAccounts = lazyWithReload(() => import("@/pages/BankAccounts"));
 const BankFeeds = lazyWithReload(() => import("@/pages/BankFeeds"));
-const BankFeedCallback = lazyWithReload(() => import("@/pages/BankFeedCallback"));
 const EvidenceCenter = lazyWithReload(() => import("@/pages/EvidenceCenter"));
 const VATFiling = lazyWithReload(() => import("@/pages/VATFiling"));
 const VATAutopilot = lazyWithReload(() => import("@/pages/VATAutopilot"));
@@ -499,10 +499,22 @@ function FirmRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function AuthorizationCapture({ failed, retry }: { failed: boolean; retry: () => void }) {
+  if (!failed) return <PageLoader variant="form" />;
+  return (
+    <main className="mx-auto w-full max-w-3xl p-4 sm:p-8">
+      <Suspense fallback={<PageLoader variant="form" />}>
+        <BankFeeds retryCapture={retry} />
+      </Suspense>
+    </main>
+  );
+}
+
 function Router() {
   const [location, setLocation] = useLocation();
   const { data: user, isLoading: userLoading } = useCurrentUser();
   const pathname = pathnameOnly(location);
+  const authorization = useBankAuthorizationReturn(pathname);
 
   // Redirect authenticated users from landing to their home (portal or main dashboard)
   useEffect(() => {
@@ -564,6 +576,31 @@ function Router() {
           </Suspense>
         </TrialAccessGate>
       </ProtectedRoute>
+    );
+  }
+
+  // Scrub the URL before the sign-in gate builds its return link. The callback API resolves
+  // the workspace independently of the active workspace or its loading state.
+  if (authorization.isCallback) {
+    return (
+      <Switch>
+        <Route path="/banking/callback">
+          <AuthorizationCapture failed={authorization.failed} retry={authorization.retry} />
+        </Route>
+        <Route path="/bank-feeds/callback">
+          {authorization.cleaning ? (
+            <AuthorizationCapture failed={authorization.failed} retry={authorization.retry} />
+          ) : (
+            <ProtectedRoute replaceOnLoginRedirect>
+              <main className="mx-auto w-full max-w-3xl p-4 sm:p-8">
+                <Suspense fallback={<PageLoader variant="form" />}>
+                  <BankFeeds resumeAuthorization />
+                </Suspense>
+              </main>
+            </ProtectedRoute>
+          )}
+        </Route>
+      </Switch>
     );
   }
 
@@ -764,8 +801,9 @@ function Router() {
             <Route path="/analytics" component={AnalyticsHub} />
             <Route path="/bank-reconciliation" component={BankReconciliation} />
             <Route path="/bank-accounts" component={BankAccounts} />
-            <Route path="/bank-feeds/callback" component={BankFeedCallback} />
-            <Route path="/bank-feeds" component={BankFeeds} />
+            <Route path="/bank-feeds">
+              <BankFeeds />
+            </Route>
             <Route path="/evidence-center" component={EvidenceCenter} />
             <Route path="/vat-filing" component={VATFiling} />
             <Route path="/vat-autopilot" component={VATAutopilot} />

@@ -203,12 +203,12 @@ describe("server copy templates", () => {
       message: "Previous message",
     });
 
-    expect(row.title).toBe("Continue bank reconciliation");
+    expect(row.title).toBe("Import a CSV bank statement");
     expect(row.message).toBe(
       "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books"
     );
     expect(localizeNotification(row, ar, "ar")).toEqual({
-      title: "تابع التسوية البنكية",
+      title: "استورد كشف حساب بنكي بصيغة CSV",
       message: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
     });
   });
@@ -225,7 +225,7 @@ describe("server copy templates", () => {
       },
     } as never);
     const english = {
-      title: "Continue bank reconciliation",
+      title: "Import a CSV bank statement",
       message:
         "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
     };
@@ -236,7 +236,7 @@ describe("server copy templates", () => {
     const notification = withNotificationCopy(row!);
     expect(localizeNotification(notification, en, "en")).toEqual(english);
     expect(localizeNotification(notification, ar, "ar")).toEqual({
-      title: "تابع التسوية البنكية",
+      title: "استورد كشف حساب بنكي بصيغة CSV",
       message: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
     });
   });

@@ -132,6 +132,7 @@ export const ALL_AUTH_ROUTES = [
   "/bank-accounts",
   "/bank-feeds",
   "/bank-feeds/callback",
+  "/banking/callback",
   "/evidence-center",
   "/vat-filing",
   "/vat-autopilot",

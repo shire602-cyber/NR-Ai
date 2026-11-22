@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 
 const repoRoot = process.cwd();
 
@@ -45,6 +46,7 @@ const publicLaunchFiles = [
 ];
 
 const bannedLaunchClaims = [
+  unsupportedStatementCopy,
   /FTA-compliant/i,
   /FTA Compliant/i,
   /FTA Registered/i,

@@ -159,7 +159,7 @@ Digits generates the following financial reports, all interactive and real-time:
 - Manual payroll recording option for unsupported providers
 
 ### Other Integrations
-- Connects to "thousands of financial institutions and tools"
+- [Historical comparison excerpt redacted.]
 - Supports data migration from **QuickBooks Online** and **Xero**
 
 ### Developer / API Access

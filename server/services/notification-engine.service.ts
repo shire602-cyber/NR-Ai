@@ -27,7 +27,12 @@ import { listJobs, registerJob } from "../platform/job-registry";
 import { escapeHtml, renderBilingualEmail, renderEmailText, sendEmail } from "./email.service";
 import { isCapabilityLive } from "../../shared/capabilities";
 import { BANK_SYNC_FAILED_NOTIFICATION } from "../../shared/notification-copy";
-import { notificationCopy, renderServerCopy, withNotificationCopy } from "../../shared/server-copy";
+import {
+  normalizeNotificationCopy,
+  notificationCopy,
+  renderServerCopy,
+  withNotificationCopy,
+} from "../../shared/server-copy";
 
 const log = createLogger("notification-engine");
 
@@ -243,11 +248,12 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
     }
     if (ch.email && user.email) {
       // The signed-in language is a browser preference. Include both languages for bank guidance.
+      const normalized = normalizeNotificationCopy({ ...input, eventKey: key });
       const content = {
         brandName: "Muhasib.ai",
         heading: bank?.title ?? { en: title, ar: title },
         paragraphs: {
-          en: [escapeHtml(message)],
+          en: [escapeHtml(normalized.message)],
           ar: bank ? [escapeHtml(bank.message.ar)] : [],
         },
         footer: bank
@@ -256,7 +262,7 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
       };
       const language = bank ? "bilingual" : "en";
       const subject = bank ? `${bank.title.en} | ${bank.title.ar}` : title;
-      const text = bank ? renderEmailText(content, language) : message;
+      const text = bank ? renderEmailText(content, language) : normalized.message;
       const r = await sendEmail(user.email, subject, text, {
         html: renderBilingualEmail(content, language),
         companyId: input.companyId,
