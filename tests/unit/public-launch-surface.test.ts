@@ -363,7 +363,6 @@ describe("Public SaaS launch surface", () => {
       "Sample company workspace",
       "Pearl Trading LLC",
       "CSV statement import",
-      "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
       "Export VAT 201 workbook",
     ]) {
       expect(demoSource).toContain(expectedDemoSignal);

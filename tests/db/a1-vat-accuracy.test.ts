@@ -494,4 +494,115 @@ describe("A1 C6: partial exemption (Exec. Reg. Art. 55)", () => {
     expect(c.boxes.box9ExpensesVat).toBe(100);
     expect(c.partialExemption.advisory).toBe("PARTIAL_EXEMPTION_NOT_ENABLED");
   });
+
+  it("[C6] group submission apportions input VAT in the enabled member's books and rolls back on stale figures", async () => {
+    const representative = await vatTenant({ partial_exemption_enabled: false });
+    const member = await vatTenant({
+      trn_vat_number: "100000000000037",
+      partial_exemption_enabled: true,
+    });
+    await h.sql("INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'owner')", [
+      member.company.id,
+      representative.user.id,
+    ]);
+    const group = await representative.as.put(`${base(representative)}/vat/group`, {
+      name: "Partial exemption group",
+      groupTrn: "100000000000053",
+      memberCompanyIds: [member.company.id],
+    });
+    expect(group.status, group.text).toBe(200);
+
+    const representativeSale = await invoice(representative, "2026-07-10", [
+      { description: "Consulting", quantity: 1, unitPrice: 2000, vatRate: 5 },
+    ]);
+    expect((await issue(representativeSale.id, representative)).status).toBe(200);
+    const memberSale = await invoice(member, "2026-07-10", [
+      { description: "Consulting", quantity: 1, unitPrice: 8000, vatRate: 5 },
+      {
+        description: "Residential rent",
+        quantity: 1,
+        unitPrice: 2000,
+        vatRate: 0,
+        vatSupplyType: "exempt",
+      },
+    ]);
+    expect((await issue(memberSale.id, member)).status).toBe(200);
+    for (const [tenant, amount] of [
+      [representative, 1000],
+      [member, 2000],
+    ] as const) {
+      const purchase = await bill(tenant, {
+        bill_date: "2026-07-13",
+        line_items: [{ description: "Overhead", quantity: 1, unit_price: amount, vat_rate: 5 }],
+      });
+      const approved = await approve(representative, purchase.id);
+      expect(approved.status, approved.text).toBe(200);
+    }
+
+    const generate = () =>
+      representative.as.post(`${base(representative)}/vat-returns/generate`, {
+        periodStart: "2026-07-01",
+        periodEnd: "2026-09-30",
+      });
+    const draft = await generate();
+    expect(draft.status, draft.text).toBe(201);
+    expect(draft.body).toMatchObject({
+      box12TotalDueTax: 500,
+      box13RecoverableTax: 130,
+      box14PayableTax: 370,
+    });
+    const submit = () => representative.as.post(`/api/vat-returns/${draft.body.id}/submit`, {});
+    const memberApportionment = () =>
+      linesOf(member.company.id, "vat_partial_exemption", draft.body.id);
+
+    const lateSale = await invoice(representative, "2026-07-20", [
+      { description: "Late consulting invoice", quantity: 1, unitPrice: 1000, vatRate: 5 },
+    ]);
+    expect((await issue(lateSale.id, representative)).status).toBe(200);
+    const stale = await submit();
+    expect(stale.status, stale.text).toBe(409);
+    expect(stale.body.code).toBe("VAT_RETURN_STALE");
+    expect(await memberApportionment()).toEqual([]);
+    expect(await h.sql("SELECT status FROM vat_returns WHERE id = $1", [draft.body.id])).toEqual([
+      { status: "draft" },
+    ]);
+
+    const regenerated = await generate();
+    expect(regenerated.status, regenerated.text).toBe(201);
+    expect(regenerated.body.id).toBe(draft.body.id);
+    const submitted = await submit();
+    expect(submitted.status, submitted.text).toBe(200);
+    expect(await linesOf(representative.company.id, "vat_partial_exemption")).toEqual([]);
+    expect(await memberApportionment()).toEqual([
+      ["1050", 0, 20],
+      ["5160", 20, 0],
+    ]);
+    expect(submitted.body).toMatchObject({
+      status: "submitted",
+      vatGroupId: group.body.id,
+      box12TotalDueTax: 550,
+      box13RecoverableTax: 130,
+      box14PayableTax: 420,
+      reconciliationSnapshot: {
+        filingReconciliation: {
+          hasUnexplainedDifference: false,
+          ledgerInputVatFils: 13_000,
+          members: expect.arrayContaining([
+            expect.objectContaining({
+              companyId: representative.company.id,
+              ledgerInputBaseFils: 5_000,
+            }),
+            expect.objectContaining({ companyId: member.company.id, ledgerInputBaseFils: 8_000 }),
+          ]),
+        },
+      },
+    });
+    const replay = await submit();
+    expect(replay.status, replay.text).toBe(200);
+    expect(replay.body.id).toBe(draft.body.id);
+    expect(await memberApportionment()).toEqual([
+      ["1050", 0, 20],
+      ["5160", 20, 0],
+    ]);
+  });
 });

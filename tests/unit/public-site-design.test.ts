@@ -60,11 +60,14 @@ async function render(page: keyof typeof PAGES) {
 }
 
 async function renderBanking(client: QueryClient) {
-  const { ActiveCompanyProvider } = await import("../../client/src/components/ActiveCompanyProvider");
+  const { ActiveCompanyProvider } =
+    await import("../../client/src/components/ActiveCompanyProvider");
   const { default: BankFeeds } = await PAGES.BankFeeds();
   await act(async () => {
     root.render(
-      createElement(QueryClientProvider, { client },
+      createElement(
+        QueryClientProvider,
+        { client },
         createElement(ActiveCompanyProvider, { children: createElement(BankFeeds) })
       )
     );
@@ -89,7 +92,7 @@ function arabicModeEnglishLines(): string[] {
 const UNSUPPORTED_CLAIMS = [
   /FTA[-\s]?(accredited|compliant|registered|approved)/i,
   /submits? (your|the) (VAT )?return(s)? (to|with) the FTA automatically/i,
-  /(?:connect to|sync from) (?:a |your )?(?:live )?bank feeds?/i,
+  /(?:connect to|sync from) (?:a |your )?(?:live )?bank\b/i,
   /money-back/i,
   /UAE-hosted/i,
   // "Most popular" is a plan-card highlight the owner asked for (X6b); it states no user count.
@@ -151,36 +154,39 @@ function recoveryClient(
 it.each([
   ["en", "Retry refresh"],
   ["ar", "أعد محاولة التحديث"],
-] as const)("retries the failed bank connection and refreshes the page in %s", async (locale, label) => {
-  await setLocale(locale);
-  const requests = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
-    if (String(url).endsWith("/api/csrf-token")) return Response.json({ csrfToken: "test-csrf" });
-    expect(String(url)).toBe("/api/bank-connections/linked-account/sync");
-    expect(options?.method).toBe("POST");
-    return Response.json({ imported: 2 });
-  });
-  const reload = vi.fn(async () => [{ ...recoveryConnection, status: "active" }]);
-  const client = recoveryClient(["documents.write"], ["lean"], reload);
-  const statementKey = ["/api/companies", "workspace", "bank-statements", "transactions"];
-  client.setQueryData(statementKey, []);
-  await renderBanking(client);
+] as const)(
+  "retries the failed bank connection and refreshes the page in %s",
+  async (locale, label) => {
+    await setLocale(locale);
+    const requests = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
+      if (String(url).endsWith("/api/csrf-token")) return Response.json({ csrfToken: "test-csrf" });
+      expect(String(url)).toBe("/api/bank-connections/linked-account/sync");
+      expect(options?.method).toBe("POST");
+      return Response.json({ imported: 2 });
+    });
+    const reload = vi.fn(async () => [{ ...recoveryConnection, status: "active" }]);
+    const client = recoveryClient(["documents.write"], ["lean"], reload);
+    const statementKey = ["/api/companies", "workspace", "bank-statements", "transactions"];
+    client.setQueryData(statementKey, []);
+    await renderBanking(client);
 
-  const buttons = container.querySelectorAll<HTMLButtonElement>("button");
-  expect([...buttons].map((button) => button.textContent)).toEqual([label]);
-  await act(async () => {
-    buttons[0].click();
-    await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
-  });
-  await vi.waitFor(async () => {
-    await act(async () => {});
-    expect(container.querySelector("button")).toBeNull();
-  });
-  expect(requests).toHaveBeenCalledWith(
-    "/api/bank-connections/linked-account/sync",
-    expect.objectContaining({ method: "POST" })
-  );
-  expect(client.getQueryState(statementKey)?.isInvalidated).toBe(true);
-});
+    const buttons = container.querySelectorAll<HTMLButtonElement>("button");
+    expect([...buttons].map((button) => button.textContent)).toEqual([label]);
+    await act(async () => {
+      buttons[0].click();
+      await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    });
+    await vi.waitFor(async () => {
+      await act(async () => {});
+      expect(container.querySelector("button")).toBeNull();
+    });
+    expect(requests).toHaveBeenCalledWith(
+      "/api/bank-connections/linked-account/sync",
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(client.getQueryState(statementKey)?.isInvalidated).toBe(true);
+  }
+);
 
 it.each([
   { permissions: ["reports.read"], providers: ["lean"] },
@@ -192,6 +198,56 @@ it.each([
 });
 
 describe("D1 public site", () => {
+  it.each([
+    {
+      locale: "en",
+      question: "How do I reconcile my bank account?",
+      workflow:
+        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
+      steps: [
+        "Choose the account and preview the CSV before importing.",
+        "Review suggestions and resolve unmatched entries.",
+      ],
+    },
+    {
+      locale: "ar",
+      question: "كيف أطابق حسابي البنكي؟",
+      workflow: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
+      steps: [
+        "اختر الحساب وعاين ملف CSV قبل استيراده.",
+        "راجع المطابقات المقترحة وعالج الحركات غير المطابقة.",
+      ],
+    },
+  ])(
+    "describes bank reconciliation as CSV import on the $locale public site",
+    async ({ locale, question, workflow, steps }) => {
+      const { default: PhaseRoot } =
+        await import("../../client/src/components/marketing/phase/PhaseRoot");
+      const previousUrl = window.location.href;
+      try {
+        window.history.replaceState(null, "", `/${locale}`);
+        await act(async () => root.render(createElement(PhaseRoot)));
+        const faq = Array.from(container.querySelectorAll("details")).find((entry) =>
+          entry.querySelector("summary")?.textContent?.includes(question)
+        );
+        expect(faq?.querySelector("p")?.textContent).toBe(workflow);
+
+        await act(async () => root.unmount());
+        root = createRoot(container);
+        window.history.replaceState(null, "", `/${locale}/product/bank-reconciliation`);
+        await act(async () => root.render(createElement(PhaseRoot)));
+        expect(container.querySelector("main .phase-lead")?.textContent).toBe(workflow);
+        expect(
+          [...container.querySelectorAll("main .phase-product-detail ol > li")].map(
+            (step) => step.textContent
+          )
+        ).toEqual(steps);
+      } finally {
+        window.history.replaceState(null, "", previousUrl);
+      }
+    }
+  );
+
   it("[D1] the landing page leads with an honest value proposition and sets its SEO meta", async () => {
     const { default: PhaseSite } =
       await import("../../client/src/components/marketing/phase/PhaseSite");
@@ -199,16 +255,18 @@ describe("D1 public site", () => {
     const h1 = container.querySelector("h1");
     expect(h1?.textContent).toBe("Accounting and VAT for UAE businesses");
     expect(document.title).toContain(h1?.textContent);
-    expect(document.head.querySelector('meta[name="description"]')?.getAttribute("content")).toContain(
-      "Send bilingual invoices"
-    );
+    expect(
+      document.head.querySelector('meta[name="description"]')?.getAttribute("content")
+    ).toContain("Send bilingual invoices");
     // Primary CTAs keep their routes.
     const register = container.querySelector('[data-testid="button-hero-start"]');
     expect(register?.getAttribute("href")).toBe("/register");
     expect(container.querySelector('[data-testid="button-hero-demo"]')?.getAttribute("href")).toBe(
       "/en/book-a-demo"
     );
-    expect(container.textContent).toContain("Prepare and review VAT 201 in the app, then submit it in EmaraTax.");
+    expect(container.textContent).toContain(
+      "Prepare and review VAT 201 in the app, then submit it in EmaraTax."
+    );
     expect(container.textContent).toContain("Upload a CSV exported from your bank");
     for (const claim of UNSUPPORTED_CLAIMS) {
       expect(container.textContent ?? "", String(claim)).not.toMatch(claim);
@@ -316,6 +374,24 @@ describe("D1 public site", () => {
       expect(arabicModeEnglishLines(), page).toEqual([]);
     }
   });
+
+  it.each([
+    ["en", "CSV statement import"],
+    ["ar", "استيراد كشف الحساب بصيغة CSV"],
+  ] as const)(
+    "shows only the CSV import label in the %s demo banking tab",
+    async (locale, label) => {
+      await setLocale(locale);
+      await render("DemoWorkspace");
+      const tab = container.querySelector('[role="tab"][aria-controls$="-content-banking"]');
+      expect(tab).not.toBeNull();
+      await act(async () => {
+        tab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      });
+      const panel = container.querySelector('[role="tabpanel"][data-state="active"]');
+      expect(panel?.querySelector("p")?.textContent).toBe(label);
+    }
+  );
 
   it("[D1b] the product preview shows the post-D2 dashboard strip with shared money and status components", async () => {
     await render("MuhasibLanding");

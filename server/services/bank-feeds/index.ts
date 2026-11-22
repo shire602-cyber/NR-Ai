@@ -17,8 +17,8 @@ import { db } from "../../db";
 import { DomainError } from "../../errors";
 import { storage } from "../../storage";
 import { createLogger } from "../../config/logger";
-import { BANK_RECONCILIATION_COPY } from "../../../shared/bank-reconciliation-copy";
 import { getCapability, type CapabilityStatus } from "../../../shared/capabilities";
+import { BANK_STATEMENT_IMPORT_GUIDANCE } from "../../../shared/bank-statement-copy";
 import { fromFils } from "../../../shared/money";
 import {
   bankAccounts,
@@ -48,7 +48,7 @@ export function getAdapter(provider: string): BankFeedAdapter {
       "BANK_FEED_UNKNOWN_PROVIDER",
       400,
       undefined,
-      BANK_RECONCILIATION_COPY.en
+      BANK_STATEMENT_IMPORT_GUIDANCE.en
     );
   return adapter;
 }
@@ -59,7 +59,7 @@ function assertConfigured(adapter: BankFeedAdapter): void {
       "BANK_FEED_NOT_CONFIGURED",
       503,
       { provider: adapter.id, capability: adapter.capability },
-      BANK_RECONCILIATION_COPY.en
+      BANK_STATEMENT_IMPORT_GUIDANCE.en
     );
   }
 }
@@ -109,7 +109,7 @@ function assertAllowedRedirect(uri: string): void {
       "REDIRECT_URI_NOT_ALLOWED",
       400,
       { allowed },
-      BANK_RECONCILIATION_COPY.en
+      BANK_STATEMENT_IMPORT_GUIDANCE.en
     );
   }
 }
@@ -156,7 +156,7 @@ export function sanitizeConnection(c: BankConnection) {
   void _r;
   return {
     ...rest,
-    lastError: c.lastError ? BANK_RECONCILIATION_COPY.en : c.lastError,
+    lastError: c.lastError ? BANK_STATEMENT_IMPORT_GUIDANCE.en : c.lastError,
     hasToken: Boolean(c.accessToken),
   };
 }
@@ -185,7 +185,7 @@ export async function completeCallback(input: {
     )
     .returning();
   if (!row) {
-    throw new DomainError("INVALID_OAUTH_STATE", 400, undefined, BANK_RECONCILIATION_COPY.en);
+    throw new DomainError("INVALID_OAUTH_STATE", 400, undefined, BANK_STATEMENT_IMPORT_GUIDANCE.en);
   }
   assertConfigured(adapter);
   let tokens: FeedTokens;
@@ -197,7 +197,12 @@ export async function completeCallback(input: {
     throw providerFailure(adapter, err);
   }
   if (accounts.length === 0)
-    throw new DomainError("BANK_FEED_NO_ACCOUNTS", 422, undefined, BANK_RECONCILIATION_COPY.en);
+    throw new DomainError(
+      "BANK_FEED_NO_ACCOUNTS",
+      422,
+      undefined,
+      BANK_STATEMENT_IMPORT_GUIDANCE.en
+    );
   const out = [];
   for (const account of accounts) {
     const connection = await storage.createBankConnection({
@@ -232,7 +237,7 @@ function providerFailure(adapter: BankFeedAdapter, err: unknown): DomainError {
     "BANK_FEED_PROVIDER_ERROR",
     502,
     { provider: adapter.id, providerStatus: status },
-    BANK_RECONCILIATION_COPY.en
+    BANK_STATEMENT_IMPORT_GUIDANCE.en
   );
 }
 
@@ -261,7 +266,7 @@ export async function syncConnection(
       "BANK_FEED_ACCOUNT_NOT_LINKED",
       409,
       undefined,
-      BANK_RECONCILIATION_COPY.en
+      BANK_STATEMENT_IMPORT_GUIDANCE.en
     );
   }
   const ba = await storage.getBankAccountById(connection.bankAccountId, connection.companyId);
@@ -271,7 +276,7 @@ export async function syncConnection(
       "BANK_FEED_RECONNECT_REQUIRED",
       409,
       undefined,
-      BANK_RECONCILIATION_COPY.en
+      BANK_STATEMENT_IMPORT_GUIDANCE.en
     );
   }
   let tokens: FeedTokens = {
@@ -437,6 +442,11 @@ export async function linkConnection(
   if (!ba) throw new DomainError("BANK_ACCOUNT_NOT_FOUND", 404);
   const updated = await storage.updateBankConnection(connectionId, { bankAccountId });
   if (!updated)
-    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, BANK_RECONCILIATION_COPY.en);
+    throw new DomainError(
+      "BANK_CONNECTION_NOT_FOUND",
+      404,
+      undefined,
+      BANK_STATEMENT_IMPORT_GUIDANCE.en
+    );
   return updated;
 }

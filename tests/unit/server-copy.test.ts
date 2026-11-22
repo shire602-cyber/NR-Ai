@@ -213,6 +213,34 @@ describe("server copy templates", () => {
     });
   });
 
+  it("guides customers to CSV statement import after a bank transaction import fails", async () => {
+    const row = await notificationForEvent({
+      type: "bank.sync_failed",
+      payload: {
+        companyId: "c1",
+        entityId: "e1",
+        provider: "wio",
+        reason: "internal-provider-error",
+        occurredAt: "2026-11-16T00:00:00.000Z",
+      },
+    } as never);
+    const english = {
+      title: "Continue bank reconciliation",
+      message:
+        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
+    };
+    expect(row).toMatchObject({
+      ...english,
+      actionUrl: "/bank-reconciliation?import=1",
+    });
+    const notification = withNotificationCopy(row!);
+    expect(localizeNotification(notification, en, "en")).toEqual(english);
+    expect(localizeNotification(notification, ar, "ar")).toEqual({
+      title: "تابع التسوية البنكية",
+      message: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
+    });
+  });
+
   it("localises report delivery names and outcomes", () => {
     const n = buildReportDeliveryNotificationForPlan({
       userId: "u",

@@ -42,7 +42,7 @@ page, sidebar EN/AR, and an E2E flow):
 Quotes · Credit Notes (auto reversing journal entries via
 `createJournalEntryWithLines`) · Purchase Orders · Cost Centers (journal-line
 allocation) · Financial Statements · Reconciliation Rules · Invoice
-Templates · Bank Reconciliation. Employee management lives in
+Templates · Bank Import (CSV statement upload and suggested matches). Employee management lives in
 **Payroll** (the old duplicate module/page was deleted).
 
 Upload a CSV exported from your bank, review suggested matches, and reconcile against your books

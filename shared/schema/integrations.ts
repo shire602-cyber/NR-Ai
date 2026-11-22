@@ -143,7 +143,7 @@ export type InsertInvoiceTemplate = z.infer<typeof insertInvoiceTemplateSchema>;
 export type InvoiceTemplate = typeof invoiceTemplates.$inferSelect;
 
 // ===========================
-// Bank Connections (adapter authorization and statement imports)
+// Bank connections for configured accounts and manual statement imports
 // ===========================
 export const bankConnections = pgTable(
   "bank_connections",

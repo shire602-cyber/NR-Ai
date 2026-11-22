@@ -236,6 +236,36 @@ describe("capability registry", () => {
     expect(isCapabilityLive("ai", {})).toBe(false);
   });
 
+  it("keeps adapter diagnostics separate at every provider status", () => {
+    const credentials = {
+      LEAN_APP_TOKEN: "test-app",
+      TARABUT_CLIENT_ID: "test-client",
+      TARABUT_CLIENT_SECRET: "test-secret",
+      WIO_CLIENT_ID: "test-client",
+      WIO_CLIENT_SECRET: "test-secret",
+    };
+    const productionUrls = {
+      LEAN_API_BASE_URL: "https://api.example.com",
+      TARABUT_API_BASE_URL: "https://api.example.com",
+      WIO_API_BASE_URL: "https://api.example.com",
+    };
+    for (const [env, status] of [
+      [{}, "requires_external"],
+      [credentials, "sandbox"],
+      [{ ...credentials, ...productionUrls }, "live"],
+    ] as const) {
+      const bankCapabilities = computeCapabilities(env).filter(({ id }) =>
+        id.startsWith("bank_feed_")
+      );
+      expect(bankCapabilities.map(({ id, status }) => ({ id, status }))).toEqual(
+        ["bank_feed_lean", "bank_feed_tarabut", "bank_feed_wio"].map((id) => ({ id, status }))
+      );
+      for (const capability of bankCapabilities) {
+        expect(capability.label.en).toMatch(/adapter diagnostics$/);
+      }
+    }
+  });
+
   it("[S5] news_feed is registered and push needs external VAPID keys (requires_external)", () => {
     const status = (env: Record<string, string>, id: string) =>
       computeCapabilities(env).find((c) => c.id === id)?.status;

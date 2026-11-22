@@ -419,6 +419,9 @@ Scored across 8 dimensions (10 points each, 80 max):
 
 ### Critical Gaps (Would Strengthen Competitive Position)
 
+Muhasib uses CSV statement uploads for bank reconciliation. QuickBooks, Xero,
+Sage, and Wafeq support direct transaction imports in supported markets.
+
 | Gap | Who Has It | Priority | Impact |
 |-----|-----------|----------|--------|
 | **Native Mobile Apps (iOS/Android)** | QuickBooks, Xero, Zoho, Wafeq, Fiskl | HIGH | PWA is good but native apps rank in app stores |

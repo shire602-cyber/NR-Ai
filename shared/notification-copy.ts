@@ -5,13 +5,14 @@
  * detail goes to the server log only.
  */
 
+import { BANK_STATEMENT_IMPORT_HREF } from "./app-links";
 import { BANK_RECONCILIATION_COPY } from "./bank-reconciliation-copy";
 
 /** Bank sync failure copy for in-app notifications and staff emails. */
 export const BANK_SYNC_FAILED_NOTIFICATION = {
   titleKey: "notification.bankSyncFailed.title",
   messageKey: "notification.bankSyncFailed.message",
-  actionUrl: "/bank-reconciliation?import=1",
+  actionUrl: BANK_STATEMENT_IMPORT_HREF,
   title: { en: "Continue bank reconciliation", ar: "تابع التسوية البنكية" },
   message: BANK_RECONCILIATION_COPY,
 } as const;

@@ -1486,28 +1486,23 @@ export function notificationCopy(
   };
 }
 
-type StoredNotificationText = { title: string; message: string; eventKey?: string | null };
-
-/** Apply current wording when rendering a stored notification. */
-export function currentNotificationText({
-  title,
-  message,
-  eventKey,
-}: StoredNotificationText): { title: string; message: string } {
-  if (eventKey?.startsWith("bank.sync_failed:")) {
-    return notificationCopy(
-      "notification.bankSyncFailed.title",
-      "notification.bankSyncFailed.message"
-    );
-  }
-  return { title, message };
+/** Show the current CSV guidance for stored bank sync alerts. */
+export function normalizeNotificationCopy<T extends { eventKey?: string | null }>(n: T): T {
+  return n.eventKey?.startsWith("bank.sync_failed:")
+    ? {
+        ...n,
+        title: BANK_SYNC_FAILED_NOTIFICATION.title.en,
+        message: BANK_SYNC_FAILED_NOTIFICATION.message.en,
+        actionUrl: BANK_SYNC_FAILED_NOTIFICATION.actionUrl,
+      }
+    : n;
 }
 
 /** Attach `copy` (stable keys + params) to a notification for API/socket responses. */
-export function withNotificationCopy<T extends StoredNotificationText>(
-  n: T
-): T & { copy: NotificationCopyDescriptor } {
-  const copy = describeNotificationCopy(currentNotificationText(n));
+export function withNotificationCopy<
+  T extends { title: string; message: string; eventKey?: string | null },
+>(n: T): T & { copy: NotificationCopyDescriptor } {
+  const copy = describeNotificationCopy(normalizeNotificationCopy(n));
   // Keep legacy provider details and reconnect instructions out of API fallback text as well.
   return {
     ...n,
