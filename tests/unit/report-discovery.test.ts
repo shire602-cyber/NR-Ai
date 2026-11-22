@@ -9,6 +9,7 @@ it("lists only the available steps for the owner cash workflow", () => {
     (item) => item.id === "owner-cash-control-autopilot"
   );
   expect(starter?.setupSteps).toEqual([
+    "Review invoices and upload a CSV bank statement",
     bankStatementCopy.en,
     "Schedule the owner weekly command pack.",
     "Route overdue balances to payment chasing.",
