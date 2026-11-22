@@ -1545,16 +1545,18 @@ export function bankStatementUpdateFailureCopy(n: StoredNotificationText) {
 
 export function normalizeNotificationCopy<T extends StoredNotificationText>(n: T): T {
   const bankReview = bankStatementUpdateFailureCopy(n);
-  if (bankReview) return { ...n, ...bankReview };
+  if (bankReview) return { ...n, title: bankReview.title, message: bankReview.message };
   const legacy = legacyStatementImportCopy(n);
   return legacy ? { ...n, message: renderServerCopy(legacy.key, legacy.params) } : n;
 }
 
 /** Attach stable keys and parameters to stored notification text. */
-export function withNotificationCopy<T extends { title: string; message: string }>(
+export function withNotificationCopy<T extends StoredNotificationText>(
   n: T
 ): T & { copy: NotificationCopyDescriptor } {
-  return { ...normalizeNotificationCopy(n), copy: describeNotificationCopy(n) };
+  const bankReview = bankStatementUpdateFailureCopy(n);
+  const wording = bankReview ? { ...n, ...bankReview } : normalizeNotificationCopy(n);
+  return { ...wording, copy: describeNotificationCopy(n) };
 }
 
 /** Key + params for a stored report-delivery run error or handoff sentence, or null. */
