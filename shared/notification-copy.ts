@@ -5,12 +5,20 @@
  * detail goes to the server log only.
  */
 
+import { BANK_RECONCILIATION_COPY } from "./bank-reconciliation-copy";
+
 /** Event key prefix for historical alerts about retired provider diagnostics. */
 export const RETIRED_BANK_NOTIFICATION_PREFIX = "bank.sync_failed:";
 
 export const BANK_STATEMENT_REVIEW_TITLE = {
   en: "Import a CSV bank statement",
   ar: "استورد كشف حساب بنكي بصيغة CSV",
+} as const;
+
+/** Exact historical CSV reminder, matched only when refreshing stored copy. */
+export const LEGACY_BANK_RECONCILIATION_NOTICE = {
+  title: "Continue bank reconciliation",
+  message: `The bank connection could not sync. ${BANK_RECONCILIATION_COPY.en}.`,
 } as const;
 
 /** Body of a report-delivery notification when no email provider is configured. */

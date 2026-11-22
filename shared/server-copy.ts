@@ -11,7 +11,11 @@
  * when any parameter inside it is missing or empty.
  */
 
-import { BANK_STATEMENT_REVIEW_TITLE, EMAIL_NOT_SET_UP_RUN_ERROR } from "./notification-copy";
+import {
+  BANK_STATEMENT_REVIEW_TITLE,
+  EMAIL_NOT_SET_UP_RUN_ERROR,
+  LEGACY_BANK_RECONCILIATION_NOTICE,
+} from "./notification-copy";
 import { BANK_RECONCILIATION_COPY } from "./bank-reconciliation-copy";
 
 export interface CopyDescriptor {
@@ -356,11 +360,11 @@ function legacyStatementImportCopy(n: { title: string; message: string }): CopyD
 
 // Historical titles and messages are matched together so unrelated notices keep their wording.
 const LEGACY_BANK_REVIEW_TITLES = [
-  T("statementReview", "Continue bank reconciliation"),
+  T("statementReview", LEGACY_BANK_RECONCILIATION_NOTICE.title),
   T("statementReview", "Bank feed sync failed"),
 ];
 const LEGACY_BANK_REVIEW_MESSAGES = [
-  T("statementReview", `The bank connection could not sync. ${BANK_RECONCILIATION_COPY.en}.`),
+  T("statementReview", LEGACY_BANK_RECONCILIATION_NOTICE.message),
   T(
     "statementReview",
     "The bank feed[ ({provider})] could not sync[: {reason}]. Reconnect it under Banking."

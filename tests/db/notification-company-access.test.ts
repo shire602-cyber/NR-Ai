@@ -294,8 +294,8 @@ describe("Notification access after team removal", () => {
       const { renderBilingualEmail } = await import("../../server/services/email-layout");
       const day = new Date().toISOString().slice(0, 10);
       await h.sql(
-        `INSERT INTO notifications (user_id, company_id, type, title, message)
-       VALUES ($1, $2, 'system', $3, $4)`,
+        `INSERT INTO notifications (user_id, company_id, type, title, message, event_key)
+       VALUES ($1, $2, 'system', $3, $4, 'bank.sync_failed:legacy-csv-reminder')`,
         [tenant.user.id, tenant.company.id, legacyBankNotice.title, legacyBankNotice.message]
       );
       const oldHtml = renderBilingualEmail(

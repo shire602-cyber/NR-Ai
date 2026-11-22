@@ -7,7 +7,10 @@ import {
   notifications,
   users,
 } from "../../shared/schema";
-import { RETIRED_BANK_NOTIFICATION_PREFIX } from "../../shared/notification-copy";
+import {
+  LEGACY_BANK_RECONCILIATION_NOTICE,
+  RETIRED_BANK_NOTIFICATION_PREFIX,
+} from "../../shared/notification-copy";
 import { firmClientCondition, NR_FIRM_ID } from "../services/firm/scope";
 
 // The same pattern runs in PostgreSQL for inbox queries and in JavaScript for stored emails.
@@ -49,15 +52,25 @@ function companyNoticeAccess() {
 }
 
 /** Company notices need current access at the point a stored row is read or acted on. */
-export function customerVisibleNotification() {
+export function customerVisibleNotification({ refreshingDigest = false } = {}) {
   const currentAccess = db
     .select({ id: companies.id })
     .from(companies)
     .innerJoin(users, eq(users.id, notifications.userId))
     .where(and(eq(companies.id, notifications.companyId), companyNoticeAccess()));
-  return and(
+  const visibleCopy = and(
     sql`starts_with(${notifications.eventKey}, ${RETIRED_BANK_NOTIFICATION_PREFIX}) IS NOT TRUE`,
-    sql`concat(${notifications.title}, ' ', ${notifications.message}) !~* ${retiredCopyPattern}`,
+    sql`concat(${notifications.title}, ' ', ${notifications.message}) !~* ${retiredCopyPattern}`
+  );
+  // A queued digest can recover this known reminder by replacing its copy before delivery.
+  const legacyReminder = refreshingDigest
+    ? and(
+        eq(notifications.title, LEGACY_BANK_RECONCILIATION_NOTICE.title),
+        eq(notifications.message, LEGACY_BANK_RECONCILIATION_NOTICE.message)
+      )
+    : undefined;
+  return and(
+    or(visibleCopy, legacyReminder),
     or(isNull(notifications.companyId), exists(currentAccess))
   );
 }

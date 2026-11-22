@@ -84,7 +84,7 @@ export async function rebuildNotificationDigest(row: EmailOutboxRow) {
         eq(notifications.userId, userId),
         sql`lower(${users.email}) = lower(${row.toAddress})`,
         batch,
-        customerVisibleNotification()
+        customerVisibleNotification({ refreshingDigest: true })
       )
     )
     .orderBy(notifications.createdAt, notifications.id);
@@ -93,9 +93,10 @@ export async function rebuildNotificationDigest(row: EmailOutboxRow) {
     if (!legacyItems) return true;
     const original = digestItemHtml(item);
     // A failed delivery can persist a refreshed snapshot while the source keeps its old wording.
-    const html = (legacyItems.get(original) ?? 0) > 0
-      ? original
-      : digestItemHtml(normalizeNotificationCopy(item));
+    const html =
+      (legacyItems.get(original) ?? 0) > 0
+        ? original
+        : digestItemHtml(normalizeNotificationCopy(item));
     const remaining = legacyItems.get(html) ?? 0;
     if (remaining === 0) return false;
     legacyItems.set(html, remaining - 1);
