@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { bankCsvWorkflow } from "../../shared/banking-copy";
 
 const repoRoot = process.cwd();
 
@@ -145,8 +146,10 @@ describe("Public SaaS launch surface", () => {
   });
 
   it("describes CSV statement upload and reconciliation in both locales", () => {
-    for (const locale of ["en", "ar"]) {
+    for (const locale of ["en", "ar"] as const) {
       const prefix = `client/src/locales/${locale}`;
+      const onboarding = JSON.parse(readRepoFile(`${prefix}/onboarding.json`));
+      expect(onboarding["onboarding.bankCardDesc"]).toBe(bankCsvWorkflow[locale]);
       const keys = [
         ["marketing", "marketing.faq3A"],
         ["banking", "banking.statementUpload.title"],
@@ -166,16 +169,22 @@ describe("Public SaaS launch surface", () => {
       /\blive[\s-]*bank[\s-]*feeds?\b/i,
       /\bautomatic\s+bank\s+transaction\s+sync\b/i,
       /\bbank[\s-]+feeds?\b[^\n.]{0,60}\b(?:coming|later|soon)\b/i,
+      /\bbank\s+account\s+is\s+(?:already\s+)?connected\b/i,
+      /حسابك\s+البنكي\s+(?:مرتبط|متصل)/,
       /الربط\s+البنكي\s+المباشر|(?:الربط|المزامنة)\s+البنكي(?:ة)?[^\n.]{0,60}(?:قريب|لاحق)/,
     ];
     const files = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
       .split("\0")
-      .filter((file) => /\.(?:md|tsx?|json|mjs|cjs|js|html|txt|ya?ml)$/i.test(file));
+      .filter((file) => /\.(?:md|tsx?|json|mjs|cjs|js|html|txt|ya?ml|sql)$/i.test(file));
     const matches = files.flatMap((file) => {
       const source = readRepoFile(file);
-      const rules = file.startsWith("client/src/locales/")
-        ? [...claims, /\bbank\s+feeds?\b|الربط\s+البنكي/i]
-        : claims;
+      const rules = [...claims];
+      if (file.startsWith("client/src/locales/")) {
+        rules.push(/\bbank\s+feeds?\b|الربط\s+البنكي/i);
+      }
+      if (file.startsWith("migrations/") || file.endsWith("/benchmark-run.json")) {
+        rules.push(/\bcoming\s+soon\b/i, /الرفع\s+قريب/);
+      }
       return rules.flatMap((rule) => {
         const match = rule.exec(source);
         return match ? [`${file}:${source.slice(0, match.index).split("\n").length}`] : [];

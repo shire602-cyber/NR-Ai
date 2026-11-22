@@ -980,6 +980,7 @@ function expenseSummaryRows(rows: any[] = []) {
 }
 
 export function prepareExpenseReportsForExport(report: any): ExportData[] {
+  const baseCurrency = report?.baseCurrency ?? "AED";
   return [
     {
       sheetName: "Expenses by Vendor",
@@ -987,9 +988,9 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
         { header: "Vendor", key: "label", width: 30 },
         { header: "Posted Entries", key: "entryCount", width: 16 },
         { header: "Expense Lines", key: "lineCount", width: 16 },
-        { header: "Debit (AED)", key: "debitAed", width: 18 },
-        { header: "Credit (AED)", key: "creditAed", width: 18 },
-        { header: "Net Expense (AED)", key: "netExpenseAed", width: 20 },
+        { header: `Debit (${baseCurrency})`, key: "debitAed", width: 18 },
+        { header: `Credit (${baseCurrency})`, key: "creditAed", width: 18 },
+        { header: `Net Expense (${baseCurrency})`, key: "netExpenseAed", width: 20 },
       ],
       rows: expenseSummaryRows(report?.byVendor),
     },
@@ -999,9 +1000,9 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
         { header: "Category", key: "label", width: 28 },
         { header: "Posted Entries", key: "entryCount", width: 16 },
         { header: "Expense Lines", key: "lineCount", width: 16 },
-        { header: "Debit (AED)", key: "debitAed", width: 18 },
-        { header: "Credit (AED)", key: "creditAed", width: 18 },
-        { header: "Net Expense (AED)", key: "netExpenseAed", width: 20 },
+        { header: `Debit (${baseCurrency})`, key: "debitAed", width: 18 },
+        { header: `Credit (${baseCurrency})`, key: "creditAed", width: 18 },
+        { header: `Net Expense (${baseCurrency})`, key: "netExpenseAed", width: 20 },
       ],
       rows: expenseSummaryRows(report?.byCategory),
     },
@@ -1017,13 +1018,25 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
         { metric: "Needs posting", value: report?.unpostedReceipts ?? 0 },
         { metric: "Posted expense entries", value: report?.entryCount ?? 0 },
         { metric: "Posted expense lines", value: report?.lineCount ?? 0 },
-        { metric: "Posted expense debits (AED)", value: formatExportAmount(report?.debitAed) },
-        { metric: "Posted expense credits (AED)", value: formatExportAmount(report?.creditAed) },
-        { metric: "Net posted expenses (AED)", value: formatExportAmount(report?.totalAed) },
-        { metric: "Receipt VAT captured (AED)", value: formatExportAmount(report?.vatAed) },
         {
-          metric: "Receipt spend captured (AED)",
-          value: formatExportAmount(report?.receiptSpendAed),
+          metric: `Posted expense debits (${baseCurrency})`,
+          value: formatExportAmount(report?.debitAed),
+        },
+        {
+          metric: `Posted expense credits (${baseCurrency})`,
+          value: formatExportAmount(report?.creditAed),
+        },
+        {
+          metric: `Net posted expenses (${baseCurrency})`,
+          value: formatExportAmount(report?.totalAed),
+        },
+        {
+          metric: `Receipt VAT captured (${baseCurrency})`,
+          value: formatExportAmount(report?.receiptVat),
+        },
+        {
+          metric: `Receipt spend captured (${baseCurrency})`,
+          value: formatExportAmount(report?.receiptSpend),
         },
         { metric: "Basis", value: report?.basis ?? "" },
       ],
@@ -1091,9 +1104,9 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
         { header: "Expense Account", key: "category", width: 28 },
         { header: "Account Code", key: "accountCode", width: 16 },
         { header: "Source", key: "source", width: 18 },
-        { header: "Debit (AED)", key: "debitAed", width: 18 },
-        { header: "Credit (AED)", key: "creditAed", width: 18 },
-        { header: "Net Expense (AED)", key: "netExpenseAed", width: 20 },
+        { header: `Debit (${baseCurrency})`, key: "debitAed", width: 18 },
+        { header: `Credit (${baseCurrency})`, key: "creditAed", width: 18 },
+        { header: `Net Expense (${baseCurrency})`, key: "netExpenseAed", width: 20 },
       ],
       rows:
         report?.lines?.map((line: any) => ({

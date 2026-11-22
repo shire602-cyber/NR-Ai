@@ -29,8 +29,8 @@ import {
   payrollAmount,
   payrollRunInDateRange,
   receiptInDateRange,
-  receiptSpendAed,
-  receiptVatAed,
+  receiptSpendInBase,
+  receiptVatInBase,
   reportDateRange,
   reportText,
 } from "../shared";
@@ -66,6 +66,7 @@ type UseReportsDerivedReportsDeps = Pick<
   | "receipts"
   | "receiptsLoading"
   | "salesProductServiceReport"
+  | "selectedCompany"
   | "trialBalance"
   | "vendorBills"
 >;
@@ -96,6 +97,7 @@ export function useReportsDerivedReports({
   receipts,
   receiptsLoading,
   salesProductServiceReport,
+  selectedCompany,
   trialBalance,
   vendorBills,
 }: UseReportsDerivedReportsDeps) {
@@ -656,13 +658,16 @@ export function useReportsDerivedReports({
       summary: expenseClaimSummary ?? { all: {}, thisMonth: {} },
     };
   }, [expenseClaimSummary, reportExpenseClaims]);
+  const baseCurrency = selectedCompany?.baseCurrency ?? "AED";
   const expenseReport = useMemo(() => {
-    const capturedReceiptSpendAed = reportReceipts.reduce(
-      (sum, receipt) => sum + receiptSpendAed(receipt),
+    const entriesById = new Map(journalEntries.map((entry) => [entry.id, entry]));
+    const capturedReceiptSpend = reportReceipts.reduce(
+      (sum, receipt) =>
+        sum + receiptSpendInBase(receipt, entriesById.get(receipt.journalEntryId ?? "")),
       0
     );
-    const capturedReceiptVatAed = reportReceipts.reduce(
-      (sum, receipt) => sum + receiptVatAed(receipt),
+    const capturedReceiptVat = reportReceipts.reduce(
+      (sum, receipt) => sum + receiptVatInBase(receipt),
       0
     );
     const unpostedReceipts = reportReceipts.filter((receipt) => !receipt.posted).length;
@@ -700,6 +705,7 @@ export function useReportsDerivedReports({
       )
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return {
+      baseCurrency,
       basis: reportText(
         "expenseBasis",
         "Posted journal lines where the linked chart-of-account type is expense. Input VAT and unposted receipts are shown separately as source-workflow context."
@@ -708,11 +714,11 @@ export function useReportsDerivedReports({
       lineCount: expenseByCategory.reduce((sum, row) => sum + row.lineCount, 0),
       receiptCount: reportReceipts.length,
       subtotalAed: debitAed,
-      vatAed: capturedReceiptVatAed,
+      receiptVat: capturedReceiptVat,
       totalAed,
       debitAed,
       creditAed,
-      receiptSpendAed: capturedReceiptSpendAed,
+      receiptSpend: capturedReceiptSpend,
       unpostedReceipts,
       autoPostedReceipts,
       byVendor: expenseByVendor,
@@ -722,6 +728,8 @@ export function useReportsDerivedReports({
       claims: expenseClaimReport,
     };
   }, [
+    baseCurrency,
+    journalEntries,
     expenseByCategory,
     expenseByVendor,
     expenseVendorLabel,

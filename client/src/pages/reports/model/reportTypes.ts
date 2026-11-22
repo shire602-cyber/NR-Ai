@@ -491,6 +491,8 @@ export interface ReceiptReportRow {
   vatAmount: number | null;
   currency: string | null;
   exchangeRate: number;
+  journalEntryId?: string | null;
+  paymentAccountId?: string | null;
   baseCurrencyAmount: number;
   exchangeRateSource?: "manual" | "lookup" | null;
   reverseCharge?: boolean;
