@@ -1,7 +1,6 @@
 // Source inspection is intentional: this is the unsupported-claims guard for public marketing,
 // legal and help copy. It scans the shipped source/catalog text for banned compliance and security
 // claims across pages that cannot all be rendered without API data.
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
