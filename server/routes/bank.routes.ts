@@ -124,7 +124,7 @@ export async function registerBankRoutes(app: Express) {
         iban: body.iban ?? null,
         status: "active",
       });
-      logger.info({ connectionId: connection.id, companyId }, "Bank connection created");
+      logger.info({ connectionId: connection.id, companyId }, "Statement source created");
       res.status(201).json(sanitizeConnection(connection));
     })
   );
@@ -136,7 +136,7 @@ export async function registerBankRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const connection = await ownedConnection(req, req.params.id);
       await storage.deleteBankConnection(connection.id);
-      res.json({ message: "Bank connection deleted" });
+      res.json({ message: "Statement source deleted" });
     })
   );
 

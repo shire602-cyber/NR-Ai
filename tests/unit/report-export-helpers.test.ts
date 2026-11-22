@@ -1,11 +1,21 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
 import type {
   JournalEntryReportRow,
   ReceiptReportRow,
 } from "../../client/src/pages/reports/model/reportTypes";
+import { collectInvoiceExportRows } from "../../client/src/lib/invoice-filters";
+import { describe, expect, it, vi } from "vitest";
+import { clearCsrfToken } from "../../client/src/lib/csrf";
+import { loadLocale, translateNow, useI18n } from "../../client/src/lib/i18n";
 import {
+  reportAutomationStarters,
+  reportPersonaWorkspaces,
+} from "../../client/src/lib/reportCatalog";
+import {
+  downloadOcrExcel,
+  downloadReceiptsExcel,
+  exportToExcel,
   prepareAgingReportsForExport,
   prepareAuditTrailForExport,
   prepareBalanceSummaryReportsForExport,
@@ -19,8 +29,260 @@ import {
   preparePeriodComparisonForExport,
   preparePlanningReportsForExport,
 } from "../../client/src/lib/export";
+import { useReportsWorkspacePack } from "../../client/src/pages/reports/hooks/useReportsWorkspacePack";
+import { localizeExportSheets } from "../../client/src/lib/export-localize";
+import { EXCEL_EXPORT_LIMITS, supportsExcelWorkbookSize } from "../../shared/excel-export";
 
 describe("report export helpers", () => {
+  it("collects all status-filtered pages and exports only invoices in the date range", async () => {
+    const november = Array.from({ length: 51 }, (_, id) => ({
+      id,
+      date: "2026-11-10",
+      status: id === 50 ? "sent" : "draft",
+    }));
+    const source = [
+      ...november.slice(0, 48),
+      { id: 51, date: "2021-01-01", status: "draft" },
+      { id: 52, date: "2021-01-02", status: "draft" },
+      ...november.slice(48),
+    ];
+    const range = { from: new Date(2026, 10, 1), to: new Date(2026, 10, 30) };
+    const downloadRows = (status?: string) =>
+      collectInvoiceExportRows(async (cursor) => {
+        const filtered = source.filter((row) => !status || row.status === status);
+        const offset = Number(cursor ?? 0);
+        return {
+          items: filtered.slice(offset, offset + 50),
+          nextCursor: filtered.length > offset + 50 ? String(offset + 50) : null,
+        };
+      }, range);
+    expect(await downloadRows()).toEqual(november);
+    expect(await downloadRows("draft")).toEqual(november.slice(0, 50));
+  });
+
+  it.each([
+    [
+      "en",
+      "Automation Starters",
+      "Setup Steps",
+      "Review invoices and upload a CSV bank statement",
+      "Launch cash autopilot",
+    ],
+    [
+      "ar",
+      "بدايات الأتمتة",
+      "خطوات الإعداد",
+      "راجع الفواتير وارفع كشف حساب بنكي بصيغة CSV",
+      "إطلاق الأتمتة الذاتية للنقد",
+    ],
+  ] as const)(
+    "exports the %s owner automation checklist in the workbook",
+    async (locale, name, setupHeader, step, action) => {
+      const previous = useI18n.getState().locale;
+      await loadLocale(locale);
+      useI18n.getState().setLocale(locale);
+      try {
+        const workspace = {
+          ...reportPersonaWorkspaces.find((item) => item.persona === "owner"),
+          reports: [],
+          readyReports: 0,
+        };
+        const starter = reportAutomationStarters.find(
+          (item) => item.id === "owner-cash-control-autopilot"
+        );
+        const { buildWorkspaceReportPack } = useReportsWorkspacePack({
+          dateRange: {},
+          vatReturns: [],
+          automationQueue: [],
+          comparisonRows: [],
+          personaReportRecommendations: [],
+          reportAccountantHandoffSummaries: [],
+          reportAutomationOperationSummaries: [],
+          reportAutomationRules: [],
+          reportAutomationStarterSummaries: [
+            {
+              ...starter,
+              reports: [],
+              playbooks: [],
+              queueSignals: [],
+              readyCount: 0,
+              openWorkItemCount: 0,
+              amountAtRisk: 0,
+            },
+          ],
+          reportAutomationTriggerRuleSummaries: [],
+          reportComparisonPresetSummaries: [],
+          reportDecisionShortcutSummaries: [],
+          reportDeliverySubscriptionSummaries: [],
+          reportPackDeliveryReadiness: [],
+          reportPackTemplateSummaries: [],
+          reportRoadmap: [],
+        } as Parameters<typeof useReportsWorkspacePack>[0]);
+        const sheets = buildWorkspaceReportPack(
+          workspace as Parameters<typeof buildWorkspaceReportPack>[0]
+        );
+        const starters = (await localizeExportSheets(sheets, undefined, true)).find(
+          (sheet) => sheet.sheetName === name
+        );
+        expect(starters?.columns).toContainEqual(
+          expect.objectContaining({ key: "setupSteps", header: setupHeader })
+        );
+        expect(String(starters?.rows[0]?.setupSteps).split(" | ")[0]).toBe(step);
+        expect(starters?.rows[0]?.primaryAction).toBe(action);
+      } finally {
+        useI18n.getState().setLocale(previous);
+      }
+    }
+  );
+
+  it("includes headers and empty cells in the shared workbook budget", () => {
+    const columns = Array(EXCEL_EXPORT_LIMITS.columnsPerWorksheet).fill({});
+    const rowsAtLimit = EXCEL_EXPORT_LIMITS.renderedCells / columns.length - 1;
+    expect(supportsExcelWorkbookSize([{ columns, rows: Array(rowsAtLimit).fill({}) }])).toBe(true);
+    expect(supportsExcelWorkbookSize([{ columns, rows: Array(rowsAtLimit + 1).fill({}) }])).toBe(
+      false
+    );
+  });
+
+  it("blocks an over-limit UTF-8 workbook before sending an export request", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    try {
+      const value = "€".repeat(Math.ceil(EXCEL_EXPORT_LIMITS.requestBytes / 3));
+      const sheets = [{ columns: [{ header: "Value", key: "value" }], rows: [{ value }] }];
+      expect(JSON.stringify(sheets).length).toBeLessThan(EXCEL_EXPORT_LIMITS.requestBytes);
+      await expect(exportToExcel(sheets, "test_workbook")).rejects.toThrow(
+        translateNow("toasts.excelExportTooLarge")
+      );
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("rechecks the active company after the workbook response and before downloading", async () => {
+    clearCsrfToken();
+    const request = vi.fn()
+      .mockResolvedValueOnce(Response.json({ csrfToken: "test-token" }))
+      .mockResolvedValueOnce(new Response("workbook"));
+    vi.stubGlobal("fetch", request);
+    const download = vi.spyOn(URL, "createObjectURL");
+    const assertActive = vi.fn()
+      .mockImplementationOnce(() => {})
+      .mockImplementationOnce(() => { throw new Error("Company changed"); });
+
+    try {
+      const sheets = [{ columns: [{ header: "Value", key: "value" }], rows: [{ value: 10 }] }];
+      await expect(exportToExcel(sheets, "workbook", { assertActive })).rejects.toThrow(
+        "Company changed"
+      );
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(assertActive).toHaveBeenCalledTimes(2);
+      expect(download).not.toHaveBeenCalled();
+    } finally {
+      clearCsrfToken();
+      download.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([
+    {
+      label: "a selected receipt",
+      run: () => downloadReceiptsExcel("company", { ids: ["receipt"] }),
+      path: "/api/companies/company/receipts/export-excel",
+      body: { ids: ["receipt"] },
+      disposition: "attachment; filename*=UTF-8''June%20receipts.xlsx",
+      name: "June receipts.xlsx",
+    },
+    {
+      label: "all receipts",
+      run: () => downloadReceiptsExcel("company"),
+      path: "/api/companies/company/receipts/export-excel",
+      body: {},
+      disposition: "attachment",
+      name: "muhasib-receipts.xlsx",
+    },
+    {
+      label: "OCR rows",
+      run: () => downloadOcrExcel([], { filename: "June" }),
+      path: "/api/ocr/export-excel",
+      body: { rows: [], filename: "June" },
+      disposition: null,
+      name: "muhasib-ocr-receipts.xlsx",
+    },
+    {
+      label: "an untitled OCR export",
+      run: () => downloadOcrExcel([]),
+      path: "/api/ocr/export-excel",
+      body: { rows: [] },
+      disposition: null,
+      name: "muhasib-ocr-receipts.xlsx",
+    },
+    {
+      label: "a standard workbook",
+      run: () => exportToExcel([{ columns: [{ header: "Value", key: "value" }], rows: [] }], "ledger"),
+      path: "/api/export/excel",
+      body: { sheets: [{ columns: [{ header: "Value", key: "value" }], rows: [] }], filename: "ledger" },
+      disposition: 'attachment; filename="ledger-export.xlsx"',
+      name: "ledger-export.xlsx",
+    },
+  ])("downloads $label from the expected endpoint", async ({ run, path, body, disposition, name }) => {
+    clearCsrfToken();
+    const request = vi.fn()
+      .mockResolvedValueOnce(Response.json({ csrfToken: "test-token" }))
+      .mockResolvedValueOnce(new Response("workbook", {
+        headers: disposition ? { "Content-Disposition": disposition } : {},
+      }));
+    const anchor = { href: "", download: "", click: vi.fn() };
+    const revoke = vi.spyOn(URL, "revokeObjectURL");
+
+    vi.stubGlobal("fetch", request);
+    vi.stubGlobal("document", {
+      createElement: () => anchor,
+      body: { appendChild: vi.fn(), removeChild: vi.fn() },
+    });
+
+    try {
+      await run();
+      expect(request).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining(path),
+        expect.objectContaining({ method: "POST", body: JSON.stringify(body) })
+      );
+      expect(anchor.download).toBe(name);
+      expect(anchor.click).toHaveBeenCalledOnce();
+      expect(revoke).toHaveBeenCalledWith(anchor.href);
+    } finally {
+      clearCsrfToken();
+      revoke.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([
+    [() => Response.json({ error: "Workbook unavailable" }, { status: 422 }), "Workbook unavailable"],
+    [() => Response.json({ message: "Try another workbook" }, { status: 422 }), "Try another workbook"],
+    [() => Response.json({}, { status: 418, statusText: "Unavailable" }), "418 Unavailable"],
+    [() => new Response("unavailable", { status: 418, statusText: "Unavailable" }), "418 Unavailable"],
+  ] as const)("reports a rejected workbook response without downloading", async (response, message) => {
+    clearCsrfToken();
+    const request = vi.fn()
+      .mockResolvedValueOnce(Response.json({ csrfToken: "test-token" }))
+      .mockResolvedValueOnce(response());
+    const download = vi.spyOn(URL, "createObjectURL");
+    vi.stubGlobal("fetch", request);
+
+    try {
+      await expect(downloadReceiptsExcel("company")).rejects.toThrow(message);
+      expect(download).not.toHaveBeenCalled();
+    } finally {
+      clearCsrfToken();
+      download.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("builds workbook sheets for advanced cash, aging, comparison, and FX reports", () => {
     const cashSheets = prepareCashFlowStatementForExport([
       {

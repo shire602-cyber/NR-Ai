@@ -134,6 +134,9 @@ jobs:
       - name: npm run test:db
         run: npm run test:db
 
+      - name: Migration rehearsal (disposable Postgres 16)
+        run: npm run test:migration-rehearsal
+
       - name: UAE calendar date regressions
         env:
           TZ: Asia/Dubai
@@ -206,6 +209,12 @@ jobs:
 
       - name: Public launch crawl
         run: npm run e2e:customer:public
+
+      - name: Owner report pack downloads
+        run: npm run e2e:owner-report-pack
+
+      - name: Excel export feedback
+        run: node tests/e2e/excel-export-feedback.mjs
 
       - name: Bilingual marketing route and accessibility crawl
         run: npm run e2e:marketing

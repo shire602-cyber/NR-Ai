@@ -2,8 +2,8 @@
  * W5-B backups (R19-06, R19-07, R17-08, R17-22, R19-17): full-company,
  * encrypted, permissioned snapshots with merge / replace restore.
  */
+import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { createHash } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { useHarness, type Tenant } from "./harness";
 
@@ -34,6 +34,17 @@ async function backup(t: Tenant, name = "Snapshot A") {
   const r = await t.as.post(`/api/companies/${t.company.id}/backups`, { name });
   expect(r.status, r.text).toBe(201);
   return r.body as { id: string; name: string; tableCounts: Record<string, number> };
+}
+
+async function seedBankFinding(company: Tenant, referencedCompany: Tenant) {
+  const [row] = await h.sql(
+    `INSERT INTO bank_gl_migration_findings (bank_transaction_id, company_id, kind, details)
+     VALUES (gen_random_uuid(), $1, 'statement_company_mismatch',
+             jsonb_build_object('statement_company_id', $2::uuid))
+     RETURNING *`,
+    [company.company.id, referencedCompany.company.id]
+  );
+  return row;
 }
 
 describe("W5-B backups", () => {
@@ -104,6 +115,190 @@ describe("W5-B backups", () => {
     expect(dl.headers.get("x-backup-export-sha256")).toBe(sha256(dl.text));
     expect(dl.body.tables.vendor_bills[0].vendor_name).toBe("Raw SQL Vendor");
     expect(dl.body.companyId).toBe(t.company.id);
+    const sealed = await t.as.get(`/api/backups/${b.id}/download?format=encrypted`);
+    expect(sealed.status, sealed.text).toBe(200);
+    expect(sealed.text).toBe(row.data_snapshot);
+    const { openSnapshot } = await import("../../server/services/backup.service");
+    expect(dl.text).toBe(openSnapshot(row.data_snapshot, row.checksum).json);
+  });
+
+  it.each([
+    { version: "1.0", hasFindings: false },
+    { version: "1.0", hasFindings: true },
+    { version: "2.0", hasFindings: false },
+    { version: "2.0", hasFindings: true },
+  ])(
+    "seals plaintext v$version downloads on request (findings: $hasFindings)",
+    async ({ version, hasFindings }) => {
+      const owner = await h.createTenant();
+      const b = await backup(owner);
+      const dataKey = version === "1.0" ? "data" : "tables";
+      const tables = { invoices: [{ customer_name: "Archived customer عميل" }] };
+      const snapshot = { version, companyId: owner.company.id, [dataKey]: tables };
+      const archived = JSON.stringify(
+        hasFindings
+          ? {
+              ...snapshot,
+              [dataKey]: {
+                ...tables,
+                bank_gl_migration_findings: [{ details: { statement_company_id: randomUUID() } }],
+              },
+            }
+          : snapshot,
+        null,
+        2
+      );
+      const checksum = createHash("sha256").update(archived).digest("hex");
+      await h.sql(
+        `UPDATE backups SET data_snapshot = $2, checksum = $3, encrypted = false, format_version = $4
+       WHERE id = $1`,
+        [b.id, archived, checksum, version]
+      );
+
+      const json = await owner.as.get(`/api/backups/${b.id}/download`);
+      expect(json.status, json.text).toBe(200);
+      expect(json.text).toBe(hasFindings ? JSON.stringify(snapshot) : archived);
+      const digest = createHash("sha256").update(json.text).digest("base64");
+      expect(json.headers.get("Content-Digest")).toBe(hasFindings ? `sha-256=:${digest}:` : null);
+      const encrypted = await owner.as.get(`/api/backups/${b.id}/download?format=encrypted`);
+      expect(encrypted.status, encrypted.text).toBe(200);
+      expect(encrypted.headers.get("Content-Type")).toContain("application/octet-stream");
+      expect(encrypted.headers.get("Content-Disposition")).toMatch(/\.muhbak"$/);
+      expect(encrypted.headers.get("Content-Digest")).toBeNull();
+      expect(encrypted.text).toMatch(/^enc:v1:/);
+      expect(encrypted.text).not.toContain("Archived customer");
+      const { openSnapshot } = await import("../../server/services/backup.service");
+      const exportedChecksum = createHash("sha256").update(json.text).digest("hex");
+      expect(openSnapshot(encrypted.text, exportedChecksum).json).toBe(json.text);
+
+      const [record] = await h.sql(
+        `SELECT data_snapshot, checksum, encrypted, format_version FROM backups WHERE id = $1`,
+        [b.id]
+      );
+      expect(record).toEqual({
+        data_snapshot: archived,
+        checksum,
+        encrypted: false,
+        format_version: version,
+      });
+      const [audit] = await h.sql(
+        `SELECT count(*)::int AS count FROM activity_logs
+       WHERE company_id = $1 AND entity_type = 'backup' AND entity_id = $2
+         AND description = $3`,
+        [owner.company.id, b.id, `Downloaded backup (encrypted): ${b.name}`]
+      );
+      expect(audit.count).toBe(1);
+    }
+  );
+
+  it("excludes operator bank migration findings from tenant exports", async () => {
+    const owner = await h.createTenant();
+    const other = await h.createSecondTenant();
+    await seedBankFinding(owner, other);
+
+    const b = await backup(owner);
+    expect(b.tableCounts).not.toHaveProperty("bank_gl_migration_findings");
+    const dl = await owner.as.get(`/api/backups/${b.id}/download`);
+    expect(dl.status, dl.text).toBe(200);
+    expect(dl.body.tables).not.toHaveProperty("bank_gl_migration_findings");
+    expect(dl.text).not.toContain(other.company.id);
+  });
+
+  it("filters excluded table counts from historical backup list and detail metadata", async () => {
+    const owner = await h.createTenant();
+    await seed(owner);
+    const b = await backup(owner);
+    const archivedCounts = JSON.stringify({ ...b.tableCounts, bank_gl_migration_findings: 2 });
+    await h.sql(`UPDATE backups SET table_counts = $2 WHERE id = $1`, [b.id, archivedCounts]);
+
+    const list = await owner.as.get(`/api/companies/${owner.company.id}/backups`);
+    expect(list.status, list.text).toBe(200);
+    expect(list.body).toContainEqual(expect.objectContaining(b));
+    const detail = await owner.as.get(`/api/backups/${b.id}`);
+    expect(detail.status, detail.text).toBe(200);
+    expect(detail.body).toMatchObject(b);
+    expect(detail.body.tableCounts).toEqual(b.tableCounts);
+
+    const [archived] = await h.sql(`SELECT table_counts FROM backups WHERE id = $1`, [b.id]);
+    expect(archived.table_counts).toBe(archivedCounts);
+  });
+
+  it("filters historical bank migration findings from downloads and ignores them on restore", async () => {
+    const owner = await h.createTenant();
+    const other = await h.createSecondTenant();
+    const { invoiceId } = await seed(owner);
+    const ownFinding = await seedBankFinding(owner, other);
+    const foreignFinding = await seedBankFinding(other, owner);
+    const b = await backup(owner);
+    const dl = await owner.as.get(`/api/backups/${b.id}/download`);
+    expect(dl.status, dl.text).toBe(200);
+
+    // Give the restore a validly sealed snapshot containing an excluded table.
+    const injectedId = randomUUID();
+    const { openSnapshot, sealSnapshot } = await import("../../server/services/backup.service");
+    const snapshot = sealSnapshot({
+      ...dl.body,
+      tables: {
+        ...dl.body.tables,
+        bank_gl_migration_findings: [
+          {
+            bank_transaction_id: injectedId,
+            company_id: owner.company.id,
+            kind: ownFinding.kind,
+            details: { ...ownFinding.details, suppliedBySnapshot: true },
+            found_at: ownFinding.found_at,
+          },
+          { ...foreignFinding, details: { suppliedBySnapshot: true } },
+        ],
+      },
+    });
+    await h.sql(`UPDATE backups SET data_snapshot = $2, checksum = $3 WHERE id = $1`, [
+      b.id,
+      snapshot.sealed,
+      snapshot.checksum,
+    ]);
+
+    const jsonExport = await owner.as.get(`/api/backups/${b.id}/download`);
+    expect(jsonExport.status, jsonExport.text).toBe(200);
+    expect(jsonExport.body).toEqual(dl.body);
+    const expectedDigest = createHash("sha256").update(jsonExport.text).digest("base64");
+    const archivedDigest = Buffer.from(snapshot.checksum, "hex").toString("base64");
+    expect(jsonExport.headers.get("Content-Digest")).toBe(`sha-256=:${expectedDigest}:`);
+    expect(expectedDigest).not.toBe(archivedDigest);
+    expect(jsonExport.headers.get("Cache-Control")).toContain("no-transform");
+    const encryptedExport = await owner.as.get(`/api/backups/${b.id}/download?format=encrypted`);
+    expect(encryptedExport.status, encryptedExport.text).toBe(200);
+    expect(encryptedExport.text).toMatch(/^enc:v1:/);
+    expect(encryptedExport.headers.get("Content-Digest")).toBeNull();
+    expect(openSnapshot(encryptedExport.text, null).snapshot).toEqual(dl.body);
+    const [archived] = await h.sql(`SELECT data_snapshot, checksum FROM backups WHERE id = $1`, [
+      b.id,
+    ]);
+    expect(archived).toEqual({ data_snapshot: snapshot.sealed, checksum: snapshot.checksum });
+
+    await h.sql(`UPDATE invoices SET customer_name = 'EDITED AFTER BACKUP' WHERE id = $1`, [
+      invoiceId,
+    ]);
+
+    const restore = await owner.as.post(`/api/backups/${b.id}/restore`, {
+      mode: "replace",
+      confirmRestore: true,
+      confirmName: b.name,
+    });
+    expect(restore.status, restore.text).toBe(200);
+    expect(restore.body.tables.map((row: { table: string }) => row.table)).not.toContain(
+      "bank_gl_migration_findings"
+    );
+    const [invoice] = await h.sql(`SELECT customer_name FROM invoices WHERE id = $1`, [invoiceId]);
+    expect(invoice.customer_name).toBe("Snapshot Customer");
+
+    const findings = await h.sql(
+      `SELECT * FROM bank_gl_migration_findings WHERE company_id IN ($1, $2)
+         OR bank_transaction_id = $3`,
+      [owner.company.id, other.company.id, injectedId]
+    );
+    expect(findings).toHaveLength(2);
+    expect(findings).toEqual(expect.arrayContaining([ownFinding, foreignFinding]));
   });
 
   it("seals an encrypted download of a legacy plaintext backup and returns an export checksum", async () => {
@@ -310,6 +505,9 @@ describe("W5-B backups", () => {
       connection.id,
     ]);
     clean.tables.bank_connections[0] = originalConnection;
+    clean.tables.bank_gl_migration_findings = [{
+      details: { statement_company_id: randomUUID() },
+    }];
     const oldJson = JSON.stringify(clean);
     await h.sql("UPDATE backups SET data_snapshot = $2, checksum = $3 WHERE id = $1", [
       b.id,
@@ -321,10 +519,15 @@ describe("W5-B backups", () => {
     expect(download.headers.get("x-backup-export-sha256")).toBe(sha256(download.text));
     expect(sha256(download.text)).not.toBe(sha256(oldJson));
     expect(download.body.tables.bank_connections[0]).toMatchObject(stripped);
+    expect(download.body.tables).not.toHaveProperty("bank_gl_migration_findings");
+    const digest = createHash("sha256").update(download.text).digest("base64");
+    expect(download.headers.get("Content-Digest")).toBe(`sha-256=:${digest}:`);
     const encrypted = await t.as.get(`/api/backups/${b.id}/download?format=encrypted`);
     expect(encrypted.status, encrypted.text).toBe(200);
     expect(encrypted.headers.get("x-backup-export-sha256")).toBe(sha256(encrypted.text));
-    expect(readSealed(encrypted.text).tables.bank_connections[0]).toMatchObject(stripped);
+    const exported = readSealed(encrypted.text);
+    expect(exported.tables.bank_connections[0]).toMatchObject(stripped);
+    expect(exported.tables).not.toHaveProperty("bank_gl_migration_findings");
 
     await h.sql("DELETE FROM bank_connections WHERE id = $1", [connection.id]);
     const restored = await t.as.post(`/api/backups/${b.id}/restore`, {

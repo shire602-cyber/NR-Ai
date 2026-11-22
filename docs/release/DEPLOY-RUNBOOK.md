@@ -1,9 +1,9 @@
-# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0137)
+# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 through 0149)
 
 Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
 
-Owner-run. The first deploy of this branch applies 49 migrations (0089-0137) that rewrite some production data
-(users, roles, FX rates, reconciliation rules, portal tokens, audit chain, subscriptions). Do not
+Owner-run. The first deploy of this branch applies 66 migrations (through 0149) that rewrite some production data
+(users, roles, FX rates, bank GL links and reconciliation rules, portal tokens, audit chain, subscriptions). Do not
 merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived or external items
 (A-Cube, email, Stripe, WPS, GPSSA, FAF) are listed in section 9 and stay off until proven.
 
@@ -197,6 +197,24 @@ SELECT cu.company_id, u.email FROM company_users cu JOIN users u ON u.id = cu.us
  WHERE u.user_type = 'client_portal';
 ```
 
+#### Bank GL links, invoice payment claims, and journal provenance (0138–0141)
+
+Migration `0138` repairs eligible bank GL links, including on databases that already recorded
+`0097`. Migration `0139` reports invalid GL references and unsafe invoice payment links, including
+on databases that already recorded `0138`. Review the linked journals before resolving shared,
+ambiguous, mismatched, or competing payments. Migration `0140` restores the bank-created
+journal flag on provable legacy receipt allocations and reports competing claims when an earlier
+`0139` is already recorded. Migration `0141` restores the bank-created flag for legacy
+invoice-linked journals that point back to the same bank transaction and have no payment.
+The posted journals and external payment links are preserved during migration.
+[Bank GL findings query](../migration-rehearsal.md#review-bank-gl-findings)
+
+For pre-`0097` manual invoice matches, review the payment, journal, and scoped audit records
+together. A legacy match to an already-paid invoice may carry no payment or journal pointer.
+The unmatch service checks the current receivable balance before clearing that link. The
+migration finding still records the missing pointers for operator review.
+[Legacy invoice payment evidence](../migration-rehearsal.md#legacy-invoice-payment-evidence)
+
 #### Skipped `uq_employees_*` unique indexes (0118)
 
 Migration `0118_x4_payroll.sql` creates three partial unique indexes on `employees`, but each one is
@@ -339,7 +357,7 @@ and FTA. The PR description must say so, so "394 fixed" is not read as "certifie
 Migration `0117_e2_einvoice_complyance.sql` (journal idx 116) adds the nullable column
 `einvoice_legal_entities.provider_details jsonb`. It is additive and idempotent (`IF NOT EXISTS`);
 safe to re-run, no data rewrite, no lock beyond a brief catalog change. Rehearse it with the rest of
-0089-0137, then run it a second time to confirm it is a no-op.
+0089 through 0149, then run it a second time to confirm it is a no-op.
 
 One provider is active at a time, selected by `EINVOICE_PROVIDER` (unset = e-invoicing off; a
 provider that is selected but not fully configured stays hidden/"Not connected"):

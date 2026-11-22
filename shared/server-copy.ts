@@ -15,7 +15,9 @@ import {
   BANK_STATEMENT_REVIEW_TITLE,
   EMAIL_NOT_SET_UP_RUN_ERROR,
   LEGACY_BANK_RECONCILIATION_NOTICE,
+  RETIRED_BANK_NOTIFICATION_PREFIX,
 } from "./notification-copy";
+import { BANK_STATEMENT_ENTRY } from "./bank-statement-routes";
 import { BANK_RECONCILIATION_COPY } from "./bank-reconciliation-copy";
 
 export interface CopyDescriptor {
@@ -1519,19 +1521,40 @@ export function notificationCopy(
   };
 }
 
-export function normalizeNotificationCopy<T extends { title: string; message: string }>(n: T): T {
-  if (isBankStatementReviewCopy(n)) {
-    return { ...n, title: BANK_STATEMENT_REVIEW_TITLE.en, message: BANK_RECONCILIATION_COPY.en };
-  }
+type StoredNotificationText = {
+  title: string;
+  message: string;
+  eventKey?: string | null;
+  copy?: NotificationCopyDescriptor | null;
+};
+
+export function bankStatementUpdateFailureCopy(n: StoredNotificationText) {
+  if (
+    !n.eventKey?.startsWith(RETIRED_BANK_NOTIFICATION_PREFIX) &&
+    n.copy?.titleKey !== "notification.bankSyncFailed.title" &&
+    !isBankStatementReviewCopy(n)
+  ) return null;
+  return {
+    actionUrl: BANK_STATEMENT_ENTRY,
+    title: BANK_STATEMENT_REVIEW_TITLE.en,
+    message: BANK_RECONCILIATION_COPY.en,
+  };
+}
+
+export function normalizeNotificationCopy<T extends StoredNotificationText>(n: T): T {
+  const bankReview = bankStatementUpdateFailureCopy(n);
+  if (bankReview) return { ...n, title: bankReview.title, message: bankReview.message };
   const legacy = legacyStatementImportCopy(n);
   return legacy ? { ...n, message: renderServerCopy(legacy.key, legacy.params) } : n;
 }
 
 /** Attach stable keys and parameters to stored notification text. */
-export function withNotificationCopy<T extends { title: string; message: string }>(
+export function withNotificationCopy<T extends StoredNotificationText>(
   n: T
 ): T & { copy: NotificationCopyDescriptor } {
-  return { ...normalizeNotificationCopy(n), copy: describeNotificationCopy(n) };
+  const bankReview = bankStatementUpdateFailureCopy(n);
+  const wording = bankReview ? { ...n, ...bankReview } : normalizeNotificationCopy(n);
+  return { ...wording, copy: describeNotificationCopy(n) };
 }
 
 /** Key + params for a stored report-delivery run error or handoff sentence, or null. */

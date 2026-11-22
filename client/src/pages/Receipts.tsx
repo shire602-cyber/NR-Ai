@@ -1620,27 +1620,29 @@ function CompanyReceipts({
         ? `_${format(dateRange.from, "yyyy-MM-dd")}_to_${format(dateRange.to, "yyyy-MM-dd")}`
         : "";
 
+    setIsExporting(true);
     try {
       await exportToExcel(
         [prepareReceiptsForExport(filteredReceipts, locale)],
         `expenses${dateRangeStr}`,
-        () => assertDraftCompany(companyId)
+        { assertActive: () => assertDraftCompany(companyId) }
       );
+      toast({
+        title: tr("Export successful", "تم التصدير بنجاح"),
+        description: tr(
+          `${filteredReceipts.length} expenses exported to Excel`,
+          `تم تصدير ${filteredReceipts.length} من المصروفات إلى Excel`
+        ),
+      });
     } catch (error) {
       toast({
-        title: tr("Export failed", "فشل التصدير"),
-        description: error instanceof Error ? error.message : undefined,
         variant: "destructive",
+        title: t["toasts.exportFailed"],
+        description: error instanceof Error ? error.message : undefined,
       });
-      return;
+    } finally {
+      setIsExporting(false);
     }
-    toast({
-      title: tr("Export successful", "تم التصدير بنجاح"),
-      description: tr(
-        `${filteredReceipts.length} expenses exported to Excel`,
-        `تم تصدير ${filteredReceipts.length} من المصروفات إلى Excel`
-      ),
-    });
   };
 
   const handleExportGoogleSheets = async () => {

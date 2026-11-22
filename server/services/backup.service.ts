@@ -38,6 +38,7 @@ import { createLogger } from "../config/logger";
 const log = createLogger("backup-service");
 
 export const BACKUP_FORMAT_VERSION = "2.0";
+const BANK_GL_MIGRATION_FINDINGS = "bank_gl_migration_findings";
 
 /** Company-scoped tables deliberately NOT in a backup, and why. */
 export const BACKUP_EXCLUDED_TABLES: Readonly<Record<string, string>> = {
@@ -51,6 +52,8 @@ export const BACKUP_EXCLUDED_TABLES: Readonly<Record<string, string>> = {
   company_invitations: "access control",
   api_keys: "credentials: a restore must never revive a revoked key",
   bank_feed_oauth_states: "short-lived OAuth state",
+  [BANK_GL_MIGRATION_FINDINGS]:
+    "operator-only migration diagnostics can contain references to other companies and must survive tenant restores",
   portal_login_codes: "short-lived credentials",
   portal_access_tokens: "credentials",
   payslip_tokens: "credentials",
@@ -367,7 +370,7 @@ export function openSnapshot(
   checksum: string | null
 ): { json: string; snapshot: CompanySnapshot | LegacySnapshot; redacted?: CompanySnapshot } {
   let json: string;
-  if (stored.startsWith("enc:v1:")) {
+  if (isEncryptedSecret(stored)) {
     const plain = decryptSecret(stored) ?? "";
     json = plain.startsWith("gz1:")
       ? zlib.gunzipSync(Buffer.from(plain.slice(4), "base64")).toString("utf8")
@@ -394,15 +397,26 @@ export function openSnapshot(
   return { json, snapshot };
 }
 
+/** Produce both download formats from the same sanitized, verified snapshot. */
 export function exportBackupSnapshot(
   stored: string,
   checksum: string | null,
   encrypted: boolean
-): { body: string; exportChecksum: string } {
-  const { json, redacted } = openSnapshot(stored, checksum);
-  let body = json;
-  if (encrypted) body = !redacted && isEncryptedSecret(stored) ? stored : sealSnapshotJson(json);
-  return { body, exportChecksum: snapshotChecksum(body) };
+): { body: string; exportChecksum: string; contentDigest?: string } {
+  const { json, snapshot, redacted } = openSnapshot(stored, checksum);
+  const tables = "tables" in snapshot ? snapshot.tables : snapshot.data;
+  const hadFindings = tables && Object.hasOwn(tables, BANK_GL_MIGRATION_FINDINGS);
+  if (hadFindings) delete tables[BANK_GL_MIGRATION_FINDINGS];
+  const plaintext = hadFindings ? JSON.stringify(snapshot) : json;
+  const sanitized = hadFindings || !!redacted;
+  const body = encrypted
+    ? (!sanitized && isEncryptedSecret(stored) ? stored : sealSnapshotJson(plaintext))
+    : plaintext;
+  const exportChecksum = snapshotChecksum(body);
+  const contentDigest = !encrypted && sanitized
+    ? `sha-256=:${Buffer.from(exportChecksum, "hex").toString("base64")}:`
+    : undefined;
+  return { body, exportChecksum, ...(contentDigest ? { contentDigest } : {}) };
 }
 
 interface LegacySnapshot {

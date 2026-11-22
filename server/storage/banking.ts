@@ -1,4 +1,4 @@
-// DatabaseStorage part: Bank accounts, bank transactions, bank connections and reconciliation rules.
+// DatabaseStorage part: Bank accounts, bank transactions, statement sources and reconciliation rules.
 // Domain classes are chained with `extends` and composed into DatabaseStorage in
 // server/storage.ts (R20-09); import `storage` from "./storage", not these classes.
 
@@ -109,7 +109,7 @@ export class BankingStorage extends IntegrationStorage {
       .orderBy(desc(bankTransactions.transactionDate));
   }
 
-  // Bank connections
+  // Statement sources
   async getBankConnectionsByCompanyId(companyId: string): Promise<BankConnection[]> {
     return db
       .select()

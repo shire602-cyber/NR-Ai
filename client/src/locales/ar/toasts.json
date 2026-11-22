@@ -19,6 +19,7 @@
   "toasts.accessRestricted": "الوصول مقيّد",
   "toasts.couldNotExportVat201Workbook": "تعذّر تصدير مصنف إقرار الضريبة 201.",
   "toasts.exportFailed": "فشل التصدير",
+  "toasts.excelExportTooLarge": "حجم تصدير Excel كبير جدًا. جرّب نطاقًا زمنيًا أقصر أو صدّر التقارير بصورة منفردة.",
   "toasts.vat201WorkbookHasBeenDownloadedFor": "تم تنزيل مصنف إقرار الضريبة 201 للمراجعة ودعم التقديم.",
   "toasts.excelExported": "تم التصدير إلى Excel",
   "toasts.vat201ReturnHasBeenDownloaded": "تم تنزيل إقرار الضريبة 201.",

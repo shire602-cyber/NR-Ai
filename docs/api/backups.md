@@ -26,6 +26,8 @@ AES-256-GCM through the secret vault (key from `TOKEN_ENCRYPTION_KEY`, else deri
 `?format=encrypted` returns a sealed file, including for legacy plaintext snapshots.
 Both formats return `X-Backup-Export-SHA256`, the hex SHA-256 digest of the downloaded file.
 Backup metadata reports the checksum of the stored plaintext used for restore verification.
+Downloads omit operator-only bank migration findings and retired bank credentials. A
+filtered JSON download also includes an RFC 9530 `Content-Digest` for the response bytes.
 
 ## Restore
 

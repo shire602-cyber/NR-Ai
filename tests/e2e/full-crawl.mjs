@@ -1131,6 +1131,10 @@ async function main() {
       }
     }
 
+    if (keys.includes("openBanking")) {
+      await fail("integration-status", { detail: "Unexpected provider status entry" });
+    }
+
     // API key lifecycle: create returns the raw key exactly once.
     const keyRes = await page.request.post(`${BASE}/api/companies/${companyId}/api-keys`, {
       headers: { "x-csrf-token": csrfToken ?? "" },

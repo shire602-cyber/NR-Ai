@@ -5,8 +5,10 @@
  * shared templates. Configuration problems are phrased for users with a "Set up email" link
  * instead of environment variable names.
  */
-import { EMAIL_SETUP_HREF, isEmailNotSetUpMessage } from "@shared/notification-copy";
+import { BANK_STATEMENT_REVIEW_TITLE, EMAIL_SETUP_HREF, isEmailNotSetUpMessage } from "@shared/notification-copy";
+import { BANK_RECONCILIATION_COPY } from "@shared/bank-reconciliation-copy";
 import {
+  bankStatementUpdateFailureCopy,
   describeNotificationCopy,
   renderDescriptor,
   type NotificationCopyDescriptor,
@@ -45,6 +47,7 @@ function localizeAmounts(text: string): string {
 type NotificationLike = {
   title: string;
   message: string;
+  eventKey?: string | null;
   copy?: NotificationCopyDescriptor | null;
 };
 
@@ -83,7 +86,15 @@ export function localizeNotification(
   n: NotificationLike,
   t: Record<string, string | undefined>,
   locale: "en" | "ar" = "en"
-): { title: string; message: string; setupEmailHref?: string } {
+): { title: string; message: string; actionUrl?: string; setupEmailHref?: string } {
+  const bankFailure = bankStatementUpdateFailureCopy(n);
+  if (bankFailure) {
+    return {
+      title: BANK_STATEMENT_REVIEW_TITLE[locale],
+      message: BANK_RECONCILIATION_COPY[locale],
+      actionUrl: bankFailure.actionUrl,
+    };
+  }
   const copy = n.copy ?? describeNotificationCopy(n);
   const titleParams = localizeDateParams({ ...copy.titleParams }, locale);
   if (titleParams.title) {

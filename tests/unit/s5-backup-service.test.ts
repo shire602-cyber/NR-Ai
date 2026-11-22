@@ -219,8 +219,14 @@ describe("S5 backup manifest + snapshot (unit)", () => {
     const opened = s.openSnapshot(sealed.sealed, sealed.checksum);
     expect((opened.snapshot as { companyId: string }).companyId).toBe(CO);
     expect(() => s.openSnapshot(sealed.sealed, "0".repeat(64))).toThrow(/checksum/);
-    const legacy = s.openSnapshot(JSON.stringify({ version: "1", companyId: CO, data: {} }), null);
+    const legacyJson = JSON.stringify({ version: "1", companyId: CO, data: {} }, null, 2);
+    const legacy = s.openSnapshot(legacyJson, null);
     expect((legacy.snapshot as { data: unknown }).data).toEqual({});
+    expect(s.exportBackupSnapshot(legacyJson, null, false)).toMatchObject({ body: legacyJson });
+    const legacyEncrypted = s.exportBackupSnapshot(legacyJson, null, true);
+    expect(legacyEncrypted.body).toMatch(/^enc:v1:/);
+    expect(legacyEncrypted.contentDigest).toBeUndefined();
+    expect(s.openSnapshot(legacyEncrypted.body, null).json).toBe(legacyJson);
   });
 });
 

@@ -366,13 +366,13 @@ Muhasib scored on what I could make it do today, not what it intends to do.
 
 **QuickBooks is beatable on localisation and nothing else.** No Arabic. No RTL. No corporate tax. Intuit stated on the record in December 2025 and again in April 2026 that UAE e-invoicing is unsupported with no roadmap. Its UAE VAT marketing page is **recycled Malaysian GST content**; its FAQ still references Windows XP and Internet Explorer; zero UAE testimonials.
 
-**mazeed is your closest structural analogue** — Dubai, founded 2018 (formerly McLedger), 4,000+ businesses, full Arabic, AED 170/month unlimited users, and channel distribution through Dubai SME, Sharjah, Hub71, Meydan and e& that you cannot match. It is software *plus* an outsourced accounting service in one app. Its weakness is that its own e-invoicing page still says "Phase 1 — Q2 2026" against the real 30 Oct 2026 dates — stale compliance content from a compliance vendor.
+**mazeed is your closest structural analogue** — Dubai, founded 2018 (formerly McLedger), 4,000+ businesses, full Arabic, AED 170/month unlimited users, and channel distribution through Dubai SME, Sharjah, Hub71, Meydan and e& that you cannot match. It is software *plus* an outsourced accounting service in one app. Its weakness is that its own e-invoicing page still says "Phase 1 — Q2 2026" against the real 30 Oct 2026 dates — stale compliance content from a compliance vendor. Its banking workflow uses CSV statement imports.
 
 **FreshBooks is not a competitor in the UAE.** No VAT 201 (UK/HMRC only), no Arabic, no AED storefront, doesn't even label invoices "Tax Invoice" for the UAE. Remove it from your comparisons; naming it makes you look like you're padding the list.
 
 **The one you left out is the one that should worry you: Tally.** Accredited ASP #35, fully accredited 27 July 2026, native PINT AE XML, emirate field in party ledger masters, direct EmaraTax filing, full Arabic and bilingual invoices — and it **bundles unlimited e-invoices into the annual subscription while everyone else will meter per document**. ~AED 2,340 perpetual, ~AED 4,200 five-year TCO, 65,000+ UAE businesses. When the mandate lands, Tally is the safe answer, and "safe" is what a compliance purchase optimises for.
 
-**UAE Open Finance regulatory context.** CBUAE Open Finance (Circular 7/2023, in force 10 July 2025) **bans screen-scraping** and routes everything through one licensed central API Hub with **usage fees**. Bank data in the UAE is a cost of goods sold, not a free PSD2-style API. Only 7 of 267 UAE banks are reachable through any aggregator; Plaid has zero UAE coverage; DIFC and ADGM are excluded entirely. Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
+**UAE financial-data regulation.** CBUAE Open Finance (Circular 7/2023, in force 10 July 2025) **bans screen-scraping** and routes everything through one licensed central API Hub with **usage fees**. DIFC and ADGM are excluded. [Historical comparison excerpt redacted.] Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 
 ---
 

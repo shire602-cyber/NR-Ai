@@ -76,7 +76,7 @@ B2C out of scope pending further decision. **Penalties (Cabinet Decision 106/202
 
 **Wafeq** — (1) Not an ASP; TASR expires this month. (2) No emirate Box 1 and no field to build one from. (3) Custom tax rates **"cannot be included in VAT reports at all"** → RCM/Designated Zone unworkaroundable; whether system codes ship is **UNVERIFIED, the highest-value in-product test**. (4) No WPS/gratuity, no budgeting; fixed assets not linked to bills. (5) ~5 genuine reviews (4 Capterra, Nov 2022, all "Vendor Referred – Incentive Offered"; **G2: 0**) against an 18,000-customer claim. (6) Backlog stalled since Apr 2024; Android unshipped; API lacks webhooks and fixed-asset/budget endpoints.
 
-**mazeed** — (1) Not an ASP with the mandate closing. (2) Stale compliance content. (3) No payroll/WPS, no fixed assets; budgeting is human advisory. (4) Warehouse caps (1/2) push inventory businesses to Enterprise; thin project accounting. (6) Permanent 80%-off banner signals weak pricing power; no disclosed funding.
+**mazeed** — (1) Not an ASP with the mandate closing. (2) Stale compliance content. (3) CSV statement imports. (4) No payroll/WPS, no fixed assets; budgeting is human advisory. (5) Warehouse caps (1/2) push inventory businesses to Enterprise; thin project accounting. (6) Permanent 80%-off banner signals weak pricing power; no disclosed funding.
 
 **QuickBooks Online** — (1) Intuit stated on record **18 Dec 2025 and again 10 Apr 2026** that UAE e-invoicing/Peppol/ASP is unsupported with no roadmap. (2) No Arabic, no RTL, no CT module. (3) Localisation demonstrably stale: the UAE VAT page is **recycled Malaysian GST content**; the FAQ says "three plans" (there are four), "Windows XP," "Internet Explorer"; testimonials are Singapore/Malaysia/Hong Kong, **zero UAE**. (4) Generic ROW SKU, entity Intuit Limited (UK), **support routed to Singapore**; monthly billing only, **no pro-rata refunds**. (5) Capterra 4.3/8,500: cost 55% negative of 832 mentions, glitches 70% of 614, slow performance 72% of 376. (6) CoA capped at **250 accounts** through Plus.
 
@@ -102,7 +102,7 @@ B2C out of scope pending further decision. **Penalties (Cabinet Decision 106/202
 
 **Also:** SAP (ASP #30, enterprise) · Focus Softnet (largest Dubai-HQ ERP, **not an ASP**, TASR expired Apr 2024) · Daftra/IZAM (Arabic-first, TASR to May 2027, **disputed false ASP claim**) · Microsoft D365 BC (partner Techventures is ASP #39) · ERPNext/Frappe (Corner 1 only) · Bayzat (owns the UAE payroll/WPS layer — partner, not competitor) · **Rewaa** (Saudi, $45m Series B — likeliest future entrant, **UNVERIFIED**). **Ignore:** Sage (TASR expired 2020), Zybra (Indian GST), Elate/Emerald/Peniel/QuickDice/Naqood (SEO reseller shops).
 
-**UAE Open Finance regulatory context.** CBUAE Open Finance (**Circular 7 of 2023**, in force 10 Jul 2025 via Circular 3/2025; **FDL 6/2025** made it licensed) **bans screen-scraping**, routes everything through one central API Hub run by **Nebras**, and **meters it with licensing plus usage fees** — bank data is a COGS line, not free as under PSD2. **DIFC and ADGM excluded.** Live mid-2026: CBD (retail only), Mashreq, ADIB, DIB; TPPs Lean, Pay10, NymCard, Spare — **no live AIS-for-accounting use case**. **Plaid has zero UAE coverage.** Whether business accounts are in the live phase is **UNVERIFIED — the most important open question**. Only **7 of 267 UAE banks** are reachable via any aggregator.
+**Bank reconciliation.** Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 
 ---
 

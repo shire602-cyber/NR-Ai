@@ -39,7 +39,14 @@ describe("migrations", () => {
     });
     for (const e of journal.entries.filter((x) => x.idx >= 88)) {
       expect(e).toMatchObject({ version: "7", breakpoints: false });
-      expect(e.when - journal.entries[e.idx - 1].when).toBe(10_000);
+      // Keep release timestamps fixed and reserve a gap before the bank entries.
+      const gaps = {
+        "0144_prepare_preview_firm_membership": 5_000,
+        "0142_recover_firm_membership_provenance": 5_000,
+        "0138_repair_bank_gl_links": 30_000,
+      } as Record<string, number>;
+      const cadence = gaps[e.tag] ?? 10_000;
+      expect(e.when - journal.entries[e.idx - 1].when).toBe(cadence);
     }
     for (const e of journal.entries.filter((x) => x.idx >= 89)) {
       const body = sqlFile(e.tag);
@@ -255,7 +262,7 @@ describe("migrations", () => {
         expect(r.is_admin).toBe(false);
         expect(r.memberships).toBe(0);
       }
-      return rows.length;
+      return rows.map((r) => r.password_hash);
     };
     await check();
     await h.createTenant({ name: "Cred" });
@@ -278,7 +285,10 @@ describe("migrations", () => {
     );
     expect(replayed[0].password_hash).toMatch(/^\$2[aby]\$/);
     await h.sql(sqlFile("0089_platform_foundation"));
-    expect(await check()).toBe(1);
+    const revoked = await check();
+    expect(revoked).toHaveLength(1);
+    await h.sql(sqlFile("0089_platform_foundation"));
+    expect(await check()).toEqual(revoked);
     const login = await h.anon.post("/api/auth/login", {
       email: "test_firm_owner@nra.ae",
       password: "TestFirmOwner123!",

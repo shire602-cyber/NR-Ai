@@ -19,6 +19,7 @@
   "toasts.accessRestricted": "Access restricted",
   "toasts.couldNotExportVat201Workbook": "Could not export VAT 201 workbook.",
   "toasts.exportFailed": "Export failed",
+  "toasts.excelExportTooLarge": "This Excel export is too large. Try a shorter date range or export individual reports.",
   "toasts.vat201WorkbookHasBeenDownloadedFor": "VAT 201 workbook has been downloaded for review and filing support.",
   "toasts.excelExported": "Excel exported",
   "toasts.vat201ReturnHasBeenDownloaded": "VAT 201 return has been downloaded.",

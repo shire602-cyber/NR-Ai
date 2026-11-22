@@ -28,8 +28,8 @@ prunes expired records separately.
 
 ## Processors and sub-processors (only when configured)
 
-The application calls a third party only when its environment variables are set; the
-capability report (`shared/capabilities.ts`, `/api/integrations/status`) shows which are live.
+The capability registry (`shared/capabilities.ts`) tracks configured integrations. In the
+customer banking workflow, users upload CSV statements for import and reconciliation.
 
 | Processor                                     | Data sent                                                                       | Trigger / env                               |
 | --------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------- |
