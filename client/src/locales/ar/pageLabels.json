@@ -104,7 +104,6 @@
   "pageLabels.autoPosted": "ترحيل تلقائي",
   "pageLabels.autoReconciliation": "التسوية التلقائية",
   "pageLabels.automaticSync": "المزامنة التلقائية",
-  "pageLabels.automaticTransactionImportEliminatesManualDataEntry": "استيراد المعاملات تلقائيًا يلغي الإدخال اليدوي للبيانات",
   "pageLabels.automaticallyCreateJournalEntriesForMatchedTransactions": "إنشاء قيود يومية تلقائيًا للمعاملات المطابقة",
   "pageLabels.automaticallyCreateNewInvoiceCopiesOnSchedule": "إنشاء نسخ جديدة من الفاتورة تلقائيًا وفق جدول",
   "pageLabels.automaticallyMatchTransactionsWithInvoices": "مطابقة المعاملات مع الفواتير تلقائيًا",

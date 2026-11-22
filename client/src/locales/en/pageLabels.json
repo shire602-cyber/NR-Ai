@@ -104,7 +104,6 @@
   "pageLabels.autoPosted": "Auto-Posted",
   "pageLabels.autoReconciliation": "Auto-Reconciliation",
   "pageLabels.automaticSync": "Automatic sync",
-  "pageLabels.automaticTransactionImportEliminatesManualDataEntry": "Automatic transaction import eliminates manual data entry",
   "pageLabels.automaticallyCreateJournalEntriesForMatchedTransactions": "Automatically create journal entries for matched transactions",
   "pageLabels.automaticallyCreateNewInvoiceCopiesOnSchedule": "Automatically create new invoice copies on schedule",
   "pageLabels.automaticallyMatchTransactionsWithInvoices": "Automatically match transactions with invoices",
