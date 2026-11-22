@@ -49,6 +49,7 @@ import {
 } from "./portal-access.service";
 import { deliverOutboxMessage, enqueueEmail, type OutboxResult } from "../outbox";
 import { renderPortalInviteEmail, normaliseInviteLanguage } from "./portal-invite-email";
+import { resolveEmailLanguage } from "./email-layout";
 import { paymentsAvailability, publicBaseUrl } from "./payments";
 import { recordAudit } from "./audit.service";
 import { isPlaceholderPasswordHash, passwordPolicySchema } from "../auth";
@@ -351,7 +352,7 @@ export async function createInvitation(args: {
         email,
         contactEmailAtIssue: saveEmail ? email : contactEmail(lockedContact),
         name: body.name || lockedContact.contactPerson || null,
-        language: body.language,
+        language: resolveEmailLanguage(body.language, lockedContact.preferredLanguage),
         message: body.message || null,
         tokenHash: token.hash,
         expiresAt: new Date(now.getTime() + PORTAL_INVITE_TTL_DAYS * 86_400_000),
@@ -380,7 +381,7 @@ export async function createInvitation(args: {
     entityType: "customer_portal_invitation",
     entityId: invitation.id,
     before: null,
-    after: { contactId: contact.id, email, language: body.language, delivery },
+    after: { contactId: contact.id, email, language: invitation.language, delivery },
     req: args.req,
   });
   return {

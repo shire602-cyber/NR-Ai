@@ -13,9 +13,18 @@ opinion and has not been reviewed by counsel or an auditor.
 | Company membership           | role per company, invitations (email, role)                                                      | `company_users`, `company_invitations`, `invitations`           | access control                                   |
 | Customer and vendor contacts | names, emails, phones, TRNs, addresses                                                           | `customer_contacts`, `vendors`, invoice/bill rows               | bookkeeping, invoicing                           |
 | Employees (payroll)          | name, Emirates ID / passport numbers, IBAN, salary, leave                                        | `employees`, `payroll_*`                                        | payroll and WPS files                            |
-| Financial documents          | invoices, receipts (images + OCR text), bank statements and transactions                         | `invoices`, `receipts`, `bank_transactions`, object storage     | accounting, VAT, corporate tax                   |
+| Financial documents          | invoices, receipts (images + OCR text)                                                            | `invoices`, `receipts`, object storage                          | accounting, VAT, corporate tax                   |
+| CSV statement uploads         | transaction dates, descriptions, references, debit/credit amounts, balances and bank account association | `bank_import_batches`, `bank_transactions`                    | in-app statement import, suggested matches and reconciliation |
+| Financial-data authorizations | provider account and consent IDs, account identifiers, and encrypted access and refresh credentials | `bank_connections`, `bank_feed_oauth_states`                    | authorize optional financial-data processing     |
 | Communications               | outbound email bodies/attachments (sensitive messages flagged), WhatsApp messages (NR firm only) | `email_outbox`, `email_outbox_attachments`, `whatsapp_messages` | delivery and retries                             |
 | Backups                      | JSON snapshots of the books above                                                                | `backups.data_snapshot` (AES-256-GCM)                           | recovery                                         |
+
+An authorization return and any exchange data needed for retry are encrypted in the server session
+store. They become unusable when the original state expires within ten minutes. The return is bound
+to the browser's HttpOnly CSRF cookie and an opaque reference in its originating tab. After
+completion, the application attempts to replace the saved return and exchange data with a receipt
+and record IDs. It attempts to delete the receipt after the tab acknowledges it. The session store
+prunes expired records separately.
 
 ## Processors and sub-processors (only when configured)
 
@@ -29,6 +38,7 @@ capability report (`shared/capabilities.ts`, `/api/integrations/status`) shows w
 | AI providers (OpenAI, Anthropic)              | receipt images/text, transaction descriptions for classification and assistants | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`       |
 | Email (Resend or SMTP provider)               | recipient address, message body, attachments                                    | `RESEND_API_KEY`, `SMTP_*`                  |
 | Payments (Stripe)                             | billing contact, invoice amount, payer details                                  | `STRIPE_*`                                  |
+| Lean, Tarabut and Wio (conditional financial-data processors) | authorization codes or consent identifiers, access and refresh credentials, account identifiers and transaction query ranges sent to the configured processor. Responses may contain account names, masked account numbers or IBANs, balances, transaction references, dates, descriptions and amounts. | Authorization and account lookup require the selected processor's configuration and an authenticated authorization return. Authorized staff can request transaction processing. Scheduled processing requires an active authorization linked to an account, with automatic processing enabled. Configuration uses `LEAN_APP_TOKEN`, `TARABUT_CLIENT_ID` with `TARABUT_CLIENT_SECRET`, or `WIO_CLIENT_ID` with `WIO_CLIENT_SECRET`, plus the processor URL overrides and `BANK_FEED_REDIRECT_URIS` when set. |
 | E-invoicing ASP                               | e-invoice XML (buyer/seller identifiers)                                        | `EINVOICE_ASP_*`, `ACUBE_*`, `COMPLYANCE_*` |
 | SMS / WhatsApp (Twilio, Meta)                 | phone numbers, message text                                                     | `TWILIO_*`, `WHATSAPP_*`                    |
 | Error monitoring (Sentry)                     | stack traces, request metadata                                                  | `SENTRY_DSN`                                |

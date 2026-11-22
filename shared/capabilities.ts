@@ -16,7 +16,7 @@
  * This module adds no routes.
  */
 
-import { BANK_STATEMENT_IMPORT_GUIDANCE } from "./bank-statement-copy";
+const adapterAction = { en: "Review adapter credentials", ar: "راجع بيانات اعتماد المهايئ" };
 
 export type CapabilityStatus = "live" | "sandbox" | "requires_external" | "disabled";
 
@@ -101,12 +101,6 @@ export function httpsFeedUrls(raw: string | undefined): string[] {
 const flag = (env: EnvLike, name: string): boolean =>
   ["1", "true", "yes", "on"].includes((env[name] ?? "").trim().toLowerCase());
 
-const csvReconciliationCopy = {
-  label: { en: "Bank reconciliation (CSV import)", ar: "التسوية البنكية (استيراد CSV)" },
-  externalAction: BANK_STATEMENT_IMPORT_GUIDANCE,
-  envVars: [],
-} as const;
-
 const DEFS: readonly CapabilityDef[] = [
   {
     id: "email",
@@ -177,7 +171,9 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_lean",
-    ...csvReconciliationCopy,
+    label: { en: "Lean adapter", ar: "مهايئ لين" },
+    externalAction: adapterAction,
+    envVars: ["LEAN_APP_TOKEN", "LEAN_API_BASE_URL"],
     whenUnconfigured: "requires_external",
     detect: (env) =>
       set(env, "LEAN_APP_TOKEN")
@@ -188,7 +184,9 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_tarabut",
-    ...csvReconciliationCopy,
+    label: { en: "Tarabut adapter", ar: "مهايئ ترابط" },
+    externalAction: adapterAction,
+    envVars: ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET", "TARABUT_API_BASE_URL"],
     whenUnconfigured: "requires_external",
     detect: (env) =>
       all(env, ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET"])
@@ -199,7 +197,9 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_wio",
-    ...csvReconciliationCopy,
+    label: { en: "Wio adapter", ar: "مهايئ ويو" },
+    externalAction: adapterAction,
+    envVars: ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET", "WIO_API_BASE_URL"],
     whenUnconfigured: "requires_external",
     detect: (env) =>
       all(env, ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET"])
@@ -342,7 +342,7 @@ const DEFS: readonly CapabilityDef[] = [
       ar: "اضبط FX_RATE_FEED (cbuae أو ecb أو كلاهما) وروابط المزود (FX_RATE_FEED_CBUAE_URL و FX_RATE_FEED_ECB_URL) المتفق عليها مع مزود الأسعار.",
     },
     envVars: ["FX_RATE_FEED", "FX_RATE_FEED_CBUAE_URL", "FX_RATE_FEED_ECB_URL", "FX_RATE_API_KEY"],
-    // Provider configuration is retained for internal diagnostics.
+    // W5-C (R14-14): adapter health is separate from CSV availability.
     whenUnconfigured: "requires_external",
     detect: (env) => (set(env, "FX_RATE_FEED") ? "live" : null),
   },

@@ -236,7 +236,7 @@ describe("capability registry", () => {
     expect(isCapabilityLive("ai", {})).toBe(false);
   });
 
-  it("publishes the CSV workflow for each bank capability at every provider status", () => {
+  it("reports technical adapter health at every provider status", () => {
     const credentials = {
       LEAN_APP_TOKEN: "test-app",
       TARABUT_CLIENT_ID: "test-client",
@@ -258,18 +258,26 @@ describe("capability registry", () => {
         id.startsWith("bank_feed_")
       );
       expect(bankCapabilities).toEqual(
-        ["bank_feed_lean", "bank_feed_tarabut", "bank_feed_wio"].map((id) => ({
+        [
+          ["bank_feed_lean", "Lean adapter", "مهايئ لين", ["LEAN_APP_TOKEN", "LEAN_API_BASE_URL"]],
+          [
+            "bank_feed_tarabut",
+            "Tarabut adapter",
+            "مهايئ ترابط",
+            ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET", "TARABUT_API_BASE_URL"],
+          ],
+          [
+            "bank_feed_wio",
+            "Wio adapter",
+            "مهايئ ويو",
+            ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET", "WIO_API_BASE_URL"],
+          ],
+        ].map(([id, en, ar, envVars]) => ({
           id,
           status,
-          label: {
-            en: "Bank reconciliation (CSV import)",
-            ar: "التسوية البنكية (استيراد CSV)",
-          },
-          externalAction: {
-            en: "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
-            ar: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
-          },
-          envVars: [],
+          label: { en, ar },
+          externalAction: { en: "Review adapter credentials", ar: "راجع بيانات اعتماد المهايئ" },
+          envVars,
         }))
       );
     }

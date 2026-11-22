@@ -1,3 +1,4 @@
+import { bankCsvWorkflow } from "../../shared/banking-copy";
 // Source inspection is intentional: this is the unsupported-claims guard for public marketing,
 // legal and help copy. It scans the shipped source/catalog text for banned compliance and security
 // claims across pages that cannot all be rendered without API data.
@@ -6,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { bankCsvWorkflow } from "../../shared/banking-copy";
+import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 
 const repoRoot = process.cwd();
 
@@ -71,13 +72,7 @@ const bannedLaunchClaims = [
   /all data automatically/i,
   /reports generated automatically/i,
   /Untouched/i,
-  /Connect Your Bank/i,
-  /Securely link your.*bank account/i,
-  /via encrypted feeds/i,
-  /UAE bank feeds/i,
-  /الربط (?:البنكي|المصرفي) المباشر/,
-  /Photo, email forward, or bank feed/i,
-  /sync a bank line/i,
+  unsupportedStatementCopy,
   /compliant with FTA/i,
   /SOC 2 Type II/i,
   /Trusted by 500\+ UAE businesses/i,
@@ -161,6 +156,27 @@ describe("Public SaaS launch surface", () => {
         const source = JSON.parse(readRepoFile(`${prefix}/${catalog}.json`));
         expect(source[key], `${locale} ${key}`).toMatch(/CSV/);
       }
+    }
+  });
+
+  it("omits future-feature wording from toast catalogs and release notes", () => {
+    const obsoleteToast = "toasts.newsletterFeatureWillBeAvailableSoonConfigure";
+    const futureClaims = [
+      /\bcoming\s+soon\b/i,
+      /\bwill\s+be\s+available\s+soon\b/i,
+      /ستتوفر[^.\n]*قريب/,
+    ];
+    for (const locale of ["en", "ar"]) {
+      const path = `client/src/locales/${locale}/toasts.json`;
+      const catalog: Record<string, string> = JSON.parse(readRepoFile(path));
+      expect(catalog).not.toHaveProperty([obsoleteToast]);
+      for (const claim of futureClaims) {
+        expect(Object.values(catalog).join("\n"), path).not.toMatch(claim);
+      }
+    }
+    const releaseNotes = "docs/release/SUPERSEDED-PRS.md";
+    for (const claim of futureClaims) {
+      expect(readRepoFile(releaseNotes), releaseNotes).not.toMatch(claim);
     }
   });
 

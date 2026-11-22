@@ -417,7 +417,9 @@ export interface IStorage {
 
   // Invoice Share Token
   getInvoiceByShareToken(token: string): Promise<Invoice | undefined>;
-  setInvoiceShareToken(id: string, token: string, expiresAt: Date): Promise<void>;
+  ensureInvoiceShareToken(
+    invoice: Pick<Invoice, "id" | "companyId" | "shareToken" | "shareTokenExpiresAt">
+  ): Promise<string>;
 
   // Invoice Lines
   createInvoiceLine(line: InsertInvoiceLine): Promise<InvoiceLine>;

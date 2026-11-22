@@ -1,6 +1,6 @@
 # Najma Al Raeda — Website
 
-Premium-minimal marketing site for **Najma Al Raeda**, a Dubai accounting, tax & advisory firm (est. 2017 · 700+ clients · 500+ active).
+Premium-minimal marketing site for **Najma Al Raeda**, a Dubai accounting, tax & advisory firm (est. 2017).
 
 ## Pages
 - `index.html` — Home (hero, services overview, why-us, stats, testimonials, CTA)
@@ -37,7 +37,6 @@ cd website && python3 -m http.server 8080
 
 ### Still to replace before launch
 - **Form ID** — add a Formspree (or similar) ID to `data-endpoint` in `contact.html` (see "Activating the contact form" below). Until then the form falls back to opening the visitor's email app.
-- **Testimonials** — the two quotes on the home page are still sample names; swap for real client quotes (ideally with a Google rating).
 - **FTA tax-agent number** — the footer says "Registered FTA Tax Agency"; add the actual TAAN if you want it shown.
 - **Insights articles** — accurate general guidance, but have a tax professional review against the latest FTA rules before publishing.
 

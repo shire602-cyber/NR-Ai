@@ -14,6 +14,7 @@ import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
 
 let container: HTMLDivElement;
 let root: Root;
+let validRows = 1;
 
 const json = (body: unknown) =>
   new Response(JSON.stringify(body), {
@@ -33,6 +34,8 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  validRows = 1;
+  localStorage.setItem("muhasib_auth_hint", "1");
   window.history.pushState({}, "", "/bank-reconciliation?import=1");
   vi.stubGlobal(
     "fetch",
@@ -41,6 +44,27 @@ beforeEach(() => {
       if (url.includes("/api/csrf-token")) return json({ csrfToken: "x" });
       if (url.endsWith("/bank/providers")) return json({ isConfigured: false, statuses: [] });
       if (/\/api\/companies$/.test(url)) return json([{ id: "c-1", name: "شركة الواحة" }]);
+      if (url.endsWith("/bank-statements/preview"))
+        return json({
+          kind: "camt053",
+          detectedFormat: "camt053",
+          detectedFormatLabel: "CAMT.053",
+          headers: [],
+          totalRows: 1,
+          validRows,
+          errorRows: 1 - validRows,
+          warnings: [],
+          sampleRows: [
+            {
+              rowIndex: 1,
+              date: "2026-11-20",
+              description: "Sample transaction",
+              debit: 10,
+              credit: 0,
+              errors: [],
+            },
+          ],
+        });
       if (url.endsWith("/bank-accounts"))
         return json([
           {
@@ -67,18 +91,22 @@ afterEach(async () => {
   container.remove();
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
+  localStorage.removeItem("muhasib_auth_hint");
   const { useI18n } = await import("../../client/src/lib/i18n");
   useI18n.getState().setLocale("en");
 });
 
-async function mountPage(locale: "en" | "ar") {
+async function mountPage(locale: "en" | "ar", page: "feeds" | "reconciliation" = "reconciliation") {
   const i18n = await import("../../client/src/lib/i18n");
   await act(async () => i18n.useI18n.getState().setLocale(locale));
   const { queryClient } = await import("../../client/src/lib/queryClient");
   queryClient.clear();
   const { ActiveCompanyProvider } =
     await import("../../client/src/components/ActiveCompanyProvider");
-  const { default: Page } = await import("../../client/src/pages/BankReconciliation");
+  const { default: Page } =
+    page === "feeds"
+      ? await import("../../client/src/pages/BankFeeds")
+      : await import("../../client/src/pages/BankReconciliation");
   await act(async () => {
     root.render(
       createElement(
@@ -92,6 +120,58 @@ async function mountPage(locale: "en" | "ar") {
 }
 
 const dialog = () => document.querySelector('[role="dialog"]') as HTMLElement | null;
+
+async function chooseStatement() {
+  const sample = "Date,Description,Amount\n2026-11-20,Sample transaction,20";
+  const file = new File([sample], "statement.csv", { type: "text/csv" });
+  Object.defineProperty(file, "arrayBuffer", {
+    value: async () => new TextEncoder().encode(sample).buffer,
+  });
+  const input = dialog()?.querySelector('[data-testid="input-bank-statement-file"]');
+  expect(input).not.toBeNull();
+  Object.defineProperty(input, "files", { value: [file] });
+  await act(async () => input!.dispatchEvent(new Event("change", { bubbles: true })));
+}
+describe("CSV bank statement import page", () => {
+  it.each([
+    {
+      locale: "en" as const,
+      title: "CSV bank statements",
+      action: "Upload a CSV statement",
+      workflow:
+        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
+    },
+    {
+      locale: "ar" as const,
+      title: "كشوف الحساب البنكي بصيغة CSV",
+      action: "ارفع كشف حساب بصيغة CSV",
+      workflow: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
+    },
+  ])(
+    "shows the CSV heading and import action, and localizes the unavailable-provider error in $locale",
+    async ({ locale, title, action, workflow }) => {
+      window.history.replaceState(null, "", "/bank-feeds");
+      await mountPage(locale, "feeds");
+      expect([...container.querySelectorAll("h1")].map((heading) => heading.textContent)).toEqual([
+        title,
+      ]);
+      expect(container.textContent).toContain(workflow);
+      const importLink = container.querySelector('[data-testid="button-feeds-import-statement"]');
+      expect(importLink?.textContent).toBe(action);
+      expect(importLink?.getAttribute("href")).toBe("/bank-reconciliation?import=1");
+
+      const { serverErrorCopy } = await import("../../client/src/lib/validation-messages");
+      for (const code of [
+        "BANK_FEED_NOT_CONFIGURED",
+        "BANK_FEED_RECONNECT_REQUIRED",
+        "BANK_FEED_NOT_SUPPORTED",
+        "BANK_FEED_BALANCE_UNAVAILABLE",
+      ]) {
+        expect(serverErrorCopy(locale, code), code).toBe(workflow);
+      }
+    }
+  );
+});
 
 describe("bank statement import dialog", () => {
   it("in Arabic: every line is Arabic, including the supported formats and the Import button", async () => {
@@ -118,11 +198,46 @@ describe("bank statement import dialog", () => {
   it("in English: the same lines come from the catalog", async () => {
     await mountPage("en");
     const text = dialog()?.textContent ?? "";
-    expect(text).toContain("Comma, semicolon, and tab-delimited Excel exports are supported");
+    expect(text).toContain("CSV supports comma, semicolon, and tab delimiters");
+    expect(text).not.toMatch(/\b(?:XLSX|MT940|CAMT\.053|OFX)\b/);
     expect(dialog()?.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
       "Import"
     );
   });
+
+  it.each([
+    ["en", "Statement recognized", "ltr"],
+    ["ar", "تم التعرّف على كشف الحساب", "rtl"],
+  ] as const)(
+    "shows a localized label for a populated statement preview in %s",
+    async (locale, label, dir) => {
+      await mountPage(locale);
+      await chooseStatement();
+      await vi.waitFor(() => {
+        const mapper = dialog()?.querySelector('[data-testid="panel-statement-mapper"]');
+        expect(mapper?.getAttribute("dir")).toBe(dir);
+        expect(mapper?.querySelector('[data-testid="statement-recognized"]')?.textContent).toBe(
+          label
+        );
+        expect(mapper?.textContent).toContain("Sample transaction");
+        expect(mapper?.textContent).not.toMatch(/MT940|CAMT\.053|OFX|QFX/);
+      });
+    }
+  );
+
+  it.each(["en", "ar"] as const)(
+    "shows row errors without a recognition badge in %s",
+    async (locale) => {
+      validRows = 0;
+      await mountPage(locale);
+      await chooseStatement();
+      await vi.waitFor(() => {
+        const mapper = dialog()?.querySelector('[data-testid="panel-statement-mapper"]');
+        expect(mapper).not.toBeNull();
+        expect(mapper?.querySelector('[data-testid="statement-recognized"]')).toBeNull();
+      });
+    }
+  );
 
   it("lets the dialog content shrink to a phone (single minmax(0,1fr) column, no min-content growth)", async () => {
     await mountPage("en");
@@ -186,8 +301,8 @@ it("lists only CSV in the banking format copy and keeps receipt links free of re
     import("../../client/src/locales/ar/forms.json"),
     import("../../shared/banking-copy"),
   ]);
-  expect(enBank["banking.import.formats"]).toBe(bankCsvWorkflow.en);
-  expect(arBank["banking.import.formats"]).toBe(bankCsvWorkflow.ar);
+  expect(enBank["banking.emptyTransactionsDescription"]).toBe(bankCsvWorkflow.en);
+  expect(arBank["banking.emptyTransactionsDescription"]).toBe(bankCsvWorkflow.ar);
   expect(enForms["forms.claim.receiptUrlHint"]).toBe("Link to the receipt");
   expect(arForms["forms.claim.receiptUrlHint"]).toBe("رابط الإيصال");
 });

@@ -1,6 +1,6 @@
 /**
  * Proves e-commerce integration credentials are encrypted before they reach
- * the database — same secret-vault as bank connection tokens.
+ * the database — the same vault used for other external processor tokens.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

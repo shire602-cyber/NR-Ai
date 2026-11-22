@@ -325,7 +325,7 @@ describe("WQ1 partial credit note from an invoice (7.15)", () => {
 describe("WQ1 make recurring from an invoice (7.13)", () => {
   it("creates the schedule and the next run emails through the outbox: queued, never sent", async () => {
     const t = await h.createTenant();
-    const c = await contact(t);
+    const c = await contact(t, "Gulf Retail LLC", { preferredLanguage: "ar" });
     const inv = await issued(t, { contactId: c.id });
     // The row action seeds the recurring editor from the invoice; it saves through the one
     // recurring-invoice route with email automatically on.
@@ -349,13 +349,19 @@ describe("WQ1 make recurring from an invoice (7.13)", () => {
       [t.company.id, inv.id]
     );
     expect(gen).toMatchObject({ status: "sent", source: "recurring" });
-    const outbox = await h.sql<{ status: string; to_address: string; category: string }>(
-      `SELECT status, to_address, category FROM email_outbox WHERE related_entity_id = $1`,
-      [gen.id]
-    );
-    expect(outbox).toEqual([
+    const outbox = await h.sql<{
+      status: string;
+      to_address: string;
+      category: string;
+      html: string;
+    }>(`SELECT status, to_address, category, html FROM email_outbox WHERE related_entity_id = $1`, [
+      gen.id,
+    ]);
+    expect(outbox).toMatchObject([
       { status: "blocked_no_provider", to_address: "ap@gulfretail.example", category: "invoice" },
     ]);
+    expect(outbox[0].html).toContain('<div dir="rtl" lang="ar"');
+    expect(outbox[0].html).not.toContain('<div dir="ltr" lang="en"');
     const [row] = await h.sql<{ last_run_status: string; last_run_message: string }>(
       `SELECT last_run_status, last_run_message FROM recurring_invoices WHERE id = $1`,
       [tpl.body.id]

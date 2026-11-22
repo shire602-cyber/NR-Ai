@@ -1049,5 +1049,7 @@
   "serverErrors.VAT_RETURN_STALE": "The VAT figures changed after this return was generated. Regenerate the return before filing.",
   "serverErrors.VAT_GROUP_MEMBERSHIP_VERIFICATION_REQUIRED": "VAT group membership for this period must be verified before VAT changes can be recorded.",
   "serverErrors.VAT_GROUP_MEMBER_AUTHORIZATION_REQUIRED": "A company owner or administrator must authorize VAT group membership for each member.",
-  "serverErrors.VAT_RETURN_SCOPE_OVERLAP": "A company covered by this VAT return already has a submitted or filed return for an overlapping period."
+  "serverErrors.VAT_RETURN_SCOPE_OVERLAP": "A company covered by this VAT return already has a submitted or filed return for an overlapping period.",
+  "serverErrors.AUTHORIZATION_RETRY": "Could not finish authorization. Try again.",
+  "serverErrors.AUTHORIZATION_RESTART": "Authorization expired. Start again from where you began, or upload a CSV statement."
 }

@@ -738,5 +738,6 @@
   "marketing.signupTrialCaps": "خلال الفترة التجريبية: حتى {companies, plural, one {شركة واحدة} two {شركتين} few {# شركات} many {# شركة} other {# شركة}} و{credits} من أرصدة الذكاء الاصطناعي و{storage} من التخزين.",
   "marketing.prPlanPhrase_starter": "خطة المبتدئ",
   "marketing.prPlanPhrase_professional": "الخطة الاحترافية",
-  "marketing.prPlanPhrase_enterprise": "خطة المؤسسات"
+  "marketing.prPlanPhrase_enterprise": "خطة المؤسسات",
+  "marketing.demoBankBody": "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك"
 }

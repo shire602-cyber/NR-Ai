@@ -1,8 +1,8 @@
 import type { Express, Request, Response } from "express";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import { authMiddleware, adminMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/email.service";
-import { bankCsvWorkflow } from "../../shared/banking-copy";
 import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
 import { isObjectStorageConfigured, objectStorageBackend } from "../services/fileStorage";
 import { connectorStatuses } from "../services/connectors/oauth";
@@ -83,7 +83,7 @@ export function registerIntegrationStatusRoutes(app: Express) {
           key: "bankStatementUpload",
           name: "Bank CSV reconciliation",
           configured: true,
-          detail: bankCsvWorkflow.en,
+          detail: bankStatementCopy.en,
           requiredEnv: [],
           unlocks: "CSV reconciliation",
         },

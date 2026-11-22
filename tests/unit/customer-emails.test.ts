@@ -49,11 +49,27 @@ const invoice = {
 const PAY = "https://app.muhasib.example/view/invoice/abc123";
 const LANGS: EmailLanguage[] = ["en", "ar", "bilingual"];
 
+it("isolates an escaped numeric-prefix invoice identifier inside the RTL heading", () => {
+  const numeric = buildInvoiceEmail({ ...invoice, number: "12-2026-00001" }, company, undefined, {
+    language: "ar",
+  });
+  expect(numeric.html).toMatch(
+    /<h2 dir="rtl"[^>]*>فاتورة رقم <span dir="ltr"[^>]*>12-2026-00001<\/span><\/h2>/
+  );
+  expect(numeric.text).toContain("فاتورة رقم 12-2026-00001");
+  const escaped = buildInvoiceEmail({ ...invoice, number: "12-<123>" }, company, undefined, {
+    language: "ar",
+  });
+  expect(escaped.html).toMatch(
+    /<h2 dir="rtl"[^>]*>فاتورة رقم <span dir="ltr"[^>]*>12-&lt;123&gt;<\/span><\/h2>/
+  );
+});
+
 /** The Arabic section's visible text (HTML tags and entities removed). */
 function arabicText(html: string): string {
   const start = html.indexOf('<div dir="rtl" lang="ar"');
   const rest = start < 0 ? "" : html.slice(html.indexOf(">", start));
-  const end = rest.search(/<\/td>\s*<\/tr>\s*<tr><td class="em-pad" style="background:#F9FAFB/);
+  const end = rest.indexOf("</div>");
   return htmlToText(end < 0 ? rest : rest.slice(0, end));
 }
 
@@ -101,7 +117,7 @@ describe("layout and formatters", () => {
       expect(html).toContain("background:#F7F8F4");
       expect(html).toContain("background:#0B6A4A");
       expect(html).toContain("color:#14241E");
-      expect(html).toContain("'Noto Sans Arabic'");
+      expect(html).toContain(lang === "ar" ? "'Noto Sans Arabic'" : "'Geist'");
       expect(html).toContain("<bdi>Muhasib.ai</bdi>");
       expect(renderEmailText(content, lang)).toContain("Muhasib.ai");
     }
@@ -252,6 +268,20 @@ describe("invoice email details", () => {
     expect(e.html).toMatch(/padding:14px 32px/);
     expect(e.html).toMatch(/@media only screen and \(max-width:620px\)/);
     expect(e.html).toContain('bgcolor="#');
+  });
+
+  it("styles the bilingual sections independently and keeps Arabic invoice links and IDs LTR", () => {
+    const e = buildInvoiceEmail(invoice, company, undefined, { portalUrl: PAY });
+    expect(e.html).toContain("#0B6A4A");
+    expect(e.html).toContain("#14241E");
+    expect(e.html).toContain("#F7F8F4");
+    expect(e.html).toContain("'Geist','Segoe UI',Arial");
+    expect(e.html).toContain("'Noto Sans Arabic',Tahoma,Arial");
+    expect(e.html).toContain("<!--[if mso]>");
+    expect(e.html).toContain('dir="rtl" align="right"');
+    expect(e.html).toContain('dir="ltr" align="left"');
+    expect(e.html).toContain(`<a dir="ltr" href="${PAY}"`);
+    expect(e.html).toContain(`direction:ltr;unicode-bidi:isolate;">${invoice.number}</span>`);
   });
 
   it("escapes the customer name and the custom message", () => {
@@ -454,6 +484,14 @@ describe("password reset", () => {
 });
 
 describe("footers are consistent", () => {
+  it("keeps long billing addresses breakable in the body and footer", () => {
+    const contactEmail = `${"billing".repeat(8)}@example.test`;
+    const businessAddress = "LongAddress".repeat(20);
+    const { html } = buildInvoiceEmail(invoice, { ...company, contactEmail, businessAddress });
+    for (const value of [contactEmail, businessAddress]) {
+      expect(html).toMatch(new RegExp(`<p [^>]*overflow-wrap:anywhere[^>]*>[^\\n]*${value}`));
+    }
+  });
   it("every customer template carries the automated note and the Muhasib.ai line", () => {
     const all = [
       buildInvoiceEmail(invoice, company, undefined, { language: "en" }),

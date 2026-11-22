@@ -4,6 +4,7 @@
  * without provider configuration. Set BASE_URL, DATABASE_URL and CHROMIUM_PATH.
  * SHOT_DIR optionally writes viewport screenshots of the synthetic customer screens.
  */
+import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
@@ -679,12 +680,10 @@ async function run(browser, lang, device) {
       "bank-csv-fallback",
       async () => {
         await page.getByText(copy[lang].bank, { exact: true }).waitFor();
-        for (const alias of ["/bank-feeds", "/bank-feeds/callback?code=fixture&state=fixture"]) {
-          await open(page, alias, lang, "/bank-reconciliation");
-        }
+        await open(page, "/bank-feeds", lang, "/bank-reconciliation");
         assert.equal(providerRequests, 0);
         const bankPage = await page.locator("main").innerText();
-        assert.doesNotMatch(bankPage, /bank feeds?|الربط البنكي/i);
+        assert.doesNotMatch(bankPage, unsupportedStatementCopy);
         assert.doesNotMatch(bankPage, /coming (?:soon|later)|قريب|لاحق/i);
       },
       "/bank-reconciliation"

@@ -1,4 +1,3 @@
-import { bankCsvWorkflow } from "../../shared/banking-copy";
 /**
  * D4: server-generated copy is described as stable keys + params and rendered from the en/ar
  * catalogs. Covers every template round trip, legacy stored English rows, catalog parity and
@@ -210,7 +209,8 @@ describe("server copy templates", () => {
     } as never);
     const english = {
       title: "Import a CSV bank statement",
-      message: bankCsvWorkflow.en,
+      message:
+        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
     };
     expect(row).toMatchObject({
       ...english,
@@ -220,7 +220,7 @@ describe("server copy templates", () => {
     expect(localizeNotification(notification, en, "en")).toEqual(english);
     expect(localizeNotification(notification, ar, "ar")).toEqual({
       title: "استورد كشف حساب بنكي بصيغة CSV",
-      message: bankCsvWorkflow.ar,
+      message: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
     });
   });
 
