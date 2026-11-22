@@ -38,6 +38,14 @@ export class ApiError extends Error {
   }
 }
 
+/** Preparation failed before the mutation was submitted or queued. */
+export class ApiRequestNotSentError extends ApiError {
+  constructor(message: string) {
+    super(message, 0);
+    this.name = "ApiRequestNotSentError";
+  }
+}
+
 async function throwIfResNotOk(res: Response, portalSelection?: string | null) {
   if (!res.ok) {
     let errorMessage = res.statusText;
@@ -159,10 +167,11 @@ export function apiRequest(
   url: string,
   data?: unknown | undefined,
   /** Extra request headers, e.g. `X-Period-Lock-Reason` for an audited soft-lock override. */
-  extraHeaders?: Record<string, string>
+  extraHeaders?: Record<string, string>,
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean }
 ): Promise<any> {
   const authHeaders = PORTAL_API_PREFIX.test(url) ? portalRequestHeaders() : getAuthHeaders();
-  return requestWithHeaders(method, url, data, authHeaders, extraHeaders);
+  return requestWithHeaders(method, url, data, authHeaders, extraHeaders, options);
 }
 
 async function requestWithHeaders(
@@ -170,41 +179,50 @@ async function requestWithHeaders(
   url: string,
   data: unknown,
   authHeaders: Record<string, string>,
-  extraHeaders?: Record<string, string>
+  extraHeaders?: Record<string, string>,
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean }
 ): Promise<any> {
   const withExtra = (h: Record<string, string>) => (extraHeaders ? { ...h, ...extraHeaders } : h);
-  // Keep the supplier pinned across CSRF/session refreshes and mutation retries.
-  let headers = withExtra(await buildRequestHeaders(method, data, authHeaders));
+  const upperMethod = method.toUpperCase();
+  const isMutation = MUTATING_METHODS.has(upperMethod);
+  const immediateOnly = isMutation && options?.queueWhenOffline === false;
+  if (immediateOnly && !isOnline()) throw new ApiRequestNotSentError("You are offline.");
+
+  let headers: Record<string, string>;
+  try {
+    headers = withExtra(await buildRequestHeaders(method, data, authHeaders));
+  } catch (error) {
+    if (immediateOnly) throw new ApiRequestNotSentError("Could not prepare the request.");
+    throw error;
+  }
 
   const fullUrl = apiUrl(url);
-  const upperMethod = method.toUpperCase();
   const body = data !== undefined ? JSON.stringify(data) : undefined;
+  const send = (requestHeaders: Record<string, string>) =>
+    fetch(fullUrl, {
+      method,
+      headers: requestHeaders,
+      body,
+      credentials: "include",
+      keepalive: options?.keepalive,
+    });
 
   // If we're offline and this is a mutation, queue it for the service worker
   // to replay once connectivity returns. Reads are not queued — they should
   // surface a clear error so the UI can render its offline state.
-  if (!isOnline() && MUTATING_METHODS.has(upperMethod)) {
+  if (isMutation && !isOnline()) {
+    if (immediateOnly) throw new ApiRequestNotSentError("You are offline.");
     await queueForSync({ url: fullUrl, method: upperMethod, headers, body });
     throw new ApiError("You are offline. This change will sync when you reconnect.", 0);
   }
 
-  let res = await fetch(fullUrl, {
-    method,
-    headers,
-    body,
-    credentials: "include",
-  });
+  let res = await send(headers);
 
   if (res.status === 401) {
     const refreshed = await refreshSession();
     if (refreshed) {
       headers = withExtra(await buildRequestHeaders(method, data, authHeaders));
-      res = await fetch(fullUrl, {
-        method,
-        headers,
-        body,
-        credentials: "include",
-      });
+      res = await send(headers);
     }
   }
 
@@ -214,12 +232,7 @@ async function requestWithHeaders(
   if (await isCsrfInvalidResponse(res)) {
     clearCsrfToken();
     const retryHeaders = await withCsrfHeader(method, { ...headers });
-    res = await fetch(fullUrl, {
-      method,
-      headers: retryHeaders,
-      body,
-      credentials: "include",
-    });
+    res = await send(retryHeaders);
     if (await isCsrfInvalidResponse(res)) {
       clearCsrfToken();
     }
@@ -233,12 +246,7 @@ async function requestWithHeaders(
       if (reason) {
         const lockHeaders = withExtra(await buildRequestHeaders(method, data, authHeaders));
         lockHeaders[PERIOD_LOCK_REASON_HEADER] = encodeLockReason(reason);
-        res = await fetch(fullUrl, {
-          method,
-          headers: lockHeaders,
-          body,
-          credentials: "include",
-        });
+        res = await send(lockHeaders);
       }
     }
   }

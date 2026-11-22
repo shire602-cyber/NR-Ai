@@ -552,6 +552,17 @@ describe("WQ5 firm console e-invoicing column", () => {
     }
   });
 
+  it("exposes approvals by company and sending by invoice without a firm-wide endpoint", () => {
+    const routes = h.routes().filter(({ path }) => /einvoic|approver-links/i.test(path));
+    expect(routes).toEqual(
+      expect.arrayContaining([
+        { method: "POST", path: "/api/companies/:companyId/einvoicing/approver-links" },
+        { method: "POST", path: "/api/invoices/:id/einvoice/submit" },
+      ])
+    );
+    expect(routes.filter(({ path }) => /^\/api\/firm(?:[/-]|$)/.test(path))).toEqual([]);
+  });
+
   it("one state per client, and never 'connected' without a configured provider", async () => {
     const { clientEInvoicingStates } =
       await import("../../server/services/firm-command-center.service");

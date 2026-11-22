@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { readDashboardSource } from "./dashboardSource";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 
 const repoRoot = process.cwd();
 const read = (path: string) => readFileSync(join(repoRoot, path), "utf8");
@@ -189,6 +190,11 @@ describe("Mobile launch UX guards", () => {
   describe("Bank import launch UX", () => {
     it("keeps a sample CSV path for manual statement import", () => {
       expect(source).toContain("muhasib-sample-bank-statement.csv");
+      expect(source).toContain('t["banking.emptyTransactionsDescription"]');
+      for (const locale of ["en", "ar"] as const) {
+        const catalog = JSON.parse(read(`client/src/locales/${locale}/banking.json`));
+        expect(catalog["banking.emptyTransactionsDescription"]).toBe(bankStatementCopy[locale]);
+      }
       // Step 1 / F4: the supported-format lines are catalog copy (en and ar), not page literals.
       for (const key of ["formatCsv", "formatDelimiters", "formatDrCr", "csvRequired"]) {
         expect(source).toContain(`banking.import.${key}`);

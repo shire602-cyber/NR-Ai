@@ -27,13 +27,13 @@ beforeAll(async () => {
 const localeCases = [
   {
     locale: "en",
-    statements: "Import bank statements",
-    importAction: "Import a statement",
+    statements: "CSV bank statements",
+    importAction: "Upload a CSV statement",
   },
   {
     locale: "ar",
-    statements: "استيراد كشوف الحسابات البنكية",
-    importAction: "استيراد كشف",
+    statements: "كشوف الحساب البنكي بصيغة CSV",
+    importAction: "ارفع كشف حساب بصيغة CSV",
   },
 ] as const;
 
@@ -85,7 +85,7 @@ describe.each(localeCases)("signed-in bank page ($locale)", (copy) => {
         expect(node.querySelector("h1")?.textContent).toBe(copy.statements);
         expect(document.title).toBe(copy.statements);
         expect(node.querySelectorAll("button")).toHaveLength(0);
-        expect(node.textContent).not.toMatch(/bank\s+feeds?|bank connections|الربط البنكي/i);
+        expect(node.textContent).not.toMatch(/bank\s+feeds?|bank connections|الربط\s+البنكي/i);
         expect(read).not.toHaveBeenCalled();
       });
     }
@@ -100,7 +100,7 @@ describe("statement-only banking guidance", () => {
     expect(copy.onboarding["onboarding.bankCardDesc"]).toContain("CSV");
     expect(copy.onboarding["onboarding.bankConnectedDescription"]).toContain("CSV");
     expect(copy.onboarding["onboarding.bankAddDescription"]).toContain("CSV");
-    expect(copy.marketing["marketing.faq3Q"]).toMatch(/bank statement|كشف حساب/i);
+    expect(copy.marketing["marketing.faq3Q"]).toMatch(/bank account|حسابي البنكي/i);
     expect(copy.marketing["marketing.faq3A"]).toContain("CSV");
     for (const key of [
       "serverErrors.BANK_CONNECTION_NOT_FOUND",

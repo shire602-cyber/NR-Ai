@@ -46,7 +46,7 @@ export interface Capability {
   id: CapabilityId;
   status: CapabilityStatus;
   label: LocalizedText;
-  /** What must happen externally for the capability to be live. */
+  /** Setup instructions or the available workflow. */
   externalAction: LocalizedText;
   /** Env vars that configure it (names only, never values). */
   envVars: readonly string[];
@@ -298,7 +298,7 @@ const DEFS: readonly CapabilityDef[] = [
       ar: "اضبط FX_RATE_FEED (cbuae أو ecb أو كلاهما) وروابط المزود (FX_RATE_FEED_CBUAE_URL و FX_RATE_FEED_ECB_URL) المتفق عليها مع مزود الأسعار.",
     },
     envVars: ["FX_RATE_FEED", "FX_RATE_FEED_CBUAE_URL", "FX_RATE_FEED_ECB_URL", "FX_RATE_API_KEY"],
-    // W5-C (R14-14): the adapters exist; a live feed needs the provider arrangement.
+    // W5-C (R14-14): adapter credentials depend on the provider arrangement.
     whenUnconfigured: "requires_external",
     detect: (env) => (set(env, "FX_RATE_FEED") ? "live" : null),
   },

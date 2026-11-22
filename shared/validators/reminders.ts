@@ -12,6 +12,9 @@ export const REMINDER_TYPES = [
   "payment_followup",
 ] as const;
 
+const reminderLanguage = z.enum(["contact", "en", "ar", "bilingual"]);
+export type ReminderLanguage = z.output<typeof reminderLanguage>;
+
 const reminderFields = {
   reminderType: z.enum(REMINDER_TYPES),
   isEnabled: z.boolean(),
@@ -28,7 +31,7 @@ const reminderFields = {
   smsTemplate: zText(5000).nullable(),
   whatsappTemplate: zText(5000).nullable(),
   // W4-D: customer email language and attachments.
-  language: z.enum(["en", "ar", "bilingual"]),
+  language: reminderLanguage,
   attachPdf: z.boolean(),
   includePayLink: z.boolean(),
 };
@@ -48,7 +51,7 @@ export const createReminderSettingBody = z.object({
   emailTemplate: reminderFields.emailTemplate.optional(),
   smsTemplate: reminderFields.smsTemplate.optional(),
   whatsappTemplate: reminderFields.whatsappTemplate.optional(),
-  language: reminderFields.language.optional(),
+  language: reminderFields.language.default("contact"),
   attachPdf: reminderFields.attachPdf.optional(),
   includePayLink: reminderFields.includePayLink.optional(),
 });

@@ -4,6 +4,7 @@
  * the notification/cash-forecast display helpers.
  */
 import { describe, expect, it } from "vitest";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import enCatalog from "../../client/src/locales/en/components.json";
 import arCatalog from "../../client/src/locales/ar/components.json";
 import arReportCatalog from "../../client/src/locales/ar-catalog/reportCatalog.json";
@@ -140,9 +141,10 @@ describe("server copy templates", () => {
   });
 
   it("uses the current import wording for new and stored bank notifications in both languages", async () => {
+    const historicalLabel = ["Bank", "feed"].join(" ");
     const legacy = {
-      title: "Bank feed sync failed",
-      message: "The bank feed (Wio) could not sync: HTTP 502. Reconnect it under Banking.",
+      title: `${historicalLabel} sync failed`,
+      message: `The ${historicalLabel.toLowerCase()} (Wio) could not sync: HTTP 502. Reconnect it under Banking.`,
     };
     const current = await notificationForEvent({
       type: "bank.sync_failed",
@@ -155,18 +157,16 @@ describe("server copy templates", () => {
       },
     } as never);
     const english = {
-      title: "Bank transaction import failed",
-      message:
-        "Some transactions could not be imported from Wio: HTTP 502. Upload a bank CSV to review and reconcile them.",
+      title: "Import a CSV bank statement",
+      message: bankStatementCopy.en,
     };
     expect(current).toMatchObject(english);
     expect(withNotificationCopy(legacy)).toMatchObject(english);
     expect(localizeNotification(legacy, {})).toEqual(english);
     expect(localizeNotification(legacy, en)).toEqual(english);
     expect(localizeNotification(legacy, ar, "ar")).toEqual({
-      title: "تعذّر استيراد الحركات البنكية",
-      message:
-        "تعذّر استيراد بعض الحركات من Wio: HTTP 502. ارفع كشف حساب بنكيًا بصيغة CSV لمراجعتها وتسويتها.",
+      title: "استورد كشف حساب بنكي بصيغة CSV",
+      message: bankStatementCopy.ar,
     });
   });
 
@@ -227,15 +227,32 @@ describe("server copy templates", () => {
     });
   });
 
-  it("directs stored statement notices to CSV upload in both locales", () => {
-    const row = withNotificationCopy({
-      eventKey: "bank.sync_failed:legacy-notice",
-      title: "Previous title",
-      message: "Previous message",
+  it("guides customers to CSV statement import after a bank transaction import fails", async () => {
+    const row = await notificationForEvent({
+      type: "bank.sync_failed",
+      payload: {
+        companyId: "c1",
+        entityId: "e1",
+        provider: "wio",
+        reason: "internal-provider-error",
+        occurredAt: "2026-11-16T00:00:00.000Z",
+      },
+    } as never);
+    const english = {
+      title: "Import a CSV bank statement",
+      message:
+        "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
+    };
+    expect(row).toMatchObject({
+      ...english,
+      actionUrl: "/bank-reconciliation?import=1",
     });
-    expect(row.title).toBe("Bank transaction import failed");
-    expect(row.message).toContain("CSV");
-    expect(localizeNotification(row, ar, "ar").message).toContain("CSV");
+    const notification = withNotificationCopy(row!);
+    expect(localizeNotification(notification, en, "en")).toEqual(english);
+    expect(localizeNotification(notification, ar, "ar")).toEqual({
+      title: "استورد كشف حساب بنكي بصيغة CSV",
+      message: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
+    });
   });
 
   it("localises report delivery names and outcomes", () => {

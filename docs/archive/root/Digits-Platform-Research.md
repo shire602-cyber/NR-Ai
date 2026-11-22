@@ -26,7 +26,7 @@ Digits uses a left-hand sidebar menu. Based on reviews, walkthroughs, and docume
 | **Reports** | Interactive, presentation-ready financial reports and management reporting |
 | **Documents** | Central document repository — uploaded bills, bank statements, receipts, and other files |
 | **Category Manager** | Digits' version of the Chart of Accounts — AI-assisted account categorization and standardization |
-| **Settings / Connections** | Bank connections, integrations, team management, and configuration |
+| **Settings / Connections** | Integrations, team management, and configuration |
 | **Firm Dashboard** *(accountant view)* | Centralized view of all clients with real-time status, staff access controls, and onboarding tools |
 
 ---
@@ -144,8 +144,7 @@ Digits generates the following financial reports, all interactive and real-time:
 ## 6. Integrations
 
 ### Banking & Financial Institutions
-- **12,000+ financial institutions** via direct bank connections
-- Named integrations: **Chase, Mercury, American Express, Brex, Arc**
+- [Historical comparison excerpt redacted.]
 
 ### Payment Processors
 - **Stripe** — real-time payment sync
@@ -159,7 +158,7 @@ Digits generates the following financial reports, all interactive and real-time:
 - Manual payroll recording option for unsupported providers
 
 ### Other Integrations
-- Connects to "thousands of financial institutions and tools"
+- [Historical comparison excerpt redacted.]
 - Supports data migration from **QuickBooks Online** and **Xero**
 
 ### Developer / API Access

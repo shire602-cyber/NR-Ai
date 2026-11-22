@@ -44,7 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -75,7 +75,6 @@ interface GlAccount {
 interface ImportBatch {
   id: string;
   bankAccountId: string | null;
-  source: string;
   fileName: string | null;
   rowCount: number;
   importedCount: number;
@@ -344,12 +343,7 @@ export default function BankAccounts() {
                     {accountName(b.bankAccountId)}
                   </TableCell>
                   <TableCell data-truncate="" data-cell="title">
-                    <span dir="ltr" className="[unicode-bidi:isolate]">
-                      {b.fileName ??
-                        formatMessage(tr("banking.imports.sourceImport"), {
-                          format: b.source.toUpperCase(),
-                        })}
-                    </span>
+                    {b.fileName ? <bdi>{b.fileName}</bdi> : tr("banking.imports.sourceImport")}
                     {b.continuityWarning && (
                       <p className="truncate text-caption text-warning" title={b.continuityWarning}>
                         {tr("banking.imports.continuity")}: {b.continuityWarning}

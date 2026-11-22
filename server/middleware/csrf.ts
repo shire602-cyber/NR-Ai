@@ -92,7 +92,7 @@ function readCookieFromHeader(req: Request, name: string): string | undefined {
   return undefined;
 }
 
-function readCsrfIdentifierCookie(req: Request): string | undefined {
+export function readCsrfIdentifierCookie(req: Request): string | undefined {
   const name = csrfIdentifierCookieName();
   const parsed = normalizeCookieValue(req.cookies?.[name]);
   return parsed || readCookieFromHeader(req, name);

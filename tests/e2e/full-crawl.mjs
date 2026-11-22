@@ -1098,7 +1098,7 @@ async function main() {
     for (const expected of [
       "apiKeys",
       "email",
-      "openBanking",
+      "bankStatementImport",
       "push",
       "stripe",
       "tokenEncryption",

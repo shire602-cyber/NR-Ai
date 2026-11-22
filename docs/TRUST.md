@@ -155,7 +155,7 @@ for MFA users, and each restore is written to the audit chain.
 ## Incident checklist
 
 1. **Contain** — rotate `SESSION_SECRET`/`TOKEN_ENCRYPTION_KEY` (note: vault
-   re-encryption required; bank reconnects acceptable), revoke affected API
+   re-encryption required; re-authorization acceptable), revoke affected API
    keys (`DELETE /api/api-keys/:id`), disable affected webhook endpoints.
 2. **Assess** — query audit logs for the affected window (user, IP, action);
    check Stripe events table for replayed webhooks.

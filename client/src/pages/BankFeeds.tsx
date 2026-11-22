@@ -15,7 +15,7 @@ export default function BankFeeds() {
     <PageHeader
       eyebrow={t["shell.nav.banking"]}
       title={title}
-      description={t["banking.feeds.manualImportBody"]}
+      description={t["banking.feeds.unavailableBody"]}
       primaryAction={
         <Button asChild>
           <Link href="/bank-reconciliation?import=1" data-testid="button-feeds-import-statement">

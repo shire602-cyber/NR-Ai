@@ -1,4 +1,4 @@
-// Cost centers, reconciliation rules, templates, bank connections, API keys, webhooks, push.
+// Cost centers, reconciliation rules, templates, statement associations, API keys, webhooks, push.
 // Part of the shared/schema.ts barrel (R20-09); import from "@shared/schema".
 
 import {

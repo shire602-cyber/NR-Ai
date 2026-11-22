@@ -115,7 +115,7 @@ tone is by meaning (expenses up = `negative`). Legacy `visual` /
 <EmptyState size="md" icon={FileText} title={t["x.noInvoices"]} description={t["x.invoicesAppearHere"]}
   action={{ label: t["x.newInvoice"], onClick: create, testId: "button-new" }}
   secondaryAction={{ label: t["x.importExcel"], href: "/import" }} />
-<EmptyState size="lg" icon={Landmark} title={t["x.uploadBankStatement"]} description={t["x.twoSentences"]}
+<EmptyState size="lg" icon={Landmark} title={t["banking.statementUpload.title"]} description={t["banking.feeds.unavailableBody"]}
   action={{ ... }} secondaryAction={{ ... }} previewColumns={4} /* or preview={<MyGhost/>} */ />
 ```
 

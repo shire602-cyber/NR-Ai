@@ -7,8 +7,10 @@
  * transaction edit / exclude / delete / import undo / continuity.
  */
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { bankStatementCopy, statementRecognized } from "../../shared/bank-statement-copy";
 
 const h = useHarness();
 const base = (t: Tenant) => `/api/companies/${t.company.id}`;
@@ -109,6 +111,73 @@ async function liveEntries(companyId: string, source: string) {
     [companyId, source]
   );
 }
+
+describe("statement import copy", () => {
+  it.each([
+    ["2026-10-03", statementRecognized.en, 1],
+    ["invalid-date", null, 0],
+  ] as const)(
+    "reports a recognized statement only when it has valid rows (%s)",
+    async (date, detectedFormatLabel, validRows) => {
+      const t = await vatTenant();
+      const reply = await t.as.post(`${base(t)}/bank-statements/preview`, {
+        csvContent: `Date,Description,Debit,Credit\n${date},Test line,0,12.50\n`,
+      });
+      expect(reply.status, reply.text).toBe(200);
+      expect(reply.body).toMatchObject({ detectedFormatLabel, validRows });
+    }
+  );
+
+  it("prompts for CSV when either statement entry point receives empty input", async () => {
+    const t = await vatTenant();
+    const ba = await bankAccount(t);
+    for (const action of ["preview", "import"]) {
+      for (const source of [{}, { csvContent: " ", fileBase64: "" }]) {
+        const reply = await t.as.post(`${base(t)}/bank-statements/${action}`, {
+          bankAccountId: ba.id,
+          ...source,
+        });
+        expect(reply.status, reply.text).toBe(400);
+        expect(reply.body.fields).toEqual({ _root: [bankStatementCopy.en] });
+        expect(reply.text).not.toMatch(/XLSX|fileBase64/);
+      }
+    }
+  });
+
+  it("parses a legacy file and keeps the completion and duplicate notices format-neutral", async () => {
+    const t = await vatTenant();
+    const ba = await bankAccount(t);
+    const upload = {
+      bankAccountId: ba.id,
+      fileName: "statement.sta",
+      fileBase64: readFileSync("tests/fixtures/bank-statements/statement.sta", "base64"),
+    };
+    const first = await t.as.post(`${base(t)}/bank-statements/import`, upload);
+    const duplicate = await t.as.post(`${base(t)}/bank-statements/import`, upload);
+    expect(first.status, first.text).toBe(201);
+    expect(first.body.detectedFormat).toBe("mt940");
+    expect(first.body.imported).toBeGreaterThan(0);
+    expect(duplicate.status, duplicate.text).toBe(201);
+    expect(duplicate.body.imported).toBe(0);
+    expect(duplicate.body.skippedDuplicates).toBe(first.body.imported);
+    await expect
+      .poll(async () => {
+        const list = await t.as.get("/api/notifications");
+        expect(list.status, list.text).toBe(200);
+        const notices = list.body.notifications.filter(
+          (n: { type: string }) => n.type === "bank_import"
+        );
+        expect(JSON.stringify(notices)).not.toMatch(/MT940|OFX|format/i);
+        return notices.map((n: { message: string }) => n.message);
+      })
+      .toEqual(
+        expect.arrayContaining([
+          `${first.body.imported} transaction(s) imported from Emirates NBD`,
+          `No new transactions from Emirates NBD; ${first.body.imported} already imported`,
+        ])
+      );
+  });
+});
 
 describe("W3-C banking: GL link and accounts", () => {
   it("[R06-01] an account created without a GL account gets one and its imported rows reconcile", async () => {

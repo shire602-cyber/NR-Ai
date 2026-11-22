@@ -7,7 +7,9 @@ import { join } from "node:path";
 import { DOMParser } from "@xmldom/xmldom";
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import { pdfToText } from "./pdf-test-helpers";
+import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 
 const repoRoot = process.cwd();
 
@@ -72,16 +74,15 @@ const bannedLaunchClaims = [
   /all data automatically/i,
   /reports generated automatically/i,
   /Untouched/i,
-  /Connect Your Bank/i,
   /Securely link your.*bank account/i,
   /via encrypted feeds/i,
-  /UAE bank feeds/i,
   /\blive\s+bank\s+feeds?\b/i,
   /الربط\s+البنكي\s+المباشر/,
   /accredited provider (?:per deployment|configured for your deployment)/i,
   /لكل\s+نسخة\s+من\s+التطبيق/,
-  /Photo, email forward, or bank feed/i,
+  /Photo,\s+email\s+forward,\s+or\s+bank\s+feed/i,
   /sync a bank line/i,
+  unsupportedStatementCopy,
   /compliant with FTA/i,
   /SOC 2 Type II/i,
   /Trusted by 500\+ UAE businesses/i,
@@ -124,7 +125,7 @@ describe("Public SaaS launch surface", () => {
     ]) {
       const words = text.replace(/\s+/g, " ");
       expect(
-        words.includes("Upload bank CSVs, review matches, and reconcile transactions"),
+        words.includes(bankStatementCopy.en),
         format
       ).toBe(true);
       expect(/\bbank\s+feeds?\b|\bopen\s+banking\b/i.test(words), format).toBe(false);
@@ -193,13 +194,13 @@ describe("Public SaaS launch surface", () => {
   it("documents a CSV upload and removes the retired transaction setting from both catalogs", () => {
     // The archived teardown and unused catalog entries have no runtime surface to render.
     const teardown = readRepoFile("docs/archive/root/Muhasib-Teardown-2026-08-07.md");
-    expect(teardown).toContain("Bank reconciliation starts with a CSV upload.");
+    expect(teardown).toContain("| Bank reconciliation | CSV statement import |");
     expect(teardown).not.toMatch(/add (?:direct )?bank \w+ later/i);
     for (const locale of ["en", "ar"]) {
       const labels = JSON.parse(readRepoFile(`client/src/locales/${locale}/pageLabels.json`));
       expect(labels).not.toHaveProperty(["pageLabels.syncNewTransactionsEveryHour"]);
       const banking = JSON.parse(readRepoFile(`client/src/locales/${locale}/banking.json`));
-      expect(banking["banking.feeds.manualImportBody"]).toContain("CSV");
+      expect(banking["banking.feeds.unavailableBody"]).toContain("CSV");
     }
   });
 

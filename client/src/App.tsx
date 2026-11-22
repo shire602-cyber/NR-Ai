@@ -763,6 +763,7 @@ function Router() {
             <Route path="/analytics" component={AnalyticsHub} />
             <Route path="/bank-reconciliation" component={BankReconciliation} />
             <Route path="/bank-accounts" component={BankAccounts} />
+            <Route path="/banking/callback" component={BankFeeds} />
             <Route path="/bank-feeds/callback" component={BankFeeds} />
             <Route path="/bank-feeds" component={BankFeeds} />
             <Route path="/evidence-center" component={EvidenceCenter} />

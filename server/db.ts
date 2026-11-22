@@ -204,13 +204,79 @@ export async function runMigrations(migrationsFolder: string): Promise<void> {
   }
 }
 
+// Use the same expressions for DDL and comparison with PostgreSQL's catalog deparser.
+const vatGroupAuditMembershipExpression = `CASE
+    WHEN octet_length(details) <= 2048 THEN string_to_array(lower(details), '"'::text)
+    ELSE regexp_split_to_array(lower(details), '"|[^"]{37,}'::text)
+END`;
+const vatGroupAuditMembershipPredicate =
+  "resource_type = 'vat_group'::text AND action = 'vat.group.upsert'::text";
+
+async function ensureVatGroupAuditMembershipIndex(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    // Indexing older histories can take longer than the normal request deadline.
+    await client.query("SELECT set_config('statement_timeout', $1, false)", [
+      String(Math.max(POOL_CONFIG.statement_timeout, 300_000)),
+    ]);
+    // Serialize release runners while checking for and repairing an interrupted build.
+    await client.query(
+      "SELECT pg_advisory_lock(hashtextextended('schema:idx_audit_logs_vat_group_member_ids', 0))"
+    );
+    const {
+      rows: [index],
+    } = await client.query<{
+      indisvalid: boolean;
+      on_audit_logs: boolean;
+      expected_key_type: boolean;
+      expression: string | null;
+      predicate: string | null;
+    }>(
+      `SELECT i.indisvalid, i.indrelid = 'public.audit_logs'::regclass AS on_audit_logs,
+              (am.amname = 'gin' AND i.indnkeyatts = 1 AND i.indnatts = 1
+                AND i.indcollation[0] = 'pg_catalog."default"'::regcollation
+                AND opc.opcnamespace = 'pg_catalog'::regnamespace
+                AND opc.opcname = 'array_ops') AS expected_key_type,
+              pg_get_expr(i.indexprs, i.indrelid, true) AS expression,
+              pg_get_expr(i.indpred, i.indrelid, true) AS predicate
+         FROM pg_index i
+         JOIN pg_class c ON c.oid = i.indexrelid
+         JOIN pg_am am ON am.oid = c.relam
+         JOIN pg_opclass opc ON opc.oid = i.indclass[0]
+        WHERE i.indexrelid = to_regclass('public.idx_audit_logs_vat_group_member_ids')`
+    );
+    const normalize = (value: string | null) => value?.replace(/\s+/g, " ").trim();
+    const definitionMatches =
+      index?.expected_key_type &&
+      normalize(index.expression) === normalize(vatGroupAuditMembershipExpression) &&
+      normalize(index.predicate) === vatGroupAuditMembershipPredicate;
+    if (index && (!index.on_audit_logs || (index.indisvalid && !definitionMatches))) {
+      throw new Error("Unexpected index definition for idx_audit_logs_vat_group_member_ids");
+    }
+    if (index?.indisvalid) return;
+    if (index) {
+      await client.query("DROP INDEX CONCURRENTLY public.idx_audit_logs_vat_group_member_ids");
+    }
+    // Limit index keys for oversized payloads, including malformed legacy audit text.
+    await client.query(`
+      CREATE INDEX CONCURRENTLY idx_audit_logs_vat_group_member_ids
+        ON public.audit_logs USING gin ((${vatGroupAuditMembershipExpression}))
+        WHERE ${vatGroupAuditMembershipPredicate}
+    `);
+  } finally {
+    // Closing the dedicated connection releases the session lock even if the build fails.
+    client.release(true);
+  }
+}
+
 /**
  * Belt-and-suspenders schema guard: ensures critical columns exist regardless
- * of Drizzle migration tracking state. Every statement uses IF NOT EXISTS so
- * it is always safe to re-run. Covers migrations 0003-0020 which may have
- * been tracked-but-not-executed in the production database.
+ * of Drizzle migration tracking state. The steps are safe to rerun. The release
+ * path also requires the VAT-group audit index to be ready.
  */
-export async function ensureCriticalSchema(): Promise<void> {
+export async function ensureCriticalSchema({
+  requireVatGroupAuditMembershipIndex = false,
+}: { requireVatGroupAuditMembershipIndex?: boolean } = {}): Promise<void> {
   const schemaSteps: Array<{ name: string; sql: ReturnType<typeof sql> }> = [
     // ── 0003: invoice share token ────────────────────────────────────────
     {
@@ -1303,6 +1369,17 @@ export async function ensureCriticalSchema(): Promise<void> {
       log.error({ step: step.name, err: errorMessage(err) }, "Schema guard step failed");
       failed++;
     }
+  }
+  try {
+    await ensureVatGroupAuditMembershipIndex();
+    ok++;
+  } catch (err: unknown) {
+    failed++;
+    log.error(
+      { step: "audit_logs.vat_group_member_ids index", err: errorMessage(err) },
+      "Schema guard step failed"
+    );
+    if (requireVatGroupAuditMembershipIndex) throw err;
   }
   log.info({ ok, failed, mode: "schema-only" }, "Critical schema guard completed");
 }

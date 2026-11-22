@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import pg from "pg";
@@ -88,6 +89,128 @@ describe("migrations", () => {
       }
     },
     180_000
+  );
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "fails the release when the VAT audit membership index cannot be installed, then retries",
+    async () => {
+      const name = "idx_audit_logs_vat_group_member_ids";
+      const runRelease = () =>
+        spawnSync(process.execPath, ["--import", "tsx", "server/migrate.ts"], {
+          cwd: repoRoot,
+          encoding: "utf8",
+          env: { ...process.env, DATABASE_URL: h.databaseUrl, LOG_LEVEL: "info" },
+          timeout: 25_000,
+        });
+
+      await h.sql(`DROP INDEX public.${name}`);
+      await h.sql(`CREATE TABLE public.${name} (id integer)`);
+      try {
+        const { ensureCriticalSchema } = await import("../../server/db");
+        await expect(ensureCriticalSchema()).resolves.toBeUndefined();
+
+        const failed = runRelease();
+        const output = failed.stdout + failed.stderr;
+        expect(failed.error).toBeUndefined();
+        expect(failed.status, output).toBe(1);
+        expect(output).toContain("Production migration failed");
+        expect(output).toContain(name);
+      } finally {
+        await h.sql(`DROP TABLE public.${name}`);
+      }
+
+      const repaired = runRelease();
+      const output = repaired.stdout + repaired.stderr;
+      expect(repaired.error).toBeUndefined();
+      expect(repaired.status, output).toBe(0);
+      expect(output).toContain("Production migration completed");
+      expect(
+        await h.sql(
+          `SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('public.${name}')`
+        )
+      ).toEqual([{ indisvalid: true }]);
+    },
+    60_000
+  );
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "rejects an audit membership GIN index with the wrong expression or predicate",
+    async () => {
+      const name = "idx_audit_logs_vat_group_member_ids";
+      const { ensureCriticalSchema } = await import("../../server/db");
+      const release = () => ensureCriticalSchema({ requireVatGroupAuditMembershipIndex: true });
+      const indexDefinition = async () => {
+        const [row] = await h.sql<{ definition: string }>(
+          `SELECT pg_get_indexdef(to_regclass('public.${name}')) AS definition`
+        );
+        return row.definition;
+      };
+      const expected = await indexDefinition();
+      const replacements = [
+        `CREATE INDEX ${name} ON audit_logs USING gin (to_tsvector('simple', details))
+           WHERE resource_type = 'vat_group' AND action = 'vat.group.upsert'`,
+        `CREATE INDEX ${name} ON audit_logs USING gin (string_to_array(lower(details), '"'))
+           WHERE resource_type = 'vat_group' AND action = 'vat.group.upsert'`,
+        expected.replace(/ WHERE .*$/s, ""),
+        expected.replace(/\) WHERE /, ' COLLATE "C") WHERE '),
+      ];
+      await h.sql(`DROP INDEX public.${name}`);
+      try {
+        for (const ddl of replacements) {
+          await h.sql(ddl);
+          try {
+            const unexpected = await indexDefinition();
+            expect(unexpected).not.toBe(expected);
+            await expect(ensureCriticalSchema()).resolves.toBeUndefined();
+            await expect(release()).rejects.toThrow(
+              "Unexpected index definition for idx_audit_logs_vat_group_member_ids"
+            );
+            expect(await indexDefinition()).toBe(unexpected);
+          } finally {
+            await h.sql(`DROP INDEX public.${name}`);
+          }
+        }
+      } finally {
+        await release();
+      }
+      expect(await indexDefinition()).toBe(expected);
+      await expect(release()).resolves.toBeUndefined();
+    },
+    60_000
+  );
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "repairs an interrupted VAT audit membership index build on the release schema path",
+    async () => {
+      const indexState = () =>
+        h.sql<{ valid: boolean; definition: string }>(`
+          SELECT indisvalid AS valid, pg_get_indexdef(indexrelid) AS definition
+            FROM pg_index
+           WHERE indexrelid = to_regclass('public.idx_audit_logs_vat_group_member_ids')
+        `);
+      expect(await indexState()).toEqual([
+        { valid: true, definition: expect.stringContaining("USING gin") },
+      ]);
+
+      await h.sql("DROP INDEX public.idx_audit_logs_vat_group_member_ids");
+      await h.sql(`INSERT INTO audit_logs (action, resource_type)
+                   VALUES ('schema.test', 'vat_audit_index_test'), ('schema.test', 'vat_audit_index_test')`);
+      // PostgreSQL keeps an invalid index when a concurrent unique build finds duplicates.
+      await expect(
+        h.sql(`CREATE UNIQUE INDEX CONCURRENTLY idx_audit_logs_vat_group_member_ids
+                 ON audit_logs (resource_type) WHERE resource_type = 'vat_audit_index_test'`)
+      ).rejects.toMatchObject({ code: "23505" });
+      expect(await indexState()).toEqual([
+        { valid: false, definition: expect.stringContaining("CREATE UNIQUE INDEX") },
+      ]);
+
+      const { ensureCriticalSchema } = await import("../../server/db");
+      await ensureCriticalSchema();
+      expect(await indexState()).toEqual([
+        { valid: true, definition: expect.stringContaining("USING gin") },
+      ]);
+    },
+    60_000
   );
 
   it("0089 creates the platform foundation objects", async () => {

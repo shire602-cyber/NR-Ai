@@ -30,6 +30,7 @@ import {
   type LedgerTx,
   type PostJournalLineInput,
 } from "../ledger";
+import { ledgerQueryable } from "../ledger/tx";
 import { emitDomainEventInTx } from "../platform/event-outbox";
 import { has, provide, resolve } from "../platform/service-registry";
 import { registerJob, listJobs } from "../platform/job-registry";
@@ -90,14 +91,15 @@ export async function resolveDocRate(
   companyId: string,
   currency: string | null | undefined,
   dateIso: string,
-  given?: string | null
+  given?: string | null,
+  tx?: LedgerTx
 ): Promise<string> {
-  const base = await loadBaseCurrency(companyId);
+  const base = await loadBaseCurrency(companyId, tx);
   const cur = documentCurrency(currency, base);
   if (cur === base) return "1";
   if (given) return given;
   const getRate = resolve<FxGetRate>("fx.getRate");
-  const r = await getRate(companyId, cur, base, dateIso);
+  const r = await getRate(companyId, cur, base, dateIso, { tx });
   return r.rateText;
 }
 
@@ -272,7 +274,8 @@ interface PreparedBill {
 async function prepareBill(
   companyId: string,
   input: BillFieldsInput,
-  existing: BillRow | null
+  existing: BillRow | null,
+  tx?: LedgerTx
 ): Promise<PreparedBill> {
   const warnings: Array<{ code: string; message: string }> = [];
   const header: Record<string, unknown> = {};
@@ -285,11 +288,15 @@ async function prepareBill(
     input.vendor_name !== undefined ||
     input.vendor_trn !== undefined
   ) {
-    const v = await resolveVendor(companyId, {
-      vendor_id: input.vendor_id ?? null,
-      vendor_name: input.vendor_name ?? (existing?.vendor_name || null),
-      vendor_trn: input.vendor_trn ?? null,
-    });
+    const v = await resolveVendor(
+      companyId,
+      {
+        vendor_id: input.vendor_id ?? null,
+        vendor_name: input.vendor_name ?? (existing?.vendor_name || null),
+        vendor_trn: input.vendor_trn ?? null,
+      },
+      tx
+    );
     if (v) {
       header.vendor_id = v.vendorId;
       header.vendor_name = v.vendorName;
@@ -321,7 +328,7 @@ async function prepareBill(
   if (input.recoverable_vat_percent !== undefined)
     header.recoverable_vat_percent = input.recoverable_vat_percent;
 
-  const companyBase = await loadBaseCurrency(companyId);
+  const companyBase = await loadBaseCurrency(companyId, tx);
   const currency = documentCurrency(
     String(get("currency", existing?.currency ?? companyBase)),
     companyBase
@@ -340,7 +347,7 @@ async function prepareBill(
         ? String(existing.exchange_rate)
         : null);
     header.currency = currency;
-    header.exchange_rate = await resolveDocRate(companyId, currency, billDate, given);
+    header.exchange_rate = await resolveDocRate(companyId, currency, billDate, given, tx);
   }
   header.reverse_charge = reverseCharge || isImport;
   header.is_import = isImport;
@@ -377,10 +384,10 @@ async function prepareBill(
     }));
     if (src && input.line_items) {
       // A2 (C3): an edit keeps each line's purchase-order link so the bill still clears GRNI.
-      await linkPurchaseOrderLines(companyId, existing, input.line_items, src);
+      await linkPurchaseOrderLines(companyId, existing, input.line_items, src, tx);
     }
     if (!src && existing) {
-      const r = await pool.query(
+      const r = await ledgerQueryable(tx).query(
         `SELECT * FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
         [existing.id]
       );
@@ -402,9 +409,19 @@ async function prepareBill(
     if (src) {
       await assertCostCenters(
         companyId,
-        src.map((l) => l.costCenterId)
+        src.map((l) => l.costCenterId),
+        tx
       );
-      await assertRefsOwned(pool, companyId, {
+      const refsQueryable = tx
+        ? {
+            query: async (text: string, params: unknown[]) => ({
+              rows: (await ledgerQueryable(tx).query(text, params)).rows.map((row) => ({
+                id: String(row.id),
+              })),
+            }),
+          }
+        : pool;
+      await assertRefsOwned(refsQueryable, companyId, {
         account: src.map((l) => l.accountId),
         product: src.map((l) => l.productId),
       });
@@ -413,7 +430,8 @@ async function prepareBill(
       // line's product, VAT through its VAT rate, the payable is the bill itself.
       await assertChosenAccountsNotControl(
         companyId,
-        src.map((l, i) => ({ field: `line_items[${i}].account_id`, accountId: l.accountId }))
+        src.map((l, i) => ({ field: `line_items[${i}].account_id`, accountId: l.accountId })),
+        { tx }
       );
     }
     const totals = computeBillTotals({
@@ -460,7 +478,7 @@ async function prepareBill(
     | null
     | undefined;
   // WQ2 (4.7): one of our own sales invoices is never a purchase.
-  await assertNotOwnTrn(companyId, trn);
+  await assertNotOwnTrn(companyId, trn, tx);
   if (!trn && !(header.reverse_charge as boolean)) {
     warnings.push({
       code: "VENDOR_TRN_MISSING",
@@ -484,14 +502,15 @@ async function linkPurchaseOrderLines(
   companyId: string,
   existing: BillRow | null,
   input: Array<{ product_id?: string | null; purchase_order_line_id?: string | null }>,
-  src: Array<{ productId: string | null; poLineId: string | null }>
+  src: Array<{ productId: string | null; poLineId: string | null }>,
+  tx?: LedgerTx
 ): Promise<void> {
   const poId = existing
     ? ((existing as unknown as { purchase_order_id?: string | null }).purchase_order_id ?? null)
     : null;
   const prev = existing
     ? ((
-        await pool.query(
+        await ledgerQueryable(tx).query(
           `SELECT product_id, purchase_order_line_id FROM bill_line_items
             WHERE bill_id = $1 ORDER BY created_at, id`,
           [existing.id]
@@ -526,14 +545,14 @@ async function linkPurchaseOrderLines(
     );
   }
   if (!explicit.length) return;
-  const { rows } = await pool.query(
+  const { rows } = await ledgerQueryable(tx).query(
     `SELECT pol.id FROM purchase_order_lines pol
        JOIN purchase_orders po ON po.id = pol.purchase_order_id
       WHERE pol.id = ANY($1::uuid[]) AND po.company_id = $2
         AND ($3::uuid IS NULL OR po.id = $3)`,
     [explicit, companyId, poId]
   );
-  const found = new Set(rows.map((r: { id: string }) => r.id));
+  const found = new Set(rows.map((r) => String(r.id)));
   const missing = explicit.find((id) => !found.has(id));
   if (missing) {
     throw new DomainError(
@@ -573,14 +592,18 @@ async function writeLines(tx: LedgerTx, billId: string, lines: Array<Record<stri
 }
 
 /** R10-11: every bill line cost centre must exist in the company (404 otherwise). */
-async function assertCostCenters(companyId: string, ids: Array<string | null>): Promise<void> {
+async function assertCostCenters(
+  companyId: string,
+  ids: Array<string | null>,
+  tx?: LedgerTx
+): Promise<void> {
   const wanted = [...new Set(ids.filter((v): v is string => !!v))];
   if (wanted.length === 0) return;
-  const { rows } = await pool.query(
+  const { rows } = await ledgerQueryable(tx).query(
     `SELECT id FROM cost_centers WHERE company_id = $1 AND id = ANY($2::uuid[])`,
     [companyId, wanted]
   );
-  const found = new Set(rows.map((r: { id: string }) => r.id));
+  const found = new Set(rows.map((r) => String(r.id)));
   const missing = wanted.filter((id) => !found.has(id));
   if (missing.length) {
     throw new DomainError(
@@ -651,16 +674,17 @@ type CreateBillArgs = {
 /** Resolve and validate bill inputs before the caller acquires a write transaction. */
 async function prepareBillCreate(args: CreateBillArgs) {
   const { companyId, actorId, input } = args;
-  await assertPeriodNotLocked(companyId, input.bill_date);
-  const prepared = await prepareBill(companyId, input as BillFieldsInput, null);
+  await assertPeriodNotLocked(companyId, input.bill_date, args.tx);
+  const prepared = await prepareBill(companyId, input as BillFieldsInput, null, args.tx);
   if (args.poLineIds && prepared.lines) {
     prepared.lines.forEach((l, i) => (l.purchase_order_line_id = args.poLineIds![i] ?? null));
   }
   const status = args.status ?? (input.save_as_draft ? "draft" : "pending");
   if (!prepared.header.due_date && prepared.header.vendor_id) {
-    const v = await pool.query(`SELECT payment_terms_days FROM vendors WHERE id = $1`, [
-      prepared.header.vendor_id,
-    ]);
+    const v = await ledgerQueryable(args.tx).query(
+      `SELECT payment_terms_days FROM vendors WHERE id = $1`,
+      [prepared.header.vendor_id]
+    );
     const days = Number(v.rows[0]?.payment_terms_days ?? 0);
     if (days > 0) {
       const d = new Date(`${input.bill_date}T00:00:00.000Z`);

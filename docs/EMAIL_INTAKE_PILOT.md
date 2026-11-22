@@ -88,7 +88,8 @@ intake documents just point at the receipt they produced.
   emailing the same invoice twice. Statement reconciliation ties the document to its payment.
 - **Completeness — the most important control.** OCR can't flag a document that
   never arrived, and a VAT return is only correct if *all* sales and purchases are
-  captured. So intake is paired with the existing **CSV statement reconciliation**:
+  captured. Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
+  The imported statement supports the completeness check:
   unmatched bank lines = "evidence we expect but haven't received", which drives
   the existing **document-chasing** nudges to the client. The accountant sees a
   reconciliation gap before approving, not after filing.

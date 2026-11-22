@@ -68,7 +68,7 @@ plus workers on a UAE container service. [Fargate regions](https://docs.aws.amaz
   the existing UTC schedules and UAE business-date rules. The email and domain-event outboxes
   scan every minute, as do audit sealing and outbound webhook retries. Object cleanup runs every
   ten minutes. Other jobs cover recurring invoices, GL classification, report delivery, reminders,
-  bank and e-invoice integrations, and maintenance.
+  financial-data processing, e-invoice integrations, and maintenance.
   Use one scheduler per environment and have it claim work or enqueue bounded work with a
   durable run key for each schedule window. Keep the existing transactional claims, stale-lease
   recovery, backoff, and dead-letter and replay behavior. [Job registry](../server/platform/job-registry.ts) ·
@@ -188,7 +188,7 @@ against the managed target. [Application pool](../server/db.ts#L17-L69) ·
 WAL, PITR backups, replicas, snapshots, restore environments and migration artefacts.
 If the requirement covers all customer processing, map Vercel's global ingress/CDN, logs,
 traces and support access, object storage and caches, jobs, and external providers for AI/OCR,
-payments, legacy banking adapters, email and e-invoicing. Pin sensitive compute and storage, explicitly
+payments, email and e-invoicing. Pin sensitive compute and storage, explicitly
 choose acceptable failover regions and retention, keep previews synthetic, and minimize
 payloads and personal data in logs and event messages. A second UAE availability zone
 protects against an AZ failure. A UAE-wide recovery objective needs a separate in-country

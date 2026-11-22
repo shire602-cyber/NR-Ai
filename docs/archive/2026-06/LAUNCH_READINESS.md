@@ -43,8 +43,10 @@ that runs in CI or locally, not by assertion._
 4. **Push** — `npx web-push generate-vapid-keys`, paste both keys.
 5. **Domain** — buy, point DNS at Railway, set `FRONTEND_URL` (now also
    feeds CORS and password-reset links).
-6. **Live ASP/FTA e-invoicing provider** — when UAE accreditation lists
+5. **Live ASP/FTA e-invoicing provider** — when UAE accreditation lists
    firm up; XML generation/validation is ready and marked "not connected".
+
+Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 
 ## Competitive claim discipline
 

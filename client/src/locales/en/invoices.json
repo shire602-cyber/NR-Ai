@@ -373,6 +373,7 @@
   "invoices.reminders.channelSms": "Text message",
   "invoices.reminders.emailLanguage": "Email language",
   "invoices.reminders.langBoth": "English and العربية",
+  "invoices.reminders.langContact": "Use contact preference",
   "invoices.reminders.optionalSubject": "Subject (optional)",
   "invoices.reminders.optionalBody": "Message (optional)",
   "invoices.reminders.optionalBodyHint": "Leave empty to use the standard bilingual wording.",

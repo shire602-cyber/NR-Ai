@@ -590,8 +590,7 @@ export default function BankReconciliation() {
 
   // Step 1 / F4: the import dialog copy lives in the banking catalog (en + ar).
   const strings = {
-    detected: t["banking.import.detected"],
-    genericFormat: t["banking.import.genericFormat"],
+    recognized: t["banking.import.statementRecognized"],
     reviewTitle: t["banking.import.reviewTitle"],
     rows: t["banking.import.rows"],
     valid: t["banking.import.valid"],
@@ -1428,16 +1427,11 @@ export default function BankReconciliation() {
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium text-sm">{strings.reviewTitle}</p>
-                  <Badge variant="secondary">
-                    {/* Sweep: the server's English "Generic (Arabic/English)" showed in Arabic;
-                        bank names stay proper names. */}
-                    {strings.detected}:{" "}
-                    {statementPreview.detectedFormat === "generic" ? (
-                      strings.genericFormat
-                    ) : (
-                      <span translate="no">{statementPreview.detectedFormatLabel}</span>
-                    )}
-                  </Badge>
+                  {statementPreview.validRows > 0 && (
+                    <Badge variant="secondary" data-testid="statement-recognized">
+                      {strings.recognized}
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {statementPreview.totalRows} {strings.rows} · {statementPreview.validRows}{" "}

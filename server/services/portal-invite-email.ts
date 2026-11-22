@@ -5,13 +5,15 @@
  * logs or a Referer header.
  */
 import type { Company, CustomerContact, CustomerPortalInvitation } from "../../shared/schema";
+import { marketingBrand as PRODUCT_NAME } from "../../shared/marketing-brand";
 import {
+  arabicGreeting,
+  buildCustomerEmail,
   companyFooter,
-  escapeHtml,
-  renderBilingualEmail,
-  renderPlainTemplate,
-  type EmailLanguage,
-} from "./email.service";
+  supplierEmailSubject,
+  type BuiltEmail,
+} from "./customer-emails";
+import { escapeHtml, isolateInline, type EmailLanguage } from "./email-layout";
 
 export interface PortalInviteEmailInput {
   company: Pick<Company, "name" | "trnVatNumber" | "businessAddress" | "contactEmail">;
@@ -35,92 +37,55 @@ export function normaliseInviteLanguage(value: string | null | undefined): Email
   return value === "ar" || value === "bilingual" ? value : "en";
 }
 
-export function renderPortalInviteEmail(input: PortalInviteEmailInput): {
-  subject: string;
-  html: string;
-  text: string;
-} {
+export function renderPortalInviteEmail(input: PortalInviteEmailInput): BuiltEmail {
   const { company, contact, invitation, url, onlinePayment } = input;
   const language = normaliseInviteLanguage(invitation.language);
-  const e = escapeHtml;
+  const supplier = isolateInline(company.name);
+  const product = isolateInline(PRODUCT_NAME, "ltr");
   const greetName = (invitation.name || contact.name).trim();
-  const customerAr = contact.nameAr?.trim() || contact.name;
-  const note = invitation.message?.trim() || "";
-  const quote = (text: string, dir: "ltr" | "rtl") =>
-    `<span style="display:block;border-${dir === "rtl" ? "right" : "left"}:3px solid #D1D5DB;padding:4px 12px;color:#4B5563;" dir="auto">${e(text).replace(/\n/g, "<br>")}</span>`;
+  const note = invitation.message?.trim();
+  const quotedNote = note
+    ? `<span dir="auto">${escapeHtml(note).replace(/\n/g, "<br>")}</span>`
+    : null;
 
-  const paragraphs = {
-    en: [
-      `Hi ${e(greetName)},`,
-      `${e(company.name)} uses Muhasib to share your invoices with you. Set a password to see every invoice and credit note issued to ${e(contact.name)}, download PDFs and your statement of account${onlinePayment ? ", and pay online" : ""}.`,
-      ...(note ? [quote(note, "ltr")] : []),
-      `This invitation expires on ${e(formatInviteDate(invitation.expiresAt, "en"))}.`,
-      "If you didn't expect this email, you can safely ignore it.",
-    ],
-    ar: [
-      `مرحبًا ${e(greetName)}،`,
-      `تستخدم ${e(company.name)} منصة محاسب لمشاركة فواتيرك معك. عيّن كلمة مرور لتطّلع على كل الفواتير والإشعارات الدائنة الصادرة باسم ${e(customerAr)}، وتنزّل ملفات PDF وكشف حسابك${onlinePayment ? "، وتسدّد عبر الإنترنت" : ""}.`,
-      ...(note ? [quote(note, "rtl")] : []),
-      `تنتهي صلاحية هذه الدعوة في ${e(formatInviteDate(invitation.expiresAt, "ar"))}.`,
-      "إذا لم تكن تتوقع هذه الرسالة، يمكنك تجاهلها بأمان.",
-    ],
-  };
-
-  const html = renderBilingualEmail(
+  return buildCustomerEmail(
     {
       heading: { en: "Your customer portal", ar: "بوابة العملاء الخاصة بك" },
-      paragraphs,
+      preheader: {
+        en: `${company.name} invited you to view your invoices online.`,
+        ar: `دعتك ${company.name} للاطلاع على فواتيرك عبر الإنترنت.`,
+      },
+      paragraphs: {
+        en: [
+          `Hi ${isolateInline(greetName)},`,
+          `${supplier} uses ${product} to share your invoices. Set up your account to view invoices and credit notes, download PDFs, and access your statement of account.`,
+          ...(onlinePayment ? ["You can also pay online when payment is available."] : []),
+          ...(quotedNote ? [`<strong>Message from ${supplier}</strong><br>${quotedNote}`] : []),
+          `This invitation expires on ${formatInviteDate(invitation.expiresAt, "en")}.`,
+          "If you didn't expect this email, you can safely ignore it.",
+        ],
+        ar: [
+          arabicGreeting({
+            nameAr: invitation.name,
+            name: contact.nameAr,
+            companyNameAr: contact.name,
+          }),
+          `تستخدم ${supplier} منصة ${product} لمشاركة فواتيرك. أنشئ حسابك للاطلاع على الفواتير والإشعارات الدائنة وتنزيل ملفات PDF وعرض كشف حسابك.`,
+          ...(onlinePayment ? ["يمكنك أيضًا السداد عبر الإنترنت عند توفر خيار الدفع."] : []),
+          ...(quotedNote ? [`<strong>رسالة من ${supplier}</strong><br>${quotedNote}`] : []),
+          `تنتهي صلاحية هذه الدعوة في ${formatInviteDate(invitation.expiresAt, "ar")}.`,
+          "إذا لم تكن تتوقع هذه الرسالة، يمكنك تجاهلها بأمان.",
+        ],
+      },
       button: { url, label: { en: "Set up your account", ar: "أنشئ حسابك" } },
       brandName: company.name,
-      footer: [
-        companyFooter(company as Company),
-        company.contactEmail ? company.contactEmail : null,
-      ]
-        .filter(Boolean)
-        .join(" · "),
+      footer: companyFooter(company),
+      contactEmail: company.contactEmail,
     },
-    language
+    language,
+    supplierEmailSubject(company.name, language, (name) => ({
+      en: `${name} invited you to view your invoices`,
+      ar: `دعتك ${name} للاطلاع على فواتيرك`,
+    }))
   );
-
-  const subjects = {
-    en: renderPlainTemplate("{{company}} invited you to view your invoices", {
-      company: company.name,
-    }),
-    ar: renderPlainTemplate("دعتك {{company}} للاطلاع على فواتيرك", { company: company.name }),
-  };
-  const subject =
-    language === "ar"
-      ? subjects.ar
-      : language === "bilingual"
-        ? `${subjects.en} | ${subjects.ar}`
-        : subjects.en;
-
-  const textEn = [
-    `Hi ${greetName},`,
-    "",
-    `${company.name} uses Muhasib to share your invoices with you. Set a password to see every invoice and credit note issued to ${contact.name}.`,
-    ...(note ? ["", note] : []),
-    "",
-    `Set up your account: ${url}`,
-    `This invitation expires on ${formatInviteDate(invitation.expiresAt, "en")}.`,
-    "If you didn't expect this email, you can safely ignore it.",
-  ].join("\n");
-  const textAr = [
-    `مرحبًا ${greetName}،`,
-    "",
-    `تستخدم ${company.name} منصة محاسب لمشاركة فواتيرك معك. عيّن كلمة مرور لتطّلع على كل الفواتير الصادرة باسم ${customerAr}.`,
-    ...(note ? ["", note] : []),
-    "",
-    `أنشئ حسابك: ${url}`,
-    `تنتهي صلاحية هذه الدعوة في ${formatInviteDate(invitation.expiresAt, "ar")}.`,
-    "إذا لم تكن تتوقع هذه الرسالة، يمكنك تجاهلها بأمان.",
-  ].join("\n");
-  const text =
-    language === "ar"
-      ? textAr
-      : language === "bilingual"
-        ? `${textEn}\n\n----\n\n${textAr}`
-        : textEn;
-
-  return { subject, html, text };
 }

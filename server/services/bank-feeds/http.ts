@@ -1,4 +1,4 @@
-/** Shared HTTP + parsing helpers for bank-feed adapters (injectable fetch for contract tests). */
+/** Shared HTTP and parsing helpers for financial-data adapters, with injectable fetch. */
 import { toFils } from "../../../shared/money";
 import { BankFeedProviderError, type FetchLike, type FeedTransaction } from "./types";
 
@@ -11,7 +11,7 @@ export function setBankFeedFetch(fn: FetchLike | null): void {
 
 export function feedFetch(): FetchLike {
   if (fetchImpl) return fetchImpl;
-  return (url, init) => fetch(url, init) as ReturnType<FetchLike>;
+  return (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) });
 }
 
 export function env(name: string): string {

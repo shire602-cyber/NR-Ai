@@ -316,6 +316,13 @@ async function openScreen(ctx, url, opts) {
   await page.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => undefined);
   await page.waitForTimeout(500);
   if (opts.act) await opts.act(page);
+  if (!opts.skipH1) {
+    await page
+      .locator("h1")
+      .first()
+      .waitFor({ timeout: 8000 })
+      .catch(() => undefined);
+  }
 
   const phone = opts.viewport !== "desktop";
   const info = await page.evaluate(() => {
@@ -905,8 +912,13 @@ async function firmCell(ctx, viewport, lang, who) {
     ...base,
     name: `${who} firm e-invoicing column`,
   });
-  const cells = await g.page.locator("[data-testid^=firm-einvoicing-]").count();
-  check(cells >= 1, `${who} firm: an e-invoicing status per client`, cells);
+  const cells = g.page.locator("[data-testid^=firm-einvoicing-]");
+  const count = await cells.count();
+  check(count >= 1, `${who} firm: an e-invoicing status per client`, count);
+  const interactive = await cells.evaluateAll((badges) =>
+    badges.some((badge) => !!badge.closest("a, button, [role='button'], [role='link']"))
+  );
+  check(!interactive, `${who} firm: e-invoicing cells only show status`);
   check(
     (await g.page.locator("[data-testid=firm-einvoicing-approver_done]").count()) >= 1,
     `${who} firm: the client whose approver finished shows as such`
@@ -953,7 +965,48 @@ async function seedEmails() {
     email: `ap+${RUN}m@desertrose.example`,
   }).catch(() => undefined);
   await api("POST", "/api/auth/forgot-password", null, { email: u.email });
-  return { companyId: cid, companyName: `Mail Owner Home ${RUN}`, email: u.email };
+  return { companyId: cid, invoiceId: inv, email: u.email };
+}
+
+/** The invoice share dialog leaves language selection to the recipient's settings. */
+async function shareInvoiceByEmail(browser, mailCo, lang) {
+  currentLabel = `invoice email ${lang}`;
+  const ctx = await signedInContext(browser, "desktop", lang, mailCo, mailCo.companyId);
+  try {
+    const page = await ctx.newPage();
+    await page.goto(BASE + "/invoices", { waitUntil: "load" });
+    const id = mailCo.invoiceId;
+    await page.getByTestId(`button-invoice-actions-${id}`).click();
+    await page.getByTestId(`button-share-invoice-${id}`).click();
+    check(
+      (await page.locator("html").getAttribute("lang")) === lang,
+      "share dialog uses the requested UI language"
+    );
+    const to = `share-${lang}+${RUN}@customer.example`;
+    await page.getByTestId("input-invoice-share-email").fill(to);
+    const sent = page.waitForResponse((response) => response.url().endsWith(`/${id}/send-email`));
+    await page.getByTestId("button-send-invoice-email").click();
+    const response = await sent;
+    check(response.status() === 202, "share dialog queued the invoice e-mail", response.status());
+    const [row] = (
+      await db.query(
+        "SELECT subject, html, text_body FROM email_outbox WHERE category = 'invoice' AND company_id = $1 AND to_address = $2",
+        [mailCo.companyId, to]
+      )
+    ).rows;
+    check(
+      !!row &&
+        row.html.includes('dir="ltr" lang="en"') &&
+        row.html.includes('dir="rtl" lang="ar"') &&
+        /Invoice/.test(row.subject) &&
+        ARABIC.test(row.subject) &&
+        /Invoice/.test(row.text_body) &&
+        ARABIC.test(row.text_body),
+      "share dialog preserves bilingual subject, HTML and plain text for a customer without a preference"
+    );
+  } finally {
+    await ctx.close();
+  }
 }
 
 async function emailRender(browser, mailCo) {
@@ -1100,6 +1153,7 @@ try {
       await firmCell(fctx2, viewport, lang, "staff");
       await fctx2.close();
     }
+  for (const lang of LANGS) await shareInvoiceByEmail(browser, mailCo, lang);
   await emailRender(browser, mailCo);
 } finally {
   await browser.close();

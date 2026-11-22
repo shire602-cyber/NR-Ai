@@ -71,6 +71,23 @@ export interface VatReconciliation {
   aed: Record<string, number>;
 }
 
+export interface VatFilingMemberEvidence {
+  companyId: string;
+  baseCurrency: string;
+  outputAedFils: number;
+  inputAedFils: number;
+  outputBaseFils: number;
+  inputBaseFils: number;
+  ledgerOutputBaseFils: number;
+  ledgerInputBaseFils: number;
+}
+
+export interface VatFilingReconciliation extends VatReconciliation {
+  outputAedFils: number;
+  inputAedFils: number;
+  members: VatFilingMemberEvidence[];
+}
+
 const LABELS: Record<string, string> = {
   sales: "Sales invoices, debit and credit notes",
   purchases: "Vendor bills and debit notes",
