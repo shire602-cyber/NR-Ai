@@ -45,6 +45,8 @@ export const BACKUP_EXCLUDED_TABLES: Readonly<Record<string, string>> = {
   backup_schedules: "backup configuration",
   activity_logs: "audit trail: must survive every restore",
   company_users: "access control: a restore must not lock out or revive members",
+  firm_client_links: "access control: firm links follow the current client relationship",
+  firm_company_grants: "access control: firm grants follow current staff access",
   invitations: "access control",
   company_invitations: "access control",
   api_keys: "credentials: a restore must never revive a revoked key",
@@ -429,14 +431,35 @@ export interface BackupRecord {
   status: string;
 }
 
-export async function createCompanyBackup(args: {
+interface CreateCompanyBackupArgs {
   companyId: string;
   userId: string | null;
   name?: string | null;
   description?: string | null;
   backupType: "manual" | "scheduled" | "pre_restore";
   retentionDays?: number;
-}): Promise<BackupRecord & Record<string, unknown>> {
+}
+
+async function captureConsistentSnapshot(companyId: string): Promise<CompanySnapshot> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const snapshot = await captureSnapshot(companyId, client);
+    await client.query("COMMIT");
+    return snapshot;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function createCompanyBackup(
+  args: CreateCompanyBackupArgs,
+  transaction?: { client: Queryable; manifest: BackupManifest }
+): Promise<BackupRecord & Record<string, unknown>> {
+  const executor = transaction?.client ?? pool;
   const { rows } = await pq<BackupRecord>(
     `INSERT INTO backups (company_id, name, description, backup_type, status, created_by, format_version, encrypted)
           VALUES ($1, $2, $3, $4, 'in_progress', $5, $6, true) RETURNING id, company_id, name, status`,
@@ -447,23 +470,14 @@ export async function createCompanyBackup(args: {
       args.backupType,
       args.userId,
       BACKUP_FORMAT_VERSION,
-    ]
+    ],
+    executor
   );
   const backup = rows[0];
   try {
-    const client = await pool.connect();
-    let snapshot: CompanySnapshot;
-    try {
-      // One consistent read of every table.
-      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      snapshot = await captureSnapshot(args.companyId, client);
-      await client.query("COMMIT");
-    } catch (err) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw err;
-    } finally {
-      client.release();
-    }
+    const snapshot = transaction
+      ? await captureSnapshot(args.companyId, transaction.client, transaction.manifest)
+      : await captureConsistentSnapshot(args.companyId);
     const sealed = sealSnapshot(snapshot);
     const c = sealed.counts;
     const { rows: done } = await pq(
@@ -488,13 +502,16 @@ export async function createCompanyBackup(args: {
         c.receipts ?? 0,
         c.vat_returns ?? 0,
         String(args.retentionDays ?? 90),
-      ]
+      ],
+      executor
     );
     return done[0] as BackupRecord & Record<string, unknown>;
   } catch (err) {
-    await pq(`UPDATE backups SET status = 'failed' WHERE id = $1`, [backup.id]).catch(
-      () => undefined
-    );
+    if (!transaction) {
+      await pq(`UPDATE backups SET status = 'failed' WHERE id = $1`, [backup.id]).catch(
+        () => undefined
+      );
+    }
     throw err;
   }
 }
@@ -742,6 +759,8 @@ export const CLONE_SKIPPED_TABLES: Readonly<Record<string, string>> = {
   email_intake_messages: "provider message ids are globally unique",
   ecommerce_transactions: "marketplace transaction ids belong to the source company's store",
   ecommerce_integrations: "store connections are credentials of the source company",
+  webhook_endpoints: "outbound destinations and signing secrets belong to each company",
+  whatsapp_configs: "messaging credentials and settings belong to each company",
   einvoice_archive: "immutable legal archive of the source company's transmissions",
   tax_return_archive: "immutable legal archive of the source company's filings",
   einvoice_documents: "transmission state belongs to the source company",
@@ -878,55 +897,59 @@ export async function restoreBackupIntoCompany(args: {
     throw new DomainError("BACKUP_COMPANY_MISMATCH", 409);
   }
 
-  const { rows: cos } = await pq<{ id: string; base_currency: string | null }>(
-    `SELECT id, base_currency FROM companies WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
-    [[args.sourceCompanyId, args.targetCompanyId]]
-  );
-  const src = cos.find((c) => c.id === args.sourceCompanyId);
-  const dst = cos.find((c) => c.id === args.targetCompanyId);
-  if (!dst) throw new DomainError("NOT_FOUND", 404, undefined, "Target company not found");
-  if (src && (src.base_currency || "AED") !== (dst.base_currency || "AED")) {
-    throw new DomainError(
-      "BASE_CURRENCY_MISMATCH",
-      422,
-      { source: src.base_currency, target: dst.base_currency },
-      "The target company must use the same base currency as the backup's company."
-    );
-  }
-  for (const table of CLONE_TARGET_ACTIVITY_TABLES) {
-    const { rows: n } = await pq<{ n: string }>(
-      `SELECT count(*) AS n FROM ${q(table)} WHERE company_id = $1`,
-      [args.targetCompanyId]
-    );
-    if (Number(n[0].n) > 0) {
-      throw new DomainError(
-        "CLONE_TARGET_NOT_EMPTY",
-        409,
-        { table, rows: Number(n[0].n) },
-        "The target company already has accounting activity. Clone only into a new, empty company."
-      );
-    }
-  }
-
-  let preRestoreBackupId: string | null = null;
-  if (!args.dryRun) {
-    const pre = await createCompanyBackup({
-      companyId: args.targetCompanyId,
-      userId: args.userId,
-      name: `Pre-clone backup (before loading ${backup.name})`,
-      description: "Automatic backup created before restoring another company's backup here",
-      backupType: "pre_restore",
-    });
-    preRestoreBackupId = pre.id;
-  }
-
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
       `backup-restore:${args.targetCompanyId}`,
     ]);
+    const { rows: cos } = await pq<{ id: string; base_currency: string | null }>(
+      `SELECT id, base_currency FROM companies WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
+      [[args.sourceCompanyId, args.targetCompanyId]],
+      client
+    );
+    const src = cos.find((c) => c.id === args.sourceCompanyId);
+    const dst = cos.find((c) => c.id === args.targetCompanyId);
+    if (!dst) throw new DomainError("NOT_FOUND", 404, undefined, "Target company not found");
+    if (src && (src.base_currency || "AED") !== (dst.base_currency || "AED")) {
+      throw new DomainError(
+        "BASE_CURRENCY_MISMATCH",
+        422,
+        { source: src.base_currency, target: dst.base_currency },
+        "The target company must use the same base currency as the backup's company."
+      );
+    }
+    for (const table of CLONE_TARGET_ACTIVITY_TABLES) {
+      const { rows: n } = await pq<{ n: string }>(
+        `SELECT count(*) AS n FROM ${q(table)} WHERE company_id = $1`,
+        [args.targetCompanyId],
+        client
+      );
+      if (Number(n[0].n) > 0) {
+        throw new DomainError(
+          "CLONE_TARGET_NOT_EMPTY",
+          409,
+          { table, rows: Number(n[0].n) },
+          "The target company already has accounting activity. Clone only into a new, empty company."
+        );
+      }
+    }
+
     const full = await buildBackupManifest(client);
+    let preRestoreBackupId: string | null = null;
+    if (!args.dryRun) {
+      const pre = await createCompanyBackup(
+        {
+          companyId: args.targetCompanyId,
+          userId: args.userId,
+          name: `Pre-clone backup (before loading ${backup.name})`,
+          description: "Automatic backup created before restoring another company's backup here",
+          backupType: "pre_restore",
+        },
+        { client, manifest: full }
+      );
+      preRestoreBackupId = pre.id;
+    }
     const skip = cloneSkipReasons(full.tables);
     const skippedTables = full.tables
       .filter((t) => skip.has(t.name))

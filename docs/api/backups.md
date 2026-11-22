@@ -2,7 +2,7 @@
 
 Implementation: `server/services/backup.service.ts`, routes in `server/routes/backups.routes.ts`.
 Backup routes require the company’s `backups.manage` permission (owners and admins).
-For NR firm owners and admins, client companies must also be within their firm scope.
+For NR firm owners and admins, a company with firm-link history or a client company type must also be within their current firm scope.
 The same checks apply to both the source and the target when loading a backup into another company.
 
 ## What a backup contains
@@ -12,7 +12,7 @@ every table reachable from those through a foreign key (journal lines, invoice l
 bill payments, payroll items, budget lines, claim items, …). Raw-SQL tables are included the same
 way. `GET /api/companies/{id}/backups/manifest` lists what is captured and what is excluded, with
 the reason. Excluded on purpose: audit trails (`activity_logs`, `audit_*`), access control
-(`company_users`, invitations), credentials (API keys, portal tokens), billing state
+(`company_users`, firm links, firm grants, invitations), credentials (API keys, portal tokens), billing state
 (subscriptions, usage counters, billing credits/documents), delivery queues and logs (email outbox,
 webhook deliveries) and NR firm-workspace tables. `tests/db/backup-full-restore.test.ts` fails when
 a company-scoped table is neither captured nor excluded.
@@ -44,6 +44,9 @@ Both run in one transaction under a per-company advisory lock. Append-only table
 (`einvoice_archive`, `tax_return_archive`) are only ever topped up. The audit entry (with the mode
 and counts) is written after the transaction commits; a failed restore (checksum mismatch, FK
 conflict) changes nothing and writes no success entry.
+
+A clone checks that the target is empty under its restore lock and creates a safety backup in the same
+transaction. Target webhook endpoints, messaging credentials and firm access are preserved.
 
 ## Schedules
 

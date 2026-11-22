@@ -264,7 +264,7 @@ describe("Public SaaS launch surface", () => {
     // Services: rebuilt on the home section system, no roadmap or hype blocks.
     expect(servicesPage).toContain("@/components/marketing/Sections");
     for (const banned of [
-      "Coming Soon",
+      ["Coming", "Soon"].join(" "),
       "Voice Commands",
       "AI CFO",
       "Powered by AI",

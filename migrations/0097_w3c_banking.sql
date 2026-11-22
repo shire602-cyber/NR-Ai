@@ -7,7 +7,7 @@
 --    the single record unmatch reverses (R06-02)
 --  * bank_import_batches: import history with undo (R06-22)
 --  * bank_reconciliations: statement vs GL snapshot with sign-off (R06-20)
---  * bank_feed_oauth_states: OAuth state for bank-feed connect, verified on callback (R06-14)
+--  * bank_feed_oauth_states: historical provider authorization state (R06-14)
 --  * reconciliation_rules: GL account, VAT treatment, review flag; match_type fixed (R06-04, R06-15)
 
 -- ── bank_accounts ─────────────────────────────────────────────────────────────

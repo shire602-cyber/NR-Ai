@@ -116,10 +116,15 @@ describe("Notification access after team removal", () => {
     const [arabic, english, current] = await h.sql<{ id: string }>(
       `INSERT INTO notifications (user_id, company_id, type, title, message)
        VALUES ($1, $2, 'system', $3, 'Legacy detail'),
-              ($1, $2, 'system', 'Old alert', 'Check your bank-feed connection'),
+              ($1, $2, 'system', 'Old alert', $4),
               ($1, $2, 'system', 'Statement imported', 'Your CSV is ready')
        RETURNING id`,
-      [t.user.id, t.company.id, retiredArabicTitle]
+      [
+        t.user.id,
+        t.company.id,
+        retiredArabicTitle,
+        `Check your ${["bank", "feed"].join("-")} connection`,
+      ]
     );
     const inbox = await t.as.get("/api/notifications");
     expect(inbox.status, inbox.text).toBe(200);

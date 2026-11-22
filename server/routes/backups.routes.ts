@@ -46,7 +46,7 @@ import {
   restoreCompanyBackup,
   runScheduledBackups,
 } from "../services/backup.service";
-import { canAccessFirmClient, NR_FIRM_ID } from "../services/firm/scope";
+import { canAccessFirmClientOrUnlinkedCustomer, NR_FIRM_ID } from "../services/firm/scope";
 import { listJobs, registerJob } from "../platform/job-registry";
 import { hasRecentMfa } from "../services/security/policy";
 
@@ -112,9 +112,8 @@ async function companyForBackup(req: Request, companyId: string, conceal: boolea
   const role = company ? await getCompanyRole(user.id, companyId) : null;
   const firmClientInScope =
     !company ||
-    company.companyType !== "client" ||
     !isNraFirmRole(user.firmRole) ||
-    (await canAccessFirmClient(
+    (await canAccessFirmClientOrUnlinkedCustomer(
       {
         firmId: NR_FIRM_ID,
         isNr: true,

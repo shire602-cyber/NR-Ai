@@ -187,6 +187,95 @@ describe("W5-B backups", () => {
     expect((await staff.as.post(`${cloneUrl}-preview`, target)).status).toBe(404);
   });
 
+  it("requires current firm scope for backup downloads and clone targets with customer-type link history", async () => {
+    const { NR_FIRM_ID } = await import("../../server/services/firm/scope");
+    const staff = await h.createTenant({ firmRole: "firm_admin" });
+    const customer = await h.createSecondTenant({ companyColumns: { company_type: "customer" } });
+    const own = await backup(staff);
+    const customerBackup = await backup(customer);
+    await h.sql(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'admin')`, [
+      customer.company.id,
+      staff.user.id,
+    ]);
+    const [link] = await h.sql<{ id: string }>(
+      `INSERT INTO firm_client_links (company_id, firm_id, status)
+       VALUES ($1, $2, 'active') RETURNING id`,
+      [customer.company.id, NR_FIRM_ID]
+    );
+    const download = `/api/backups/${customerBackup.id}/download`;
+    const clone = `/api/backups/${own.id}/clone-preview`;
+    const target = { targetCompanyId: customer.company.id };
+    expect((await staff.as.get(download)).status).toBe(200);
+    expect((await staff.as.post(clone, target)).status).toBe(200);
+
+    // An independently granted company role may still be present after a firm link ends.
+    await h.sql("UPDATE firm_client_links SET status = 'revoked' WHERE id = $1", [link.id]);
+    expect((await staff.as.get(download)).status).toBe(404);
+    expect((await staff.as.post(clone, target)).status).toBe(404);
+    expect((await customer.as.get(download)).status).toBe(200);
+  });
+
+  it("excludes firm access tables and preserves current links and grants on historical backup restore", async () => {
+    const { NR_FIRM_ID } = await import("../../server/services/firm/scope");
+    const { sealSnapshot } = await import("../../server/services/backup.service");
+    const owner = await h.createTenant();
+    const former = await h.createSecondTenant();
+    const current = await h.createSecondTenant();
+    const [link] = await h.sql<{ id: string }>(
+      `INSERT INTO firm_client_links (company_id, firm_id, status)
+       VALUES ($1, $2, 'active') RETURNING id`,
+      [owner.company.id, NR_FIRM_ID]
+    );
+    const makeGrant = (userId: string) =>
+      h.sql<{ id: string }>(
+        `INSERT INTO firm_company_grants (company_id, firm_id, user_id)
+       VALUES ($1, $2, $3) RETURNING id`,
+        [owner.company.id, NR_FIRM_ID, userId]
+      );
+    const [formerGrant] = await makeGrant(former.user.id);
+    const saved = await backup(owner);
+    const downloaded = await owner.as.get(`/api/backups/${saved.id}/download`);
+    expect(downloaded.status, downloaded.text).toBe(200);
+    const snapshot = downloaded.body;
+    expect(snapshot.tables).not.toHaveProperty("firm_client_links");
+    expect(snapshot.tables).not.toHaveProperty("firm_company_grants");
+
+    snapshot.tables.firm_client_links = await h.sql(
+      "SELECT * FROM firm_client_links WHERE id = $1",
+      [link.id]
+    );
+    snapshot.tables.firm_company_grants = await h.sql(
+      "SELECT * FROM firm_company_grants WHERE id = $1",
+      [formerGrant.id]
+    );
+    const old = sealSnapshot(snapshot);
+    await h.sql("UPDATE backups SET data_snapshot = $2, checksum = $3 WHERE id = $1", [
+      saved.id,
+      old.sealed,
+      old.checksum,
+    ]);
+    await h.sql("UPDATE firm_client_links SET status = 'revoked' WHERE id = $1", [link.id]);
+    await h.sql("DELETE FROM firm_company_grants WHERE id = $1", [formerGrant.id]);
+    const [currentGrant] = await makeGrant(current.user.id);
+
+    for (const mode of ["merge", "replace"]) {
+      const restored = await owner.as.post(`/api/backups/${saved.id}/restore`, {
+        mode,
+        confirmRestore: true,
+        ...(mode === "replace" ? { confirmName: saved.name } : {}),
+      });
+      expect(restored.status, restored.text).toBe(200);
+      expect(await h.sql("SELECT status FROM firm_client_links WHERE id = $1", [link.id])).toEqual([
+        { status: "revoked" },
+      ]);
+      expect(
+        await h.sql("SELECT id, user_id FROM firm_company_grants WHERE company_id = $1", [
+          owner.company.id,
+        ])
+      ).toEqual([{ id: currentGrant.id, user_id: current.user.id }]);
+    }
+  });
+
   it("strips retired connection credentials when capturing, downloading, or restoring backups", async () => {
     const t = await h.createTenant();
     const { encryptSecret, decryptSecret } = await import("../../server/services/secret-vault");

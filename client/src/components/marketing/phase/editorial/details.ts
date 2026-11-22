@@ -544,8 +544,8 @@ export const editorialDetails: Record<DetailPath, Details> & Partial<Record<Inde
       {
         title: ["In-app backups and restore", "النسخ الاحتياطي والاستعادة داخل التطبيق"],
         body: [
-          "In-app backups are encrypted and checked for integrity. Both restore modes offer a preview. The app creates an automatic safety snapshot before a Replace restore only. Merge is the default and adds missing records while keeping existing values.",
-          "يشفّر التطبيق النسخ الاحتياطية ويتحقّق من سلامتها. تتوفر معاينة في كلا وضعي الاستعادة. ينشئ التطبيق نسخة احتياطية تلقائية قبل الاستعادة في وضع الاستبدال فقط. يضيف وضع الدمج، وهو الوضع الافتراضي، السجلات المفقودة ويُبقي القيم الحالية.",
+          "New in-app backups are encrypted and checked for integrity. Both restore modes offer a preview. The app creates an automatic safety snapshot before a Replace restore only. Merge is the default and adds missing records while keeping existing values.",
+          "يشفّر التطبيق النسخ الاحتياطية الجديدة ويتحقّق من سلامتها. تتوفر معاينة في كلا وضعي الاستعادة. ينشئ التطبيق نسخة احتياطية تلقائية قبل الاستعادة في وضع الاستبدال فقط. يضيف وضع الدمج، وهو الوضع الافتراضي، السجلات المفقودة ويُبقي القيم الحالية.",
         ],
       },
       {

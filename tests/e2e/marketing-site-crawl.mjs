@@ -210,6 +210,12 @@ async function crawl(locale) {
       const copy = await backup.innerText();
       assert.match(
         copy,
+        locale === "ar"
+          ? /يشفّر التطبيق النسخ الاحتياطية الجديدة/
+          : /New in-app backups are encrypted/
+      );
+      assert.match(
+        copy,
         locale === "ar" ? /في وضع الاستبدال فقط/ : /before a Replace restore only/
       );
       assert.match(
