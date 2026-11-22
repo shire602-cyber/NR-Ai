@@ -1090,7 +1090,7 @@ async function main() {
     for (const expected of [
       "apiKeys",
       "email",
-      "bankStatementImport",
+      "bankStatementUpload",
       "push",
       "stripe",
       "tokenEncryption",
@@ -1100,6 +1100,10 @@ async function main() {
         await fail("integration-status", { detail: `missing ${expected} in ${keys.join(",")}` });
         break;
       }
+    }
+
+    if (keys.includes("openBanking")) {
+      await fail("integration-status", { detail: "Unexpected provider status entry" });
     }
 
     // API key lifecycle: create returns the raw key exactly once.

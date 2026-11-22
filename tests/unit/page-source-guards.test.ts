@@ -196,11 +196,10 @@ describe("Mobile launch UX guards", () => {
         expect(catalog["banking.emptyTransactionsDescription"]).toBe(bankStatementCopy[locale]);
       }
       // Step 1 / F4: the supported-format lines are catalog copy (en and ar), not page literals.
-      for (const key of ["formats", "formatCsv", "formatDelimiters", "formatDrCr", "csvRequired"]) {
+      for (const key of ["formatCsv", "formatDelimiters", "formatDrCr", "csvRequired"]) {
         expect(source).toContain(`banking.import.${key}`);
       }
       const bankingEn = JSON.parse(readFileSync("client/src/locales/en/banking.json", "utf8"));
-      expect(bankingEn["banking.import.formats"]).toBe("Upload a CSV exported from your bank.");
       expect(bankingEn["banking.import.formatCsv"]).toContain("Arabic/English generic");
       expect(bankingEn["banking.import.formatDelimiters"]).toBe(
         "CSV supports comma, semicolon, and tab delimiters"

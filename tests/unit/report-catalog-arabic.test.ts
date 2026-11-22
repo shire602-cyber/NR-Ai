@@ -12,7 +12,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import * as catalog from "../../client/src/lib/reportCatalog";
-import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import {
   reportCatalog,
   reportComparisonPresets,
@@ -226,9 +225,9 @@ describe("F14 report catalog Arabic overlay", () => {
     const starter = catalog.reportAutomationStarters.find(
       (s) => s.id === "owner-cash-control-autopilot"
     );
-    expect(starter?.setupSteps[0]).toBe(bankStatementCopy.en);
+    expect(starter?.setupSteps[0]).toBe("Review invoices and upload a CSV bank statement");
     expect(overlay["reportCatalog.starter.owner-cash-control-autopilot.setupSteps.0"]).toBe(
-      bankStatementCopy.ar
+      "راجع الفواتير وارفع كشف حساب بنكي بصيغة CSV"
     );
   });
 

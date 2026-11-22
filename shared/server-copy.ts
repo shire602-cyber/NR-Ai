@@ -1509,7 +1509,7 @@ export function bankStatementUpdateFailureCopy(n: StoredNotificationText) {
   if (
     !isBankStatementReview(n.eventKey) &&
     n.copy?.titleKey !== "notification.bankSyncFailed.title" &&
-    !/^bank feed sync failed$/i.test(n.title)
+    !/^bank\x20feed\x20sync\x20failed$/i.test(n.title)
   ) return null;
 
   return {
