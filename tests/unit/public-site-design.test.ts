@@ -170,9 +170,9 @@ describe("D1 public site", () => {
           window.history.pushState(null, "", `/${locale}/product/bank-reconciliation`);
         });
         expect(container.querySelector(".phase-lead")?.textContent).toBe(copy);
-        expect(container.querySelector(".phase-product-detail ol")?.textContent).not.toMatch(
-          /bank feeds?|coming (?:soon|later)|الربط (?:البنكي|المصرفي) المباشر|قريب|لاحق/i
-        );
+        const workflow = container.querySelector(".phase-product-detail ol")?.textContent;
+        expect(workflow).not.toMatch(/bank feeds?|الربط (?:البنكي|المصرفي) المباشر/i);
+        expect(workflow).not.toMatch(/coming (?:soon|later)|قريب|لاحق/i);
       } finally {
         window.history.replaceState(null, "", previousUrl);
       }

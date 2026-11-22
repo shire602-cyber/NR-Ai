@@ -683,10 +683,9 @@ async function run(browser, lang, device) {
           await open(page, alias, lang, "/bank-reconciliation");
         }
         assert.equal(providerRequests, 0);
-        assert.doesNotMatch(
-          await page.locator("main").innerText(),
-          /bank feeds?|coming (?:soon|later)|الربط البنكي|قريب|لاحق/i
-        );
+        const bankPage = await page.locator("main").innerText();
+        assert.doesNotMatch(bankPage, /bank feeds?|الربط البنكي/i);
+        assert.doesNotMatch(bankPage, /coming (?:soon|later)|قريب|لاحق/i);
       },
       "/bank-reconciliation"
     );
