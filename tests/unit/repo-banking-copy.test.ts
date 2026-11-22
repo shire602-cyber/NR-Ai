@@ -37,11 +37,17 @@ function filesIn(dir: string, extension: string): string[] {
   });
 }
 
+const archivedBankImportMentions = [
+  /\byodlee\s*\+\s*wio\b/i,
+  /\b(?:bank[-\s]+data\s+access|(?:access\s+(?:to\s+)?bank[-\s]+data|bank[-\s]+data)\s+(?:through|via|from)\s+[^.\n]{0,45}\baggregators?)\b/i,
+  /\bbank\s+connections\b/i,
+];
+
 function findProseMention(copy: string): string | undefined {
   // The historical adapter filename is a literal technical reference in the archive.
-  return findPublicBankingMention(
-    copy.replaceAll("`open-banking.service.ts`", "").replace(/\*/g, "")
-  );
+  const text = copy.replaceAll("`open-banking.service.ts`", "").replace(/\*/g, "");
+  return findPublicBankingMention(text) ??
+    archivedBankImportMentions.map((pattern) => text.match(pattern)?.[0]).find(Boolean);
 }
 
 function findJsonProseMention(copy: string): string | undefined {
@@ -55,7 +61,7 @@ function findJsonProseMention(copy: string): string | undefined {
 
 function findSqlCommentMention(copy: string): string | undefined {
   for (const [comment] of copy.matchAll(/--[^\r\n]*(?:\r?\n[ \t]*--[^\r\n]*)*|\/\*[\s\S]*?\*\//g)) {
-    const match = findProseMention(comment.replace(/^[ \t]*--[ \t]*/gm, ""));
+    const match = findPublicBankingMention(comment.replace(/^[ \t]*--[ \t]*/gm, ""));
     if (match) return match;
   }
 }
@@ -119,6 +125,15 @@ function docxToText(data: Buffer): string {
 }
 
 describe("CSV banking wording in the repository", () => {
+  it.each([
+    [["Bank transaction imports | ", "Yodlee", " + ", "Wio", " |"], ["Yodlee", " + ", "Wio"]],
+    [["Historical banking plan: ", "bank-data", " access", " through aggregators."], ["bank-data", " access"]],
+    [["Access ", "bank data ", "via regional ", "aggregators."], ["Access ", "bank data ", "via regional ", "aggregators"]],
+    [["| Settings / Connections | ", "Bank", " connections", ", team management |"], ["Bank", " connections"]],
+  ])("rejects archived banking descriptions %j", (parts, expected) => {
+    expect(findProseMention(parts.join(""))).toBe(expected.join(""));
+  });
+
   it("checks comment prose without rejecting route names and event IDs", () => {
     const route = "/api/bank-connections/:id/sync";
     const label = ["Bank", "Syncing"].join(" ");

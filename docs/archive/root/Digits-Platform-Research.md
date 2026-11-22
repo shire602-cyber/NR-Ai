@@ -26,7 +26,7 @@ Digits uses a left-hand sidebar menu. Based on reviews, walkthroughs, and docume
 | **Reports** | Interactive, presentation-ready financial reports and management reporting |
 | **Documents** | Central document repository — uploaded bills, bank statements, receipts, and other files |
 | **Category Manager** | Digits' version of the Chart of Accounts — AI-assisted account categorization and standardization |
-| **Settings / Connections** | Integrations, team management, and configuration |
+| **Settings** | Team management and configuration |
 | **Firm Dashboard** *(accountant view)* | Centralized view of all clients with real-time status, staff access controls, and onboarding tools |
 
 ---

@@ -706,7 +706,7 @@ Everything in Phases 1–4 serves that sentence. Everything that doesn't, isn't 
 
 **Months 9–12 — Firms.** Land 20 firms with the bulk VAT workspace. One firm with 50 clients is worth 50 direct signups and churns less. Free for the firm, paid per client. Wafeq's 94 partner firms is the number to beat.
 
-**Bank reconciliation.** Upload a CSV exported from your bank, review suggested matches, and reconcile against your books. The archived improvement priorities were format memory, match suggestions, and reconciliation rules.
+**Bank reconciliation.** The archived improvement priorities for CSV uploads were format memory, match suggestions, and reconciliation rules.
 
 **Beyond the UAE — but not yet.** Saudi (ZATCA Fatoora) is the obvious second market and your Arabic and e-invoicing work transfers. **Do not touch it until 100 paying UAE customers.** Wafeq's warning is right there: 18,000 claimed customers, ~90% of volume in Saudi, and a UAE product with no emirate field. They spread and got thin. Sequence: UAE → Saudi → Bahrain/Oman/Qatar (GCC VAT is harmonised, which makes this cheaper than it looks) → Egypt/Jordan.
 

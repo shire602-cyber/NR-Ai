@@ -136,15 +136,10 @@ const recoveryConnection = {
 };
 const recoveryQueryKey = ["/api/companies", "workspace", "bank-connections"];
 
-function recoveryClient(
-  permissions: string[],
-  providers: string[],
-  queryFn = async () => [{ ...recoveryConnection, status: "active" }]
-) {
-  const client = new QueryClient({ defaultOptions: { queries: { queryFn, staleTime: Infinity } } });
+function recoveryClient(permissions: string[]) {
+  const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
   client.setQueryData(["/api/companies"], [{ id: "workspace" }]);
   client.setQueryData(["/api/companies", "workspace", "team", "me"], { permissions });
-  client.setQueryData(["/api/bank/providers"], { providers });
   client.setQueryData(recoveryQueryKey, [
     recoveryConnection,
     { ...recoveryConnection, id: "csv-only", provider: "manual" },
@@ -154,48 +149,26 @@ function recoveryClient(
 }
 
 it.each([
-  ["en", "Retry refresh"],
-  ["ar", "أعد محاولة التحديث"],
-] as const)(
-  "retries the failed bank connection and refreshes the page in %s",
-  async (locale, label) => {
-    await setLocale(locale);
-    const requests = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
-      if (String(url).endsWith("/api/csrf-token")) return Response.json({ csrfToken: "test-csrf" });
-      expect(String(url)).toBe("/api/bank-connections/linked-account/sync");
-      expect(options?.method).toBe("POST");
-      return Response.json({ imported: 2 });
-    });
-    const reload = vi.fn(async () => [{ ...recoveryConnection, status: "active" }]);
-    const client = recoveryClient(["documents.write"], ["lean"], reload);
-    const statementKey = ["/api/companies", "workspace", "bank-statements", "transactions"];
-    client.setQueryData(statementKey, []);
-    await renderBanking(client);
+  ["en", "Upload a CSV statement"],
+  ["ar", "ارفع كشف حساب بصيغة CSV"],
+] as const)("routes a failed bank record to CSV upload in %s", async (locale, label) => {
+  await setLocale(locale);
+  const requests = vi.spyOn(globalThis, "fetch");
+  await renderBanking(recoveryClient(["documents.write"]));
 
-    const buttons = container.querySelectorAll<HTMLButtonElement>("button");
-    expect([...buttons].map((button) => button.textContent)).toEqual([label]);
-    await act(async () => {
-      buttons[0].click();
-      await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
-    });
-    await vi.waitFor(async () => {
-      await act(async () => {});
-      expect(container.querySelector("button")).toBeNull();
-    });
-    expect(requests).toHaveBeenCalledWith(
-      "/api/bank-connections/linked-account/sync",
-      expect.objectContaining({ method: "POST" })
-    );
-    expect(client.getQueryState(statementKey)?.isInvalidated).toBe(true);
-  }
-);
-
-it.each([
-  { permissions: ["reports.read"], providers: ["lean"] },
-  { permissions: ["documents.write"], providers: ["wio"] },
-])("offers only CSV upload when retry is unavailable (%j)", async ({ permissions, providers }) => {
-  await renderBanking(recoveryClient(permissions, providers));
+  const links = container.querySelectorAll<HTMLAnchorElement>("a[aria-describedby]");
+  expect(links).toHaveLength(1);
+  expect(links[0].textContent).toBe(label);
+  expect(links[0].getAttribute("href")).toBe("/bank-reconciliation?import=1");
+  links[0].addEventListener("click", (event) => event.preventDefault());
+  await act(async () => links[0].click());
+  expect(requests).not.toHaveBeenCalled();
   expect(container.querySelector("button")).toBeNull();
+});
+
+it("offers the ordinary CSV upload to users without document write access", async () => {
+  await renderBanking(recoveryClient(["reports.read"]));
+  expect(container.querySelector("a[aria-describedby]")).toBeNull();
   expect(container.querySelector('[href="/bank-reconciliation?import=1"]')).not.toBeNull();
 });
 

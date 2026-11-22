@@ -151,10 +151,11 @@ use existing records and require no migration ledger changes.
 [Historical unmatch route](https://github.com/shire602-cyber/NR-Ai/blob/04c3986bb50882cfdafb6ad4affe56cdf891bf93/server/routes/bank-statements.routes.ts#L854-L887)
 
 The release journal retains the portal security entries from PR #71. Its bank entries use
-timestamps above the last historical preview timestamp, and a catch-up entry applies the
-portal schema on preview ledgers that occupied the original portal slots. Historical journal
-entries and compressed SQL fixtures reproduce their original hashes on replay. The
-rehearsal verifies the exact `d6d0c35c` ledger, applies the catch-up, and compares the
+timestamps above the last historical preview timestamp. Catch-up migrations apply the portal
+security schema from PR #71 and the reminder language change from PR #75 on preview ledgers
+that occupied the original slots. Historical journal entries and compressed SQL fixtures
+reproduce their original hashes on replay. The rehearsal verifies the exact `d6d0c35c` ledger,
+applies the catch-up migrations, and compares the
 resulting schema and seeded business records.
 
 ## Migration fixes

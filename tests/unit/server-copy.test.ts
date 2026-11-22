@@ -217,9 +217,13 @@ describe("server copy templates", () => {
       actionUrl: "/bank-reconciliation?import=1",
     });
     const notification = withNotificationCopy(row!);
-    expect(localizeNotification(notification, en, "en")).toEqual(english);
+    expect(localizeNotification(notification, en, "en")).toEqual({
+      ...english,
+      actionUrl: "/bank-reconciliation?import=1",
+    });
     expect(localizeNotification(notification, ar, "ar")).toEqual({
       title: "استورد كشف حساب بنكي بصيغة CSV",
+      actionUrl: "/bank-reconciliation?import=1",
       message: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
     });
   });

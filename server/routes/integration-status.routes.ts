@@ -7,7 +7,6 @@ import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/em
 import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
 import { isObjectStorageConfigured, objectStorageBackend } from "../services/fileStorage";
 import { connectorStatuses } from "../services/connectors/oauth";
-import { isOpenBankingConfigured } from "../services/open-banking.service";
 
 /**
  * The "what do I paste where" surface: each integration with its live
@@ -80,16 +79,6 @@ export function registerIntegrationStatusRoutes(app: Express) {
             "BILLING_ENFORCEMENT=true (flip last, once checkout works)",
           ],
           unlocks: "Subscriptions, checkout, plan upgrades, tier enforcement",
-        },
-        {
-          key: "openBanking",
-          name: "Transaction refresh recovery",
-          configured: isOpenBankingConfigured(),
-          detail: null,
-          requiredEnv: [
-            "LEAN_APP_TOKEN — or TARABUT_CLIENT_ID + TARABUT_CLIENT_SECRET — or WIO_CLIENT_ID + WIO_CLIENT_SECRET",
-          ],
-          unlocks: "Refresh transactions for existing connections",
         },
         {
           key: "bankStatementUpload",

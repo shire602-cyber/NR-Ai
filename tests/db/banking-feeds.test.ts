@@ -447,7 +447,7 @@ describe("W3-C financial-data authorization", () => {
     }
   });
 
-  it("reports CSV upload separately from existing provider configuration", async () => {
+  it("reports only CSV upload in admin banking status regardless of provider configuration", async () => {
     await clearEnv();
     const admin = await h.createTenant({ isAdmin: true });
     const response = await admin.as.get("/api/admin/integration-status");
@@ -460,19 +460,15 @@ describe("W3-C financial-data authorization", () => {
       requiredEnv: [],
       unlocks: "Upload CSV bank statements for reconciliation",
     });
-    expect(response.body.integrations).toContainEqual(
-      expect.objectContaining({ key: "openBanking", configured: false })
+    expect(response.body.integrations).not.toContainEqual(
+      expect.objectContaining({ key: "openBanking" })
     );
+    expect(response.text).not.toContain("LEAN_APP_TOKEN");
 
     process.env.LEAN_APP_TOKEN = `test-${crypto.randomUUID()}`;
     const configured = await admin.as.get("/api/admin/integration-status");
     expect(configured.status, configured.text).toBe(200);
-    expect(configured.body.integrations).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ key: "openBanking", configured: true }),
-        expect.objectContaining({ key: "bankStatementUpload", configured: true, requiredEnv: [] }),
-      ])
-    );
+    expect(configured.body).toEqual(response.body);
   });
 
   it("guides customers to CSV import when statement-only sync or balance is unavailable", async () => {

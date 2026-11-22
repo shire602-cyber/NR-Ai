@@ -102,7 +102,7 @@ B2C out of scope pending further decision. **Penalties (Cabinet Decision 106/202
 
 **Also:** SAP (ASP #30, enterprise) · Focus Softnet (largest Dubai-HQ ERP, **not an ASP**, TASR expired Apr 2024) · Daftra/IZAM (Arabic-first, TASR to May 2027, **disputed false ASP claim**) · Microsoft D365 BC (partner Techventures is ASP #39) · ERPNext/Frappe (Corner 1 only) · Bayzat (owns the UAE payroll/WPS layer — partner, not competitor) · **Rewaa** (Saudi, $45m Series B — likeliest future entrant, **UNVERIFIED**). **Ignore:** Sage (TASR expired 2020), Zybra (Indian GST), Elate/Emerald/Peniel/QuickDice/Naqood (SEO reseller shops).
 
-**UAE financial-data regulation.** CBUAE Open Finance (**Circular 7 of 2023**, in force 10 Jul 2025 via Circular 3/2025; **FDL 6/2025** made it licensed) **bans screen-scraping**, routes everything through one central API Hub run by **Nebras**, and **meters it with licensing plus usage fees** — bank data is a COGS line, not free as under PSD2. **DIFC and ADGM excluded.** [Historical comparison excerpt redacted.]
+**Bank reconciliation.** Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 
 ---
 

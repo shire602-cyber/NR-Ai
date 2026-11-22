@@ -5,8 +5,6 @@
  * 404 page; tests/unit/app-links-routes.test.ts pins every stored link to a client route).
  */
 
-export const BANK_STATEMENT_IMPORT_HREF = "/bank-reconciliation?import=1";
-
 /** One bill, opened in the bill editor/view. */
 export function billHref(billId: string): string {
   return `/bill-pay/${encodeURIComponent(billId)}/edit`;

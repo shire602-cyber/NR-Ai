@@ -3,11 +3,11 @@ export const publicBankingCopy = {
   en: {
     question: "How do I reconcile my bank account?",
     answer:
-      "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.",
+      "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
   },
   ar: {
     question: "كيف أطابق حسابي البنكي؟",
-    answer: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك.",
+    answer: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
   },
 };
 

@@ -348,7 +348,6 @@ Muhasib scored on what I could make it do today, not what it intends to do.
 | VAT figures internally consistent | ❌ **two engines, 75 vs 50** | ✅ | ✅ | ✅ | ✅ | n/a |
 | Corporate Tax | ⚠️ workpaper export only | taxable income only | tracking + humans file | ❌ none | ✅ module (Professional+) | ❌ |
 | Arabic + RTL | ⚠️ **382 keys / 1,004 hardcoded strings** | ✅ strong, Arabic-default | ✅ full | ❌ **none** | ⚠️ UI yes, **no Arabic CoA** | ❌ none |
-| Bank reconciliation | CSV statement import | — | CSV statement import | — | — | — |
 | WPS SIF payroll | ✅ **generator present** | ❌ | ❌ (Bayzat partner) | ❌ | ✅ (separate paid product) | ❌ |
 | Period lock / month-end | ❌ **500, broken** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Money stored as decimal | ⚠️ **ledger yes, VAT return no** | ✅ | ✅ | ✅ | ✅ | ✅ |
