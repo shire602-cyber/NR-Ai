@@ -2,12 +2,14 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 
 it("lists only the available steps for the owner cash workflow", () => {
   const starter = reportAutomationStarters.find(
     (item) => item.id === "owner-cash-control-autopilot"
   );
   expect(starter?.setupSteps).toEqual([
+    bankStatementCopy.en,
     "Schedule the owner weekly command pack.",
     "Route overdue balances to payment chasing.",
   ]);
