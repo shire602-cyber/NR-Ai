@@ -53,8 +53,8 @@ it.skipIf(process.env.HARNESS_MODE !== "postgres")(
     let revocation: Promise<Response> | undefined;
     try {
       await blocker.query("BEGIN");
-      // The assignment insert must lock the referenced user's key. Keep it mid-flight while
-      // the client attempts revocation.
+      // Pause the assignment after it takes the company access lock and before the
+      // staff row is revalidated and the assignment is written.
       await blocker.query("SELECT id FROM users WHERE id = $1 FOR UPDATE", [staff.user.id]);
       assignment = firm.as.post(`/api/firm/clients/${companyId}/assign-staff`, {
         staffUserId: staff.user.id,
@@ -65,7 +65,7 @@ it.skipIf(process.env.HARNESS_MODE !== "postgres")(
           const [row] = await h.sql<{ waiting: boolean }>(`SELECT EXISTS (
           SELECT 1 FROM pg_stat_activity
           WHERE datname = current_database() AND wait_event_type = 'Lock'
-            AND lower(query) LIKE '%insert into "firm_staff_assignments"%'
+            AND lower(query) LIKE '%from "users"%for update%'
         ) AS waiting`);
           expect(row.waiting).toBe(true);
         },

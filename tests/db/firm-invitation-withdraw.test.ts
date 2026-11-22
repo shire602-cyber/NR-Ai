@@ -52,11 +52,11 @@ it.skipIf(process.env.HARNESS_MODE !== "postgres")(
 
     try {
       await blocker.query("BEGIN");
-      // Acceptance has made the link active inside its transaction when it reaches the
-      // automatic owner grant. Pause that insert while other transactions still see invited.
+      // Acceptance locks the firm before revalidating the owner and writing the link.
+      // Pause it on the owner row while other transactions still see invited.
       await blocker.query("SELECT id FROM users WHERE id = $1 FOR UPDATE", [owner.user.id]);
       acceptance = client.as.post(`/api/firm-invitations/${invite.id}/accept`, { companyId });
-      await waitForLock('insert into "company_users"');
+      await waitForLock('from "users".*for update');
       withdrawal = withdrawFirmLink(ctx, invite.id);
       await waitForLock('firm_membership|update "firm_client_links"');
     } finally {
