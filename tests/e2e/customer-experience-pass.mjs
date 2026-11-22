@@ -722,24 +722,14 @@ async function run(browser, lang, device) {
       }
     );
     const { token: inviteToken } = await readPortalInviteMail(invitation.invitation.id);
-    const guest = await browser.newContext({ baseURL: base });
-    let accept;
-    try {
-      const { csrfToken } = await (await guest.request.get("/api/csrf-token")).json();
-      accept = await guest.request.post("/api/portal-invitations/accept", {
-        headers: { "X-CSRF-Token": csrfToken },
-        data: {
-          token: inviteToken,
-          email: contactEmail,
-          name: localized("Layla Ahmad", "ليلى أحمد"),
-          password: PASSWORD,
-          acceptTerms: true,
-        },
-      });
-      assert.ok(accept.ok(), `Portal invitation acceptance returned ${accept.status()}`);
-    } finally {
-      await guest.close();
-    }
+    const accept = await apiClient(base)("", "POST", "/api/portal-invitations/accept", {
+      token: inviteToken,
+      email: contactEmail,
+      name: localized("Layla Ahmad", "ليلى أحمد"),
+      password: PASSWORD,
+      acceptTerms: true,
+    });
+    assert.ok(accept.status < 300, `Portal invitation acceptance returned ${accept.status}`);
     const secondContact = await checked(
       otherToken,
       "POST",

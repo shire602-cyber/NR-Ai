@@ -1,4 +1,3 @@
-import { PortalAccountScope } from "../../client/src/lib/portal-scope";
 // @vitest-environment jsdom
 /**
  * WP10 (code audit §2.2): the customer portal built its own Intl.NumberFormat("en-AE",
@@ -14,6 +13,7 @@ import PortalStatements from "../../client/src/pages/portal/PortalStatements";
 import { loadLocale, useI18n } from "../../client/src/lib/i18n";
 import { formatMoneyText, stripBidiControls } from "../../client/src/lib/format-money";
 import { portalQuery } from "../../client/src/lib/queryClient";
+import { PortalAccountScope } from "../../client/src/lib/portal-scope";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
