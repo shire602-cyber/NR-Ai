@@ -224,17 +224,18 @@ describe("capability registry", () => {
     expect(isCapabilityLive("ai", {})).toBe(false);
   });
 
-  it("keeps CSV upload independent of retired adapter configuration", () => {
-    expect(
-      computeCapabilities({
-        LEAN_APP_TOKEN: "fake-adapter-token",
-        LEAN_API_BASE_URL: "https://adapter.example.test",
-        TARABUT_CLIENT_ID: "fake-client-id",
-        TARABUT_CLIENT_SECRET: "fake-client-secret",
-        WIO_CLIENT_ID: "fake-client-id",
-        WIO_CLIENT_SECRET: "fake-client-secret",
-      })
-    ).toEqual(computeCapabilities({}));
+  it("does not advertise retired providers with production credentials", () => {
+    const caps = computeCapabilities({
+      LEAN_APP_TOKEN: "fixture",
+      LEAN_API_BASE_URL: "https://api.leantech.me",
+      TARABUT_CLIENT_ID: "fixture",
+      TARABUT_CLIENT_SECRET: "fixture",
+      TARABUT_API_BASE_URL: "https://api.tarabut.com",
+      WIO_CLIENT_ID: "fixture",
+      WIO_CLIENT_SECRET: "fixture",
+      WIO_API_BASE_URL: "https://api.wio.io",
+    });
+    expect(caps.filter((c) => c.id.startsWith("bank_feed_"))).toEqual([]);
   });
 
   it("[S5] news_feed is registered and push needs external VAPID keys (requires_external)", () => {

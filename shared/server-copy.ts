@@ -12,8 +12,6 @@
  */
 
 import { EMAIL_NOT_SET_UP_RUN_ERROR } from "./notification-copy";
-import { bankStatementCopy } from "./bank-statement-copy";
-import { BANK_STATEMENT_IMPORT_HREF } from "./app-links";
 
 export interface CopyDescriptor {
   key: string;
@@ -38,10 +36,6 @@ const T = (
   defaults?: Record<string, string>
 ): CopyTemplate => ({ key, en, prefix, ...(defaults ? { defaults } : {}) });
 
-const BANK_IMPORT_TITLE_KEY = "notification.bankSyncFailed.title";
-const BANK_IMPORT_MESSAGE_KEY = "notification.bankSyncFailed.message";
-const LEGACY_BANK_IMPORT_TITLE = /^Bank\s+feed\s+sync\s+failed$/i;
-
 /** Notification titles, most specific first. */
 export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.invoiceIssued.title", "Invoice {number} issued"),
@@ -51,7 +45,6 @@ export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billApproved.title", "Bill approved {label}"),
   T("notification.billPaid.title", "Bill paid {label}"),
   T("notification.payrollApproved.title", "Payroll approved"),
-  T("notification.bankSyncFailed.title", "Import a CSV bank statement"),
   T("notification.deadlineDue.title", "Deadline due[ {dueDate}]"),
   T("notification.taskDue.title", "Task due[ {dueDate}]"),
   T("notification.invoiceOverdue.title", "Invoice {number} is overdue"),
@@ -104,7 +97,6 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billApproved.message", "Bill {label} was approved for payment."),
   T("notification.billPaid.message", "Bill {label} was paid."),
   T("notification.payrollApproved.message", "Payroll for {month}/{year} was approved."),
-  T("notification.bankSyncFailed.message", bankStatementCopy.en),
   T("notification.deadlineDueGeneric.message", "A compliance obligation is due[ on {dueDate}]."),
   T("notification.taskDue.message", "A task is due[ on {dueDate}]."),
   T("notification.invoiceOverdue.message", "Invoice {number} for {customer} was due on {dueDate}."),
@@ -366,14 +358,6 @@ export function describeNotificationCopy(n: {
   title: string;
   message: string;
 }): NotificationCopyDescriptor {
-  if (LEGACY_BANK_IMPORT_TITLE.test(n.title)) {
-    return {
-      titleKey: BANK_IMPORT_TITLE_KEY,
-      titleParams: {},
-      messageKey: BANK_IMPORT_MESSAGE_KEY,
-      messageParams: {},
-    };
-  }
   const title = parseServerCopy(n.title, [
     ...NOTIFICATION_TITLE_TEMPLATES,
     ...LEGACY_NOTIFICATION_TITLE_TEMPLATES,
@@ -392,16 +376,6 @@ export function describeNotificationCopy(n: {
   };
 }
 
-function currentBankImportText(
-  key: string | null,
-  params: Record<string, string>,
-  fallback: string
-): string {
-  return key === BANK_IMPORT_TITLE_KEY || key === BANK_IMPORT_MESSAGE_KEY
-    ? renderServerCopy(key, params)
-    : fallback;
-}
-
 /** Render a descriptor with catalog strings; falls back to the English source on a miss. */
 export function renderDescriptor(
   key: string | null,
@@ -411,9 +385,7 @@ export function renderDescriptor(
 ): string {
   if (!key) return fallback;
   const template = catalog[serverCopyCatalogKey(key)];
-  return template
-    ? renderCopyTemplate(template, params)
-    : currentBankImportText(key, params, fallback);
+  return template ? renderCopyTemplate(template, params) : fallback;
 }
 
 // ─── Anomaly checks and categorisation reasons ───────────────────────────────
@@ -1517,34 +1489,16 @@ export function notificationCopy(
   };
 }
 
-/** Retain the stable event key for notifications already stored before the copy changed. */
-export function isBankStatementReview(eventKey: string | null | undefined): boolean {
-  return eventKey?.startsWith("bank.sync_failed:") ?? false;
-}
-
-export function normalizeNotificationCopy<
-  T extends { title: string; message: string; eventKey?: string | null },
->(n: T): T {
-  if (isBankStatementReview(n.eventKey) || LEGACY_BANK_IMPORT_TITLE.test(n.title)) {
-    return {
-      ...n,
-      actionUrl: BANK_STATEMENT_IMPORT_HREF,
-      ...notificationCopy(
-        "notification.bankSyncFailed.title",
-        "notification.bankSyncFailed.message"
-      ),
-    };
-  }
+export function normalizeNotificationCopy<T extends { title: string; message: string }>(n: T): T {
   const legacy = legacyStatementImportCopy(n);
   return legacy ? { ...n, message: renderServerCopy(legacy.key, legacy.params) } : n;
 }
 
-/** Attach `copy` (stable keys + params) to a notification for API/socket responses. */
-export function withNotificationCopy<
-  T extends { title: string; message: string; eventKey?: string | null },
->(n: T): T & { copy: NotificationCopyDescriptor } {
-  const wording = normalizeNotificationCopy(n);
-  return { ...wording, copy: describeNotificationCopy(wording) };
+/** Attach stable keys and parameters to stored notification text. */
+export function withNotificationCopy<T extends { title: string; message: string }>(
+  n: T
+): T & { copy: NotificationCopyDescriptor } {
+  return { ...normalizeNotificationCopy(n), copy: describeNotificationCopy(n) };
 }
 
 /** Key + params for a stored report-delivery run error or handoff sentence, or null. */

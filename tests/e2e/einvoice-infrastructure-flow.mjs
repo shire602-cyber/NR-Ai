@@ -75,7 +75,6 @@ const copies = {
     reportFailed: "Report failed",
     reportFailedChip: "FTA: report failed",
     reportingUnknown: "Reporting requirement unknown",
-    bankStatementImport: "CSV bank statements",
     verifyTracking: "Verify and save",
     trackingVerified: "Tracking environment verified",
     refusalVerified:
@@ -112,7 +111,6 @@ const copies = {
     reportFailed: "تعذّر الإبلاغ",
     reportFailedChip: "الهيئة: تعذّر الإبلاغ",
     reportingUnknown: "متطلبات الإبلاغ غير معروفة",
-    bankStatementImport: "كشوف الحساب البنكي بصيغة CSV",
     verifyTracking: "تحقّق واحفظ",
     trackingVerified: "تم التحقق من بيئة المتابعة",
     refusalVerified: "تم التحقّق من البيئة الأصلية. يمكنك الآن تصحيح هذه الفاتورة وإعادة إرسالها.",
@@ -654,19 +652,17 @@ async function selectProviders(browser, persona) {
       (await saved.json()).identity.einvoicePaymentMeansCode,
       lang === "ar" ? "55" : "54"
     );
-    await navigate("/bank-feeds");
-    const importTitle = copies[lang].bankStatementImport;
-    const importHeading = page.getByRole("heading", { name: importTitle, level: 1, exact: true });
-    await importHeading.waitFor();
-    await page.waitForFunction((title) => document.title === title, importTitle);
-    assert.doesNotMatch(
-      await page.locator("main").innerText(),
-      /\bbank\s+feeds?\b|\b(?:connect|sync|xlsx|mt940|camt|ofx)\b|الربط\s+البنكي\s+المباشر|الخلاصة\s+البنكية|مزامنة/i
-    );
-    await expectFrame(page, lang);
-    await navigate("/banking", "/bank-feeds");
-    await importHeading.waitFor();
-    await page.waitForFunction((title) => document.title === title, importTitle);
+    const statementEntry = "/bank-reconciliation?import=1";
+    for (const path of ["/bank-feeds", "/banking"]) {
+      await navigate(path, statementEntry);
+      const dialog = page.getByRole("dialog");
+      await dialog.getByTestId("button-download-sample-bank-csv").waitFor();
+      assert.doesNotMatch(
+        await dialog.innerText(),
+        /\bbank\s+feeds?\b|\b(?:connect|sync|xlsx|mt940|camt|ofx)\b|الربط\s+البنكي\s+المباشر|الخلاصة\s+البنكية|مزامنة/i
+      );
+      await expectFrame(page, lang);
+    }
     const bankAccount = await request(
       token,
       "POST",
@@ -677,11 +673,6 @@ async function selectProviders(browser, persona) {
         currency: "AED",
       }
     );
-    const importStatement = page.getByTestId("button-feeds-import-statement");
-    assert.equal(await importStatement.getAttribute("href"), "/bank-reconciliation?import=1");
-    await importStatement.click();
-    await page.waitForURL("**/bank-reconciliation?import=1");
-    await page.getByTestId("button-download-sample-bank-csv").waitFor();
     const statementFile = page.getByTestId("input-bank-statement-file");
     assert.equal(await statementFile.getAttribute("accept"), ".csv");
     await statementFile.setInputFiles({

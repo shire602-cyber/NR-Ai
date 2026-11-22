@@ -272,9 +272,11 @@ export default function DemoWorkspace() {
                 <div className="rounded-lg border bg-warning-subtle p-4 text-warning-subtle-foreground">
                   <div className="flex items-center gap-2">
                     <Sparkles className="h-4 w-4" aria-hidden="true" />
-                    <p className="text-sm font-medium">{t["marketing.demoBankTitle"]}</p>
+                    <p className="text-sm font-medium">
+                      <T k="pageLabels.bankCsvStatementImport" />
+                    </p>
                   </div>
-                  <p className="mt-1 text-sm">{t["marketing.demoBankBody"]}</p>
+                  <p className="mt-1 text-sm">{t["marketing.bankBody"]}</p>
                 </div>
                 <div className="divide-hairline rounded-lg border">
                   {bankLines.map((line) => (

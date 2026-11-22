@@ -6,21 +6,21 @@ import { requirePermission } from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
+import { createLogger } from "../config/logger";
 import { storage } from "../storage";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
+import { manualBankConnectionBody } from "../../shared/validators/banking";
 import {
-  bankFeedCallbackBody,
-  bankFeedConnectBody,
-  bankFeedSyncBody,
-  manualBankConnectionBody,
-} from "../../shared/validators/banking";
-import type { BankConnection } from "../../shared/schema";
+  retireAutomaticBanking,
+  retiredBankingError,
+  sanitizeConnection,
+} from "../services/bank-feeds";
 import {
   importConnectionStatement,
   linkConnectionStatement,
   parseStatementCsv,
   statementImportChoice,
 } from "../services/bank-import.service";
-import { createLogger } from "../config/logger";
 import { z } from "zod";
 import { zUuid } from "../../shared/validators/primitives";
 import { parseReportDate, uaeToday } from "../reporting";
@@ -41,19 +41,9 @@ async function assertAccess(req: Request, companyId: string): Promise<void> {
 async function ownedConnection(req: Request, id: string, companyId?: string) {
   const connection = await storage.getBankConnection(id);
   if (!connection || (companyId && connection.companyId !== companyId))
-    throw new DomainError(
-      "BANK_CONNECTION_NOT_FOUND",
-      404,
-      undefined,
-      "Statement import record not found"
-    );
+    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, "Bank connection not found");
   if (!(await storage.hasCompanyAccess(userId(req), connection.companyId)))
-    throw new DomainError(
-      "BANK_CONNECTION_NOT_FOUND",
-      404,
-      undefined,
-      "Statement import record not found"
-    );
+    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, "Bank connection not found");
   return connection;
 }
 
@@ -64,33 +54,10 @@ const connectionImportBody = z
   })
   .strict();
 const connectionLinkBody = z.object({ bankAccountId: zUuid }).strict();
-const statementImport = { format: "csv", href: "/bank-reconciliation?import=1" };
 
-function sanitizeConnection({
-  accessToken: _accessToken,
-  refreshToken: _refreshToken,
-  ...record
-}: BankConnection) {
-  void _accessToken;
-  void _refreshToken;
-  return {
-    ...record,
-    autoSync: false,
-    hasToken: false,
-    ...(record.provider === "manual" ? {} : { status: "disconnected", lastError: null }),
-  };
-}
+export async function registerBankRoutes(app: Express) {
+  await retireAutomaticBanking();
 
-function statementUploadRequired(): never {
-  throw new DomainError(
-    "BANK_FEED_NOT_SUPPORTED",
-    410,
-    { statementImport },
-    "Open Bank Reconciliation to upload a CSV statement."
-  );
-}
-
-export function registerBankRoutes(app: Express) {
   // ─── Bank-account balances in account and base currency (W5-C, R14-16) ──
 
   const balanceAsOf = (req: Request): string =>
@@ -134,7 +101,7 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
-  // Compatibility record for older CSV statement callers.
+  // Create a statement source for CSV uploads.
   app.post(
     "/api/companies/:companyId/bank-connections",
     authMiddleware,
@@ -155,10 +122,9 @@ export function registerBankRoutes(app: Express) {
         accountName: body.accountName ?? null,
         bankAccountId: body.bankAccountId ?? null,
         iban: body.iban ?? null,
-        autoSync: false,
         status: "active",
       });
-      logger.info({ connectionId: connection.id, companyId }, "Statement import record created");
+      logger.info({ connectionId: connection.id, companyId }, "Bank connection created");
       res.status(201).json(sanitizeConnection(connection));
     })
   );
@@ -170,7 +136,7 @@ export function registerBankRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const connection = await ownedConnection(req, req.params.id);
       await storage.deleteBankConnection(connection.id);
-      res.json({ message: "Statement import record deleted" });
+      res.json({ message: "Bank connection deleted" });
     })
   );
 
@@ -237,17 +203,21 @@ export function registerBankRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     asyncHandler(async (_req: Request, res: Response) => {
-      // Older clients can still read this shape and discover the CSV upload destination.
       res.json({
         providers: [],
         isConfigured: false,
         statuses: [],
         redirectUris: [],
         capabilities: [],
-        statementImport,
+        csvImport: { available: true, message: BANK_RECONCILIATION_COPY },
       });
     })
   );
+
+  const retiredAuthorization = asyncHandler(async (req: Request, _res: Response) => {
+    await assertAccess(req, req.params.companyId);
+    throw retiredBankingError();
+  });
 
   app.post(
     "/api/companies/:companyId/bank-connections/connect",
@@ -255,12 +225,7 @@ export function registerBankRoutes(app: Express) {
     requireCustomer,
     requireFeature("bankImport"),
     requirePermission("settings.company"),
-    strictBody(bankFeedConnectBody),
-    asyncHandler(async (req: Request) => {
-      const { companyId } = req.params;
-      await assertAccess(req, companyId);
-      statementUploadRequired();
-    })
+    retiredAuthorization
   );
 
   app.post(
@@ -269,12 +234,7 @@ export function registerBankRoutes(app: Express) {
     requireCustomer,
     requireFeature("bankImport"),
     requirePermission("settings.company"),
-    strictBody(bankFeedCallbackBody),
-    asyncHandler(async (req: Request) => {
-      const { companyId } = req.params;
-      await assertAccess(req, companyId);
-      statementUploadRequired();
-    })
+    retiredAuthorization
   );
 
   app.post(
@@ -282,10 +242,9 @@ export function registerBankRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     requireFeature("bankImport"),
-    strictBody(bankFeedSyncBody),
-    asyncHandler(async (req: Request) => {
+    asyncHandler(async (req: Request, _res: Response) => {
       await ownedConnection(req, req.params.id);
-      statementUploadRequired();
+      throw retiredBankingError();
     })
   );
 
@@ -300,7 +259,7 @@ export function registerBankRoutes(app: Express) {
         "BANK_FEED_BALANCE_UNAVAILABLE",
         503,
         undefined,
-        "Open the reconciliation statement to review the bank balance."
+        BANK_RECONCILIATION_COPY.en
       );
     })
   );

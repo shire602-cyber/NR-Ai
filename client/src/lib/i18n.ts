@@ -1,5 +1,6 @@
 // Internationalization utilities for English/Arabic support
 import { siteLocale } from "@/components/marketing/phase/routes";
+import { BANK_RECONCILIATION_COPY } from "@shared/bank-reconciliation-copy";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { FIRM_FIRST_SCREEN_NAMESPACES, LOCALE_COOKIE, firmFirstScreen } from "@shared/firm-boot";
@@ -410,7 +411,7 @@ const baseT = {
     pressEnterToSend: "Press Enter to send • Supports both English and Arabic",
 
     // Bank Reconciliation
-    bankReconciliationDescription: "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
+    bankReconciliationDescription: BANK_RECONCILIATION_COPY.en,
     autoMatch: "Auto-match",
     importCsv: "Import CSV",
     totalTransactions: "Total transactions",
@@ -424,7 +425,7 @@ const baseT = {
     match: "Match",
     unmatched: "Unmatched",
     importBankStatement: "Import Bank Statement",
-    uploadBankStatement: "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
+    uploadBankStatement: BANK_RECONCILIATION_COPY.en,
     bankAccount: "Bank Account",
     selectAccount: "Select account",
     bankStatementFile: "Bank Statement File (CSV)",
@@ -853,7 +854,7 @@ const baseT = {
     pressEnterToSend: "اضغط Enter للإرسال • يدعم اللغتين العربية والإنجليزية",
 
     // Bank Reconciliation
-    bankReconciliationDescription: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
+    bankReconciliationDescription: BANK_RECONCILIATION_COPY.ar,
     autoMatch: "مطابقة تلقائية",
     importCsv: "استيراد",
     totalTransactions: "إجمالي المعاملات",
@@ -867,7 +868,7 @@ const baseT = {
     match: "مطابقة",
     unmatched: "غير مسوى",
     importBankStatement: "استيراد كشف حساب البنك",
-    uploadBankStatement: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
+    uploadBankStatement: BANK_RECONCILIATION_COPY.ar,
     bankAccount: "حساب البنك",
     selectAccount: "اختر الحساب",
     bankStatementFile: "ملف كشف الحساب (CSV)",

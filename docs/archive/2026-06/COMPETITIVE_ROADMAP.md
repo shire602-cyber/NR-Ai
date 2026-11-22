@@ -70,7 +70,7 @@ Ready before rivals' SMEs migrate.
 
 ### P2 — Competitive parity — months 3–6
 Feature parity with Wafeq / Zoho.
-- CSV bank statement upload, review and reconciliation.
+- Bank reconciliation. Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 - Correct multi-currency + realised/unrealised FX; inventory with COGS.
 - Payroll + WPS/SIF end-to-end; 30+ report parity; period close + RE roll-forward; Arabic/RTL polish.
 

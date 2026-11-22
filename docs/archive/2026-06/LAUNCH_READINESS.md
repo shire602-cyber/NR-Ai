@@ -28,7 +28,7 @@ that runs in CI or locally, not by assertion._
 | Locked periods respected by VAT/CT/journal/AI posting                                                 | `assertPeriodNotLocked` call sites + E2E month-end flow                                                                                                                                                                        |
 | AI cannot mutate books without approval/audit                                                         | PR #52; autopilot threshold floor 0.8, draft-only AI GL queue, `ai_autopost_receipt` audit rows (`receipt-autopilot.test.ts`, 33 tests)                                                                                        |
 | Unpaid plan cannot access paid endpoints by changing frontend state                                   | `tests/unit/billing-enforcement.test.ts` — server-side 403 TIER_LOCKED with `BILLING_ENFORCEMENT=true`; gates mounted in 10+ route modules                                                                                     |
-| Signed-in banking uses CSV statement import | Upload a bank CSV, review transactions and reconcile them against the ledger. |
+| CSV bank statement reconciliation | Upload a CSV exported from your bank, review suggested matches, and reconcile against your books. |
 | Trust documentation                                                                                   | `docs/TRUST.md` (security, retention, backup proof, audit coverage, incident checklist)                                                                                                                                        |
 | No real-company data used                                                                             | All tests run against freshly seeded fixtures; E2E registers throwaway accounts per run                                                                                                                                        |
 
@@ -39,9 +39,8 @@ that runs in CI or locally, not by assertion._
 2. **Stripe** — keys + 8 price IDs, test a checkout, then flip
    `BILLING_ENFORCEMENT=true` **last**. Enforcement behavior is already
    tested.
-3. **Bank statements** — upload a CSV export, review transactions and reconcile.
-4. **Push** — `npx web-push generate-vapid-keys`, paste both keys.
-5. **Domain** — buy, point DNS at Railway, set `FRONTEND_URL` (now also
+3. **Push** — `npx web-push generate-vapid-keys`, paste both keys.
+4. **Domain** — buy, point DNS at Railway, set `FRONTEND_URL` (now also
    feeds CORS and password-reset links).
 5. **Live ASP/FTA e-invoicing provider** — when UAE accreditation lists
    firm up; XML generation/validation is ready and marked "not connected".

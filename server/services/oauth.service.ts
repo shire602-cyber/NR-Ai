@@ -7,9 +7,9 @@ import { db, rowsFromResult } from "../db";
 import { getEnv, isProduction } from "../config/env";
 import { authIdentities, oauthLoginStates, users } from "../../shared/schema";
 import {
-  BANK_AUTHORIZATION_RETURN_PATH,
-  isBankAuthorizationReturnPath,
-} from "../../shared/bank-authorization-paths";
+  BANK_STATEMENT_ENTRY,
+  isRetiredBankReturnPath,
+} from "../../shared/bank-statement-routes";
 
 export type OAuthProviderId = "google" | "microsoft";
 
@@ -209,7 +209,7 @@ export function sanitizeOAuthNextPath(input: unknown): string {
   try {
     const parsed = new URL(trimmed, "https://muhasib.local");
     if (parsed.origin !== "https://muhasib.local") return "/dashboard";
-    if (isBankAuthorizationReturnPath(parsed.pathname)) return BANK_AUTHORIZATION_RETURN_PATH;
+    if (isRetiredBankReturnPath(parsed.pathname)) return BANK_STATEMENT_ENTRY;
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {
     return "/dashboard";

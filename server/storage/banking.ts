@@ -1,4 +1,4 @@
-// DatabaseStorage part: Bank accounts, transactions, statement associations and reconciliation rules.
+// DatabaseStorage part: Bank accounts, bank transactions, bank connections and reconciliation rules.
 // Domain classes are chained with `extends` and composed into DatabaseStorage in
 // server/storage.ts (R20-09); import `storage` from "./storage", not these classes.
 
@@ -18,8 +18,12 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { encryptSecret } from "../services/secret-vault";
 import { IntegrationStorage } from "./integrations";
+
+type StatementConnectionInsert = Omit<
+  InsertBankConnection,
+  "accessToken" | "refreshToken" | "tokenExpiresAt" | "consentId" | "autoSync"
+>;
 
 export class BankingStorage extends IntegrationStorage {
   // Bank Accounts
@@ -105,7 +109,7 @@ export class BankingStorage extends IntegrationStorage {
       .orderBy(desc(bankTransactions.transactionDate));
   }
 
-  // Compatibility records are read without opening historical credentials.
+  // Bank connections
   async getBankConnectionsByCompanyId(companyId: string): Promise<BankConnection[]> {
     return db
       .select()
@@ -123,58 +127,21 @@ export class BankingStorage extends IntegrationStorage {
     return connection;
   }
 
-  async createBankConnection(data: InsertBankConnection): Promise<BankConnection> {
-    const [connection] = await db
-      .insert(bankConnections)
-      .values({
-        ...data,
-        accessToken: encryptSecret(data.accessToken ?? null),
-        refreshToken: encryptSecret(data.refreshToken ?? null),
-      })
-      .returning();
+  async createBankConnection(data: StatementConnectionInsert): Promise<BankConnection> {
+    const [connection] = await db.insert(bankConnections).values(data).returning();
     return connection;
   }
 
   async updateBankConnection(
     id: string,
-    data: Partial<InsertBankConnection>
+    data: Partial<Pick<StatementConnectionInsert, "bankAccountId" | "lastSyncedAt">>
   ): Promise<BankConnection | undefined> {
-    const patch: Partial<InsertBankConnection> = { ...data };
-    if ("accessToken" in patch) patch.accessToken = encryptSecret(patch.accessToken ?? null);
-    if ("refreshToken" in patch) patch.refreshToken = encryptSecret(patch.refreshToken ?? null);
     const [connection] = await db
       .update(bankConnections)
-      .set({ ...patch, updatedAt: new Date() })
+      .set({ ...data, updatedAt: new Date() })
       .where(eq(bankConnections.id, id))
       .returning();
     return connection;
-  }
-
-  async updateBankConnectionTokens(
-    id: string,
-    tokens: {
-      accessToken?: string;
-      refreshToken?: string | null;
-      tokenExpiresAt?: Date | null;
-      status?: string;
-      lastError?: string | null;
-    }
-  ): Promise<void> {
-    await db
-      .update(bankConnections)
-      .set({
-        ...(tokens.accessToken !== undefined
-          ? { accessToken: encryptSecret(tokens.accessToken) }
-          : {}),
-        ...(tokens.refreshToken !== undefined
-          ? { refreshToken: encryptSecret(tokens.refreshToken) }
-          : {}),
-        ...(tokens.tokenExpiresAt !== undefined ? { tokenExpiresAt: tokens.tokenExpiresAt } : {}),
-        ...(tokens.status !== undefined ? { status: tokens.status } : {}),
-        ...(tokens.lastError !== undefined ? { lastError: tokens.lastError } : {}),
-        updatedAt: new Date(),
-      })
-      .where(eq(bankConnections.id, id));
   }
 
   async deleteBankConnection(id: string): Promise<void> {

@@ -166,7 +166,7 @@ describe("bank statement import dialog", () => {
     expect(lines.filter((line) => isEnglishLine(line))).toEqual([]);
     const text = d!.textContent ?? "";
     expect(text).toContain("استيراد");
-    expect(text).toContain("الصيغ المدعومة");
+    expect(text).toContain("متطلبات ملف CSV");
     expect(text).toContain("CSV");
     expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT|OFX/);
     expect(d!.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
@@ -177,7 +177,7 @@ describe("bank statement import dialog", () => {
   it("in English: the same lines come from the catalog", async () => {
     await mountPage("en");
     const text = dialog()?.textContent ?? "";
-    expect(text).toContain("CSV exports can use commas, semicolons or tabs.");
+    expect(text).toContain("CSV files can use commas, semicolons, or tabs");
     expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT|OFX/);
     expect(dialog()?.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
       "Import"

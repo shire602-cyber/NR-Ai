@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { DOMParser } from "@xmldom/xmldom";
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
-import { bankStatementCopy } from "../../shared/bank-statement-copy";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { pdfToText } from "./pdf-test-helpers";
 import { unsupportedStatementCopy } from "../helpers/statement-copy.mjs";
 
@@ -32,6 +32,8 @@ const publicLaunchFiles = [
   "client/src/components/marketing/phase/PhaseSite.tsx",
   "client/src/components/marketing/phase/content.ts",
   "client/src/components/marketing/phase/Forms.tsx",
+  "client/src/components/marketing/phase/editorial/pages.ts",
+  "client/src/components/marketing/phase/editorial/details.ts",
   "client/src/components/auth/AuthLayout.tsx",
   "client/src/pages/Register.tsx",
   "client/src/pages/Services.tsx",
@@ -125,7 +127,7 @@ describe("Public SaaS launch surface", () => {
     ]) {
       const words = text.replace(/\s+/g, " ");
       expect(
-        words.includes(bankStatementCopy.en),
+        words.includes(BANK_RECONCILIATION_COPY.en),
         format
       ).toBe(true);
       expect(/\bbank\s+feeds?\b|\bopen\s+banking\b/i.test(words), format).toBe(false);
@@ -198,13 +200,21 @@ describe("Public SaaS launch surface", () => {
   it("documents a CSV upload and removes the retired transaction setting from both catalogs", () => {
     // The archived teardown and unused catalog entries have no runtime surface to render.
     const teardown = readRepoFile("docs/archive/root/Muhasib-Teardown-2026-08-07.md");
-    expect(teardown).toContain("| Bank reconciliation | CSV statement import |");
+    expect(teardown).toContain(BANK_RECONCILIATION_COPY.en);
     expect(teardown).not.toMatch(/add (?:direct )?bank \w+ later/i);
     for (const locale of ["en", "ar"]) {
       const labels = JSON.parse(readRepoFile(`client/src/locales/${locale}/pageLabels.json`));
       expect(labels).not.toHaveProperty(["pageLabels.syncNewTransactionsEveryHour"]);
-      const banking = JSON.parse(readRepoFile(`client/src/locales/${locale}/banking.json`));
-      expect(banking["banking.feeds.unavailableBody"]).toContain("CSV");
+      const prefix = `client/src/locales/${locale}`;
+      const keys = [
+        ["marketing", "marketing.faq3A"],
+        ["banking", "banking.emptyTransactionsDescription"],
+        ["serverErrors", "serverErrors.BANK_FEED_NOT_CONFIGURED"],
+      ];
+      for (const [catalog, key] of keys) {
+        const source = JSON.parse(readRepoFile(`${prefix}/${catalog}.json`));
+        expect(source[key], `${locale} ${key}`).toMatch(/CSV/);
+      }
     }
   });
 
@@ -327,7 +337,7 @@ describe("Public SaaS launch surface", () => {
     // Services: rebuilt on the home section system, no roadmap or hype blocks.
     expect(servicesPage).toContain("@/components/marketing/Sections");
     for (const banned of [
-      "Coming Soon",
+      ["Coming", "Soon"].join(" "),
       "Voice Commands",
       "AI CFO",
       "Powered by AI",
@@ -381,6 +391,49 @@ describe("Public SaaS launch surface", () => {
     ]) {
       expect(demoSource).toContain(expectedDemoSignal);
     }
+  });
+
+  it.each(["en", "ar"] as const)("uses the same CSV wording in %s customer copy", (locale) => {
+    const load = (namespace: string): Record<string, string> =>
+      JSON.parse(readRepoFile(`client/src/locales/${locale}/${namespace}.json`));
+    const banking = load("banking");
+    const errors = load("serverErrors");
+    const marketing = load("marketing");
+    const csv = BANK_RECONCILIATION_COPY[locale];
+    const faq =
+      locale === "en" ? "How do I reconcile my bank statement?" : "كيف أطابق كشف حسابي البنكي؟";
+    const phase = readRepoFile("client/src/components/marketing/phase/PhaseSite.tsx");
+    const gallery = readRepoFile("client/src/dev/UiGallery.tsx");
+
+    expect(marketing["marketing.faq3Q"]).toBe(faq);
+    expect(marketing).not.toHaveProperty(["marketing.prRowAiReceiptsNote"]);
+    expect(phase).toContain(faq);
+    expect(gallery).toContain(
+      "description={L(BANK_RECONCILIATION_COPY.en, BANK_RECONCILIATION_COPY.ar)}"
+    );
+    expect(gallery).not.toMatch(/connect your bank|اربط حسابك البنكي/i);
+    expect(load("portal")).not.toHaveProperty(["portal.eventType.bank.sync_failed"]);
+    expect(load("components")).not.toHaveProperty([
+      "components.srv.notification.bankSyncFailed.title",
+    ]);
+    const providerErrors = Object.entries(errors).filter(([key]) =>
+      key.startsWith("serverErrors.BANK_FEED_")
+    );
+    expect(providerErrors).not.toHaveLength(0);
+    for (const [key, message] of providerErrors) expect(message, key).toBe(csv);
+    expect([
+      banking["banking.emptyTransactionsDescription"],
+      marketing["marketing.bankBody"],
+      marketing["marketing.faq3A"],
+      marketing["marketing.helpGuide4Body"],
+      marketing["marketing.prEveryBankBody"],
+    ]).toEqual(Array(5).fill(csv));
+  });
+
+  it("documents CSV reconciliation without an availability claim about bank providers", () => {
+    const audit = readRepoFile("docs/archive/root/muhasibaisource20260611-audit.md");
+    expect(audit).not.toMatch(/no\s+live\s+bank\s+feeds/i);
+    expect(audit).toContain(BANK_RECONCILIATION_COPY.en);
   });
 
   // X6b: the old test here compared advertised free-plan limits with source text. Pricing, the
