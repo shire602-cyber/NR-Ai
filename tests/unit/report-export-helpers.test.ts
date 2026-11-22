@@ -1,5 +1,12 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import type {
+  JournalEntryReportRow,
+  ReceiptReportRow,
+} from "../../client/src/pages/reports/model/reportTypes";
 import { collectInvoiceExportRows } from "../../client/src/lib/invoice-filters";
 import { describe, expect, it, vi } from "vitest";
+import { clearCsrfToken } from "../../client/src/lib/csrf";
 import { loadLocale, translateNow, useI18n } from "../../client/src/lib/i18n";
 import {
   reportAutomationStarters,
@@ -147,6 +154,32 @@ describe("report export helpers", () => {
       );
       expect(fetch).not.toHaveBeenCalled();
     } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("rechecks the active company after the workbook response and before downloading", async () => {
+    clearCsrfToken();
+    const request = vi.fn()
+      .mockResolvedValueOnce(Response.json({ csrfToken: "test-token" }))
+      .mockResolvedValueOnce(new Response("workbook"));
+    vi.stubGlobal("fetch", request);
+    const download = vi.spyOn(URL, "createObjectURL");
+    const assertActive = vi.fn()
+      .mockImplementationOnce(() => {})
+      .mockImplementationOnce(() => { throw new Error("Company changed"); });
+
+    try {
+      const sheets = [{ columns: [{ header: "Value", key: "value" }], rows: [{ value: 10 }] }];
+      await expect(exportToExcel(sheets, "workbook", { assertActive })).rejects.toThrow(
+        "Company changed"
+      );
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(assertActive).toHaveBeenCalledTimes(2);
+      expect(download).not.toHaveBeenCalled();
+    } finally {
+      clearCsrfToken();
+      download.mockRestore();
       vi.unstubAllGlobals();
     }
   });
@@ -584,14 +617,14 @@ describe("report export helpers", () => {
       autoPostedReceipts: 1,
       unpostedReceipts: 1,
       subtotalAed: 1900,
-      vatAed: 95,
+      receiptVat: 95,
       totalAed: 1995,
       debitAed: 1900,
       creditAed: 0,
       lineCount: 2,
       entryCount: 1,
       basis: "Posted journal lines where the linked chart-of-account type is expense.",
-      receiptSpendAed: 1995,
+      receiptSpend: 1995,
       byVendor: [
         {
           label: "Travel Desk LLC",
@@ -1001,4 +1034,120 @@ describe("report export helpers", () => {
       openBalanceAed: "6100.00",
     });
   });
+});
+
+it("exports actual cash spent once and reports VAT separately", async () => {
+  const { receiptSpendInBase, receiptVatInBase } =
+    await import("../../client/src/pages/reports/model/reportDocuments");
+  const reverseCharge = {
+    amount: 100,
+    vatAmount: 5,
+    exchangeRate: 0.9,
+    baseCurrencyAmount: 90,
+    reverseCharge: true,
+    posted: true,
+  } as never;
+  const regular = {
+    amount: 100,
+    vatAmount: 5,
+    exchangeRate: 0.9,
+    baseCurrencyAmount: 94.5,
+    posted: true,
+  } as never;
+  const sheet = prepareExpenseReportsForExport({
+    receiptSpend: receiptSpendInBase(reverseCharge) + receiptSpendInBase(regular),
+    receiptVat: receiptVatInBase(reverseCharge) + receiptVatInBase(regular),
+  }).find((sheet) => sheet.sheetName === "Posting Automation");
+  expect(sheet?.rows).toEqual(
+    expect.arrayContaining([
+      { metric: "Receipt spend captured (AED)", value: "184.50" },
+      { metric: "Receipt VAT captured (AED)", value: "9.00" },
+    ])
+  );
+});
+
+it("exports the booked receipt payment and captured VAT in EUR", async () => {
+  const { useReportsDerivedReports } =
+    await import("../../client/src/pages/reports/hooks/useReportsDerivedReports");
+  const receipt: ReceiptReportRow = {
+    id: "receipt",
+    merchant: "Office supplies",
+    date: "2026-11-20",
+    amount: 100,
+    vatAmount: 5,
+    currency: "USD",
+    exchangeRate: 0.9,
+    baseCurrencyAmount: 94.58,
+    journalEntryId: "posted-entry",
+    paymentAccountId: "bank",
+    category: null,
+    posted: true,
+    autoPosted: false,
+  };
+  const entry: JournalEntryReportRow = {
+    id: "posted-entry",
+    entryNumber: "JE-001",
+    date: "2026-11-20",
+    source: "receipt",
+    status: "posted",
+    lines: [
+      {
+        id: "expense-line",
+        entryId: "posted-entry",
+        accountId: "expense",
+        debit: 90,
+        credit: 0,
+        account: { id: "expense", type: "expense", code: "5000", nameEn: "Office expense" },
+      },
+      { id: "vat-line", entryId: "posted-entry", accountId: "vat", debit: 4.5, credit: 0 },
+      { id: "payment-line", entryId: "posted-entry", accountId: "bank", debit: 0, credit: 94.5 },
+    ],
+  };
+  const sheets: ReturnType<typeof prepareExpenseReportsForExport> = [];
+  type ReportInputs = Parameters<typeof useReportsDerivedReports>[0];
+  function ExpenseReportFixture() {
+    const { expenseReport } = useReportsDerivedReports({
+      agingReport: [],
+      balanceSummaries: undefined,
+      billAgingReport: undefined,
+      consolidatedStatementSources: [],
+      dateRange: { from: undefined, to: undefined },
+      depreciationPeriodDate: new Date(2026, 10, 1),
+      expenseClaimSummary: undefined,
+      expenseClaimSummaryLoading: false,
+      expenseClaims: [],
+      expenseClaimsLoading: false,
+      fixedAssetSummary: undefined,
+      fixedAssets: [],
+      inventoryMovements: [],
+      inventoryProducts: [],
+      invoices: [],
+      invoicesLoading: false,
+      journalEntries: [entry],
+      journalLoading: false,
+      overdueLoading: false,
+      overdueReport: undefined,
+      payrollRuns: [],
+      payrollRunsLoading: false,
+      receipts: [receipt],
+      receiptsLoading: false,
+      salesProductServiceReport: undefined,
+      selectedCompany: { id: "company", baseCurrency: "EUR" } as ReportInputs["selectedCompany"],
+      trialBalance: undefined,
+      vendorBills: [],
+    });
+    sheets.push(...prepareExpenseReportsForExport(expenseReport));
+    return null;
+  }
+  renderToStaticMarkup(createElement(ExpenseReportFixture));
+  const posting = sheets.find((sheet) => sheet.sheetName === "Posting Automation");
+  expect(posting?.rows).toEqual(
+    expect.arrayContaining([
+      { metric: "Receipt spend captured (EUR)", value: "94.50" },
+      { metric: "Receipt VAT captured (EUR)", value: "4.50" },
+      { metric: "Posted expense debits (EUR)", value: "90.00" },
+    ])
+  );
+  expect(posting?.rows.some(({ metric }) => String(metric).includes("(AED)"))).toBe(false);
+  expect(sheets[0].columns).toContainEqual(expect.objectContaining({ header: "Debit (EUR)" }));
 });

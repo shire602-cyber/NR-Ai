@@ -48,6 +48,8 @@ customer banking workflow, users upload CSV statements for import and reconcilia
 
 ## Storage locations
 
+Customers supply bank transaction data by uploading a CSV exported from their bank. The customer banking screens route uploads and reconciliation through the application. The server retains optional provider adapters, which require separate configuration and are outside the customer CSV workflow.
+
 Data residency depends on the regions chosen for the hosting, database and storage
 providers at deployment time. The application does not pin a region itself. See
 `pdpl-data-residency.md` for the open decisions.

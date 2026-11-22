@@ -100,18 +100,21 @@ export function PageHeader({
         {backHref && (
           <Link
             href={backHref}
-            className="mb-3 inline-flex items-center gap-1.5 rounded-md text-small font-medium text-muted-foreground transition-colors duration-fast hover:text-foreground"
+            className="mb-2 inline-flex min-h-11 items-center sm:min-h-8 gap-1.5 rounded-md text-small font-medium text-muted-foreground transition-colors duration-fast hover:text-foreground"
           >
             <ArrowLeft className="h-3.5 w-3.5 rtl:rotate-180" aria-hidden />
             {backLabel ?? t["components.back"]}
           </Link>
         )}
         {eyebrow && <div className="eyebrow mb-1.5 text-accent">{translatedEyebrow}</div>}
-        <h1 className="min-w-0 text-h1 text-foreground" data-testid={testId ?? "text-page-title"}>
+        <h1
+          className="min-w-0 break-words text-h1 text-foreground"
+          data-testid={testId ?? "text-page-title"}
+        >
           {title}
         </h1>
         {description && (
-          <p className="mt-1 max-w-2xl text-body text-muted-foreground text-pretty">
+          <p className="mt-2 max-w-prose text-body text-muted-foreground text-pretty">
             {description}
           </p>
         )}

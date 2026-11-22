@@ -129,9 +129,13 @@ it("aggregates vendor credit applications once, net of reversals and within the 
     }
   );
   expect(result.unappliedCredits).toBe(110);
-  const paymentScans = plan.filter((node) => node["Relation Name"] === "bill_payments");
-  expect(paymentScans).toHaveLength(1);
-  expect(paymentScans[0]["Actual Loops"]).toBe(1);
+  // The aging statement also reads payments for open bill balances. Check the
+  // scan that aggregates vendor credit applications, aliased va in settlement.ts.
+  const creditScans = plan.filter(
+    (node) => node["Relation Name"] === "bill_payments" && node.Alias === "va"
+  );
+  expect(creditScans).toHaveLength(1);
+  expect(creditScans[0]["Actual Loops"]).toBe(1);
 });
 
 it("calculates remaining credit-note amounts using only the originating company's notes", async () => {

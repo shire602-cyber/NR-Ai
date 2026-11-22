@@ -1,3 +1,4 @@
+import { isVatFilingRecorded } from "../../shared/vat-filing-status";
 /**
  * VAT return settlement (accounting round A integration; A2 H8 follow-up).
  *
@@ -46,8 +47,6 @@ import {
 
 export { VAT_SETTLEMENT_SOURCE };
 
-const SETTLEABLE = new Set(["submitted", "filed"]);
-
 interface GroupSettlementEvidence {
   outputFils: number;
   inputFils: number;
@@ -59,6 +58,7 @@ interface GroupSettlementEvidence {
 interface ReturnRow {
   id: string;
   status: string;
+  fta_reference_number: string | null;
   period_start: string;
   period_end: string;
   box12: string;
@@ -85,7 +85,7 @@ async function loadReturn(
   forUpdate = true
 ): Promise<ReturnRow> {
   const { rows } = await ledgerQueryable(tx).query(
-    `SELECT id, status, period_start::date::text AS period_start,
+    `SELECT id, status, fta_reference_number, period_start::date::text AS period_start,
             period_end::date::text AS period_end, box12_total_due_tax::text AS box12,
             box13_recoverable_tax::text AS box13, engine_version, vat_group_id, amends_return_id,
             reconciliation_snapshot, payment_status,
@@ -673,12 +673,12 @@ export async function settleVatReturn(input: {
         prior
       );
     }
-    if (!SETTLEABLE.has(ret.status)) {
+    if (ret.status === "amended" || !isVatFilingRecorded(ret.status, ret.fta_reference_number)) {
       throw new DomainError(
         "VAT_RETURN_NOT_SUBMITTED",
         409,
         { status: ret.status },
-        "Submit the VAT return before recording its payment or refund"
+        "Record the EmaraTax filing before recording the payment or refund"
       );
     }
     if (input.date <= ret.period_end) {

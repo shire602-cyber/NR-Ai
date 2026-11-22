@@ -107,7 +107,7 @@ export function useReportsExports({
       await exportToExcel(
         buildWorkspaceReportPack(workspace),
         `${workspace.persona}_report_pack${exportDateRangeSuffix}`,
-        true
+        { reportPack: true }
       );
       toast({
         title: translateNow("toasts.reportPackExported"),

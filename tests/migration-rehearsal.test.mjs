@@ -55,7 +55,7 @@ test("rehearses the journal and rollback entirely on disposable PostgreSQL", () 
   assert.match(result.stdout, /Original 0097 hash and incorrect legacy GL link verified/);
   assert.match(
     result.stdout,
-    /Base-to-head ledger added 0138_secure_portal_invitations, 0139_bind_portal_invite_and_verification_lifecycle, 0140_preserve_reminder_language, 0141_firm_membership_provenance, 0144_prepare_preview_firm_membership, 0142_recover_firm_membership_provenance, 0143_preserve_firm_grant_review, 0138_repair_bank_gl_links, 0139_audit_bank_match_links, 0140_repair_bank_receipt_provenance, 0141_restore_legacy_invoice_bank_provenance/
+    /Base-to-head ledger added 0138_secure_portal_invitations, 0139_bind_portal_invite_and_verification_lifecycle, 0140_preserve_reminder_language, 0141_firm_membership_provenance, 0144_prepare_preview_firm_membership, 0142_recover_firm_membership_provenance, 0143_preserve_firm_grant_review, 0144_receipt_invoice_number, 0145_receipt_rate_and_capture, 0138_repair_bank_gl_links, 0139_audit_bank_match_links, 0140_repair_bank_receipt_provenance, 0141_restore_legacy_invoice_bank_provenance/
   );
   assert.match(result.stdout, /Forward GL repair and tenant mismatch findings verified/);
   assert.match(result.stdout, /Tracked rerun historical_upgrade \d+ ms/);
@@ -78,5 +78,6 @@ test("rehearses the journal and rollback entirely on disposable PostgreSQL", () 
     /Forward invoice journal provenance and linked payment verified from 48b878ba/
   );
   assert.match(result.stdout, /Preview catch-up verified from 0be21c6d/);
+  assert.match(result.stdout, /Preview catch-up verified from a3eb9a2a/);
   assert.match(result.stdout, /Migration rehearsal passed/);
 });

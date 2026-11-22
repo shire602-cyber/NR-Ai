@@ -1,3 +1,4 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ui/page-header";
@@ -7,15 +8,16 @@ import { portalQuery } from "@/lib/queryClient";
 import { useTranslation } from "@/lib/i18n";
 
 export default function PortalInvoices() {
+  const supplier = usePortalAccountScope();
   const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: invoices = [], isLoading } = useQuery<PortalInvoice[]>({
-    ...portalQuery("/api/client-portal/invoices"),
+    ...portalQuery("/api/client-portal/invoices", supplier),
     staleTime: 60_000,
   });
   const { data: dashboard } = useQuery<{ onlinePayment?: { available: boolean } }>({
-    ...portalQuery("/api/client-portal/dashboard"),
+    ...portalQuery("/api/client-portal/dashboard", supplier),
     staleTime: 60_000,
   });
 

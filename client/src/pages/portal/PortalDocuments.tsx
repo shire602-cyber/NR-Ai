@@ -1,3 +1,4 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { T } from "@/components/layout/T";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { useState, useRef } from "react";
@@ -10,17 +11,16 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DateText } from "@/components/documents/DateText";
 import { fetchPortalResource, portalQuery } from "@/lib/queryClient";
-import { getAuthHeaders } from "@/lib/auth";
+import { portalRequestHeaders } from "@/lib/portal-state";
 import { withCsrfHeader } from "@/lib/csrf";
 
 /** W4-D (R16-09): real multipart upload; the server sniffs the bytes and stores them. */
-async function uploadDocument(file: File) {
+async function uploadDocument(file: File, supplier: string) {
   const form = new FormData();
   form.append("name", file.name.replace(/\.[^.]+$/, ""));
   form.append("category", "other");
   form.append("file", file, file.name);
-  let headers: Record<string, string> = { ...getAuthHeaders() };
-  if (!headers.Authorization) headers = await withCsrfHeader("POST", headers);
+  const headers = await withCsrfHeader("POST", portalRequestHeaders(supplier));
   const res = await fetchPortalResource("/api/client-portal/documents", {
     method: "POST",
     headers,
@@ -55,6 +55,7 @@ function formatBytes(bytes: number | null) {
 }
 
 export default function PortalDocuments() {
+  const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -62,11 +63,11 @@ export default function PortalDocuments() {
   const [uploading, setUploading] = useState(false);
 
   const { data: documents = [], isLoading } = useQuery<any[]>({
-    ...portalQuery("/api/client-portal/documents"),
+    ...portalQuery("/api/client-portal/documents", supplier),
   });
 
   const uploadMutation = useMutation({
-    mutationFn: (file: File) => uploadDocument(file),
+    mutationFn: (file: File) => uploadDocument(file, supplier),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-documents"] });
       toast({
@@ -88,6 +89,8 @@ export default function PortalDocuments() {
     setUploading(true);
     try {
       await uploadMutation.mutateAsync(file);
+    } catch {
+      // The mutation reports upload failures to the customer.
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";

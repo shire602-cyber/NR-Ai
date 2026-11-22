@@ -61,7 +61,7 @@ export function DashboardHero({ m, empty = false }: { m: DashboardModel; empty?:
             )}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Button asChild variant="outline" data-testid="button-quick-receipt">
             <Link href="/receipts">
               <Receipt aria-hidden />

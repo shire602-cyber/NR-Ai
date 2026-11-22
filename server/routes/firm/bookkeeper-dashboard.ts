@@ -1,6 +1,7 @@
 // Firm bookkeeper dashboard handler: per-client work queues, deadlines and intervention scoring.
 // Handlers moved from firm.routes.ts (R20-09); the route registrations (paths and
 // middleware order) stay in firm.routes.ts.
+import { isVatFilingRecorded } from "../../../shared/vat-filing-status";
 import { CLIENT_SERVICE_OPTIONS } from "@shared/client-services";
 import type { Request, Response } from "express";
 import {
@@ -131,6 +132,7 @@ export async function buildBookkeeperDashboard(userId: string, firmRole: string,
     periodEnd: Date;
     dueDate: Date;
     status: string;
+    ftaReferenceNumber: string | null;
     payableTax: number;
     submittedAt: Date | null;
     updatedAt: Date | null;
@@ -179,6 +181,7 @@ export async function buildBookkeeperDashboard(userId: string, firmRole: string,
         periodEnd: vatReturns.periodEnd,
         dueDate: vatReturns.dueDate,
         status: vatReturns.status,
+        ftaReferenceNumber: vatReturns.ftaReferenceNumber,
         payableTax: vatReturns.box14PayableTax,
         submittedAt: vatReturns.submittedAt,
         updatedAt: vatReturns.updatedAt,
@@ -273,8 +276,7 @@ export async function buildBookkeeperDashboard(userId: string, firmRole: string,
     const latestVat = vatMap.get(company.id) ?? null;
     const latestVatIsOpen =
       latestVat &&
-      latestVat.status !== "filed" &&
-      latestVat.status !== "submitted" &&
+      !isVatFilingRecorded(latestVat.status, latestVat.ftaReferenceNumber) &&
       new Date(latestVat.dueDate) <= plannedVat.dueDate;
     const vatWindow = latestVatIsOpen ? latestVat : plannedVat;
     const vatDueDate = latestVatIsOpen ? latestVat.dueDate : plannedVat.dueDate;
@@ -320,7 +322,7 @@ export async function buildBookkeeperDashboard(userId: string, firmRole: string,
 
     const vatFiled =
       latestVat &&
-      (latestVat.status === "filed" || latestVat.status === "submitted") &&
+      isVatFilingRecorded(latestVat.status, latestVat.ftaReferenceNumber) &&
       new Date(latestVat.periodEnd) >= plannedVat.periodEnd;
     const vatPriority = !hasVatService
       ? "on_track"

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -34,7 +34,7 @@ import {
 } from "@/lib/portal-state";
 import { useSessionActions } from "@/hooks/useSessionActions";
 import { PortalStatePage } from "@/components/portal/PortalStatePage";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PortalAccountScope } from "@/lib/portal-scope";
 import { useActiveIntoView, useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { bidiIsolate } from "@/lib/customer-link";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
@@ -418,15 +418,17 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                 />
               </div>
             ) : company ? (
-              <Fragment key={selection}>{children}</Fragment>
+              <PortalAccountScope.Provider key={selection} value={selection}>
+                {children}
+              </PortalAccountScope.Provider>
             ) : companyError ? (
               <p className="mx-auto max-w-md py-16 text-center" role="alert">
                 {companyError.message}
               </p>
             ) : (
               <div className="mx-auto max-w-[960px] space-y-4" role="status" aria-busy="true">
-                <Skeleton className="h-8 w-48" />
-                <Skeleton className="h-24 w-full" />
+                <div className="h-8 w-48 animate-pulse rounded-md bg-muted" />
+                <div className="h-24 w-full animate-pulse rounded-md bg-muted" />
               </div>
             )}
           </div>

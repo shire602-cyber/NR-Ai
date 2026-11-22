@@ -17,6 +17,7 @@ import {
   UserRoundCheck,
   type LucideIcon,
 } from "lucide-react";
+import { PageSkeleton } from "@/components/PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -96,7 +97,11 @@ export function CustomerOnboarding() {
   const { company, isLoading } = useActiveCompany();
   const progress = useOnboardingProgress(company?.id);
   if (isLoading || (company?.id && progress.isLoading)) {
-    return <OnboardingShell total={TOTAL}>{null}</OnboardingShell>;
+    return (
+      <OnboardingShell total={TOTAL}>
+        <PageSkeleton variant="form" />
+      </OnboardingShell>
+    );
   }
   if (company && !canRunCompanyOnboarding(company)) {
     return <OwnerStillSettingUp companyName={company.name} />;

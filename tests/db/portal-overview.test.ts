@@ -30,10 +30,93 @@ async function portalFor(t: Tenant, name: string) {
     token: link.body.token as string,
     contactId: c.body.id as string,
     number: inv.body.number as string,
+    invoiceId: inv.body.id as string,
   };
 }
 
 describe("portal overview", () => {
+  it("honors the selected supplier on statement downloads and rejects a revoked selection", async () => {
+    const first = await h.createTenant();
+    const second = await h.createSecondTenant();
+    const customer = await h.createSecondTenant();
+    const a = await portalFor(first, "First Customer");
+    const b = await portalFor(second, "Second Customer");
+    const [older, newer] = await h.sql(
+      `INSERT INTO customer_portal_accounts (user_id, company_id, contact_id, created_at)
+       VALUES ($1, $2, $3, now() - interval '1 day'), ($1, $4, $5, now()) RETURNING id`,
+      [customer.user.id, first.company.id, a.contactId, second.company.id, b.contactId]
+    );
+    const url = "/api/client-portal/statements";
+    const unscoped = await customer.as.get(url);
+    expect(unscoped.body.accountId).toBe(newer.id);
+    const headers = { "X-Portal-Account": older.id };
+    const selected = await customer.as.get(url, { headers });
+    expect(selected.body).toMatchObject({ accountId: older.id, party: { id: a.contactId } });
+    for (const [binding, owner, data] of [
+      [older, first, a],
+      [newer, second, b],
+    ] as const) {
+      const scoped = { headers: { "X-Portal-Account": binding.id } };
+      expect((await customer.as.get("/api/client-portal/company", scoped)).body).toMatchObject({
+        id: owner.company.id,
+        portalAccountId: binding.id,
+      });
+      expect((await customer.as.get("/api/client-portal/invoices", scoped)).body).toMatchObject([
+        { id: data.invoiceId },
+      ]);
+      expect((await customer.as.get("/api/client-portal/dashboard", scoped)).body).toMatchObject({
+        recentInvoices: [{ id: data.invoiceId }],
+      });
+      expect((await customer.as.get(url, scoped)).body).toMatchObject({
+        accountId: binding.id,
+        party: { id: data.contactId },
+      });
+    }
+    const pdf = await customer.as.get(`${url}?format=pdf`, { headers });
+    expect(pdf.status, pdf.text).toBe(200);
+    expect(pdf.headers.get("content-type")).toContain("application/pdf");
+    const messageUrl = "/api/client-portal/messages";
+    const sent = await customer.as.post(
+      messageUrl,
+      { content: "For the displayed supplier" },
+      { headers }
+    );
+    expect(sent.status, sent.text).toBe(201);
+    expect(sent.body).toMatchObject({ companyId: first.company.id, contactId: a.contactId });
+
+    const upload = (accountId: string) => {
+      const form = new FormData();
+      form.append("name", "Scoped document");
+      form.append("file", new Blob(["first supplier only"], { type: "text/plain" }), "scope.txt");
+      return fetch(h.baseUrl + "/api/client-portal/documents", {
+        method: "POST",
+        body: form,
+        headers: { Authorization: `Bearer ${customer.token}`, "X-Portal-Account": accountId },
+      });
+    };
+    const doc = await upload(older.id);
+    expect(doc.status).toBe(201);
+    expect(await doc.json()).toMatchObject({ companyId: first.company.id, contactId: a.contactId });
+
+    await h.sql(`UPDATE customer_portal_accounts SET revoked_at = now() WHERE id = $1`, [older.id]);
+    const removed = await customer.as.get(`${url}?format=pdf`, { headers });
+    expect(removed.status).toBe(403);
+    expect(removed.body.code).toBe("PORTAL_ACCESS_REVOKED");
+    const rejected = await customer.as.post(
+      messageUrl,
+      { content: "Should not reach supplier B" },
+      { headers }
+    );
+    expect(rejected.status).toBe(403);
+    expect(
+      (await customer.as.post(messageUrl, { content: "Missing pinned supplier" })).status
+    ).toBe(403);
+    expect((await upload(older.id)).status).toBe(403);
+    const secondScope = { headers: { "X-Portal-Account": newer.id } };
+    expect((await customer.as.get(messageUrl, secondScope)).body).toEqual([]);
+    expect((await customer.as.get("/api/client-portal/documents", secondScope)).body).toEqual([]);
+  });
+
   it("returns info and invoices that equal the separate routes, with no caching", async () => {
     const t = await h.createTenant();
     const p = await portalFor(t, "Gulf Retail");

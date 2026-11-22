@@ -14,8 +14,7 @@ import {
   normalizeMonthlyBurn,
   payrollAmount,
   ratioPercent,
-  receiptSubtotalAed,
-  receiptVatAed,
+  receiptSpendInBase,
   runwayCoverageDays,
   valueInDateRange,
 } from "../shared";
@@ -123,11 +122,11 @@ export function computeOperationsComparisonFigures({
   | "varianceReport"
 >) {
   const currentExpenseValue = currentReceipts.reduce(
-    (sum, receipt) => sum + receiptSubtotalAed(receipt) + receiptVatAed(receipt),
+    (sum, receipt) => sum + receiptSpendInBase(receipt),
     0
   );
   const previousExpenseValue = previousReceipts.reduce(
-    (sum, receipt) => sum + receiptSubtotalAed(receipt) + receiptVatAed(receipt),
+    (sum, receipt) => sum + receiptSpendInBase(receipt),
     0
   );
   const currentAverageReceiptValue =
@@ -163,16 +162,14 @@ export function computeOperationsComparisonFigures({
     submittedExpenseClaimRows(previousExpenseClaims).length;
   const currentApprovedExpenseClaimCount = approvedExpenseClaimRows(currentExpenseClaims).length;
   const previousApprovedExpenseClaimCount = approvedExpenseClaimRows(previousExpenseClaims).length;
-  const receiptTotalAed = (receipt: ReceiptReportRow) =>
-    receiptSubtotalAed(receipt) + receiptVatAed(receipt);
   const unpostedReceiptRows = (rows: ReceiptReportRow[]) =>
     rows.filter((receipt) => !receipt.posted);
   const unpostedReceiptValue = (rows: ReceiptReportRow[]) =>
-    unpostedReceiptRows(rows).reduce((sum, receipt) => sum + receiptTotalAed(receipt), 0);
+    unpostedReceiptRows(rows).reduce((sum, receipt) => sum + receiptSpendInBase(receipt), 0);
   const currentUnpostedReceiptValue = unpostedReceiptValue(currentReceipts);
   const previousUnpostedReceiptValue = unpostedReceiptValue(previousReceipts);
   const unpostedExpenseShare = (rows: ReceiptReportRow[]) => {
-    const total = rows.reduce((sum, receipt) => sum + receiptTotalAed(receipt), 0);
+    const total = rows.reduce((sum, receipt) => sum + receiptSpendInBase(receipt), 0);
     if (total <= 0.005) return 0;
 
     const unpostedTotal = unpostedReceiptValue(rows);
@@ -185,7 +182,7 @@ export function computeOperationsComparisonFigures({
   const autoPostedReceiptRows = (rows: ReceiptReportRow[]) =>
     rows.filter((receipt) => receipt.autoPosted);
   const autoPostedReceiptValue = (rows: ReceiptReportRow[]) =>
-    autoPostedReceiptRows(rows).reduce((sum, receipt) => sum + receiptTotalAed(receipt), 0);
+    autoPostedReceiptRows(rows).reduce((sum, receipt) => sum + receiptSpendInBase(receipt), 0);
   const currentAutoPostedReceiptCount = autoPostedReceiptRows(currentReceipts).length;
   const previousAutoPostedReceiptCount = autoPostedReceiptRows(previousReceipts).length;
   const currentAutoPostedReceiptValue = autoPostedReceiptValue(currentReceipts);
@@ -198,7 +195,7 @@ export function computeOperationsComparisonFigures({
   const currentReceiptAutomationCoverage = receiptAutomationCoverage(currentReceipts);
   const previousReceiptAutomationCoverage = receiptAutomationCoverage(previousReceipts);
   const receiptAutomationValueCoverage = (rows: ReceiptReportRow[]) => {
-    const total = rows.reduce((sum, receipt) => sum + receiptTotalAed(receipt), 0);
+    const total = rows.reduce((sum, receipt) => sum + receiptSpendInBase(receipt), 0);
     if (total <= 0.005) return 0;
 
     return Math.round((autoPostedReceiptValue(rows) / total) * 10000) / 100;

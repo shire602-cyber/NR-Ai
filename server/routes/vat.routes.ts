@@ -728,8 +728,8 @@ export function registerVATRoutes(app: Express) {
           transmittedByMuhasib: false,
           channel: reference ? "manual-emaratax" : "none",
           message: reference
-            ? `Recorded as filed with FTA reference ${reference}. Muhasib did not transmit this return; this is your record of a filing you made through the official channel.`
-            : "Finalised for review. Muhasib does NOT file with the FTA — you must still submit this return through EmaraTax, then record the FTA reference number here.",
+            ? "Filing recorded with the EmaraTax reference you entered."
+            : "Ready to file. Submit your return in EmaraTax, then record the FTA reference number here.",
         },
       });
     })
@@ -824,13 +824,23 @@ export function registerVATRoutes(app: Express) {
       const access = await requireReturnAccess(req, res);
       if (!access) return;
       const body = parsedBody<Body<typeof patchVatReturnBody>>(req);
-      const vatReturn = await storage.updateVatReturn(access.existing.id, {
-        ...(body.notes !== undefined ? { notes: body.notes } : {}),
-        ...(body.declarantName !== undefined ? { declarantName: body.declarantName } : {}),
-        ...(body.declarantPosition !== undefined
-          ? { declarantPosition: body.declarantPosition }
-          : {}),
-      });
+      const { existing } = access;
+      if (!["draft", "pending_review", "ready", "submitted"].includes(existing.status)) {
+        throw new DomainError("INVALID_TRANSITION", 409);
+      }
+      const vatReturn = await storage.updateUnfiledVatReturn(
+        existing.companyId,
+        existing.id,
+        existing.status,
+        {
+          ...(body.notes !== undefined ? { notes: body.notes } : {}),
+          ...(body.declarantName !== undefined ? { declarantName: body.declarantName } : {}),
+          ...(body.declarantPosition !== undefined
+            ? { declarantPosition: body.declarantPosition }
+            : {}),
+        }
+      );
+      if (!vatReturn) throw new DomainError("INVALID_TRANSITION", 409);
       res.json(vatReturn);
     })
   );

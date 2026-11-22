@@ -167,6 +167,17 @@ export function registerClientPortalRoutes(app: Express): void {
     },
   ];
 
+  const pinnedWriteChain: RequestHandler[] = [
+    authMiddleware as RequestHandler,
+    (req, res, next) => {
+      if (!req.get("X-Portal-Account")) {
+        res.set("Cache-Control", "no-store");
+        return next(new DomainError("PORTAL_ACCESS_REVOKED", 403));
+      }
+      requirePortalUser(req, res, next).catch(next);
+    },
+  ];
+
   app.get(
     "/api/client-portal/company",
     ...chain,
@@ -343,10 +354,13 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.post(
     "/api/client-portal/documents",
-    ...chain,
+    ...pinnedWriteChain,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, contact, userId } = scopeOf(req);
+      const { companyId, contact, userId, accountId } = scopeOf(req);
       const { meta, file } = await readValidatedUpload(req);
+      if (!(await portalAccountForUser(userId, accountId))) {
+        throw new DomainError("PORTAL_ACCESS_REVOKED", 403);
+      }
       const doc = await createVaultDocument({
         companyId,
         uploadedBy: userId,
@@ -369,7 +383,7 @@ export function registerClientPortalRoutes(app: Express): void {
     "/api/client-portal/statements",
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, contact } = scopeOf(req);
+      const { companyId, contact, accountId } = scopeOf(req);
       const q = statementQuery.parse(req.query);
       const st = await buildCustomerStatement({
         companyId,
@@ -385,7 +399,7 @@ export function registerClientPortalRoutes(app: Express): void {
         });
         return res.send(pdf);
       }
-      res.json(st);
+      res.json({ ...st, accountId });
     })
   );
 
@@ -411,10 +425,10 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.post(
     "/api/client-portal/messages",
-    ...chain,
+    ...pinnedWriteChain,
     strictBody(portalMessageBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, contact, userId } = scopeOf(req);
+      const { companyId, contact, userId, accountId } = scopeOf(req);
       const body = parsedBody<PortalMessageBody>(req);
       if (body.threadId) {
         const [thread] = await db
@@ -430,6 +444,9 @@ export function registerClientPortalRoutes(app: Express): void {
           )
           .limit(1);
         if (!thread) throw new DomainError("THREAD_NOT_FOUND", 404, undefined, "Thread not found");
+      }
+      if (!(await portalAccountForUser(userId, accountId))) {
+        throw new DomainError("PORTAL_ACCESS_REVOKED", 403);
       }
       const [message] = await db
         .insert(messages)

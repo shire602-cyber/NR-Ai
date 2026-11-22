@@ -137,6 +137,11 @@ jobs:
       - name: Migration rehearsal (disposable Postgres 16)
         run: npm run test:migration-rehearsal
 
+      - name: UAE calendar date regressions
+        env:
+          TZ: Asia/Dubai
+        run: npm run test:db -- tests/db/e3-vat-lifecycle-periods.test.ts tests/db/purchases-bills.test.ts
+
   e2e:
     name: Browser E2E · full route crawl
     # Pinned: Playwright has no Chromium build for ubuntu-latest (26.04) yet.

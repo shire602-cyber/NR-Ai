@@ -243,6 +243,9 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("POST", "companies/*/corporate-tax/deferred-tax/*/reverse", "ledger.post"),
   r("MUT", "companies/*/corporate-tax/external-returns", "tax.submit"),
   r("MUT", "companies/*/corporate-tax/external-returns/*", "tax.submit"),
+  r("PATCH", "vat-returns/*", "tax.submit"),
+  r("POST", "vat-returns/*/ready", "tax.submit"),
+  r("POST", "vat-returns/*/amend", "tax.submit"),
   r("POST", "vat-returns/*/submit", "tax.submit"),
   // VAT paid to / refunded by the FTA for a submitted return (posts Dr 2020 / Cr 1050 / bank).
   r("POST", "vat-returns/*/settlement", "tax.submit"),
@@ -618,6 +621,7 @@ export async function companyRolePolicy(
     const allowed = !!role && roleHasAnyPermission(role, permissions);
     if (allowed) {
       req.companyRole = role!;
+      req.companyRoleCompanyId = companyId;
       return next();
     }
     const details = { permission: permissions[0], permissions, role, companyId };
@@ -677,6 +681,7 @@ export function requirePermission(...permissions: [Permission, ...Permission[]])
         return deny(res, "PERMISSION_DENIED", { permission: permissions[0], permissions, role });
       }
       req.companyRole = role;
+      req.companyRoleCompanyId = companyId;
       next();
     })().catch(next);
   };

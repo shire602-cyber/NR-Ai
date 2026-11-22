@@ -640,6 +640,7 @@ function buildResult(
     confidenceBand: band.band,
     confidenceScore: band.score,
     reviewReasons: band.reasons,
+    reviewReasonCodes: band.reasonCodes,
     validationIssues: issues,
     classifier,
     ocrSource: aiResult._ocrSource || "ai",

@@ -1013,50 +1013,71 @@
   {
    "idx": 144,
    "version": "7",
+   "when": 1781430590000,
+   "tag": "0144_receipt_invoice_number",
+   "breakpoints": false
+  },
+  {
+   "idx": 145,
+   "version": "7",
+   "when": 1781430600000,
+   "tag": "0145_receipt_rate_and_capture",
+   "breakpoints": false
+  },
+  {
+   "idx": 146,
+   "version": "7",
    "when": 1781430630000,
    "tag": "0138_repair_bank_gl_links",
    "breakpoints": false
   },
   {
-   "idx": 145,
+   "idx": 147,
    "version": "7",
    "when": 1781430640000,
    "tag": "0139_audit_bank_match_links",
    "breakpoints": false
   },
   {
-   "idx": 146,
+   "idx": 148,
    "version": "7",
    "when": 1781430650000,
    "tag": "0140_repair_bank_receipt_provenance",
    "breakpoints": false
   },
   {
-   "idx": 147,
+   "idx": 149,
    "version": "7",
    "when": 1781430660000,
    "tag": "0141_restore_legacy_invoice_bank_provenance",
    "breakpoints": false
   },
   {
-   "idx": 148,
+   "idx": 150,
    "version": "7",
    "when": 1781430670000,
    "tag": "0146_reconcile_preview_portal_migration_slots",
    "breakpoints": false
   },
   {
-   "idx": 149,
+   "idx": 151,
    "version": "7",
    "when": 1781430680000,
    "tag": "0147_reconcile_preview_reminder_language",
    "breakpoints": false
   },
   {
-   "idx": 150,
+   "idx": 152,
    "version": "7",
    "when": 1781430690000,
    "tag": "0148_reconcile_preview_firm_membership",
+   "breakpoints": false
+  },
+  {
+   "idx": 153,
+   "version": "7",
+   "when": 1781430700000,
+   "tag": "0149_reconcile_preview_receipt_schema",
    "breakpoints": false
   }
  ]

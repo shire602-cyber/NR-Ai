@@ -1,8 +1,8 @@
-# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 through 0148)
+# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 through 0149)
 
 Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
 
-Owner-run. The first deploy of this branch applies 63 migrations (through 0148) that rewrite some production data
+Owner-run. The first deploy of this branch applies 66 migrations (through 0149) that rewrite some production data
 (users, roles, FX rates, bank GL links and reconciliation rules, portal tokens, audit chain, subscriptions). Do not
 merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived or external items
 (A-Cube, email, Stripe, WPS, GPSSA, FAF) are listed in section 9 and stay off until proven.
@@ -357,7 +357,7 @@ and FTA. The PR description must say so, so "394 fixed" is not read as "certifie
 Migration `0117_e2_einvoice_complyance.sql` (journal idx 116) adds the nullable column
 `einvoice_legal_entities.provider_details jsonb`. It is additive and idempotent (`IF NOT EXISTS`);
 safe to re-run, no data rewrite, no lock beyond a brief catalog change. Rehearse it with the rest of
-0089 through 0148, then run it a second time to confirm it is a no-op.
+0089 through 0149, then run it a second time to confirm it is a no-op.
 
 One provider is active at a time, selected by `EINVOICE_PROVIDER` (unset = e-invoicing off; a
 provider that is selected but not fully configured stays hidden/"Not connected"):

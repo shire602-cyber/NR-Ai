@@ -16,6 +16,8 @@ import {
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
   renderPage,
+  rerenderPage,
+  setWorkspaceCompany,
   resetHarness,
   setFixtures,
   type,
@@ -219,7 +221,7 @@ describe("[E2][J3-r2] VAT return after 'ready'", () => {
   });
 
   it("a refund return offers Record refund", async () => {
-    await renderVat({ status: "filed", box14PayableTax: -190 });
+    await renderVat({ status: "filed", ftaReferenceNumber: "ET-1", box14PayableTax: -190 });
     const btn = all(`button-record-settlement-${RID}`)[0];
     expect(btn.textContent).toMatch(/Record refund/);
   });
@@ -227,6 +229,7 @@ describe("[E2][J3-r2] VAT return after 'ready'", () => {
   it("a paid return shows Paid, the last checklist step done, and offers a reversal", async () => {
     await renderVat({
       status: "filed",
+      ftaReferenceNumber: "ET-1",
       paymentStatus: "paid",
       paymentDate: "2026-10-20T00:00:00Z",
     });
@@ -236,6 +239,22 @@ describe("[E2][J3-r2] VAT return after 'ready'", () => {
     await click(all(`button-reverse-settlement-${RID}`)[0]);
     const confirm = byTestId("button-confirm-reverse-settlement") as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
+  });
+
+  it("closes Company A's workbook when Company B becomes active", async () => {
+    await renderVat({ status: "draft" });
+    await click(byTestId("button-hero-edit-return") ?? byTestId(`button-edit-${RID}`));
+    expect(byTestId("vat201-workbook-page")).not.toBeNull();
+    const other = {
+      ...COMPANY,
+      id: "c0000000-0000-4000-8000-000000000002",
+      name: "Other taxpayer",
+    };
+    setWorkspaceCompany(other);
+    setFixtures({ [`/api/companies/${other.id}`]: other });
+    const { default: VATFiling } = await import("../../client/src/pages/VATFiling");
+    await rerenderPage(VATFiling);
+    expect(byTestId("vat201-workbook-page")).toBeNull();
   });
 
   it("a viewer sees the step but cannot use it", async () => {

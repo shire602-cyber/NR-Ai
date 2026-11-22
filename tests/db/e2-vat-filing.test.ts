@@ -83,6 +83,34 @@ async function returnRow(t: Tenant, id: string) {
 }
 
 describe("E2 (J3-r2) VAT return: ready -> filed -> paid", () => {
+  it("records one piece of filing evidence when several submissions race", async () => {
+    const t = await vatTenant();
+    const id = await readyReturn(t);
+    const attempt = (reference: string) =>
+      t.as.post(`/api/vat-returns/${id}/submit`, {
+        ftaReferenceNumber: reference,
+        filedOn: "2026-04-20",
+      });
+    const attempts = await Promise.all([
+      attempt("EMT-A"),
+      attempt("EMT-B"),
+      attempt("EMT-A"),
+      attempt("EMT-B"),
+    ]);
+    const recorded = await returnRow(t, id);
+    expect(["EMT-A", "EMT-B"]).toContain(recorded.ftaReferenceNumber);
+    const winner = recorded.ftaReferenceNumber === "EMT-A" ? [0, 2] : [1, 3];
+    for (const [index, attempt] of attempts.entries()) {
+      expect(attempt.status, attempt.text).toBe(winner.includes(index) ? 200 : 409);
+      if (winner.includes(index)) expect(attempt.body.updatedAt).toBe(recorded.updatedAt);
+    }
+    const audits = await h.sql(
+      `SELECT id FROM audit_logs WHERE resource_id = $1 AND action = 'vat_return.filed'`,
+      [id]
+    );
+    expect(audits).toHaveLength(1);
+  });
+
   it("records the filing with the EmaraTax reference and date, then the payment, then reverses it", async () => {
     const t = await vatTenant();
     const bank = await accountByCode(t, "1020");
@@ -104,7 +132,24 @@ describe("E2 (J3-r2) VAT return: ready -> filed -> paid", () => {
     const filed = await submit({ ftaReferenceNumber: "ET-2026-Q1-001", filedOn: "2026-04-20" });
     expect(filed.status, filed.text).toBe(200);
     expect(filed.body).toMatchObject({ status: "filed", ftaReferenceNumber: "ET-2026-Q1-001" });
+    const tampered = await t.as.patch(`/api/vat-returns/${id}`, {
+      declarantName: "Another person",
+    });
+    expect(tampered.status).toBe(409);
+    expect((await t.as.post(`/api/vat-returns/${id}/ready`, {})).status).toBe(409);
+
     expect(String(filed.body.submittedAt).slice(0, 10)).toBe("2026-04-20");
+    const retry = await submit({ ftaReferenceNumber: " ET-2026-Q1-001 ", filedOn: "2026-04-20" });
+    expect(retry.status, retry.text).toBe(200);
+    expect(retry.body.updatedAt).toBe(filed.body.updatedAt);
+    for (const evidence of [
+      { ftaReferenceNumber: "ET-OTHER", filedOn: "2026-04-20" },
+      { ftaReferenceNumber: "ET-2026-Q1-001", filedOn: "2026-04-21" },
+    ]) {
+      const conflict = await submit(evidence);
+      expect(conflict.status, conflict.text).toBe(409);
+      expect(conflict.body.code).toBe("VAT_FILING_CONFLICT");
+    }
     expect(filed.body.paymentStatus ?? "unpaid").toBe("unpaid");
 
     // Payment status follows the settlement only.
@@ -177,30 +222,46 @@ describe("E2 (J3-r2) VAT return: ready -> filed -> paid", () => {
 });
 
 describe("INTEGRATE-G: the compliance calendar follows the filed VAT return", () => {
-  it("filing the Q1 return (period end 31 Mar) completes the vat:2026-03-31 obligation", async () => {
-    const t = await vatTenant();
-    await activity(t, 2000, 400);
-    const id = await readyReturn(t);
-    const calRow = async () => {
-      const cal = await t.as.get(`${base(t)}/compliance-calendar?from=2026-01-01&to=2026-12-31`);
-      expect(cal.status, cal.text).toBe(200);
-      return (cal.body as Array<Record<string, unknown>>).find(
-        (r) => r.obligationKey === "vat:2026-03-31"
-      );
-    };
-    // Before filing the return is matched to its own period (not 1 Apr) and is not completed.
-    const before = await calRow();
-    expect(before, "obligation for the 31 Mar period").toBeTruthy();
-    expect(before).toMatchObject({ periodEnd: "2026-03-31", relatedEntityId: id });
-    expect(before!.status).not.toBe("completed");
-    const filed = await t.as.post(`/api/vat-returns/${id}/submit`, {
-      ftaReferenceNumber: "ET-2026-Q1-CAL",
-      filedOn: "2026-04-20",
-    });
-    expect(filed.status, filed.text).toBe(200);
-    const after = await calRow();
-    expect(after).toMatchObject({ status: "completed", statusDerived: true, relatedEntityId: id });
-  });
+  it.each([false, true])(
+    "keeps the deadline until EmaraTax filing is recorded (nil return: %s)",
+    async (nil) => {
+      const t = await vatTenant();
+      if (!nil) await activity(t, 2000, 400);
+      const id = await readyReturn(t);
+      const calRow = async () => {
+        const cal = await t.as.get(`${base(t)}/compliance-calendar?from=2026-01-01&to=2026-12-31`);
+        expect(cal.status, cal.text).toBe(200);
+        return (cal.body as Array<Record<string, unknown>>).find(
+          (r) => r.obligationKey === "vat:2026-03-31"
+        );
+      };
+      // Before filing the return is matched to its own period (not 1 Apr) and is not completed.
+      const before = await calRow();
+      expect(before, "obligation for the 31 Mar period").toBeTruthy();
+      expect(before).toMatchObject({ periodEnd: "2026-03-31", relatedEntityId: id });
+      expect(before!.status).not.toBe("completed");
+      const prepared = await t.as.post(`/api/vat-returns/${id}/submit`, {});
+      expect(prepared.status, prepared.text).toBe(200);
+      expect(prepared.body).toMatchObject({
+        status: "submitted",
+        submittedAt: null,
+        filing: { channel: "none" },
+      });
+      expect(Number(prepared.body.box14PayableTax) === 0).toBe(nil);
+      expect((await calRow())?.status).not.toBe("completed");
+      const filed = await t.as.post(`/api/vat-returns/${id}/submit`, {
+        ftaReferenceNumber: "ET-2026-Q1-CAL",
+        filedOn: "2026-04-20",
+      });
+      expect(filed.status, filed.text).toBe(200);
+      const after = await calRow();
+      expect(after).toMatchObject({
+        status: "completed",
+        statusDerived: true,
+        relatedEntityId: id,
+      });
+    }
+  );
 });
 
 describe("VAT filing and settlement transaction boundaries", () => {
@@ -991,16 +1052,12 @@ describe("VAT filing and settlement transaction boundaries", () => {
       t.as.post(`${url}/submit`, { ftaReferenceNumber: "ET-DATE-RACE", filedOn: "2026-04-20" }),
       t.as.post(`${url}/settlement`, { date: "2026-04-19", paymentAccountId: bank.id }),
     ]);
-    if (filed.status === 200) {
-      expect(paid.status, paid.text).toBe(422);
-      expect(paid.body.code).toBe("VAT_SETTLEMENT_BEFORE_FILING");
-      expect((await t.as.get(`${url}/settlement`)).body.settlement).toBeNull();
-    } else {
-      expect(paid.status, paid.text).toBe(201);
-      expect(filed.status, filed.text).toBe(409);
-      expect(filed.body.code).toBe("VAT_FILING_AFTER_SETTLEMENT");
-      expect(await returnRow(t, id)).toMatchObject({ status: "submitted", paymentStatus: "paid" });
-    }
+    expect(filed.status, filed.text).toBe(200);
+    expect([409, 422]).toContain(paid.status);
+    expect(paid.body.code).toBe(
+      paid.status === 409 ? "VAT_RETURN_NOT_SUBMITTED" : "VAT_SETTLEMENT_BEFORE_FILING"
+    );
+    expect((await t.as.get(`${url}/settlement`)).body.settlement).toBeNull();
   });
 
   it("rolls back journals and return state when filing, settling or reversing fails before commit", async () => {

@@ -1,7 +1,13 @@
 import { fetchPortalResource } from "./queryClient";
 
-export async function downloadPortalFile(path: string, filename: string): Promise<boolean> {
-  const response = await fetchPortalResource(path);
+import { portalRequestHeaders } from "./portal-state";
+
+export async function downloadPortalFile(
+  path: string,
+  filename: string,
+  supplier: string
+): Promise<boolean> {
+  const response = await fetchPortalResource(path, { headers: portalRequestHeaders(supplier) });
   const url = URL.createObjectURL(await response.blob());
   const link = document.createElement("a");
   link.href = url;

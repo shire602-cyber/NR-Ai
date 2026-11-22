@@ -1,5 +1,12 @@
 import { DatePicker } from "@/components/ui/date-picker";
-import { useState, useCallback, useEffect, useMemo } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import {
   FormActions,
   FormErrorSummary,
@@ -20,6 +27,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { CardListSkeleton } from "@/components/ui/loading-skeletons";
+import { ErrorState } from "@/components/ui/error-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   Select,
@@ -53,8 +61,6 @@ import {
   bandRequiresReview,
   deriveConfidenceBand,
   receiptReviewDecision,
-  type ConfidenceBand,
-  type ReviewSnapshot,
 } from "@shared/receipt-confidence";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import {
@@ -91,10 +97,15 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ReceiptAutomation } from "./ReceiptAutopilot";
+import type { ExtractedData, ProcessedReceipt } from "@/lib/receipt-draft-types";
+import { useReceiptQueue } from "@/components/receipts/ReceiptQueueProvider";
 import { ReceiptLinesDialog, type ReceiptForSplit } from "@/components/receipts/ReceiptLinesDialog";
 import { SiGooglesheets } from "react-icons/si";
 import { VirtualList } from "@/components/VirtualList";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { currencyLabel } from "@/lib/format-money";
+import { effectiveCompanyId } from "@/lib/activeCompany";
+import { approvedReceiptAmounts } from "@/lib/receipt-review-amounts";
 import { Money } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import {
@@ -119,62 +130,42 @@ import {
 import { accountDisplayName } from "@/lib/account-name";
 import { parseCalendarDate } from "@/lib/format-date";
 
-interface ExtractedData {
-  merchant?: string;
-  date?: string;
-  invoiceNumber?: string | null;
-  subtotal?: number;
-  vatPercentage?: number;
-  vatAmount?: number;
-  total?: number;
-  currency?: string;
-  rawText: string;
-  category?: string;
-  lineItems?: Array<{ description: string; quantity: number; unitPrice: number; total: number }>;
-  confidence?: number;
-  suggestedCategory?: string;
-  classifier?: { method?: string; confidence?: number; reason?: string } | null;
-  // Confidence banding and review routing (R05-23)
-  confidenceBand?: ConfidenceBand;
-  reviewReasons?: string[];
-  reviewed?: boolean;
-  original?: ReviewSnapshot;
-  ocrSource?: string;
-  // FTA tax-invoice signals (R05-17)
-  supplierTrn?: string | null;
-  isTaxInvoice?: boolean;
-  simplifiedInvoice?: boolean;
-  reverseChargeSuggested?: boolean;
-  // Set after the server reported an exact duplicate and the user chose to upload anyway.
-  confirmDuplicate?: boolean;
-}
-
 /** Fill in band + the "as extracted" snapshot used to record the reviewer's decision. */
 function withReviewMeta(data: ExtractedData): ExtractedData {
-  const band =
-    data.confidenceBand ?? deriveConfidenceBand({ extractionConfidence: data.confidence }).band;
+  const reportedBand = data.confidenceBand;
+  const band = reportedBand
+    ? Object.hasOwn(BAND_LABELS, reportedBand)
+      ? reportedBand
+      : "low"
+    : deriveConfidenceBand({ extractionConfidence: data.confidence }).band;
   return {
     ...data,
     confidenceBand: band,
     original: data.original ?? {
       merchant: data.merchant,
       date: data.date,
+      invoiceNumber: data.invoiceNumber,
       total: data.total,
+      subtotal: data.subtotal,
+      currency: data.currency,
       vatAmount: data.vatAmount,
       category: data.category,
     },
   };
 }
 
-interface ProcessedReceipt {
-  file: File;
-  preview: string;
-  status: "pending" | "processing" | "completed" | "saved" | "error" | "save_error";
-  progress: number;
-  data?: ExtractedData;
-  error?: string;
-  /** True when the server rejected the save as an exact duplicate (409). */
-  duplicate?: boolean;
+interface ManualReceiptDraft {
+  companyId: string;
+  source: ProcessedReceipt | null;
+}
+
+type ReceiptToSave = ProcessedReceipt & { data: ExtractedData };
+
+function isReceiptReadyToSave(receipt: ProcessedReceipt): receipt is ReceiptToSave {
+  return (
+    !!receipt.data &&
+    (receipt.status === "completed" || (receipt.status === "save_error" && !receipt.duplicate))
+  );
 }
 
 function isOcrRetryable(receipt: ProcessedReceipt): boolean {
@@ -359,11 +350,35 @@ function isInternalClassifierMethod(value: unknown): value is InternalClassifier
 // Human-readable labels for how a category suggestion was derived, shown on
 // the review card so users understand why a category was pre-filled.
 const CLASSIFIER_METHOD_LABELS: Record<string, string> = {
-  rule: "your company rules",
-  keyword: "UAE keyword match",
-  statistical: "your past classifications",
-  openai: "AI vision",
+  rule: "pageLabels.receiptCategoryRule",
+  keyword: "pageLabels.receiptCategoryKeyword",
+  statistical: "pageLabels.receiptCategoryHistory",
+  openai: "pageLabels.receiptCategoryAi",
 };
+
+const OCR_REVIEW_ISSUE_LABELS: Record<string, string> = {
+  MISSING_CONFIDENCE: "pageLabels.receiptIssueMissingConfidence",
+  CLASSIFIER_DISAGREEMENT: "pageLabels.receiptIssueClassifierDisagreement",
+  MISSING_AMOUNT: "pageLabels.receiptIssueMissingAmount",
+  AMOUNT_MISMATCH: "pageLabels.receiptIssueAmounts",
+  DATE_FORMAT: "pageLabels.receiptIssueDate",
+  DATE_FUTURE: "pageLabels.receiptIssueFutureDate",
+  DATE_ANCIENT: "pageLabels.receiptIssueOldDate",
+  DATE_MISSING: "pageLabels.receiptIssueMissingDate",
+  CURRENCY_INVALID: "pageLabels.receiptIssueCurrency",
+  TRN_INVALID: "pageLabels.receiptIssueTrn",
+  VAT_RATE_UNUSUAL: "pageLabels.receiptIssueVat",
+};
+
+function receiptReviewNotes(data: ExtractedData, locale: string, t: Record<string, string>) {
+  const reasons = data.reviewReasons ?? [];
+  if (locale !== "ar" || reasons.length === 0) return reasons;
+
+  const fallback = "pageLabels.receiptIssueGeneral";
+  const codes = data.reviewReasonCodes ?? data.validationIssues?.map(({ code }) => code) ?? [];
+  const keys = codes.map((code) => OCR_REVIEW_ISSUE_LABELS[code] ?? fallback);
+  return keys.length ? Array.from(new Set(keys), (key) => t[key]) : [t[fallback]];
+}
 
 /** Display label for a stored (English) receipt category; unknown categories show as stored. */
 const RECEIPT_CATEGORY_KEYS: Record<string, string> = {
@@ -387,13 +402,44 @@ function receiptCategoryLabel(t: Record<string, string>, category: string): stri
 }
 
 export default function Receipts() {
+  const company = useDefaultCompany();
+  const key = company.companyId ?? "";
+  const [processedReceipts, setProcessedReceipts, saveBatch] = useReceiptQueue(key);
+  return (
+    <CompanyReceipts
+      key={key}
+      company={company}
+      processedReceipts={processedReceipts}
+      setProcessedReceipts={setProcessedReceipts}
+      saveBatch={saveBatch}
+    />
+  );
+}
+
+function CompanyReceipts({
+  company,
+  processedReceipts,
+  setProcessedReceipts,
+  saveBatch,
+}: {
+  company: ReturnType<typeof useDefaultCompany>;
+  processedReceipts: ProcessedReceipt[];
+  setProcessedReceipts: Dispatch<SetStateAction<ProcessedReceipt[]>>;
+  saveBatch: ReturnType<typeof useReceiptQueue>[2];
+}) {
   const { t, locale } = useTranslation();
   // Receipt-capture strings for the confidence/duplicate/TRN additions (en + ar).
   const tr = useCallback((en: string, ar: string) => (locale === "ar" ? ar : en), [locale]);
   const accountLabel = (a?: { nameEn: string; nameAr?: string | null }) =>
     a ? accountDisplayName(a, locale) : "";
   const { toast } = useToast();
-  const { companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
+  const { companyId, companies, isLoading: _isLoadingCompany } = company;
+  const assertDraftCompany = (origin: string) => {
+    const active = effectiveCompanyId(companies, companyId);
+    if (origin !== companyId || origin !== active) {
+      throw new Error(t["pageLabels.receiptDraftCompanyChanged"]);
+    }
+  };
   // Spec 3.8: automation settings are a tab here (`/receipt-autopilot` redirects to it).
   const [receiptsTab, setReceiptsTab] = useState(() =>
     typeof window !== "undefined" &&
@@ -402,16 +448,15 @@ export default function Receipts() {
       : "receipts"
   );
   // X3: ask up front whether automatic reading (AI/OCR) is enabled, so a scan never spins for a
-  // minute and then fails. `false` = not enabled; undefined = still loading (scan proceeds).
-  const { data: ocrStatus } = useQuery<{ aiConfigured: boolean }>({
+  // minute and then fails. The scan controls wait for a positive status.
+  const { data: ocrStatus, isLoading: ocrStatusLoading } = useQuery<{ aiConfigured: boolean }>({
     queryKey: ["/api/ocr/status"],
     staleTime: 5 * 60 * 1000,
   });
-  const autoReadUnavailable = ocrStatus?.aiConfigured === false;
-  const [processedReceipts, setProcessedReceipts] = useState<ProcessedReceipt[]>([]);
+  const autoReadUnavailable = !ocrStatusLoading && ocrStatus?.aiConfigured !== true;
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
-  const [isSavingAll, setIsSavingAll] = useState(false);
+  const isSavingAll = saveBatch.saving;
   const [totalToSave, setTotalToSave] = useState(0);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingReceipt, setEditingReceipt] = useState<any>(null);
@@ -425,11 +470,12 @@ export default function Receipts() {
   const [newAccountName, setNewAccountName] = useState("");
   const [similarWarningOpen, setSimilarWarningOpen] = useState(false);
   const [similarTransactions, setSimilarTransactions] = useState<any[]>([]);
-  const [pendingSaveData, setPendingSaveData] = useState<any>(null);
+  const [pendingSaveData, setPendingSaveData] = useState<ReceiptToSave[] | null>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [isExporting, setIsExporting] = useState(false);
   const [isOcrExporting, setIsOcrExporting] = useState(false);
-  const [manualExpenseDialogOpen, setManualExpenseDialogOpen] = useState(false);
+  const [manualDraft, setManualDraft] = useState<ManualReceiptDraft | null>(null);
+  const manualSource = manualDraft?.source;
   const [imagePreview, setImagePreview] = useState<{ src: string; merchant?: string } | null>(null);
   // R05-19b (S2): split lines / revise a posted receipt / split one upload into receipts.
   const [linesDialog, setLinesDialog] = useState<{
@@ -450,7 +496,12 @@ export default function Receipts() {
   });
 
   // Fetch receipts
-  const { data: receipts, isLoading } = useQuery<any[]>({
+  const {
+    data: receipts,
+    isLoading,
+    error: receiptsError,
+    refetch: refetchReceipts,
+  } = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "receipts"],
     enabled: !!companyId,
   });
@@ -553,18 +604,22 @@ export default function Receipts() {
   });
 
   const manualExpenseMutation = useMutation({
-    mutationFn: async (data: ReceiptFormData) => {
-      return apiRequest("POST", `/api/companies/${companyId}/receipts`, {
+    mutationFn: async ({ data, draft }: { data: ReceiptFormData; draft: ManualReceiptDraft }) => {
+      assertDraftCompany(draft.companyId);
+      return apiRequest("POST", `/api/companies/${draft.companyId}/receipts`, {
         merchant: data.merchant,
         date: data.date,
         amount: data.amount,
         vatAmount: data.vatAmount,
         category: data.category,
         currency: data.currency,
+        ...(draft.source ? { imageData: draft.source.preview, captureId: draft.source.id } : {}),
       });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
+    onSuccess: (_created, { draft }) => {
+      if (draft.source) removeReceipt(draft.source.id);
+      setManualDraft(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", draft.companyId, "receipts"] });
       toast({
         title: tr("Expense created successfully", "تم إنشاء المصروف"),
         description: tr(
@@ -572,8 +627,6 @@ export default function Receipts() {
           "تمت إضافة المصروف. يمكنك الآن ترحيله إلى دفتر اليومية."
         ),
       });
-      setManualExpenseDialogOpen(false);
-      manualExpenseForm.reset();
     },
     onError: (error: any) => {
       toast({
@@ -742,18 +795,21 @@ export default function Receipts() {
   const resetForm = () => {
     setProcessedReceipts([]);
     setIsProcessingBulk(false);
-    setIsSavingAll(false);
     setTotalToSave(0);
   };
 
   const onManualExpenseSubmit = (data: ReceiptFormData) => {
+    if (!manualDraft || manualExpenseMutation.isPending) return;
     manualExpenseMutation.mutate({
-      ...data,
-      amount: Number(data.amount),
-      vatAmount:
-        data.vatAmount === 0 || data.vatAmount === null || isNaN(data.vatAmount as number)
-          ? null
-          : Number(data.vatAmount),
+      draft: manualDraft,
+      data: {
+        ...data,
+        amount: Number(data.amount),
+        vatAmount:
+          data.vatAmount === 0 || data.vatAmount === null || isNaN(data.vatAmount as number)
+            ? null
+            : Number(data.vatAmount),
+      },
     });
   };
 
@@ -800,6 +856,7 @@ export default function Receipts() {
 
   const handleFilesSelect = useCallback(
     async (files: FileList | File[]) => {
+      if (!companyId) return;
       const fileArray = Array.from(files);
 
       for (const file of fileArray) {
@@ -834,6 +891,8 @@ export default function Receipts() {
             const { pages, total, rendered } = await convertPdfToImages(file);
             const baseName = file.name.replace(/\.pdf$/i, "");
             const newReceipts = pages.map((p, i) => ({
+              id: crypto.randomUUID(),
+              companyId,
               file: new File(
                 [p.blob],
                 pages.length > 1 ? `${baseName} (p${i + 1}).png` : `${baseName}.png`,
@@ -889,9 +948,12 @@ export default function Receipts() {
           const reader = new FileReader();
           reader.onload = (e) => {
             const preview = e.target?.result as string;
+            const id = crypto.randomUUID();
             setProcessedReceipts((prev) => [
               ...prev,
               {
+                id,
+                companyId,
                 file: imageFile,
                 preview,
                 status: "pending",
@@ -903,7 +965,7 @@ export default function Receipts() {
         }
       }
     },
-    [toast, tr, locale]
+    [companyId, toast, tr, locale, setProcessedReceipts]
   );
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -924,12 +986,31 @@ export default function Receipts() {
     }
   };
 
-  const removeReceipt = (index: number) => {
-    setProcessedReceipts((prev) => prev.filter((_, i) => i !== index));
+  const removeReceipt = (id: string) => {
+    setProcessedReceipts((prev) => prev.filter((receipt) => receipt.id !== id));
   };
 
-  /** Explain (en/ar) that automatic reading is off and open manual entry right away. */
-  const explainAutoReadUnavailable = () => {
+  const openManualExpense = (source: ProcessedReceipt | null) => {
+    const origin = source?.companyId ?? companyId;
+    if (!origin) return;
+    manualExpenseForm.reset({
+      merchant: "",
+      date: new Date().toISOString().slice(0, 10),
+      amount: 0,
+      vatAmount: null,
+      category: "",
+      currency: "AED",
+    });
+    setManualDraft({ source, companyId: origin });
+  };
+
+  const patchReceipt = (id: string, patch: Partial<ProcessedReceipt>) => {
+    setProcessedReceipts((prev) =>
+      prev.map((receipt) => (receipt.id === id ? { ...receipt, ...patch } : receipt))
+    );
+  };
+
+  const explainAutoReadUnavailable = (source: ProcessedReceipt) => {
     toast({
       title: tr("Automatic reading isn't enabled yet", "القراءة التلقائية غير مفعّلة بعد"),
       description: tr(
@@ -937,24 +1018,21 @@ export default function Receipts() {
         "لا يمكننا قراءة الإيصالات تلقائياً بعد. أدخل التفاصيل بنفسك وأرفق الصورة كإثبات."
       ),
     });
-    setManualExpenseDialogOpen(true);
+    openManualExpense(source);
   };
 
   const processReceipt = async (index: number) => {
     const receipt = processedReceipts[index];
     if (!receipt) return;
     if (autoReadUnavailable) {
-      explainAutoReadUnavailable();
+      explainAutoReadUnavailable(receipt);
       return;
     }
 
-    setProcessedReceipts((prev) => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], status: "processing", progress: 10, error: undefined };
-      return updated;
-    });
+    patchReceipt(receipt.id, { status: "processing", progress: 10, error: undefined });
 
     try {
+      assertDraftCompany(receipt.companyId);
       // Strategy 1: Backend AI Vision OCR (GPT-4o)
       const toBase64 = (file: File): Promise<string> =>
         new Promise((resolve, reject) => {
@@ -966,11 +1044,7 @@ export default function Receipts() {
 
       const imageData = await toBase64(receipt.file);
 
-      setProcessedReceipts((prev) => {
-        const updated = [...prev];
-        updated[index] = { ...updated[index], progress: 40 };
-        return updated;
-      });
+      patchReceipt(receipt.id, { progress: 40 });
 
       let parsed: ExtractedData | null = null;
       let backendErrorMessage: string | null = null;
@@ -1016,7 +1090,7 @@ export default function Receipts() {
             ...getAuthHeaders(),
           }),
           credentials: "include",
-          body: JSON.stringify({ imageData, companyId }),
+          body: JSON.stringify({ imageData, companyId: receipt.companyId }),
         });
 
       try {
@@ -1046,18 +1120,28 @@ export default function Receipts() {
             suggestedCategory: result.category || "Other",
             classifier: result.classifier || null,
             confidenceBand: result.confidenceBand,
-            reviewReasons: Array.isArray(result.reviewReasons) ? result.reviewReasons : [],
+            reviewReasons: Array.isArray(result.reviewReasons)
+              ? result.reviewReasons.filter((reason: unknown) => typeof reason === "string")
+              : [],
+            reviewReasonCodes: Array.isArray(result.reviewReasonCodes)
+              ? result.reviewReasonCodes.filter((code: unknown) => typeof code === "string")
+              : undefined,
+            validationIssues: Array.isArray(result.validationIssues)
+              ? result.validationIssues.filter(
+                  (issue: unknown) =>
+                    issue !== null &&
+                    typeof issue === "object" &&
+                    "code" in issue &&
+                    typeof issue.code === "string"
+                )
+              : [],
             ocrSource: result.ocrSource,
             supplierTrn: result.supplierTrn ?? null,
             isTaxInvoice: Boolean(result.isTaxInvoice),
             simplifiedInvoice: Boolean(result.simplifiedInvoice),
             reverseChargeSuggested: Boolean(result.reverseChargeSuggested),
           };
-          setProcessedReceipts((prev) => {
-            const updated = [...prev];
-            updated[index] = { ...updated[index], progress: 90 };
-            return updated;
-          });
+          patchReceipt(receipt.id, { progress: 90 });
         } else {
           backendErrorStatus = response.status;
           // Capture the server-provided message so we can surface it if Tesseract
@@ -1116,14 +1200,7 @@ export default function Receipts() {
           const result = await Tesseract.recognize(receipt.file, "eng+ara", {
             logger: (m) => {
               if (m.status === "recognizing text") {
-                setProcessedReceipts((prev) => {
-                  const updated = [...prev];
-                  updated[index] = {
-                    ...updated[index],
-                    progress: 40 + Math.round(m.progress * 50),
-                  };
-                  return updated;
-                });
+                patchReceipt(receipt.id, { progress: 40 + Math.round(m.progress * 50) });
               }
             },
           });
@@ -1156,7 +1233,7 @@ export default function Receipts() {
 
         if (parsed.merchant || parsed.total) {
           try {
-            const category = await categorizeWithAI(parsed);
+            const category = await categorizeWithAI(parsed, receipt.companyId);
             if (category) parsed.category = category;
           } catch (aiError) {
             console.error("AI categorization failed, continuing without it:", aiError);
@@ -1164,29 +1241,18 @@ export default function Receipts() {
         }
       }
 
-      setProcessedReceipts((prev) => {
-        const updated = [...prev];
-        updated[index] = {
-          ...updated[index],
-          status: "completed",
-          data: withReviewMeta(parsed!),
-          progress: 100,
-        };
-        return updated;
+      patchReceipt(receipt.id, {
+        status: "completed",
+        data: withReviewMeta(parsed),
+        progress: 100,
       });
     } catch (error: any) {
-      console.error("OCR processing error:", error);
-      setProcessedReceipts((prev) => {
-        const updated = [...prev];
-        updated[index] = {
-          ...updated[index],
-          status: "error",
-          error:
-            error?.message ||
-            tr("Reading failed. Try a clearer image.", "تعذّرت القراءة. جرّب صورة أوضح."),
-          progress: 0,
-        };
-        return updated;
+      patchReceipt(receipt.id, {
+        status: "error",
+        error:
+          error?.message ||
+          tr("Reading failed. Try a clearer image.", "تعذّرت القراءة. جرّب صورة أوضح."),
+        progress: 0,
       });
     }
   };
@@ -1196,11 +1262,7 @@ export default function Receipts() {
       .map((receipt, index) => (isOcrRetryable(receipt) ? index : -1))
       .filter((index) => index >= 0);
 
-    if (indexesToProcess.length === 0) return;
-    if (autoReadUnavailable) {
-      explainAutoReadUnavailable();
-      return;
-    }
+    if (indexesToProcess.length === 0 || ocrStatusLoading || autoReadUnavailable) return;
 
     setIsProcessingBulk(true);
 
@@ -1222,7 +1284,7 @@ export default function Receipts() {
     return { ...parseReceiptOcrText(text), ocrSource: "browser-ocr" };
   };
 
-  const categorizeWithAI = async (data: ExtractedData): Promise<string | null> => {
+  const categorizeWithAI = async (data: ExtractedData, origin: string): Promise<string | null> => {
     if (!companyId) return null;
 
     try {
@@ -1233,7 +1295,7 @@ export default function Receipts() {
           ...getAuthHeaders(),
         },
         body: JSON.stringify({
-          companyId,
+          companyId: origin,
           description: `${data.merchant || "Unknown"} - ${data.total} ${data.currency}`,
           amount: data.total,
           currency: data.currency || "AED",
@@ -1250,29 +1312,75 @@ export default function Receipts() {
     return null;
   };
 
-  const updateReceiptData = (index: number, updates: Partial<ExtractedData>) => {
-    setProcessedReceipts((prev) => {
-      const updated = [...prev];
-      if (updated[index].data) {
-        updated[index] = {
-          ...updated[index],
-          data: { ...updated[index].data!, ...updates },
-        };
-      }
-      return updated;
+  const amountsFrom = (data: ExtractedData) => {
+    const result = approvedReceiptAmounts(data);
+    if (!result) throw new Error(t["pageLabels.receiptAmountsInvalid"]);
+    return result;
+  };
+
+  const toggleReviewed = (receipt: ReceiptToSave) => {
+    try {
+      amountsFrom(receipt.data);
+      updateReceiptData(receipt.id, { reviewed: !receipt.data.reviewed });
+    } catch (error) {
+      toast({ title: (error as Error).message, variant: "destructive" });
+    }
+  };
+
+  const editOcrAmount = (
+    id: string,
+    data: ExtractedData,
+    field: "subtotal" | "vatAmount" | "total",
+    value: string
+  ) => {
+    const input = value === "" ? undefined : Number(value);
+    const vat = field === "vatAmount" ? input : data.vatAmount;
+    const net =
+      field === "subtotal"
+        ? input
+        : (data.subtotal ?? (data.total == null ? undefined : data.total - (data.vatAmount ?? 0)));
+    if (field === "total") {
+      updateReceiptData(id, {
+        total: input,
+        subtotal: input == null ? undefined : Math.round((input - (vat ?? 0)) * 100) / 100,
+      });
+      return;
+    }
+    updateReceiptData(id, {
+      subtotal: net,
+      vatAmount: vat,
+      total: net == null ? undefined : Math.round((net + (vat ?? 0)) * 100) / 100,
     });
   };
 
-  const saveAllReceipts = async () => {
-    const completed = processedReceipts
-      .map((r, i) => ({ receipt: r, index: i }))
-      .filter(({ receipt }) => receipt.status === "completed" && receipt.data);
-    // Confidence routing: low-confidence extractions need an explicit review click first.
-    const completedIndices = completed.filter(
-      ({ receipt }) =>
-        !bandRequiresReview(receipt.data!.confidenceBand) || receipt.data!.reviewed === true
+  const updateReceiptData = (id: string, updates: Partial<ExtractedData>) => {
+    setProcessedReceipts((prev) =>
+      prev.map((receipt) =>
+        receipt.id === id && receipt.data
+          ? {
+              ...receipt,
+              data: {
+                ...receipt.data,
+                ...(Object.keys(updates).some(
+                  (key) => key !== "reviewed" && key !== "confirmDuplicate"
+                )
+                  ? { reviewed: false }
+                  : {}),
+                ...updates,
+              },
+            }
+          : receipt
+      )
     );
-    const heldForReview = completed.length - completedIndices.length;
+  };
+
+  const saveAllReceipts = async () => {
+    const completed = processedReceipts.filter(isReceiptReadyToSave);
+    // Confidence routing: low-confidence extractions need an explicit review click first.
+    const ready = completed.filter(
+      ({ data }) => !bandRequiresReview(data.confidenceBand) || data.reviewed === true
+    );
+    const heldForReview = completed.length - ready.length;
     if (heldForReview > 0) {
       toast({
         title: tr("Review required", "المراجعة مطلوبة"),
@@ -1284,7 +1392,7 @@ export default function Receipts() {
       });
     }
 
-    if (completedIndices.length === 0 && completed.length === 0) {
+    if (completed.length === 0) {
       toast({
         title: tr("No receipts to save", "لا توجد إيصالات للحفظ"),
         description: tr("Please process receipts before saving", "يرجى معالجة الإيصالات قبل الحفظ"),
@@ -1305,13 +1413,13 @@ export default function Receipts() {
       return;
     }
 
-    if (completedIndices.length === 0) return;
+    if (ready.length === 0) return;
 
     // Proceed with save directly - similar check removed for better UX
-    await performSave(completedIndices);
+    await performSave(ready);
   };
 
-  const performSave = async (completedIndices: any[]) => {
+  const performSave = async (drafts: ReceiptToSave[]) => {
     if (!companyId) {
       toast({
         title: tr("Error", "خطأ"),
@@ -1325,151 +1433,134 @@ export default function Receipts() {
     }
 
     // Capture total count before starting to prevent denominator from shrinking
-    const total = completedIndices.length;
+    const total = drafts.length;
     setTotalToSave(total);
-    setIsSavingAll(true);
-    let successCount = 0;
-    let errorCount = 0;
-    let firstSaveError: string | undefined;
+    if (!saveBatch.start()) return;
+    try {
+      let successCount = 0;
+      let errorCount = 0;
+      let firstSaveError: string | undefined;
 
-    // Save each receipt sequentially with status updates
-    for (const { receipt, index } of completedIndices) {
-      try {
-        // The server derives companyId/uploader from the session and URL and rejects unknown
-        // fields (W2-D), so only the fields the receipt contract accepts are sent.
-        const receiptData = {
-          merchant: receipt.data!.merchant || "Unknown",
-          date: receipt.data!.date || new Date().toISOString().split("T")[0],
-          amount: Number(receipt.data!.subtotal ?? receipt.data!.total) || 0,
-          vatAmount: receipt.data!.vatAmount ? Number(receipt.data!.vatAmount) : null,
-          category: receipt.data!.category || "Uncategorized",
-          currency: receipt.data!.currency || "AED",
-          imageData: receipt.preview,
-          rawText: receipt.data!.rawText,
-          suggestedCategory: receipt.data!.suggestedCategory ?? null,
-          classifierMethod: receipt.data!.classifier?.method ?? null,
-          classifierConfidence: receipt.data!.classifier?.confidence ?? null,
-          classifierReason: receipt.data!.classifier?.reason ?? null,
-          supplierTrn: receipt.data!.supplierTrn || undefined,
-          confirmDuplicate: receipt.data!.confirmDuplicate === true ? true : undefined,
-        };
+      // Save each receipt sequentially with status updates
+      for (const receipt of drafts) {
+        try {
+          assertDraftCompany(receipt.companyId);
+          // The server derives companyId/uploader from the session and URL and rejects unknown
+          // fields (W2-D), so only the fields the receipt contract accepts are sent.
+          const { net, vat } = amountsFrom(receipt.data);
+          const receiptData = {
+            captureId: receipt.id,
+            merchant: receipt.data!.merchant || "Unknown",
+            date: receipt.data!.date || new Date().toISOString().split("T")[0],
+            amount: net / 100,
+            vatAmount: vat / 100,
+            invoiceNumber: receipt.data.invoiceNumber?.trim() || null,
+            category: receipt.data!.category || "Uncategorized",
+            currency: receipt.data!.currency || "AED",
+            imageData: receipt.preview,
+            rawText: receipt.data!.rawText,
+            suggestedCategory: receipt.data!.suggestedCategory ?? null,
+            classifierMethod: receipt.data!.classifier?.method ?? null,
+            classifierConfidence: receipt.data!.classifier?.confidence ?? null,
+            classifierReason: receipt.data!.classifier?.reason ?? null,
+            supplierTrn: receipt.data!.supplierTrn || undefined,
+            confirmDuplicate: receipt.data!.confirmDuplicate === true ? true : undefined,
+          };
 
-        const created = await apiRequest(
-          "POST",
-          `/api/companies/${companyId}/receipts`,
-          receiptData
-        );
+          const created = await apiRequest(
+            "POST",
+            `/api/companies/${receipt.companyId}/receipts`,
+            receiptData
+          );
 
-        // Fuzzy duplicate warning from the server: saved, but worth a second look.
-        if (Array.isArray(created?.duplicateWarnings) && created.duplicateWarnings.length > 0) {
-          toast({
-            title: tr("Possible duplicate", "احتمال وجود تكرار"),
-            description: tr(
-              `A similar receipt from ${created.duplicateWarnings[0].merchant ?? "the same merchant"} already exists`,
-              `يوجد إيصال مشابه من ${created.duplicateWarnings[0].merchant ?? "نفس التاجر"} بالفعل`
-            ),
-          });
-        }
+          // Fuzzy duplicate warning from the server: saved, but worth a second look.
+          if (Array.isArray(created?.duplicateWarnings) && created.duplicateWarnings.length > 0) {
+            toast({
+              title: tr("Possible duplicate", "احتمال وجود تكرار"),
+              description: tr(
+                `A similar receipt from ${created.duplicateWarnings[0].merchant ?? "the same merchant"} already exists`,
+                `يوجد إيصال مشابه من ${created.duplicateWarnings[0].merchant ?? "نفس التاجر"} بالفعل`
+              ),
+            });
+          }
 
-        // Record the human decision on the AI extraction for audit (non-fatal).
-        if (created?.id && receipt.data!.confidenceBand) {
-          apiRequest("POST", `/api/companies/${companyId}/receipts/${created.id}/review-decision`, {
-            decision: receiptReviewDecision(receipt.data!.original, {
-              merchant: receipt.data!.merchant,
-              date: receipt.data!.date,
-              total: receipt.data!.total,
-              vatAmount: receipt.data!.vatAmount,
-              category: receipt.data!.category,
-            }),
-            band: receipt.data!.confidenceBand,
-          }).catch(() => {});
-        }
+          // Record the human decision on the AI extraction for audit (non-fatal).
+          if (created?.id && receipt.data!.confidenceBand) {
+            apiRequest(
+              "POST",
+              `/api/companies/${receipt.companyId}/receipts/${created.id}/review-decision`,
+              {
+                decision: receiptReviewDecision(receipt.data!.original, {
+                  merchant: created.merchant,
+                  date: created.date?.slice(0, 10),
+                  total: Number(created.amount ?? 0) + Number(created.vatAmount ?? 0),
+                  subtotal: Number(created.amount ?? 0),
+                  currency: created.currency,
+                  vatAmount: created.vatAmount,
+                  invoiceNumber: created.invoiceNumber,
+                  category: created.category,
+                }),
+                band: receipt.data!.confidenceBand,
+              }
+            ).catch(() => {});
+          }
 
-        // Mark this receipt as saved
-        setProcessedReceipts((prev) => {
-          const updated = [...prev];
-          updated[index] = { ...updated[index], status: "saved" };
-          return updated;
-        });
+          // Mark this receipt as saved
+          patchReceipt(receipt.id, { status: "saved" });
 
-        successCount++;
-      } catch (error: any) {
-        console.error("Failed to save receipt:", error);
+          successCount++;
+        } catch (error: any) {
+          // Extract error message
+          const isDuplicate = error?.status === 409;
+          const errorMessage = isDuplicate
+            ? tr("This file has already been uploaded.", "تم رفع هذا الملف من قبل.")
+            : error?.message || "Failed to save to database";
+          if (!firstSaveError) firstSaveError = errorMessage;
 
-        // Extract error message
-        const isDuplicate = error?.status === 409;
-        const errorMessage = isDuplicate
-          ? tr("This file has already been uploaded.", "تم رفع هذا الملف من قبل.")
-          : error?.message || "Failed to save to database";
-        if (!firstSaveError) firstSaveError = errorMessage;
-
-        // Mark this receipt as failed to save
-        setProcessedReceipts((prev) => {
-          const updated = [...prev];
-          updated[index] = {
-            ...updated[index],
+          // Mark this receipt as failed to save
+          patchReceipt(receipt.id, {
             status: "save_error",
             error: errorMessage,
             duplicate: isDuplicate,
-          };
-          return updated;
+          });
+
+          errorCount++;
+        }
+      }
+
+      // Wait for queries to invalidate and refresh
+      await queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
+
+      if (successCount > 0) {
+        toast({
+          title: tr("Receipts Saved", "تم حفظ الإيصالات"),
+          description: tr(
+            `Successfully saved ${successCount} receipt(s)${errorCount > 0 ? `. ${errorCount} failed` : ""}`,
+            `تم حفظ ${successCount} إيصال بنجاح${errorCount > 0 ? `، وفشل ${errorCount}` : ""}`
+          ),
         });
 
-        errorCount++;
-      }
-    }
-
-    // Wait for queries to invalidate and refresh
-    await queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
-
-    setIsSavingAll(false);
-
-    if (successCount > 0) {
-      toast({
-        title: tr("Receipts Saved", "تم حفظ الإيصالات"),
-        description: tr(
-          `Successfully saved ${successCount} receipt(s)${errorCount > 0 ? `. ${errorCount} failed` : ""}`,
-          `تم حفظ ${successCount} إيصال بنجاح${errorCount > 0 ? `، وفشل ${errorCount}` : ""}`
-        ),
-      });
-
-      // Only clear successfully saved receipts
-      if (errorCount === 0) {
-        resetForm();
-      } else {
-        // Remove only the saved ones, keep the failed ones for retry
         setProcessedReceipts((prev) => prev.filter((r) => r.status !== "saved"));
+      } else {
+        toast({
+          title: tr("Save Failed", "فشل الحفظ"),
+          description: firstSaveError
+            ? tr(`Couldn't save: ${firstSaveError}`, `تعذّر الحفظ: ${firstSaveError}`)
+            : tr(
+                "Failed to save any receipts. Please try again.",
+                "تعذّر حفظ أي إيصال. يرجى المحاولة مرة أخرى."
+              ),
+          variant: "destructive",
+        });
       }
-    } else {
-      toast({
-        title: tr("Save Failed", "فشل الحفظ"),
-        description: firstSaveError
-          ? tr(`Couldn't save: ${firstSaveError}`, `تعذّر الحفظ: ${firstSaveError}`)
-          : tr(
-              "Failed to save any receipts. Please try again.",
-              "تعذّر حفظ أي إيصال. يرجى المحاولة مرة أخرى."
-            ),
-        variant: "destructive",
-      });
+    } finally {
+      saveBatch.finish();
     }
   };
 
-  // Warn before navigating away/refreshing while there are extracted-but-unsaved
-  // receipts — they live only in memory until "Save All", so a refresh loses them.
-  const hasUnsavedReceipts = processedReceipts.some((r) => r.status !== "saved");
-  useEffect(() => {
-    if (!hasUnsavedReceipts) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [hasUnsavedReceipts]);
-
   const pendingCount = processedReceipts.filter((r) => r.status === "pending").length;
   const processingCount = processedReceipts.filter((r) => r.status === "processing").length;
-  const completedCount = processedReceipts.filter((r) => r.status === "completed").length;
+  const completedCount = processedReceipts.filter(isReceiptReadyToSave).length;
   const savedCount = processedReceipts.filter((r) => r.status === "saved").length;
   const errorCount = processedReceipts.filter((r) => r.status === "error").length;
   const saveErrorCount = processedReceipts.filter((r) => r.status === "save_error").length;
@@ -1503,7 +1594,18 @@ export default function Receipts() {
     });
   }, [receipts, dateRange.from, dateRange.to]);
 
+  function canExportReceipts(origin: string) {
+    try {
+      assertDraftCompany(origin);
+      return true;
+    } catch {
+      toast({ title: t["pageLabels.receiptDraftCompanyChanged"], variant: "destructive" });
+      return false;
+    }
+  }
+
   const handleExportExcel = async () => {
+    if (!companyId || !canExportReceipts(companyId)) return;
     if (!filteredReceipts.length) {
       toast({
         variant: "destructive",
@@ -1522,7 +1624,8 @@ export default function Receipts() {
     try {
       await exportToExcel(
         [prepareReceiptsForExport(filteredReceipts, locale)],
-        `expenses${dateRangeStr}`
+        `expenses${dateRangeStr}`,
+        { assertActive: () => assertDraftCompany(companyId) }
       );
       toast({
         title: tr("Export successful", "تم التصدير بنجاح"),
@@ -1543,6 +1646,7 @@ export default function Receipts() {
   };
 
   const handleExportGoogleSheets = async () => {
+    if (!companyId || !canExportReceipts(companyId)) return;
     if (!companyId || !filteredReceipts.length) {
       toast({
         variant: "destructive",
@@ -1591,6 +1695,7 @@ export default function Receipts() {
   // Server-rendered Excel of the OCR-extracted rows currently on screen
   // (post-extraction, pre-save). Skips rows that haven't completed OCR yet.
   const handleDownloadOcrExcel = async () => {
+    if (!companyId || !canExportReceipts(companyId)) return;
     const rows = processedReceipts
       .filter((r) => r.status === "completed" || r.status === "saved")
       .filter((r) => r.data)
@@ -1610,7 +1715,7 @@ export default function Receipts() {
 
     setIsOcrExporting(true);
     try {
-      await downloadOcrExcel(rows);
+      await downloadOcrExcel(rows, { assertActive: () => assertDraftCompany(companyId) });
       toast({
         title: tr("Excel ready", "ملف Excel جاهز"),
         description: tr(
@@ -1634,6 +1739,7 @@ export default function Receipts() {
   // as the OCR export, so users get a consistent spreadsheet format for both
   // in-flight scans and historical data.
   const handleDownloadReceiptsExcel = async () => {
+    if (!companyId || !canExportReceipts(companyId)) return;
     if (!companyId || !filteredReceipts.length) {
       toast({
         variant: "destructive",
@@ -1646,6 +1752,7 @@ export default function Receipts() {
     try {
       await downloadReceiptsExcel(companyId, {
         ids: filteredReceipts.map((r: any) => r.id),
+        assertActive: () => assertDraftCompany(companyId),
       });
       toast({
         title: tr("Excel ready", "ملف Excel جاهز"),
@@ -1678,7 +1785,12 @@ export default function Receipts() {
         }
         actions={
           <Button
-            onClick={() => setManualExpenseDialogOpen(true)}
+            onClick={() => {
+              const images = processedReceipts.filter(
+                (receipt) => receipt.companyId === companyId && isOcrRetryable(receipt)
+              );
+              openManualExpense(images.length === 1 ? images[0] : null);
+            }}
             className="w-full sm:w-auto"
             data-testid="button-add-manual-expense"
           >
@@ -1787,34 +1899,36 @@ export default function Receipts() {
 
               {/* Action Buttons */}
               {processedReceipts.length > 0 && (
-                <div className="flex gap-2">
-                  <Button
-                    onClick={processAllReceipts}
-                    disabled={isProcessingBulk || retryableOcrCount === 0}
-                    className="flex-1"
-                    size="lg"
-                    data-testid="button-process-all"
-                  >
-                    {isProcessingBulk ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <T k="invoices.processing" />
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        {errorCount > 0 && pendingCount === 0
-                          ? formatMessage(t["screens.retryFailedOcr"], { count: errorCount })
-                          : errorCount > 0
-                            ? formatMessage(t["screens.processRetryOcr"], {
-                                count: retryableOcrCount,
-                              })
-                            : formatMessage(t["screens.processAllReceipts"], {
-                                count: pendingCount,
-                              })}
-                      </>
-                    )}
-                  </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {!autoReadUnavailable && (
+                    <Button
+                      onClick={processAllReceipts}
+                      disabled={ocrStatusLoading || isProcessingBulk || retryableOcrCount === 0}
+                      className="flex-1"
+                      size="lg"
+                      data-testid="button-process-all"
+                    >
+                      {isProcessingBulk ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <T k="invoices.processing" />
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          {errorCount > 0 && pendingCount === 0
+                            ? formatMessage(t["screens.retryFailedOcr"], { count: errorCount })
+                            : errorCount > 0
+                              ? formatMessage(t["screens.processRetryOcr"], {
+                                  count: retryableOcrCount,
+                                })
+                              : formatMessage(t["screens.processAllReceipts"], {
+                                  count: pendingCount,
+                                })}
+                        </>
+                      )}
+                    </Button>
+                  )}
 
                   <Button
                     onClick={saveAllReceipts}
@@ -1912,7 +2026,7 @@ export default function Receipts() {
           {processedReceipts.length > 0 && (
             <div className="space-y-3">
               {processedReceipts.map((receipt, index) => (
-                <Card key={index} data-testid={`receipt-card-${index}`}>
+                <Card key={receipt.id} data-testid={`receipt-card-${index}`}>
                   <CardContent className="p-4">
                     <div className="flex flex-col gap-4 sm:flex-row">
                       {/* Thumbnail — click to view source image alongside extracted data */}
@@ -1931,7 +2045,7 @@ export default function Receipts() {
                         >
                           <img
                             src={receipt.preview}
-                            alt={`Receipt ${index + 1}`}
+                            alt=""
                             className="w-full h-full object-cover"
                           />
                           <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -1942,8 +2056,9 @@ export default function Receipts() {
                           variant="destructive"
                           size="icon"
                           className="absolute -top-2 -end-2 h-6 w-6"
-                          onClick={() => removeReceipt(index)}
-                          disabled={isProcessingBulk}
+                          onClick={() => removeReceipt(receipt.id)}
+                          disabled={isProcessingBulk || isSavingAll}
+                          aria-label={t["components.ui.fileDropRemove"]}
                           data-testid={`button-remove-${index}`}
                         >
                           <X className="w-3 h-3" />
@@ -1967,8 +2082,19 @@ export default function Receipts() {
                           </div>
                         )}
 
+                        {isOcrRetryable(receipt) && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => openManualExpense(receipt)}
+                            data-testid={`button-manual-receipt-${index}`}
+                          >
+                            {t["pageLabels.addExpenseManually"]}
+                          </Button>
+                        )}
+
                         {receipt.status === "processing" && (
-                          <div className="space-y-2">
+                          <div className="space-y-2" role="status">
                             <div className="flex items-center justify-between text-sm">
                               <span className="flex items-center gap-2">
                                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -2040,78 +2166,109 @@ export default function Receipts() {
                         {receipt.status === "completed" && receipt.data && (
                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <div className="space-y-1">
-                              <Label className="text-xs">Merchant / supplier</Label>
+                              <Label htmlFor={`ocr-merchant-${index}`}>
+                                {t["forms.receipt.merchant"]}
+                              </Label>
                               <Input
+                                id={`ocr-merchant-${index}`}
+                                dir="auto"
                                 value={receipt.data.merchant || ""}
                                 onChange={(e) =>
-                                  updateReceiptData(index, { merchant: e.target.value })
+                                  updateReceiptData(receipt.id, { merchant: e.target.value })
                                 }
-                                className="h-8"
+                                className="min-h-10"
                                 data-testid={`input-merchant-${index}`}
                               />
                             </div>
 
                             <div className="space-y-1">
-                              <Label className="text-xs">Date</Label>
+                              <Label htmlFor={`ocr-date-${index}`}>{t.date}</Label>
                               <DatePicker
+                                id={`ocr-date-${index}`}
                                 value={receipt.data.date || ""}
-                                onChange={(value) => updateReceiptData(index, { date: value })}
-                                className="h-8"
+                                onChange={(value) => updateReceiptData(receipt.id, { date: value })}
+                                className="min-h-10"
                                 data-testid={`input-date-${index}`}
                               />
                             </div>
 
-                            {receipt.data.invoiceNumber && (
-                              <div className="space-y-1 col-span-2">
-                                <Label className="text-xs">Invoice / receipt number</Label>
-                                <Input
-                                  value={receipt.data.invoiceNumber || ""}
-                                  onChange={(e) =>
-                                    updateReceiptData(index, { invoiceNumber: e.target.value })
-                                  }
-                                  className="h-8"
-                                />
-                              </div>
-                            )}
-
-                            <div className="space-y-1">
-                              <Label className="text-xs">Subtotal (excl. VAT)</Label>
+                            <div className="space-y-1 sm:col-span-2">
+                              <Label htmlFor={`ocr-number-${index}`}>
+                                {t["pageLabels.receiptDocumentNumber"]}
+                              </Label>
                               <Input
-                                type="number"
-                                step="0.01"
-                                value={receipt.data.subtotal ?? receipt.data.total ?? ""}
+                                id={`ocr-number-${index}`}
+                                dir="ltr"
+                                value={receipt.data.invoiceNumber || ""}
                                 onChange={(e) =>
-                                  updateReceiptData(index, { subtotal: parseFloat(e.target.value) })
+                                  updateReceiptData(receipt.id, { invoiceNumber: e.target.value })
                                 }
-                                className="h-8"
+                                className="min-h-10"
                               />
                             </div>
 
                             <div className="space-y-1">
-                              <Label className="text-xs">
-                                VAT ({receipt.data.vatPercentage ?? 5}%)
+                              <Label htmlFor={`ocr-subtotal-${index}`}>
+                                {t["pageLabels.receiptSubtotal"]}
                               </Label>
                               <Input
                                 type="number"
                                 step="0.01"
-                                value={receipt.data.vatAmount ?? ""}
-                                onChange={(e) =>
-                                  updateReceiptData(index, {
-                                    vatAmount: parseFloat(e.target.value),
-                                  })
+                                id={`ocr-subtotal-${index}`}
+                                value={
+                                  receipt.data.subtotal ??
+                                  (receipt.data.total != null
+                                    ? Math.round(
+                                        (receipt.data.total - (receipt.data.vatAmount ?? 0)) * 100
+                                      ) / 100
+                                    : "")
                                 }
-                                className="h-8"
+                                onChange={(e) =>
+                                  editOcrAmount(
+                                    receipt.id,
+                                    receipt.data!,
+                                    "subtotal",
+                                    e.target.value
+                                  )
+                                }
+                                className="min-h-10"
                               />
                             </div>
 
                             <div className="space-y-1">
-                              <Label className="text-xs font-semibold">Total (incl. VAT)</Label>
+                              <Label htmlFor={`ocr-vat-${index}`}>
+                                {formatMessage(t["pageLabels.receiptVatCurrency"], {
+                                  currency: currencyLabel(receipt.data.currency, locale),
+                                })}
+                              </Label>
                               <Input
                                 type="number"
                                 step="0.01"
+                                id={`ocr-vat-${index}`}
+                                value={receipt.data.vatAmount ?? ""}
+                                onChange={(e) =>
+                                  editOcrAmount(
+                                    receipt.id,
+                                    receipt.data!,
+                                    "vatAmount",
+                                    e.target.value
+                                  )
+                                }
+                                className="min-h-10"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <Label htmlFor={`ocr-total-${index}`}>
+                                {t["pageLabels.receiptTotal"]}
+                              </Label>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                id={`ocr-total-${index}`}
                                 value={receipt.data.total ?? ""}
                                 onChange={(e) =>
-                                  updateReceiptData(index, { total: parseFloat(e.target.value) })
+                                  editOcrAmount(receipt.id, receipt.data!, "total", e.target.value)
                                 }
                                 className="h-8 font-semibold"
                                 data-testid={`input-amount-${index}`}
@@ -2125,11 +2282,11 @@ export default function Receipts() {
                               <Select
                                 value={receipt.data.category}
                                 onValueChange={(value) =>
-                                  updateReceiptData(index, { category: value })
+                                  updateReceiptData(receipt.id, { category: value })
                                 }
                               >
                                 <SelectTrigger
-                                  className="h-8"
+                                  className="min-h-10"
                                   data-testid={`select-category-${index}`}
                                 >
                                   <SelectValue placeholder={t["forms.claim.category"]} />
@@ -2176,7 +2333,7 @@ export default function Receipts() {
                             </div>
 
                             {receipt.data.lineItems && receipt.data.lineItems.length > 0 && (
-                              <div className="col-span-2 space-y-1">
+                              <div className="sm:col-span-2 space-y-1">
                                 <Label className="text-xs">
                                   <T k="pages.lineItems" />
                                 </Label>
@@ -2198,7 +2355,7 @@ export default function Receipts() {
 
                             {receipt.data.confidenceBand && (
                               <div
-                                className="col-span-2 space-y-1"
+                                className="sm:col-span-2 space-y-1"
                                 data-testid={`confidence-band-${index}`}
                               >
                                 <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-2">
@@ -2238,10 +2395,12 @@ export default function Receipts() {
                                 </p>
                                 {receipt.data.reviewReasons &&
                                   receipt.data.reviewReasons.length > 0 && (
-                                    <ul className="text-xs text-muted-foreground list-disc ps-4">
-                                      {receipt.data.reviewReasons.map((reason, i) => (
-                                        <li key={i}>{reason}</li>
-                                      ))}
+                                    <ul className="list-disc space-y-1 ps-4 text-small text-muted-foreground">
+                                      {receiptReviewNotes(receipt.data, locale, t).map(
+                                        (reason, i) => (
+                                          <li key={i}>{reason}</li>
+                                        )
+                                      )}
                                     </ul>
                                   )}
                                 {bandRequiresReview(receipt.data.confidenceBand) && (
@@ -2250,9 +2409,7 @@ export default function Receipts() {
                                     size="sm"
                                     data-testid={`button-mark-reviewed-${index}`}
                                     onClick={() =>
-                                      updateReceiptData(index, {
-                                        reviewed: !receipt.data!.reviewed,
-                                      })
+                                      toggleReviewed({ ...receipt, data: receipt.data! })
                                     }
                                   >
                                     {receipt.data.reviewed
@@ -2271,7 +2428,7 @@ export default function Receipts() {
                               receipt.data.reverseChargeSuggested ||
                               receipt.data.ocrSource === "ai") && (
                               <div
-                                className="col-span-2 flex flex-wrap gap-2 text-xs"
+                                className="sm:col-span-2 flex flex-wrap gap-2 text-xs"
                                 data-testid={`tax-invoice-signals-${index}`}
                               >
                                 {receipt.data.supplierTrn && (
@@ -2302,29 +2459,23 @@ export default function Receipts() {
                               </div>
                             )}
 
-                            {receipt.data.classifier?.method && (
-                              <div className="col-span-2">
-                                <p
-                                  className="text-xs text-muted-foreground"
-                                  data-testid={`text-classifier-why-${index}`}
-                                  title={receipt.data.classifier.reason || undefined}
-                                >
-                                  Category suggested by{" "}
-                                  <span className="font-medium text-foreground">
-                                    {CLASSIFIER_METHOD_LABELS[receipt.data.classifier.method] ??
-                                      receipt.data.classifier.method}
-                                  </span>
-                                  {typeof receipt.data.classifier.confidence === "number" && (
-                                    <>
-                                      {" "}
-                                      · {Math.round(receipt.data.classifier.confidence * 100)}%
-                                      confident
-                                    </>
-                                  )}
-                                  . You can change it above — your correction trains the model.
-                                </p>
-                              </div>
-                            )}
+                            {receipt.data.classifier?.method &&
+                              Object.hasOwn(
+                                CLASSIFIER_METHOD_LABELS,
+                                receipt.data.classifier.method
+                              ) && (
+                                <div className="sm:col-span-2">
+                                  <p
+                                    className="text-xs text-muted-foreground"
+                                    data-testid={`text-classifier-why-${index}`}
+                                  >
+                                    {formatMessage(t["pageLabels.receiptSuggestedCategory"], {
+                                      source:
+                                        t[CLASSIFIER_METHOD_LABELS[receipt.data.classifier.method]],
+                                    })}
+                                  </p>
+                                </div>
+                              )}
                           </div>
                         )}
                       </div>
@@ -2390,6 +2541,8 @@ export default function Receipts() {
                 <div className="p-4">
                   <CardListSkeleton count={4} />
                 </div>
+              ) : receiptsError && !receipts ? (
+                <ErrorState compact onRetry={() => void refetchReceipts()} />
               ) : filteredReceipts && filteredReceipts.length > 0 ? (
                 <VirtualList
                   items={filteredReceipts as any[]}
@@ -2798,7 +2951,11 @@ export default function Receipts() {
                       )}
                     </div>
                     <p className="font-semibold">
-                      {formatCurrency(transaction.amount || 0, "AED", locale)}
+                      {formatCurrency(
+                        transaction.amount || 0,
+                        transaction.currency || "AED",
+                        locale
+                      )}
                     </p>
                   </div>
                 </div>
@@ -2948,7 +3105,7 @@ export default function Receipts() {
                     <p className="font-semibold text-lg">
                       {formatCurrency(
                         (postingReceipt.amount || 0) + (postingReceipt.vatAmount || 0),
-                        "AED",
+                        postingReceipt.currency || "AED",
                         locale
                       )}
                     </p>
@@ -2956,8 +3113,16 @@ export default function Receipts() {
                     {(postingReceipt.vatAmount || 0) > 0 && (
                       <p className="text-xs text-muted-foreground" data-testid="text-post-net-vat">
                         {formatMessage(t["pages.receiptsNetPlusVat"], {
-                          net: formatCurrency(postingReceipt.amount || 0, "AED", locale),
-                          vat: formatCurrency(postingReceipt.vatAmount || 0, "AED", locale),
+                          net: formatCurrency(
+                            postingReceipt.amount || 0,
+                            postingReceipt.currency || "AED",
+                            locale
+                          ),
+                          vat: formatCurrency(
+                            postingReceipt.vatAmount || 0,
+                            postingReceipt.currency || "AED",
+                            locale
+                          ),
                         })}
                       </p>
                     )}
@@ -3056,12 +3221,24 @@ export default function Receipts() {
                     {accountLabel(accounts?.find((a) => a.id === selectedExpenseAccount)) ||
                       tr("Expense account", "حساب المصروف")}
                   </span>
-                  <span>{formatCurrency(postingReceipt?.amount || 0, "AED", locale)}</span>
+                  <span>
+                    {formatCurrency(
+                      postingReceipt?.amount || 0,
+                      postingReceipt?.currency || "AED",
+                      locale
+                    )}
+                  </span>
                 </div>
                 {(postingReceipt?.vatAmount || 0) > 0 && (
                   <div className="flex justify-between" data-testid="preview-input-vat">
                     <span>{t["pages.receiptsInputVatRecoverable"]}</span>
-                    <span>{formatCurrency(postingReceipt?.vatAmount || 0, "AED", locale)}</span>
+                    <span>
+                      {formatCurrency(
+                        postingReceipt?.vatAmount || 0,
+                        postingReceipt?.currency || "AED",
+                        locale
+                      )}
+                    </span>
                   </div>
                 )}
                 <div className="flex justify-between ps-4">
@@ -3073,7 +3250,7 @@ export default function Receipts() {
                   <span>
                     {formatCurrency(
                       (postingReceipt?.amount || 0) + (postingReceipt?.vatAmount || 0),
-                      "AED",
+                      postingReceipt?.currency || "AED",
                       locale
                     )}
                   </span>
@@ -3112,14 +3289,22 @@ export default function Receipts() {
       </Dialog>
 
       {/* Manual Expense Entry Dialog */}
-      <Dialog open={manualExpenseDialogOpen} onOpenChange={setManualExpenseDialogOpen}>
+      <Dialog
+        open={!!manualDraft}
+        onOpenChange={(open) => {
+          if (manualExpenseMutation.isPending) return;
+          if (!open) setManualDraft(null);
+        }}
+      >
         <DialogContent size="md" data-testid="dialog-manual-expense">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.addExpenseManually" />
             </DialogTitle>
             <DialogDescription>
-              <T k="pageLabels.enterExpenseDetailsWithoutOcrScanning" />
+              {manualSource
+                ? t["pageLabels.receiptImageAttached"]
+                : t["pageLabels.enterExpenseDetailsWithoutOcrScanning"]}
             </DialogDescription>
           </DialogHeader>
           <Form {...manualExpenseForm}>
@@ -3231,7 +3416,8 @@ export default function Receipts() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setManualExpenseDialogOpen(false)}
+                  onClick={() => setManualDraft(null)}
+                  disabled={manualExpenseMutation.isPending}
                 >
                   <T k="banking.common.cancel" />
                 </Button>

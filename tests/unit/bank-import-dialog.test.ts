@@ -127,9 +127,10 @@ const retiredLabels = [
 ];
 
 async function chooseStatement() {
-  const file = new File(["<Document/>"], "statement.xml");
+  const sample = "Date,Description,Amount\n2026-11-20,Sample transaction,20";
+  const file = new File([sample], "statement.csv", { type: "text/csv" });
   Object.defineProperty(file, "arrayBuffer", {
-    value: async () => new Uint8Array([60, 62]).buffer,
+    value: async () => new TextEncoder().encode(sample).buffer,
   });
   const input = dialog()?.querySelector('[data-testid="input-bank-statement-file"]');
   expect(input).not.toBeNull();

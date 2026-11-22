@@ -39,12 +39,11 @@ describe("migrations", () => {
     });
     for (const e of journal.entries.filter((x) => x.idx >= 88)) {
       expect(e).toMatchObject({ version: "7", breakpoints: false });
-      // Leave the last historical preview timestamp unused so installed preview databases
-      // apply every migrated bank entry and the portal catch-up.
+      // Keep release timestamps fixed and reserve a gap before the bank entries.
       const gaps = {
         "0144_prepare_preview_firm_membership": 5_000,
         "0142_recover_firm_membership_provenance": 5_000,
-        "0138_repair_bank_gl_links": 50_000,
+        "0138_repair_bank_gl_links": 30_000,
       } as Record<string, number>;
       const cadence = gaps[e.tag] ?? 10_000;
       expect(e.when - journal.entries[e.idx - 1].when).toBe(cadence);

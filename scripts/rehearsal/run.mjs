@@ -27,6 +27,7 @@ const previousReceiptRepair = "0140_repair_bank_receipt_provenance";
 // Preserve the exact versions from a5e75c2104c846ed5eae71dd0b247161413057b7 so an
 // already-applied database carries the original hashes even in a shallow checkout.
 const historicalPurchases = "0127_wq2_purchases";
+const postCsvPurchasesHash = "7046a6fedb2a4deaf36016a88a9cbe6ecd9664fe3794441592aa3981c530c861";
 const historicalHashes = {
   [historicalPurchases]: "107cfd37aac37b878018ca0c5ef1d2f964bb982436e5f0771a11ca3d1b73dcde",
   "0089_platform_foundation": "3da08352369f0ec61e21f218165042af1e762b2092a56d60461623593ab2c011",
@@ -513,6 +514,8 @@ async function stageReleaseSchema(database) {
     "0141_firm_membership_provenance",
     "0142_recover_firm_membership_provenance",
     "0143_preserve_firm_grant_review",
+    "0144_receipt_invoice_number",
+    "0145_receipt_rate_and_capture",
   ]) {
     psql(database, readFileSync(path.join(migrationsFolder, tag + ".sql"), "utf8"));
   }
@@ -520,14 +523,15 @@ async function stageReleaseSchema(database) {
 
 async function applyPublishedBankHead(
   database,
-  { ref, count, digest, historical, entries = previewEntries.slice(0, count), useCurrentPurchases }
+  { ref, count, digest, historical, entries = previewEntries.slice(0, count), usesPostCsvPurchases }
 ) {
-  const purchases = useCurrentPurchases ? {} : { [historicalPurchases]: historicalPurchases };
+  const purchases = usesPostCsvPurchases ? "post-csv/" + historicalPurchases : historicalPurchases;
+  const purchasesHash = usesPostCsvPurchases ? postCsvPurchasesHash : historicalHashes[historicalPurchases];
   const folder = stageMigrations(
     database,
     count,
-    { ...purchases, ...historical },
-    { [historicalPurchases]: historicalHashes[historicalPurchases] },
+    { [historicalPurchases]: purchases, ...historical },
+    { [historicalPurchases]: purchasesHash },
     entries
   );
   const originalFiles = readMigrationFiles({ migrationsFolder: folder });
@@ -939,7 +943,19 @@ async function rehearse() {
     digest: "b621b62018b637563e8c43d0989f16a14c6abefd2c194e0415d785fb88194ab3",
     historical: {},
     entries: preFirmEntries,
-    useCurrentPurchases: true,
+    usesPostCsvPurchases: true,
+  });
+  const preReceiptEntries = [
+    ...journal.entries.slice(0, historicalCount),
+    ...JSON.parse(readFileSync(path.join(here, "historical/pre-receipt-release-journal-tail.json"), "utf8")),
+  ];
+  await checkPreviewUpgrade({
+    ref: "a3eb9a2a",
+    count: preReceiptEntries.length,
+    digest: "8e1bce2e2a94da442afb51da31c9eac06fd45265255b28577ab4883c078d4b1b",
+    historical: {},
+    entries: preReceiptEntries,
+    usesPostCsvPurchases: true,
   });
   console.log("Migration rehearsal passed");
 }

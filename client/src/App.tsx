@@ -535,7 +535,11 @@ function Router() {
   }
 
   // Client Portal routes — authenticated, portal layout
-  if (pathname.startsWith("/client-portal")) {
+  if (pathname === "/client-portal" || pathname === "/client-portal/") {
+    return <RedirectTo to="/client-portal/dashboard" />;
+  }
+
+  if (pathname.startsWith("/client-portal/")) {
     return (
       <PortalRoute>
         <PortalLayout>

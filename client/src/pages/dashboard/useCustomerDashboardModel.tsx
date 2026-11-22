@@ -645,7 +645,12 @@ export function useCustomerDashboardModel() {
     query: periodQuery,
   } = useDashboardPeriod();
 
-  const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    error: statsError,
+    refetch: refetchStats,
+  } = useQuery<DashboardStats>({
     queryKey: ["/api/companies", selectedCompanyId, "dashboard/stats", periodQuery],
     queryFn: () =>
       apiRequest("GET", `/api/companies/${selectedCompanyId}/dashboard/stats${periodQuery}`),
@@ -1431,6 +1436,8 @@ export function useCustomerDashboardModel() {
     periodQuery,
     stats,
     statsLoading,
+    statsError,
+    refetchStats,
     recentInvoices,
     invoicesLoading,
     journalEntries,

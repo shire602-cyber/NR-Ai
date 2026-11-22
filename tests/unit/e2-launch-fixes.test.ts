@@ -103,17 +103,49 @@ describe("[E2][J3-r2] VAT filing stage", () => {
     expect(vatNextAction({ status: "draft" })).toBe("review");
     expect(vatNextAction({ status: "ready" })).toBe("recordFiling");
     expect(vatNextAction({ status: "submitted" })).toBe("recordFiling");
-    expect(vatNextAction({ status: "filed", box14PayableTax: 80 })).toBe("recordPayment");
-    expect(vatNextAction({ status: "filed", box14PayableTax: -5 })).toBe("recordRefund");
-    expect(vatNextAction({ status: "filed", box14PayableTax: 0 })).toBe("none");
-    expect(vatFilingStage({ status: "filed", paymentStatus: "paid", box14PayableTax: 80 })).toBe(
-      "paid"
+    expect(vatNextAction({ status: "filed", paymentStatus: "paid" })).toBe("recordFiling");
+    expect(
+      vatNextAction({ status: "filed", ftaReferenceNumber: "ET-1", box14PayableTax: 80 })
+    ).toBe("recordPayment");
+    expect(
+      vatNextAction({ status: "filed", ftaReferenceNumber: "ET-1", box14PayableTax: -5 })
+    ).toBe("recordRefund");
+    expect(vatNextAction({ status: "filed", ftaReferenceNumber: "ET-1", box14PayableTax: 0 })).toBe(
+      "none"
     );
-    expect(vatFilingStage({ status: "filed", paymentStatus: "paid", box14PayableTax: -5 })).toBe(
-      "refunded"
-    );
+    expect(
+      vatFilingStage({
+        status: "filed",
+        ftaReferenceNumber: "ET-1",
+        paymentStatus: "paid",
+        box14PayableTax: 80,
+      })
+    ).toBe("paid");
+    expect(
+      vatFilingStage({
+        status: "filed",
+        ftaReferenceNumber: "ET-1",
+        paymentStatus: "paid",
+        box14PayableTax: -5,
+      })
+    ).toBe("refunded");
     expect(vatChecklist({ status: "ready" })).toMatchObject({ ready: true, filed: false });
-    expect(vatChecklist({ status: "filed", box14PayableTax: 0 })).toMatchObject({
+    expect(vatChecklist({ status: "submitted", box14PayableTax: 0 })).toMatchObject({
+      ready: true,
+      filed: false,
+      settled: false,
+      nothingToSettle: true,
+    });
+    expect(
+      vatChecklist({ status: "submitted", paymentStatus: "paid", box14PayableTax: 80 })
+    ).toMatchObject({
+      ready: true,
+      filed: false,
+      settled: false,
+    });
+    expect(
+      vatChecklist({ status: "filed", ftaReferenceNumber: "ET-1", box14PayableTax: 0 })
+    ).toMatchObject({
       filed: true,
       settled: true,
       nothingToSettle: true,
