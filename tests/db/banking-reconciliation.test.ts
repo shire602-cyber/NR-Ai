@@ -947,6 +947,33 @@ describe("CSV statement import isolation", () => {
 });
 
 describe("CSV statement import regressions", () => {
+  it("requires the same ambiguity confirmation on the managed and compatibility CSV endpoints", async () => {
+    const t = await h.createTenant();
+    const account = await bankAccount(t);
+    const connections = `${base(t)}/bank-connections`;
+    const connection = await t.as.post(connections, {
+      bankName: "Emirates NBD",
+      bankAccountId: account.id,
+    });
+    expect(connection.status, connection.text).toBe(201);
+    const csvContent = "Date,Description,Debit,Credit\n03/04/2026,Card purchase,17.25,";
+    const legacy = `${connections}/${connection.body.id}/import`;
+    const main = await t.as.post(`${base(t)}/bank-statements/import`, {
+      bankAccountId: account.id,
+      csvContent,
+    });
+    const unconfirmed = await t.as.post(legacy, { csvContent });
+    expect(main.status, main.text).toBe(409);
+    expect(main.body.code).toBe("CHOICE_REQUIRED");
+    expect(unconfirmed.status, unconfirmed.text).toBe(409);
+    expect(unconfirmed.body).toEqual(main.body);
+    expect(await lines(t, account.id)).toHaveLength(0);
+    const confirmed = await t.as.post(legacy, { csvContent, acknowledgeAmbiguity: true });
+    expect(confirmed.status, confirmed.text).toBe(200);
+    expect(confirmed.body.imported).toBe(1);
+    expect(await lines(t, account.id)).toHaveLength(1);
+  });
+
   it("links prior statement rows to the managed account without duplicating overlapping CSV rows", async () => {
     const t = await h.createTenant();
     const account = await bankAccount(t);

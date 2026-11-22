@@ -135,6 +135,11 @@ describe("Public SaaS launch surface", () => {
     for (const locale of ["en", "ar"]) {
       const forms = JSON.parse(readRepoFile(`client/src/locales/${locale}/forms.json`));
       expect(forms).not.toHaveProperty(["forms.claim.receiptUrlHint"]);
+      const banking = JSON.parse(readRepoFile(`client/src/locales/${locale}/banking.json`));
+      const toasts = JSON.parse(readRepoFile(`client/src/locales/${locale}/toasts.json`));
+      expect(banking).not.toHaveProperty(["banking.rulesDescription"]);
+      expect(banking["banking.rulesCreateDesc"]).toContain("CSV");
+      expect(toasts).not.toHaveProperty(["toasts.newsletterFeatureWillBeAvailableSoonConfigure"]);
     }
     expect(readRepoFile("server/services/email-intake.ts")).not.toMatch(/\bbank\s+feeds?\b/i);
     expect(readRepoFile("shared/server-copy.ts")).not.toMatch(/\bReconnect it under Banking\b/i);

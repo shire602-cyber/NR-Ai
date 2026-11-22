@@ -689,6 +689,45 @@ describe("W5-D firm practice management", () => {
     }
   );
 
+  it.each(["employee", "approver"])(
+    "removes a legacy firm-derived %s role on unlink",
+    async (role) => {
+      const firm = await firmB();
+      const client = await h.createTenant();
+      const companyId = client.company.id;
+      const userId = firm.owner.user.id;
+      const [link] = await h.sql<{ id: string }>(
+        "INSERT INTO firm_client_links (firm_id, invitee_email, status) VALUES ($1, $2, 'invited') RETURNING id",
+        [firm.firmId, client.email]
+      );
+      expect(
+        (await client.as.post(`/api/firm-invitations/${link.id}/accept`, { companyId })).status
+      ).toBe(200);
+      const [membership] = await h.sql<{ id: string; role: string }>(
+        "SELECT id, role FROM company_users WHERE company_id = $1 AND user_id = $2",
+        [companyId, userId]
+      );
+      expect(membership.role).toBe("accountant");
+      const updated = await client.as.put(`/api/companies/${companyId}/team/${membership.id}`, {
+        role,
+      });
+      expect(updated.status, updated.text).toBe(200);
+      // Recreate the erroneous flag written by older Team edits on this membership.
+      await h.sql(
+        "UPDATE firm_company_grants SET created_membership = false WHERE company_id = $1 AND user_id = $2",
+        [companyId, userId]
+      );
+      const revoked = await client.as.post(
+        `/api/companies/${companyId}/firm-links/${link.id}/revoke`,
+        {}
+      );
+      expect(revoked.status, revoked.text).toBe(200);
+      expect(await h.sql("SELECT id FROM company_users WHERE id = $1", [membership.id])).toEqual(
+        []
+      );
+    }
+  );
+
   it("keeps the later direct role of an explicitly adopted membership when a legacy firm marker is stale", async () => {
     const firm = await firmB();
     const client = await h.createTenant();

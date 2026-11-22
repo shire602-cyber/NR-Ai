@@ -25,7 +25,11 @@ import {
   type BankParseResult,
   type ParseOptions,
 } from "../services/bank-statement-parser.service";
-import { importStatementRows, parseStatementCsv } from "../services/bank-import.service";
+import {
+  importStatementRows,
+  parseStatementCsv,
+  statementImportChoice,
+} from "../services/bank-import.service";
 import {
   applyMatch,
   assertLinkableGlAccount,
@@ -482,18 +486,8 @@ export function registerBankStatementRoutes(app: Express) {
         });
       }
 
-      const unresolved = parsedFile.warnings.filter((w) => w.requiresChoice);
-      if (unresolved.length > 0 && !acknowledgeAmbiguity) {
-        return res.status(409).json({
-          code: "CHOICE_REQUIRED",
-          message:
-            "The statement is ambiguous. Confirm the date order, decimal separator or column mapping and retry.",
-          warnings: parsedFile.warnings,
-          dateOrder: parsedFile.dateOrder,
-          decimalSeparator: parsedFile.decimalSeparator,
-          detectedFormat: format,
-        });
-      }
+      const choice = statementImportChoice(parsedFile, acknowledgeAmbiguity);
+      if (choice) return res.status(409).json(choice);
 
       const result = await importStatementRows({
         companyId,

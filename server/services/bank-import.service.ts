@@ -40,6 +40,19 @@ export function parseStatementCsv(bytes: Buffer, options: ParseOptions = {}): Ba
   return parseBankCsvText(text, options, fingerprintBytes(bytes));
 }
 
+export function statementImportChoice(parsed: BankParseResult, acknowledged?: boolean) {
+  if (acknowledged || !parsed.warnings.some((warning) => warning.requiresChoice)) return null;
+  return {
+    code: "CHOICE_REQUIRED",
+    message:
+      "The statement is ambiguous. Confirm the date order, decimal separator or column mapping and retry.",
+    warnings: parsed.warnings,
+    dateOrder: parsed.dateOrder,
+    decimalSeparator: parsed.decimalSeparator,
+    detectedFormat: parsed.format,
+  };
+}
+
 export interface ImportStatementRowsInput {
   companyId: string;
   bankAccountId: string;

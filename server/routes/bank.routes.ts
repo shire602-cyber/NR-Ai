@@ -18,6 +18,7 @@ import {
   importConnectionStatement,
   linkConnectionStatement,
   parseStatementCsv,
+  statementImportChoice,
 } from "../services/bank-import.service";
 import { createLogger } from "../config/logger";
 import { z } from "zod";
@@ -56,7 +57,12 @@ async function ownedConnection(req: Request, id: string, companyId?: string) {
   return connection;
 }
 
-const connectionImportBody = z.object({ csvContent: z.string().min(1).max(5_000_000) }).strict();
+const connectionImportBody = z
+  .object({
+    csvContent: z.string().min(1).max(5_000_000),
+    acknowledgeAmbiguity: z.boolean().optional(),
+  })
+  .strict();
 const connectionLinkBody = z.object({ bankAccountId: zUuid }).strict();
 const statementImport = { format: "csv", href: "/bank-reconciliation?import=1" };
 
@@ -195,7 +201,8 @@ export function registerBankRoutes(app: Express) {
       const { companyId, id } = req.params;
       await assertAccess(req, companyId);
       await ownedConnection(req, id, companyId);
-      const { csvContent } = parsedBody<z.output<typeof connectionImportBody>>(req);
+      const { csvContent, acknowledgeAmbiguity } =
+        parsedBody<z.output<typeof connectionImportBody>>(req);
       let parsed;
       try {
         parsed = parseStatementCsv(Buffer.from(csvContent, "utf8"));
@@ -218,6 +225,8 @@ export function registerBankRoutes(app: Express) {
           undefined,
           "No valid transactions found"
         );
+      const choice = statementImportChoice(parsed, acknowledgeAmbiguity);
+      if (choice) return res.status(409).json(choice);
       const result = await importConnectionStatement(companyId, id, parsed, userId(req));
       res.json(result);
     })

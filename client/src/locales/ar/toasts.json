@@ -121,7 +121,6 @@
   "toasts.reportGenerated": "تم إنشاء التقرير",
   "toasts.usageReportIsBeingGenerated": "جارٍ إنشاء تقرير الاستخدام...",
   "toasts.generatingReport": "جارٍ إنشاء التقرير",
-  "toasts.newsletterFeatureWillBeAvailableSoonConfigure": "ستتوفر ميزة النشرة البريدية قريبًا. اضبط إعدادات البريد الإلكتروني أولًا.",
   "toasts.newsletter": "النشرة البريدية",
   "toasts.databaseHasBeenBackedUpSuccessfully": "تم نسخ قاعدة البيانات احتياطيًا بنجاح.",
   "toasts.backupComplete": "اكتمل النسخ الاحتياطي",

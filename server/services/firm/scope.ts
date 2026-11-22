@@ -215,7 +215,10 @@ function legacyTeamRoleSave(companyId: SqlValue, userId: SqlValue, createdAt: Sq
       and change.created_at >= edited.created_at
       and ${details} #>> '{after,userId}' = edited.user_id::text
       and ${details} #>> '{before,userId}' = edited.user_id::text
-      and ${details} #>> '{after,role}' in ('admin', 'accountant', 'bookkeeper', 'viewer')
+      and ${details} #>> '{after,role}' in (${sql.join(
+        COMPANY_ROLES.filter((role) => role !== "owner").map((role) => sql`${role}`),
+        sql`, `
+      )})
       and ${details} #>> '{before,role}' in ('accountant', 'bookkeeper', 'viewer'))`;
 }
 
