@@ -32,12 +32,6 @@ export interface FirmOverview {
   missingDocuments: number;
 }
 
-export interface ImportResult {
-  message: string;
-  created: { id: string; name: string }[];
-  errors: { row: number; name: string; error: string }[];
-}
-
 export type BookkeeperPriority = "on_track" | "attention" | "critical";
 export type BookkeeperInterventionLevel = "low" | "medium" | "high";
 

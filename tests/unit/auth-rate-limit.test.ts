@@ -17,6 +17,7 @@ describe("auth rate-limit scoping", () => {
     expect(isCredentialAuthPath("/reset-password")).toBe(true);
     expect(isCredentialAuthPath("/reset-password/abc123")).toBe(true);
     expect(isCredentialAuthPath("/change-password")).toBe(true);
+    expect(isCredentialAuthPath("/Login/")).toBe(true);
   });
 
   it("R17-06: exempts session reads and token plumbing that fire on every page load", () => {
@@ -95,13 +96,16 @@ describe("R01-10 rate-limit identity", () => {
   const req = (headers: Record<string, string>, url = "/api/x") =>
     ({ headers, ip: "203.0.113.5", originalUrl: url, url, query: {} }) as unknown as Request;
 
-  it("keys signed access tokens by user and company, everything else by IP", () => {
+  it("keys signed access tokens by user and other requests by IP", () => {
     const access = jwt.sign({ userId: "u1", type: "access" }, secret);
     const refresh = jwt.sign({ userId: "u1", type: "refresh" }, secret);
     const cid = "11111111-1111-4111-8111-111111111111";
     expect(
       rateLimitIdentity(req({ authorization: `Bearer ${access}` }, `/api/companies/${cid}/x`)).key
-    ).toBe(`u:u1:${cid}`);
+    ).toBe("u:u1");
+    expect(
+      rateLimitIdentity(req({ authorization: `Bearer ${access}` }, "/api/firm/clients")).key
+    ).toBe("u:u1");
     expect(rateLimitIdentity(req({ authorization: `Bearer ${refresh}` })).key).toBe(
       "ip:203.0.113.5"
     );

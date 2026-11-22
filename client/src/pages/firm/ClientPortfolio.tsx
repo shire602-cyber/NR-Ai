@@ -2,6 +2,7 @@ import { T } from "@/components/layout/T";
 import { FileDrop } from "@/components/ui/file-drop";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { localizeApiError } from "@/lib/validation-messages";
 import { vatCloseGroups } from "@/lib/month-labels";
 import { useMemo, useState } from "react";
 import { Money } from "@/components/ui/money";
@@ -57,19 +58,20 @@ import {
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import {
   CLIENT_SERVICE_OPTIONS,
   DEFAULT_CLIENT_SERVICE_CODES,
   type ClientServiceCode,
 } from "@shared/client-services";
+import {
+  CLIENT_IMPORT_FILE_TYPES,
+  isClientImportFileName,
+  type ClientImportResult,
+  type ClientImportRowErrorCode,
+} from "@shared/firm-client-import";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
-import type {
-  BookkeeperDashboard,
-  ClientWithStats,
-  FirmOverview,
-  ImportResult,
-} from "./portfolio/types";
+import type { BookkeeperDashboard, ClientWithStats, FirmOverview } from "./portfolio/types";
 import {
   clientNeedsAttention,
   formatDays,
@@ -158,6 +160,29 @@ const vatGroupFilterByQuickFilter = new Map(
   VAT_GROUP_FILTERS.map((filter) => [filter.filter, filter])
 );
 
+const importFailureCopy = new Map([
+  ["CLIENT_IMPORT_FILE_TYPE", "firmOps.importFileTypeError"],
+  ["CLIENT_IMPORT_UNREADABLE", "firmOps.importUnreadable"],
+  ["CLIENT_IMPORT_EMPTY", "firmOps.importEmpty"],
+  ["CLIENT_IMPORT_TOO_MANY_ROWS", "firmOps.importTooManyRows"],
+]);
+
+const importRowErrorCopy: Record<ClientImportRowErrorCode, string> = {
+  NAME_REQUIRED: "firmOps.importNameRequired",
+  INVALID_ROW: "firmOps.importInvalidRow",
+  DUPLICATE_ROW: "firmOps.importDuplicateRow",
+  DUPLICATE_CLIENT: "firmOps.importDuplicateClient",
+  ROW_FAILED: "firmOps.importRowFailed",
+};
+
+const importFieldCopy = new Map([
+  ["trnVatNumber", "firmOps.trnVatNumber"],
+  ["contactEmail", "pages.contactEmail"],
+  ["vatPeriodStartMonth", "pages.vatCloseGroup"],
+  ["fiscalYearStartMonth", "pages.financialYearStart"],
+  ["serviceScope", "pages.services"],
+]);
+
 export default function ClientPortfolio() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -169,7 +194,7 @@ export default function ClientPortfolio() {
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importResult, setImportResult] = useState<ClientImportResult | null>(null);
   const [form, setForm] = useState<AddClientFormData>(emptyForm);
 
   const {
@@ -237,6 +262,10 @@ export default function ClientPortfolio() {
     },
   });
 
+  function showImportError(description: string) {
+    toast({ variant: "destructive", title: t["firmOps.importFailedTitle"], description });
+  }
+
   const importMutation = useMutation({
     mutationFn: async (file: File) => {
       const buffer = await file.arrayBuffer();
@@ -248,7 +277,10 @@ export default function ClientPortfolio() {
         binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)) as any);
       }
       const fileData = btoa(binary);
-      return apiRequest("POST", "/api/firm/clients/import", { fileData }) as Promise<ImportResult>;
+      return apiRequest("POST", "/api/firm/clients/import", {
+        fileData,
+        fileName: file.name,
+      }) as Promise<ClientImportResult>;
     },
     onSuccess: (result) => {
       setImportResult(result);
@@ -268,12 +300,12 @@ export default function ClientPortfolio() {
             : undefined,
       });
     },
-    onError: (e: any) => {
-      toast({
-        variant: "destructive",
-        title: translateNow("toasts.importFailed2"),
-        description: e?.message,
-      });
+    onError: (error) => {
+      const body = error instanceof ApiError ? error.body : undefined;
+      const key = typeof body?.code === "string" ? importFailureCopy.get(body.code) : undefined;
+      showImportError(
+        key ? t[key] : (localizeApiError(body) ?? t["firmOps.importFailedDescription"])
+      );
     },
   });
 
@@ -1125,22 +1157,23 @@ export default function ClientPortfolio() {
             <DialogTitle>
               <T k="pages.importClients" />
             </DialogTitle>
-            <DialogDescription>
-              Upload a CSV or Excel file. Each row becomes a new client company with a UAE chart of
-              accounts. Recognised columns: name, TRN, email, phone, industry, address, emirate, VAT
-              filing, VAT close group, financial year start, corporate tax ID.
-            </DialogDescription>
+            <DialogDescription>{t["firmOps.importInstructions"]}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="grid gap-1.5">
               <Label htmlFor="import-file">{t["firmOps.importFileLabel"]}</Label>
               <FileDrop
                 id="import-file"
-                accept=".csv,.xlsx,.xls"
+                accept={CLIENT_IMPORT_FILE_TYPES.join(",")}
                 value={importFile?.name}
-                onFiles={([f]) => {
-                  setImportFile(f ?? null);
+                onFiles={([file]) => {
                   setImportResult(null);
+                  if (file && !isClientImportFileName(file.name)) {
+                    setImportFile(null);
+                    showImportError(t["firmOps.importFileTypeError"]);
+                    return;
+                  }
+                  setImportFile(file ?? null);
                 }}
                 onClear={() => setImportFile(null)}
               />
@@ -1164,12 +1197,21 @@ export default function ClientPortfolio() {
                 </div>
                 {importResult.errors.length > 0 && (
                   <div className="max-h-40 overflow-auto text-xs text-muted-foreground space-y-1">
-                    {importResult.errors.slice(0, 20).map((e, i) => (
-                      <div key={i}>
-                        Row {e.row}
-                        {e.name ? ` (${e.name})` : ""}: {e.error}
-                      </div>
-                    ))}
+                    {importResult.errors.slice(0, 20).map((error) => {
+                      const field = error.field ? importFieldCopy.get(error.field) : undefined;
+                      const reason =
+                        error.code === "INVALID_ROW" && field
+                          ? formatMessage(t["firmOps.importInvalidField"], { field: t[field] })
+                          : t[importRowErrorCopy[error.code] ?? "firmOps.importRowFailed"];
+                      return (
+                        <div key={error.row}>
+                          {formatMessage(t["firmOps.importErrorRow"], { row: error.row })}
+                          {error.name && <bdi translate="no"> ({error.name})</bdi>}
+                          {" · "}
+                          {reason}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1184,8 +1226,8 @@ export default function ClientPortfolio() {
               disabled={!importFile || importMutation.isPending}
               data-testid="button-import-clients"
             >
-              <Upload className="w-4 h-4 me-2" />
-              {importMutation.isPending ? "Importing..." : "Import"}
+              <Upload className="w-4 h-4 me-2" aria-hidden />
+              {t[importMutation.isPending ? "firmOps.clientImportPending" : "firmOps.clientImport"]}
             </Button>
           </DialogFooter>
         </DialogContent>

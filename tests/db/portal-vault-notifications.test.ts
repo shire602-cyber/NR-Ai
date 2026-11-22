@@ -187,6 +187,17 @@ describe("W4-D document vault", () => {
     );
     expect(diff.status).toBe(200);
     expect(diff.body.changes).toEqual([]);
+    const diffUrl = `${url}/invoice/${inv.body.id}/diff`;
+    for (const query of ["?from=0", "?from=1&from=2", "?to=2147483648", "?from=1e0"]) {
+      const invalid = await t.as.get(diffUrl + query);
+      expect(invalid.status).toBe(400);
+      expect(invalid.body.code).toBe("VALIDATION_ERROR");
+    }
+    const latest = await t.as.get(diffUrl);
+    expect(latest.status).toBe(200);
+    expect(latest.body).toMatchObject({ from: 7, to: 8 });
+    expect((await t.as.get(diffUrl + "?from=99&to=2")).status).toBe(404);
+    expect((await other.as.get(diffUrl)).status).toBe(403);
   });
 });
 

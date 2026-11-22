@@ -60,7 +60,11 @@ import { fromFils, mulRate, toFils } from "../../shared/money";
 import { emitDomainEvent } from "../platform/domain-events";
 import { createAndEmitNotification } from "../services/socket.service";
 import { notificationCopy } from "../../shared/server-copy";
-import { assertPeriodNotLocked, assertNotFutureDate } from "../services/period-lock.service";
+import {
+  assertPeriodNotLocked,
+  assertNotFutureDate,
+  lockPeriodPolicy,
+} from "../services/period-lock.service";
 import {
   dueDateFromTerms,
   prepareSalesLines,
@@ -73,6 +77,8 @@ import {
   invoiceSettlement,
   isIssuedStatus,
   issueInvoice,
+  issueInvoiceInTx,
+  lockInvoice,
   postInvoiceRevenueJournal,
   resolveCustomerHeader,
   voidInvoice,
@@ -102,7 +108,7 @@ import {
 import { removeDraftInvoice } from "../services/invoice-draft-delete.service";
 import { assertRetentionExpired } from "../services/retention.service";
 import { getRate } from "../services/fx";
-import { documentCurrency, loadBaseCurrency } from "../ledger";
+import { documentCurrency, loadBaseCurrency, withLedgerTx, type LedgerTx } from "../ledger";
 import type { SupplyType } from "../../shared/vat-classification";
 
 const log = createLogger("invoices");
@@ -185,22 +191,27 @@ export async function resolveDocumentRate(
   companyId: string,
   currency: string,
   dateIso: string,
-  supplied?: number | null
+  supplied?: number | null,
+  tx?: LedgerTx
 ): Promise<number> {
-  const base = await loadBaseCurrency(companyId);
+  const base = await loadBaseCurrency(companyId, tx);
   const cur = documentCurrency(currency, base);
   if (cur === base) return 1;
   if (supplied && supplied > 0) return supplied;
-  const r = await getRate(companyId, cur, base, dateIso);
+  const r = await getRate(companyId, cur, base, dateIso, { tx });
   return r.rate;
 }
 
 /** Company-scoped product / cost-centre ids on lines must belong to the company (404 otherwise). */
-async function assertLineRefs(companyId: string, lines: SalesLineInput[]): Promise<void> {
+async function assertLineRefs(
+  companyId: string,
+  lines: SalesLineInput[],
+  q: LedgerTx = db
+): Promise<void> {
   const products = [...new Set(lines.map((l) => l.productId).filter(Boolean) as string[])];
   const centres = [...new Set(lines.map((l) => l.costCenterId).filter(Boolean) as string[])];
   for (const id of products) {
-    const r: { rows?: unknown[] } = await db.execute(
+    const r: { rows?: unknown[] } = await q.execute(
       sqlTag`SELECT 1 FROM products WHERE id = ${id} AND company_id = ${companyId}`
     );
     if (!(r.rows ?? (r as unknown as unknown[])).length) {
@@ -208,7 +219,7 @@ async function assertLineRefs(companyId: string, lines: SalesLineInput[]): Promi
     }
   }
   for (const id of centres) {
-    const r: { rows?: unknown[] } = await db.execute(
+    const r: { rows?: unknown[] } = await q.execute(
       sqlTag`SELECT 1 FROM cost_centers WHERE id = ${id} AND company_id = ${companyId}`
     );
     if (!(r.rows ?? (r as unknown as unknown[])).length) {
@@ -224,7 +235,7 @@ async function assertLineRefs(companyId: string, lines: SalesLineInput[]): Promi
     ),
   ];
   for (const id of incomeAccounts) {
-    const r: { rows?: unknown[] } = await db.execute(
+    const r: { rows?: unknown[] } = await q.execute(
       sqlTag`SELECT 1 FROM accounts WHERE id = ${id} AND company_id = ${companyId}
                AND type = 'income' AND is_active = true AND COALESCE(is_archived, false) = false`
     );
@@ -291,7 +302,11 @@ export async function invoicePdfOptions(invoice: Invoice): Promise<GenerateInvoi
 }
 
 /** Build header + lines + totals for a new sales document (invoice or debit note). */
-export async function prepareNewDocument(companyId: string, body: CreateInvoiceInput) {
+export async function prepareNewDocument(
+  companyId: string,
+  body: CreateInvoiceInput,
+  tx?: LedgerTx
+) {
   const header = await resolveCustomerHeader(
     companyId,
     {
@@ -304,9 +319,10 @@ export async function prepareNewDocument(companyId: string, body: CreateInvoiceI
       dueDate: body.dueDate,
       date: body.date,
     },
-    { dueDateFromTerms, termsFromDays }
+    { dueDateFromTerms, termsFromDays },
+    tx
   );
-  await assertLineRefs(companyId, body.lines);
+  await assertLineRefs(companyId, body.lines, tx);
   const { rows, totals } = prepareSalesLines(body.lines.map(lineDraft), {
     discountType: body.discountType,
     discountValue: body.discountValue,
@@ -315,11 +331,54 @@ export async function prepareNewDocument(companyId: string, body: CreateInvoiceI
   await assertPlaceOfSupply(
     companyId,
     header.placeOfSupplyEmirate,
-    rows.map((r) => r.vatSupplyType)
+    rows.map((r) => r.vatSupplyType),
+    tx
   );
-  const currency = documentCurrency(body.currency, await loadBaseCurrency(companyId));
-  const rate = await resolveDocumentRate(companyId, currency, body.date, body.exchangeRate);
+  const currency = documentCurrency(body.currency, await loadBaseCurrency(companyId, tx));
+  const rate = await resolveDocumentRate(companyId, currency, body.date, body.exchangeRate, tx);
   return { header, rows, totals, currency, rate };
+}
+
+/** Allocate a draft number and store its header and lines under the company period policy. */
+export async function createInvoiceDraft(companyId: string, body: CreateInvoiceInput) {
+  const doc = await prepareNewDocument(companyId, body);
+  const date = toDate(body.date);
+  const invoice = await db.transaction(async (tx: LedgerTx) => {
+    await lockPeriodPolicy(tx, companyId, "shared");
+    await assertPeriodNotLocked(companyId, date, tx);
+    const number = await allocateInvoiceNumber(companyId, "invoice", date, tx);
+    const [inserted] = await tx
+      .insert(invoicesTable)
+      .values({
+        companyId,
+        number,
+        ...doc.header,
+        dueDate: doc.header.dueDate ? toDate(doc.header.dueDate) : null,
+        date,
+        supplyDate: body.supplyDate ? toDate(body.supplyDate) : null,
+        currency: doc.currency,
+        exchangeRate: doc.rate,
+        baseCurrencyAmount: Number(fromFils(mulRate(doc.totals.totalFils || 0, doc.rate) || 0)),
+        subtotal: Number(fromFils(doc.totals.subtotalFils)),
+        vatAmount: Number(fromFils(doc.totals.vatFils)),
+        total: Number(fromFils(doc.totals.totalFils)),
+        discountType: body.discountType ?? null,
+        discountValue: body.discountValue ?? null,
+        discountAmount: Number(fromFils(doc.totals.discountFils)),
+        reverseCharge: body.reverseCharge ?? false,
+        notes: body.notes ?? null,
+        templateId: body.templateId ?? null,
+        documentLanguage: body.documentLanguage ?? null,
+        source: "app",
+        status: "draft",
+        invoiceType: "invoice",
+      })
+      .returning();
+    for (const row of doc.rows)
+      await tx.insert(invoiceLinesTable).values(lineRow(inserted.id, row));
+    return inserted;
+  });
+  return { invoice, totalFils: doc.totals.totalFils };
 }
 
 const NO_BALANCE: InvoiceBalanceFields = {
@@ -475,44 +534,7 @@ export function registerInvoiceRoutes(app: Express) {
       const userId = userOf(req);
       await assertCompanyAccess(req, companyId);
       const body = validated<CreateInvoiceInput>(req);
-      const doc = await prepareNewDocument(companyId, body);
-      const invoiceDate = toDate(body.date);
-      await assertPeriodNotLocked(companyId, invoiceDate);
-
-      // Number allocation and insert in ONE transaction (FTA gap-free numbering).
-      const invoice = await db.transaction(async (tx: typeof db) => {
-        const number = await allocateInvoiceNumber(companyId, "invoice", invoiceDate, tx);
-        const [inserted] = await tx
-          .insert(invoicesTable)
-          .values({
-            companyId,
-            number,
-            ...doc.header,
-            dueDate: doc.header.dueDate ? toDate(doc.header.dueDate) : null,
-            date: invoiceDate,
-            supplyDate: body.supplyDate ? toDate(body.supplyDate) : null,
-            currency: doc.currency,
-            exchangeRate: doc.rate,
-            baseCurrencyAmount: Number(fromFils(mulRate(doc.totals.totalFils || 0, doc.rate) || 0)),
-            subtotal: Number(fromFils(doc.totals.subtotalFils)),
-            vatAmount: Number(fromFils(doc.totals.vatFils)),
-            total: Number(fromFils(doc.totals.totalFils)),
-            discountType: body.discountType ?? null,
-            discountValue: body.discountValue ?? null,
-            discountAmount: Number(fromFils(doc.totals.discountFils)),
-            reverseCharge: body.reverseCharge ?? false,
-            notes: body.notes ?? null,
-            templateId: body.templateId ?? null,
-            documentLanguage: body.documentLanguage ?? null,
-            source: "app",
-            status: "draft",
-            invoiceType: "invoice",
-          })
-          .returning();
-        for (const r of doc.rows)
-          await tx.insert(invoiceLinesTable).values(lineRow(inserted.id, r));
-        return inserted;
-      });
+      const { invoice, totalFils } = await createInvoiceDraft(companyId, body);
 
       await recordAudit({
         userId,
@@ -534,7 +556,7 @@ export function registerInvoiceRoutes(app: Express) {
         companyId,
         entityId: invoice.id,
         number: invoice.number,
-        totalFils: doc.totals.totalFils,
+        totalFils,
         actorUserId: userId,
       });
       createAndEmitNotification({
@@ -635,63 +657,73 @@ export function registerInvoiceRoutes(app: Express) {
         return res.json(updated);
       }
 
-      // Draft: full edit. Missing fields keep their stored value.
-      const dateIso = body.date ?? isoOf(invoice.date)!;
-      const merged: CreateInvoiceInput = {
-        contactId: body.contactId !== undefined ? body.contactId : invoice.contactId,
-        customerName: body.customerName ?? (body.contactId ? undefined : invoice.customerName),
-        customerTrn: body.customerTrn !== undefined ? body.customerTrn : invoice.customerTrn,
-        customerAddress:
-          body.customerAddress !== undefined ? body.customerAddress : invoice.customerAddress,
-        date: dateIso,
-        dueDate: body.dueDate !== undefined ? body.dueDate : isoOf(invoice.dueDate),
-        supplyDate: body.supplyDate !== undefined ? body.supplyDate : isoOf(invoice.supplyDate),
-        paymentTerms: body.paymentTerms !== undefined ? body.paymentTerms : invoice.paymentTerms,
-        currency: body.currency ?? invoice.currency,
-        exchangeRate:
-          body.exchangeRate !== undefined
-            ? body.exchangeRate
-            : (body.currency ?? invoice.currency) === invoice.currency
-              ? Number(invoice.exchangeRate)
-              : null,
-        reverseCharge: body.reverseCharge ?? invoice.reverseCharge,
-        placeOfSupplyEmirate:
-          body.placeOfSupplyEmirate !== undefined
-            ? body.placeOfSupplyEmirate
-            : invoice.placeOfSupplyEmirate,
-        discountType: body.discountType !== undefined ? body.discountType : invoice.discountType,
-        discountValue:
-          body.discountValue !== undefined ? body.discountValue : invoice.discountValue,
-        notes: body.notes !== undefined ? body.notes : invoice.notes,
-        templateId: body.templateId !== undefined ? body.templateId : invoice.templateId,
-        documentLanguage:
-          body.documentLanguage !== undefined
-            ? body.documentLanguage
-            : ((invoice.documentLanguage as "en" | "ar" | null) ?? null),
-        lines:
-          body.lines ??
-          (await storage.getInvoiceLinesByInvoiceId(invoice.id)).map((l) => ({
-            description: l.description,
-            quantity: Number(l.quantity),
-            unitPrice: toFils(l.unitPrice, { rounding: "halfUp" }),
-            vatRate: Number(l.vatRate),
-            vatSupplyType: (l.vatSupplyType as SupplyType | null) ?? null,
-            discountType: (l.discountType as "amount" | "percent" | null) ?? null,
-            discountValue: l.discountValue ?? null,
-            productId: l.productId ?? null,
-            costCenterId: l.costCenterId ?? null,
-            revenueAccountId: l.revenueAccountId ?? null,
-            marginScheme: l.marginScheme ?? false,
-            marginPurchaseCost: l.marginScheme
-              ? toFils(l.marginPurchaseCost ?? 0, { rounding: "halfUp" })
-              : null,
-          })),
-      } as CreateInvoiceInput;
-      const doc = await prepareNewDocument(invoice.companyId, merged);
-      await assertPeriodNotLocked(invoice.companyId, invoice.date);
-      await assertPeriodNotLocked(invoice.companyId, toDate(dateIso));
-
-      const updated = await db.transaction(async (tx: typeof db) => {
+      // Draft: merge with the latest locked row and keep the close policy stable until commit.
+      const { draft, updated } = await db.transaction(async (tx: typeof db) => {
+        // Match issuance's lock order: invoice row, then shared period policy.
+        const draft = await lockInvoice(tx, invoice.id, invoice.companyId);
+        if (draft.status !== "draft")
+          throw new DomainError("INVOICE_ISSUED_IMMUTABLE", 409, { hint: "Issued meanwhile" });
+        await lockPeriodPolicy(tx, draft.companyId, "shared");
+        const currentDate = isoOf(draft.date)!;
+        const dateIso = body.date ?? currentDate;
+        await assertPeriodNotLocked(draft.companyId, currentDate, tx);
+        if (dateIso !== currentDate) await assertPeriodNotLocked(draft.companyId, dateIso, tx);
+        const merged: CreateInvoiceInput = {
+          contactId: body.contactId !== undefined ? body.contactId : draft.contactId,
+          customerName: body.customerName ?? (body.contactId ? undefined : draft.customerName),
+          customerTrn: body.customerTrn !== undefined ? body.customerTrn : draft.customerTrn,
+          customerAddress:
+            body.customerAddress !== undefined ? body.customerAddress : draft.customerAddress,
+          date: dateIso,
+          dueDate: body.dueDate !== undefined ? body.dueDate : isoOf(draft.dueDate),
+          supplyDate: body.supplyDate !== undefined ? body.supplyDate : isoOf(draft.supplyDate),
+          paymentTerms: body.paymentTerms !== undefined ? body.paymentTerms : draft.paymentTerms,
+          currency: body.currency ?? draft.currency,
+          exchangeRate:
+            body.exchangeRate !== undefined
+              ? body.exchangeRate
+              : (body.currency ?? draft.currency) === draft.currency
+                ? Number(draft.exchangeRate)
+                : null,
+          reverseCharge: body.reverseCharge ?? draft.reverseCharge,
+          placeOfSupplyEmirate:
+            body.placeOfSupplyEmirate !== undefined
+              ? body.placeOfSupplyEmirate
+              : draft.placeOfSupplyEmirate,
+          discountType: body.discountType !== undefined ? body.discountType : draft.discountType,
+          discountValue:
+            body.discountValue !== undefined ? body.discountValue : draft.discountValue,
+          notes: body.notes !== undefined ? body.notes : draft.notes,
+          templateId: body.templateId !== undefined ? body.templateId : draft.templateId,
+          documentLanguage:
+            body.documentLanguage !== undefined
+              ? body.documentLanguage
+              : ((draft.documentLanguage as "en" | "ar" | null) ?? null),
+          lines:
+            body.lines ??
+            (
+              await tx
+                .select()
+                .from(invoiceLinesTable)
+                .where(eq(invoiceLinesTable.invoiceId, draft.id))
+            ).map((l) => ({
+              description: l.description,
+              quantity: Number(l.quantity),
+              unitPrice: toFils(l.unitPrice, { rounding: "halfUp" }),
+              vatRate: Number(l.vatRate),
+              vatSupplyType: (l.vatSupplyType as SupplyType | null) ?? null,
+              discountType: (l.discountType as "amount" | "percent" | null) ?? null,
+              discountValue: l.discountValue ?? null,
+              productId: l.productId ?? null,
+              costCenterId: l.costCenterId ?? null,
+              revenueAccountId: l.revenueAccountId ?? null,
+              marginScheme: l.marginScheme ?? false,
+              marginPurchaseCost: l.marginScheme
+                ? toFils(l.marginPurchaseCost ?? 0, { rounding: "halfUp" })
+                : null,
+            })),
+        } as CreateInvoiceInput;
+        const doc = await prepareNewDocument(draft.companyId, merged, tx);
         const [row] = await tx
           .update(invoicesTable)
           .set({
@@ -715,17 +747,17 @@ export function registerInvoiceRoutes(app: Express) {
           })
           .where(
             and(
-              eq(invoicesTable.id, invoice.id),
-              eq(invoicesTable.companyId, invoice.companyId),
+              eq(invoicesTable.id, draft.id),
+              eq(invoicesTable.companyId, draft.companyId),
               eq(invoicesTable.status, "draft")
             )
           )
           .returning();
         if (!row)
           throw new DomainError("INVOICE_ISSUED_IMMUTABLE", 409, { hint: "Issued meanwhile" });
-        await tx.delete(invoiceLinesTable).where(eq(invoiceLinesTable.invoiceId, invoice.id));
-        for (const r of doc.rows) await tx.insert(invoiceLinesTable).values(lineRow(invoice.id, r));
-        return row;
+        await tx.delete(invoiceLinesTable).where(eq(invoiceLinesTable.invoiceId, draft.id));
+        for (const r of doc.rows) await tx.insert(invoiceLinesTable).values(lineRow(draft.id, r));
+        return { draft, updated: row };
       });
 
       await recordAudit({
@@ -735,10 +767,10 @@ export function registerInvoiceRoutes(app: Express) {
         entityType: "invoice",
         entityId: invoice.id,
         before: {
-          subtotal: invoice.subtotal,
-          vatAmount: invoice.vatAmount,
-          total: invoice.total,
-          date: invoice.date,
+          subtotal: draft.subtotal,
+          vatAmount: draft.vatAmount,
+          total: draft.total,
+          date: draft.date,
         },
         after: {
           subtotal: updated.subtotal,
@@ -1192,25 +1224,24 @@ export function registerInvoiceRoutes(app: Express) {
       const userId = userOf(req);
       await assertCompanyAccess(req, companyId);
       const body = validated<z.output<typeof debitNoteRequestSchema>>(req);
-      const original = await storage.getInvoice(invoiceId, companyId);
-      if (!original)
-        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
-      if (original.invoiceType !== "invoice" || !isIssuedStatus(original.status)) {
-        throw new DomainError(
-          "INVOICE_NOT_ISSUED",
-          409,
-          undefined,
-          "A debit note needs an issued invoice."
-        );
-      }
-      const dnDate = body.date ?? new Date().toISOString().slice(0, 10);
-      await assertPeriodNotLocked(companyId, toDate(dnDate));
-      const { rows, totals } = prepareSalesLines(body.lines.map(lineDraft), {
-        reverseCharge: original.reverseCharge,
-      });
-      const rate = Number(original.exchangeRate) || 1;
-      const dn = await db.transaction(async (tx: typeof db) => {
-        const number = await allocateInvoiceNumber(companyId, "debit_note", toDate(dnDate), tx);
+      const dnDate = toDate(body.date ?? new Date().toISOString().slice(0, 10));
+      const { invoice: dn, totalFils } = await withLedgerTx(async (tx) => {
+        const original = await lockInvoice(tx, invoiceId, companyId);
+        if (original.invoiceType !== "invoice" || !isIssuedStatus(original.status)) {
+          throw new DomainError(
+            "INVOICE_NOT_ISSUED",
+            409,
+            undefined,
+            "A debit note needs an issued invoice."
+          );
+        }
+        await lockPeriodPolicy(tx, companyId, "shared");
+        await assertPeriodNotLocked(companyId, dnDate, tx);
+        const { rows, totals } = prepareSalesLines(body.lines.map(lineDraft), {
+          reverseCharge: original.reverseCharge,
+        });
+        const rate = Number(original.exchangeRate) || 1;
+        const number = await allocateInvoiceNumber(companyId, "debit_note", dnDate, tx);
         const [inserted] = await tx
           .insert(invoicesTable)
           .values({
@@ -1220,7 +1251,7 @@ export function registerInvoiceRoutes(app: Express) {
             customerTrn: original.customerTrn,
             customerAddress: original.customerAddress,
             contactId: original.contactId,
-            date: toDate(dnDate),
+            date: dnDate,
             dueDate: original.dueDate,
             paymentTerms: original.paymentTerms,
             currency: original.currency,
@@ -1239,10 +1270,10 @@ export function registerInvoiceRoutes(app: Express) {
           })
           .returning();
         for (const r of rows) await tx.insert(invoiceLinesTable).values(lineRow(inserted.id, r));
-        return inserted;
+        // A debit note is a tax document. Commit its issuance and revenue with the draft and number.
+        const issued = await issueInvoiceInTx(tx, inserted.id, companyId, userId, "sent");
+        return { invoice: issued.invoice, totalFils: totals.totalFils };
       });
-      // A debit note is a tax document: issue it straight away (posts revenue).
-      const issued = await issueInvoice(dn.id, companyId, userId, "sent");
       await recordAudit({
         userId,
         companyId,
@@ -1257,10 +1288,10 @@ export function registerInvoiceRoutes(app: Express) {
         companyId,
         entityId: dn.id,
         number: dn.number,
-        totalFils: totals.totalFils,
+        totalFils,
         actorUserId: userId,
       });
-      res.status(201).json(issued.invoice);
+      res.status(201).json(dn);
     })
   );
 

@@ -37,7 +37,7 @@ import {
   type TaxReturnArchive,
   type VatReturn,
 } from "@shared/schema";
-import { db } from "../db";
+import { db, type AppDatabase } from "../db";
 import { and, desc, eq, lt, or, sql } from "drizzle-orm";
 import { CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP } from "../../shared/ct-workpaper";
 import { scopedGet, scopedUpdate } from "../tenancy";
@@ -523,8 +523,11 @@ export class ComplianceStorage extends EngagementStorage {
       .limit(limit);
   }
 
-  async createActivityLog(insertLog: InsertActivityLog): Promise<ActivityLog> {
-    const [log] = await db.insert(activityLogs).values(insertLog).returning();
+  async createActivityLog(
+    insertLog: InsertActivityLog,
+    exec: Pick<AppDatabase, "insert"> = db
+  ): Promise<ActivityLog> {
+    const [log] = await exec.insert(activityLogs).values(insertLog).returning();
     return log;
   }
 }

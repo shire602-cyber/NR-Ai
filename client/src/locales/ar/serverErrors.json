@@ -1051,5 +1051,10 @@
   "serverErrors.INVITATION_NOT_RESENDABLE": "لا يمكن إعادة إرسال هذه الدعوة بعد الآن.",
   "serverErrors.INVITATION_NOT_REVOCABLE": "يمكن إلغاء الدعوات المعلّقة فقط.",
   "serverErrors.CONTACT_NOT_FOUND": "تعذّر العثور على هذا العميل.",
-  "serverErrors.INVOICE_NOT_FOUND": "تعذّر العثور على هذه الفاتورة."
+  "serverErrors.INVOICE_NOT_FOUND": "تعذّر العثور على هذه الفاتورة.",
+  "serverErrors.DATABASE_UNAVAILABLE": "الخدمة غير متاحة مؤقتًا. حاول مرة أخرى بعد قليل.",
+  "serverErrors.FIRM_MEMBER_INELIGIBLE": "لا يمكن لحسابات بوابة العملاء الانضمام إلى المكتب.",
+  "serverErrors.LAST_FIRM_OWNER": "يجب أن يكون للمكتب مالك واحد على الأقل. عيّن مالكًا آخر أولًا.",
+  "serverErrors.TRANSACTION_CONFLICT": "تعارض تحديث آخر مع هذه العملية. أعد تحميل الصفحة وحاول مرة أخرى.",
+  "serverErrors.UNRESOLVED_FIRM_ACCESS": "يجب أن يراجع مالك الشركة صلاحية الوصول المتبقية قبل إتمام تغيير الصلاحيات."
 }

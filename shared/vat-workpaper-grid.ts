@@ -1,3 +1,5 @@
+import Decimal from "decimal.js";
+
 export type VatRowCategory =
   | "standard_sale"
   | "tourist_refund"
@@ -166,8 +168,11 @@ function dateFromCell(value: string | undefined) {
   return raw;
 }
 
-function roundMoney(n: number): number {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
+const AmountDecimal = Decimal.clone({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
+
+function roundAmount(value: Decimal): number {
+  const rounded = value.toDecimalPlaces(2).toNumber();
+  return Number.isFinite(rounded) && rounded !== 0 ? rounded : 0;
 }
 
 /**
@@ -178,7 +183,7 @@ function roundMoney(n: number): number {
  * recursive-descent parser (no eval). Anything malformed returns 0.
  */
 export function evaluateAmountExpression(input: string | number | null | undefined): number {
-  if (typeof input === "number") return Number.isFinite(input) ? roundMoney(input) : 0;
+  if (typeof input === "number") return roundAmount(new AmountDecimal(input));
   const raw = String(input ?? "").trim();
   if (!raw) return 0;
 
@@ -196,32 +201,32 @@ export function evaluateAmountExpression(input: string | number | null | undefin
   if (!/^[0-9+\-*/().]+$/.test(s)) return 0;
 
   let i = 0;
-  const parseExpression = (): number => {
+  const parseExpression = (): Decimal => {
     let value = parseTerm();
     while (s[i] === "+" || s[i] === "-") {
       const op = s[i++];
       const rhs = parseTerm();
-      value = op === "+" ? value + rhs : value - rhs;
+      value = op === "+" ? value.plus(rhs) : value.minus(rhs);
     }
     return value;
   };
-  const parseTerm = (): number => {
+  const parseTerm = (): Decimal => {
     let value = parseFactor();
     while (s[i] === "*" || s[i] === "/") {
       const op = s[i++];
       const rhs = parseFactor();
-      value = op === "*" ? value * rhs : value / rhs;
+      value = op === "*" ? value.times(rhs) : value.dividedBy(rhs);
     }
     return value;
   };
-  const parseFactor = (): number => {
+  const parseFactor = (): Decimal => {
     if (s[i] === "+") {
       i++;
       return parseFactor();
     }
     if (s[i] === "-") {
       i++;
-      return -parseFactor();
+      return parseFactor().negated();
     }
     if (s[i] === "(") {
       i++;
@@ -233,15 +238,13 @@ export function evaluateAmountExpression(input: string | number | null | undefin
     let num = "";
     while (i < s.length && /[0-9.]/.test(s[i])) num += s[i++];
     if (num === "" || num === ".") throw new Error("bad number");
-    const n = Number(num);
-    if (!Number.isFinite(n)) throw new Error("bad number");
-    return n;
+    return new AmountDecimal(num);
   };
 
   try {
     const result = parseExpression();
     if (i !== s.length) return 0; // trailing garbage → reject
-    return Number.isFinite(result) ? roundMoney(result) : 0;
+    return roundAmount(result);
   } catch {
     return 0;
   }

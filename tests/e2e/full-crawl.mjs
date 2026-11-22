@@ -118,6 +118,27 @@ const FAIL_TEXT = /something went wrong|an error occurred|failed to load|unexpec
 const NOT_FOUND = (t) =>
   /not found/i.test(t) && t.trim().length < 300 && !/no [a-z ]*found/i.test(t);
 
+/** A mounted workspace can show its header while its records are still loading. */
+async function renderedMainText(page) {
+  await page.waitForFunction(
+    () => {
+      const main = document.querySelector("main");
+      if (!main || main.innerText.trim().length < 40) return false;
+      const loading = '[aria-busy="true"], .skeleton-shimmer';
+      return (
+        !main.matches(loading) &&
+        !Array.from(main.querySelectorAll(loading)).some(
+          (element) =>
+            element.getClientRects().length && getComputedStyle(element).visibility === "visible"
+        )
+      );
+    },
+    null,
+    { timeout: 15000 }
+  );
+  return page.locator("main").innerText();
+}
+
 /** Poll the page's <main> until it shows `text` (client render after a fetch is not instant). */
 async function mainShows(page, text, timeoutMs = 20000) {
   const end = Date.now() + timeoutMs;
@@ -255,8 +276,8 @@ async function main() {
       await page.goto(`${BASE}${route}`, { timeout: 45000 });
       const main = page.locator("main");
       await main.getByRole("heading").filter({ visible: true }).first().waitFor({ timeout: 18000 });
+      const mainText = await renderedMainText(page);
       const finalUrl = page.url().replace(BASE, "");
-      const mainText = await main.innerText();
       const failText =
         mainText.match(FAIL_TEXT)?.[0] ?? (NOT_FOUND(mainText) ? "not-found screen" : null);
       const blank = mainText.trim().length < 40;
@@ -1238,18 +1259,8 @@ async function main() {
       mApi = [];
       try {
         await mPage.goto(`${BASE}${route}`, { timeout: 45000 });
-        await mPage.waitForTimeout(1500);
+        const bodyText = await renderedMainText(mPage);
         const finalUrl = mPage.url().replace(BASE, "");
-        const mainText = await mPage
-          .locator("main")
-          .innerText()
-          .catch(() => "");
-        const bodyText =
-          mainText ||
-          (await mPage
-            .locator("body")
-            .innerText()
-            .catch(() => ""));
         const failText = bodyText.match(FAIL_TEXT)?.[0] ?? null;
         const blank = bodyText.trim().length < 40;
         if (mErrors.length || mApi.length || failText || blank) {
@@ -1311,12 +1322,15 @@ async function main() {
         data: { periodStart: ymd(qStart), periodEnd: ymd(qEnd) },
       }
     );
-    if (!generated.ok()) throw new Error(`VAT return generation returned ${generated.status()}`);
-    const { id: returnId } = await generated.json();
-    if (!returnId) throw new Error("VAT return generation did not supply an ID");
+    const vatReturn = await generated.json();
+    if (!generated.ok() || !vatReturn.id) {
+      throw new Error(
+        `VAT fixture failed with ${generated.status()}: ${vatReturn.code ?? "missing return ID"}`
+      );
+    }
     const datesOn = async (p) => {
       await p.goto(`${BASE}/vat-filing?tab=returns`, { timeout: 45000 });
-      const row = p.getByTestId(`row-return-${returnId}`);
+      const row = p.getByTestId(`row-return-${vatReturn.id}`);
       await row.waitFor({ state: "visible", timeout: 18000 });
       const cells = row.getByRole("cell");
       return { period: await cells.nth(0).innerText(), dueDate: await cells.nth(1).innerText() };
@@ -1341,6 +1355,7 @@ async function main() {
     const expectedPeriod = `${month.format(qStart)} - ${month.format(qEnd)}`;
     if (
       JSON.stringify(utcDates) !== JSON.stringify(localDates) ||
+      utcDates.period !== expectedPeriod ||
       localDates.period !== expectedPeriod
     ) {
       await fail(`timezone probe /vat-filing (${BROWSER_TIMEZONE})`, {
@@ -1370,25 +1385,11 @@ async function main() {
       routeErrors = [];
       apiFailures = [];
       await page.goto(`${BASE}${route}`, { timeout: 45000 });
-      await page.waitForTimeout(1700);
-      // The document direction flips once the locale store hydrates; wait for it (and for the
-      // route to render) instead of racing a fixed delay.
-      await page
-        .waitForFunction(() => document.documentElement.getAttribute("dir") === "rtl", null, {
-          timeout: 15000,
-        })
-        .catch(() => {});
+      await page.locator('html[lang="ar"][dir="rtl"]').waitFor();
+      const mainText = await renderedMainText(page);
       const dir = await page.evaluate(() => document.documentElement.getAttribute("dir"));
-      let mainText = "";
-      for (let i = 0; i < 30 && mainText.trim().length < 40; i++) {
-        mainText = await page
-          .locator("main")
-          .innerText()
-          .catch(() => "");
-        if (mainText.trim().length < 40) await page.waitForTimeout(500);
-      }
       const blank = mainText.trim().length < 40;
-      if (dir !== "rtl" || routeErrors.length || blank) {
+      if (dir !== "rtl" || routeErrors.length || apiFailures.length || blank) {
         await fail(`rtl route ${route}`, {
           dir,
           blank: blank || undefined,

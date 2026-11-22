@@ -46,7 +46,7 @@ import { postJournal, withLedgerTx, type PostJournalLineInput } from "../../ledg
 import { controlAccountsAmong, type ControlLedger } from "../../ledger/control-accounts";
 import { emitDomainEvent } from "../../platform/domain-events";
 import { txRows } from "../bill-posting.service";
-import { pq } from "../connectors/pq";
+import { pq, type Queryable } from "../connectors/pq";
 import { syncOpeningGratuity } from "../payroll/opening-gratuity";
 import { isSubTypeForType } from "../../../shared/validators/accounts";
 import {
@@ -561,9 +561,10 @@ export async function openingTrialBalanceCommitted(companyId: string): Promise<b
  * open invoices / bills that have not been imported yet (fils; zero when complete).
  */
 export async function pendingOpeningDocuments(
-  companyId: string
+  companyId: string,
+  q?: Queryable
 ): Promise<{ cutOver: string; receivablesFils: number; payablesFils: number } | null> {
-  const state = await openingState(companyId);
+  const state = await openingState(companyId, q);
   if (!state.tb || state.tb.mode !== "documents") return null;
   return {
     cutOver: state.tb.cutOver,
@@ -599,7 +600,7 @@ interface OpeningState {
   billsFils: number;
 }
 
-async function openingState(companyId: string): Promise<OpeningState> {
+async function openingState(companyId: string, q?: Queryable): Promise<OpeningState> {
   const { rows } = await pq<{
     id: string;
     kind: string;
@@ -610,7 +611,8 @@ async function openingState(companyId: string): Promise<OpeningState> {
     `SELECT id, kind, ar_ap_mode, summary, cut_over_date::text AS cut_over_date FROM import_jobs
       WHERE company_id = $1 AND status = 'committed'
         AND kind IN ('trial_balance', 'open_invoices', 'open_bills')`,
-    [companyId]
+    [companyId],
+    q
   );
   const state: OpeningState = { tb: null, invoicesFils: 0, billsFils: 0 };
   for (const r of rows) {

@@ -87,7 +87,7 @@ it("keeps invite credentials out of request logs, throttling, error reports and 
     ).toBe(204);
 
     expect(logs.error).toHaveBeenCalledWith(
-      expect.objectContaining({ captured: true, url: invitePath }),
+      expect.objectContaining({ captured: true, route: invitePath }),
       expect.any(String)
     );
     expect(logs.warn).toHaveBeenCalledWith(

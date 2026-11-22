@@ -8,7 +8,7 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { useHarness } from "./harness";
+import { freezeTime, useHarness } from "./harness";
 import { migrateDatabase, repoRoot } from "./pg-admin";
 
 const h = useHarness();
@@ -102,6 +102,65 @@ describe("S-H3 migration 0054 is neutralised", () => {
 });
 
 describe("S-H3 opt-in platform owner grant / revoke", () => {
+  it("settles an authorized timer when revoking and rolls back both changes if the audit insert fails", async () => {
+    const { grantPlatformOwner, revokePlatformOwner } =
+      await import("../../server/services/platform-owner.service");
+    const candidate = await h.createTenant();
+    const { email } = candidate;
+    const options = { confirm: email };
+    const replacement = await insertUser(`replacement-${randomUUID()}@example.test`);
+    await h.sql("UPDATE users SET firm_role = 'firm_owner' WHERE id = $1", [replacement]);
+    expect(await grantPlatformOwner(email, options)).toMatchObject({ ok: true, changed: true });
+
+    const client = await candidate.as.post("/api/firm/clients", { name: "Platform timer client" });
+    expect(client.status, client.text).toBe(201);
+    const started = await candidate.as.post("/api/firm/time-entries/start", {
+      companyId: client.body.id,
+      hourlyRate: 60,
+    });
+    expect(started.status, started.text).toBe(201);
+    const entryId = started.body.entry.id as string;
+    const cutoff = new Date();
+    await h.sql("UPDATE firm_time_entries SET started_at = $2 WHERE id = $1", [
+      entryId,
+      new Date(cutoff.getTime() - 13 * 60_000).toISOString(),
+    ]);
+    const timers = () =>
+      h.sql(
+        "SELECT status, minutes, billable, stopped_at = $2::timestamp AS stopped_at_cutoff FROM firm_time_entries WHERE id = $1",
+        [entryId, cutoff.toISOString()]
+      );
+    await h.sql(`CREATE FUNCTION refuse_platform_owner_revoke_audit() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.action = 'platform_owner.revoke' THEN RAISE EXCEPTION 'Injected platform audit failure'; END IF;
+        RETURN NEW;
+      END $$`);
+    await h.sql(`CREATE TRIGGER refuse_platform_owner_revoke_audit BEFORE INSERT ON audit_logs
+      FOR EACH ROW EXECUTE FUNCTION refuse_platform_owner_revoke_audit()`);
+    const restore = freezeTime(cutoff);
+    try {
+      try {
+        await expect(revokePlatformOwner(email, options)).rejects.toThrow();
+        expect(await state(candidate.user.id)).toMatchObject({
+          is_admin: true,
+          firm_role: "firm_owner",
+        });
+        expect(await timers()).toEqual([
+          expect.objectContaining({ status: "running", minutes: 0 }),
+        ]);
+      } finally {
+        await h.sql("DROP TRIGGER refuse_platform_owner_revoke_audit ON audit_logs");
+        await h.sql("DROP FUNCTION refuse_platform_owner_revoke_audit()");
+      }
+      expect(await revokePlatformOwner(email, options)).toMatchObject({ ok: true, changed: true });
+      expect(await timers()).toEqual([
+        { status: "logged", minutes: 13, billable: true, stopped_at_cutoff: true },
+      ]);
+    } finally {
+      restore();
+    }
+  });
+
   it("S-H3: grant needs a matching confirmation and an existing account; it is idempotent and audited", async () => {
     const svc = await import("../../server/services/platform-owner.service");
     const email = `owner-${randomUUID().slice(0, 8)}@example.test`;
@@ -130,6 +189,8 @@ describe("S-H3 opt-in platform owner grant / revoke", () => {
       changed: false,
     });
 
+    const replacementId = await insertUser(`replacement-${randomUUID()}@example.test`);
+    await h.sql(`UPDATE users SET firm_role = 'firm_owner' WHERE id = $1`, [replacementId]);
     const revoked = await svc.revokePlatformOwner(email, { confirm: email });
     expect(revoked).toMatchObject({ ok: true, changed: true });
     expect(await state(id)).toEqual({

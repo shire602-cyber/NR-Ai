@@ -7,7 +7,7 @@
  * dispatched from domain_event_outbox with retry/backoff, dead-lettering and idempotent
  * per-handler delivery keyed by event id.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { accountByCode, useHarness } from "./harness";
 
 const h = useHarness();
@@ -151,7 +151,7 @@ describe("F8 durable domain events", () => {
         "payroll.paid",
         () => {
           failing += 1;
-          throw new Error("downstream unavailable");
+          throw new Error("downstream unavailable for recipient@example.invalid");
         },
         { name: "f8.test.failing" }
       )
@@ -171,13 +171,13 @@ describe("F8 durable domain events", () => {
     await p.drainDomainEvents();
     let [row] = await outboxRows(entity);
     expect(row).toMatchObject({ id, status: "pending", attempts: 1 });
-    expect(row.last_error).toMatch(/downstream unavailable/);
+    expect(row.last_error).toBe("Handler failed: payroll.paid:f8.test.failing");
     const [{ delay }] = await h.sql<{ delay: number }>(
       `SELECT extract(epoch FROM next_attempt_at - updated_at)::int AS delay
          FROM domain_event_outbox WHERE id = $1`,
       [id]
     );
-    expect(delay).toBeGreaterThanOrEqual(25); // backoff, not an immediate hot loop
+    expect(delay).toBe(30);
     // Not due yet: the dispatcher leaves it alone.
     expect(await p.dispatchEventOutbox()).toEqual({});
 
@@ -239,6 +239,204 @@ describe("F8 durable domain events", () => {
     expect(calls).toBe(1);
     const [row] = await outboxRows(entity);
     expect(row.status).toBe("dispatched");
+  });
+
+  it("recovers an expired claim without letting the old worker overwrite a completed event", async () => {
+    const p = await platform();
+    const eventId = "10000000-0000-4000-8000-000000000001";
+    const entityId = "expired-lease-recovery";
+    await h.sql(
+      `INSERT INTO domain_event_outbox (id, event_type, entity_id, payload, max_attempts)
+       VALUES ($1, 'task.due', $2, $3, 3)`,
+      [eventId, entityId, JSON.stringify({ companyId: eventId, entityId, dueDate: today() })]
+    );
+
+    let signalEntered!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      signalEntered = resolve;
+    });
+    let releaseOriginal!: () => void;
+    const release = new Promise<void>((resolve) => {
+      releaseOriginal = resolve;
+    });
+    let calls = 0;
+    offs.push(
+      p.onDomainEvent(
+        "task.due",
+        async () => {
+          if (++calls !== 1) return;
+          signalEntered();
+          await release;
+          throw new Error("The original worker completed after losing its lease");
+        },
+        { name: "f8.test.stale" }
+      )
+    );
+
+    const original = p.dispatchDomainEvent(eventId);
+    try {
+      const outcome = await Promise.race([entered, original]);
+      expect(outcome).toBeUndefined();
+      await h.sql("UPDATE domain_event_outbox SET locked_until = now() WHERE id = $1", [eventId]);
+      expect(await p.dispatchDomainEvent(eventId)).toBe("dispatched");
+    } finally {
+      releaseOriginal();
+      await original.catch(() => {});
+    }
+
+    expect(await original).toBeNull();
+    expect(calls).toBe(2);
+    const [row] = await outboxRows(entityId);
+    expect(row).toMatchObject({ status: "dispatched", attempts: 2, last_error: null });
+  });
+
+  it("dead-letters an expired last attempt with incomplete receipts without calling handlers again", async () => {
+    const p = await platform();
+    const eventId = "10000000-0000-4000-8000-000000000002";
+    const entityId = "expired-final-attempt";
+    const completed = vi.fn();
+    const missing = vi.fn();
+    offs.push(p.onDomainEvent("task.due", completed, { name: "f8.test.final-attempt" }));
+    offs.push(p.onDomainEvent("task.due", missing, { name: "f8.test.missing-receipt" }));
+    await h.sql(
+      `INSERT INTO domain_event_outbox
+         (id, event_type, entity_id, payload, status, attempts, max_attempts, locked_until)
+       VALUES ($1, 'task.due', $2, $3, 'dispatching', 1, 1, now() - interval '1 second')`,
+      [eventId, entityId, JSON.stringify({ companyId: eventId, entityId, dueDate: today() })]
+    );
+    await h.sql("INSERT INTO domain_event_deliveries (event_id, handler) VALUES ($1, $2)", [
+      eventId,
+      "task.due:f8.test.final-attempt",
+    ]);
+
+    expect(await p.dispatchEventOutbox()).toEqual({ dead: 1 });
+    expect(await p.dispatchDomainEvent(eventId)).toBeNull();
+    expect(completed).not.toHaveBeenCalled();
+    expect(missing).not.toHaveBeenCalled();
+    const [row] = await outboxRows(entityId);
+    expect(row).toMatchObject({
+      status: "dead",
+      attempts: 1,
+      last_error: "Final delivery attempt expired",
+    });
+  });
+
+  it("reconciles a fully receipted final attempt without invoking either handler", async () => {
+    const p = await platform();
+    const eventId = "10000000-0000-4000-8000-000000000003";
+    const entityId = "expired-final-attempt-with-receipts";
+    const first = vi.fn();
+    const second = vi.fn();
+    offs.push(p.onDomainEvent("task.due", first, { name: "f8.test.receipt" }));
+    offs.push(p.onDomainEvent("*", second, { name: "f8.test.wildcard-receipt" }));
+    await h.sql(
+      `INSERT INTO domain_event_outbox
+         (id, event_type, entity_id, payload, status, attempts, max_attempts, locked_until)
+       VALUES ($1, 'task.due', $2, $3, 'dispatching', 2, 2, now() - interval '1 second')`,
+      [eventId, entityId, JSON.stringify({ companyId: eventId, entityId, dueDate: today() })]
+    );
+    for (const { key } of p.domainEventHandlersFor("task.due")) {
+      await h.sql("INSERT INTO domain_event_deliveries (event_id, handler) VALUES ($1, $2)", [
+        eventId,
+        key,
+      ]);
+    }
+
+    const outcomes = await Promise.all([
+      p.dispatchDomainEvent(eventId),
+      p.dispatchDomainEvent(eventId),
+    ]);
+    expect(outcomes.filter((outcome) => outcome !== null)).toEqual(["dispatched"]);
+    expect(first).not.toHaveBeenCalled();
+    expect(second).not.toHaveBeenCalled();
+    const [row] = await outboxRows(entityId);
+    expect(row).toMatchObject({ status: "dispatched", attempts: 2, last_error: null });
+    const [timestamps] = await h.sql(
+      `SELECT locked_until IS NULL AS cleared, dispatched_at IS NOT NULL AS dispatched,
+              dead_at IS NULL AS alive FROM domain_event_outbox WHERE id = $1`,
+      [eventId]
+    );
+    expect(timestamps).toEqual({ cleared: true, dispatched: true, alive: true });
+  });
+
+  it("bounds a hung handler through the scheduled job and fences the late completion", async () => {
+    const p = await platform();
+    const { getJobStatus, runJob } = await import("../../server/platform/job-registry");
+    const staleId = "10000000-0000-4000-8000-000000000004";
+    const nextId = "10000000-0000-4000-8000-000000000005";
+    for (const [id, order] of [
+      [staleId, 2],
+      [nextId, 1],
+    ]) {
+      await h.sql(
+        `INSERT INTO domain_event_outbox (id, event_type, entity_id, payload, created_at, max_attempts)
+         VALUES ($1, 'task.due', $2, $3, now() - ($4::int * interval '1 minute'), 2)`,
+        [id, `job-${order}`, JSON.stringify({ companyId: id, entityId: `job-${order}` }), order]
+      );
+    }
+    let releaseHung!: () => void;
+    const hung = new Promise<void>((resolve) => {
+      releaseHung = resolve;
+    });
+    let expireHandler: (() => void) | undefined;
+    const handler = vi.fn(
+      async (event: { payload: { eventId?: string } }, signal?: AbortSignal) => {
+        if (event.payload.eventId === staleId) {
+          // Deliberately ignore abort so the test can exercise late completion.
+          expect(signal?.aborted).toBe(false);
+          expireHandler?.();
+          await hung;
+        }
+      }
+    );
+    offs.push(p.onDomainEvent("task.due", handler, { name: "f8.test.hung" }));
+
+    // Fire only the hung handler's deadline. Preserve timing for DB-backed handlers.
+    const realTimeout = globalThis.setTimeout;
+    const timers = vi
+      .spyOn(globalThis, "setTimeout")
+      .mockImplementation((callback, delay, ...args) => {
+        if (delay === 60_000) expireHandler = () => callback(...args);
+        return realTimeout(callback, delay, ...args);
+      });
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
+    p.registerEventOutboxJob();
+    const sweep = runJob(p.EVENT_OUTBOX_JOB);
+    try {
+      const outcome = await Promise.race([
+        sweep,
+        new Promise((_, reject) => {
+          watchdog = realTimeout(
+            () => reject(new Error("Dispatch job stalled on a handler")),
+            5000
+          );
+        }),
+      ]);
+      expect(outcome).toBe("ok");
+      expect(getJobStatus(p.EVENT_OUTBOX_JOB)?.running).toBe(false);
+      expect(handler.mock.calls.map(([event]) => event.payload.eventId)).toEqual([staleId, nextId]);
+      expect(handler.mock.calls.map(([, signal]) => signal?.aborted)).toEqual([true, false]);
+      expect((await outboxRows("job-1"))[0]).toMatchObject({ status: "dispatched", attempts: 1 });
+      expect((await outboxRows("job-2"))[0]).toMatchObject({
+        status: "pending",
+        attempts: 1,
+        last_error: "Handler timed out: task.due:f8.test.hung",
+      });
+    } finally {
+      clearTimeout(watchdog);
+      timers.mockRestore();
+      releaseHung();
+      await sweep;
+    }
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect((await outboxRows("job-2"))[0]).toMatchObject({ status: "pending", attempts: 1 });
+    expect(
+      await h.sql(
+        "SELECT handler FROM domain_event_deliveries WHERE event_id = $1 AND handler = $2",
+        [staleId, "task.due:f8.test.hung"]
+      )
+    ).toEqual([]);
   });
 
   it("[F8-02] the dispatcher is a registered job", async () => {

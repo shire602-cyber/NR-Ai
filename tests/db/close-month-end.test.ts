@@ -5,8 +5,8 @@
  */
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
-import { postJournalEntry, useHarness, type Tenant } from "./harness";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { accountByCode, postJournalEntry, useHarness, type Tenant } from "./harness";
 import { repoRoot } from "./pg-admin";
 
 const h = useHarness();
@@ -261,7 +261,432 @@ describe("lock policy", () => {
   });
 });
 
+describe.skipIf(process.env.HARNESS_MODE !== "postgres")("hard-close checklist concurrency", () => {
+  it.each([
+    ["month", "lock-period", { periodEnd: "2025-12-31", lockType: "hard" }],
+    ["year", "year-end-close", { fiscalYearEnd: "2025-12-31", hardClose: true }],
+  ])("rechecks %s eligibility after a pending expense commits", async (_, endpoint, body) => {
+    const tenant = await h.createTenant({
+      name: `Checklist-${endpoint}`,
+      vatRegistered: false,
+      companyColumns: { tax_registration_type: "Non-registered" },
+    });
+    const companyId = tenant.company.id;
+    const { postJournal, withLedgerTx } = await import("../../server/ledger");
+    const [bank, expense] = await Promise.all([
+      accountByCode(tenant, "1020"),
+      accountByCode(tenant, "5010"),
+    ]);
+    const ready = await tenant.as.get(
+      `/api/companies/${companyId}/month-end/checklist?period=2025-12`
+    );
+    expect(ready.status, ready.text).toBe(200);
+    expect(
+      ready.body.checklist.filter(
+        (step: { effectiveStatus: string }) => step.effectiveStatus !== "complete"
+      )
+    ).toEqual([]);
+    let signalInserted = () => {};
+    const inserted = new Promise<void>((resolve) => {
+      signalInserted = resolve;
+    });
+    let releasePosting = () => {};
+    const released = new Promise<void>((resolve) => {
+      releasePosting = resolve;
+    });
+    const posting = withLedgerTx(async (tx) => {
+      await postJournal(
+        {
+          companyId,
+          date: "2025-12-15",
+          status: "posted",
+          lines: [
+            { accountId: expense.id, debit: 100 },
+            { accountId: bank.id, credit: 100 },
+          ],
+        },
+        { actorId: tenant.user.id, tx }
+      );
+      signalInserted();
+      await released;
+    });
+    await Promise.race([inserted, posting]);
+    const url = `/api/companies/${companyId}/month-end/${endpoint}`;
+    const closing = tenant.as.post(url, body);
+    try {
+      await vi.waitFor(
+        async () => {
+          const [waiting] = await h.sql<{ waiting: boolean }>(
+            `SELECT EXISTS (
+             SELECT 1 FROM pg_locks
+              WHERE locktype = 'advisory' AND mode = 'ExclusiveLock' AND NOT granted
+                AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+           ) AS waiting`
+          );
+          expect(waiting.waiting).toBe(true);
+        },
+        { timeout: 6000 }
+      );
+    } finally {
+      releasePosting();
+      await Promise.all([posting, closing]);
+    }
+    const close = await closing;
+    expect(close.status, close.text).toBe(422);
+    expect(close.body.code).toBe("CLOSE_CHECKLIST_INCOMPLETE");
+    expect(close.body.details.incomplete).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 8 })])
+    );
+    const rows = await h.sql("SELECT 1 FROM month_end_close WHERE company_id = $1", [companyId]);
+    expect(rows).toHaveLength(0);
+
+    const override = await tenant.as.post(url, {
+      ...body,
+      overrideChecklist: true,
+      reason: "Auditor confirmed no accrual required",
+    });
+    expect(override.status, override.text).toBe(endpoint === "lock-period" ? 200 : 201);
+    const record = endpoint === "lock-period" ? override.body : override.body.lock;
+    expect(record.checklistOverride).toBe(true);
+    const [saved] = await h.sql<{ checklist_snapshot: unknown }>(
+      "SELECT checklist_snapshot FROM month_end_close WHERE id = $1 AND company_id = $2",
+      [record.id, companyId]
+    );
+    expect(saved.checklist_snapshot).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 8, status: "incomplete" })])
+    );
+  });
+});
+
 describe("year-end close", () => {
+  it.each([
+    { lockType: "soft", lockScope: "through" },
+    { lockType: "hard", lockScope: "month" },
+    { lockType: "hard", lockScope: "through" },
+  ])(
+    "keeps an active hard fiscal close when a lock requests $lockType/$lockScope",
+    async (weaker) => {
+      const tenant = await h.createTenant({ name: "Hard fiscal lock" });
+      const companyId = tenant.company.id;
+      const companyUrl = `/api/companies/${companyId}`;
+      const url = `${companyUrl}/month-end`;
+      const end = "2025-12-31";
+      const settings = await tenant.as.put(`${url}/settings`, { requireChecklistToLock: false });
+      expect(settings.status, settings.text).toBe(200);
+      const month = await tenant.as.post(`${url}/lock-period`, {
+        periodEnd: end,
+        lockType: "soft",
+      });
+      expect(month.status, month.text).toBe(200);
+      const request = await tenant.as.post(`${url}/reopen-requests`, {
+        periodEnd: end,
+        reason: "Draft correction",
+      });
+      expect(request.status, request.text).toBe(201);
+      const close = await tenant.as.post(`${url}/year-end-close`, {
+        fiscalYearEnd: end,
+        hardClose: true,
+        reason: "Annual review completed",
+      });
+      expect(close.status, close.text).toBe(201);
+      const lockRow = () =>
+        h.sql("SELECT * FROM month_end_close WHERE id = $1", [close.body.lock.id]);
+      const originalLock = await lockRow();
+
+      const weakening = await tenant.as.post(`${url}/lock-period`, { periodEnd: end, ...weaker });
+      expect(weakening.status, weakening.text).toBe(403);
+      expect(weakening.body.code).toBe("FISCAL_YEAR_HARD_CLOSED");
+
+      const admin = await h.createTenant({ name: "Period administrator", isAdmin: true });
+      await h.sql(
+        "INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'accountant')",
+        [companyId, admin.user.id]
+      );
+      const ordinaryUnlock = await admin.as.post(`${companyUrl}/period-lock/unlock`, {
+        periodEnd: end,
+        reason: "Draft correction",
+      });
+      expect(ordinaryUnlock.status, ordinaryUnlock.text).toBe(403);
+      expect(ordinaryUnlock.body.code).toBe("FISCAL_YEAR_HARD_CLOSED");
+      const approval = await admin.as.post(`${url}/reopen-requests/${request.body.id}/approve`, {});
+      expect(approval.status, approval.text).toBe(403);
+      expect(approval.body.code).toBe("FISCAL_YEAR_HARD_CLOSED");
+      const [pending] = await h.sql("SELECT status FROM month_end_reopen_requests WHERE id = $1", [
+        request.body.id,
+      ]);
+      expect(pending.status).toBe("pending");
+      const period = await tenant.as.get(`${companyUrl}/period-lock`);
+      expect(period.status, period.text).toBe(200);
+      expect(period.body.locks).toEqual([
+        expect.objectContaining({ id: close.body.lock.id, lockType: "hard", lockScope: "through" }),
+      ]);
+      expect(period.body.fiscalYears).toEqual([
+        expect.objectContaining({ id: close.body.record.id, status: "closed", hardClosed: true }),
+      ]);
+      expect(await lockRow()).toEqual(originalLock);
+
+      const reopen = await admin.as.post(`${url}/year-end-close/reopen`, {
+        fiscalYearEnd: end,
+        reason: "Restatement authorized",
+      });
+      expect(reopen.status, reopen.text).toBe(200);
+      const ordinaryLock = await tenant.as.post(`${url}/lock-period`, {
+        periodEnd: end,
+        ...weaker,
+      });
+      expect(ordinaryLock.status, ordinaryLock.text).toBe(200);
+      expect(ordinaryLock.body).toMatchObject(weaker);
+    }
+  );
+
+  it.each(["weakened", "missing"])(
+    "honors a hard fiscal close with a %s period lock row",
+    async (state) => {
+      const tenant = await h.createTenant({ name: "Legacy fiscal lock" });
+      const companyId = tenant.company.id;
+      const { closeFiscalYear } = await import("../../server/services/month-end.service");
+      const close = await closeFiscalYear(companyId, "2025-12-31", tenant.user.id, {
+        hardClose: true,
+      });
+      await h.sql(
+        state === "weakened"
+          ? "UPDATE month_end_close SET lock_type = 'soft', lock_scope = 'month' WHERE id = $1"
+          : "DELETE FROM month_end_close WHERE id = $1",
+        [close.lock.id]
+      );
+      const companyUrl = `/api/companies/${companyId}`;
+      const period = await tenant.as.get(`${companyUrl}/period-lock`);
+      expect(period.status, period.text).toBe(200);
+      expect(period.body.lockThroughDate).toBe("2025-12-31");
+      const draft = await tenant.as.post(`${companyUrl}/invoices`, {
+        customerName: "Pending restatement",
+        date: "2025-08-15",
+        lines: [
+          {
+            description: "Services",
+            quantity: 1,
+            unitPrice: 100,
+            vatRate: 0,
+            vatSupplyType: "out_of_scope",
+          },
+        ],
+      });
+      expect(draft.status, draft.text).toBe(403);
+      expect(draft.body.code).toBe("PERIOD_LOCKED");
+    }
+  );
+
+  it("preserves the sign-off that made an incomplete year-end checklist step pass", async () => {
+    const tenant = await h.createTenant({
+      name: "YearCloseSignOff",
+      vatRegistered: false,
+      companyColumns: { tax_registration_type: "Non-registered" },
+    });
+    const companyId = tenant.company.id;
+    const url = `/api/companies/${companyId}/month-end`;
+    await postJournalEntry(tenant, {
+      date: "2025-12-15",
+      description: "Year-end office expense",
+      lines: [
+        { code: "5010", debit: 100 },
+        { code: "1020", credit: 100 },
+      ],
+    });
+    const input = { fiscalYearEnd: "2025-12-31", hardClose: true };
+    const before = await tenant.as.post(`${url}/year-end-close`, input);
+    expect(before.status, before.text).toBe(422);
+    expect(before.body.details.incomplete).toEqual([expect.objectContaining({ id: 8 })]);
+
+    const note = "Reviewed the December expenses. No accrual is outstanding.";
+    const signOff = await tenant.as.post(`${url}/steps/accruals/sign-off`, {
+      period: "2025-12",
+      note,
+    });
+    expect(signOff.status, signOff.text).toBe(201);
+    const close = await tenant.as.post(`${url}/year-end-close`, input);
+    expect(close.status, close.text).toBe(201);
+    expect(close.body.lock.checklistOverride).toBe(false);
+
+    const [saved] = await h.sql<{ checklist_snapshot: unknown }>(
+      "SELECT checklist_snapshot FROM month_end_close WHERE id = $1 AND company_id = $2",
+      [close.body.lock.id, companyId]
+    );
+    expect(saved.checklist_snapshot).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 8,
+          status: "incomplete",
+          effectiveStatus: "complete",
+          signOff: {
+            stepKey: "accruals",
+            signedOffBy: tenant.user.id,
+            signedOffAt: signOff.body.signedOffAt,
+            note,
+          },
+        }),
+      ])
+    );
+    const [audit] = await h.sql<{ details: string }>(
+      "SELECT details FROM audit_logs WHERE company_id = $1 AND action = 'fiscal_year.close'",
+      [companyId]
+    );
+    expect(JSON.parse(audit.details).after.checklist).toEqual(saved.checklist_snapshot);
+  });
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "includes an AED 100 journal that commits while the year-end close waits for the period lock",
+    async () => {
+      const tenant = await h.createTenant({ name: "CloseConcurrentProfit" });
+      const companyId = tenant.company.id;
+      const actorId = tenant.user.id;
+      const url = `/api/companies/${companyId}/month-end`;
+      const settings = await tenant.as.put(`${url}/settings`, {
+        postYearEndClosingEntry: true,
+        requireChecklistToLock: false,
+      });
+      expect(settings.status, settings.text).toBe(200);
+      const [bank, income] = await Promise.all([
+        accountByCode(tenant, "1020"),
+        accountByCode(tenant, "4020"),
+      ]);
+      const { postJournal } = await import("../../server/ledger");
+      const { withLedgerTx } = await import("../../server/ledger/tx");
+      const journal = (amount: number) => ({
+        companyId,
+        date: "2025-06-01",
+        status: "posted" as const,
+        lines: [
+          { accountId: bank.id, debit: amount },
+          { accountId: income.id, credit: amount },
+        ],
+      });
+      await postJournal(journal(200), { actorId });
+      let signalInserted = () => {};
+      const inserted = new Promise<void>((resolve) => {
+        signalInserted = resolve;
+      });
+      let releasePosting = () => {};
+      const release = new Promise<void>((resolve) => {
+        releasePosting = resolve;
+      });
+      const posting = withLedgerTx(async (tx) => {
+        await postJournal(journal(100), { actorId, tx });
+        signalInserted();
+        await release;
+      });
+      await Promise.race([inserted, posting]);
+      const closing = tenant.as.post(`${url}/year-end-close`, {
+        fiscalYearEnd: "2025-12-31",
+        hardClose: true,
+      });
+      try {
+        await vi.waitFor(
+          async () => {
+            const [waiting] = await h.sql<{ waiting: boolean }>(
+              `SELECT EXISTS (
+               SELECT 1 FROM pg_locks
+                WHERE locktype = 'advisory' AND mode = 'ExclusiveLock' AND NOT granted
+                  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+             ) AS waiting`
+            );
+            expect(waiting.waiting).toBe(true);
+          },
+          { timeout: 6000 }
+        );
+      } finally {
+        releasePosting();
+        await Promise.all([posting, closing]);
+      }
+      const close = await closing;
+      expect(close.status, close.text).toBe(201);
+      expect(close.body.summary.netIncome).toBe(300);
+      expect(close.body.record.netIncome).toBe(300);
+      const [retainedEarnings] = await h.sql<{ credit: string }>(
+        `SELECT jl.credit::text AS credit
+           FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+          WHERE jl.entry_id = $1 AND a.code = '3020'`,
+        [close.body.closingEntryId]
+      );
+      expect(Number(retainedEarnings.credit)).toBe(300);
+      await expect(postJournal(journal(100), { actorId })).rejects.toMatchObject({
+        code: "PERIOD_LOCKED",
+      });
+    }
+  );
+
+  it("rolls back failed year-end closes and reopens and lets each operation retry cleanly", async () => {
+    const tenant = await h.createTenant({ name: "CloseAtomicRollback" });
+    const companyId = tenant.company.id;
+    const { closeFiscalYear, reopenFiscalYear, updateCloseSettings } =
+      await import("../../server/services/month-end.service");
+    await updateCloseSettings(companyId, { postYearEndClosingEntry: true }, tenant.user.id);
+    await postJournalEntry(tenant, {
+      date: "2025-06-01",
+      description: "June revenue",
+      lines: [
+        { code: "1020", debit: 200 },
+        { code: "4020", credit: 200 },
+      ],
+    });
+
+    // Fail the last write after the closing journal and fiscal-year record have been attempted.
+    await h.sql(`ALTER TABLE month_end_close ADD CONSTRAINT test_year_close_lock_write
+                 CHECK (status <> 'locked') NOT VALID`);
+    try {
+      await expect(closeFiscalYear(companyId, "2025-12-31", tenant.user.id)).rejects.toMatchObject({
+        cause: { code: "23514", constraint: "test_year_close_lock_write" },
+      });
+      const [state] = await h.sql<{ journals: number; closes: number; locks: number }>(
+        `SELECT
+           (SELECT COUNT(*)::int FROM journal_entries WHERE company_id = $1 AND source = 'year_end_close') AS journals,
+           (SELECT COUNT(*)::int FROM fiscal_year_closes WHERE company_id = $1) AS closes,
+           (SELECT COUNT(*)::int FROM month_end_close WHERE company_id = $1) AS locks`,
+        [companyId]
+      );
+      expect(state).toEqual({ journals: 0, closes: 0, locks: 0 });
+    } finally {
+      await h.sql("ALTER TABLE month_end_close DROP CONSTRAINT test_year_close_lock_write");
+    }
+
+    const retry = await closeFiscalYear(companyId, "2025-12-31", tenant.user.id);
+    expect(retry.record.netIncome).toBe(200);
+    expect(retry.posted).toBe(true);
+    expect(retry.lock.status).toBe("locked");
+
+    // Fail the reversal after the fiscal record and its period lock have been reopened.
+    await h.sql(`ALTER TABLE journal_entries ADD CONSTRAINT test_year_reopen_reverse_write
+                 CHECK (source <> 'year_end_close' OR source_id IS NULL) NOT VALID`);
+    try {
+      await expect(
+        reopenFiscalYear(companyId, "2025-12-31", tenant.user.id, "Auditor adjustment")
+      ).rejects.toMatchObject({
+        cause: { code: "23514", constraint: "test_year_reopen_reverse_write" },
+      });
+      const [state] = await h.sql<{ reversals: number; close: string; period: string }>(
+        `SELECT
+           (SELECT COUNT(*)::int FROM journal_entries WHERE company_id = $1 AND source_id = $2) AS reversals,
+           (SELECT status FROM fiscal_year_closes WHERE company_id = $1) AS close,
+           (SELECT status FROM month_end_close WHERE company_id = $1) AS period`,
+        [companyId, retry.closingEntryId]
+      );
+      expect(state).toEqual({ reversals: 0, close: "closed", period: "locked" });
+    } finally {
+      await h.sql("ALTER TABLE journal_entries DROP CONSTRAINT test_year_reopen_reverse_write");
+    }
+    const reopened = await reopenFiscalYear(
+      companyId,
+      "2025-12-31",
+      tenant.user.id,
+      "Auditor adjustment"
+    );
+    expect(reopened.status).toBe("reopened");
+    const [reversal] = await h.sql<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM journal_entries WHERE company_id = $1 AND source_id = $2`,
+      [companyId, retry.closingEntryId]
+    );
+    expect(reversal.n).toBe(1);
+  });
+
   it("[R08-02][R11-14] posted year-end close keeps CT at 20,250 and the roll-forward does not double count", async () => {
     expect(await ctTax()).toBe(20_250);
     const settings = await t.as.put(`${base}/month-end/settings`, {
