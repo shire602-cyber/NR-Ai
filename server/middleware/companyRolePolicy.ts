@@ -241,6 +241,9 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("POST", "companies/*/corporate-tax/deferred-tax/*/reverse", "ledger.post"),
   r("MUT", "companies/*/corporate-tax/external-returns", "tax.submit"),
   r("MUT", "companies/*/corporate-tax/external-returns/*", "tax.submit"),
+  r("PATCH", "vat-returns/*", "tax.submit"),
+  r("POST", "vat-returns/*/ready", "tax.submit"),
+  r("POST", "vat-returns/*/amend", "tax.submit"),
   r("POST", "vat-returns/*/submit", "tax.submit"),
   // VAT paid to / refunded by the FTA for a submitted return (posts Dr 2020 / Cr 1050 / bank).
   r("POST", "vat-returns/*/settlement", "tax.submit"),

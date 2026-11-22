@@ -1,3 +1,4 @@
+import { activeVatReturnFilter } from "../../tax/vat-filing-filter";
 // Shared firm route helpers: client access/stats, health and bookkeeper scoring, service plans and request schemas.
 // Split from firm.routes.ts (R20-09); shared by its route handler modules.
 import { ASSIGNMENT_ROLES } from "../../services/firm/staff.service";
@@ -159,7 +160,7 @@ export async function getClientStatsBatch(companyIds: string[]): Promise<Map<str
         periodEnd: vatReturns.periodEnd,
       })
       .from(vatReturns)
-      .where(inArray(vatReturns.companyId, companyIds))
+      .where(and(inArray(vatReturns.companyId, companyIds), activeVatReturnFilter))
       .orderBy(vatReturns.companyId, desc(vatReturns.periodEnd)) as Promise<
       {
         companyId: string;

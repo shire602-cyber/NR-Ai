@@ -1,3 +1,4 @@
+import { vatFilingOutstandingFilter } from "../tax/vat-filing-filter";
 import type { Request, Response } from "express";
 import { Router } from "express";
 import type { Express } from "express";
@@ -532,6 +533,7 @@ export function registerFirmCommsRoutes(app: Express): void {
         .where(
           and(
             eq(companies.companyType, "client"),
+            vatFilingOutstandingFilter,
             gte(vatReturns.dueDate, now),
             lte(vatReturns.dueDate, cutoff),
             accessibleIds !== null ? inArray(vatReturns.companyId, accessibleIds) : undefined

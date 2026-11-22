@@ -76,6 +76,7 @@ function refineReceipt(v: { amount?: number; vatAmount?: number | null }, ctx: z
 
 export const createReceiptBody = z
   .object({
+    captureId: zUuid.optional(),
     merchant,
     invoiceNumber,
     date: zDate,

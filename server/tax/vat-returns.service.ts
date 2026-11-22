@@ -236,8 +236,14 @@ export async function generateVatReturn(input: {
     }
   }
   const vatReturn = existing
-    ? await storage.updateVatReturn(existing.id, data as never)
+    ? await storage.updateUnfiledVatReturn(
+        existing.companyId,
+        existing.id,
+        existing.status,
+        data as never
+      )
     : await storage.createVatReturn(data as never);
+  if (!vatReturn) throw new DomainError("INVALID_TRANSITION", 409);
   return { vatReturn, computation };
 }
 
@@ -276,12 +282,18 @@ export async function assertReconciledOrOverridden(input: {
       "The VAT return does not agree with the VAT control accounts in the ledger. Resolve the difference or give an override reason."
     );
   }
-  await storage.updateVatReturn(input.vatReturn.id, {
-    reconciliationOverrideReason: reason,
-    reconciliationOverrideBy: input.userId,
-    reconciliationOverrideAt: new Date(),
-    reconciliationSnapshot: reconciliationSnapshot(computation),
-  } as never);
+  const overridden = await storage.updateUnfiledVatReturn(
+    input.vatReturn.companyId,
+    input.vatReturn.id,
+    input.vatReturn.status,
+    {
+      reconciliationOverrideReason: reason,
+      reconciliationOverrideBy: input.userId,
+      reconciliationOverrideAt: new Date(),
+      reconciliationSnapshot: reconciliationSnapshot(computation),
+    } as never
+  );
+  if (!overridden) throw new DomainError("INVALID_TRANSITION", 409);
   await recordAudit({
     userId: input.userId,
     companyId: input.vatReturn.companyId,
@@ -325,11 +337,17 @@ export async function markVatReturnReady(input: {
   }
   await postReturnApportionment(existing, input.userId);
   await assertReconciledOrOverridden({ vatReturn: existing, ...input });
-  const updated = await storage.updateVatReturn(existing.id, {
-    status: "ready",
-    readyAt: new Date(),
-    readyBy: input.userId,
-  } as never);
+  const updated = await storage.updateUnfiledVatReturn(
+    existing.companyId,
+    existing.id,
+    existing.status,
+    {
+      status: "ready",
+      readyAt: new Date(),
+      readyBy: input.userId,
+    } as never
+  );
+  if (!updated) throw new DomainError("INVALID_TRANSITION", 409);
   await recordAudit({
     userId: input.userId,
     companyId: existing.companyId,
@@ -368,32 +386,47 @@ export async function amendVatReturn(input: {
   const to = new Date(original.periodEnd).toISOString().slice(0, 10);
   const computation = await computeVat201({ companyId: original.companyId, from, to });
   const diff = diffReturns(original as unknown as Record<string, unknown>, computation.boxes);
-  const created = await storage.createVatReturn({
-    companyId: original.companyId,
-    periodStart: original.periodStart,
-    periodEnd: original.periodEnd,
-    dueDate: original.dueDate,
-    status: "draft",
-    vatStagger: original.vatStagger,
-    ...vatReturnColumns(computation.boxes),
-    amendsReturnId: original.id,
-    amendmentDiff: {
-      reason: input.reason,
-      boxes: diff,
-      netChange: filsToAed(
-        computation.boxesFils.box14PayableTax - Math.round(Number(original.box14PayableTax) * 100)
-      ),
-    },
-    reconciliationSnapshot: reconciliationSnapshot(computation),
-    engineVersion: computation.engineVersion,
-    partialExemptionRatio: computation.company.exemptSupplyRatio,
-    notes: `Amendment of return ${original.id}: ${input.reason}`,
-    createdBy: input.userId,
-  } as never);
-  await db
-    .update(vatReturns)
-    .set({ status: "amended", updatedAt: new Date() })
-    .where(and(eq(vatReturns.id, original.id), eq(vatReturns.companyId, original.companyId)));
+  const created = await db.transaction(async (tx) => {
+    const [superseded] = await tx
+      .update(vatReturns)
+      .set({ status: "amended", updatedAt: new Date() })
+      .where(
+        and(
+          eq(vatReturns.id, original.id),
+          eq(vatReturns.companyId, original.companyId),
+          eq(vatReturns.status, original.status)
+        )
+      )
+      .returning({ id: vatReturns.id });
+    if (!superseded) throw new DomainError("INVALID_TRANSITION", 409);
+    const [amendment] = await tx
+      .insert(vatReturns)
+      .values({
+        companyId: original.companyId,
+        periodStart: original.periodStart,
+        periodEnd: original.periodEnd,
+        dueDate: original.dueDate,
+        status: "draft",
+        vatStagger: original.vatStagger,
+        ...vatReturnColumns(computation.boxes),
+        amendsReturnId: original.id,
+        amendmentDiff: {
+          reason: input.reason,
+          boxes: diff,
+          netChange: filsToAed(
+            computation.boxesFils.box14PayableTax -
+              Math.round(Number(original.box14PayableTax) * 100)
+          ),
+        },
+        reconciliationSnapshot: reconciliationSnapshot(computation),
+        engineVersion: computation.engineVersion,
+        partialExemptionRatio: computation.company.exemptSupplyRatio,
+        notes: `Amendment of return ${original.id}: ${input.reason}`,
+        createdBy: input.userId,
+      } as never)
+      .returning();
+    return amendment;
+  });
   await recordAudit({
     userId: input.userId,
     companyId: original.companyId,

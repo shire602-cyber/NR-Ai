@@ -94,6 +94,8 @@ export interface ReviewSnapshot {
   date?: string | null;
   invoiceNumber?: string | null;
   total?: number | null;
+  subtotal?: number | null;
+  currency?: string | null;
   vatAmount?: number | null;
   category?: string | null;
 }
@@ -105,11 +107,15 @@ export function receiptReviewDecision(
 ): "accepted" | "corrected" {
   if (!original) return "corrected";
   const cents = (v: number | null | undefined) => Math.round((Number(v) || 0) * 100);
+  const subtotal = (v: ReviewSnapshot) =>
+    v.subtotal == null ? cents(v.total) - cents(v.vatAmount) : cents(v.subtotal);
   const same =
     (original.merchant ?? "").trim() === (final.merchant ?? "").trim() &&
     (original.date ?? "") === (final.date ?? "") &&
     (original.invoiceNumber ?? "").trim() === (final.invoiceNumber ?? "").trim() &&
     cents(original.total) === cents(final.total) &&
+    subtotal(original) === subtotal(final) &&
+    (original.currency ?? "AED") === (final.currency ?? "AED") &&
     cents(original.vatAmount) === cents(final.vatAmount) &&
     (original.category ?? "") === (final.category ?? "");
   return same ? "accepted" : "corrected";

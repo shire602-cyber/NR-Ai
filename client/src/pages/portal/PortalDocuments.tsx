@@ -1,7 +1,7 @@
 import { T } from "@/components/layout/T";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { useState, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Upload, FileText, FileImage, File, FolderOpen, Loader2, CheckCircle2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DateText } from "@/components/documents/DateText";
-import { apiRequest } from "@/lib/queryClient";
+import { usePortalSupplier, usePortalSupplierQuery } from "@/lib/portal-supplier";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { withCsrfHeader } from "@/lib/csrf";
@@ -67,26 +67,14 @@ export default function PortalDocuments() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const uploadAccount = useRef<string | undefined>(undefined);
-  const { data: company } = useQuery<{ accountId: string }>({
-    queryKey: ["portal-company"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/company"),
-    staleTime: 5 * 60 * 1000,
-  });
+  const company = usePortalSupplier()?.company;
 
-  const accountId = company?.accountId;
   const {
     data: documents = [],
     isLoading,
     isLoadingError,
     refetch,
-  } = useQuery<any[]>({
-    queryKey: ["portal-documents", accountId],
-    enabled: !!accountId,
-    queryFn: () =>
-      apiRequest("GET", "/api/client-portal/documents", undefined, {
-        "X-Portal-Account": accountId!,
-      }),
-  });
+  } = usePortalSupplierQuery<any[]>("portal-documents", "documents");
 
   const uploadMutation = useMutation({
     mutationFn: uploadDocument,

@@ -1,6 +1,5 @@
 import { T } from "@/components/layout/T";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { CircleAlert, FileText, FolderOpen, PartyPopper, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { apiRequest } from "@/lib/queryClient";
+import { usePortalSupplier, usePortalSupplierQuery } from "@/lib/portal-supplier";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { DateText } from "@/components/documents/DateText";
 
@@ -51,25 +50,14 @@ export default function PortalDashboard() {
     isLoading,
     error: dashboardError,
     refetch: refetchDashboard,
-  } = useQuery({
-    queryKey: ["portal-dashboard"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/dashboard"),
-  });
+  } = usePortalSupplierQuery<any>("portal-dashboard", "dashboard", 60_000);
   const {
     data: documents = [],
     isLoading: documentsLoading,
     isLoadingError: documentsFailed,
     refetch: refetchDocuments,
-  } = useQuery<PortalDocumentRow[]>({
-    queryKey: ["portal-documents"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/documents"),
-  });
-
-  const { data: company } = useQuery<{ name?: string }>({
-    queryKey: ["portal-company"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/company"),
-    staleTime: 5 * 60 * 1000,
-  });
+  } = usePortalSupplierQuery<PortalDocumentRow[]>("portal-documents", "documents");
+  const company = usePortalSupplier()?.company;
   const [welcome, setWelcome] = useState(() => {
     try {
       return window.localStorage.getItem(PORTAL_WELCOME_KEY) === "1";

@@ -619,7 +619,7 @@
   "marketing.prRowPayroll": "Payroll and WPS",
   "marketing.prRowAiCategorise": "AI categorisation",
   "marketing.prRowAiReceipts": "AI receipt reading",
-  "marketing.prRowAiReceiptsNote": "Automatic reading arrives later",
+  "marketing.prRowAiReceiptsNote": "Manual receipt entry",
   "marketing.prRowAiAssistant": "Forecasts, anomaly checks and auto-posting",
   "marketing.prRowAiPriority": "Priority AI processing",
   "marketing.prRowApi": "API access",

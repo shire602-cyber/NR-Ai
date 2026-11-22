@@ -492,6 +492,8 @@ export interface ReceiptReportRow {
   currency: string | null;
   exchangeRate: number;
   baseCurrencyAmount: number;
+  exchangeRateSource?: "manual" | "lookup" | null;
+  reverseCharge?: boolean;
   category: string | null;
   posted: boolean;
   autoPosted: boolean;

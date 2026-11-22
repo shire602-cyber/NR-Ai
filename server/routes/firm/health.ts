@@ -2,7 +2,7 @@
 // Handlers moved from firm.routes.ts (R20-09); the route registrations (paths and
 // middleware order) stay in firm.routes.ts.
 import type { Request, Response } from "express";
-import { and, count, eq, inArray, lt, lte, max, not, sql } from "drizzle-orm";
+import { and, count, eq, inArray, lt, lte, max, sql } from "drizzle-orm";
 import {
   bankTransactions,
   companies,
@@ -12,7 +12,11 @@ import {
 } from "../../../shared/schema";
 import { firmReceivablesAed, sumReceivables } from "../../services/firm/receivables.service";
 import { buildBookkeeperDashboard } from "./bookkeeper-dashboard";
-import { vatFilingRecordedFilter } from "../../tax/vat-filing-filter";
+import {
+  activeVatReturnFilter,
+  vatFilingOutstandingFilter,
+  vatFilingRecordedFilter,
+} from "../../tax/vat-filing-filter";
 import { db } from "../../db";
 import { aed, ledgerBalanceCheckByCompany } from "../../reporting";
 import { getAccessibleCompanyIds } from "../../middleware/rbac";
@@ -80,7 +84,7 @@ export const handleGetFirmHealth = async (req: Request, res: Response) => {
       maxPeriodEnd: max(vatReturns.periodEnd).as("max_period_end"),
     })
     .from(vatReturns)
-    .where(inArray(vatReturns.companyId, clientIds))
+    .where(and(inArray(vatReturns.companyId, clientIds), activeVatReturnFilter))
     .groupBy(vatReturns.companyId)
     .as("latest_vat");
 
@@ -99,7 +103,8 @@ export const handleGetFirmHealth = async (req: Request, res: Response) => {
       latestVatSub,
       and(
         eq(vatReturns.companyId, latestVatSub.companyId),
-        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd)
+        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd),
+        activeVatReturnFilter
       )
     );
 
@@ -282,7 +287,7 @@ export const handleGetFirmHealthDeadlines = async (req: Request, res: Response) 
   const ninetyDaysOut = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
 
   const whereClause = and(
-    not(vatFilingRecordedFilter),
+    vatFilingOutstandingFilter,
     lte(vatReturns.dueDate, ninetyDaysOut),
     ...(accessibleIds !== null ? [inArray(vatReturns.companyId, accessibleIds)] : [])
   );
@@ -405,7 +410,7 @@ export const handleGetFirmOverview = async (req: Request, res: Response) => {
     .where(
       and(
         inArray(vatReturns.companyId, clientIds),
-        not(vatFilingRecordedFilter),
+        vatFilingOutstandingFilter,
         lt(vatReturns.dueDate, now)
       )
     )

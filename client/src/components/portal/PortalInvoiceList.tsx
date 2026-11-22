@@ -75,9 +75,11 @@ export function PortalInvoiceList({
   invoices,
   loading,
   onlinePayment,
+  accountId,
 }: {
   invoices: PortalInvoice[];
   loading?: boolean;
+  accountId?: string;
   onlinePayment: boolean;
 }) {
   const { t, locale } = useTranslation();
@@ -112,7 +114,12 @@ export function PortalInvoiceList({
 
   const pay = (inv: PortalInvoice) =>
     run(`pay:${inv.id}`, async () => {
-      const res = (await apiRequest("POST", `/api/client-portal/invoices/${inv.id}/pay`, {})) as {
+      const res = (await apiRequest(
+        "POST",
+        `/api/client-portal/invoices/${inv.id}/pay`,
+        {},
+        accountId ? { "X-Portal-Account": accountId } : undefined
+      )) as {
         url?: string;
       };
       if (!res?.url) return false;
@@ -284,7 +291,8 @@ export function PortalInvoiceList({
                               void run(`pdf:${inv.id}`, () =>
                                 download(
                                   `/api/client-portal/invoices/${inv.id}/pdf`,
-                                  `invoice-${inv.number}.pdf`
+                                  `invoice-${inv.number}.pdf`,
+                                  accountId
                                 )
                               )
                             }
@@ -308,7 +316,8 @@ export function PortalInvoiceList({
                                 void run(`xml:${inv.id}`, () =>
                                   download(
                                     `/api/client-portal/invoices/${inv.id}/einvoice`,
-                                    `einvoice-${inv.number}.xml`
+                                    `einvoice-${inv.number}.xml`,
+                                    accountId
                                   )
                                 )
                               }

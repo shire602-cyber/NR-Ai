@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, Link } from "wouter";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   FileText,
@@ -14,6 +14,7 @@ import {
   Check,
   ChevronsUpDown,
   ShieldOff,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { PortalSupplierContext, portalSupplierHeaders } from "@/lib/portal-supplier";
 import { ApiError, apiRequest } from "@/lib/queryClient";
 import { getSelectedPortalAccount, setSelectedPortalAccount } from "@/lib/auth";
 import { useSessionActions } from "@/hooks/useSessionActions";
@@ -51,15 +53,25 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
-  const queryClient = useQueryClient();
   const { signOut } = useSessionActions();
   const mobileNav = useRef<HTMLElement>(null);
   const mobileNavFade = useEdgeFade(mobileNav);
   useActiveIntoView(mobileNav);
 
-  const { data: company, error: companyError } = useQuery({
-    queryKey: ["portal-company"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/company"),
+  const [selection, setSelection] = useState(getSelectedPortalAccount);
+  const {
+    data: company,
+    error: companyError,
+    refetch: refetchCompany,
+  } = useQuery({
+    queryKey: ["portal-company", selection],
+    queryFn: () =>
+      apiRequest(
+        "GET",
+        "/api/client-portal/company",
+        undefined,
+        portalSupplierHeaders(selection ?? "")
+      ),
     staleTime: 5 * 60 * 1000,
     retry: false,
   });
@@ -77,13 +89,13 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
 
   function switchSupplier(id: string) {
     setSelectedPortalAccount(id);
-    queryClient.removeQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("portal-") });
-    void queryClient.invalidateQueries();
+    setSelection(id);
     navigate("/client-portal/dashboard");
   }
 
-  const selectedId = company?.accountId ?? getSelectedPortalAccount();
-  const current = accounts.find((a) => a.id === selectedId) ?? accounts[0];
+  const selectedId = company?.accountId ?? selection;
+  const current = accounts.find((a) => a.id === selectedId);
+  const alternate = accounts.find((a) => a.id !== selectedId);
   const removed =
     companyError instanceof ApiError &&
     (companyError.body?.code === "PORTAL_ACCESS_REVOKED" ||
@@ -340,13 +352,8 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                   })}
                   actions={
                     <>
-                      {accounts.length > 1 && accounts.find((a) => a.id !== current?.id) ? (
-                        <Button
-                          className="h-11"
-                          onClick={() =>
-                            switchSupplier(accounts.find((a) => a.id !== current?.id)!.id)
-                          }
-                        >
+                      {alternate ? (
+                        <Button className="h-11" onClick={() => switchSupplier(alternate.id)}>
                           {t["portal.states.useOther"]}
                         </Button>
                       ) : null}
@@ -361,8 +368,28 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                   }
                 />
               </div>
+            ) : companyError ? (
+              <div className="py-12 text-center" role="alert">
+                <p className="mb-3">{t["components.errorSectionCouldNotLoad"]}</p>
+                <Button variant="outline" onClick={() => void refetchCompany()}>
+                  {t["components.errorRetry"]}
+                </Button>
+              </div>
+            ) : company?.accountId ? (
+              <PortalSupplierContext.Provider
+                key={company.accountId}
+                value={{ company, switchSupplier }}
+              >
+                {children}
+              </PortalSupplierContext.Provider>
             ) : (
-              children
+              <div
+                className="grid min-h-32 place-items-center"
+                role="status"
+                aria-label={t["components.ui.loading"]}
+              >
+                <Loader2 aria-hidden className="size-5 animate-spin" />
+              </div>
             )}
           </div>
         </main>

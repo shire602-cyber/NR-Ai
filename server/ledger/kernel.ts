@@ -46,14 +46,18 @@ import type {
 
 // Period-lock service is loaded lazily: it imports month-end.service, which
 // imports storage, which delegates createJournalEntry to this module.
-export async function assertPeriodNotLocked(companyId: string, date: Date | string): Promise<void> {
+export async function assertPeriodNotLocked(
+  companyId: string,
+  date: Date | string,
+  tx?: LedgerTx
+): Promise<void> {
   const mod = await import("../services/period-lock.service");
-  await mod.assertPeriodNotLocked(companyId, date);
+  await mod.assertPeriodNotLocked(companyId, date, tx);
 }
 
-async function isPeriodLocked(companyId: string, isoDate: string): Promise<boolean> {
-  const mod = await import("../services/month-end.service");
-  return mod.isPeriodLocked(companyId, isoDate);
+async function isPeriodLocked(companyId: string, isoDate: string, tx?: LedgerTx): Promise<boolean> {
+  const mod = await import("../services/period-lock.service");
+  return mod.isPeriodLocked(companyId, isoDate, tx);
 }
 
 /** Options only the kernel's own flows (reversal, legacy adapter) may set. */
@@ -407,7 +411,7 @@ export async function postNormalized(
   internal: InternalPostOptions = {}
 ): Promise<PostJournalResult> {
   actorOf(ctx);
-  await assertPeriodNotLocked(n.companyId, n.dateAt);
+  await assertPeriodNotLocked(n.companyId, n.dateAt, ctx.tx);
   return withLedgerTx((tx) => insertNormalizedEntry(tx, n, ctx, internal), ctx.tx);
 }
 
@@ -604,11 +608,12 @@ type ReversalMode = "reversed" | "voided";
 async function resolveReversalDate(
   original: JournalEntry,
   opts: ReverseOptions,
-  mode: ReversalMode
+  mode: ReversalMode,
+  tx?: LedgerTx
 ): Promise<Date> {
   const origIso = entryIso(original);
   if (mode === "voided") {
-    await assertPeriodNotLocked(original.companyId, original.date);
+    await assertPeriodNotLocked(original.companyId, original.date, tx);
     return new Date(original.date);
   }
   if (opts.date) {
@@ -622,13 +627,13 @@ async function resolveReversalDate(
       );
     }
     if (!opts.allowFutureDate) assertNotFuture(iso);
-    await assertPeriodNotLocked(original.companyId, at);
+    await assertPeriodNotLocked(original.companyId, at, tx);
     return iso === origIso ? new Date(original.date) : at;
   }
-  if (!(await isPeriodLocked(original.companyId, origIso))) return new Date(original.date);
+  if (!(await isPeriodLocked(original.companyId, origIso, tx))) return new Date(original.date);
   const today = todayIso();
   const at = new Date(`${today}T00:00:00.000Z`);
-  await assertPeriodNotLocked(original.companyId, at);
+  await assertPeriodNotLocked(original.companyId, at, tx);
   return at;
 }
 
@@ -765,7 +770,7 @@ async function reverseOrVoid(
   const pre = await loadEntry(ctx.tx ?? db, entryId, ctx.companyId);
   if (!pre) throw notFound(entryId);
   assertReversible(pre);
-  const date = await resolveReversalDate(pre, opts, mode);
+  const date = await resolveReversalDate(pre, opts, mode, ctx.tx);
   return withLedgerTx((tx) => reverseInTx(tx, entryId, date, opts, mode, ctx), ctx.tx);
 }
 
@@ -820,7 +825,8 @@ export async function reverseBySource(
     );
   if (candidates.length === 0) return [];
   const dates = new Map<string, Date>();
-  for (const c of candidates) dates.set(c.id, await resolveReversalDate(c, opts ?? {}, mode));
+  for (const c of candidates)
+    dates.set(c.id, await resolveReversalDate(c, opts ?? {}, mode, ctx.tx));
   const scoped: LedgerContext = { ...ctx, companyId };
   return withLedgerTx(async (tx) => {
     const out: ReverseResult[] = [];

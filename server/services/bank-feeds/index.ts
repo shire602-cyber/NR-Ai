@@ -388,7 +388,7 @@ export async function runScheduledBankFeedSync(): Promise<{ synced: number; fail
       failed++;
       log.warn(
         { connectionId: raw.id, err: (err as Error).message },
-        "Scheduled bank feed sync failed"
+        "Banking integration maintenance failed"
       );
     }
   }
@@ -400,7 +400,7 @@ export function registerBankFeedJobs(): void {
   registerJob({
     name: "bankFeeds.sync",
     cron: "41 */6 * * *",
-    description: "Sync configured open-banking feeds (dedupe by provider transaction id)",
+    description: "Maintain existing banking integration records",
     run: async () => {
       await runScheduledBankFeedSync();
     },

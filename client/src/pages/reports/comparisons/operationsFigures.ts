@@ -14,8 +14,7 @@ import {
   normalizeMonthlyBurn,
   payrollAmount,
   ratioPercent,
-  receiptSubtotalAed,
-  receiptVatAed,
+  receiptSpendAed,
   runwayCoverageDays,
   valueInDateRange,
 } from "../shared";
@@ -123,11 +122,11 @@ export function computeOperationsComparisonFigures({
   | "varianceReport"
 >) {
   const currentExpenseValue = currentReceipts.reduce(
-    (sum, receipt) => sum + receiptSubtotalAed(receipt) + receiptVatAed(receipt),
+    (sum, receipt) => sum + receiptSpendAed(receipt),
     0
   );
   const previousExpenseValue = previousReceipts.reduce(
-    (sum, receipt) => sum + receiptSubtotalAed(receipt) + receiptVatAed(receipt),
+    (sum, receipt) => sum + receiptSpendAed(receipt),
     0
   );
   const currentAverageReceiptValue =
@@ -163,8 +162,7 @@ export function computeOperationsComparisonFigures({
     submittedExpenseClaimRows(previousExpenseClaims).length;
   const currentApprovedExpenseClaimCount = approvedExpenseClaimRows(currentExpenseClaims).length;
   const previousApprovedExpenseClaimCount = approvedExpenseClaimRows(previousExpenseClaims).length;
-  const receiptTotalAed = (receipt: ReceiptReportRow) =>
-    receiptSubtotalAed(receipt) + receiptVatAed(receipt);
+  const receiptTotalAed = (receipt: ReceiptReportRow) => receiptSpendAed(receipt);
   const unpostedReceiptRows = (rows: ReceiptReportRow[]) =>
     rows.filter((receipt) => !receipt.posted);
   const unpostedReceiptValue = (rows: ReceiptReportRow[]) =>

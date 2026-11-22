@@ -61,9 +61,6 @@ import {
   bandRequiresReview,
   deriveConfidenceBand,
   receiptReviewDecision,
-  type ConfidenceBand,
-  type ValidationIssue,
-  type ReviewSnapshot,
 } from "@shared/receipt-confidence";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import {
@@ -100,14 +97,15 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ReceiptAutomation } from "./ReceiptAutopilot";
+import type { ExtractedData, ProcessedReceipt } from "@/lib/receipt-draft-types";
 import { useReceiptQueue } from "@/components/receipts/ReceiptQueueProvider";
 import { ReceiptLinesDialog, type ReceiptForSplit } from "@/components/receipts/ReceiptLinesDialog";
 import { SiGooglesheets } from "react-icons/si";
 import { VirtualList } from "@/components/VirtualList";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { currencyLabel } from "@/lib/format-money";
-import { getActiveCompanyId, resolveActiveCompany } from "@/lib/activeCompany";
-import { toFilsInput } from "@/lib/receipt-split";
+import { effectiveCompanyId } from "@/lib/activeCompany";
+import { approvedReceiptAmounts } from "@/lib/receipt-review-amounts";
 import { Money } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import {
@@ -132,38 +130,6 @@ import {
 import { accountDisplayName } from "@/lib/account-name";
 import { parseCalendarDate } from "@/lib/format-date";
 
-interface ExtractedData {
-  merchant?: string;
-  date?: string;
-  invoiceNumber?: string | null;
-  subtotal?: number;
-  vatPercentage?: number;
-  vatAmount?: number;
-  total?: number;
-  currency?: string;
-  rawText: string;
-  category?: string;
-  lineItems?: Array<{ description: string; quantity: number; unitPrice: number; total: number }>;
-  confidence?: number;
-  suggestedCategory?: string;
-  classifier?: { method?: string; confidence?: number; reason?: string } | null;
-  // Confidence banding and review routing (R05-23)
-  confidenceBand?: ConfidenceBand;
-  reviewReasons?: string[];
-  reviewReasonCodes?: string[];
-  validationIssues?: Pick<ValidationIssue, "code">[];
-  reviewed?: boolean;
-  original?: ReviewSnapshot;
-  ocrSource?: string;
-  // FTA tax-invoice signals (R05-17)
-  supplierTrn?: string | null;
-  isTaxInvoice?: boolean;
-  simplifiedInvoice?: boolean;
-  reverseChargeSuggested?: boolean;
-  // Set after the server reported an exact duplicate and the user chose to upload anyway.
-  confirmDuplicate?: boolean;
-}
-
 /** Fill in band + the "as extracted" snapshot used to record the reviewer's decision. */
 function withReviewMeta(data: ExtractedData): ExtractedData {
   const reportedBand = data.confidenceBand;
@@ -180,23 +146,12 @@ function withReviewMeta(data: ExtractedData): ExtractedData {
       date: data.date,
       invoiceNumber: data.invoiceNumber,
       total: data.total,
+      subtotal: data.subtotal,
+      currency: data.currency,
       vatAmount: data.vatAmount,
       category: data.category,
     },
   };
-}
-
-export interface ProcessedReceipt {
-  id: string;
-  companyId: string;
-  file: File;
-  preview: string;
-  status: "pending" | "processing" | "completed" | "saved" | "error" | "save_error";
-  progress: number;
-  data?: ExtractedData;
-  error?: string;
-  /** True when the server rejected the save as an exact duplicate (409). */
-  duplicate?: boolean;
 }
 
 interface ManualReceiptDraft {
@@ -449,13 +404,14 @@ function receiptCategoryLabel(t: Record<string, string>, category: string): stri
 export default function Receipts() {
   const company = useDefaultCompany();
   const key = company.companyId ?? "";
-  const [processedReceipts, setProcessedReceipts] = useReceiptQueue(key);
+  const [processedReceipts, setProcessedReceipts, saveBatch] = useReceiptQueue(key);
   return (
     <CompanyReceipts
       key={key}
       company={company}
       processedReceipts={processedReceipts}
       setProcessedReceipts={setProcessedReceipts}
+      saveBatch={saveBatch}
     />
   );
 }
@@ -464,10 +420,12 @@ function CompanyReceipts({
   company,
   processedReceipts,
   setProcessedReceipts,
+  saveBatch,
 }: {
   company: ReturnType<typeof useDefaultCompany>;
   processedReceipts: ProcessedReceipt[];
   setProcessedReceipts: Dispatch<SetStateAction<ProcessedReceipt[]>>;
+  saveBatch: ReturnType<typeof useReceiptQueue>[2];
 }) {
   const { t, locale } = useTranslation();
   // Receipt-capture strings for the confidence/duplicate/TRN additions (en + ar).
@@ -477,7 +435,7 @@ function CompanyReceipts({
   const { toast } = useToast();
   const { companyId, companies, isLoading: _isLoadingCompany } = company;
   const assertDraftCompany = (origin: string) => {
-    const active = resolveActiveCompany(companies, getActiveCompanyId())?.id;
+    const active = effectiveCompanyId(companies, companyId);
     if (origin !== companyId || origin !== active) {
       throw new Error(t["pageLabels.receiptDraftCompanyChanged"]);
     }
@@ -498,7 +456,7 @@ function CompanyReceipts({
   const autoReadUnavailable = !ocrStatusLoading && ocrStatus?.aiConfigured !== true;
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
-  const [isSavingAll, setIsSavingAll] = useState(false);
+  const isSavingAll = saveBatch.saving;
   const [totalToSave, setTotalToSave] = useState(0);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingReceipt, setEditingReceipt] = useState<any>(null);
@@ -655,7 +613,7 @@ function CompanyReceipts({
         vatAmount: data.vatAmount,
         category: data.category,
         currency: data.currency,
-        ...(draft.source ? { imageData: draft.source.preview } : {}),
+        ...(draft.source ? { imageData: draft.source.preview, captureId: draft.source.id } : {}),
       });
     },
     onSuccess: (_created, { draft }) => {
@@ -837,7 +795,6 @@ function CompanyReceipts({
   const resetForm = () => {
     setProcessedReceipts([]);
     setIsProcessingBulk(false);
-    setIsSavingAll(false);
     setTotalToSave(0);
   };
 
@@ -1356,20 +1313,18 @@ function CompanyReceipts({
   };
 
   const amountsFrom = (data: ExtractedData) => {
-    const vat = toFilsInput(String(data.vatAmount ?? 0));
-    const total = toFilsInput(String(data.total ?? data.subtotal ?? 0));
-    const invalidAmounts = t["pageLabels.receiptAmountsInvalid"];
-    if (
-      vat === null ||
-      total === null ||
-      !Number.isSafeInteger(vat) ||
-      !Number.isSafeInteger(total)
-    ) {
-      throw new Error(invalidAmounts);
+    const result = approvedReceiptAmounts(data);
+    if (!result) throw new Error(t["pageLabels.receiptAmountsInvalid"]);
+    return result;
+  };
+
+  const toggleReviewed = (receipt: ReceiptToSave) => {
+    try {
+      amountsFrom(receipt.data);
+      updateReceiptData(receipt.id, { reviewed: !receipt.data.reviewed });
+    } catch (error) {
+      toast({ title: (error as Error).message, variant: "destructive" });
     }
-    const net = data.total == null ? total : total - vat;
-    if (net <= 0 || vat > net) throw new Error(invalidAmounts);
-    return { net, vat };
   };
 
   const editOcrAmount = (
@@ -1402,7 +1357,18 @@ function CompanyReceipts({
     setProcessedReceipts((prev) =>
       prev.map((receipt) =>
         receipt.id === id && receipt.data
-          ? { ...receipt, data: { ...receipt.data, ...updates } }
+          ? {
+              ...receipt,
+              data: {
+                ...receipt.data,
+                ...(Object.keys(updates).some(
+                  (key) => key !== "reviewed" && key !== "confirmDuplicate"
+                )
+                  ? { reviewed: false }
+                  : {}),
+                ...updates,
+              },
+            }
           : receipt
       )
     );
@@ -1469,121 +1435,126 @@ function CompanyReceipts({
     // Capture total count before starting to prevent denominator from shrinking
     const total = drafts.length;
     setTotalToSave(total);
-    setIsSavingAll(true);
-    let successCount = 0;
-    let errorCount = 0;
-    let firstSaveError: string | undefined;
+    if (!saveBatch.start()) return;
+    try {
+      let successCount = 0;
+      let errorCount = 0;
+      let firstSaveError: string | undefined;
 
-    // Save each receipt sequentially with status updates
-    for (const receipt of drafts) {
-      try {
-        assertDraftCompany(receipt.companyId);
-        // The server derives companyId/uploader from the session and URL and rejects unknown
-        // fields (W2-D), so only the fields the receipt contract accepts are sent.
-        const { net, vat } = amountsFrom(receipt.data);
-        const receiptData = {
-          merchant: receipt.data!.merchant || "Unknown",
-          date: receipt.data!.date || new Date().toISOString().split("T")[0],
-          amount: net / 100,
-          vatAmount: vat / 100,
-          invoiceNumber: receipt.data.invoiceNumber?.trim() || null,
-          category: receipt.data!.category || "Uncategorized",
-          currency: receipt.data!.currency || "AED",
-          imageData: receipt.preview,
-          rawText: receipt.data!.rawText,
-          suggestedCategory: receipt.data!.suggestedCategory ?? null,
-          classifierMethod: receipt.data!.classifier?.method ?? null,
-          classifierConfidence: receipt.data!.classifier?.confidence ?? null,
-          classifierReason: receipt.data!.classifier?.reason ?? null,
-          supplierTrn: receipt.data!.supplierTrn || undefined,
-          confirmDuplicate: receipt.data!.confirmDuplicate === true ? true : undefined,
-        };
+      // Save each receipt sequentially with status updates
+      for (const receipt of drafts) {
+        try {
+          assertDraftCompany(receipt.companyId);
+          // The server derives companyId/uploader from the session and URL and rejects unknown
+          // fields (W2-D), so only the fields the receipt contract accepts are sent.
+          const { net, vat } = amountsFrom(receipt.data);
+          const receiptData = {
+            captureId: receipt.id,
+            merchant: receipt.data!.merchant || "Unknown",
+            date: receipt.data!.date || new Date().toISOString().split("T")[0],
+            amount: net / 100,
+            vatAmount: vat / 100,
+            invoiceNumber: receipt.data.invoiceNumber?.trim() || null,
+            category: receipt.data!.category || "Uncategorized",
+            currency: receipt.data!.currency || "AED",
+            imageData: receipt.preview,
+            rawText: receipt.data!.rawText,
+            suggestedCategory: receipt.data!.suggestedCategory ?? null,
+            classifierMethod: receipt.data!.classifier?.method ?? null,
+            classifierConfidence: receipt.data!.classifier?.confidence ?? null,
+            classifierReason: receipt.data!.classifier?.reason ?? null,
+            supplierTrn: receipt.data!.supplierTrn || undefined,
+            confirmDuplicate: receipt.data!.confirmDuplicate === true ? true : undefined,
+          };
 
-        const created = await apiRequest(
-          "POST",
-          `/api/companies/${receipt.companyId}/receipts`,
-          receiptData
-        );
-
-        // Fuzzy duplicate warning from the server: saved, but worth a second look.
-        if (Array.isArray(created?.duplicateWarnings) && created.duplicateWarnings.length > 0) {
-          toast({
-            title: tr("Possible duplicate", "احتمال وجود تكرار"),
-            description: tr(
-              `A similar receipt from ${created.duplicateWarnings[0].merchant ?? "the same merchant"} already exists`,
-              `يوجد إيصال مشابه من ${created.duplicateWarnings[0].merchant ?? "نفس التاجر"} بالفعل`
-            ),
-          });
-        }
-
-        // Record the human decision on the AI extraction for audit (non-fatal).
-        if (created?.id && receipt.data!.confidenceBand) {
-          apiRequest(
+          const created = await apiRequest(
             "POST",
-            `/api/companies/${receipt.companyId}/receipts/${created.id}/review-decision`,
-            {
-              decision: receiptReviewDecision(receipt.data!.original, {
-                merchant: created.merchant,
-                date: created.date?.slice(0, 10),
-                total: Number(created.amount ?? 0) + Number(created.vatAmount ?? 0),
-                vatAmount: created.vatAmount,
-                invoiceNumber: created.invoiceNumber,
-                category: created.category,
-              }),
-              band: receipt.data!.confidenceBand,
-            }
-          ).catch(() => {});
+            `/api/companies/${receipt.companyId}/receipts`,
+            receiptData
+          );
+
+          // Fuzzy duplicate warning from the server: saved, but worth a second look.
+          if (Array.isArray(created?.duplicateWarnings) && created.duplicateWarnings.length > 0) {
+            toast({
+              title: tr("Possible duplicate", "احتمال وجود تكرار"),
+              description: tr(
+                `A similar receipt from ${created.duplicateWarnings[0].merchant ?? "the same merchant"} already exists`,
+                `يوجد إيصال مشابه من ${created.duplicateWarnings[0].merchant ?? "نفس التاجر"} بالفعل`
+              ),
+            });
+          }
+
+          // Record the human decision on the AI extraction for audit (non-fatal).
+          if (created?.id && receipt.data!.confidenceBand) {
+            apiRequest(
+              "POST",
+              `/api/companies/${receipt.companyId}/receipts/${created.id}/review-decision`,
+              {
+                decision: receiptReviewDecision(receipt.data!.original, {
+                  merchant: created.merchant,
+                  date: created.date?.slice(0, 10),
+                  total: Number(created.amount ?? 0) + Number(created.vatAmount ?? 0),
+                  subtotal: Number(created.amount ?? 0),
+                  currency: created.currency,
+                  vatAmount: created.vatAmount,
+                  invoiceNumber: created.invoiceNumber,
+                  category: created.category,
+                }),
+                band: receipt.data!.confidenceBand,
+              }
+            ).catch(() => {});
+          }
+
+          // Mark this receipt as saved
+          patchReceipt(receipt.id, { status: "saved" });
+
+          successCount++;
+        } catch (error: any) {
+          // Extract error message
+          const isDuplicate = error?.status === 409;
+          const errorMessage = isDuplicate
+            ? tr("This file has already been uploaded.", "تم رفع هذا الملف من قبل.")
+            : error?.message || "Failed to save to database";
+          if (!firstSaveError) firstSaveError = errorMessage;
+
+          // Mark this receipt as failed to save
+          patchReceipt(receipt.id, {
+            status: "save_error",
+            error: errorMessage,
+            duplicate: isDuplicate,
+          });
+
+          errorCount++;
         }
+      }
 
-        // Mark this receipt as saved
-        patchReceipt(receipt.id, { status: "saved" });
+      // Wait for queries to invalidate and refresh
+      await queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
 
-        successCount++;
-      } catch (error: any) {
-        // Extract error message
-        const isDuplicate = error?.status === 409;
-        const errorMessage = isDuplicate
-          ? tr("This file has already been uploaded.", "تم رفع هذا الملف من قبل.")
-          : error?.message || "Failed to save to database";
-        if (!firstSaveError) firstSaveError = errorMessage;
-
-        // Mark this receipt as failed to save
-        patchReceipt(receipt.id, {
-          status: "save_error",
-          error: errorMessage,
-          duplicate: isDuplicate,
+      if (successCount > 0) {
+        toast({
+          title: tr("Receipts Saved", "تم حفظ الإيصالات"),
+          description: tr(
+            `Successfully saved ${successCount} receipt(s)${errorCount > 0 ? `. ${errorCount} failed` : ""}`,
+            `تم حفظ ${successCount} إيصال بنجاح${errorCount > 0 ? `، وفشل ${errorCount}` : ""}`
+          ),
         });
 
-        errorCount++;
+        setProcessedReceipts((prev) => prev.filter((r) => r.status !== "saved"));
+      } else {
+        toast({
+          title: tr("Save Failed", "فشل الحفظ"),
+          description: firstSaveError
+            ? tr(`Couldn't save: ${firstSaveError}`, `تعذّر الحفظ: ${firstSaveError}`)
+            : tr(
+                "Failed to save any receipts. Please try again.",
+                "تعذّر حفظ أي إيصال. يرجى المحاولة مرة أخرى."
+              ),
+          variant: "destructive",
+        });
       }
-    }
-
-    // Wait for queries to invalidate and refresh
-    await queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
-
-    setIsSavingAll(false);
-
-    if (successCount > 0) {
-      toast({
-        title: tr("Receipts Saved", "تم حفظ الإيصالات"),
-        description: tr(
-          `Successfully saved ${successCount} receipt(s)${errorCount > 0 ? `. ${errorCount} failed` : ""}`,
-          `تم حفظ ${successCount} إيصال بنجاح${errorCount > 0 ? `، وفشل ${errorCount}` : ""}`
-        ),
-      });
-
-      setProcessedReceipts((prev) => prev.filter((r) => r.status !== "saved"));
-    } else {
-      toast({
-        title: tr("Save Failed", "فشل الحفظ"),
-        description: firstSaveError
-          ? tr(`Couldn't save: ${firstSaveError}`, `تعذّر الحفظ: ${firstSaveError}`)
-          : tr(
-              "Failed to save any receipts. Please try again.",
-              "تعذّر حفظ أي إيصال. يرجى المحاولة مرة أخرى."
-            ),
-        variant: "destructive",
-      });
+    } finally {
+      saveBatch.finish();
     }
   };
 
@@ -2242,7 +2213,14 @@ function CompanyReceipts({
                                 type="number"
                                 step="0.01"
                                 id={`ocr-subtotal-${index}`}
-                                value={receipt.data.subtotal ?? receipt.data.total ?? ""}
+                                value={
+                                  receipt.data.subtotal ??
+                                  (receipt.data.total != null
+                                    ? Math.round(
+                                        (receipt.data.total - (receipt.data.vatAmount ?? 0)) * 100
+                                      ) / 100
+                                    : "")
+                                }
                                 onChange={(e) =>
                                   editOcrAmount(
                                     receipt.id,
@@ -2429,9 +2407,7 @@ function CompanyReceipts({
                                     size="sm"
                                     data-testid={`button-mark-reviewed-${index}`}
                                     onClick={() =>
-                                      updateReceiptData(receipt.id, {
-                                        reviewed: !receipt.data!.reviewed,
-                                      })
+                                      toggleReviewed({ ...receipt, data: receipt.data! })
                                     }
                                   >
                                     {receipt.data.reviewed

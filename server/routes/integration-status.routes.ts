@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { authMiddleware, adminMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/email.service";
-import { isOpenBankingConfigured } from "../services/open-banking.service";
+import { bankCsvWorkflow } from "../../shared/banking-copy";
 import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
 import { isObjectStorageConfigured, objectStorageBackend } from "../services/fileStorage";
 import { connectorStatuses } from "../services/connectors/oauth";
@@ -81,12 +81,11 @@ export function registerIntegrationStatusRoutes(app: Express) {
         },
         {
           key: "openBanking",
-          name: "Bank connection diagnostics",
-          configured: isOpenBankingConfigured(),
-          detail:
-            "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
+          name: "Bank CSV reconciliation",
+          configured: true,
+          detail: bankCsvWorkflow.en,
           requiredEnv: [],
-          unlocks: "Configured bank connections",
+          unlocks: "CSV reconciliation",
         },
         {
           key: "push",

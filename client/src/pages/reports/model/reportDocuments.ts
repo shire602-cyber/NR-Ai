@@ -145,13 +145,18 @@ export function receiptExchangeRate(receipt: ReceiptReportRow): number {
 }
 
 export function receiptSubtotalAed(receipt: ReceiptReportRow): number {
-  const base = Number(receipt.baseCurrencyAmount ?? 0);
-  if (Number.isFinite(base) && Math.abs(base) > 0.005) return base;
-  return (Number(receipt.amount) || 0) * receiptExchangeRate(receipt);
+  return Math.round((Number(receipt.amount) || 0) * receiptExchangeRate(receipt) * 100) / 100;
 }
 
 export function receiptVatAed(receipt: ReceiptReportRow): number {
-  return (Number(receipt.vatAmount) || 0) * receiptExchangeRate(receipt);
+  return Math.round((Number(receipt.vatAmount) || 0) * receiptExchangeRate(receipt) * 100) / 100;
+}
+
+export function receiptSpendAed(receipt: ReceiptReportRow): number {
+  const cash = Number(receipt.baseCurrencyAmount);
+  if (Number.isFinite(cash) && cash > 0) return cash;
+  if (!receipt.posted && receipt.exchangeRateSource === null && cash === 0) return 0;
+  return receiptSubtotalAed(receipt) + (receipt.reverseCharge ? 0 : receiptVatAed(receipt));
 }
 
 export function expenseClaimAmount(claim: ExpenseClaimReportRow): number {

@@ -646,6 +646,7 @@ export async function createBill(args: {
   purchaseOrderId?: string | null;
   poLineIds?: Array<string | null>;
   tx?: LedgerTx;
+  onCreated?: (tx: LedgerTx, bill: BillRow) => Promise<void>;
 }): Promise<BillWriteResult> {
   const { companyId, actorId, input } = args;
   await assertPeriodNotLocked(companyId, input.bill_date);
@@ -723,6 +724,7 @@ export async function createBill(args: {
       `SELECT * FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
       [bill.id]
     );
+    await args.onCreated?.(tx, bill);
     return { bill, lines, warnings: prepared.warnings };
   }, args.tx);
 }
@@ -1978,11 +1980,6 @@ export async function runRecurringBill(
     await pool.query(`UPDATE recurring_bills SET is_active = false WHERE id = $1`, [id]);
     return null;
   }
-  const claimed = await pool.query(
-    `UPDATE recurring_bills SET next_run_on = $2 WHERE id = $1 AND next_run_on = $3 RETURNING id`,
-    [id, advance(runOn, rec.frequency), runOn]
-  );
-  if (!claimed.rowCount) return null; // another runner took this occurrence
   const t = rec.template as Record<string, unknown> & { due_in_days?: number };
   const dueInDays = typeof t.due_in_days === "number" ? t.due_in_days : null;
   const { due_in_days: _drop, ...template } = t;
@@ -1992,19 +1989,29 @@ export async function runRecurringBill(
     d.setUTCDate(d.getUTCDate() + dueInDays);
     due = d.toISOString().slice(0, 10);
   }
-  const result = await createBill({
-    companyId: rec.company_id,
-    actorId: rec.created_by,
-    status: "pending",
-    origin: "recurring",
-    originRef: rec.id,
-    input: { ...(template as unknown as BillCreateInput), bill_date: runOn, due_date: due },
-  });
-  await pool.query(`UPDATE recurring_bills SET last_bill_id = $2 WHERE id = $1`, [
-    id,
-    result.bill.id,
-  ]);
-  return result;
+  const alreadyClaimed = new Error("Recurring occurrence already claimed");
+  try {
+    return await createBill({
+      companyId: rec.company_id,
+      actorId: rec.created_by,
+      status: "pending",
+      origin: "recurring",
+      originRef: rec.id,
+      input: { ...(template as unknown as BillCreateInput), bill_date: runOn, due_date: due },
+      onCreated: async (tx, bill) => {
+        const claimed = await txRows(
+          tx,
+          `UPDATE recurring_bills SET next_run_on = $2, last_bill_id = $4
+            WHERE id = $1 AND is_active AND next_run_on = $3 RETURNING id`,
+          [id, advance(runOn, rec.frequency), runOn, bill.id]
+        );
+        if (!claimed.length) throw alreadyClaimed;
+      },
+    });
+  } catch (error) {
+    if (error === alreadyClaimed) return null;
+    throw error;
+  }
 }
 
 export async function runDueRecurringBills(today = new Date().toISOString().slice(0, 10)) {

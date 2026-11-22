@@ -7,6 +7,7 @@
  *   vi.mock("../../client/src/lib/queryClient", () => formHarnessQueryClientMock());
  *   vi.mock("../../client/src/hooks/useDefaultCompany", () => formHarnessCompanyMock());
  */
+import { ReceiptQueueProvider } from "../../../client/src/components/receipts/ReceiptQueueProvider";
 import { act, createElement, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -41,6 +42,7 @@ export function apiCalls(method?: string) {
   return state.calls.filter((c) => !method || c.method === method);
 }
 export function resetHarness() {
+  workspaceCompany = COMPANY;
   state.calls = [];
   state.fixtures = {};
   state.responses = {};
@@ -93,12 +95,16 @@ export function formHarnessQueryClientMock() {
   };
 }
 
+let workspaceCompany = COMPANY;
+export function setWorkspaceCompany(company: typeof COMPANY) {
+  workspaceCompany = company;
+}
 export function formHarnessCompanyMock() {
   return {
     useDefaultCompany: () => ({
-      company: COMPANY,
-      companyId: COMPANY_ID,
-      companies: [COMPANY],
+      company: workspaceCompany,
+      companyId: workspaceCompany.id,
+      companies: workspaceCompany.id === COMPANY_ID ? [COMPANY] : [COMPANY, workspaceCompany],
       hasNoCompanies: false,
       isLoading: false,
       error: null,
@@ -117,9 +123,18 @@ export async function renderPage(Component: ComponentType<any>, props: object = 
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
+  await rerenderPage(Component, props);
+}
+
+export async function rerenderPage(Component: ComponentType<any>, props: object = {}) {
+  const { queryClient } = await import("../../../client/src/lib/queryClient");
   await act(async () => {
     root!.render(
-      createElement(QueryClientProvider, { client: queryClient }, createElement(Component, props))
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(ReceiptQueueProvider, { children: createElement(Component, props) })
+      )
     );
   });
   await flush();

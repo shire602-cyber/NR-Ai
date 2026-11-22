@@ -24,7 +24,11 @@ import {
   type SplitReceiptBody,
   type UpdateReceiptBody,
 } from "../../shared/validators/receipts";
-import { postReceipt, reviseReceipt } from "../services/receipt-posting.service";
+import {
+  postReceipt,
+  reviseReceipt,
+  resolveReceiptRate,
+} from "../services/receipt-posting.service";
 import { zSupplyType } from "../../shared/validators/primitives";
 import { type Receipt } from "../../shared/schema";
 import {
@@ -84,10 +88,23 @@ async function findReceiptForUser(userId: string, receiptId: string): Promise<Re
   return hasAccess ? receipt : undefined;
 }
 
-/** VAT + FX derived columns shared by create / update / revise. */
-function baseCurrencyAmountOf(amount: number, vat: number, rate: number): number {
-  const total = toFils(amount) + toFils(vat);
-  return filsToNumber(rate === 1 ? total : mulRate(total, rate));
+/** Estimate the payment credit using the same per-leg rounding as receipt posting. */
+function baseCurrencyAmountOf(
+  amount: number,
+  vat: number,
+  rate: number,
+  lines?: ReceiptLineInput[] | null,
+  reverseCharge = false
+): number {
+  const items = lines?.length ? lines : [{ amount, vatAmount: vat }];
+  return filsToNumber(
+    sumFils(
+      items.flatMap((line) => [
+        mulRate(toFils(line.amount), rate),
+        reverseCharge ? 0 : mulRate(toFils(line.vatAmount ?? 0), rate),
+      ])
+    )
+  );
 }
 
 /** Accounts referenced by a receipt write must belong to the receipt's company. */
@@ -301,6 +318,10 @@ export function registerReceiptRoutes(app: Express) {
       }
 
       const body = parsedBody<CreateReceiptBody>(req);
+      if (body.captureId) {
+        const existing = await storage.getCapturedReceipt(companyId, body.captureId);
+        if (existing) return res.json(existing);
+      }
       const {
         imageData,
         suggestedCategory,
@@ -319,7 +340,16 @@ export function registerReceiptRoutes(app: Express) {
         throw new DomainError("VALIDATION_ERROR", 400, undefined, "VAT cannot exceed the amount");
       }
       const currency = body.currency ?? "AED";
-      const exchangeRate = body.exchangeRate ?? 1;
+      const date = receiptDateToDate(body.date);
+      const quoted = await resolveReceiptRate(
+        companyId,
+        currency,
+        date,
+        body.exchangeRate ?? null,
+        undefined,
+        true
+      );
+      const exchangeRate = quoted.rate ?? 1;
       await assertReceiptAccounts(companyId, {
         accountId: body.accountId,
         paymentAccountId: body.paymentAccountId,
@@ -334,6 +364,7 @@ export function registerReceiptRoutes(app: Express) {
         vatAmount: number;
         currency: string;
         exchangeRate: number;
+        exchangeRateSource: Receipt["exchangeRateSource"];
         baseCurrencyAmount: number;
         category: string | null;
         accountId: string | null;
@@ -345,12 +376,16 @@ export function registerReceiptRoutes(app: Express) {
       } = {
         merchant: body.merchant ?? null,
         invoiceNumber: body.invoiceNumber ?? null,
-        date: receiptDateToDate(body.date),
+        date,
         amount,
         vatAmount,
         currency,
         exchangeRate,
-        baseCurrencyAmount: baseCurrencyAmountOf(amount, vatAmount, exchangeRate),
+        exchangeRateSource: quoted.source,
+        baseCurrencyAmount:
+          quoted.rate === null
+            ? 0
+            : baseCurrencyAmountOf(amount, vatAmount, exchangeRate, split, body.reverseCharge),
         category: body.category ?? null,
         accountId: body.accountId ?? null,
         paymentAccountId: body.paymentAccountId ?? null,
@@ -406,23 +441,25 @@ export function registerReceiptRoutes(app: Express) {
           throw err;
         }
 
-        // Exact duplicate (same stored content) -> 409 with the matching receipt.
         if (!confirmDuplicate) {
-          const exact = await findReceiptByContentHash(companyId, inspected.sha256);
-          if (exact) {
+          const duplicate = await findReceiptByContentHash(companyId, inspected.sha256);
+          if (duplicate) {
+            if (body.captureId) {
+              const replay = await storage.getCapturedReceipt(companyId, body.captureId);
+              if (replay) return res.json(replay);
+            }
             return res.status(409).json({
-              message: "This file has already been uploaded",
               code: "DUPLICATE_RECEIPT",
+              message: "This file has already been uploaded",
               duplicateOf: {
-                id: exact.id,
-                merchant: exact.merchant,
-                amount: exact.amount,
-                date: exact.date,
+                id: duplicate.id,
+                merchant: duplicate.merchant,
+                amount: duplicate.amount,
+                date: duplicate.date,
               },
             });
           }
         }
-
         imagePath = await saveReceiptFile(inspected.buffer, {
           mime: inspected.mime,
           ext: inspected.ext,
@@ -448,15 +485,35 @@ export function registerReceiptRoutes(app: Express) {
         }
       }
 
-      const receipt = await storage.createReceipt({
-        ...receiptData,
-        supplierTrn: receiptData.supplierTrn ?? null,
-        companyId,
-        uploadedBy: userId,
-        imagePath: imagePath ?? null,
-        ...(fileMeta ?? {}),
-        // imageData intentionally omitted — not stored in Postgres
-      });
+      const result = await storage
+        .createCapturedReceipt(
+          {
+            ...receiptData,
+            captureId: body.captureId ?? null,
+            supplierTrn: receiptData.supplierTrn ?? null,
+            companyId,
+            uploadedBy: userId,
+            imagePath: imagePath ?? null,
+            ...(fileMeta ?? {}),
+            // imageData intentionally omitted — not stored in Postgres
+          },
+          confirmDuplicate === true
+        )
+        .catch(async (error) => {
+          if (imagePath) await deleteReceiptImage(imagePath);
+          throw error;
+        });
+      if (result.duplicate || result.replay) {
+        if (imagePath) await deleteReceiptImage(imagePath);
+        if (result.duplicate)
+          return res.status(409).json({
+            message: "This file has already been uploaded",
+            code: "DUPLICATE_RECEIPT",
+            duplicateOf: result.duplicate,
+          });
+        return res.json(result.receipt);
+      }
+      const receipt = result.receipt;
 
       log.info({ receiptId: receipt.id }, "Receipt created successfully");
 
@@ -683,8 +740,43 @@ export function registerReceiptRoutes(app: Express) {
       patch.amount = amount;
       patch.vatAmount = vatAmount;
     }
-    const rate = Number(patch.exchangeRate ?? before.exchangeRate) || 1;
-    patch.baseCurrencyAmount = baseCurrencyAmountOf(amount, vatAmount, rate);
+    const currencyChanged = patch.currency !== undefined && patch.currency !== before.currency;
+    const dateChanged = patch.date && calendarDateKey(patch.date) !== calendarDateKey(before.date);
+    const reprice = currencyChanged || dateChanged;
+    const date = patch.date ?? before.date ?? before.createdAt;
+    const currency = patch.currency ?? before.currency;
+    const manual =
+      body.exchangeRate ??
+      (!reprice && before.exchangeRateSource === "manual" ? before.exchangeRate : null);
+    if (before.posted) {
+      if (body.exchangeRate !== undefined) patch.exchangeRateSource = "manual";
+      else if (reprice) {
+        // Zero is a transient marker. The revision plan resolves and persists the booked rate.
+        patch.exchangeRate = 0;
+        patch.exchangeRateSource = null;
+      }
+    } else {
+      const quote = await resolveReceiptRate(
+        before.companyId,
+        currency,
+        date,
+        manual,
+        undefined,
+        true
+      );
+      patch.exchangeRate = quote.rate ?? 1;
+      patch.exchangeRateSource = quote.source;
+      patch.baseCurrencyAmount =
+        quote.rate === null
+          ? 0
+          : baseCurrencyAmountOf(
+              amount,
+              vatAmount,
+              quote.rate,
+              (patch.lines ?? before.lines) as ReceiptLineInput[] | null,
+              patch.reverseCharge ?? before.reverseCharge
+            );
+    }
 
     await assertReceiptAccounts(before.companyId, {
       accountId: patch.accountId,
@@ -808,31 +900,49 @@ export function registerReceiptRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = req.user!.id;
-      const { parts } = req.body as SplitReceiptBody;
+      const { parts: partsInput } = req.body as SplitReceiptBody;
 
       const source = await findReceiptForUser(userId, id);
       if (!source) {
         return res.status(404).json({ message: "Receipt not found", code: "RECEIPT_NOT_FOUND" });
       }
-      for (const part of parts) {
+      for (const part of partsInput) {
         if (part.date) await assertPeriodNotLocked(source.companyId, receiptDateToDate(part.date));
       }
+      const parts = await Promise.all(
+        partsInput.map(async (part) => {
+          const date = part.date ? receiptDateToDate(part.date) : source.date;
+          const keepManual =
+            source.exchangeRateSource === "manual" &&
+            calendarDateKey(date) === calendarDateKey(source.date);
+          const quote = await resolveReceiptRate(
+            source.companyId,
+            source.currency,
+            date ?? source.createdAt,
+            keepManual ? source.exchangeRate : null,
+            undefined,
+            true
+          );
+          const vat = part.vatAmount ?? 0;
+          return {
+            merchant: part.merchant ?? source.merchant,
+            date,
+            amount: part.amount,
+            vatAmount: vat,
+            category: part.category ?? source.category,
+            exchangeRate: quote.rate ?? 1,
+            exchangeRateSource: quote.source,
+            baseCurrencyAmount:
+              quote.rate === null
+                ? 0
+                : baseCurrencyAmountOf(part.amount, source.reverseCharge ? 0 : vat, quote.rate),
+          };
+        })
+      );
       const created = await storage.splitReceiptAtomic({
         receiptId: id,
         companyId: source.companyId,
-        parts: parts.map((part) => {
-          const amount = part.amount;
-          const vat = part.vatAmount ?? 0;
-          const rate = Number(source.exchangeRate) || 1;
-          return {
-            merchant: part.merchant ?? source.merchant,
-            date: part.date ? receiptDateToDate(part.date) : source.date,
-            amount,
-            vatAmount: vat,
-            category: part.category ?? source.category,
-            baseCurrencyAmount: baseCurrencyAmountOf(amount, vat, rate),
-          };
-        }),
+        parts,
       });
       await recordAudit({
         userId,

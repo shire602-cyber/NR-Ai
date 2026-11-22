@@ -32,6 +32,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
+import { effectiveCompanyId } from "@/lib/activeCompany";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { isVatRegistered } from "@shared/vat-registration";
@@ -213,6 +214,11 @@ const DEFAULT_VAT_DATA = {
 type VatWorksheetData = typeof DEFAULT_VAT_DATA;
 
 export default function VATFiling() {
+  const workspace = useDefaultCompany();
+  return <CompanyVatFiling key={workspace.companyId} workspace={workspace} />;
+}
+
+function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefaultCompany> }) {
   const search = useSearch();
   const [, navigate] = useLocation();
   const tabParam = new URLSearchParams(search).get("tab");
@@ -224,7 +230,7 @@ export default function VATFiling() {
   const { t, locale } = useTranslation();
   const dfOpts = dateFnsOptions(locale);
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId, companies, isLoading: isLoadingCompany } = workspace;
   const { gate } = useCompanyPermission();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -569,7 +575,7 @@ export default function VATFiling() {
   };
 
   const handleSaveReturn = () => {
-    if (!selectedReturn) return;
+    if (!selectedReturn || effectiveCompanyId(companies, companyId) !== companyId) return;
     // W4-E: boxes come from the VAT engine; only descriptive fields are editable. Corrections
     // go through return adjustments (tourist refunds, corrections) so they are audited.
     updateMutation.mutate({
@@ -579,7 +585,7 @@ export default function VATFiling() {
   };
 
   const handleSubmitReturn = () => {
-    if (!selectedReturn) return;
+    if (!selectedReturn || effectiveCompanyId(companies, companyId) !== companyId) return;
     submitMutation.mutate({ id: selectedReturn.id });
   };
 

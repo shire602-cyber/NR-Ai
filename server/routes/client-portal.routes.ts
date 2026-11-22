@@ -163,17 +163,10 @@ export function totalsByCurrency(
 }
 
 export function registerClientPortalRoutes(app: Express): void {
-  const chain: RequestHandler[] = [
-    authMiddleware as RequestHandler,
-    (req, res, next) => {
-      requirePortalUser(req, res, next).catch(next);
-    },
-  ];
-
   const pinnedReadChain: RequestHandler[] = [
     authMiddleware as RequestHandler,
     (req, res, next) => {
-      requirePortalUser(req, res, next, req.get("X-Portal-Account") !== undefined).catch(next);
+      requirePortalUser(req, res, next, !!req.get("X-Portal-Account")).catch(next);
     },
   ];
   const pinnedWriteChain: RequestHandler[] = [
@@ -185,7 +178,7 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.get(
     "/api/client-portal/company",
-    ...chain,
+    ...pinnedReadChain,
     asyncHandler(async (req: Request, res: Response) => {
       const { company, contact, accountId } = scopeOf(req);
       // The accounting firm serving this client (active engagement), for the portal header.
@@ -233,7 +226,7 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.get(
     "/api/client-portal/dashboard",
-    ...chain,
+    ...pinnedReadChain,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, contact } = scopeOf(req);
       const all = await contactInvoices(companyId, contact.id);
@@ -274,7 +267,7 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.get(
     "/api/client-portal/invoices",
-    ...chain,
+    ...pinnedReadChain,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, contact } = scopeOf(req);
       res.json(await contactInvoices(companyId, contact.id));
@@ -283,7 +276,7 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.get(
     "/api/client-portal/invoices/:id/pdf",
-    ...chain,
+    ...pinnedReadChain,
     asyncHandler(async (req: Request, res: Response) => {
       const scope = scopeOf(req);
       const invoice = await ownInvoice(scope, req.params.id);
@@ -302,7 +295,7 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.get(
     "/api/client-portal/invoices/:id/einvoice",
-    ...chain,
+    ...pinnedReadChain,
     asyncHandler(async (req: Request, res: Response) => {
       const invoice = await ownInvoice(scopeOf(req), req.params.id);
       if (!invoice || !invoice.einvoiceXml) {
@@ -322,7 +315,7 @@ export function registerClientPortalRoutes(app: Express): void {
   // Pay now: the same hosted checkout as the token portal, for the customer's own open invoice.
   app.post(
     "/api/client-portal/invoices/:id/pay",
-    ...chain,
+    ...pinnedReadChain,
     asyncHandler(async (req: Request, res: Response) => {
       const scope = scopeOf(req);
       const invoice = await ownInvoice(scope, req.params.id);
@@ -385,15 +378,10 @@ export function registerClientPortalRoutes(app: Express): void {
   // R16-15: the customer's statement of account (not the company's P&L / balance sheet).
   app.get(
     "/api/client-portal/statements",
-    ...chain,
+    ...pinnedReadChain,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, contact, accountId } = scopeOf(req);
       const q = statementQuery.parse(req.query);
-      const selected = req.get("X-Portal-Account");
-      // A download must not fall back to another supplier when its displayed binding was removed.
-      if (q.format === "pdf" && selected && selected.toLowerCase() !== accountId) {
-        throw new DomainError("PORTAL_ACCESS_REVOKED", 403);
-      }
       const st = await buildCustomerStatement({
         companyId,
         contactId: contact.id,

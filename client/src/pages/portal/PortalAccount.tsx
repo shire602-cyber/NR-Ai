@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Building2, Check, Languages, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { ChangePasswordCard } from "@/pages/security/ChangePasswordCard";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSessionActions } from "@/hooks/useSessionActions";
 import { apiRequest } from "@/lib/queryClient";
-import { getSelectedPortalAccount, setSelectedPortalAccount } from "@/lib/auth";
+import { usePortalSupplier } from "@/lib/portal-supplier";
 import { useI18n, useTranslation } from "@/lib/i18n";
 
 interface PortalAccountRow {
@@ -26,7 +26,7 @@ export default function PortalAccount() {
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
   const [, navigate] = useLocation();
-  const queryClient = useQueryClient();
+  const supplier = usePortalSupplier();
   const { signOut } = useSessionActions();
   const { data: user } = useCurrentUser();
   const [busy, setBusy] = useState(false);
@@ -35,7 +35,7 @@ export default function PortalAccount() {
     queryFn: () => apiRequest("GET", "/api/client-portal/accounts"),
     staleTime: 5 * 60 * 1000,
   });
-  const selected = getSelectedPortalAccount();
+  const selected = supplier?.company.accountId;
   const current = accounts.find((a) => a.id === selected) ?? accounts[0];
 
   const signOutEverywhere = async () => {
@@ -148,13 +148,7 @@ export default function PortalAccount() {
                     variant="outline"
                     size="sm"
                     className="min-h-11"
-                    onClick={() => {
-                      setSelectedPortalAccount(a.id);
-                      queryClient.removeQueries({
-                        predicate: (q) => String(q.queryKey[0]).startsWith("portal-"),
-                      });
-                      navigate("/client-portal/dashboard");
-                    }}
+                    onClick={() => supplier?.switchSupplier(a.id)}
                   >
                     {t["portal.account.open"]}
                   </Button>

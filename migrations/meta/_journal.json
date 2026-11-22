@@ -967,6 +967,13 @@
    "when": 1781430530000,
    "tag": "0138_receipt_invoice_number",
    "breakpoints": false
+  },
+  {
+   "idx": 138,
+   "version": "7",
+   "when": 1781430540000,
+   "tag": "0139_receipt_rate_and_capture",
+   "breakpoints": false
   }
  ]
 }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { T } from "@/components/layout/T";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Send, MessageSquare, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { usePortalSupplier, usePortalSupplierQuery } from "@/lib/portal-supplier";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/format-date";
@@ -35,11 +36,7 @@ export default function PortalMessages() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [draft, setDraft] = useState({ subject: "", content: "", accountId: "" });
-  const { data: company } = useQuery<{ accountId: string }>({
-    queryKey: ["portal-company"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/company"),
-    staleTime: 5 * 60 * 1000,
-  });
+  const company = usePortalSupplier()?.company;
   const accountId = company?.accountId;
 
   function editDraft(field: "subject" | "content", value: string) {
@@ -56,14 +53,7 @@ export default function PortalMessages() {
     isLoading,
     isLoadingError,
     refetch,
-  } = useQuery<any[]>({
-    queryKey: ["portal-messages", accountId],
-    enabled: !!accountId,
-    queryFn: () =>
-      apiRequest("GET", "/api/client-portal/messages", undefined, {
-        "X-Portal-Account": accountId!,
-      }),
-  });
+  } = usePortalSupplierQuery<any[]>("portal-messages", "messages");
 
   const sendMutation = useMutation({
     mutationFn: ({

@@ -194,7 +194,7 @@
   "banking.import.colDescription": "Description",
   "banking.import.colDebit": "Debit",
   "banking.import.colCredit": "Credit",
-  "banking.import.formats": "CSV, XLSX, MT940, CAMT.053, OFX — Emirates NBD, ADCB, FAB, Mashreq, Mashreq Neo, RAKBANK, CBD, Wio",
+  "banking.import.formats": "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
   "banking.import.field.date": "Date",
   "banking.import.field.description": "Description",
   "banking.import.field.reference": "Reference",

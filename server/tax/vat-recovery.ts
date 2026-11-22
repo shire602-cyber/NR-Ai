@@ -1,3 +1,5 @@
+import { type LedgerTx } from "../ledger";
+import { rowsOf } from "../ledger/tx";
 /**
  * Input-VAT recoverability (W4-E, R05-28). Some purchases carry VAT that the buyer may not
  * recover (Executive Regulations Art. 53): entertainment for non-employees, motor vehicles
@@ -78,13 +80,27 @@ export function resolveRecovery(
   return { percent: Number(rule.recoverablePercent), label: rule.label };
 }
 
-export async function loadRecoveryRules(companyId: string): Promise<RecoveryRule[]> {
+interface RecoveryRuleRow {
+  match_type: RecoveryRule["matchType"];
+  match_value: string;
+  recoverable_percent: string;
+  label: string;
+}
+
+export async function loadRecoveryRules(companyId: string, tx?: LedgerTx): Promise<RecoveryRule[]> {
   try {
-    const { rows } = await pool.query(
-      `SELECT match_type, match_value, recoverable_percent, label
-         FROM vat_recovery_rules WHERE company_id = $1`,
-      [companyId]
-    );
+    const rows = tx
+      ? rowsOf<RecoveryRuleRow>(
+          await tx.execute(sql`SELECT match_type, match_value, recoverable_percent, label
+          FROM vat_recovery_rules WHERE company_id = ${companyId}`)
+        )
+      : (
+          await pool.query(
+            `SELECT match_type, match_value, recoverable_percent, label
+             FROM vat_recovery_rules WHERE company_id = $1`,
+            [companyId]
+          )
+        ).rows;
     return rows.map(
       (r: {
         match_type: RecoveryRule["matchType"];

@@ -162,10 +162,22 @@ describe("R05-23 receipt review helpers (en + ar)", () => {
     };
     expect(receiptReviewDecision(original, { ...original })).toBe("accepted");
     expect(receiptReviewDecision(original, { ...original, total: 106 })).toBe("corrected");
+    expect(
+      receiptReviewDecision({ ...original, subtotal: 90 }, { ...original, subtotal: 100 })
+    ).toBe("corrected");
     expect(receiptReviewDecision(original, { ...original, invoiceNumber: "POS-721" })).toBe(
       "corrected"
     );
     expect(receiptReviewDecision(original, { ...original, category: "Other" })).toBe("corrected");
     expect(receiptReviewDecision(undefined, original)).toBe("corrected");
+  });
+});
+
+it("rejects an OCR subtotal that disagrees with the displayed total and VAT", async () => {
+  const { approvedReceiptAmounts } = await import("../../client/src/lib/receipt-review-amounts");
+  expect(approvedReceiptAmounts({ subtotal: 100, vatAmount: 5, total: 95 })).toBeNull();
+  expect(approvedReceiptAmounts({ subtotal: 90, vatAmount: 5, total: 95 })).toEqual({
+    net: 9000,
+    vat: 500,
   });
 });

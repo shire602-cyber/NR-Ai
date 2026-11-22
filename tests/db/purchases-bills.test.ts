@@ -545,6 +545,24 @@ describe("W3-B debit notes, prepayments, vendors, approval rules, services", () 
       },
     });
     expect(rec.status, rec.text).toBe(201);
+    const [schedule] = await h.sql("SELECT template FROM recurring_bills WHERE id = $1", [
+      rec.body.id,
+    ]);
+    await h.sql("UPDATE recurring_bills SET template = '{}'::jsonb WHERE id = $1", [rec.body.id]);
+    const failed = await t.as.post(
+      `/api/companies/${t.company.id}/recurring-bills/${rec.body.id}/run`,
+      {}
+    );
+    expect(failed.status).toBeGreaterThanOrEqual(400);
+    const [unadvanced] = await h.sql(
+      "SELECT next_run_on::text AS date FROM recurring_bills WHERE id = $1",
+      [rec.body.id]
+    );
+    expect(unadvanced.date).toBe("2026-02-01");
+    await h.sql("UPDATE recurring_bills SET template = $2 WHERE id = $1", [
+      rec.body.id,
+      schedule.template,
+    ]);
     const run = await t.as.post(
       `/api/companies/${t.company.id}/recurring-bills/${rec.body.id}/run`,
       {}

@@ -24,6 +24,7 @@ let calls: string[] = [];
 let me: { status: number; body: unknown } = { status: 200, body: {} };
 let pdfStatus = 200;
 let statementDownloadAccount: string | null;
+let readAccounts: Array<[string, string | null]> = [];
 
 const INVOICES = [
   {
@@ -44,6 +45,8 @@ function stub() {
     vi.fn(async (url: string, init?: RequestInit) => {
       const u = String(url);
       calls.push(u);
+      if (u.includes("/api/client-portal/"))
+        readAccounts.push([u, new Headers(init?.headers).get("X-Portal-Account")]);
       const json = (status: number, body: unknown) =>
         new Response(JSON.stringify(body), {
           status,
@@ -53,6 +56,7 @@ function stub() {
       if (u.includes("/api/client-portal/company"))
         return json(200, {
           id: "c1",
+          accountId: "supplier-one",
           name: "Al Noor Trading LLC",
           logoUrl: null,
           firmName: null,
@@ -142,6 +146,7 @@ beforeEach(async () => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
+  readAccounts = [];
   stub();
 });
 
@@ -193,6 +198,30 @@ describe("client portal light root", () => {
     await waitForRender(() => expect(download()).toBeDefined());
     await act(async () => download()!.click());
     await waitForRender(() => expect(document.body.textContent).toContain("تعذّر تنزيل ملف PDF"));
+  });
+
+  it("loads the displayed supplier’s invoices, statement and dashboard documents", async () => {
+    const { setSelectedPortalAccount } = await import("../../client/src/lib/auth");
+    const { navigate } = await import("wouter/use-browser-location");
+    setSelectedPortalAccount("supplier-one");
+    await mountAt("/client-portal/dashboard");
+    await waitForRender(() => expect(text()).toContain("INV-2026-00001"));
+    setSelectedPortalAccount("supplier-two");
+    for (const resource of ["invoices", "statements"]) {
+      await act(async () => navigate(`/client-portal/${resource}`));
+      await waitForRender(() =>
+        expect(readAccounts).toContainEqual([
+          expect.stringContaining(`/api/client-portal/${resource}`),
+          "supplier-one",
+        ])
+      );
+    }
+    for (const resource of ["dashboard", "documents"]) {
+      expect(readAccounts).toContainEqual([
+        expect.stringContaining(`/api/client-portal/${resource}`),
+        "supplier-one",
+      ]);
+    }
   });
 
   it("downloads from the supplier shown in the statement after the selection changes", async () => {

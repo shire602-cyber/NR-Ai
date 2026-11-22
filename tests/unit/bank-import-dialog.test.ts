@@ -157,3 +157,32 @@ it.each([
       expect(serverErrorCopy(locale, code), code).toBe(copy);
   }
 );
+
+it("uses the provider company when local storage is blocked", async () => {
+  const { effectiveCompanyId } = await import("../../client/src/lib/activeCompany");
+  const read = vi.spyOn(Storage.prototype, "getItem").mockImplementationOnce(() => {
+    throw new DOMException("Storage is blocked", "SecurityError");
+  });
+  expect(effectiveCompanyId([{ id: "first" }, { id: "selected" }], "selected")).toBe("selected");
+  read.mockRestore();
+});
+
+it("lists only CSV in the banking format copy and keeps receipt links free of release promises", async () => {
+  const [
+    { default: enBank },
+    { default: arBank },
+    { default: enForms },
+    { default: arForms },
+    { bankCsvWorkflow },
+  ] = await Promise.all([
+    import("../../client/src/locales/en/banking.json"),
+    import("../../client/src/locales/ar/banking.json"),
+    import("../../client/src/locales/en/forms.json"),
+    import("../../client/src/locales/ar/forms.json"),
+    import("../../shared/banking-copy"),
+  ]);
+  expect(enBank["banking.import.formats"]).toBe(bankCsvWorkflow.en);
+  expect(arBank["banking.import.formats"]).toBe(bankCsvWorkflow.ar);
+  expect(enForms["forms.claim.receiptUrlHint"]).toBe("Link to the receipt");
+  expect(arForms["forms.claim.receiptUrlHint"]).toBe("رابط الإيصال");
+});

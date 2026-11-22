@@ -48,7 +48,7 @@ import { DataTableCard } from "@/components/ui/data-table";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActionButton } from "@/components/ui/row-actions";
 import { useToast } from "@/hooks/use-toast";
-import { getActiveCompanyId, resolveActiveCompany } from "@/lib/activeCompany";
+import { effectiveCompanyId } from "@/lib/activeCompany";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
@@ -291,8 +291,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
   const { gate } = useCompanyPermission();
   const { toast } = useToast();
   const { companyId, companies, isLoading: isLoadingCompany } = company;
-  const isActive = () =>
-    !!companyId && resolveActiveCompany(companies, getActiveCompanyId())?.id === companyId;
+  const isActive = () => !!companyId && effectiveCompanyId(companies, companyId) === companyId;
 
   const [selectedBankAccount, setSelectedBankAccount] = useState<string>("");
   // `?import=1` opens the statement import straight away.

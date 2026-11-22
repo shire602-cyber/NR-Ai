@@ -1,3 +1,4 @@
+import { VAT_RECORDED_STATUSES } from "../../shared/vat-filing-status";
 /**
  * Notification engine (W4-D: R13-32, R13-33, R16-18).
  *
@@ -525,10 +526,10 @@ export async function scanVatDeadlines(now: Date = new Date()): Promise<number> 
   const { rows } = await pool.query(
     `SELECT id, company_id, due_date::date::text AS due, period_end::date::text AS period_end
        FROM vat_returns
-      WHERE NOT (status IN ('filed', 'amended', 'paid', 'accepted')
+      WHERE status <> 'amended' AND NOT (status = ANY($2::text[])
         AND NULLIF(BTRIM(fta_reference_number), '') IS NOT NULL)
         AND due_date::date <= ($1::date + 14)`,
-    [now.toISOString().slice(0, 10)]
+    [now.toISOString().slice(0, 10), VAT_RECORDED_STATUSES]
   );
   for (const r of rows) {
     await notify({

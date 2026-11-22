@@ -124,6 +124,12 @@ describe("E2 (J3-r2) VAT return: ready -> filed -> paid", () => {
     const filed = await submit({ ftaReferenceNumber: "ET-2026-Q1-001", filedOn: "2026-04-20" });
     expect(filed.status, filed.text).toBe(200);
     expect(filed.body).toMatchObject({ status: "filed", ftaReferenceNumber: "ET-2026-Q1-001" });
+    const tampered = await t.as.patch(`/api/vat-returns/${id}`, {
+      declarantName: "Another person",
+    });
+    expect(tampered.status).toBe(409);
+    expect((await t.as.post(`/api/vat-returns/${id}/ready`, {})).status).toBe(409);
+
     expect(String(filed.body.submittedAt).slice(0, 10)).toBe("2026-04-20");
     const retry = await submit({ ftaReferenceNumber: " ET-2026-Q1-001 ", filedOn: "2026-04-20" });
     expect(retry.status, retry.text).toBe(200);

@@ -1,7 +1,7 @@
-import { and, count, desc, eq, gte, inArray, lt, lte, max, ne, not, sql, sum } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, lt, lte, max, ne, sql, sum } from "drizzle-orm";
 
 import { isVatFilingRecorded } from "../../shared/vat-filing-status";
-import { vatFilingRecordedFilter } from "../tax/vat-filing-filter";
+import { activeVatReturnFilter, vatFilingOutstandingFilter } from "../tax/vat-filing-filter";
 import { db } from "../db";
 import { aed, ledgerBalanceCheckByCompany } from "../reporting";
 import {
@@ -599,7 +599,7 @@ export async function buildFirmValueOps(
       maxPeriodEnd: max(vatReturns.periodEnd).as("max_period_end"),
     })
     .from(vatReturns)
-    .where(inArray(vatReturns.companyId, companyIds))
+    .where(and(inArray(vatReturns.companyId, companyIds), activeVatReturnFilter))
     .groupBy(vatReturns.companyId)
     .as("latest_value_ops_vat");
 
@@ -629,7 +629,8 @@ export async function buildFirmValueOps(
       latestVatSub,
       and(
         eq(vatReturns.companyId, latestVatSub.companyId),
-        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd)
+        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd),
+        activeVatReturnFilter
       )
     )) as VatRow[];
   const vatMap = new Map(vatRows.map((r) => [r.companyId, r]));
@@ -1631,7 +1632,7 @@ export async function buildFirmReviewQueue(
     .where(
       and(
         inArray(vatReturns.companyId, companyIds),
-        not(vatFilingRecordedFilter),
+        vatFilingOutstandingFilter,
         lte(vatReturns.dueDate, dueSoon)
       )
     )

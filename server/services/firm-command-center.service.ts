@@ -25,7 +25,6 @@ import {
   isNull,
   lt,
   max,
-  not,
   notInArray,
   sql,
   sum,
@@ -48,7 +47,7 @@ import { listAccessibleClientIds, resolveFirmContext, type FirmContext } from ".
 import { assignStaff, staffWorkloadInput } from "./firm/staff.service";
 
 import { isVatFilingRecorded } from "../../shared/vat-filing-status";
-import { vatFilingRecordedFilter } from "../tax/vat-filing-filter";
+import { activeVatReturnFilter, vatFilingOutstandingFilter } from "../tax/vat-filing-filter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -538,7 +537,7 @@ export async function buildClientSnapshots(
       maxPeriodEnd: max(vatReturns.periodEnd).as("max_period_end"),
     })
     .from(vatReturns)
-    .where(inArray(vatReturns.companyId, companyIds))
+    .where(and(inArray(vatReturns.companyId, companyIds), activeVatReturnFilter))
     .groupBy(vatReturns.companyId)
     .as("latest_vat_phase6");
 
@@ -560,7 +559,8 @@ export async function buildClientSnapshots(
       latestVatSub,
       and(
         eq(vatReturns.companyId, latestVatSub.companyId),
-        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd)
+        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd),
+        activeVatReturnFilter
       )
     )) as VatRow[];
   const vatMap = new Map(vatRows.map((r) => [r.companyId, r]));
@@ -665,7 +665,7 @@ export async function buildDashboardSummary(
     db
       .select({ liability: sum(vatReturns.box14PayableTax) })
       .from(vatReturns)
-      .where(and(inArray(vatReturns.companyId, companyIds), not(vatFilingRecordedFilter))),
+      .where(and(inArray(vatReturns.companyId, companyIds), vatFilingOutstandingFilter)),
     db
       .select({ cnt: count() })
       .from(receipts)

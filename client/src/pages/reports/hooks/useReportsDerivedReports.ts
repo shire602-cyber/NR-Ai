@@ -29,7 +29,7 @@ import {
   payrollAmount,
   payrollRunInDateRange,
   receiptInDateRange,
-  receiptSubtotalAed,
+  receiptSpendAed,
   receiptVatAed,
   reportDateRange,
   reportText,
@@ -657,8 +657,8 @@ export function useReportsDerivedReports({
     };
   }, [expenseClaimSummary, reportExpenseClaims]);
   const expenseReport = useMemo(() => {
-    const capturedReceiptSubtotalAed = reportReceipts.reduce(
-      (sum, receipt) => sum + receiptSubtotalAed(receipt),
+    const capturedReceiptSpendAed = reportReceipts.reduce(
+      (sum, receipt) => sum + receiptSpendAed(receipt),
       0
     );
     const capturedReceiptVatAed = reportReceipts.reduce(
@@ -712,7 +712,7 @@ export function useReportsDerivedReports({
       totalAed,
       debitAed,
       creditAed,
-      receiptSpendAed: capturedReceiptSubtotalAed + capturedReceiptVatAed,
+      receiptSpendAed: capturedReceiptSpendAed,
       unpostedReceipts,
       autoPostedReceipts,
       byVendor: expenseByVendor,

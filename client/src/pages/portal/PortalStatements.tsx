@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { FileDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import {
   StatementOfAccount,
   type StatementSectionView,
 } from "@/components/documents/StatementOfAccount";
-import { apiRequest } from "@/lib/queryClient";
+import { usePortalSupplierQuery } from "@/lib/portal-supplier";
 import { downloadPortalFile } from "@/lib/portal-download";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/format-date";
@@ -34,10 +34,10 @@ interface Statement {
 export default function PortalStatements() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { data, isLoading, error, refetch } = useQuery<Statement>({
-    queryKey: ["portal-statements"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/statements"),
-  });
+  const { data, isLoading, error, refetch } = usePortalSupplierQuery<Statement>(
+    "portal-statements",
+    "statements"
+  );
 
   const download = useMutation({
     mutationFn: async (statement: Statement) => {

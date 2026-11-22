@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { PortalSupplierContext } from "../../client/src/lib/portal-supplier";
 /**
  * WP10 (code audit §2.2): the customer portal built its own Intl.NumberFormat("en-AE",
  * { style: "currency" }) and rendered money differently from the rest of the app. The
@@ -69,10 +70,23 @@ describe("WP10 portal statement money uses the shared formatter", () => {
 
   function renderStatement() {
     const qc = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
-    qc.setQueryData(["portal-statements"], statement);
+    qc.setQueryData(["portal-statements", "supplier-one"], statement);
     act(() => {
       root.render(
-        createElement(QueryClientProvider, { client: qc }, createElement(PortalStatements))
+        createElement(
+          QueryClientProvider,
+          { client: qc },
+          createElement(
+            PortalSupplierContext.Provider,
+            {
+              value: {
+                company: { name: "Supplier", accountId: "supplier-one" },
+                switchSupplier: () => {},
+              },
+            },
+            createElement(PortalStatements)
+          )
+        )
       );
     });
     // <Money> lays sign, digits and currency out in separate spans; compare without spaces.

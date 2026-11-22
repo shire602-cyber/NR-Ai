@@ -792,7 +792,7 @@ export function registerVATRoutes(app: Express) {
         });
       }
 
-      const vatReturn = await storage.recordVatReturnFiling(
+      const vatReturn = await storage.updateUnfiledVatReturn(
         existing.companyId,
         existing.id,
         existing.status,
@@ -918,13 +918,23 @@ export function registerVATRoutes(app: Express) {
       const access = await requireReturnAccess(req, res);
       if (!access) return;
       const body = parsedBody<Body<typeof patchVatReturnBody>>(req);
-      const vatReturn = await storage.updateVatReturn(access.existing.id, {
-        ...(body.notes !== undefined ? { notes: body.notes } : {}),
-        ...(body.declarantName !== undefined ? { declarantName: body.declarantName } : {}),
-        ...(body.declarantPosition !== undefined
-          ? { declarantPosition: body.declarantPosition }
-          : {}),
-      });
+      const { existing } = access;
+      if (!["draft", "pending_review", "ready", "submitted"].includes(existing.status)) {
+        throw new DomainError("INVALID_TRANSITION", 409);
+      }
+      const vatReturn = await storage.updateUnfiledVatReturn(
+        existing.companyId,
+        existing.id,
+        existing.status,
+        {
+          ...(body.notes !== undefined ? { notes: body.notes } : {}),
+          ...(body.declarantName !== undefined ? { declarantName: body.declarantName } : {}),
+          ...(body.declarantPosition !== undefined
+            ? { declarantPosition: body.declarantPosition }
+            : {}),
+        }
+      );
+      if (!vatReturn) throw new DomainError("INVALID_TRANSITION", 409);
       res.json(vatReturn);
     })
   );

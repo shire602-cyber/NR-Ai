@@ -968,21 +968,6 @@ export function prepareInvoiceStatusForExport(report: any): ExportData[] {
   ];
 }
 
-function receiptExportRate(receipt: any): number {
-  const rate = Number(receipt?.exchangeRate ?? 1);
-  return Number.isFinite(rate) && rate > 0 ? rate : 1;
-}
-
-function _receiptSubtotalExportAed(receipt: any): number {
-  const base = Number(receipt?.baseCurrencyAmount ?? 0);
-  if (Number.isFinite(base) && Math.abs(base) > 0.005) return base;
-  return (Number(receipt?.amount) || 0) * receiptExportRate(receipt);
-}
-
-function _receiptVatExportAed(receipt: any): number {
-  return (Number(receipt?.vatAmount) || 0) * receiptExportRate(receipt);
-}
-
 function expenseSummaryRows(rows: any[] = []) {
   return rows.map((row: any) => ({
     label: row.label,

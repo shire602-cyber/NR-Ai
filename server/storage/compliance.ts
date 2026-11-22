@@ -103,16 +103,7 @@ export class ComplianceStorage extends EngagementStorage {
     return vatReturn;
   }
 
-  async updateVatReturn(id: string, data: Partial<InsertVatReturn>): Promise<VatReturn> {
-    const [vatReturn] = await db
-      .update(vatReturns)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(vatReturns.id, id))
-      .returning();
-    return vatReturn;
-  }
-
-  async recordVatReturnFiling(
+  async updateUnfiledVatReturn(
     companyId: string,
     id: string,
     previousStatus: string,

@@ -2,13 +2,24 @@ import { queryClient } from "./queryClient";
 
 const ACTIVE_COMPANY_STORAGE_KEY = "muhasib_active_company_id";
 
-export function getActiveCompanyId(): string | null {
-  if (typeof window === "undefined") return null;
+function readActiveCompanyId(): string | null | undefined {
+  if (typeof window === "undefined") return undefined;
   try {
     return window.localStorage.getItem(ACTIVE_COMPANY_STORAGE_KEY);
   } catch {
-    return null;
+    return undefined;
   }
+}
+
+export function getActiveCompanyId(): string | null {
+  return readActiveCompanyId() ?? null;
+}
+
+export function effectiveCompanyId(companies: readonly { id: string }[] = [], providerId?: string) {
+  const selected = readActiveCompanyId();
+  return selected === undefined || companies.length === 0
+    ? providerId
+    : resolveActiveCompany(companies, selected)?.id;
 }
 
 export function resolveActiveCompany<T extends { id: string }>(

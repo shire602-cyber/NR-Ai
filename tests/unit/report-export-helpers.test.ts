@@ -866,3 +866,33 @@ describe("report export helpers", () => {
     });
   });
 });
+
+it("exports actual cash spent once and reports VAT separately", async () => {
+  const { receiptSpendAed, receiptVatAed } =
+    await import("../../client/src/pages/reports/model/reportDocuments");
+  const reverseCharge = {
+    amount: 100,
+    vatAmount: 5,
+    exchangeRate: 0.9,
+    baseCurrencyAmount: 90,
+    reverseCharge: true,
+    posted: true,
+  } as never;
+  const regular = {
+    amount: 100,
+    vatAmount: 5,
+    exchangeRate: 0.9,
+    baseCurrencyAmount: 94.5,
+    posted: true,
+  } as never;
+  const sheet = prepareExpenseReportsForExport({
+    receiptSpendAed: receiptSpendAed(reverseCharge) + receiptSpendAed(regular),
+    vatAed: receiptVatAed(reverseCharge) + receiptVatAed(regular),
+  }).find((sheet) => sheet.sheetName === "Posting Automation");
+  expect(sheet?.rows).toEqual(
+    expect.arrayContaining([
+      { metric: "Receipt spend captured (AED)", value: "184.50" },
+      { metric: "Receipt VAT captured (AED)", value: "9.00" },
+    ])
+  );
+});

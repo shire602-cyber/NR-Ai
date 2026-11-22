@@ -500,7 +500,7 @@ describe("STEP5 portal invitations", () => {
     expect([403, 404]).toContain(sneaky.status);
     expect((await cust.get("/api/companies")).body).toEqual([]);
 
-    // X-Portal-Account pointing at someone else's binding is ignored, never honoured.
+    // X-Portal-Account pointing at someone else's binding is rejected without falling back.
     const foreign = (
       await h.sql(`SELECT id FROM customer_portal_accounts WHERE id <> $1 LIMIT 1`, [
         portalAccountId,
@@ -509,7 +509,7 @@ describe("STEP5 portal invitations", () => {
     const forged = await cust.get("/api/client-portal/invoices", {
       "x-portal-account": foreign?.id ?? "00000000-0000-4000-8000-000000000000",
     });
-    expect(forged.body.map((i: { id: string }) => i.id)).toEqual([myInv.id]);
+    expect(forged.status).toBe(403);
   });
 
   it("[S5-07] existing accounts sign in first; same-email binds without a password; mismatch is refused; several suppliers switch", async () => {
