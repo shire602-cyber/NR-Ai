@@ -3,7 +3,6 @@
 // (client/src/lib/reportCatalogText.ts); tests/unit/report-catalog-arabic.test.ts enforces coverage
 // of every field the launcher and dashboard render.
 import { registerDeliverySubscriptions } from "./deliveryTitleRegistry";
-import { bankStatementCopy } from "@shared/bank-statement-copy";
 
 export const reportTabs = [
   "pl",

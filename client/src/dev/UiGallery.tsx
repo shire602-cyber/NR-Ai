@@ -19,7 +19,6 @@ import {
   YAxis,
 } from "recharts";
 import { Download, FileText, Landmark, Pencil, Send, Trash2 } from "lucide-react";
-import { bankStatementCopy } from "@shared/bank-statement-copy";
 
 import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
