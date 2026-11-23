@@ -1004,7 +1004,7 @@
   "pages.subscriptionStateReadOnly": "Locked",
   "pages.subscriptionTrialEnds": "Trial ends",
   "pages.subscriptionTrialExplain": "Every feature is open during the trial. Choosing a plan alone doesn't keep you working: activate one before it ends.",
-  "pages.subscriptionExpiredExplain": "Choose and activate a paid plan to regain access. Your data is saved.",
+  "pages.subscriptionExpiredExplain": "Choose and activate a paid plan to make changes. Your data is saved.",
   "pages.subscriptionUnlimitedUsersNote": "Every plan includes unlimited users.",
   "pages.subscriptionChooseAPlan": "Choose a plan",
   "pages.subscriptionChoosePlanContact": "Choose {plan}",

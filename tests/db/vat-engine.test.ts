@@ -137,12 +137,23 @@ describe("W4-E VAT engine: report 07 scenario", () => {
     );
     expect(rep.status, rep.text).toBe(200);
     expect(rep.body.boxes).toMatchObject(EXPECTED_07);
-    expect(rep.body.boxes.box14PayableTax).toBe(30);
+    expect(rep.body).toMatchObject({
+      period: { from: "2026-07-01", to: "2026-09-30" },
+      box1_standardRatedSupplies: 1000,
+      box2_zeroRatedSupplies: 500,
+      box3_exemptSupplies: 250,
+      box4_totalSupplies: 1750,
+      box5_outputVat: 233.63,
+      box8_netVatDue: 30,
+      excluded: { outOfScopeAmount: 100 },
+    });
     const canonical = await t.as.get(
       `/api/companies/${t.company.id}/vat/compute?from=2026-07-01&to=2026-09-30`
     );
     expect(canonical.status, canonical.text).toBe(200);
-    expect(rep.body).toEqual(canonical.body);
+    expect(canonical.body.boxes).toMatchObject(EXPECTED_07);
+    expect(canonical.body.excluded.outOfScopeFils).toBe(10000);
+    expect(canonical.body).not.toHaveProperty("box8_netVatDue");
     expect(rep.headers.get("link")).toContain("/vat/compute");
 
     const sum = await t.as.get(

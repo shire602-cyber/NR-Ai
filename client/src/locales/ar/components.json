@@ -913,7 +913,7 @@
   "components.srv.monthEnd.vat.notRegistered": "غير مسجل في ضريبة القيمة المضافة: لا يوجد إقرار لإعداده",
   "components.srv.monthEnd.vat.notReturnMonth": "لا يستحق إقرار ضريبة القيمة المضافة هذا الشهر: تنتهي فترة الضريبة في {date}",
   "components.planLimitTrialEndedTitle": "انتهت تجربتك المجانية",
-  "components.planLimitTrialEndedBody": "مساحة عملك مقفلة. اختر خطة مدفوعة وفعّلها لاستعادة الوصول.",
+  "components.planLimitTrialEndedBody": "مساحة عملك للقراءة فقط. اختر خطة مدفوعة وفعّلها لإجراء تغييرات.",
   "components.planLimitLockedTitle": "{module} غير مشمول في خطتك",
   "components.planLimitThisModule": "هذه الوحدة",
   "components.planLimitLockedBody": "يمكنك فتح ما هو موجود وتصديره. قم بالترقية إلى {plan} لإضافة السجلات أو تعديلها.",
@@ -934,7 +934,7 @@
   "components.planLockChoosePlan": "اختر خطة",
   "components.planLockUpgrade": "عرض الخطط",
   "components.planLockTrialEndedTitle": "انتهت تجربتك المجانية لمدة 14 يومًا",
-  "components.planLockTrialEndedBody": "مساحة عملك مقفلة. اختر خطة مدفوعة وفعّلها لاستعادة الوصول. بياناتك محفوظة.",
+  "components.planLockTrialEndedBody": "مساحة عملك للقراءة فقط. اختر خطة مدفوعة وفعّلها لإجراء تغييرات. بياناتك محفوظة.",
   "components.planLockModuleTitle": "{module} للقراءة فقط في خطتك",
   "components.planLockModuleBody": "تبقى سجلاتك ظاهرة. قم بالترقية إلى {plan} لإضافتها أو تعديلها.",
   "components.planLockedNavLabel": "غير مشمول في خطتك",
@@ -974,8 +974,8 @@
   "components.srv.notification.bankStatementImportedSkipped.message": "{count, plural, zero {لم تُستورد أي معاملة} one {تم استيراد معاملة واحدة} two {تم استيراد معاملتين} few {تم استيراد # معاملات} many {تم استيراد # معاملة} other {تم استيراد # معاملة}}[ من {bank}]؛ تم تخطي {skipped, plural, one {معاملة واحدة مستوردة مسبقًا} two {معاملتان مستوردتان مسبقًا} few {# معاملات مستوردة مسبقًا} many {# معاملة مستوردة مسبقًا} other {# معاملة مستوردة مسبقًا}}",
   "components.srv.notification.bankStatementNothingNew.message": "لا توجد معاملات جديدة[ من {bank}]؛ {skipped, plural, one {معاملة واحدة مستوردة مسبقًا} two {معاملتان مستوردتان مسبقًا} few {# معاملات مستوردة مسبقًا} many {# معاملة مستوردة مسبقًا} other {# معاملة مستوردة مسبقًا}}",
   "components.planLockActivate": "فعّل {plan}",
-  "components.planLockBodyChosen": "مساحة عملك مقفلة. فعّل {plan} لاستعادة الوصول. بياناتك محفوظة.",
-  "components.planLimitBodyChosen": "فعّل {plan} لاستعادة الوصول إلى مساحة عملك. بياناتك محفوظة.",
-  "components.planUntilThenReadable": "تبقى مساحة عملك مقفلة حتى تفعيل خطتك. بياناتك محفوظة.",
-  "components.planLockBodyRequestedPage": "استلمنا طلب التفعيل. تبقى مساحة عملك مقفلة حتى تفعيل خطتك. بياناتك محفوظة."
+  "components.planLockBodyChosen": "مساحة عملك للقراءة فقط. فعّل {plan} لإجراء تغييرات. بياناتك محفوظة.",
+  "components.planLimitBodyChosen": "فعّل {plan} لإجراء تغييرات في مساحة عملك. بياناتك محفوظة.",
+  "components.planUntilThenReadable": "تبقى مساحة عملك للقراءة فقط حتى تفعيل خطتك. بياناتك محفوظة.",
+  "components.planLockBodyRequestedPage": "استلمنا طلب التفعيل. تبقى مساحة عملك للقراءة فقط حتى تفعيل خطتك. بياناتك محفوظة."
 }

@@ -23,6 +23,8 @@ it("keeps expired trial data and billing recovery readable while blocking change
   const read = await t.as.get(`/api/invoices/${draft.body.id}`);
   expect(read.status, read.text).toBe(200);
   expect(read.body).toMatchObject({ id: draft.body.id, customerName: body.customerName });
+  expect((await t.as.get(`/api/invoices/${draft.body.id}/pdf`)).status).toBe(200);
+  expect((await t.as.get(`${base}/reports/pl`)).status).toBe(200);
   for (const write of [
     await t.as.post(`${base}/invoices`, body),
     await t.as.delete(`/api/invoices/${draft.body.id}`),
@@ -86,6 +88,19 @@ it("posts receipts with saved accounts, names a missing account, and recognizes 
     accountId: expense.id,
     paymentAccountId: bank.id,
   });
+  const lines = await h.sql<{ account_id: string; debit: string; credit: string }>(
+    `SELECT jl.account_id, jl.debit, jl.credit
+       FROM receipts r JOIN journal_lines jl ON jl.entry_id = r.journal_entry_id
+      WHERE r.id = $1 AND r.company_id = $2`,
+    [receipt.body.id, t.company.id]
+  );
+  expect(lines).toHaveLength(2);
+  expect(lines.map((line) => [line.account_id, Number(line.debit), Number(line.credit)])).toEqual(
+    expect.arrayContaining([
+      [expense.id, 100, 0],
+      [bank.id, 0, 100],
+    ])
+  );
   expect(await company()).toMatchObject({ onboardingCompleted: false, hasPostedDocuments: true });
   for (const [field, saved] of [
     ["accountId", { paymentAccountId: bank.id }],

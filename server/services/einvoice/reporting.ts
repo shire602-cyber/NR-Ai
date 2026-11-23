@@ -53,6 +53,7 @@ export const reportingInvoiceColumns = {
   date: invoices.date,
   status: invoices.status,
   source: invoices.source,
+  buyerType: invoices.buyerType,
   customerTrn: invoices.customerTrn,
   einvoiceStatus: invoices.einvoiceStatus,
   einvoiceProvider: invoices.einvoiceProvider,
@@ -110,12 +111,11 @@ export function projectInvoiceTracks(
   doc: EInvoiceDocument | null | undefined,
   company: Company,
   now: Date,
-  resolvedBuyerTrn: string | null | undefined = invoice?.customerTrn,
-  buyerEndpoint?: string | null
+  resolvedBuyerTrn: string | null | undefined = invoice?.customerTrn
 ) {
   if (
     invoice &&
-    isB2cCashSale(invoice, { trn: resolvedBuyerTrn, endpointId: buyerEndpoint }) &&
+    isB2cCashSale(invoice) &&
     !invoice.einvoiceSubmittedAt &&
     !doc?.submittedAt &&
     submissionProviderPin(invoice, doc ?? undefined) === undefined

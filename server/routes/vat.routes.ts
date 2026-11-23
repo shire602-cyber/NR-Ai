@@ -9,7 +9,8 @@ import { isNraFirmRole } from "../../shared/access";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
-import { deprecate } from "../reporting/http";
+import { assertReportAccess, deprecate } from "../reporting/http";
+import { readRange } from "../reporting";
 import { recordAudit } from "../services/audit.service";
 import {
   addVatWorkpaperRow,
@@ -51,6 +52,7 @@ import {
   vatWorkpaperStatusBody,
 } from "../../shared/validators/vat";
 import { computeVat201 } from "../tax/vat-engine";
+import { vatBox1Total } from "../tax/vat-boxes";
 import {
   getVatReturnSettlement,
   reverseVatReturnSettlement,
@@ -573,11 +575,47 @@ export function registerVATRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/reports/vat-return",
     authMiddleware,
-    (req: Request, res: Response, next: () => void) => {
-      deprecate(res, `/api/companies/${req.params.companyId}/vat/compute`);
-      next();
-    },
-    vatPreview
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      deprecate(res, `/api/companies/${companyId}/vat/compute`);
+      const q = req.query as Record<string, string | undefined>;
+      const fromQ = q.from ?? q.startDate ?? q.periodStart;
+      const toQ = q.to ?? q.endDate ?? q.periodEnd;
+      if (!fromQ || !toQ) {
+        return res.status(400).json({
+          message: "from and to date params are required (YYYY-MM-DD)",
+          code: "REPORT_RANGE_REQUIRED",
+        });
+      }
+      const range = readRange({ from: fromQ, to: toQ });
+      await assertReportAccess(req, companyId);
+      const c = await computeVat201({
+        companyId,
+        from: range.from!,
+        to: range.to,
+        allowIncomplete: true,
+      });
+      const b = c.boxes;
+      const standard = vatBox1Total(c.boxesFils, "Amount");
+      res.json({
+        period: { from: range.from, to: range.to },
+        engineVersion: c.engineVersion,
+        box1_standardRatedSupplies: standard,
+        box2_zeroRatedSupplies: b.box4ZeroRatedAmount,
+        box3_exemptSupplies: b.box5ExemptAmount,
+        box4_totalSupplies:
+          Math.round((standard + b.box4ZeroRatedAmount + b.box5ExemptAmount) * 100) / 100,
+        box5_outputVat: b.box12TotalDueTax,
+        box6_standardRatedExpenses: b.box9ExpensesAmount,
+        box7_inputVatRecoverable: b.box13RecoverableTax,
+        box8_netVatDue: b.box14PayableTax,
+        boxes: b,
+        issues: c.issues,
+        complete: c.complete,
+        excluded: { outOfScopeAmount: c.excluded.outOfScopeFils / 100 },
+        reconciliation: c.reconciliation,
+      });
+    })
   );
 
   // R12-08b: VAT return vs GL VAT control accounts, by source.

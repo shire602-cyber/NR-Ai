@@ -236,7 +236,7 @@ describe("trial banner", () => {
     const el = await banner(trialState(new Date(Date.now() - 30 * 86400_000)));
     expect(el?.getAttribute("data-trial-state")).toBe("ended");
     expect(el?.textContent).toContain(
-      "Your workspace is locked until you choose and activate a paid plan"
+      "Your workspace is read-only until you choose and activate a paid plan"
     );
     expect(container.querySelector("[data-testid=trial-contact-us]")?.getAttribute("href")).toBe(
       "/subscription"

@@ -136,14 +136,7 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     : null;
   const isAcube = providerId === "acube";
   const providerStatus = doc?.providerStatus?.trim().toLowerCase();
-  const tracks = projectInvoiceTracks(
-    invoice,
-    doc,
-    company,
-    now,
-    ctx.customer?.trn,
-    ctx.customer?.endpointId
-  );
+  const tracks = projectInvoiceTracks(invoice, doc, company, now, ctx.customer?.trn);
   const applicable = tracks.delivery !== "not_applicable";
   const {
     delivery,

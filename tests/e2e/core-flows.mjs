@@ -793,7 +793,7 @@ async function portalInviteJourney(h, { phone }) {
 async function expiredTrialJourney(h) {
   const owner = await newOwner("trial-lock", h.lang);
   const base = `/api/companies/${owner.companyId}`;
-  const invoice = await seedInvoice(owner, { issue: false });
+  const invoice = await seedInvoice(owner);
   const onboarding = await api(owner.token, "POST", `${base}/onboarding/complete`, {});
   expect(onboarding.status === 200, `finish onboarding ${onboarding.status}`);
   const page = await h.signIn(owner);
@@ -841,44 +841,45 @@ async function expiredTrialJourney(h) {
   );
 
   await h.step(
-    "expiry replaces dashboard, invoice deep link and onboarding with the localized lock",
+    "expired owner can open an invoice, download its PDF, and read a report",
     async () => {
       await dbRows("UPDATE subscriptions SET trial_ends_at = now() WHERE company_id = $1", [
         owner.companyId,
       ]);
-      const lock = tid(page, "trial-lock-screen");
-      for (const route of ["/dashboard", `/invoices/${invoice.id}`, "/onboarding"]) {
-        await goto(page, route);
-        await lock.waitFor({ timeout: 15000 });
-        const heading = h.ar
-          ? "انتهت تجربتك المجانية لمدة 14 يومًا"
-          : "Your 14-day trial has ended";
-        await lock.getByRole("heading", { name: heading }).waitFor();
-        expect(
-          (await page.locator("html").getAttribute("dir")) === (h.ar ? "rtl" : "ltr"),
-          "page direction is wrong"
-        );
-        expect(
-          (await tid(page, "button-sidebar-toggle").count()) === 0,
-          "workspace navigation mounted"
-        );
-        expect(
-          (await lock
-            .getByRole("link", { name: h.ar ? "تواصل مع الدعم" : "Contact support" })
-            .getAttribute("href")) === "mailto:support@muhasib.ai",
-          "support link is wrong"
-        );
-        await noSideScroll(page, route);
-      }
-      const request = await api(owner.token, "GET", `/api/invoices/${invoice.id}/pdf`);
-      expect(request.status === 200, "invoice PDF should stay readable after trial expiry");
+      const banner = tid(page, "trial-readonly-banner");
+      await goto(page, `/invoices/${invoice.id}/edit`);
+      await banner.waitFor({ timeout: 15000 });
+      await tid(page, "issued-invoice-locked").waitFor();
+      expect(
+        await tid(page, "button-issued-add-payment").isDisabled(),
+        "payment action is enabled"
+      );
+      const [download] = await Promise.all([
+        page.waitForEvent("download", { timeout: 15000 }),
+        click(page, "button-issued-download-pdf"),
+      ]);
+      expect(/\.pdf$/i.test(download.suggestedFilename()), download.suggestedFilename());
+      expect(
+        (await page.locator("html").getAttribute("dir")) === (h.ar ? "rtl" : "ltr"),
+        "page direction is wrong"
+      );
+      await noSideScroll(page, "read-only invoice");
+
+      const reportResponse = page.waitForResponse(
+        (response) => response.url().includes(`${base}/reports/pl`) && response.ok()
+      );
+      await goto(page, "/reports?tab=pl&report=profit-loss&persona=owner");
+      await reportResponse;
+      await banner.waitFor();
+      await tid(page, "text-net-profit").waitFor();
+      await noSideScroll(page, "read-only profit and loss");
     }
   );
 
   await h.step(
     "plan choice and activation request remain available while workspace is locked",
     async () => {
-      const choose = tid(page, "trial-lock-screen").getByRole("link", {
+      const choose = tid(page, "trial-readonly-banner").getByRole("link", {
         name: h.ar ? "اختر خطة" : "Choose a plan",
       });
       await choose.click();
@@ -911,7 +912,10 @@ async function expiredTrialJourney(h) {
     await goto(page, "/invoices");
     const { status, body: restored } = await api(owner.token, "GET", `/api/invoices/${invoice.id}`);
     expect(status === 200 && restored.id === invoice.id, "same invoice was not restored");
-    expect((await tid(page, "trial-lock-screen").count()) === 0, "paid workspace is still locked");
+    expect(
+      (await tid(page, "trial-readonly-banner").count()) === 0,
+      "paid workspace is still locked"
+    );
     expect(
       (await api(owner.token, "GET", base)).body.addressCountry === "SA",
       "stored country was lost"

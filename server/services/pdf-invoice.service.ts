@@ -37,7 +37,6 @@ const HEADER_FILL = "#E6E6E6";
 export type InvoicePdfTemplate = "standard" | "nra";
 
 export interface GenerateInvoicePdfOptions {
-  template?: InvoicePdfTemplate;
   /** Document language; defaults to the company's `locale` (en/ar). */
   locale?: PdfLocale;
   /** Payments received so far. Defaults to the full total for `paid` invoices, else 0. */
@@ -74,7 +73,9 @@ export interface InvoicePdfBranding {
 }
 
 export function invoicePdfTemplateForCompany(company: Company): InvoicePdfTemplate {
-  return company.companyType === "client" && !company.trnVatNumber ? "nra" : "standard";
+  return company.id === process.env.NRA_INVOICE_ISSUER_COMPANY_ID && !company.trnVatNumber
+    ? "nra"
+    : "standard";
 }
 
 export async function generateInvoicePDF(
@@ -83,7 +84,7 @@ export async function generateInvoicePDF(
   company: Company,
   options: GenerateInvoicePdfOptions = {}
 ): Promise<Buffer> {
-  const template = options.template ?? invoicePdfTemplateForCompany(company);
+  const template = invoicePdfTemplateForCompany(company);
   if (template === "nra") {
     return generateNraInvoicePDF(invoice, lines);
   }

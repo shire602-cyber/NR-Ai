@@ -13,12 +13,13 @@ import { useCompanySubscription } from "@/hooks/useSubscription";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { planPhraseKey } from "@/lib/plan-state";
 import { PLAN_LIMIT_EVENT, type PlanLimitDetail } from "@/lib/plan-limit";
+import { TrialReadOnlyContext } from "@/lib/trial-access";
 
 export function TrialAccessGate({
   children,
   billing,
 }: {
-  children: ReactNode;
+  children: ReactNode | ((notice: ReactNode) => ReactNode);
   billing?: ReactNode;
 }) {
   const [location] = useLocation();
@@ -30,6 +31,15 @@ export function TrialAccessGate({
   const queryClient = useQueryClient();
   const lockedCompany = useRef<string>();
   const isLocked = data?.trialLocked === true;
+  const workspace = (notice: ReactNode = null) =>
+    typeof children === "function" ? (
+      children(notice)
+    ) : (
+      <>
+        {notice}
+        {children}
+      </>
+    );
 
   useEffect(() => {
     if (!companyId || exempt) return;
@@ -52,7 +62,7 @@ export function TrialAccessGate({
     }
   }, [companyId, data, isLocked, queryClient]);
 
-  if (exempt) return <>{children}</>;
+  if (exempt) return workspace();
   if (isLoading || (companyId && isPending)) {
     return (
       <div role="status" className="grid min-h-dvh place-items-center bg-background">
@@ -74,7 +84,7 @@ export function TrialAccessGate({
       </TrialRecoveryLayout>
     );
   }
-  if (!data || !isLocked) return <>{children}</>;
+  if (!data || !isLocked) return workspace();
 
   if (location.split(/[?#]/)[0] === "/subscription" && billing) {
     return <TrialRecoveryLayout billing>{billing}</TrialRecoveryLayout>;
@@ -89,43 +99,42 @@ export function TrialAccessGate({
       : "/subscription#after-trial"
     : "/subscription";
 
-  return (
-    <TrialRecoveryLayout>
-      <section
-        className="mx-auto w-full max-w-xl rounded-2xl border bg-card p-6 text-start shadow-sm sm:p-9"
-        aria-labelledby="trial-lock-title"
-        data-testid="trial-lock-screen"
-      >
-        <div className="mb-5 grid size-12 place-items-center rounded-xl bg-muted text-foreground">
-          <Lock className="size-6" aria-hidden />
-        </div>
-        <h1 id="trial-lock-title" className="text-2xl font-semibold sm:text-3xl">
+  const notice = (
+    <section
+      className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b bg-warning/10 px-3 py-2 text-start md:px-6"
+      aria-labelledby="trial-readonly-title"
+      data-testid="trial-readonly-banner"
+    >
+      <Lock className="size-4 shrink-0" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <h2 id="trial-readonly-title" className="text-sm font-semibold">
           {t["components.planLockTrialEndedTitle"]}
-        </h1>
-        <p className="mt-3 leading-relaxed text-muted-foreground">
+        </h2>
+        <p className="text-sm text-muted-foreground">
           {requested
             ? t["components.planLockBodyRequestedPage"]
             : chosen
               ? formatMessage(t["components.planLockBodyChosen"], { plan })
               : t["components.planLockTrialEndedBody"]}
         </p>
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-          <Button asChild className="min-h-11 whitespace-normal">
-            <Link href={billingHref}>
-              {requested
-                ? t["marketing.trialSeePlan"]
-                : chosen
-                  ? formatMessage(t["components.planLockActivate"], { plan })
-                  : t["components.planLockChoosePlan"]}
-            </Link>
-          </Button>
-          <Button asChild variant="outline" className="min-h-11">
-            <a href={`mailto:${UPGRADE_CONTACT_EMAIL}`}>{t["components.trialAccessSupport"]}</a>
-          </Button>
-        </div>
-      </section>
-    </TrialRecoveryLayout>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button asChild size="sm">
+          <Link href={billingHref}>
+            {requested
+              ? t["marketing.trialSeePlan"]
+              : chosen
+                ? formatMessage(t["components.planLockActivate"], { plan })
+                : t["components.planLockChoosePlan"]}
+          </Link>
+        </Button>
+        <Button asChild size="sm" variant="outline">
+          <a href={`mailto:${UPGRADE_CONTACT_EMAIL}`}>{t["components.trialAccessSupport"]}</a>
+        </Button>
+      </div>
+    </section>
   );
+  return <TrialReadOnlyContext.Provider value>{workspace(notice)}</TrialReadOnlyContext.Provider>;
 }
 
 function TrialRecoveryLayout({

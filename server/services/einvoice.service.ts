@@ -814,7 +814,7 @@ export function validateForEInvoicing(
     options?: EInvoiceOptions;
   } = {}
 ): EInvoiceIssue[] {
-  if (isB2cCashSale(invoice, ctx.customer)) return [];
+  if (isB2cCashSale(invoice)) return [];
   const issues: EInvoiceIssue[] = [];
   const add = (field: string, code: string, message: string) =>
     issues.push({ field, code, message });

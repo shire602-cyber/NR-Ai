@@ -40,7 +40,6 @@ import { loadBaseCurrency, postJournal, withLedgerTx } from "../ledger";
 import { emitDomainEvent } from "../platform/domain-events";
 import { recordAudit } from "../services/audit.service";
 import { isB2cCashSale } from "../services/einvoice/applicability";
-import { getBuyerEndpoint } from "../services/einvoice/store";
 import { lineRow, prepareNewDocument } from "./invoices.routes";
 
 const userOf = (req: Request): string => (req as Request & { user: { id: string } }).user.id;
@@ -376,6 +375,7 @@ export function registerSalesReceiptRoutes(app: Express) {
             templateId: body.templateId ?? null,
             documentLanguage: body.documentLanguage ?? null,
             source: "cash_sale",
+            buyerType: body.buyerType,
             status: "draft",
             invoiceType: "invoice",
           })
@@ -394,18 +394,12 @@ export function registerSalesReceiptRoutes(app: Express) {
           createdBy: userId,
           tx,
         });
-        const endpoint = !paid.invoice.customerTrn?.trim()
-          ? await getBuyerEndpoint(companyId, paid.invoice.contactId, tx)
-          : undefined;
-        const einvoiceApplicable = !isB2cCashSale(paid.invoice, {
-          endpointId: endpoint?.participantId,
-        });
         return {
           invoice: paid.invoice,
           issued: issued.invoice,
           payment: paid.payment,
           paid,
-          einvoiceApplicable,
+          einvoiceApplicable: !isB2cCashSale(paid.invoice),
         };
       });
 

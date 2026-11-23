@@ -130,7 +130,9 @@ export async function createCheckoutSession(
 
   // A first paid invoice can earn a referral discount even after the product trial ends.
   const firstSubscription =
-    !subscription?.stripeSubscriptionId && (subscription?.planId ?? "free") === "free";
+    !subscription?.stripeCheckoutCompleted &&
+    !subscription?.stripeSubscriptionId &&
+    (subscription?.planId ?? "free") === "free";
   const quantity = perSeat() ? await billableSeats(companyId) : 1;
   // Referee reward: a percent-off coupon applied to the first paid invoice.
   const coupon = firstSubscription ? await refereeCouponFor(companyId) : null;
@@ -308,6 +310,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
     planId,
     planName: planId.charAt(0).toUpperCase() + planId.slice(1),
     status: "active",
+    stripeCheckoutCompleted: true,
     stripeCustomerId:
       typeof session.customer === "string" ? session.customer : session.customer?.id || undefined,
     stripeSubscriptionId:
@@ -374,6 +377,7 @@ async function handleSubscriptionDeleted(sub: Stripe.Subscription): Promise<void
   if (!subscription) return;
 
   // Downgrade to free
+  if (subscription.stripeSubscriptionId && subscription.stripeSubscriptionId !== sub.id) return;
   const freeLimits = PLAN_LIMITS.free;
   const now = new Date();
   const periodEnd = new Date(now);
@@ -384,6 +388,7 @@ async function handleSubscriptionDeleted(sub: Stripe.Subscription): Promise<void
     planName: "Free",
     status: "active",
     stripeSubscriptionId: null,
+    stripeCheckoutCompleted: true,
     billingCycle: "monthly",
     cancelAtPeriodEnd: false,
     currentPeriodStart: now,

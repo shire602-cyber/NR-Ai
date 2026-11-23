@@ -1,4 +1,9 @@
 {
+  "invoices.cashSale.buyerType": "نوع المشتري",
+  "invoices.cashSale.buyerType.unknown": "غير معروف",
+  "invoices.cashSale.buyerType.consumer": "مستهلك",
+  "invoices.cashSale.buyerType.business": "منشأة تجارية",
+  "invoices.cashSale.buyerType.government": "جهة حكومية",
   "invoices.autoIssue": "إصدار تلقائي (ترحيل إلى الدفاتر)",
   "invoices.autoSend": "إرسال كل فاتورة صادرة بالبريد الإلكتروني",
   "invoices.clearStatusFilter": "مسح فلتر الحالة",

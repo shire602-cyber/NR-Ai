@@ -61,25 +61,46 @@ async function issuedInvoice(t: Tenant, body: Record<string, unknown>) {
   return c.body as { id: string; number: string };
 }
 
-it("keeps overdrawn cash and bank balances under assets and reports a warning", async () => {
-  const t = await tenant("Overdrawn cash");
+it("presents a deposit and an unrelated bank overdraft gross", async () => {
+  const t = await tenant("Bank overdraft");
+  const base = `/api/companies/${t.company.id}`;
+  const deposit = await t.as.post(`${base}/bank-accounts`, {
+    nameEn: "Deposit account",
+    bankName: "Bank A",
+  });
+  expect(deposit.status, deposit.text).toBe(201);
+  const overdraft = await t.as.post(`${base}/bank-accounts`, {
+    nameEn: "Overdrawn account",
+    bankName: "Bank B",
+  });
+  expect(overdraft.status, overdraft.text).toBe(201);
   await postJournalEntry(t, {
     date: "2026-10-31",
     lines: [
-      { code: "5000", debit: 2136.25 },
-      { code: "1010", credit: 10 },
-      { code: "1020", credit: 2126.25 },
+      { accountId: deposit.body.glAccountId, debit: 6000 },
+      { accountId: overdraft.body.glAccountId, credit: 2136.25 },
+      { code: "3010", credit: 3863.75 },
     ],
   });
-  const base = `/api/companies/${t.company.id}`;
-  const expected = [
-    expect.objectContaining({ accountCode: "1010", amount: -10 }),
-    expect.objectContaining({ accountCode: "1020", amount: -2126.25 }),
-  ];
   const report = await get(t, `${base}/reports/balance-sheet?asOf=2026-10-31`);
-  expect(report.statement.assets.current.lines).toEqual(expect.arrayContaining(expected));
-  expect(report.statement.liabilities.current.lines).toEqual([]);
-  expect(report.warnings).toEqual([{ code: "OVERDRAWN_CASH_ACCOUNTS", accounts: expected }]);
+  expect(report.statement.assets.current).toEqual({
+    total: 6000,
+    lines: [expect.objectContaining({ accountId: deposit.body.glAccountId, amount: 6000 })],
+  });
+  expect(report.statement.liabilities.current).toEqual({
+    total: 2136.25,
+    lines: [expect.objectContaining({ accountId: overdraft.body.glAccountId, amount: 2136.25 })],
+  });
+  expect(report.statement.assets.total).toBe(6000);
+  expect(report.statement.liabilities.total).toBe(2136.25);
+  expect(report.warnings).toEqual([
+    {
+      code: "OVERDRAWN_CASH_ACCOUNTS",
+      accounts: [
+        expect.objectContaining({ accountId: overdraft.body.glAccountId, amount: -2136.25 }),
+      ],
+    },
+  ]);
   expect(report.isBalanced).toBe(true);
   const legacy = await get(t, `${base}/financial-statements/balance-sheet?asOf=2026-10-31`);
   expect(legacy.warnings).toEqual(report.warnings);

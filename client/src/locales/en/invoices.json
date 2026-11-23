@@ -1,4 +1,9 @@
 {
+  "invoices.cashSale.buyerType": "Buyer type",
+  "invoices.cashSale.buyerType.unknown": "Unknown",
+  "invoices.cashSale.buyerType.consumer": "Consumer",
+  "invoices.cashSale.buyerType.business": "Business",
+  "invoices.cashSale.buyerType.government": "Government entity",
   "invoices.autoIssue": "Issue automatically (post to the ledger)",
   "invoices.autoSend": "Email each issued invoice",
   "invoices.clearStatusFilter": "Clear status filter",

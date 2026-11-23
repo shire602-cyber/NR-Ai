@@ -271,12 +271,18 @@ function WorkspaceLayout({ children }: { children: React.ReactNode }) {
         </Suspense>
       }
     >
-      <ProtectedLayout>{children}</ProtectedLayout>
+      {(trialNotice) => <ProtectedLayout trialNotice={trialNotice}>{children}</ProtectedLayout>}
     </TrialAccessGate>
   );
 }
 
-function ProtectedLayout({ children }: { children: React.ReactNode }) {
+function ProtectedLayout({
+  children,
+  trialNotice,
+}: {
+  children: React.ReactNode;
+  trialNotice: React.ReactNode;
+}) {
   const [location, navigate] = useLocation();
   const { t } = useTranslation();
   const { company, hasNoCompanies, isLoading: companyLoading } = useDefaultCompany();
@@ -291,6 +297,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
     // console, a client workspace a firm staffer is operating in (or is just switching into:
     // "Open books") and in-flight company refetches never redirect. Only the owner runs the
     // wizard; invited members use the app while the owner finishes (J4).
+    if (trialNotice) return;
     const target = onboardingRedirectTarget({
       pathname,
       companyLoading,
@@ -308,6 +315,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
     companyLoading,
     companiesFetching,
     pathname,
+    trialNotice,
     navigate,
     isFirmContext,
     isSwitchingClient,
@@ -380,6 +388,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
             </div>
           </header>
           <FirmContextBanner />
+          {trialNotice}
           <PlanLockBanner />
           <ReadOnlyForms />
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto focus:outline-none">
@@ -564,9 +573,15 @@ function Router() {
     return (
       <ProtectedRoute>
         <TrialAccessGate>
-          <Suspense fallback={<PageLoader variant="form" />}>
-            <Onboarding />
-          </Suspense>
+          {(trialNotice) =>
+            trialNotice ? (
+              <RedirectTo to="/dashboard" />
+            ) : (
+              <Suspense fallback={<PageLoader variant="form" />}>
+                <Onboarding />
+              </Suspense>
+            )
+          }
         </TrialAccessGate>
       </ProtectedRoute>
     );

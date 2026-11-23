@@ -1493,6 +1493,7 @@ export default function Invoices() {
             size="sm"
             onClick={() => setInvoiceToShare(editingInvoice)}
             data-testid="button-issued-share"
+            {...gate("documents.write")}
           >
             <Share2 aria-hidden />
             {t["invoices.actionShare"]}
@@ -1530,6 +1531,7 @@ export default function Invoices() {
           size="sm"
           onClick={() => openRecurring(editingInvoice)}
           data-testid="button-issued-make-recurring"
+          {...gate("documents.write")}
         >
           <RefreshCw aria-hidden />
           {t["invoices.makeRecurring"]}
@@ -2697,13 +2699,17 @@ export default function Invoices() {
                             <DropdownMenuItem
                               onSelect={() => setInvoiceToShare(invoice)}
                               data-testid={`mobile-button-share-invoice-${invoice.id}`}
+                              {...gate("documents.write")}
                             >
                               <Share2 aria-hidden />
                               {t["invoices.actionShare"]}
                             </DropdownMenuItem>
                           )}
                           {invoiceRowActions(invoice).canRecordPayment && (
-                            <DropdownMenuItem onSelect={() => openAddPayment(invoice)}>
+                            <DropdownMenuItem
+                              onSelect={() => openAddPayment(invoice)}
+                              {...gate("ledger.post")}
+                            >
                               <DollarSign aria-hidden />
                               <T k="invoices.actionAddPayment" />
                             </DropdownMenuItem>
@@ -2713,6 +2719,7 @@ export default function Invoices() {
                             <DropdownMenuItem
                               onSelect={() => void generateEinvoice(invoice)}
                               data-testid={`mobile-button-einvoice-${invoice.id}`}
+                              {...gate("documents.write")}
                             >
                               <FileCode aria-hidden />
                               <T k="invoices.actionGenerateEinvoice" />
@@ -2846,6 +2853,7 @@ export default function Invoices() {
                                     <DropdownMenuItem
                                       onSelect={() => setInvoiceToShare(invoice)}
                                       data-testid={`button-share-invoice-${invoice.id}`}
+                                      {...gate("documents.write")}
                                     >
                                       <Share2 aria-hidden />
                                       {t["invoices.actionShare"]}
@@ -2875,6 +2883,7 @@ export default function Invoices() {
                                     <DropdownMenuItem
                                       onSelect={() => void generateEinvoice(invoice)}
                                       data-testid={`button-einvoice-${invoice.id}`}
+                                      {...gate("documents.write")}
                                     >
                                       <FileCode aria-hidden />
                                       <T k="invoices.actionGenerateEinvoice" />
@@ -2883,6 +2892,7 @@ export default function Invoices() {
                                   <DropdownMenuItem
                                     onSelect={() => openRecurring(invoice)}
                                     data-testid={`button-set-recurring-${invoice.id}`}
+                                    {...gate("documents.write")}
                                   >
                                     <RefreshCw aria-hidden />
                                     {t["invoices.makeRecurring"]}
@@ -2902,6 +2912,7 @@ export default function Invoices() {
                                       <DropdownMenuItem
                                         onSelect={() => setInvoiceToWriteOff(invoice)}
                                         data-testid={`button-write-off-${invoice.id}`}
+                                        {...gate("ledger.post")}
                                       >
                                         <XCircle aria-hidden />
                                         <T k="invoices.actionWriteOff" />
@@ -2917,6 +2928,7 @@ export default function Invoices() {
                                         disabled={deleteMutation.isPending}
                                         className="text-destructive focus:text-destructive"
                                         data-testid={`button-delete-invoice-${invoice.id}`}
+                                        {...gate("documents.write")}
                                       >
                                         <Trash2 aria-hidden />
                                         <T k="invoices.actionDelete" />

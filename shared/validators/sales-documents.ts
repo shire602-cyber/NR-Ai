@@ -77,6 +77,7 @@ export const cashSaleSchema = z
   .object({
     ...invoiceHeaderShape,
     customerName: zText(300).optional().nullable(),
+    buyerType: z.enum(["consumer", "business", "government"]).optional(),
     paymentAccountId: zUuid,
     method: zText(40).optional(),
     reference: zText(200).optional().nullable(),

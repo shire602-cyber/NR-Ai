@@ -1,5 +1,5 @@
 {
-  "statements.overdrawnCashAccounts": "تظهر حسابات النقد والبنوك المكشوفة كأصول سالبة.",
+  "statements.overdrawnCashAccounts": "تظهر حسابات النقد والبنوك المكشوفة ضمن الخصوم المتداولة.",
   "statements.outOfBalance": "هذه القائمة غير متوازنة: الفرق {amount}. راجع القيود أحادية الجانب أو غير المرحّلة قبل الاعتماد عليها.",
   "statements.balanced": "متوازنة",
   "statements.notBalanced": "غير متوازنة",

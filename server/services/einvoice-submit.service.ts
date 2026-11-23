@@ -139,7 +139,7 @@ export async function preflightEInvoice(
   ctx: EInvoiceContext = {},
   opts: { uuid?: string; now?: Date } = {}
 ): Promise<EInvoicePreflight> {
-  if (isB2cCashSale(invoice, ctx.customer)) {
+  if (isB2cCashSale(invoice)) {
     return { applicable: false, issues: [], built: null, validation: null, valid: false };
   }
   const issues = validateForEInvoicing(invoice, lines, company, ctx);
@@ -167,7 +167,7 @@ export function buildEInvoiceDocument(
 ):
   | { ok: true; xml: string; uuid: string; hash: string; documentType: string | null }
   | { ok: false; issues: EInvoiceIssue[] } {
-  if (isB2cCashSale(invoice, ctx.customer)) {
+  if (isB2cCashSale(invoice)) {
     return {
       ok: false,
       issues: [
@@ -269,7 +269,7 @@ export async function prepareEInvoiceSubmission(args: {
     };
   }
 
-  if (isB2cCashSale(invoice, args.ctx?.customer)) {
+  if (isB2cCashSale(invoice)) {
     return {
       ok: false,
       status: 409,

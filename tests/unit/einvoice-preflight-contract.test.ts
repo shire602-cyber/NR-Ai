@@ -20,6 +20,26 @@ const credit = PINT_AE_FIXTURES.find((fixture) => fixture.name === "credit note"
 const ctx = { customer: standard.customer };
 
 describe("UAE e-invoice preflight", () => {
+  it.each(["consumer", "business", "government", null] as const)(
+    "classifies a cash sale with buyer type %s and no identifiers",
+    async (buyerType) => {
+      const checked = await preflightEInvoice(
+        { ...standard.invoice, source: "cash_sale", buyerType, customerTrn: null },
+        standard.lines,
+        fixtureCompany,
+        { customer: { ...standard.customer, trn: null, endpointId: null } }
+      );
+      if (buyerType === "consumer") {
+        expect(checked).toMatchObject({ applicable: false, issues: [] });
+      } else {
+        expect(checked.applicable).toBe(true);
+        expect(checked.issues).toContainEqual(
+          expect.objectContaining({ code: "EINVOICE_BUYER_ENDPOINT_MISSING" })
+        );
+      }
+    }
+  );
+
   it("guards immutable invoices already queued with contradictory buyer identifiers or generic card", () => {
     const old = (endpointId: string, paymentMeansCode: "48" | "54") =>
       generateEInvoiceXML(

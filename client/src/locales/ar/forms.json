@@ -380,7 +380,7 @@
   "forms.accountGroupExpenses": "المصروفات",
   "forms.accountGroupFixedAssets": "الأصول الثابتة",
   "forms.accountGroupOtherAssets": "أصول أخرى",
-  "forms.serverErrors.PLAN_REQUIRED": "انتهت تجربتك المجانية. اختر خطة مدفوعة وفعّلها لاستعادة الوصول. بياناتك محفوظة.",
+  "forms.serverErrors.PLAN_REQUIRED": "انتهت تجربتك المجانية. اختر خطة مدفوعة وفعّلها لإجراء تغييرات. بياناتك محفوظة.",
   "forms.serverErrors.USAGE_LIMIT_REACHED_invoices": "استُخدم حد الفواتير الشهري في خطتك. قم بالترقية لفواتير بلا حد.",
   "forms.serverErrors.USAGE_LIMIT_REACHED_receipts": "استُخدم حد الإيصالات الشهري في خطتك. قم بالترقية لإيصالات بلا حد.",
   "forms.serverErrors.USAGE_LIMIT_REACHED_ai_calls": "استُخدمت أرصدة الذكاء الاصطناعي لهذا الشهر في خطتك. قم بالترقية للمزيد.",

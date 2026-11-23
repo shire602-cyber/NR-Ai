@@ -1,5 +1,6 @@
 import { errorHeading } from "@/lib/error-heading";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { useSubscription } from "@/hooks/useSubscription";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
 import { accountDisplayName } from "@/lib/account-name";
@@ -85,7 +86,8 @@ interface Account {
 }
 
 export function RunsTab({ companyId }: { companyId: string }) {
-  const { gate } = useCompanyPermission();
+  const { can, gate } = useCompanyPermission();
+  const { canWrite } = useSubscription();
   const { tx, locale } = useHr();
   const { toast } = useToast();
   const runsKey = [`/api/companies/${companyId}/payroll-runs`];
@@ -214,16 +216,20 @@ export function RunsTab({ companyId }: { companyId: string }) {
 
   const downloadSif = async (r: PayrollRun) => {
     try {
-      const pre = (await apiRequest("GET", `/api/payroll-runs/${r.id}/sif-prevalidation`)) as {
-        ready: boolean;
-        issues: SifIssue[];
-      };
-      if (!pre.ready) {
-        setIssues(pre.issues);
-        return;
+      const path = `/api/payroll-runs/${r.id}/generate-sif`;
+      if (can("payroll.manage") && canWrite("payroll")) {
+        const pre = (await apiRequest("GET", `/api/payroll-runs/${r.id}/sif-prevalidation`)) as {
+          ready: boolean;
+          issues: SifIssue[];
+        };
+        if (!pre.ready) {
+          setIssues(pre.issues);
+          return;
+        }
+        await apiRequest("POST", path, {}, undefined, { queueWhenOffline: false });
+        refresh();
       }
-      await downloadFile(`/api/payroll-runs/${r.id}/generate-sif`, "payroll.SIF");
-      refresh();
+      await downloadFile(path, "payroll.SIF");
       toast({ title: tx("hr.sifDownloaded"), description: tx("hr.sifExternalNote") });
     } catch (err) {
       fail(err);

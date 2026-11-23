@@ -596,11 +596,9 @@ async function balanceSheetCore(
     if (a.type === "asset") {
       const net = t.debit - t.credit;
       if (net < 0 && !isContraAsset(a)) {
-        if (!isCashAccount(a)) {
-          curL.push([a, -net]);
-          continue;
-        }
-        overdrawnCash.push([a, net]);
+        if (isCashAccount(a)) overdrawnCash.push([a, net]);
+        curL.push([a, -net]);
+        continue;
       }
       (isNonCurrent(a) ? nonA : curA).push([a, net]);
     } else if (a.type === "liability") {
