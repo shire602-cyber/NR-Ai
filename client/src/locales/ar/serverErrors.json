@@ -1,4 +1,5 @@
 {
+  "serverErrors.STRIPE_CHECKOUT_IN_PROGRESS": "هناك عملية دفع قيد التنفيذ. أكملها في علامة التبويب الأصلية أو حاول مجددًا بعد انتهاء صلاحيتها.",
   "serverErrors.EINVOICE_NOT_REQUIRED": "الفوترة الإلكترونية غير مطلوبة لهذه المبيعة النقدية.",
   "serverErrors.AUTHORIZATION_RETRY": "تعذّر إكمال التفويض. أعد المحاولة.",
   "serverErrors.AUTHORIZATION_RESTART": "انتهت صلاحية التفويض. أعد بدءه من الصفحة التي بدأت منها، أو ارفع كشف حساب بصيغة CSV.",

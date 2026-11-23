@@ -88,6 +88,7 @@ export interface EInvoiceStatusView {
     | "needs_reconciliation";
   detail: string | null;
   contactId: string | null;
+  cashSaleBuyer?: { buyerType: "consumer" | "business" | "government" | null } | null;
   tracks: {
     delivery: { status: DeliveryStatus; at: string | null; confirmationUnavailable?: boolean };
     reporting: {

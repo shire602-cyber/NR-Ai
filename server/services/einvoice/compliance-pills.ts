@@ -7,6 +7,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   customerContacts,
+  einvoiceBuyerEndpoints,
   einvoiceDocuments,
   invoices,
   type Company,
@@ -15,7 +16,7 @@ import { db } from "../../db";
 import { projectEInvoiceDocument } from "./status-view";
 import { einvoiceMandateApplies } from "./scope";
 import { isReportingObservation, type DeliveryStatus, type ReportingStatus } from "./tracks";
-import { projectInvoiceTracks, reportingInvoiceColumns } from "./reporting";
+import { projectInvoiceTracks, reportingBuyerContact, reportingInvoiceColumns } from "./reporting";
 
 export interface CompliancePill {
   invoiceId: string;
@@ -55,6 +56,8 @@ export async function listCompliancePills(
       invoice: reportingInvoiceColumns,
       doc: einvoiceDocuments,
       linkedBuyerTrn: customerContacts.trnNumber,
+      endpointId: einvoiceBuyerEndpoints.participantId,
+      endpointScheme: einvoiceBuyerEndpoints.scheme,
     })
     .from(invoices)
     .leftJoin(
@@ -68,7 +71,14 @@ export async function listCompliancePills(
       customerContacts,
       and(
         eq(customerContacts.companyId, invoices.companyId),
-        eq(customerContacts.id, invoices.contactId)
+        eq(customerContacts.id, reportingBuyerContact)
+      )
+    )
+    .leftJoin(
+      einvoiceBuyerEndpoints,
+      and(
+        eq(einvoiceBuyerEndpoints.companyId, invoices.companyId),
+        eq(einvoiceBuyerEndpoints.contactId, customerContacts.id)
       )
     )
     .where(
@@ -80,14 +90,15 @@ export async function listCompliancePills(
     .orderBy(desc(invoices.date));
   const items: CompliancePill[] = [];
   const documents: DocumentEvidence[] = [];
-  for (const { invoice, doc, linkedBuyerTrn } of rows) {
+  for (const { invoice, doc, linkedBuyerTrn, endpointId, endpointScheme } of rows) {
     const status = String(invoice.status ?? "").toLowerCase();
     const t = projectInvoiceTracks(
       invoice,
       doc,
       company,
       now,
-      invoice.customerTrn || linkedBuyerTrn
+      invoice.einvoiceBuyerContactId ? linkedBuyerTrn : invoice.customerTrn || linkedBuyerTrn,
+      { endpointId, endpointScheme }
     );
     if (invoiceIds && doc) {
       const {

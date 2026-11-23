@@ -99,7 +99,7 @@ describe("R07-13 scope switch by turnover band", () => {
       einvoicingScope({ einvoiceScope: "b2b", einvoiceTurnoverBand: "large" }, today)
     ).toMatchObject({
       goLiveDate: "2027-01-01",
-      appointAspBy: "2026-07-31",
+      appointAspBy: "2026-10-30",
       mandatory: false,
       daysToGoLive: 47,
       source: "band",

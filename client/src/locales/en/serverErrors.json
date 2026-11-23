@@ -1,4 +1,5 @@
 {
+  "serverErrors.STRIPE_CHECKOUT_IN_PROGRESS": "A checkout is already in progress. Complete it in its original tab or try again after it expires.",
   "serverErrors.EINVOICE_NOT_REQUIRED": "E-invoicing is not required for this cash sale.",
   "serverErrors.AUTHORIZATION_RETRY": "Could not finish authorization. Try again.",
   "serverErrors.AUTHORIZATION_RESTART": "Authorization expired. Start again from where you began, or upload a CSV statement.",

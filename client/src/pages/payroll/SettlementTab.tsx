@@ -1,5 +1,6 @@
 import { errorHeading } from "@/lib/error-heading";
-import { useState } from "react";
+import { useContext, useState } from "react";
+import { TrialReadOnlyContext } from "@/lib/trial-access";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -74,6 +75,7 @@ interface SettlementRow {
 }
 
 export function SettlementTab({ companyId }: { companyId: string }) {
+  const readOnly = useContext(TrialReadOnlyContext);
   const { tx, locale } = useHr();
   const { toast } = useToast();
   const listKey = [`/api/companies/${companyId}/payroll/settlements`];
@@ -268,7 +270,7 @@ export function SettlementTab({ companyId }: { companyId: string }) {
               <Calculator className="me-2 h-4 w-4" />
               {tx("hr.preview")}
             </Button>
-            <Button disabled={!preview || post.isPending} onClick={() => post.mutate()}>
+            <Button disabled={readOnly || !preview || post.isPending} onClick={() => post.mutate()}>
               <FileCheck className="me-2 h-4 w-4" />
               {tx("hr.postSettlement")}
             </Button>
@@ -351,6 +353,7 @@ export function SettlementTab({ companyId }: { companyId: string }) {
                         <Button
                           size="sm"
                           variant="outline"
+                          disabled={readOnly}
                           data-testid={`settlement-pay-${s.id}`}
                           onClick={() => {
                             setPaying(s);
@@ -414,7 +417,7 @@ export function SettlementTab({ companyId }: { companyId: string }) {
               {tx("hr.cancel")}
             </Button>
             <Button
-              disabled={!payAccount || !payDate || pay.isPending}
+              disabled={readOnly || !payAccount || !payDate || pay.isPending}
               onClick={() => pay.mutate()}
               data-testid="settlement-pay-confirm"
             >

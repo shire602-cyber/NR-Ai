@@ -14,6 +14,7 @@ import {
 } from "../../../shared/schema";
 import { storage } from "../../storage";
 import { validateForEInvoicing } from "../einvoice.service";
+import { canRemediateCashSaleBuyer } from "./applicability";
 import { loadEInvoiceContext } from "./context";
 import {
   documentProviderEnvironment,
@@ -136,7 +137,14 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     : null;
   const isAcube = providerId === "acube";
   const providerStatus = doc?.providerStatus?.trim().toLowerCase();
-  const tracks = projectInvoiceTracks(invoice, doc, company, now, ctx.customer?.trn);
+  const tracks = projectInvoiceTracks(
+    invoice,
+    doc,
+    company,
+    now,
+    ctx.customer?.trn,
+    ctx.customer ?? undefined
+  );
   const applicable = tracks.delivery !== "not_applicable";
   const {
     delivery,
@@ -343,7 +351,10 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
           (!legacyRecovery && canRecoverAcubeSubmission(invoice, doc))),
     },
     issues: applicable ? issues : [],
-    contactId: invoice.contactId ?? null,
+    cashSaleBuyer: canRemediateCashSaleBuyer(invoice, doc)
+      ? { buyerType: invoice.buyerType }
+      : null,
+    contactId: invoice.einvoiceBuyerContactId ?? invoice.contactId ?? null,
     rejection: failed
       ? {
           environment: rejectionEnvironment,

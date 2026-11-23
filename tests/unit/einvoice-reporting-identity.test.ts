@@ -4,6 +4,7 @@ import {
   invoiceReportingDeadline,
   invoiceReportingRequired,
   projectReportingObligation,
+  projectInvoiceTracks,
 } from "../../server/services/einvoice/reporting";
 import { einvoicingScope } from "../../server/services/einvoice/scope";
 import { deriveInvoiceTracks, reportByDate } from "../../server/services/einvoice/tracks";
@@ -99,6 +100,9 @@ describe("reporting obligation of the frozen buyer", () => {
 describe("FTA reporting deadline projection", () => {
   const issued = {
     id: "issued-invoice",
+    source: "app",
+    buyerType: null,
+    einvoiceBuyerContactId: null,
     customerTrn: TRN,
     date: new Date("2026-03-01T00:00:00Z"),
     status: "sent",
@@ -109,6 +113,50 @@ describe("FTA reporting deadline projection", () => {
   };
   const document = (changes: Partial<EInvoiceDocument>) =>
     ({ status: "generated", ...changes }) as EInvoiceDocument;
+
+  it("projects both tracks for a business cash buyer with a Peppol endpoint and no VAT TRN", () => {
+    const invoice = {
+      ...issued,
+      source: "cash_sale",
+      buyerType: "business" as const,
+      customerTrn: null,
+    };
+    const endpoint = { endpointId: "1007654321", endpointScheme: "0235" };
+    const tracks = projectInvoiceTracks(invoice, null, company, now, null, endpoint);
+    expect(tracks).toMatchObject({
+      delivery: "validated",
+      reporting: "pending",
+      reportingRequired: true,
+      reportingObligationKnown: true,
+      reportBy: "2026-03-15",
+    });
+    expect(
+      projectInvoiceTracks(
+        { ...invoice, buyerType: "consumer" },
+        null,
+        company,
+        now,
+        null,
+        endpoint
+      )
+    ).toMatchObject({
+      delivery: "not_applicable",
+      reporting: "not_required",
+      reportingRequired: false,
+    });
+    expect(
+      projectInvoiceTracks(invoice, null, { ...company, einvoiceScope: "b2g" }, now, null, endpoint)
+        .reportingRequired
+    ).toBe(false);
+    const xml = buyerXml("CT", "1007654321").replace(
+      "<cac:PartyTaxScheme>",
+      '<cbc:EndpointID schemeID="0235">1007654321</cbc:EndpointID><cac:PartyTaxScheme>'
+    );
+    expect(invoiceReportingRequired({ ...invoice, einvoiceXml: xml }, company, now)).toBe(true);
+    expect(
+      invoiceReportingRequired({ ...invoice, buyerType: null, einvoiceXml: xml }, company, now)
+    ).toBe(true);
+  });
 
   it("re-evaluates a generated-only deadline until transmission work is queued", () => {
     const preview = document({

@@ -10,6 +10,7 @@ import {
   type Invoice,
   type ReminderSetting,
 } from "../../shared/schema";
+import { billingEnforced, companyEntitlement } from "../middleware/featureGate";
 import { createLogger } from "../config/logger";
 import { errorCode } from "../errors";
 import { assertPeriodNotLocked, lockPeriodPolicy } from "./period-lock.service";
@@ -694,6 +695,12 @@ export async function generateDueRecurringInvoices(): Promise<number> {
         seen.add(template.id);
         claimed = true;
         const now = new Date();
+        if (
+          billingEnforced() &&
+          (await companyEntitlement(template.companyId, now, tx))?.state === "expired"
+        ) {
+          return { skipped: true };
+        }
         const note = async (status: string, message: string, disable = false) => {
           await tx
             .update(recurringInvoicesTable)

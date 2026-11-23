@@ -73,11 +73,29 @@ export type ReceivePaymentInput = z.output<typeof receivePaymentSchema>;
  * POST /api/companies/:companyId/cash-sales — an invoice paid on the spot: the customer is
  * optional ("Cash customer"), the paid-through cash/bank account is required.
  */
+const cashSaleBuyerTypeSchema = z.enum(["consumer", "business", "government"]);
+
+export const cashSaleEInvoiceBuyerSchema = z
+  .object({ buyerType: cashSaleBuyerTypeSchema, contactId: zUuid.optional() })
+  .strict()
+  .superRefine(({ buyerType, contactId }, ctx) => {
+    if (buyerType === "consumer" ? !!contactId : !contactId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["contactId"],
+        message:
+          buyerType === "consumer" ? "Remove the contact for a consumer" : "Choose a buyer contact",
+      });
+    }
+  });
+
+export type CashSaleEInvoiceBuyer = z.output<typeof cashSaleEInvoiceBuyerSchema>;
+
 export const cashSaleSchema = z
   .object({
     ...invoiceHeaderShape,
     customerName: zText(300).optional().nullable(),
-    buyerType: z.enum(["consumer", "business", "government"]).optional(),
+    buyerType: cashSaleBuyerTypeSchema.optional(),
     paymentAccountId: zUuid,
     method: zText(40).optional(),
     reference: zText(200).optional().nullable(),

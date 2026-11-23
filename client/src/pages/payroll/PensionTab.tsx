@@ -1,5 +1,6 @@
 import { errorHeading } from "@/lib/error-heading";
-import { useState } from "react";
+import { useContext, useState } from "react";
+import { TrialReadOnlyContext } from "@/lib/trial-access";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Wallet } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -74,6 +75,7 @@ interface Account {
  * paid in the fund's own portal; this records the payment.
  */
 export function PensionTab({ companyId }: { companyId: string }) {
+  const readOnly = useContext(TrialReadOnlyContext);
   const { tx, locale } = useHr();
   const { toast } = useToast();
   const liabilityKey = [`/api/companies/${companyId}/payroll/pension-liability`];
@@ -160,7 +162,7 @@ export function PensionTab({ companyId }: { companyId: string }) {
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={!(Number(f.outstanding) > 0)}
+                        disabled={readOnly || !(Number(f.outstanding) > 0)}
                         onClick={() => {
                           setPaying(f);
                           setAmount(f.outstanding);
@@ -208,7 +210,7 @@ export function PensionTab({ companyId }: { companyId: string }) {
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={reverse.isPending}
+                          disabled={readOnly || reverse.isPending}
                           onClick={() => reverse.mutate(p.id)}
                         >
                           {tx("hr.pension.reverse")}
@@ -279,7 +281,7 @@ export function PensionTab({ companyId }: { companyId: string }) {
               <Button type="button" variant="outline" onClick={() => setPaying(null)}>
                 {tx("hr.cancel")}
               </Button>
-              <Button type="submit" disabled={!account || !amount || pay.isPending}>
+              <Button type="submit" disabled={readOnly || !account || !amount || pay.isPending}>
                 {tx("hr.pension.pay")}
               </Button>
             </FormActions>

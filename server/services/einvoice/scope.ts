@@ -2,8 +2,7 @@
  * UAE e-invoicing scope switch (R07-13): who must e-invoice and from when.
  *
  * Phased timeline as published by the UAE Ministry of Finance (Ministerial
- * Decisions 243 and 244 of 2025; NOT independently verified, so the UI presents them as guidance
- * to confirm per entity). Revenue threshold for "large" is AED 50 million. A
+ * Decisions 243 and 244 of 2025 and Decision 66 of 2026). Revenue threshold for "large" is AED 50 million. A
  * company may store an explicit go-live date (e.g. a voluntary early
  * adoption, or a revised FTA date) which overrides the band.
  */
@@ -20,7 +19,7 @@ export const EINVOICE_TIMELINE: Record<
   { appointAspBy: string; goLive: string; label: { en: string; ar: string } }
 > = {
   large: {
-    appointAspBy: "2026-07-31",
+    appointAspBy: "2026-10-30",
     goLive: "2027-01-01",
     label: {
       en: "Revenue of AED 50 million or more",

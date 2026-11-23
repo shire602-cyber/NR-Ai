@@ -3,7 +3,7 @@
  *
  * Every assertion reads the real ledger (journal_lines × accounts) of a fresh tenant.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -511,6 +511,54 @@ describe("W3-A sales cycle", () => {
     expect(rows[0].n).toBe(2);
     const status = await h.sql("SELECT status FROM quotes WHERE id = $1", [q.body.id]);
     expect(status[0].status).toBe("converted");
+  });
+
+  it("[PR93-3] skips expired auto-issue templates before changing invoices, journals or schedules", async () => {
+    const active = await h.createTenant();
+    const expired = await h.createSecondTenant();
+    async function due(t: Tenant) {
+      const created = await t.as.post(`/api/companies/${t.company.id}/recurring-invoices`, {
+        customerName: "Monthly Customer",
+        frequency: "monthly",
+        startDate: today(),
+        autoIssue: true,
+        lines: [{ description: "Retainer", quantity: 1, unitPrice: 100, vatRate: 5 }],
+      });
+      expect(created.status, created.text).toBe(200);
+      return created.body.id as string;
+    }
+    const activeId = await due(active);
+    const expiredId = await due(expired);
+    await h.sql(
+      "UPDATE subscriptions SET trial_ends_at = now() - interval '1 day' WHERE company_id = $1",
+      [expired.company.id]
+    );
+    const state = async (tenant: Tenant, id: string) => ({
+      invoices: await h.sql("SELECT id, status FROM invoices WHERE company_id = $1 ORDER BY id", [
+        tenant.company.id,
+      ]),
+      journal: await h.sql("SELECT id FROM journal_entries WHERE company_id = $1 ORDER BY id", [
+        tenant.company.id,
+      ]),
+      schedule: await h.sql("SELECT * FROM recurring_invoices WHERE id = $1", [id]),
+    });
+    const beforeExpired = await state(expired, expiredId);
+    const beforeActive = await state(active, activeId);
+    const { generateDueRecurringInvoices } =
+      await import("../../server/services/scheduler.service");
+    vi.stubEnv("BILLING_ENFORCEMENT", "true");
+    try {
+      await generateDueRecurringInvoices();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(await state(expired, expiredId)).toEqual(beforeExpired);
+    const afterActive = await state(active, activeId);
+    expect(afterActive.invoices).toEqual([{ id: expect.any(String), status: "sent" }]);
+    expect(afterActive.journal).toHaveLength(beforeActive.journal.length + 1);
+    expect(afterActive.schedule[0].next_run_date).not.toEqual(
+      beforeActive.schedule[0].next_run_date
+    );
   });
 
   it("[R03-12][R03-23] a EUR recurring template generates an invoice at the company EUR rate with the correct AED posting", async () => {

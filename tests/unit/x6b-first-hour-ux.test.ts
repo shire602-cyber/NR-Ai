@@ -35,6 +35,7 @@ vi.mock("../../client/src/lib/queryClient", async () => {
 vi.mock("../../client/src/hooks/useCompanyPermission", () => ({
   useCompanyPermission: () => ({
     can: () => perm.can,
+    canRead: () => !perm.known || perm.can,
     gate: () => ({}),
     known: perm.known,
   }),

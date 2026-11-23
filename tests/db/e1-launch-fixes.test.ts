@@ -2,7 +2,7 @@
  * E1 launch fixes (J1-r2 / J2-r2): the AED/USD peg is the default rate for the pegged pair, and
  * the VAT Periods tab / due-date list follow the same "applies from" rule as the dashboard.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -137,6 +137,33 @@ describe("E1 compliance obligations and the Periods tab (J3-r2)", () => {
       expect(String(s.periodEnd) >= today.slice(0, 7), `${s.key} starts before the books`).toBe(
         true
       );
+    }
+  });
+
+  it("[PR93-5] returns VAT boxes in expired preview mode without updating the stored snapshot", async () => {
+    const t = await h.createTenant();
+    const base = `/api/vat/autopilot/calculate/${t.company.id}?periodStart=2026-07-01&periodEnd=2026-09-30`;
+    const saved = await t.as.get(base);
+    expect(saved.status, saved.text).toBe(200);
+    const periodId = saved.body.periodId;
+    expect(periodId).toBeTruthy();
+    const read = () => h.sql("SELECT * FROM vat_return_periods WHERE id = $1", [periodId]);
+    // Distinguish the stored snapshot from the calculation that would overwrite it.
+    await h.sql("UPDATE vat_return_periods SET output_vat = 123.45 WHERE id = $1", [periodId]);
+    const before = await read();
+    await h.sql(
+      "UPDATE subscriptions SET trial_ends_at = now() - interval '1 day' WHERE company_id = $1",
+      [t.company.id]
+    );
+    vi.stubEnv("BILLING_ENFORCEMENT", "true");
+    try {
+      expect((await t.as.get(base)).status).toBe(402);
+      const preview = await t.as.get(base + "&persist=false");
+      expect(preview.status, preview.text).toBe(200);
+      expect(preview.body).toMatchObject({ periodId: null, boxes: saved.body.boxes });
+      expect(await read()).toEqual(before);
+    } finally {
+      vi.unstubAllEnvs();
     }
   });
 

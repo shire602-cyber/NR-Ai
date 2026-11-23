@@ -386,23 +386,19 @@ export function acubeStatusErrorCode(raw: unknown): string | null {
   return null;
 }
 
-/**
- * Must this invoice be reported to the FTA? B2C supplies (no buyer TRN) are out of scope of the
- * UAE mandate's first phases, and a company that set its scope to "none" reports nothing.
- */
+/** Apply the mandate to the transaction. Legacy documents can identify the buyer by TRN or endpoint. */
 export function reportingRequired(args: {
+  buyerType?: "consumer" | "business" | "government" | null;
   customerTrn?: string | null;
+  hasBuyerEndpoint?: boolean;
   companyScope?: string | null;
-  /**
-   * Does the e-invoicing mandate actually apply to this company yet (go-live reached for its
-   * scope/band, or an explicit opt-in go-live date that has been reached)? Defaults to true for
-   * callers that only test the buyer/scope rules; invoice-level callers must pass it.
-   */
   mandateApplies?: boolean;
 }): boolean {
-  if (args.mandateApplies === false) return false;
-  if (args.companyScope === "none") return false;
-  return !!args.customerTrn && /^\d{15}$/.test(args.customerTrn.trim());
+  if (args.mandateApplies === false || args.companyScope === "none") return false;
+  if (args.buyerType === "consumer") return false;
+  if (args.buyerType === "business") return args.companyScope !== "b2g";
+  if (args.buyerType === "government") return args.companyScope !== "b2b";
+  return !!args.hasBuyerEndpoint || /^\d{15}$/.test(args.customerTrn?.trim() ?? "");
 }
 
 /**

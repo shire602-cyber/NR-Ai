@@ -6,6 +6,7 @@ import {
   type PlanLimits as SharedPlanLimits,
 } from "../../shared/plans";
 import Stripe from "stripe";
+import type { Company } from "../../shared/schema";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
 import { getEnv } from "../config/env";
@@ -97,6 +98,55 @@ export async function billableSeats(companyId: string): Promise<number> {
 const perSeat = () => process.env.STRIPE_PER_SEAT === "true";
 
 const CHECKOUT_MIN_TRIAL_SECONDS = 48 * 60 * 60;
+// Stripe requires at least 30 minutes. Include time for the coupon and session API calls.
+const FIRST_CHECKOUT_SECONDS = 35 * 60;
+
+function checkoutInProgress() {
+  return new DomainError(
+    "STRIPE_CHECKOUT_IN_PROGRESS",
+    409,
+    undefined,
+    "A checkout is already in progress. Complete it in its original tab or try again after it expires."
+  );
+}
+
+async function reserveFirstCheckout(stripeClient: Stripe, company: Company, customerId: string) {
+  const previous = company.stripeFirstCheckoutExpiresAt ?? null;
+  if (previous && previous.getTime() > Date.now()) throw checkoutInProgress();
+
+  // Check Stripe even if creation lost its response or the completion webhook is delayed.
+  // With no reservation, also check for sessions created before this guard was deployed.
+  const previousExpiry = previous ? Math.floor(previous.getTime() / 1000) : null;
+  const createdAfter =
+    previousExpiry === null
+      ? Math.floor(Date.now() / 1000) - 24 * 60 * 60
+      : previousExpiry - FIRST_CHECKOUT_SECONDS;
+  for await (const session of stripeClient.checkout.sessions.list({
+    customer: customerId,
+    created: { gte: createdAfter },
+  })) {
+    if (
+      session.mode === "subscription" &&
+      session.status !== "expired" &&
+      (previousExpiry === null || session.metadata?.firstCheckoutExpiry === String(previousExpiry))
+    ) {
+      throw checkoutInProgress();
+    }
+  }
+  const expiresAt = Math.floor(Date.now() / 1000) + FIRST_CHECKOUT_SECONDS;
+  const result = await pq(
+    `UPDATE companies
+        SET stripe_first_checkout_expires_at = $2
+      WHERE id = $1 AND stripe_first_checkout_expires_at IS NOT DISTINCT FROM $3
+        AND NOT EXISTS (
+          SELECT 1 FROM subscriptions WHERE company_id = $1
+            AND (stripe_checkout_completed OR stripe_subscription_id IS NOT NULL OR plan_id <> 'free')
+        )`,
+    [company.id, new Date(expiresAt * 1000), previous]
+  );
+  if (!result.rowCount) throw checkoutInProgress();
+  return expiresAt;
+}
 
 export async function createCheckoutSession(
   companyId: string,
@@ -113,33 +163,39 @@ export async function createCheckoutSession(
 
   // Get or create Stripe customer
   const subscription = await storage.getSubscription(companyId);
-  let customerId = subscription?.stripeCustomerId;
+  if (!subscription) throw new DomainError("SUBSCRIPTION_NOT_FOUND", 404);
+  const company = await storage.getCompany(companyId);
+  if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
+  let customerId = subscription.stripeCustomerId;
 
   if (!customerId) {
-    const company = await storage.getCompany(companyId);
-    const customer = await stripeClient.customers.create({
-      metadata: { companyId, planId },
-      name: company?.name || undefined,
-      email: company?.contactEmail || undefined,
-    });
+    const customer = await stripeClient.customers.create(
+      {
+        metadata: { companyId },
+        name: company.name || undefined,
+        email: company.contactEmail || undefined,
+      },
+      { idempotencyKey: "checkout-customer:" + companyId }
+    );
     customerId = customer.id;
-    if (subscription) {
-      await storage.updateSubscription(subscription.id, { stripeCustomerId: customerId });
-    }
+    await storage.updateSubscription(subscription.id, { stripeCustomerId: customerId });
   }
 
   // A first paid invoice can earn a referral discount even after the product trial ends.
   const firstSubscription =
-    !subscription?.stripeCheckoutCompleted &&
-    !subscription?.stripeSubscriptionId &&
-    (subscription?.planId ?? "free") === "free";
+    !subscription.stripeCheckoutCompleted &&
+    !subscription.stripeSubscriptionId &&
+    subscription.planId === "free";
+  const firstCheckoutExpiry = firstSubscription
+    ? await reserveFirstCheckout(stripeClient, company, customerId)
+    : null;
   const quantity = perSeat() ? await billableSeats(companyId) : 1;
   // Referee reward: a percent-off coupon applied to the first paid invoice.
   const coupon = firstSubscription ? await refereeCouponFor(companyId) : null;
   const vatTaxRate = process.env.STRIPE_TAX_RATE_VAT;
 
   const trialEnd =
-    firstSubscription && subscription?.trialEndsAt
+    firstSubscription && subscription.trialEndsAt
       ? Math.floor(subscription.trialEndsAt.getTime() / 1000)
       : 0;
   const hasRemainingTrial = trialEnd >= Math.ceil(Date.now() / 1000) + CHECKOUT_MIN_TRIAL_SECONDS;
@@ -150,7 +206,13 @@ export async function createCheckoutSession(
     line_items: [{ price: priceId, quantity, ...(vatTaxRate ? { tax_rates: [vatTaxRate] } : {}) }],
     success_url: successUrl,
     cancel_url: cancelUrl,
-    metadata: { companyId, planId, billingCycle },
+    metadata: {
+      companyId,
+      planId,
+      billingCycle,
+      ...(firstCheckoutExpiry ? { firstCheckoutExpiry: String(firstCheckoutExpiry) } : {}),
+    },
+    ...(firstCheckoutExpiry ? { expires_at: firstCheckoutExpiry } : {}),
     ...(coupon ? { discounts: [{ coupon }] } : {}),
     ...(process.env.STRIPE_AUTOMATIC_TAX === "true" ? { automatic_tax: { enabled: true } } : {}),
     subscription_data: {

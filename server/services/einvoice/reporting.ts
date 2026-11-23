@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   invoices,
   type Company,
@@ -6,6 +7,7 @@ import {
 } from "../../../shared/schema";
 import { isB2cCashSale } from "./applicability";
 import { first, parseXml, partyVatTrn, textAt } from "./dom";
+import { PEPPOL_SCHEME_UAE_TIN, tinFromTrn, uaePeppolEndpointIssue } from "./pint-ae-codes";
 import { einvoiceMandateApplies } from "./scope";
 import { deriveInvoiceTracks, reportByDate, reportingRequired } from "./tracks";
 import {
@@ -14,14 +16,23 @@ import {
   submissionProviderPin,
 } from "./store";
 
-type InvoiceBuyer = Pick<Invoice, "customerTrn"> & Partial<Pick<Invoice, "einvoiceXml">>;
+type InvoiceBuyer = Pick<Invoice, "customerTrn"> &
+  Partial<Pick<Invoice, "einvoiceXml" | "buyerType">>;
+
+type BuyerEndpoint = { endpointScheme?: string | null; endpointId?: string | null };
+
+export const reportingBuyerContact = sql<string>`coalesce(${invoices.einvoiceBuyerContactId}, ${invoices.contactId})`;
 
 function readReportingSource(xml: string | null | undefined) {
   if (!xml) return null;
   try {
     const root = parseXml(xml).documentElement;
+    const party = first(root, "cac:AccountingCustomerParty/cac:Party");
+    const endpoint = party && first(party, "cbc:EndpointID");
     return {
-      customerTrn: partyVatTrn(first(root, "cac:AccountingCustomerParty/cac:Party")),
+      customerTrn: partyVatTrn(party),
+      endpointId: endpoint?.textContent ?? null,
+      endpointScheme: endpoint?.getAttribute("schemeID") ?? null,
       issueDate: textAt(root, "cbc:IssueDate"),
     };
   } catch {
@@ -29,16 +40,26 @@ function readReportingSource(xml: string | null | undefined) {
   }
 }
 
-/** A frozen document determines whether its buyer was VAT-registered. */
+/** Use the issued XML for buyer identity when freezing the transaction obligation. */
 export function invoiceReportingRequired(
   invoice: InvoiceBuyer,
   company: Company,
   now: Date = new Date(),
-  resolvedBuyerTrn: string | null | undefined = invoice.customerTrn
+  resolvedBuyerTrn: string | null | undefined = invoice.customerTrn,
+  liveEndpoint?: BuyerEndpoint
 ): boolean {
   const source = readReportingSource(invoice.einvoiceXml);
+  const customerTrn = source ? source.customerTrn : resolvedBuyerTrn;
+  const endpoint = source ?? liveEndpoint;
+  const scheme = endpoint?.endpointScheme?.trim() || PEPPOL_SCHEME_UAE_TIN;
+  const id = endpoint?.endpointId?.trim();
   return reportingRequired({
-    customerTrn: source ? source.customerTrn : resolvedBuyerTrn,
+    buyerType: invoice.buyerType,
+    customerTrn,
+    hasBuyerEndpoint:
+      !!id &&
+      /^\d{4}$/.test(scheme) &&
+      !uaePeppolEndpointIssue(scheme, id, tinFromTrn(customerTrn)),
     companyScope: company.einvoiceScope,
     mandateApplies: einvoiceMandateApplies(company, now),
   });
@@ -54,6 +75,7 @@ export const reportingInvoiceColumns = {
   status: invoices.status,
   source: invoices.source,
   buyerType: invoices.buyerType,
+  einvoiceBuyerContactId: invoices.einvoiceBuyerContactId,
   customerTrn: invoices.customerTrn,
   einvoiceStatus: invoices.einvoiceStatus,
   einvoiceProvider: invoices.einvoiceProvider,
@@ -79,7 +101,8 @@ export function projectReportingObligation(
   doc: EInvoiceDocument | null | undefined,
   company: Company,
   now: Date,
-  resolvedBuyerTrn: string | null | undefined = invoice?.customerTrn
+  resolvedBuyerTrn: string | null | undefined = invoice?.customerTrn,
+  liveEndpoint?: BuyerEndpoint
 ) {
   const attempted =
     !invoice ||
@@ -99,11 +122,18 @@ export function projectReportingObligation(
   }
   // Generate can leave XML behind before submission. Only a queued revision freezes the buyer.
   const required = invoiceReportingRequired(
-    { customerTrn: resolvedBuyerTrn ?? null },
+    { buyerType: invoice.buyerType, customerTrn: resolvedBuyerTrn ?? null },
     company,
-    now
+    now,
+    resolvedBuyerTrn,
+    liveEndpoint
   );
-  return { required, known: true, reportBy: required ? reportByDate(invoice.date) : null };
+  const buyerUnknown =
+    !required &&
+    invoice.source === "cash_sale" &&
+    !invoice.buyerType &&
+    einvoiceMandateApplies(company, now);
+  return { required, known: !buyerUnknown, reportBy: required ? reportByDate(invoice.date) : null };
 }
 
 export function projectInvoiceTracks(
@@ -111,7 +141,8 @@ export function projectInvoiceTracks(
   doc: EInvoiceDocument | null | undefined,
   company: Company,
   now: Date,
-  resolvedBuyerTrn: string | null | undefined = invoice?.customerTrn
+  resolvedBuyerTrn: string | null | undefined = invoice?.customerTrn,
+  liveEndpoint?: BuyerEndpoint
 ) {
   if (
     invoice &&
@@ -137,7 +168,14 @@ export function projectInvoiceTracks(
     provider: invoice?.einvoiceProvider,
     providerMessageId: invoice?.einvoiceProviderMessageId,
     doc: doc ?? null,
-    obligation: projectReportingObligation(invoice, doc, company, now, resolvedBuyerTrn),
+    obligation: projectReportingObligation(
+      invoice,
+      doc,
+      company,
+      now,
+      resolvedBuyerTrn,
+      liveEndpoint
+    ),
     now,
   });
 }
