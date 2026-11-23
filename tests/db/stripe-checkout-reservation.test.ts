@@ -34,12 +34,13 @@ beforeEach(() => {
   stripe.createSession.mockResolvedValue({ url: "https://checkout.example.test" });
 });
 
-it("[PR93-6] atomically reserves one first checkout per company and reopens it after abandonment", async () => {
+it.each([false, true])("[PR95] reserves checkout (returning: %s)", async (returning) => {
   const t = await h.createTenant();
   const companyId = t.company.id;
   await h.sql(
-    "UPDATE subscriptions SET stripe_customer_id = 'fixture-customer', trial_ends_at = now() + interval '4 days' WHERE company_id = $1",
-    [companyId]
+    `UPDATE subscriptions SET stripe_customer_id = 'fixture-customer',
+      trial_ends_at = now() + interval '4 days', stripe_checkout_completed = $2 WHERE company_id = $1`,
+    [companyId, returning]
   );
   const { createCheckoutSession, handleWebhookEvent, PLAN_PRICE_MAP } =
     await import("../../server/services/stripe.service");
@@ -73,13 +74,27 @@ it("[PR93-6] atomically reserves one first checkout per company and reopens it a
     });
     expect(stripe.createSession).toHaveBeenCalledTimes(1);
     const first = stripe.createSession.mock.calls[0][0] as Stripe.Checkout.SessionCreateParams;
-    expect(first.subscription_data?.trial_end).toBeDefined();
+    if (returning) expect(first.subscription_data?.trial_end).toBeUndefined();
+    else expect(first.subscription_data?.trial_end).toBeDefined();
     const [company] = await h.sql<{ expires: number }>(
       "SELECT extract(epoch FROM stripe_first_checkout_expires_at)::integer AS expires FROM companies WHERE id = $1",
       [companyId]
     );
     expect(company.expires).toBe(first.expires_at);
-    await expect(checkout()).rejects.toMatchObject({ code: "STRIPE_CHECKOUT_IN_PROGRESS" });
+    expect(stripe.createSession.mock.calls[0][1]).toEqual({
+      idempotencyKey: `checkout-session:${companyId}:${company.expires}`,
+    });
+    stripe.listSessions.mockReturnValue([
+      { mode: "subscription", status: "open", metadata: first.metadata },
+    ]);
+    const retries = await Promise.allSettled([checkout(), checkout()]);
+    for (const retry of retries) {
+      expect(retry).toMatchObject({
+        status: "rejected",
+        reason: { code: "STRIPE_CHECKOUT_IN_PROGRESS" },
+      });
+    }
+    expect(stripe.createSession).toHaveBeenCalledTimes(1);
 
     vi.spyOn(Date, "now").mockReturnValue((company.expires + 1) * 1000);
     stripe.listSessions.mockReturnValue([
@@ -174,9 +189,21 @@ it("[PR94] changes Starter to Professional on the existing Stripe subscription",
 });
 
 it.each([
-  { scenario: "a returning customer", returning: true, ageHours: 1 },
-  { scenario: "a pre-migration checkout older than 24 hours", returning: false, ageHours: 48 },
-])("[PR94] recovers paid entitlement for $scenario", async ({ returning, ageHours }) => {
+  { scenario: "a returning customer", returning: true, ageHours: 1, sessionOnly: false },
+  {
+    scenario: "a pre-migration checkout older than 24 hours",
+    returning: false,
+    ageHours: 48,
+    sessionOnly: false,
+  },
+  {
+    scenario: "an older checkout with plan metadata only on the session",
+    returning: false,
+    ageHours: 48,
+    sessionOnly: true,
+  },
+])("[PR95] recovers paid entitlement for $scenario", async (fixture) => {
+  const { returning, ageHours, sessionOnly } = fixture;
   const t = await h.createTenant();
   const companyId = t.company.id;
   const customer = "fixture-customer";
@@ -218,7 +245,7 @@ it.each([
       {
         id: subscriptionId,
         customer,
-        metadata,
+        metadata: sessionOnly ? {} : metadata,
         created,
         status: "active",
         cancel_at_period_end: false,
@@ -231,6 +258,8 @@ it.each([
     expect(retry.status).toBe(200);
     expect(retry.body).toEqual({ url: expect.stringMatching(/\/subscription\?success=true$/) });
     expect(stripe.listSubscriptions).toHaveBeenCalledWith({ customer, status: "all" });
+    if (sessionOnly)
+      expect(stripe.listSessions).toHaveBeenCalledWith({ subscription: subscriptionId });
     expect(stripe.createSession).toHaveBeenCalledTimes(returning ? 1 : 0);
     const billing = await t.as.get(`/api/companies/${companyId}/billing/subscription`);
     expect(billing.body).toMatchObject({

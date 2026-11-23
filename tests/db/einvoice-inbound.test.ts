@@ -8,6 +8,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import { PINT_AE_FIXTURES, fixtureCompany, type PintAeFixture } from "../fixtures/pint-ae/fixtures";
 
+const h = useHarness();
 type Generate = typeof import("../../server/services/einvoice.service").generateEInvoiceXML;
 let generateEInvoiceXML: Generate;
 beforeAll(async () => {
@@ -25,7 +26,6 @@ function signInbound(raw: Buffer, ts: string, companyId: string, secret: string)
   return `sha256=${mac}`;
 }
 
-const h = useHarness();
 const SECRET = "inbound-test-secret-0123456789abcdef";
 const BUYER_TRN = "100555666700003";
 

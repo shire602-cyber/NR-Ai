@@ -210,13 +210,31 @@ describe("Stripe checkout product trial and referral", () => {
     expect(stripe.createSession).not.toHaveBeenCalled();
   });
 
-  it("reserves before creating a session, even when overlapping requests read the same state", async () => {
+  it("recovers session-only plan metadata from the completed checkout with matching IDs", async () => {
     const subscription = {
-      planId: "free",
+      companyId: "company",
       stripeCustomerId: "fixture-customer",
-      trialEndsAt: new Date(now.getTime() + 96 * hour),
+      stripeCheckoutCompleted: true,
     };
     stripe.getSubscription.mockResolvedValue(subscription);
+    stripe.applyStripeCheckout.mockResolvedValue(true);
+    stripe.listSubscriptions.mockReturnValue([
+      { ...currentStripeSubscription, status: "active", metadata: {} },
+    ]);
+    const completed = {
+      mode: "subscription",
+      status: "complete",
+      customer: { id: "fixture-customer" },
+      subscription: { id: "first-subscription" },
+      metadata: { companyId: "company", planId: "professional", billingCycle: "yearly" },
+    };
+    const unrelated = [
+      { ...completed, status: "open" },
+      { ...completed, metadata: { ...completed.metadata, companyId: "other-company" } },
+      { ...completed, customer: "other-customer" },
+      { ...completed, subscription: "other-subscription" },
+    ];
+    stripe.listSessions.mockReturnValue(unrelated);
     const request = () =>
       createCheckoutSession(
         "company",
@@ -225,14 +243,51 @@ describe("Stripe checkout product trial and referral", () => {
         "https://example.test/success",
         "https://example.test/cancel"
       );
-    const results = await Promise.allSettled([request(), request()]);
-    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-    expect(results.find((result) => result.status === "rejected")).toMatchObject({
-      reason: { code: "STRIPE_CHECKOUT_IN_PROGRESS" },
-    });
-    expect(stripe.createSession).toHaveBeenCalledTimes(1);
-    expect(stripe.createCoupon).toHaveBeenCalledTimes(1);
+    await expect(request()).rejects.toMatchObject({ code: "STRIPE_CHECKOUT_IN_PROGRESS" });
+    expect(stripe.applyStripeCheckout).not.toHaveBeenCalled();
+
+    stripe.listSessions.mockReturnValue([...unrelated, completed]);
+    await expect(request()).resolves.toBe("https://example.test/success");
+    expect(stripe.listSessions).toHaveBeenCalledWith({ subscription: "first-subscription" });
+    expect(stripe.applyStripeCheckout).toHaveBeenCalledExactlyOnceWith(
+      subscription,
+      expect.objectContaining({
+        planId: "professional",
+        billingCycle: "yearly",
+        status: "active",
+        stripeSubscriptionId: "first-subscription",
+      })
+    );
+    expect(stripe.createSession).not.toHaveBeenCalled();
   });
+
+  it.each([false, true])(
+    "reserves before overlapping checkouts create a session (returning: %s)",
+    async (returning) => {
+      const subscription = {
+        planId: "free",
+        stripeCustomerId: "fixture-customer",
+        stripeCheckoutCompleted: returning,
+        trialEndsAt: new Date(now.getTime() + 96 * hour),
+      };
+      stripe.getSubscription.mockResolvedValue(subscription);
+      const request = () =>
+        createCheckoutSession(
+          "company",
+          "starter",
+          "monthly",
+          "https://example.test/success",
+          "https://example.test/cancel"
+        );
+      const results = await Promise.allSettled([request(), request()]);
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      expect(results.find((result) => result.status === "rejected")).toMatchObject({
+        reason: { code: "STRIPE_CHECKOUT_IN_PROGRESS" },
+      });
+      expect(stripe.createSession).toHaveBeenCalledTimes(1);
+      expect(stripe.createCoupon).toHaveBeenCalledTimes(returning ? 0 : 1);
+    }
+  );
 
   it.each(["expired", "complete", "open"] as const)(
     "checks the earlier Stripe session after the reservation expires (%s)",
@@ -380,6 +435,19 @@ describe("Stripe checkout product trial and referral", () => {
     } as unknown as Stripe.Event);
     expect(subscription.stripeSubscriptionId).toBeNull();
     expect(stripe.applyStripeCheckout).toHaveBeenCalledTimes(1);
+    stripe.listSessions.mockReturnValue([
+      {
+        mode: "subscription",
+        status: "complete",
+        customer: "fixture-customer",
+        subscription: "first-subscription",
+        metadata: currentStripeSubscription.metadata,
+      },
+    ]);
+    stripe.retrieveSubscription.mockResolvedValue({
+      ...currentStripeSubscription,
+      status: "canceled",
+    });
     await createCheckoutSession(
       "company",
       "starter",
