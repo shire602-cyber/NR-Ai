@@ -508,7 +508,7 @@ describe("[C1][RM4] opening trial balance control balances", () => {
 // ─── RM5 ─────────────────────────────────────────────────────────────────────
 
 describe("[C1][RM5] firm VAT workpaper rows post through invoices and bills", () => {
-  it("[RM5] a manual sales row issues an invoice (Dr 1040 / Cr 4010 / Cr 2020); the aging ties and a pull does not count it twice", async () => {
+  it("[RM5] a manual sales row issues an invoice (Dr 1040 / Cr 4020 / Cr 2020); the aging ties and a pull does not count it twice", async () => {
     const t = await vatTenant("C1RM5");
     const wp = await t.as.post(`${base(t)}/vat-workpapers`, {
       periodStart: "2026-10-01",
@@ -536,7 +536,7 @@ describe("[C1][RM5] firm VAT workpaper rows post through invoices and bills", ()
     expect(await linesOf(posted.body.journalEntryId)).toEqual({
       "1040": [1050, 0],
       "2020": [0, 50],
-      "4010": [0, 1000],
+      "4020": [0, 1000],
     });
     const bare = await h.sql<{ n: number }>(
       `SELECT count(*)::int AS n FROM journal_entries WHERE company_id = $1 AND source = 'vat_workpaper_row'`,

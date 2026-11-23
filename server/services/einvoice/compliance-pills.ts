@@ -7,6 +7,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   customerContacts,
+  einvoiceBuyerEndpoints,
   einvoiceDocuments,
   invoices,
   type Company,
@@ -55,6 +56,7 @@ export async function listCompliancePills(
       invoice: reportingInvoiceColumns,
       doc: einvoiceDocuments,
       linkedBuyerTrn: customerContacts.trnNumber,
+      buyerEndpoint: einvoiceBuyerEndpoints.participantId,
     })
     .from(invoices)
     .leftJoin(
@@ -71,6 +73,13 @@ export async function listCompliancePills(
         eq(customerContacts.id, invoices.contactId)
       )
     )
+    .leftJoin(
+      einvoiceBuyerEndpoints,
+      and(
+        eq(einvoiceBuyerEndpoints.companyId, invoices.companyId),
+        eq(einvoiceBuyerEndpoints.contactId, customerContacts.id)
+      )
+    )
     .where(
       and(
         eq(invoices.companyId, company.id),
@@ -80,14 +89,15 @@ export async function listCompliancePills(
     .orderBy(desc(invoices.date));
   const items: CompliancePill[] = [];
   const documents: DocumentEvidence[] = [];
-  for (const { invoice, doc, linkedBuyerTrn } of rows) {
+  for (const { invoice, doc, linkedBuyerTrn, buyerEndpoint } of rows) {
     const status = String(invoice.status ?? "").toLowerCase();
     const t = projectInvoiceTracks(
       invoice,
       doc,
       company,
       now,
-      invoice.customerTrn || linkedBuyerTrn
+      invoice.customerTrn || linkedBuyerTrn,
+      buyerEndpoint
     );
     if (invoiceIds && doc) {
       const {
@@ -121,6 +131,7 @@ export async function listCompliancePills(
     }
     if (status === "draft" || status === "void" || status === "cancelled") continue;
     if (
+      t.delivery !== "not_applicable" &&
       !mandateApplies &&
       t.reportingObligationKnown &&
       !t.reportingRequired &&

@@ -311,17 +311,17 @@ export function registerInvoiceShareRoutes(app: Express) {
       }
 
       const lines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
+      const shareUrl =
+        invoice.status === "draft" || invoice.status === "cancelled"
+          ? null
+          : await ensureShareUrl(invoice);
       const pdfBuffer = await generateInvoicePDF(
-        invoice,
+        shareUrl ? ((await storage.getInvoice(invoice.id, invoice.companyId)) ?? invoice) : invoice,
         lines,
         company,
         await invoicePdfOptions(invoice)
       );
 
-      const shareUrl =
-        invoice.status === "draft" || invoice.status === "cancelled"
-          ? null
-          : await ensureShareUrl(invoice);
       const openFils =
         !shareUrl || invoice.invoiceType === "credit_note" ? 0 : await invoiceOpenFils(db, invoice);
       const customer = invoice.contactId
@@ -398,14 +398,14 @@ export function registerInvoiceShareRoutes(app: Express) {
 
       const newReminderCount = (invoice.reminderCount || 0) + 1;
       const lines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
+      const shareUrl = await ensureShareUrl(invoice);
       const pdfBuffer = await generateInvoicePDF(
-        invoice,
+        shareUrl ? ((await storage.getInvoice(invoice.id, invoice.companyId)) ?? invoice) : invoice,
         lines,
         company,
         await invoicePdfOptions(invoice)
       );
 
-      const shareUrl = await ensureShareUrl(invoice);
       const openFils = await invoiceOpenFils(db, invoice);
       const customer = invoice.contactId
         ? await storage.getCustomerContact(invoice.contactId)

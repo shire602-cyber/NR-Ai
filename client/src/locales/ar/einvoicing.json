@@ -5,6 +5,7 @@
   "einvoicing.navEInvoicing": "الفوترة الإلكترونية (الإمارات)",
   "einvoicing.trackDelivery": "التسليم إلى العميل",
   "einvoicing.trackReporting": "الإبلاغ إلى الهيئة الاتحادية للضرائب",
+  "einvoicing.delivery_not_applicable": "لا ينطبق",
   "einvoicing.delivery_draft": "لم يُنشأ بعد",
   "einvoicing.delivery_validated": "تم التحقق، لم يُرسل",
   "einvoicing.delivery_queued": "لدى مزود الخدمة",

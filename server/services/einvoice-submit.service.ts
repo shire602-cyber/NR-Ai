@@ -4,6 +4,11 @@
 // einvoice_documents row with attempts/backoff/reasons). Persistence and HTTP
 // shaping live in the route; this stays storage-agnostic for testability.
 
+import {
+  EINVOICE_NOT_REQUIRED,
+  EINVOICE_NOT_REQUIRED_MESSAGE,
+  isB2cCashSale,
+} from "./einvoice/applicability";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import {
   validateForEInvoicing,
@@ -110,6 +115,7 @@ function generateFreshDocument(
 }
 
 export interface EInvoicePreflight {
+  applicable: boolean;
   /** Data-level issues (the fix-it list). Non-empty means no document was built. */
   issues: EInvoiceIssue[];
   /** The document built from the current data, when there were no data-level issues. */
@@ -133,13 +139,18 @@ export async function preflightEInvoice(
   ctx: EInvoiceContext = {},
   opts: { uuid?: string; now?: Date } = {}
 ): Promise<EInvoicePreflight> {
+  if (isB2cCashSale(invoice, ctx.customer)) {
+    return { applicable: false, issues: [], built: null, validation: null, valid: false };
+  }
   const issues = validateForEInvoicing(invoice, lines, company, ctx);
-  if (issues.length > 0) return { issues, built: null, validation: null, valid: false };
+  if (issues.length > 0)
+    return { applicable: true, issues, built: null, validation: null, valid: false };
   const g = generateFreshDocument(invoice, lines, company, ctx, opts.uuid);
   const validation = summariseValidation(
     await validateEInvoiceXml(g.xml, opts.now ? { now: opts.now } : undefined)
   );
   return {
+    applicable: true,
     issues,
     built: { xml: g.xml, uuid: g.uuid, hash: g.hash, documentType: g.documentType },
     validation,
@@ -156,6 +167,14 @@ export function buildEInvoiceDocument(
 ):
   | { ok: true; xml: string; uuid: string; hash: string; documentType: string | null }
   | { ok: false; issues: EInvoiceIssue[] } {
+  if (isB2cCashSale(invoice, ctx.customer)) {
+    return {
+      ok: false,
+      issues: [
+        { field: "invoice", code: EINVOICE_NOT_REQUIRED, message: EINVOICE_NOT_REQUIRED_MESSAGE },
+      ],
+    };
+  }
   const issues = validateForEInvoicing(invoice, lines, company, ctx);
   if (issues.length > 0) return { ok: false, issues };
   // E1: a regenerated document keeps the invoice's e-invoice UUID, so a resubmission after a
@@ -250,6 +269,14 @@ export async function prepareEInvoiceSubmission(args: {
     };
   }
 
+  if (isB2cCashSale(invoice, args.ctx?.customer)) {
+    return {
+      ok: false,
+      status: 409,
+      code: EINVOICE_NOT_REQUIRED,
+      message: EINVOICE_NOT_REQUIRED_MESSAGE,
+    };
+  }
   const built = buildEInvoiceDocument(invoice, lines, company, args.ctx);
   if (!built.ok) {
     return {

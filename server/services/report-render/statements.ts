@@ -275,7 +275,17 @@ export async function renderBalanceSheet(
     period: periodLabel(null, asOf, company.locale),
     basis: "ledger",
     tables: [{ columns: amountColumns(), rows: balanceSheetRows(bs, company.locale) }],
-    notes: [balanceNote(bs.isBalanced, bs.difference)],
+    notes: [
+      balanceNote(bs.isBalanced, bs.difference),
+      ...(bs.warnings?.length
+        ? [
+            {
+              en: "Overdrawn cash and bank accounts are shown as negative assets.",
+              ar: "تظهر حسابات النقد والبنوك المكشوفة كأصول سالبة.",
+            },
+          ]
+        : []),
+    ],
   };
 }
 

@@ -275,6 +275,13 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
   }
 
   const view = status.data;
+  if (view.applicable === false) {
+    return (
+      <p className={cn("text-small text-muted-foreground", className)}>
+        {t["einvoicing.reporting_not_required"]}
+      </p>
+    );
+  }
   const {
     tracks: { delivery, reporting },
     rejection,

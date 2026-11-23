@@ -93,7 +93,7 @@ describe("WQ1 cash sale (7.7)", () => {
     expect(await linesBySource(t, ["invoice", "payment"])).toEqual([
       "invoice 1040 525.00/0.00",
       "invoice 2020 0.00/25.00",
-      "invoice 4010 0.00/500.00",
+      "invoice 4020 0.00/500.00",
       "payment 1021 525.00/0.00",
       "payment 1040 0.00/525.00",
     ]);
@@ -398,7 +398,7 @@ describe("WQ1 cost centre on an invoice line (7.2i / 6.9)", () => {
         WHERE jl.cost_center_id = $1 GROUP BY a.code`,
       [cc.body.id]
     );
-    expect(rows).toEqual([{ code: "4010", credit: "1000.00" }]);
+    expect(rows).toEqual([{ code: "4020", credit: "1000.00" }]);
     const report = await t.as.get(`${base(t)}/cost-centers/${cc.body.id}/report`);
     expect(report.status, report.text).toBe(200);
     expect(JSON.stringify(report.body)).toMatch(/1000/);

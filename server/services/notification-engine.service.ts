@@ -139,6 +139,8 @@ export interface NotifyInput {
   relatedEntityType?: string | null;
   /** Default: every staff member of the company (client-portal users excluded). */
   userIds?: string[];
+  /** The user who performed the action already has its immediate confirmation. */
+  excludeUserId?: string | null;
   /** Idempotency suffix (default: entity id) — `<type>:<key>` is unique per user. */
   eventKey?: string;
 }
@@ -188,7 +190,7 @@ async function emitSocket(userId: string, row: unknown): Promise<void> {
 
 /** Fan one event out to its recipients on their allowed channels. */
 export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
-  const recipients = input.userIds
+  const eligible = input.userIds
     ? await db
         .select({ id: users.id, email: users.email })
         .from(users)
@@ -199,6 +201,7 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
           )})`
         )
     : await staffRecipients(input.companyId);
+  const recipients = eligible.filter(({ id }) => id !== input.excludeUserId);
   const prefs = await loadPrefs(recipients.map((r: { id: string }) => r.id));
   const pushLive = isCapabilityLive("push");
   const urgent = input.priority === "urgent";
@@ -413,7 +416,12 @@ export function registerNotificationEngine(): void {
     subscribed = true;
     const handle = async (event: DomainEvent) => {
       const input = await notificationForEvent(event);
-      if (input) await notify(input);
+      if (!input) return;
+      const isSalesAction =
+        event.type === "invoice.issued" ||
+        event.type === "invoice.paid" ||
+        event.type === "payment.received";
+      await notify({ ...input, excludeUserId: isSalesAction ? event.payload.actorUserId : null });
     };
     for (const type of [
       "invoice.issued",

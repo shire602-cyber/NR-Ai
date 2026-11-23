@@ -61,6 +61,30 @@ async function issuedInvoice(t: Tenant, body: Record<string, unknown>) {
   return c.body as { id: string; number: string };
 }
 
+it("keeps overdrawn cash and bank balances under assets and reports a warning", async () => {
+  const t = await tenant("Overdrawn cash");
+  await postJournalEntry(t, {
+    date: "2026-10-31",
+    lines: [
+      { code: "5000", debit: 2136.25 },
+      { code: "1010", credit: 10 },
+      { code: "1020", credit: 2126.25 },
+    ],
+  });
+  const base = `/api/companies/${t.company.id}`;
+  const expected = [
+    expect.objectContaining({ accountCode: "1010", amount: -10 }),
+    expect.objectContaining({ accountCode: "1020", amount: -2126.25 }),
+  ];
+  const report = await get(t, `${base}/reports/balance-sheet?asOf=2026-10-31`);
+  expect(report.statement.assets.current.lines).toEqual(expect.arrayContaining(expected));
+  expect(report.statement.liabilities.current.lines).toEqual([]);
+  expect(report.warnings).toEqual([{ code: "OVERDRAWN_CASH_ACCOUNTS", accounts: expected }]);
+  expect(report.isBalanced).toBe(true);
+  const legacy = await get(t, `${base}/financial-statements/balance-sheet?asOf=2026-10-31`);
+  expect(legacy.warnings).toEqual(report.warnings);
+});
+
 describe("A3 S7 fixed assets: revaluation, impairment, disposal and the cash flow", () => {
   it("[C5][H4][H5][H11] IAS 7 indirect cash flow, IAS 36 impairment via surplus, OCI and register", async () => {
     const t = await tenant("A3S7");

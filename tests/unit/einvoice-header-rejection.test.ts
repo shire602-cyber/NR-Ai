@@ -19,6 +19,65 @@ import { einvoiceStatusKey } from "../../client/src/components/einvoice/use-einv
 
 // F15 N2/N3: the invoice header strip shows the rejection reason and the FTA chip label.
 describe("e-invoice header strip", () => {
+  it.each([
+    ["en", "Not required"],
+    ["ar", "غير مطلوب"],
+  ] as const)("shows walk-in sales without remediation in %s", async (locale, label) => {
+    await loadNamespace(locale, "einvoicing");
+    const priorLocale = useI18n.getState().locale;
+    const actEnvironment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const priorActEnvironment = actEnvironment.IS_REACT_ACT_ENVIRONMENT;
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    const node = document.createElement("div");
+    const root = createRoot(node);
+    const client = new QueryClient();
+    const invoiceId = "walk-in-sale";
+    client.setQueryData(einvoiceStatusKey(invoiceId), {
+      applicable: false,
+      tracks: { delivery: { status: "not_applicable" }, reporting: { required: false } },
+      issues: [],
+    });
+    try {
+      useI18n.setState({ locale });
+      await act(async () => {
+        root.render(
+          createElement(QueryClientProvider, {
+            client,
+            children: [
+              createElement(EInvoiceHeaderStrip, { invoiceId, key: "header" }),
+              createElement(EInvoiceListCell, {
+                key: "list",
+                invoice: { id: invoiceId },
+                evidence: {
+                  pill: {
+                    invoiceId,
+                    delivery: "not_applicable",
+                    reporting: "not_required",
+                    reportBy: null,
+                    overdue: false,
+                    reportingRequired: false,
+                  },
+                },
+              }),
+            ],
+          })
+        );
+      });
+      expect(node.querySelector("[data-testid=einvoice-header-strip]")?.textContent).toContain(
+        label
+      );
+      expect(node.querySelector("[data-testid=einvoice-cell-walk-in-sale]")?.textContent).toBe(
+        label
+      );
+      expect(node.querySelector("button, a")).toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+      client.clear();
+      useI18n.setState({ locale: priorLocale });
+      actEnvironment.IS_REACT_ACT_ENVIRONMENT = priorActEnvironment;
+    }
+  });
+
   it("keeps the queue label when a worker has claimed but not handed off the invoice", async () => {
     await loadNamespace("en", "einvoicing");
     const html = renderToStaticMarkup(

@@ -68,7 +68,7 @@ describe("R14-19 non-AED functional currency", () => {
     expect(usdLines.map((l) => [l.code, Number(l.debit), Number(l.credit)])).toEqual([
       ["1040", 1050, 0],
       ["2020", 0, 50],
-      ["4010", 0, 1000],
+      ["4020", 0, 1000],
     ]);
     expect(usdLines.every((l) => l.foreign_currency === null)).toBe(true);
 
@@ -82,7 +82,7 @@ describe("R14-19 non-AED functional currency", () => {
     expect(aedLines.map((l) => [l.code, Number(l.debit), Number(l.credit)])).toEqual([
       ["1040", 105, 0],
       ["2020", 0, 5],
-      ["4010", 0, 100],
+      ["4020", 0, 100],
     ]);
     const ar = aedLines.find((l) => l.code === "1040")!;
     expect(ar.foreign_currency).toBe("AED");
@@ -140,7 +140,7 @@ describe("R14-19 non-AED functional currency", () => {
       "1040": 105,
       "1050": 10,
       "5000": 200,
-      "4010": -1100,
+      "4020": -1100,
       "2020": -55,
     });
     expect(tb.body.isBalanced).toBe(true);

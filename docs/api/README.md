@@ -63,3 +63,14 @@ decimals). Writes are attributed to the user who created the key.
 
 See [`webhooks.md`](./webhooks.md). Backups and data portability: [`backups.md`](./backups.md).
 Migration from other systems: [`imports.md`](./imports.md).
+
+## App API compatibility for bills and invoices
+
+The web app's session-authenticated bill list (`GET /api/companies/{companyId}/bills`) and bill
+detail (`GET /api/bills/{id}`) retain snake_case fields. PostgreSQL decimal amounts such as
+`total_amount` and `amount_paid` are JSON strings in document currency. Computed list amounts
+`open_balance` and `open_balance_base` are JSON numbers in document and functional currency,
+respectively. The corresponding app invoice responses use camelCase fields and numeric amounts
+such as `total` and `vatAmount`. Consumers should read each endpoint's native shape and parse
+bill decimal strings with decimal arithmetic. The separately versioned `/api/v1` responses follow
+the [OpenAPI contract](./openapi.json).

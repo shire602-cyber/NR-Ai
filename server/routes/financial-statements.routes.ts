@@ -138,6 +138,7 @@ export function registerFinancialStatementRoutes(app: Express) {
           currentYearEarnings: bs.equity.currentYearEarnings,
         },
         totalLiabilitiesAndEquity: bs.totalLiabilitiesAndEquity,
+        ...(bs.warnings?.length ? { warnings: bs.warnings } : {}),
         isBalanced: bs.isBalanced,
         difference: bs.difference,
         fiscalYearStart: bs.fiscalYearStart,

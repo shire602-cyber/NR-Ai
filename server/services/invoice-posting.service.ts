@@ -414,9 +414,8 @@ function revenueBuckets(totals: SalesDocumentTotals, lines: RevenueLineHint[]) {
 }
 
 /**
- * X5 (J1 L1): income account per line by item type. A line linked to a service product posts
- * to the chart's service revenue account (4020 "Service Revenue", when the chart has it as an
- * active income account); goods and free-text lines post to sales revenue (4010) as before.
+ * Service products and unlinked service lines default to active Service Revenue (4020).
+ * An explicit income account takes precedence, while goods use the chart sales default.
  */
 export async function revenueLineHints(
   tx: LedgerTx,
@@ -449,19 +448,17 @@ export async function revenueLineHints(
   const explicit = (l: { revenueAccountId?: string | null }) =>
     l.revenueAccountId && chosen.has(l.revenueAccountId) ? l.revenueAccountId : null;
   const productIds = [...new Set(lines.map((l) => l.productId).filter(Boolean) as string[])];
-  if (productIds.length === 0) {
-    return lines.map((l) => ({
-      costCenterId: l.costCenterId ?? null,
-      revenueAccountId: explicit(l),
-    }));
-  }
-  const products: Array<{ id: string; productType: string | null }> = await tx
-    .select({ id: products_.id, productType: products_.productType })
-    .from(products_)
-    .where(and(eq(products_.companyId, companyId), inArray(products_.id, productIds)));
+  const products: Array<{ id: string; productType: string | null }> = productIds.length
+    ? await tx
+        .select({ id: products_.id, productType: products_.productType })
+        .from(products_)
+        .where(and(eq(products_.companyId, companyId), inArray(products_.id, productIds)))
+    : [];
   const services = new Set(products.filter((p) => p.productType === "service").map((p) => p.id));
   let serviceAccount: string | null = null;
-  if (services.size > 0) {
+  const isService = (line: { productId?: string | null }) =>
+    !line.productId || services.has(line.productId);
+  if (lines.some((line) => !explicit(line) && isService(line))) {
     const [row]: Array<{ id: string }> = await tx
       .select({ id: accounts.id })
       .from(accounts)
@@ -478,8 +475,7 @@ export async function revenueLineHints(
   }
   return lines.map((l) => ({
     costCenterId: l.costCenterId ?? null,
-    revenueAccountId:
-      explicit(l) ?? (l.productId && services.has(l.productId) ? serviceAccount : null),
+    revenueAccountId: explicit(l) ?? (isService(l) ? serviceAccount : null),
   }));
 }
 

@@ -1,4 +1,5 @@
 {
+  "serverErrors.EINVOICE_NOT_REQUIRED": "الفوترة الإلكترونية غير مطلوبة لهذه المبيعة النقدية.",
   "serverErrors.AUTHORIZATION_RETRY": "تعذّر إكمال التفويض. أعد المحاولة.",
   "serverErrors.AUTHORIZATION_RESTART": "انتهت صلاحية التفويض. أعد بدءه من الصفحة التي بدأت منها، أو ارفع كشف حساب بصيغة CSV.",
   "serverErrors.ACCESS_DENIED": "ليس لديك صلاحية الوصول إلى هذا التقرير.",

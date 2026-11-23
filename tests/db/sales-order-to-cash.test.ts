@@ -81,7 +81,7 @@ describe("W3-A sales cycle", () => {
     expect(v.body.status).toBe("void");
     const after = await balances(t);
     expect(after["1040"] ?? 0).toBe(0);
-    expect(after["4010"] ?? 0).toBe(0);
+    expect(after["4020"] ?? 0).toBe(0);
     expect(after["2020"] ?? 0).toBe(0);
     const lines = await entryLinesOf(t, inv.id);
     const reversal = lines.filter((l) => l.entry_kind === "reversal");
@@ -95,7 +95,7 @@ describe("W3-A sales cycle", () => {
     );
   });
 
-  it("[R03-04][R07-01] a partial credit note on a zero-rated line debits 4060, not 4010", async () => {
+  it("[R03-04][R07-01] a partial credit note on a zero-rated line debits 4060, not 4020", async () => {
     const t = await h.createTenant();
     const inv = await mkIssued(t, {}, [
       { description: "Std", quantity: 1, unitPrice: 1000, vatRate: 5 },
@@ -124,7 +124,7 @@ describe("W3-A sales cycle", () => {
     expect(debited).toEqual(["4060"]);
     const b = await balances(t);
     expect(b["4060"]).toBe(-300);
-    expect(b["4010"]).toBe(-1000);
+    expect(b["4020"]).toBe(-1000);
     expect(b["1040"]).toBe(1550 - 200);
   });
 
@@ -244,7 +244,7 @@ describe("W3-A sales cycle", () => {
       Zero: "zero_rated",
     });
     const b = await balances(t);
-    expect(b["4010"]).toBe(-1000);
+    expect(b["4020"]).toBe(-1000);
     expect(b["4060"]).toBe(-500);
     expect(b["4070"]).toBe(-250);
     expect(b["4030"]).toBe(-100);
@@ -283,7 +283,7 @@ describe("W3-A sales cycle", () => {
       discount_amount: "100.00",
     });
     const b = await balances(t);
-    expect(b["4010"]).toBe(-900);
+    expect(b["4020"]).toBe(-900);
     expect(b["2020"]).toBe(-45);
     expect(b["1040"]).toBe(945);
 
@@ -386,7 +386,7 @@ describe("W3-A sales cycle", () => {
     expect(voided.body.status).toBe("void");
     const after = await balances(t);
     expect(after["1040"]).toBe(1050);
-    expect(after["4010"]).toBe(-1000);
+    expect(after["4020"]).toBe(-1000);
     expect(after["2020"]).toBe(-50);
 
     const dn = await t.as.post(`/api/companies/${t.company.id}/invoices/${inv.id}/debit-note`, {
@@ -571,7 +571,7 @@ describe("W3-A sales cycle", () => {
     expect(gen.status).toBe("sent");
     const b = await balances(t);
     expect(b["1040"]).toBe(620); // 155 EUR × 4
-    expect(b["4010"]).toBe(-400);
+    expect(b["4020"]).toBe(-400);
     expect(b["4060"]).toBe(-200);
     expect(b["2020"]).toBe(-20);
     const tplRow = await h.sql(
@@ -673,7 +673,7 @@ describe("W3-A sales cycle", () => {
     expect(cn.status, cn.text).toBe(201);
     const b = await balances(t);
     // 950 USD left at 3.6725 = 3,488.88 (revenue 900×3.6725 + VAT 45×3.6725 rounded per leg)
-    expect(b["4010"]).toBeCloseTo(-(3672.5 - 367.25), 2);
+    expect(b["4020"]).toBeCloseTo(-(3672.5 - 367.25), 2);
     const r = await pay(t, inv.id, { amount: 945, exchangeRate: 3.7 });
     expect(r.status, r.text).toBe(201);
     expect(r.body.status).toBe("paid");
