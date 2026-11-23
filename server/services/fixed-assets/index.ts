@@ -49,7 +49,7 @@ import { assertChosenAccountsNotControl } from "../../ledger/control-accounts";
 import { defaultPaymentAccountId, isHeaderAccount } from "../payment-accounts.service";
 import { normaliseEmirate } from "../../tax/vat-boxes";
 import { createDraftInvoice } from "../connectors/draft-documents";
-import { issueInvoice, voidInvoice } from "../invoice-posting.service";
+import { issueInvoice, resolveSalesAccounts, voidInvoice } from "../invoice-posting.service";
 import {
   depreciationFor,
   disposalSplit,
@@ -1265,7 +1265,12 @@ async function disposeOnCredit(assetId: string, companyId: string, input: Dispos
       tx,
       sql`SELECT emirate FROM companies WHERE id = ${companyId}`
     );
-    return { asset: a, emirate: normaliseEmirate(co[0]?.emirate ?? null) };
+    const { revenue } = await resolveSalesAccounts(tx, companyId, { roles: new Set(), vat: false });
+    return {
+      asset: a,
+      emirate: normaliseEmirate(co[0]?.emirate ?? null),
+      revenueAccountId: revenue.standard_sales,
+    };
   });
   const treatment = input.vatTreatment ?? "standard";
   const draft = await createDraftInvoice(
@@ -1280,6 +1285,7 @@ async function disposeOnCredit(assetId: string, companyId: string, input: Dispos
       lines: [
         {
           description: `Disposal of ${pre.asset.asset_name}`.slice(0, 500),
+          revenueAccountId: pre.revenueAccountId,
           quantity: 1,
           unitPrice: input.proceedsFils,
           vatRate: treatment === "standard" ? 0.05 : 0,

@@ -306,6 +306,11 @@ describe("W4-D notification engine", () => {
 
   it("[R13-32] staff receive payment, task and invoice alerts without provider alerts", async () => {
     const t = await h.createTenant();
+    const colleague = await h.createSecondTenant();
+    await h.sql(
+      "INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'accountant')",
+      [t.company.id, colleague.user.id]
+    );
     const inv = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
       customerName: "Notify Co",
       date: new Date(Date.now() - 40 * 86_400_000).toISOString().slice(0, 10),
@@ -339,15 +344,21 @@ describe("W4-D notification engine", () => {
     await scanOverdueInvoices();
     const { drainDomainEvents } = await import("../../server/platform/domain-events");
     await drainDomainEvents();
-    const keys = (
-      await h.sql<{ event_key: string }>(
-        `SELECT event_key FROM notifications WHERE user_id = $1 AND event_key IS NOT NULL ORDER BY event_key`,
-        [t.user.id]
-      )
-    ).map((r) => r.event_key.split(":")[0]);
-    expect(keys).toEqual(
-      expect.arrayContaining(["invoice.issued", "invoice.overdue", "payment.received", "task.due"])
-    );
+    const keysFor = async (userId: string) =>
+      (
+        await h.sql<{ event_key: string }>(
+          `SELECT event_key FROM notifications WHERE user_id = $1 AND event_key IS NOT NULL ORDER BY event_key`,
+          [userId]
+        )
+      ).map((r) => r.event_key.split(":")[0]);
+    const keys = await keysFor(t.user.id);
+    expect(keys).toEqual(["invoice.overdue", "task.due"]);
+    expect(await keysFor(colleague.user.id)).toEqual([
+      "invoice.issued",
+      "invoice.overdue",
+      "payment.received",
+      "task.due",
+    ]);
     expect(keys).not.toContain("bank.sync_failed");
     const preferences = await t.as.get("/api/notification-preferences");
     expect(preferences.status).toBe(200);
