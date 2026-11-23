@@ -131,7 +131,7 @@ describe("WQ7 plan gates (enforced)", () => {
     expect(proHooks.body).toMatchObject({ feature: "webhooks", requiredTier: "enterprise" });
   });
 
-  it("[WQ7-gate-expired] after the trial the workspace is locked and the same records return on activation", async () => {
+  it("[WQ7-gate-expired] after the trial the workspace stays readable and writes resume on activation", async () => {
     setEnforcement("true");
     const t = await h.createTenant({ name: "Expired" });
     const made = await invoice(t);
@@ -161,9 +161,8 @@ describe("WQ7 plan gates (enforced)", () => {
       `/api/reports/${t.company.id}/aging`,
       "/api/notifications",
     ]) {
-      const locked = await t.as.get(path);
-      expect(locked.status, path).toBe(402);
-      expect(locked.body.code).toBe("PLAN_REQUIRED");
+      const read = await t.as.get(path);
+      expect(read.status, path).toBe(200);
     }
     expect((await t.as.patch(base, { name: "Blocked update" })).status).toBe(402);
     expect((await t.as.delete(`/api/invoices/${made.body.id}`)).status).toBe(402);
@@ -184,7 +183,7 @@ describe("WQ7 plan gates (enforced)", () => {
       ).status
     ).toBe(200);
     expect((await t.as.post(`${base}/billing/activation-request`, {})).status).toBe(202);
-    expect((await t.as.get(`${base}/invoices`)).status).toBe(402);
+    expect((await t.as.get(`${base}/invoices`)).status).toBe(200);
 
     const paid = await h.createSecondTenant({ planId: "starter" });
     await h.sql("INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')", [
@@ -192,8 +191,8 @@ describe("WQ7 plan gates (enforced)", () => {
       t.user.id,
     ]);
     expect((await t.as.get(`/api/companies/${paid.company.id}/invoices`)).status).toBe(200);
-    expect((await t.as.get(`/api/invoices/${made.body.id}`)).status).toBe(402);
-    expect((await t.as.get(`/api/reports/${t.company.id}/aging`)).status).toBe(402);
+    expect((await t.as.get(`/api/invoices/${made.body.id}`)).status).toBe(200);
+    expect((await t.as.get(`/api/reports/${t.company.id}/aging`)).status).toBe(200);
 
     const admin = await h.createTenant({ isAdmin: true });
     const activated = await admin.as.put(`/api/admin/companies/${t.company.id}/plan`, {

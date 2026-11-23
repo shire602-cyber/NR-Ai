@@ -153,6 +153,12 @@ export function validateEnv(): Env {
     process.exit(1);
   }
 
+  if (result.data.NODE_ENV === "production" && !process.env.TURNSTILE_SECRET_KEY?.trim()) {
+    process.stderr.write(
+      "WARNING: TURNSTILE_SECRET_KEY is unset. Public registration and password reset are accepting requests without CAPTCHA.\n"
+    );
+  }
+
   _env = result.data;
   return result.data;
 }

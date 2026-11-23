@@ -871,10 +871,7 @@ async function expiredTrialJourney(h) {
         await noSideScroll(page, route);
       }
       const request = await api(owner.token, "GET", `/api/invoices/${invoice.id}/pdf`);
-      expect(
-        request.status === 402 && request.body.code === "PLAN_REQUIRED",
-        "invoice PDF is accessible while locked"
-      );
+      expect(request.status === 200, "invoice PDF should stay readable after trial expiry");
     }
   );
 
@@ -900,8 +897,8 @@ async function expiredTrialJourney(h) {
       );
       await noSideScroll(page, "billing recovery");
       expect(
-        (await api(owner.token, "GET", `/api/invoices/${invoice.id}`)).status === 402,
-        "pending activation opened the workspace"
+        (await api(owner.token, "DELETE", `/api/invoices/${invoice.id}`)).status === 402,
+        "pending activation allowed a write"
       );
     }
   );

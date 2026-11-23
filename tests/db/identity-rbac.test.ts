@@ -162,7 +162,7 @@ describe("R01-02 central permission policy", () => {
     vi.stubEnv("RESEND_WEBHOOK_SECRET", undefined);
     vi.stubEnv("EMAIL_DSN_WEBHOOK_SECRET", undefined);
     try {
-      expect((await owner.as.get(`/api/companies/${owner.company.id}/accounts`)).status).toBe(402);
+      expect((await owner.as.get(`/api/companies/${owner.company.id}/accounts`)).status).toBe(200);
       for (const provider of ["resend", "smtp-dsn"]) {
         const result = await owner.as.post(`/api/webhooks/email-events/${provider}`, {});
         expect(result.status).toBe(503);

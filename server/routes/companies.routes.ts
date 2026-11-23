@@ -21,7 +21,9 @@ import { deleteReceiptImage, readReceiptImage, saveReceiptFile } from "../servic
 import { z } from "zod";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
-import { ensureCriticalSchema } from "../db";
+import { db, ensureCriticalSchema } from "../db";
+import { and, eq, exists, inArray } from "drizzle-orm";
+import { companies as companyTable, journalEntries } from "../../shared/schema";
 import { withNrClientVatGroup } from "../services/firm-clients.service";
 
 const log = createLogger("companies");
@@ -212,6 +214,33 @@ export function registerCompanyRoutes(app: Express) {
       // myRole lets the client keep owner-only flows (the setup wizard) away from
       // invited members. Firm-accessible client companies have no direct membership.
       const roles = await storage.getCompanyRolesByUserId(userId);
+      const pendingOwnerCompanies = companies
+        .filter(({ id, onboardingCompleted }) => roles[id] === "owner" && !onboardingCompleted)
+        .map(({ id }) => id);
+      const postedDocuments =
+        pendingOwnerCompanies.length === 0
+          ? []
+          : await db
+              .select({ companyId: companyTable.id })
+              .from(companyTable)
+              .where(
+                and(
+                  inArray(companyTable.id, pendingOwnerCompanies),
+                  exists(
+                    db
+                      .select({ id: journalEntries.id })
+                      .from(journalEntries)
+                      .where(
+                        and(
+                          eq(journalEntries.companyId, companyTable.id),
+                          eq(journalEntries.status, "posted"),
+                          inArray(journalEntries.source, ["invoice", "receipt", "bill"])
+                        )
+                      )
+                  )
+                )
+              );
+      const bookedCompanyIds = new Set(postedDocuments.map(({ companyId }) => companyId));
       const enforceTrialLock = billingEnforced() && !bypassesTrialLock(req.user!);
       res.set("Cache-Control", "private, no-store").json(
         await Promise.all(
@@ -227,7 +256,11 @@ export function registerCompanyRoutes(app: Express) {
                 myRole,
               };
             }
-            return { ...withNrClientVatGroup(company), myRole };
+            return {
+              ...withNrClientVatGroup(company),
+              myRole,
+              hasPostedDocuments: bookedCompanyIds.has(company.id),
+            };
           })
         )
       );

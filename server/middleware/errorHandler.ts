@@ -288,10 +288,11 @@ export function globalErrorHandler(
  * 404 handler for unmatched routes.
  */
 export function notFoundHandler(req: Request, res: Response): void {
+  const path = (req.originalUrl || req.url).split(/[?#]/, 1)[0];
   res.status(404).json(
     withRequestId(
       {
-        message: `Route ${req.method} ${portalInviteLogPath(req.originalUrl || req.url) ?? req.path} not found`,
+        message: `Route ${req.method} ${portalInviteLogPath(path) ?? path} not found`,
         code: "ROUTE_NOT_FOUND",
       },
       req

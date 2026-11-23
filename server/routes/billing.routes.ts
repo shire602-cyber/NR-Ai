@@ -22,7 +22,6 @@ import {
   handleWebhookEvent,
   getStripe,
   isStripeConfigured,
-  trialDays,
 } from "../services/stripe.service";
 import { requirePermission } from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
@@ -112,7 +111,7 @@ export function registerBillingRoutes(app: Express) {
         // exactly what the API refuses, and nothing while enforcement is off.
         enforcement: billingEnforced() && ent !== null,
         trialLocked: billingEnforced() && ent?.state === "expired" && !bypassesTrialLock(req.user!),
-        trialDays: trialDays(),
+        trialDays: TRIAL_DAYS,
         // The Upgrade button becomes "Contact us" while checkout cannot work.
         checkoutAvailable: isStripeConfigured(),
         trial: ent ? trialFromEntitlement(ent) : null,

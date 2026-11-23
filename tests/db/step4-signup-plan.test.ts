@@ -250,7 +250,7 @@ describe("STEP4 gates ignore the choice", () => {
     expect([402, 403]).not.toContain(hooks.status);
   });
 
-  it("[STEP4-gates-after-trial] after the trial, reads and writes are 402 and the choice is still reported", async () => {
+  it("[STEP4-gates-after-trial] after the trial, writes are 402 and the chosen plan is still reported", async () => {
     setEnforcement("true");
     const { tenant: t } = await signUp("S4after", {
       plan: "professional",
@@ -265,7 +265,7 @@ describe("STEP4 gates ignore the choice", () => {
     expect(inv.status).toBe(402);
     expect(inv.body.code).toBe("PLAN_REQUIRED");
     const list = await t!.as.get(`/api/companies/${t!.company.id}/invoices`);
-    expect(list.status).toBe(402);
+    expect(list.status).toBe(200);
     const sub = await t!.as.get(subUrl(t!));
     expect(sub.body.entitlement.state).toBe("expired");
     expect(sub.body.entitlement.chosenPlan).toMatchObject({ planId: "professional" });

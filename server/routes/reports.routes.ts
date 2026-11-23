@@ -471,55 +471,6 @@ export function registerReportRoutes(app: Express) {
     })
   );
 
-  // VAT Return report (UAE). R07-03 / R12-03: the one VAT engine (documents + manual VAT
-  // journal adjustments, Box 1 by emirate of supply) with its VAT-to-GL reconciliation.
-  app.get(
-    "/api/companies/:id/reports/vat-return",
-    authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const companyId = req.params.id;
-      // R12-05: accept from/to or startDate/endDate.
-      const q = req.query as Record<string, string | undefined>;
-      const fromQ = q.from ?? q.startDate ?? q.periodStart;
-      const toQ = q.to ?? q.endDate ?? q.periodEnd;
-      if (!fromQ || !toQ) {
-        return res.status(400).json({
-          message: "from and to date params are required (YYYY-MM-DD)",
-          code: "REPORT_RANGE_REQUIRED",
-        });
-      }
-      const range = readRange({ from: fromQ, to: toQ });
-      await assertReportAccess(req, companyId);
-      const c = await computeVat201({
-        companyId,
-        from: range.from!,
-        to: range.to,
-        allowIncomplete: true,
-      });
-      const b = c.boxes;
-      const standard = vatBox1Total(c, "Amount");
-      res.json({
-        period: { from: range.from, to: range.to },
-        engineVersion: c.engineVersion,
-        // Legacy summary keys (kept for existing clients), now engine-backed.
-        box1_standardRatedSupplies: standard,
-        box2_zeroRatedSupplies: b.box4ZeroRatedAmount,
-        box3_exemptSupplies: b.box5ExemptAmount,
-        box4_totalSupplies:
-          Math.round((standard + b.box4ZeroRatedAmount + b.box5ExemptAmount) * 100) / 100,
-        box5_outputVat: b.box12TotalDueTax,
-        box6_standardRatedExpenses: b.box9ExpensesAmount,
-        box7_inputVatRecoverable: b.box13RecoverableTax,
-        box8_netVatDue: b.box14PayableTax,
-        boxes: b,
-        issues: c.issues,
-        complete: c.complete,
-        excluded: { outOfScopeAmount: c.excluded.outOfScopeFils / 100 },
-        reconciliation: c.reconciliation,
-      });
-    })
-  );
-
   // VAT summary (dashboard / reports centre). W2-B carry-over: accepts from/to or
   // startDate/endDate, reads the VAT engine (so ledger-only VAT journals count) and returns
   // the reconciliation. Without a start date it covers the tax period containing `to`.

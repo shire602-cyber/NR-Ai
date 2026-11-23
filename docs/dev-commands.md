@@ -11,8 +11,12 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
 - Use `npm run build:analyze` when inspecting production bundle size; it writes the Vite
   visualizer report to `dist/bundle-stats.html`.
 - Type-check with `npm run check`.
-- Run unit tests with `npm test`; use `npm run test:watch` for watch mode and
-  `npm run test:coverage` for the baseline coverage ratchet.
+- Fresh checkout on Debian or Ubuntu with Node 22 active: `sudo apt-get install -y poppler-utils && npm ci && npm test -- --maxWorkers=2`.
+  On macOS, replace the first command with `brew install poppler`.
+  PDF tests call `pdftotext`, which npm does not install. The unit suite supplies its own test
+  environment, so it needs neither a project `.env` nor provider credentials. Run `npm run test:db`
+  separately for the [PostgreSQL harness](../tests/db/README.md). Use `npm run test:watch` for watch
+  mode and `npm run test:coverage` for the coverage ratchet.
 - Run the broader readiness sweep with `npm run audit:campaign`; it chains type/contract checks,
   audit inventory, frontend API coverage, production dependency audit, unit tests, and build.
 - Populate a dedicated synthetic report-audit company with `BASE_URL=... npm run
