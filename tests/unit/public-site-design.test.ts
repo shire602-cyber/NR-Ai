@@ -167,13 +167,11 @@ describe("D1 public site", () => {
     ).toContain("Send bilingual invoices");
     // Primary CTAs keep their routes.
     const register = container.querySelector('[data-testid="button-hero-start"]');
-    expect(register?.getAttribute("href")).toBe("/register");
+    expect(register?.getAttribute("href")).toBe("/register?step=account");
     expect(container.querySelector('[data-testid="button-hero-demo"]')?.getAttribute("href")).toBe(
-      "/en/book-a-demo"
+      "/en/book-demo"
     );
-    expect(container.textContent).toContain(
-      "Prepare and review VAT 201 in the app, then submit it in EmaraTax."
-    );
+    expect(container.textContent).toContain("then submit it in EmaraTax.");
     expect(container.textContent).toContain("Upload a CSV exported from your bank");
     for (const claim of UNSUPPORTED_CLAIMS) {
       expect(container.textContent ?? "", String(claim)).not.toMatch(claim);

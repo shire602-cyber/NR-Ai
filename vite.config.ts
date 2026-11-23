@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import { visualizer } from "rollup-plugin-visualizer";
 import type { Plugin } from "vite";
+import { MARKETING_BRAND } from "./shared/marketing-brand";
 import { FIRM_FIRST_SCREEN_NAMESPACES } from "./shared/firm-boot";
 
 const ANALYZE = process.env.ANALYZE === "1";
@@ -22,6 +23,12 @@ const FIRM_BUILD = process.env.FIRM_BUILD === "1";
 export default defineConfig({
   plugins: [
     react(),
+    !FIRM_BUILD && {
+      name: "marketing-brand-html",
+      transformIndexHtml(html: string) {
+        return html.replaceAll("{{MARKETING_BRAND}}", MARKETING_BRAND.name.en);
+      },
+    },
     FIRM_BUILD ? firmPreloads() : marketingPreloads(),
     ANALYZE &&
       visualizer({

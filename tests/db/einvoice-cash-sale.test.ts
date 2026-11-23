@@ -6,7 +6,7 @@ import { useHarness } from "./harness";
 const h = useHarness();
 
 describe("UAE PINT AE cash sales", () => {
-  it("excludes a walk-in sale from validation, delivery and filing", async () => {
+  it("excludes an explicitly identified consumer cash sale from validation, delivery and filing", async () => {
     const tenant = await h.createTenant();
     const base = `/api/companies/${tenant.company.id}`;
     const colleague = await h.createSecondTenant();
@@ -21,6 +21,7 @@ describe("UAE PINT AE cash sales", () => {
     expect(bank.status, bank.text).toBe(201);
     const sale = await tenant.as.post(`${base}/cash-sales`, {
       customerName: "Walk-in customer",
+      buyerType: "consumer",
       date: new Date().toISOString().slice(0, 10),
       placeOfSupplyEmirate: "dubai",
       paymentAccountId: bank.body.glAccountId,
@@ -80,6 +81,45 @@ describe("UAE PINT AE cash sales", () => {
     expect(submit.status, submit.text).toBe(409);
     expect(submit.body.code).toBe("EINVOICE_NOT_REQUIRED");
   });
+
+  it.each(["business", "government", undefined] as const)(
+    "keeps a cash buyer with type %s and no TRN or endpoint available for remediation",
+    async (buyerType) => {
+      const tenant = await h.createTenant();
+      const base = `/api/companies/${tenant.company.id}`;
+      const bank = await tenant.as.post(`${base}/bank-accounts`, {
+        nameEn: "Cash receipts account",
+        bankName: "Test bank",
+      });
+      expect(bank.status, bank.text).toBe(201);
+      const sale = await tenant.as.post(`${base}/cash-sales`, {
+        customerName: "Counter buyer",
+        buyerType,
+        date: new Date().toISOString().slice(0, 10),
+        placeOfSupplyEmirate: "dubai",
+        paymentAccountId: bank.body.glAccountId,
+        lines: [{ description: "Counter service", quantity: 1, unitPrice: 100, vatRate: 0.05 }],
+      });
+      expect(sale.status, sale.text).toBe(201);
+      expect(sale.body).toMatchObject({ buyerType: buyerType ?? null, einvoiceApplicable: true });
+      const url = `/api/invoices/${sale.body.id}/einvoice`;
+      const validation = await tenant.as.get(`${url}/validate`);
+      expect(validation.status, validation.text).toBe(200);
+      expect(validation.body).toMatchObject({
+        applicable: true,
+        issues: expect.arrayContaining([expect.objectContaining({ field: "customer.endpointId" })]),
+      });
+      const detail = await tenant.as.get(`${url}/status`);
+      expect(detail.body.applicable).toBe(true);
+      expect(detail.body.tracks.delivery.status).not.toBe("not_applicable");
+      const compliance = await tenant.as.get(
+        `${base}/einvoicing/compliance?invoiceIds=${sale.body.id}`
+      );
+      expect(compliance.body.items).toContainEqual(
+        expect.objectContaining({ invoiceId: sale.body.id })
+      );
+    }
+  );
 
   it("keeps an endpoint-only cash buyer in e-invoicing scope", async () => {
     const tenant = await h.createTenant();

@@ -193,18 +193,25 @@ function flattenErrors(errors: FieldErrors<FieldValues>, prefix = ""): Array<[st
   return out;
 }
 
-/** The DOM element react-hook-form bound for `name` (inputs carry name; Controllers get ids). */
+/** Prefer a registered input name, then the marker used by custom controls. */
 function fieldElement(scope: Element | null, name: string): HTMLElement | null {
   if (!scope) return null;
-  const byName = scope.querySelector<HTMLElement>(`[name="${CSS.escape(name)}"]`);
-  if (byName) return byName;
-  return null;
+  const fields = Array.from(scope.querySelectorAll<HTMLElement>("[name], [data-field]"));
+  return (
+    fields.find((element) => element.getAttribute("name") === name) ??
+    fields.find((element) => element.getAttribute("data-field") === name) ??
+    null
+  );
 }
 
 function labelFor(el: HTMLElement | null): string | undefined {
   if (!el) return undefined;
   const id = el.getAttribute("id");
-  const label = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`) : null;
+  const label = id
+    ? Array.from(document.querySelectorAll<HTMLLabelElement>("label[for]")).find(
+        (candidate) => candidate.htmlFor === id
+      )
+    : null;
   const text = (label?.textContent ?? el.getAttribute("aria-label") ?? "").replace(
     /\*\s*\(.*\)$/,
     ""
@@ -230,7 +237,7 @@ export function FormErrorSummary({ className }: { className?: string }) {
     const next = signature
       ? signature.split("\u0001").map((row) => {
           const [name, message] = row.split("\u0000");
-          const el = fieldElement(form, name) ?? findInvalidById(form, name);
+          const el = fieldElement(form, name);
           return { id: el?.id || undefined, label: labelFor(el), message };
         })
       : [];
@@ -252,12 +259,6 @@ export function FormErrorSummary({ className }: { className?: string }) {
       {submitCount > 0 && <ErrorSummary items={items} />}
     </div>
   );
-}
-
-function findInvalidById(scope: Element | null, name: string): HTMLElement | null {
-  if (!scope) return null;
-  // FormControl ids are useId-based; fall back to the data-field marker some forms set.
-  return scope.querySelector<HTMLElement>(`[data-field="${CSS.escape(name)}"]`);
 }
 
 /** Line-item editor list: hairline-separated rows on a sunken inset (no nested borders). */

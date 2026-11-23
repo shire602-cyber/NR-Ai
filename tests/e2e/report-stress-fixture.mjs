@@ -744,7 +744,10 @@ async function seedPayroll(companyId) {
         })
       );
       await optional("generate WPS SIF", () =>
-        http("generate WPS SIF", `/api/payroll-runs/${run.id}/generate-sif`)
+        http("generate WPS SIF", `/api/payroll-runs/${run.id}/generate-sif`, {
+          method: "POST",
+          body: {},
+        })
       );
     }
   }

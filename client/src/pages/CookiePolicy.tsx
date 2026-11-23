@@ -1,3 +1,4 @@
+import { MARKETING_BRAND } from "@shared/marketing-brand";
 import { T } from "@/components/layout/T";
 import { useTranslation } from "@/lib/i18n";
 import { LegalLayout } from "@/components/LegalLayout";
@@ -8,8 +9,8 @@ export default function CookiePolicy() {
   return (
     <LegalLayout slug="cookies" effectiveDate="2026-04-26" arabic={<CookiePolicyAr />}>
       <p>
-        This Cookie Policy explains how Muhasib.ai uses cookies and similar technologies on our
-        website and platform. It should be read alongside our{" "}
+        This Cookie Policy explains how {MARKETING_BRAND.name.en} uses cookies and similar
+        technologies on our website and platform. It should be read alongside our{" "}
         <a href="/privacy">
           <T k="pages.privacyPolicy" />
         </a>
@@ -81,7 +82,7 @@ export default function CookiePolicy() {
       <h2>6. Contact</h2>
       <p>
         If you have questions about how we use cookies, contact{" "}
-        <a href="mailto:privacy@muhasib.ai">privacy@muhasib.ai</a>.
+        <a href={`mailto:${MARKETING_BRAND.privacyEmail}`}>{MARKETING_BRAND.privacyEmail}</a>.
       </p>
     </LegalLayout>
   );

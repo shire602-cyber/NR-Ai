@@ -1,8 +1,59 @@
+import { MARKETING_BRAND } from "../../../../../../shared/marketing-brand";
 import type { Bilingual } from "../content";
 
 interface EditorialPage {
   title: Bilingual;
   lead: Bilingual;
+}
+
+export const launchPages = {
+  "/product": {
+    title: [
+      "Your books, invoices and VAT in one place",
+      "دفاترك وفواتيرك وضريبة القيمة المضافة في مكان واحد",
+    ],
+    lead: [
+      "Explore the daily tasks that take you from your first invoice to month-end.",
+      "استكشف المهام اليومية من إصدار أول فاتورة إلى إقفال الشهر.",
+    ],
+  },
+  "/tools": {
+    title: ["Free tools for UAE businesses", "أدوات مجانية للشركات في الإمارات"],
+    lead: [
+      "Calculate VAT, download a sample tax invoice or work through an e-invoicing setup checklist.",
+      "احسب ضريبة القيمة المضافة أو حمّل نموذج فاتورة ضريبية أو راجع خطوات إعداد الفوترة الإلكترونية.",
+    ],
+  },
+  "/tools/invoice-template": {
+    title: [
+      "Download a sample bilingual UAE tax invoice",
+      "حمّل نموذج فاتورة ضريبية إماراتية بالعربية والإنجليزية",
+    ],
+    lead: [
+      "Inspect the seller and customer details, line items, VAT amounts and totals in a sample PDF.",
+      "راجع بيانات البائع والعميل وبنود الفاتورة ومبالغ الضريبة والإجماليات في نموذج PDF.",
+    ],
+  },
+  "/about": {
+    title: [`About ${MARKETING_BRAND.name.en}`, `عن ${MARKETING_BRAND.name.ar}`],
+    lead: [
+      "Najma Al Raeda Accounting and Bookkeeping in Dubai operates the software and offers separate accounting services.",
+      "تتولى نجمة الرائدة للمحاسبة ومسك الدفاتر في دبي تشغيل البرنامج وتقدّم خدمات محاسبية منفصلة.",
+    ],
+  },
+  "/contact": {
+    title: [`Contact ${MARKETING_BRAND.name.en}`, `تواصل مع ${MARKETING_BRAND.name.ar}`],
+    lead: [
+      "Request a walkthrough, ask about accounting services or contact support. Leave financial documents out of your initial message.",
+      "اطلب عرضًا توضيحيًا أو استفسر عن الخدمات المحاسبية أو تواصل مع الدعم. تجنّب إرفاق المستندات المالية في رسالتك الأولى.",
+    ],
+  },
+} as const satisfies Record<string, EditorialPage>;
+
+export type LaunchPagePath = keyof typeof launchPages;
+
+export function launchPagePath(path: string): LaunchPagePath | undefined {
+  return Object.hasOwn(launchPages, path) ? (path as LaunchPagePath) : undefined;
 }
 
 export const editorialPages = {

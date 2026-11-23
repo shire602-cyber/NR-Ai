@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { useContext } from "react";
 import { Clock, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatMessage, useTranslation } from "@/lib/i18n";
@@ -6,6 +7,7 @@ import { formatDate } from "@/lib/format-date";
 import { planCta, planPhase, planPhraseKey } from "@/lib/plan-state";
 import { useSubscription, type ChosenPlan } from "@/hooks/useSubscription";
 import type { TrialState } from "@shared/trial";
+import { TrialReadOnlyContext } from "@/lib/trial-access";
 
 /** The trial banner goes to the warning tone this many days before the end. */
 const WARN_DAYS = 3;
@@ -37,11 +39,12 @@ export function TrialBanner({
   endedOnly?: boolean;
 }) {
   const { t, locale } = useTranslation();
+  const readOnly = useContext(TrialReadOnlyContext);
   const { trial: fetched, chosenPlan, activationRequestedAt } = useSubscription();
   const trial = given === undefined ? fetched : given;
   const chosen = givenChosen === undefined ? chosenPlan : givenChosen;
   const requestedAt = givenRequested === undefined ? activationRequestedAt : givenRequested;
-  if (!trial || (endedOnly && !trial.ended)) return null;
+  if (readOnly || !trial || (endedOnly && !trial.ended)) return null;
   const phase = planPhase({
     trialEnded: trial.ended,
     chosen: !!chosen,

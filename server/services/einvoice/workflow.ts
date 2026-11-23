@@ -63,7 +63,7 @@ import {
   isEInvoiceInFlight,
   nextRetryAt,
 } from "../einvoice-status";
-import { loadEInvoiceBuyer, loadEInvoiceContext } from "./context";
+import { loadEInvoiceContext } from "./context";
 import { invoiceReportingDeadline, invoiceReportingRequired } from "./reporting";
 import { frozenEInvoiceDispatchIssue } from "../einvoice.service";
 import { PEPPOL_SCHEME_UAE_TIN } from "./pint-ae-codes";
@@ -400,10 +400,7 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         message: "E-invoice transmission requires permission for this company.",
       };
     }
-    if (
-      fresh.source === "cash_sale" &&
-      isB2cCashSale(fresh, await loadEInvoiceBuyer(fresh, company, tx))
-    ) {
+    if (isB2cCashSale(fresh)) {
       return {
         ok: false,
         status: 409,

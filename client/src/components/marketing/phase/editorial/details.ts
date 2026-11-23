@@ -1,4 +1,4 @@
-import { marketingBrand, supportEmail } from "@shared/marketing-brand";
+import { MARKETING_BRAND, marketingBrand, supportEmail } from "@shared/marketing-brand";
 import { bankCopy, featureBySlug, vatCopy, type Bilingual } from "../content";
 import type { EditorialPath, editorialIndexes } from "./pages";
 
@@ -88,7 +88,7 @@ const providerList: SourceLink = {
   ],
 };
 
-const appTitle: Bilingual = [marketingBrand, marketingBrand];
+const appTitle: Bilingual = [marketingBrand, MARKETING_BRAND.name.ar];
 const bankWorkflow: Bilingual = [`${bankCopy[0]}.`, `${bankCopy[1]}.`];
 
 const cutover: Section = {
@@ -562,7 +562,7 @@ export const editorialDetails: Record<DetailPath, Details> & Partial<Record<Inde
     sources: [{ title: ["Read the privacy policy", "اقرأ سياسة الخصوصية"], url: "/privacy" }],
     email: {
       title: ["Report a security issue", "أبلغ عن مشكلة أمنية"],
-      address: "security@muhasib.ai",
+      address: MARKETING_BRAND.securityEmail,
     },
   },
 };

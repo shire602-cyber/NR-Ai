@@ -33,9 +33,18 @@ import {
   type Bilingual,
 } from "./content";
 import { DemoRequest, FreeTool } from "./Forms";
-import { marketingBrand, supportEmail } from "@shared/marketing-brand";
+import { MARKETING_BRAND, supportEmail } from "@shared/marketing-brand";
 import { siteLocale, type SiteLocale } from "./routes";
-import { editorialPages, editorialPath } from "./editorial/pages";
+import { editorialPages, editorialPath, launchPagePath, launchPages } from "./editorial/pages";
+import { LaunchPages } from "./LaunchPages";
+import {
+  demoTitle,
+  featurePath,
+  homeLead,
+  homeTitle,
+  marketingMetadata,
+  trialSignupPath,
+} from "./route-content";
 import "@fontsource/noto-sans-arabic/arabic-400.css";
 import "@fontsource/noto-sans-arabic/arabic-700.css";
 import "./phase.css";
@@ -65,7 +74,7 @@ function EditorialUnavailable({ locale }: { locale: SiteLocale }) {
 }
 
 const start = ["Start free trial", "ابدأ التجربة المجانية"] as const;
-const demo = ["Book a demo", "احجز عرضًا توضيحيًا"] as const;
+const demo = demoTitle;
 const pricing = ["Pricing", "الأسعار"] as const;
 const workflows = [
   { feature: "receipt-scanning", label: ["Scan a receipt", "امسح إيصالًا"], icon: ScanLine },
@@ -142,7 +151,10 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
     {
       id: "product",
       title: ["Product", "المنتج"],
-      items: features.map((f) => ({ title: f.title, href: `${base}/product/${f.slug}` })),
+      items: [
+        { title: ["Product overview", "نظرة عامة على المنتج"], href: `${base}/product` },
+        ...features.map((f) => ({ title: f.title, href: base + featurePath(f.slug) })),
+      ],
     },
     {
       id: "solutions",
@@ -152,7 +164,14 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
     {
       id: "tools",
       title: ["Free tools", "أدوات مجانية"],
-      items: tools.map((tool) => ({ title: tool.title, href: `${base}/tools/${tool.slug}` })),
+      items: [
+        { title: ["All free tools", "جميع الأدوات المجانية"], href: `${base}/tools` },
+        ...tools.map((tool) => ({ title: tool.title, href: `${base}/tools/${tool.slug}` })),
+        {
+          title: ["Sample tax invoice", "نموذج فاتورة ضريبية"],
+          href: `${base}/tools/invoice-template`,
+        },
+      ],
     },
     {
       id: "resources",
@@ -189,10 +208,10 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
   );
   const actions = (
     <>
-      <Link className="phase-button phase-outline" href={`${base}/book-a-demo`}>
+      <Link className="phase-button phase-outline" href={`${base}/book-demo`}>
         {tr(demo)}
       </Link>
-      <Link className="phase-button phase-primary" href="/register">
+      <Link className="phase-button phase-primary" href={trialSignupPath}>
         {tr(start)}
       </Link>
     </>
@@ -241,7 +260,7 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
       <div className="phase-wrap phase-header-inner">
         <Link className="phase-brand" href={base} translate="no">
           <BrandMark size="sm" />
-          <bdi>{marketingBrand}</bdi>
+          <bdi>{MARKETING_BRAND.name[base === "/ar" ? "ar" : "en"]}</bdi>
         </Link>
         <nav
           className="phase-desktop"
@@ -393,7 +412,7 @@ function Workflows({ base, locale, tr }: { base: string; locale: string; tr: Tra
                     <div>
                       <h3>{tr(w.label)}</h3>
                       <p>{tr(f.lead)}</p>
-                      <Link className="phase-textlink" href={`${base}/product/${f.slug}`}>
+                      <Link className="phase-textlink" href={`${base}${featurePath(f.slug)}`}>
                         {tr(["Explore feature", "استكشف الميزة"])} <ArrowRight aria-hidden="true" />
                       </Link>
                     </div>
@@ -452,10 +471,10 @@ function Closing({ base, tr }: { base: string; tr: Translate }) {
           ])}
         </h2>
         <div className="phase-cta-row">
-          <Link className="phase-button phase-white" href="/register">
+          <Link className="phase-button phase-white" href={trialSignupPath}>
             {tr(start)}
           </Link>
-          <Link className="phase-button phase-light-outline" href={`${base}/book-a-demo`}>
+          <Link className="phase-button phase-light-outline" href={`${base}/book-demo`}>
             {tr(demo)}
           </Link>
         </div>
@@ -464,14 +483,6 @@ function Closing({ base, tr }: { base: string; tr: Translate }) {
   );
 }
 
-const homeTitle = [
-  "Accounting and VAT for UAE businesses",
-  "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات",
-] as const;
-const homeLead = [
-  "Send bilingual invoices, scan receipts with AI, prepare your VAT return and give your accountant access to your books.",
-  "أرسل فواتير ثنائية اللغة، وامسح الإيصالات بالذكاء الاصطناعي، وأعدّ إقرار ضريبة القيمة المضافة، وامنح محاسبك وصولاً إلى دفاترك.",
-] as const;
 const faqs: readonly [Bilingual, Bilingual][] = [
   [["How do I reconcile my bank statement?", "كيف أطابق كشف حسابي البنكي؟"], bankCopy],
   [["How do I file my VAT return?", "كيف أقدّم إقرار ضريبة القيمة المضافة؟"], vatCopy],
@@ -492,8 +503,8 @@ const faqs: readonly [Bilingual, Bilingual][] = [
   [
     ["Who handles e-invoice transmission?", "من يتولى إرسال الفواتير الإلكترونية؟"],
     [
-      "The accredited provider you select for your company handles transmission after you complete its setup.",
-      "يتولى مزوّد الخدمة المعتمد الذي تختاره لشركتك إرسال الفواتير بعد إكمال إعداده.",
+      "Choose A-Cube or Complyance for your company, then complete setup before testing the exchange.",
+      "اختر A-Cube أو Complyance لشركتك واستكمل الإعداد قبل اختبار التبادل.",
     ],
   ],
 ];
@@ -509,17 +520,20 @@ function Home({ base, locale, tr }: { base: string; locale: string; tr: Translat
             <div className="phase-cta-row">
               <Link
                 className="phase-button phase-primary"
-                href="/register"
+                href={trialSignupPath}
                 data-testid="button-hero-start"
               >
                 {tr(start)} <ArrowUpRight aria-hidden="true" />
               </Link>
               <Link
                 className="phase-button phase-outline"
-                href={`${base}/book-a-demo`}
+                href={`${base}/book-demo`}
                 data-testid="button-hero-demo"
               >
                 {tr(demo)}
+              </Link>
+              <Link className="phase-textlink" href="/demo">
+                {tr(["Explore the sample workspace", "استكشف مساحة العمل التجريبية"])}
               </Link>
             </div>
             <p className="phase-trial">
@@ -617,7 +631,7 @@ function Home({ base, locale, tr }: { base: string; locale: string; tr: Translat
                 <Link
                   className="phase-card phase-feature-card"
                   key={f.slug}
-                  href={`${base}/product/${f.slug}`}
+                  href={`${base}${featurePath(f.slug)}`}
                 >
                   <h3>
                     {tr(f.title)} <ArrowUpRight aria-hidden="true" />
@@ -670,7 +684,12 @@ function Home({ base, locale, tr }: { base: string; locale: string; tr: Translat
       </section>
       <section className="phase-section">
         <div className="phase-wrap phase-split phase-faq">
-          <Heading title={tr(["Frequently asked questions", "الأسئلة الشائعة"])} />
+          <div>
+            <Heading title={tr(["Frequently asked questions", "الأسئلة الشائعة"])} />
+            <Link className="phase-textlink" href={`${base}/tools/invoice-template`}>
+              {tr(["Inspect a sample tax invoice", "راجع نموذج فاتورة ضريبية"])}
+            </Link>
+          </div>
           <div>
             {faqs.map(([q, a]) => (
               <details key={q[0]}>
@@ -715,14 +734,22 @@ export default function PhaseSite() {
   const base = `/${locale}`;
   const [, , route, slug, extra] = path.replace(/\/$/, "").split("/");
   const section = extra ? "404" : route;
-  const editorial = editorialPath(path.slice(base.length).replace(/\/$/, ""));
-  const page = editorial && editorialPages[editorial];
+  const localPath = path.slice(base.length).replace(/\/$/, "");
+  const editorial = editorialPath(localPath);
+  const launchPage = launchPagePath(localPath);
+  const page = editorial
+    ? editorialPages[editorial]
+    : launchPage
+      ? launchPages[launchPage]
+      : undefined;
   const parent = editorial && slug ? editorialPath(`/${section}`) : undefined;
-  const feature = section === "product" ? features.find((f) => f.slug === slug) : undefined;
+  const feature = features.find(
+    (f) => localPath === featurePath(f.slug) || localPath === `/product/${f.slug}`
+  );
   const audience = section === "solutions" ? audiences.find((a) => a.slug === slug) : undefined;
   const tool = section === "tools" ? tools.find((t) => t.slug === slug) : undefined;
   const home = !section;
-  const booking = section === "book-a-demo" && !slug;
+  const booking = (section === "book-demo" || section === "book-a-demo") && !slug;
   const plans = section === "pricing" && !slug;
   const title = tr(
     home
@@ -734,7 +761,12 @@ export default function PhaseSite() {
           (booking ? demo : plans ? pricing : ["Page not found", "الصفحة غير موجودة"]))
   );
   const lead = tr(home ? homeLead : (feature?.lead ?? audience?.lead ?? page?.lead ?? ["", ""]));
-  usePageMeta(`${title} | ${marketingBrand}`, lead);
+  const meta = marketingMetadata(home ? base : path);
+  usePageMeta(
+    meta?.title ?? `${title} | ${MARKETING_BRAND.name[locale]}`,
+    meta?.description ?? lead,
+    meta
+  );
   return (
     <div className="phase-site" lang={locale} dir={locale === "ar" ? "rtl" : "ltr"}>
       <a className="phase-skip" href="#phase-main">
@@ -781,6 +813,45 @@ export default function PhaseSite() {
                   )}
                 </div>
               )}
+              {feature?.slug === "e-invoicing" && (
+                <div className="phase-form">
+                  <h2>{tr(["PDFs and structured invoices", "ملفات PDF والفواتير المهيكلة"])}</h2>
+                  <p>
+                    {tr([
+                      "A PDF is a readable invoice copy. A structured e-invoice sends machine-readable invoice data through the provider you select.",
+                      "ملف PDF نسخة مقروءة من الفاتورة. أمّا الفاتورة الإلكترونية المهيكلة فترسل بيانات قابلة للقراءة آليًا عبر مزوّد الخدمة الذي تختاره.",
+                    ])}
+                  </p>
+                  <p>
+                    {tr([
+                      "E-invoicing is available on every plan. Choose A-Cube or Complyance and confirm onboarding and any separate fees with your provider.",
+                      "تتوفر الفوترة الإلكترونية في جميع الباقات. اختر A-Cube أو Complyance وتحقّق من إجراءات الإعداد وأي رسوم منفصلة مع المزوّد.",
+                    ])}
+                  </p>
+                  <a
+                    className="phase-textlink"
+                    href="https://mof.gov.ae/en/about-us/initiatives/einvoicing/einvoicing-accredited-service-providers-asps/"
+                  >
+                    {tr([
+                      "Ministry of Finance provider register",
+                      "سجل مزوّدي الخدمات لدى وزارة المالية",
+                    ])}
+                  </a>
+                  <Link className="phase-textlink" href={`${base}/tools/e-invoicing-readiness`}>
+                    {tr(["Review the setup checklist", "راجع قائمة خطوات الإعداد"])}
+                  </Link>
+                </div>
+              )}
+              {feature?.slug === "invoicing" && (
+                <Link className="phase-textlink" href={`${base}/tools/invoice-template`}>
+                  {tr(["View a sample tax invoice", "اطّلع على نموذج فاتورة ضريبية"])}
+                </Link>
+              )}
+              {feature?.slug === "vat" && (
+                <Link className="phase-textlink" href={`${base}/tools/vat-calculator`}>
+                  {tr(["Try the VAT calculator", "جرّب حاسبة ضريبة القيمة المضافة"])}
+                </Link>
+              )}
               {audience && (
                 <div className="phase-split phase-product-detail">
                   {audience.links.map((link) => {
@@ -789,7 +860,7 @@ export default function PhaseSite() {
                       <Link
                         className="phase-card phase-feature-card"
                         key={f.slug}
-                        href={`${base}/product/${f.slug}`}
+                        href={`${base}${featurePath(f.slug)}`}
                       >
                         <h3>{tr(f.title)}</h3>
                         <p>{tr(f.lead)}</p>
@@ -798,6 +869,7 @@ export default function PhaseSite() {
                   })}
                 </div>
               )}
+              {launchPage && <LaunchPages path={launchPage} base={base} tr={tr} />}
               {editorial && (
                 <Suspense fallback={null}>
                   <EditorialContent path={editorial} locale={locale} />
@@ -808,6 +880,12 @@ export default function PhaseSite() {
               {plans && (
                 <>
                   <Plans tr={tr} immediate />
+                  <p>
+                    {tr([
+                      "The 14-day trial includes Enterprise. If it ends before you choose a paid plan, your workspace becomes read-only and your records stay available.",
+                      "تشمل التجربة لمدة ١٤ يومًا باقة المؤسسات. إذا انتهت التجربة قبل اختيار باقة مدفوعة، تصبح مساحة العمل للقراءة فقط وتظل سجلاتك متاحة.",
+                    ])}
+                  </p>
                   <Link className="phase-textlink" href="/pricing">
                     {tr(["View the full plan comparison", "اطّلع على المقارنة الكاملة للباقات"])}
                   </Link>
@@ -822,10 +900,13 @@ export default function PhaseSite() {
         <div className="phase-wrap">
           <Link className="phase-brand" href={base} translate="no">
             <BrandMark size="sm" />
-            <bdi>{marketingBrand}</bdi>
+            <bdi>{MARKETING_BRAND.name[base === "/ar" ? "ar" : "en"]}</bdi>
           </Link>
           <nav aria-label={tr(["Footer", "روابط التذييل"])}>
             <Link href={`${base}/trust`}>{tr(editorialPages["/trust"].title)}</Link>
+            <Link href={`${base}/about`}>{tr(["About", "عن الشركة"])}</Link>
+            <Link href={`${base}/contact`}>{tr(["Contact", "تواصل معنا"])}</Link>
+            <Link href="/cookies">{tr(["Cookies", "ملفات تعريف الارتباط"])}</Link>
             <Link href="/privacy">{tr(["Privacy", "الخصوصية"])}</Link>
             <Link href="/terms">{tr(["Terms", "الشروط"])}</Link>
             <Link href="/help">{tr(["Help", "المساعدة"])}</Link>

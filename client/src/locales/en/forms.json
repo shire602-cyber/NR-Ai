@@ -380,7 +380,7 @@
   "forms.accountGroupExpenses": "Expenses",
   "forms.accountGroupFixedAssets": "Fixed assets",
   "forms.accountGroupOtherAssets": "Other assets",
-  "forms.serverErrors.PLAN_REQUIRED": "Your free trial has ended. Choose and activate a paid plan to regain access. Your data is saved.",
+  "forms.serverErrors.PLAN_REQUIRED": "Your free trial has ended. Choose and activate a paid plan to make changes. Your data is saved.",
   "forms.serverErrors.USAGE_LIMIT_REACHED_invoices": "This month's invoice limit on your plan is used up. Upgrade for unlimited invoices.",
   "forms.serverErrors.USAGE_LIMIT_REACHED_receipts": "This month's receipt limit on your plan is used up. Upgrade for unlimited receipts.",
   "forms.serverErrors.USAGE_LIMIT_REACHED_ai_calls": "This month's AI credits on your plan are used up. Upgrade for more.",

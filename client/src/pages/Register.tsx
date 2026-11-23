@@ -248,6 +248,7 @@ export default function Register() {
   const [plan, setPlan] = useState<SignupPlanState>(() =>
     readSignupPlan(typeof window !== "undefined" ? window.location.search : "")
   );
+  const trialOnly = plan.step === "account" && !plan.explicit;
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusTarget = useRef<"heading" | "radio" | null>(null);
   const [announced, setAnnounced] = useState(false);
@@ -314,7 +315,7 @@ export default function Register() {
       "",
       signupPlanUrl(next.planId, next.cycle, { step: next.step, source: next.source })
     );
-    setPlan(next);
+    setPlan({ ...next, explicit: true });
   }, []);
 
   // Step change: move focus (heading on Continue, the selected radio on Change / Back).
@@ -388,8 +389,14 @@ export default function Register() {
             onSuccess={handleSuccess}
             captchaToken={captchaToken}
             captcha={<TurnstileWidget onToken={setCaptchaToken} />}
-            plan={{ planId: plan.planId, cycle: plan.cycle, source: plan.source }}
-            onChangePlan={() => goToStep({ ...plan, step: "plan" }, "radio")}
+            plan={
+              trialOnly
+                ? undefined
+                : { planId: plan.planId, cycle: plan.cycle, source: plan.source }
+            }
+            onChangePlan={
+              trialOnly ? undefined : () => goToStep({ ...plan, step: "plan" }, "radio")
+            }
           />
         </div>
       )}

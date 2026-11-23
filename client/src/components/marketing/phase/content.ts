@@ -1,3 +1,4 @@
+import { MARKETING_BRAND } from "../../../../../shared/marketing-brand";
 import { BANK_RECONCILIATION_COPY } from "@shared/bank-reconciliation-copy";
 import { planDefinition } from "@shared/plans";
 
@@ -7,8 +8,8 @@ export type Bilingual = readonly [string, string];
 
 export const bankCopy: Bilingual = [BANK_RECONCILIATION_COPY.en, BANK_RECONCILIATION_COPY.ar];
 export const vatCopy: Bilingual = [
-  "Prepare and review VAT 201 in the app, then submit it in EmaraTax.",
-  "أعدّ وراجع إقرار ضريبة القيمة المضافة VAT 201 في التطبيق، ثم قدّمه عبر EmaraTax.",
+  `Prepare and review VAT 201 in ${MARKETING_BRAND.name.en}, then submit it in EmaraTax.`,
+  `جهّز إقرار ضريبة القيمة المضافة وراجعه في ${MARKETING_BRAND.name.ar}، ثم قدّمه عبر إمارات تاكس (EmaraTax).`,
 ];
 
 interface Feature {
@@ -214,8 +215,8 @@ const featureData = [
     slug: "e-invoicing",
     title: ["UAE e-invoicing", "الفوترة الإلكترونية في الإمارات"],
     lead: [
-      "Prepare for UAE e-invoicing and choose one accredited provider for your company, either A-Cube or Complyance.",
-      "استعد للفوترة الإلكترونية في الإمارات واختر مزوّد خدمة معتمدًا واحدًا لشركتك، إما A-Cube أو Complyance.",
+      `${MARKETING_BRAND.name.en} supports UAE structured e-invoicing through accredited service providers. Setup is required.`,
+      `يدعم ${MARKETING_BRAND.name.ar} الفوترة الإلكترونية في الإمارات عبر مزوّدي خدمات معتمدين، بعد استكمال الإعداد.`,
     ],
     steps: [
       ["Review your company and customer tax details.", "راجع البيانات الضريبية لشركتك وعملائك."],

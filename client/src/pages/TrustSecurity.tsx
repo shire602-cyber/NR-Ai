@@ -1,3 +1,4 @@
+import { MARKETING_BRAND } from "@shared/marketing-brand";
 import { T } from "@/components/layout/T";
 import { MarketingLayout } from "@/components/marketing/MarketingLayout";
 import { Checklist, SectionHeading, Tiles } from "@/components/marketing/Sections";
@@ -24,9 +25,9 @@ import { useTranslation } from "@/lib/i18n";
 // pages document (operator, support and privacy mailboxes). Release-gate / CI notes are
 // internal evidence (docs/TRUST.md), not customer copy.
 
-const SUPPORT_EMAIL = "support@muhasib.ai";
-const PRIVACY_EMAIL = "privacy@muhasib.ai";
-const SECURITY_EMAIL = "security@muhasib.ai";
+const SUPPORT_EMAIL = MARKETING_BRAND.supportEmail;
+const PRIVACY_EMAIL = MARKETING_BRAND.privacyEmail;
+const SECURITY_EMAIL = MARKETING_BRAND.securityEmail;
 
 const ROADMAP = [1, 2, 3, 4];
 

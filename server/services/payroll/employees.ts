@@ -9,6 +9,7 @@ import { fromFils, sumFils, toFils } from "../../../shared/money";
 import type { EmployeeCreateBody, EmployeePatchBody } from "../../../shared/validators/payroll";
 import { fils, q, q1, type Row } from "./sql";
 import { syncOpeningGratuity } from "./opening-gratuity";
+import { ensureDefaultLeaveTypes } from "./leave";
 
 const log = createLogger("payroll-employees");
 
@@ -206,6 +207,7 @@ export async function createEmployee(
 ): Promise<Row> {
   await assertCostCenter(companyId, body.costCenterId);
   await assertUniqueIdentifiers(companyId, body, null);
+  await ensureDefaultLeaveTypes(companyId);
   const values: Record<string, unknown> = { ...NOT_NULL_DEFAULTS };
   for (const [k, v] of Object.entries(body)) if (v !== undefined) values[k] = v;
   withOpeningGratuityDate(values);

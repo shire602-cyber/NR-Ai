@@ -54,6 +54,7 @@ interface CashLine {
 }
 
 const NO_CONTACT = "__none__";
+const BUYER_TYPES = ["consumer", "business", "government"] as const;
 
 /**
  * WQ1 (7.7): a sale paid on the spot. The customer is optional (a walk-in customer is "Cash
@@ -104,6 +105,7 @@ export default function CashSale() {
   const nextNumber = numbering?.numbering.find((n) => n.docType === "cash_sale")?.nextFormatted;
 
   const [contactId, setContactId] = useState(NO_CONTACT);
+  const [buyerType, setBuyerType] = useState<(typeof BUYER_TYPES)[number] | "unknown">("unknown");
   const [customerName, setCustomerName] = useState("");
   const [pickedAccountId, setAccountId] = useState("");
   // The primary bank (or cash) account until one is picked.
@@ -141,6 +143,7 @@ export default function CashSale() {
           ? { contactId }
           : { customerName: customerName.trim() || t["invoices.cashSale.cashCustomer"] }),
         date,
+        ...(buyerType === "unknown" ? {} : { buyerType }),
         paymentAccountId: accountId,
         ...(emirate ? { placeOfSupplyEmirate: emirate } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
@@ -266,6 +269,25 @@ export default function CashSale() {
               />
             </div>
           )}
+          <div className="space-y-2">
+            <Label htmlFor="cash-buyer-type">{t["invoices.cashSale.buyerType"]}</Label>
+            <Select
+              value={buyerType}
+              onValueChange={(value: typeof buyerType) => setBuyerType(value)}
+            >
+              <SelectTrigger id="cash-buyer-type" data-testid="select-cash-buyer-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unknown">{t["invoices.cashSale.buyerType.unknown"]}</SelectItem>
+                {BUYER_TYPES.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {t[`invoices.cashSale.buyerType.${type}`]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="cash-account">{t["invoices.cashSale.paidInto"]}</Label>
             <Select

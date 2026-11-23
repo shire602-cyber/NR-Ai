@@ -1004,7 +1004,7 @@
   "pages.subscriptionStateReadOnly": "مقفلة",
   "pages.subscriptionTrialEnds": "تنتهي التجربة",
   "pages.subscriptionTrialExplain": "كل الميزات متاحة خلال الفترة التجريبية. اختيار خطة وحده لا يُبقي عملك مستمرًا: فعّل خطة قبل انتهائها.",
-  "pages.subscriptionExpiredExplain": "اختر خطة مدفوعة وفعّلها لاستعادة الوصول. بياناتك محفوظة.",
+  "pages.subscriptionExpiredExplain": "اختر خطة مدفوعة وفعّلها لإجراء تغييرات. بياناتك محفوظة.",
   "pages.subscriptionUnlimitedUsersNote": "كل خطة تشمل عددًا غير محدود من المستخدمين.",
   "pages.subscriptionChooseAPlan": "اختر خطة",
   "pages.subscriptionChoosePlanContact": "اختر {plan}",

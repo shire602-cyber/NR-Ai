@@ -486,3 +486,9 @@ describe.each(["en", "ar"] as const)("trial banner (%s)", (locale) => {
     expect(q("trial-activate")).not.toBeNull();
   });
 });
+
+it("starts the public trial at account creation without a plan selection", async () => {
+  await mountRegister("en", "?step=account", "signup-trial-offer");
+  expect(q("signup-plan-summary")).toBeNull();
+  expect(q("signup-trial-offer")?.textContent).toContain("AED 0 due today");
+});

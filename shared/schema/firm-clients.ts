@@ -334,6 +334,7 @@ export const subscriptions = pgTable(
     // Stripe Integration (if using)
     stripeCustomerId: text("stripe_customer_id"),
     stripeSubscriptionId: text("stripe_subscription_id"),
+    stripeCheckoutCompleted: boolean("stripe_checkout_completed").notNull().default(false),
 
     // Usage Limits
     maxUsers: integer("max_users").default(1),

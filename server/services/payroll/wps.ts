@@ -77,15 +77,23 @@ export async function sifPrevalidation(companyId: string, runId: string) {
   return { ready: issues.length === 0, issues };
 }
 
-export async function generateRunSif(companyId: string, runId: string) {
-  const input = await sifInput(companyId, runId);
-  const file = buildSif(input); // 422 SIF_PREVALIDATION_FAILED with the per-employee list
+export async function downloadRunSif(companyId: string, runId: string) {
+  const saved = await q1<{ content: string | null; name: string | null }>(
+    `SELECT sif_file_content AS content, sif_file_name AS name FROM payroll_runs
+      WHERE id = $1 AND company_id = $2`,
+    [runId, companyId]
+  );
+  if (saved?.content && saved.name) return { content: saved.content, fileName: saved.name };
+  return buildSif(await sifInput(companyId, runId));
+}
+
+export async function generateRunSif(companyId: string, runId: string): Promise<void> {
+  const file = buildSif(await sifInput(companyId, runId));
   await q(
     `UPDATE payroll_runs SET sif_file_content = $2, sif_file_name = $3, sif_generated_at = NOW()
-      WHERE id = $1`,
-    [runId, file.content, file.fileName]
+      WHERE id = $1 AND company_id = $4`,
+    [runId, file.content, file.fileName, companyId]
   );
-  return file;
 }
 
 export async function setWpsStatus(

@@ -242,7 +242,7 @@ export function logBillingEnforcementStatus(): void {
 export const UPGRADE_URL = "/subscription";
 
 export const TRIAL_LOCK_MESSAGE =
-  "Your free trial has ended. Choose and activate a paid plan to regain access. Your data is saved.";
+  "Your free trial has ended. Choose and activate a paid plan to make changes. Your data is saved.";
 
 export function refuseExpiredTrial(res: Response, companyId?: string): void {
   res

@@ -13,7 +13,6 @@ import { strictBody } from "../http/strict-body";
 import { DomainError } from "../errors";
 import {
   customerContacts,
-  einvoiceBuyerEndpoints,
   invoiceLines,
   invoices,
   type Company,
@@ -38,7 +37,7 @@ import {
   EINVOICE_NOT_REQUIRED_MESSAGE,
   isB2cCashSale,
 } from "../services/einvoice/applicability";
-import { loadEInvoiceBuyer, loadEInvoiceContext } from "../services/einvoice/context";
+import { loadEInvoiceContext } from "../services/einvoice/context";
 import {
   artefactStatus,
   summariseValidation,
@@ -590,10 +589,7 @@ export function registerEInvoiceRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { invoice, company } = await loadInvoiceAndCompany(req);
       await assertScopedCompanyPermission(req.user, company.id, "tax.submit");
-      if (
-        invoice.source === "cash_sale" &&
-        isB2cCashSale(invoice, await loadEInvoiceBuyer(invoice, company))
-      ) {
+      if (isB2cCashSale(invoice)) {
         throw new DomainError(EINVOICE_NOT_REQUIRED, 409, undefined, EINVOICE_NOT_REQUIRED_MESSAGE);
       }
       const prior = await getEInvoiceDocument(company.id, invoice.id);
@@ -803,7 +799,6 @@ export function registerEInvoiceRoutes(app: Express) {
             customerName: invoices.customerName,
           },
           linkedBuyerTrn: customerContacts.trnNumber,
-          buyerEndpoint: einvoiceBuyerEndpoints.participantId,
         })
         .from(invoices)
         .leftJoin(
@@ -811,13 +806,6 @@ export function registerEInvoiceRoutes(app: Express) {
           and(
             eq(customerContacts.id, invoices.contactId),
             eq(customerContacts.companyId, invoices.companyId)
-          )
-        )
-        .leftJoin(
-          einvoiceBuyerEndpoints,
-          and(
-            eq(einvoiceBuyerEndpoints.companyId, invoices.companyId),
-            eq(einvoiceBuyerEndpoints.contactId, customerContacts.id)
           )
         )
         .where(
@@ -840,8 +828,7 @@ export function registerEInvoiceRoutes(app: Express) {
             doc,
             company,
             now,
-            invoice?.customerTrn || source?.linkedBuyerTrn,
-            source?.buyerEndpoint
+            invoice?.customerTrn || source?.linkedBuyerTrn
           );
           return {
             ...projectEInvoiceDocument(doc, tracks),

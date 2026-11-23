@@ -1,3 +1,4 @@
+import { MARKETING_BRAND } from "@shared/marketing-brand";
 // Internationalization utilities for English/Arabic support
 import { siteLocale } from "@/components/marketing/phase/routes";
 import { BANK_RECONCILIATION_COPY } from "@shared/bank-reconciliation-copy";
@@ -305,7 +306,7 @@ const baseT = {
     vat: "VAT",
     total: "Total",
     addLine: "Add line",
-    description: "Description",
+    description: "Description", // i18n-ignore: English entry in the bilingual base translation dictionary.
     quantity: "Quantity",
     unitPrice: "Unit price",
     amount: "Amount",
@@ -1175,7 +1176,15 @@ function loadPaths(locale: Locale, paths: string[]): Promise<void> {
       if (!job) {
         job = loaders[path]()
           .then((catalog) => {
-            Object.assign(t[locale], catalog);
+            if (namespaceOf(path) === "marketing") {
+              for (const [key, value] of Object.entries(catalog)) {
+                t[locale][key] = value
+                  .replaceAll("[[brand]]", MARKETING_BRAND.name[locale])
+                  .replaceAll("[[supportEmail]]", MARKETING_BRAND.supportEmail);
+              }
+            } else {
+              Object.assign(t[locale], catalog);
+            }
             loadedPaths[locale].add(path);
           })
           .finally(() => pendingPaths.delete(key));

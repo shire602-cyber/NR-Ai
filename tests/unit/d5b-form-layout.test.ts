@@ -200,6 +200,36 @@ describe("[D5b] error summary", () => {
     expect(document.activeElement?.id).toBe("x-name");
   });
 
+  it("matches a custom control and its label by exact attribute value", async () => {
+    const id = 'picker["customer"]';
+    function Demo() {
+      const form = useForm<{ customer: string }>();
+      return createElement(
+        Form,
+        form as never,
+        createElement(
+          "form",
+          {
+            onSubmit: form.handleSubmit(() =>
+              form.setError("customer", { type: "manual", message: "Customer is required" })
+            ),
+          },
+          createElement(FormErrorSummary),
+          createElement("label", { htmlFor: id }, "Customer"),
+          createElement("button", { id, type: "button", "data-field": "customer" }, "Choose"),
+          createElement("button", { type: "submit" }, "Save")
+        )
+      );
+    }
+
+    await render(createElement(Demo));
+    await act(async () => container.querySelector("form")!.requestSubmit());
+    const summary = container.querySelector('[data-testid="form-error-summary"]')!;
+    expect(summary.textContent).toContain("Customer is required");
+    await act(async () => summary.querySelector("button")!.click());
+    expect(document.activeElement?.id).toBe(id);
+  });
+
   it("FormErrorSummary appears only after a failed submit and focuses the first invalid", async () => {
     function Demo() {
       const form = useForm<{ name: string }>({ defaultValues: { name: "" } });
