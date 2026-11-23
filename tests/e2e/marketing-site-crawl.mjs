@@ -51,22 +51,22 @@ const localizedHeadings = {
     "Download a sample bilingual UAE tax invoice",
     "حمّل نموذج فاتورة ضريبية إماراتية بالعربية والإنجليزية",
   ],
+  "/about": ["About Muhasib.ai", "عن محاسب"],
+  "/contact": ["Contact Muhasib.ai", "تواصل مع محاسب"],
   "/uae-e-invoicing": ["UAE e-invoicing", "الفوترة الإلكترونية في الإمارات"],
   "/book-demo": ["Request a demo", "اطلب عرضًا توضيحيًا"],
-  "/book-a-demo": ["Request a demo", "اطلب عرضًا توضيحيًا"],
   "/pricing": ["Pricing", "الأسعار"],
   "/product/invoicing": ["Invoicing", "الفوترة"],
   "/product/accounting": ["Accounting", "المحاسبة"],
   "/product/vat": ["VAT 201", "إقرار VAT 201"],
-  "/product/reporting": ["Reporting", "التقارير"],
+  "/product/accounting-reports": ["Reporting", "التقارير"],
   "/product/expenses": ["Expenses", "المصروفات"],
   "/product/bookkeeping": ["Bookkeeping", "مسك الدفاتر"],
   "/product/inventory": ["Inventory", "المخزون"],
   "/product/bank-reconciliation": ["Bank reconciliation", "المطابقة البنكية"],
-  "/product/receipt-scanning": ["AI receipt scanning", "مسح الإيصالات بالذكاء الاصطناعي"],
+  "/product/ai-document-scanning": ["AI receipt scanning", "مسح الإيصالات بالذكاء الاصطناعي"],
   "/product/payroll": ["Payroll", "الرواتب"],
   "/product/client-portal": ["Client portal", "بوابة العملاء"],
-  "/product/e-invoicing": ["UAE e-invoicing", "الفوترة الإلكترونية في الإمارات"],
   "/solutions/small-business": ["Small and medium businesses", "الشركات الصغيرة والمتوسطة"],
   "/solutions/accounting-firms": ["Accounting firms", "مكاتب المحاسبة"],
   "/tools/vat-calculator": ["VAT calculator", "حاسبة ضريبة القيمة المضافة"],
@@ -77,18 +77,27 @@ const localizedHeadings = {
   ],
   ...editorialHeadings,
 };
+// Older URLs remain valid even when navigation uses the canonical paths.
+const localizedAliases = {
+  "/book-a-demo": "/book-demo",
+  "/product/reporting": "/product/accounting-reports",
+  "/product/receipt-scanning": "/product/ai-document-scanning",
+  "/product/e-invoicing": "/uae-e-invoicing",
+};
 const registrationHeading = ["Start your books", "ابدأ دفاترك"];
 const sharedHeadings = {
   "/help": ["Help with setting up and running your books.", "مساعدة في إعداد دفاترك وإدارتها."],
   "/demo": ["Open a sample company and look around.", "افتح شركة نموذجية وتجوّل فيها."],
   "/login": ["Welcome back", "مرحبًا بعودتك"],
   "/register": ["Choose your plan", "اختر خطتك"],
+  "/register?step=account": registrationHeading,
   "/register?plan=starter&cycle=monthly": registrationHeading,
   "/register?plan=professional&cycle=monthly": registrationHeading,
   "/register?plan=enterprise&cycle=monthly": registrationHeading,
   "/pricing": ["One plan for where your books are today.", "خطة تناسب حال دفاترك اليوم."],
   "/privacy": ["Privacy policy", "سياسة الخصوصية"],
   "/terms": ["Terms of service", "شروط الخدمة"],
+  "/cookies": ["Cookie policy", "سياسة ملفات تعريف الارتباط"],
 };
 const base = new URL(process.env.BASE_URL || "http://127.0.0.1:5000");
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH });
@@ -117,16 +126,18 @@ async function checkHeading(onPage, path, expected) {
 
 async function checkPage(onPage, locale, path) {
   const expectedDir = locale === "ar" ? "rtl" : "ltr";
-  const expected = localizedHeadings[path.slice(3)];
+  const localPath = path.slice(3);
+  const expected = localizedHeadings[localizedAliases[localPath] ?? localPath];
   assert.ok(expected, `Linked destination ${path} has no expected heading`);
   await onPage.waitForURL((url) => url.pathname === path);
-  await checkHeading(onPage, path, translated(expected, locale));
+  const main = onPage.locator("#phase-main");
+  await checkHeading(main, path, translated(expected, locale));
   await onPage.waitForFunction(
     ({ lang, dir }) =>
       document.documentElement.lang === lang && document.documentElement.dir === dir,
     { lang: locale, dir: expectedDir }
   );
-  const layout = await onPage.locator("#phase-main").evaluate((main) => ({
+  const layout = await main.evaluate((main) => ({
     direction: getComputedStyle(main).direction,
     reflows: document.documentElement.scrollWidth <= window.innerWidth,
   }));
@@ -156,7 +167,11 @@ async function checkEncodedPage(locale, encoded, canonical) {
   const response = await page.goto(url);
   assert.equal(response?.status(), 200, `${url} localized HTML status`);
   assert.equal((await page.request.head(url)).status(), 200, `${url} HEAD status`);
-  await checkHeading(page, url, translated(localizedHeadings[canonical], locale));
+  await checkHeading(
+    page.locator("#phase-main"),
+    url,
+    translated(localizedHeadings[canonical], locale)
+  );
   assert.deepEqual(contextErrors, [], url);
   const encodedSeparator = new URL(`/${locale}/product%2Finvoicing`, base).href;
   assert.equal((await page.request.head(encodedSeparator)).status(), 404, encodedSeparator);
@@ -236,7 +251,7 @@ async function crawl(locale) {
       );
     }
     const hrefs = await page
-      .locator('.phase-site a[href^="/"]')
+      .locator('.phase-site a[href^="/"]:not([download])')
       .evaluateAll((links) => links.map((link) => link.href));
     for (const href of hrefs) {
       const target = new URL(href);
@@ -258,7 +273,8 @@ async function crawl(locale) {
     contextErrors.length = 0;
     const response = await page.goto(href);
     assert.equal(response?.status(), 200, href);
-    assert.equal(page.url(), href);
+    // Explicit plan links add the account step to the URL after mounting.
+    assert.equal(response.url(), href);
     await checkHeading(page, path, translated(expected, locale));
     assert.deepEqual(contextErrors, [], path);
   }
@@ -337,6 +353,12 @@ try {
   const sitemapText = await sitemap.text();
   assert.match(sitemapText, /<loc>https:\/\/muhasib\.ai\/en<\/loc>/);
   assert.match(sitemapText, /<loc>https:\/\/muhasib\.ai\/ar<\/loc>/);
+
+  const sampleInvoice = await page.request.head(
+    new URL("/samples/muhasib-sample-invoice.pdf", base).href
+  );
+  assert.equal(sampleInvoice.status(), 200);
+  assert.match(sampleInvoice.headers()["content-type"], /application\/pdf/);
 
   const readiness = await page.request.get(new URL("/readyz", base).href);
   assert.equal(readiness.status(), 200);
