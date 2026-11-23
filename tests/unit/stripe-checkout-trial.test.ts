@@ -411,7 +411,13 @@ describe("Stripe checkout product trial and referral", () => {
     await handleWebhookEvent({
       id: "delete-event",
       type: "customer.subscription.deleted",
-      data: { object: { id: "first-subscription", metadata: { companyId: "company" } } },
+      data: {
+        object: {
+          id: "first-subscription",
+          customer: "fixture-customer",
+          metadata: { companyId: "company" },
+        },
+      },
     } as unknown as Stripe.Event);
     expect(subscription).toMatchObject({
       planId: "free",

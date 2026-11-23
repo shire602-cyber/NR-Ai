@@ -133,14 +133,16 @@ async function reserveCheckout(
     if (session.mode !== "subscription" || session.metadata?.companyId !== company.id) continue;
     // Open sessions also include checkouts created before returning customers were reserved.
     if (session.status === "open") throw checkoutInProgress();
-    const matchesReservation =
-      previousExpiry !== null && session.metadata.firstCheckoutExpiry === String(previousExpiry);
-    if (previousExpiry !== null && !matchesReservation) continue;
+    // A legacy session can complete after the subscription list was read.
     if (session.status === "complete") {
       const result = await reconcileCheckout(stripeClient, session, subscription);
       if (result === "applied") return null;
       if (result !== "closed") throw checkoutInProgress();
-    } else if (session.status !== "expired") {
+    }
+    const matchesReservation =
+      previousExpiry !== null && session.metadata.firstCheckoutExpiry === String(previousExpiry);
+    if (previousExpiry !== null && !matchesReservation) continue;
+    if (session.status !== "complete" && session.status !== "expired") {
       throw checkoutInProgress();
     }
     if (matchesReservation) stripeExpired = true;
@@ -549,13 +551,19 @@ function stripeSubscriptionState(sub: Stripe.Subscription) {
   };
 }
 
-async function handleSubscriptionUpdated(sub: Stripe.Subscription): Promise<void> {
+async function resolveWebhookSubscription(sub: Stripe.Subscription) {
   const companyId = sub.metadata?.companyId;
-  if (!companyId) return;
+  const customerId = stripeObjectId(sub.customer);
+  if (!customerId) return;
+  if (!companyId) return storage.getSubscriptionByStripeIds(sub.id, customerId);
 
   const subscription = await storage.getSubscription(companyId);
-  if (!subscription) return;
-  if (subscription.stripeSubscriptionId !== sub.id) return;
+  if (subscription?.stripeCustomerId === customerId) return subscription;
+}
+
+async function handleSubscriptionUpdated(sub: Stripe.Subscription): Promise<void> {
+  const subscription = await resolveWebhookSubscription(sub);
+  if (!subscription || subscription.stripeSubscriptionId !== sub.id) return;
 
   await storage.updateSubscription(subscription.id, {
     ...stripeSubscriptionState(sub),
@@ -564,10 +572,7 @@ async function handleSubscriptionUpdated(sub: Stripe.Subscription): Promise<void
 }
 
 async function handleSubscriptionDeleted(sub: Stripe.Subscription): Promise<void> {
-  const companyId = sub.metadata?.companyId;
-  if (!companyId) return;
-
-  const subscription = await storage.getSubscription(companyId);
+  const subscription = await resolveWebhookSubscription(sub);
   if (!subscription) return;
 
   // Downgrade to free
@@ -596,7 +601,7 @@ async function handleSubscriptionDeleted(sub: Stripe.Subscription): Promise<void
     aiCreditsPerMonth: freeLimits.aiCreditsPerMonth,
   });
 
-  log.info({ companyId }, "Subscription cancelled, downgraded to free");
+  log.info({ companyId: subscription.companyId }, "Subscription cancelled, downgraded to free");
 }
 
 // ─── Subscription invoices, dunning, referral rewards (W5-B, R19-11, R19-16) ──

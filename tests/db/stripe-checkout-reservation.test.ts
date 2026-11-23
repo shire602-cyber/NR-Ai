@@ -191,6 +191,13 @@ it("[PR94] changes Starter to Professional on the existing Stripe subscription",
 it.each([
   { scenario: "a returning customer", returning: true, ageHours: 1, sessionOnly: false },
   {
+    scenario: "a returning customer whose legacy checkout completes after listing subscriptions",
+    returning: true,
+    ageHours: 1,
+    sessionOnly: false,
+    completesAfterSubscriptionList: true,
+  },
+  {
     scenario: "a pre-migration checkout older than 24 hours",
     returning: false,
     ageHours: 48,
@@ -203,16 +210,23 @@ it.each([
     sessionOnly: true,
   },
 ])("[PR95] recovers paid entitlement for $scenario", async (fixture) => {
-  const { returning, ageHours, sessionOnly } = fixture;
+  const { returning, ageHours, sessionOnly, completesAfterSubscriptionList } = fixture;
   const t = await h.createTenant();
   const companyId = t.company.id;
-  const customer = "fixture-customer";
-  const subscriptionId = "missed-webhook-subscription";
+  const customer = `fixture-customer-${companyId}`;
+  const subscriptionId = `missed-webhook-subscription-${companyId}`;
   await h.sql(
     "UPDATE subscriptions SET stripe_customer_id = $2, stripe_checkout_completed = $3 WHERE company_id = $1",
     [companyId, customer, returning]
   );
-  const { PLAN_PRICE_MAP } = await import("../../server/services/stripe.service");
+  if (sessionOnly) {
+    await h.sql(
+      "UPDATE subscriptions SET created_at = now() - interval '60 days' WHERE company_id = $1",
+      [companyId]
+    );
+  }
+  const { handleWebhookEvent, PLAN_PRICE_MAP } =
+    await import("../../server/services/stripe.service");
   const oldPrice = PLAN_PRICE_MAP.starter.monthly;
   PLAN_PRICE_MAP.starter.monthly = "price-starter";
   const checkout = () =>
@@ -225,6 +239,12 @@ it.each([
       stripe.listSubscriptions.mockReturnValue([{ status: "canceled" }]);
       const first = await checkout();
       expect(first.body).toEqual({ url: "https://checkout.example.test" });
+    }
+    if (completesAfterSubscriptionList) {
+      await h.sql(
+        "UPDATE companies SET stripe_first_checkout_expires_at = date_trunc('second', now()) - interval '5 minutes' WHERE id = $1",
+        [companyId]
+      );
     }
     const created = Math.floor(Date.now() / 1000) - ageHours * 3_600;
     const metadata = { companyId, planId: "starter", billingCycle: "monthly" };
@@ -241,31 +261,53 @@ it.each([
           ]
         : []
     );
-    stripe.listSubscriptions.mockReturnValue([
-      {
-        id: subscriptionId,
-        customer,
-        metadata: sessionOnly ? {} : metadata,
-        created,
-        status: "active",
-        cancel_at_period_end: false,
-        current_period_start: created,
-        current_period_end: created + 30 * 86_400,
-        items: { data: [{ quantity: 1 }] },
-      },
-    ]);
+    const active = {
+      id: subscriptionId,
+      customer,
+      metadata: sessionOnly ? {} : metadata,
+      created,
+      status: "active",
+      cancel_at_period_end: false,
+      current_period_start: created,
+      current_period_end: created + 30 * 86_400,
+      items: { data: [{ quantity: 1 }] },
+    };
+    if (completesAfterSubscriptionList) stripe.retrieveSubscription.mockResolvedValue(active);
+    else stripe.listSubscriptions.mockReturnValue([active]);
     const retry = await checkout();
     expect(retry.status).toBe(200);
     expect(retry.body).toEqual({ url: expect.stringMatching(/\/subscription\?success=true$/) });
     expect(stripe.listSubscriptions).toHaveBeenCalledWith({ customer, status: "all" });
     if (sessionOnly)
       expect(stripe.listSessions).toHaveBeenCalledWith({ subscription: subscriptionId });
+    if (completesAfterSubscriptionList)
+      expect(stripe.retrieveSubscription).toHaveBeenCalledWith(subscriptionId);
     expect(stripe.createSession).toHaveBeenCalledTimes(returning ? 1 : 0);
     const billing = await t.as.get(`/api/companies/${companyId}/billing/subscription`);
     expect(billing.body).toMatchObject({
       subscription: { stripeSubscriptionId: subscriptionId, stripeCheckoutCompleted: true },
       entitlement: { state: "active", planId: "starter" },
     });
+    if (sessionOnly) {
+      await handleWebhookEvent({
+        id: "fixture-subscription-updated",
+        type: "customer.subscription.updated",
+        data: { object: { ...active, cancel_at_period_end: true } },
+      } as unknown as Stripe.Event);
+      const scheduled = await t.as.get(`/api/companies/${companyId}/billing/subscription`);
+      expect(scheduled.body).toMatchObject({ subscription: { cancelAtPeriodEnd: true } });
+
+      await handleWebhookEvent({
+        id: "fixture-subscription-deleted",
+        type: "customer.subscription.deleted",
+        data: { object: { ...active, status: "canceled" } },
+      } as unknown as Stripe.Event);
+      const canceled = await t.as.get(`/api/companies/${companyId}/billing/subscription`);
+      expect(canceled.body).toMatchObject({
+        subscription: { planId: "free", stripeSubscriptionId: null, stripeCheckoutCompleted: true },
+        entitlement: { state: "expired", planId: null },
+      });
+    }
   } finally {
     PLAN_PRICE_MAP.starter.monthly = oldPrice;
   }
