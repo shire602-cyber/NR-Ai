@@ -36,8 +36,8 @@ export function useCompanyPermission() {
   const known = !!access && Array.isArray(access.permissions);
   const locked = (permission: Permission) =>
     readOnly && permission !== "reports.read" && permission !== "billing.manage";
-  const can = (permission: Permission): boolean =>
-    !locked(permission) && (!known || canPerform(access, permission));
+  const canRead = (permission: Permission): boolean => !known || canPerform(access, permission);
+  const can = (permission: Permission): boolean => !locked(permission) && canRead(permission);
   /** Props that disable a control (with an explanatory tooltip) when `permission` is missing. */
   const gate = (permission: Permission) =>
     can(permission)
@@ -66,6 +66,7 @@ export function useCompanyPermission() {
   };
   return {
     can,
+    canRead,
     gate,
     gateApproval,
     role: (access?.role ?? null) as CompanyRole | null,

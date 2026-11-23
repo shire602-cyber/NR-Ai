@@ -147,6 +147,7 @@
   "activityLog.action.document.received": "استُلم المستند",
   "activityLog.action.document.xml": "أُنشئ ملف XML للمستند",
   "activityLog.action.einvoice.retry": "أُعيدت محاولة الفاتورة الإلكترونية",
+  "activityLog.action.einvoice.cash_sale_buyer_updated": "حُدّثت بيانات المشتري في الفاتورة الإلكترونية للبيع النقدي",
   "activityLog.action.einvoice.submit": "قُدمت الفاتورة الإلكترونية",
   "activityLog.action.expense_claim.approve": "اعتُمدت مطالبة المصروفات",
   "activityLog.action.expense_claim.approve_step": "اكتملت خطوة اعتماد مطالبة المصروفات",

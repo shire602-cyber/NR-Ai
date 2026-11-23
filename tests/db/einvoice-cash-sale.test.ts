@@ -121,16 +121,44 @@ describe("UAE PINT AE cash sales", () => {
     }
   );
 
-  it("keeps an endpoint-only cash buyer in e-invoicing scope", async () => {
-    const tenant = await h.createTenant();
+  it("[PR93-2] remediates a legacy cash sale and generates both tracks for a buyer without a VAT TRN", async () => {
+    const tenant = await h.createTenant({
+      companyColumns: {
+        trn_vat_number: "100123456700003",
+        legal_name: "Pearl Trading L.L.C.",
+        address_street: "Office 1204, Al Saqr Tower",
+        address_city: "Dubai",
+        address_country: "AE",
+        emirate: "dubai",
+        trade_licence_no: "CN-1234567",
+        trade_licence_authority: "Dubai Department of Economy and Tourism",
+        einvoice_scope: "b2b",
+        einvoice_go_live_date: "2025-01-01",
+      },
+    });
+    const other = await h.createSecondTenant();
     const base = `/api/companies/${tenant.company.id}`;
     const contact = await tenant.as.post(`${base}/customer-contacts`, {
-      name: "Public agency",
+      name: "Endpoint-only business",
+      address: "Building 7, Al Majaz",
+      city: "Sharjah",
+      emirate: "sharjah",
+      postalCode: "45678",
+      country: "AE",
     });
     expect(contact.status, contact.text).toBeLessThan(300);
+    const foreignContact = await other.as.post(
+      `/api/companies/${other.company.id}/customer-contacts`,
+      {
+        name: "Other tenant buyer",
+      }
+    );
+    expect(foreignContact.status, foreignContact.text).toBeLessThan(300);
     const endpoint = await tenant.as.put(`${base}/einvoicing/buyer-endpoints/${contact.body.id}`, {
       scheme: "0235",
       participantId: "1007654321",
+      legalId: "TL-1234",
+      legalIdType: "TL",
     });
     expect(endpoint.status, endpoint.text).toBe(200);
     const bank = await tenant.as.post(`${base}/bank-accounts`, {
@@ -138,19 +166,101 @@ describe("UAE PINT AE cash sales", () => {
       bankName: "Test bank",
     });
     expect(bank.status, bank.text).toBe(201);
-    const sale = await tenant.as.post(`${base}/cash-sales`, {
-      contactId: contact.body.id,
-      date: new Date().toISOString().slice(0, 10),
+    // Seed the legacy series before issue and post both journal effects through the normal APIs.
+    // PGlite's one-connection pool cannot run the cash-sale route's nested settlement reads.
+    const date = new Date().toISOString().slice(0, 10);
+    const sale = await tenant.as.post(`${base}/invoices`, {
+      customerName: "Unknown walk-in",
+      date,
+      dueDate: date,
       placeOfSupplyEmirate: "dubai",
+      paymentTerms: "due_on_receipt",
+      lines: [{ description: "Counter service", quantity: 1, unitPrice: 100, vatRate: 5 }],
+    });
+    expect(sale.status, sale.text).toBe(200);
+    const invoiceId = sale.body.id as string;
+    await h.sql(
+      "UPDATE invoices SET source = 'cash_sale', number = 'CS-LEGACY-001' WHERE id = $1",
+      [invoiceId]
+    );
+    const invoice = `/api/invoices/${invoiceId}`;
+    const issued = await tenant.as.patch(`${invoice}/status`, { status: "sent" });
+    expect(issued.status, issued.text).toBe(200);
+    const paid = await tenant.as.post(`${base}/invoices/${invoiceId}/payments`, {
+      date,
+      amount: Number(sale.body.total),
       paymentAccountId: bank.body.glAccountId,
       method: "cash",
-      lines: [{ description: "Counter service", quantity: 1, unitPrice: 100, vatRate: 0.05 }],
     });
-    expect(sale.status, sale.text).toBe(201);
-    expect(sale.body.einvoiceApplicable).toBe(true);
-    const validation = await tenant.as.get(`/api/invoices/${sale.body.id}/einvoice/validate`);
-    expect(validation.status, validation.text).toBe(200);
-    expect(validation.body.applicable).toBe(true);
+    expect(paid.status, paid.text).toBeLessThan(300);
+    const url = `${invoice}/einvoice`;
+    const ledgerState = async () => ({
+      invoice: await h.sql(
+        "SELECT number, date, status, subtotal, total, vat_amount, customer_name, customer_trn, contact_id, issued_at FROM invoices WHERE id = $1",
+        [invoiceId]
+      ),
+      lines: await h.sql("SELECT * FROM invoice_lines WHERE invoice_id = $1 ORDER BY id", [
+        invoiceId,
+      ]),
+      payments: await h.sql("SELECT * FROM invoice_payments WHERE invoice_id = $1 ORDER BY id", [
+        invoiceId,
+      ]),
+      journal: await h.sql("SELECT * FROM journal_entries WHERE company_id = $1 ORDER BY id", [
+        tenant.company.id,
+      ]),
+    });
+    const before = await ledgerState();
+    const original = await tenant.as.get(`${url}/status`);
+    expect(original.body.cashSaleBuyer).toEqual({ buyerType: null });
+    expect(original.body.issues).toContainEqual(
+      expect.objectContaining({ field: "customer.endpointId" })
+    );
+    const fix = { buyerType: "business", contactId: contact.body.id };
+    expect((await other.as.put(`${url}/buyer`, fix)).status).toBe(404);
+    expect(
+      (await tenant.as.put(`${url}/buyer`, { ...fix, contactId: foreignContact.body.id })).status
+    ).toBe(404);
+    const saved = await tenant.as.put(`${url}/buyer`, fix);
+    expect(saved.status, saved.text).toBe(200);
+    expect(saved.body).toEqual(fix);
+
+    const checked = await tenant.as.get(`${url}/validate`);
+    expect(checked.status, checked.text).toBe(200);
+    expect(checked.body).toMatchObject({ valid: true, issues: [] });
+    const generated = await tenant.as.post(`${invoice}/generate-einvoice`, {});
+    expect(generated.status, generated.text).toBe(200);
+    const detail = await tenant.as.get(`${url}/status`);
+    expect(detail.body).toMatchObject({
+      contactId: contact.body.id,
+      tracks: {
+        delivery: { status: "validated" },
+        reporting: { status: "pending", required: true, reportBy: expect.any(String) },
+      },
+    });
+    const [doc] = await h.sql(
+      "SELECT validation, report_by FROM einvoice_documents WHERE invoice_id = $1",
+      [invoiceId]
+    );
+    expect(doc.validation).toMatchObject({ submission: { reportingRequired: true } });
+    expect(doc.report_by).toBeTruthy();
+    const xml = parseXml((await tenant.as.get(`${invoice}/einvoice-xml`)).text).documentElement;
+    expect(textAt(xml, "cac:AccountingCustomerParty/cac:Party/cbc:EndpointID")).toBe("1007654321");
+    expect(
+      textAt(xml, "cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName")
+    ).toBe("Endpoint-only business");
+    expect(await ledgerState()).toEqual(before);
+    const audit = await h.sql<{ user_id: string; details: string }>(
+      "SELECT user_id, details FROM audit_logs WHERE company_id = $1 AND resource_id = $2 AND action = 'einvoice.cash_sale_buyer_updated'",
+      [tenant.company.id, invoiceId]
+    );
+    expect(audit).toHaveLength(1);
+    expect(audit[0].user_id).toBe(tenant.user.id);
+    expect(JSON.parse(audit[0].details)).toMatchObject({
+      before: { buyerType: null, einvoiceBuyerContactId: null },
+      after: { buyerType: "business", einvoiceBuyerContactId: contact.body.id },
+    });
+    await h.sql("UPDATE invoices SET einvoice_status = 'queued' WHERE id = $1", [invoiceId]);
+    expect((await tenant.as.put(`${url}/buyer`, { buyerType: "consumer" })).status).toBe(409);
   });
 
   it.each([

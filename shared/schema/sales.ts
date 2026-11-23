@@ -102,6 +102,7 @@ export const invoices = pgTable(
     // where the document came from (app | api | recurring | quote | cash_sale | import | shopify).
     documentLanguage: text("document_language"),
     source: text("source").notNull().default("app"),
+    einvoiceBuyerContactId: uuid("einvoice_buyer_contact_id"),
     buyerType: text("buyer_type", { enum: ["consumer", "business", "government"] }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

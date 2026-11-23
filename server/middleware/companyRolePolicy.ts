@@ -187,6 +187,7 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("MUT", "companies/*/journal/**", "ledger.post"),
   r("MUT", "journal/**", "ledger.post"),
   r("POST", "invoices/*/post", "ledger.post"),
+  r("PUT", "invoices/*/einvoice/buyer", "documents.write"),
   // Sending an e-invoice through an ASP is an external tax transmission.
   r("POST", "invoices/*/einvoice/submit", "tax.submit"),
   r("POST", "invoices/*/einvoice/resubmit", "tax.submit"),
@@ -874,7 +875,8 @@ export async function assertScopedCompanyPermission(
   permission: Permission
 ): Promise<void> {
   if (!user) throw new DomainError("AUTH_REQUIRED", 401);
-  if (!companyId || !zUuid.safeParse(companyId).success) throw new DomainError("COMPANY_REQUIRED", 400);
+  if (!companyId || !zUuid.safeParse(companyId).success)
+    throw new DomainError("COMPANY_REQUIRED", 400);
   const failure = await scopedCompanyPermissionFailure(user, companyId, permission);
   if (!failure) return;
   const details = { companyId, permission, role: "role" in failure ? failure.role : null };

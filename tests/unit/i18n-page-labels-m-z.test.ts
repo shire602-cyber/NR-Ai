@@ -4,6 +4,7 @@ import { scanPages } from "../../scripts/i18n-scan.mjs";
 
 import enCatalog from "../../client/src/locales/en/pageLabels.json";
 import arCatalog from "../../client/src/locales/ar/pageLabels.json";
+import { brandOnlyPageLabels } from "../helpers/brand-only-page-labels";
 
 const load = (locale: string): Record<string, string> =>
   (locale === "ar" ? arCatalog : enCatalog) as Record<string, string>;
@@ -15,6 +16,7 @@ describe("pageLabels i18n catalog (pages M-Z, portal)", () => {
     expect(Object.keys(en).length).toBeGreaterThan(950);
     expect(Object.keys(ar).sort()).toEqual(Object.keys(en).sort());
     for (const [key, value] of Object.entries(ar)) {
+      if (brandOnlyPageLabels.has(key)) continue;
       expect(value, key).toMatch(/[؀-ۿ]/);
       expect(value, key).not.toBe(en[key]);
     }

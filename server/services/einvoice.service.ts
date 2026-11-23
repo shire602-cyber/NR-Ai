@@ -445,9 +445,9 @@ export function generateEInvoiceXML(
 
   const seller = sellerFromCompany(co);
   const buyer: EInvoiceParty = {
-    name: customer?.name || inv.customerName || "Cash Customer",
-    trn: customer?.trn ?? inv.customerTrn ?? null,
-    address: customer?.address ?? inv.customerAddress ?? null,
+    name: customer?.name || (inv.einvoiceBuyerContactId ? "" : inv.customerName) || "Cash Customer",
+    trn: customer?.trn ?? (inv.einvoiceBuyerContactId ? null : inv.customerTrn) ?? null,
+    address: customer?.address ?? (inv.einvoiceBuyerContactId ? null : inv.customerAddress) ?? null,
     addressLine2: customer?.addressLine2 ?? null,
     city: customer?.city ?? null,
     postalCode: customer?.postalCode ?? null,
@@ -928,10 +928,14 @@ export function validateForEInvoicing(
   if (!issueDateValid) {
     add("invoice.date", "EINVOICE_ISSUE_DATE_INVALID", "A valid invoice issue date is required");
   }
-  if (!(ctx.customer?.name || invoice.customerName)?.trim()) {
+  const buyerName =
+    ctx.customer?.name || (invoice.einvoiceBuyerContactId ? null : invoice.customerName);
+  if (!buyerName?.trim()) {
     add("invoice.customerName", "EINVOICE_BUYER_NAME_REQUIRED", "Buyer name is required");
   }
-  const buyerTrn = (ctx.customer?.trn ?? invoice.customerTrn)?.trim();
+  const buyerTrn = (
+    ctx.customer?.trn ?? (invoice.einvoiceBuyerContactId ? null : invoice.customerTrn)
+  )?.trim();
   const buyerEndpoint = ctx.customer?.endpointId?.trim();
   const buyerScheme = ctx.customer?.endpointScheme?.trim() || PEPPOL_SCHEME_UAE_TIN;
   const buyerEndpointIssue = buyerEndpoint

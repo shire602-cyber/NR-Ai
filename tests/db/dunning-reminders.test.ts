@@ -6,7 +6,7 @@
  * The harness has no email provider, so every message is honestly `blocked_no_provider`.
  */
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -84,6 +84,47 @@ const outboxFor = (invoiceId: string) =>
   );
 
 describe("W4-D dunning engine", () => {
+  it("[PR94] the hourly scan reminds customers on active trials only", async () => {
+    const active = await h.createTenant();
+    const expired = await h.createTenant();
+    const activeInvoice = await invoice(active, await contact(active, "Active Payer"));
+    const expiredInvoice = await invoice(expired, await contact(expired, "Expired Payer"));
+    await setting(active, { attachPdf: false });
+    await setting(expired, { attachPdf: false });
+    await h.sql(
+      `UPDATE subscriptions SET plan_id = 'free', trial_ends_at =
+         CASE WHEN company_id = $1 THEN now() + interval '1 day' ELSE now() - interval '1 day' END
+       WHERE company_id IN ($1, $2)`,
+      [active.company.id, expired.company.id]
+    );
+
+    vi.stubEnv("BILLING_ENFORCEMENT", "true");
+    try {
+      await dun();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    const logs = (id: string) =>
+      h.sql(`SELECT outbox_id FROM reminder_logs WHERE related_entity_id = $1`, [id]);
+    const activeOutbox = await outboxFor(activeInvoice);
+    expect(activeOutbox).toHaveLength(1);
+    expect(await logs(activeInvoice)).toEqual([{ outbox_id: activeOutbox[0].id }]);
+    expect(await logs(expiredInvoice)).toEqual([]);
+    expect(await outboxFor(expiredInvoice)).toEqual([]);
+    const counters = await h.sql(`SELECT id, reminder_count FROM invoices WHERE id IN ($1, $2)`, [
+      activeInvoice,
+      expiredInvoice,
+    ]);
+    expect(counters).toHaveLength(2);
+    expect(counters).toEqual(
+      expect.arrayContaining([
+        { id: activeInvoice, reminder_count: 1 },
+        { id: expiredInvoice, reminder_count: 0 },
+      ])
+    );
+  });
+
   it("migrates legacy rules to their effective language and lets staff switch to both", async () => {
     const t = await h.createTenant();
     const cid = await contact(t, "Arabic Payer", "legacy-arabic@example.test", "ar");

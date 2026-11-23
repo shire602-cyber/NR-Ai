@@ -1,3 +1,4 @@
+import { MARKETING_BRAND } from "../../shared/marketing-brand";
 import ExcelJS from "exceljs";
 
 import {
@@ -362,10 +363,8 @@ function addComputationSheet(
 
 // ─── EmaraTax-aligned return sheet (R08-20, R08-24) ────────────────────────
 
-export const EMARATAX_MANUAL_UPLOAD_NOTICE =
-  "Upload manually to EmaraTax. Muhasib has no FTA API connection: this workbook is not a submission and does not file the return.";
-export const EMARATAX_MANUAL_UPLOAD_NOTICE_AR =
-  "يُرجى إدخال القيم يدوياً في منصة إمارات تاكس. لا يوجد لدى محاسب اتصال بواجهة الهيئة الاتحادية للضرائب: هذا الملف ليس تقديماً ولا يقدّم الإقرار.";
+export const EMARATAX_MANUAL_UPLOAD_NOTICE = `Upload manually to EmaraTax. ${MARKETING_BRAND.name.en} has no FTA API connection: this workbook is not a submission and does not file the return.`;
+export const EMARATAX_MANUAL_UPLOAD_NOTICE_AR = `يُرجى إدخال القيم يدوياً في منصة إمارات تاكس. لا يوجد لدى ${MARKETING_BRAND.name.ar} اتصال بواجهة الهيئة الاتحادية للضرائب: هذا الملف ليس تقديماً ولا يقدّم الإقرار.`;
 
 export interface EmaraTaxField {
   section: string;

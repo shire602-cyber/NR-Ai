@@ -315,6 +315,24 @@ export class FirmStorage extends ComplianceStorage {
     return subscription;
   }
 
+  async applyStripeCheckout(
+    subscription: Subscription,
+    data: Partial<InsertSubscription>
+  ): Promise<boolean> {
+    const [updated] = await db
+      .update(subscriptions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(
+        and(
+          eq(subscriptions.id, subscription.id),
+          isNull(subscriptions.stripeSubscriptionId),
+          eq(subscriptions.stripeCheckoutCompleted, subscription.stripeCheckoutCompleted)
+        )
+      )
+      .returning({ id: subscriptions.id });
+    return Boolean(updated);
+  }
+
   // Backups
   async getBackupsByCompanyId(companyId: string): Promise<Backup[]> {
     return await db

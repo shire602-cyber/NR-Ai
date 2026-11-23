@@ -147,6 +147,7 @@
   "activityLog.action.document.received": "Document received",
   "activityLog.action.document.xml": "Document XML generated",
   "activityLog.action.einvoice.retry": "E-invoice retried",
+  "activityLog.action.einvoice.cash_sale_buyer_updated": "Cash sale e-invoice buyer details updated",
   "activityLog.action.einvoice.submit": "E-invoice submitted",
   "activityLog.action.expense_claim.approve": "Expense claim approved",
   "activityLog.action.expense_claim.approve_step": "Expense claim approval step completed",

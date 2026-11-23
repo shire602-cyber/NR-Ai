@@ -1,7 +1,8 @@
 import { T } from "@/components/layout/T";
 import { formatMessage, useTranslation } from "@/lib/i18n";
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
+import { TrialReadOnlyContext } from "@/lib/trial-access";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -224,12 +225,13 @@ function periodLabel(
   return `${formatDate(period.periodStart, locale)} - ${formatDate(period.periodEnd, locale)} (${t[FREQUENCY_KEY[period.frequency]] ?? period.frequency})`;
 }
 
-function calculationPath(companyId: string, period: VatPeriodSummary): string {
+function calculationPath(companyId: string, period: VatPeriodSummary, readOnly: boolean): string {
   const params = new URLSearchParams({
     periodStart: period.periodStart,
     periodEnd: period.periodEnd,
     frequency: period.frequency,
   });
+  if (readOnly) params.set("persist", "false");
   return `/api/vat/autopilot/calculate/${companyId}?${params.toString()}`;
 }
 
@@ -248,6 +250,7 @@ export default function VATAutopilot() {
 }
 
 export function VatPeriodsPanel() {
+  const readOnly = useContext(TrialReadOnlyContext);
   const { t, locale } = useTranslation();
   const { companyId, isLoading: companyLoading } = useDefaultCompany();
   const { toast } = useToast();
@@ -285,12 +288,13 @@ export function VatPeriodsPanel() {
   const calcMutation = useMutation<CalculationResult, Error, VatPeriodSummary>({
     mutationFn: (period) => {
       if (!companyId) throw new Error(t["compliance.autopilotChooseCompanyFirst"]);
-      return apiRequest("GET", calculationPath(companyId, period));
+      return apiRequest("GET", calculationPath(companyId, period, readOnly));
     },
     onSuccess: (calc) => {
       setSelectedPeriodKey(
         periodKey({ periodStart: calc.period.start, periodEnd: calc.period.end })
       );
+      if (readOnly) return;
       queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/periods", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/due-dates", companyId] });
       toast({
@@ -691,7 +695,7 @@ export function VatPeriodsPanel() {
               <Button
                 variant="outline"
                 onClick={() => setAdjustmentOpen(true)}
-                disabled={!currentPeriodId}
+                disabled={readOnly || !currentPeriodId}
               >
                 <T k="pageLabels.addManualAdjustment" />
               </Button>
@@ -701,7 +705,7 @@ export function VatPeriodsPanel() {
                   onClick={() =>
                     statusMutation.mutate({ periodId: currentPeriodId, status: "ready" })
                   }
-                  disabled={statusMutation.isPending}
+                  disabled={readOnly || statusMutation.isPending}
                   data-testid="button-mark-ready"
                 >
                   <CheckCircle2 className="h-4 w-4 me-2" />
@@ -874,6 +878,7 @@ export function VatPeriodsPanel() {
                 !adjustmentBox ||
                 !adjustmentReason.trim() ||
                 !adjustmentAmountValid ||
+                readOnly ||
                 adjustmentMutation.isPending
               }
               data-testid="button-save-adjustment"

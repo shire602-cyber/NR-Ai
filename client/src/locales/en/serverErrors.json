@@ -1,4 +1,5 @@
 {
+  "serverErrors.STRIPE_CHECKOUT_IN_PROGRESS": "A checkout is already in progress. Complete it in its original tab or try again after it expires.",
   "serverErrors.EINVOICE_NOT_REQUIRED": "E-invoicing is not required for this cash sale.",
   "serverErrors.AUTHORIZATION_RETRY": "Could not finish authorization. Try again.",
   "serverErrors.AUTHORIZATION_RESTART": "Authorization expired. Start again from where you began, or upload a CSV statement.",
@@ -240,6 +241,7 @@
   "serverErrors.EINVOICE_TAXPAYER_CHANGED": "The taxpayer or e-invoicing provider changed. Reload the settings before confirming the appointment.",
   "serverErrors.EINVOICE_TIN_MISSING": "Enter the company’s 10-digit TIN or 15-digit UAE TRN in company settings first.",
   "serverErrors.EINVOICE_BUYER_ENDPOINT_MISMATCH": "The buyer's Peppol 0235 address must match the first 10 digits of the buyer's VAT TRN.",
+  "serverErrors.EINVOICE_BUYER_CHANGE_UNAVAILABLE": "You can only change the e-invoice buyer on a paid cash sale before any submission attempt.",
   "serverErrors.EINVOICE_INBOUND_SOURCE_CONFLICT": "The inbound document has the same supplier and number as an earlier receipt, but its XML is different.",
   "serverErrors.EINVOICE_PAYMENT_CARD_TYPE_REQUIRED": "Check the payment record and use the confirmed credit or debit card method for e-invoicing.",
   "serverErrors.EINVOICE_SUPPLIER_ENDPOINT_MISMATCH": "The supplier e-invoicing address on the invoice does not match your registered TIN.",

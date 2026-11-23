@@ -1,3 +1,5 @@
+import { sql } from "drizzle-orm";
+import type { AppDatabase } from "../db";
 import type { Request, Response, NextFunction } from "express";
 import { createLogger } from "../config/logger";
 import { isStripeConfigured } from "../services/stripe.service";
@@ -75,11 +77,12 @@ export interface CompanyEntitlement extends Entitlement {
  */
 export async function companyEntitlement(
   companyId: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  tx?: Pick<AppDatabase, "execute">
 ): Promise<CompanyEntitlement | null> {
   if (!companyId || !UUID_RE.test(companyId)) return null;
   const { pq } = await import("../services/connectors/pq");
-  const { rows } = await pq<{
+  type EntitlementRow = {
     company_type: string | null;
     company_created_at: Date | string | null;
     plan_id: string | null;
@@ -91,8 +94,8 @@ export async function companyEntitlement(
     chosen_plan_source: string | null;
     chosen_plan_at: Date | string | null;
     plan_activation_requested_at: Date | string | null;
-  }>(
-    `SELECT c.company_type, c.created_at AS company_created_at,
+  };
+  const query = `SELECT c.company_type, c.created_at AS company_created_at,
             s.plan_id, s.status, s.created_at AS sub_created_at, s.trial_ends_at,
             s.chosen_plan_id, s.chosen_billing_cycle, s.chosen_plan_source, s.chosen_plan_at,
             s.plan_activation_requested_at
@@ -103,9 +106,10 @@ export async function companyEntitlement(
            FROM subscriptions
           WHERE company_id = c.id ORDER BY created_at DESC LIMIT 1
        ) s ON true
-      WHERE c.id = $1`,
-    [companyId]
-  );
+      WHERE c.id = `;
+  const { rows } = tx
+    ? await tx.execute<EntitlementRow>(sql`${sql.raw(query)}${companyId}`)
+    : await pq<EntitlementRow>(query + "$1", [companyId]);
   const row = rows[0];
   if (!row || isFirmBilledCompany({ companyType: row.company_type })) return null;
   const trialStartedAt = row.sub_created_at ?? row.company_created_at;

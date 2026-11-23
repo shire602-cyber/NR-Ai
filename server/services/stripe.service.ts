@@ -3,9 +3,12 @@ import {
   NO_PLAN_LIMITS,
   PAID_PLAN_IDS,
   PLAN_DEFINITIONS,
+  isBillingCycle,
+  isPaidPlanId,
   type PlanLimits as SharedPlanLimits,
 } from "../../shared/plans";
 import Stripe from "stripe";
+import type { Company, Subscription } from "../../shared/schema";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
 import { getEnv } from "../config/env";
@@ -97,6 +100,72 @@ export async function billableSeats(companyId: string): Promise<number> {
 const perSeat = () => process.env.STRIPE_PER_SEAT === "true";
 
 const CHECKOUT_MIN_TRIAL_SECONDS = 48 * 60 * 60;
+// Stripe requires at least 30 minutes. Include time for the coupon and session API calls.
+const FIRST_CHECKOUT_SECONDS = 35 * 60;
+
+function checkoutInProgress() {
+  return new DomainError(
+    "STRIPE_CHECKOUT_IN_PROGRESS",
+    409,
+    undefined,
+    "A checkout is already in progress. Complete it in its original tab or try again after it expires."
+  );
+}
+
+/** Returns null when a previous checkout has already activated the subscription. */
+async function reserveFirstCheckout(
+  stripeClient: Stripe,
+  company: Company,
+  subscription: Subscription,
+  customerId: string
+): Promise<number | null> {
+  const previous = company.stripeFirstCheckoutExpiresAt ?? null;
+
+  // Check Stripe even if creation lost its response or the completion webhook is delayed.
+  // With no reservation, also check for sessions created before this guard was deployed.
+  const previousExpiry = previous ? Math.floor(previous.getTime() / 1000) : null;
+  const createdAfter = (previousExpiry ?? Math.floor(Date.now() / 1000)) - 24 * 60 * 60;
+  let stripeExpired = false;
+  for await (const session of stripeClient.checkout.sessions.list({
+    customer: customerId,
+    created: { gte: createdAfter },
+  })) {
+    if (
+      session.mode === "subscription" &&
+      session.metadata?.companyId === company.id &&
+      (previousExpiry === null || session.metadata?.firstCheckoutExpiry === String(previousExpiry))
+    ) {
+      if (session.status === "expired") {
+        stripeExpired = true;
+        continue;
+      }
+      if (
+        session.status === "complete" &&
+        (await reconcileCheckout(stripeClient, session, subscription))
+      ) {
+        return null;
+      }
+      throw checkoutInProgress();
+    }
+  }
+  if (previous && previous.getTime() > Date.now() && !stripeExpired) throw checkoutInProgress();
+  const expiresAt = Math.max(
+    Math.floor(Date.now() / 1000) + FIRST_CHECKOUT_SECONDS,
+    (previousExpiry ?? 0) + 1
+  );
+  const result = await pq(
+    `UPDATE companies
+        SET stripe_first_checkout_expires_at = $2
+      WHERE id = $1 AND stripe_first_checkout_expires_at IS NOT DISTINCT FROM $3
+        AND NOT EXISTS (
+          SELECT 1 FROM subscriptions WHERE company_id = $1
+            AND (stripe_checkout_completed OR stripe_subscription_id IS NOT NULL OR plan_id <> 'free')
+        )`,
+    [company.id, new Date(expiresAt * 1000), previous]
+  );
+  if (!result.rowCount) throw checkoutInProgress();
+  return expiresAt;
+}
 
 export async function createCheckoutSession(
   companyId: string,
@@ -112,34 +181,42 @@ export async function createCheckoutSession(
   if (!priceId) throw new Error(`No Stripe price configured for ${planId} ${billingCycle}`);
 
   // Get or create Stripe customer
-  const subscription = await storage.getSubscription(companyId);
-  let customerId = subscription?.stripeCustomerId;
+  let subscription = await storage.getSubscription(companyId);
+  if (!subscription) throw new DomainError("SUBSCRIPTION_NOT_FOUND", 404);
+  if (subscription.stripeSubscriptionId) return successUrl;
+  const company = await storage.getCompany(companyId);
+  if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
+  let customerId = subscription.stripeCustomerId;
 
   if (!customerId) {
-    const company = await storage.getCompany(companyId);
-    const customer = await stripeClient.customers.create({
-      metadata: { companyId, planId },
-      name: company?.name || undefined,
-      email: company?.contactEmail || undefined,
-    });
+    const customer = await stripeClient.customers.create(
+      {
+        metadata: { companyId },
+        name: company.name || undefined,
+        email: company.contactEmail || undefined,
+      },
+      { idempotencyKey: "checkout-customer:" + companyId }
+    );
     customerId = customer.id;
-    if (subscription) {
-      await storage.updateSubscription(subscription.id, { stripeCustomerId: customerId });
-    }
+    subscription = await storage.updateSubscription(subscription.id, {
+      stripeCustomerId: customerId,
+    });
+    if (subscription.stripeSubscriptionId) return successUrl;
   }
 
   // A first paid invoice can earn a referral discount even after the product trial ends.
-  const firstSubscription =
-    !subscription?.stripeCheckoutCompleted &&
-    !subscription?.stripeSubscriptionId &&
-    (subscription?.planId ?? "free") === "free";
+  const firstSubscription = !subscription.stripeCheckoutCompleted && subscription.planId === "free";
+  const firstCheckoutExpiry = firstSubscription
+    ? await reserveFirstCheckout(stripeClient, company, subscription, customerId)
+    : null;
+  if (firstSubscription && firstCheckoutExpiry === null) return successUrl;
   const quantity = perSeat() ? await billableSeats(companyId) : 1;
   // Referee reward: a percent-off coupon applied to the first paid invoice.
   const coupon = firstSubscription ? await refereeCouponFor(companyId) : null;
   const vatTaxRate = process.env.STRIPE_TAX_RATE_VAT;
 
   const trialEnd =
-    firstSubscription && subscription?.trialEndsAt
+    firstSubscription && subscription.trialEndsAt
       ? Math.floor(subscription.trialEndsAt.getTime() / 1000)
       : 0;
   const hasRemainingTrial = trialEnd >= Math.ceil(Date.now() / 1000) + CHECKOUT_MIN_TRIAL_SECONDS;
@@ -150,7 +227,13 @@ export async function createCheckoutSession(
     line_items: [{ price: priceId, quantity, ...(vatTaxRate ? { tax_rates: [vatTaxRate] } : {}) }],
     success_url: successUrl,
     cancel_url: cancelUrl,
-    metadata: { companyId, planId, billingCycle },
+    metadata: {
+      companyId,
+      planId,
+      billingCycle,
+      ...(firstCheckoutExpiry ? { firstCheckoutExpiry: String(firstCheckoutExpiry) } : {}),
+    },
+    ...(firstCheckoutExpiry ? { expires_at: firstCheckoutExpiry } : {}),
     ...(coupon ? { discounts: [{ coupon }] } : {}),
     ...(process.env.STRIPE_AUTOMATIC_TAX === "true" ? { automatic_tax: { enabled: true } } : {}),
     subscription_data: {
@@ -283,10 +366,7 @@ async function dispatchWebhookEvent(event: Stripe.Event): Promise<void> {
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promise<void> {
   const companyId = session.metadata?.companyId;
-  const planId = session.metadata?.planId;
-  const billingCycle = session.metadata?.billingCycle as "monthly" | "yearly";
-
-  if (!companyId || !planId) {
+  if (!companyId) {
     log.warn({ sessionId: session.id }, "Checkout session missing metadata");
     return;
   }
@@ -297,29 +377,63 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
     return;
   }
 
-  const limits = PLAN_LIMITS[planId] || PLAN_LIMITS.free;
-  const now = new Date();
-  const periodEnd = new Date(now);
-  if (billingCycle === "yearly") {
-    periodEnd.setFullYear(periodEnd.getFullYear() + 1);
-  } else {
-    periodEnd.setMonth(periodEnd.getMonth() + 1);
+  const stripeClient = getStripe();
+  if (stripeClient) await reconcileCheckout(stripeClient, session, subscription);
+}
+
+async function reconcileCheckout(
+  stripeClient: Stripe,
+  session: Stripe.Checkout.Session,
+  subscription: Subscription
+): Promise<boolean> {
+  const stripeSubscriptionId =
+    typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+  const stripeCustomerId =
+    typeof session.customer === "string" ? session.customer : session.customer?.id;
+  if (
+    !stripeSubscriptionId ||
+    !stripeCustomerId ||
+    stripeCustomerId !== subscription.stripeCustomerId
+  ) {
+    return false;
+  }
+  if (subscription.stripeSubscriptionId) {
+    return subscription.stripeSubscriptionId === stripeSubscriptionId;
   }
 
-  await storage.updateSubscription(subscription.id, {
+  // A delayed event can describe a checkout whose plan or status has since changed.
+  const current = await stripeClient.subscriptions.retrieve(stripeSubscriptionId);
+  const customerId = typeof current.customer === "string" ? current.customer : current.customer.id;
+  const planId = current.metadata?.planId ?? session.metadata?.planId;
+  const billingCycle = current.metadata?.billingCycle ?? session.metadata?.billingCycle;
+  if (
+    customerId !== stripeCustomerId ||
+    (current.metadata?.companyId && current.metadata.companyId !== subscription.companyId) ||
+    !isPaidPlanId(planId) ||
+    !isBillingCycle(billingCycle)
+  ) {
+    return false;
+  }
+  if (current.status === "canceled" || current.status === "incomplete_expired") {
+    if (!subscription.stripeCheckoutCompleted) {
+      await storage.applyStripeCheckout(subscription, { stripeCheckoutCompleted: true });
+    }
+    return false;
+  }
+  if (!["active", "trialing", "past_due", "unpaid", "paused"].includes(current.status))
+    return false;
+
+  const limits = PLAN_LIMITS[planId];
+  const now = new Date();
+
+  const applied = await storage.applyStripeCheckout(subscription, {
     planId,
     planName: planId.charAt(0).toUpperCase() + planId.slice(1),
-    status: "active",
+    ...stripeSubscriptionState(current),
     stripeCheckoutCompleted: true,
-    stripeCustomerId:
-      typeof session.customer === "string" ? session.customer : session.customer?.id || undefined,
-    stripeSubscriptionId:
-      typeof session.subscription === "string"
-        ? session.subscription
-        : session.subscription?.id || undefined,
+    stripeSubscriptionId,
     billingCycle,
-    currentPeriodStart: now,
-    currentPeriodEnd: periodEnd,
+    seatCount: current.items.data[0]?.quantity ?? subscription.seatCount ?? 1,
     maxUsers: limits.maxUsers,
     maxInvoices: limits.maxInvoices,
     maxReceipts: limits.maxReceipts,
@@ -333,21 +447,24 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
     usagePeriodStart: now,
   });
 
-  log.info({ companyId, planId, billingCycle }, "Subscription upgraded via checkout");
+  if (applied) {
+    log.info(
+      { companyId: subscription.companyId, planId, billingCycle },
+      "Subscription upgraded via checkout"
+    );
+    return true;
+  }
+  // A concurrent webhook or recovery request may already have applied this Checkout.
+  const latest = await storage.getSubscription(subscription.companyId);
+  return latest?.stripeSubscriptionId === stripeSubscriptionId;
 }
 
-async function handleSubscriptionUpdated(sub: Stripe.Subscription): Promise<void> {
+function stripeSubscriptionState(sub: Stripe.Subscription) {
   // The pinned API version still sends the period bounds on the subscription itself.
   const subPeriod = sub as Stripe.Subscription & {
     current_period_start: number;
     current_period_end: number;
   };
-  const companyId = sub.metadata?.companyId;
-  if (!companyId) return;
-
-  const subscription = await storage.getSubscription(companyId);
-  if (!subscription) return;
-
   const status =
     sub.status === "active"
       ? "active"
@@ -357,15 +474,30 @@ async function handleSubscriptionUpdated(sub: Stripe.Subscription): Promise<void
           ? "past_due"
           : sub.status === "canceled"
             ? "cancelled"
-            : "active";
+            : sub.status === "paused"
+              ? "paused"
+              : "active";
 
-  await storage.updateSubscription(subscription.id, {
+  return {
     status,
     trialEndsAt: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
-    seatCount: sub.items?.data?.[0]?.quantity ?? subscription.seatCount ?? 1,
     cancelAtPeriodEnd: sub.cancel_at_period_end,
     currentPeriodStart: new Date(subPeriod.current_period_start * 1000),
     currentPeriodEnd: new Date(subPeriod.current_period_end * 1000),
+  };
+}
+
+async function handleSubscriptionUpdated(sub: Stripe.Subscription): Promise<void> {
+  const companyId = sub.metadata?.companyId;
+  if (!companyId) return;
+
+  const subscription = await storage.getSubscription(companyId);
+  if (!subscription) return;
+  if (subscription.stripeSubscriptionId !== sub.id) return;
+
+  await storage.updateSubscription(subscription.id, {
+    ...stripeSubscriptionState(sub),
+    seatCount: sub.items?.data?.[0]?.quantity ?? subscription.seatCount ?? 1,
   });
 }
 

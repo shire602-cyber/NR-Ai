@@ -242,8 +242,9 @@ export async function scanDueReportDeliveries(
   const automations = await import("../platform/company-automations");
   const switchedOff = await automations.companiesWithAutomationOff("reportDeliveries");
   for (const company of companies) {
-    // WQ7: a company that switched "Report deliveries" off in Automations is not scanned.
-    if (switchedOff.has(String(company.id))) continue;
+    if (switchedOff.has(company.id) || !(await automations.automationWritesAllowed(company.id))) {
+      continue;
+    }
     const companyResult = emptyCompanyScanResult(now);
     try {
       const settings = await storage.getReportDeliverySubscriptionSettings(company.id);

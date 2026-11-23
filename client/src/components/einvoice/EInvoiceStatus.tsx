@@ -10,7 +10,8 @@
  * says "generated and validated — not sent".
  */
 import { lazy, Suspense, useState, type ReactNode } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import type { CashSaleEInvoiceBuyer } from "@shared/validators/sales-documents";
 import { Link } from "wouter";
 import {
   AlertTriangle,
@@ -189,6 +190,98 @@ function TrackRow({
   );
 }
 
+function CashSaleBuyerEditor({
+  invoiceId,
+  companyId,
+  view,
+  onSaved,
+}: {
+  invoiceId: string;
+  companyId: string;
+  view: EInvoiceStatusView;
+  onSaved: () => void;
+}) {
+  const { t } = useTranslation(["einvoicing"]);
+  const { can } = useCompanyPermission();
+  const [buyerType, setBuyerType] = useState<CashSaleEInvoiceBuyer["buyerType"] | "">(
+    view.cashSaleBuyer?.buyerType ?? ""
+  );
+  const [contactId, setContactId] = useState(view.contactId ?? "");
+  const needsContact = buyerType === "business" || buyerType === "government";
+  const { data: contacts = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/companies", companyId, "customer-contacts"],
+    enabled: needsContact,
+  });
+  const save = useMutation({
+    mutationFn: (body: CashSaleEInvoiceBuyer) =>
+      apiRequest("PUT", `/api/invoices/${invoiceId}/einvoice/buyer`, body, undefined, {
+        queueWhenOffline: false,
+      }),
+    onSuccess: onSaved,
+  });
+  return (
+    <form
+      className="space-y-3 rounded-lg border border-border p-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!can("documents.write") || save.isPending) return;
+        if (buyerType === "consumer") save.mutate({ buyerType });
+        else if (needsContact && contactId) save.mutate({ buyerType, contactId });
+      }}
+    >
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="grid gap-1 text-small">
+          {t["einvoicing.cashBuyerType"]}
+          <select
+            className="rounded-md border border-input bg-background p-2"
+            value={buyerType}
+            onChange={(event) => setBuyerType(event.target.value as typeof buyerType)}
+          >
+            <option value="">{t["einvoicing.cashBuyerUnknown"]}</option>
+            <option value="consumer">{t["einvoicing.cashBuyerConsumer"]}</option>
+            <option value="business">{t["einvoicing.cashBuyerBusiness"]}</option>
+            <option value="government">{t["einvoicing.cashBuyerGovernment"]}</option>
+          </select>
+        </label>
+        {needsContact && (
+          <label className="grid gap-1 text-small">
+            {t["einvoicing.cashBuyerContact"]}
+            <select
+              className="rounded-md border border-input bg-background p-2"
+              value={contactId}
+              onChange={(event) => setContactId(event.target.value)}
+            >
+              <option value="">{t["einvoicing.cashBuyerChooseContact"]}</option>
+              {contacts.map((contact) => (
+                <option key={contact.id} value={contact.id}>
+                  {contact.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <Button
+          type="submit"
+          size="sm"
+          disabled={!buyerType || (needsContact && !contactId) || save.isPending}
+        >
+          {t["einvoicing.cashBuyerSave"]}
+        </Button>
+      </div>
+      {needsContact && (
+        <Link href="/contacts" className="text-small text-accent underline">
+          {t["einvoicing.cashBuyerManageContacts"]}
+        </Link>
+      )}
+      {save.isError && (
+        <p role="alert" className="text-small text-danger">
+          {t["einvoicing.cashBuyerSaveFailed"]}
+        </p>
+      )}
+    </form>
+  );
+}
+
 export interface EInvoicePanelProps {
   invoiceId: string;
   /** Opens the invoice editor (the "Fix" step of "Fix and resubmit"). */
@@ -275,11 +368,23 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
   }
 
   const view = status.data;
+  const buyerEditor = view.cashSaleBuyer &&
+    handoffCompanyId &&
+    permission.can("documents.write") && (
+      <CashSaleBuyerEditor
+        key={invoiceId + ":" + view.cashSaleBuyer.buyerType + ":" + view.contactId}
+        invoiceId={invoiceId}
+        companyId={handoffCompanyId}
+        view={view}
+        onSaved={invalidate}
+      />
+    );
   if (view.applicable === false) {
     return (
-      <p className={cn("text-small text-muted-foreground", className)}>
-        {t["einvoicing.reporting_not_required"]}
-      </p>
+      <div className={cn("space-y-3 text-small text-muted-foreground", className)}>
+        <p>{t["einvoicing.reporting_not_required"]}</p>
+        {buyerEditor}
+      </div>
     );
   }
   const {
@@ -340,6 +445,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
 
   return (
     <div className={cn("space-y-5", className)} data-testid="einvoice-panel">
+      {buyerEditor}
       {/* Two tracks */}
       <div className="divide-hairline rounded-lg border border-border px-4">
         <TrackRow

@@ -1039,7 +1039,8 @@ export function isCustomerLinkPath(pathname: string): boolean {
  * messages`). They get their own light root (PortalApp) and only the catalogs they read, not
  * the whole signed-in app.
  */
-const PORTAL_APP_PATH = /^\/client-portal\/(dashboard|invoices|documents|statements|messages|account)$/;
+const PORTAL_APP_PATH =
+  /^\/client-portal\/(dashboard|invoices|documents|statements|messages|account)$/;
 const PORTAL_APP_NAMESPACES = ["components", "portal", "shell", "toasts", "pages", "statements"];
 /** Sign-in and password recovery read only these catalogs (not the help/legal ones). */
 const AUTH_FORM_PATH = /^\/(login|forgot-password|reset-password|verify-email)$/;
@@ -1176,14 +1177,10 @@ function loadPaths(locale: Locale, paths: string[]): Promise<void> {
       if (!job) {
         job = loaders[path]()
           .then((catalog) => {
-            if (namespaceOf(path) === "marketing") {
-              for (const [key, value] of Object.entries(catalog)) {
-                t[locale][key] = value
-                  .replaceAll("[[brand]]", MARKETING_BRAND.name[locale])
-                  .replaceAll("[[supportEmail]]", MARKETING_BRAND.supportEmail);
-              }
-            } else {
-              Object.assign(t[locale], catalog);
+            for (const [key, value] of Object.entries(catalog)) {
+              t[locale][key] = value
+                .replaceAll("[[brand]]", MARKETING_BRAND.name[locale])
+                .replaceAll("[[supportEmail]]", MARKETING_BRAND.supportEmail);
             }
             loadedPaths[locale].add(path);
           })

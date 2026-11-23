@@ -10,9 +10,15 @@ import {
   requireScopedCompanyPermission,
 } from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
+import { scopedGet } from "../tenancy";
+import {
+  cashSaleEInvoiceBuyerSchema,
+  type CashSaleEInvoiceBuyer,
+} from "../../shared/validators/sales-documents";
 import { DomainError } from "../errors";
 import {
   customerContacts,
+  einvoiceBuyerEndpoints,
   invoiceLines,
   invoices,
   type Company,
@@ -36,6 +42,7 @@ import {
   EINVOICE_NOT_REQUIRED,
   EINVOICE_NOT_REQUIRED_MESSAGE,
   isB2cCashSale,
+  canRemediateCashSaleBuyer,
 } from "../services/einvoice/applicability";
 import { loadEInvoiceContext } from "../services/einvoice/context";
 import {
@@ -85,6 +92,7 @@ import {
   invoiceReportingDeadline,
   invoiceReportingRequired,
   projectInvoiceTracks,
+  reportingBuyerContact,
   reportingInvoiceColumns,
 } from "../services/einvoice/reporting";
 import { einvoiceStatusView, projectEInvoiceDocument } from "../services/einvoice/status-view";
@@ -799,13 +807,22 @@ export function registerEInvoiceRoutes(app: Express) {
             customerName: invoices.customerName,
           },
           linkedBuyerTrn: customerContacts.trnNumber,
+          endpointId: einvoiceBuyerEndpoints.participantId,
+          endpointScheme: einvoiceBuyerEndpoints.scheme,
         })
         .from(invoices)
         .leftJoin(
           customerContacts,
           and(
-            eq(customerContacts.id, invoices.contactId),
+            eq(customerContacts.id, reportingBuyerContact),
             eq(customerContacts.companyId, invoices.companyId)
+          )
+        )
+        .leftJoin(
+          einvoiceBuyerEndpoints,
+          and(
+            eq(einvoiceBuyerEndpoints.companyId, invoices.companyId),
+            eq(einvoiceBuyerEndpoints.contactId, customerContacts.id)
           )
         )
         .where(
@@ -828,7 +845,10 @@ export function registerEInvoiceRoutes(app: Express) {
             doc,
             company,
             now,
-            invoice?.customerTrn || source?.linkedBuyerTrn
+            invoice?.einvoiceBuyerContactId
+              ? source?.linkedBuyerTrn
+              : invoice?.customerTrn || source?.linkedBuyerTrn,
+            source
           );
           return {
             ...projectEInvoiceDocument(doc, tracks),
@@ -972,6 +992,74 @@ export function registerEInvoiceRoutes(app: Express) {
         }
       }
       res.json({ received: items.length, results });
+    })
+  );
+
+  app.put(
+    "/api/invoices/:id/einvoice/buyer",
+    authMiddleware,
+    requireCustomer,
+    strictBody(cashSaleEInvoiceBuyerSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { invoice: owned, company } = await loadInvoiceAndCompany(req);
+      await assertScopedCompanyPermission(req.user, company.id, "documents.write");
+      const body = validated<CashSaleEInvoiceBuyer>(req);
+      const contactId = body.contactId ?? null;
+      await db.transaction(async (tx) => {
+        const invoice = await lockEInvoiceInvoice(company.id, owned.id, tx);
+        if (!invoice) throw new DomainError("INVOICE_NOT_FOUND", 404);
+        const doc = await getEInvoiceDocument(company.id, invoice.id, tx);
+        if (!canRemediateCashSaleBuyer(invoice, doc)) {
+          throw new DomainError("EINVOICE_BUYER_CHANGE_UNAVAILABLE", 409);
+        }
+        if (contactId && !(await scopedGet(customerContacts, company.id, contactId, tx))) {
+          throw new DomainError("NOT_FOUND", 404, undefined, "Customer contact not found");
+        }
+        const before = {
+          buyerType: invoice.buyerType,
+          einvoiceBuyerContactId: invoice.einvoiceBuyerContactId,
+        };
+        const after = { buyerType: body.buyerType, einvoiceBuyerContactId: contactId };
+        if (before.buyerType === after.buyerType && before.einvoiceBuyerContactId === contactId)
+          return;
+        await tx
+          .update(invoices)
+          .set({
+            ...after,
+            einvoiceXml: null,
+            einvoiceHash: null,
+            einvoiceStatus: "not_generated",
+          })
+          .where(and(eq(invoices.companyId, company.id), eq(invoices.id, invoice.id)));
+        if (doc) {
+          await upsertEInvoiceDocument(
+            company.id,
+            invoice.id,
+            {
+              xmlHash: null,
+              validation: null,
+              validatedAt: null,
+              deliveryStatus: null,
+              reportingStatus: null,
+              reportBy: null,
+            },
+            tx
+          );
+        }
+        await recordAudit({
+          companyId: company.id,
+          userId: userOf(req),
+          action: "einvoice.cash_sale_buyer_updated",
+          entityType: "invoice",
+          entityId: invoice.id,
+          before,
+          after,
+          req,
+          required: true,
+          tx,
+        });
+      });
+      res.json({ buyerType: body.buyerType, contactId });
     })
   );
 

@@ -14,14 +14,14 @@
  * Automations: the job is registered in the platform job registry under its name and listed as
  * the WQ7 automation `monthlyDepreciation` (server/platform/company-automations.ts). The per-company
  * switch `automations.isEnabled(companyId, jobName)` is respected and each company's run is
- * recorded through `automations.recordRun` (last run, result, "n assets depreciated"); without those services
- * the job runs for every company.
+ * recorded through `automations.recordRun` (last run, result, "n assets depreciated").
  */
 import { pool } from "../../db";
 import { createLogger } from "../../config/logger";
 import { todayIso } from "../../ledger/normalize";
 import { has, resolve } from "../../platform/service-registry";
 import { listJobs, registerJob } from "../../platform/job-registry";
+import { automationEnabled as companyAutomationEnabled } from "../../platform/company-automations";
 import { isPeriodLocked } from "../period-lock.service";
 import { depreciationPeriodEnd, lastEndedMonth, runDepreciation } from "./index";
 
@@ -41,8 +41,10 @@ export interface CompanyDepreciationRun {
 }
 
 async function automationEnabled(companyId: string): Promise<boolean> {
-  if (!has("automations.isEnabled")) return true;
   try {
+    if (!has("automations.isEnabled")) {
+      return await companyAutomationEnabled("monthlyDepreciation", companyId);
+    }
     return await resolve<AutomationEnabledFn>("automations.isEnabled")(
       companyId,
       MONTHLY_DEPRECIATION_JOB

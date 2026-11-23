@@ -38,27 +38,32 @@ export async function loadEInvoiceBuyer(
     trn: invoice.customerTrn || null,
     address: invoice.customerAddress || null,
   };
-  if (invoice.contactId) {
+  const buyerOverride = invoice.einvoiceBuyerContactId;
+  const contactId = buyerOverride ?? invoice.contactId;
+  if (contactId) {
+    if (buyerOverride) {
+      customer.name = "";
+      customer.trn = null;
+      customer.address = null;
+    }
     const [contact] = await conn
       .select()
       .from(customerContacts)
-      .where(
-        and(eq(customerContacts.companyId, company.id), eq(customerContacts.id, invoice.contactId))
-      );
+      .where(and(eq(customerContacts.companyId, company.id), eq(customerContacts.id, contactId)));
     if (contact) {
+      if (buyerOverride) customer.name = contact.name;
       const additional = [contact.addressBuilding, contact.addressDistrict]
         .filter((v) => v && v.trim())
         .join(", ");
-      customer.address =
-        invoice.customerAddress || contact.addressStreet || contact.address || null;
-      if (!invoice.customerAddress && contact.addressStreet) {
+      customer.address = customer.address || contact.addressStreet || contact.address || null;
+      if ((buyerOverride || !invoice.customerAddress) && contact.addressStreet) {
         customer.addressLine2 = additional || null;
       }
       customer.city = contact.city || null;
       customer.postalCode = contact.postalCode || null;
       customer.emirate = contact.emirate || null;
       customer.country = countryCode(contact.country);
-      customer.trn = invoice.customerTrn || contact.trnNumber || null;
+      customer.trn = customer.trn || contact.trnNumber || null;
       customer.email = contact.email || null;
       customer.phone = contact.phone || null;
       const endpoint = await getBuyerEndpoint(company.id, contact.id, conn);

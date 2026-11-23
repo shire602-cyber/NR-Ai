@@ -1,3 +1,5 @@
+import { MARKETING_BRAND } from "./marketing-brand";
+
 // Free trial (owner decision, 2026-11-18): every new company gets a 14-day free trial of the top
 // plan, no card required. The trial start is the company's subscription row creation time
 // (existing companies count from when their row was created); an NR admin may extend it
@@ -11,7 +13,7 @@ export const TRIAL_DAYS = 14;
 export const TRIAL_END_BEHAVIOUR = "locked" as const;
 
 /** Where "Contact us" goes while online checkout is not configured. */
-export const UPGRADE_CONTACT_EMAIL = "support@muhasib.ai";
+export const UPGRADE_CONTACT_EMAIL = MARKETING_BRAND.supportEmail;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

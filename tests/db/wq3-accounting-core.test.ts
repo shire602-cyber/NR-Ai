@@ -17,7 +17,7 @@
  *        lines), skips a locked period and never charges a disposed asset
  *  9.13  the tax-rates endpoint returns the boxes from the engine's own mapping
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { accountByCode, freezeTime, postJournalEntry, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -450,6 +450,62 @@ describe("WQ3 9.11: the monthly depreciation job", () => {
     expect(a.status, a.text).toBe(201);
     return a.body.id as string;
   }
+
+  it("[PR94] posts depreciation for an active trial and leaves expired books untouched", async () => {
+    const { runMonthlyDepreciation } =
+      await import("../../server/services/fixed-assets/monthly-job");
+    const active = await tenant("PR94DepActive");
+    const expired = await tenant("PR94DepExpired");
+    for (const t of [active, expired]) {
+      // Seed already-capitalised books to exercise the scheduled job directly.
+      const entry = await postJournalEntry(t, {
+        date: "2026-10-01",
+        lines: [
+          { code: "1210", debit: 60_000 },
+          { code: "1020", credit: 60_000 },
+        ],
+      });
+      await h.sql(
+        `INSERT INTO fixed_assets (company_id, asset_name, category, purchase_date, purchase_cost,
+                                  useful_life_years, net_book_value, capitalization_entry_id)
+         VALUES ($1, 'Server rack', 'equipment', '2026-10-01', 60000, 5, 60000, $2)`,
+        [t.company.id, entry.id]
+      );
+    }
+    const companyIds = [active.company.id, expired.company.id];
+    await h.sql(
+      `UPDATE subscriptions SET plan_id = 'free', trial_ends_at =
+         CASE WHEN company_id = $1 THEN '2026-11-24'::timestamp ELSE '2026-11-17'::timestamp END
+       WHERE company_id IN ($1, $2)`,
+      companyIds
+    );
+    const counts = async (companyId: string) => {
+      const [row] = await h.sql<{ journals: number; schedules: number }>(
+        `SELECT (SELECT count(*)::int FROM journal_entries WHERE company_id = $1) AS journals,
+                (SELECT count(*)::int FROM depreciation_schedules WHERE company_id = $1) AS schedules`,
+        [companyId]
+      );
+      return row;
+    };
+    const activeBefore = await counts(active.company.id);
+    const expiredBefore = await counts(expired.company.id);
+    vi.stubEnv("BILLING_ENFORCEMENT", "true");
+    try {
+      expect(await runMonthlyDepreciation({ companyIds, today: TODAY })).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ companyId: active.company.id, status: "posted", posted: 1 }),
+          expect.objectContaining({ companyId: expired.company.id, status: "disabled", posted: 0 }),
+        ])
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(await counts(active.company.id)).toEqual({
+      journals: activeBefore.journals + 1,
+      schedules: 1,
+    });
+    expect(await counts(expired.company.id)).toEqual(expiredBefore);
+  });
 
   it("[9.11] posts October once (idempotent), with exact lines; skips a locked period", async () => {
     const { runMonthlyDepreciation, MONTHLY_DEPRECIATION_JOB } =

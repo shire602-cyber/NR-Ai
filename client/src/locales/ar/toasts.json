@@ -28,7 +28,7 @@
   "toasts.addTrnFirst": "أضف الرقم الضريبي أولًا",
   "toasts.failedToSubmitVatReturn": "فشل تقديم إقرار الضريبة",
   "toasts.submissionFailed": "فشل التقديم",
-  "toasts.muhasibDoesNotFileWithTheFta": "لا يقدّم محاسب الإقرارات إلى الهيئة الاتحادية للضرائب. قدّم هذا الإقرار عبر إمارة تاكس ثم سجّل الرقم المرجعي للهيئة عليه.",
+  "toasts.muhasibDoesNotFileWithTheFta": "لا يقدّم [[brand]] الإقرارات إلى الهيئة الاتحادية للضرائب. قدّم هذا الإقرار عبر إمارة تاكس ثم سجّل الرقم المرجعي للهيئة عليه.",
   "toasts.finalisedForReviewNotYetFiled": "جاهز للمراجعة — لم يُقدَّم بعد",
   "toasts.failedToUpdateVatReturn": "فشل تحديث إقرار الضريبة",
   "toasts.updateFailed": "فشل التحديث",
