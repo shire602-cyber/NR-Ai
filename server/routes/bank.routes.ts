@@ -55,8 +55,8 @@ const connectionImportBody = z
   .strict();
 const connectionLinkBody = z.object({ bankAccountId: zUuid }).strict();
 
-export async function registerBankRoutes(app: Express) {
-  await retireAutomaticBanking();
+export async function registerBankRoutes(app: Express, retireOnStartup = true) {
+  if (retireOnStartup) await retireAutomaticBanking();
 
   // ─── Bank-account balances in account and base currency (W5-C, R14-16) ──
 

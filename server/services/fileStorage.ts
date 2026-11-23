@@ -61,6 +61,7 @@ const VERCEL_BLOB_URL = /^https:\/\/[a-z0-9]+\.(?:public|private)\.blob\.vercel-
 // the store token, so a leaked URL alone is not enough. BLOB_ACCESS=public restores the legacy
 // unguessable-URL behaviour for stores that cannot create private blobs.
 function blobAccess(): "public" | "private" {
+  if (process.env.VERCEL === "1") return "private";
   return process.env.BLOB_ACCESS === "public" ? "public" : "private";
 }
 
@@ -229,6 +230,10 @@ export async function putObject(
       })
     );
     return key;
+  }
+
+  if (process.env.VERCEL === "1") {
+    throw new Error("Private object storage is required for uploads on Vercel");
   }
 
   const dir = path.join(projectRoot, "uploads", prefix);
