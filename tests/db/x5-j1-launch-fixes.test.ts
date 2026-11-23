@@ -425,7 +425,7 @@ describe("[J1-D7] VAT 201 for a period that has not ended", () => {
 });
 
 describe("[J1-L1] service lines post to service revenue", () => {
-  it("a line linked to a service product credits 4020, a free-text line 4010", async () => {
+  it("service products and free-text lines credit 4020, while goods credit 4010", async () => {
     const t = await h.createTenant({
       name: "LaylaSvc",
       companyColumns: { trn_vat_number: TRN, emirate: "dubai" },
@@ -435,10 +435,22 @@ describe("[J1-L1] service lines post to service revenue", () => {
        VALUES ($1, 'Consulting Services', 500, 0.05, 'service', false) RETURNING id`,
       [t.company.id]
     );
+    const [goods] = await h.sql<{ id: string }>(
+      `INSERT INTO products (company_id, name, unit_price, vat_rate, product_type, track_inventory)
+       VALUES ($1, 'Printed brochure', 100, 0.05, 'inventory', false) RETURNING id`,
+      [t.company.id]
+    );
     const inv = await issuedInvoice(t, {
       lines: [
         { description: "Consulting", quantity: 2, unitPrice: 500, vatRate: 5, productId: svc.id },
-        { description: "Printed brochure", quantity: 1, unitPrice: 100, vatRate: 5 },
+        { description: "Installation", quantity: 1, unitPrice: 100, vatRate: 5 },
+        {
+          description: "Printed brochure",
+          quantity: 1,
+          unitPrice: 100,
+          vatRate: 5,
+          productId: goods.id,
+        },
       ],
     });
     expect(await postedRevenueCodes(t, inv.id)).toEqual(["4010", "4020"]);

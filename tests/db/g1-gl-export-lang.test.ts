@@ -32,7 +32,7 @@ describe("GL tabular export language", () => {
     });
     expect(inv.status, inv.text).toBe(200);
     await t.as.patch(`/api/invoices/${inv.body.id}/status`, { status: "sent" });
-    const rev = await accountByCode(t, "4010");
+    const rev = await accountByCode(t, "4020");
     const q = (lang?: string) =>
       `${base(t)}/reports/general-ledger/export?accountIds=${rev.id}&from=2026-01-01&to=2026-12-31&format=xlsx${
         lang ? `&lang=${lang}` : ""

@@ -136,6 +136,7 @@ export async function createDraftInvoice(
         netAmount: r.netAmount,
         productId: r.productId,
         costCenterId: r.costCenterId,
+        revenueAccountId: r.revenueAccountId,
       } as typeof invoiceLines.$inferInsert);
     }
     if (outer) afterCommit(() => notifyCreated(inserted));
