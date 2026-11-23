@@ -9,6 +9,7 @@ import type { StatusTone } from "@/components/ui/status-badge";
 import { einvoiceIssueTextKey } from "@/lib/einvoice-issues";
 
 export type DeliveryStatus =
+  | "not_applicable"
   | "draft"
   | "validated"
   | "queued"
@@ -75,6 +76,7 @@ export interface EInvoiceEnvironmentVerification {
 }
 
 export interface EInvoiceStatusView {
+  applicable?: boolean;
   status: string;
   submissionState?:
     | "draft"
@@ -200,6 +202,7 @@ export interface EInvoiceReadiness {
 }
 
 export const DELIVERY_TONE: Record<DeliveryStatus, StatusTone> = {
+  not_applicable: "neutral",
   draft: "neutral",
   validated: "neutral",
   queued: "info",

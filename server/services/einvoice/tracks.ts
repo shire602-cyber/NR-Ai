@@ -16,6 +16,7 @@ import type { EInvoiceStatus } from "../einvoice-status";
 import { calendarDateKey, uaeToday } from "../../../shared/uae-date";
 
 export type DeliveryStatus =
+  | "not_applicable"
   | "draft"
   | "validated"
   | "queued"
@@ -273,6 +274,7 @@ export function legacyFromTracks(
   reporting: ReportingStatus
 ): EInvoiceStatus {
   switch (delivery) {
+    case "not_applicable":
     case "draft":
       return "not_generated";
     case "validated":

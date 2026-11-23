@@ -55,6 +55,16 @@ export default function BalanceSheetTab() {
             <Skeleton className="h-96" />
           ) : (
             <div className="space-y-6">
+              {balanceSheet?.warnings?.some(
+                (warning) => warning.code === "OVERDRAWN_CASH_ACCOUNTS"
+              ) && (
+                <p
+                  role="status"
+                  className="rounded-md bg-warning-subtle p-3 text-small text-warning-subtle-foreground"
+                >
+                  <T k="statements.overdrawnCashAccounts" />
+                </p>
+              )}
               <div>
                 <h3 className="font-semibold mb-3 text-info ">
                   <T k="reportCenter.assets" />

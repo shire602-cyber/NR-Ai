@@ -6,6 +6,113 @@ import { useHarness } from "./harness";
 const h = useHarness();
 
 describe("UAE PINT AE cash sales", () => {
+  it("excludes a walk-in sale from validation, delivery and filing", async () => {
+    const tenant = await h.createTenant();
+    const base = `/api/companies/${tenant.company.id}`;
+    const colleague = await h.createSecondTenant();
+    await h.sql(
+      "INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'accountant')",
+      [tenant.company.id, colleague.user.id]
+    );
+    const bank = await tenant.as.post(`${base}/bank-accounts`, {
+      nameEn: "Cash receipts account",
+      bankName: "Test bank",
+    });
+    expect(bank.status, bank.text).toBe(201);
+    const sale = await tenant.as.post(`${base}/cash-sales`, {
+      customerName: "Walk-in customer",
+      date: new Date().toISOString().slice(0, 10),
+      placeOfSupplyEmirate: "dubai",
+      paymentAccountId: bank.body.glAccountId,
+      method: "cash",
+      lines: [{ description: "Counter service", quantity: 1, unitPrice: 100, vatRate: 0.05 }],
+    });
+    expect(sale.status, sale.text).toBe(201);
+    expect(sale.body).toMatchObject({
+      number: expect.stringMatching(/^CS-/),
+      einvoiceApplicable: false,
+    });
+
+    const { drainDomainEvents } = await import("../../server/platform/domain-events");
+    await drainDomainEvents();
+    const signals = await h.sql<{ user_id: string; event_key: string }>(
+      "SELECT user_id, event_key FROM notifications WHERE company_id = $1 AND event_key = ANY($2::text[])",
+      [
+        tenant.company.id,
+        [
+          `invoice.issued:${sale.body.id}`,
+          `invoice.paid:${sale.body.id}`,
+          `payment.received:${sale.body.payment.id}`,
+        ],
+      ]
+    );
+    expect(signals.map(({ user_id }) => user_id)).toEqual(Array(3).fill(colleague.user.id));
+
+    const invoice = `/api/invoices/${sale.body.id}`;
+    const validation = await tenant.as.get(`${invoice}/einvoice/validate`);
+    expect(validation.status, validation.text).toBe(200);
+    expect(validation.body).toMatchObject({ applicable: false, issues: [] });
+    const detail = await tenant.as.get(`${invoice}/einvoice/status`);
+    expect(detail.status, detail.text).toBe(200);
+    expect(detail.body).toMatchObject({
+      applicable: false,
+      issues: [],
+      tracks: {
+        delivery: { status: "not_applicable" },
+        reporting: { status: "not_required", required: false, reportBy: null },
+      },
+      transmission: { canSubmit: false },
+    });
+    const list = await tenant.as.get(`${base}/einvoicing/compliance?invoiceIds=${sale.body.id}`);
+    expect(list.status, list.text).toBe(200);
+    expect(list.body.items).toContainEqual(
+      expect.objectContaining({
+        invoiceId: sale.body.id,
+        delivery: "not_applicable",
+        reporting: "not_required",
+        reportingRequired: false,
+      })
+    );
+    const generate = await tenant.as.post(`${invoice}/generate-einvoice`, {});
+    expect(generate.status, generate.text).toBe(409);
+    expect(generate.body.code).toBe("EINVOICE_NOT_REQUIRED");
+    const submit = await tenant.as.post(`${invoice}/einvoice/submit`, {});
+    expect(submit.status, submit.text).toBe(409);
+    expect(submit.body.code).toBe("EINVOICE_NOT_REQUIRED");
+  });
+
+  it("keeps an endpoint-only cash buyer in e-invoicing scope", async () => {
+    const tenant = await h.createTenant();
+    const base = `/api/companies/${tenant.company.id}`;
+    const contact = await tenant.as.post(`${base}/customer-contacts`, {
+      name: "Public agency",
+    });
+    expect(contact.status, contact.text).toBeLessThan(300);
+    const endpoint = await tenant.as.put(`${base}/einvoicing/buyer-endpoints/${contact.body.id}`, {
+      scheme: "0235",
+      participantId: "1007654321",
+    });
+    expect(endpoint.status, endpoint.text).toBe(200);
+    const bank = await tenant.as.post(`${base}/bank-accounts`, {
+      nameEn: "Cash receipts account",
+      bankName: "Test bank",
+    });
+    expect(bank.status, bank.text).toBe(201);
+    const sale = await tenant.as.post(`${base}/cash-sales`, {
+      contactId: contact.body.id,
+      date: new Date().toISOString().slice(0, 10),
+      placeOfSupplyEmirate: "dubai",
+      paymentAccountId: bank.body.glAccountId,
+      method: "cash",
+      lines: [{ description: "Counter service", quantity: 1, unitPrice: 100, vatRate: 0.05 }],
+    });
+    expect(sale.status, sale.text).toBe(201);
+    expect(sale.body.einvoiceApplicable).toBe(true);
+    const validation = await tenant.as.get(`/api/invoices/${sale.body.id}/einvoice/validate`);
+    expect(validation.status, validation.text).toBe(200);
+    expect(validation.body.applicable).toBe(true);
+  });
+
   it.each([
     { method: "cash", code: "10", gets: "IN_CASH" },
     { method: "credit_card", code: "54", gets: "CREDIT_CARD" },
@@ -66,6 +173,7 @@ describe("UAE PINT AE cash sales", () => {
       expect(sale.status, sale.text).toBe(201);
       expect(sale.body.number).toMatch(/^CS-/);
       expect(sale.body.status).toBe("paid");
+      expect(sale.body.einvoiceApplicable).toBe(true);
 
       const invoiceBase = `/api/invoices/${sale.body.id}`;
       if (method === "cash") {

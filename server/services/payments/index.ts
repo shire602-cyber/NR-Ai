@@ -563,6 +563,7 @@ async function applyPaidEvent(
       notes: `Online payment via ${adapter.label.en} (link ${link.id})`,
       paymentAccountId: depositAccountId,
       createdBy: actor,
+      actorUserId: null,
       // The customer has paid this money: any excess over the open balance is a credit.
       allowCredit: true,
     });

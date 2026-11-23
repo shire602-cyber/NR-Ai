@@ -36,6 +36,13 @@ export function EInvoiceListCell({
   const { t, locale } = useTranslation();
   const [open, setOpen] = useState(false);
   const { pill, doc } = evidence ?? {};
+  if (pill?.delivery === "not_applicable" || doc?.deliveryStatus === "not_applicable") {
+    return (
+      <StatusBadge tone="neutral" data-testid={`einvoice-cell-${invoice.id}`}>
+        {t["einvoicing.reporting_not_required"]}
+      </StatusBadge>
+    );
+  }
   const showPills = !!pill?.reportingRequired;
   if (!doc && !invoice.einvoiceStatus && !showPills) return null;
   const storedStatus = doc?.status ?? invoice.einvoiceStatus;

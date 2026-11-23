@@ -4,6 +4,7 @@ import {
   type EInvoiceDocument,
   type Invoice,
 } from "../../../shared/schema";
+import { isB2cCashSale } from "./applicability";
 import { first, parseXml, partyVatTrn, textAt } from "./dom";
 import { einvoiceMandateApplies } from "./scope";
 import { deriveInvoiceTracks, reportByDate, reportingRequired } from "./tracks";
@@ -51,6 +52,7 @@ export const reportingInvoiceColumns = {
   id: invoices.id,
   date: invoices.date,
   status: invoices.status,
+  source: invoices.source,
   customerTrn: invoices.customerTrn,
   einvoiceStatus: invoices.einvoiceStatus,
   einvoiceProvider: invoices.einvoiceProvider,
@@ -108,8 +110,27 @@ export function projectInvoiceTracks(
   doc: EInvoiceDocument | null | undefined,
   company: Company,
   now: Date,
-  resolvedBuyerTrn: string | null | undefined = invoice?.customerTrn
+  resolvedBuyerTrn: string | null | undefined = invoice?.customerTrn,
+  buyerEndpoint?: string | null
 ) {
+  if (
+    invoice &&
+    isB2cCashSale(invoice, { trn: resolvedBuyerTrn, endpointId: buyerEndpoint }) &&
+    !invoice.einvoiceSubmittedAt &&
+    !doc?.submittedAt &&
+    submissionProviderPin(invoice, doc ?? undefined) === undefined
+  ) {
+    return {
+      delivery: "not_applicable" as const,
+      deliveryConfirmationUnavailable: false,
+      reporting: "not_required" as const,
+      reportingRequired: false,
+      reportingObligationKnown: true,
+      isDraft: invoice.status === "draft",
+      reportBy: null,
+      overdue: false,
+    };
+  }
   return deriveInvoiceTracks({
     invoiceStatus: invoice?.status,
     legacyStatus: invoice?.einvoiceStatus ?? doc?.status,

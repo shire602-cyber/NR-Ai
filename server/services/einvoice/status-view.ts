@@ -136,7 +136,15 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     : null;
   const isAcube = providerId === "acube";
   const providerStatus = doc?.providerStatus?.trim().toLowerCase();
-  const tracks = projectInvoiceTracks(invoice, doc, company, now, ctx.customer?.trn);
+  const tracks = projectInvoiceTracks(
+    invoice,
+    doc,
+    company,
+    now,
+    ctx.customer?.trn,
+    ctx.customer?.endpointId
+  );
+  const applicable = tracks.delivery !== "not_applicable";
   const {
     delivery,
     reporting,
@@ -207,7 +215,8 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
                   ? "queued"
                   : "draft";
   const issued = !["draft", "cancelled", "void"].includes(invoice.status);
-  const maySubmit = issued && block === null && company.einvoicePartner === providerId;
+  const maySubmit =
+    applicable && issued && block === null && company.einvoicePartner === providerId;
   const checklist: ChecklistItem[] = [
     {
       key: "posted",
@@ -217,8 +226,9 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     },
     {
       key: "validated",
-      state:
-        issues.length > 0
+      state: !applicable
+        ? "not_applicable"
+        : issues.length > 0
           ? "failed"
           : validation?.valid
             ? "done"
@@ -230,8 +240,9 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     },
     {
       key: "sent",
-      state:
-        delivery === "delivered" && !receivedByRecipient
+      state: !applicable
+        ? "not_applicable"
+        : delivery === "delivered" && !receivedByRecipient
           ? "done"
           : delivery === "queued" ||
               delivery === "sending" ||
@@ -247,7 +258,9 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
       code:
         delivery === "delivery_failed" || delivery === "rejected" || delivery === "needs_link"
           ? (doc?.lastErrorCode ?? null)
-          : block,
+          : applicable
+            ? block
+            : null,
     },
     {
       key: "reported",
@@ -265,7 +278,8 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
                   ? "blocked"
                   : "todo",
       at: reporting === "reported" ? iso(doc?.reportedAt) : null,
-      code: reporting === "report_failed" ? (doc?.lastErrorCode ?? null) : block,
+      code:
+        reporting === "report_failed" ? (doc?.lastErrorCode ?? null) : applicable ? block : null,
     },
   ];
 
@@ -294,6 +308,7 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     doc.xmlHash === sha256Hex(invoice.einvoiceXml);
   return {
     status: legacy,
+    applicable,
     submissionState,
     detail: invoice.einvoiceStatusDetail ?? null,
     document: doc ? projectEInvoiceDocument(doc, tracks) : null,
@@ -321,19 +336,20 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
       environment,
       environmentVerification: await legacyTrackingAvailability(invoice, doc, company, revision),
       connected: block === null,
-      block,
+      block: applicable ? block : null,
       providerDocumentId,
       legalEntityStatus: legalEntity?.status ?? null,
       recipientAcknowledgement: acknowledgement,
       canSubmit: maySubmit && submissionState === "draft" && !legacyRecovery,
       canRefresh:
+        applicable &&
         !receiptConflict &&
         !correctionRevisionUnverified &&
         configuration !== null &&
         ((handedOver && (legacy !== "cleared" || revision.canRepairClearance)) ||
           (!legacyRecovery && canRecoverAcubeSubmission(invoice, doc))),
     },
-    issues,
+    issues: applicable ? issues : [],
     contactId: invoice.contactId ?? null,
     rejection: failed
       ? {

@@ -51,6 +51,7 @@ export interface CostCenterProfitabilityReport {
 }
 
 export interface BalanceSheetReport {
+  warnings?: Array<{ code: string }>;
   assets: AccountLineItem[];
   liabilities: AccountLineItem[];
   equity: AccountLineItem[];

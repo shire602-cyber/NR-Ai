@@ -1,4 +1,5 @@
 {
+  "serverErrors.EINVOICE_NOT_REQUIRED": "E-invoicing is not required for this cash sale.",
   "serverErrors.AUTHORIZATION_RETRY": "Could not finish authorization. Try again.",
   "serverErrors.AUTHORIZATION_RESTART": "Authorization expired. Start again from where you began, or upload a CSV statement.",
   "serverErrors.ACCESS_DENIED": "You do not have access to this report.",

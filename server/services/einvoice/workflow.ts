@@ -7,6 +7,11 @@
  * (history.ts); a provider that needs a linked legal entity (A-Cube) is gated on it; a
  * submission is claimed first so two requests never hand the same invoice to the ASP twice.
  */
+import {
+  EINVOICE_NOT_REQUIRED,
+  EINVOICE_NOT_REQUIRED_MESSAGE,
+  isB2cCashSale,
+} from "./applicability";
 import { randomUUID } from "node:crypto";
 import { and, eq, ne, sql } from "drizzle-orm";
 import {
@@ -58,7 +63,7 @@ import {
   isEInvoiceInFlight,
   nextRetryAt,
 } from "../einvoice-status";
-import { loadEInvoiceContext } from "./context";
+import { loadEInvoiceBuyer, loadEInvoiceContext } from "./context";
 import { invoiceReportingDeadline, invoiceReportingRequired } from "./reporting";
 import { frozenEInvoiceDispatchIssue } from "../einvoice.service";
 import { PEPPOL_SCHEME_UAE_TIN } from "./pint-ae-codes";
@@ -393,6 +398,17 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         status: 403,
         code: "PERMISSION_DENIED",
         message: "E-invoice transmission requires permission for this company.",
+      };
+    }
+    if (
+      fresh.source === "cash_sale" &&
+      isB2cCashSale(fresh, await loadEInvoiceBuyer(fresh, company, tx))
+    ) {
+      return {
+        ok: false,
+        status: 409,
+        code: EINVOICE_NOT_REQUIRED,
+        message: EINVOICE_NOT_REQUIRED_MESSAGE,
       };
     }
     const entity = await assertCanTransmit(company, provider, tx);

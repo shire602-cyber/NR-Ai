@@ -27,12 +27,12 @@ import { getBuyerEndpoint } from "./store";
 
 type ContextReader = Pick<AppDatabase, "select">;
 
-export async function loadEInvoiceContext(
+/** The current buyer identity is shared by scope checks and document generation. */
+export async function loadEInvoiceBuyer(
   invoice: Invoice,
   company: Company,
-  lines?: InvoiceLine[],
   conn: ContextReader = db
-): Promise<EInvoiceContext> {
+): Promise<NonNullable<EInvoiceContext["customer"]>> {
   const customer: Partial<EInvoiceParty> & { name?: string } = {
     name: invoice.customerName,
     trn: invoice.customerTrn || null,
@@ -71,6 +71,16 @@ export async function loadEInvoiceContext(
       }
     }
   }
+  return customer;
+}
+
+export async function loadEInvoiceContext(
+  invoice: Invoice,
+  company: Company,
+  lines?: InvoiceLine[],
+  conn: ContextReader = db
+): Promise<EInvoiceContext> {
+  const customer = await loadEInvoiceBuyer(invoice, company, conn);
   let originalInvoice: EInvoiceContext["originalInvoice"] = null;
   if (invoice.originalInvoiceId) {
     const [original] = await conn

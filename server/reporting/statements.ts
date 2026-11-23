@@ -505,6 +505,8 @@ export async function profitAndLoss(
 
 // ─── Balance sheet ──────────────────────────────────────────────────────────
 
+const OVERDRAWN_CASH_ACCOUNTS = "OVERDRAWN_CASH_ACCOUNTS";
+
 export interface BalanceSheet {
   reportCurrency: string;
   asOf: IsoDate;
@@ -527,6 +529,7 @@ export interface BalanceSheet {
     /** Capital lines + reserve lines + synthetic retained earnings b/f + current year earnings. */
     lines: StatementLine[];
   };
+  warnings?: Array<{ code: typeof OVERDRAWN_CASH_ACCOUNTS; accounts: StatementLine[] }>;
   totalAssets: number;
   totalLiabilities: number;
   totalEquity: number;
@@ -578,6 +581,7 @@ async function balanceSheetCore(
   ]);
   const cyTotals = await accountTotals(companyId, { from: fyStart, to: asOf }, q);
 
+  const overdrawnCash: Array<[ReportAccount, Fils]> = [];
   const curA: Array<[ReportAccount, Fils]> = [];
   const nonA: Array<[ReportAccount, Fils]> = [];
   const curL: Array<[ReportAccount, Fils]> = [];
@@ -591,9 +595,14 @@ async function balanceSheetCore(
     if (!t) continue;
     if (a.type === "asset") {
       const net = t.debit - t.credit;
-      // A-2: credit-balance asset is presented as a liability, except contra assets.
-      if (net >= 0 || isContraAsset(a)) (isNonCurrent(a) ? nonA : curA).push([a, net]);
-      else curL.push([a, -net]);
+      if (net < 0 && !isContraAsset(a)) {
+        if (!isCashAccount(a)) {
+          curL.push([a, -net]);
+          continue;
+        }
+        overdrawnCash.push([a, net]);
+      }
+      (isNonCurrent(a) ? nonA : curA).push([a, net]);
     } else if (a.type === "liability") {
       const net = t.credit - t.debit;
       if (net < 0) curA.push([a, -net]);
@@ -685,6 +694,11 @@ async function balanceSheetCore(
         },
       ],
     },
+    ...(overdrawnCash.length
+      ? {
+          warnings: [{ code: OVERDRAWN_CASH_ACCOUNTS, accounts: section(overdrawnCash).lines }],
+        }
+      : {}),
     totalAssets: aed(totalAssets),
     totalLiabilities: aed(totalLiabilities),
     totalEquity: aed(totalEquity),

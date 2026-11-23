@@ -71,6 +71,7 @@ describe("pdf invoice content", { timeout: 30_000 }, () => {
     const pdf = await generateInvoicePDF(invoice(), lines(), company());
     const text = await pdfToText(pdf);
     expect(text).toContain("Tax invoice");
+    expect(text).not.toContain("Scan to view");
     expect(text).toContain("فاتورة ضريبية");
     expect(text).toContain("رقم الفاتورة");
     expect(text).toContain("شركة النجمة للتجارة");
@@ -151,12 +152,29 @@ describe("pdf invoice content", { timeout: 30_000 }, () => {
     expect((await pdfToText(pdf)).replace(/\s+/g, " ")).toContain("Reverse charge");
   });
 
-  it("R03-19 QR is labelled as a TLV invoice QR, not an FTA submission", async () => {
-    const pdf = await generateInvoicePDF(invoice(), lines(), company());
-    const text = await pdfToText(pdf);
-    expect(text).toContain("Invoice QR (TLV)");
-    expect(text).not.toContain("FTA e-Invoice");
-  });
+  it.each(["en", "ar"] as const)(
+    "uses seller legal identity and a share QR in the %s layout",
+    async (locale) => {
+      const pdf = await generateInvoicePDF(
+        invoice({ shareToken: "shared-invoice" }),
+        lines(),
+        company({
+          name: "Seller Display Name",
+          legalName: "Pearl Commercial LLC",
+          legalNameAr: "شركة اللؤلؤة للتجارة",
+          addressAr: "شارع السعادة",
+          locale,
+        })
+      );
+      const text = (await pdfToText(pdf)).replace(/\s+/g, " ");
+      for (const value of ["Pearl Commercial LLC", "شركة اللؤلؤة للتجارة", "شارع السعادة"]) {
+        expect(text.split(value)).toHaveLength(3);
+      }
+      expect(text).not.toContain("Seller Display Name");
+      expect(text).toContain("Scan to view");
+      expect(text).toContain("امسح للعرض");
+    }
+  );
 
   it("R14-21 ar-locale company gets Arabic-first labels and a mirrored table", async () => {
     const pdf = await generateInvoicePDF(invoice(), lines(), company({ locale: "ar" } as never));

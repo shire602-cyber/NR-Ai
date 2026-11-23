@@ -169,6 +169,7 @@ export function registerDashboardRoutes(app: Express) {
         currentPeriodNetIncome: periodNetIncome,
         retainedEarningsBroughtForward: bs.equity.retainedEarningsBroughtForward,
         currentYearEarnings: bs.equity.currentYearEarnings,
+        ...(bs.warnings?.length ? { warnings: bs.warnings } : {}),
         isBalanced: bs.isBalanced,
         difference: bs.difference,
         statement: bs,

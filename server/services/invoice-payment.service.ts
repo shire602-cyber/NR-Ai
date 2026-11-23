@@ -119,6 +119,8 @@ export interface RecordPaymentInput {
   /** AED per unit of the invoice currency on the payment date (realised FX). */
   paymentExchangeRate?: number | null;
   createdBy: string;
+  /** Explicit null when the payment was received without an acting staff user. */
+  actorUserId?: string | null;
   allowCredit?: boolean;
   /**
    * WQ1: run inside the caller's ledger transaction (one receipt over several invoices, a cash
@@ -325,19 +327,20 @@ async function afterPaymentRecorded(
       log.error({ err, invoiceId: input.invoiceId }, "bad-debt relief reversal on payment failed");
     }
   }
+  const actorUserId = input.actorUserId === undefined ? input.createdBy : input.actorUserId;
   emitDomainEvent("payment.received", {
     companyId: input.companyId,
     entityId: result.payment.id,
     invoiceId: input.invoiceId,
     amountFils,
-    actorUserId: input.createdBy,
+    actorUserId,
   });
   if (result.invoice.status === "paid") {
     emitDomainEvent("invoice.paid", {
       companyId: input.companyId,
       entityId: input.invoiceId,
       amountFils: toFils(result.invoice.total, { rounding: "halfUp" }),
-      actorUserId: input.createdBy,
+      actorUserId,
     });
   }
   return badDebtReliefReversal;

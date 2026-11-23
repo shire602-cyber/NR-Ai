@@ -49,6 +49,16 @@ export function EInvoiceHeaderStrip({
   const status = useEInvoiceStatus(invoiceId);
   const view = status.data;
   if (!view?.tracks) return null;
+  if (view.applicable === false) {
+    return (
+      <div className="flex flex-wrap items-center gap-2" data-testid="einvoice-header-strip">
+        <span className="text-small font-medium">{t["einvoicing.headerTitle"]}</span>
+        <span className="text-small text-muted-foreground">
+          {t["einvoicing.reporting_not_required"]}
+        </span>
+      </div>
+    );
+  }
   const { delivery, reporting } = view.tracks;
   const reportingOnlyFailure = isReportingOnlyFailure(delivery.status, reporting.status);
   const first = view.issues[0];

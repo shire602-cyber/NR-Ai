@@ -12,6 +12,7 @@
  * UAE 5-corner model the Accredited Service Provider (ASP) applies its
  * signature and reports to the FTA; see einvoice-provider.ts.
  */
+import { isB2cCashSale } from "./einvoice/applicability";
 import crypto from "crypto";
 import Decimal from "decimal.js";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
@@ -813,6 +814,7 @@ export function validateForEInvoicing(
     options?: EInvoiceOptions;
   } = {}
 ): EInvoiceIssue[] {
+  if (isB2cCashSale(invoice, ctx.customer)) return [];
   const issues: EInvoiceIssue[] = [];
   const add = (field: string, code: string, message: string) =>
     issues.push({ field, code, message });

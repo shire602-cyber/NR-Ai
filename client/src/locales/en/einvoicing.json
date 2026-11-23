@@ -5,6 +5,7 @@
   "einvoicing.navEInvoicing": "E-invoicing (UAE)",
   "einvoicing.trackDelivery": "Delivery to customer",
   "einvoicing.trackReporting": "FTA reporting",
+  "einvoicing.delivery_not_applicable": "Not applicable",
   "einvoicing.delivery_draft": "Not generated",
   "einvoicing.delivery_validated": "Validated, not sent",
   "einvoicing.delivery_queued": "With provider",

@@ -1,91 +1,19 @@
 import QRCode from "qrcode";
+import type { Invoice } from "../../shared/schema";
+import { publicBaseUrl } from "./payments";
 
-// Invoice PDF QR: a five-tag TLV summary (seller, TRN, timestamp, total, VAT).
-// It is a convenience for readers of the PDF, NOT a
-// cryptographic stamp: it carries no invoice hash, signature or public key, and
-// the UAE PINT AE e-invoice is signed by the Accredited Service Provider, not
-// by this QR.
-// Each record is: 1-byte tag, 1-byte length, n bytes UTF-8 value (≤255 bytes).
-export const EINVOICE_QR_TAGS = {
-  SELLER_NAME: 1,
-  VAT_REG_NUMBER: 2,
-  TIMESTAMP: 3,
-  INVOICE_TOTAL_WITH_VAT: 4,
-  VAT_AMOUNT: 5,
-} as const;
-
-export interface EInvoiceQrFields {
-  sellerName: string;
-  vatRegistrationNumber: string;
-  timestamp: Date;
-  invoiceTotalWithVat: number;
-  vatAmount: number;
-}
-
-function tlv(tag: number, value: string): Buffer {
-  const bytes = Buffer.from(value, "utf-8");
-  if (bytes.length > 255) {
-    throw new Error(`TLV value for tag ${tag} exceeds 255 bytes (got ${bytes.length})`);
+/** A PDF may point to an existing public share. Rendering never creates a share. */
+export async function renderInvoiceShareQrPng(
+  invoice: Pick<Invoice, "shareToken" | "shareTokenExpiresAt" | "status">
+): Promise<Buffer | null> {
+  if (
+    !invoice.shareToken ||
+    invoice.status === "draft" ||
+    invoice.status === "cancelled" ||
+    (invoice.shareTokenExpiresAt && new Date(invoice.shareTokenExpiresAt).getTime() <= Date.now())
+  ) {
+    return null;
   }
-  const out = Buffer.alloc(2 + bytes.length);
-  out[0] = tag;
-  out[1] = bytes.length;
-  bytes.copy(out, 2);
-  return out;
-}
-
-function formatAmount(n: number): string {
-  return n.toFixed(2);
-}
-
-// Build the base64-encoded TLV payload that goes into the QR code.
-export function buildEInvoiceQrPayload(fields: EInvoiceQrFields): string {
-  if (!fields.sellerName) throw new Error("sellerName is required for QR payload");
-  if (!fields.vatRegistrationNumber) {
-    throw new Error("vatRegistrationNumber (TRN) is required for QR payload");
-  }
-
-  const blob = Buffer.concat([
-    tlv(EINVOICE_QR_TAGS.SELLER_NAME, fields.sellerName),
-    tlv(EINVOICE_QR_TAGS.VAT_REG_NUMBER, fields.vatRegistrationNumber),
-    tlv(EINVOICE_QR_TAGS.TIMESTAMP, fields.timestamp.toISOString()),
-    tlv(EINVOICE_QR_TAGS.INVOICE_TOTAL_WITH_VAT, formatAmount(fields.invoiceTotalWithVat)),
-    tlv(EINVOICE_QR_TAGS.VAT_AMOUNT, formatAmount(fields.vatAmount)),
-  ]);
-
-  return blob.toString("base64");
-}
-
-// Decode a TLV payload back into a record of tag → value. Used in tests and
-// for verifying QRs scanned from issued PDFs.
-export function decodeEInvoiceQrPayload(base64: string): Record<number, string> {
-  const buf = Buffer.from(base64, "base64");
-  const out: Record<number, string> = {};
-  let i = 0;
-  while (i < buf.length) {
-    const tag = buf[i];
-    const len = buf[i + 1];
-    if (i + 2 + len > buf.length) {
-      throw new Error("truncated TLV payload");
-    }
-    out[tag] = buf.slice(i + 2, i + 2 + len).toString("utf-8");
-    i += 2 + len;
-  }
-  return out;
-}
-
-// Render the QR payload to a PNG buffer suitable for embedding in PDFKit.
-// Margin 0 keeps the rendered image tight to the QR data; PDF layout already
-// handles the surrounding whitespace.
-export async function renderEInvoiceQrPng(
-  fields: EInvoiceQrFields,
-  options: { width?: number } = {}
-): Promise<Buffer> {
-  const payload = buildEInvoiceQrPayload(fields);
-  return QRCode.toBuffer(payload, {
-    errorCorrectionLevel: "M",
-    type: "png",
-    margin: 0,
-    width: options.width ?? 240,
-  });
+  const url = `${publicBaseUrl()}/view/invoice/${encodeURIComponent(invoice.shareToken)}`;
+  return QRCode.toBuffer(url, { errorCorrectionLevel: "M", type: "png", margin: 4, width: 240 });
 }
