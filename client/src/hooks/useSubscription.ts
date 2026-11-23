@@ -43,6 +43,7 @@ interface SubscriptionData {
     billingCycle: string;
     currentPeriodEnd: string;
     stripeCustomerId: string | null;
+    stripeSubscriptionId: string | null;
     invoicesCreatedThisMonth: number;
     receiptsCreatedThisMonth: number;
     aiCreditsUsedThisMonth: number;

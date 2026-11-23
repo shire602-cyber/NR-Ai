@@ -1454,7 +1454,7 @@ describe("Legacy A-Cube environment verification", () => {
     const inv = await issuedInvoice(t);
     const prefix = `/api/invoices/${inv.id}/einvoice`;
     const [buyer] = await h.sql(
-      "UPDATE invoices SET customer_trn = NULL WHERE id = $1 RETURNING contact_id",
+      "UPDATE invoices SET customer_trn = NULL, date = '2026-03-01' WHERE id = $1 RETURNING contact_id",
       [inv.id]
     );
     await h.sql(
@@ -1544,8 +1544,8 @@ describe("Legacy A-Cube environment verification", () => {
     ).toHaveLength(1);
     expect((await statusOf(t, inv.id)).rejection.resubmittable).toBe(true);
     expect((await statusOf(t, inv.id)).tracks.reporting).toMatchObject({
-      required: false,
-      reportBy: null,
+      required: true,
+      reportBy: "2026-03-15",
     });
     await h.sql(
       "UPDATE customer_contacts SET trn_number = '100765432100003' WHERE company_id = $1 AND id = $2",

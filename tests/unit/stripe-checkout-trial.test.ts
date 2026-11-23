@@ -3,9 +3,11 @@ import type Stripe from "stripe";
 
 const stripe = vi.hoisted(() => ({
   listSessions: vi.fn(),
+  listSubscriptions: vi.fn(),
   createSession: vi.fn().mockResolvedValue({ url: "https://checkout.example.test" }),
   createCoupon: vi.fn().mockResolvedValue({ id: "referral-discount" }),
   retrieveSubscription: vi.fn(),
+  updateStripeSubscription: vi.fn(),
   getCompany: vi.fn(),
   getSubscription: vi.fn(),
   updateSubscription: vi.fn(),
@@ -18,7 +20,11 @@ vi.mock("stripe", () => ({
   default: class {
     checkout = { sessions: { create: stripe.createSession, list: stripe.listSessions } };
     coupons = { create: stripe.createCoupon };
-    subscriptions = { retrieve: stripe.retrieveSubscription };
+    subscriptions = {
+      retrieve: stripe.retrieveSubscription,
+      list: stripe.listSubscriptions,
+      update: stripe.updateStripeSubscription,
+    };
   },
 }));
 vi.mock("../../server/config/env", () => ({ getEnv: () => ({ STRIPE_SECRET_KEY: "fixture" }) }));
@@ -34,6 +40,7 @@ vi.mock("../../server/storage", () => ({
 vi.mock("../../server/services/connectors/pq", () => ({ pq: stripe.pq }));
 
 import {
+  changeSubscriptionPlan,
   createCheckoutSession,
   handleWebhookEvent,
   PLAN_PRICE_MAP,
@@ -57,6 +64,7 @@ describe("Stripe checkout product trial and referral", () => {
     vi.clearAllMocks();
     stripe.getCompany.mockResolvedValue({ id: "company" });
     stripe.listSessions.mockReturnValue([]);
+    stripe.listSubscriptions.mockReturnValue([]);
     stripe.createSession.mockResolvedValue({ url: "https://checkout.example.test" });
     stripe.retrieveSubscription.mockResolvedValue(currentStripeSubscription);
     let reservation: Date | null = null;
@@ -128,13 +136,149 @@ describe("Stripe checkout product trial and referral", () => {
     expect(stripe.createCoupon).not.toHaveBeenCalled();
   });
 
-  it("reserves before creating a session, even when overlapping requests read the same state", async () => {
+  it("[PR94] changes Starter to Professional on the existing subscription item", async () => {
+    stripe.getSubscription.mockResolvedValue({
+      id: "subscription-row",
+      planId: "starter",
+      billingCycle: "monthly",
+      stripeSubscriptionId: "first-subscription",
+    });
+    stripe.retrieveSubscription.mockResolvedValue({
+      items: { data: [{ id: "existing-item" }] },
+    });
+    const originalPrice = PLAN_PRICE_MAP.professional.monthly;
+    PLAN_PRICE_MAP.professional.monthly = "price-professional";
+    try {
+      await changeSubscriptionPlan("company", { planId: "professional" });
+      expect(stripe.updateStripeSubscription).toHaveBeenCalledExactlyOnceWith(
+        "first-subscription",
+        {
+          items: [{ id: "existing-item", price: "price-professional", quantity: 1 }],
+          proration_behavior: "create_prorations",
+          metadata: { companyId: "company", planId: "professional", billingCycle: "monthly" },
+        }
+      );
+      expect(stripe.updateSubscription).toHaveBeenCalledExactlyOnceWith(
+        "subscription-row",
+        expect.objectContaining({ planId: "professional", billingCycle: "monthly" })
+      );
+      expect(stripe.createSession).not.toHaveBeenCalled();
+    } finally {
+      PLAN_PRICE_MAP.professional.monthly = originalPrice;
+    }
+  });
+
+  it.each([
+    { scenario: "a returning customer", checkoutCompleted: true, checkoutAgeHours: 1 },
+    { scenario: "an older pre-migration checkout", checkoutCompleted: false, checkoutAgeHours: 48 },
+  ])("reconciles $scenario before creating a checkout session", async (testCase) => {
     const subscription = {
+      companyId: "company",
       planId: "free",
       stripeCustomerId: "fixture-customer",
-      trialEndsAt: new Date(now.getTime() + 96 * hour),
+      stripeSubscriptionId: null,
+      stripeCheckoutCompleted: testCase.checkoutCompleted,
     };
     stripe.getSubscription.mockResolvedValue(subscription);
+    stripe.applyStripeCheckout.mockResolvedValue(true);
+    stripe.listSubscriptions.mockReturnValue([
+      {
+        ...currentStripeSubscription,
+        status: "active",
+        created: (now.getTime() - testCase.checkoutAgeHours * hour) / 1000,
+      },
+    ]);
+    await expect(
+      createCheckoutSession(
+        "company",
+        "starter",
+        "monthly",
+        "https://example.test/success",
+        "https://example.test/cancel"
+      )
+    ).resolves.toBe("https://example.test/success");
+    expect(stripe.applyStripeCheckout).toHaveBeenCalledExactlyOnceWith(
+      subscription,
+      expect.objectContaining({
+        planId: "professional",
+        billingCycle: "yearly",
+        status: "active",
+        stripeSubscriptionId: "first-subscription",
+        stripeCheckoutCompleted: true,
+      })
+    );
+    expect(stripe.createSession).not.toHaveBeenCalled();
+  });
+
+  it("recovers a legacy checkout at the 24-hour cutoff when the clock advances between lookups", async () => {
+    const created = (now.getTime() - 24 * hour) / 1000;
+    stripe.getSubscription.mockResolvedValue({
+      companyId: "company",
+      planId: "free",
+      stripeCustomerId: "fixture-customer",
+      stripeSubscriptionId: null,
+      stripeCheckoutCompleted: true,
+    });
+    stripe.listSubscriptions.mockImplementationOnce(() => {
+      vi.mocked(Date.now).mockReturnValue(now.getTime() + 1000);
+      return [];
+    });
+    stripe.listSessions.mockImplementationOnce(({ created: cutoff }) =>
+      created >= cutoff.gte
+        ? [
+            {
+              mode: "subscription",
+              status: "complete",
+              customer: "fixture-customer",
+              subscription: "first-subscription",
+              metadata: currentStripeSubscription.metadata,
+            },
+          ]
+        : []
+    );
+    stripe.applyStripeCheckout.mockResolvedValue(true);
+
+    await expect(
+      createCheckoutSession(
+        "company",
+        "starter",
+        "monthly",
+        "https://example.test/success",
+        "https://example.test/cancel"
+      )
+    ).resolves.toBe("https://example.test/success");
+    expect(stripe.listSessions).toHaveBeenCalledWith({
+      customer: "fixture-customer",
+      created: { gte: created },
+    });
+    expect(stripe.createSession).not.toHaveBeenCalled();
+  });
+
+  it("recovers session-only plan metadata from the completed checkout with matching IDs", async () => {
+    const subscription = {
+      companyId: "company",
+      stripeCustomerId: "fixture-customer",
+      stripeCheckoutCompleted: true,
+    };
+    stripe.getSubscription.mockResolvedValue(subscription);
+    stripe.applyStripeCheckout.mockResolvedValue(true);
+    stripe.listSubscriptions.mockReturnValue([
+      { ...currentStripeSubscription, status: "active", metadata: {} },
+    ]);
+    const completed = {
+      mode: "subscription",
+      status: "complete",
+      customer: { id: "fixture-customer" },
+      subscription: { id: "first-subscription" },
+      metadata: { companyId: "company", planId: "professional", billingCycle: "yearly" },
+    };
+    const unrelated = [
+      { ...completed, status: "open" },
+      { ...completed, metadata: { ...completed.metadata, companyId: "other-company" } },
+      { ...completed, customer: "other-customer" },
+      { ...completed, subscription: "other-subscription" },
+    ];
+    stripe.listSessions.mockReturnValue(unrelated);
     const request = () =>
       createCheckoutSession(
         "company",
@@ -143,14 +287,51 @@ describe("Stripe checkout product trial and referral", () => {
         "https://example.test/success",
         "https://example.test/cancel"
       );
-    const results = await Promise.allSettled([request(), request()]);
-    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-    expect(results.find((result) => result.status === "rejected")).toMatchObject({
-      reason: { code: "STRIPE_CHECKOUT_IN_PROGRESS" },
-    });
-    expect(stripe.createSession).toHaveBeenCalledTimes(1);
-    expect(stripe.createCoupon).toHaveBeenCalledTimes(1);
+    await expect(request()).rejects.toMatchObject({ code: "STRIPE_CHECKOUT_IN_PROGRESS" });
+    expect(stripe.applyStripeCheckout).not.toHaveBeenCalled();
+
+    stripe.listSessions.mockReturnValue([...unrelated, completed]);
+    await expect(request()).resolves.toBe("https://example.test/success");
+    expect(stripe.listSessions).toHaveBeenCalledWith({ subscription: "first-subscription" });
+    expect(stripe.applyStripeCheckout).toHaveBeenCalledExactlyOnceWith(
+      subscription,
+      expect.objectContaining({
+        planId: "professional",
+        billingCycle: "yearly",
+        status: "active",
+        stripeSubscriptionId: "first-subscription",
+      })
+    );
+    expect(stripe.createSession).not.toHaveBeenCalled();
   });
+
+  it.each([false, true])(
+    "reserves before overlapping checkouts create a session (returning: %s)",
+    async (returning) => {
+      const subscription = {
+        planId: "free",
+        stripeCustomerId: "fixture-customer",
+        stripeCheckoutCompleted: returning,
+        trialEndsAt: new Date(now.getTime() + 96 * hour),
+      };
+      stripe.getSubscription.mockResolvedValue(subscription);
+      const request = () =>
+        createCheckoutSession(
+          "company",
+          "starter",
+          "monthly",
+          "https://example.test/success",
+          "https://example.test/cancel"
+        );
+      const results = await Promise.allSettled([request(), request()]);
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      expect(results.find((result) => result.status === "rejected")).toMatchObject({
+        reason: { code: "STRIPE_CHECKOUT_IN_PROGRESS" },
+      });
+      expect(stripe.createSession).toHaveBeenCalledTimes(1);
+      expect(stripe.createCoupon).toHaveBeenCalledTimes(returning ? 0 : 1);
+    }
+  );
 
   it.each(["expired", "complete", "open"] as const)(
     "checks the earlier Stripe session after the reservation expires (%s)",
@@ -274,7 +455,13 @@ describe("Stripe checkout product trial and referral", () => {
     await handleWebhookEvent({
       id: "delete-event",
       type: "customer.subscription.deleted",
-      data: { object: { id: "first-subscription", metadata: { companyId: "company" } } },
+      data: {
+        object: {
+          id: "first-subscription",
+          customer: "fixture-customer",
+          metadata: { companyId: "company" },
+        },
+      },
     } as unknown as Stripe.Event);
     expect(subscription).toMatchObject({
       planId: "free",
@@ -298,6 +485,19 @@ describe("Stripe checkout product trial and referral", () => {
     } as unknown as Stripe.Event);
     expect(subscription.stripeSubscriptionId).toBeNull();
     expect(stripe.applyStripeCheckout).toHaveBeenCalledTimes(1);
+    stripe.listSessions.mockReturnValue([
+      {
+        mode: "subscription",
+        status: "complete",
+        customer: "fixture-customer",
+        subscription: "first-subscription",
+        metadata: currentStripeSubscription.metadata,
+      },
+    ]);
+    stripe.retrieveSubscription.mockResolvedValue({
+      ...currentStripeSubscription,
+      status: "canceled",
+    });
     await createCheckoutSession(
       "company",
       "starter",

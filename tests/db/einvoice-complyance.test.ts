@@ -1038,12 +1038,18 @@ describe("E2 submit, two tracks and history", () => {
         "UPDATE invoices SET customer_trn = NULL, date = '2026-03-01' WHERE id = $1 RETURNING contact_id",
         [inv.id]
       );
-      const setBuyerVat = (required: boolean) =>
-        h.sql("UPDATE customer_contacts SET trn_number = $2 WHERE id = $1", [
+      const setBuyerAndScope = async (required: boolean) => {
+        await h.sql("UPDATE customer_contacts SET trn_number = $2 WHERE id = $1", [
           buyer.contact_id,
           required ? "100765432100003" : null,
         ]);
-      await setBuyerVat(originalRequiresReport);
+        // A valid buyer endpoint establishes B2B identity even without a VAT number.
+        await h.sql("UPDATE companies SET einvoice_scope = $2 WHERE id = $1", [
+          t.company.id,
+          required ? "b2b" : "none",
+        ]);
+      };
+      await setBuyerAndScope(originalRequiresReport);
       const endpoint = await t.as.put(
         `/api/companies/${t.company.id}/einvoicing/buyer-endpoints/${buyer.contact_id}`,
         { scheme: "0235", participantId: "1007654321" }
@@ -1062,7 +1068,7 @@ describe("E2 submit, two tracks and history", () => {
       });
       expect(rejected.tracks.reporting).toMatchObject(expectedReporting(originalRequiresReport));
 
-      await setBuyerVat(correctedRequiresReport);
+      await setBuyerAndScope(correctedRequiresReport);
       const correction = await t.as.post(`${prefix}/resubmit`, {});
       expect(correction.status, correction.text).toBe(202);
       expect(correction.body.tracks.reporting).toMatchObject(

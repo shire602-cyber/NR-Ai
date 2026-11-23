@@ -301,6 +301,22 @@ export class FirmStorage extends ComplianceStorage {
     return subscription || undefined;
   }
 
+  async getSubscriptionByStripeIds(
+    subscriptionId: string,
+    customerId: string
+  ): Promise<Subscription | undefined> {
+    const [subscription] = await db
+      .select()
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.stripeSubscriptionId, subscriptionId),
+          eq(subscriptions.stripeCustomerId, customerId)
+        )
+      );
+    return subscription;
+  }
+
   async createSubscription(insertSubscription: InsertSubscription): Promise<Subscription> {
     const [subscription] = await db.insert(subscriptions).values(insertSubscription).returning();
     return subscription;
