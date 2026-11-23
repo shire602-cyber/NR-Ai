@@ -209,8 +209,21 @@ it.each([
     ageHours: 48,
     sessionOnly: true,
   },
-])("[PR95] recovers paid entitlement for $scenario", async (fixture) => {
-  const { returning, ageHours, sessionOnly, completesAfterSubscriptionList } = fixture;
+  {
+    scenario: "a session-only checkout canceled before recovery links it",
+    returning: false,
+    ageHours: 48,
+    sessionOnly: true,
+    canceledDuringRecovery: true,
+  },
+])("[PR95] reconciles $scenario", async (fixture) => {
+  const {
+    returning,
+    ageHours,
+    sessionOnly,
+    completesAfterSubscriptionList,
+    canceledDuringRecovery,
+  } = fixture;
   const t = await h.createTenant();
   const companyId = t.company.id;
   const customer = `fixture-customer-${companyId}`;
@@ -248,19 +261,13 @@ it.each([
     }
     const created = Math.floor(Date.now() / 1000) - ageHours * 3_600;
     const metadata = { companyId, planId: "starter", billingCycle: "monthly" };
-    stripe.listSessions.mockImplementation((params: Stripe.Checkout.SessionListParams) =>
-      created >= (typeof params.created === "object" ? (params.created.gte ?? 0) : 0)
-        ? [
-            {
-              mode: "subscription",
-              status: "complete",
-              metadata,
-              customer,
-              subscription: subscriptionId,
-            },
-          ]
-        : []
-    );
+    const completed = {
+      mode: "subscription",
+      status: "complete",
+      metadata,
+      customer,
+      subscription: subscriptionId,
+    };
     const active = {
       id: subscriptionId,
       customer,
@@ -272,6 +279,21 @@ it.each([
       current_period_end: created + 30 * 86_400,
       items: { data: [{ quantity: 1 }] },
     };
+    const deleted = {
+      id: `fixture-subscription-deleted-${companyId}`,
+      type: "customer.subscription.deleted",
+      data: { object: { ...active, status: "canceled" } },
+    } as unknown as Stripe.Event;
+    stripe.listSessions.mockImplementation(async function* (
+      params: Stripe.Checkout.SessionListParams
+    ) {
+      if (canceledDuringRecovery && params.subscription === subscriptionId) {
+        await expect(handleWebhookEvent(deleted)).rejects.toThrow("before recovery linked it");
+      }
+      if (created >= (typeof params.created === "object" ? (params.created.gte ?? 0) : 0)) {
+        yield completed;
+      }
+    });
     if (completesAfterSubscriptionList) stripe.retrieveSubscription.mockResolvedValue(active);
     else stripe.listSubscriptions.mockReturnValue([active]);
     const retry = await checkout();
@@ -288,7 +310,7 @@ it.each([
       subscription: { stripeSubscriptionId: subscriptionId, stripeCheckoutCompleted: true },
       entitlement: { state: "active", planId: "starter" },
     });
-    if (sessionOnly) {
+    if (sessionOnly && !canceledDuringRecovery) {
       await handleWebhookEvent({
         id: "fixture-subscription-updated",
         type: "customer.subscription.updated",
@@ -296,12 +318,9 @@ it.each([
       } as unknown as Stripe.Event);
       const scheduled = await t.as.get(`/api/companies/${companyId}/billing/subscription`);
       expect(scheduled.body).toMatchObject({ subscription: { cancelAtPeriodEnd: true } });
-
-      await handleWebhookEvent({
-        id: "fixture-subscription-deleted",
-        type: "customer.subscription.deleted",
-        data: { object: { ...active, status: "canceled" } },
-      } as unknown as Stripe.Event);
+    }
+    if (sessionOnly) {
+      await handleWebhookEvent(deleted);
       const canceled = await t.as.get(`/api/companies/${companyId}/billing/subscription`);
       expect(canceled.body).toMatchObject({
         subscription: { planId: "free", stripeSubscriptionId: null, stripeCheckoutCompleted: true },

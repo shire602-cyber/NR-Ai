@@ -100,6 +100,7 @@ export async function billableSeats(companyId: string): Promise<number> {
 const perSeat = () => process.env.STRIPE_PER_SEAT === "true";
 
 const CHECKOUT_MIN_TRIAL_SECONDS = 48 * 60 * 60;
+const CHECKOUT_SESSION_LOOKBACK_SECONDS = 24 * 60 * 60;
 // Stripe requires at least 30 minutes. Include time for the coupon and session API calls.
 const CHECKOUT_RESERVATION_SECONDS = 35 * 60;
 
@@ -117,14 +118,18 @@ async function reserveCheckout(
   stripeClient: Stripe,
   company: Company,
   subscription: Subscription,
-  customerId: string
+  customerId: string,
+  legacySessionCutoff: number
 ): Promise<number | null> {
   const previous = company.stripeFirstCheckoutExpiresAt ?? null;
 
   // Check Stripe even if creation lost its response or the completion webhook is delayed.
   // With no reservation, also check for sessions created before this guard was deployed.
   const previousExpiry = previous ? Math.floor(previous.getTime() / 1000) : null;
-  const createdAfter = (previousExpiry ?? Math.floor(Date.now() / 1000)) - 24 * 60 * 60;
+  const createdAfter =
+    previousExpiry === null
+      ? legacySessionCutoff
+      : previousExpiry - CHECKOUT_SESSION_LOOKBACK_SECONDS;
   let stripeExpired = false;
   for await (const session of stripeClient.checkout.sessions.list({
     customer: customerId,
@@ -186,6 +191,7 @@ export async function createCheckoutSession(
   const company = await storage.getCompany(companyId);
   if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
   let customerId = subscription.stripeCustomerId;
+  const legacySessionCutoff = Math.floor(Date.now() / 1000) - CHECKOUT_SESSION_LOOKBACK_SECONDS;
 
   if (!customerId) {
     const customer = await stripeClient.customers.create(
@@ -207,7 +213,13 @@ export async function createCheckoutSession(
 
   // A first paid invoice can earn a referral discount even after the product trial ends.
   const firstSubscription = !subscription.stripeCheckoutCompleted && subscription.planId === "free";
-  const checkoutExpiry = await reserveCheckout(stripeClient, company, subscription, customerId);
+  const checkoutExpiry = await reserveCheckout(
+    stripeClient,
+    company,
+    subscription,
+    customerId,
+    legacySessionCutoff
+  );
   if (checkoutExpiry === null) return successUrl;
   const quantity = perSeat() ? await billableSeats(companyId) : 1;
   // Referee reward: a percent-off coupon applied to the first paid invoice.
@@ -573,7 +585,20 @@ async function handleSubscriptionUpdated(sub: Stripe.Subscription): Promise<void
 
 async function handleSubscriptionDeleted(sub: Stripe.Subscription): Promise<void> {
   const subscription = await resolveWebhookSubscription(sub);
-  if (!subscription) return;
+  if (!subscription) {
+    const customerId = stripeObjectId(sub.customer);
+    if (customerId && !sub.metadata?.companyId) {
+      // Session-only recovery may link this subscription after the first lookup.
+      const { rows } = await pq(
+        `SELECT 1 FROM subscriptions WHERE stripe_customer_id = $1
+           AND (stripe_subscription_id IS NULL OR stripe_subscription_id = $2) LIMIT 1`,
+        [customerId, sub.id]
+      );
+      if (rows.length)
+        throw new Error("Stripe subscription deletion arrived before recovery linked it");
+    }
+    return;
+  }
 
   // Downgrade to free
   if (subscription.stripeSubscriptionId && subscription.stripeSubscriptionId !== sub.id) return;

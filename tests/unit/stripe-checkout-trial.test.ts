@@ -210,6 +210,50 @@ describe("Stripe checkout product trial and referral", () => {
     expect(stripe.createSession).not.toHaveBeenCalled();
   });
 
+  it("recovers a legacy checkout at the 24-hour cutoff when the clock advances between lookups", async () => {
+    const created = (now.getTime() - 24 * hour) / 1000;
+    stripe.getSubscription.mockResolvedValue({
+      companyId: "company",
+      planId: "free",
+      stripeCustomerId: "fixture-customer",
+      stripeSubscriptionId: null,
+      stripeCheckoutCompleted: true,
+    });
+    stripe.listSubscriptions.mockImplementationOnce(() => {
+      vi.mocked(Date.now).mockReturnValue(now.getTime() + 1000);
+      return [];
+    });
+    stripe.listSessions.mockImplementationOnce(({ created: cutoff }) =>
+      created >= cutoff.gte
+        ? [
+            {
+              mode: "subscription",
+              status: "complete",
+              customer: "fixture-customer",
+              subscription: "first-subscription",
+              metadata: currentStripeSubscription.metadata,
+            },
+          ]
+        : []
+    );
+    stripe.applyStripeCheckout.mockResolvedValue(true);
+
+    await expect(
+      createCheckoutSession(
+        "company",
+        "starter",
+        "monthly",
+        "https://example.test/success",
+        "https://example.test/cancel"
+      )
+    ).resolves.toBe("https://example.test/success");
+    expect(stripe.listSessions).toHaveBeenCalledWith({
+      customer: "fixture-customer",
+      created: { gte: created },
+    });
+    expect(stripe.createSession).not.toHaveBeenCalled();
+  });
+
   it("recovers session-only plan metadata from the completed checkout with matching IDs", async () => {
     const subscription = {
       companyId: "company",
