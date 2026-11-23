@@ -451,7 +451,7 @@ export async function planReceiptJournal(
 export async function postReceipt(
   receipt: Receipt,
   userId: string,
-  input: { accountId?: string | null; paymentAccountId: string; vat?: ReceiptVatOptions }
+  input: { accountId?: string | null; paymentAccountId?: string; vat?: ReceiptVatOptions }
 ): Promise<{ receipt: Receipt; entryId: string }> {
   return withLedgerTx(async (tx) => {
     const [current] = await tx
@@ -468,11 +468,29 @@ export async function postReceipt(
         "Receipt has already been posted"
       );
     }
+    const expenseAccountId = input.accountId ?? current.accountId;
+    const paymentAccountId = input.paymentAccountId ?? current.paymentAccountId;
+    if (!expenseAccountId && !current.lines?.length) {
+      throw new DomainError(
+        "RECEIPT_ACCOUNTS_REQUIRED",
+        400,
+        { field: "accountId" },
+        "accountId is required to post the receipt"
+      );
+    }
+    if (!paymentAccountId) {
+      throw new DomainError(
+        "RECEIPT_ACCOUNTS_REQUIRED",
+        400,
+        { field: "paymentAccountId" },
+        "paymentAccountId is required to post the receipt"
+      );
+    }
     const plan = await planReceiptJournal(
       current,
       {
-        expenseAccountId: input.accountId ?? null,
-        paymentAccountId: input.paymentAccountId,
+        expenseAccountId,
+        paymentAccountId,
         vat: input.vat,
       },
       tx
@@ -483,7 +501,7 @@ export async function postReceipt(
         companyId: current.companyId,
         userId,
         accountId: plan.expenseAccountId ?? current.accountId ?? null,
-        paymentAccountId: input.paymentAccountId,
+        paymentAccountId,
         exchangeRate: plan.exchangeRate,
         exchangeRateSource: plan.exchangeRateSource,
         baseCurrencyAmount: plan.baseCurrencyAmount,

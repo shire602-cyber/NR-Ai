@@ -17,13 +17,15 @@ import {
   clearActiveCompany,
 } from "@/lib/activeCompany";
 
+type WorkspaceCompany = Company & { hasPostedDocuments?: boolean };
+
 interface ActiveCompanyContextValue {
   /** The currently active company (firm-managed client if switched, else first owned company). */
-  company: Company | undefined;
+  company: WorkspaceCompany | undefined;
   /** Convenience accessor for the company id. */
   companyId: string | undefined;
   /** Full list of companies the user can access (owned + firm-accessible). */
-  companies: Company[];
+  companies: WorkspaceCompany[];
   /** True while the underlying company list is loading. */
   isLoading: boolean;
   /** Error from the underlying company query, if any. */
@@ -70,7 +72,7 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
     data: companies,
     isLoading,
     error,
-  } = useQuery<Company[]>({
+  } = useQuery<WorkspaceCompany[]>({
     queryKey: ["/api/companies"],
   });
 

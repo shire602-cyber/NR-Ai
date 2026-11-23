@@ -158,7 +158,7 @@ app.get("/api/version", (_req, res) => {
 
 // Readiness probe — process is up and can reach the database. Minimal details
 // only; full internals stay behind authenticated operational routes.
-app.get("/health/ready", async (_req, res) => {
+app.get(["/health/ready", "/readyz"], async (_req, res) => {
   const ping = await pingDb();
   res.status(ping.ok ? 200 : 503).json({
     status: ping.ok ? "ok" : "degraded",

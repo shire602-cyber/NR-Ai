@@ -137,7 +137,13 @@ describe("W4-E VAT engine: report 07 scenario", () => {
     );
     expect(rep.status, rep.text).toBe(200);
     expect(rep.body.boxes).toMatchObject(EXPECTED_07);
-    expect(rep.body.box8_netVatDue).toBe(30);
+    expect(rep.body.boxes.box14PayableTax).toBe(30);
+    const canonical = await t.as.get(
+      `/api/companies/${t.company.id}/vat/compute?from=2026-07-01&to=2026-09-30`
+    );
+    expect(canonical.status, canonical.text).toBe(200);
+    expect(rep.body).toEqual(canonical.body);
+    expect(rep.headers.get("link")).toContain("/vat/compute");
 
     const sum = await t.as.get(
       `/api/companies/${t.company.id}/reports/vat-summary?from=2026-07-01&to=2026-09-30`
@@ -251,7 +257,7 @@ describe("W4-E VAT engine: report 07 scenario", () => {
       `/api/companies/${t.company.id}/reports/vat-return?from=2026-07-01&to=2026-09-30`
     );
     expect(rep.status, rep.text).toBe(200);
-    expect(rep.body.box5_outputVat).toBe(50);
+    expect(rep.body.boxes.box12TotalDueTax).toBe(50);
     expect(rep.body.boxes.box1cSharjahAdj).toBe(50);
     expect(rep.body.reconciliation.hasUnexplainedDifference).toBe(false);
     const row = rep.body.reconciliation.byCategory.find(
@@ -323,7 +329,7 @@ describe("W4-E VAT engine: report 07 scenario", () => {
     expect(rep.body.boxes.box1cSharjahVat).toBe(450);
     expect(rep.body.boxes.box1cSharjahAdj).toBe(0);
     expect(rep.body.boxes.box4ZeroRatedAmount).toBe(2000);
-    expect(rep.body.box5_outputVat).toBe(450);
+    expect(rep.body.boxes.box12TotalDueTax).toBe(450);
     expect(rep.body.reconciliation.hasUnexplainedDifference).toBe(false);
     const row = rep.body.reconciliation.byCategory.find(
       (r: { category: string }) => r.category === "fixed_asset_disposals"

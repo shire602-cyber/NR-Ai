@@ -1038,14 +1038,6 @@ export function registerReceiptRoutes(app: Express) {
       if (!receipt) {
         return res.status(404).json({ message: "Receipt not found", code: "RECEIPT_NOT_FOUND" });
       }
-      const hasLines = Array.isArray(receipt.lines) && receipt.lines.length > 0;
-      if (!hasLines && !body.accountId) {
-        return res.status(400).json({
-          message: "Expense account and payment account are required",
-          code: "RECEIPT_ACCOUNTS_REQUIRED",
-        });
-      }
-
       const result = await postReceipt(receipt, userId, {
         accountId: body.accountId ?? null,
         paymentAccountId: body.paymentAccountId,

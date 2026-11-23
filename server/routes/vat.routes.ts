@@ -9,6 +9,7 @@ import { isNraFirmRole } from "../../shared/access";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
+import { deprecate } from "../reporting/http";
 import { recordAudit } from "../services/audit.service";
 import {
   addVatWorkpaperRow,
@@ -549,28 +550,34 @@ export function registerVATRoutes(app: Express) {
 
   // Preview of the VAT 201 for any range (reports-grade: blocking issues are returned, not
   // thrown). Generation is stricter (aligned period, TRN, emirate per supply).
+  const vatPreview = asyncHandler(async (req: Request, res: Response) => {
+    const { companyId } = req.params;
+    if (!(await requireCompanyAccess(req, res, companyId))) return;
+    const { from, to } = readPeriod(req.query as Record<string, unknown>);
+    const c = await computeVat201({ companyId, from, to, allowIncomplete: true });
+    res.json({
+      engineVersion: c.engineVersion,
+      period: c.period,
+      boxes: c.boxes,
+      issues: c.issues,
+      complete: c.complete,
+      excluded: c.excluded,
+      counts: c.counts,
+      partialExemption: c.partialExemption,
+      reconciliation: c.reconciliation,
+      group: c.group,
+      contributions: req.query.detail === "true" ? c.contributions : undefined,
+    });
+  });
+  app.get("/api/companies/:companyId/vat/compute", authMiddleware, vatPreview);
   app.get(
-    "/api/companies/:companyId/vat/compute",
+    "/api/companies/:companyId/reports/vat-return",
     authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
-      if (!(await requireCompanyAccess(req, res, companyId))) return;
-      const { from, to } = readPeriod(req.query as Record<string, unknown>);
-      const c = await computeVat201({ companyId, from, to, allowIncomplete: true });
-      res.json({
-        engineVersion: c.engineVersion,
-        period: c.period,
-        boxes: c.boxes,
-        issues: c.issues,
-        complete: c.complete,
-        excluded: c.excluded,
-        counts: c.counts,
-        partialExemption: c.partialExemption,
-        reconciliation: c.reconciliation,
-        group: c.group,
-        contributions: req.query.detail === "true" ? c.contributions : undefined,
-      });
-    })
+    (req: Request, res: Response, next: () => void) => {
+      deprecate(res, `/api/companies/${req.params.companyId}/vat/compute`);
+      next();
+    },
+    vatPreview
   );
 
   // R12-08b: VAT return vs GL VAT control accounts, by source.

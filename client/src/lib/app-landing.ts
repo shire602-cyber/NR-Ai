@@ -39,7 +39,10 @@ export interface OnboardingRedirectState {
   /** /api/companies is being fetched. */
   companiesFetching: boolean;
   hasNoCompanies: boolean;
-  company: { onboardingCompleted?: boolean | null } | undefined | null;
+  company:
+    | { onboardingCompleted?: boolean | null; hasPostedDocuments?: boolean }
+    | undefined
+    | null;
   /** The viewer may run the setup wizard for `company` (owner). */
   canRunOnboarding: boolean;
 }
@@ -54,6 +57,12 @@ export function onboardingRedirectTarget(s: OnboardingRedirectState): string | n
   if (s.isFirmContext || s.switchingClient) return null;
   if (s.companiesFetching) return null;
   if (s.hasNoCompanies) return "/onboarding";
-  if (s.company && !s.company.onboardingCompleted && s.canRunOnboarding) return "/onboarding";
+  if (
+    s.company &&
+    !s.company.onboardingCompleted &&
+    !s.company.hasPostedDocuments &&
+    s.canRunOnboarding
+  )
+    return "/onboarding";
   return null;
 }

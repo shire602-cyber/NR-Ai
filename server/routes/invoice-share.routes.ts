@@ -38,7 +38,7 @@ function emailOutcome(result: SendEmailResult, what: string, to: string) {
   const message = result.sent
     ? `${what} sent to ${to}`
     : result.status === "blocked_no_provider"
-      ? `Email not configured — ${what.toLowerCase()} is queued, not sent.`
+      ? `Email not configured — ${what} is queued, not sent.`
       : `${what} is queued for delivery (${result.status}).`;
   return {
     message,

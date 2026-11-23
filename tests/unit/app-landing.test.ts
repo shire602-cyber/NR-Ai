@@ -54,6 +54,14 @@ describe("firm audit defect 3: Open books never lands in an onboarding wizard", 
   it("sends a staffer whose own company is not onboarded to the wizard on ordinary pages", () => {
     expect(onboardingRedirectTarget(base)).toBe("/onboarding");
   });
+  it("keeps owners in established books even if onboarding was never marked complete", () => {
+    expect(
+      onboardingRedirectTarget({
+        ...base,
+        company: { onboardingCompleted: false, hasPostedDocuments: true },
+      })
+    ).toBeNull();
+  });
   it("stays on the client's books while the switch is in flight (own company still active)", () => {
     expect(onboardingRedirectTarget({ ...base, switchingClient: true })).toBeNull();
   });

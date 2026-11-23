@@ -1,4 +1,3 @@
-import { TRIAL_DAYS } from "../../shared/trial";
 import {
   BILLING_CYCLES,
   NO_PLAN_LIMITS,
@@ -86,12 +85,6 @@ const PLAN_LIMITS: Record<string, PlanLimits> = {
   ...Object.fromEntries(PLAN_DEFINITIONS.map((p) => [p.id, storedLimits(p.limits)])),
 };
 
-/** Trial length for a company's first paid subscription (STRIPE_TRIAL_DAYS, default 14; 0 = none). */
-export function trialDays(): number {
-  const n = Number(process.env.STRIPE_TRIAL_DAYS ?? TRIAL_DAYS);
-  return Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), 90) : TRIAL_DAYS;
-}
-
 /** Seats billed: company members (min 1). Plans priced per seat set STRIPE_PER_SEAT=true. */
 export async function billableSeats(companyId: string): Promise<number> {
   const { rows } = await pq<{ n: string }>(
@@ -103,9 +96,8 @@ export async function billableSeats(companyId: string): Promise<number> {
 
 const perSeat = () => process.env.STRIPE_PER_SEAT === "true";
 
-// TODO(STEP4): a company still in its product trial (see docs/release/DEPLOY-RUNBOOK.md, STEP4 note)
-// should pass subscription_data.trial_end = its trial end instead of trial_period_days, so the
-// trial is not given twice; the chosen plan and cycle prefill checkout.
+const CHECKOUT_MIN_TRIAL_SECONDS = 48 * 60 * 60;
+
 export async function createCheckoutSession(
   companyId: string,
   planId: string,
@@ -136,14 +128,19 @@ export async function createCheckoutSession(
     }
   }
 
-  // Trial only for a company that never had a paid subscription.
+  // A first paid invoice can earn a referral discount even after the product trial ends.
   const firstSubscription =
     !subscription?.stripeSubscriptionId && (subscription?.planId ?? "free") === "free";
-  const days = firstSubscription ? trialDays() : 0;
   const quantity = perSeat() ? await billableSeats(companyId) : 1;
   // Referee reward: a percent-off coupon applied to the first paid invoice.
   const coupon = firstSubscription ? await refereeCouponFor(companyId) : null;
   const vatTaxRate = process.env.STRIPE_TAX_RATE_VAT;
+
+  const trialEnd =
+    firstSubscription && subscription?.trialEndsAt
+      ? Math.floor(subscription.trialEndsAt.getTime() / 1000)
+      : 0;
+  const hasRemainingTrial = trialEnd >= Math.ceil(Date.now() / 1000) + CHECKOUT_MIN_TRIAL_SECONDS;
 
   const session = await stripeClient.checkout.sessions.create({
     customer: customerId,
@@ -156,7 +153,7 @@ export async function createCheckoutSession(
     ...(process.env.STRIPE_AUTOMATIC_TAX === "true" ? { automatic_tax: { enabled: true } } : {}),
     subscription_data: {
       metadata: { companyId, planId, billingCycle },
-      ...(days > 0 ? { trial_period_days: days } : {}),
+      ...(hasRemainingTrial ? { trial_end: trialEnd } : {}),
     },
   });
 

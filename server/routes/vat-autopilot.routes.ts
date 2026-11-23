@@ -1,3 +1,4 @@
+import { assertTrialAccess } from "../middleware/trialAccessPolicy";
 /**
  * VAT Return Autopilot routes (Phase 3).
  *
@@ -132,10 +133,11 @@ export function registerVATAutopilotRoutes(app: Express) {
       // Optional period override via query string for historical calculations.
       const period = await parsePeriod(companyId, query.data);
 
+      // This legacy GET can persist a snapshot unless the caller requests a preview.
+      const persist = query.data.persist !== "false";
+      if (persist) await assertTrialAccess(companyId, req.user!);
       try {
         const calc = await calculateVatReturn(companyId, period);
-        // Persist the snapshot so the periods listing reflects it.
-        const persist = query.data.persist !== "false";
         let periodId: string | null = null;
         if (persist) {
           periodId = await upsertCalculatedPeriod(calc);

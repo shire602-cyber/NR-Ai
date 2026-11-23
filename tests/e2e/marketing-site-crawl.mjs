@@ -127,6 +127,7 @@ async function checkMissingPage(locale, localePrefix = locale) {
   const url = new URL(`${missing}/?source=crawl`, base).href;
   const response = await page.goto(url);
   assert.equal(response?.status(), 404, `${missing} localized HTML status`);
+  assert.equal(response?.headers()["x-robots-tag"], "noindex", missing);
   assert.equal((await page.request.head(url)).status(), 404, `${missing} HEAD status`);
   await checkHeading(page, missing, translated(["Page not found", "الصفحة غير موجودة"], locale));
   await assert.rejects(
@@ -315,6 +316,22 @@ async function checkEditorialRecovery(locale) {
 }
 
 try {
+  const unknown = await page.request.get(new URL("/missing-staging-audit-page", base).href);
+  assert.equal(unknown.status(), 404);
+  assert.equal(unknown.headers()["x-robots-tag"], "noindex");
+
+  const sitemap = await page.request.get(new URL("/sitemap.xml", base).href);
+  assert.equal(sitemap.status(), 200);
+  assert.match(sitemap.headers()["content-type"], /xml/);
+  const sitemapText = await sitemap.text();
+  assert.match(sitemapText, /<loc>https:\/\/muhasib\.ai\/en<\/loc>/);
+  assert.match(sitemapText, /<loc>https:\/\/muhasib\.ai\/ar<\/loc>/);
+
+  const readiness = await page.request.get(new URL("/readyz", base).href);
+  assert.equal(readiness.status(), 200);
+  assert.match(readiness.headers()["content-type"], /json/);
+  assert.equal((await readiness.json()).checks.database, "ok");
+
   await checkEncodedPage("en", "%70ricing", "/pricing");
   await checkEncodedPage("ar", "%73ervices", "/services");
   await crawl("en");

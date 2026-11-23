@@ -71,6 +71,9 @@ describe("W4-D email outbox", () => {
     expect(r.status, r.text).toBe(202);
     expect(r.body).toMatchObject({ sent: false, queued: true, status: "blocked_no_provider" });
     expect(r.body.message).toContain("Email not configured");
+    const invoice = await t.as.get(`/api/invoices/${id}`);
+    expect(invoice.body.number).toMatch(/^INV-/);
+    expect(r.body.message).toContain(`Invoice ${invoice.body.number}`);
     const [row] = await h.sql(`SELECT status, attempts FROM email_outbox WHERE id = $1`, [
       r.body.outboxId,
     ]);

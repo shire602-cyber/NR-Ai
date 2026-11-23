@@ -352,6 +352,15 @@ sign-off), FAF export (check against the current FTA specification). The e-invoi
 and the 14-day reporting window are assumptions shown as guidance in the UI; confirm them with the MoF
 and FTA. The PR description must say so, so "394 fixed" is not read as "certified".
 
+**STEP4 checkout.** Stripe uses the company's existing product trial deadline when at least 48
+hours remain. Otherwise checkout starts a paid subscription immediately. A qualifying referral
+still discounts the first paid invoice even if the trial has expired.
+
+**Production registration.** Set `TURNSTILE_SECRET_KEY` and the corresponding public
+`TURNSTILE_SITE_KEY` in the deployment environment before opening signup. When the secret is
+missing, the server starts with a warning and registration and password reset accept requests
+without a CAPTCHA.
+
 ### 9a. Migration 0117 and the e-invoice provider switch
 
 Migration `0117_e2_einvoice_complyance.sql` (journal idx 116) adds the nullable column

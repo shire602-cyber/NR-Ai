@@ -26,11 +26,9 @@ export async function assertTrialAccess(companyId: string, user: Express.User): 
 
 /** Billing recovers the workspace. Identity and separately authorised public links stay usable. */
 function isTrialRecoveryRequest(method: string, path: string): boolean {
-  if (method === "OPTIONS" || isSignedProviderCallback(method, path)) return true;
-  const reads = method === "GET" || method === "HEAD";
-  if (path === "/companies" && reads) return true;
+  if (["GET", "HEAD", "OPTIONS"].includes(method) || isSignedProviderCallback(method, path))
+    return true;
   if (/^\/companies\/[^/]+\/billing(?:\/|$)/i.test(path)) return true;
-  if (reads && /^\/companies\/[^/]+\/team\/me$/i.test(path)) return true;
   if (
     /^\/(auth|billing|admin|firm|nra|client-portal|portal-invitations|public|payslips|team-invitations|invitations)(\/|$)/i.test(
       path
@@ -44,7 +42,7 @@ function isTrialRecoveryRequest(method: string, path: string): boolean {
   );
 }
 
-/** Gate both reads and writes before any customer workspace handler runs. */
+/** Keep expired workspaces readable and block writes before workspace handlers run. */
 export const trialAccessPolicy: RequestHandler = async (req, res, next) => {
   try {
     const path = req.path.replace(/\/+$/, "").toLowerCase();

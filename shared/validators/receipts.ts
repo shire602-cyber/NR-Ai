@@ -131,7 +131,7 @@ export type UpdateReceiptBody = z.output<typeof updateReceiptBody>;
 export const postReceiptBody = z
   .object({
     accountId,
-    paymentAccountId: zUuid,
+    paymentAccountId: zUuid.optional(),
   })
   .strict();
 export type PostReceiptBody = z.output<typeof postReceiptBody>;

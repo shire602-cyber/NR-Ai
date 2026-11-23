@@ -6,9 +6,14 @@ import { fileURLToPath } from "url";
 import { LOCALE_COOKIE, SHELL_BOOT_API, firmFirstScreen } from "../shared/firm-boot";
 import { accessCookieName, refreshCookieName } from "./services/auth-cookies.service";
 import { features, tools } from "../client/src/components/marketing/phase/content";
-import { editorialPath } from "../client/src/components/marketing/phase/editorial/pages";
+import {
+  editorialPages,
+  editorialPath,
+} from "../client/src/components/marketing/phase/editorial/pages";
 import { siteLocale } from "../client/src/components/marketing/phase/routes";
 import { BANK_STATEMENT_ENTRY, isRetiredBankReturnPath } from "../shared/bank-statement-routes";
+
+import { isSpaPath } from "../shared/spa-paths";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -19,7 +24,7 @@ const projectRoot = path.resolve(__dirname, "..");
  * as a real sitemap or security.txt). If a real file is ever added under
  * client/public, the static middleware serves it first and this never runs.
  */
-const UNPUBLISHED_FILE_PATHS = new Set(["/sitemap.xml", "/llms.txt", "/.well-known/security.txt"]);
+const UNPUBLISHED_FILE_PATHS = new Set(["/llms.txt", "/.well-known/security.txt"]);
 
 export function rejectUnpublishedFiles(req: Request, res: Response, next: NextFunction) {
   if ((req.method === "GET" || req.method === "HEAD") && UNPUBLISHED_FILE_PATHS.has(req.path)) {
@@ -47,7 +52,10 @@ function decodeUnreserved(pathname: string): string {
 }
 
 function redirectRetiredBankReturn(req: Request, res: Response, next: NextFunction) {
-  if ((req.method === "GET" || req.method === "HEAD") && isRetiredBankReturnPath(decodeUnreserved(req.path))) {
+  if (
+    (req.method === "GET" || req.method === "HEAD") &&
+    isRetiredBankReturnPath(decodeUnreserved(req.path))
+  ) {
     res.set({ "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
     res.redirect(303, BANK_STATEMENT_ENTRY);
     return;
@@ -55,18 +63,35 @@ function redirectRetiredBankReturn(req: Request, res: Response, next: NextFuncti
   next();
 }
 
-/** Keep the localized error page renderable while reporting its status to HTTP clients. */
-function documentStatus(url: string): 200 | 404 {
-  const pathname = url.split(/[?#]/, 1)[0];
-  if (!siteLocale(decodeUnreserved(pathname))) return 200;
-  let localPath: string;
+export function serveSitemap(_req: Request, res: Response): void {
+  const pages = [...new Set([...marketingPaths, ...Object.keys(editorialPages)])].sort();
+  const urls = ["en", "ar"].flatMap((locale) =>
+    pages.map((page) => `<url><loc>https://muhasib.ai/${locale}${page}</loc></url>`)
+  );
+  res.type("application/xml").send(
+    `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls.join("\n")}
+</urlset>
+`
+  );
+}
+
+export function documentStatus(url: string): 200 | 404 {
   try {
-    // Match Wouter's decoding without treating encoded delimiters as path separators.
-    localPath = decodeURI(pathname).slice(3).replace(/\/$/, "");
+    const pathname = decodeURI(routeKey(url));
+    if (!siteLocale(pathname)) return isSpaPath(pathname) ? 200 : 404;
+    const localPath = pathname.slice(3);
+    return marketingPaths.has(localPath) || editorialPath(localPath) ? 200 : 404;
   } catch {
     return 404;
   }
-  return marketingPaths.has(localPath) || editorialPath(localPath) ? 200 : 404;
+}
+
+function setDocumentStatus(req: Request, res: Response): Response {
+  const status = documentStatus(req.originalUrl);
+  if (status === 404) res.set("X-Robots-Tag", "noindex");
+  return res.status(status);
 }
 
 /**
@@ -95,6 +120,7 @@ export async function setupVite(app: Express, server: Server) {
     appType: "custom",
   });
 
+  app.get("/sitemap.xml", serveSitemap);
   app.use(redirectRetiredBankReturn);
   app.use(vite.middlewares);
   app.use(rejectUnpublishedFiles);
@@ -107,7 +133,7 @@ export async function setupVite(app: Express, server: Server) {
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(`src="/src/main.tsx"`, `src="/src/main.tsx?v=${nanoid()}"`);
       const page = await vite.transformIndexHtml(url, template);
-      res.status(documentStatus(url)).set({ "Content-Type": "text/html" }).end(page);
+      setDocumentStatus(req, res).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
       next(e);
@@ -286,6 +312,7 @@ export function serveStatic(app: Express) {
     );
   }
 
+  app.get("/sitemap.xml", serveSitemap);
   app.use(redirectRetiredBankReturn);
   // Hashed assets — safe to cache aggressively because the filename changes
   // any time content does.
@@ -312,12 +339,18 @@ export function serveStatic(app: Express) {
       }
       let html = marketingDocument;
       if (locale) {
-        html = html.replace('<html lang="en">', `<html lang="${locale}" dir="${locale === "ar" ? "rtl" : "ltr"}">`);
+        html = html.replace(
+          '<html lang="en">',
+          `<html lang="${locale}" dir="${locale === "ar" ? "rtl" : "ltr"}">`
+        );
         if (pathname === `/${locale}`) {
-          html = html.replace("</head>", `    <link rel="preload" as="image" fetchpriority="high" imagesrcset="/product/dashboard-${locale}-small.webp 720w, /product/dashboard-${locale}.webp 1280w" imagesizes="(max-width: 760px) calc(100vw - 34px), 56vw">\n  </head>`);
+          html = html.replace(
+            "</head>",
+            `    <link rel="preload" as="image" fetchpriority="high" imagesrcset="/product/dashboard-${locale}-small.webp 720w, /product/dashboard-${locale}.webp 1280w" imagesizes="(max-width: 760px) calc(100vw - 34px), 56vw">\n  </head>`
+          );
         }
       }
-      res.status(documentStatus(req.originalUrl)).set(NO_STORE_HEADERS).type("html").send(html);
+      setDocumentStatus(req, res).set(NO_STORE_HEADERS).type("html").send(html);
     });
   }
 
@@ -343,8 +376,7 @@ export function serveStatic(app: Express) {
     for (const [k, v] of Object.entries(NO_STORE_HEADERS)) res.setHeader(k, v);
     if (firmDocument && req.method === "GET" && isFirmPath(req.originalUrl)) {
       const cookies = (req as Request & { cookies?: Record<string, string> }).cookies ?? {};
-      res
-        .status(200)
+      setDocumentStatus(req, res)
         .type("html")
         .send(
           renderFirmDocument({
@@ -357,6 +389,6 @@ export function serveStatic(app: Express) {
         );
       return;
     }
-    res.status(documentStatus(req.originalUrl)).sendFile(path.resolve(distPath, "index.html"));
+    setDocumentStatus(req, res).sendFile(path.resolve(distPath, "index.html"));
   });
 }
