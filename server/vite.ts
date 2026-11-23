@@ -5,11 +5,12 @@ import { type Server } from "http";
 import { fileURLToPath } from "url";
 import { LOCALE_COOKIE, SHELL_BOOT_API, firmFirstScreen } from "../shared/firm-boot";
 import { accessCookieName, refreshCookieName } from "./services/auth-cookies.service";
-import { features, tools } from "../client/src/components/marketing/phase/content";
 import {
-  editorialPages,
-  editorialPath,
-} from "../client/src/components/marketing/phase/editorial/pages";
+  marketingMetadata,
+  marketingPaths,
+} from "../client/src/components/marketing/phase/route-content";
+import { MARKETING_BRAND } from "../shared/marketing-brand";
+import { renderMarketingDocument } from "./marketing-document";
 import { siteLocale } from "../client/src/components/marketing/phase/routes";
 import { BANK_STATEMENT_ENTRY, isRetiredBankReturnPath } from "../shared/bank-statement-routes";
 
@@ -34,16 +35,6 @@ export function rejectUnpublishedFiles(req: Request, res: Response, next: NextFu
   next();
 }
 
-const marketingPaths = new Set([
-  "",
-  "/book-a-demo",
-  "/pricing",
-  "/solutions/small-business",
-  "/solutions/accounting-firms",
-  ...features.map(({ slug }) => `/product/${slug}`),
-  ...tools.map(({ slug }) => `/tools/${slug}`),
-]);
-
 function decodeUnreserved(pathname: string): string {
   return pathname.replace(/%[\da-f]{2}/gi, (encoded) => {
     const character = String.fromCharCode(Number.parseInt(encoded.slice(1), 16));
@@ -63,10 +54,18 @@ function redirectRetiredBankReturn(req: Request, res: Response, next: NextFuncti
   next();
 }
 
+function serveRobots(_req: Request, res: Response): void {
+  res
+    .type("text/plain")
+    .send(
+      `User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: ${MARKETING_BRAND.origin}/sitemap.xml\n`
+    );
+}
+
 export function serveSitemap(_req: Request, res: Response): void {
-  const pages = [...new Set([...marketingPaths, ...Object.keys(editorialPages)])].sort();
+  const pages = [...marketingPaths].sort();
   const urls = ["en", "ar"].flatMap((locale) =>
-    pages.map((page) => `<url><loc>https://muhasib.ai/${locale}${page}</loc></url>`)
+    pages.map((page) => `<url><loc>${MARKETING_BRAND.origin}/${locale}${page}</loc></url>`)
   );
   res.type("application/xml").send(
     `<?xml version="1.0" encoding="UTF-8"?>
@@ -81,8 +80,7 @@ export function documentStatus(url: string): 200 | 404 {
   try {
     const pathname = decodeURI(routeKey(url));
     if (!siteLocale(pathname)) return isSpaPath(pathname) ? 200 : 404;
-    const localPath = pathname.slice(3);
-    return marketingPaths.has(localPath) || editorialPath(localPath) ? 200 : 404;
+    return marketingMetadata(pathname) ? 200 : 404;
   } catch {
     return 404;
   }
@@ -120,6 +118,7 @@ export async function setupVite(app: Express, server: Server) {
     appType: "custom",
   });
 
+  app.get("/robots.txt", serveRobots);
   app.get("/sitemap.xml", serveSitemap);
   app.use(redirectRetiredBankReturn);
   app.use(vite.middlewares);
@@ -132,7 +131,12 @@ export async function setupVite(app: Express, server: Server) {
 
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(`src="/src/main.tsx"`, `src="/src/main.tsx?v=${nanoid()}"`);
-      const page = await vite.transformIndexHtml(url, template);
+      const pathname = routeKey(url);
+      const cookies = req.cookies as Record<string, string> | undefined;
+      const signedIn = cookies?.[accessCookieName()] || cookies?.[refreshCookieName()];
+      const document =
+        pathname === "/" && signedIn ? template : renderMarketingDocument(template, pathname);
+      const page = await vite.transformIndexHtml(url, document);
       setDocumentStatus(req, res).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
@@ -291,7 +295,8 @@ function loadMarketingDocument(distPath: string) {
     const { scripts, styles } = JSON.parse(
       fs.readFileSync(path.resolve(distPath, "marketing-preloads.json"), "utf-8")
     ) as { scripts: string[]; styles: string[] };
-    const css = styles.filter((file) => !html.includes(`href="/${file}"`))
+    const css = styles
+      .filter((file) => !html.includes(`href="/${file}"`))
       .map((file) => `<link rel="stylesheet" crossorigin href="/${file}">`)
       .join("\n    ");
     return injectModulePreloads(
@@ -312,6 +317,7 @@ export function serveStatic(app: Express) {
     );
   }
 
+  app.get("/robots.txt", serveRobots);
   app.get("/sitemap.xml", serveSitemap);
   app.use(redirectRetiredBankReturn);
   // Hashed assets — safe to cache aggressively because the filename changes
@@ -337,12 +343,8 @@ export function serveStatic(app: Express) {
       if (pathname === "/" && (cookies?.[accessCookieName()] || cookies?.[refreshCookieName()])) {
         return next();
       }
-      let html = marketingDocument;
+      let html = renderMarketingDocument(marketingDocument, pathname);
       if (locale) {
-        html = html.replace(
-          '<html lang="en">',
-          `<html lang="${locale}" dir="${locale === "ar" ? "rtl" : "ltr"}">`
-        );
         if (pathname === `/${locale}`) {
           html = html.replace(
             "</head>",

@@ -1,7 +1,9 @@
+import { Link } from "wouter";
 import { useRef, useState, type FormEvent } from "react";
 import { normalizeCallbackPhone } from "@shared/demo-callback";
 import { supportEmail } from "@shared/marketing-brand";
 import type { Bilingual, SiteLocale } from "./content";
+import { parseVatAmount, vatBreakdown } from "./vat-calculator";
 
 type Translate = (text: Bilingual) => string;
 const checks: readonly Bilingual[] = [
@@ -30,6 +32,7 @@ export function FreeTool({
   locale: SiteLocale;
 }) {
   const [amount, setAmount] = useState("");
+  const [copyStatus, setCopyStatus] = useState<"copied" | "failed">();
   const [mode, setMode] = useState("add");
   const [taxClass, setTaxClass] = useState("standard");
   const [completed, setCompleted] = useState<Set<number>>(() => new Set());
@@ -39,17 +42,15 @@ export function FreeTool({
   });
   const corporate = slug === "corporate-tax-estimator";
   const value = Number(amount);
-  const valid =
-    amount.trim() !== "" &&
-    Number.isFinite(value) &&
-    value <= 1_000_000_000_000 &&
-    (corporate || value >= 0);
-  const cents = Math.round(value * 100);
+  const parsedVat = parseVatAmount(amount);
+  const valid = corporate
+    ? amount.trim() !== "" && Number.isFinite(value) && Math.abs(value) <= 1_000_000_000_000
+    : parsedVat !== undefined;
+  const vat = vatBreakdown(parsedVat ?? 0, mode, taxClass);
   const taxCents = corporate
-    ? Math.round((Math.max(0, cents - 37_500_000) * 9) / 100)
-    : taxClass !== "standard"
-      ? 0
-      : Math.round(cents * (mode === "extract" ? 5 / 105 : 5 / 100));
+    ? Math.round((Math.max(0, Math.round(value * 100) - 37_500_000) * 9) / 100)
+    : vat.vat;
+
   const money = (minor: number) => <bdi>{format.format(minor / 100)}</bdi>;
   if (slug === "e-invoicing-readiness")
     return (
@@ -93,7 +94,7 @@ export function FreeTool({
       </div>
     );
   return (
-    <div className="phase-form">
+    <div className="phase-form" onChange={() => setCopyStatus(undefined)}>
       {corporate ? (
         <p>
           {tr([
@@ -109,7 +110,7 @@ export function FreeTool({
             : ["Amount (AED)", "المبلغ (درهم)"]
         )}
         <input
-          type="number"
+          type={corporate ? "number" : "text"}
           dir="ltr"
           inputMode="decimal"
           min={corporate ? undefined : 0}
@@ -164,8 +165,8 @@ export function FreeTool({
             </span>
             {!corporate && (
               <span>
-                {tr(["Net", "الصافي"])} {money(mode === "extract" ? cents - taxCents : cents)} {"·"}{" "}
-                {tr(["Total", "الإجمالي"])} {money(mode === "extract" ? cents : cents + taxCents)}
+                {tr(["Net", "الصافي"])} {money(vat.net)} {"·"} {tr(["Total", "الإجمالي"])}{" "}
+                {money(vat.gross)}
               </span>
             )}
           </>
@@ -173,6 +174,82 @@ export function FreeTool({
           tr(["Enter a valid amount to calculate.", "أدخل مبلغاً صالحاً للحساب."])
         )}
       </output>
+      {!corporate && (
+        <>
+          <div className="phase-cta-row">
+            <button
+              type="button"
+              className="phase-button phase-outline"
+              onClick={() => {
+                setAmount("");
+                setTaxClass("standard");
+                setMode("add");
+                setCopyStatus(undefined);
+              }}
+            >
+              {tr(["Reset", "إعادة ضبط"])}
+            </button>
+            <button
+              type="button"
+              className="phase-button phase-outline"
+              disabled={!valid}
+              onClick={() => window.print()}
+            >
+              {tr(["Print", "طباعة"])}
+            </button>
+            <button
+              type="button"
+              className="phase-button phase-outline"
+              disabled={!valid}
+              onClick={async () => {
+                const result = [
+                  [tr(["Net", "الصافي"]), vat.net],
+                  [tr(["VAT", "الضريبة"]), vat.vat],
+                  [tr(["Total", "الإجمالي"]), vat.gross],
+                ] as const;
+                try {
+                  await navigator.clipboard.writeText(
+                    result
+                      .map(([label, fils]) => `${label} ${format.format(fils / 100)}`)
+                      .join("\n")
+                  );
+                  setCopyStatus("copied");
+                } catch {
+                  setCopyStatus("failed");
+                }
+              }}
+            >
+              {tr(["Copy result", "انسخ النتيجة"])}
+            </button>
+            {copyStatus && (
+              <span role="status">
+                {copyStatus === "copied"
+                  ? tr(["Result copied.", "نُسخت النتيجة."])
+                  : tr(["Could not copy the result.", "تعذّر نسخ النتيجة."])}
+              </span>
+            )}
+          </div>
+          <p>
+            {tr([
+              "AED 100 before VAT plus AED 5 VAT equals AED 105. Extracting VAT from AED 105 gives the same breakdown.",
+              "١٠٠ درهم قبل الضريبة مع ٥ دراهم ضريبة تساوي ١٠٥ دراهم. ويعطي استخراج الضريبة من ١٠٥ دراهم النتيجة نفسها.",
+            ])}
+          </p>
+          <p>
+            {tr(["VAT guidance reviewed", "تاريخ مراجعة إرشادات الضريبة"])}{" "}
+            <time dateTime="2026-11-23">{tr(["23 November 2026", "٢٣ نوفمبر ٢٠٢٦"])}</time>
+          </p>
+          <a className="phase-textlink" href="https://tax.gov.ae/en/taxes/Vat.aspx">
+            {tr([
+              "Federal Tax Authority VAT guidance",
+              "إرشادات الهيئة الاتحادية للضرائب بشأن ضريبة القيمة المضافة",
+            ])}
+          </a>
+          <Link className="phase-textlink" href={`/${locale}/tools/invoice-template`}>
+            {tr(["See a sample tax invoice", "اطّلع على نموذج فاتورة ضريبية"])}
+          </Link>
+        </>
+      )}
       {corporate && (
         <p>
           {tr([

@@ -1,3 +1,4 @@
+import { MARKETING_BRAND } from "@shared/marketing-brand";
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { Languages, Menu, X } from "lucide-react";
@@ -218,8 +219,8 @@ export function MarketingFooter() {
             <MarketingBrand />
             <p>{t["marketing.footerTagline"]}</p>
             <p>
-              <a href="mailto:hello@muhasib.ai" className="mk-link">
-                <span dir="ltr">hello@muhasib.ai</span>
+              <a href={`mailto:${MARKETING_BRAND.contactEmail}`} className="mk-link">
+                <span dir="ltr">{MARKETING_BRAND.contactEmail}</span>
               </a>
             </p>
           </div>

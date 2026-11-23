@@ -175,6 +175,11 @@ export function RegisterForm({
         title={t["components.authStartBooks"]}
         description={t["components.authRegisterDescription"]}
       />
+      {!plan && (
+        <p className="mb-4 text-sm text-muted-foreground" data-testid="signup-trial-offer">
+          {t["marketing.signupTrialOffer"]}
+        </p>
+      )}
       {plan ? (
         <div
           className="mb-6 flex min-h-14 flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl border border-border bg-card px-4 py-2"

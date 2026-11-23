@@ -129,10 +129,7 @@ describe("Public SaaS launch surface", () => {
       ["PDF", pdfText],
     ]) {
       const words = text.replace(/\s+/g, " ");
-      expect(
-        words.includes(BANK_RECONCILIATION_COPY.en),
-        format
-      ).toBe(true);
+      expect(words.includes(BANK_RECONCILIATION_COPY.en), format).toBe(true);
       expect(/\bbank\s+feeds?\b|\bopen\s+banking\b/i.test(words), format).toBe(false);
     }
   });
@@ -355,7 +352,7 @@ describe("Public SaaS launch surface", () => {
     for (const id of ["trust-data-residency", "trust-support-contact"]) {
       expect(trustPage).toContain(id);
     }
-    expect(trustPage).toContain("support@muhasib.ai");
+    expect(trustPage).toContain("MARKETING_BRAND.supportEmail");
     // Owner-confirmed facts (T1): operator name, UAE hosting, named support contact, services terms.
     const ar = JSON.parse(readRepoFile("client/src/locales/ar/marketing.json")) as Record<
       string,
