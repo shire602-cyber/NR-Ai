@@ -2073,6 +2073,10 @@ export async function runDueRecurringBills(today = new Date().toISOString().slic
   for (const row of due.rows) {
     const companyId = String(row.company_id);
     if (off.has(companyId)) continue;
+    if (!runs.has(companyId) && !(await automations.automationWritesAllowed(companyId))) {
+      off.add(companyId);
+      continue;
+    }
     const run = runs.get(companyId) ?? { created: 0, failed: 0, error: null };
     runs.set(companyId, run);
     try {

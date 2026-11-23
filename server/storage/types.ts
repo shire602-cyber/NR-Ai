@@ -815,6 +815,10 @@ export interface IStorage {
   getSubscription(companyId: string): Promise<Subscription | undefined>;
   createSubscription(subscription: InsertSubscription): Promise<Subscription>;
   updateSubscription(id: string, data: Partial<InsertSubscription>): Promise<Subscription>;
+  applyStripeCheckout(
+    subscription: Subscription,
+    data: Partial<InsertSubscription>
+  ): Promise<boolean>;
 
   // User type management
   updateUserType(id: string, userType: string): Promise<User>;

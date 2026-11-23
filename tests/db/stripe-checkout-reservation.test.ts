@@ -6,11 +6,13 @@ const h = useHarness();
 const stripe = vi.hoisted(() => ({
   createSession: vi.fn(),
   listSessions: vi.fn(),
+  retrieveSubscription: vi.fn(),
 }));
 
 vi.mock("stripe", () => ({
   default: class {
     checkout = { sessions: { create: stripe.createSession, list: stripe.listSessions } };
+    subscriptions = { retrieve: stripe.retrieveSubscription };
   },
 }));
 
@@ -26,7 +28,7 @@ it("[PR93-6] atomically reserves one first checkout per company and reopens it a
     "UPDATE subscriptions SET stripe_customer_id = 'fixture-customer', trial_ends_at = now() + interval '4 days' WHERE company_id = $1",
     [companyId]
   );
-  const { createCheckoutSession, PLAN_PRICE_MAP } =
+  const { createCheckoutSession, handleWebhookEvent, PLAN_PRICE_MAP } =
     await import("../../server/services/stripe.service");
   const oldPrice = PLAN_PRICE_MAP.starter.monthly;
   PLAN_PRICE_MAP.starter.monthly = "fixture-price";
@@ -73,6 +75,51 @@ it("[PR93-6] atomically reserves one first checkout per company and reopens it a
     ]);
     await expect(checkout()).resolves.toBe("https://checkout.example.test");
     expect(stripe.createSession).toHaveBeenCalledTimes(2);
+
+    const retry = stripe.createSession.mock.calls[1][0] as Stripe.Checkout.SessionCreateParams;
+    const completed = {
+      id: "fixture-completed-session",
+      mode: "subscription",
+      status: "complete",
+      customer: "fixture-customer",
+      subscription: "fixture-subscription",
+      metadata: retry.metadata,
+    };
+    stripe.listSessions.mockReturnValue([completed]);
+    stripe.retrieveSubscription.mockResolvedValue({
+      id: completed.subscription,
+      customer: completed.customer,
+      metadata: retry.subscription_data?.metadata,
+      status: "active",
+      current_period_start: company.expires,
+      current_period_end: company.expires + 30 * 86_400,
+      items: { data: [{ quantity: 1 }] },
+    });
+    // Even before the new reservation times out, retry and webhook can race on the same session.
+    const [url] = await Promise.all([
+      checkout(),
+      handleWebhookEvent({
+        id: "fixture-checkout-webhook",
+        type: "checkout.session.completed",
+        data: { object: completed },
+      } as unknown as Stripe.Event),
+    ]);
+    expect(url).toBe("https://example.test/success");
+    expect(stripe.createSession).toHaveBeenCalledTimes(2);
+    expect(
+      await h.sql(
+        `SELECT plan_id, status, stripe_subscription_id, stripe_checkout_completed
+          FROM subscriptions WHERE company_id = $1`,
+        [companyId]
+      )
+    ).toEqual([
+      {
+        plan_id: "starter",
+        status: "active",
+        stripe_subscription_id: "fixture-subscription",
+        stripe_checkout_completed: true,
+      },
+    ]);
   } finally {
     PLAN_PRICE_MAP.starter.monthly = oldPrice;
     vi.restoreAllMocks();

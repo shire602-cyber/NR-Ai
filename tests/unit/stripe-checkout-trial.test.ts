@@ -5,9 +5,11 @@ const stripe = vi.hoisted(() => ({
   listSessions: vi.fn(),
   createSession: vi.fn().mockResolvedValue({ url: "https://checkout.example.test" }),
   createCoupon: vi.fn().mockResolvedValue({ id: "referral-discount" }),
+  retrieveSubscription: vi.fn(),
   getCompany: vi.fn(),
   getSubscription: vi.fn(),
   updateSubscription: vi.fn(),
+  applyStripeCheckout: vi.fn(),
   createStripeEvent: vi.fn().mockResolvedValue(true),
   pq: vi.fn(),
 }));
@@ -16,6 +18,7 @@ vi.mock("stripe", () => ({
   default: class {
     checkout = { sessions: { create: stripe.createSession, list: stripe.listSessions } };
     coupons = { create: stripe.createCoupon };
+    subscriptions = { retrieve: stripe.retrieveSubscription };
   },
 }));
 vi.mock("../../server/config/env", () => ({ getEnv: () => ({ STRIPE_SECRET_KEY: "fixture" }) }));
@@ -24,6 +27,7 @@ vi.mock("../../server/storage", () => ({
     getCompany: stripe.getCompany,
     getSubscription: stripe.getSubscription,
     updateSubscription: stripe.updateSubscription,
+    applyStripeCheckout: stripe.applyStripeCheckout,
     createStripeEvent: stripe.createStripeEvent,
   },
 }));
@@ -37,6 +41,16 @@ import {
 
 const now = new Date("2026-11-23T10:00:00.000Z");
 const hour = 60 * 60 * 1000;
+const currentStripeSubscription = {
+  id: "first-subscription",
+  customer: "fixture-customer",
+  metadata: { companyId: "company", planId: "professional", billingCycle: "yearly" },
+  status: "trialing",
+  trial_end: 1_795_715_200,
+  current_period_start: 1_795_369_600,
+  current_period_end: 1_795_715_200,
+  items: { data: [{ quantity: 3 }] },
+};
 
 describe("Stripe checkout product trial and referral", () => {
   beforeEach(() => {
@@ -44,6 +58,7 @@ describe("Stripe checkout product trial and referral", () => {
     stripe.getCompany.mockResolvedValue({ id: "company" });
     stripe.listSessions.mockReturnValue([]);
     stripe.createSession.mockResolvedValue({ url: "https://checkout.example.test" });
+    stripe.retrieveSubscription.mockResolvedValue(currentStripeSubscription);
     let reservation: Date | null = null;
     stripe.pq.mockImplementation(async (query: string, params: [string, Date, Date | null]) => {
       if (/^UPDATE companies/.test(query)) {
@@ -62,17 +77,16 @@ describe("Stripe checkout product trial and referral", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it.each([
-    { scenario: "mid-trial", hours: 96, previous: false, trial: true },
-    { scenario: "exactly 48 hours left", hours: 48, previous: false, trial: true },
-    { scenario: "less than 48 hours left", hours: 47, previous: false, trial: false },
-    { scenario: "expired", hours: -24, previous: false, trial: false },
-    { scenario: "missing original deadline", hours: null, previous: false, trial: false },
-    { scenario: "legacy active subscription ID", hours: 96, previous: true, trial: false },
-  ])("sends the right checkout parameters for $scenario", async ({ hours, previous, trial }) => {
+    { scenario: "mid-trial", hours: 96, trial: true },
+    { scenario: "exactly 48 hours left", hours: 48, trial: true },
+    { scenario: "less than 48 hours left", hours: 47, trial: false },
+    { scenario: "expired", hours: -24, trial: false },
+    { scenario: "missing original deadline", hours: null, trial: false },
+  ])("sends the right checkout parameters for $scenario", async ({ hours, trial }) => {
     const trialEndsAt = hours === null ? null : new Date(now.getTime() + hours * hour);
     stripe.getSubscription.mockResolvedValue({
       planId: "free",
-      stripeSubscriptionId: previous ? "previous-subscription" : null,
+      stripeSubscriptionId: null,
       stripeCustomerId: "fixture-customer",
       trialEndsAt,
     });
@@ -91,15 +105,27 @@ describe("Stripe checkout product trial and referral", () => {
     } else {
       expect(session.subscription_data).not.toHaveProperty("trial_end");
     }
-    if (previous) {
-      expect(stripe.createCoupon).not.toHaveBeenCalled();
-      expect(session).not.toHaveProperty("discounts");
-    } else {
-      expect(stripe.createCoupon).toHaveBeenCalledWith(
-        expect.objectContaining({ duration: "once" })
-      );
-      expect(session.discounts).toEqual([{ coupon: "referral-discount" }]);
-    }
+    expect(stripe.createCoupon).toHaveBeenCalledWith(expect.objectContaining({ duration: "once" }));
+    expect(session.discounts).toEqual([{ coupon: "referral-discount" }]);
+  });
+
+  it("does not start a second subscription when the local plan is stale", async () => {
+    stripe.getSubscription.mockResolvedValue({
+      planId: "free",
+      stripeSubscriptionId: "existing-subscription",
+      stripeCustomerId: "fixture-customer",
+    });
+    await expect(
+      createCheckoutSession(
+        "company",
+        "starter",
+        "monthly",
+        "https://example.test/success",
+        "https://example.test/cancel"
+      )
+    ).resolves.toBe("https://example.test/success");
+    expect(stripe.createSession).not.toHaveBeenCalled();
+    expect(stripe.createCoupon).not.toHaveBeenCalled();
   });
 
   it("reserves before creating a session, even when overlapping requests read the same state", async () => {
@@ -130,13 +156,22 @@ describe("Stripe checkout product trial and referral", () => {
     "checks the earlier Stripe session after the reservation expires (%s)",
     async (status) => {
       const subscription = {
+        id: "subscription-row",
+        companyId: "company",
         planId: "free",
+        stripeCheckoutCompleted: false,
+        stripeSubscriptionId: null,
         stripeCustomerId: "fixture-customer",
         trialEndsAt: new Date(now.getTime() + 96 * hour),
+        invoicesCreatedThisMonth: 0,
       };
       const company = { id: "company", stripeFirstCheckoutExpiresAt: null as Date | null };
       stripe.getCompany.mockImplementation(async () => ({ ...company }));
       stripe.getSubscription.mockResolvedValue(subscription);
+      stripe.applyStripeCheckout.mockImplementation(async (_subscription, patch) => {
+        Object.assign(subscription, patch);
+        return true;
+      });
       stripe.pq.mockImplementation(async (query: string, params: [string, Date, Date | null]) => {
         if (/^UPDATE companies/.test(query)) {
           expect(params[2]).toEqual(company.stripeFirstCheckoutExpiresAt);
@@ -161,15 +196,47 @@ describe("Stripe checkout product trial and referral", () => {
       await expect(request()).rejects.toMatchObject({ code: "STRIPE_CHECKOUT_IN_PROGRESS" });
 
       vi.mocked(Date.now).mockReturnValue((first.expires_at + 1) * 1000);
-      stripe.listSessions.mockReturnValue([
-        { mode: "subscription", status, metadata: first.metadata },
-      ]);
+      const session = {
+        id: "first-session",
+        mode: "subscription",
+        status,
+        customer: "fixture-customer",
+        subscription: "first-subscription",
+        metadata: first.metadata,
+      };
+      stripe.listSessions.mockReturnValue([session]);
       if (status === "expired") {
         await expect(request()).resolves.toBe("https://checkout.example.test");
         expect(stripe.createSession).toHaveBeenCalledTimes(2);
+      } else if (status === "complete") {
+        await expect(request()).resolves.toBe("https://example.test/success");
+        expect(subscription).toMatchObject({
+          planId: "professional",
+          status: "trialing",
+          billingCycle: "yearly",
+          seatCount: 3,
+          stripeCheckoutCompleted: true,
+          stripeSubscriptionId: "first-subscription",
+          trialEndsAt: new Date(currentStripeSubscription.trial_end * 1000),
+          currentPeriodStart: new Date(currentStripeSubscription.current_period_start * 1000),
+          currentPeriodEnd: new Date(currentStripeSubscription.current_period_end * 1000),
+        });
+        expect(stripe.retrieveSubscription).toHaveBeenCalledWith("first-subscription");
+        subscription.invoicesCreatedThisMonth = 4;
+        await handleWebhookEvent({
+          id: "late-checkout-event",
+          type: "checkout.session.completed",
+          data: { object: session },
+        } as unknown as Stripe.Event);
+        await expect(request()).resolves.toBe("https://example.test/success");
+        expect(subscription.invoicesCreatedThisMonth).toBe(4);
+        expect(stripe.applyStripeCheckout).toHaveBeenCalledTimes(1);
+        expect(stripe.createSession).toHaveBeenCalledTimes(1);
+        expect(stripe.createCoupon).toHaveBeenCalledTimes(1);
       } else {
         await expect(request()).rejects.toMatchObject({ code: "STRIPE_CHECKOUT_IN_PROGRESS" });
         expect(stripe.createSession).toHaveBeenCalledTimes(1);
+        expect(stripe.retrieveSubscription).not.toHaveBeenCalled();
       }
     }
   );
@@ -177,6 +244,7 @@ describe("Stripe checkout product trial and referral", () => {
   it("keeps checkout history when the deletion webhook clears the active subscription", async () => {
     const subscription = {
       id: "subscription-row",
+      companyId: "company",
       planId: "free",
       stripeSubscriptionId: null as string | null,
       stripeCustomerId: "fixture-customer",
@@ -184,6 +252,10 @@ describe("Stripe checkout product trial and referral", () => {
       trialEndsAt: new Date(now.getTime() + 96 * hour),
     };
     stripe.getSubscription.mockResolvedValue(subscription);
+    stripe.applyStripeCheckout.mockImplementation(async (_subscription, patch) => {
+      Object.assign(subscription, patch);
+      return true;
+    });
     stripe.updateSubscription.mockImplementation(async (_id, patch) =>
       Object.assign(subscription, patch)
     );
@@ -209,6 +281,23 @@ describe("Stripe checkout product trial and referral", () => {
       stripeSubscriptionId: null,
       stripeCheckoutCompleted: true,
     });
+    stripe.retrieveSubscription.mockResolvedValueOnce({
+      ...currentStripeSubscription,
+      status: "canceled",
+    });
+    await handleWebhookEvent({
+      id: "late-completion-event",
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          metadata: { companyId: "company", planId: "starter", billingCycle: "monthly" },
+          customer: "fixture-customer",
+          subscription: "first-subscription",
+        },
+      },
+    } as unknown as Stripe.Event);
+    expect(subscription.stripeSubscriptionId).toBeNull();
+    expect(stripe.applyStripeCheckout).toHaveBeenCalledTimes(1);
     await createCheckoutSession(
       "company",
       "starter",

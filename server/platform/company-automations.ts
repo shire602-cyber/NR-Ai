@@ -11,8 +11,9 @@
  * A missing settings row means the automation is on (its default). Switching one off never
  * deletes or changes data the automation produced earlier.
  */
-import { pool } from "../db";
+import { pool, type AppDatabase } from "../db";
 import { createLogger } from "../config/logger";
+import { billingEnforced, companyEntitlement } from "../middleware/featureGate";
 import { getJobStatus, listJobs } from "./job-registry";
 import { has, provide } from "./service-registry";
 
@@ -40,11 +41,20 @@ export function isCompanyAutomationKey(key: unknown): key is CompanyAutomationKe
 
 export type AutomationRunStatus = "ok" | "failed";
 
-/** Is the automation on for this company? (no row = on) */
+export async function automationWritesAllowed(
+  companyId: string,
+  now?: Date,
+  tx?: Pick<AppDatabase, "execute">
+): Promise<boolean> {
+  return !billingEnforced() || (await companyEntitlement(companyId, now, tx))?.state !== "expired";
+}
+
+/** Can this company run the automation? A missing switch row defaults to on. */
 export async function automationEnabled(
   key: CompanyAutomationKey,
   companyId: string
 ): Promise<boolean> {
+  if (!(await automationWritesAllowed(companyId))) return false;
   const r = await pool.query(
     `SELECT enabled FROM company_automation_settings WHERE company_id = $1 AND automation_key = $2`,
     [companyId, key]
@@ -92,7 +102,7 @@ export async function recordAutomationRun(
 
 /**
  * Run one company's share of an automation if the company has it on, recording the outcome.
- * Returns undefined (without running) when the company switched it off. A failure is recorded
+ * Returns undefined when the company switched it off or its trial expired. A failure is recorded
  * and rethrown, so the scan's own per-company error handling still applies.
  */
 export async function runForCompany<T>(

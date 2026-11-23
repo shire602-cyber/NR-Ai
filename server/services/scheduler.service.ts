@@ -10,7 +10,6 @@ import {
   type Invoice,
   type ReminderSetting,
 } from "../../shared/schema";
-import { billingEnforced, companyEntitlement } from "../middleware/featureGate";
 import { createLogger } from "../config/logger";
 import { errorCode } from "../errors";
 import { assertPeriodNotLocked, lockPeriodPolicy } from "./period-lock.service";
@@ -33,6 +32,7 @@ import { purgeExpiredAuthTokens } from "./auth-tokens.service";
 import { scanDueReportDeliveries } from "./report-delivery-scheduler.service";
 import { listJobs, registerJob, startRegisteredJobs } from "../platform/job-registry";
 import {
+  automationWritesAllowed,
   companiesWithAutomationOff,
   recordAutomationRun,
   runForCompany,
@@ -479,10 +479,11 @@ export async function runDunningScan(
       ).rows.map((r: { company_id: string }) => r.company_id);
   for (const companyId of ids) {
     try {
-      // WQ7: the scheduled scan respects the company's Automations switch; an explicit run for
-      // one company (opts.companyId) is the user asking, so it runs regardless.
+      // An explicit run bypasses the Automations switch, but still needs write entitlement.
       if (opts.companyId) {
-        await dunCompany(companyId, now, summary);
+        if (await automationWritesAllowed(companyId, now)) {
+          await dunCompany(companyId, now, summary);
+        }
       } else {
         const before = { sent: summary.sent, queued: summary.queued };
         await runForCompany(
@@ -695,10 +696,7 @@ export async function generateDueRecurringInvoices(): Promise<number> {
         seen.add(template.id);
         claimed = true;
         const now = new Date();
-        if (
-          billingEnforced() &&
-          (await companyEntitlement(template.companyId, now, tx))?.state === "expired"
-        ) {
+        if (!(await automationWritesAllowed(template.companyId, now, tx))) {
           return { skipped: true };
         }
         const note = async (status: string, message: string, disable = false) => {

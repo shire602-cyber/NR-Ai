@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 // @ts-expect-error - plain .mjs script without type declarations
 import { scanComponents, scanPages } from "../../scripts/i18n-scan.mjs";
 import { formatMessage, isLocaleLoaded, loadLocale, t } from "../../client/src/lib/i18n";
+import { brandOnlyPageLabels } from "../helpers/brand-only-page-labels";
 
 // S5: namespace catalogs are code-split (one lazy chunk per namespace and locale).
 beforeAll(async () => {
@@ -77,6 +78,11 @@ describe("i18n catalogs", () => {
     ]);
     for (const [namespace, catalog] of Object.entries(ar)) {
       for (const [key, value] of Object.entries(catalog)) {
+        if (namespace === "pageLabels" && brandOnlyPageLabels.has(key)) {
+          expect(value, `ar ${key}`).toBe("[[brand]]");
+          expect(en[namespace][key], `en ${key}`).toBe("[[brand]]");
+          continue;
+        }
         if (allowedLatin.has(key)) continue;
         expect(value, `${namespace}/${key}`).toMatch(/[؀-ۿ]/);
       }
