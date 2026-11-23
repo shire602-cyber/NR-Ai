@@ -505,6 +505,8 @@ export async function profitAndLoss(
 
 // ─── Balance sheet ──────────────────────────────────────────────────────────
 
+const OVERDRAWN_CASH_ACCOUNTS = "OVERDRAWN_CASH_ACCOUNTS";
+
 export interface BalanceSheet {
   reportCurrency: string;
   asOf: IsoDate;
@@ -527,7 +529,7 @@ export interface BalanceSheet {
     /** Capital lines + reserve lines + synthetic retained earnings b/f + current year earnings. */
     lines: StatementLine[];
   };
-  warnings?: Array<{ code: "OVERDRAWN_CASH_ACCOUNTS"; accounts: StatementLine[] }>;
+  warnings?: Array<{ code: typeof OVERDRAWN_CASH_ACCOUNTS; accounts: StatementLine[] }>;
   totalAssets: number;
   totalLiabilities: number;
   totalEquity: number;
@@ -694,9 +696,7 @@ async function balanceSheetCore(
     },
     ...(overdrawnCash.length
       ? {
-          warnings: [
-            { code: "OVERDRAWN_CASH_ACCOUNTS" as const, accounts: section(overdrawnCash).lines },
-          ],
+          warnings: [{ code: OVERDRAWN_CASH_ACCOUNTS, accounts: section(overdrawnCash).lines }],
         }
       : {}),
     totalAssets: aed(totalAssets),
