@@ -202,6 +202,8 @@ export async function createCheckoutSession(
       stripeCustomerId: customerId,
     });
     if (subscription.stripeSubscriptionId) return successUrl;
+  } else if (await recoverStripeSubscription(stripeClient, subscription, customerId)) {
+    return successUrl;
   }
 
   // A first paid invoice can earn a referral discount even after the product trial ends.
@@ -403,11 +405,38 @@ async function reconcileCheckout(
 
   // A delayed event can describe a checkout whose plan or status has since changed.
   const current = await stripeClient.subscriptions.retrieve(stripeSubscriptionId);
+  return applyStripeSubscription(current, subscription, session.metadata);
+}
+
+async function recoverStripeSubscription(
+  stripeClient: Stripe,
+  subscription: Subscription,
+  customerId: string
+): Promise<boolean> {
+  // A completed session can outlive the checkout lookup window, and returning customers
+  // do not have a first-checkout reservation.
+  for await (const current of stripeClient.subscriptions.list({
+    customer: customerId,
+    status: "all",
+  })) {
+    if (current.status === "canceled" || current.status === "incomplete_expired") continue;
+    if (await applyStripeSubscription(current, subscription)) return true;
+    // An incomplete or unrecognized subscription must not lead to a second charge.
+    throw checkoutInProgress();
+  }
+  return false;
+}
+
+async function applyStripeSubscription(
+  current: Stripe.Subscription,
+  subscription: Subscription,
+  checkoutMetadata?: Stripe.Metadata | null
+): Promise<boolean> {
   const customerId = typeof current.customer === "string" ? current.customer : current.customer.id;
-  const planId = current.metadata?.planId ?? session.metadata?.planId;
-  const billingCycle = current.metadata?.billingCycle ?? session.metadata?.billingCycle;
+  const planId = current.metadata?.planId ?? checkoutMetadata?.planId;
+  const billingCycle = current.metadata?.billingCycle ?? checkoutMetadata?.billingCycle;
   if (
-    customerId !== stripeCustomerId ||
+    customerId !== subscription.stripeCustomerId ||
     (current.metadata?.companyId && current.metadata.companyId !== subscription.companyId) ||
     !isPaidPlanId(planId) ||
     !isBillingCycle(billingCycle)
@@ -431,7 +460,7 @@ async function reconcileCheckout(
     planName: planId.charAt(0).toUpperCase() + planId.slice(1),
     ...stripeSubscriptionState(current),
     stripeCheckoutCompleted: true,
-    stripeSubscriptionId,
+    stripeSubscriptionId: current.id,
     billingCycle,
     seatCount: current.items.data[0]?.quantity ?? subscription.seatCount ?? 1,
     maxUsers: limits.maxUsers,
@@ -456,7 +485,7 @@ async function reconcileCheckout(
   }
   // A concurrent webhook or recovery request may already have applied this Checkout.
   const latest = await storage.getSubscription(subscription.companyId);
-  return latest?.stripeSubscriptionId === stripeSubscriptionId;
+  return latest?.stripeSubscriptionId === current.id;
 }
 
 function stripeSubscriptionState(sub: Stripe.Subscription) {

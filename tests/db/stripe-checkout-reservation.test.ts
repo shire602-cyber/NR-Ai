@@ -1,4 +1,4 @@
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import type Stripe from "stripe";
 import { useHarness } from "./harness";
 
@@ -6,19 +6,32 @@ const h = useHarness();
 const stripe = vi.hoisted(() => ({
   createSession: vi.fn(),
   listSessions: vi.fn(),
+  listSubscriptions: vi.fn(),
   retrieveSubscription: vi.fn(),
+  updateSubscription: vi.fn(),
 }));
 
 vi.mock("stripe", () => ({
   default: class {
     checkout = { sessions: { create: stripe.createSession, list: stripe.listSessions } };
-    subscriptions = { retrieve: stripe.retrieveSubscription };
+    subscriptions = {
+      list: stripe.listSubscriptions,
+      retrieve: stripe.retrieveSubscription,
+      update: stripe.updateSubscription,
+    };
   },
 }));
 
 vi.mock("../../server/config/env", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../server/config/env")>();
   return { ...actual, getEnv: () => ({ ...actual.getEnv(), STRIPE_SECRET_KEY: "fixture" }) };
+});
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  stripe.listSessions.mockReturnValue([]);
+  stripe.listSubscriptions.mockReturnValue([]);
+  stripe.createSession.mockResolvedValue({ url: "https://checkout.example.test" });
 });
 
 it("[PR93-6] atomically reserves one first checkout per company and reopens it after abandonment", async () => {
@@ -52,7 +65,6 @@ it("[PR93-6] atomically reserves one first checkout per company and reopens it a
     await bothRead;
     yield* [];
   });
-  stripe.createSession.mockResolvedValue({ url: "https://checkout.example.test" });
   try {
     const results = await Promise.allSettled([checkout(), checkout()]);
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
@@ -123,5 +135,109 @@ it("[PR93-6] atomically reserves one first checkout per company and reopens it a
   } finally {
     PLAN_PRICE_MAP.starter.monthly = oldPrice;
     vi.restoreAllMocks();
+  }
+});
+
+it("[PR94] changes Starter to Professional on the existing Stripe subscription", async () => {
+  const t = await h.createTenant();
+  const companyId = t.company.id;
+  await h.sql(
+    `UPDATE subscriptions SET plan_id = 'starter', stripe_customer_id = 'fixture-customer',
+      stripe_subscription_id = 'fixture-subscription' WHERE company_id = $1`,
+    [companyId]
+  );
+  const { PLAN_PRICE_MAP } = await import("../../server/services/stripe.service");
+  const oldPrice = PLAN_PRICE_MAP.professional.monthly;
+  PLAN_PRICE_MAP.professional.monthly = "price-professional";
+  stripe.retrieveSubscription.mockResolvedValue({ items: { data: [{ id: "existing-item" }] } });
+  try {
+    const result = await t.as.post(`/api/companies/${companyId}/billing/change-plan`, {
+      planId: "professional",
+      billingCycle: "monthly",
+    });
+    expect(result.status).toBe(200);
+    expect(stripe.retrieveSubscription).toHaveBeenCalledWith("fixture-subscription");
+    expect(stripe.updateSubscription).toHaveBeenCalledExactlyOnceWith("fixture-subscription", {
+      items: [{ id: "existing-item", price: "price-professional", quantity: 1 }],
+      proration_behavior: "create_prorations",
+      metadata: { companyId, planId: "professional", billingCycle: "monthly" },
+    });
+    expect(stripe.createSession).not.toHaveBeenCalled();
+    const billing = await t.as.get(`/api/companies/${companyId}/billing/subscription`);
+    expect(billing.body).toMatchObject({
+      subscription: { stripeSubscriptionId: "fixture-subscription" },
+      entitlement: { state: "active", planId: "professional" },
+    });
+  } finally {
+    PLAN_PRICE_MAP.professional.monthly = oldPrice;
+  }
+});
+
+it.each([
+  { scenario: "a returning customer", returning: true, ageHours: 1 },
+  { scenario: "a pre-migration checkout older than 24 hours", returning: false, ageHours: 48 },
+])("[PR94] recovers paid entitlement for $scenario", async ({ returning, ageHours }) => {
+  const t = await h.createTenant();
+  const companyId = t.company.id;
+  const customer = "fixture-customer";
+  const subscriptionId = "missed-webhook-subscription";
+  await h.sql(
+    "UPDATE subscriptions SET stripe_customer_id = $2, stripe_checkout_completed = $3 WHERE company_id = $1",
+    [companyId, customer, returning]
+  );
+  const { PLAN_PRICE_MAP } = await import("../../server/services/stripe.service");
+  const oldPrice = PLAN_PRICE_MAP.starter.monthly;
+  PLAN_PRICE_MAP.starter.monthly = "price-starter";
+  const checkout = () =>
+    t.as.post(`/api/companies/${companyId}/billing/checkout`, {
+      planId: "starter",
+      billingCycle: "monthly",
+    });
+  try {
+    if (returning) {
+      stripe.listSubscriptions.mockReturnValue([{ status: "canceled" }]);
+      const first = await checkout();
+      expect(first.body).toEqual({ url: "https://checkout.example.test" });
+    }
+    const created = Math.floor(Date.now() / 1000) - ageHours * 3_600;
+    const metadata = { companyId, planId: "starter", billingCycle: "monthly" };
+    stripe.listSessions.mockImplementation((params: Stripe.Checkout.SessionListParams) =>
+      created >= (typeof params.created === "object" ? (params.created.gte ?? 0) : 0)
+        ? [
+            {
+              mode: "subscription",
+              status: "complete",
+              metadata,
+              customer,
+              subscription: subscriptionId,
+            },
+          ]
+        : []
+    );
+    stripe.listSubscriptions.mockReturnValue([
+      {
+        id: subscriptionId,
+        customer,
+        metadata,
+        created,
+        status: "active",
+        cancel_at_period_end: false,
+        current_period_start: created,
+        current_period_end: created + 30 * 86_400,
+        items: { data: [{ quantity: 1 }] },
+      },
+    ]);
+    const retry = await checkout();
+    expect(retry.status).toBe(200);
+    expect(retry.body).toEqual({ url: expect.stringMatching(/\/subscription\?success=true$/) });
+    expect(stripe.listSubscriptions).toHaveBeenCalledWith({ customer, status: "all" });
+    expect(stripe.createSession).toHaveBeenCalledTimes(returning ? 1 : 0);
+    const billing = await t.as.get(`/api/companies/${companyId}/billing/subscription`);
+    expect(billing.body).toMatchObject({
+      subscription: { stripeSubscriptionId: subscriptionId, stripeCheckoutCompleted: true },
+      entitlement: { state: "active", planId: "starter" },
+    });
+  } finally {
+    PLAN_PRICE_MAP.starter.monthly = oldPrice;
   }
 });

@@ -337,6 +337,32 @@ describe("/subscription", () => {
     ).toBe(true);
   });
 
+  it("[PR94] updates the existing subscription when the Starter customer selects Professional", async () => {
+    sub.state = {
+      ...freshState(),
+      checkoutAvailable: true,
+      planState: "active",
+      entitlement: { state: "active", planId: "starter", storedPlanId: "starter" },
+      subscription: {
+        planId: "starter",
+        billingCycle: "monthly",
+        stripeSubscriptionId: "sub_existing",
+      },
+    };
+    sub.apiRequest.mockResolvedValue({ planId: "professional", billingCycle: "monthly", seats: 1 });
+    await renderSubscription();
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>("[data-testid=plan-upgrade-professional]")!
+        .click();
+    });
+    expect(sub.apiRequest).toHaveBeenCalledExactlyOnceWith(
+      "POST",
+      "/api/companies/c1/billing/change-plan",
+      { planId: "professional", billingCycle: "monthly" }
+    );
+  });
+
   it("surfaces a checkout failure instead of failing silently", async () => {
     const { ApiError } = await import("../../client/src/lib/queryClient");
     sub.state.checkoutAvailable = true;
