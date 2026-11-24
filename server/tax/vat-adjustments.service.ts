@@ -694,6 +694,7 @@ export async function undoReliefRecoveryOnPayment(input: {
   actorId: string;
   reason: string;
   date?: string | null;
+  paymentReversalDate: string;
   tx: LedgerTx;
 }) {
   const { tx, companyId, invoiceId, paymentId, actorId } = input;
@@ -717,7 +718,6 @@ export async function undoReliefRecoveryOnPayment(input: {
       rows: [payment],
     } = await q.query(
       `SELECT sp.created_at > c.created_at AS eligible,
-              ${localDateSql("sp.date")}::text AS date,
               split_part(last.idempotency_key, ':', 3) = 'recover' AS keyed,
               split_part(last.idempotency_key, ':', 4) = 'manual' AS manual
          FROM invoice_payments sp
@@ -794,7 +794,7 @@ export async function undoReliefRecoveryOnPayment(input: {
     } else {
       await reconcileReceiptRecoveries(tx, claim, {
         paymentId,
-        reversalDate: reversalDate ?? input.date ?? payment.date,
+        reversalDate: reversalDate ?? input.paymentReversalDate,
         actorId,
       });
     }

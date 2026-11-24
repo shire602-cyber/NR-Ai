@@ -202,11 +202,11 @@ async function lockVatReturnScope(
     companyId,
     ...(group === UNVERIFIED_VAT_GROUP ? [] : (group?.memberIds ?? [])),
   ];
-  // Keep the ledger's period policy -> VAT return -> journal numbering order.
+  // Take every exclusive VAT lock before period policy requests any shared VAT lock.
+  await lockVatReturnCompanies(tx, companies);
   for (const id of [...new Set(companies)].sort()) {
     await lockPeriodPolicy(tx, id, "shared");
   }
-  await lockVatReturnCompanies(tx, companies);
   return group;
 }
 

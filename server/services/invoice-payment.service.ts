@@ -15,6 +15,7 @@
 // write and no journal. Online payment, when built, must call this service.
 
 import { journalLine, journalMemo } from "@shared/journal-memo";
+import { uaeToday } from "@shared/uae-date";
 import { and, desc, eq, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
@@ -38,6 +39,7 @@ import {
   isForeignCurrency,
   loadBaseCurrency,
   postJournal,
+  resolveUndatedReversalDate,
   reverseEntry,
   withLedgerTx,
   type LedgerTx,
@@ -561,10 +563,11 @@ export async function reverseInvoicePayment(
       throw reversalReviewRequired();
     }
 
-    let journalToReverse: string | null = null;
+    let journalToReverse: { id: string; date: Date } | undefined;
     if (payment.journalEntryId) {
       const [je] = await tx
         .select({
+          date: journalEntries.date,
           reversedBy: journalEntries.reversedByEntryId,
           status: journalEntries.status,
           source: journalEntries.source,
@@ -608,15 +611,26 @@ export async function reverseInvoicePayment(
           await assertLegacyPaymentLink(tx, payment, legacyBank);
           return { reversed: false, invoice: null };
         }
-        journalToReverse = payment.journalEntryId;
+        journalToReverse = { id: payment.journalEntryId, date: je.date };
       }
     }
+    let postingDate: string | Date | null | undefined = input.date;
     if (payment.method !== WRITE_OFF_METHOD) {
       await lockPeriodPolicy(tx, input.companyId, "shared");
       await assertInvoicePaymentTaxPointOpen(tx, input.companyId, invoice.id, {
         id: payment.id,
       });
       if (has("vat.undoReliefRecoveryOnPayment")) {
+        let paymentReversalDate = input.date || uaeToday(payment.date);
+        if (!input.date && journalToReverse) {
+          const originalDate = journalToReverse.date;
+          const resolvedDate = await resolveUndatedReversalDate(tx, {
+            companyId: input.companyId,
+            date: originalDate,
+          });
+          paymentReversalDate = uaeToday(resolvedDate);
+          if (resolvedDate.getTime() !== originalDate.getTime()) postingDate = resolvedDate;
+        }
         await resolve<typeof undoReliefRecoveryOnPayment>("vat.undoReliefRecoveryOnPayment")({
           companyId: input.companyId,
           invoiceId: invoice.id,
@@ -624,18 +638,19 @@ export async function reverseInvoicePayment(
           actorId: input.actorId,
           reason: input.reason,
           date: input.date,
+          paymentReversalDate,
           tx,
         });
       }
     }
     if (journalToReverse) {
       await reverseEntry(
-        journalToReverse,
+        journalToReverse.id,
         {
           reason: input.reason,
           source: "payment_reversal",
           sourceId: payment.invoiceId,
-          ...(input.date ? { date: input.date } : {}),
+          ...(postingDate ? { date: postingDate } : {}),
         },
         { actorId: input.actorId, tx, companyId: input.companyId }
       );

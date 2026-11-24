@@ -484,7 +484,7 @@ function compactAttributes(a: JournalLineAttributes): JournalLineAttributes {
   ) as JournalLineAttributes;
 }
 
-function entryIso(entry: JournalEntry): string {
+function entryIso(entry: Pick<JournalEntry, "date">): string {
   return new Date(entry.date).toISOString().slice(0, 10);
 }
 
@@ -599,6 +599,17 @@ export async function postDraft(
 
 type ReversalMode = "reversed" | "voided";
 
+/** Resolve an undated reversal while the transaction holds the company's period policy lock. */
+export async function resolveUndatedReversalDate(
+  tx: LedgerTx,
+  original: Pick<JournalEntry, "companyId" | "date">
+): Promise<Date> {
+  if (!(await getEffectiveLock(original.companyId, entryIso(original), tx))) {
+    return new Date(original.date);
+  }
+  return new Date(`${todayIso()}T00:00:00.000Z`);
+}
+
 async function resolveReversalDate(
   tx: LedgerTx,
   original: JournalEntry,
@@ -620,8 +631,7 @@ async function resolveReversalDate(
     if (!opts.allowFutureDate) assertNotFuture(iso);
     return iso === origIso ? new Date(original.date) : at;
   }
-  if (!(await getEffectiveLock(original.companyId, origIso, tx))) return new Date(original.date);
-  return new Date(`${todayIso()}T00:00:00.000Z`);
+  return resolveUndatedReversalDate(tx, original);
 }
 
 function assertReversible(entry: JournalEntry): void {

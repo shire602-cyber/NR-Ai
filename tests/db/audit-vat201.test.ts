@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { uaeToday } from "../../shared/uae-date";
 import { accountByCode, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -656,6 +657,58 @@ describe("Accounting audit — VAT 201", () => {
       expect(q4.reconciliation.hasUnexplainedDifference).toBe(false);
     }
   );
+
+  it("posts rounding on the effective date of an undated reversal from a locked period", async () => {
+    const t = await vatTenant();
+    const { invoiceId, claimId } = await claimedInvoice(t);
+    const companyId = t.company.id;
+    const { reverseInvoicePayment } = await import("../../server/services/invoice-payment.service");
+    const { reverseReliefOnPayment } = await import("../../server/tax/vat-adjustments.service");
+    const pay = await unprocessedReceipt(t, invoiceId);
+    const first = await pay(0.01, "2026-09-15");
+    expect(
+      await reverseReliefOnPayment({ companyId, invoiceId, paymentId: first.payment.id })
+    ).toBeNull();
+    const second = await pay(105.1, "2026-10-05");
+    expect(
+      await reverseReliefOnPayment({ companyId, invoiceId, paymentId: second.payment.id })
+    ).toMatchObject({ remainingVatFils: 4499 });
+    await h.sql(
+      `INSERT INTO month_end_close (company_id, period_end, status, lock_type, lock_scope)
+       VALUES ($1, '2026-09-30', 'locked', 'hard', 'through')`,
+      [companyId]
+    );
+
+    const today = uaeToday();
+    const reversal = await reverseInvoicePayment({
+      companyId,
+      paymentId: first.payment.id,
+      actorId: t.user.id,
+      reason: "Payment returned",
+    });
+    expect(reversal.reversed).toBe(true);
+    const adjustments = await h.sql(
+      `SELECT (je.date + interval '4 hours')::date::text AS date,
+              (jl.credit - jl.debit)::text AS vat
+         FROM journal_entries je JOIN journal_lines jl ON jl.entry_id = je.id
+        WHERE je.company_id = $1 AND je.source = 'vat_bad_debt_relief' AND je.source_id = $2
+          AND jl.system_vat
+        ORDER BY je.date`,
+      [companyId, claimId]
+    );
+    expect(adjustments).toEqual([
+      { date: "2026-08-20", vat: "-50.00" },
+      { date: "2026-10-05", vat: "5.01" },
+      { date: today, vat: "-0.01" },
+    ]);
+    const cash = await h.sql(
+      `SELECT (date + interval '4 hours')::date::text AS date
+         FROM journal_entries WHERE company_id = $1 AND source = 'payment_reversal'
+          AND reversed_entry_id = $2`,
+      [companyId, first.journalEntryId]
+    );
+    expect(cash).toEqual([{ date: today }]);
+  });
 
   it("reopens a fully recovered claim when its AED 105 receipt is reversed and restores VAT on repayment", async () => {
     const t = await vatTenant();
