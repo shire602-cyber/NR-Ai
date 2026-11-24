@@ -449,7 +449,12 @@ function Plans({ tr, immediate = false }: { tr: Translate; immediate?: boolean }
   return (
     <div className="phase-plan-grid" ref={grid}>
       <div className="phase-plan-intro">
-        <p>{tr(["14 days free. No card required.", "١٤ يومًا مجاناً. دون بطاقة مصرفية."])}</p>
+        <p>
+          {tr([
+            "Try Enterprise free for 14 days. No card required.",
+            "جرّب باقة المؤسسات مجانًا لمدة ١٤ يومًا دون الحاجة إلى بطاقة.",
+          ])}
+        </p>
       </div>
       {showPlans && (
         <Suspense fallback={null}>
@@ -538,8 +543,8 @@ function Home({ base, locale, tr }: { base: string; locale: string; tr: Translat
             </div>
             <p className="phase-trial">
               {tr([
-                `From AED ${starterPrice}/month, 14-day free trial, no card`,
-                `ابتداءً من ${starterPrice} درهماً شهريًا، تجربة مجانية لمدة ١٤ يومًا، دون بطاقة مصرفية`,
+                `From AED ${starterPrice}/month, 14-day free Enterprise trial, no card`,
+                `ابتداءً من ${starterPrice} درهماً شهريًا، تجربة مجانية لباقة المؤسسات لمدة ١٤ يومًا، دون بطاقة مصرفية`,
               ])}
             </p>
           </div>
@@ -660,14 +665,16 @@ function Home({ base, locale, tr }: { base: string; locale: string; tr: Translat
           <ul>
             {(
               [
-                ["excel", ["Excel", "إكسل"]],
-                ["wafeq", ["Wafeq", "وافق"]],
-                ["mazeed", ["Mazeed", "مزيد"]],
-                ["zoho", ["Zoho Books", "زوهو بوكس"]],
+                ["excel", "Excel"],
+                ["wafeq", "Wafeq"],
+                ["mazeed", "Mazeed"],
+                ["zoho", "Zoho Books"],
               ] as const
             ).map(([source, name]) => (
               <li key={source}>
-                <Link href={`${base}/migration-guides/${source}`}>{tr(name)}</Link>
+                <Link href={`${base}/migration-guides/${source}`}>
+                  <bdi translate="no">{name}</bdi>
+                </Link>
               </li>
             ))}
           </ul>
@@ -824,8 +831,8 @@ export default function PhaseSite() {
                   </p>
                   <p>
                     {tr([
-                      "E-invoicing is available on every plan. Choose A-Cube or Complyance and confirm onboarding and any separate fees with your provider.",
-                      "تتوفر الفوترة الإلكترونية في جميع الباقات. اختر A-Cube أو Complyance وتحقّق من إجراءات الإعداد وأي رسوم منفصلة مع المزوّد.",
+                      "E-invoicing is available on every plan. Choose A-Cube or Complyance in e-invoicing settings. No provider is preselected. Confirm setup and any separate fees with your chosen provider.",
+                      "تتوفر الفوترة الإلكترونية في جميع الباقات. اختر A-Cube أو Complyance من إعدادات الفوترة الإلكترونية. يبدأ الإعداد دون مزوّد محدّد. تحقّق من خطوات الإعداد وأي رسوم منفصلة مع المزوّد الذي تختاره.",
                     ])}
                   </p>
                   <a
@@ -882,8 +889,8 @@ export default function PhaseSite() {
                   <Plans tr={tr} immediate />
                   <p>
                     {tr([
-                      "The 14-day trial includes Enterprise. If it ends before you choose a paid plan, your workspace becomes read-only and your records stay available.",
-                      "تشمل التجربة لمدة ١٤ يومًا باقة المؤسسات. إذا انتهت التجربة قبل اختيار باقة مدفوعة، تصبح مساحة العمل للقراءة فقط وتظل سجلاتك متاحة.",
+                      "When your trial ends, your workspace becomes read-only until you activate a paid plan. You can still view and export your books.",
+                      "عند انتهاء التجربة، تصبح مساحة العمل للقراءة فقط حتى تفعّل باقة مدفوعة. يمكنك مواصلة الاطلاع على دفاترك وتصديرها.",
                     ])}
                   </p>
                   <Link className="phase-textlink" href="/pricing">

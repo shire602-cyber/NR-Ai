@@ -810,7 +810,7 @@ export function ReconciliationRulesPanel() {
                   disabled={createMutation.isPending || updateMutation.isPending}
                 >
                   {(createMutation.isPending || updateMutation.isPending) && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <Loader2 className="animate-spin" aria-hidden="true" />
                   )}
                   {editingRule ? t["banking.rulesUpdateRule"] : t["banking.rulesCreateRule"]}
                 </Button>

@@ -325,7 +325,7 @@
   "einvoicing.providerCardTitle": "E-invoicing provider",
   "einvoicing.providerCardDescription": "An accredited e-invoicing service provider sends your e-invoices to your customers over Peppol and reports the tax data to the FTA.",
   "einvoicing.providerNotConnectedHeading": "No e-invoicing provider is connected",
-  "einvoicing.providerNotConnectedBody": "E-invoices are generated and validated here, but nothing is sent or reported until an accredited provider is connected. Request the connection and our team will set it up with you.",
+  "einvoicing.providerNotConnectedBody": "To send e-invoices and report tax data, connect the provider you choose in the e-invoicing partner section. Request a connection and our team will help you set it up.",
   "einvoicing.requestConnectionSubjectNeutral": "Request e-invoicing provider connection",
   "einvoicing.corner2TitleNeutral": "Your accredited provider",
   "einvoicing.corner5BodyNeutral": "Your provider reports the invoice's tax data to the FTA. You cannot connect to Peppol on your own: an accredited provider is required.",

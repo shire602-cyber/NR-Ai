@@ -4,7 +4,7 @@
  * renders the descriptor from its en/ar catalogs; the English text stays for exports and
  * back-compat. This runs the real app: every user-visible sentence in the payload must carry a
  * descriptor that reproduces the English text from the en catalog and reads as Arabic from the ar
- * catalog (no leftover Latin words apart from document numbers / amounts), including the audit
+ * catalog (no leftover Latin words apart from document numbers, amounts, and Latin brand names), including the audit
  * trail rows written by the resolve action.
  */
 import { describe, expect, it } from "vitest";
@@ -13,6 +13,7 @@ import arCatalog from "../../client/src/locales/ar/components.json";
 import enEvidence from "../../client/src/locales/en/documentsEvidence.json";
 import arEvidence from "../../client/src/locales/ar/documentsEvidence.json";
 import { localizeEvidenceText } from "../../shared/server-copy";
+import { stripAllowlisted } from "../e2e/lib/latin-text.mjs";
 import { useHarness } from "./harness";
 
 const h = useHarness();
@@ -61,14 +62,9 @@ function collect(body: any): Pair[] {
   return out;
 }
 
-/** Latin words of 2+ letters left after dropping ALL-CAPS acronyms, numbers and ids. */
+/** Latin words left after stripping allow-listed brands, acronyms, numbers and ids. */
 function latinWords(text: string): string[] {
-  return (
-    text
-      .replace(/[A-Z]{2,6}\b/g, " ")
-      .replace(/[A-Za-z]*[-_0-9][A-Za-z0-9_-]*/g, " ")
-      .match(/[A-Za-z]{2,}/g) ?? []
-  );
+  return stripAllowlisted(text).match(/[A-Za-z]{2,}/g) ?? [];
 }
 
 describe("F13 evidence centre copy keys", () => {

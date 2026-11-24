@@ -131,21 +131,21 @@ export const editorialPages = {
     ],
   },
   "/compare/wafeq": {
-    title: ["Compare with Wafeq", "المقارنة مع وافق (Wafeq)"],
+    title: ["Compare with Wafeq", "المقارنة مع Wafeq"],
     lead: [
       "Compare invoicing, reconciliation and the records you need to take with you.",
       "قارن الفوترة والمطابقة البنكية والسجلات التي تحتاج إلى نقلها.",
     ],
   },
   "/compare/mazeed": {
-    title: ["Compare with Mazeed", "المقارنة مع مزيد (Mazeed)"],
+    title: ["Compare with Mazeed", "المقارنة مع Mazeed"],
     lead: [
       "Compare the accounting workspace and how each option fits the way you work with an accountant.",
       "قارن مساحة العمل المحاسبية ومدى ملاءمة كل خيار لطريقة تعاونك مع المحاسب.",
     ],
   },
   "/compare/zoho": {
-    title: ["Compare with Zoho Books", "المقارنة مع زوهو بوكس (Zoho Books)"],
+    title: ["Compare with Zoho Books", "المقارنة مع Zoho Books"],
     lead: [
       "Compare UAE invoicing and reporting workflows, including how each option handles bank data.",
       "قارن مسارات الفوترة وإعداد التقارير في الإمارات، بما في ذلك طريقة التعامل مع البيانات البنكية في كل خيار.",
@@ -159,31 +159,31 @@ export const editorialPages = {
     ],
   },
   "/migration-guides/excel": {
-    title: ["Move your books from Excel", "انقل دفاترك من إكسل (Excel)"],
+    title: ["Move your books from Excel", "انقل دفاترك من Excel"],
     lead: [
       "Keep a copy of the workbook and build clean CSV files using the app’s import templates.",
       "احتفظ بنسخة من المصنف وجهّز ملفات CSV مرتّبة باستخدام قوالب الاستيراد في التطبيق.",
     ],
   },
   "/migration-guides/wafeq": {
-    title: ["Move your books from Wafeq", "انقل دفاترك من وافق (Wafeq)"],
+    title: ["Move your books from Wafeq", "انقل دفاترك من Wafeq"],
     lead: [
       "Export your records, review the Wafeq column mappings and confirm your balances at cutover.",
-      "صدّر سجلاتك وراجع تعيين أعمدة ملفات وافق وتحقّق من الأرصدة عند الانتقال.",
+      "صدّر سجلاتك وراجع تعيين أعمدة ملفات Wafeq وتحقّق من الأرصدة عند الانتقال.",
     ],
   },
   "/migration-guides/mazeed": {
-    title: ["Move your books from Mazeed", "انقل دفاترك من مزيد (Mazeed)"],
+    title: ["Move your books from Mazeed", "انقل دفاترك من Mazeed"],
     lead: [
       "Save your reports and use the app’s CSV templates to bring supported records into your new books.",
       "احفظ تقاريرك واستخدم قوالب CSV في التطبيق لنقل السجلات المدعومة إلى دفاترك الجديدة.",
     ],
   },
   "/migration-guides/zoho": {
-    title: ["Move your books from Zoho Books", "انقل دفاترك من زوهو بوكس (Zoho Books)"],
+    title: ["Move your books from Zoho Books", "انقل دفاترك من Zoho Books"],
     lead: [
       "Export your Zoho organisation data and review the trial balance, open documents and tax mappings before cutover.",
-      "صدّر بيانات شركتك من زوهو وراجع ميزان المراجعة والمستندات المفتوحة وتعيين المعاملات الضريبية قبل الانتقال.",
+      "صدّر بيانات شركتك من Zoho وراجع ميزان المراجعة والمستندات المفتوحة وتعيين المعاملات الضريبية قبل الانتقال.",
     ],
   },
   "/trust": {

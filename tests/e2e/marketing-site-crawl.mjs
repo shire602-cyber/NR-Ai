@@ -24,16 +24,16 @@ const editorialHeadings = {
     "الاستعداد للفوترة الإلكترونية في الإمارات",
   ],
   "/compare": ["Compare accounting software", "قارن برامج المحاسبة"],
-  "/compare/wafeq": ["Compare with Wafeq", "المقارنة مع وافق (Wafeq)"],
-  "/compare/mazeed": ["Compare with Mazeed", "المقارنة مع مزيد (Mazeed)"],
-  "/compare/zoho": ["Compare with Zoho Books", "المقارنة مع زوهو بوكس (Zoho Books)"],
+  "/compare/wafeq": ["Compare with Wafeq", "المقارنة مع Wafeq"],
+  "/compare/mazeed": ["Compare with Mazeed", "المقارنة مع Mazeed"],
+  "/compare/zoho": ["Compare with Zoho Books", "المقارنة مع Zoho Books"],
   "/migration-guides": ["Migration guides", "أدلة الانتقال"],
-  "/migration-guides/excel": ["Move your books from Excel", "انقل دفاترك من إكسل (Excel)"],
-  "/migration-guides/wafeq": ["Move your books from Wafeq", "انقل دفاترك من وافق (Wafeq)"],
-  "/migration-guides/mazeed": ["Move your books from Mazeed", "انقل دفاترك من مزيد (Mazeed)"],
+  "/migration-guides/excel": ["Move your books from Excel", "انقل دفاترك من Excel"],
+  "/migration-guides/wafeq": ["Move your books from Wafeq", "انقل دفاترك من Wafeq"],
+  "/migration-guides/mazeed": ["Move your books from Mazeed", "انقل دفاترك من Mazeed"],
   "/migration-guides/zoho": [
     "Move your books from Zoho Books",
-    "انقل دفاترك من زوهو بوكس (Zoho Books)",
+    "انقل دفاترك من Zoho Books",
   ],
   "/trust": ["Trust and security", "الثقة والأمان"],
 };
@@ -208,8 +208,8 @@ async function crawl(locale) {
       await page
         .getByText(
           locale === "ar"
-            ? "١٤ يومًا مجاناً. دون بطاقة مصرفية."
-            : "14 days free. No card required.",
+            ? "جرّب باقة المؤسسات مجانًا لمدة ١٤ يومًا دون الحاجة إلى بطاقة."
+            : "Try Enterprise free for 14 days. No card required.",
           { exact: true }
         )
         .waitFor();
