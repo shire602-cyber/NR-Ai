@@ -1,0 +1,156 @@
+/*
+ * Pricing section and /pricing page ("mz-price-"). Scope: .phase-site. Logical properties only.
+ * The plan cards themselves are the shared PlanCard; this file frames them: an e-invoicing badge on
+ * every card, the middle (Professional) card lifted, and the plan matrix table.
+ */
+.phase-site .mz-price .phase-plan-grid {
+  align-items: stretch;
+  gap: clamp(14px, 2vw, 24px);
+  margin-block: 0;
+}
+.phase-site .mz-price-slot {
+  position: relative;
+  display: flex;
+  min-inline-size: 0;
+}
+.phase-site .mz-price-slot > .plan-card {
+  flex: 1;
+  /* Room for the badge row above the plan name. */
+  padding-block-start: 58px;
+}
+.phase-site .mz-price-slot > .mz-price-badge {
+  position: absolute;
+  inset-block-start: 18px;
+  inset-inline-start: 24px;
+  z-index: 1;
+}
+.phase-site .mz-price-slot[data-featured="true"] > .plan-card {
+  box-shadow:
+    0 0 0 3px var(--mz-emerald),
+    0 24px 60px rgb(11 106 74 / 0.28);
+}
+.phase-site .mz-price-slot[data-featured="true"] > .mz-price-badge {
+  background: var(--mz-mint);
+  color: var(--mz-mint-ink);
+}
+@media (min-width: 761px) {
+  .phase-site .mz-price-slot[data-featured="true"] {
+    transform: translateY(-10px);
+  }
+}
+
+.phase-site .mz-price-note {
+  margin-block-start: clamp(22px, 3vw, 36px);
+  text-align: center;
+  font-size: clamp(16px, 1.5vw, 19px);
+  font-weight: 650;
+  color: var(--mz-fg);
+}
+.phase-site .mz-price-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 28px;
+  margin-block-start: 8px;
+}
+.phase-site .mz-price-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 44px;
+  font-weight: 650;
+  color: var(--mz-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.phase-site .mz-price-links svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+.phase-site[dir="rtl"] .mz-price-links svg {
+  transform: scaleX(-1);
+}
+
+/* ---------- /pricing page ---------- */
+.phase-site .mz-price-page > .mz-band {
+  padding-block: clamp(32px, 5vw, 64px);
+}
+.phase-site .mz-price-page .mz-band .phase-wrap {
+  inline-size: 100%;
+}
+.phase-site .mz-price-matrix-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--mz-line);
+  border-radius: var(--mz-radius);
+}
+.phase-site .mz-price-matrix {
+  inline-size: 100%;
+  min-inline-size: 640px;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.phase-site .mz-price-matrix caption {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.phase-site .mz-price-matrix :is(th, td) {
+  padding: 12px 16px;
+  text-align: start;
+  vertical-align: top;
+  border-block-end: 1px solid var(--mz-line);
+}
+.phase-site .mz-price-matrix thead th {
+  position: sticky;
+  inset-block-start: 0;
+  background: var(--mz-paper);
+  font-weight: 700;
+  color: var(--mz-fg);
+}
+.phase-site .mz-price-matrix tbody th[scope="row"] {
+  font-weight: 600;
+  color: var(--mz-fg);
+}
+.phase-site .mz-price-matrix tbody tr:last-child :is(th, td) {
+  border-block-end: 0;
+}
+.phase-site .mz-price-matrix [data-featured="true"] {
+  background: #eef6f1;
+}
+.phase-site .mz-price-matrix thead [data-featured="true"] {
+  background: #dcefe4;
+}
+.phase-site .mz-price-matrix .mz-price-group th {
+  background: var(--mz-sand);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--mz-emerald-deep);
+}
+.phase-site[lang="ar"] .mz-price-matrix .mz-price-group th {
+  letter-spacing: 0;
+  font-size: 14px;
+}
+.phase-site .mz-price-matrix small {
+  display: block;
+  margin-block-start: 2px;
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--mz-fg-muted);
+}
+.phase-site .mz-price-yes {
+  color: var(--mz-emerald);
+  font-weight: 700;
+}
+.phase-site .mz-price-no {
+  color: #5a6b61;
+}
+.phase-site .mz-price-readonly {
+  max-inline-size: 70ch;
+  margin-block: 14px 0;
+  margin-inline: auto;
+  font-size: 16px;
+  font-weight: 400;
+}
