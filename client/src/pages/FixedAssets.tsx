@@ -1581,9 +1581,15 @@ export default function FixedAssets() {
                           <SelectItem value="4">
                             <T k="pages.april" />
                           </SelectItem>
-                          <SelectItem value="5">May</SelectItem>
-                          <SelectItem value="6">June</SelectItem>
-                          <SelectItem value="7">July</SelectItem>
+                          <SelectItem value="5">
+                            <T k="pages.may" />
+                          </SelectItem>
+                          <SelectItem value="6">
+                            <T k="pages.june" />
+                          </SelectItem>
+                          <SelectItem value="7">
+                            <T k="pages.july" />
+                          </SelectItem>
                           <SelectItem value="8">
                             <T k="pages.august" />
                           </SelectItem>

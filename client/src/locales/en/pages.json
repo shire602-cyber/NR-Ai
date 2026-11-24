@@ -1029,5 +1029,14 @@
   "pages.subscriptionBilled_monthly": "billed monthly",
   "pages.subscriptionBilled_yearly": "billed yearly",
   "pages.subscriptionTrialOpen": "Every feature is open during the trial.",
-  "pages.subscriptionExpiredSafe": "Your data is saved."
+  "pages.subscriptionExpiredSafe": "Your data is saved.",
+  "pages.may": "May",
+  "pages.june": "June",
+  "pages.july": "July",
+  "pages.varShort": "Var",
+  "pages.workpaperLine": "Line",
+  "pages.supportingWorkpaper": "Supporting workpaper:",
+  "pages.apiKeyColName": "Name",
+  "pages.apiKeyColKey": "Key",
+  "pages.apiKeyNamePlaceholder": "e.g., Production Server"
 }

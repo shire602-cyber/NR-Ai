@@ -1029,5 +1029,14 @@
   "pages.subscriptionBilled_monthly": "تُدفع شهريًا",
   "pages.subscriptionBilled_yearly": "تُدفع سنويًا",
   "pages.subscriptionTrialOpen": "كل الميزات متاحة خلال الفترة التجريبية.",
-  "pages.subscriptionExpiredSafe": "بياناتك محفوظة."
+  "pages.subscriptionExpiredSafe": "بياناتك محفوظة.",
+  "pages.may": "مايو",
+  "pages.june": "يونيو",
+  "pages.july": "يوليو",
+  "pages.varShort": "الفرق",
+  "pages.workpaperLine": "البند",
+  "pages.supportingWorkpaper": "ورقة العمل الداعمة:",
+  "pages.apiKeyColName": "الاسم",
+  "pages.apiKeyColKey": "المفتاح",
+  "pages.apiKeyNamePlaceholder": "مثال: خادم الإنتاج"
 }

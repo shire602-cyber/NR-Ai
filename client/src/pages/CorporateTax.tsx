@@ -1512,12 +1512,16 @@ export default function CorporateTax() {
 
               {viewReturn.workpaper?.rows?.length ? (
                 <div className="pt-2 border-t">
-                  <span className="text-muted-foreground text-xs">Supporting workpaper:</span>
+                  <span className="text-muted-foreground text-xs">
+                    <T k="pages.supportingWorkpaper" />
+                  </span>
                   <div className="mt-2 max-h-56 overflow-auto rounded-md border">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Line</TableHead>
+                          <TableHead>
+                            <T k="pages.workpaperLine" />
+                          </TableHead>
                           <TableHead data-numeric>
                             <T k="pages.expense" />
                           </TableHead>

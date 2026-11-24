@@ -309,8 +309,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Key</TableHead>
+                  <TableHead>
+                    <T k="pages.apiKeyColName" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.apiKeyColKey" />
+                  </TableHead>
                   <TableHead>
                     <T k="pages.scopes" />
                   </TableHead>
@@ -382,10 +386,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="key-name">Name</Label>
+              <Label htmlFor="key-name">
+                <T k="pages.apiKeyColName" />
+              </Label>
               <Input
                 id="key-name"
-                placeholder="e.g., Production Server"
+                placeholder={t["pages.apiKeyNamePlaceholder"]}
                 value={newKeyName}
                 onChange={(e) => setNewKeyName(e.target.value)}
               />

@@ -1282,7 +1282,9 @@ export default function Budgets() {
                                 <span className="flex-1 text-end pe-1">
                                   <T k="pages.actual" />
                                 </span>
-                                <span className="flex-1 text-end">Var</span>
+                                <span className="flex-1 text-end">
+                                  <T k="pages.varShort" />
+                                </span>
                               </div>
                             </TableHead>
                           ))}
