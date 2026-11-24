@@ -36,6 +36,10 @@ const featureData = [
       ],
       ["Choose a template and share the invoice.", "اختر قالبًا وشارك الفاتورة."],
       ["Record payments and check outstanding balances.", "سجّل الدفعات وراجع الأرصدة المستحقة."],
+      [
+        "Record cash sales in their own number series, separate from tax invoices.",
+        "سجّل المبيعات النقدية بأرقام من سلسلة خاصة بها، منفصلة عن سلسلة الفواتير الضريبية.",
+      ],
     ],
   },
   {

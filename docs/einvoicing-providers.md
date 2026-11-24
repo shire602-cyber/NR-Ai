@@ -87,6 +87,7 @@ both providers may stay.
 
 - `client/src/components/marketing/phase/content.ts` — update the bilingual e-invoicing product copy.
 - `client/src/components/marketing/phase/PhaseSite.tsx` — remove the provider from the homepage.
+- `client/src/components/marketing/plans.ts` — update the plan comparison e-invoicing line.
 
 - `server/services/einvoice/providers/registry.ts`: the `ACUBE_PROVIDER_MODULE` import and list entry
 - `server/services/einvoice/providers/company-credentials.ts`: the A-Cube credential schema
@@ -132,6 +133,8 @@ both providers may stay.
 - `einvoicing.accreditation`
 - `einvoicing.publishedOnPeppol`
 - `activityLog.action.company.einvoicing_acube_reserve`
+- `marketing.faq4A`
+- `marketing.prEveryEinvoiceBody`
 
 Env to unset: `ACUBE_*`.
 
@@ -156,6 +159,7 @@ Env to unset: `ACUBE_*`.
 
 - `client/src/components/marketing/phase/content.ts` — update the bilingual e-invoicing product copy.
 - `client/src/components/marketing/phase/PhaseSite.tsx` — remove the provider from the homepage.
+- `client/src/components/marketing/plans.ts` — update the plan comparison e-invoicing line.
 
 - `server/services/einvoice/providers/registry.ts`: the `COMPLYANCE_PROVIDER_MODULE` import and list entry
 - `server/services/einvoice/providers/company-credentials.ts`: the Complyance credential schema
@@ -190,6 +194,8 @@ Env to unset: `ACUBE_*`.
   variants only the Complyance card uses)
 - `activityLog.action.company.einvoicing_complyance_connect`
 - `activityLog.action.invoice.einvoice_complyance_link`
+- `marketing.faq4A`
+- `marketing.prEveryEinvoiceBody`
 
 Env to unset: `COMPLYANCE_*`.
 

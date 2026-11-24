@@ -46,25 +46,25 @@ const einvoicing = { path: "/product/e-invoicing", title: featureBySlug("e-invoi
 const planLink: RelatedLink = { path: "/pricing", title: ["View plans", "عرض الباقات"] };
 
 const wafeqSales: SourceLink = {
-  title: ["Sales invoices and exports in Wafeq", "فواتير المبيعات وتصديرها في وافق"],
+  title: ["Sales invoices and exports in Wafeq", "فواتير المبيعات وتصديرها في Wafeq"],
   url: [
     "https://help.wafeq.com/hc/en-ae/articles/20859758405148-Creating-a-sales-invoice",
     "https://help.wafeq.com/hc/ar-ae/articles/20859758405148",
   ],
 };
 const wafeqBank: SourceLink = {
-  title: ["Bank reconciliation in Wafeq", "المطابقة البنكية في وافق"],
+  title: ["Bank reconciliation in Wafeq", "المطابقة البنكية في Wafeq"],
   url: [
     "https://www.wafeq.com/en-ae/wafeq-help/bank-and-reconciliation/importing-your-bank-account-and-reconciling-transactions",
     "https://www.wafeq.com/ar-ae/مركز-المساعدة/المعاملات-المصرفية-و-التسوية/استيراد-حسابك-المصرفي-و-تسوية-المعاملات",
   ],
 };
 const mazeedReports: SourceLink = {
-  title: ["Financial reporting and exports in Mazeed", "التقارير المالية وتصديرها في مزيد"],
+  title: ["Financial reporting and exports in Mazeed", "التقارير المالية وتصديرها في Mazeed"],
   url: ["https://mazeed.com/financial-reporting/", "https://mazeed.com/ar/financial-reporting/"],
 };
 const zohoExport: SourceLink = {
-  title: ["Import and export in Zoho Books", "الاستيراد والتصدير في زوهو بوكس (بالإنجليزية)"],
+  title: ["Import and export in Zoho Books", "الاستيراد والتصدير في Zoho Books (بالإنجليزية)"],
   url: "https://www.zoho.com/ae/books/help/import-export/",
 };
 const taxSubmission: SourceLink = {
@@ -308,10 +308,10 @@ export const editorialDetails: Record<DetailPath, Details> & Partial<Record<Inde
         ],
       },
       {
-        title: ["Wafeq", "وافق"],
+        title: ["Wafeq", "Wafeq"],
         body: [
           "Wafeq documents sales invoicing and invoice exports, as well as importing bank transactions and reconciling them against records in Wafeq.",
-          "يوثّق وافق طريقة إعداد فواتير المبيعات وتصديرها، كما يشرح استيراد المعاملات البنكية ومطابقتها مع السجلات في وافق.",
+          "يوثّق Wafeq طريقة إعداد فواتير المبيعات وتصديرها، كما يشرح استيراد المعاملات البنكية ومطابقتها مع السجلات في Wafeq.",
         ],
       },
     ],
@@ -335,7 +335,7 @@ export const editorialDetails: Record<DetailPath, Details> & Partial<Record<Inde
     related: [
       {
         path: "/migration-guides/wafeq",
-        title: ["Wafeq migration guide", "دليل الانتقال من وافق"],
+        title: ["Wafeq migration guide", "دليل الانتقال من Wafeq"],
       },
       banking,
       planLink,
@@ -352,10 +352,10 @@ export const editorialDetails: Record<DetailPath, Details> & Partial<Record<Inde
         ],
       },
       {
-        title: ["Mazeed", "مزيد"],
+        title: ["Mazeed", "Mazeed"],
         body: [
           "Mazeed offers accounting software with invoicing and financial reporting. It also offers managed accounting and bookkeeping services through Mazeed OPS.",
-          "يوفّر مزيد برنامج محاسبة يشمل الفوترة والتقارير المالية. كما يقدّم خدمات المحاسبة ومسك الدفاتر من خلال Mazeed OPS.",
+          "يوفّر Mazeed برنامج محاسبة يشمل الفوترة والتقارير المالية. كما يقدّم خدمات المحاسبة ومسك الدفاتر من خلال Mazeed OPS.",
         ],
       },
     ],
@@ -379,7 +379,7 @@ export const editorialDetails: Record<DetailPath, Details> & Partial<Record<Inde
     related: [
       {
         path: "/migration-guides/mazeed",
-        title: ["Mazeed migration guide", "دليل الانتقال من مزيد"],
+        title: ["Mazeed migration guide", "دليل الانتقال من Mazeed"],
       },
       { path: "/services", title: ["Accounting services", "خدمات المحاسبة"] },
       planLink,
@@ -389,7 +389,7 @@ export const editorialDetails: Record<DetailPath, Details> & Partial<Record<Inde
       {
         title: [
           "Accounting and bookkeeping services from Mazeed OPS",
-          "خدمات مزيد أوبس للمحاسبة ومسك الدفاتر",
+          "خدمات Mazeed OPS للمحاسبة ومسك الدفاتر",
         ],
         url: [
           "https://mazeed.com/accounting-and-bookkeeping-services/",
@@ -408,10 +408,10 @@ export const editorialDetails: Record<DetailPath, Details> & Partial<Record<Inde
         ],
       },
       {
-        title: ["Zoho Books", "زوهو بوكس"],
+        title: ["Zoho Books", "Zoho Books"],
         body: [
           "Zoho Books UAE documents importing bank statements manually and exporting data from individual modules.",
-          "يوضّح زوهو بوكس في الإمارات كيفية استيراد كشوف الحسابات البنكية يدويًا وتصدير البيانات من وحدات البرنامج كلٍّ على حدة.",
+          "يوضّح Zoho Books في الإمارات كيفية استيراد كشوف الحسابات البنكية يدويًا وتصدير البيانات من وحدات البرنامج كلٍّ على حدة.",
         ],
       },
     ],
@@ -435,14 +435,17 @@ export const editorialDetails: Record<DetailPath, Details> & Partial<Record<Inde
     related: [
       {
         path: "/migration-guides/zoho",
-        title: ["Zoho Books migration guide", "دليل الانتقال من زوهو بوكس"],
+        title: ["Zoho Books migration guide", "دليل الانتقال من Zoho Books"],
       },
       banking,
       planLink,
     ],
     sources: [
       {
-        title: ["Banking in Zoho Books UAE", "الخدمات البنكية في زوهو بوكس الإمارات (بالإنجليزية)"],
+        title: [
+          "Banking in Zoho Books UAE",
+          "الخدمات البنكية في Zoho Books الإمارات (بالإنجليزية)",
+        ],
         url: "https://www.zoho.com/ae/books/help/banking/",
       },
       zohoExport,
@@ -465,22 +468,22 @@ export const editorialDetails: Record<DetailPath, Details> & Partial<Record<Inde
   "/migration-guides/wafeq": {
     sections: [
       {
-        title: ["Export from Wafeq", "صدّر سجلاتك من وافق"],
+        title: ["Export from Wafeq", "صدّر سجلاتك من Wafeq"],
         body: [
           "Save the trial balance as of cutover and export the chart of accounts, contacts and open sales invoices and bills. Save the original exports and supporting reports. Choose Wafeq in Import data and check the proposed column mapping for every file.",
-          "احفظ ميزان المراجعة كما في تاريخ الانتقال وصدّر دليل الحسابات وجهات الاتصال وفواتير المبيعات والمشتريات المفتوحة. احتفظ بالملفات الأصلية والتقارير المؤيدة. اختر «وافق» في شاشة «استيراد البيانات» وراجع تعيين الأعمدة المقترح لكل ملف.",
+          "احفظ ميزان المراجعة كما في تاريخ الانتقال وصدّر دليل الحسابات وجهات الاتصال وفواتير المبيعات والمشتريات المفتوحة. احتفظ بالملفات الأصلية والتقارير المؤيدة. اختر «Wafeq» في شاشة «استيراد البيانات» وراجع تعيين الأعمدة المقترح لكل ملف.",
         ],
       },
       cutover,
       verify,
     ],
     related: [
-      { path: "/compare/wafeq", title: ["Compare with Wafeq", "المقارنة مع وافق"] },
+      { path: "/compare/wafeq", title: ["Compare with Wafeq", "المقارنة مع Wafeq"] },
       banking,
     ],
     sources: [
       {
-        title: ["Trial balance and export in Wafeq", "ميزان المراجعة وتصديره في وافق"],
+        title: ["Trial balance and export in Wafeq", "ميزان المراجعة وتصديره في Wafeq"],
         url: [
           "https://help.wafeq.com/hc/en-sa/articles/21381428049564-Your-Guide-to-the-Trial-Balance-Balances-Movements-and-Retained-Earnings",
           "https://help.wafeq.com/hc/ar-ae/articles/21381428049564",
@@ -495,14 +498,14 @@ export const editorialDetails: Record<DetailPath, Details> & Partial<Record<Inde
         title: ["Save reports and map the data", "احفظ التقارير وطابق حقول البيانات"],
         body: [
           "Export your cutover reports and gather your master records, open invoices and bills. If Mazeed manages your books, ask which files your accountant can supply and agree who closes the prior period. Copy supported records into the CSV templates and choose Template / other in Import data.",
-          "صدّر تقارير تاريخ الانتقال واجمع سجلاتك الأساسية وفواتير المبيعات والمشتريات المفتوحة. إذا كان مزيد يدير دفاترك، فاسأل محاسبك عن الملفات التي يمكنه توفيرها واتفق معه على من سيقفل الفترة السابقة. انقل السجلات المدعومة إلى قوالب CSV واختر «نموذج / أخرى» في شاشة «استيراد البيانات».",
+          "صدّر تقارير تاريخ الانتقال واجمع سجلاتك الأساسية وفواتير المبيعات والمشتريات المفتوحة. إذا كان Mazeed يدير دفاترك، فاسأل محاسبك عن الملفات التي يمكنه توفيرها واتفق معه على من سيقفل الفترة السابقة. انقل السجلات المدعومة إلى قوالب CSV واختر «نموذج / أخرى» في شاشة «استيراد البيانات».",
         ],
       },
       cutover,
       verify,
     ],
     related: [
-      { path: "/compare/mazeed", title: ["Compare with Mazeed", "المقارنة مع مزيد"] },
+      { path: "/compare/mazeed", title: ["Compare with Mazeed", "المقارنة مع Mazeed"] },
       banking,
     ],
     sources: [mazeedReports],
@@ -510,17 +513,17 @@ export const editorialDetails: Record<DetailPath, Details> & Partial<Record<Inde
   "/migration-guides/zoho": {
     sections: [
       {
-        title: ["Export the right Zoho organisation", "صدّر بيانات شركتك المعنية من زوهو"],
+        title: ["Export the right Zoho organisation", "صدّر بيانات شركتك المعنية من Zoho"],
         body: [
           "Verify the organisation and cutover date before exporting the chart of accounts, trial balance, contacts, items and open documents. Keep a separate archive of the source records and filed returns. Choose Zoho Books in Import data and check account codes, document currencies and tax treatment in the mapped rows.",
-          "تحقّق من الشركة وتاريخ الانتقال قبل تصدير دليل الحسابات وميزان المراجعة وجهات الاتصال والأصناف والمستندات المفتوحة. احتفظ بأرشيف منفصل للسجلات الأصلية والإقرارات المقدّمة. اختر «زوهو بوكس» في شاشة «استيراد البيانات» وتحقّق من رموز الحسابات وعملات المستندات ومعاملتها الضريبية في الصفوف التي جرى تعيينها.",
+          "تحقّق من الشركة وتاريخ الانتقال قبل تصدير دليل الحسابات وميزان المراجعة وجهات الاتصال والأصناف والمستندات المفتوحة. احتفظ بأرشيف منفصل للسجلات الأصلية والإقرارات المقدّمة. اختر «Zoho Books» في شاشة «استيراد البيانات» وتحقّق من رموز الحسابات وعملات المستندات ومعاملتها الضريبية في الصفوف التي جرى تعيينها.",
         ],
       },
       cutover,
       verify,
     ],
     related: [
-      { path: "/compare/zoho", title: ["Compare with Zoho Books", "المقارنة مع زوهو بوكس"] },
+      { path: "/compare/zoho", title: ["Compare with Zoho Books", "المقارنة مع Zoho Books"] },
       banking,
     ],
     sources: [zohoExport],
