@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { type Tenant, useHarness } from "./harness";
 
@@ -49,7 +49,73 @@ function replace(t: Tenant, backup: { id: string; name: string }, key?: string) 
   );
 }
 
+async function seedPaymentLink(t: Tenant) {
+  const token = randomBytes(24).toString("hex");
+  const [invoice] = await h.sql<{ id: string }>(
+    `INSERT INTO invoices (company_id, number, customer_name, date, total)
+     VALUES ($1, 'AU7-LINK', 'Fixture customer', now(), 120) RETURNING id`,
+    [t.company.id]
+  );
+  const [link] = await h.sql<{ id: string }>(
+    `INSERT INTO payment_links (company_id, invoice_id, provider, token_hash, amount_fils, currency, expires_at)
+     VALUES ($1, $2, 'stripe', $3, 12000, 'AED', now() + interval '1 day') RETURNING id`,
+    [t.company.id, invoice.id, createHash("sha256").update(token).digest("hex")]
+  );
+  return { invoiceId: invoice.id, linkId: link.id, token };
+}
+
 describe("AU7 accounting backup integrity", () => {
+  it("keeps a cancelled public payment link inactive when restoring a legacy snapshot", async () => {
+    const t = await h.createTenant();
+    const { linkId, token } = await seedPaymentLink(t);
+    const backup = await snapshot(t);
+    const [active] = await h.sql<{ data: unknown }>(
+      "SELECT to_jsonb(l) AS data FROM payment_links l WHERE id = $1",
+      [linkId]
+    );
+    await makeLegacy(backup.id, (tables) => {
+      expect(tables).not.toHaveProperty("payment_links");
+      tables.payment_links = [active.data];
+    });
+    const { cancelPaymentLink } = await import("../../server/services/payments");
+    expect(await cancelPaymentLink(t.company.id, linkId)).toBe(true);
+
+    const response = await replace(t, backup);
+    expect(response.status, response.text).toBe(200);
+    const checkout = await h.anon.get(`/api/portal/pay/${token}`);
+    expect(checkout.status, checkout.text).toBe(410);
+    expect(checkout.body.code).toBe("PAYMENT_LINK_INACTIVE");
+    expect(await h.sql("SELECT status FROM payment_links WHERE id = $1", [linkId])).toEqual([
+      { status: "cancelled" },
+    ]);
+  });
+
+  it("keeps a payment gateway receipt, its link and its invoice through replace", async () => {
+    const t = await h.createTenant();
+    const backup = await snapshot(t);
+    const { invoiceId, linkId } = await seedPaymentLink(t);
+    const eventId = randomUUID();
+    await h.sql(
+      `INSERT INTO payment_gateway_events (provider, event_id, type, payment_link_id)
+       VALUES ('stripe', $1, 'checkout.session.completed', $2)`,
+      [eventId, linkId]
+    );
+
+    const response = await replace(t, backup);
+    expect(response.status, response.text).toBe(200);
+    expect(await h.sql("SELECT id FROM invoices WHERE id = $1", [invoiceId])).toEqual([
+      { id: invoiceId },
+    ]);
+    expect(await h.sql("SELECT invoice_id FROM payment_links WHERE id = $1", [linkId])).toEqual([
+      { invoice_id: invoiceId },
+    ]);
+    expect(
+      await h.sql("SELECT payment_link_id FROM payment_gateway_events WHERE event_id = $1", [
+        eventId,
+      ])
+    ).toEqual([{ payment_link_id: linkId }]);
+  });
+
   it("merge preserves a bank transaction's invoice match made after the snapshot", async () => {
     const t = await h.createTenant();
     const [invoice] = await h.sql<{ id: string }>(
@@ -100,6 +166,90 @@ describe("AU7 accounting backup integrity", () => {
     });
     await expect(result).rejects.toMatchObject({ code: "CLONE_TARGET_NOT_EMPTY" });
     expect(await h.sql("SELECT id FROM purchase_orders WHERE id = $1", [order.id])).toHaveLength(1);
+  });
+
+  it.each([
+    [
+      "tax_return_archive",
+      `INSERT INTO tax_return_archive (company_id, return_type, period_label, period_start, period_end, filing_date)
+       VALUES ($1, 'VAT', 'Q1', '2025-01-01', '2025-03-31', '2025-04-15')`,
+    ],
+    [
+      "einvoice_archive",
+      `INSERT INTO einvoice_archive (company_id, direction, kind, document_number, xml, sha256, retain_until)
+       VALUES ($1, 'outbound', 'submitted', 'ARCHIVE-1', '<Invoice/>', repeat('a', 64), '2035-01-01')`,
+    ],
+  ])("clone refuses a target with only seeded accounts and %s history", async (table, insert) => {
+    const t = await h.createTenant();
+    const target = await t.as.post("/api/companies", { name: "AU7 archive target" });
+    expect([200, 201]).toContain(target.status);
+    await h.sql(insert, [target.body.id]);
+    const backup = await snapshot(t);
+    const { restoreBackupIntoCompany } = await import("../../server/services/backup.service");
+    for (const dryRun of [true, false]) {
+      await expect(
+        restoreBackupIntoCompany({
+          backupId: backup.id,
+          sourceCompanyId: t.company.id,
+          targetCompanyId: target.body.id,
+          userId: t.user.id,
+          dryRun,
+        })
+      ).rejects.toMatchObject({ code: "CLONE_TARGET_NOT_EMPTY", details: { table, rows: 1 } });
+    }
+  });
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres").each([
+    ["base_currency = 'USD'", "BASE_CURRENCY_MISMATCH"],
+    ["deleted_at = now()", "NOT_FOUND"],
+  ])("clone checks target state after a concurrent update to %s", async (update, code) => {
+    const t = await h.createTenant();
+    const target = await t.as.post("/api/companies", { name: "AU7 concurrent company target" });
+    expect([200, 201]).toContain(target.status);
+    const backup = await snapshot(t);
+    const { pool } = await import("../../server/db");
+    const { restoreBackupIntoCompany } = await import("../../server/services/backup.service");
+    const writer = await pool.connect();
+    let clone: Promise<unknown> | undefined;
+    try {
+      await writer.query("BEGIN");
+      const {
+        rows: [{ pid }],
+      } = await writer.query<{ pid: number }>(
+        `UPDATE companies SET ${update} WHERE id = $1 RETURNING pg_backend_pid() AS pid`,
+        [target.body.id]
+      );
+      clone = restoreBackupIntoCompany({
+        backupId: backup.id,
+        sourceCompanyId: t.company.id,
+        targetCompanyId: target.body.id,
+        userId: t.user.id,
+        dryRun: false,
+      }).catch((error: unknown) => error);
+      await expect
+        .poll(
+          async () => {
+            const [row] = await h.sql<{ waiting: boolean }>(
+              `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+             WHERE query LIKE '%FROM companies WHERE id = $1%FOR UPDATE%'
+               AND $1::int = ANY(pg_blocking_pids(pid))) AS waiting`,
+              [pid]
+            );
+            return row.waiting;
+          },
+          { timeout: 15000 }
+        )
+        .toBe(true);
+      await writer.query("COMMIT");
+      expect(await clone).toMatchObject({ code });
+      expect(await h.sql("SELECT id FROM backups WHERE company_id = $1", [target.body.id])).toEqual(
+        []
+      );
+    } finally {
+      await writer.query("ROLLBACK");
+      writer.release();
+      await clone;
+    }
   });
 
   it.skipIf(process.env.HARNESS_MODE !== "postgres")(

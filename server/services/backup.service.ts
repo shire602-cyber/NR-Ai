@@ -80,6 +80,7 @@ export const BACKUP_EXCLUDED_TABLES: Readonly<Record<string, string>> = {
   domain_event_outbox: "event dispatch queue",
   domain_event_deliveries: "event handler delivery receipts",
   ai_gl_queue: "processing queue",
+  payment_links: "public tokens and payment lifecycle state must survive every restore",
   payment_gateway_events: "provider event processing receipts",
   einvoice_documents: "external transmission state",
   einvoice_approver_links: "access control: revocable approval links",
@@ -907,10 +908,9 @@ async function applyRestore(
   }
 }
 
-async function lockRestoreTarget(client: Queryable, companyId: string, manifest: BackupManifest) {
+async function lockRestoreRows(client: Queryable, companyId: string, manifest: BackupManifest) {
   // The company lock conflicts with FK checks on ordinary inserts into the
   // company. Tables without that FK need a table lock to cover the first write.
-  await client.query("SELECT id FROM companies WHERE id = $1 FOR UPDATE", [companyId]);
   const directFks = new Set(
     manifest.fks
       .filter(
@@ -1062,7 +1062,8 @@ export async function restoreCompanyBackup(
     const snapshot = snapshotForRestore(backup);
     const manifest = await buildBackupManifest(client);
     if (!args.dryRun && args.mode === "replace") {
-      await lockRestoreTarget(client, args.companyId, manifest);
+      await client.query("SELECT id FROM companies WHERE id = $1 FOR UPDATE", [args.companyId]);
+      await lockRestoreRows(client, args.companyId, manifest);
     }
     const plan = planRestore(snapshot, manifest, manifest.tables);
     await validateSnapshotRows(client, plan);
@@ -1149,7 +1150,6 @@ export async function restoreCompanyBackup(
 
 /** Tables never cloned into another company (globally unique external identities). */
 export const CLONE_SKIPPED_TABLES: Readonly<Record<string, string>> = {
-  payment_links: "payment links carry provider sessions and public tokens",
   email_intake_messages: "provider message ids are globally unique",
   ecommerce_transactions: "marketplace transaction ids belong to the source company's store",
   ecommerce_integrations: "store connections are credentials of the source company",
@@ -1169,6 +1169,15 @@ export const CLONE_CLEARED_COLUMNS: Readonly<Record<string, readonly string[]>> 
 };
 
 const CLONE_COUNTERS = "invoice_number_sequences";
+
+// Integration settings and delivery artifacts can exist without accounting activity.
+const CLONE_TARGET_IGNORED_TABLES = new Set([
+  "ecommerce_integrations",
+  "webhook_endpoints",
+  "whatsapp_configs",
+  "company_report_delivery_subscriptions",
+  "company_report_delivery_artifacts",
+]);
 
 async function countCloneTarget(
   client: Queryable,
@@ -1346,14 +1355,21 @@ export async function restoreBackupIntoCompany(
       }
     }
     const snapshot = snapshotForRestore(backup);
-    const { rows: cos } = await pq<{ id: string; name: string; base_currency: string | null }>(
-      `SELECT id, name, base_currency FROM companies WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
-      [[args.sourceCompanyId, args.targetCompanyId]],
+    const {
+      rows: [dst],
+    } = await pq<{ name: string; base_currency: string | null }>(
+      `SELECT name, base_currency FROM companies WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
+      [args.targetCompanyId],
       client
     );
-    const src = cos.find((c) => c.id === args.sourceCompanyId);
-    const dst = cos.find((c) => c.id === args.targetCompanyId);
     if (!dst) throw new DomainError("NOT_FOUND", 404, undefined, "Target company not found");
+    const {
+      rows: [src],
+    } = await pq<{ base_currency: string | null }>(
+      `SELECT base_currency FROM companies WHERE id = $1 AND deleted_at IS NULL`,
+      [args.sourceCompanyId],
+      client
+    );
     if (src && (src.base_currency || "AED") !== (dst.base_currency || "AED")) {
       throw new DomainError(
         "BASE_CURRENCY_MISMATCH",
@@ -1372,13 +1388,14 @@ export async function restoreBackupIntoCompany(
         rows: (snapshot.tables[t.name] ?? []).length,
       }));
     const cloneTables = full.tables.filter((t) => !skip.has(t.name));
+    const targetTables = full.tables.filter((t) => !CLONE_TARGET_IGNORED_TABLES.has(t.name));
     if (!args.dryRun) {
-      await lockRestoreTarget(client, args.targetCompanyId, { ...full, tables: cloneTables });
+      await lockRestoreRows(client, args.targetCompanyId, { ...full, tables: targetTables });
     }
 
     // A clone's seed exceptions apply only to the target's chart and counters.
     // Check all other accounting tables, including those absent in old backups.
-    const seedRows = await countCloneTarget(client, cloneTables, args.targetCompanyId);
+    const seedRows = await countCloneTarget(client, targetTables, args.targetCompanyId);
     const { tables } = remapSnapshotForClone(
       Object.fromEntries(
         cloneTables
