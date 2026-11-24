@@ -328,15 +328,16 @@ export async function depositConsumptionLines(
   credit: CustomerCredit,
   amountFils: number,
   label: { kind: "depositApplied" | "refundDeposit"; params: Record<string, string> },
-  /** Posting date (ISO): the VAT engine reports the consumption on it. */
+  /** Journal posting date (ISO), also the VAT reporting date for refunds. */
   dateIso: string
 ): Promise<{ lines: PostJournalLineInput[]; vatFils: number; deposit: CustomerDeposit }> {
-  // A1 (C1) x A4 (M1): applying or refunding an advance changes the VAT 201 of the period it is
-  // dated in (even a zero-rated / exempt one that posts no VAT line), so it is refused in a
-  // submitted / filed VAT period like any other VAT posting.
   await lockVatReturns(tx, credit.companyId, "shared");
-  const filed = await findFiledVatPeriod(tx, credit.companyId, dateIso);
-  if (filed) throw vatPeriodFiledError(filed, dateIso);
+  // The ledger checks applications on the effective VAT offset date once the allocation exists.
+  // Refunds affect VAT on their posting date.
+  if (label.kind === "refundDeposit") {
+    const filed = await findFiledVatPeriod(tx, credit.companyId, dateIso);
+    if (filed) throw vatPeriodFiledError(filed, dateIso);
+  }
   const [deposit] = await tx
     .select()
     .from(customerDeposits)
