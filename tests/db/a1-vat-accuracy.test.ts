@@ -408,7 +408,7 @@ describe("A1 M9: asset disposal needs the company emirate", () => {
 describe("A1 C6: partial exemption (Exec. Reg. Art. 55)", () => {
   it("[C6] direct attribution first, residual apportioned by the period's standard ratio, irrecoverable VAT posted to GL at ready", async () => {
     const t = await vatTenant({ partial_exemption_enabled: true });
-    // Supplies: 8,000 standard + 2,000 exempt -> 80% recoverable.
+    // Supplies: 8,000 standard + 2,000 exempt. Input attribution determines the recovery rate.
     const s = await invoice(t, "2026-07-10", [
       { description: "Consulting", quantity: 1, unitPrice: 8000, vatRate: 5 },
       {
@@ -435,22 +435,22 @@ describe("A1 C6: partial exemption (Exec. Reg. Art. 55)", () => {
       input_vat_attribution: "exempt",
       line_items: line(400),
     });
-    // Residual overhead: 2,000 + 100, 80% recoverable -> 80.
+    // Residual VAT: 100 × round(50 / (50 + 20) × 100)% = 71.
     const b3 = await bill(t, { bill_date: "2026-07-13", line_items: line(2000) });
     for (const b of [b1, b2, b3]) expect((await approve(t, b.id)).status).toBe(200);
 
     const c = await compute(t, "2026-07-01", "2026-09-30");
-    expect(c.boxes.box9ExpensesVat).toBe(130); // 50 + 0 + 80
-    expect(c.boxes.box13RecoverableTax).toBe(130);
+    expect(c.boxes.box9ExpensesVat).toBe(121); // 50 + 0 + 71
+    expect(c.boxes.box13RecoverableTax).toBe(121);
     expect(c.partialExemption).toMatchObject({
       enabled: true,
       method: "standard",
-      recoverableRatio: 0.8,
+      recoverableRatio: 0.71,
       grossInputVatFils: 17_000,
       directTaxableFils: 5_000,
       directExemptFils: 2_000,
       residualFils: 10_000,
-      apportionedFils: 4_000,
+      apportionedFils: 4_900,
       postedFils: 0,
     });
 
@@ -459,23 +459,23 @@ describe("A1 C6: partial exemption (Exec. Reg. Art. 55)", () => {
       periodEnd: "2026-09-30",
     });
     expect(gen.status, gen.text).toBe(201);
-    expect(gen.body.box9ExpensesVat).toBe(130);
+    expect(gen.body.box9ExpensesVat).toBe(121);
     const ready = await t.as.post(`/api/vat-returns/${gen.body.id}/ready`, {});
     expect(ready.status, ready.text).toBe(200);
-    // Dr 5160 irrecoverable input VAT 40 / Cr 1050 40, dated at period end.
+    // Dr 5160 irrecoverable input VAT 49 / Cr 1050 49, dated at period end.
     expect(await linesOf(t.company.id, "vat_partial_exemption")).toEqual([
-      ["1050", 0, 40],
-      ["5160", 40, 0],
+      ["1050", 0, 49],
+      ["5160", 49, 0],
     ]);
     const after = await vat(t, "2026-07-01", "2026-09-30");
-    expect(after.boxes.box9ExpensesVat).toBe(130);
+    expect(after.boxes.box9ExpensesVat).toBe(121);
     expect(after.reconciliation.hasUnexplainedDifference).toBe(false);
     // Readiness is idempotent: nothing more is posted.
     const sub = await t.as.post(`/api/vat-returns/${gen.body.id}/submit`, {});
     expect(sub.status, sub.text).toBe(200);
     expect(await linesOf(t.company.id, "vat_partial_exemption")).toEqual([
-      ["1050", 0, 40],
-      ["5160", 40, 0],
+      ["1050", 0, 49],
+      ["5160", 49, 0],
     ]);
   });
 
@@ -500,6 +500,7 @@ describe("A1 C6: partial exemption (Exec. Reg. Art. 55)", () => {
     const member = await vatTenant({
       trn_vat_number: "100000000000037",
       partial_exemption_enabled: true,
+      exempt_supply_ratio: 0.2,
     });
     await h.sql("INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'owner')", [
       member.company.id,

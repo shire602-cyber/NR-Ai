@@ -763,12 +763,12 @@ describe("VAT return settlement", () => {
 });
 
 describe("A4 deposits x A1 filed-period lock", () => {
-  it("applying a zero-rated deposit inside a filed VAT period is refused", async () => {
+  async function marchDepositAndInvoice() {
     const t = await vatTenant();
     const bank = await accountByCode(t, "1020");
     const dep = await t.as.post(`${base(t)}/customer-deposits`, {
       customerName: "Export Customer LLC",
-      date: "2026-02-05",
+      date: "2026-03-01",
       amount: 1000,
       vatTreatment: "zero_rated",
       paymentAccountId: bank.id,
@@ -776,7 +776,7 @@ describe("A4 deposits x A1 filed-period lock", () => {
     expect(dep.status, dep.text).toBe(201);
     const inv = await t.as.post(`${base(t)}/invoices`, {
       customerName: "Export Customer LLC",
-      date: "2026-03-01",
+      date: "2026-03-10",
       placeOfSupplyEmirate: "dubai",
       lines: [
         {
@@ -792,21 +792,52 @@ describe("A4 deposits x A1 filed-period lock", () => {
     expect(
       (await t.as.patch(`/api/invoices/${inv.body.id}/status`, { status: "sent" })).status
     ).toBe(200);
+    return { t, creditId: dep.body.creditId, invoiceId: inv.body.id };
+  }
+
+  it("applying a zero-rated deposit inside a filed VAT period is refused", async () => {
+    const { t, creditId, invoiceId } = await marchDepositAndInvoice();
     const ret = await generate(t, "2026-01-01", "2026-03-31");
     await submit(ret.id, t);
 
-    const refused = await t.as.post(`${base(t)}/customer-credits/${dep.body.creditId}/apply`, {
-      invoiceId: inv.body.id,
+    const refused = await t.as.post(`${base(t)}/customer-credits/${creditId}/apply`, {
+      invoiceId,
       amount: 1000,
       date: "2026-03-15",
     });
     expect(refused.status, refused.text).toBe(409);
     expect(refused.body.code).toBe("VAT_PERIOD_FILED");
-    const ok = await t.as.post(`${base(t)}/customer-credits/${dep.body.creditId}/apply`, {
-      invoiceId: inv.body.id,
+    const stillRefused = await t.as.post(`${base(t)}/customer-credits/${creditId}/apply`, {
+      invoiceId,
       amount: 1000,
       date: "2026-04-02",
     });
-    expect(ok.status, ok.text).toBe(201);
+    expect(stillRefused.status, stillRefused.text).toBe(409);
+    expect(stillRefused.body.code).toBe("VAT_PERIOD_FILED");
+  });
+
+  it("allows an April deposit application with Q2 filed when its March VAT period is open", async () => {
+    const { t, creditId, invoiceId } = await marchDepositAndInvoice();
+    const ret = await generate(t, "2026-04-01", "2026-06-30");
+    await submit(ret.id, t);
+
+    const applied = await t.as.post(`${base(t)}/customer-credits/${creditId}/apply`, {
+      invoiceId,
+      amount: 1000,
+      date: "2026-04-02",
+    });
+    expect(applied.status, applied.text).toBe(201);
+    const [journal] = await h.sql<{ date: string }>(
+      "SELECT date::date::text AS date FROM journal_entries WHERE id = $1",
+      [applied.body.journalEntryId]
+    );
+    expect(journal.date).toBe("2026-04-02");
+
+    const q1 = await t.as.get(`${base(t)}/vat/compute?from=2026-01-01&to=2026-03-31`);
+    expect(q1.status, q1.text).toBe(200);
+    expect(q1.body.boxes.box4ZeroRatedAmount).toBe(3000);
+    const q2 = await t.as.get(`${base(t)}/vat/compute?from=2026-04-01&to=2026-06-30`);
+    expect(q2.status, q2.text).toBe(200);
+    expect(q2.body.boxes.box4ZeroRatedAmount).toBe(0);
   });
 });

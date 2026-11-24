@@ -45,10 +45,12 @@ import {
 } from "../services/invoice-state-machine";
 import { ACCOUNT_CODES } from "../constants";
 import { allocatePayment, buildPaymentJournalLines } from "../services/invoice-lifecycle";
-import { getCustomerCreditAccount } from "../services/invoice-posting.service";
+import { getCustomerCreditAccount, invoiceVatEventTime } from "../services/invoice-posting.service";
 import { deleteDraft, isForeignCurrency, loadBaseCurrency, postJournal } from "../ledger";
 import type { InvoiceSummary } from "./types";
 import { DEFAULT_LIST_LIMIT } from "./helpers";
+import { assertInvoicePaymentTaxPointOpen } from "../ledger/vat-lock";
+import { lockPeriodPolicy } from "../services/period-lock.service";
 import { LedgerStorage } from "./ledger";
 import { receivableSettlementPartsSql } from "../reporting/settlement";
 
@@ -703,8 +705,10 @@ export class SalesStorage extends LedgerStorage {
           )
           SELECT COALESCE(SUM(jl.debit - jl.credit), 0)::text AS residual
             FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
-           WHERE jl.account_id = ${input.receivableAccountId} AND je.status = 'posted'
+           WHERE jl.account_id = ${input.receivableAccountId}
+             AND je.company_id = ${input.companyId} AND je.status = 'posted'
              AND (je.id IN (SELECT id FROM docs)
+                  OR je.reversed_entry_id IN (SELECT id FROM docs)
                   OR (je.source = 'reversal' AND je.source_id IN (SELECT id FROM docs)))
         `);
         const r = Number(rowsFromResult<{ residual: string }>(residual)[0]?.residual);
@@ -773,6 +777,12 @@ export class SalesStorage extends LedgerStorage {
           exchangeRate: rate.toString(),
         };
       };
+      // Filing can post a journal for this date while holding the VAT-return lock.
+      await lockPeriodPolicy(tx, input.companyId, "shared");
+      await assertInvoicePaymentTaxPointOpen(tx, input.companyId, input.invoiceId, {
+        date: input.date,
+        appliedAmount: allocation.appliedToReceivable,
+      });
       const { entry } = await postJournal(
         {
           companyId: input.companyId,
@@ -827,6 +837,7 @@ export class SalesStorage extends LedgerStorage {
           exchangeRate: hasPaymentRate ? payRate : null,
           journalEntryId: entry.id,
           createdBy: input.createdBy,
+          createdAt: invoiceVatEventTime(input.companyId, input.invoiceId),
         })
         .returning();
 

@@ -1061,7 +1061,8 @@ describe("VAT filing and settlement transaction boundaries", () => {
   });
 
   it("rolls back journals and return state when filing, settling or reversing fails before commit", async () => {
-    const t = await vatTenant({ partial_exemption_enabled: true });
+    // The bill has only residual input VAT, so apportionment uses the provisional ratio.
+    const t = await vatTenant({ partial_exemption_enabled: true, exempt_supply_ratio: 0.5 });
     await activity(t, 2000, 400);
     const exempt = await t.as.post(`${base(t)}/invoices`, {
       customerName: "Tenant",

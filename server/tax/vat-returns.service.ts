@@ -10,7 +10,7 @@ import { db } from "../db";
 import { DomainError } from "../errors";
 import { vatReturns, type VatReturn } from "../../shared/schema";
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { assertPeriodNotLocked, lockPeriodPolicy } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
 import { defineMachine, withLedgerTx, type LedgerTx } from "../ledger";
 import { todayIso } from "../ledger/normalize";
@@ -198,11 +198,15 @@ async function lockVatReturnScope(
 ): Promise<ResolvedVatGroup> {
   const current = await loadVatGroupForRepresentative(companyId, tx);
   const group = await resolveFilingVatGroup(tx, existing, current);
-  // Each member's shared journal lock conflicts with the exclusive lock held here.
-  await lockVatReturnCompanies(tx, [
+  const companies = [
     companyId,
     ...(group === UNVERIFIED_VAT_GROUP ? [] : (group?.memberIds ?? [])),
-  ]);
+  ];
+  // Take every exclusive VAT lock before period policy requests any shared VAT lock.
+  await lockVatReturnCompanies(tx, companies);
+  for (const id of [...new Set(companies)].sort()) {
+    await lockPeriodPolicy(tx, id, "shared");
+  }
   return group;
 }
 

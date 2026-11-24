@@ -6,6 +6,7 @@ export {
   postJournal,
   postDraft,
   reverseEntry,
+  resolveUndatedReversalDate,
   voidEntry,
   reverseBySource,
   submitForApproval,
