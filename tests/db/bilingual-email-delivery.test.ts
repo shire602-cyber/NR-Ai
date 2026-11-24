@@ -15,7 +15,7 @@ describe("customer email delivery for an Arabic company", () => {
     { preferredLanguage: "en", expected: "en" },
     { preferredLanguage: "ar", expected: "ar" },
   ])("sends invoice, reminder and invite in $expected", async ({ preferredLanguage, expected }) => {
-    const t = await h.createTenant({ companyColumns: { locale: "ar" } });
+    const t = await h.createTenant({ emailVerified: true, companyColumns: { locale: "ar" } });
     const base = `/api/companies/${t.company.id}`;
     const to = `customer-${expected}@example.test`;
     const contact = await t.as.post(`${base}/customer-contacts`, {

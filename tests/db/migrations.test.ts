@@ -393,7 +393,7 @@ describe("migrations", () => {
   });
 
   it("[S5] rerunning 0138 preserves invitations created after the upgrade", async () => {
-    const supplier = await h.createTenant();
+    const supplier = await h.createTenant({ emailVerified: true });
     const contacts = `/api/companies/${supplier.company.id}/customer-contacts`;
     const contact = await supplier.as.post(contacts, {
       name: "Portal customer",
