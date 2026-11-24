@@ -903,9 +903,47 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
     );
   }
 
+  const workbookDetails = selectedReturn &&
+    company && {
+      companyInfo: {
+        nameEn: company.legalName || company.name,
+        nameAr: company.nameAr || undefined,
+        trnNumber: company.trnVatNumber || undefined,
+        address:
+          companyAddressLine(company, (code) => {
+            const key = `pageLabels.companySettings.country.${code.toUpperCase()}`;
+            return t[key] && t[key] !== key ? t[key] : code;
+          }) ||
+          company.address ||
+          undefined,
+        phone: company.contactPhone || company.phone || undefined,
+      },
+      periodInfo: {
+        periodStart: formatDisplayDate(selectedReturn.periodStart, locale),
+        periodEnd: formatDisplayDate(selectedReturn.periodEnd, locale),
+        dueDate: formatDisplayDate(selectedReturn.dueDate, locale),
+        taxYearEnd: selectedReturn.taxYearEnd
+          ? formatDisplayDate(selectedReturn.taxYearEnd, locale)
+          : undefined,
+        vatStagger: vatStaggerLabel(
+          selectedReturn.vatStagger || company.vatFilingFrequency || "Quarterly",
+          company.vatPeriodStartMonth,
+          (m) => format(new Date(2000, m - 1, 1), "MMM", dfOpts),
+          (frequency, months) => {
+            if (months.length) {
+              return formatMessage(t["compliance.vatWorkbookQuarterlyStagger"], {
+                months: months.join(locale === "ar" ? "، " : ", "),
+              });
+            }
+            return /^month/i.test(frequency) ? t["onboarding.v3Monthly"] : frequency;
+          }
+        ),
+      },
+    };
+
   // Spec 3.12 (WP-D): editing a return is a full-page VAT 201 workbook, not a dialog, so the
   // boxes have room on mobile. Same form, same handlers; Cancel returns to the list.
-  if (editDialogOpen && selectedReturn && company) {
+  if (editDialogOpen && selectedReturn && workbookDetails) {
     return (
       <div className="space-y-6 pb-24" data-testid="vat201-workbook-page">
         <PageHeader
@@ -922,36 +960,18 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
         <VAT201Form
           data={vatFormData}
           onChange={setVatFormData}
-          companyInfo={{
-            nameEn: company.legalName || company.name,
-            nameAr: company.nameAr || undefined,
-            trnNumber: company.trnVatNumber || undefined,
-            address: companyAddressLine(company) || company.address || undefined,
-            phone: company.contactPhone || company.phone || undefined,
-          }}
-          periodInfo={{
-            periodStart: formatDisplayDate(selectedReturn.periodStart, locale),
-            periodEnd: formatDisplayDate(selectedReturn.periodEnd, locale),
-            dueDate: formatDisplayDate(selectedReturn.dueDate, locale),
-            taxYearEnd: selectedReturn.taxYearEnd
-              ? formatDisplayDate(selectedReturn.taxYearEnd, locale)
-              : undefined,
-            vatStagger: vatStaggerLabel(
-              selectedReturn.vatStagger || company.vatFilingFrequency || "Quarterly",
-              company.vatPeriodStartMonth,
-              (m) => format(new Date(2000, m - 1, 1), "MMM", dfOpts)
-            ),
-          }}
+          {...workbookDetails}
           readOnly={true}
           summaryOffsetClassName="bottom-[4.5rem]"
         />
         <section className="max-w-[760px] space-y-2">
-          <Label htmlFor="vat-return-notes">{locale === "ar" ? "ملاحظات" : "Notes"}</Label>
+          <Label htmlFor="vat-return-notes">{t["pages.notes"]}</Label>
           <Textarea
             id="vat-return-notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder={locale === "ar" ? "أضف ملاحظات..." : "Add notes..."}
+            placeholder={t["compliance.vatWorkbookNotesPlaceholder"]}
+            dir="auto"
             className="min-h-20"
           />
         </section>
@@ -1719,30 +1739,11 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
               )}
             </DialogDescription>
           </DialogHeader>
-          {selectedReturn && company && (
+          {workbookDetails && (
             <VAT201Form
               data={vatFormData}
               onChange={() => {}}
-              companyInfo={{
-                nameEn: company.legalName || company.name,
-                nameAr: company.nameAr || undefined,
-                trnNumber: company.trnVatNumber || undefined,
-                address: companyAddressLine(company) || company.address || undefined,
-                phone: company.contactPhone || company.phone || undefined,
-              }}
-              periodInfo={{
-                periodStart: formatDisplayDate(selectedReturn.periodStart, locale),
-                periodEnd: formatDisplayDate(selectedReturn.periodEnd, locale),
-                dueDate: formatDisplayDate(selectedReturn.dueDate, locale),
-                taxYearEnd: selectedReturn.taxYearEnd
-                  ? formatDisplayDate(selectedReturn.taxYearEnd, locale)
-                  : undefined,
-                vatStagger: vatStaggerLabel(
-                  selectedReturn.vatStagger || company.vatFilingFrequency || "Quarterly",
-                  company.vatPeriodStartMonth,
-                  (m) => format(new Date(2000, m - 1, 1), "MMM", dfOpts)
-                ),
-              }}
+              {...workbookDetails}
               readOnly={true}
             />
           )}

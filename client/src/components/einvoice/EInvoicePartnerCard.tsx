@@ -240,7 +240,7 @@ export function EInvoicePartnerCard({
                           <bdi>{p.displayName}</bdi>
                         </p>
                         <p className="truncate text-caption text-muted-foreground" translate="no">
-                          {p.legalName}
+                          <bdi>{p.legalName}</bdi>
                         </p>
                       </div>
                       {selected && (

@@ -205,6 +205,9 @@ describe("D1 public site", () => {
       expect(container.querySelector('a[hreflang="en"]')?.getAttribute("href")).toBe("/en");
       expect(container.textContent).toContain("اختر مزوّد خدمة معتمدًا واحدًا لكل شركة");
       expect(container.textContent).toContain("ارفع كشف حسابك البنكي بصيغة CSV");
+      expect(container.querySelector('a[href="/ar/migration-guides/zoho"] bdi')?.textContent).toBe(
+        "Zoho Books"
+      );
       expect(arabicModeEnglishLines()).toEqual([]);
     } finally {
       window.history.replaceState(null, "", previousUrl);
@@ -309,4 +312,17 @@ describe("D1 public site", () => {
     expect(container.querySelectorAll('[data-testid^="card-plan-"]').length).toBe(3);
     expect(container.querySelector('[data-testid="button-plan-enterprise"]')?.tagName).toBe("A");
   });
+
+  it.each([
+    ["en", "read-only", "A-Cube or Complyance"],
+    ["ar", "للقراءة فقط", "A-Cube أو Complyance"],
+  ] as const)(
+    "explains trial expiry and provider choice in %s pricing",
+    async (locale, lock, providers) => {
+      await setLocale(locale);
+      await render("Pricing");
+      expect(container.textContent).toContain(lock);
+      expect(container.textContent).toContain(providers);
+    }
+  );
 });

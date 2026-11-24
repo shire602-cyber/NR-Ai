@@ -13,7 +13,10 @@ export interface CompanyAddressLike {
 
 const COUNTRY_NAMES: Record<string, string> = { AE: "United Arab Emirates", SA: "Saudi Arabia" };
 
-export function companyAddressLine(c: CompanyAddressLike | null | undefined): string {
+export function companyAddressLine(
+  c: CompanyAddressLike | null | undefined,
+  countryName = (code: string) => COUNTRY_NAMES[code.toUpperCase()] ?? code
+): string {
   if (!c) return "";
   const street = (c.addressStreet ?? "").trim();
   const city = (c.addressCity ?? "").trim();
@@ -25,7 +28,7 @@ export function companyAddressLine(c: CompanyAddressLike | null | undefined): st
   const unique = parts.filter(
     (p, i) => i === 0 || !parts[0].toLowerCase().includes(p.toLowerCase())
   );
-  if (country) unique.push(COUNTRY_NAMES[country.toUpperCase()] ?? country);
+  if (country) unique.push(countryName(country));
   return unique.join(", ");
 }
 
@@ -33,11 +36,13 @@ export function companyAddressLine(c: CompanyAddressLike | null | undefined): st
 export function vatStaggerLabel(
   frequency: string | null | undefined,
   startMonth: number | null | undefined,
-  monthName: (m: number) => string
+  monthName: (m: number) => string,
+  formatLabel = (frequency: string, months: string[]) =>
+    months.length ? `${frequency} (${months.join(", ")})` : frequency
 ): string {
   const freq = (frequency ?? "").trim();
   const start = Number(startMonth) >= 1 && Number(startMonth) <= 12 ? Number(startMonth) : 1;
-  if (!/^quarter/i.test(freq)) return freq;
+  if (!/^quarter/i.test(freq)) return formatLabel(freq, []);
   const months = [0, 3, 6, 9].map((o) => monthName(((start - 1 + o) % 12) + 1));
-  return `${freq} (${months.join(", ")})`;
+  return formatLabel(freq, months);
 }

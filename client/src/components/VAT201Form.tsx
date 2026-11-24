@@ -169,13 +169,13 @@ export default function VAT201Form({
             <bdi className="money">{companyInfo.trnNumber || "—"}</bdi>
           </Meta>
           <Meta en="Legal name (English)" ar="الاسم القانوني بالإنجليزية">
-            {companyInfo.nameEn}
+            <bdi>{companyInfo.nameEn}</bdi>
           </Meta>
           <Meta en="Legal name (Arabic)" ar="الاسم القانوني بالعربية">
             <span dir="rtl">{companyInfo.nameAr || "—"}</span>
           </Meta>
           <Meta en="Address" ar="العنوان">
-            {companyInfo.address || "—"}
+            <bdi>{companyInfo.address || "—"}</bdi>
           </Meta>
           <Meta en="Return period" ar="فترة الإقرار الضريبي">
             <bdi className="money">
@@ -397,9 +397,11 @@ function Meta({ en, ar, children }: { en: string; ar: string; children: ReactNod
   return (
     <div className="min-w-0">
       <dt className="text-caption text-muted-foreground">
-        <span className="block">{en}</span>
+        <span className="block" lang="en">
+          <bdi>{en}</bdi>
+        </span>
         <span className="block" lang="ar">
-          {ar}
+          <bdi>{ar}</bdi>
         </span>
       </dt>
       <dd className="mt-0.5 break-words font-medium text-foreground">{children}</dd>
