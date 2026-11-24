@@ -3,8 +3,8 @@
  */
 import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 import { useHarness, type Tenant } from "./harness";
-import type { OutgoingEmail } from "../../server/outbox";
 
 // Capture everything the app logs, at any level, to prove no secret reaches a log line.
 const captured: Array<{ level: string; text: string }> = vi.hoisted(() => []);
@@ -31,7 +31,7 @@ vi.mock("../../server/config/logger", () => {
 
 const h = useHarness();
 const uniq = () => randomBytes(4).toString("hex");
-const PASSWORD = "Portal9Strong!x";
+const PASSWORD = FAKE_PASSWORD;
 const TOKEN_RE = /#t=([0-9a-f]{64})/;
 const ANY_TOKEN = /[0-9a-f]{64}/;
 const verified = (o: Record<string, unknown> = {}) =>
