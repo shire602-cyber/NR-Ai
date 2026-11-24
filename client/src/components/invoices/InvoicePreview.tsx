@@ -135,12 +135,12 @@ export function InvoicePreview(props: InvoicePreviewProps) {
 
   return (
     <div
-      className={cn("rounded-xl bg-surface-sunken p-3 sm:p-4", className)}
+      className={cn("rounded-2xl bg-surface-sunken p-3 sm:p-5", className)}
       data-testid="invoice-preview"
       aria-label={t["forms.preview.ariaLabel"]}
       role="region"
     >
-      <div className="mb-3 flex items-center justify-between gap-2 px-1">
+      <div className="mb-4 flex items-center justify-between gap-3 px-1">
         <p className="text-caption font-medium text-muted-foreground">
           {status && status !== "draft"
             ? t["forms.preview.headingDocument"]
@@ -152,7 +152,8 @@ export function InvoicePreview(props: InvoicePreviewProps) {
       </div>
 
       <article
-        className="space-y-5 rounded-lg border-t-[3px] bg-card p-5 text-small text-card-foreground shadow-card-soft"
+        className="space-y-6 rounded-xl border-t-[3px] bg-card p-6 text-small text-card-foreground shadow-card-hover"
+        data-tilt="3"
         style={{ borderTopColor: accentColour }}
       >
         {/* Seller + document title */}

@@ -21,7 +21,7 @@ export function InvoiceChecksPanel({
   if (checks.length === 0) {
     return (
       <div
-        className="flex items-start gap-2 rounded-lg border border-success/40 bg-success-subtle p-3 text-small text-success-subtle-foreground"
+        className="flex items-start gap-3 rounded-xl border border-success/40 bg-success-subtle p-4 text-small text-success-subtle-foreground"
         role="status"
         data-testid="invoice-checks-ok"
       >
@@ -31,7 +31,7 @@ export function InvoiceChecksPanel({
     );
   }
   return (
-    <ul className="space-y-2" data-testid="invoice-checks-list">
+    <ul className="space-y-3" data-testid="invoice-checks-list">
       {checks.map((c) => {
         const text = formatMessage(t[c.messageKey] ?? c.messageKey, c.values ?? {});
         const detail = c.message
@@ -42,7 +42,7 @@ export function InvoiceChecksPanel({
         return (
           <li
             key={c.id}
-            className="flex items-start gap-2 rounded-lg border border-border bg-card p-3 text-small"
+            className="flex items-start gap-3 rounded-xl border border-border bg-card p-4 text-small shadow-card-soft"
             data-testid={`invoice-check-${c.id}`}
             data-severity={c.severity}
           >

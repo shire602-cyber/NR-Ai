@@ -1933,9 +1933,9 @@ export default function Invoices() {
                   </Button>
                 }
               >
-                <ol className="divide-y divide-border rounded-lg bg-surface-sunken/60 px-3">
+                <ol className="divide-y divide-border rounded-xl bg-surface-sunken/60 px-4">
                   {fields.map((field, index) => (
-                    <li key={field.id} className="space-y-3 py-3">
+                    <li key={field.id} className="space-y-4 py-5">
                       {/* Phones: the description takes the full row; picker and remove wrap under it. */}
                       <div className="flex flex-wrap items-start gap-2 sm:flex-nowrap">
                         <span
@@ -2030,7 +2030,7 @@ export default function Invoices() {
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
-                      <div className="mobile-keep-cols grid grid-cols-2 gap-x-3 gap-y-3 ps-7 sm:grid-cols-[5rem_7rem_minmax(0,1fr)_5rem_minmax(6.5rem,auto)]">
+                      <div className="mobile-keep-cols grid grid-cols-2 gap-x-4 gap-y-4 ps-7 sm:grid-cols-[5.5rem_7.5rem_minmax(0,1fr)_5.5rem_minmax(6.5rem,auto)]">
                         <FormField
                           control={form.control}
                           name={`lines.${index}.quantity`}
@@ -2277,7 +2277,7 @@ export default function Invoices() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <Dialog open={!!einvoiceIssues} onOpenChange={(open) => !open && setEinvoiceIssues(null)}>
         <DialogContent data-testid="dialog-einvoice-issues">
           <DialogHeader>
@@ -2537,17 +2537,17 @@ export default function Invoices() {
       {editorOpen ? (
         invoiceEditor
       ) : (
-        <div className="space-y-4">
+        <div className="stagger-in space-y-stack">
           <InvoiceStatusTiles
             companyId={selectedCompanyId}
             active={statusFilter}
             onSelect={(status) => (status ? setStatusFilter(status) : clearStatusFilter())}
           />
           <div
-            className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+            className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
             data-testid="invoices-filter-toolbar"
           >
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
               <span className="sr-only">{(t as any).filterByDate ?? "Filter by date:"}</span>
               <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
               <Select value={sourceFilter} onValueChange={setSourceFilter}>
@@ -2602,7 +2602,7 @@ export default function Invoices() {
                 data-testid="mobile-invoice-list"
               >
                 {(filteredInvoices || []).map((invoice) => (
-                  <div key={invoice.id} className="flex items-start gap-2 px-4 py-3">
+                  <div key={invoice.id} className="flex items-start gap-3 px-card py-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline justify-between gap-3">
                         <p dir="auto" className="truncate text-sm font-medium text-foreground">
@@ -2614,7 +2614,7 @@ export default function Invoices() {
                           className="shrink-0 text-sm font-semibold text-foreground"
                         />
                       </div>
-                      <div className="mt-1 flex items-center justify-between gap-3">
+                      <div className="mt-1.5 flex items-center justify-between gap-3">
                         <p className="min-w-0 truncate text-caption text-muted-foreground">
                           <span dir="ltr" className="[unicode-bidi:isolate]">
                             {invoice.number}
@@ -3585,7 +3585,7 @@ function InvoiceStatusTiles({
 
   return (
     <div
-      className="mobile-keep-cols grid grid-cols-2 gap-3 lg:grid-cols-4"
+      className="mobile-keep-cols grid grid-cols-2 gap-3 sm:gap-stack lg:grid-cols-4"
       data-testid="invoice-status-tiles"
     >
       {buckets.map((b) => {
@@ -3597,9 +3597,10 @@ function InvoiceStatusTiles({
             aria-pressed={isActive}
             onClick={() => onSelect(isActive ? null : b.key)}
             data-testid={`invoice-status-tile-${b.key}`}
+            data-tilt="5"
             className={cn(
-              "rounded-xl border bg-card px-4 py-3 text-start shadow-card-soft transition-colors duration-fast",
-              "hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "rounded-xl border bg-card p-card text-start shadow-card-soft",
+              "hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               isActive ? "border-primary ring-1 ring-primary" : "border-border"
             )}
           >
@@ -3621,11 +3622,11 @@ function InvoiceStatusTiles({
             <Money
               amount={b.value}
               className={cn(
-                "mt-1 flex text-h3 font-semibold text-foreground",
+                "mt-2.5 flex text-h2 text-foreground",
                 b.key === "overdue" && b.value > 0 && "text-danger"
               )}
             />
-            <span className="mt-0.5 block text-caption text-muted-foreground">
+            <span className="mt-1 block text-caption text-muted-foreground">
               {formatMessage(t["screens.invoicesCount"], { count: b.count })}
             </span>
           </button>
