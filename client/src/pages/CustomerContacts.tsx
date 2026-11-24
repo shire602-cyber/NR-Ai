@@ -37,6 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -206,6 +207,16 @@ export default function CustomerContacts() {
   // STEP5: the invitation sheet and the bulk invite dialog (the customer portal with a login).
   const [inviteContact, setInviteContact] = useState<PortalSheetContact | null>(null);
   const [bulkInviteOpen, setBulkInviteOpen] = useState(false);
+  // Row multi-select (customers only): the bulk "Invite to portal" action acts on the ticked rows.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [bulkFromSelection, setBulkFromSelection] = useState(false);
+  const toggleSelected = (id: string, on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   const { data: portalSummary = {} } = useQuery<Record<string, PortalSummaryEntry>>({
     queryKey: portalSummaryKey(companyId ?? ""),
     enabled: !!companyId,
@@ -508,6 +519,17 @@ export default function CustomerContacts() {
       contact.phone?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const selectableIds = filteredContacts.filter((c) => c.isCustomer !== false).map((c) => c.id);
+  const selectedIds = selectableIds.filter((id) => selected.has(id));
+  const allSelected = selectableIds.length > 0 && selectedIds.length === selectableIds.length;
+  const toPortalContact = (c: CustomerContact): PortalSheetContact => ({
+    id: c.id,
+    name: c.name,
+    email: c.email ?? null,
+    contactPerson: c.contactPerson ?? null,
+    preferredLanguage: c.preferredLanguage ?? null,
+  });
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -531,7 +553,10 @@ export default function CustomerContacts() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-48">
                 <DropdownMenuItem
-                  onSelect={() => setBulkInviteOpen(true)}
+                  onSelect={() => {
+                    setBulkFromSelection(false);
+                    setBulkInviteOpen(true);
+                  }}
                   data-testid="button-bulk-portal-invite"
                   disabled={!canDo("documents.write")}
                 >
@@ -616,6 +641,41 @@ export default function CustomerContacts() {
             </div>
           </div>
 
+          {selectedIds.length > 0 && (
+            <div
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-4 py-2"
+              role="region"
+              aria-label={t["portal.select.bar"]}
+              data-testid="contacts-selection-bar"
+            >
+              <span className="text-small font-medium" aria-live="polite">
+                {formatMessage(t["portal.select.count"], { count: selectedIds.length })}
+              </span>
+              <span className="flex flex-wrap items-center gap-2">
+                <Button
+                  className="min-h-11"
+                  onClick={() => {
+                    setBulkFromSelection(true);
+                    setBulkInviteOpen(true);
+                  }}
+                  {...gate("documents.write")}
+                  data-testid="button-bulk-invite-selected"
+                >
+                  <UserPlus aria-hidden />
+                  {t["portal.invite.action"]}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="min-h-11"
+                  onClick={() => setSelected(new Set())}
+                  data-testid="button-clear-selection"
+                >
+                  {t["portal.select.clear"]}
+                </Button>
+              </span>
+            </div>
+          )}
+
           <DataTableCard
             status={isLoading ? "loading" : filteredContacts.length === 0 ? "empty" : "ready"}
             columnLabels={[
@@ -650,6 +710,18 @@ export default function CustomerContacts() {
             <div className="divide-hairline md:hidden" data-testid="mobile-contact-list">
               {filteredContacts.map((contact) => (
                 <div key={contact.id} className="flex items-start gap-2 px-4 py-3">
+                  {contact.isCustomer !== false && (
+                    <span className="-ms-2 grid h-11 w-11 shrink-0 place-items-center">
+                      <Checkbox
+                        checked={selected.has(contact.id)}
+                        onCheckedChange={(v) => toggleSelected(contact.id, v === true)}
+                        aria-label={formatMessage(t["portal.select.row"], {
+                          name: locale === "ar" && contact.nameAr ? contact.nameAr : contact.name,
+                        })}
+                        data-testid={`select-contact-${contact.id}`}
+                      />
+                    </span>
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-3">
                       <p dir="auto" className="truncate text-sm font-medium text-foreground">
@@ -727,6 +799,33 @@ export default function CustomerContacts() {
                 getRowId={(contact) => contact.id}
                 rowTestId={(contact) => `row-contact-${contact.id}`}
                 columns={[
+                  {
+                    key: "select",
+                    header: (
+                      <Checkbox
+                        checked={
+                          allSelected ? true : selectedIds.length > 0 ? "indeterminate" : false
+                        }
+                        onCheckedChange={(v) =>
+                          setSelected(v === true ? new Set(selectableIds) : new Set())
+                        }
+                        aria-label={t["portal.select.all"]}
+                        data-testid="select-all-contacts"
+                      />
+                    ),
+                    width: "44px",
+                    cell: (contact) =>
+                      contact.isCustomer !== false ? (
+                        <Checkbox
+                          checked={selected.has(contact.id)}
+                          onCheckedChange={(v) => toggleSelected(contact.id, v === true)}
+                          aria-label={formatMessage(t["portal.select.row"], {
+                            name: locale === "ar" && contact.nameAr ? contact.nameAr : contact.name,
+                          })}
+                          data-testid={`select-contact-${contact.id}`}
+                        />
+                      ) : null,
+                  },
                   {
                     key: "name",
                     header: t["pages.contactsColName"],
@@ -1146,17 +1245,18 @@ export default function CustomerContacts() {
       />
       <BulkPortalInviteDialog
         open={bulkInviteOpen}
-        onOpenChange={setBulkInviteOpen}
+        onOpenChange={(o) => {
+          setBulkInviteOpen(o);
+          if (!o) {
+            // After inviting the ticked rows the selection is spent; the chips show the result.
+            if (bulkFromSelection) setSelected(new Set());
+            setBulkFromSelection(false);
+          }
+        }}
         companyId={companyId ?? ""}
         contacts={contacts
-          .filter((c) => c.isCustomer !== false)
-          .map((c) => ({
-            id: c.id,
-            name: c.name,
-            email: c.email ?? null,
-            contactPerson: c.contactPerson ?? null,
-            preferredLanguage: c.preferredLanguage ?? null,
-          }))}
+          .filter((c) => c.isCustomer !== false && (!bulkFromSelection || selected.has(c.id)))
+          .map(toPortalContact)}
         summary={portalSummary}
       />
 

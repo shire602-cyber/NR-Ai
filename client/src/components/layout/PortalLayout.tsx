@@ -244,8 +244,9 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             <div className="md:hidden">{companyMark}</div>
             {/* Not a heading: each page's PageHeader owns the single h1. */}
             <p className="truncate text-body font-semibold text-foreground">
+              {/* On phones the supplier name shows once: here, or in the switcher when there are several. */}
               <span
-                className="block truncate md:hidden"
+                className={`truncate ${accounts.length > 1 ? "hidden" : "block md:hidden"}`}
                 dir="auto"
                 translate={company?.name ? "no" : undefined}
                 title={company?.name}
@@ -369,7 +370,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                   active ? "bg-muted text-foreground" : "text-muted-foreground",
                 ].join(" ")}
               >
-                <Icon className="h-4 w-4" aria-hidden />
+                <Icon className="h-4 w-4 shrink-0" aria-hidden />
                 {t[labelKey]}
               </Link>
             );

@@ -74,6 +74,8 @@ interface InviteInfo {
   email: string;
   name: string;
   language: "en" | "ar" | "bilingual";
+  /** The supplier's personal note: plain text, rendered as text only. */
+  note?: string | null;
   expiresAt: string;
   account: "new" | "existing" | "signed_in" | "signed_in_other";
   signedInAs: string | null;
@@ -150,7 +152,7 @@ function Shell({ children, supplier }: { children: ReactNode; supplier?: InviteI
               lang={l}
               aria-pressed={locale === l}
               onClick={() => setLocale(l)}
-              className={`min-h-9 min-w-11 rounded px-3 text-small font-medium ${
+              className={`min-h-11 min-w-11 rounded px-3 text-small font-medium ${
                 locale === l ? "bg-primary text-primary-foreground" : "text-muted-foreground"
               }`}
               data-testid={`join-lang-${l}`}
@@ -453,6 +455,23 @@ function JoinPanel({
       <p className="mt-2 text-small text-muted-foreground text-pretty">
         {withSlots(t["portal.join.subtitle"], { supplier, customer })}
       </p>
+      {info.note ? (
+        <figure
+          className="mt-4 rounded-lg border border-border bg-muted/40 p-3 text-start"
+          data-testid="join-note"
+        >
+          <figcaption className="text-caption font-medium text-muted-foreground">
+            {withSlots(t["portal.join.noteFrom"], { supplier })}
+          </figcaption>
+          {/* Plain text only: React escapes it, whitespace is kept, nothing is linkified. */}
+          <blockquote
+            dir="auto"
+            className="mt-1 whitespace-pre-wrap break-words text-small text-foreground"
+          >
+            {info.note}
+          </blockquote>
+        </figure>
+      ) : null}
     </header>
   );
 
@@ -621,7 +640,10 @@ function JoinPanel({
           </div>
         </div>
 
-        <div className="flex items-start gap-3">
+        <Label
+          htmlFor="join-terms"
+          className="flex min-h-11 cursor-pointer items-start gap-3 py-1.5 text-small font-normal leading-snug"
+        >
           <Checkbox
             id="join-terms"
             checked={terms}
@@ -629,7 +651,7 @@ function JoinPanel({
             className="mt-0.5 h-5 w-5"
             data-testid="join-terms"
           />
-          <Label htmlFor="join-terms" className="text-small font-normal leading-snug">
+          <span>
             {withSlots(t["portal.join.terms"], {
               terms: (
                 <Link
@@ -652,8 +674,8 @@ function JoinPanel({
                 </Link>
               ),
             })}
-          </Label>
-        </div>
+          </span>
+        </Label>
 
         <Button
           type="submit"

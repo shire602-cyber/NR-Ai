@@ -208,10 +208,11 @@ export default function PortalDashboard() {
           {documents.length === 0 ? (
             <EmptyState
               compact
+              className="[&_a]:min-h-11"
               headingLevel="h2"
               icon={FolderOpen}
               title={t["portal.doc.noDocumentsTitle"]}
-              description={t["portal.doc.documentsHint"]}
+              description={t["portal.doc.noDocumentsBody"]}
               action={{ label: t["portal.doc.upload"], href: "/client-portal/documents" }}
             />
           ) : (

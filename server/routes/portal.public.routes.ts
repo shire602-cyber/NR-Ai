@@ -67,7 +67,7 @@ import {
 import { checkoutForInvoice, paymentsAvailability, publicBaseUrl } from "../services/payments";
 import { buildPortalCodeEmail, sendEmail } from "../services/email.service";
 import { resolveEmailLanguage } from "../services/email-layout";
-import { receivableSettledSql } from "../reporting/settlement";
+import { localDateSql, receivableSettledSql } from "../reporting/settlement";
 import { actorFromRequest, assertCompanyPermission } from "../services/approval-rules.service";
 import type { Permission } from "../../shared/permissions";
 import {
@@ -216,7 +216,9 @@ export async function contactInvoices(
               'providerStatus', d.provider_status, 'deliveryStatus', d.delivery_status,
               'reportingStatus', d.reporting_status, 'validation', d.validation
             ) END AS einvoice_evidence,
-            ${receivableSettledSql("i")}::text AS settled
+            ${receivableSettledSql("i")}::text AS settled,
+            (i.due_date IS NOT NULL
+              AND ${localDateSql("i.due_date")} < ${localDateSql("now()")}) AS past_due
        FROM invoices i
        LEFT JOIN einvoice_documents d ON d.company_id = i.company_id AND d.invoice_id = i.id
       WHERE i.company_id = $1 AND i.contact_id = $2
@@ -224,7 +226,6 @@ export async function contactInvoices(
       ORDER BY i.date DESC, i.number DESC`,
     params
   );
-  const now = Date.now();
   return rows.map((r: Record<string, unknown>) => {
     const total = Number(r.total);
     const isCredit = r.invoice_type === "credit_note";
@@ -256,10 +257,12 @@ export async function contactInvoices(
         ? "credit"
         : r.status === "paid" || due === 0
           ? "paid"
-          : settled > 0
-            ? "partially_paid"
-            : dueDate && dueDate.getTime() < now
-              ? "overdue"
+          : // Overdue is a calendar-date rule (Asia/Dubai): due before today, with anything still
+            // open, whether or not part of it was paid. Due today is not overdue.
+            r.past_due === true
+            ? "overdue"
+            : settled > 0
+              ? "partially_paid"
               : "unpaid",
       einvoice: eInvoiceOutcome
         ? {

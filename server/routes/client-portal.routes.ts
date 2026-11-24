@@ -39,8 +39,10 @@ import {
 } from "../services/document-vault.service";
 import {
   portalMessageBody,
+  portalProfileBody,
   statementQuery,
   type PortalMessageBody,
+  type PortalProfileBody,
 } from "../../shared/validators/portal";
 import { contactInvoices, ISSUED_STATUSES } from "./portal.public.routes";
 import { getCustomerEInvoiceOutcome } from "../services/einvoice/customer-outcome";
@@ -244,6 +246,20 @@ export function registerClientPortalRoutes(app: Express): void {
     })
   );
 
+  // The customer edits their own display name. Only `name` is accepted; email, user type and the
+  // supplier binding can never be changed here, and the row updated is the signed-in user's own.
+  app.patch(
+    "/api/client-portal/profile",
+    ...chain,
+    strictBody(portalProfileBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { userId } = scopeOf(req);
+      const { name } = parsedBody<PortalProfileBody>(req);
+      const user = await storage.updateUser(userId, { name });
+      res.json({ id: user.id, name: user.name, email: user.email });
+    })
+  );
+
   app.get(
     "/api/client-portal/dashboard",
     ...chain,
@@ -254,9 +270,11 @@ export function registerClientPortalRoutes(app: Express): void {
       const outstanding = rows.filter((r) => r.amountDue > 0);
       const overdue = rows.filter((r) => r.paymentStatus === "overdue");
       const paid = rows.filter((r) => r.paymentStatus === "paid");
+      // "Next payment due" is the earliest open invoice that is not yet overdue (due today or later);
+      // an overdue invoice is reported by the overdue totals, never as an upcoming due date.
       const nextDue =
         outstanding
-          .filter((r) => r.dueDate)
+          .filter((r) => r.dueDate && r.paymentStatus !== "overdue")
           .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))[0] ?? null;
       const docs = await listVaultDocuments(companyId, { contactId: contact.id });
       res.json({

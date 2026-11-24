@@ -17,7 +17,7 @@ import { escapeHtml, isolateInline, type EmailLanguage } from "./email-layout";
 
 export interface PortalInviteEmailInput {
   company: Pick<Company, "name" | "trnVatNumber" | "businessAddress" | "contactEmail">;
-  contact: Pick<CustomerContact, "name" | "nameAr">;
+  contact: Pick<CustomerContact, "name" | "nameAr"> & { contactPerson?: string | null };
   invitation: Pick<CustomerPortalInvitation, "language" | "name" | "message" | "expiresAt">;
   url: string;
   onlinePayment: boolean;
@@ -60,7 +60,8 @@ export function renderPortalInviteEmail(input: PortalInviteEmailInput): BuiltEma
   const language = normaliseInviteLanguage(invitation.language);
   const supplier = isolateInline(company.name);
   const product = isolateInline(PRODUCT_NAME, "ltr");
-  const greetName = (invitation.name || contact.name).trim();
+  // Greet a person, never the company: with no contact person the English greeting is generic.
+  const greetName = (invitation.name || contact.contactPerson || "").trim();
   const note = invitation.message ? neutraliseInviteNote(invitation.message.trim()) : "";
   const quotedNote = note
     ? `<span dir="auto">${escapeHtml(note).replace(/\n/g, "<br>")}</span>`
@@ -75,8 +76,8 @@ export function renderPortalInviteEmail(input: PortalInviteEmailInput): BuiltEma
       },
       paragraphs: {
         en: [
-          `Hi ${isolateInline(greetName)},`,
-          `${supplier} uses ${product} to share your invoices. Set up your account to view invoices and credit notes, download PDFs, and access your statement of account.`,
+          greetName ? `Hi ${isolateInline(greetName)},` : "Hello,",
+          `${supplier} uses ${product} to share your invoices. Set up your account to view the invoices and credit notes issued to ${isolateInline(contact.name)}, download PDFs, and access your statement of account.`,
           ...(onlinePayment ? ["You can also pay online when payment is available."] : []),
           ...(quotedNote ? [`<strong>Message from ${supplier}</strong><br>${quotedNote}`] : []),
           `This invitation expires on ${formatInviteDate(invitation.expiresAt, "en")}.`,

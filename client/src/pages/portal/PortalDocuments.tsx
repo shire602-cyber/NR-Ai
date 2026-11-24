@@ -112,7 +112,12 @@ export default function PortalDocuments() {
         title={t["pages.documents"]}
         description={t["portal.doc.documentsHint"]}
         primaryAction={
-          <Button onClick={pick} disabled={uploading} data-testid="button-portal-upload">
+          <Button
+            className="min-h-11"
+            onClick={pick}
+            disabled={uploading}
+            data-testid="button-portal-upload"
+          >
             {uploading ? (
               <Loader2 className="h-4 w-4 me-2 animate-spin" aria-hidden />
             ) : (
@@ -134,7 +139,7 @@ export default function PortalDocuments() {
               headingLevel="h2"
               icon={FolderOpen}
               title={t["portal.doc.noDocumentsTitle"]}
-              description={t["portal.doc.documentsHint"]}
+              description={t["portal.doc.noDocumentsBody"]}
               action={{ label: t["portal.doc.upload"], onClick: pick }}
             />
           ) : (

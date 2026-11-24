@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Send } from "lucide-react";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -30,6 +31,13 @@ type Outcome =
   | "delivery_failed"
   | "rate_limited";
 
+interface BulkResult {
+  contactId: string;
+  outcome: Outcome;
+  /** "queued": saved in the outbox but not sent (no email provider); "email": handed to the provider. */
+  delivery?: "email" | "queued";
+}
+
 interface BulkProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -54,21 +62,24 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
   const [picked, setPicked] = useState<Set<string>>(
     () => new Set(eligible.slice(0, PORTAL_BULK_MAX).map((c) => c.id))
   );
-  const [results, setResults] = useState<Array<{ contactId: string; outcome: Outcome }> | null>(
-    null
-  );
+  const [results, setResults] = useState<BulkResult[] | null>(null);
 
   const send = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/companies/${companyId}/portal-invitations/bulk`, {
         contactIds: [...picked],
         language: "contact",
-      }) as Promise<{ results: Array<{ contactId: string; outcome: Outcome }> }>,
+      }) as Promise<{ results: BulkResult[] }>,
     onSuccess: (res) => {
       setResults(res.results);
       void queryClient.invalidateQueries({ queryKey: portalSummaryKey(companyId) });
       const n = res.results.filter((r) => r.outcome === "invited").length;
-      toast({ title: formatMessage(t["portal.bulk.done"], { count: n }) });
+      const queued = res.results.some((r) => r.delivery === "queued");
+      toast({
+        title: formatMessage(t[queued ? "portal.bulk.doneQueued" : "portal.bulk.done"], {
+          count: n,
+        }),
+      });
     },
     onError: (err) =>
       toast({
@@ -78,6 +89,8 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
   });
 
   const nameOf = (id: string) => contacts.find((c) => c.id === id)?.name ?? id;
+  // With no email provider nothing was sent: say so instead of "Invited".
+  const anyQueued = (results ?? []).some((r) => r.delivery === "queued");
   const toggle = (id: string, on: boolean) =>
     setPicked((p) => {
       const next = new Set(p);
@@ -93,18 +106,31 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
         <DialogDescription>{t["portal.bulk.help"]}</DialogDescription>
       </DialogHeader>
       {results ? (
-        <ul className="max-h-72 space-y-1 overflow-y-auto text-small" data-testid="bulk-results">
-          {results.map((r) => (
-            <li key={r.contactId} className="flex items-center justify-between gap-3 py-1">
-              <bdi className="min-w-0 truncate" translate="no" title={nameOf(r.contactId)}>
-                {nameOf(r.contactId)}
-              </bdi>
-              <span className="shrink-0 text-muted-foreground">
-                {t[`portal.bulk.outcome.${r.outcome}`]}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-3">
+          {anyQueued && (
+            <Alert
+              tone="warning"
+              title={t["portal.bulk.queuedTitle"]}
+              data-testid="bulk-queued-panel"
+            >
+              {t["portal.bulk.queuedBody"]}
+            </Alert>
+          )}
+          <ul className="max-h-72 space-y-1 overflow-y-auto text-small" data-testid="bulk-results">
+            {results.map((r) => (
+              <li key={r.contactId} className="flex items-center justify-between gap-3 py-1">
+                <bdi className="min-w-0 truncate" translate="no" title={nameOf(r.contactId)}>
+                  {nameOf(r.contactId)}
+                </bdi>
+                <span className="shrink-0 text-muted-foreground">
+                  {r.outcome === "invited" && r.delivery === "queued"
+                    ? t["portal.bulk.outcome.queued"]
+                    : t[`portal.bulk.outcome.${r.outcome}`]}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : eligible.length === 0 ? (
         <p className="text-small text-muted-foreground" data-testid="bulk-empty">
           {t["portal.bulk.none"]}
@@ -135,32 +161,35 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
           </div>
           <ul className="max-h-72 divide-y divide-border overflow-y-auto rounded-lg border border-border">
             {eligible.map((c) => (
-              <li key={c.id} className="flex items-center gap-3 p-3">
-                <Checkbox
-                  id={`bulk-${c.id}`}
-                  checked={picked.has(c.id)}
-                  onCheckedChange={(v) => toggle(c.id, v === true)}
-                  className="h-5 w-5"
-                />
+              <li key={c.id}>
+                {/* The whole row is the label: a 44px-tall tap target, not just the 20px box. */}
                 <Label
                   htmlFor={`bulk-${c.id}`}
-                  className="min-w-0 flex-1 cursor-pointer font-normal"
+                  className="flex min-h-11 cursor-pointer items-center gap-3 p-3 font-normal"
                 >
-                  <bdi
-                    className="block truncate text-small font-medium"
-                    translate="no"
-                    title={c.name}
-                  >
-                    {c.name}
-                  </bdi>
-                  <bdi
-                    className="block truncate text-caption text-muted-foreground"
-                    dir="ltr"
-                    translate="no"
-                    title={c.email ?? undefined}
-                  >
-                    {c.email}
-                  </bdi>
+                  <Checkbox
+                    id={`bulk-${c.id}`}
+                    checked={picked.has(c.id)}
+                    onCheckedChange={(v) => toggle(c.id, v === true)}
+                    className="h-5 w-5"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <bdi
+                      className="block truncate text-small font-medium"
+                      translate="no"
+                      title={c.name}
+                    >
+                      {c.name}
+                    </bdi>
+                    <bdi
+                      className="block truncate text-caption text-muted-foreground"
+                      dir="ltr"
+                      translate="no"
+                      title={c.email ?? undefined}
+                    >
+                      {c.email}
+                    </bdi>
+                  </span>
                 </Label>
               </li>
             ))}

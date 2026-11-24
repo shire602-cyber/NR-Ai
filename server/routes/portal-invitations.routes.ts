@@ -124,7 +124,11 @@ export function registerPortalInvitationRoutes(app: Express): void {
       const companyId = await companyParam(req);
       const body = parsedBody<PortalBulkInviteBody>(req);
       const ids = [...new Set(body.contactIds)];
-      const results: Array<{ contactId: string; outcome: string }> = [];
+      const results: Array<{
+        contactId: string;
+        outcome: string;
+        delivery?: string;
+      }> = [];
       let limited = false;
       for (const contactId of ids) {
         if (limited) {
@@ -137,7 +141,7 @@ export function registerPortalInvitationRoutes(app: Express): void {
             results.push({ contactId, outcome: "not_found" });
             continue;
           }
-          await createInvitation({
+          const created = await createInvitation({
             companyId,
             contactId,
             body: {
@@ -149,7 +153,12 @@ export function registerPortalInvitationRoutes(app: Express): void {
             invitedBy: userId(req),
             req,
           });
-          results.push({ contactId, outcome: "invited" });
+          // "queued" means saved in the outbox but not sent (no email provider): the dialog says so.
+          results.push({
+            contactId,
+            outcome: "invited",
+            ...(created.delivery === "queued" ? { delivery: "queued" } : {}),
+          });
         } catch (err) {
           const code = (err as { code?: string }).code;
           if (code === "PORTAL_INVITE_DELIVERY_FAILED") {
@@ -282,6 +291,8 @@ export function registerPortalInvitationRoutes(app: Express): void {
         email: r.invitation.email,
         name: r.invitation.name ?? r.contact.contactPerson ?? "",
         language: r.invitation.language,
+        // The supplier's personal note, plain text (the page renders it as text, never as markup).
+        note: r.invitation.message?.trim() || null,
         expiresAt: r.invitation.expiresAt.toISOString(),
         account,
         signedInAs: signedIn && account === "signed_in_other" ? signedIn.email : null,

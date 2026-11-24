@@ -142,4 +142,49 @@ describe("STEP5 portal invitation email", () => {
   it("never replaces the support address", () => {
     expect(render().html).not.toContain("support@");
   });
+
+  it("is fluid: a max-width card and a small-screen rule for 375px", () => {
+    const m = render({ language: "bilingual" });
+    // The fixed 600 table only exists inside the Outlook-only conditional comment.
+    const visible = m.html.replace(/<!--\[if mso\]>[\s\S]*?<!\[endif\]-->/g, "");
+    expect(visible).not.toMatch(/<table[^>]*\swidth="600"/);
+    expect(m.html).toContain("max-width:600px");
+    expect(m.html).toContain('name="viewport"');
+    expect(m.html).toContain("max-width:620px");
+  });
+
+  it("Arabic mail: the brand header is right-aligned and RTL", () => {
+    const ar = render({ language: "ar" }).html;
+    expect(ar).toMatch(/<td class="em-pad" dir="rtl"[^>]*align="right"/);
+  });
+
+  it("greets a person, never the company: no contact person gives a generic greeting", () => {
+    const none = render({ name: null, language: "bilingual" }, false);
+    expect(none.html).toContain("Hello,");
+    expect(none.html).not.toContain("Hi Al Noor");
+    expect(none.text).toContain("Hello,");
+    expect(none.html).not.toMatch(/،<\/p>[^<]*<bdi>Al Noor/);
+    const withPerson = renderPortalInviteEmail({
+      company: {
+        name: "Desert Rose",
+        trnVatNumber: null,
+        businessAddress: null,
+        contactEmail: null,
+      },
+      contact: { name: "Al Noor Trading", nameAr: null, contactPerson: "Omar" },
+      invitation: { language: "en", name: null, message: null, expiresAt } as never,
+      url: URL,
+      onlinePayment: false,
+    });
+    expect(withPerson.html).toContain("Hi ");
+    expect(withPerson.html).toContain("Omar");
+  });
+
+  it("the English copy mentions PDFs and the statement of account in both parts", () => {
+    const m = render({}, false);
+    expect(m.text).toMatch(/download PDFs, and access your statement of account/);
+    expect(m.html).toMatch(/download PDFs, and access your statement of account/);
+    expect(render({ language: "ar" }).text).toContain("PDF");
+    expect(render({ language: "ar" }).text).toContain("كشف حسابك");
+  });
 });
