@@ -126,6 +126,33 @@ describe("W4-C settings are honest about the ASP boundary", () => {
     expect((await t.as.get(settings)).body.identity.einvoicePaymentMeansCode).toBe("55");
   });
 
+  it("stores UAE Peppol addresses entered with localized digits in ASCII", async () => {
+    const t = await readyTenant();
+    const base = `/api/companies/${t.company.id}`;
+    const seller = await t.as.put(`${base}/einvoicing/settings`, {
+      peppolScheme: "٠٢٣٥",
+      peppolParticipantId: "١٠٠١٢٣٤٥٦٧",
+    });
+    expect(seller.status, seller.text).toBe(200);
+    expect(seller.body.identity).toMatchObject({
+      peppolScheme: "0235",
+      peppolParticipantId: "1001234567",
+    });
+
+    const contact = await t.as.post(`${base}/customer-contacts`, {
+      name: "Acme Gulf FZ-LLC",
+      trnNumber: "100765432100003",
+    });
+    expect(contact.status, contact.text).toBeLessThan(300);
+    const url = `${base}/einvoicing/buyer-endpoints/${contact.body.id}`;
+    const mismatch = await t.as.put(url, { scheme: "۰۲۳۵", participantId: "۱۰۰۹۹۹۹۹۹۹" });
+    expect(mismatch.status, mismatch.text).toBe(422);
+    expect(mismatch.body.code).toBe("EINVOICE_BUYER_ENDPOINT_MISMATCH");
+    const buyer = await t.as.put(url, { scheme: "۰۲۳۵", participantId: "۱۰۰۷۶۵۴۳۲۱" });
+    expect(buyer.status, buyer.text).toBe(200);
+    expect(buyer.body).toMatchObject({ scheme: "0235", participantId: "1007654321" });
+  });
+
   it("[R07-13] a viewer cannot change e-invoicing settings and another tenant cannot read them", async () => {
     const t = await readyTenant();
     const viewer = await h.createTenant({ role: "viewer" });
