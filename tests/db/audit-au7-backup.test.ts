@@ -49,19 +49,77 @@ function replace(t: Tenant, backup: { id: string; name: string }, key?: string) 
   );
 }
 
-async function seedPaymentLink(t: Tenant) {
+async function expectReplaceConflict(
+  t: Tenant,
+  backup: { id: string; name: string },
+  table: string
+) {
+  for (const response of [
+    await t.as.post(`/api/backups/${backup.id}/restore-preview`, { mode: "replace" }),
+    await replace(t, backup),
+  ]) {
+    expect(response.status, response.text).toBe(409);
+    expect(response.body).toMatchObject({
+      code: "BACKUP_RESTORE_CONFLICT",
+      details: { table },
+    });
+  }
+  expect(
+    await h.sql("SELECT id FROM backups WHERE company_id = $1 AND backup_type = 'pre_restore'", [
+      t.company.id,
+    ])
+  ).toEqual([]);
+}
+
+async function draftInvoice(t: Tenant): Promise<string> {
+  const response = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
+    customerName: "Fixture customer",
+    date: new Date().toISOString().slice(0, 10),
+    lines: [
+      {
+        description: "Consulting",
+        quantity: 1,
+        unitPrice: 120,
+        vatRate: 0,
+        vatSupplyType: "zero_rated",
+      },
+    ],
+  });
+  expect(response.status, response.text).toBe(200);
+  expect(response.body.status).toBe("draft");
+  return response.body.id;
+}
+
+async function issueInvoice(t: Tenant, invoiceId: string) {
+  const response = await t.as.patch(`/api/invoices/${invoiceId}/status`, { status: "sent" });
+  expect(response.status, response.text).toBe(200);
+}
+
+async function journalLines(t: Tenant, sourceId: string) {
+  return h.sql(
+    `SELECT l.* FROM journal_lines l JOIN journal_entries j ON j.id = l.entry_id
+     WHERE j.company_id = $1 AND j.source_id = $2 AND j.status = 'posted' ORDER BY l.id`,
+    [t.company.id, sourceId]
+  );
+}
+
+async function createPaymentLinkFixture(t: Tenant, invoiceId: string) {
   const token = randomBytes(24).toString("hex");
+  const [link] = await h.sql<{ id: string }>(
+    `INSERT INTO payment_links (company_id, invoice_id, provider, token_hash, amount_fils, currency, expires_at)
+     VALUES ($1, $2, 'stripe', $3, 12000, 'AED', now() + interval '1 day') RETURNING id`,
+    [t.company.id, invoiceId, createHash("sha256").update(token).digest("hex")]
+  );
+  return { invoiceId, linkId: link.id, token };
+}
+
+async function seedPaymentLink(t: Tenant) {
   const [invoice] = await h.sql<{ id: string }>(
     `INSERT INTO invoices (company_id, number, customer_name, date, total)
      VALUES ($1, 'AU7-LINK', 'Fixture customer', now(), 120) RETURNING id`,
     [t.company.id]
   );
-  const [link] = await h.sql<{ id: string }>(
-    `INSERT INTO payment_links (company_id, invoice_id, provider, token_hash, amount_fils, currency, expires_at)
-     VALUES ($1, $2, 'stripe', $3, 12000, 'AED', now() + interval '1 day') RETURNING id`,
-    [t.company.id, invoice.id, createHash("sha256").update(token).digest("hex")]
-  );
-  return { invoiceId: invoice.id, linkId: link.id, token };
+  return createPaymentLinkFixture(t, invoice.id);
 }
 
 describe("AU7 accounting backup integrity", () => {
@@ -116,6 +174,37 @@ describe("AU7 accounting backup integrity", () => {
     ).toEqual([{ payment_link_id: linkId }]);
   });
 
+  it.each(["draft invoice", "missing issuance journal lines"])(
+    "rejects replace with a live payment link and a snapshot with %s",
+    async (scenario) => {
+      const t = await h.createTenant();
+      const invoiceId = await draftInvoice(t);
+      if (scenario === "missing issuance journal lines") await issueInvoice(t, invoiceId);
+      const backup = await snapshot(t);
+      if (scenario === "draft invoice") {
+        await issueInvoice(t, invoiceId);
+      } else {
+        await makeLegacy(backup.id, (tables) => {
+          expect(tables.journal_lines.length).toBeGreaterThan(0);
+          tables.journal_lines = [];
+        });
+      }
+      const { linkId } = await createPaymentLinkFixture(t, invoiceId);
+      const lines = await journalLines(t, invoiceId);
+      expect(lines.length).toBeGreaterThan(0);
+
+      await expectReplaceConflict(t, backup, "payment_links");
+
+      expect(await h.sql("SELECT status FROM invoices WHERE id = $1", [invoiceId])).toEqual([
+        { status: "sent" },
+      ]);
+      expect(await h.sql("SELECT status FROM payment_links WHERE id = $1", [linkId])).toEqual([
+        { status: "active" },
+      ]);
+      expect(await journalLines(t, invoiceId)).toEqual(lines);
+    }
+  );
+
   it("keeps a payslip token and its payroll run through replace", async () => {
     const t = await h.createTenant();
     const backup = await snapshot(t);
@@ -150,6 +239,51 @@ describe("AU7 accounting backup integrity", () => {
     ]);
   });
 
+  it("rejects replace that would strip the accrual from an approved run with a payslip token", async () => {
+    const t = await h.createTenant();
+    const backup = await snapshot(t);
+    const employee = await t.as.post(`/api/companies/${t.company.id}/employees`, {
+      fullName: "Fixture employee",
+      nationality: "IN",
+      joinDate: "2025-01-01",
+      basicSalary: "5000.00",
+    });
+    expect(employee.status, employee.text).toBe(201);
+    const run = await t.as.post(`/api/companies/${t.company.id}/payroll-runs`, {
+      periodMonth: 1,
+      periodYear: 2025,
+    });
+    expect(run.status, run.text).toBe(201);
+    const runId = run.body.id;
+    const calculated = await t.as.post(`/api/payroll-runs/${runId}/calculate`, {});
+    expect(calculated.status, calculated.text).toBe(200);
+    const approved = await t.as.post(`/api/payroll-runs/${runId}/approve`, {});
+    expect(approved.status, approved.text).toBe(200);
+    const [item] = await h.sql(
+      "SELECT id, journal_entry_id FROM payroll_items WHERE payroll_run_id = $1",
+      [runId]
+    );
+    expect(item.journal_entry_id).toBeTruthy();
+    const [token] = await h.sql(
+      `INSERT INTO payslip_tokens (company_id, payroll_item_id, token_hash, expires_at)
+       VALUES ($1, $2, $3, now() + interval '1 day') RETURNING *`,
+      [t.company.id, item.id, randomUUID()]
+    );
+    const lines = await journalLines(t, runId);
+    expect(lines.length).toBeGreaterThan(0);
+
+    await expectReplaceConflict(t, backup, "payroll_runs");
+
+    expect(
+      await h.sql("SELECT status, journal_entry_id FROM payroll_runs WHERE id = $1", [runId])
+    ).toEqual([{ status: "approved", journal_entry_id: item.journal_entry_id }]);
+    expect(
+      await h.sql("SELECT id, journal_entry_id FROM payroll_items WHERE id = $1", [item.id])
+    ).toEqual([item]);
+    expect(await h.sql("SELECT * FROM payslip_tokens WHERE id = $1", [token.id])).toEqual([token]);
+    expect(await journalLines(t, runId)).toEqual(lines);
+  });
+
   it("rejects replace that would remove an invoice with e-invoice transmission history", async () => {
     const t = await h.createTenant();
     const backup = await snapshot(t);
@@ -178,6 +312,34 @@ describe("AU7 accounting backup integrity", () => {
     expect(await h.sql("SELECT * FROM einvoice_documents WHERE id = $1", [document.id])).toEqual([
       document,
     ]);
+  });
+
+  it("rejects replace that would rewind a transmitted invoice already in the backup", async () => {
+    const t = await h.createTenant();
+    const invoiceId = await draftInvoice(t);
+    const backup = await snapshot(t);
+    await issueInvoice(t, invoiceId);
+    const [invoice] = await h.sql(
+      `UPDATE invoices SET einvoice_status = 'submitted', einvoice_submitted_at = now(),
+                           einvoice_provider_message_id = 'au7-transmission'
+       WHERE id = $1 RETURNING *`,
+      [invoiceId]
+    );
+    const [document] = await h.sql(
+      `INSERT INTO einvoice_documents (company_id, invoice_id, status, provider_message_id)
+       VALUES ($1, $2, 'submitted', 'au7-transmission') RETURNING *`,
+      [t.company.id, invoiceId]
+    );
+    const lines = await journalLines(t, invoiceId);
+    expect(lines.length).toBeGreaterThan(0);
+
+    await expectReplaceConflict(t, backup, "invoices");
+
+    expect(await h.sql("SELECT * FROM invoices WHERE id = $1", [invoiceId])).toEqual([invoice]);
+    expect(await h.sql("SELECT * FROM einvoice_documents WHERE id = $1", [document.id])).toEqual([
+      document,
+    ]);
+    expect(await journalLines(t, invoiceId)).toEqual(lines);
   });
 
   it("merge preserves a bank transaction's invoice match made after the snapshot", async () => {

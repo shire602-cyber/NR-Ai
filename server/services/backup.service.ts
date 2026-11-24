@@ -821,6 +821,73 @@ async function validateSnapshotRows(client: Queryable, plan: RestoreTable[]): Pr
   }
 }
 
+interface ProtectedRestoreRows {
+  table: string;
+  where: string;
+  columns?: string[];
+  columnMatches?: Record<string, string>;
+  requireSnapshotRow?: boolean;
+}
+
+async function replaceChangesProtectedRows(
+  client: Queryable,
+  companyId: string,
+  plan: RestoreTable[],
+  scope: string,
+  checks: ProtectedRestoreRows[]
+): Promise<boolean> {
+  const values = [companyId];
+  const conflicts: string[] = [];
+  for (const check of checks) {
+    const entry = plan.find(({ table }) => table.name === check.table);
+    if (!entry) continue;
+    const { table, json } = entry;
+    values.push(json);
+    const snapshot = `json_populate_recordset(NULL::${q(table.name)}, $${values.length}::json)`;
+    const key = pkMatch(table, "t", "s");
+    const equal = table.columns
+      .filter((column) => !check.columns || check.columns.includes(column))
+      .map(
+        (column) =>
+          check.columnMatches?.[column] ??
+          `to_jsonb(t.${q(column)}) IS NOT DISTINCT FROM to_jsonb(s.${q(column)})`
+      )
+      .join(" AND ");
+    // A retained row absent from the snapshot is left alone. A retained row
+    // present in the snapshot can still be overwritten by the upsert.
+    const protectedDeletion =
+      !check.requireSnapshotRow && table.protectedFromDelete
+        ? `AND (NOT (${table.protectedFromDelete})
+                OR EXISTS (SELECT 1 FROM ${snapshot} s WHERE ${key}))`
+        : "";
+    conflicts.push(`EXISTS (
+      SELECT 1 FROM ${q(table.name)} t
+      WHERE ${table.predicate} AND (${check.where})
+        AND NOT EXISTS (SELECT 1 FROM ${snapshot} s WHERE ${key} AND (${equal || "true"}))
+        ${protectedDeletion}
+    )`);
+  }
+  if (!conflicts.length) return false;
+  const { rows } = await client.query(
+    `WITH ${scope} SELECT 1 WHERE ${conflicts.join(" OR ")}`,
+    values
+  );
+  return rows.length > 0;
+}
+
+const PROTECTED_INVOICE_JOURNALS = `protected_journals AS (
+  SELECT id FROM journal_entries
+  WHERE company_id = $1 AND source IN ('invoice', 'payment_reversal')
+    AND source_id IN (SELECT id FROM protected_invoices)
+  UNION
+  SELECT journal_entry_id FROM invoice_payments
+  WHERE company_id = $1 AND invoice_id IN (SELECT id FROM protected_invoices)
+)`;
+const PROTECTED_JOURNAL_CHECKS = [
+  { table: "journal_entries", where: "t.id IN (SELECT id FROM protected_journals)" },
+  { table: "journal_lines", where: "t.entry_id IN (SELECT id FROM protected_journals)" },
+];
+
 async function validateReplaceExternalState(
   client: Queryable,
   companyId: string,
@@ -847,26 +914,106 @@ async function validateReplaceExternalState(
     }
   }
 
-  const invoices = plan.find(({ table }) => table.name === "invoices");
-  if (!invoices) return;
+  if (
+    await replaceChangesProtectedRows(
+      client,
+      companyId,
+      plan,
+      `protected_invoices AS (
+        SELECT invoice_id AS id FROM payment_links
+        WHERE company_id = $1 AND status = 'active'
+          AND (expires_at >= now() AT TIME ZONE 'UTC' OR provider_session_id IS NOT NULL)
+      ), ${PROTECTED_INVOICE_JOURNALS}`,
+      [
+        {
+          table: "invoices",
+          where: "t.id IN (SELECT id FROM protected_invoices)",
+          columns: ["status", "invoice_type", "currency", "total", "exchange_rate"],
+          columnMatches: {
+            status: "(s.status = t.status OR s.status IN ('sent', 'posted', 'partial'))",
+          },
+        },
+        { table: "invoice_payments", where: "t.invoice_id IN (SELECT id FROM protected_invoices)" },
+        ...PROTECTED_JOURNAL_CHECKS,
+      ]
+    )
+  ) {
+    throw new DomainError(
+      "BACKUP_RESTORE_CONFLICT",
+      409,
+      { table: "payment_links" },
+      "Replace restore would rewind a payable invoice or its accounting records while a payment link is active."
+    );
+  }
+
+  if (
+    await replaceChangesProtectedRows(
+      client,
+      companyId,
+      plan,
+      `protected_payroll AS (
+        SELECT r.id AS run_id,
+               r.journal_entry_id AS run_accrual, r.payment_journal_entry_id AS run_payment,
+               i.journal_entry_id AS item_accrual, i.payment_journal_entry_id AS item_payment
+        FROM payslip_tokens p
+        JOIN payroll_items i ON i.id = p.payroll_item_id
+        JOIN payroll_runs r ON r.id = i.payroll_run_id
+        WHERE p.company_id = $1 AND r.company_id = $1
+          AND COALESCE(r.journal_entry_id, r.payment_journal_entry_id,
+                       i.journal_entry_id, i.payment_journal_entry_id) IS NOT NULL
+      ), protected_journals AS (
+        SELECT run_accrual AS id FROM protected_payroll
+        UNION SELECT run_payment FROM protected_payroll
+        UNION SELECT item_accrual FROM protected_payroll
+        UNION SELECT item_payment FROM protected_payroll
+      )`,
+      [
+        { table: "payroll_runs", where: "t.id IN (SELECT run_id FROM protected_payroll)" },
+        {
+          table: "payroll_items",
+          where: "t.payroll_run_id IN (SELECT run_id FROM protected_payroll)",
+        },
+        ...PROTECTED_JOURNAL_CHECKS,
+      ]
+    )
+  ) {
+    throw new DomainError(
+      "BACKUP_RESTORE_CONFLICT",
+      409,
+      { table: "payroll_runs" },
+      "Replace restore would rewind payroll accounting records linked to an issued payslip token."
+    );
+  }
+
   const history = EINVOICE_HISTORY_TABLES.map(
     (table) => `SELECT invoice_id FROM ${q(table)} WHERE company_id = $1`
   );
-  const { rows: transmissions } = await client.query(
-    `SELECT 1 FROM (${history.join(" UNION ALL ")}) h
-       JOIN invoices i ON i.id = h.invoice_id AND i.company_id = $1
-       WHERE NOT EXISTS (
-         SELECT 1 FROM json_populate_recordset(NULL::invoices, $2::json) s WHERE s.id = i.id
-       )
-     LIMIT 1`,
-    [companyId, invoices.json]
-  );
-  if (transmissions.length) {
+  if (
+    await replaceChangesProtectedRows(
+      client,
+      companyId,
+      plan,
+      `protected_invoices AS (
+        SELECT id FROM invoices WHERE company_id = $1
+          AND (id IN (${history.join(" UNION ALL ")})
+               OR einvoice_submitted_at IS NOT NULL OR einvoice_provider_message_id IS NOT NULL)
+      ), ${PROTECTED_INVOICE_JOURNALS}`,
+      [
+        {
+          table: "invoices",
+          where: "t.id IN (SELECT id FROM protected_invoices)",
+          requireSnapshotRow: true,
+        },
+        { table: "invoice_lines", where: "t.invoice_id IN (SELECT id FROM protected_invoices)" },
+        ...PROTECTED_JOURNAL_CHECKS,
+      ]
+    )
+  ) {
     throw new DomainError(
       "BACKUP_RESTORE_CONFLICT",
       409,
       { table: "invoices" },
-      "Replace restore would remove an invoice with e-invoice transmission history."
+      "Replace restore would rewind or remove an invoice or its accounting records with e-invoice transmission history."
     );
   }
 }
@@ -1140,7 +1287,7 @@ export async function restoreCompanyBackup(
       await lockRestoreRows(client, args.companyId, {
         fks: manifest.fks,
         tables: [
-          ...externalCompanyTables(["payment_links", ...EINVOICE_HISTORY_TABLES]),
+          ...externalCompanyTables(["payment_links", "payslip_tokens", ...EINVOICE_HISTORY_TABLES]),
           ...manifest.tables,
         ],
       });
