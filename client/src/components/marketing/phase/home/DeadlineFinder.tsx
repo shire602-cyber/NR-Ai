@@ -26,7 +26,7 @@ import {
   DEADLINE_SOURCES,
   DEADLINE_SEGMENTS,
   DEFAULT_SEGMENT,
-  PENALTY_AED_PER_MONTH,
+  PENALTY_TEXT_VARS,
   deadlineState,
   formatDeadlineDate,
   timelineLayout,
@@ -198,7 +198,6 @@ export function DeadlineFinder({
   const milestones = [appoint, live] as const;
   const actNow = appoint.passed && !live.passed;
   const tone = !next ? "warn" : actNow ? "act" : "ok";
-  const penalty = new Intl.NumberFormat("en-US").format(PENALTY_AED_PER_MONTH);
 
   let sentence: string;
   if (!next) sentence = text("hxDlAllPassed");
@@ -316,7 +315,7 @@ export function DeadlineFinder({
 
         <div className="mz-dl-penalty" data-testid="deadline-penalty">
           <TriangleAlert aria-hidden="true" />
-          <p>{text("hxDlPenalty", { amount: penalty })}</p>
+          <p>{text("hxDlPenalty", PENALTY_TEXT_VARS)}</p>
         </div>
 
         {!compact && (
@@ -355,6 +354,10 @@ export function DeadlineFinder({
           {" | "}
           <ExternalLink href={DEADLINE_SOURCES.mof} hint={text("hxDlNewTab")}>
             {text("hxDlSourceMof")}
+          </ExternalLink>
+          {" | "}
+          <ExternalLink href={DEADLINE_SOURCES.penalty} hint={text("hxDlNewTab")}>
+            {text("hxDlSourcePenalty")}
           </ExternalLink>
         </p>
       </div>

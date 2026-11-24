@@ -196,7 +196,7 @@ describe("savings render", () => {
     expect(how.querySelector('a[href="https://www.wafeq.com/en-ae/pricing"]')).not.toBeNull();
     expect(how.querySelector('a[href="https://www.zoho.com/ae/books/pricing/"]')).not.toBeNull();
     expect(byId("savings-penalty").textContent).toContain(
-      `E-invoicing late penalty: AED ${PENALTY_AED_PER_MONTH.toLocaleString("en-US")} per month`
+      `AED ${PENALTY_AED_PER_MONTH.toLocaleString("en-US")} initially, then AED 5,000 per month or part thereof, capped at AED 50,000 in any 12 consecutive months`
     );
     expect(container.querySelector(`a[href="${trialSignupPath}"]`)?.textContent).toContain(
       "Start saving - 14 days free"

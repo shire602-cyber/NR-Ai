@@ -1,4 +1,4 @@
-import { siteLocale } from "@/components/marketing/phase/routes";
+import { bareMarketingRedirect, siteLocale } from "@/components/marketing/phase/routes";
 // zod 3-compatible validation messages for forms (R17-27). Installed by the app root
 // (and by the public pages' providers) rather than main.tsx, so the landing page does
 // not download zod before its first paint (D1b).
@@ -46,7 +46,6 @@ const ResetPassword = lazyWithReload(() => import("@/pages/ResetPassword"));
 const Dashboard = lazyWithReload(() => import("@/pages/Dashboard"));
 const PhaseSite = lazyWithReload(() => import("@/components/marketing/phase/PhaseSite"));
 const Services = lazyWithReload(() => import("@/pages/Services"));
-const Pricing = lazyWithReload(() => import("@/pages/Pricing"));
 const PublicInvoiceView = lazyWithReload(() => import("@/pages/PublicInvoiceView"));
 const EInvoicingApprove = lazyWithReload(() => import("@/pages/EInvoicingApprove"));
 const CustomerPortal = lazyWithReload(() => import("@/pages/CustomerPortal"));
@@ -521,6 +520,10 @@ function Router() {
 
   if (isRetiredBankReturnPath(pathname)) return <Redirect to={BANK_STATEMENT_ENTRY} replace />;
 
+  // Bare /pricing, /e-invoicing ... show the language-prefixed marketing page.
+  const bareTarget = bareMarketingRedirect(pathname);
+  if (bareTarget) return <Redirect to={bareTarget} replace />;
+
   // Guard: authenticated users at root - wait for redirect
   if (pathname === "/" && userLoading) {
     return null;
@@ -596,7 +599,6 @@ function Router() {
     pathname === "/reset-password" ||
     pathname === "/verify-email" ||
     pathname === "/services" ||
-    pathname === "/pricing" ||
     pathname === "/trust" ||
     pathname === "/help" ||
     pathname === "/migration-guides" ||
@@ -623,7 +625,6 @@ function Router() {
             <Route path="/portal/einvoicing-approve/:token" component={EInvoicingApprove} />
             <Route path="/portal/join" component={PortalJoin} />
             <Route path="/portal/:token" component={CustomerPortal} />
-            <Route path="/pricing" component={Pricing} />
             <Route path="/trust" component={TrustSecurity} />
             <Route path="/help" component={HelpCenter} />
             <Route path="/migration-guides" component={MigrationGuides} />

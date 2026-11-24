@@ -1,9 +1,14 @@
 import { createElement, Fragment, useCallback, useEffect, type ReactNode } from "react";
 import { loadNamespace, t, useCatalogRevision } from "@/lib/i18n";
 import type enMarketing from "@/locales/en/marketing.json";
+import type enMarketingHome from "@/locales/en/marketingHome.json";
+import type enMarketingMeta from "@/locales/en/marketingMeta.json";
 import type { SiteLocale } from "../routes";
 
-type CatalogKey = keyof typeof enMarketing;
+// Copy lives in two catalogs: the original `marketing` one (also read by in-app pages) and
+// `marketingHome` (the rebuilt public site, loaded only on /en and /ar). Keys share the
+// `marketing.` prefix.
+type CatalogKey = keyof typeof enMarketing | keyof typeof enMarketingHome | keyof typeof enMarketingMeta;
 /** A key of the English marketing catalog without its `marketing.` prefix, e.g. `hxHeroTitle`. */
 export type MarketingKey = CatalogKey extends infer K
   ? K extends `marketing.${infer Rest}`
@@ -16,7 +21,7 @@ export type MarketingText = (key: MarketingKey, vars?: Vars) => string;
 export type MarketingRich = (key: MarketingKey, vars?: Vars) => ReactNode;
 
 /** Present in every build of the catalog, so its absence means the chunk is not loaded yet. */
-const READY_KEY = "marketing.hxHeroTitle";
+const READY_KEY = "marketing.hxDlSourcePenalty";
 const requested = new Set<SiteLocale>();
 
 /** Third-party proper noun inside a sentence: `⟦Elite⟧` renders as an English, untranslated island. */
@@ -55,7 +60,11 @@ function useCatalogLookup(locale: SiteLocale) {
   useEffect(() => {
     if (READY_KEY in t[locale] || requested.has(locale)) return;
     requested.add(locale);
-    loadNamespace(locale, "marketing").catch(() => requested.delete(locale));
+    Promise.all([
+      loadNamespace(locale, "marketing"),
+      loadNamespace(locale, "marketingMeta"),
+      loadNamespace(locale, "marketingHome"),
+    ]).catch(() => requested.delete(locale));
   }, [locale, revision]);
   return useCallback(
     (key: MarketingKey, vars?: Vars) => {

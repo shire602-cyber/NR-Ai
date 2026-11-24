@@ -13,7 +13,7 @@ import {
   type Comparator,
   type CompetitorId,
 } from "./competitor-prices";
-import { PENALTY_AED_PER_MONTH } from "./deadlines";
+import { PENALTY_TEXT_VARS } from "./deadlines";
 import {
   ASSUMPTIONS,
   DEFAULT_COMPARATOR,
@@ -274,7 +274,7 @@ export function SavingsCalculator({ locale }: SectionProps) {
             <div className="mz-sav-context" data-testid="savings-penalty">
               <p className="mz-sav-context-label">{text("hxSavContextLabel")}</p>
               <p className="mz-sav-context-line">
-                {text("hxSavPenalty", { amount: formatAmount(PENALTY_AED_PER_MONTH) })}
+                {text("hxSavPenalty", PENALTY_TEXT_VARS)}
               </p>
             </div>
 

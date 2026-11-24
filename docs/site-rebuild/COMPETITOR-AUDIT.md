@@ -73,7 +73,7 @@ Design benchmarks:
   - Revenue >= AED 50m: appoint ASP by 30 Oct 2026, go live 1 Jan 2027.
   - Revenue < AED 50m: appoint ASP by 31 Mar 2027, go live 1 Jul 2027.
   - Government entities: appoint by 31 Mar 2027, go live 1 Oct 2027.
-  - Penalty: AED 5,000 per month (or part) of delay, including failing to appoint an ASP.
+  - Penalty (UAE Ministry of Finance, 30 Oct 2026): AED 5,000 for the initial violation, then AED 5,000 for each month or part thereof that non-compliance continues, capped at AED 50,000 in any 12 consecutive months. Source: https://mof.gov.ae/en/news/mof-announces-updated-administrative-penalties-related-to-the-uae-einvoicing-system-to-enhance-clarity-and-support-business-compliance/
   - B2C-only businesses currently out of scope.
 - Format: PINT AE over Peppol, via an Accredited Service Provider (ASP).
 - Muhasib facts (do not change): AED 59 / 119 / 229 per month; 14-day Enterprise trial, no card; e-invoicing on every plan via an accredited provider (provider names are internal only - NEVER shown on public marketing/pricing pages; in-app settings may keep the choice); bank import is CSV upload only (no live bank feeds); no ZATCA / Saudi references; VAT 201 prepared in Muhasib and submitted in EmaraTax; WPS SIF file for payroll.

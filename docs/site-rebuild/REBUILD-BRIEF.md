@@ -43,7 +43,7 @@ Confident, calm, premium, Gulf-modern. Deep emerald (#0B6A4A) + near-black ink +
   - >= 50m: appoint by 30 Oct 2026 (show "deadline passed - act now" state if past), live 1 Jan 2027.
   - < 50m: appoint by 31 Mar 2027, live 1 Jul 2027.
   - Government: appoint by 31 Mar 2027, live 1 Oct 2027.
-- Penalty callout: "Late implementation: AED 5,000 per month (FTA)". Source footnote linking tax.gov.ae / mof.gov.ae.
+- Penalty callout: "Late implementation: AED 5,000 for the initial violation, then AED 5,000 for each month or part thereof that non-compliance continues, capped at AED 50,000 in any 12 consecutive months (UAE Ministry of Finance)". Source footnote linking tax.gov.ae / mof.gov.ae and the MoF penalty announcement.
 - Three steps with icons: "Switch on e-invoicing in Settings" -> "Confirm your TRN" -> "Every invoice you issue is validated and exchanged as PINT AE". Copy: "Included on every plan. No separate e-invoicing subscription from us." (Provider fees, if any, must not be claimed as zero unless confirmed - leave a TODO marker in code for the owner to confirm.)
 - CTA: "Check your readiness in 2 minutes" -> existing readiness checker.
 

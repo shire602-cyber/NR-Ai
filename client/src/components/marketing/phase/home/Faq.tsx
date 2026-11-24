@@ -4,7 +4,7 @@ import { MARKETING_BRAND } from "@shared/marketing-brand";
 import { bankCopy, type Bilingual } from "../content";
 import type { Translate } from "../shared";
 import type { LegacySectionProps, SectionProps } from "./types";
-import { DEADLINES, PENALTY_AED_PER_MONTH, formatDeadlineDate } from "./deadlines";
+import { DEADLINES, PENALTY_TEXT_VARS, formatDeadlineDate } from "./deadlines";
 import { SectionHead } from "./SectionHead";
 import { useMarketingText, type MarketingKey } from "./text";
 import "./faq.css";
@@ -53,7 +53,7 @@ export function FaqList({ locale, tr }: Pick<SectionProps, "locale"> & { tr: Tra
     smallLive: formatDeadlineDate(DEADLINES.small.live, locale),
     largeAppoint: formatDeadlineDate(DEADLINES.large.appoint, locale),
     largeLive: formatDeadlineDate(DEADLINES.large.live, locale),
-    penalty: PENALTY_AED_PER_MONTH.toLocaleString("en-US"),
+    ...PENALTY_TEXT_VARS,
   };
   const entries = FAQ_ITEMS.map(({ id, q, a }) => ({ id, q: text(q, vars), a: text(a, vars) }));
   entries.splice(2, 0, { id: BANK_FAQ.id, q: tr(BANK_FAQ.q), a: tr(BANK_FAQ.a) });

@@ -11,7 +11,7 @@ import {
 } from "../client/src/components/marketing/phase/route-content";
 import { MARKETING_BRAND } from "../shared/marketing-brand";
 import { renderMarketingDocument } from "./marketing-document";
-import { siteLocale } from "../client/src/components/marketing/phase/routes";
+import { bareMarketingRedirect, siteLocale } from "../client/src/components/marketing/phase/routes";
 import { BANK_STATEMENT_ENTRY, isRetiredBankReturnPath } from "../shared/bank-statement-routes";
 
 import { isSpaPath } from "../shared/spa-paths";
@@ -52,6 +52,17 @@ function redirectRetiredBankReturn(req: Request, res: Response, next: NextFuncti
     return;
   }
   next();
+}
+
+/** 301 the bare marketing URLs (/pricing, /e-invoicing ...) to their /en page, keeping the query. */
+export function redirectBareMarketing(req: Request, res: Response, next: NextFunction) {
+  const target =
+    req.method === "GET" || req.method === "HEAD"
+      ? bareMarketingRedirect(decodeUnreserved(req.path))
+      : undefined;
+  if (!target) return next();
+  const at = req.originalUrl.indexOf("?");
+  res.redirect(301, at < 0 ? target : target + req.originalUrl.slice(at));
 }
 
 function serveRobots(_req: Request, res: Response): void {
@@ -121,6 +132,7 @@ export async function setupVite(app: Express, server: Server) {
   app.get("/robots.txt", serveRobots);
   app.get("/sitemap.xml", serveSitemap);
   app.use(redirectRetiredBankReturn);
+  app.use(redirectBareMarketing);
   app.use(vite.middlewares);
   app.use(rejectUnpublishedFiles);
   app.use("*", async (req, res, next) => {
@@ -320,6 +332,7 @@ export function serveStatic(app: Express) {
   app.get("/robots.txt", serveRobots);
   app.get("/sitemap.xml", serveSitemap);
   app.use(redirectRetiredBankReturn);
+  app.use(redirectBareMarketing);
   // Hashed assets — safe to cache aggressively because the filename changes
   // any time content does.
   for (const dir of ["assets", "firm-assets"]) {

@@ -4,6 +4,7 @@
  * prices from shared/plans.ts) and the rendered table in English and Arabic, with and without
  * the single-competitor focus used by the /compare pages.
  */
+import { readFileSync } from "node:fs";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,6 +21,28 @@ describe("comparison config", () => {
   it("keeps the price config dated and Xero without an AED price", () => {
     expect(COMPETITOR_PRICES.lastChecked).toBe("2026-11-24");
     expect(COMPETITOR_PRICES.xero.aedListPrice).toBeNull();
+  });
+
+  it("never names an accredited provider or calls a competitor one, in English or Arabic", () => {
+    const forbidden = [
+      /as your ASP/i,
+      /\bas (an )?ASP\b/i,
+      /\bASP\b.{0,40}(Wafeq|Zoho)|(Wafeq|Zoho).{0,40}\bASP\b/i,
+      /(Wafeq|Zoho)[^.]{0,60}(accredited|مزوّد|مزود)|(accredited|مزوّد|مزود)[^.]{0,60}(Wafeq|Zoho)/i,
+      /A-?Cube/i,
+      /Complyance/i,
+    ];
+    for (const locale of ["en", "ar"]) {
+      for (const file of ["marketing", "marketingMeta", "marketingHome"]) {
+        const path = `client/src/locales/${locale}/${file}.json`;
+        const catalog = JSON.parse(readFileSync(path, "utf8")) as Record<string, string>;
+        for (const [key, value] of Object.entries(catalog)) {
+          for (const pattern of forbidden) {
+            expect(value, `${path} ${key} matches ${pattern}`).not.toMatch(pattern);
+          }
+        }
+      }
+    }
   });
 
   it("reads Muhasib prices from shared/plans.ts", () => {

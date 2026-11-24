@@ -8,7 +8,7 @@ import { SectionHead } from "../home/SectionHead";
 import {
   DEADLINES,
   DEADLINE_SOURCES,
-  PENALTY_AED_PER_MONTH,
+  PENALTY_TEXT_VARS,
   type DeadlineSegment,
 } from "../home/deadlines";
 import { useMarketingText, type MarketingKey } from "../home/text";
@@ -46,8 +46,7 @@ const FAQ: readonly { q: MarketingKey; a: MarketingKey }[] = [
 export function EinvoicingHub({ base, locale, tr }: LegacySectionProps) {
   const text = useMarketingText(locale);
   const brand = MARKETING_BRAND.name[locale];
-  const amount = new Intl.NumberFormat("en-US").format(PENALTY_AED_PER_MONTH);
-  const vars = { brand, amount };
+  const vars = { brand, ...PENALTY_TEXT_VARS };
 
   return (
     <div data-testid="einvoicing-hub">
@@ -147,13 +146,17 @@ export function EinvoicingHub({ base, locale, tr }: LegacySectionProps) {
             </table>
           </div>
           <p className="mz-page-note">
-            <strong>{text("hxDlPenalty", { amount })}.</strong> {text("hxDlSourcesIntro")}{" "}
+            <strong>{text("hxDlPenalty", PENALTY_TEXT_VARS)}.</strong> {text("hxDlSourcesIntro")}{" "}
             <a href={DEADLINE_SOURCES.fta} target="_blank" rel="noopener noreferrer">
               {text("hxDlSourceFta")}
             </a>
             {" · "}
             <a href={DEADLINE_SOURCES.mof} target="_blank" rel="noopener noreferrer">
               {text("hxDlSourceMof")}
+            </a>
+            {" · "}
+            <a href={DEADLINE_SOURCES.penalty} target="_blank" rel="noopener noreferrer">
+              {text("hxDlSourcePenalty")}
             </a>
           </p>
         </div>

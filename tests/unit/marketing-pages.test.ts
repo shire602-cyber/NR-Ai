@@ -7,8 +7,15 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import enMarketing from "../../client/src/locales/en/marketing.json";
-import arMarketing from "../../client/src/locales/ar/marketing.json";
+import enMarketingBase from "../../client/src/locales/en/marketing.json";
+import arMarketingBase from "../../client/src/locales/ar/marketing.json";
+import enMarketingHome from "../../client/src/locales/en/marketingHome.json";
+import arMarketingHome from "../../client/src/locales/ar/marketingHome.json";
+import enMarketingMeta from "../../client/src/locales/en/marketingMeta.json";
+import arMarketingMeta from "../../client/src/locales/ar/marketingMeta.json";
+
+const enMarketing = { ...enMarketingBase, ...enMarketingHome, ...enMarketingMeta };
+const arMarketing = { ...arMarketingBase, ...arMarketingHome, ...arMarketingMeta };
 import {
   canonicalMarketingPath,
   hubLead,

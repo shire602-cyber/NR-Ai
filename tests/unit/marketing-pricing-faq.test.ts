@@ -8,8 +8,15 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PLAN_DEFINITIONS } from "../../shared/plans";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
-import enMarketing from "../../client/src/locales/en/marketing.json";
-import arMarketing from "../../client/src/locales/ar/marketing.json";
+import enMarketingBase from "../../client/src/locales/en/marketing.json";
+import arMarketingBase from "../../client/src/locales/ar/marketing.json";
+import enMarketingHome from "../../client/src/locales/en/marketingHome.json";
+import arMarketingHome from "../../client/src/locales/ar/marketingHome.json";
+import enMarketingMeta from "../../client/src/locales/en/marketingMeta.json";
+import arMarketingMeta from "../../client/src/locales/ar/marketingMeta.json";
+
+const enMarketing = { ...enMarketingBase, ...enMarketingHome, ...enMarketingMeta } as Record<string, string>;
+const arMarketing = { ...arMarketingBase, ...arMarketingHome, ...arMarketingMeta } as Record<string, string>;
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -42,6 +49,7 @@ afterEach(() => {
 async function render(locale: "en" | "ar", path: string, element: () => Promise<ReactElement>) {
   const { useI18n, loadNamespace } = await import("../../client/src/lib/i18n");
   await loadNamespace(locale, "marketing");
+  await loadNamespace(locale, "marketingHome");
   act(() => useI18n.getState().setLocale(locale));
   window.history.replaceState(null, "", `/${locale}${path}`);
   await act(async () => root.render(await element()));

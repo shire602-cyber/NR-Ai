@@ -26,6 +26,8 @@ import { FinalCta } from "./home/FinalCta";
 import { SiteFooter } from "./home/SiteFooter";
 import { PricingPage } from "./pages/PricingPage";
 import { Picture, type Translate } from "./shared";
+import { metaText, type MetaKey } from "./meta-text";
+import { fragmentId } from "./fragment";
 import {
   canonicalMarketingPath,
   demoTitle,
@@ -89,10 +91,9 @@ function EditorialUnavailable({ locale }: { locale: SiteLocale }) {
   );
 }
 
-const start = ["Start free trial", "ابدأ التجربة المجانية"] as const;
 const demo = demoTitle;
-const pricing = ["Pricing", "الأسعار"] as const;
-type Item = { href: string; title: Bilingual };
+const pricing: Bilingual = [metaText("en", "hxNavPricing"), metaText("ar", "hxNavPricing")];
+type Item = { href: string; title: string };
 
 function Header({ base, path, tr }: { base: string; path: string; tr: Translate }) {
   const [open, setOpen] = useState<string>();
@@ -100,46 +101,48 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
   const navigation = useRef<HTMLElement>(null);
   const other = base === "/ar" ? "en" : "ar";
   const languagePath = path.slice(base.length).replace(/^\/$/, "");
-  const groups: { id: string; title: Bilingual; items: readonly Item[] }[] = [
+  const locale = base === "/ar" ? "ar" : "en";
+  const nav = (key: MetaKey) => metaText(locale, key);
+  const groups: { id: string; title: string; items: readonly Item[] }[] = [
     {
       id: "product",
-      title: ["Product", "المنتج"],
+      title: nav("hxNavProduct"),
       items: [
-        { title: ["Product overview", "نظرة عامة على المنتج"], href: `${base}/product` },
-        ...features.map((f) => ({ title: f.title, href: base + featurePath(f.slug) })),
+        { title: nav("hxNavProductOverview"), href: `${base}/product` },
+        ...features.map((f) => ({ title: tr(f.title), href: base + featurePath(f.slug) })),
       ],
     },
     {
       id: "solutions",
-      title: ["Solutions", "الحلول"],
-      items: audiences.map((a) => ({ title: a.title, href: `${base}/solutions/${a.slug}` })),
+      title: nav("hxNavSolutions"),
+      items: audiences.map((a) => ({ title: tr(a.title), href: `${base}/solutions/${a.slug}` })),
     },
     {
       id: "tools",
-      title: ["Free tools", "أدوات مجانية"],
+      title: nav("hxNavTools"),
       items: [
-        { title: ["All free tools", "جميع الأدوات المجانية"], href: `${base}/tools` },
-        ...tools.map((tool) => ({ title: tool.title, href: `${base}/tools/${tool.slug}` })),
+        { title: nav("hxNavAllTools"), href: `${base}/tools` },
+        ...tools.map((tool) => ({ title: tr(tool.title), href: `${base}/tools/${tool.slug}` })),
         {
-          title: ["Sample tax invoice", "نموذج فاتورة ضريبية"],
+          title: nav("hxNavSampleInvoice"),
           href: `${base}/tools/invoice-template`,
         },
       ],
     },
     {
       id: "resources",
-      title: ["Resources", "الموارد"],
+      title: nav("hxNavResources"),
       items: [
-        { title: editorialPages["/resources"].title, href: `${base}/resources` },
+        { title: tr(editorialPages["/resources"].title), href: `${base}/resources` },
         {
-          title: ["UAE e-invoicing guide", "دليل الفوترة الإلكترونية في الإمارات"],
+          title: nav("hxNavEinvoicingGuide"),
           href: base + featurePath("e-invoicing"),
         },
-        { title: editorialPages["/compare"].title, href: `${base}/compare` },
-        { title: editorialPages["/migration-guides"].title, href: `${base}/migration-guides` },
-        { title: editorialPages["/trust"].title, href: `${base}/trust` },
-        { title: ["Help centre", "مركز المساعدة"], href: "/help" },
-        { title: ["Sample workspace", "مساحة عمل تجريبية"], href: "/demo" },
+        { title: tr(editorialPages["/compare"].title), href: `${base}/compare` },
+        { title: tr(editorialPages["/migration-guides"].title), href: `${base}/migration-guides` },
+        { title: tr(editorialPages["/trust"].title), href: `${base}/trust` },
+        { title: nav("hxNavHelp"), href: "/help" },
+        { title: nav("hxNavSampleWorkspace"), href: "/demo" },
       ],
     },
   ];
@@ -152,7 +155,7 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
     return () => document.removeEventListener("pointerdown", close);
   }, [open]);
 
-  const signIn = <Link href="/login">{tr(["Sign in", "تسجيل الدخول"])}</Link>;
+  const signIn = <Link href="/login">{nav("hxNavSignIn")}</Link>;
   const toggle = (
     <Link
       href={`/${other}${languagePath}`}
@@ -169,7 +172,7 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
         {tr(demo)}
       </Link>
       <Link className="phase-button phase-primary" href={trialSignupPath}>
-        {tr(start)}
+        {nav("hxNavStart")}
       </Link>
     </>
   );
@@ -177,14 +180,14 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
     const id = `phase-${mobile ? "drawer" : "nav"}-${g.id}`;
     const links = g.items.map((item) => (
       <Link key={item.href} href={item.href}>
-        {tr(item.title)}
+        {item.title}
       </Link>
     ));
     if (mobile)
       return (
         <details key={g.id}>
           <summary>
-            {tr(g.title)} <ChevronDown aria-hidden="true" />
+            {g.title} <ChevronDown aria-hidden="true" />
           </summary>
           <div>{links}</div>
         </details>
@@ -197,7 +200,7 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
           aria-controls={id}
           onClick={() => setOpen(open === g.id ? undefined : g.id)}
         >
-          {tr(g.title)} <ChevronDown aria-hidden="true" />
+          {g.title} <ChevronDown aria-hidden="true" />
         </button>
         <div
           id={id}
@@ -210,8 +213,8 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
       </div>
     );
   }
-  const services = <Link href={`${base}/services`}>{tr(["Services", "الخدمات"])}</Link>;
-  const plans = <Link href={`${base}/pricing`}>{tr(pricing)}</Link>;
+  const services = <Link href={`${base}/services`}>{nav("hxNavServices")}</Link>;
+  const plans = <Link href={`${base}/pricing`}>{nav("hxNavPricing")}</Link>;
   return (
     <header className="phase-header">
       <div className="phase-wrap phase-header-inner">
@@ -222,7 +225,7 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
         <nav
           className="phase-desktop"
           ref={navigation}
-          aria-label={tr(["Main navigation", "القائمة الرئيسية"])}
+          aria-label={nav("hxNavMain")}
           onBlur={(e) => {
             if (!e.currentTarget.contains(e.relatedTarget)) setOpen(undefined);
           }}
@@ -250,7 +253,7 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
             className="phase-menu-toggle"
             type="button"
             aria-haspopup="dialog"
-            aria-label={tr(["Open navigation", "افتح القائمة"])}
+            aria-label={nav("hxNavOpen")}
             onClick={() => dialog.current?.showModal()}
           >
             <Menu aria-hidden="true" />
@@ -267,17 +270,17 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
       >
         <div className="phase-drawer-inner">
           <div className="phase-drawer-head">
-            <strong id="phase-drawer-title">{tr(["Navigation", "القائمة"])}</strong>
+            <strong id="phase-drawer-title">{nav("hxNavMenu")}</strong>
             <button
               type="button"
-              aria-label={tr(["Close navigation", "أغلق القائمة"])}
+              aria-label={nav("hxNavClose")}
               onClick={() => dialog.current?.close()}
             >
               <X aria-hidden="true" />
             </button>
           </div>
           <nav
-            aria-label={tr(["Main navigation", "القائمة الرئيسية"])}
+            aria-label={nav("hxNavMain")}
             onClick={(e) => {
               if ((e.target as Element).closest("a")) dialog.current?.close();
             }}
@@ -313,7 +316,7 @@ export default function PhaseSite() {
   }, [path]);
   useEffect(() => {
     // "#product" is the old id of the homepage tour section.
-    const id = decodeURIComponent(window.location.hash.slice(1));
+    const id = fragmentId(window.location.hash);
     if (id) document.getElementById(id === "product" ? "tour" : id)?.scrollIntoView();
   }, [path]);
   const preference = useI18n((state) => state.locale);
@@ -325,6 +328,7 @@ export default function PhaseSite() {
     }
   }, [explicitLocale]);
   const tr: Translate = (content) => content[locale === "ar" ? 1 : 0];
+  const nav = (key: MetaKey) => metaText(locale, key);
   const base = `/${locale}`;
   // Alias URLs (/e-invoicing, /free-tools, /compare/zoho-books ...) render their target page; the
   // server gives them the target's canonical URL (see `aliases` in route-content.ts).
@@ -361,7 +365,11 @@ export default function PhaseSite() {
           audience?.title ??
           tool?.title ??
           page?.title ??
-          (booking ? demo : plans ? pricing : ["Page not found", "الصفحة غير موجودة"]))
+          (booking
+            ? demo
+            : plans
+              ? pricing
+              : [metaText("en", "hxNavNotFound"), metaText("ar", "hxNavNotFound")]))
   );
   const lead = tr(
     home
@@ -381,7 +389,7 @@ export default function PhaseSite() {
   return (
     <div className="phase-site" lang={locale} dir={locale === "ar" ? "rtl" : "ltr"}>
       <a className="phase-skip" href="#phase-main">
-        {tr(["Skip to content", "انتقل إلى المحتوى"])}
+        {nav("hxNavSkip")}
       </a>
       <Header key={path} base={base} tr={tr} path={path} />
       <main ref={main} id="phase-main" tabIndex={-1}>
@@ -395,9 +403,9 @@ export default function PhaseSite() {
               }
             >
               <div className="phase-wrap">
-                <nav className="phase-breadcrumb" aria-label={tr(["Breadcrumb", "مسار التنقل"])}>
+                <nav className="phase-breadcrumb" aria-label={nav("hxNavBreadcrumb")}>
                   <Link className="phase-textlink" href={base}>
-                    {tr(["Home", "الرئيسية"])}
+                    {nav("hxNavHome")}
                   </Link>
                   {parent && (
                     <>

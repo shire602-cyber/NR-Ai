@@ -25,13 +25,27 @@ export const DEADLINES: Record<DeadlineSegment, DeadlineConfig> = {
   government: { appoint: "2027-03-31", live: "2027-10-01" },
 };
 
-/** Late-implementation penalty published by the FTA, in AED per month. */
+/**
+ * Administrative penalty (UAE Ministry of Finance, 30 Oct 2026): AED 5,000 for the initial
+ * violation, then AED 5,000 for each month or part thereof that non-compliance continues, capped
+ * at AED 50,000 in any 12 consecutive months.
+ */
 export const PENALTY_AED_PER_MONTH = 5000;
+export const PENALTY_AED_CAP = 50000;
+
+/** Locale placeholders for every penalty sentence (`{amount}`, `{penalty}`, `{cap}`). */
+export const PENALTY_TEXT_VARS = {
+  amount: PENALTY_AED_PER_MONTH.toLocaleString("en-US"),
+  penalty: PENALTY_AED_PER_MONTH.toLocaleString("en-US"),
+  cap: PENALTY_AED_CAP.toLocaleString("en-US"),
+} as const;
 
 /** Official sources, shown as footnote links. The decision name itself lives in a locale string. */
 export const DEADLINE_SOURCES = {
   fta: "https://tax.gov.ae",
   mof: "https://mof.gov.ae/en/about-us/initiatives/einvoicing/",
+  penalty:
+    "https://mof.gov.ae/en/news/mof-announces-updated-administrative-penalties-related-to-the-uae-einvoicing-system-to-enhance-clarity-and-support-business-compliance/",
 } as const;
 
 const DAY_MS = 86_400_000;

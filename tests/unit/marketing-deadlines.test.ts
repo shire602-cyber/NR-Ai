@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEADLINES,
+  PENALTY_AED_CAP,
   PENALTY_AED_PER_MONTH,
   daysUntil,
   deadlineState,
@@ -63,6 +64,7 @@ describe("deadlineState", () => {
   it("keeps the config and penalty in line with the published facts", () => {
     expect(DEADLINES.large).toEqual({ appoint: "2026-10-30", live: "2027-01-01" });
     expect(PENALTY_AED_PER_MONTH).toBe(5000);
+    expect(PENALTY_AED_CAP).toBe(50000);
   });
 
   it("places the milestones and today inside the timeline", () => {
@@ -156,7 +158,7 @@ describe("DeadlineFinder render", () => {
   it("shows the penalty, both official source links, the CTA and no provider names", async () => {
     await render("en");
     expect(q('[data-testid="deadline-penalty"]').textContent).toBe(
-      "Late implementation: AED 5,000 per month (FTA)"
+      "Late implementation: AED 5,000 for the initial violation, then AED 5,000 for each month or part thereof that non-compliance continues, capped at AED 50,000 in any 12 consecutive months (UAE Ministry of Finance)"
     );
     const hrefs = [
       ...container.querySelectorAll<HTMLAnchorElement>('[data-testid="deadline-sources"] a'),
@@ -164,6 +166,7 @@ describe("DeadlineFinder render", () => {
     expect(hrefs.map((a) => a.href)).toEqual([
       "https://tax.gov.ae/",
       "https://mof.gov.ae/en/about-us/initiatives/einvoicing/",
+      "https://mof.gov.ae/en/news/mof-announces-updated-administrative-penalties-related-to-the-uae-einvoicing-system-to-enhance-clarity-and-support-business-compliance/",
     ]);
     for (const a of hrefs) {
       expect(a.target).toBe("_blank");

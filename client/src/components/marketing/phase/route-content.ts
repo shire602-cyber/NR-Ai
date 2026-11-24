@@ -1,48 +1,24 @@
 import { MARKETING_BRAND } from "../../../../../shared/marketing-brand";
 import { features, starterPrice, tools, type Bilingual } from "./content";
 import { editorialPages, launchPages } from "./editorial/pages";
+import { metaPair } from "./meta-text";
 import { siteLocale } from "./routes";
 
 export const trialSignupPath = "/register?step=account";
 
-// These two stay `[en, ar]` tuples because the server imports this file to render the h1, title
-// and meta description of the homepage. They must match marketing.hxHeroTitle / hxHeroSub in
-// locales/{en,ar}/marketing.json (tests/unit/public-site-design.test.ts checks they do).
-export const homeTitle: Bilingual = [
-  "Your books. Your VAT. Your e-invoices. Done.",
-  "دفاترك. ضريبتك. فواتيرك الإلكترونية. كلها منجزة.",
-];
-export const homeLead: Bilingual = [
-  `Bilingual tax invoices, AI receipt capture, VAT 201 ready for EmaraTax and e-invoicing on every plan, from AED ${starterPrice} a month.`,
-  `فواتير ضريبية بالعربية والإنجليزية، والتقاط الإيصالات بالذكاء الاصطناعي، وإقرار VAT 201 جاهز لـ EmaraTax، وفوترة إلكترونية مشمولة في كل باقة، من ${starterPrice} درهمًا شهريًا.`,
-];
+// The server imports this file to render the h1, title and meta description. The copy is read from
+// the marketingMeta catalog (locales/{en,ar}/marketingMeta.json), the same file the client store
+// loads, so the server-rendered text cannot drift from the page.
+export const homeTitle: Bilingual = metaPair("hxHeroTitle");
+export const homeLead: Bilingual = metaPair("hxHeroSub", { price: starterPrice });
 
-export const demoTitle: Bilingual = ["Request a demo", "اطلب عرضًا توضيحيًا"];
-export const demoLead: Bilingual = [
-  "Request a callback to arrange a walkthrough for your UAE business or accounting firm.",
-  "اطلب اتصالًا لترتيب عرض توضيحي لشركتك أو مكتب المحاسبة في الإمارات.",
-];
-export const pricingTitle: Bilingual = [
-  "UAE accounting plans from AED " + starterPrice + " a month",
-  "خطط محاسبية تبدأ من " + starterPrice + " درهمًا شهريًا",
-];
-export const pricingLead: Bilingual = [
-  "Compare Starter, Professional and Enterprise. Try Enterprise free for 14 days with no card.",
-  "قارن باقات المبتدئ والاحترافية والمؤسسات. جرّب باقة المؤسسات مجانًا لمدة 14 يومًا دون بطاقة دفع.",
-];
+export const demoTitle: Bilingual = metaPair("hxMetaDemoTitle");
+export const demoLead: Bilingual = metaPair("hxMetaDemoLead");
+export const pricingTitle: Bilingual = metaPair("hxMetaPricingTitle", { price: starterPrice });
+export const pricingLead: Bilingual = metaPair("hxMetaPricingLead");
 
-// The UAE e-invoicing hub is the SEO landing page. Like the homepage pair above these stay
-// `[en, ar]` tuples because the server imports this file for the h1, title and meta description;
-// they must match marketing.hxHubH1 / hxHubLead in locales/{en,ar}/marketing.json
-// (tests/unit/marketing-pages.test.ts checks they do).
-export const hubTitle: Bilingual = [
-  "UAE e-invoicing, built into your accounting",
-  "الفوترة الإلكترونية في الإمارات، مدمجة في محاسبتك",
-];
-export const hubLead: Bilingual = [
-  "See your deadline, how e-invoices are exchanged through an accredited service provider, and check your readiness. Included on every plan.",
-  "اعرف موعدك النهائي وكيف تُتبادل الفواتير الإلكترونية عبر مزوّد خدمة معتمد، وتحقّق من جاهزيتك. مشمولة في كل باقة.",
-];
+export const hubTitle: Bilingual = metaPair("hxHubH1");
+export const hubLead: Bilingual = metaPair("hxHubLead");
 
 const pages = new Map<string, { title: Bilingual; lead?: Bilingual }>([
   ["", { title: homeTitle, lead: homeLead }],
@@ -51,21 +27,15 @@ const pages = new Map<string, { title: Bilingual; lead?: Bilingual }>([
   [
     "/solutions/small-business",
     {
-      title: ["Small and medium businesses", "الشركات الصغيرة والمتوسطة"],
-      lead: [
-        "Send invoices, capture expenses and collaborate with your accountant.",
-        "أرسل الفواتير وسجّل المصروفات وتعاون مع محاسبك.",
-      ],
+      title: metaPair("hxMetaSmbTitle"),
+      lead: metaPair("hxMetaSmbLead"),
     },
   ],
   [
     "/solutions/accounting-firms",
     {
-      title: ["Accounting firms", "مكاتب المحاسبة"],
-      lead: [
-        "Work across client companies and share invoices and statements through the client portal.",
-        "اعمل عبر شركات عملائك وشارك الفواتير وكشوف الحساب عبر بوابة العملاء.",
-      ],
+      title: metaPair("hxMetaFirmsTitle"),
+      lead: metaPair("hxMetaFirmsLead"),
     },
   ],
   ...Object.entries(editorialPages),
