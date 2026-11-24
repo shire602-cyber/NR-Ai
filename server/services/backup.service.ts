@@ -875,18 +875,27 @@ async function replaceChangesProtectedRows(
   return rows.length > 0;
 }
 
-const PROTECTED_INVOICE_JOURNALS = `protected_journals AS (
+const PROTECTED_INVOICE_ACCOUNTING = `protected_credit_allocations AS (
+  SELECT id, journal_entry_id FROM customer_credit_allocations
+  WHERE company_id = $1 AND invoice_id IN (SELECT id FROM protected_invoices)
+), protected_journals AS (
   SELECT id FROM journal_entries
   WHERE company_id = $1 AND source IN ('invoice', 'payment_reversal')
     AND source_id IN (SELECT id FROM protected_invoices)
   UNION
   SELECT journal_entry_id FROM invoice_payments
   WHERE company_id = $1 AND invoice_id IN (SELECT id FROM protected_invoices)
+  UNION
+  SELECT journal_entry_id FROM protected_credit_allocations
 )`;
 const PROTECTED_JOURNAL_CHECKS = [
   { table: "journal_entries", where: "t.id IN (SELECT id FROM protected_journals)" },
   { table: "journal_lines", where: "t.entry_id IN (SELECT id FROM protected_journals)" },
 ];
+const PROTECTED_CREDIT_ALLOCATION_CHECK = {
+  table: "customer_credit_allocations",
+  where: "t.id IN (SELECT id FROM protected_credit_allocations)",
+};
 
 async function validateReplaceExternalState(
   client: Queryable,
@@ -921,9 +930,10 @@ async function validateReplaceExternalState(
       plan,
       `protected_invoices AS (
         SELECT invoice_id AS id FROM payment_links
-        WHERE company_id = $1 AND status = 'active'
-          AND (expires_at >= now() AT TIME ZONE 'UTC' OR provider_session_id IS NOT NULL)
-      ), ${PROTECTED_INVOICE_JOURNALS}`,
+        WHERE company_id = $1
+          AND ((status = 'active' AND expires_at >= now() AT TIME ZONE 'UTC')
+               OR (status IN ('active', 'cancelled', 'expired') AND provider_session_id IS NOT NULL))
+      ), ${PROTECTED_INVOICE_ACCOUNTING}`,
       [
         {
           table: "invoices",
@@ -934,6 +944,7 @@ async function validateReplaceExternalState(
           },
         },
         { table: "invoice_payments", where: "t.invoice_id IN (SELECT id FROM protected_invoices)" },
+        PROTECTED_CREDIT_ALLOCATION_CHECK,
         ...PROTECTED_JOURNAL_CHECKS,
       ]
     )
@@ -942,7 +953,7 @@ async function validateReplaceExternalState(
       "BACKUP_RESTORE_CONFLICT",
       409,
       { table: "payment_links" },
-      "Replace restore would rewind a payable invoice or its accounting records while a payment link is active."
+      "Replace restore would rewind a payable invoice or its accounting records while a payment link or checkout session can still settle."
     );
   }
 
@@ -959,19 +970,26 @@ async function validateReplaceExternalState(
         JOIN payroll_items i ON i.id = p.payroll_item_id
         JOIN payroll_runs r ON r.id = i.payroll_run_id
         WHERE p.company_id = $1 AND r.company_id = $1
-          AND COALESCE(r.journal_entry_id, r.payment_journal_entry_id,
-                       i.journal_entry_id, i.payment_journal_entry_id) IS NOT NULL
+      ), payroll_history AS (
+        SELECT id, source_id AS run_id FROM journal_entries
+        WHERE company_id = $1 AND source IN ('payroll', 'payroll_payment')
+          AND source_id IN (SELECT run_id FROM protected_payroll)
+      ), posted_payroll AS (
+        SELECT * FROM protected_payroll
+        WHERE COALESCE(run_accrual, run_payment, item_accrual, item_payment) IS NOT NULL
+          OR run_id IN (SELECT run_id FROM payroll_history)
       ), protected_journals AS (
-        SELECT run_accrual AS id FROM protected_payroll
-        UNION SELECT run_payment FROM protected_payroll
-        UNION SELECT item_accrual FROM protected_payroll
-        UNION SELECT item_payment FROM protected_payroll
+        SELECT run_accrual AS id FROM posted_payroll
+        UNION SELECT run_payment FROM posted_payroll
+        UNION SELECT item_accrual FROM posted_payroll
+        UNION SELECT item_payment FROM posted_payroll
+        UNION SELECT id FROM payroll_history
       )`,
       [
-        { table: "payroll_runs", where: "t.id IN (SELECT run_id FROM protected_payroll)" },
+        { table: "payroll_runs", where: "t.id IN (SELECT run_id FROM posted_payroll)" },
         {
           table: "payroll_items",
-          where: "t.payroll_run_id IN (SELECT run_id FROM protected_payroll)",
+          where: "t.payroll_run_id IN (SELECT run_id FROM posted_payroll)",
         },
         ...PROTECTED_JOURNAL_CHECKS,
       ]
@@ -997,7 +1015,7 @@ async function validateReplaceExternalState(
         SELECT id FROM invoices WHERE company_id = $1
           AND (id IN (${history.join(" UNION ALL ")})
                OR einvoice_submitted_at IS NOT NULL OR einvoice_provider_message_id IS NOT NULL)
-      ), ${PROTECTED_INVOICE_JOURNALS}`,
+      ), ${PROTECTED_INVOICE_ACCOUNTING}`,
       [
         {
           table: "invoices",
@@ -1005,6 +1023,7 @@ async function validateReplaceExternalState(
           requireSnapshotRow: true,
         },
         { table: "invoice_lines", where: "t.invoice_id IN (SELECT id FROM protected_invoices)" },
+        PROTECTED_CREDIT_ALLOCATION_CHECK,
         ...PROTECTED_JOURNAL_CHECKS,
       ]
     )
