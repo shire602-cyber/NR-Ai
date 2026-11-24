@@ -54,6 +54,12 @@ async function expectReplaceConflict(
   backup: { id: string; name: string },
   table: string
 ) {
+  const preRestoreBackups = () =>
+    h.sql(
+      "SELECT id FROM backups WHERE company_id = $1 AND backup_type = 'pre_restore' ORDER BY id",
+      [t.company.id]
+    );
+  const before = await preRestoreBackups();
   for (const response of [
     await t.as.post(`/api/backups/${backup.id}/restore-preview`, { mode: "replace" }),
     await replace(t, backup),
@@ -64,11 +70,7 @@ async function expectReplaceConflict(
       details: { table },
     });
   }
-  expect(
-    await h.sql("SELECT id FROM backups WHERE company_id = $1 AND backup_type = 'pre_restore'", [
-      t.company.id,
-    ])
-  ).toEqual([]);
+  expect(await preRestoreBackups()).toEqual(before);
 }
 
 async function draftInvoice(t: Tenant, contactId?: string): Promise<string> {
@@ -94,6 +96,38 @@ async function draftInvoice(t: Tenant, contactId?: string): Promise<string> {
 async function issueInvoice(t: Tenant, invoiceId: string) {
   const response = await t.as.patch(`/api/invoices/${invoiceId}/status`, { status: "sent" });
   expect(response.status, response.text).toBe(200);
+}
+
+async function partiallyPaidInvoice(t: Tenant, bankId: string) {
+  const invoiceId = await draftInvoice(t);
+  await issueInvoice(t, invoiceId);
+  const payment = await t.as.post(`/api/companies/${t.company.id}/invoices/${invoiceId}/payments`, {
+    date: new Date().toISOString().slice(0, 10),
+    method: "bank",
+    amount: 30,
+    paymentAccountId: bankId,
+  });
+  expect(payment.status, payment.text).toBe(201);
+  return invoiceId;
+}
+
+async function issuePartialCreditNote(t: Tenant, invoiceId: string): Promise<string> {
+  const response = await t.as.post(
+    `/api/companies/${t.company.id}/invoices/${invoiceId}/credit-note`,
+    {
+      lines: [
+        {
+          description: "Partial credit",
+          quantity: 1,
+          unitPrice: 20,
+          vatRate: 0,
+          vatSupplyType: "zero_rated",
+        },
+      ],
+    }
+  );
+  expect(response.status, response.text).toBe(201);
+  return response.body.id;
 }
 
 async function journalLines(t: Tenant, sourceId: string) {
@@ -383,7 +417,7 @@ describe("AU7 accounting backup integrity", () => {
       const t = await h.createTenant();
       const base = `/api/companies/${t.company.id}`;
       const contact = await t.as.post(`${base}/customer-contacts`, { name: "Fixture customer" });
-      expect(contact.status, contact.text).toBe(201);
+      expect(contact.status, contact.text).toBe(200);
       const invoiceId = await draftInvoice(t, contact.body.id);
       await issueInvoice(t, invoiceId);
       const bank = await accountByCode(t, "1020");
@@ -446,37 +480,17 @@ describe("AU7 accounting backup integrity", () => {
 
   it("protects an issued credit note and its journal when checkout quotes the reduced balance", async () => {
     const t = await h.createTenant();
-    const base = `/api/companies/${t.company.id}`;
-    const invoiceId = await draftInvoice(t);
-    await issueInvoice(t, invoiceId);
     const bank = await accountByCode(t, "1020");
-    const payment = await t.as.post(`${base}/invoices/${invoiceId}/payments`, {
-      date: new Date().toISOString().slice(0, 10),
-      method: "bank",
-      amount: 30,
-      paymentAccountId: bank.id,
-    });
-    expect(payment.status, payment.text).toBe(201);
+    const invoiceId = await partiallyPaidInvoice(t, bank.id);
     const invoiceRows = () => h.sql("SELECT * FROM invoices WHERE id = $1", [invoiceId]);
     const before = await invoiceRows();
     expect(before[0].status).toBe("partial");
     const backup = await snapshot(t);
 
-    const note = await t.as.post(`${base}/invoices/${invoiceId}/credit-note`, {
-      lines: [
-        {
-          description: "Partial credit",
-          quantity: 1,
-          unitPrice: 20,
-          vatRate: 0,
-          vatSupplyType: "zero_rated",
-        },
-      ],
-    });
-    expect(note.status, note.text).toBe(201);
-    const noteId = note.body.id;
+    const noteId = await issuePartialCreditNote(t, invoiceId);
     expect(await invoiceRows()).toEqual(before);
     await startCheckout(t, invoiceId, bank.id, 7000);
+    const checkoutInvoice = await invoiceRows();
 
     const noteRows = () => h.sql("SELECT * FROM invoices WHERE id = $1", [noteId]);
     const issued = await noteRows();
@@ -492,9 +506,35 @@ describe("AU7 accounting backup integrity", () => {
       );
     });
     await expectReplaceConflict(t, backupWithNote, "payment_links");
-    expect(await invoiceRows()).toEqual(before);
+    expect(await invoiceRows()).toEqual(checkoutInvoice);
     expect(await noteRows()).toEqual(issued);
     expect(await journalLines(t, noteId)).toEqual(lines);
+  });
+
+  it("rejects a snapshot-only credit note that would reduce an open checkout balance", async () => {
+    const t = await h.createTenant();
+    const bank = await accountByCode(t, "1020");
+    const invoiceId = await partiallyPaidInvoice(t, bank.id);
+    const invoiceRows = () => h.sql("SELECT * FROM invoices WHERE id = $1", [invoiceId]);
+    const before = await invoiceRows();
+    expect(before[0].status).toBe("partial");
+    const backupWithoutNote = await snapshot(t);
+    const noteId = await issuePartialCreditNote(t, invoiceId);
+    expect(await invoiceRows()).toEqual(before);
+    expect((await journalLines(t, noteId)).length).toBeGreaterThan(0);
+    const backupWithNote = await snapshot(t);
+
+    const restored = await replace(t, backupWithoutNote);
+    expect(restored.status, restored.text).toBe(200);
+    const noteRows = () => h.sql("SELECT id FROM invoices WHERE id = $1", [noteId]);
+    expect(await noteRows()).toEqual([]);
+    await startCheckout(t, invoiceId, bank.id, 9000);
+    const checkoutInvoice = await invoiceRows();
+
+    await expectReplaceConflict(t, backupWithNote, "payment_links");
+    expect(await invoiceRows()).toEqual(checkoutInvoice);
+    expect(await noteRows()).toEqual([]);
+    expect(await journalLines(t, noteId)).toEqual([]);
   });
 
   it("keeps the configured deposit account eligible while checkout can still settle", async () => {
@@ -520,6 +560,69 @@ describe("AU7 accounting backup integrity", () => {
     expect(
       await h.sql("SELECT is_active, is_archived FROM accounts WHERE id = $1", [accountId])
     ).toEqual([{ is_active: true, is_archived: false }]);
+  });
+
+  it("rejects a restored child that would make the checkout deposit account a header", async () => {
+    const t = await h.createTenant();
+    const invoiceId = await draftInvoice(t);
+    await issueInvoice(t, invoiceId);
+    const url = `/api/companies/${t.company.id}/accounts`;
+    const parent = await t.as.post(url, {
+      code: "1029",
+      nameEn: "Checkout deposits",
+      type: "asset",
+      subType: "bank",
+    });
+    expect(parent.status, parent.text).toBe(201);
+    const child = await t.as.post(url, {
+      code: "1031",
+      nameEn: "Deposit sub-account",
+      type: "asset",
+      subType: "bank",
+      parentId: parent.body.id,
+    });
+    expect(child.status, child.text).toBe(201);
+    const childRows = () =>
+      h.sql("SELECT parent_id, is_archived FROM accounts WHERE id = $1", [child.body.id]);
+    expect(await childRows()).toEqual([{ parent_id: parent.body.id, is_archived: false }]);
+    const backup = await snapshot(t);
+    const archived = await t.as.post(`/api/accounts/${child.body.id}/archive`, {});
+    expect(archived.status, archived.text).toBe(200);
+    await startCheckout(t, invoiceId, parent.body.id, 12000);
+
+    await expectReplaceConflict(t, backup, "payment_links");
+    expect(await childRows()).toEqual([{ parent_id: parent.body.id, is_archived: true }]);
+  });
+
+  it("rejects a restored posting lock that covers the checkout receipt date", async () => {
+    const t = await h.createTenant();
+    const invoiceId = await draftInvoice(t);
+    await issueInvoice(t, invoiceId);
+    const bank = await accountByCode(t, "1020");
+    const now = new Date();
+    const periodEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0))
+      .toISOString()
+      .slice(0, 10);
+    const base = `/api/companies/${t.company.id}`;
+    const lock = await t.as.post(`${base}/month-end/lock-period`, {
+      periodEnd,
+      overrideChecklist: true,
+      lockType: "hard",
+      reason: "AU7 checkout fixture",
+    });
+    expect(lock.status, lock.text).toBe(200);
+    const backup = await snapshot(t);
+    const unlock = await t.as.post(`${base}/period-lock/unlock`, {
+      periodEnd,
+      reason: "Accept payment on the issued invoice",
+    });
+    expect(unlock.status, unlock.text).toBe(200);
+    await startCheckout(t, invoiceId, bank.id, 12000);
+
+    await expectReplaceConflict(t, backup, "payment_links");
+    expect(
+      await h.sql("SELECT status FROM month_end_close WHERE company_id = $1", [t.company.id])
+    ).toEqual([{ status: "open" }]);
   });
 
   it("keeps a payslip token and its payroll run through replace", async () => {

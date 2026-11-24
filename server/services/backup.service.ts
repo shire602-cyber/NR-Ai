@@ -33,6 +33,7 @@ import { pool } from "../db";
 import { pq, type Queryable } from "./connectors/pq";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secret-vault";
 import { DomainError, errorCode } from "../errors";
+import { HEADER_SUB_TYPES } from "../ledger/kernel";
 import { createLogger } from "../config/logger";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { recordAudit } from "./audit.service";
@@ -827,6 +828,7 @@ interface ProtectedRestoreRows {
   columns?: string[];
   columnMatches?: Record<string, string>;
   requireSnapshotRow?: boolean;
+  snapshotWhere?: string;
 }
 
 async function replaceChangesProtectedRows(
@@ -866,6 +868,18 @@ async function replaceChangesProtectedRows(
         AND NOT EXISTS (SELECT 1 FROM ${snapshot} s WHERE ${key} AND (${equal || "true"}))
         ${protectedDeletion}
     )`);
+    if (check.snapshotWhere) {
+      const incomingScope = check.snapshotWhere.replace(/\bt\.(\w+)/g, (ref, column: string) =>
+        table.columns.includes(column) ? `s.${column}` : ref
+      );
+      // Use the live value for scope columns omitted by an older snapshot.
+      // A missing live row still conflicts even when its incoming values are null.
+      conflicts.push(`EXISTS (
+        SELECT 1 FROM ${snapshot} s
+        LEFT JOIN ${q(table.name)} t ON (${table.predicate}) AND ${key}
+        WHERE (${incomingScope}) AND (t.${q(table.pk[0])} IS NULL OR NOT (${equal || "true"}))
+      )`);
+    }
   }
   if (!conflicts.length) return false;
   const { rows } = await client.query(
@@ -898,6 +912,119 @@ const PROTECTED_CREDIT_ALLOCATION_CHECK = {
   where: "t.id IN (SELECT id FROM protected_credit_allocations)",
 };
 
+const SETTLING_LINKS = `settling_links AS (
+  SELECT invoice_id, deposit_account_id, expires_at, provider_session_id FROM payment_links
+  WHERE company_id = $1
+    AND ((status = 'active' AND expires_at >= now() AT TIME ZONE 'UTC')
+         OR (status IN ('active', 'cancelled', 'expired') AND provider_session_id IS NOT NULL))
+)`;
+const LINKED_CREDIT_NOTE =
+  "t.invoice_type = 'credit_note' AND t.original_invoice_id IN (SELECT invoice_id FROM settling_links)";
+const LINKED_LEGACY_CREDIT_NOTE = "t.invoice_id IN (SELECT invoice_id FROM settling_links)";
+
+// Project only the columns the guards read. Older snapshots leave omitted
+// columns unchanged on updates and use the column defaults on inserts.
+function replacementRows(
+  plan: RestoreTable[],
+  values: string[],
+  name: string,
+  columns: Record<string, string>
+): string {
+  const live = `FROM ${q(name)} t WHERE t.company_id = $1`;
+  const entry = plan.find(({ table }) => table.name === name);
+  if (!entry) return `SELECT ${Object.keys(columns).join(", ")} ${live}`;
+  const { table, json } = entry;
+  values.push(json);
+  const snapshot = `json_populate_recordset(NULL::${q(name)}, $${values.length}::json)`;
+  const key = pkMatch(table, "t", "s");
+  const projected = Object.entries(columns).map(([column, defaultSql]) =>
+    table.columns.includes(column)
+      ? `s.${column}`
+      : `CASE WHEN t.id IS NULL THEN ${defaultSql} ELSE t.${column} END AS ${column}`
+  );
+  return `SELECT ${projected.join(", ")}
+    FROM ${snapshot} s LEFT JOIN ${q(name)} t ON ${key}
+    WHERE s.company_id = $1
+    UNION ALL
+    SELECT ${Object.keys(columns).join(", ")} ${live}
+      AND NOT EXISTS (SELECT 1 FROM ${snapshot} s WHERE ${key})
+      ${table.protectedFromDelete ? `AND (${table.protectedFromDelete})` : "AND false"}`;
+}
+
+function postingLockRanges(months: string, years: string): string {
+  // The automatic payment has no override for either a hard or a soft lock.
+  return `
+    SELECT daterange(
+      CASE WHEN lock_scope IS DISTINCT FROM 'through' THEN date_trunc('month', period_end)::date END,
+      period_end::date, '[]'
+    ) AS dates FROM ${months} WHERE status = 'locked'
+    UNION ALL
+    SELECT daterange(NULL, fiscal_year_end, '[]') FROM ${years}
+    WHERE status = 'closed' AND hard_closed = true`;
+}
+
+async function replaceBlocksCheckoutPosting(
+  client: Queryable,
+  companyId: string,
+  plan: RestoreTable[]
+): Promise<boolean> {
+  const values = [companyId];
+  const conflicts: string[] = [];
+  if (plan.some(({ table }) => table.name === "accounts")) {
+    const resultingAccounts = replacementRows(plan, values, "accounts", {
+      parent_id: "NULL",
+      is_archived: "false",
+    });
+    values.push(`{${HEADER_SUB_TYPES.join(",")}}`);
+    conflicts.push(`EXISTS (
+      SELECT 1 FROM settling_links link
+      JOIN accounts parent ON parent.id = link.deposit_account_id AND parent.company_id = $1
+      JOIN (${resultingAccounts}) child ON child.parent_id = parent.id
+      WHERE parent.sub_type = ANY($${values.length}::text[]) AND child.is_archived = false
+    )`);
+  }
+  if (plan.some(({ table }) => ["month_end_close", "fiscal_year_closes"].includes(table.name))) {
+    const months = replacementRows(plan, values, "month_end_close", {
+      period_end: "NULL",
+      status: "'open'",
+      lock_scope: "'month'",
+    });
+    const years = replacementRows(plan, values, "fiscal_year_closes", {
+      fiscal_year_end: "NULL",
+      status: "'closed'",
+      hard_closed: "false",
+    });
+    // A known session can deliver a paid event after link expiry or cancellation.
+    // The webhook posts on its UTC receipt date, including delayed delivery.
+    conflicts.push(`EXISTS (
+      SELECT 1 FROM (
+        SELECT daterange((now() AT TIME ZONE 'UTC')::date,
+          CASE WHEN NOT bool_or(provider_session_id IS NOT NULL) THEN max(expires_at)::date END,
+          '[]') AS dates
+        FROM settling_links HAVING count(*) > 0
+      ) settlement_window
+      CROSS JOIN LATERAL (
+        SELECT COALESCE(range_agg(dates), '{}'::datemultirange) AS dates
+        FROM (${postingLockRanges(`(${months}) m`, `(${years}) y`)}) locks
+      ) restored
+      CROSS JOIN LATERAL (
+        SELECT COALESCE(range_agg(dates), '{}'::datemultirange) AS dates
+        FROM (${postingLockRanges(
+          "(SELECT * FROM month_end_close WHERE company_id = $1) m",
+          "(SELECT * FROM fiscal_year_closes WHERE company_id = $1) y"
+        )}) locks
+      ) live
+      WHERE (restored.dates - live.dates) && datemultirange(settlement_window.dates)
+    )`);
+  }
+  if (!conflicts.length) return false;
+  const { rows } = await client.query(
+    `WITH ${SETTLING_LINKS} SELECT 1 WHERE ${conflicts.join(" OR ")}`,
+    values
+  );
+  return rows.length > 0;
+}
+
 async function validateReplaceExternalState(
   client: Queryable,
   companyId: string,
@@ -925,21 +1052,15 @@ async function validateReplaceExternalState(
   }
 
   if (
-    await replaceChangesProtectedRows(
+    (await replaceChangesProtectedRows(
       client,
       companyId,
       plan,
-      `settling_links AS (
-        SELECT invoice_id, deposit_account_id FROM payment_links
-        WHERE company_id = $1
-          AND ((status = 'active' AND expires_at >= now() AT TIME ZONE 'UTC')
-               OR (status IN ('active', 'cancelled', 'expired') AND provider_session_id IS NOT NULL))
-      ), protected_credit_notes AS (
-        SELECT id FROM invoices WHERE company_id = $1 AND invoice_type = 'credit_note'
-          AND original_invoice_id IN (SELECT invoice_id FROM settling_links)
+      `${SETTLING_LINKS}, protected_credit_notes AS (
+        SELECT id FROM invoices t WHERE company_id = $1 AND ${LINKED_CREDIT_NOTE}
       ), protected_legacy_credit_notes AS (
-        SELECT id, journal_entry_id FROM credit_notes WHERE company_id = $1
-          AND invoice_id IN (SELECT invoice_id FROM settling_links)
+        SELECT id, journal_entry_id FROM credit_notes t WHERE company_id = $1
+          AND ${LINKED_LEGACY_CREDIT_NOTE}
       ), protected_invoices AS (
         SELECT invoice_id AS id FROM settling_links
         UNION SELECT id FROM protected_credit_notes
@@ -953,28 +1074,51 @@ async function validateReplaceExternalState(
             status: "(s.status = t.status OR s.status IN ('sent', 'posted', 'partial'))",
           },
         },
-        { table: "invoices", where: "t.id IN (SELECT id FROM protected_credit_notes)" },
+        {
+          table: "invoices",
+          where: "t.id IN (SELECT id FROM protected_credit_notes)",
+          snapshotWhere: LINKED_CREDIT_NOTE,
+        },
         {
           table: "invoice_lines",
           where: "t.invoice_id IN (SELECT id FROM protected_credit_notes)",
+          snapshotWhere: "t.invoice_id IN (SELECT id FROM protected_credit_notes)",
         },
-        { table: "credit_notes", where: "t.id IN (SELECT id FROM protected_legacy_credit_notes)" },
+        {
+          table: "credit_notes",
+          where: "t.id IN (SELECT id FROM protected_legacy_credit_notes)",
+          snapshotWhere: LINKED_LEGACY_CREDIT_NOTE,
+        },
         {
           table: "accounts",
           where: "t.id IN (SELECT deposit_account_id FROM settling_links)",
           columns: ["type", "sub_type", "is_active", "is_archived"],
         },
-        { table: "invoice_payments", where: "t.invoice_id IN (SELECT id FROM protected_invoices)" },
-        PROTECTED_CREDIT_ALLOCATION_CHECK,
-        ...PROTECTED_JOURNAL_CHECKS,
+        {
+          table: "invoice_payments",
+          where: "t.invoice_id IN (SELECT id FROM protected_invoices)",
+          snapshotWhere: "t.invoice_id IN (SELECT id FROM protected_invoices)",
+        },
+        {
+          ...PROTECTED_CREDIT_ALLOCATION_CHECK,
+          snapshotWhere: "t.invoice_id IN (SELECT id FROM protected_invoices)",
+        },
+        {
+          ...PROTECTED_JOURNAL_CHECKS[0],
+          snapshotWhere: `${PROTECTED_JOURNAL_CHECKS[0].where}
+            OR (t.source IN ('invoice', 'payment_reversal')
+                AND t.source_id IN (SELECT id FROM protected_invoices))`,
+        },
+        { ...PROTECTED_JOURNAL_CHECKS[1], snapshotWhere: PROTECTED_JOURNAL_CHECKS[1].where },
       ]
-    )
+    )) ||
+    (await replaceBlocksCheckoutPosting(client, companyId, plan))
   ) {
     throw new DomainError(
       "BACKUP_RESTORE_CONFLICT",
       409,
       { table: "payment_links" },
-      "Replace restore would rewind a payable invoice, its accounting records, or deposit account eligibility while a payment link or checkout session can still settle."
+      "Replace restore would change a payable invoice, its accounting records, deposit account eligibility, or posting availability while a payment link or checkout session can still settle."
     );
   }
 
