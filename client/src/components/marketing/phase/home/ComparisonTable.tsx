@@ -2,7 +2,7 @@ import { Link } from "wouter";
 import { ArrowRight } from "lucide-react";
 import type { SectionProps } from "./types";
 import { SectionHead } from "./SectionHead";
-import { useMarketingText, type MarketingKey } from "./text";
+import { useMarketingRich, useMarketingText, type MarketingKey } from "./text";
 import {
   COMPARISON_ROWS,
   COMPARISON_SOURCES,
@@ -24,13 +24,14 @@ const DASH = "-";
 
 export function ComparisonTable({ base, locale, focus, headingLevel = 2 }: ComparisonTableProps) {
   const text = useMarketingText(locale);
+  const rich = useMarketingRich(locale);
   const columns = visibleColumns(focus);
   const competitors = columns.filter((c): c is "wafeq" | "zoho" => c !== "muhasib");
   const Heading = `h${headingLevel}` as "h1" | "h2" | "h3";
 
   const renderCell = (cell: ComparisonCell) =>
     cell.key ? (
-      text(cell.key, cell.vars)
+      rich(cell.key, cell.vars)
     ) : (
       <span role="img" aria-label={text("hxCmpDashLabel")}>
         {DASH}

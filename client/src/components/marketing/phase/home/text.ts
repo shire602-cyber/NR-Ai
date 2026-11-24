@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { createElement, Fragment, useCallback, useEffect, type ReactNode } from "react";
 import { loadNamespace, t, useCatalogRevision } from "@/lib/i18n";
 import type enMarketing from "@/locales/en/marketing.json";
 import type { SiteLocale } from "../routes";
@@ -11,17 +11,60 @@ export type MarketingKey = CatalogKey extends infer K
     : never
   : never;
 
-export type MarketingText = (key: MarketingKey, vars?: Record<string, string | number>) => string;
+type Vars = Record<string, string | number>;
+export type MarketingText = (key: MarketingKey, vars?: Vars) => string;
+export type MarketingRich = (key: MarketingKey, vars?: Vars) => ReactNode;
 
 /** Present in every build of the catalog, so its absence means the chunk is not loaded yet. */
 const READY_KEY = "marketing.hxHeroTitle";
 const requested = new Set<SiteLocale>();
 
+/** Third-party proper noun inside a sentence: `⟦Elite⟧` renders as an English, untranslated island. */
+const BRAND_MARK = /⟦([^⟧]*)⟧/g;
+
 /** Replace `{name}` placeholders; unknown names are left as written. */
-export function fillPlaceholders(template: string, vars?: Record<string, string | number>) {
+export function fillPlaceholders(template: string, vars?: Vars) {
   if (!vars) return template;
   return template.replace(/\{(\w+)\}/g, (match, name: string) =>
     Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match
+  );
+}
+
+/** Drop the `⟦ ⟧` markers for plain-string consumers (aria labels, captions, option text). */
+export function stripBrandMarks(value: string): string {
+  return value.replace(BRAND_MARK, "$1");
+}
+
+/** Wrap every `⟦name⟧` in `<bdi lang="en" translate="no">` so vendor names stay Latin in Arabic. */
+export function brandNodes(value: string): ReactNode {
+  const parts = value.split(BRAND_MARK);
+  if (parts.length === 1) return value;
+  return createElement(
+    Fragment,
+    null,
+    parts.map((part, index) =>
+      index % 2 === 1
+        ? createElement("bdi", { key: index, lang: "en", translate: "no" }, part)
+        : part || null
+    )
+  );
+}
+
+function useCatalogLookup(locale: SiteLocale) {
+  const revision = useCatalogRevision();
+  useEffect(() => {
+    if (READY_KEY in t[locale] || requested.has(locale)) return;
+    requested.add(locale);
+    loadNamespace(locale, "marketing").catch(() => requested.delete(locale));
+  }, [locale, revision]);
+  return useCallback(
+    (key: MarketingKey, vars?: Vars) => {
+      const value = t[locale][`marketing.${key}`];
+      return typeof value === "string" ? fillPlaceholders(value, vars) : "";
+    },
+    // `revision` changes when a catalog chunk lands, so consumers re-render with the new text.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [locale, revision]
   );
 }
 
@@ -32,19 +75,12 @@ export function fillPlaceholders(template: string, vars?: Record<string, string 
  * renders as "" (never the other language, never the raw key).
  */
 export function useMarketingText(locale: SiteLocale): MarketingText {
-  const revision = useCatalogRevision();
-  useEffect(() => {
-    if (READY_KEY in t[locale] || requested.has(locale)) return;
-    requested.add(locale);
-    loadNamespace(locale, "marketing").catch(() => requested.delete(locale));
-  }, [locale, revision]);
-  return useCallback<MarketingText>(
-    (key, vars) => {
-      const value = t[locale][`marketing.${key}`];
-      return typeof value === "string" ? fillPlaceholders(value, vars) : "";
-    },
-    // `revision` changes when a catalog chunk lands, so consumers re-render with the new text.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [locale, revision]
-  );
+  const lookup = useCatalogLookup(locale);
+  return useCallback<MarketingText>((key, vars) => stripBrandMarks(lookup(key, vars)), [lookup]);
+}
+
+/** Like `useMarketingText` but returns nodes, with `⟦brand⟧` spans rendered as English islands. */
+export function useMarketingRich(locale: SiteLocale): MarketingRich {
+  const lookup = useCatalogLookup(locale);
+  return useCallback<MarketingRich>((key, vars) => brandNodes(lookup(key, vars)), [lookup]);
 }

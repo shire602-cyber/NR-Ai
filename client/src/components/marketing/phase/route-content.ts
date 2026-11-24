@@ -14,7 +14,7 @@ export const homeTitle: Bilingual = [
 ];
 export const homeLead: Bilingual = [
   `Bilingual tax invoices, AI receipt capture, VAT 201 ready for EmaraTax and e-invoicing on every plan, from AED ${starterPrice} a month.`,
-  `فواتير ضريبية ثنائية اللغة، والتقاط الإيصالات بالذكاء الاصطناعي، وإقرار VAT 201 جاهز لـ EmaraTax، وفوترة إلكترونية في كل باقة، ابتداءً من ${starterPrice} درهمًا شهريًا.`,
+  `فواتير ضريبية بالعربية والإنجليزية، والتقاط الإيصالات بالذكاء الاصطناعي، وإقرار VAT 201 جاهز لـ EmaraTax، وفوترة إلكترونية مشمولة في كل باقة، من ${starterPrice} درهمًا شهريًا.`,
 ];
 
 export const demoTitle: Bilingual = ["Request a demo", "اطلب عرضًا توضيحيًا"];
@@ -28,7 +28,7 @@ export const pricingTitle: Bilingual = [
 ];
 export const pricingLead: Bilingual = [
   "Compare Starter, Professional and Enterprise. Try Enterprise free for 14 days with no card.",
-  "قارن باقات المبتدئ والاحترافية والمؤسسات. جرّب باقة المؤسسات مجانًا لمدة ١٤ يومًا دون بطاقة دفع.",
+  "قارن باقات المبتدئ والاحترافية والمؤسسات. جرّب باقة المؤسسات مجانًا لمدة 14 يومًا دون بطاقة دفع.",
 ];
 
 // The UAE e-invoicing hub is the SEO landing page. Like the homepage pair above these stay

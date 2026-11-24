@@ -5,7 +5,7 @@ import { PAID_PLAN_IDS, type PaidPlanId } from "@shared/plans";
 import { trialSignupPath } from "../route-content";
 import type { SectionProps } from "./types";
 import { SectionHead } from "./SectionHead";
-import { useMarketingText, type MarketingKey, type MarketingText } from "./text";
+import { useMarketingRich, useMarketingText, type MarketingKey, type MarketingText } from "./text";
 import { useCountUp, useInView } from "./motion";
 import {
   COMPARATORS,
@@ -80,6 +80,7 @@ function Slider({ id, label, spec, value, valueText, onChange }: SliderProps) {
 
 export function SavingsCalculator({ locale }: SectionProps) {
   const text = useMarketingText(locale);
+  const rich = useMarketingRich(locale);
   const uid = useId();
   const [invoices, setInvoices] = useState<number>(SLIDERS.invoices.default);
   const [receipts, setReceipts] = useState<number>(SLIDERS.receipts.default);
@@ -116,7 +117,8 @@ export function SavingsCalculator({ locale }: SectionProps) {
     softwareLine = text("hxSavSwMore", { amount: formatAmount(-software.diffAed) });
   else softwareLine = text("hxSavSwSame");
 
-  const theirsName = comparatorLabel(comparator, text);
+  const theirsBrand = comparatorBrand(comparator);
+  const theirsMarked = theirsBrand ? `⟦${theirsBrand}⟧` : comparatorLabel(comparator, text);
   const dash = (
     <span aria-label={text("hxSavDashLabel")} role="img">
       {DASH}
@@ -177,7 +179,11 @@ export function SavingsCalculator({ locale }: SectionProps) {
                   }}
                 >
                   {COMPARATORS.map((c) => (
-                    <option key={c.id} value={c.id}>
+                    <option
+                      key={c.id}
+                      value={c.id}
+                      {...(comparatorBrand(c) ? { lang: "en", translate: "no" as const } : {})}
+                    >
                       {comparatorLabel(c, text)}
                     </option>
                   ))}
@@ -242,7 +248,7 @@ export function SavingsCalculator({ locale }: SectionProps) {
                 <h4 className="mz-sav-h4">{text("hxSavSwTitle")}</h4>
                 <dl className="mz-sav-stats">
                   <div>
-                    <dt>{text("hxSavSwTheirs", { name: theirsName })}</dt>
+                    <dt>{rich("hxSavSwTheirs", { name: theirsMarked })}</dt>
                     <dd data-testid="savings-theirs">
                       {software.theirsYearAed === null
                         ? dash
@@ -303,7 +309,7 @@ export function SavingsCalculator({ locale }: SectionProps) {
               </tr>
             </tbody>
           </table>
-          <p>{text("hxSavHowPlans")}</p>
+          <p>{rich("hxSavHowPlans")}</p>
           <p>{text("hxSavPriceAsOf")}</p>
           <ul className="mz-sav-sources">
             <li>
