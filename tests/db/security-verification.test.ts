@@ -227,6 +227,56 @@ describe("W5-E email verification", () => {
   });
 });
 
+describe("STEP5 N-1 no live verification link at rest", () => {
+  it("keeps no body for verification mail while no provider exists, and a resend issues a fresh working link", async () => {
+    const { setEmailTransportOverride, processOutbox } = await import("../../server/outbox");
+    setEmailTransportOverride(null);
+    const user = await h.createTenant({ name: "NoProvider" });
+    const rows = await h.sql(
+      `SELECT status, html, text_body, sensitive FROM email_outbox
+        WHERE to_address = $1 AND category = 'security'`,
+      [user.email]
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      expect(r.status).toBe("blocked_no_provider");
+      expect(r.sensitive).toBe(true);
+      expect(r.html).toBeNull();
+      expect(r.text_body).toBeNull();
+    }
+    // No 64-hex token sits anywhere in the outbox for this address.
+    const leaked = await h.sql(
+      `SELECT 1 FROM email_outbox WHERE to_address = $1 AND (html ~ '[0-9a-f]{64}' OR text_body ~ '[0-9a-f]{64}')`,
+      [user.email]
+    );
+    expect(leaked).toHaveLength(0);
+
+    // A provider appears later: the body-less rows are never sent on their own (nothing empty goes out).
+    sent.length = 0;
+    setEmailTransportOverride({
+      name: "test",
+      send: async (m) => {
+        sent.push(m);
+        return { providerMessageId: `late-${sent.length}` };
+      },
+    });
+    await processOutbox();
+    expect(sent.filter((m) => m.to === user.email)).toHaveLength(0);
+
+    // Resend still works with a provider: a fresh token, delivered, and the body is not kept.
+    const resend = await user.as.post("/api/auth/verify-email/resend", {});
+    expect(resend.status, resend.text).toBe(200);
+    const token = tokenFrom(sent.find((m) => m.to === user.email));
+    const after = await h.sql(
+      `SELECT status, html FROM email_outbox WHERE to_address = $1 AND category = 'security' AND status = 'sent'`,
+      [user.email]
+    );
+    expect(after.length).toBeGreaterThan(0);
+    expect(after.every((r) => r.html === null)).toBe(true);
+    expect((await h.anon.post("/api/auth/verify-email", { token })).status).toBe(200);
+  });
+});
+
 describe("W5-E CAPTCHA adapter", () => {
   it("[R17-24] skipped when not configured; called and enforced when TURNSTILE_SECRET_KEY is set", async () => {
     const { __setCaptchaFetchForTests } = await import("../../server/services/security/captcha");
