@@ -802,11 +802,12 @@ describe("A4 deposits x A1 filed-period lock", () => {
     });
     expect(refused.status, refused.text).toBe(409);
     expect(refused.body.code).toBe("VAT_PERIOD_FILED");
-    const ok = await t.as.post(`${base(t)}/customer-credits/${dep.body.creditId}/apply`, {
+    const stillRefused = await t.as.post(`${base(t)}/customer-credits/${dep.body.creditId}/apply`, {
       invoiceId: inv.body.id,
       amount: 1000,
       date: "2026-04-02",
     });
-    expect(ok.status, ok.text).toBe(201);
+    expect(stillRefused.status, stillRefused.text).toBe(409);
+    expect(stillRefused.body.code).toBe("VAT_PERIOD_FILED");
   });
 });

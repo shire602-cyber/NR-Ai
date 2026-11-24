@@ -29,7 +29,11 @@ import type { JournalLineVatTreatment } from "../../shared/journal-line-treatmen
 import { uaeToday } from "../../shared/uae-date";
 import { DomainError } from "../errors";
 import { ENTRY_LOCAL_DATE_SQL } from "../reporting/ledger-query";
-import { salesTaxPointSql } from "../tax/sales-tax-point";
+import {
+  depositApplicationTaxDateSql,
+  depositApplicationVatDateSql,
+  salesTaxPointSql,
+} from "../tax/sales-tax-point";
 import { ledgerQueryable, rowsOf } from "./tx";
 import type { LedgerTx } from "./types";
 import {
@@ -379,20 +383,30 @@ export async function assertVatPeriodOpen(
     const date = rowsOf<{ d: string | null }>(point)[0]?.d;
     if (date) dates[0] = date;
   }
+  if (input.source === "customer_deposit" && input.sourceId && !input.reversedEntryId) {
+    const { rows } = await ledgerQueryable(tx).query(
+      `SELECT (${depositApplicationVatDateSql("$1", "$2")})::text AS d`,
+      [input.companyId, input.sourceId]
+    );
+    if (rows[0]?.d) dates[0] = rows[0].d;
+  }
   let originalSource: string | null = null;
   if (input.reversedEntryId) {
     const res = await tx.execute(sql`
-      SELECT COALESCE(${sql.raw(salesTaxPointSql("si"))}, ${sql.raw(ENTRY_LOCAL_DATE_SQL)})::text AS d,
-             je.source
+      SELECT COALESCE(${sql.raw(salesTaxPointSql("si"))}, dep.d, ${sql.raw(ENTRY_LOCAL_DATE_SQL)})::text AS d,
+             je.source, dep.d::text AS deposit_application_date
         FROM journal_entries je LEFT JOIN invoices si
           ON je.source = 'invoice' AND si.id = je.source_id AND si.company_id = je.company_id
+        LEFT JOIN LATERAL (
+          SELECT ${sql.raw(depositApplicationVatDateSql("je.company_id", "je.source_id"))} AS d
+        ) dep ON je.source = 'customer_deposit'
        WHERE je.id = ${input.reversedEntryId} AND je.company_id = ${input.companyId}
     `);
     const original = rowsOf<Record<string, string | null>>(res)[0];
     if (VAT_LOCK_EXEMPT_SOURCES.has(original?.source ?? "")) return;
     if (original?.d && !REVERSAL_REPORTED_ON_OWN_DATE.has(original.source ?? "")) {
       originalSource = original.source;
-      if (originalSource === "invoice") dates[0] = original.d;
+      if (originalSource === "invoice" || original.deposit_application_date) dates[0] = original.d;
       else dates.push(original.d);
     }
   }
@@ -417,22 +431,42 @@ export async function assertInvoicePaymentTaxPointOpen(
   tx: LedgerTx,
   companyId: string,
   invoiceId: string,
-  payment: { date: Date; amount: number; id?: string }
+  payment: { date: Date; appliedAmount: number } | { id: string }
 ): Promise<void> {
   const current = salesTaxPointSql("si");
-  const next = payment.id ? salesTaxPointSql("si", "$3::uuid") : `LEAST(${current}, $3::date)`;
+  const removing = "id" in payment;
+  const next = removing ? salesTaxPointSql("si", "$3::uuid") : `LEAST(${current}, $3::date)`;
   const { rows } = await ledgerQueryable(tx).query(
-    `SELECT (${current})::text AS old_date, (${next})::text AS new_date
+    `WITH points AS (
+      SELECT (${current}) AS old_date, (${next}) AS new_date
        FROM invoices si
-      WHERE si.company_id = $1 AND si.id = $2 AND $4 >= si.total
-        AND si.invoice_type NOT IN ('credit_note', 'debit_note')`,
-    [companyId, invoiceId, payment.id ?? uaeToday(payment.date), payment.amount]
+      WHERE si.company_id = $1 AND si.id = $2 ${removing ? "" : "AND $4 >= si.total"}
+        AND si.invoice_type NOT IN ('credit_note', 'debit_note')
+    ), deposit_points AS (
+      SELECT ${depositApplicationTaxDateSql("p.old_date", "d")} AS old_date,
+             ${depositApplicationTaxDateSql("p.new_date", "d")} AS new_date
+        FROM points p
+        JOIN customer_credit_allocations a ON a.invoice_id = $2 AND a.company_id = $1
+        JOIN customer_credits c ON c.id = a.credit_id AND c.company_id = a.company_id
+        JOIN customer_deposits d ON d.id = c.source_id AND d.company_id = a.company_id
+        JOIN journal_entries je ON je.id = a.journal_entry_id AND je.company_id = a.company_id
+       WHERE p.old_date <> p.new_date AND a.kind = 'apply' AND c.source_type = 'deposit'
+         AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL
+    )
+    SELECT date::text FROM (
+      SELECT old_date AS date FROM points WHERE old_date <> new_date
+      UNION SELECT new_date FROM points WHERE old_date <> new_date
+      UNION SELECT old_date FROM deposit_points WHERE old_date <> new_date
+      UNION SELECT new_date FROM deposit_points WHERE old_date <> new_date
+    ) changed ORDER BY date`,
+    removing
+      ? [companyId, invoiceId, payment.id]
+      : [companyId, invoiceId, uaeToday(payment.date), payment.appliedAmount]
   );
-  const row = rows[0];
-  if (!row || row.old_date === row.new_date) return;
+  if (!rows.length) return;
   await lockVatReturns(tx, companyId, "shared");
-  for (const point of [row.old_date, row.new_date]) {
-    const period = await findFiledVatPeriod(tx, companyId, point);
-    if (period) throw vatPeriodFiledError(period, point);
+  for (const { date } of rows) {
+    const period = await findFiledVatPeriod(tx, companyId, date);
+    if (period) throw vatPeriodFiledError(period, date);
   }
 }

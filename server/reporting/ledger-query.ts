@@ -4,7 +4,7 @@
  * report; conversion back to major units of the company's base currency happens once,
  * at the edge (`aed()`, kept for its historical name).
  */
-import { salesTaxPointSql } from "../tax/sales-tax-point";
+import { depositApplicationVatDateSql, salesTaxPointSql } from "../tax/sales-tax-point";
 import type { QueryResultRow } from "pg";
 import { pool } from "../db";
 import { DomainError } from "../errors";
@@ -312,7 +312,18 @@ export async function ledgerLines(
                             WHERE orig.id = COALESCE(je.reversed_entry_id,
                                     CASE WHEN je.source = 'reversal' THEN je.source_id END)
                               AND orig.company_id = je.company_id
-                              AND orig.source = 'invoice') END), ${ENTRY_LOCAL_DATE_SQL})`
+                              AND orig.source = 'invoice') END),
+        ${depositApplicationVatDateSql(
+          "je.company_id",
+          `CASE
+          WHEN je.reversed_entry_id IS NOT NULL OR je.source = 'reversal'
+          THEN (SELECT orig.source_id FROM journal_entries orig
+             WHERE orig.id = COALESCE(je.reversed_entry_id,
+                     CASE WHEN je.source = 'reversal' THEN je.source_id END)
+               AND orig.company_id = je.company_id AND orig.source = 'customer_deposit')
+          WHEN je.source = 'customer_deposit' THEN je.source_id END`
+        )},
+        ${ENTRY_LOCAL_DATE_SQL})`
     : ENTRY_LOCAL_DATE_SQL;
   const { rows } = await q.query(
     `SELECT je.id AS entry_id, je.entry_number, ${dateSql}::text AS d, je.memo,

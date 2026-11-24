@@ -44,6 +44,7 @@ import {
   type PostJournalLineInput,
 } from "../ledger";
 import { assertInvoicePaymentTaxPointOpen } from "../ledger/vat-lock";
+import type { undoReliefRecoveryOnPayment } from "../tax/vat-adjustments.service";
 import { fromFils, toFils } from "../../shared/money";
 import { emitDomainEvent } from "../platform/domain-events";
 import { has, provide, resolve } from "../platform/service-registry";
@@ -620,9 +621,18 @@ export async function reverseInvoicePayment(
     if (payment.method !== WRITE_OFF_METHOD) {
       await assertInvoicePaymentTaxPointOpen(tx, input.companyId, invoice.id, {
         id: payment.id,
-        date: payment.date,
-        amount: Number(payment.amount),
       });
+      if (has("vat.undoReliefRecoveryOnPayment")) {
+        await resolve<typeof undoReliefRecoveryOnPayment>("vat.undoReliefRecoveryOnPayment")({
+          companyId: input.companyId,
+          invoiceId: invoice.id,
+          paymentId: payment.id,
+          actorId: input.actorId,
+          reason: input.reason,
+          date: input.date,
+          tx,
+        });
+      }
     }
     await tx.delete(invoicePayments).where(eq(invoicePayments.id, payment.id));
     const updated = await refreshSettlementStatus(tx, invoice.id);

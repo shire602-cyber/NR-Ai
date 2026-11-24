@@ -11,7 +11,7 @@
  */
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import { uaeToday } from "@shared/uae-date";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Request } from "express";
 import { db, pool } from "../db";
 import { DomainError } from "../errors";
@@ -19,7 +19,6 @@ import { storage } from "../storage";
 import {
   badDebtReliefClaims,
   invoiceLines,
-  invoicePayments,
   invoices,
   vatReturnAdjustments,
   vatReturns,
@@ -48,16 +47,23 @@ import {
   lockVatGroupMembership,
   lockVatReturnCompanies,
   lockVatReturns,
+  vatPeriodFiledError,
 } from "../ledger/vat-lock";
 import { recordAudit } from "../services/audit.service";
-import { invoiceSettlement, totalsForStoredDocument } from "../services/invoice-posting.service";
+import {
+  invoiceSettlement,
+  lockInvoice,
+  totalsForStoredDocument,
+} from "../services/invoice-posting.service";
+import { lockPeriodPolicy } from "../services/period-lock.service";
+import { localDateSql } from "../reporting/settlement";
 import { invoiceWrittenOffFils } from "../services/invoice-payment.service";
 import { onDomainEvent } from "../platform/domain-events";
 import { createLogger } from "../config/logger";
 import { has, provide } from "../platform/service-registry";
 import { normaliseEmirate, toBaseFils } from "./vat-boxes";
 import { loadVatCompany, returnAdjustmentDelta, type ReturnAdjustmentKind } from "./vat-engine";
-import { salesTaxPointSql } from "./sales-tax-point";
+import { appliedReceiptAmountSql, salesTaxPointSql } from "./sales-tax-point";
 import { assertAlignedPeriod } from "./vat-periods";
 
 const log = createLogger("vat-adjustments");
@@ -180,6 +186,7 @@ export async function createBadDebtReliefClaim(input: {
   const expense = await ensureBadDebtExpense(input.companyId);
 
   return withLedgerTx(async (tx) => {
+    await lockInvoice(tx, inv.id, input.companyId);
     const s = await invoiceSettlement(tx, inv.id);
     // A3 (H1): Art. 64(1)(b) needs an actual write-off in the accounts, not a self-attestation.
     // The write-off settles the invoice (method 'write_off'), so the unpaid consideration is
@@ -333,6 +340,17 @@ export async function reverseBadDebtReliefClaim(input: {
   req?: Request;
 }): Promise<BadDebtReliefClaim> {
   return withLedgerTx(async (tx) => {
+    const [target] = await tx
+      .select({ invoiceId: badDebtReliefClaims.invoiceId })
+      .from(badDebtReliefClaims)
+      .where(
+        and(
+          eq(badDebtReliefClaims.id, input.claimId),
+          eq(badDebtReliefClaims.companyId, input.companyId)
+        )
+      );
+    if (!target) throw new DomainError("BAD_DEBT_CLAIM_NOT_FOUND", 404);
+    await lockInvoice(tx, target.invoiceId, input.companyId);
     const [claim] = await tx
       .select()
       .from(badDebtReliefClaims)
@@ -402,123 +420,197 @@ export async function listBadDebtReliefClaims(companyId: string) {
     .orderBy(sql`${badDebtReliefClaims.claimDate} DESC`);
 }
 
-/** Restore only the VAT attributable to recovered consideration under Art. 64(3). */
+const PAYMENT_RECOVERY_REASON = "Payment received after bad-debt relief was claimed";
+
+/** Process committed receipts in order, independently of which callback runs first. */
 export async function reverseReliefOnPayment(p: {
   companyId: string;
   invoiceId: string;
   paymentId: string;
   actorUserId?: string | null;
 }): Promise<{ claimId: string; reversed: true; date: string; remainingVatFils: number } | null> {
-  const recover = (nextOpen?: string) =>
-    withLedgerTx(async (tx) => {
-      const [claim] = await tx
-        .select()
-        .from(badDebtReliefClaims)
-        .where(
-          and(
-            eq(badDebtReliefClaims.companyId, p.companyId),
-            eq(badDebtReliefClaims.invoiceId, p.invoiceId),
-            eq(badDebtReliefClaims.status, "claimed")
-          )
+  return withLedgerTx(async (tx) => {
+    const q = ledgerQueryable(tx);
+    // Match the invoice -> claim lock order used by payment reversal and claim creation.
+    const locked = await q.query(
+      "SELECT id FROM invoices WHERE company_id = $1 AND id = $2 FOR UPDATE",
+      [p.companyId, p.invoiceId]
+    );
+    if (!locked.rows.length) return null;
+    const [claim] = await tx
+      .select()
+      .from(badDebtReliefClaims)
+      .where(
+        and(
+          eq(badDebtReliefClaims.companyId, p.companyId),
+          eq(badDebtReliefClaims.invoiceId, p.invoiceId),
+          eq(badDebtReliefClaims.status, "claimed")
         )
-        .for("update");
-      if (!claim) return null;
+      )
+      .for("update");
+    if (!claim) return null;
 
-      const [payment] = await tx
-        .select()
-        .from(invoicePayments)
-        .where(
-          and(
-            eq(invoicePayments.companyId, p.companyId),
-            eq(invoicePayments.invoiceId, p.invoiceId),
-            eq(invoicePayments.id, p.paymentId),
-            ne(invoicePayments.method, "write_off")
-          )
-        );
-      if (!payment || payment.createdAt < claim.createdAt) return null;
+    const { rows: receipts } = await q.query(
+      `SELECT sp.id, sp.created_by, ${localDateSql("sp.date")}::text AS date,
+              ROUND(${appliedReceiptAmountSql("sp")} * 100) AS applied_fils,
+              EXISTS (
+                SELECT 1 FROM journal_entries je
+                 WHERE je.company_id = sp.company_id AND je.source = $4 AND je.source_id = c.id
+                   AND je.idempotency_key = $4 || ':' || c.id || ':recover:' || sp.id
+                   AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL
+              ) AS recovered
+         FROM invoice_payments sp
+         JOIN bad_debt_relief_claims c ON c.invoice_id = sp.invoice_id AND c.company_id = sp.company_id
+        WHERE sp.invoice_id = $1 AND sp.company_id = $2 AND c.id = $3
+          AND sp.method <> 'write_off' AND sp.created_at >= c.created_at
+        ORDER BY sp.created_at, sp.id`,
+      [p.invoiceId, p.companyId, claim.id, BAD_DEBT_SOURCE]
+    );
+    if (!receipts.some((receipt) => receipt.id === p.paymentId)) return null;
 
-      const q = ledgerQueryable(tx);
-      const {
-        rows: [basis],
-      } = await q.query(
-        `SELECT (je.memo_params ->> 'outstandingDocFils')::bigint AS outstanding_doc_fils,
+    const {
+      rows: [basis],
+    } = await q.query(
+      `SELECT (je.memo_params ->> 'outstandingDocFils')::bigint AS outstanding_doc_fils,
               i.currency, i.exchange_rate
          FROM invoices i
          LEFT JOIN journal_entries je ON je.id = $3 AND je.company_id = i.company_id
         WHERE i.id = $1 AND i.company_id = $2`,
-        [p.invoiceId, p.companyId, claim.journalEntryId]
-      );
-      // Older claim journals recorded the outstanding amount using an AED-based rate.
-      const legacyRate =
-        (basis.currency || "AED").toUpperCase() === "AED" ? 1 : Number(basis.exchange_rate || 1);
-      const outstandingFils = Number(
-        basis.outstanding_doc_fils ?? Math.round(toFils(claim.outstandingAmount) / legacyRate)
-      );
-      if (outstandingFils <= 0) return null;
+      [p.invoiceId, p.companyId, claim.journalEntryId]
+    );
+    // Older claim journals recorded the outstanding amount using an AED-based rate.
+    const legacyRate =
+      (basis.currency || "AED").toUpperCase() === "AED" ? 1 : Number(basis.exchange_rate || 1);
+    const outstandingFils = Number(
+      basis.outstanding_doc_fils ?? Math.round(toFils(claim.outstandingAmount) / legacyRate)
+    );
+    if (outstandingFils <= 0) return null;
 
-      const [total] = await tx
-        .select({
-          fils: sql<string>`COALESCE(SUM(ROUND(${invoicePayments.amount} * 100)), 0)::text`,
-        })
-        .from(invoicePayments)
-        .where(
-          and(
-            eq(invoicePayments.companyId, p.companyId),
-            eq(invoicePayments.invoiceId, p.invoiceId),
-            ne(invoicePayments.method, "write_off"),
-            // Keep the database timestamps' precision when selecting receipts around the claim.
-            sql`${invoicePayments.createdAt} BETWEEN
-              (SELECT c.created_at FROM bad_debt_relief_claims c
-                WHERE c.id = ${claim.id} AND c.company_id = ${p.companyId})
-              AND
-              (SELECT receipt.created_at FROM invoice_payments receipt
-                WHERE receipt.id = ${payment.id} AND receipt.company_id = ${p.companyId})`
-          )
-        );
-      const receivedFils = Math.min(Number(total.fils), outstandingFils);
-      if (receivedFils <= 0) return null;
-      const cap = toFils(claim.vatAmount);
-      const [targetFils] = allocate(cap, [receivedFils, outstandingFils - receivedFils]);
-      const incrementalFils = targetFils - (await restoredBadDebtVatFils(tx, claim));
-      if (incrementalFils <= 0) return null;
+    const cap = toFils(claim.vatAmount);
+    let restoredFils = await restoredBadDebtVatFils(tx, claim);
+    let receivedFils = 0;
+    let previousTarget = 0;
+    let paymentDate: string | undefined;
+    for (const receipt of receipts) {
+      receivedFils = Math.min(receivedFils + Number(receipt.applied_fils), outstandingFils);
+      const [target] = allocate(cap, [receivedFils, outstandingFils - receivedFils]);
+      const incrementalFils = Math.min(target - previousTarget, cap - restoredFils);
+      previousTarget = target;
+      if (receipt.recovered || incrementalFils <= 0) continue;
 
-      const paymentDate = uaeToday(payment.date);
-      const claimDate = String(claim.claimDate);
-      const date = nextOpen ?? (paymentDate < claimDate ? claimDate : paymentDate);
-      const actor = p.actorUserId ?? payment.createdBy;
-      const reason = "Payment received after bad-debt relief was claimed";
+      await lockPeriodPolicy(tx, p.companyId, "shared");
+      await lockVatReturns(tx, p.companyId, "shared");
+      let date = receipt.date < claim.claimDate ? claim.claimDate : receipt.date;
+      // If the receipt's return is filed, keep its correction in the first open return.
+      for (
+        let closure = await findFiledVatPeriod(tx, p.companyId, date);
+        closure;
+        closure = await findFiledVatPeriod(tx, p.companyId, date)
+      ) {
+        if (closure === UNVERIFIED_VAT_GROUP) throw vatPeriodFiledError(closure, date);
+        const next = new Date(`${closure.periodEnd}T00:00:00.000Z`);
+        next.setUTCDate(next.getUTCDate() + 1);
+        date = next.toISOString().slice(0, 10);
+      }
       const entry = await postBadDebtVatRecovery(
         tx,
         claim,
         incrementalFils,
         date,
-        actor,
-        reason,
-        payment.id
+        (receipt.id === p.paymentId ? p.actorUserId : null) ?? receipt.created_by,
+        PAYMENT_RECOVERY_REASON,
+        receipt.id
       );
-      const remainingVatFils = cap - targetFils;
-      if (remainingVatFils === 0) {
+      if (receipt.id === p.paymentId) paymentDate = date;
+      restoredFils += incrementalFils;
+      if (restoredFils === cap) {
         await tx
           .update(badDebtReliefClaims)
           .set({
             status: "reversed",
             reversedAt: date,
-            reversalReason: reason,
+            reversalReason: PAYMENT_RECOVERY_REASON,
             reversalEntryId: entry.id,
             updatedAt: new Date(),
           })
           .where(eq(badDebtReliefClaims.id, claim.id));
+        break;
       }
-      return { claimId: claim.id, reversed: true as const, date, remainingVatFils };
-    });
+    }
+    return paymentDate
+      ? {
+          claimId: claim.id,
+          reversed: true,
+          date: paymentDate,
+          remainingVatFils: cap - restoredFils,
+        }
+      : null;
+  });
+}
 
-  try {
-    return await recover();
-  } catch (err) {
-    const next = (err as DomainError & { details?: { nextOpenPeriodStart?: string } })?.details
-      ?.nextOpenPeriodStart;
-    if ((err as DomainError)?.code !== "VAT_PERIOD_FILED" || !next) throw err;
-    return recover(next);
+/** Undo the VAT recovery in the same transaction that removes the receipt. */
+export async function undoReliefRecoveryOnPayment(input: {
+  companyId: string;
+  invoiceId: string;
+  paymentId: string;
+  actorId: string;
+  reason: string;
+  date?: string | null;
+  tx: LedgerTx;
+}) {
+  const { tx, companyId, invoiceId, paymentId, actorId } = input;
+  const q = ledgerQueryable(tx);
+  const { rows: recoveries } = await q.query(
+    `SELECT je.id, c.id AS claim_id, ROUND((jl.credit - jl.debit) * 100) AS vat_fils,
+            last.idempotency_key = $4 || ':' || c.id || ':recover:manual' AS manually_closed
+       FROM bad_debt_relief_claims c
+       JOIN journal_entries je ON je.source_id = c.id AND je.company_id = c.company_id
+       JOIN journal_lines jl ON jl.entry_id = je.id AND jl.system_vat
+       LEFT JOIN journal_entries last ON last.id = c.reversal_entry_id AND last.company_id = c.company_id
+      WHERE c.company_id = $1 AND c.invoice_id = $2 AND je.source = $4
+        AND je.idempotency_key = $4 || ':' || c.id || ':recover:' || $3
+        AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL
+      ORDER BY c.id FOR UPDATE OF c`,
+    [companyId, invoiceId, paymentId, BAD_DEBT_SOURCE]
+  );
+  for (const recovery of recoveries) {
+    const { reversal } = await reverseEntry(
+      recovery.id,
+      {
+        date: input.date,
+        reason: input.reason,
+        source: BAD_DEBT_SOURCE,
+        sourceId: recovery.claim_id,
+      },
+      { actorId, tx, companyId }
+    );
+    if (recovery.manually_closed) {
+      // A manual withdrawal still restores the whole claim after a receipt is removed.
+      const [claim] = await tx
+        .select()
+        .from(badDebtReliefClaims)
+        .where(eq(badDebtReliefClaims.id, recovery.claim_id));
+      await postBadDebtVatRecovery(
+        tx,
+        claim,
+        Number(recovery.vat_fils),
+        uaeToday(reversal.date),
+        actorId,
+        "Maintain manual withdrawal of bad-debt relief after receipt reversal",
+        `manual:${paymentId}`
+      );
+    } else {
+      await tx
+        .update(badDebtReliefClaims)
+        .set({
+          status: "claimed",
+          reversedAt: null,
+          reversalReason: null,
+          reversalEntryId: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(badDebtReliefClaims.id, recovery.claim_id));
+    }
   }
 }
 
@@ -529,6 +621,8 @@ export function installBadDebtPaymentHook(): void {
   paymentHookInstalled = true;
   if (!has("vat.reverseReliefOnPayment"))
     provide("vat.reverseReliefOnPayment", reverseReliefOnPayment);
+  if (!has("vat.undoReliefRecoveryOnPayment"))
+    provide("vat.undoReliefRecoveryOnPayment", undoReliefRecoveryOnPayment);
   onDomainEvent("payment.received", async (e) => {
     const p = e.payload as typeof e.payload & { actorUserId?: string };
     if (!p.invoiceId) return;

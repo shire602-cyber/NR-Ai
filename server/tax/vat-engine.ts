@@ -17,7 +17,7 @@
  * Partial-exemption apportionment (company.exempt_supply_ratio, Art. 55) reduces recoverable
  * input VAT. VAT groups aggregate members and eliminate intra-group supplies (TRN match).
  */
-import { salesTaxPointSql } from "./sales-tax-point";
+import { depositApplicationTaxDateSql, salesTaxPointSql } from "./sales-tax-point";
 import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "../db";
 import { DomainError } from "../errors";
@@ -26,6 +26,7 @@ import { toFils } from "../../shared/money";
 import { classifySupply, type Vat201Family } from "../../shared/vat-classification";
 import { totalsForStoredDocument } from "../services/invoice-posting.service";
 import { ledgerLines } from "../reporting";
+import { localDateSql } from "../reporting/settlement";
 import { loadBaseCurrency, type LedgerTx } from "../ledger";
 import { ledgerQueryable } from "../ledger/tx";
 import { loadVatGroupForRepresentative, type VatGroupInfo } from "../ledger/vat-group-scope";
@@ -1182,8 +1183,8 @@ async function collectFixedAssetAcquisitions(
  * FDL 8/2017 Art. 25-26: VAT on an advance is due when it is received. A deposit reports its
  * net / VAT in the period of receipt (Box 1 of the company's emirate, or Box 4 / Box 5 for a
  * zero-rated / exempt supply). Applying it to the final invoice (or refunding it) reports the
- * same share negatively, because the invoice reports the whole supply: over the two periods the
- * supply is declared once. Journals: source 'customer_deposit' (receipt and each application).
+ * same share negatively. An application offsets the full sale as soon as both VAT amounts are
+ * reportable; a refund follows its own date.
  */
 async function collectCustomerDeposits(
   companyId: string,
@@ -1231,16 +1232,20 @@ async function collectCustomerDeposits(
       ledgerSource: "customer_deposit",
     });
   }
+  const consumptionDate = `CASE WHEN a.kind = 'apply' AND si.id IS NOT NULL
+    THEN ${depositApplicationTaxDateSql(salesTaxPointSql("si"), "d")}
+    ELSE ${localDateSql("a.date")} END`;
   const consumed = await ledgerQueryable(tx).query(
-    `SELECT a.id, a.kind, a.amount, a.vat_amount, to_char(a.date, 'YYYY-MM-DD') AS d,
+    `SELECT a.id, a.kind, a.amount, a.vat_amount, (${consumptionDate})::text AS d,
             d.number, d.customer_name, d.customer_trn, d.emirate, d.vat_treatment
        FROM customer_credit_allocations a
-       JOIN customer_credits c ON c.id = a.credit_id AND c.source_type = 'deposit'
+       JOIN customer_credits c ON c.id = a.credit_id AND c.company_id = a.company_id
+                             AND c.source_type = 'deposit'
        JOIN customer_deposits d ON d.id = c.source_id AND d.company_id = a.company_id
        JOIN journal_entries je ON je.id = a.journal_entry_id AND je.company_id = a.company_id
+       LEFT JOIN invoices si ON si.id = a.invoice_id AND si.company_id = a.company_id
       WHERE a.company_id = $1
-        AND (a.date + interval '4 hours')::date >= $2::date
-        AND (a.date + interval '4 hours')::date <= $3::date
+        AND (${consumptionDate}) BETWEEN $2::date AND $3::date
         AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL`,
     [companyId, from, to]
   );
@@ -1334,9 +1339,10 @@ async function collectBadDebtRelief(
        JOIN bad_debt_relief_claims c
          ON c.id = je.source_id AND c.company_id = je.company_id
        JOIN invoices i ON i.id = c.invoice_id AND i.company_id = c.company_id
+       LEFT JOIN journal_entries original
+         ON original.id = je.reversed_entry_id AND original.company_id = je.company_id
       WHERE je.company_id = $1 AND je.source = 'vat_bad_debt_relief' AND je.status = 'posted'
-        AND je.entry_kind <> 'reversal' AND je.reversed_by_entry_id IS NULL
-        AND split_part(je.idempotency_key, ':', 3) = 'recover'
+        AND split_part(COALESCE(original.idempotency_key, je.idempotency_key), ':', 3) = 'recover'
         AND (je.date + interval '4 hours')::date BETWEEN $2::date AND $3::date`,
     [companyId, from, to]
   );

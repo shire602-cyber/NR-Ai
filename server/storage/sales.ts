@@ -817,7 +817,7 @@ export class SalesStorage extends LedgerStorage {
 
       await assertInvoicePaymentTaxPointOpen(tx, input.companyId, input.invoiceId, {
         date: input.date,
-        amount: input.amount,
+        appliedAmount: allocation.appliedToReceivable,
       });
       // Record the payment row.
       const [payment] = await tx
