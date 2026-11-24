@@ -311,18 +311,21 @@ export async function changeSubscriptionPlan(
   const priceId = PLAN_PRICE_MAP[planId]?.[billingCycle];
   if (!priceId) throw new DomainError("NO_PRICE_FOR_PLAN", 422, { planId, billingCycle });
   const seats = change.seats ?? (perSeat() ? await billableSeats(companyId) : 1);
-  const sub = await stripeClient.subscriptions.retrieve(subscription.stripeSubscriptionId);
+  const stripeSubscriptionId = subscription.stripeSubscriptionId;
+  const sub = await stripeClient.subscriptions.retrieve(stripeSubscriptionId);
   const itemId = sub.items.data[0]?.id;
-  await stripeClient.subscriptions.update(subscription.stripeSubscriptionId, {
+  await stripeClient.subscriptions.update(stripeSubscriptionId, {
     items: [{ id: itemId, price: priceId, quantity: seats }],
     proration_behavior: "create_prorations",
     metadata: { companyId, planId, billingCycle },
   });
-  await storage.updateSubscription(subscription.id, {
-    ...subscriptionPlanChangeFields(planId, billingCycle),
-    seatCount: seats,
-  });
-  return { planId, billingCycle, seats };
+  const reconciled = await reconcileLinkedStripeSubscription(
+    stripeClient,
+    subscription,
+    stripeSubscriptionId
+  );
+  if (!reconciled) throw new DomainError("NO_PAID_SUBSCRIPTION", 409);
+  return reconciled;
 }
 
 export async function createPortalSession(
@@ -416,7 +419,7 @@ async function reconcileCheckout(
   stripeClient: Stripe,
   session: Stripe.Checkout.Session,
   subscription: Subscription
-): Promise<"applied" | "closed" | "unresolved"> {
+): Promise<CheckoutReconciliation> {
   const stripeSubscriptionId = stripeObjectId(session.subscription);
   if (
     !stripeSubscriptionId ||
@@ -426,17 +429,12 @@ async function reconcileCheckout(
   ) {
     return "unresolved";
   }
-  if (subscription.stripeSubscriptionId) {
-    return subscription.stripeSubscriptionId === stripeSubscriptionId ? "applied" : "unresolved";
-  }
-
-  // A delayed event can describe a checkout whose plan or status has since changed.
-  const current = await stripeClient.subscriptions.retrieve(stripeSubscriptionId);
-  if (current.id !== stripeSubscriptionId || !stripeSubscriptionMatches(current, subscription)) {
-    return "unresolved";
-  }
-  if (await applyStripeSubscription(current, subscription, session.metadata)) return "applied";
-  return stripeSubscriptionClosed(current) ? "closed" : "unresolved";
+  return reconcileStripeCheckout(
+    stripeClient,
+    subscription,
+    stripeSubscriptionId,
+    session.metadata
+  );
 }
 
 function stripeObjectId(value: string | { id: string } | null | undefined) {
@@ -460,26 +458,28 @@ async function recoverStripeSubscription(
   customerId: string
 ): Promise<boolean> {
   // A completed session can outlive the reservation lookup window.
-  for await (const current of stripeClient.subscriptions.list({
+  for await (const candidate of stripeClient.subscriptions.list({
     customer: customerId,
     status: "all",
   })) {
-    if (stripeSubscriptionClosed(current)) continue;
-    if (await applyStripeSubscription(current, subscription)) return true;
+    if (stripeSubscriptionClosed(candidate)) continue;
+    const result = await reconcileStripeCheckout(stripeClient, subscription, candidate.id);
+    if (result === "applied") return true;
+    if (result === "closed") continue;
     if (
-      stripeSubscriptionMatches(current, subscription) &&
-      (!current.metadata?.planId || !current.metadata?.billingCycle)
+      stripeSubscriptionMatches(candidate, subscription) &&
+      (!candidate.metadata?.planId || !candidate.metadata?.billingCycle)
     ) {
       for await (const session of stripeClient.checkout.sessions.list({
-        subscription: current.id,
+        subscription: candidate.id,
       })) {
         if (
           session.mode === "subscription" &&
           session.status === "complete" &&
           session.metadata?.companyId === subscription.companyId &&
           stripeObjectId(session.customer) === customerId &&
-          stripeObjectId(session.subscription) === current.id &&
-          (await applyStripeSubscription(current, subscription, session.metadata))
+          stripeObjectId(session.subscription) === candidate.id &&
+          (await reconcileCheckout(stripeClient, session, subscription)) === "applied"
         ) {
           return true;
         }
@@ -491,58 +491,70 @@ async function recoverStripeSubscription(
   return false;
 }
 
-async function applyStripeSubscription(
-  current: Stripe.Subscription,
+type CheckoutReconciliation = "applied" | "closed" | "unresolved";
+
+async function reconcileStripeCheckout(
+  stripeClient: Stripe,
   subscription: Subscription,
+  stripeSubscriptionId: string,
   checkoutMetadata?: Stripe.Metadata | null
-): Promise<boolean> {
-  const item = current.items?.data?.[0];
-  // The portal can change the billed price before checkout links the subscription.
-  const billedPlan = planForStripePrice(item?.price?.id);
-  const planId = billedPlan?.planId ?? (current.metadata?.planId || checkoutMetadata?.planId);
-  const billingCycle =
-    billedPlan?.billingCycle ?? (current.metadata?.billingCycle || checkoutMetadata?.billingCycle);
-  if (
-    !stripeSubscriptionMatches(current, subscription) ||
-    !isPaidPlanId(planId) ||
-    !isBillingCycle(billingCycle)
-  ) {
-    return false;
-  }
-  if (stripeSubscriptionClosed(current)) {
-    if (!subscription.stripeCheckoutCompleted) {
-      await storage.applyStripeCheckout(subscription, { stripeCheckoutCompleted: true });
+): Promise<CheckoutReconciliation> {
+  // A webhook that arrives during this Stripe read waits for linking to commit.
+  const result = await storage.reconcileStripeSubscription<CheckoutReconciliation>(
+    subscription,
+    async (locked) => {
+      if (locked.stripeSubscriptionId) {
+        return {
+          result: locked.stripeSubscriptionId === stripeSubscriptionId ? "applied" : "unresolved",
+        };
+      }
+
+      const current = await stripeClient.subscriptions.retrieve(stripeSubscriptionId);
+      if (current.id !== stripeSubscriptionId || !stripeSubscriptionMatches(current, locked)) {
+        return { result: "unresolved" };
+      }
+      const item = current.items?.data?.[0];
+      // Checkout metadata can still describe the old price after a portal plan change.
+      const billedPlan = planForStripePrice(item?.price?.id);
+      const planId = billedPlan?.planId ?? (current.metadata?.planId || checkoutMetadata?.planId);
+      const billingCycle =
+        billedPlan?.billingCycle ??
+        (current.metadata?.billingCycle || checkoutMetadata?.billingCycle);
+      const knownPlan = isPaidPlanId(planId) && isBillingCycle(billingCycle);
+      if (stripeSubscriptionClosed(current)) {
+        return {
+          result: "closed",
+          data:
+            knownPlan && !locked.stripeCheckoutCompleted
+              ? { stripeCheckoutCompleted: true }
+              : undefined,
+        };
+      }
+      if (
+        !knownPlan ||
+        !["active", "trialing", "past_due", "unpaid", "paused"].includes(current.status)
+      ) {
+        return { result: "unresolved" };
+      }
+
+      return {
+        result: "applied",
+        data: {
+          ...subscriptionPlanChangeFields(planId, billingCycle),
+          ...stripeSubscriptionState(current),
+          stripeCheckoutCompleted: true,
+          stripeSubscriptionId,
+          seatCount: item?.quantity ?? locked.seatCount ?? 1,
+          aiCreditsRemaining: PLAN_LIMITS[planId].aiCreditsRemaining,
+          invoicesCreatedThisMonth: 0,
+          receiptsCreatedThisMonth: 0,
+          aiCreditsUsedThisMonth: 0,
+          usagePeriodStart: new Date(),
+        },
+      };
     }
-    return false;
-  }
-  if (!["active", "trialing", "past_due", "unpaid", "paused"].includes(current.status))
-    return false;
-
-  const now = new Date();
-
-  const applied = await storage.applyStripeCheckout(subscription, {
-    ...subscriptionPlanChangeFields(planId, billingCycle),
-    ...stripeSubscriptionState(current),
-    stripeCheckoutCompleted: true,
-    stripeSubscriptionId: current.id,
-    seatCount: item?.quantity ?? subscription.seatCount ?? 1,
-    aiCreditsRemaining: PLAN_LIMITS[planId].aiCreditsRemaining,
-    invoicesCreatedThisMonth: 0,
-    receiptsCreatedThisMonth: 0,
-    aiCreditsUsedThisMonth: 0,
-    usagePeriodStart: now,
-  });
-
-  if (applied) {
-    log.info(
-      { companyId: subscription.companyId, planId, billingCycle },
-      "Subscription upgraded via checkout"
-    );
-    return true;
-  }
-  // A concurrent webhook or recovery request may already have applied this Checkout.
-  const latest = await storage.getSubscription(subscription.companyId);
-  return latest?.stripeSubscriptionId === current.id;
+  );
+  return result ?? "unresolved";
 }
 
 function stripeSubscriptionState(sub: Stripe.Subscription) {
@@ -573,40 +585,58 @@ function stripeSubscriptionState(sub: Stripe.Subscription) {
   };
 }
 
-async function resolveWebhookSubscription(sub: Stripe.Subscription) {
+async function resolveWebhookSubscription(sub: Stripe.Subscription, includeUnlinked = false) {
   const companyId = sub.metadata?.companyId;
   const customerId = stripeObjectId(sub.customer);
   if (!customerId) return;
-  if (!companyId) return storage.getSubscriptionByStripeIds(sub.id, customerId);
+  if (!companyId) return storage.getSubscriptionByStripeIds(sub.id, customerId, includeUnlinked);
 
   const subscription = await storage.getSubscription(companyId);
   if (subscription?.stripeCustomerId === customerId) return subscription;
 }
 
 async function handleSubscriptionUpdated(sub: Stripe.Subscription): Promise<void> {
-  const subscription = await resolveWebhookSubscription(sub);
-  if (!subscription || subscription.stripeSubscriptionId !== sub.id) return;
+  const subscription = await resolveWebhookSubscription(sub, true);
+  if (!subscription) return;
 
   const stripeClient = getStripe();
   if (!stripeClient) throw new Error("Stripe not configured");
 
+  await reconcileLinkedStripeSubscription(stripeClient, subscription, sub.id);
+}
+
+async function reconcileLinkedStripeSubscription(
+  stripeClient: Stripe,
+  subscription: Subscription,
+  stripeSubscriptionId: string
+) {
   // Serialize the Stripe read and local write so overlapping deliveries cannot
   // commit their results in reverse order.
-  await storage.reconcileLinkedStripeSubscription(subscription, async (linked) => {
-    const current = await stripeClient.subscriptions.retrieve(sub.id);
+  return storage.reconcileStripeSubscription(subscription, async (locked) => {
+    if (locked.stripeSubscriptionId !== stripeSubscriptionId) return { result: undefined };
+
+    const current = await stripeClient.subscriptions.retrieve(stripeSubscriptionId);
     if (
-      current.id !== sub.id ||
-      !stripeSubscriptionMatches(current, linked) ||
+      current.id !== stripeSubscriptionId ||
+      !stripeSubscriptionMatches(current, locked) ||
       stripeSubscriptionClosed(current)
     ) {
-      return;
+      return { result: undefined };
     }
     const item = current.items.data[0];
     const plan = planForStripePrice(item?.price?.id);
+    const seats = item?.quantity ?? locked.seatCount ?? 1;
     return {
-      ...stripeSubscriptionState(current),
-      ...(plan && subscriptionPlanChangeFields(plan.planId, plan.billingCycle)),
-      seatCount: item?.quantity ?? linked.seatCount ?? 1,
+      result: {
+        planId: plan?.planId ?? locked.planId,
+        billingCycle: plan?.billingCycle ?? locked.billingCycle,
+        seats,
+      },
+      data: {
+        ...stripeSubscriptionState(current),
+        ...(plan && subscriptionPlanChangeFields(plan.planId, plan.billingCycle)),
+        seatCount: seats,
+      },
     };
   });
 }

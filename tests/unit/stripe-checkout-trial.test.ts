@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type Stripe from "stripe";
+import type { IStorage } from "../../server/storage/types";
 
 const stripe = vi.hoisted(() => ({
   listSessions: vi.fn(),
@@ -11,7 +12,7 @@ const stripe = vi.hoisted(() => ({
   getCompany: vi.fn(),
   getSubscription: vi.fn(),
   updateSubscription: vi.fn(),
-  applyStripeCheckout: vi.fn(),
+  writeStripeReconciliation: vi.fn(),
   createStripeEvent: vi.fn().mockResolvedValue(true),
   pq: vi.fn(),
 }));
@@ -33,7 +34,11 @@ vi.mock("../../server/storage", () => ({
     getCompany: stripe.getCompany,
     getSubscription: stripe.getSubscription,
     updateSubscription: stripe.updateSubscription,
-    applyStripeCheckout: stripe.applyStripeCheckout,
+    reconcileStripeSubscription: (async (subscription, readChanges) => {
+      const { data, result } = await readChanges(subscription);
+      if (data) await stripe.writeStripeReconciliation(subscription, data);
+      return result;
+    }) satisfies IStorage["reconcileStripeSubscription"],
     createStripeEvent: stripe.createStripeEvent,
   },
 }));
@@ -67,6 +72,7 @@ describe("Stripe checkout product trial and referral", () => {
     stripe.listSubscriptions.mockReturnValue([]);
     stripe.createSession.mockResolvedValue({ url: "https://checkout.example.test" });
     stripe.retrieveSubscription.mockResolvedValue(currentStripeSubscription);
+    stripe.writeStripeReconciliation.mockReset();
     let reservation: Date | null = null;
     stripe.pq.mockImplementation(async (query: string, params: [string, Date, Date | null]) => {
       if (/^UPDATE companies/.test(query)) {
@@ -139,13 +145,20 @@ describe("Stripe checkout product trial and referral", () => {
   it("[PR94] changes Starter to Professional on the existing subscription item", async () => {
     stripe.getSubscription.mockResolvedValue({
       id: "subscription-row",
+      companyId: "company",
       planId: "starter",
       billingCycle: "monthly",
       stripeSubscriptionId: "first-subscription",
+      stripeCustomerId: "fixture-customer",
     });
-    stripe.retrieveSubscription.mockResolvedValue({
-      items: { data: [{ id: "existing-item" }] },
-    });
+    stripe.retrieveSubscription
+      .mockResolvedValueOnce({ items: { data: [{ id: "existing-item" }] } })
+      .mockResolvedValue({
+        ...currentStripeSubscription,
+        items: {
+          data: [{ id: "existing-item", price: { id: "price-professional" }, quantity: 1 }],
+        },
+      });
     const originalPrice = PLAN_PRICE_MAP.professional.monthly;
     PLAN_PRICE_MAP.professional.monthly = "price-professional";
     try {
@@ -158,8 +171,8 @@ describe("Stripe checkout product trial and referral", () => {
           metadata: { companyId: "company", planId: "professional", billingCycle: "monthly" },
         }
       );
-      expect(stripe.updateSubscription).toHaveBeenCalledExactlyOnceWith(
-        "subscription-row",
+      expect(stripe.writeStripeReconciliation).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ id: "subscription-row" }),
         expect.objectContaining({ planId: "professional", billingCycle: "monthly" })
       );
       expect(stripe.createSession).not.toHaveBeenCalled();
@@ -180,14 +193,13 @@ describe("Stripe checkout product trial and referral", () => {
       stripeCheckoutCompleted: testCase.checkoutCompleted,
     };
     stripe.getSubscription.mockResolvedValue(subscription);
-    stripe.applyStripeCheckout.mockResolvedValue(true);
-    stripe.listSubscriptions.mockReturnValue([
-      {
-        ...currentStripeSubscription,
-        status: "active",
-        created: (now.getTime() - testCase.checkoutAgeHours * hour) / 1000,
-      },
-    ]);
+    const current = {
+      ...currentStripeSubscription,
+      status: "active",
+      created: (now.getTime() - testCase.checkoutAgeHours * hour) / 1000,
+    };
+    stripe.listSubscriptions.mockReturnValue([current]);
+    stripe.retrieveSubscription.mockResolvedValue(current);
     await expect(
       createCheckoutSession(
         "company",
@@ -197,7 +209,7 @@ describe("Stripe checkout product trial and referral", () => {
         "https://example.test/cancel"
       )
     ).resolves.toBe("https://example.test/success");
-    expect(stripe.applyStripeCheckout).toHaveBeenCalledExactlyOnceWith(
+    expect(stripe.writeStripeReconciliation).toHaveBeenCalledExactlyOnceWith(
       subscription,
       expect.objectContaining({
         planId: "professional",
@@ -236,7 +248,6 @@ describe("Stripe checkout product trial and referral", () => {
           ]
         : []
     );
-    stripe.applyStripeCheckout.mockResolvedValue(true);
 
     await expect(
       createCheckoutSession(
@@ -261,10 +272,9 @@ describe("Stripe checkout product trial and referral", () => {
       stripeCheckoutCompleted: true,
     };
     stripe.getSubscription.mockResolvedValue(subscription);
-    stripe.applyStripeCheckout.mockResolvedValue(true);
-    stripe.listSubscriptions.mockReturnValue([
-      { ...currentStripeSubscription, status: "active", metadata: {} },
-    ]);
+    const current = { ...currentStripeSubscription, status: "active", metadata: {} };
+    stripe.listSubscriptions.mockReturnValue([current]);
+    stripe.retrieveSubscription.mockResolvedValue(current);
     const completed = {
       mode: "subscription",
       status: "complete",
@@ -288,12 +298,12 @@ describe("Stripe checkout product trial and referral", () => {
         "https://example.test/cancel"
       );
     await expect(request()).rejects.toMatchObject({ code: "STRIPE_CHECKOUT_IN_PROGRESS" });
-    expect(stripe.applyStripeCheckout).not.toHaveBeenCalled();
+    expect(stripe.writeStripeReconciliation).not.toHaveBeenCalled();
 
     stripe.listSessions.mockReturnValue([...unrelated, completed]);
     await expect(request()).resolves.toBe("https://example.test/success");
     expect(stripe.listSessions).toHaveBeenCalledWith({ subscription: "first-subscription" });
-    expect(stripe.applyStripeCheckout).toHaveBeenCalledExactlyOnceWith(
+    expect(stripe.writeStripeReconciliation).toHaveBeenCalledExactlyOnceWith(
       subscription,
       expect.objectContaining({
         planId: "professional",
@@ -349,9 +359,8 @@ describe("Stripe checkout product trial and referral", () => {
       const company = { id: "company", stripeFirstCheckoutExpiresAt: null as Date | null };
       stripe.getCompany.mockImplementation(async () => ({ ...company }));
       stripe.getSubscription.mockResolvedValue(subscription);
-      stripe.applyStripeCheckout.mockImplementation(async (_subscription, patch) => {
+      stripe.writeStripeReconciliation.mockImplementation(async (_subscription, patch) => {
         Object.assign(subscription, patch);
-        return true;
       });
       stripe.pq.mockImplementation(async (query: string, params: [string, Date, Date | null]) => {
         if (/^UPDATE companies/.test(query)) {
@@ -411,7 +420,7 @@ describe("Stripe checkout product trial and referral", () => {
         } as unknown as Stripe.Event);
         await expect(request()).resolves.toBe("https://example.test/success");
         expect(subscription.invoicesCreatedThisMonth).toBe(4);
-        expect(stripe.applyStripeCheckout).toHaveBeenCalledTimes(1);
+        expect(stripe.writeStripeReconciliation).toHaveBeenCalledTimes(1);
         expect(stripe.createSession).toHaveBeenCalledTimes(1);
         expect(stripe.createCoupon).toHaveBeenCalledTimes(1);
       } else {
@@ -433,9 +442,8 @@ describe("Stripe checkout product trial and referral", () => {
       trialEndsAt: new Date(now.getTime() + 96 * hour),
     };
     stripe.getSubscription.mockResolvedValue(subscription);
-    stripe.applyStripeCheckout.mockImplementation(async (_subscription, patch) => {
+    stripe.writeStripeReconciliation.mockImplementation(async (_subscription, patch) => {
       Object.assign(subscription, patch);
-      return true;
     });
     stripe.updateSubscription.mockImplementation(async (_id, patch) =>
       Object.assign(subscription, patch)
@@ -484,7 +492,7 @@ describe("Stripe checkout product trial and referral", () => {
       },
     } as unknown as Stripe.Event);
     expect(subscription.stripeSubscriptionId).toBeNull();
-    expect(stripe.applyStripeCheckout).toHaveBeenCalledTimes(1);
+    expect(stripe.writeStripeReconciliation).toHaveBeenCalledTimes(1);
     stripe.listSessions.mockReturnValue([
       {
         mode: "subscription",

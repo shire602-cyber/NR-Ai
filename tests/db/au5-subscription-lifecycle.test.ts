@@ -4,14 +4,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useHarness } from "./harness";
 
 const h = useHarness();
-const { retrieveSubscription, createPortal } = vi.hoisted(() => ({
+const { retrieveSubscription, updateSubscription, createPortal } = vi.hoisted(() => ({
   retrieveSubscription: vi.fn(),
+  updateSubscription: vi.fn(),
   createPortal: vi.fn(),
 }));
 
 vi.mock("stripe", () => ({
   default: class {
-    subscriptions = { retrieve: retrieveSubscription };
+    subscriptions = { retrieve: retrieveSubscription, update: updateSubscription };
     billingPortal = { sessions: { create: createPortal } };
   },
 }));
@@ -42,17 +43,18 @@ interface StoredPlan {
   max_receipts: number;
   ai_credits_per_month: number;
   max_storage_mb: number;
+  seat_count: number;
 }
 
-async function subscribedCompany() {
-  const tenant = await h.createTenant({ planId: "starter" });
+async function subscribedCompany(linked = true) {
+  const tenant = await h.createTenant(linked ? { planId: "starter" } : undefined);
   const companyId = tenant.company.id;
   const customer = `cus_${randomUUID()}`;
   const subscription = `sub_${randomUUID()}`;
   await h.sql(
     `UPDATE subscriptions SET stripe_customer_id = $2, stripe_subscription_id = $3,
         billing_cycle = 'monthly', status = 'active' WHERE company_id = $1`,
-    [companyId, customer, subscription]
+    [companyId, customer, linked ? subscription : null]
   );
   return { companyId, customer, subscription };
 }
@@ -60,7 +62,7 @@ async function subscribedCompany() {
 async function readPlan(companyId: string) {
   const [plan] = await h.sql<StoredPlan>(
     `SELECT plan_id, billing_cycle, stripe_subscription_id,
-       max_companies, max_invoices, max_receipts, ai_credits_per_month, max_storage_mb
+       max_companies, max_invoices, max_receipts, ai_credits_per_month, max_storage_mb, seat_count
      FROM subscriptions WHERE company_id = $1`,
     [companyId]
   );
@@ -81,7 +83,7 @@ function stripeSubscription(
     current_period_end: periodStart + 30 * 86_400,
     cancel_at_period_end: false,
     trial_end: null,
-    items: { data: [{ quantity: 1, price: { id: priceId } }] },
+    items: { data: [{ id: "si_fixture", quantity: 1, price: { id: priceId } }] },
   };
 }
 
@@ -189,6 +191,106 @@ describe("AU5 subscription lifecycle", () => {
       max_companies: 3,
       ai_credits_per_month: 500,
       max_storage_mb: 25_600,
+    });
+  });
+
+  it.for([true, false])(
+    "reconciles a portal downgrade delivered during the checkout Stripe read (metadata: %s)",
+    async (withMetadata, ctx) => {
+      ctx.skip(!h.concurrencySupported);
+      const ids = await subscribedCompany(false);
+      const enterprise = stripeSubscription(ids, enterprisePrice);
+      const starter = stripeSubscription(ids, starterPrice);
+      const { storage } = await import("../../server/storage");
+      const reconcile = storage.reconcileStripeSubscription.bind(storage);
+      let downgrade: Promise<void> | undefined;
+      let onReconcile!: () => void;
+      const reconcilingDowngrade = new Promise<void>((resolve) => {
+        onReconcile = resolve;
+      });
+      const reconciliation = vi
+        .spyOn(storage, "reconcileStripeSubscription")
+        .mockImplementation((row, readChanges) => {
+          if (downgrade) onReconcile();
+          return reconcile(row, readChanges);
+        });
+
+      retrieveSubscription.mockResolvedValue(starter).mockImplementationOnce(async () => {
+        // Stripe has read Enterprise. Hold that response while the portal event is delivered.
+        downgrade = deliver("customer.subscription.updated", {
+          ...starter,
+          metadata: withMetadata ? starter.metadata : {},
+        });
+        await Promise.race([reconcilingDowngrade, downgrade]);
+        return enterprise;
+      });
+
+      try {
+        await deliver("checkout.session.completed", {
+          id: `cs_${randomUUID()}`,
+          customer: ids.customer,
+          subscription: ids.subscription,
+          metadata: { companyId: ids.companyId, planId: "enterprise", billingCycle: "yearly" },
+        });
+        await downgrade;
+        expect(await readPlan(ids.companyId)).toMatchObject({
+          stripe_subscription_id: ids.subscription,
+          plan_id: "starter",
+          billing_cycle: "monthly",
+          max_companies: 1,
+          max_invoices: 200,
+          max_receipts: 200,
+          ai_credits_per_month: 50,
+          max_storage_mb: 5_120,
+        });
+      } finally {
+        reconciliation.mockRestore();
+      }
+    }
+  );
+
+  it("keeps the portal downgrade when an in-app change resumes after its Stripe update", async () => {
+    const ids = await subscribedCompany();
+    const enterprise = stripeSubscription(ids, enterprisePrice);
+    enterprise.items.data[0].quantity = 4;
+    const starter = stripeSubscription(ids, starterPrice);
+    let current = stripeSubscription(ids, professionalPrice);
+    retrieveSubscription.mockImplementation(async () => current);
+    await deliver("customer.subscription.updated", current);
+    expect(await readPlan(ids.companyId)).toMatchObject({ plan_id: "professional" });
+
+    updateSubscription.mockImplementation(async () => {
+      // Enterprise is the response to the in-app update. Finish the portal downgrade before returning it.
+      current = starter;
+      await deliver("customer.subscription.updated", starter);
+      expect(await readPlan(ids.companyId)).toMatchObject({ plan_id: "starter", seat_count: 1 });
+      return enterprise;
+    });
+
+    const { changeSubscriptionPlan } = await import("../../server/services/stripe.service");
+    await expect(
+      changeSubscriptionPlan(ids.companyId, {
+        planId: "enterprise",
+        billingCycle: "yearly",
+        seats: 4,
+      })
+    ).resolves.toEqual({ planId: "starter", billingCycle: "monthly", seats: 1 });
+    expect(updateSubscription).toHaveBeenCalledExactlyOnceWith(
+      ids.subscription,
+      expect.objectContaining({
+        items: [{ id: "si_fixture", price: enterprisePrice, quantity: 4 }],
+      })
+    );
+    expect(await readPlan(ids.companyId)).toMatchObject({
+      stripe_subscription_id: ids.subscription,
+      plan_id: "starter",
+      billing_cycle: "monthly",
+      max_companies: 1,
+      max_invoices: 200,
+      max_receipts: 200,
+      ai_credits_per_month: 50,
+      max_storage_mb: 5_120,
+      seat_count: 1,
     });
   });
 });
