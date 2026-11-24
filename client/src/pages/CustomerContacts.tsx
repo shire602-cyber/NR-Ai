@@ -711,8 +711,13 @@ export default function CustomerContacts() {
               {filteredContacts.map((contact) => (
                 <div key={contact.id} className="flex items-start gap-2 px-4 py-3">
                   {contact.isCustomer !== false && (
-                    <span className="-ms-2 grid h-11 w-11 shrink-0 place-items-center">
+                    // The label is the 44px tap target; the box inside stays 20px.
+                    <label
+                      htmlFor={`select-contact-${contact.id}`}
+                      className="-ms-2 grid h-11 w-11 shrink-0 cursor-pointer place-items-center"
+                    >
                       <Checkbox
+                        id={`select-contact-${contact.id}`}
                         checked={selected.has(contact.id)}
                         onCheckedChange={(v) => toggleSelected(contact.id, v === true)}
                         aria-label={formatMessage(t["portal.select.row"], {
@@ -720,7 +725,7 @@ export default function CustomerContacts() {
                         })}
                         data-testid={`select-contact-${contact.id}`}
                       />
-                    </span>
+                    </label>
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-3">

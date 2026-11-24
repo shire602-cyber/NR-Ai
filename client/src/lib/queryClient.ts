@@ -73,7 +73,10 @@ async function throwIfResNotOk(res: Response, portalSelection?: string | null) {
       res.status === 403 &&
       body?.code === "PORTAL_ACCESS_REVOKED"
     ) {
-      clearRevokedPortalSelection(portalSelection);
+      clearRevokedPortalSelection(
+        portalSelection,
+        typeof body.supplierName === "string" ? body.supplierName : null
+      );
     }
     // E3 (J2-r3): the localised error copy lives in `forms`, which public routes do not load.
     await loadNamespaces(useI18n.getState().locale, SERVER_ERROR_NAMESPACES).catch(() => undefined);

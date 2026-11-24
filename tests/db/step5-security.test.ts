@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 import { useHarness, type Tenant } from "./harness";
+import { installInviteMailbox, inviteMail, inviteToken } from "./invite-mailbox";
 
 // Capture everything the app logs, at any level, to prove no secret reaches a log line.
 const captured: Array<{ level: string; text: string }> = vi.hoisted(() => []);
@@ -32,7 +33,6 @@ vi.mock("../../server/config/logger", () => {
 const h = useHarness();
 const uniq = () => randomBytes(4).toString("hex");
 const PASSWORD = FAKE_PASSWORD;
-const TOKEN_RE = /#t=([0-9a-f]{64})/;
 const ANY_TOKEN = /[0-9a-f]{64}/;
 const verified = (o: Record<string, unknown> = {}) =>
   h.createTenant({ emailVerified: true, ...o } as never);
@@ -41,6 +41,7 @@ beforeEach(async () => {
   captured.length = 0;
   const { resetPortalThrottle } = await import("../../server/services/portal-access.service");
   resetPortalThrottle();
+  await installInviteMailbox();
 });
 
 afterEach(async () => {
@@ -114,14 +115,7 @@ const invite = (t: Tenant, cid: string, body: Record<string, unknown> = {}) =>
 
 /** The token only exists in the emailed link; read it from the outbox row. */
 async function tokenOf(invitationId: string) {
-  const [mail] = await h.sql(
-    `SELECT html FROM email_outbox WHERE category = 'portal_invite' AND related_entity_id = $1
-     ORDER BY created_at DESC LIMIT 1`,
-    [invitationId]
-  );
-  const token = TOKEN_RE.exec(mail?.html ?? "")?.[1];
-  if (!token) throw new Error("Missing invitation email in test outbox");
-  return token;
+  return inviteToken((q, p) => h.sql(q, p), invitationId);
 }
 
 const lookup = (b: Awaited<ReturnType<typeof browser>>, token: string) =>
@@ -285,15 +279,12 @@ describe("S5-SEC-4 invitation abuse limits", () => {
       message: "Urgent: confirm at https://phish.test/login or phish.test/x, ceo@phish.test",
     });
     expect(r.status, r.text).toBe(201);
-    const [mail] = await h.sql(
-      `SELECT * FROM email_outbox WHERE company_id = $1 AND category = 'portal_invite'`,
-      [t.company.id]
-    );
+    const mail = await inviteMail((q, p) => h.sql(q, p), r.body.invitation.id);
     expect(mail.html).not.toContain("phish");
-    expect(mail.text_body ?? mail.body ?? mail.text ?? "").not.toContain("phish");
+    expect(mail.text ?? "").not.toContain("phish");
     expect(mail.html).toContain("[link removed]");
-    expect(String(mail.from_name)).not.toMatch(/[<>@"]|https?/);
-    expect(String(mail.from_name)).toContain("Trusted Bank");
+    expect(String(mail.fromName)).not.toMatch(/[<>@"]|https?/);
+    expect(String(mail.fromName)).toContain("Trusted Bank");
   });
 });
 

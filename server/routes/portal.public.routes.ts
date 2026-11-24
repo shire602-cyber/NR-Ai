@@ -57,6 +57,7 @@ import {
   revokePortalLinks,
   verifyLoginCode,
 } from "../services/portal-access.service";
+import { isKnownInviteToken } from "../services/portal-invitations.service";
 import { buildCustomerStatement, renderStatementPdf } from "../services/customer-statement.service";
 import {
   contentDisposition,
@@ -92,7 +93,11 @@ export function portalGuard(scope: string): RequestHandler {
       req.params.shareToken ??
       (scope === "invite" && typeof bodyToken === "string" ? bodyToken : null) ??
       null;
-    const reason = await checkPortalThrottle(ip, raw ? `${scope}:${hashPortalToken(raw)}` : null);
+    const reason = await checkPortalThrottle(
+      ip,
+      raw ? `${scope}:${hashPortalToken(raw)}` : null,
+      scope === "invite" && typeof raw === "string" ? () => isKnownInviteToken(raw) : undefined
+    );
     if (reason) {
       void logPortalAccess({ req, outcome: "throttled" });
       res.setHeader("Retry-After", "600");

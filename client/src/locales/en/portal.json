@@ -417,6 +417,15 @@
   "portal.account.nameFailed": "Could not update your name.",
   "portal.bulk.doneQueued": "{count, plural, one {# invitation queued. Nothing was emailed.} other {# invitations queued. Nothing was emailed.}}",
   "portal.bulk.queuedTitle": "Email is not set up, so nothing was sent",
-  "portal.bulk.queuedBody": "The invitations are saved and queued. They go out once email is set up for this workspace. Until then customers cannot reach the link.",
-  "portal.bulk.outcome.queued": "Queued, not sent"
+  "portal.bulk.queuedBody": "The invitations are saved but not sent. Once email is set up, open each customer's Portal access and use Resend. Until then customers cannot reach the link.",
+  "portal.bulk.outcome.queued": "Queued, not sent",
+  "portal.invite.notSent": "Invitation saved but not sent. Nothing was emailed.",
+  "portal.access.emailOffTitle": "Email is not set up, so nothing is sent",
+  "portal.access.emailOffBody": "Invitations are saved but not emailed. Once email is set up, open this sheet and use Resend on each invitation.",
+  "portal.access.status.notSent": "Not sent",
+  "portal.chip.notSent": "Invite not sent",
+  "portal.access.resendInTime": "Resend in {time}",
+  "portal.states.chooseTitle": "Choose a supplier",
+  "portal.states.chooseBody": "Your access to {supplier}'s portal was removed. Open another portal to continue.",
+  "portal.doc.dueShort": "Due"
 }

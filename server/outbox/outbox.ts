@@ -149,8 +149,10 @@ export async function enqueueEmail(input: EnqueueEmailInput, executor = db): Pro
         replyTo: input.replyTo ?? null,
         fromName: input.fromName ?? null,
         subject: input.subject.slice(0, 998),
-        html: input.html,
-        textBody: input.text ?? null,
+        // R5-9: with no provider a portal invitation is never sent by this row, so its live link is
+        // not stored at all (Resend renders a fresh message with a fresh token).
+        html: !provider && input.category === "portal_invite" ? null : input.html,
+        textBody: !provider && input.category === "portal_invite" ? null : (input.text ?? null),
         category: input.category ?? "generic",
         relatedEntityType: digest ? NOTIFICATION_DIGEST_ENTITY : (input.relatedEntityType ?? null),
         relatedEntityId: digest?.userId ?? input.relatedEntityId ?? null,
@@ -284,6 +286,9 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
         lockedUntil: null,
         lastError: "No email provider configured (RESEND_API_KEY or SMTP_HOST)",
         updatedAt: new Date(),
+        // R5-9: an unsent invitation keeps no live link at rest. The body is dropped; Resend
+        // issues a fresh token and renders a new message.
+        ...(row.category === "portal_invite" ? { html: null, textBody: null } : {}),
       })
       .where(eq(emailOutbox.id, row.id))
       .returning();
@@ -390,6 +395,36 @@ async function cancelPendingEmail(id: string): Promise<OutboxResult> {
   return toResult(cancelled);
 }
 
+/**
+ * R5-9: cancel the unsent invitation emails of one invitation (superseded by a resend, or the
+ * invitation was cancelled) and drop their bodies, so no unsent message keeps a live link.
+ */
+export async function cancelUnsentPortalInvites(
+  invitationId: string,
+  exceptOutboxId?: string | null,
+  executor: typeof db = db
+): Promise<void> {
+  await executor
+    .update(emailOutbox)
+    .set({
+      status: "cancelled",
+      lockedUntil: null,
+      updatedAt: new Date(),
+      html: null,
+      textBody: null,
+      lastError: null,
+    })
+    .where(
+      and(
+        eq(emailOutbox.category, "portal_invite"),
+        eq(emailOutbox.relatedEntityType, "customer_portal_invitation"),
+        eq(emailOutbox.relatedEntityId, invitationId),
+        inArray(emailOutbox.status, ["queued", "retrying", "blocked_no_provider"]),
+        exceptOutboxId ? sql`${emailOutbox.id} <> ${exceptOutboxId}` : undefined
+      )
+    );
+}
+
 /** Try to deliver one message now (no-op unless it is claimable). */
 export async function deliverOutboxMessage(id: string): Promise<OutboxResult | null> {
   const [row] = await claim([id], 1);
@@ -410,6 +445,7 @@ export async function processOutbox(limit = 50): Promise<Record<string, number>>
       `UPDATE email_outbox SET status = 'queued', next_attempt_at = now() AT TIME ZONE 'UTC', last_error = NULL,
               updated_at = now() AT TIME ZONE 'UTC'
         WHERE status = 'blocked_no_provider'
+          AND category <> 'portal_invite'
           AND created_at > (now() AT TIME ZONE 'UTC') - CASE WHEN sensitive THEN interval '1 hour'
                                         ELSE interval '24 hours' END`
     );
@@ -442,7 +478,7 @@ export async function requeueOutboxMessage(
         eq(emailOutbox.id, id),
         eq(emailOutbox.companyId, companyId),
         inArray(emailOutbox.status, ["dead", "blocked_no_provider", "retrying"]),
-        sql`(${emailOutbox.category} <> 'portal_invite' OR ${isCurrentPortalInvite})`
+        sql`(${emailOutbox.category} <> 'portal_invite' OR (${isCurrentPortalInvite} AND ${emailOutbox.html} IS NOT NULL))`
       )
     )
     .returning();

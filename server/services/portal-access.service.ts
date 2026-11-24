@@ -183,10 +183,26 @@ export function clientIp(req: Request): string {
   return (req.ip || req.socket?.remoteAddress || "unknown").replace(/^::ffff:/, "");
 }
 
-/** Throttle check for a public request. Returns the reason when it must get a 429. */
-export async function checkPortalThrottle(ip: string, tokenKey?: string | null) {
+/**
+ * Throttle check for a public request. Returns the reason when it must get a 429.
+ *
+ * `isKnownCredential` (R5-8): the failure lockout exists to stop guessing, so a request that
+ * presents a credential we already know (an invitation link that is expired, used or cancelled
+ * still resolves to a row) is never refused for the IP's earlier failures. Only unknown tokens
+ * are. The per-minute IP and per-token limits still apply to everyone.
+ */
+export async function checkPortalThrottle(
+  ip: string,
+  tokenKey?: string | null,
+  isKnownCredential?: () => Promise<boolean>
+) {
   const failures = await portalThrottle.check(`fail:${ip}`, FAILURE_WINDOW_MS, "peek");
-  if (failures.count >= PORTAL_LIMITS.ipFailuresPer10Min) return "too_many_failures";
+  if (
+    failures.count >= PORTAL_LIMITS.ipFailuresPer10Min &&
+    !(isKnownCredential && (await isKnownCredential()))
+  ) {
+    return "too_many_failures";
+  }
 
   const requests = await portalThrottle.check(
     `ip:${ip}`,
@@ -366,20 +382,21 @@ export async function portalAccountsForUser(userId: string): Promise<PortalBindi
 }
 
 /**
- * Resolve the exact binding when one was requested. An unscoped first visit can use the newest
- * binding until access has been removed, at which point the customer must choose a supplier.
+ * Resolve the binding a portal request acts on. With `preferredAccountId` (the `X-Portal-Account`
+ * header) only that exact binding of the user qualifies: when it was removed or its contact
+ * deactivated the result is null and the customer must choose a supplier again (never silently
+ * switch to another supplier's books). Without one, the newest ACTIVE binding is used: a removal
+ * of an older binding never hides a current one (R5-1).
  */
 export async function portalAccountForUser(
   userId: string,
   preferredAccountId?: string | null
 ): Promise<PortalBinding | null> {
-  const bindings = await db
+  const [binding] = await db
     .select({
       id: customerPortalAccounts.id,
       companyId: customerPortalAccounts.companyId,
       contactId: customerPortalAccounts.contactId,
-      revokedAt: customerPortalAccounts.revokedAt,
-      active: customerContacts.isActive,
     })
     .from(customerPortalAccounts)
     .innerJoin(
@@ -392,12 +409,14 @@ export async function portalAccountForUser(
     .where(
       and(
         eq(customerPortalAccounts.userId, userId),
+        isNull(customerPortalAccounts.revokedAt),
+        eq(customerContacts.isActive, true),
         preferredAccountId ? eq(customerPortalAccounts.id, preferredAccountId) : undefined
       )
     )
-    .orderBy(desc(customerPortalAccounts.createdAt));
-  if (bindings.some((binding) => binding.revokedAt || !binding.active)) return null;
-  return bindings[0] ?? null;
+    .orderBy(desc(customerPortalAccounts.createdAt))
+    .limit(1);
+  return binding ?? null;
 }
 
 /** Remember the last portal request (at most once every 5 minutes per binding). */

@@ -657,7 +657,7 @@ export function registerAuthRoutes(app: Express): void {
           } as Parameters<typeof storage.createUser>[0]);
         }
       } catch (err) {
-        if (isUniqueViolation(err) || errorCode(err) === "PORTAL_INVITE_EMAIL_RESERVED") {
+        if (isUniqueViolation(err)) {
           return res.json(genericRegisterBody());
         }
         throw err;

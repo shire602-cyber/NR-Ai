@@ -3,10 +3,7 @@ import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
 import { z } from "zod";
 import { storage, normalizeEmail } from "../storage";
-import {
-  assertPortalInviteEmailAvailable,
-  lockPortalInviteEmail,
-} from "../storage/portal-invite-email";
+import { lockPortalInviteEmail } from "../storage/portal-invite-email";
 import { authMiddleware, optionalAuthUser } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import {
@@ -773,7 +770,6 @@ export function registerTeamRoutes(app: Express) {
         if (!signedIn && (!passwordHash || !body.name)) {
           z.object({ name: zText(100, { min: 1 }), password: passwordPolicySchema }).parse(body);
         }
-        if (!signedIn) await assertPortalInviteEmailAvailable(tx, email);
         const claimPlaceholder = !signedIn && !!user;
         const grantor = accounts.find((account) => account.id === inv.invitedBy);
         await assertTeamInviteAuthority(inv.companyId, grantor, user, inv.role, tx, "share");

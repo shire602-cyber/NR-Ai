@@ -10,7 +10,7 @@
  * invoice is a 404. A login with no (or a removed) binding gets 403.
  */
 import type { Express, Request, Response, NextFunction, RequestHandler } from "express";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { storage } from "../storage";
 import { db } from "../db";
 import { authMiddleware } from "../middleware/auth";
@@ -20,6 +20,7 @@ import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
 import {
+  companies,
   customerPortalAccounts,
   invoices,
   messages,
@@ -77,16 +78,23 @@ async function requirePortalUser(req: Request, res: Response, next: NextFunction
   const binding =
     header === undefined || preferred ? await portalAccountForUser(user.id, preferred) : null;
   if (!binding) {
-    const [removed] = await db
-      .select({ id: customerPortalAccounts.id })
+    // The supplier whose access went away: the selected binding for a stale header, otherwise
+    // the newest one. Only the user's OWN bindings are named, so nothing leaks across tenants.
+    const own = await db
+      .select({ id: customerPortalAccounts.id, supplierName: companies.name })
       .from(customerPortalAccounts)
+      .leftJoin(companies, eq(companies.id, customerPortalAccounts.companyId))
       .where(eq(customerPortalAccounts.userId, user.id))
-      .limit(1);
+      .orderBy(desc(customerPortalAccounts.createdAt));
+    // A stale or forged header names nothing it does not own: only an exact own binding is named.
+    const named = preferred ? own.find((row) => row.id === preferred) : own[0];
+    const removed = own.length > 0 ? { supplierName: named?.supplierName ?? null } : null;
     res.status(403).json(
       removed
         ? {
             code: "PORTAL_ACCESS_REVOKED",
             message: "Your access to this customer portal was removed.",
+            supplierName: removed.supplierName ?? null,
           }
         : {
             code: "PORTAL_CONTACT_NOT_LINKED",
@@ -104,6 +112,7 @@ async function requirePortalUser(req: Request, res: Response, next: NextFunction
     res.status(403).json({
       code: "PORTAL_ACCESS_REVOKED",
       message: "Your access to this customer portal was removed.",
+      supplierName: company?.name ?? null,
     });
     return;
   }

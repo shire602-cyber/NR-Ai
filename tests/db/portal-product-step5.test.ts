@@ -6,11 +6,11 @@
 import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import { installInviteMailbox, inviteToken } from "./invite-mailbox";
 
 const h = useHarness();
 const DAY = 86_400_000;
 const uniq = () => randomBytes(4).toString("hex");
-const TOKEN_RE = /#t=([0-9a-f]{64})/;
 const dubaiDate = (offsetDays = 0) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(
     new Date(Date.now() + offsetDays * DAY)
@@ -19,10 +19,13 @@ const dubaiDate = (offsetDays = 0) =>
 beforeEach(async () => {
   const { resetPortalThrottle } = await import("../../server/services/portal-access.service");
   resetPortalThrottle();
+  await installInviteMailbox();
 });
 
-afterEach(() => {
+afterEach(async () => {
   delete process.env.RESEND_API_KEY;
+  const { setEmailTransportOverride } = await import("../../server/outbox");
+  setEmailTransportOverride(null);
 });
 
 async function contact(t: Tenant, name: string, extra: Record<string, unknown> = {}) {
@@ -63,14 +66,7 @@ async function pay(t: Tenant, invoiceId: string, amount: number) {
 
 /** The raw token only ever lives in the invitation email (here: the outbox, no provider). */
 async function tokenOf(invitationId: string) {
-  const [mail] = await h.sql(
-    `SELECT html FROM email_outbox WHERE category = 'portal_invite' AND related_entity_id = $1
-     ORDER BY created_at DESC LIMIT 1`,
-    [invitationId]
-  );
-  const token = TOKEN_RE.exec(mail?.html ?? "")?.[1];
-  if (!token) throw new Error("Missing invitation email in test outbox");
-  return token;
+  return inviteToken((q, p) => h.sql(q, p), invitationId);
 }
 
 /** A cookie-session visitor (the join page): CSRF token first, then the POST. */
@@ -160,11 +156,12 @@ describe("STEP5 portal product fixes", () => {
     const acc2 = await bind(s2, c2, customer);
     const withAccount = (id: string) => ({ headers: { "x-portal-account": id } });
 
-    // Supplier two (the newest) is deactivated: its data is refused, whether selected or not...
+    // Supplier two (the newest) is deactivated: its data is refused when selected, and with no
+    // supplier chosen the customer lands in the newest ACTIVE one (R5-1)...
     await h.sql(`UPDATE customer_contacts SET is_active = false WHERE id = $1`, [c2]);
     const unscoped = await customer.as.get("/api/client-portal/invoices");
-    expect(unscoped.status).toBe(403);
-    expect(unscoped.body.code).toBe("PORTAL_ACCESS_REVOKED");
+    expect(unscoped.status, unscoped.text).toBe(200);
+    expect(unscoped.body.map((i: any) => i.id)).toEqual([inv1.id]);
     const dead = await customer.as.get("/api/client-portal/invoices", withAccount(acc2));
     expect(dead.status).toBe(403);
     // ...the chooser lists only the active supplier, and picking it works.
@@ -189,6 +186,8 @@ describe("STEP5 portal product fixes", () => {
   });
 
   it("[S5-P4] bulk invite without an email provider reports the invitations as queued, never as sent, and returns no links", async () => {
+    const { setEmailTransportOverride } = await import("../../server/outbox");
+    setEmailTransportOverride(null);
     const t = await h.createTenant({ emailVerified: true });
     const a = await contact(t, "Bulk Queue A");
     const b = await contact(t, "Bulk Queue B");

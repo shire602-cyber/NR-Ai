@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
+import { installInviteMailbox, inviteMail, inviteToken } from "./invite-mailbox";
 import type { OutgoingEmail } from "../../server/outbox";
 import type { PoolClient } from "pg";
 
@@ -19,6 +20,7 @@ const TOKEN_RE = /#t=([0-9a-f]{64})/;
 beforeEach(async () => {
   const { resetPortalThrottle } = await import("../../server/services/portal-access.service");
   resetPortalThrottle();
+  await installInviteMailbox();
 });
 
 afterEach(async () => {
@@ -143,14 +145,7 @@ async function invite(t: Tenant, cid: string, body: Record<string, unknown> = { 
 }
 
 async function tokenOf(invitationId: string) {
-  const [mail] = await h.sql(
-    `SELECT html FROM email_outbox WHERE category = 'portal_invite' AND related_entity_id = $1
-     ORDER BY created_at DESC LIMIT 1`,
-    [invitationId]
-  );
-  const token = TOKEN_RE.exec(mail?.html ?? "")?.[1];
-  if (!token) throw new Error("Missing invitation email in test outbox");
-  return token;
+  return inviteToken((q, p) => h.sql(q, p), invitationId);
 }
 
 /** Invite and accept as a brand-new customer. Returns the logged-in browser and ids. */
@@ -185,9 +180,10 @@ describe("STEP5 portal invitations", () => {
     });
     const r = await invite(t, cid, { language: "ar", message: "Welcome <b>aboard</b>" });
     expect(r.status, r.text).toBe(201);
-    expect(r.body.delivery).toBe("queued");
+    expect(r.body.delivery).toBe("email");
     expect(r.body).not.toHaveProperty("inviteUrl");
     const token = await tokenOf(r.body.invitation.id);
+    const delivered = await inviteMail((q, p) => h.sql(q, p), r.body.invitation.id);
     expect(JSON.stringify(r.body.invitation)).not.toContain(token);
 
     const rows = await h.sql(`SELECT * FROM customer_portal_invitations WHERE company_id = $1`, [
@@ -211,13 +207,15 @@ describe("STEP5 portal invitations", () => {
     expect(outbox[0].sensitive).toBe(true);
     expect(outbox[0].related_entity_type).toBe("customer_portal_invitation");
     expect(outbox[0].related_entity_id).toBe(rows[0].id);
-    expect(outbox[0].status).toBe("blocked_no_provider");
+    expect(outbox[0].status).toBe("sent");
+    // Once delivered, a sensitive message keeps no body (and so no link) at rest.
+    expect(outbox[0].html).toBeNull();
     expect(outbox[0].subject).toMatch(/دعتك/);
-    expect(outbox[0].html).toContain('dir="rtl"');
+    expect(delivered.html).toContain('dir="rtl"');
     // Supplier-controlled text is escaped in the HTML (the company name carries an apostrophe).
-    expect(outbox[0].html).toContain("&#39;");
-    expect(outbox[0].html).not.toContain("<script");
-    expect(TOKEN_RE.exec(outbox[0].html)![1]).toBe(token);
+    expect(delivered.html).toContain("&#39;");
+    expect(delivered.html).not.toContain("<script");
+    expect(TOKEN_RE.exec(delivered.html)![1]).toBe(token);
     expect(outbox[0].subject).not.toMatch(/[\r\n]/);
 
     const audit = await h.sql(
@@ -383,7 +381,7 @@ describe("STEP5 portal invitations", () => {
     expect((await b0.lookup(token)).body.code).toBe("PORTAL_INVITE_ACCEPTED");
   });
 
-  it("reserves the invited address against signup and only creates the login on acceptance", async () => {
+  it("[R5-4] a pending invitation never blocks the invited address from creating its own account", async () => {
     const supplier = await h.createTenant({ emailVerified: true });
     const email = `reserved-${uniq()}@example.test`;
     const cid = await contact(supplier, "New customer", { email });
@@ -394,15 +392,36 @@ describe("STEP5 portal invitations", () => {
     const otherPassword = "Fake-Unauthorized-PreRegistration7!";
     const registration = await guest.post("/api/auth/register", {
       email: email.toUpperCase(),
-      name: "Uninvited claimant",
+      name: "The real owner",
       password: otherPassword,
     });
     expect(registration.status).toBe(200);
-    expect(await h.sql("SELECT id FROM users WHERE lower(email) = $1", [email])).toHaveLength(0);
+    // A normal account exists and signs in: register never says "ready" without creating one.
+    expect(await h.sql("SELECT id FROM users WHERE lower(email) = $1", [email])).toHaveLength(1);
     expect((await guest.post("/api/auth/login", { email, password: otherPassword })).status).toBe(
-      401
+      200
     );
+    // The invitation now follows the existing-account path: sign in, verify the mailbox, accept.
+    expect((await (await browser()).lookup(token)).body.account).toBe("existing");
+    const unsigned = await (
+      await browser()
+    ).accept(token, email, { password: PASSWORD, acceptTerms: true });
+    expect(unsigned.body.code).toBe("LOGIN_REQUIRED");
+    expect(
+      await h.sql("SELECT id FROM customer_portal_accounts WHERE invitation_id = $1", [
+        issued.body.invitation.id,
+      ])
+    ).toHaveLength(0);
+  });
 
+  it("only creates the login on acceptance for an address with no account", async () => {
+    const supplier = await h.createTenant({ emailVerified: true });
+    const email = `fresh-${uniq()}@example.test`;
+    const cid = await contact(supplier, "New customer", { email });
+    const issued = await invite(supplier, cid);
+    expect(issued.status, issued.text).toBe(201);
+    const token = await tokenOf(issued.body.invitation.id);
+    const guest = await browser();
     const wrongEmail = await guest.accept(token, "wrong@example.test", {
       password: PASSWORD,
       acceptTerms: true,
@@ -422,9 +441,6 @@ describe("STEP5 portal invitations", () => {
     expect(
       (await (await browser()).post("/api/auth/login", { email, password: PASSWORD })).status
     ).toBe(200);
-    expect(
-      (await (await browser()).post("/api/auth/login", { email, password: otherPassword })).status
-    ).toBe(401);
   });
 
   it("refuses a placeholder and an unverified account without overwriting their credentials", async () => {
@@ -469,26 +485,39 @@ describe("STEP5 portal invitations", () => {
       (await guest.accept(token, existing.email, { password: PASSWORD, acceptTerms: true })).body
         .code
     ).toBe("LOGIN_REQUIRED");
-    await guest.post("/api/auth/register", {
-      email: existing.email,
-      name: "Claim",
-      password: PASSWORD,
-    });
+    // The portal link never claims the placeholder (above); the owner may still register it the
+    // normal way (R5-4: a pending invitation does not block sign-up), which leaves the invitation
+    // on the existing-account path.
     expect(
-      await h.sql("SELECT password_hash FROM users WHERE id = $1", [existing.user.id])
-    ).toEqual([{ password_hash: "$placeholder$" }]);
+      (
+        await guest.post("/api/auth/register", {
+          email: existing.email,
+          name: "Claim",
+          password: PASSWORD,
+        })
+      ).status
+    ).toBe(200);
+    expect((await guest.lookup(token)).body.account).toBe("existing");
+    expect(
+      (
+        await (
+          await browser()
+        ).accept(token, existing.email, { password: PASSWORD, acceptTerms: true })
+      ).body.code
+    ).toBe("LOGIN_REQUIRED");
 
-    const reservedEmail = `edit-${uniq()}@example.test`;
+    // An admin moving an account to an invited address is not blocked either.
+    const movedEmail = `edit-${uniq()}@example.test`;
     const otherInvite = await invite(
       supplier,
-      await contact(supplier, "Email edit", { email: reservedEmail })
+      await contact(supplier, "Email edit", { email: movedEmail })
     );
     const moved = await admin.as.patch(`/api/admin/users/${existing.user.id}`, {
-      email: reservedEmail,
+      email: movedEmail,
     });
-    expect(moved.body.code).toBe("PORTAL_INVITE_EMAIL_RESERVED");
+    expect(moved.status, moved.text).toBeLessThan(300);
     expect((await guest.lookup(await tokenOf(otherInvite.body.invitation.id))).body.account).toBe(
-      "new"
+      "existing"
     );
   });
 
@@ -659,9 +688,10 @@ describe("STEP5 portal invitations", () => {
     const company = await b.get(companyPath, selected);
     expect(company.status, company.text).toBe(403);
     expect(company.body.code).toBe("PORTAL_ACCESS_REVOKED");
+    // R5-1: with no supplier chosen the customer lands in their newest ACTIVE portal.
     const cleared = await b.get(companyPath);
-    expect(cleared.status, cleared.text).toBe(403);
-    expect(cleared.body.code).toBe("PORTAL_ACCESS_REVOKED");
+    expect(cleared.status, cleared.text).toBe(200);
+    expect(cleared.body.id).toBe(second.company.id);
     const list = await b.get("/api/client-portal/accounts", selected);
     expect(list.body.map((account: { id: string }) => account.id)).toEqual([secondAccountId]);
     const chosen = await b.get(companyPath, { "x-portal-account": secondAccountId });
@@ -897,13 +927,14 @@ describe("STEP5 portal invitations", () => {
     expect(over.status).toBe(429);
     expect(over.body.code).toBe("PORTAL_INVITE_RATE_LIMITED");
 
-    // 21 bad tokens from one IP lock even a good token.
+    // 21 unknown tokens from one IP lock further unknown tokens, but never a valid link (R5-8).
     const t2 = await h.createTenant({ emailVerified: true });
     const validInvite = await invite(t2, await contact(t2, "Lock LLC"), { language: "en" });
     const good = await tokenOf(validInvite.body.invitation.id);
     const b = await browser();
     for (let i = 0; i < 21; i++) await b.lookup(randomBytes(32).toString("hex"));
-    expect((await b.lookup(good)).status).toBe(429);
+    expect((await b.lookup(randomBytes(32).toString("hex"))).status).toBe(429);
+    expect((await b.lookup(good)).status).toBe(200);
   });
 
   it("[S5-10] malformed and unknown tokens return byte-identical 404 bodies", async () => {
@@ -959,10 +990,12 @@ describe("STEP5 portal invitations", () => {
   it("[S5-12] with an email provider the email is sent and the link is not returned", async () => {
     const sent: OutgoingEmail[] = [];
     const t = await h.createTenant({ emailVerified: true });
+    const { setEmailTransportOverride } = await import("../../server/outbox");
+    setEmailTransportOverride(null);
     const none = await invite(t, await contact(t, "No provider"), { language: "en" });
     expect(none.body.delivery).toBe("queued");
+    expect(none.body.invitation.emailSent).toBe(false);
     expect(none.body).not.toHaveProperty("inviteUrl");
-    const { setEmailTransportOverride } = await import("../../server/outbox");
     setEmailTransportOverride({
       name: "test",
       send: async (m) => {
@@ -1127,6 +1160,14 @@ describe("STEP5 portal invitations", () => {
   it("uses UTC expiry for delivery and rejection under a non-UTC database session", async (ctx) => {
     if (!h.concurrencySupported) return ctx.skip();
     const supplier = await h.createTenant({ emailVerified: true });
+    // A provider outage leaves the message retrying (its body is kept for the retry).
+    const outage = await import("../../server/outbox");
+    outage.setEmailTransportOverride({
+      name: "test",
+      send: async () => {
+        throw new Error("temporary outage");
+      },
+    });
     const issued = await invite(supplier, await contact(supplier, "UTC expiry"));
     expect(issued.status).toBe(201);
     const id = issued.body.invitation.id;
@@ -1291,5 +1332,264 @@ describe("STEP5 portal invitations", () => {
     expect((await b.post("/api/auth/logout", {})).status).toBe(200);
     expect((await b.get("/api/auth/me")).status).toBe(401);
     expect((await b.get("/api/client-portal/dashboard")).status).toBe(401);
+  });
+});
+
+// ─── STEP 5 re-audit (R5-n) ─────────────────────────────────────────────────
+
+describe("STEP5 re-audit", () => {
+  const agePending = (id: string) =>
+    h.sql(
+      `UPDATE customer_portal_invitations SET last_sent_at = now() - interval '1 hour' WHERE id = $1`,
+      [id]
+    );
+  const resend = (t: Tenant, id: string) =>
+    t.as.post(`/api/companies/${t.company.id}/portal-invitations/${id}/resend`, {});
+  const noProvider = async () => {
+    const { setEmailTransportOverride } = await import("../../server/outbox");
+    setEmailTransportOverride(null);
+  };
+
+  it("[R5-1] a removed-then-re-invited customer lands in the portal on every fresh sign-in", async () => {
+    const supplier = await h.createTenant({ emailVerified: true, name: "Gulf Supplies" });
+    const cid = await contact(supplier, "Re-invited buyer");
+    const { b, email, portalAccountId } = await onboard(supplier, cid);
+    const removed = await supplier.as.delete(
+      `/api/companies/${supplier.company.id}/portal-accounts/${portalAccountId}`
+    );
+    expect(removed.status, removed.text).toBe(200);
+
+    // No active binding left: the removed state, naming the supplier that removed access.
+    const gone = await b.get("/api/client-portal/company");
+    expect(gone.status).toBe(403);
+    expect(gone.body.code).toBe("PORTAL_ACCESS_REVOKED");
+    expect(gone.body.supplierName).toBe(supplier.company.name);
+
+    const again = await invite(supplier, cid, { email, language: "en" });
+    expect(again.status, again.text).toBe(201);
+    const accepted = await b.accept(await tokenOf(again.body.invitation.id), email, {
+      acceptTerms: true,
+    });
+    expect(accepted.status, accepted.text).toBe(200);
+    const newAccountId = accepted.body.portalAccountId as string;
+
+    // A fresh sign-in sends no X-Portal-Account: the single active binding opens directly.
+    const fresh = await browser();
+    expect((await fresh.post("/api/auth/login", { email, password: PASSWORD })).status).toBe(200);
+    const company = await fresh.get("/api/client-portal/company");
+    expect(company.status, company.text).toBe(200);
+    expect(company.body.portalAccountId).toBe(newAccountId);
+    expect((await fresh.get("/api/client-portal/invoices")).status).toBe(200);
+
+    // A stale or forged selection is still refused (never silently switched), with the chooser.
+    const stale = await fresh.get("/api/client-portal/company", {
+      "x-portal-account": portalAccountId,
+    });
+    expect(stale.status).toBe(403);
+    expect(stale.body.code).toBe("PORTAL_ACCESS_REVOKED");
+    expect(stale.body.supplierName).toBe(supplier.company.name);
+    const forged = await fresh.get("/api/client-portal/company", {
+      "x-portal-account": "00000000-0000-4000-8000-000000000000",
+    });
+    expect(forged.status).toBe(403);
+    expect(forged.body.code).toBe("PORTAL_ACCESS_REVOKED");
+    expect(forged.body.supplierName).toBeNull();
+  });
+
+  it("[R5-1] a customer that never had a binding gets PORTAL_CONTACT_NOT_LINKED", async () => {
+    const stranger = await h.createTenant({ emailVerified: true });
+    const res = await stranger.as.get("/api/client-portal/company");
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("PORTAL_CONTACT_NOT_LINKED");
+  });
+
+  it("[R5-2] with no email provider the invitation, resend and contact chip say not sent", async () => {
+    await noProvider();
+    const t = await h.createTenant({ emailVerified: true });
+    const cid = await contact(t, "Honest LLC");
+    const issued = await invite(t, cid);
+    expect(issued.status, issued.text).toBe(201);
+    expect(issued.body.delivery).toBe("queued");
+    expect(issued.body.invitation.emailSent).toBe(false);
+    const id = issued.body.invitation.id;
+
+    const sheet = await t.as.get(
+      `/api/companies/${t.company.id}/customer-contacts/${cid}/portal-access`
+    );
+    expect(sheet.body.invitations.find((i: { id: string }) => i.id === id).emailSent).toBe(false);
+    const summary = await t.as.get(`/api/companies/${t.company.id}/portal-access/summary`);
+    expect(summary.body[cid]).toMatchObject({ state: "invited", notSent: true });
+
+    await agePending(id);
+    const again = await resend(t, id);
+    expect(again.status, again.text).toBe(200);
+    expect(again.body.delivery).toBe("queued");
+    expect(again.body.invitation.emailSent).toBe(false);
+
+    // Once a provider is configured, a Resend really sends and the card and chip flip.
+    await installInviteMailbox();
+    await agePending(id);
+    const sent = await resend(t, id);
+    expect(sent.body.delivery).toBe("email");
+    expect(sent.body.invitation.emailSent).toBe(true);
+    const after = await t.as.get(`/api/companies/${t.company.id}/portal-access/summary`);
+    expect(after.body[cid].state).toBe("invited");
+    expect(after.body[cid].notSent).toBeUndefined();
+  });
+
+  it("[R5-3][R5-9] an unsent invitation keeps no live link, is never sent later by itself, and Resend issues a fresh working link", async () => {
+    await noProvider();
+    const t = await h.createTenant({ emailVerified: true });
+    const cid = await contact(t, "Queued LLC");
+    const issued = await invite(t, cid);
+    const id = issued.body.invitation.id;
+    const [blocked] = await h.sql(
+      `SELECT id, status, html, text_body FROM email_outbox WHERE related_entity_id = $1`,
+      [id]
+    );
+    expect(blocked.status).toBe("blocked_no_provider");
+    expect(blocked.html).toBeNull();
+    expect(blocked.text_body).toBeNull();
+
+    // Choice for R5-3: a queued invitation is NOT sent when a provider appears later (its link was
+    // never stored); the firm uses Resend, which mints a fresh token. The copy says exactly that.
+    await installInviteMailbox();
+    const { processOutbox } = await import("../../server/outbox");
+    await processOutbox();
+    const [still] = await h.sql(`SELECT status, html FROM email_outbox WHERE id = $1`, [
+      blocked.id,
+    ]);
+    expect(still).toMatchObject({ status: "blocked_no_provider", html: null });
+    await expect(inviteMail((q, p) => h.sql(q, p), id)).rejects.toThrow();
+    // The manual outbox retry cannot send an empty message either.
+    const retry = await t.as.post(
+      `/api/companies/${t.company.id}/email-outbox/${blocked.id}/retry`,
+      {}
+    );
+    expect(retry.status).toBe(409);
+
+    await agePending(id);
+    const sent = await resend(t, id);
+    expect(sent.status, sent.text).toBe(200);
+    expect(sent.body.delivery).toBe("email");
+    const token = await tokenOf(id);
+    const [old] = await h.sql(`SELECT status, html FROM email_outbox WHERE id = $1`, [blocked.id]);
+    expect(old).toMatchObject({ status: "cancelled", html: null });
+    const guest = await browser();
+    expect((await guest.lookup(token)).status).toBe(200);
+  });
+
+  it("[R5-9] cancelling an invitation drops the body of a message that is still waiting to be retried", async () => {
+    const outbox = await import("../../server/outbox");
+    outbox.setEmailTransportOverride({
+      name: "test",
+      send: async () => {
+        throw new Error("temporary outage");
+      },
+    });
+    const t = await h.createTenant({ emailVerified: true });
+    const cid = await contact(t, "Retry LLC");
+    const issued = await invite(t, cid);
+    const id = issued.body.invitation.id;
+    const [waiting] = await h.sql(
+      `SELECT id, status, html FROM email_outbox WHERE related_entity_id = $1`,
+      [id]
+    );
+    expect(waiting.status).toBe("retrying");
+    expect(waiting.html).toMatch(/#t=[0-9a-f]{64}/);
+    const revoked = await t.as.post(
+      `/api/companies/${t.company.id}/portal-invitations/${id}/revoke`,
+      {}
+    );
+    expect(revoked.status, revoked.text).toBe(200);
+    const [after] = await h.sql(`SELECT status, html FROM email_outbox WHERE id = $1`, [
+      waiting.id,
+    ]);
+    expect(after).toMatchObject({ status: "cancelled", html: null });
+  });
+
+  it("[R5-4] a pending invitation does not block account creation or a team invitation accept", async () => {
+    const supplier = await h.createTenant({ emailVerified: true });
+    const email = `both-${uniq()}@example.test`;
+    await invite(supplier, await contact(supplier, "Both ways", { email }));
+
+    // Team invitation for the same, still account-less address.
+    const owner = await h.createTenant({ emailVerified: true });
+    const teamInvite = await owner.as.post(`/api/companies/${owner.company.id}/team/invite`, {
+      email,
+      role: "accountant",
+    });
+    expect(teamInvite.status, teamInvite.text).toBe(201);
+    const teamToken = new URL(teamInvite.body.inviteUrl).searchParams.get("teamInvite");
+    const guest = await browser();
+    const accepted = await guest.post(`/api/team-invitations/${teamToken}/accept`, {
+      name: "Team Member",
+      password: PASSWORD,
+    });
+    expect(accepted.status, accepted.text).toBe(200);
+    expect(await h.sql("SELECT id FROM users WHERE lower(email) = $1", [email])).toHaveLength(1);
+
+    // Account creation through the storage seam (register, OAuth sign-up and claim all use it).
+    const { storage } = await import("../../server/storage");
+    const other = `oauth-${uniq()}@example.test`;
+    await invite(supplier, await contact(supplier, "OAuth buyer", { email: other }));
+    const created = await storage.createUser({
+      name: "Google User",
+      email: other,
+      passwordHash: "",
+      userType: "customer",
+    } as never);
+    expect(created.email).toBe(other);
+  });
+
+  it("[R5-8] expired, used and cancelled links never count towards the lockout, and unknown ones never block a valid link", async () => {
+    const t = await h.createTenant({ emailVerified: true });
+    const expiredInvite = await invite(t, await contact(t, "Expired Co"));
+    const cancelledInvite = await invite(t, await contact(t, "Cancelled Co"));
+    const validInvite = await invite(t, await contact(t, "Valid Co"));
+    const expired = await tokenOf(expiredInvite.body.invitation.id);
+    const cancelled = await tokenOf(cancelledInvite.body.invitation.id);
+    const valid = await tokenOf(validInvite.body.invitation.id);
+    await h.sql(
+      `UPDATE customer_portal_invitations SET status = 'expired', expires_at = now() - interval '1 day' WHERE id = $1`,
+      [expiredInvite.body.invitation.id]
+    );
+    expect(
+      (
+        await t.as.post(
+          `/api/companies/${t.company.id}/portal-invitations/${cancelledInvite.body.invitation.id}/revoke`,
+          {}
+        )
+      ).status
+    ).toBe(200);
+
+    const b = await browser();
+    for (let i = 0; i < 30; i++) {
+      expect((await b.lookup(expired)).status).toBe(410);
+      expect((await b.lookup(cancelled)).status).toBe(410);
+    }
+    // 60 known-but-closed lookups did not lock the IP: an unknown token is still a plain 404.
+    expect((await b.lookup(randomBytes(32).toString("hex"))).status).toBe(404);
+    expect((await b.lookup(valid)).status).toBe(200);
+
+    // Only unknown tokens lock, and even then a valid link still opens.
+    for (let i = 0; i < 21; i++) await b.lookup(randomBytes(32).toString("hex"));
+    expect((await b.lookup(randomBytes(32).toString("hex"))).status).toBe(429);
+    expect((await b.lookup(valid)).status).toBe(200);
+    expect((await b.lookup(expired)).status).toBe(410);
+  });
+
+  it("[R5-5] the Arabic invitation greets the contact person (never the company) and names the customer", async () => {
+    const t = await h.createTenant({ emailVerified: true });
+    const cid = await contact(t, "Mail en Co", {
+      email: `ar-${uniq()}@example.test`,
+      nameAr: "النور للتجارة العامة ذ.م.م",
+      contactPerson: "Layla Hassan",
+    });
+    const issued = await invite(t, cid, { language: "ar" });
+    const mail = await inviteMail((q, p) => h.sql(q, p), issued.body.invitation.id);
+    expect(mail.text).toContain("مرحبًا Layla Hassan،");
+    expect(mail.text).not.toContain("عزيزنا");
+    expect(mail.text).toContain("الصادرة إلى النور للتجارة العامة ذ.م.م");
   });
 });

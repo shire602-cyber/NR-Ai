@@ -48,7 +48,12 @@ import {
   listPortalLinks,
   logPortalAccess,
 } from "./portal-access.service";
-import { deliverOutboxMessage, enqueueEmail, type OutboxResult } from "../outbox";
+import {
+  cancelUnsentPortalInvites,
+  deliverOutboxMessage,
+  enqueueEmail,
+  type OutboxResult,
+} from "../outbox";
 import { renderPortalInviteEmail, normaliseInviteLanguage } from "./portal-invite-email";
 import { resolveEmailLanguage } from "./email-layout";
 import { paymentsAvailability, publicBaseUrl } from "./payments";
@@ -82,7 +87,15 @@ export interface PublicInvitation {
   createdAt: string;
   /** Seconds until Resend is allowed again (0 = now). */
   resendIn: number;
+  /**
+   * True once the latest email was handed to the provider. False while it is queued, retrying,
+   * blocked (no email provider) or failed: the card must never claim an email went out (R5-2).
+   */
+  emailSent: boolean;
 }
+
+/** Outbox statuses that mean the provider accepted the message. */
+export const OUTBOX_SENT_STATUSES = ["sent", "delivered"] as const;
 
 const normEmail = (e: string) => e.trim().toLowerCase();
 const contactEmail = (contact: CustomerContact) => normEmail(contact.email ?? "") || null;
@@ -103,7 +116,10 @@ function checkInvitedContact(invitation: CustomerPortalInvitation, contact?: Cus
 }
 const iso = (d: Date | null | undefined) => (d ? new Date(d).toISOString() : null);
 
-export function publicInvitation(inv: CustomerPortalInvitation): PublicInvitation {
+export function publicInvitation(
+  inv: CustomerPortalInvitation,
+  emailSent = false
+): PublicInvitation {
   const expired = inv.status === "pending" && inv.expiresAt.getTime() <= Date.now();
   const sinceSend = inv.lastSentAt ? (Date.now() - inv.lastSentAt.getTime()) / 1000 : Infinity;
   return {
@@ -120,6 +136,7 @@ export function publicInvitation(inv: CustomerPortalInvitation): PublicInvitatio
     acceptedAt: iso(inv.acceptedAt),
     createdAt: inv.createdAt.toISOString(),
     resendIn: Math.max(0, Math.ceil(PORTAL_INVITE_RESEND_COOLDOWN_S - sinceSend)),
+    emailSent,
   };
 }
 
@@ -225,6 +242,8 @@ async function enqueueInvitation(
       .set({ lastOutboxId: outbox.id })
       .where(eq(customerPortalInvitations.id, inv.id))
       .returning();
+    // R5-9: an earlier message that never went out is superseded and keeps no live link.
+    await cancelUnsentPortalInvites(inv.id, outbox.id, tx);
     return { invitation, outbox };
   } catch {
     // Roll back the email reservation with the outbox write. Driver errors can contain mail bodies.
@@ -420,7 +439,7 @@ export async function createInvitation(args: {
     req: args.req,
   });
   return {
-    invitation: publicInvitation(invitation),
+    invitation: publicInvitation(invitation, delivery === "email"),
     delivery,
   };
 }
@@ -510,7 +529,7 @@ export async function resendInvitation(args: {
     req: args.req,
   });
   return {
-    invitation: publicInvitation(invitation),
+    invitation: publicInvitation(invitation, delivery === "email"),
     delivery,
   };
 }
@@ -564,6 +583,7 @@ export async function revokeInvitation(args: {
     after: { status: "revoked" },
     req: args.req,
   });
+  await cancelUnsentPortalInvites(inv.id);
   return publicInvitation(row);
 }
 
@@ -616,8 +636,12 @@ export async function portalAccessForContact(companyId: string, contactId: strin
     )
     .orderBy(desc(customerPortalAccounts.createdAt));
   const invitations = await db
-    .select()
+    .select({
+      invitation: customerPortalInvitations,
+      outboxStatus: emailOutbox.status,
+    })
     .from(customerPortalInvitations)
+    .leftJoin(emailOutbox, eq(emailOutbox.id, customerPortalInvitations.lastOutboxId))
     .where(
       and(
         eq(customerPortalInvitations.companyId, companyId),
@@ -658,7 +682,12 @@ export async function portalAccessForContact(companyId: string, contactId: strin
       since: a.createdAt.toISOString(),
       lastSeenAt: iso(a.lastSeenAt),
     })),
-    invitations: invitations.map(publicInvitation),
+    invitations: invitations.map((row) =>
+      publicInvitation(
+        row.invitation,
+        !!row.outboxStatus && (OUTBOX_SENT_STATUSES as readonly string[]).includes(row.outboxStatus)
+      )
+    ),
     links: await listPortalLinks(companyId, contact.id),
     timeline: timeline.map((t) => ({ outcome: t.outcome, at: t.createdAt.toISOString() })),
   };
@@ -685,8 +714,10 @@ export async function portalSummary(companyId: string) {
         contactId: customerPortalInvitations.contactId,
         status: customerPortalInvitations.status,
         expiresAt: sql<Date>`max(${customerPortalInvitations.expiresAt})`,
+        sent: sql<number>`count(*) FILTER (WHERE ${emailOutbox.status} IN ('sent', 'delivered'))::int`,
       })
       .from(customerPortalInvitations)
+      .leftJoin(emailOutbox, eq(emailOutbox.id, customerPortalInvitations.lastOutboxId))
       .where(
         and(
           eq(customerPortalInvitations.companyId, companyId),
@@ -701,6 +732,8 @@ export async function portalSummary(companyId: string) {
       active: number;
       state: "active" | "invited" | "expired" | "revoked";
       expiresAt: string | null;
+      /** An invitation is pending but its email never went out (R5-2). */
+      notSent?: boolean;
     }
   > = {};
   for (const r of inviteRows) {
@@ -715,7 +748,12 @@ export async function portalSummary(companyId: string) {
     // Pending beats expired beats revoked.
     const rank = { invited: 3, expired: 2, revoked: 1, active: 4 } as const;
     if (!prev || rank[state] > rank[prev.state]) {
-      out[r.contactId] = { active: 0, state, expiresAt: exp.toISOString() };
+      out[r.contactId] = {
+        active: 0,
+        state,
+        expiresAt: exp.toISOString(),
+        ...(state === "invited" && r.sent === 0 ? { notSent: true } : {}),
+      };
     }
   }
   for (const r of accountRows) {
@@ -741,6 +779,17 @@ export type InviteResolution =
       invitation: CustomerPortalInvitation;
       company: Company | null;
     };
+
+/** True when the token matches an invitation row in any state (used by the failure lockout). */
+export async function isKnownInviteToken(rawToken: string): Promise<boolean> {
+  if (typeof rawToken !== "string" || !PORTAL_INVITE_TOKEN_RE.test(rawToken)) return false;
+  const [row] = await db
+    .select({ id: customerPortalInvitations.id })
+    .from(customerPortalInvitations)
+    .where(eq(customerPortalInvitations.tokenHash, inviteTokenHash(rawToken)))
+    .limit(1);
+  return !!row;
+}
 
 export async function resolveInvitation(rawToken: string): Promise<InviteResolution> {
   if (typeof rawToken !== "string" || !PORTAL_INVITE_TOKEN_RE.test(rawToken)) {
