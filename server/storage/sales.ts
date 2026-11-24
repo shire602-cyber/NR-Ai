@@ -49,6 +49,7 @@ import { getCustomerCreditAccount } from "../services/invoice-posting.service";
 import { deleteDraft, isForeignCurrency, loadBaseCurrency, postJournal } from "../ledger";
 import type { InvoiceSummary } from "./types";
 import { DEFAULT_LIST_LIMIT } from "./helpers";
+import { assertInvoicePaymentTaxPointOpen } from "../ledger/vat-lock";
 import { LedgerStorage } from "./ledger";
 import { receivableSettlementPartsSql } from "../reporting/settlement";
 
@@ -703,8 +704,10 @@ export class SalesStorage extends LedgerStorage {
           )
           SELECT COALESCE(SUM(jl.debit - jl.credit), 0)::text AS residual
             FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
-           WHERE jl.account_id = ${input.receivableAccountId} AND je.status = 'posted'
+           WHERE jl.account_id = ${input.receivableAccountId}
+             AND je.company_id = ${input.companyId} AND je.status = 'posted'
              AND (je.id IN (SELECT id FROM docs)
+                  OR je.reversed_entry_id IN (SELECT id FROM docs)
                   OR (je.source = 'reversal' AND je.source_id IN (SELECT id FROM docs)))
         `);
         const r = Number(rowsFromResult<{ residual: string }>(residual)[0]?.residual);
@@ -812,6 +815,10 @@ export class SalesStorage extends LedgerStorage {
         { actorId: input.createdBy, tx }
       );
 
+      await assertInvoicePaymentTaxPointOpen(tx, input.companyId, input.invoiceId, {
+        date: input.date,
+        amount: input.amount,
+      });
       // Record the payment row.
       const [payment] = await tx
         .insert(invoicePayments)

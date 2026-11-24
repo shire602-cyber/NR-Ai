@@ -291,6 +291,7 @@ export async function insertNormalizedEntry(
       companyId: n.companyId,
       date: n.dateAt,
       source: n.source,
+      sourceId: n.sourceId,
       accountIds: n.lines.map((l) => l.accountId),
       reversedEntryId: internal.reversedEntryId ?? null,
       reportsVat:
@@ -532,6 +533,7 @@ export async function postDraft(
       companyId: pre.companyId,
       date: pre.date,
       source: pre.source ?? null,
+      sourceId: pre.sourceId,
       accountIds: normalized.map((l) => l.accountId),
       entryId,
       reportsVat: normalized.some((line) =>

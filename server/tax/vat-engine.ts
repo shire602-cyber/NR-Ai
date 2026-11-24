@@ -17,10 +17,11 @@
  * Partial-exemption apportionment (company.exempt_supply_ratio, Art. 55) reduces recoverable
  * input VAT. VAT groups aggregate members and eliminate intra-group supplies (TRN match).
  */
+import { salesTaxPointSql } from "./sales-tax-point";
 import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "../db";
 import { DomainError } from "../errors";
-import { invoiceLines, invoices, type Invoice, type InvoiceLine } from "../../shared/schema";
+import { invoiceLines, invoices, type InvoiceLine } from "../../shared/schema";
 import { toFils } from "../../shared/money";
 import { classifySupply, type Vat201Family } from "../../shared/vat-classification";
 import { totalsForStoredDocument } from "../services/invoice-posting.service";
@@ -617,14 +618,16 @@ async function collectInvoices(
   tx?: LedgerTx
 ) {
   const baseCurrency = await loadBaseCurrency(companyId, tx);
-  const docs: Invoice[] = await (tx ?? db)
-    .select()
+  const taxPoint = sql.raw(salesTaxPointSql("invoices"));
+  const docs = await (tx ?? db)
+    .select({ invoice: invoices, taxPoint: sql<string>`(${taxPoint})::text` })
     .from(invoices)
     .where(
       and(
         eq(invoices.companyId, companyId),
-        gte(sql`(${invoices.date})::date`, sql`${from}::date`),
-        lte(sql`(${invoices.date})::date`, sql`${to}::date`),
+        gte(invoices.date, sql`${from}::date`),
+        gte(taxPoint, sql`${from}::date`),
+        lte(taxPoint, sql`${to}::date`),
         sql`${invoices.status} NOT IN ('draft','void','cancelled')`
       )
     );
@@ -635,7 +638,7 @@ async function collectInvoices(
     .where(
       inArray(
         invoiceLines.invoiceId,
-        docs.map((d) => d.id)
+        docs.map(({ invoice }) => invoice.id)
       )
     );
   const byInvoice = new Map<string, InvoiceLine[]>();
@@ -645,7 +648,7 @@ async function collectInvoices(
     byInvoice.set(l.invoiceId, list);
   }
 
-  for (const inv of docs) {
+  for (const { invoice: inv, taxPoint } of docs) {
     const type: VatSourceType =
       inv.invoiceType === "credit_note"
         ? "credit_note"
@@ -727,7 +730,7 @@ async function collectInvoices(
         sourceType: type,
         sourceId: inv.id,
         reference: inv.number,
-        date: isoOf(inv.date),
+        date: taxPoint,
         counterparty: inv.customerName,
         counterpartyTrn: inv.customerTrn ?? null,
         emirate: familyNeedsEmirate(family) ? emirate : null,
@@ -1278,8 +1281,10 @@ async function collectBadDebtRelief(
   if (!(await tableExists("bad_debt_relief_claims", tx))) return;
   const { rows } = await ledgerQueryable(tx).query(
     `SELECT c.id, c.invoice_id, c.claim_date::text AS claim_date, c.reversed_at::text AS reversed_at,
-            c.emirate, c.vat_amount, c.taxable_amount, c.status, i.number, i.customer_name, i.customer_trn
+            c.emirate, c.vat_amount, i.number, i.customer_name, i.customer_trn,
+            split_part(last.idempotency_key, ':', 3) = 'recover' AS recovered_in_parts
        FROM bad_debt_relief_claims c JOIN invoices i ON i.id = c.invoice_id
+       LEFT JOIN journal_entries last ON last.id = c.reversal_entry_id AND last.company_id = c.company_id
       WHERE c.company_id = $1
         AND ((c.claim_date >= $2::date AND c.claim_date <= $3::date)
           OR (c.reversed_at IS NOT NULL AND c.reversed_at >= $2::date AND c.reversed_at <= $3::date))`,
@@ -1309,7 +1314,7 @@ async function collectBadDebtRelief(
         boxes: { [key]: -vat },
       });
     }
-    if (c.reversed_at && c.reversed_at >= from && c.reversed_at <= to) {
+    if (!c.recovered_in_parts && c.reversed_at && c.reversed_at >= from && c.reversed_at <= to) {
       push({
         ...common,
         sourceType: "bad_debt_relief_reversal",
@@ -1318,6 +1323,40 @@ async function collectBadDebtRelief(
         boxes: { [key]: vat },
       });
     }
+  }
+
+  const { rows: recoveries } = await ledgerQueryable(tx).query(
+    `SELECT je.id, c.emirate, i.number, i.customer_name, i.customer_trn,
+            (je.date + interval '4 hours')::date::text AS d,
+            ROUND((jl.credit - jl.debit) * 100)::bigint AS vat_fils
+       FROM journal_entries je
+       JOIN journal_lines jl ON jl.entry_id = je.id AND jl.system_vat
+       JOIN bad_debt_relief_claims c
+         ON c.id = je.source_id AND c.company_id = je.company_id
+       JOIN invoices i ON i.id = c.invoice_id AND i.company_id = c.company_id
+      WHERE je.company_id = $1 AND je.source = 'vat_bad_debt_relief' AND je.status = 'posted'
+        AND je.entry_kind <> 'reversal' AND je.reversed_by_entry_id IS NULL
+        AND split_part(je.idempotency_key, ':', 3) = 'recover'
+        AND (je.date + interval '4 hours')::date BETWEEN $2::date AND $3::date`,
+    [companyId, from, to]
+  );
+  for (const recovery of recoveries) {
+    const emirate = normaliseEmirate(recovery.emirate);
+    if (!emirate) continue;
+    const key = `${EMIRATE_BOX_PREFIX[emirate]}Adj` as Vat201Key;
+    push({
+      sourceType: "bad_debt_relief_reversal",
+      sourceId: recovery.id,
+      reference: recovery.number,
+      counterparty: recovery.customer_name ?? null,
+      counterpartyTrn: recovery.customer_trn ?? null,
+      date: recovery.d,
+      emirate,
+      family: "adjustment",
+      category: "bad_debt_relief",
+      inLedger: true,
+      boxes: { [key]: Number(recovery.vat_fils) },
+    });
   }
 }
 
@@ -1684,6 +1723,7 @@ async function collectLedger(
       from,
       to,
       accountIds: vatAccounts.map((a) => a.id),
+      vatPeriod: true,
     },
     ledgerQueryable(tx)
   );

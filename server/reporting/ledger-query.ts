@@ -4,6 +4,7 @@
  * report; conversion back to major units of the company's base currency happens once,
  * at the edge (`aed()`, kept for its historical name).
  */
+import { salesTaxPointSql } from "../tax/sales-tax-point";
 import type { QueryResultRow } from "pg";
 import { pool } from "../db";
 import { DomainError } from "../errors";
@@ -300,11 +301,21 @@ export interface LedgerLineRow {
 /** Posted lines in range (optionally for some accounts), ordered by date then entry number. */
 export async function ledgerLines(
   companyId: string,
-  opts: TotalsOptions & { accountIds?: string[] | null; limit?: number } = {},
+  opts: TotalsOptions & { accountIds?: string[] | null; limit?: number; vatPeriod?: boolean } = {},
   q: Queryable = pool
 ): Promise<LedgerLineRow[]> {
+  const dateSql = opts.vatPeriod
+    ? `COALESCE((SELECT ${salesTaxPointSql("si")} FROM invoices si
+                   WHERE si.company_id = je.company_id AND si.id = CASE
+                     WHEN je.source = 'invoice' THEN je.source_id
+                     ELSE (SELECT orig.source_id FROM journal_entries orig
+                            WHERE orig.id = COALESCE(je.reversed_entry_id,
+                                    CASE WHEN je.source = 'reversal' THEN je.source_id END)
+                              AND orig.company_id = je.company_id
+                              AND orig.source = 'invoice') END), ${ENTRY_LOCAL_DATE_SQL})`
+    : ENTRY_LOCAL_DATE_SQL;
   const { rows } = await q.query(
-    `SELECT je.id AS entry_id, je.entry_number, ${ENTRY_LOCAL_DATE_SQL}::text AS d, je.memo,
+    `SELECT je.id AS entry_id, je.entry_number, ${dateSql}::text AS d, je.memo,
             je.memo_key, je.memo_params,
             je.source, je.source_id, jl.account_id, jl.description,
             jl.line_key, jl.line_params,
@@ -314,8 +325,8 @@ export async function ledgerLines(
        JOIN journal_entries je ON je.id = jl.entry_id
       WHERE je.company_id = $1
         AND je.status = 'posted'
-        AND ($2::date IS NULL OR ${ENTRY_LOCAL_DATE_SQL} >= $2::date)
-        AND ($3::date IS NULL OR ${ENTRY_LOCAL_DATE_SQL} <= $3::date)
+        AND ($2::date IS NULL OR ${dateSql} >= $2::date)
+        AND ($3::date IS NULL OR ${dateSql} <= $3::date)
         AND ($4::boolean OR ${NOT_CLOSING_SQL})
         AND ($5::uuid[] IS NULL OR jl.account_id = ANY($5::uuid[]))
       ORDER BY je.date, je.entry_number, jl.id

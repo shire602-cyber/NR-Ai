@@ -43,6 +43,7 @@ import {
   type LedgerTx,
   type PostJournalLineInput,
 } from "../ledger";
+import { assertInvoicePaymentTaxPointOpen } from "../ledger/vat-lock";
 import { fromFils, toFils } from "../../shared/money";
 import { emitDomainEvent } from "../platform/domain-events";
 import { has, provide, resolve } from "../platform/service-registry";
@@ -305,7 +306,7 @@ async function afterPaymentRecorded(
   // C2 (NL8): reverse any bad-debt relief claimed on this invoice now (Art. 64(3)), so the VAT
   // return is right as soon as the receipt is; a failure is returned, not only logged.
   let badDebtReliefReversal:
-    | { status: "reversed"; claimId: string; date: string }
+    | { status: "reversed"; claimId: string; date: string; remainingVatFils: number }
     | { status: "failed"; code: string; message: string }
     | null = null;
   if (has("vat.reverseReliefOnPayment")) {
@@ -316,7 +317,14 @@ async function afterPaymentRecorded(
         paymentId: result.payment.id,
         actorUserId: input.createdBy,
       });
-      if (r) badDebtReliefReversal = { status: "reversed", claimId: r.claimId, date: r.date };
+      if (r) {
+        badDebtReliefReversal = {
+          status: "reversed",
+          claimId: r.claimId,
+          date: r.date,
+          remainingVatFils: r.remainingVatFils,
+        };
+      }
     } catch (err) {
       const e = err as { code?: string; message?: string };
       badDebtReliefReversal = {
@@ -351,7 +359,7 @@ type ReverseReliefOnPayment = (p: {
   invoiceId: string;
   paymentId: string;
   actorUserId?: string | null;
-}) => Promise<{ claimId: string; date: string } | null>;
+}) => Promise<{ claimId: string; date: string; remainingVatFils: number } | null>;
 
 export type RecordInvoicePaymentService = typeof recordInvoicePayment;
 
@@ -608,6 +616,13 @@ export async function reverseInvoicePayment(
           { actorId: input.actorId, tx, companyId: input.companyId }
         );
       }
+    }
+    if (payment.method !== WRITE_OFF_METHOD) {
+      await assertInvoicePaymentTaxPointOpen(tx, input.companyId, invoice.id, {
+        id: payment.id,
+        date: payment.date,
+        amount: Number(payment.amount),
+      });
     }
     await tx.delete(invoicePayments).where(eq(invoicePayments.id, payment.id));
     const updated = await refreshSettlementStatus(tx, invoice.id);

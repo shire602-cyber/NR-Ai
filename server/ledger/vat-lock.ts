@@ -29,7 +29,8 @@ import type { JournalLineVatTreatment } from "../../shared/journal-line-treatmen
 import { uaeToday } from "../../shared/uae-date";
 import { DomainError } from "../errors";
 import { ENTRY_LOCAL_DATE_SQL } from "../reporting/ledger-query";
-import { rowsOf } from "./tx";
+import { salesTaxPointSql } from "../tax/sales-tax-point";
+import { ledgerQueryable, rowsOf } from "./tx";
 import type { LedgerTx } from "./types";
 import {
   resolveFilingVatGroup,
@@ -359,6 +360,7 @@ export async function assertVatPeriodOpen(
     companyId: string;
     date: Date;
     source: string | null;
+    sourceId?: string | null;
     accountIds: string[];
     reversedEntryId?: string | null;
     /** The VAT engine reports this entry from its own record (see PostJournalInput). */
@@ -369,17 +371,29 @@ export async function assertVatPeriodOpen(
 ): Promise<void> {
   if (VAT_LOCK_EXEMPT_SOURCES.has(input.source ?? "")) return;
   const dates = [uaeToday(input.date)];
+  if (input.source === "invoice" && input.sourceId && !input.reversedEntryId) {
+    const point = await tx.execute(sql`
+      SELECT (${sql.raw(salesTaxPointSql("si"))})::text AS d FROM invoices si
+       WHERE si.company_id = ${input.companyId} AND si.id = ${input.sourceId}
+    `);
+    const date = rowsOf<{ d: string | null }>(point)[0]?.d;
+    if (date) dates[0] = date;
+  }
   let originalSource: string | null = null;
   if (input.reversedEntryId) {
     const res = await tx.execute(sql`
-      SELECT ${sql.raw(ENTRY_LOCAL_DATE_SQL)}::text AS d, je.source FROM journal_entries je
+      SELECT COALESCE(${sql.raw(salesTaxPointSql("si"))}, ${sql.raw(ENTRY_LOCAL_DATE_SQL)})::text AS d,
+             je.source
+        FROM journal_entries je LEFT JOIN invoices si
+          ON je.source = 'invoice' AND si.id = je.source_id AND si.company_id = je.company_id
        WHERE je.id = ${input.reversedEntryId} AND je.company_id = ${input.companyId}
     `);
     const original = rowsOf<Record<string, string | null>>(res)[0];
     if (VAT_LOCK_EXEMPT_SOURCES.has(original?.source ?? "")) return;
     if (original?.d && !REVERSAL_REPORTED_ON_OWN_DATE.has(original.source ?? "")) {
       originalSource = original.source;
-      dates.push(original.d);
+      if (originalSource === "invoice") dates[0] = original.d;
+      else dates.push(original.d);
     }
   }
   const affectsVat =
@@ -391,8 +405,34 @@ export async function assertVatPeriodOpen(
       (await reportedByVatEngine(tx, input.companyId, input.reversedEntryId))) ||
     (!!input.entryId && (await reportedByVatEngine(tx, input.companyId, input.entryId)));
   if (!affectsVat) return;
+  await lockVatReturns(tx, input.companyId, "shared");
   for (const date of new Set(dates)) {
     const period = await findFiledVatPeriod(tx, input.companyId, date);
     if (period) throw vatPeriodFiledError(period, date);
+  }
+}
+
+/** Lock both return periods if recording or removing a receipt would move the sale. */
+export async function assertInvoicePaymentTaxPointOpen(
+  tx: LedgerTx,
+  companyId: string,
+  invoiceId: string,
+  payment: { date: Date; amount: number; id?: string }
+): Promise<void> {
+  const current = salesTaxPointSql("si");
+  const next = payment.id ? salesTaxPointSql("si", "$3::uuid") : `LEAST(${current}, $3::date)`;
+  const { rows } = await ledgerQueryable(tx).query(
+    `SELECT (${current})::text AS old_date, (${next})::text AS new_date
+       FROM invoices si
+      WHERE si.company_id = $1 AND si.id = $2 AND $4 >= si.total
+        AND si.invoice_type NOT IN ('credit_note', 'debit_note')`,
+    [companyId, invoiceId, payment.id ?? uaeToday(payment.date), payment.amount]
+  );
+  const row = rows[0];
+  if (!row || row.old_date === row.new_date) return;
+  await lockVatReturns(tx, companyId, "shared");
+  for (const point of [row.old_date, row.new_date]) {
+    const period = await findFiledVatPeriod(tx, companyId, point);
+    if (period) throw vatPeriodFiledError(period, point);
   }
 }
