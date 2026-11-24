@@ -31,6 +31,19 @@ export const pricingLead: Bilingual = [
   "قارن باقات المبتدئ والاحترافية والمؤسسات. جرّب باقة المؤسسات مجانًا لمدة ١٤ يومًا دون بطاقة دفع.",
 ];
 
+// The UAE e-invoicing hub is the SEO landing page. Like the homepage pair above these stay
+// `[en, ar]` tuples because the server imports this file for the h1, title and meta description;
+// they must match marketing.hxHubH1 / hxHubLead in locales/{en,ar}/marketing.json
+// (tests/unit/marketing-pages.test.ts checks they do).
+export const hubTitle: Bilingual = [
+  "UAE e-invoicing, built into your accounting",
+  "الفوترة الإلكترونية في الإمارات، مدمجة في محاسبتك",
+];
+export const hubLead: Bilingual = [
+  "See your deadline, how e-invoices are exchanged through an accredited service provider, and check your readiness. Included on every plan.",
+  "اعرف موعدك النهائي وكيف تُتبادل الفواتير الإلكترونية عبر مزوّد خدمة معتمد، وتحقّق من جاهزيتك. مشمولة في كل باقة.",
+];
+
 const pages = new Map<string, { title: Bilingual; lead?: Bilingual }>([
   ["", { title: homeTitle, lead: homeLead }],
   ["/pricing", { title: pricingTitle, lead: pricingLead }],
@@ -59,10 +72,21 @@ const pages = new Map<string, { title: Bilingual; lead?: Bilingual }>([
   ...Object.entries(launchPages),
 ]);
 for (const feature of features) pages.set(featurePath(feature.slug), feature);
+pages.set(featurePath("e-invoicing"), { title: hubTitle, lead: hubLead });
 for (const tool of tools) pages.set(`/tools/${tool.slug}`, tool);
 
+/**
+ * Alternative URLs that serve the same page as their target. `marketingMetadata` resolves them to
+ * the target, so they get 200, the target's title/description and a canonical pointing at the
+ * target. They are not in `pages`, so `marketingPaths` (and the sitemap) never list them.
+ */
 const aliases = new Map([
   ["/book-a-demo", "/book-demo"],
+  ["/e-invoicing", "/uae-e-invoicing"],
+  ["/compare/zoho-books", "/compare/zoho"],
+  ["/free-tools", "/tools"],
+  ["/accounting-firms", "/solutions/accounting-firms"],
+  ["/small-business", "/solutions/small-business"],
   ["/product/e-invoicing", "/uae-e-invoicing"],
   ["/product/reporting", "/product/accounting-reports"],
   ["/product/receipt-scanning", "/product/ai-document-scanning"],

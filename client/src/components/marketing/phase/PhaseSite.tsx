@@ -1,4 +1,13 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ComponentType,
+} from "react";
 import { ChevronDown, Menu, X } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
 import { usePageMeta } from "../hooks";
@@ -15,25 +24,52 @@ import { audiences } from "./audiences";
 import { Home } from "./home/Home";
 import { FinalCta } from "./home/FinalCta";
 import { SiteFooter } from "./home/SiteFooter";
-import { useMarketingText } from "./home/text";
-import { Picture, Plans, type Translate } from "./shared";
+import { PricingPage } from "./pages/PricingPage";
+import { Picture, type Translate } from "./shared";
 import {
+  canonicalMarketingPath,
   demoTitle,
   featurePath,
   homeLead,
   homeTitle,
+  hubLead,
+  hubTitle,
   marketingMetadata,
   trialSignupPath,
 } from "./route-content";
 import "@fontsource/noto-sans-arabic/arabic-400.css";
 import "@fontsource/noto-sans-arabic/arabic-700.css";
 import "./phase.css";
+import "./pages/pages.css";
 
 const EditorialContent = lazy(() =>
   loadWithChunkRetry(() => import("./editorial/EditorialContent"), {
     key: "marketing-editorial",
     reload: false,
   }).catch(() => ({ default: EditorialUnavailable }))
+);
+
+/** The inner pages load on demand so the homepage chunk does not grow. */
+function lazyPage<P extends object>(
+  key: string,
+  load: { (): Promise<{ default: ComponentType<P> }> }
+) {
+  return lazy(() =>
+    loadWithChunkRetry(load, { key, reload: false }).catch(() => ({
+      default: EditorialUnavailable as unknown as ComponentType<P>,
+    }))
+  );
+}
+
+type CompareProps = ComponentProps<typeof import("./pages/ComparePage").CompareTop>;
+const EinvoicingHub = lazyPage("marketing-einvoicing-hub", () => import("./pages/EinvoicingHub"));
+const ToolsIndex = lazyPage("marketing-tools-index", () => import("./pages/ToolsIndex"));
+const SolutionPage = lazyPage("marketing-solution", () => import("./pages/SolutionPage"));
+const CompareTop = lazyPage<CompareProps>("marketing-compare", () =>
+  import("./pages/ComparePage").then((m) => ({ default: m.CompareTop }))
+);
+const CompareMigration = lazyPage<CompareProps>("marketing-compare-migration", () =>
+  import("./pages/ComparePage").then((m) => ({ default: m.CompareMigration }))
 );
 
 function EditorialUnavailable({ locale }: { locale: SiteLocale }) {
@@ -94,6 +130,10 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
       title: ["Resources", "الموارد"],
       items: [
         { title: editorialPages["/resources"].title, href: `${base}/resources` },
+        {
+          title: ["UAE e-invoicing guide", "دليل الفوترة الإلكترونية في الإمارات"],
+          href: base + featurePath("e-invoicing"),
+        },
         { title: editorialPages["/compare"].title, href: `${base}/compare` },
         { title: editorialPages["/migration-guides"].title, href: `${base}/migration-guides` },
         { title: editorialPages["/trust"].title, href: `${base}/trust` },
@@ -281,11 +321,12 @@ export default function PhaseSite() {
     }
   }, [explicitLocale]);
   const tr: Translate = (content) => content[locale === "ar" ? 1 : 0];
-  const text = useMarketingText(locale);
   const base = `/${locale}`;
-  const [, , route, slug, extra] = path.replace(/\/$/, "").split("/");
+  // Alias URLs (/e-invoicing, /free-tools, /compare/zoho-books ...) render their target page; the
+  // server gives them the target's canonical URL (see `aliases` in route-content.ts).
+  const localPath = canonicalMarketingPath(path.slice(base.length).replace(/\/+$/, ""));
+  const [, route, slug, extra] = localPath.split("/");
   const section = extra ? "404" : route;
-  const localPath = path.slice(base.length).replace(/\/$/, "");
   const editorial = editorialPath(localPath);
   const launchPage = launchPagePath(localPath);
   const page = editorial
@@ -300,18 +341,27 @@ export default function PhaseSite() {
   const audience = section === "solutions" ? audiences.find((a) => a.slug === slug) : undefined;
   const tool = section === "tools" ? tools.find((t) => t.slug === slug) : undefined;
   const home = !section;
-  const booking = (section === "book-demo" || section === "book-a-demo") && !slug;
+  const booking = section === "book-demo" && !slug;
   const plans = section === "pricing" && !slug;
+  const hub = feature?.slug === "e-invoicing";
+  const toolsIndex = launchPage === "/tools";
+  const vendor =
+    editorial === "/compare/wafeq" ? "wafeq" : editorial === "/compare/zoho" ? "zoho" : undefined;
+  const rich = hub || toolsIndex || !!audience || !!vendor;
   const title = tr(
     home
       ? homeTitle
-      : (feature?.title ??
+      : hub
+        ? hubTitle
+        : (feature?.title ??
           audience?.title ??
           tool?.title ??
           page?.title ??
           (booking ? demo : plans ? pricing : ["Page not found", "الصفحة غير موجودة"]))
   );
-  const lead = tr(home ? homeLead : (feature?.lead ?? audience?.lead ?? page?.lead ?? ["", ""]));
+  const lead = tr(
+    home ? homeLead : hub ? hubLead : (feature?.lead ?? audience?.lead ?? page?.lead ?? ["", ""])
+  );
   const meta = marketingMetadata(home ? base : path);
   usePageMeta(
     meta?.title ?? `${title} | ${MARKETING_BRAND.name[locale]}`,
@@ -328,111 +378,108 @@ export default function PhaseSite() {
         {home ? (
           <Home base={base} locale={locale} tr={tr} />
         ) : (
-          <section className="phase-section phase-subpage">
-            <div className="phase-wrap">
-              <nav className="phase-breadcrumb" aria-label={tr(["Breadcrumb", "مسار التنقل"])}>
-                <Link className="phase-textlink" href={base}>
-                  {tr(["Home", "الرئيسية"])}
-                </Link>
-                {parent && (
-                  <>
-                    <span aria-hidden="true">/</span>
-                    <Link className="phase-textlink" href={`${base}${parent}`}>
-                      {tr(editorialPages[parent].title)}
-                    </Link>
-                  </>
-                )}
-              </nav>
-              <h1>{title}</h1>
-              {lead && <p className="phase-lead">{lead}</p>}
-              {feature && (
-                <div
-                  className={
-                    feature.image ? "phase-split phase-product-detail" : "phase-product-detail"
-                  }
-                >
-                  <div>
-                    <h2>{tr(["How it works", "طريقة العمل"])}</h2>
-                    <ol>
-                      {feature.steps.map((step) => (
-                        <li key={step[0]}>{tr(step)}</li>
-                      ))}
-                    </ol>
-                  </div>
-                  {feature.image && (
-                    <Picture image={feature.image} locale={locale} alt={title} high />
-                  )}
-                </div>
-              )}
-              {feature?.slug === "e-invoicing" && (
-                <div className="phase-form">
-                  <h2>{tr(["PDFs and structured invoices", "ملفات PDF والفواتير المهيكلة"])}</h2>
-                  <p>{text("einvPageStructured", { brand: MARKETING_BRAND.name[locale] })}</p>
-                  <p>{text("einvPageIncluded")}</p>
-                  <a
-                    className="phase-textlink"
-                    href="https://mof.gov.ae/en/about-us/initiatives/einvoicing/einvoicing-accredited-service-providers-asps/"
-                  >
-                    {text("einvPageSource")}
-                  </a>
-                  <Link className="phase-textlink" href={`${base}/tools/e-invoicing-readiness`}>
-                    {tr(["Review the setup checklist", "راجع قائمة خطوات الإعداد"])}
+          <>
+            <section
+              className={
+                rich ? "phase-section phase-subpage mz-page-head" : "phase-section phase-subpage"
+              }
+            >
+              <div className="phase-wrap">
+                <nav className="phase-breadcrumb" aria-label={tr(["Breadcrumb", "مسار التنقل"])}>
+                  <Link className="phase-textlink" href={base}>
+                    {tr(["Home", "الرئيسية"])}
                   </Link>
-                </div>
-              )}
-              {feature?.slug === "invoicing" && (
-                <Link className="phase-textlink" href={`${base}/tools/invoice-template`}>
-                  {tr(["View a sample tax invoice", "اطّلع على نموذج فاتورة ضريبية"])}
-                </Link>
-              )}
-              {feature?.slug === "vat" && (
-                <Link className="phase-textlink" href={`${base}/tools/vat-calculator`}>
-                  {tr(["Try the VAT calculator", "جرّب حاسبة ضريبة القيمة المضافة"])}
-                </Link>
-              )}
-              {audience && (
-                <div className="phase-split phase-product-detail">
-                  {audience.links.map((link) => {
-                    const f = featureBySlug(link);
-                    return (
-                      <Link
-                        className="phase-card phase-feature-card"
-                        key={f.slug}
-                        href={`${base}${featurePath(f.slug)}`}
-                      >
-                        <h3>{tr(f.title)}</h3>
-                        <p>{tr(f.lead)}</p>
+                  {parent && (
+                    <>
+                      <span aria-hidden="true">/</span>
+                      <Link className="phase-textlink" href={`${base}${parent}`}>
+                        {tr(editorialPages[parent].title)}
                       </Link>
-                    );
-                  })}
-                </div>
-              )}
-              {launchPage && <LaunchPages path={launchPage} base={base} tr={tr} />}
-              {editorial && (
-                <Suspense fallback={null}>
-                  <EditorialContent path={editorial} locale={locale} />
-                </Suspense>
-              )}
-              {tool && <FreeTool key={tool.slug} slug={tool.slug} tr={tr} locale={locale} />}
-              {booking && <DemoRequest tr={tr} />}
-              {plans && (
-                <>
-                  <Plans tr={tr} immediate />
-                  <p>
-                    {tr([
-                      "When your trial ends, your workspace becomes read-only until you activate a paid plan. You can still view and export your books.",
-                      "عند انتهاء التجربة، تصبح مساحة العمل للقراءة فقط حتى تفعّل باقة مدفوعة. يمكنك مواصلة الاطلاع على دفاترك وتصديرها.",
-                    ])}
-                  </p>
-                  <Link className="phase-textlink" href="/pricing">
-                    {tr(["View the full plan comparison", "اطّلع على المقارنة الكاملة للباقات"])}
+                    </>
+                  )}
+                </nav>
+                <h1>{title}</h1>
+                {lead && <p className="phase-lead">{lead}</p>}
+                {feature && !hub && (
+                  <div
+                    className={
+                      feature.image ? "phase-split phase-product-detail" : "phase-product-detail"
+                    }
+                  >
+                    <div>
+                      <h2>{tr(["How it works", "طريقة العمل"])}</h2>
+                      <ol>
+                        {feature.steps.map((step) => (
+                          <li key={step[0]}>{tr(step)}</li>
+                        ))}
+                      </ol>
+                    </div>
+                    {feature.image && (
+                      <Picture image={feature.image} locale={locale} alt={title} high />
+                    )}
+                  </div>
+                )}
+                {feature?.slug === "invoicing" && (
+                  <Link className="phase-textlink" href={`${base}/tools/invoice-template`}>
+                    {tr(["View a sample tax invoice", "اطّلع على نموذج فاتورة ضريبية"])}
                   </Link>
+                )}
+                {feature?.slug === "vat" && (
+                  <Link className="phase-textlink" href={`${base}/tools/vat-calculator`}>
+                    {tr(["Try the VAT calculator", "جرّب حاسبة ضريبة القيمة المضافة"])}
+                  </Link>
+                )}
+                {audience && (
+                  <div className="phase-split phase-product-detail">
+                    {audience.links.map((link) => {
+                      const f = featureBySlug(link);
+                      return (
+                        <Link
+                          className="phase-card phase-feature-card"
+                          key={f.slug}
+                          href={`${base}${featurePath(f.slug)}`}
+                        >
+                          <h3>{tr(f.title)}</h3>
+                          <p>{tr(f.lead)}</p>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+                {launchPage && <LaunchPages path={launchPage} base={base} tr={tr} />}
+                {editorial && !vendor && (
+                  <Suspense fallback={null}>
+                    <EditorialContent path={editorial} locale={locale} />
+                  </Suspense>
+                )}
+                {tool && <FreeTool key={tool.slug} slug={tool.slug} tr={tr} locale={locale} />}
+                {booking && <DemoRequest tr={tr} />}
+              </div>
+            </section>
+            <Suspense fallback={null}>
+              {hub && <EinvoicingHub base={base} locale={locale} tr={tr} />}
+              {toolsIndex && <ToolsIndex base={base} locale={locale} tr={tr} />}
+              {audience && (
+                <SolutionPage slug={audience.slug} base={base} locale={locale} tr={tr} />
+              )}
+              {vendor && editorial && (
+                <>
+                  <CompareTop base={base} locale={locale} vendor={vendor} />
+                  <section className="phase-section">
+                    <div className="phase-wrap">
+                      <EditorialContent path={editorial} locale={locale} />
+                    </div>
+                  </section>
+                  <CompareMigration base={base} locale={locale} vendor={vendor} />
                 </>
               )}
-            </div>
-          </section>
+            </Suspense>
+            {plans && <PricingPage base={base} locale={locale} tr={tr} />}
+          </>
         )}
-        {(feature || audience || plans) && <FinalCta base={base} locale={locale} />}
+        {(feature || audience || plans || toolsIndex || vendor) && (
+          <FinalCta base={base} locale={locale} />
+        )}
       </main>
       <SiteFooter base={base} locale={locale} tr={tr} />
     </div>
