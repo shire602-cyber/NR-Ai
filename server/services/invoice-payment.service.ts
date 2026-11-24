@@ -44,6 +44,7 @@ import {
   type PostJournalLineInput,
 } from "../ledger";
 import { assertInvoicePaymentTaxPointOpen } from "../ledger/vat-lock";
+import { lockPeriodPolicy } from "./period-lock.service";
 import type { undoReliefRecoveryOnPayment } from "../tax/vat-adjustments.service";
 import { fromFils, toFils } from "../../shared/money";
 import { emitDomainEvent } from "../platform/domain-events";
@@ -560,6 +561,7 @@ export async function reverseInvoicePayment(
       throw reversalReviewRequired();
     }
 
+    let journalToReverse: string | null = null;
     if (payment.journalEntryId) {
       const [je] = await tx
         .select({
@@ -606,19 +608,11 @@ export async function reverseInvoicePayment(
           await assertLegacyPaymentLink(tx, payment, legacyBank);
           return { reversed: false, invoice: null };
         }
-        await reverseEntry(
-          payment.journalEntryId,
-          {
-            reason: input.reason,
-            source: "payment_reversal",
-            sourceId: payment.invoiceId,
-            ...(input.date ? { date: input.date } : {}),
-          },
-          { actorId: input.actorId, tx, companyId: input.companyId }
-        );
+        journalToReverse = payment.journalEntryId;
       }
     }
     if (payment.method !== WRITE_OFF_METHOD) {
+      await lockPeriodPolicy(tx, input.companyId, "shared");
       await assertInvoicePaymentTaxPointOpen(tx, input.companyId, invoice.id, {
         id: payment.id,
       });
@@ -633,6 +627,18 @@ export async function reverseInvoicePayment(
           tx,
         });
       }
+    }
+    if (journalToReverse) {
+      await reverseEntry(
+        journalToReverse,
+        {
+          reason: input.reason,
+          source: "payment_reversal",
+          sourceId: payment.invoiceId,
+          ...(input.date ? { date: input.date } : {}),
+        },
+        { actorId: input.actorId, tx, companyId: input.companyId }
+      );
     }
     await tx.delete(invoicePayments).where(eq(invoicePayments.id, payment.id));
     const updated = await refreshSettlementStatus(tx, invoice.id);

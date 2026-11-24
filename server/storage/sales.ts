@@ -45,11 +45,12 @@ import {
 } from "../services/invoice-state-machine";
 import { ACCOUNT_CODES } from "../constants";
 import { allocatePayment, buildPaymentJournalLines } from "../services/invoice-lifecycle";
-import { getCustomerCreditAccount } from "../services/invoice-posting.service";
+import { getCustomerCreditAccount, invoiceVatEventTime } from "../services/invoice-posting.service";
 import { deleteDraft, isForeignCurrency, loadBaseCurrency, postJournal } from "../ledger";
 import type { InvoiceSummary } from "./types";
 import { DEFAULT_LIST_LIMIT } from "./helpers";
 import { assertInvoicePaymentTaxPointOpen } from "../ledger/vat-lock";
+import { lockPeriodPolicy } from "../services/period-lock.service";
 import { LedgerStorage } from "./ledger";
 import { receivableSettlementPartsSql } from "../reporting/settlement";
 
@@ -776,6 +777,12 @@ export class SalesStorage extends LedgerStorage {
           exchangeRate: rate.toString(),
         };
       };
+      // Filing can post a journal for this date while holding the VAT-return lock.
+      await lockPeriodPolicy(tx, input.companyId, "shared");
+      await assertInvoicePaymentTaxPointOpen(tx, input.companyId, input.invoiceId, {
+        date: input.date,
+        appliedAmount: allocation.appliedToReceivable,
+      });
       const { entry } = await postJournal(
         {
           companyId: input.companyId,
@@ -815,10 +822,6 @@ export class SalesStorage extends LedgerStorage {
         { actorId: input.createdBy, tx }
       );
 
-      await assertInvoicePaymentTaxPointOpen(tx, input.companyId, input.invoiceId, {
-        date: input.date,
-        appliedAmount: allocation.appliedToReceivable,
-      });
       // Record the payment row.
       const [payment] = await tx
         .insert(invoicePayments)
@@ -834,6 +837,7 @@ export class SalesStorage extends LedgerStorage {
           exchangeRate: hasPaymentRate ? payRate : null,
           journalEntryId: entry.id,
           createdBy: input.createdBy,
+          createdAt: invoiceVatEventTime(input.companyId, input.invoiceId),
         })
         .returning();
 

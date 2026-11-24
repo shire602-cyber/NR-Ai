@@ -1287,9 +1287,13 @@ async function collectBadDebtRelief(
   const { rows } = await ledgerQueryable(tx).query(
     `SELECT c.id, c.invoice_id, c.claim_date::text AS claim_date, c.reversed_at::text AS reversed_at,
             c.emirate, c.vat_amount, i.number, i.customer_name, i.customer_trn,
-            split_part(last.idempotency_key, ':', 3) = 'recover' AS recovered_in_parts
+            (split_part(last.idempotency_key, ':', 3) = 'recover'
+              OR (last.reversed_entry_id = c.journal_entry_id AND EXISTS (
+                SELECT 1 FROM journal_lines jl WHERE jl.entry_id = last.id AND jl.system_vat
+              ))) AS recovery_in_ledger
        FROM bad_debt_relief_claims c JOIN invoices i ON i.id = c.invoice_id
        LEFT JOIN journal_entries last ON last.id = c.reversal_entry_id AND last.company_id = c.company_id
+         AND last.source = 'vat_bad_debt_relief' AND last.source_id = c.id AND last.status = 'posted'
       WHERE c.company_id = $1
         AND ((c.claim_date >= $2::date AND c.claim_date <= $3::date)
           OR (c.reversed_at IS NOT NULL AND c.reversed_at >= $2::date AND c.reversed_at <= $3::date))`,
@@ -1319,7 +1323,7 @@ async function collectBadDebtRelief(
         boxes: { [key]: -vat },
       });
     }
-    if (!c.recovered_in_parts && c.reversed_at && c.reversed_at >= from && c.reversed_at <= to) {
+    if (!c.recovery_in_ledger && c.reversed_at && c.reversed_at >= from && c.reversed_at <= to) {
       push({
         ...common,
         sourceType: "bad_debt_relief_reversal",
@@ -1342,7 +1346,8 @@ async function collectBadDebtRelief(
        LEFT JOIN journal_entries original
          ON original.id = je.reversed_entry_id AND original.company_id = je.company_id
       WHERE je.company_id = $1 AND je.source = 'vat_bad_debt_relief' AND je.status = 'posted'
-        AND split_part(COALESCE(original.idempotency_key, je.idempotency_key), ':', 3) = 'recover'
+        AND (je.reversed_entry_id = c.journal_entry_id
+          OR split_part(COALESCE(original.idempotency_key, je.idempotency_key), ':', 3) = 'recover')
         AND (je.date + interval '4 hours')::date BETWEEN $2::date AND $3::date`,
     [companyId, from, to]
   );
