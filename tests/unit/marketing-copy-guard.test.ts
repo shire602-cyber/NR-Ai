@@ -4,6 +4,9 @@
 // flags, legacy tuples, other pages, comments that become copy later), so a render-based test
 // cannot cover it. It pins the hard rules in docs/site-rebuild/REBUILD-BRIEF.md section 0: no
 // ZATCA/Saudi/KSA references, no claims of a direct bank connection, and no named e-invoicing providers.
+// Scope: every marketing*.json catalog (EN and AR), the marketing components, and the public
+// pages that live outside that folder (trust, privacy, terms, cookies, pricing, landing,
+// services, migration guides, e-invoicing hub and compare pages).
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -17,6 +20,7 @@ const BANNED: { label: string; pattern: RegExp }[] = [
   { label: "bank feed", pattern: /bank feed/i },
   { label: "live bank", pattern: /live bank/i },
   { label: "connect your bank", pattern: /connect your bank/i },
+  { label: "bank feeds", pattern: /bank[\s-]+feeds?/i },
   { label: "bank sync", pattern: /bank sync/i },
   { label: "direct filing", pattern: /direct filing/i },
   { label: "A-Cube", pattern: /A-Cube/i },
@@ -47,19 +51,50 @@ function hits(text: string): string[] {
   return BANNED.filter(({ pattern }) => pattern.test(text)).map(({ label }) => label);
 }
 
+/** Public pages outside client/src/components/marketing (their copy ships to anonymous visitors). */
+const PUBLIC_PAGE_FILES = [
+  "TrustSecurity",
+  "PrivacyPolicy",
+  "TermsOfService",
+  "CookiePolicy",
+  "Pricing",
+  "MuhasibLanding",
+  "Services",
+  "MigrationGuides",
+  "legal/legalAr",
+].map((name) => `client/src/pages/${name}.tsx`);
+
+function marketingCatalogs(locale: string): string[] {
+  return readdirSync(join(repoRoot, `client/src/locales/${locale}`)).filter((name) =>
+    /^marketing[A-Za-z]*\.json$/.test(name)
+  );
+}
+
 describe("marketing copy guard", () => {
   it.each(["en", "ar"] as const)(
-    "the %s marketing catalog values carry no banned claims",
+    "every %s marketing*.json catalog value carries no banned claims",
     (locale) => {
-      const catalog = JSON.parse(
-        readFileSync(join(repoRoot, `client/src/locales/${locale}/marketing.json`), "utf8")
-      ) as Record<string, string>;
-      const offenders = Object.entries(catalog).flatMap(([key, value]) =>
-        hits(value).map((label) => `${key}: ${label}`)
-      );
+      const names = marketingCatalogs(locale);
+      // marketing.json, marketingHome.json and marketingMeta.json at least.
+      expect(names.length).toBeGreaterThanOrEqual(3);
+      const offenders = names.flatMap((name) => {
+        const catalog = JSON.parse(
+          readFileSync(join(repoRoot, `client/src/locales/${locale}/${name}`), "utf8")
+        ) as Record<string, string>;
+        return Object.entries(catalog).flatMap(([key, value]) =>
+          hits(value).map((label) => `${name} ${key}: ${label}`)
+        );
+      });
       expect(offenders).toEqual([]);
     }
   );
+
+  it("public pages outside the marketing folder carry no banned claims", () => {
+    const offenders = PUBLIC_PAGE_FILES.flatMap((file) =>
+      hits(readFileSync(join(repoRoot, file), "utf8")).map((label) => `${file}: ${label}`)
+    );
+    expect(offenders).toEqual([]);
+  });
 
   it("marketing components (ts, tsx, css) carry no banned claims", () => {
     const files = walk(join(repoRoot, "client/src/components/marketing")).filter((file) =>
