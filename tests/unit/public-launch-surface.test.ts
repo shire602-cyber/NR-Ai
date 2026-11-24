@@ -29,9 +29,15 @@ function readRepoFileWithCatalog(path: string): string {
   ].join("\n");
 }
 
+// The homepage sections live one per file under phase/home/ (Hero.tsx, Faq.tsx, ...).
+const homeSectionFiles = readdirSync(join(repoRoot, "client/src/components/marketing/phase/home"))
+  .filter((name) => /\.tsx?$/.test(name))
+  .map((name) => `client/src/components/marketing/phase/home/${name}`);
+
 const publicLaunchFiles = [
   "client/index.html",
   "client/src/components/marketing/phase/PhaseSite.tsx",
+  ...homeSectionFiles,
   "client/src/components/marketing/phase/content.ts",
   "client/src/components/marketing/phase/Forms.tsx",
   "client/src/components/marketing/phase/editorial/pages.ts",
@@ -256,7 +262,9 @@ describe("Public SaaS launch surface", () => {
     ];
     const files = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
       .split("\0")
-      .filter((file) => /\.(?:md|tsx?|json|mjs|cjs|js|html|txt|ya?ml|sql)$/i.test(file));
+      .filter((file) => /\.(?:md|tsx?|json|mjs|cjs|js|html|txt|ya?ml|sql)$/i.test(file))
+      // The rebuild brief and audit quote the banned phrases in order to forbid them.
+      .filter((file) => !file.startsWith("docs/site-rebuild/"));
     const matches = files.flatMap((file) => {
       const source = readRepoFile(file);
       const rules = [...claims];
@@ -573,7 +581,7 @@ describe("Public SaaS launch surface", () => {
     const csv = BANK_RECONCILIATION_COPY[locale];
     const faq =
       locale === "en" ? "How do I reconcile my bank statement?" : "كيف أطابق كشف حسابي البنكي؟";
-    const phase = readRepoFile("client/src/components/marketing/phase/PhaseSite.tsx");
+    const phase = readRepoFile("client/src/components/marketing/phase/home/Faq.tsx");
     const gallery = readRepoFile("client/src/dev/UiGallery.tsx");
 
     expect(marketing["marketing.faq3Q"]).toBe(faq);

@@ -160,11 +160,11 @@ describe("D1 public site", () => {
       await import("../../client/src/components/marketing/phase/PhaseSite");
     await act(async () => root.render(createElement(PhaseSite)));
     const h1 = container.querySelector("h1");
-    expect(h1?.textContent).toBe("Accounting and VAT for UAE businesses");
+    expect(h1?.textContent).toBe("Your books. Your VAT. Your e-invoices. Done.");
     expect(document.title).toContain(h1?.textContent);
     expect(
       document.head.querySelector('meta[name="description"]')?.getAttribute("content")
-    ).toContain("Send bilingual invoices");
+    ).toContain("Bilingual tax invoices, AI receipt capture");
     // Primary CTAs keep their routes.
     const register = container.querySelector('[data-testid="button-hero-start"]');
     expect(register?.getAttribute("href")).toBe("/register?step=account");
@@ -172,6 +172,30 @@ describe("D1 public site", () => {
       "/en/book-demo"
     );
     expect(container.textContent).toContain("then submit it in EmaraTax.");
+    // Every homepage section is present, under its own stable anchor.
+    for (const id of [
+      "announcement",
+      "hero",
+      "e-invoicing-deadlines",
+      "tour",
+      "savings",
+      "compare",
+      "features",
+      "firms",
+      "trust",
+      "migration",
+      "pricing",
+      "faq",
+      "final-cta",
+    ]) {
+      expect(
+        container.querySelector(`section#${id}[data-testid="section-${id}"]`),
+        id
+      ).not.toBeNull();
+    }
+    // No provider is named; the e-invoicing answer says it is built in and included.
+    expect(container.textContent).not.toMatch(/A-?Cube|Complyance/i);
+    expect(container.textContent).toContain("accredited service provider, built into");
     expect(container.textContent).toContain("Upload a CSV exported from your bank");
     for (const claim of UNSUPPORTED_CLAIMS) {
       expect(container.textContent ?? "", String(claim)).not.toMatch(claim);
@@ -195,15 +219,16 @@ describe("D1 public site", () => {
     window.history.replaceState(null, "", "/ar");
     try {
       await act(async () => root.render(createElement(PhaseRoot)));
-      const title = "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات";
+      const title = "دفاترك. ضريبتك. فواتيرك الإلكترونية. كلها منجزة.";
       expect(container.querySelector("h1")?.textContent).toBe(title);
       expect(document.title).toContain(title);
       expect(container.querySelector('.phase-site[lang="ar"][dir="rtl"]')).not.toBeNull();
-      expect(container.querySelector(".phase-hero img")?.getAttribute("src")).toBe(
+      expect(container.querySelector(".mz-hero img")?.getAttribute("src")).toBe(
         "/product/dashboard-ar.webp"
       );
       expect(container.querySelector('a[hreflang="en"]')?.getAttribute("href")).toBe("/en");
-      expect(container.textContent).toContain("اختر مزوّد خدمة معتمدًا واحدًا لكل شركة");
+      expect(container.textContent).toContain("عبر مزوّد خدمة معتمد مدمج في");
+      expect(container.textContent).not.toMatch(/A-?Cube|Complyance/i);
       expect(container.textContent).toContain("ارفع كشف حسابك البنكي بصيغة CSV");
       expect(container.querySelector('a[href="/ar/migration-guides/zoho"] bdi')?.textContent).toBe(
         "Zoho Books"
@@ -314,15 +339,24 @@ describe("D1 public site", () => {
   });
 
   it.each([
-    ["en", "read-only", "A-Cube or Complyance"],
-    ["ar", "للقراءة فقط", "A-Cube أو Complyance"],
+    [
+      "en",
+      "read-only",
+      "UAE e-invoicing is built in and included on every plan, delivered through an accredited service provider.",
+    ],
+    [
+      "ar",
+      "للقراءة فقط",
+      "الفوترة الإلكترونية في الإمارات مدمجة ومشمولة في كل باقة، وتُنفَّذ عبر مزوّد خدمة معتمد.",
+    ],
   ] as const)(
-    "explains trial expiry and provider choice in %s pricing",
-    async (locale, lock, providers) => {
+    "explains trial expiry and included e-invoicing in %s pricing",
+    async (locale, lock, einvoicing) => {
       await setLocale(locale);
       await render("Pricing");
       expect(container.textContent).toContain(lock);
-      expect(container.textContent).toContain(providers);
+      expect(container.textContent).toContain(einvoicing);
+      expect(container.textContent).not.toMatch(/A-?Cube|Complyance/i);
     }
   );
 });
