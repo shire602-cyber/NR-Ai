@@ -70,6 +70,32 @@ describe("customer e-mails: language follows the customer", () => {
     expect(row.html + row.text_body).not.toContain("100123456700003");
   });
 
+  it("a draft or cancelled invoice cannot be e-mailed and nothing is queued", async () => {
+    const t = await h.createTenant();
+    const c = await contact(t);
+    const draft = await t.as.post(`${base(t)}/invoices`, {
+      contactId: c.id,
+      date: DATE,
+      placeOfSupplyEmirate: "dubai",
+      lines: [{ description: "Consulting", quantity: 1, unitPrice: 100, vatRate: 0.05 }],
+    });
+    expect(draft.status, draft.text).toBe(200);
+    const r1 = await t.as.post(`${base(t)}/invoices/${draft.body.id}/send-email`, {
+      to: "draft@example.test",
+    });
+    expect(r1.status, r1.text).toBe(409);
+    expect(r1.body.code).toBe("INVOICE_NOT_ISSUED");
+    await h.sql(`UPDATE invoices SET status = 'cancelled' WHERE id = $1`, [draft.body.id]);
+    const r2 = await t.as.post(`${base(t)}/invoices/${draft.body.id}/send-email`, {
+      to: "draft@example.test",
+    });
+    expect(r2.status, r2.text).toBe(409);
+    const rows = await h.sql(`SELECT 1 FROM email_outbox WHERE to_address = $1`, [
+      "draft@example.test",
+    ]);
+    expect(rows).toHaveLength(0);
+  });
+
   it("an Arabic company sends both languages when there is no preference and honors an explicit override", async () => {
     const t = await h.createTenant({ companyColumns: { locale: "ar" } });
     const c = await contact(t);
