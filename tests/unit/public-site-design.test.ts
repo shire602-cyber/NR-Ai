@@ -314,15 +314,16 @@ describe("D1 public site", () => {
   });
 
   it.each([
-    ["en", "read-only", "A-Cube or Complyance"],
-    ["ar", "للقراءة فقط", "A-Cube أو Complyance"],
+    ["en", "read-only", "accredited service provider"],
+    ["ar", "للقراءة فقط", "مزوّد خدمة معتمد"],
   ] as const)(
     "explains trial expiry and provider choice in %s pricing",
-    async (locale, lock, providers) => {
+    async (locale, lock, providerCopy) => {
       await setLocale(locale);
       await render("Pricing");
       expect(container.textContent).toContain(lock);
-      expect(container.textContent).toContain(providers);
+      expect(container.textContent).toContain(providerCopy);
+      expect(container.textContent).not.toMatch(/A-Cube|Complyance/i);
     }
   );
 });
