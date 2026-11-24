@@ -16,6 +16,7 @@ import {
   sellerLegalId,
   taxRegistrationSchema,
   tinFromTaxNumber,
+  derivedTinToStore,
   tinProblem,
 } from "../../shared/validators/einvoice-identity";
 import type { Company } from "../../shared/schema";
@@ -35,6 +36,17 @@ describe("WQ5 TIN validation", () => {
     expect(tinFromTaxNumber("100-1234-5670-0003")).toBe("1001234567");
     expect(tinFromTaxNumber("CT-123456789")).toBeNull();
     expect(tinFromTaxNumber("300123456700003")).toBeNull(); // not a UAE TIN
+  });
+
+  it("pins a TIN once from the CT TRN, else the VAT TRN, and never over a stored one", () => {
+    expect(derivedTinToStore({ trnVatNumber: "100333333300003" })).toBe("1003333333");
+    expect(
+      derivedTinToStore({ corporateTaxId: "100222222200003", trnVatNumber: "100333333300003" })
+    ).toBe("1002222222");
+    expect(derivedTinToStore({ einvoiceTin: "1111111111", trnVatNumber: "100333333300003" })).toBe(
+      null
+    );
+    expect(derivedTinToStore({ trnVatNumber: "not-a-trn" })).toBeNull();
   });
 
   it("prefers the stored TIN, then the CT TRN, then the VAT TRN", () => {
