@@ -9,7 +9,7 @@ Sections, top to bottom:
 1. Header: mega-nav (Product, Solutions, Services, Free tools, Resources, Pricing), Sign in, Arabic toggle, Request a demo, Start free trial.
 2. Hero: "Accounting and VAT for UAE businesses" + one sentence; static dashboard screenshot labelled "Product screenshot with sample data"; price line "From AED 59/month, 14-day free Enterprise trial, no card".
 3. "See how it works": 4 tabs (Scan a receipt, Reconcile a bank CSV, Review VAT 201, Client portal) with one small screenshot each.
-4. "Get ready for UAE e-invoicing": two sentences, "Setup is required", A-Cube / Complyance text chips.
+4. "Get ready for UAE e-invoicing": two sentences, "Setup is required", provider-name text chips (to be removed: provider names must not appear publicly).
 5. "Built for the way you work": 2 cards (SMEs, accounting firms).
 6. "From the first invoice to month-end": 6 feature tiles, one line each.
 7. "Bring your books with you": migration chips (Excel, Wafeq, Mazeed, Zoho Books).
@@ -76,5 +76,5 @@ Design benchmarks:
   - Penalty: AED 5,000 per month (or part) of delay, including failing to appoint an ASP.
   - B2C-only businesses currently out of scope.
 - Format: PINT AE over Peppol, via an Accredited Service Provider (ASP).
-- Muhasib facts (do not change): AED 59 / 119 / 229 per month; 14-day Enterprise trial, no card; e-invoicing on every plan; A-Cube or Complyance selectable per company (no default); bank import is CSV upload only (no live bank feeds); no ZATCA / Saudi references; VAT 201 prepared in Muhasib and submitted in EmaraTax; WPS SIF file for payroll.
+- Muhasib facts (do not change): AED 59 / 119 / 229 per month; 14-day Enterprise trial, no card; e-invoicing on every plan via an accredited provider (provider names are internal only - NEVER shown on public marketing/pricing pages; in-app settings may keep the choice); bank import is CSV upload only (no live bank feeds); no ZATCA / Saudi references; VAT 201 prepared in Muhasib and submitted in EmaraTax; WPS SIF file for payroll.
 - Do NOT claim: Muhasib is itself an ASP; any accreditation number; customer counts; ratings; customer logos; testimonials; UAE data residency (until production is live there); live bank feeds.

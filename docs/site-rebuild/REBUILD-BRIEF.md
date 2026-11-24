@@ -7,11 +7,11 @@ Code lives in client/src/components/marketing/ (phase/PhaseSite.tsx, phase/conte
 ## 0. Hard rules (non-negotiable)
 
 - Prices: Starter AED 59, Professional AED 119, Enterprise AED 229 per month. 14-day free Enterprise trial, no card.
-- E-invoicing on every plan. Providers: A-Cube or Complyance, selectable per company, no default, show both equally.
+- E-invoicing on every plan. NEVER name any e-invoicing provider or ASP (no A-Cube, no Complyance, no other provider name) anywhere on the public marketing site, pricing, FAQ, compare or product pages, in EN or AR. Say only: UAE e-invoicing is built in and included on every plan, delivered through an accredited service provider. Remove every existing A-Cube / Complyance mention from marketing, pricing, FAQ and product pages (and their locale strings). In-app settings screens for logged-in users may keep the provider choice; do not touch them.
 - Bank import: "Upload a CSV exported from your bank". Never say live bank feeds, bank sync, or "connect your bank".
 - No ZATCA, no Saudi Arabia, no KSA references anywhere.
 - No invented customer logos, testimonials, ratings, user counts, savings statistics or accreditation numbers. Where proof is needed use a clearly marked placeholder component (visible "Placeholder - real customer quote coming" in dev; hidden behind a flag `SHOW_PROOF_PLACEHOLDERS` in production builds) so marketing can drop real proof in later.
-- Do not claim Muhasib is itself an Accredited Service Provider. Say "e-invoices are exchanged through your chosen accredited service provider (A-Cube or Complyance)".
+- Do not claim Muhasib is itself an Accredited Service Provider. Say "e-invoices are exchanged through an accredited service provider, built into Muhasib".
 - Do not claim UAE data residency yet (put the line behind a config flag, default off).
 - VAT 201: "prepare and review in Muhasib, then submit in EmaraTax". No "direct filing".
 - Every visible string goes through the EN and AR locale files. No hard-coded English.
@@ -32,7 +32,7 @@ Confident, calm, premium, Gulf-modern. Deep emerald (#0B6A4A) + near-black ink +
 - Visual: a LIVE animated product composition built from real React components, not a flat PNG:
   1. Dashboard shell fades in (sidebar items stagger in like Digits).
   2. An invoice card types itself in (customer, line items, VAT 5% auto-calculated, EN/AR bilingual toggle flips the invoice to Arabic for 2 seconds).
-  3. A status pill animates: Draft -> Validated (PINT AE) -> Sent via A-Cube/Complyance -> Delivered. Use the bright signal colour.
+  3. A status pill animates: Draft -> Validated (PINT AE) -> Sent via accredited provider -> Delivered. Use the bright signal colour.
   4. A receipt photo slides in, gets "scanned" (sweeping line), and becomes a categorised expense with VAT recoverable.
   5. The VAT 201 tile counts up to the payable figure.
   Loop every ~12s. Respect prefers-reduced-motion (show static final frame). Pause when offscreen (IntersectionObserver). CSS/transform animation or lightweight Framer Motion only if already a dependency; no Lottie/three.js.
@@ -44,7 +44,7 @@ Confident, calm, premium, Gulf-modern. Deep emerald (#0B6A4A) + near-black ink +
   - < 50m: appoint by 31 Mar 2027, live 1 Jul 2027.
   - Government: appoint by 31 Mar 2027, live 1 Oct 2027.
 - Penalty callout: "Late implementation: AED 5,000 per month (FTA)". Source footnote linking tax.gov.ae / mof.gov.ae.
-- Three steps with icons: "Choose A-Cube or Complyance in Settings" -> "Connect your TRN" -> "Every invoice you issue is validated and exchanged as PINT AE". Copy: "Included on every plan. No separate e-invoicing subscription from us." (Provider fees, if any, must not be claimed as zero unless confirmed - leave a TODO marker in code for the owner to confirm.)
+- Three steps with icons: "Switch on e-invoicing in Settings" -> "Confirm your TRN" -> "Every invoice you issue is validated and exchanged as PINT AE". Copy: "Included on every plan. No separate e-invoicing subscription from us." (Provider fees, if any, must not be claimed as zero unless confirmed - leave a TODO marker in code for the owner to confirm.)
 - CTA: "Check your readiness in 2 minutes" -> existing readiness checker.
 
 ### 2.4 Interactive product tour - "See it work" (light band)
@@ -67,7 +67,6 @@ Columns: Muhasib | Wafeq | Zoho Books UAE. Rows (only facts verifiable from publ
 - Top SMB plan per month: 229 | 249 (200 yearly) | 280 (Elite, annual)
 - Full-plan free trial with no card: Yes, 14 days Enterprise | verify | verify
 - E-invoicing included on every plan: Yes | "included in your plan" | via Zoho as ASP
-- Choice of e-invoicing provider: A-Cube or Complyance | Wafeq only | Zoho only
 - Bilingual EN/AR tax invoices: Yes | verify | verify
 - VAT 201 prepared for EmaraTax: Yes | Yes | Yes (direct filing)
 - WPS payroll file: Yes | verify | verify
@@ -96,7 +95,7 @@ Facts only: role-based access, audit trail, 2FA if implemented (check code), log
 ### 2.11 Pricing (light)
 3 cards, AED, monthly. Badge on every card: "E-invoicing included". Middle card highlighted. Under it: "Every new account starts on Enterprise free for 14 days. No card." Small "Compare with Wafeq and Zoho" link to 2.6.
 
-### 2.12 FAQ (expanded to ~10, with e-invoicing deadlines, CSV import, providers, Arabic, accountant access, cancel any time, trial end = read-only).
+### 2.12 FAQ (expanded to ~10, with e-invoicing deadlines, CSV import, how e-invoicing works (no provider names), Arabic, accountant access, cancel any time, trial end = read-only).
 
 ### 2.13 Final CTA (dark, big)
 "Be e-invoicing ready before your deadline." Primary trial CTA + "Book a demo".
@@ -105,7 +104,7 @@ Facts only: role-based access, audit trail, 2FA if implemented (check code), log
 
 ## 3. Other pages
 - /pricing: same cards + full feature matrix + comparison table + FAQ.
-- /e-invoicing (UAE e-invoicing hub): deadline finder, how it works (PINT AE, Peppol, ASP), A-Cube vs Complyance choice, penalty, readiness checker embed, FAQ. This is the SEO landing page; strong H1 and meta.
+- /e-invoicing (UAE e-invoicing hub): deadline finder, how it works (PINT AE, Peppol, accredited provider, no provider names), penalty, readiness checker embed, FAQ. This is the SEO landing page; strong H1 and meta.
 - /compare/wafeq and /compare/zoho-books: hero "Muhasib vs X", table, migration CTA. Fact-checked only.
 - /free-tools: VAT calculator, CT estimator, readiness checker surfaced as cards with live mini-previews.
 - /accounting-firms and /small-business solution pages: reuse showcase components.
@@ -127,3 +126,6 @@ Facts only: role-based access, audit trail, 2FA if implemented (check code), log
 ## 6. Delivery
 - One PR into claude/eloquent-maxwell-kjxxjc. Before/after screenshots EN + AR (desktop 1440 and mobile 390) attached in PR description.
 - A short CHANGES.md in the PR description listing every TODO/flag needing the owner's confirmation (provider fees, migration help, data residency, real proof).
+
+## 7. Copy guard addition
+The copy-guard test must also fail if "A-Cube", "ACube", "Complyance" appear in marketing locale strings or marketing components (EN and AR, including Arabic transliterations).
