@@ -819,6 +819,10 @@ export interface IStorage {
   ): Promise<Subscription | undefined>;
   createSubscription(subscription: InsertSubscription): Promise<Subscription>;
   updateSubscription(id: string, data: Partial<InsertSubscription>): Promise<Subscription>;
+  reconcileLinkedStripeSubscription(
+    subscription: Subscription,
+    readChanges: (linked: Subscription) => Promise<Partial<InsertSubscription> | undefined>
+  ): Promise<void>;
   applyStripeCheckout(
     subscription: Subscription,
     data: Partial<InsertSubscription>

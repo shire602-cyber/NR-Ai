@@ -1,14 +1,47 @@
 import { randomUUID } from "node:crypto";
 import type Stripe from "stripe";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useHarness } from "./harness";
 
 const h = useHarness();
+const { retrieveSubscription, createPortal } = vi.hoisted(() => ({
+  retrieveSubscription: vi.fn(),
+  createPortal: vi.fn(),
+}));
+
+vi.mock("stripe", () => ({
+  default: class {
+    subscriptions = { retrieve: retrieveSubscription };
+    billingPortal = { sessions: { create: createPortal } };
+  },
+}));
+
+vi.mock("../../server/config/env", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../server/config/env")>();
+  return { ...actual, getEnv: () => ({ ...actual.getEnv(), STRIPE_SECRET_KEY: "fixture" }) };
+});
+
+const starterPrice = "price_au5_starter_monthly";
+const professionalPrice = "price_au5_professional_yearly";
+const enterprisePrice = "price_au5_enterprise_yearly";
+
+beforeEach(async () => {
+  vi.resetAllMocks();
+  const { PLAN_PRICE_MAP } = await import("../../server/services/stripe.service");
+  PLAN_PRICE_MAP.starter.monthly = starterPrice;
+  PLAN_PRICE_MAP.professional.yearly = professionalPrice;
+  PLAN_PRICE_MAP.enterprise.yearly = enterprisePrice;
+});
 
 interface StoredPlan {
   plan_id: string;
   billing_cycle: string;
   stripe_subscription_id: string | null;
+  max_companies: number;
+  max_invoices: number;
+  max_receipts: number;
+  ai_credits_per_month: number;
+  max_storage_mb: number;
 }
 
 async function subscribedCompany() {
@@ -26,10 +59,30 @@ async function subscribedCompany() {
 
 async function readPlan(companyId: string) {
   const [plan] = await h.sql<StoredPlan>(
-    "SELECT plan_id, billing_cycle, stripe_subscription_id FROM subscriptions WHERE company_id = $1",
+    `SELECT plan_id, billing_cycle, stripe_subscription_id,
+       max_companies, max_invoices, max_receipts, ai_credits_per_month, max_storage_mb
+     FROM subscriptions WHERE company_id = $1`,
     [companyId]
   );
   return plan;
+}
+
+function stripeSubscription(
+  ids: { companyId: string; customer: string; subscription: string },
+  priceId: string
+) {
+  const periodStart = Math.floor(Date.now() / 1000);
+  return {
+    id: ids.subscription,
+    customer: ids.customer,
+    status: "active",
+    metadata: { companyId: ids.companyId, planId: "starter", billingCycle: "monthly" },
+    current_period_start: periodStart,
+    current_period_end: periodStart + 30 * 86_400,
+    cancel_at_period_end: false,
+    trial_end: null,
+    items: { data: [{ quantity: 1, price: { id: priceId } }] },
+  };
 }
 
 // These are already-authenticated provider event objects at the dispatch boundary.
@@ -59,32 +112,83 @@ describe("AU5 subscription lifecycle", () => {
   });
 
   it("reflects a change to the yearly Professional price in the Stripe customer portal", async () => {
-    const { companyId, customer, subscription } = await subscribedCompany();
-    const { PLAN_PRICE_MAP } = await import("../../server/services/stripe.service");
-    const priceId = "price_au5_professional_yearly";
-    const previousPrice = PLAN_PRICE_MAP.professional.yearly;
-    PLAN_PRICE_MAP.professional.yearly = priceId;
-    try {
-      const periodStart = Math.floor(Date.now() / 1000);
-      await deliver("customer.subscription.updated", {
-        id: subscription,
-        customer,
-        status: "active",
-        metadata: { companyId, planId: "starter", billingCycle: "monthly" },
-        current_period_start: periodStart,
-        current_period_end: periodStart + 365 * 86400,
-        cancel_at_period_end: false,
-        trial_end: null,
-        items: {
-          data: [{ quantity: 1, price: { id: priceId, recurring: { interval: "year" } } }],
-        },
-      });
-      expect(await readPlan(companyId)).toMatchObject({
-        plan_id: "professional",
-        billing_cycle: "yearly",
-      });
-    } finally {
-      PLAN_PRICE_MAP.professional.yearly = previousPrice;
-    }
+    const ids = await subscribedCompany();
+    const updated = stripeSubscription(ids, professionalPrice);
+    retrieveSubscription.mockResolvedValue(updated);
+
+    await deliver("customer.subscription.updated", updated);
+
+    expect(await readPlan(ids.companyId)).toMatchObject({
+      plan_id: "professional",
+      billing_cycle: "yearly",
+      max_companies: 3,
+      ai_credits_per_month: 500,
+      max_storage_mb: 25_600,
+    });
+  });
+
+  it("keeps Starter limits when an older Enterprise update arrives after the downgrade", async () => {
+    const ids = await subscribedCompany();
+    const enterprise = stripeSubscription(ids, enterprisePrice);
+    const starter = stripeSubscription(ids, starterPrice);
+
+    retrieveSubscription.mockResolvedValue(enterprise);
+    await deliver("customer.subscription.updated", enterprise);
+    expect(await readPlan(ids.companyId)).toMatchObject({
+      plan_id: "enterprise",
+      billing_cycle: "yearly",
+    });
+
+    retrieveSubscription.mockResolvedValue(starter);
+    await deliver("customer.subscription.updated", starter);
+    // This is a different event from the same Enterprise period.
+    await deliver("customer.subscription.updated", enterprise);
+
+    expect(await readPlan(ids.companyId)).toMatchObject({
+      plan_id: "starter",
+      billing_cycle: "monthly",
+      max_companies: 1,
+      max_invoices: 200,
+      max_receipts: 200,
+      ai_credits_per_month: 50,
+      max_storage_mb: 5_120,
+    });
+  });
+
+  it("links checkout using the portal price when the portal update arrived before linking", async () => {
+    const tenant = await h.createTenant();
+    const companyId = tenant.company.id;
+    const customer = `cus_${randomUUID()}`;
+    const subscription = `sub_${randomUUID()}`;
+    await h.sql("UPDATE subscriptions SET stripe_customer_id = $2 WHERE company_id = $1", [
+      companyId,
+      customer,
+    ]);
+    const portalUrl = "https://billing.example.test/portal";
+    createPortal.mockResolvedValue({ url: portalUrl });
+    const portal = await tenant.as.post(`/api/companies/${companyId}/billing/portal`);
+    expect(portal.status).toBe(200);
+    expect(portal.body).toEqual({ url: portalUrl });
+
+    const updated = stripeSubscription({ companyId, customer, subscription }, professionalPrice);
+    retrieveSubscription.mockResolvedValue(updated);
+    await deliver("customer.subscription.updated", updated);
+    expect(await readPlan(companyId)).toMatchObject({ stripe_subscription_id: null });
+
+    await deliver("checkout.session.completed", {
+      id: `cs_${randomUUID()}`,
+      customer,
+      subscription,
+      metadata: updated.metadata,
+    });
+
+    expect(await readPlan(companyId)).toMatchObject({
+      stripe_subscription_id: subscription,
+      plan_id: "professional",
+      billing_cycle: "yearly",
+      max_companies: 3,
+      ai_credits_per_month: 500,
+      max_storage_mb: 25_600,
+    });
   });
 });

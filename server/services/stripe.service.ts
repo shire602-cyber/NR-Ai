@@ -496,8 +496,12 @@ async function applyStripeSubscription(
   subscription: Subscription,
   checkoutMetadata?: Stripe.Metadata | null
 ): Promise<boolean> {
-  const planId = current.metadata?.planId || checkoutMetadata?.planId;
-  const billingCycle = current.metadata?.billingCycle || checkoutMetadata?.billingCycle;
+  const item = current.items?.data?.[0];
+  // The portal can change the billed price before checkout links the subscription.
+  const billedPlan = planForStripePrice(item?.price?.id);
+  const planId = billedPlan?.planId ?? (current.metadata?.planId || checkoutMetadata?.planId);
+  const billingCycle =
+    billedPlan?.billingCycle ?? (current.metadata?.billingCycle || checkoutMetadata?.billingCycle);
   if (
     !stripeSubscriptionMatches(current, subscription) ||
     !isPaidPlanId(planId) ||
@@ -514,24 +518,15 @@ async function applyStripeSubscription(
   if (!["active", "trialing", "past_due", "unpaid", "paused"].includes(current.status))
     return false;
 
-  const limits = PLAN_LIMITS[planId];
   const now = new Date();
 
   const applied = await storage.applyStripeCheckout(subscription, {
-    planId,
-    planName: planId.charAt(0).toUpperCase() + planId.slice(1),
+    ...subscriptionPlanChangeFields(planId, billingCycle),
     ...stripeSubscriptionState(current),
     stripeCheckoutCompleted: true,
     stripeSubscriptionId: current.id,
-    billingCycle,
-    seatCount: current.items.data[0]?.quantity ?? subscription.seatCount ?? 1,
-    maxUsers: limits.maxUsers,
-    maxInvoices: limits.maxInvoices,
-    maxReceipts: limits.maxReceipts,
-    aiCreditsRemaining: limits.aiCreditsRemaining,
-    maxCompanies: limits.maxCompanies,
-    maxStorageMb: limits.maxStorageMb,
-    aiCreditsPerMonth: limits.aiCreditsPerMonth,
+    seatCount: item?.quantity ?? subscription.seatCount ?? 1,
+    aiCreditsRemaining: PLAN_LIMITS[planId].aiCreditsRemaining,
     invoicesCreatedThisMonth: 0,
     receiptsCreatedThisMonth: 0,
     aiCreditsUsedThisMonth: 0,
@@ -592,13 +587,27 @@ async function handleSubscriptionUpdated(sub: Stripe.Subscription): Promise<void
   const subscription = await resolveWebhookSubscription(sub);
   if (!subscription || subscription.stripeSubscriptionId !== sub.id) return;
 
-  const item = sub.items?.data?.[0];
-  // A portal change updates the billed price while the original checkout metadata can stay stale.
-  const plan = planForStripePrice(item?.price?.id);
-  await storage.updateSubscription(subscription.id, {
-    ...stripeSubscriptionState(sub),
-    ...(plan && subscriptionPlanChangeFields(plan.planId, plan.billingCycle)),
-    seatCount: item?.quantity ?? subscription.seatCount ?? 1,
+  const stripeClient = getStripe();
+  if (!stripeClient) throw new Error("Stripe not configured");
+
+  // Serialize the Stripe read and local write so overlapping deliveries cannot
+  // commit their results in reverse order.
+  await storage.reconcileLinkedStripeSubscription(subscription, async (linked) => {
+    const current = await stripeClient.subscriptions.retrieve(sub.id);
+    if (
+      current.id !== sub.id ||
+      !stripeSubscriptionMatches(current, linked) ||
+      stripeSubscriptionClosed(current)
+    ) {
+      return;
+    }
+    const item = current.items.data[0];
+    const plan = planForStripePrice(item?.price?.id);
+    return {
+      ...stripeSubscriptionState(current),
+      ...(plan && subscriptionPlanChangeFields(plan.planId, plan.billingCycle)),
+      seatCount: item?.quantity ?? linked.seatCount ?? 1,
+    };
   });
 }
 

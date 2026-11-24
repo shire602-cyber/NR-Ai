@@ -331,6 +331,37 @@ export class FirmStorage extends ComplianceStorage {
     return subscription;
   }
 
+  async reconcileLinkedStripeSubscription(
+    subscription: Subscription,
+    readChanges: (linked: Subscription) => Promise<Partial<InsertSubscription> | undefined>
+  ): Promise<void> {
+    const { id, stripeSubscriptionId, stripeCustomerId } = subscription;
+    if (!stripeSubscriptionId || !stripeCustomerId) return;
+
+    await db.transaction(async (tx) => {
+      const [linked] = await tx
+        .select()
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.id, id),
+            eq(subscriptions.stripeSubscriptionId, stripeSubscriptionId),
+            eq(subscriptions.stripeCustomerId, stripeCustomerId)
+          )
+        )
+        .for("update");
+      if (!linked) return;
+
+      const data = await readChanges(linked);
+      if (data) {
+        await tx
+          .update(subscriptions)
+          .set({ ...data, updatedAt: new Date() })
+          .where(eq(subscriptions.id, id));
+      }
+    });
+  }
+
   async applyStripeCheckout(
     subscription: Subscription,
     data: Partial<InsertSubscription>

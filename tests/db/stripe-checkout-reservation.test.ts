@@ -311,10 +311,12 @@ it.each([
       entitlement: { state: "active", planId: "starter" },
     });
     if (sessionOnly && !canceledDuringRecovery) {
+      const scheduledCancellation = { ...active, cancel_at_period_end: true };
+      stripe.retrieveSubscription.mockResolvedValue(scheduledCancellation);
       await handleWebhookEvent({
         id: "fixture-subscription-updated",
         type: "customer.subscription.updated",
-        data: { object: { ...active, cancel_at_period_end: true } },
+        data: { object: scheduledCancellation },
       } as unknown as Stripe.Event);
       const scheduled = await t.as.get(`/api/companies/${companyId}/billing/subscription`);
       expect(scheduled.body).toMatchObject({ subscription: { cancelAtPeriodEnd: true } });
