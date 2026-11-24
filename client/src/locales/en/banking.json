@@ -178,6 +178,7 @@
   "banking.import.rows": "rows",
   "banking.import.valid": "valid",
   "banking.import.withErrors": "with errors",
+  "banking.import.invalidDateRow": "Correct the missing or invalid transaction date in CSV row {rowIndex} and preview the file again.",
   "banking.import.dateOrder": "Date order",
   "banking.import.decimalSeparator": "Decimal separator",
   "banking.import.decimalPoint": "Point (1,234.50)",

@@ -206,6 +206,61 @@ describe("bank statement import dialog", () => {
     ).toBe(false);
   });
 
+  describe.each([
+    [
+      "en",
+      "Correct the missing or invalid transaction date in CSV row 2 and preview the file again.",
+    ],
+    ["ar", "صحّح تاريخ الحركة المفقود أو غير الصالح في الصف 2 من ملف CSV ثم عاين الملف مجددًا."],
+  ] as const)("blocked bank statement preview in %s", (locale, copy) => {
+    it.each([
+      ["blank", "", "Missing date"],
+      ["invalid", "2026-02-30", "Invalid date '2026-02-30' for YYYY-MM-DD"],
+    ])("shows CSV row 2 when the only transaction date is %s", async (_kind, date, parserError) => {
+      const { previews, imports } = recordStatementRequests();
+      await mountPage(locale);
+      await selectImportAccount();
+      await chooseStatement(`Date,Description,Amount\n${date},Deposit,100.00`);
+      await vi.waitFor(() => expect(previews).toHaveLength(1));
+      await act(async () =>
+        previews[0].respond(
+          json({
+            kind: "csv",
+            detectedFormat: "generic",
+            decimalSeparator: ".",
+            dateOrder: null,
+            headerRow: 1,
+            headers: ["Date", "Description", "Amount"],
+            mapping: { date: 0, description: 1, amount: 2 },
+            totalRows: 1,
+            validRows: 0,
+            errorRows: 1,
+            sampleRows: [
+              {
+                rowIndex: 2,
+                date: null,
+                description: "Deposit",
+                debit: 0,
+                credit: 100,
+                errors: [parserError],
+              },
+            ],
+            warnings: [],
+            requiresChoice: false,
+          })
+        )
+      );
+
+      expect(action().disabled).toBe(true);
+      expect(
+        mapper()?.querySelector('[role="alert"][data-testid="text-statement-preview-date-error"]')
+          ?.textContent
+      ).toBe(copy);
+      expect(mapper()?.querySelector("tbody tr")?.getAttribute("title")).toBe(copy);
+      expect(imports).toEqual([]);
+    });
+  });
+
   it.each(["en", "ar"] as const)(
     "only imports the bytes from the latest successful preview in %s",
     async (locale) => {

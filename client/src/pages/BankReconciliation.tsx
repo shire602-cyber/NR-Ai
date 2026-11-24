@@ -354,6 +354,10 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     reviewedStatement?.file === importFile && reviewedStatement.companyId === companyId
       ? reviewedStatement.preview
       : null;
+  const firstInvalidDateRow =
+    !previewLoading && statementPreview?.validRows === 0
+      ? statementPreview.sampleRows.find((row) => row.date === null)
+      : undefined;
   const canConfirmImport = Boolean(
     statementPreview &&
     bankAccounts?.some((account) => account.id === selectedBankAccount) &&
@@ -1484,6 +1488,18 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                   )}
                 </p>
 
+                {firstInvalidDateRow && (
+                  <p
+                    role="alert"
+                    className="text-xs text-destructive"
+                    data-testid="text-statement-preview-date-error"
+                  >
+                    {formatMessage(t["banking.import.invalidDateRow"], {
+                      rowIndex: firstInvalidDateRow.rowIndex,
+                    })}
+                  </p>
+                )}
+
                 {statementPreview.warnings.length > 0 && (
                   <ul className="space-y-1" data-testid="list-statement-warnings">
                     {statementPreview.warnings.map((w) => (
@@ -1606,7 +1622,13 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                             <tr
                               key={row.rowIndex}
                               className={row.errors.length > 0 ? "text-destructive" : undefined}
-                              title={row.errors.join("; ")}
+                              title={
+                                row.date === null
+                                  ? formatMessage(t["banking.import.invalidDateRow"], {
+                                      rowIndex: row.rowIndex,
+                                    })
+                                  : row.errors.join("; ")
+                              }
                             >
                               <td className="pe-2">{row.rowIndex}</td>
                               <td className="pe-2">{row.date ?? "—"}</td>
