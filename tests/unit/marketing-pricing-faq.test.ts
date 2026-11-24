@@ -15,8 +15,14 @@ import arMarketingHome from "../../client/src/locales/ar/marketingHome.json";
 import enMarketingMeta from "../../client/src/locales/en/marketingMeta.json";
 import arMarketingMeta from "../../client/src/locales/ar/marketingMeta.json";
 
-const enMarketing = { ...enMarketingBase, ...enMarketingHome, ...enMarketingMeta } as Record<string, string>;
-const arMarketing = { ...arMarketingBase, ...arMarketingHome, ...arMarketingMeta } as Record<string, string>;
+const enMarketing = { ...enMarketingBase, ...enMarketingHome, ...enMarketingMeta } as Record<
+  string,
+  string
+>;
+const arMarketing = { ...arMarketingBase, ...arMarketingHome, ...arMarketingMeta } as Record<
+  string,
+  string
+>;
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -240,6 +246,51 @@ describe.each(["en", "ar"] as const)("%s", (locale) => {
         expect(englishLines(scope), id).toEqual([]);
       }
     }
+  });
+
+  it("keeps the monthly/yearly selector and the yearly signup path on the pricing page", async () => {
+    const { PricingPage } =
+      await import("../../client/src/components/marketing/phase/pages/PricingPage");
+    await render(locale, "/pricing", async () => createElement(PricingPage, sectionProps(locale)));
+    const page = container.querySelector('[data-testid="pricing-page"]')!;
+    const digits = (text: string) =>
+      text.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d))).replace(/[,٬\s]/g, "");
+    const prices = () =>
+      [...page.querySelectorAll('[data-testid^="card-plan-"] .mk-tier__price strong')].map((el) =>
+        digits(el.textContent ?? "")
+      );
+    const hrefs = () =>
+      ["starter", "professional"]
+        .map((id) => page.querySelector(`[data-testid="button-plan-${id}"]`)?.getAttribute("href"))
+        // Enterprise's main CTA is "contact us"; its trial signup is the secondary link.
+        .concat(
+          page.querySelector('[data-testid="link-plan-trial-enterprise"]')?.getAttribute("href")
+        );
+    const monthly = page.querySelector('[data-testid="billing-cycle-monthly"]') as HTMLElement;
+    const yearly = page.querySelector('[data-testid="billing-cycle-yearly"]') as HTMLElement;
+    expect(monthly).not.toBeNull();
+    expect(yearly).not.toBeNull();
+    expect(prices()).toEqual(["59", "119", "229"]);
+    expect(hrefs().every((href) => href && !/cycle=yearly/.test(href))).toBe(true);
+
+    await act(async () => yearly.click());
+    expect(prices()).toEqual(["590", "1190", "2290"]);
+    expect(
+      hrefs().map((href) => /plan=(starter|professional|enterprise)/.test(href ?? ""))
+    ).toEqual([true, true, true]);
+    expect(hrefs().every((href) => /cycle=yearly/.test(href ?? ""))).toBe(true);
+
+    await act(async () => monthly.click());
+    expect(prices()).toEqual(["59", "119", "229"]);
+  });
+
+  it("links the full plan comparison to #plan-matrix on the current page in the current language", async () => {
+    const { PricingPage } =
+      await import("../../client/src/components/marketing/phase/pages/PricingPage");
+    await render(locale, "/pricing", async () => createElement(PricingPage, sectionProps(locale)));
+    const link = container.querySelector('[data-testid="link-price-matrix"]');
+    expect(link?.getAttribute("href")).toBe(`/${locale}/pricing#plan-matrix`);
+    expect(container.querySelector("#plan-matrix")).not.toBeNull();
   });
 });
 

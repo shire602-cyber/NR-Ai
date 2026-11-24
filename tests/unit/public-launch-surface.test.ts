@@ -371,10 +371,12 @@ describe("Public SaaS launch surface", () => {
     );
     expect(ar["marketing.trustOperatorBody"]).toContain("نجمة الرائدة للمحاسبة ومسك الدفاتر");
     expect(JSON.stringify(en)).not.toContain("Accounting LLC");
+    // The residency line is flag-gated (default off); when on it may say no more than this.
     expect(en["marketing.trustResidencyBody"]).toContain(
-      "Customer data is hosted in the United Arab Emirates."
+      "Production runs on Vercel, with the database hosted in the UAE."
     );
-    expect(ar["marketing.trustResidencyBody"]).toContain("الإمارات العربية المتحدة");
+    expect(ar["marketing.trustResidencyBody"]).toContain("Vercel");
+    expect(ar["marketing.trustResidencyBody"]).toContain("دولة الإمارات");
     expect(en["marketing.trustSupportContact"]).toContain("Sara, customer support");
     expect(ar["marketing.trustSupportContact"]).toContain("سارة");
     expect(en["marketing.svcFact1"]).toContain("Licensed since 2017");
