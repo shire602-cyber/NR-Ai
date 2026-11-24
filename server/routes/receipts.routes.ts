@@ -1,3 +1,4 @@
+import { sizeErrorBody } from "../http/upload-errors";
 import { receiptHref } from "../../shared/app-links";
 import { type Express, type Request, type Response } from "express";
 import { receiptCheckSimilarBody } from "../../shared/validators/route-bodies";
@@ -436,7 +437,13 @@ export function registerReceiptRoutes(app: Express) {
           await assertWithinStorageQuota(companyId, inspected.size);
         } catch (err) {
           if (err instanceof UploadRejectedError) {
-            return res.status(err.status).json({ message: err.message, code: err.code });
+            return res
+              .status(err.status)
+              .json(
+                err.code === "FILE_TOO_LARGE"
+                  ? sizeErrorBody(req, err.code)
+                  : { message: err.message, code: err.code }
+              );
           }
           throw err;
         }

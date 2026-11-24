@@ -115,7 +115,7 @@ const url = (mime: string, b: Buffer) => `data:${mime};base64,${b.toString("base
 
 function app() {
   const a = express();
-  a.use(express.json({ limit: "30mb" }));
+  a.use(express.json({ limit: "3mb" }));
   registerReceiptRoutes(a);
   return a;
 }
@@ -198,7 +198,7 @@ describe("R05-06 / R05-08 upload validation on the receipt route", () => {
   });
 
   it("R05-07 oversize uploads are rejected with 413 FILE_TOO_LARGE", async () => {
-    const big = Buffer.concat([png(), Buffer.alloc(9 * 1024 * 1024)]);
+    const big = Buffer.concat([png(), Buffer.alloc(2 * 1024 * 1024)]);
     const res = await req("POST", `/api/companies/${COMPANY}/receipts`, {
       ...base,
       imageData: url("image/png", big),
@@ -342,7 +342,7 @@ describe("R05-06 serving and R05-23 audit of AI decisions", () => {
     const res = await req("GET", `/api/companies/${COMPANY}/receipts/upload-policy`);
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
-      maxFileBytes: 8 * 1024 * 1024,
+      maxFileBytes: 2 * 1024 * 1024,
       virusScan: "requires_external",
       storage: { usedBytes: 1234 },
     });

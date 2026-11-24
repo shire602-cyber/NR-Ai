@@ -11,11 +11,11 @@ import { zDate, zEmail, zText, zUuid } from "./primitives";
 
 const zPaymentRate = z.coerce.number().finite().positive().max(1_000_000).optional().nullable();
 
-/** POST /api/invoices/:id/attachments — base64 data URL (max ~7 MB decoded). */
+/** POST /api/invoices/:id/attachments — base64 data URL (max 2 MB decoded). */
 export const invoiceAttachmentBody = z
   .object({
     fileName: z.string().trim().min(1).max(255),
-    data: z.string().min(1).max(10_000_000),
+    data: z.string().min(1),
   })
   .strict();
 export type InvoiceAttachmentBody = z.output<typeof invoiceAttachmentBody>;

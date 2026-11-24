@@ -103,8 +103,10 @@ export async function captureBillFromDocument(args: {
   companyId: string;
   userId: string;
   file: string;
+  signal: AbortSignal;
 }): Promise<BillCaptureResult & { mime: string }> {
   const inspected = await inspectPurchaseFile(args.file);
+  args.signal.throwIfAborted();
   let extraction;
   try {
     extraction = await extractBillDocument({
@@ -112,6 +114,7 @@ export async function captureBillFromDocument(args: {
       mimeType: inspected.mime,
       companyId: args.companyId,
       userId: args.userId,
+      signal: args.signal,
     });
   } catch (err) {
     if (errorCode(err) === "AI_QUOTA_EXCEEDED") {
@@ -119,6 +122,7 @@ export async function captureBillFromDocument(args: {
     }
     throw err;
   }
+  args.signal.throwIfAborted();
   if (extraction.status === "not_configured") {
     throw new DomainError(
       "AI_NOT_CONFIGURED",

@@ -5,7 +5,8 @@
  * the /api/firms/me contract FirmRoute/AppSidebar rely on.
  */
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { MAX_UPLOAD_BYTES } from "../../shared/upload-limits";
 import { useHarness, type Tenant } from "./harness";
 
 // X6b: firm sign-up is closed by default (NR-internal); these tests onboard a second firm on purpose.
@@ -53,7 +54,8 @@ async function firmB() {
 
 describe("S4 VAT workpaper maker-checker uses canPrepare/canReviewFirmWorkpaper", () => {
   it("PR #96 stores VAT evidence privately and checks workpaper access before reading", async () => {
-    const { __setObjectStoreForTests } = await import("../../server/services/fileStorage");
+    const objectStorage = await import("../../server/services/fileStorage");
+    const { __setObjectStoreForTests } = objectStorage;
     const owner = await nrOwner();
     const unassigned = await nrStaff("firm_admin", "EvidenceUnassigned");
     const client = await createClient(owner, "VAT Evidence Client LLC");
@@ -90,6 +92,28 @@ describe("S4 VAT workpaper maker-checker uses canPrepare/canReviewFirmWorkpaper"
         },
         draftRow: { rowCategory: "standard_expense", taxableAmount: 100, vatAmount: 5 },
       };
+      const oversized = await owner.as.post(`${base}/scan`, {
+        ...scan,
+        attachment: {
+          ...scan.attachment,
+          fileDataBase64: Buffer.alloc(MAX_UPLOAD_BYTES + 1).toString("base64"),
+        },
+      });
+      expect(oversized.status, oversized.text).toBe(413);
+      expect(oversized.body.code).toBe("FILE_TOO_LARGE");
+
+      const storageAvailability = vi
+        .spyOn(objectStorage, "hasDurableObjectStore")
+        .mockReturnValueOnce(false);
+      try {
+        const unavailable = await owner.as.post(`${base}/scan`, scan);
+        expect(unavailable.status, unavailable.text).toBe(503);
+        expect(unavailable.body.code).toBe("VAT_EVIDENCE_STORAGE_UNAVAILABLE");
+      } finally {
+        storageAvailability.mockRestore();
+      }
+      expect(objects.size).toBe(0);
+
       const rejected = await owner.as.post(`${base}/scan`, {
         ...scan,
         draftRow: { ...scan.draftRow, documentDate: "2026-10-01" },

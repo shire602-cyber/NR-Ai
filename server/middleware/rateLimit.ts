@@ -6,7 +6,13 @@ import jwt from "jsonwebtoken";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { getAccessTokenFromRequest } from "../services/auth-cookies.service";
-import { PostgresThrottleBucket, usesPostgresThrottle } from "./postgres-throttle";
+import {
+  CHECK_LOCKOUT,
+  INCREMENT_WINDOW,
+  RedisThrottleBucket,
+  configuredThrottleRedis,
+  type RedisThrottleClient,
+} from "./redis-throttle";
 
 const log = createLogger("rate-limit");
 
@@ -93,41 +99,33 @@ export class SlidingWindowStore {
   }
 }
 
-export class PostgresSlidingWindowStore {
-  private readonly bucket: PostgresThrottleBucket;
+export class RedisSlidingWindowStore {
+  private readonly bucket: RedisThrottleBucket;
 
   constructor(
     namespace: string,
-    private readonly windowMs: number,
-    private readonly max: number
+    windowMs: number,
+    private readonly max: number,
+    redis: RedisThrottleClient
   ) {
-    this.bucket = new PostgresThrottleBucket(`http:${namespace}`, windowMs);
+    this.bucket = new RedisThrottleBucket(redis, `http:${namespace}`, windowMs);
   }
 
   async increment(key: string) {
     return this.incrementHit(key);
   }
 
-  async incrementHit(key: string, id?: string) {
-    return this.bucket.mutate(key, (events, now) => {
-      const overLimit = events.length >= this.max;
-      if (!overLimit) events.push({ at: now, id });
-      return {
-        totalHits: events.length + (overLimit ? 1 : 0),
-        resetTime: new Date((events[0]?.at ?? now) + this.windowMs),
-      };
-    });
+  async incrementHit(key: string, id: string = randomUUID()) {
+    const [totalHits, resetAt] = await this.bucket.eval(key, INCREMENT_WINDOW, 2, this.max, id);
+    return { totalHits, resetTime: new Date(resetAt) };
   }
 
   async decrement(key: string): Promise<void> {
-    await this.bucket.mutate(key, (events) => events.pop());
+    await this.bucket.decrement(key);
   }
 
   async refundHit(key: string, id: string): Promise<void> {
-    await this.bucket.mutate(key, (events) => {
-      const index = events.findIndex((event) => event.id === id);
-      if (index >= 0) events.splice(index, 1);
-    });
+    await this.bucket.refund(key, id);
   }
 
   resetKey(key: string): Promise<void> {
@@ -211,14 +209,15 @@ interface RouteLimit {
  * Build a sliding-window limiter with a stable namespace for each route group.
  */
 export function buildLimiter(namespace: string, cfg: RouteLimit) {
-  const store = usesPostgresThrottle()
-    ? new PostgresSlidingWindowStore(namespace, cfg.windowMs, cfg.max)
+  const redis = configuredThrottleRedis();
+  const store = redis
+    ? new RedisSlidingWindowStore(namespace, cfg.windowMs, cfg.max, redis)
     : new SlidingWindowStore(cfg.max);
   if (store instanceof SlidingWindowStore) store.startGc();
   const keyGenerator = cfg.keyGenerator ?? compositeKey;
   // Give refundable hits a request ID so an overlapping request cannot
   // refund another hit. Await the refund before ending a serverless response.
-  const refundable = cfg.skipSuccessfulRequests && store instanceof PostgresSlidingWindowStore;
+  const refundable = cfg.skipSuccessfulRequests && store instanceof RedisSlidingWindowStore;
   const decodeKey = (key: string) => JSON.parse(key) as [identity: string, requestId: string];
   const limiterStore = refundable
     ? {
@@ -408,31 +407,33 @@ export class LockoutTracker {
   }
 }
 
-export class PostgresLockoutTracker {
-  private readonly bucket: PostgresThrottleBucket;
-  private readonly horizonMs: number;
+export class RedisLockoutTracker {
+  private readonly bucket: RedisThrottleBucket;
+  private readonly ruleArgs: number[];
 
-  constructor(namespace: string, private readonly rules: LockoutRule[]) {
-    this.horizonMs = Math.max(...rules.map((rule) => rule.windowMs));
-    this.bucket = new PostgresThrottleBucket(`credential:${namespace}`, this.horizonMs);
+  constructor(namespace: string, rules: LockoutRule[], redis: RedisThrottleClient) {
+    const horizonMs = Math.max(...rules.map((rule) => rule.windowMs));
+    this.bucket = new RedisThrottleBucket(redis, `credential:${namespace}`, horizonMs);
+    this.ruleArgs = rules.flatMap(({ max, windowMs }) => [max, windowMs]);
   }
 
-  async status(key: string): Promise<LockoutStatus> {
-    const { events, now } = await this.bucket.read(key);
-    const failures = events.map((event) => event.at).filter((at) => at > now - this.horizonMs);
-    return lockoutStatus(this.rules, failures, now);
+  private async check(key: string, failureId: string) {
+    const [retryAfterMs, failures, lockedNow] = await this.bucket.eval(
+      key,
+      CHECK_LOCKOUT,
+      3,
+      failureId,
+      ...this.ruleArgs
+    );
+    return { locked: retryAfterMs > 0, retryAfterMs, failures, lockedNow: lockedNow === 1 };
+  }
+
+  status(key: string): Promise<LockoutStatus> {
+    return this.check(key, "");
   }
 
   recordFailure(key: string) {
-    return this.bucket.mutate(key, (events, now) => {
-      const failures = events.map((event) => event.at);
-      const before = lockoutStatus(this.rules, failures, now);
-      if (before.locked) return { ...before, lockedNow: false };
-      events.push({ at: now });
-      failures.push(now);
-      const after = lockoutStatus(this.rules, failures, now);
-      return { ...after, lockedNow: after.locked };
-    });
+    return this.check(key, randomUUID());
   }
 
   reset(key: string): Promise<void> {
@@ -442,9 +443,8 @@ export class PostgresLockoutTracker {
 
 export function buildLockoutTracker(namespace: string) {
   const rules = loginLockoutRules();
-  return usesPostgresThrottle()
-    ? new PostgresLockoutTracker(namespace, rules)
-    : new LockoutTracker(rules);
+  const redis = configuredThrottleRedis();
+  return redis ? new RedisLockoutTracker(namespace, rules, redis) : new LockoutTracker(rules);
 }
 
 export function loginLockoutRules(): LockoutRule[] {

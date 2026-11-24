@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_BYTES } from "@shared/upload-limits";
 // ClientPortfolio module (W5-D split of ClientPortfolio.tsx; no behaviour change).
 import { FileDrop } from "@/components/ui/file-drop";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -581,6 +582,9 @@ export function VatWorkspaceDialog({
 
   const scanMutation = useMutation({
     mutationFn: async () => {
+      if (evidenceFile && evidenceFile.size > MAX_UPLOAD_BYTES) {
+        throw new Error(translateNow("serverErrors.FILE_TOO_LARGE"));
+      }
       const uploadedEvidence = evidenceFile
         ? {
             fileDataBase64: await readFileAsBase64(evidenceFile),
@@ -814,6 +818,9 @@ export function VatWorkspaceDialog({
 
   const importFileMutation = useMutation({
     mutationFn: async (file: File) => {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        throw new Error(translateNow("serverErrors.FILE_TOO_LARGE"));
+      }
       const fileDataBase64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");

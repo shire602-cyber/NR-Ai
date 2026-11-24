@@ -91,6 +91,6 @@ USER muhasib
 EXPOSE ${PORT:-5000}
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \
-  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 5000) + '/api/version').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 5000) + '/health/live').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 CMD ["node", "dist/index.js"]

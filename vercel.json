@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "fluid": true,
+  "fluid": false,
   "buildCommand": "npm run build:vercel",
   "outputDirectory": "dist/public",
   "regions": ["dxb1"],
@@ -12,6 +12,7 @@
   },
   "functions": {
     "api/http.js": {
+      "maxDuration": 60,
       "includeFiles": "{dist/public/{index.html,firm.html,marketing-preloads.json,firm-preloads.json},server/assets/**}"
     }
   },

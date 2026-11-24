@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_BYTES } from "@shared/upload-limits";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { accountDisplayName } from "@/lib/account-name";
 import { localizeServerWarning } from "@/lib/validation-messages";
@@ -668,6 +669,11 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     setPreviewError(null);
     setAcknowledgeAmbiguity(false);
     try {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        setReviewedStatement(null);
+        setPreviewError(t["serverErrors.FILE_TOO_LARGE"]);
+        return;
+      }
       const fileBase64 = await fileToBase64(file).catch(() => null);
       if (requestId !== latestPreviewRequest.current || !isActive()) return;
       if (fileBase64 === null) {

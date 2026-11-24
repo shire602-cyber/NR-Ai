@@ -280,7 +280,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
   const resolveToken = async (req: Request, res: Response) => {
     const link = await findApproverLinkByToken(String(req.params.token ?? ""));
     if (!link) {
-      notePortalFailure(req);
+      await notePortalFailure(req);
       res.status(404).json({ code: "NOT_FOUND", message: "This link is not valid." });
       return null;
     }

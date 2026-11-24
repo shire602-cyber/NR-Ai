@@ -13,39 +13,50 @@ shares one small connection pool with the session store. The container still own
 listener, Socket.IO, migrations on opt-in, banking retirement cleanup and scheduled jobs.
 Function cold starts skip banking retirement, session table creation and session pruning.
 
-## Production request body limits
+## Production environment variables
 
-Use a Vercel **Pro or Enterprise** project and select **Performance (4 GB)** under
-**Settings → Functions**. Fluid Compute is enabled in `vercel.json`. Set
-`VERCEL_SUPPORT_LARGE_REQUEST_BODY=1` in the project's **Production** environment variables
-and redeploy. Apply the same settings to Preview when rehearsing the release. The opt-in is a
-public beta for Node.js Functions that raises the inbound body limit from 4.5 MB to 20 MiB.
-[Vercel large request body opt-in](https://vercel.com/changelog/vercel-functions-now-support-request-bodies-up-to-20mib)
-and [Function memory settings](https://vercel.com/docs/functions/configuring-functions/memory).
+| Purpose                       | Variables                                                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application                   | `NODE_ENV=production`, `DATABASE_URL`, `SESSION_SECRET`, `JWT_SECRET`, `FRONTEND_URL`                                                       |
+| Shared request throttling     | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`                                                                                        |
+| Private Vercel Blob           | `BLOB_READ_WRITE_TOKEN` for a private store                                                                                                 |
+| Private S3 or R2              | `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, plus `S3_REGION` for AWS or `S3_ENDPOINT` for an S3-compatible endpoint such as R2 |
+| Optional signed inbound email | `EMAIL_INTAKE_ENABLED=true`, `EMAIL_INTAKE_WEBHOOK_SECRET`                                                                                  |
 
-The limit applies to the entire HTTP body. The app accepts up to 10 MiB of bank import JSON,
-15 MiB of VAT evidence JSON (including base64), and 20 MiB of signed raw email webhook body.
-Before cutover, send a bank import larger than 4.5 MB near its 10 MiB limit, upload and download
-a VAT evidence file above 4.5 MB through an authorized workpaper, and exercise the signed email
-webhook near 20 MiB. Confirm that requests above each cap return HTTP 413.
+Choose one private storage backend. The app prefers Blob when both backends are configured.
+Set the writable Redis REST URL and token in every production app instance. Use a separate Redis
+database for each environment. Login, MFA, API keys and customer portal throttling use the shared store, along with general
+HTTP rate limits. A missing configuration prevents startup. A Redis request failure rejects the affected request. Local
+development and test use memory when both Redis variables are unset.
+
+Set the database connection budget and trust proxy hops as appropriate. Available settings are
+`DB_POOL_MAX`, `DB_POOL_MIN`, `DB_POOL_IDLE_MS`, `DB_POOL_CONN_MS`,
+`DB_STATEMENT_TIMEOUT_MS`, `NODE_EXTRA_CA_CERTS` (when the database needs a custom CA), and
+`TRUST_PROXY_HOPS`. Expose the Vercel system variables `VERCEL`, `VERCEL_ENV`, `VERCEL_REGION`
+and `VERCEL_GIT_COMMIT_SHA` through the project settings.
+
+## Request and file limits
+
+Uploads are limited to 2 MB of actual file data (2,097,152 bytes). JSON upload routes accept
+up to 3 MiB to accommodate base64 and metadata. The signed inbound email webhook accepts up to
+2 MB for the entire HTTP body, so the JSON envelope and base64 reduce the available attachment
+space. The app returns HTTP 413 for oversized uploads within Vercel's 4.5 MB request ceiling.
+[Vercel Function limits](https://vercel.com/docs/functions/limitations)
 
 ## Release prerequisites
 
-Before the owner approves go-live:
-
-- Confirm the Vercel networking plan, UAE residency requirements and private DNS and TLS to
-  UAE PostgreSQL. Set the production runtime settings from `.env.example` through the approved
-  secret store. Expose Vercel's system variables and rehearse the pool budget and proxy trust.
-- Provision private UAE object storage. Copy existing `uploads/vat-workpapers/` files into that
-  store. Preserve their object keys with S3, or update the attachment references to the
-  corresponding private URLs with Vercel Blob. Verify that existing evidence downloads still
-  work. Create the `connect-pg-simple` session table and apply migration
-  `0156_request_throttle_buckets` before routing traffic to the Function. All instances use the
-  same PostgreSQL database for HTTP rate limits, login and MFA lockouts. Assign session pruning
-  to a controlled job, rehearse database restore and migrations, and resolve legacy banking
-  state before switching traffic.
-- Approve a UAE worker and the notification, file and webhook flows that need production
-  parity. Rehearse the remaining volume-backed firm attachments, signed webhooks,
-  Linux PDF and e-invoice dependencies, cookie and CSRF behavior, and cutover and rollback.
+- Confirm UAE residency, database reachability and TLS, and the Redis and object storage data
+  paths. Rehearse pool sizing and proxy trust.
+- Copy existing `uploads/vat-workpapers/` files into private object storage. Preserve their
+  object keys with S3-compatible storage, or update the attachment references to the
+  corresponding private Blob URLs. Verify that existing evidence downloads work through the
+  authorized workpaper route. Create the `connect-pg-simple` session table before routing
+  traffic to the Function. Assign session pruning to a controlled job, rehearse database restore
+  and migrations, and resolve legacy banking state before switching traffic.
+- Approve a UAE worker and the notification, file and webhook flows that need production parity.
+  Rehearse bank statement import, VAT evidence upload and download, and signed inbound email at
+  and above their limits. Check the oversize responses in English and Arabic. Rehearse the
+  remaining volume-backed firm attachments, e-invoice dependencies, cookie and CSRF behavior,
+  and cutover and rollback.
 
 See the [production assessment](../vercel-uae-postgres-assessment.md) for acceptance criteria.

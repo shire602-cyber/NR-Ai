@@ -633,9 +633,11 @@ export async function companyRolePolicy(
     if (!permissions) return next();
 
     const auth = await authenticateRequest(req);
+    if (res.writableEnded || res.destroyed) return;
     if (!auth || "code" in auth) return next(); // route's authMiddleware answers 401
     const user = auth.user;
     const resolved = await resolveRequestCompanyWithSource(req, req.path);
+    if (res.writableEnded || res.destroyed) return;
     if (!resolved || bypassesCompanyRoles(user)) return next();
     const { companyId } = resolved;
 
@@ -651,6 +653,7 @@ export async function companyRolePolicy(
     }
 
     const role = await getCompanyRole(user.id, companyId);
+    if (res.writableEnded || res.destroyed) return;
     const allowed = !!role && roleHasAnyPermission(role, permissions);
     if (allowed) {
       req.companyRole = role!;
@@ -672,6 +675,7 @@ export async function companyRolePolicy(
     }
     deny(res, role ? "PERMISSION_DENIED" : "COMPANY_ACCESS_DENIED", details);
   } catch (err) {
+    if (res.writableEnded || res.destroyed) return;
     if (mode === "report" && isUnresolvedTarget(err)) {
       log.warn(
         { requestId: req.id, method: req.method, code: err.code },

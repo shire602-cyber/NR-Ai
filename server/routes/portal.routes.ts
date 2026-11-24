@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_BYTES } from "../../shared/upload-limits";
 import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
@@ -93,7 +94,7 @@ const DOC_CATEGORIES = [
   "other",
 ] as const;
 
-const MAX_DOC_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_DOC_SIZE = MAX_UPLOAD_BYTES;
 
 const documentBody = z.object({
   name: zText(255, { min: 1 }).optional(),

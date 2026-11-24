@@ -234,8 +234,8 @@ export async function putObject(
     return key;
   }
 
-  if (process.env.VERCEL === "1") {
-    throw new Error("Private object storage is required for uploads on Vercel");
+  if (prefix === VAT_EVIDENCE_PREFIX || process.env.VERCEL === "1") {
+    throw new Error("Private object storage is required for this upload");
   }
 
   const dir = path.join(projectRoot, "uploads", prefix);
@@ -302,6 +302,7 @@ export async function getObject(
       return null;
     }
   }
+  if (key.startsWith(VAT_EVIDENCE_PREFIX + "/")) return null;
   try {
     const buffer = await fs.readFile(path.join(projectRoot, "uploads", key));
     return { buffer, contentType: trueContentType(buffer, guessContentType(key)) };

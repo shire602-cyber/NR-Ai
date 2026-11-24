@@ -435,7 +435,8 @@ export interface IStorage {
   getCapturedReceipt(companyId: string, captureId: string): Promise<Receipt | undefined>;
   createCapturedReceipt(
     data: InsertReceipt,
-    confirmDuplicate: boolean
+    confirmDuplicate: boolean,
+    signal?: AbortSignal
   ): Promise<
     | { receipt: Receipt; replay: boolean; duplicate?: never }
     | {

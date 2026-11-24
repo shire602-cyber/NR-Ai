@@ -1,3 +1,4 @@
+import { sizeErrorBody } from "../../http/upload-errors";
 // Cash-flow forecast, classification feedback, receipt autopilot and classifier config handlers.
 // Handlers moved from ai.routes.ts (R20-09); the route registrations (paths and
 // middleware order) stay in ai.routes.ts.
@@ -66,11 +67,7 @@ const autopilotProcessSchema = z.object({
       .optional()
       .default([]),
     rawText: z.string().max(50_000).nullable().optional(),
-    imageData: z
-      .string()
-      .max(15 * 1024 * 1024)
-      .nullable()
-      .optional(),
+    imageData: z.string().nullable().optional(),
   }),
 });
 
@@ -232,7 +229,13 @@ export const handlePostAiAutopilotProcess = async (req: Request, res: Response) 
       };
     } catch (err) {
       if (err instanceof UploadRejectedError) {
-        return res.status(err.status).json({ message: err.message, code: err.code });
+        return res
+          .status(err.status)
+          .json(
+            err.code === "FILE_TOO_LARGE"
+              ? sizeErrorBody(req, err.code)
+              : { message: err.message, code: err.code }
+          );
       }
       throw err;
     }

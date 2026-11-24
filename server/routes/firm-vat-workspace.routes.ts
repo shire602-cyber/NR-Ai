@@ -1,3 +1,5 @@
+import { assertUploadSize } from "../http/upload-errors";
+import { DomainError } from "../errors";
 import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
 import { Router } from "express";
@@ -9,7 +11,13 @@ import { authMiddleware } from "../middleware/auth";
 import { firmContextOf, requireFirmAdmin } from "../middleware/rbac";
 import { canPrepareFirmWorkpaper, canReviewFirmWorkpaper } from "../../shared/access";
 import { asyncHandler } from "../middleware/errorHandler";
-import { deleteObject, getObject, putObject, VAT_EVIDENCE_PREFIX } from "../services/fileStorage";
+import {
+  deleteObject,
+  getObject,
+  hasDurableObjectStore,
+  putObject,
+  VAT_EVIDENCE_PREFIX,
+} from "../services/fileStorage";
 import { createLogger } from "../config/logger";
 import { recordAudit } from "../services/audit.service";
 import { resolveAccessibleClientIds } from "../services/firm-command-center.service";
@@ -89,7 +97,7 @@ const scanSchema = z.object({
   attachment: z.object({
     fileName: z.string().trim().min(1).max(255),
     mimeType: z.string().trim().min(1).max(120),
-    fileDataBase64: z.string().max(15_000_000).optional().nullable(),
+    fileDataBase64: z.string().optional().nullable(),
     extractedText: z.string().max(100000).optional().nullable(),
     extractionJson: z.record(z.string(), z.unknown()).optional(),
   }),
@@ -102,18 +110,14 @@ const scanSchema = z.object({
   }),
 });
 
-const VAT_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 const VAT_IMPORT_MAX_ROWS = 2000;
 
 const importFileSchema = z.object({
   fileName: z.string().trim().min(1).max(255),
-  fileDataBase64: z.string().min(1).max(15_000_000),
+  fileDataBase64: z.string().min(1),
   defaultEmirate: z.string().trim().max(40).optional(),
 });
 
-const VAT_EVIDENCE_MAX_BYTES = Number(
-  process.env.VAT_EVIDENCE_UPLOAD_MAX_BYTES ?? 10 * 1024 * 1024
-);
 const VAT_EVIDENCE_MIME_TYPES = new Set([
   "application/pdf",
   "image/jpeg",
@@ -124,6 +128,17 @@ const VAT_EVIDENCE_MIME_TYPES = new Set([
   "application/json",
   "application/octet-stream",
 ]);
+
+function requireVatEvidenceStorage(): void {
+  if (!hasDurableObjectStore()) {
+    throw new DomainError(
+      "VAT_EVIDENCE_STORAGE_UNAVAILABLE",
+      503,
+      undefined,
+      "VAT evidence requires private object storage. Configure Vercel Blob or S3-compatible storage."
+    );
+  }
+}
 
 async function persistEvidenceUpload(attachment: z.infer<typeof scanSchema>["attachment"]) {
   const { fileDataBase64, ...withoutData } = attachment;
@@ -136,8 +151,8 @@ async function persistEvidenceUpload(attachment: z.infer<typeof scanSchema>["att
   const rawBase64 = fileDataBase64.replace(/^data:[^;]+;base64,/, "");
   const buffer = Buffer.from(rawBase64, "base64");
   if (buffer.length === 0) throw new ValidationError("VAT evidence upload is empty");
-  if (buffer.length > VAT_EVIDENCE_MAX_BYTES)
-    throw new ValidationError("VAT evidence upload is too large");
+  assertUploadSize(buffer.length);
+  requireVatEvidenceStorage();
 
   const filePath = await putObject(
     VAT_EVIDENCE_PREFIX,
@@ -492,9 +507,9 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       if (!attachment) return res.status(404).json({ message: "VAT evidence file not found" });
 
       const ref = attachment.filePath;
-      if (!ref)
-        return res.status(404).json({ message: "VAT evidence file is not stored" });
+      if (!ref) return res.status(404).json({ message: "VAT evidence file is not stored" });
 
+      requireVatEvidenceStorage();
       const file = await getObject(ref, [VAT_EVIDENCE_PREFIX]).catch(() => null);
       if (!file)
         return res.status(404).json({ message: "VAT evidence file is missing from storage" });
@@ -556,9 +571,10 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       } catch {
         return res.status(400).json({ message: "Workbook payload is not valid base64" });
       }
-      if (buffer.length === 0 || buffer.length > VAT_IMPORT_MAX_BYTES) {
-        return res.status(400).json({ message: "Workbook must be between 1 byte and 10 MB" });
+      if (buffer.length === 0) {
+        return res.status(400).json({ message: "Workbook is empty" });
       }
+      assertUploadSize(buffer.length);
 
       let rows;
       try {

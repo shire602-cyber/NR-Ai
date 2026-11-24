@@ -425,7 +425,7 @@
   "adminConsole.docNamePlaceholder": "e.g. Invoice #001",
   "adminConsole.expiryIfAny": "Expiry date (if applicable)",
   "adminConsole.remindBefore": "Remind before (days)",
-  "adminConsole.uploadFormats": "PDF, DOC, XLS, JPG, PNG (max 10 MB)",
+  "adminConsole.uploadFormats": "PDF, DOC, XLS, JPG, PNG (max 2 MB)",
   "adminConsole.expiredDaysAgo": "Expired {n}d ago",
   "adminConsole.daysLeft": "{n}d left",
   "adminConsole.inviteEmail": "Email address *",

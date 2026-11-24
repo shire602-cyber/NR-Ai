@@ -32,7 +32,8 @@ export type UserType = "admin" | "client" | "customer" | "client_portal";
 // null: Regular user — no NRA features visible
 export type FirmRole = "firm_owner" | "firm_admin" | null;
 
-// Shared sliding-window state for HTTP rate limits and credential lockouts.
+// Kept so migration 0156 and the Drizzle schema stay aligned. Production
+// throttling uses Redis; the application must not read or write this table.
 export const requestThrottleBuckets = pgTable(
   "request_throttle_buckets",
   {

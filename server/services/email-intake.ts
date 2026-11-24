@@ -1,3 +1,4 @@
+import { assertUploadSize } from "../http/upload-errors";
 // Pure logic for the email document-intake pipeline (firm-internal pilot).
 //
 // Side-effect free so the routing / dedup / gating decisions are unit-tested
@@ -158,6 +159,7 @@ export function normalizeInboundMessage(
 ): NormalizedIntakeMessage {
   const attachments: NormalizedIntakeAttachment[] = raw.attachments.map((a) => {
     const buf = Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content, "base64");
+    assertUploadSize(buf.length);
     return {
       filename: a.filename,
       mimeType: a.mimeType,

@@ -143,7 +143,7 @@ export function registerInvoiceShareRoutes(app: Express) {
         ? await storage.getInvoiceByShareToken(token)
         : undefined;
       if (!invoice || invoice.status === "draft" || invoice.status === "cancelled") {
-        notePortalFailure(req);
+        await notePortalFailure(req);
         return res
           .status(404)
           .json({ message: "Invoice not found or link is invalid", code: "INVOICE_NOT_FOUND" });
@@ -151,7 +151,7 @@ export function registerInvoiceShareRoutes(app: Express) {
 
       // Check expiry
       if (invoice.shareTokenExpiresAt && new Date(invoice.shareTokenExpiresAt) < new Date()) {
-        notePortalFailure(req);
+        await notePortalFailure(req);
         return res
           .status(410)
           .json({ message: "This invoice link has expired", code: "LINK_EXPIRED" });
@@ -248,14 +248,14 @@ export function registerInvoiceShareRoutes(app: Express) {
         ? await storage.getInvoiceByShareToken(token)
         : undefined;
       if (!invoice || invoice.status === "draft" || invoice.status === "cancelled") {
-        notePortalFailure(req);
+        await notePortalFailure(req);
         return res
           .status(404)
           .json({ message: "Invoice not found or link is invalid", code: "INVOICE_NOT_FOUND" });
       }
 
       if (invoice.shareTokenExpiresAt && new Date(invoice.shareTokenExpiresAt) < new Date()) {
-        notePortalFailure(req);
+        await notePortalFailure(req);
         return res
           .status(410)
           .json({ message: "This invoice link has expired", code: "LINK_EXPIRED" });

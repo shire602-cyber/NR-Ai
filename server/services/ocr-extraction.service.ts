@@ -221,6 +221,7 @@ export async function extractBillDocument(args: {
   mimeType: string;
   companyId: string;
   userId?: string | null;
+  signal: AbortSignal;
 }): Promise<BillDocumentExtraction> {
   const clients = createOcrClients();
   if (!clients.anthropic && !clients.openai) {
@@ -236,9 +237,11 @@ export async function extractBillDocument(args: {
         promptAddendum: BILL_EXTRACTION_ADDENDUM,
       },
       ctx: { companyId: args.companyId, userId: args.userId ?? null, task: "ocr" },
+      signal: args.signal,
     });
     return { status: "ok", data: outcome.data, issues: outcome.issues.map((i) => i.code) };
   } catch (err) {
+    args.signal.throwIfAborted();
     if (errorCode(err) === "AI_QUOTA_EXCEEDED") throw err;
     log.warn(
       { err: summarizeOcrProviderError(err), mimeType: args.mimeType },

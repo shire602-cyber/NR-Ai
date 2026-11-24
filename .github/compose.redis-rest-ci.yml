@@ -1,0 +1,20 @@
+# CI-only overlay for docker-compose.prod.yml.
+services:
+  redis-rest:
+    image: node:22-bookworm-slim
+    command: ["node", "/fixture/redis-rest.mjs", "serve", "/tls", "0.0.0.0", "5081"]
+    environment:
+      UPSTASH_REDIS_REST_TOKEN: ${UPSTASH_REDIS_REST_TOKEN:?set a throwaway fixture token}
+    volumes:
+      - ./tests/fixtures/redis-rest.mjs:/fixture/redis-rest.mjs:ro
+      - ${DATA_DIR}/redis-rest:/tls:ro
+    networks: [internal]
+
+  app:
+    environment:
+      NODE_EXTRA_CA_CERTS: /etc/redis-rest-cert.pem
+    volumes:
+      - ${DATA_DIR}/redis-rest/cert.pem:/etc/redis-rest-cert.pem:ro
+    depends_on:
+      redis-rest:
+        condition: service_started
