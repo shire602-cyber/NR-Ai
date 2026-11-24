@@ -10,7 +10,7 @@ import {
 import { ArrowRight, ClipboardCheck, FileText, Landmark, ScanLine, Users } from "lucide-react";
 import { Link } from "wouter";
 import { featurePath } from "../route-content";
-import type { LegacySectionProps } from "./types";
+import type { SectionProps } from "./types";
 import { SectionHead } from "./SectionHead";
 import { useMarketingText } from "./text";
 import { useInView, usePrefersReducedMotion } from "./motion";
@@ -30,7 +30,7 @@ const TABS = [
 
 export const TOUR_ADVANCE_MS = 8000;
 
-export function ProductTour({ base, locale }: LegacySectionProps) {
+export function ProductTour({ base, locale }: SectionProps) {
   const text = useMarketingText(locale);
   const reduced = usePrefersReducedMotion();
   const sectionRef = useRef<HTMLElement>(null);

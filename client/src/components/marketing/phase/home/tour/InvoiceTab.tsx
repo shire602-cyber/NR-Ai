@@ -247,7 +247,7 @@ export default function InvoiceTab({ locale, text, reduced, autoPlay }: TabProps
         <div className="mz-tour-actions">
           <button
             type="button"
-            className="phase-primary"
+            className="phase-button phase-primary"
             data-testid="tour-issue"
             disabled={issue.running}
             onClick={issue.start}

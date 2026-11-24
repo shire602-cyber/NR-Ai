@@ -1,4 +1,9 @@
 /* Comparison table (light band). Logical properties only. */
+/* A pale mint wash keeps it from reading as the white showcase header that follows. */
+.phase-site .mz-band.mz-cmp {
+  --mz-bg: #eaf3ee;
+  border-block: 1px solid #d3e3da;
+}
 .phase-site .mz-cmp .mz-cmp-scroll {
   margin-block-start: clamp(24px, 3vw, 40px);
   overflow-x: auto;

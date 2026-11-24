@@ -24,6 +24,15 @@
   inset-inline-start: 24px;
   z-index: 1;
 }
+/* The band paints headings and paragraphs for its own surface; the cards bring their own. */
+.phase-site .mz-price-slot .plan-card h3,
+.phase-site .mz-price-slot .plan-card .mk-tier__price {
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-price-slot[data-featured="true"] .plan-card h3,
+.phase-site .mz-price-slot[data-featured="true"] .plan-card .mk-tier__price {
+  color: #fff;
+}
 .phase-site .mz-price-slot[data-featured="true"] > .plan-card {
   box-shadow:
     0 0 0 3px var(--mz-emerald),
@@ -74,9 +83,6 @@
 /* ---------- /pricing page ---------- */
 .phase-site .mz-price-page > .mz-band {
   padding-block: clamp(32px, 5vw, 64px);
-}
-.phase-site .mz-price-page .mz-band .phase-wrap {
-  inline-size: 100%;
 }
 .phase-site .mz-price-matrix-scroll {
   overflow-x: auto;

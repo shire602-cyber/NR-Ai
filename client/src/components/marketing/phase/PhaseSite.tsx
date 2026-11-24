@@ -17,7 +17,7 @@ import { Link, useLocation } from "wouter";
 import { featureBySlug, features, tools, type Bilingual } from "./content";
 import { DemoRequest, FreeTool } from "./Forms";
 import { MARKETING_BRAND } from "@shared/marketing-brand";
-import { siteLocale, type SiteLocale } from "./routes";
+import { isLocaleSwitch, siteLocale, type SiteLocale } from "./routes";
 import { editorialPages, editorialPath, launchPagePath, launchPages } from "./editorial/pages";
 import { LaunchPages } from "./LaunchPages";
 import { audiences } from "./audiences";
@@ -35,6 +35,7 @@ import {
   hubLead,
   hubTitle,
   marketingMetadata,
+  pricingLead,
   trialSignupPath,
 } from "./route-content";
 import "@fontsource/noto-sans-arabic/arabic-400.css";
@@ -303,7 +304,10 @@ export default function PhaseSite() {
   const main = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     if (previousPath.current === path) return;
+    const switchedLanguage = isLocaleSwitch(previousPath.current, path);
     previousPath.current = path;
+    // The language toggle shows the same page in the other language: keep the reader's place.
+    if (switchedLanguage) return;
     window.scrollTo(0, 0);
     main.current?.focus({ preventScroll: true });
   }, [path]);
@@ -347,7 +351,7 @@ export default function PhaseSite() {
   const toolsIndex = launchPage === "/tools";
   const vendor =
     editorial === "/compare/wafeq" ? "wafeq" : editorial === "/compare/zoho" ? "zoho" : undefined;
-  const rich = hub || toolsIndex || !!audience || !!vendor;
+  const rich = hub || toolsIndex || plans || !!audience || !!vendor;
   const title = tr(
     home
       ? homeTitle
@@ -360,7 +364,13 @@ export default function PhaseSite() {
           (booking ? demo : plans ? pricing : ["Page not found", "الصفحة غير موجودة"]))
   );
   const lead = tr(
-    home ? homeLead : hub ? hubLead : (feature?.lead ?? audience?.lead ?? page?.lead ?? ["", ""])
+    home
+      ? homeLead
+      : hub
+        ? hubLead
+        : plans
+          ? pricingLead
+          : (feature?.lead ?? audience?.lead ?? page?.lead ?? ["", ""])
   );
   const meta = marketingMetadata(home ? base : path);
   usePageMeta(

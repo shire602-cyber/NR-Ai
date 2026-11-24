@@ -74,7 +74,7 @@ export function FaqList({ locale, tr }: Pick<SectionProps, "locale"> & { tr: Tra
 export function Faq({ base, locale, tr }: LegacySectionProps) {
   const text = useMarketingText(locale);
   return (
-    <section id="faq" data-testid="section-faq" className="mz-band mz-band--light mz-faq">
+    <section id="faq" data-testid="section-faq" className="mz-band mz-band--sand mz-faq">
       <div className="phase-wrap mz-faq-grid">
         <div>
           <SectionHead title={text("hxFaqTitle")} />

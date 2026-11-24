@@ -2,7 +2,7 @@ import { lazy, Suspense, useRef, type ComponentType } from "react";
 import { ArrowRight, Check } from "lucide-react";
 import { Link } from "wouter";
 import { featurePath } from "../route-content";
-import type { LegacySectionProps } from "./types";
+import type { SectionProps } from "./types";
 import { useInView } from "./motion";
 import { Reveal } from "./Reveal";
 import { SectionHead } from "./SectionHead";
@@ -145,7 +145,7 @@ function LazyVisual({ Visual, ...props }: VisualProps & { Visual: Visual }) {
   );
 }
 
-export function Showcase({ base, locale }: LegacySectionProps) {
+export function Showcase({ base, locale }: SectionProps) {
   const text = useMarketingText(locale);
   return (
     <section id="features" data-testid="section-features" className="mz-show">

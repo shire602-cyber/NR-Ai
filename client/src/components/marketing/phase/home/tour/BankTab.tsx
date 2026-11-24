@@ -25,7 +25,7 @@ export default function BankTab({ text, reduced, autoPlay }: TabProps) {
         <div className="mz-tour-actions">
           <button
             type="button"
-            className="phase-primary"
+            className="phase-button phase-primary"
             data-testid="tour-match"
             disabled={seq.running}
             onClick={seq.start}

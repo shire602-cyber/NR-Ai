@@ -202,6 +202,13 @@
 .phase-site .mz-show-table td {
   padding-block: 5px;
 }
+.phase-site .mz-show-table :is(th, td) {
+  padding-inline-end: 12px;
+}
+.phase-site .mz-show-table :is(th, td):last-child {
+  padding-inline-end: 0;
+  text-align: end;
+}
 .phase-site .mz-show-chip {
   display: inline-flex;
   align-items: center;

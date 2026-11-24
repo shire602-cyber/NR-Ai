@@ -28,7 +28,7 @@
 }
 @media (min-width: 720px) {
   .phase-site .mz-stage {
-    aspect-ratio: 16 / 9;
+    aspect-ratio: 2.2 / 1;
     max-inline-size: none;
   }
 }
@@ -45,7 +45,7 @@
 @media (min-width: 720px) {
   .phase-site .mz-stage-inner {
     grid-template-columns: 13em 1fr;
-    font-size: clamp(10px, 1.32cqw, 15px);
+    font-size: clamp(10px, 1.62cqw, 20px);
   }
 }
 
@@ -120,6 +120,17 @@
   }
 }
 
+/* The band paints its paragraphs for the dark surface; the stage cards are light surfaces. */
+.phase-site .mz-band .mz-stage p {
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-band .mz-stage p.mz-stage-muted {
+  color: var(--mz-muted-light);
+}
+.phase-site .mz-band .mz-stage .mz-stage-vat small {
+  color: #c9dbd1;
+}
+
 /* Cards: hidden until their data-on flips, then they settle in. */
 .phase-site .mz-stage-invoice,
 .phase-site .mz-stage-vat,
@@ -155,7 +166,11 @@
   gap: 0.7em;
   font-size: 1.1em;
 }
+.phase-site .mz-stage-invhead strong {
+  white-space: nowrap;
+}
 .phase-site .mz-stage-num {
+  white-space: nowrap;
   color: var(--mz-muted-light);
   font-weight: 600;
 }

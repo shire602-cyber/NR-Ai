@@ -10,7 +10,7 @@ const ROWS = ["box1b", "box4", "box8", "box9"] as const;
 function Payable({ locale, state }: { locale: VisualProps["locale"]; state: MotionState }) {
   const fils = Math.round(useCountUp(BOXES.box14.vatFils, { enabled: state !== "idle" }));
   return (
-    <p className="mz-show-linemz-show-strong mz-show-anim" style={stagger(ROWS.length + 1)}>
+    <p className="mz-show-line mz-show-strong mz-show-anim" style={stagger(ROWS.length + 1)}>
       <span>{pick(VAT_BOX_LABELS.box14, locale)}</span>
       <Num fils={fils} className="mz-show-payable" />
     </p>
@@ -23,7 +23,7 @@ export default function VatVisual({ locale, text, label }: VisualProps) {
     <VisualFrame text={text} label={label}>
       {(state) => (
         <div className="mz-show-paper mz-show-vat" lang={locale}>
-          <p className="mz-show-linemz-show-muted">
+          <p className="mz-show-line mz-show-muted">
             <span>{pick(VAT_HEADINGS.period, locale)}</span>
             <span className="mz-show-cols">
               <span>{pick(VAT_HEADINGS.amount, locale)}</span>
@@ -31,7 +31,7 @@ export default function VatVisual({ locale, text, label }: VisualProps) {
             </span>
           </p>
           {ROWS.map((key, i) => (
-            <p className="mz-show-linemz-show-anim mz-show-box" style={stagger(i)} key={key}>
+            <p className="mz-show-line mz-show-anim mz-show-box" style={stagger(i)} key={key}>
               <span>{pick(VAT_BOX_LABELS[key], locale)}</span>
               <span className="mz-show-cols">
                 <Num fils={BOXES[key].amountFils} />

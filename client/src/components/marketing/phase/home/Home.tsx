@@ -24,11 +24,11 @@ export function Home({ base, locale, tr }: LegacySectionProps) {
       <Hero {...section} />
       <TrustChips {...section} />
       <DeadlineFinder {...section} />
-      <ProductTour {...section} tr={tr} />
+      <ProductTour {...section} />
       <SavingsCalculator {...section} />
       <ComparisonTable {...section} />
-      <Showcase {...section} tr={tr} />
-      <FirmsBand {...section} tr={tr} />
+      <Showcase {...section} />
+      <FirmsBand {...section} />
       <TrustSecurity {...section} />
       <Migration {...section} />
       <PricingSection {...section} tr={tr} />

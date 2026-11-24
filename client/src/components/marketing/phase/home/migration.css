@@ -109,6 +109,10 @@
   text-align: end;
 }
 .phase-site .mz-mig-help {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
   margin-block-start: 22px;
   font-weight: 650;
 }

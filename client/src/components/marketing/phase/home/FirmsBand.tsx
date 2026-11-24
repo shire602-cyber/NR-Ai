@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ArrowRight, ClipboardCheck, Users, UserRoundCheck, type LucideIcon } from "lucide-react";
 import { Link } from "wouter";
-import type { LegacySectionProps } from "./types";
+import type { SectionProps } from "./types";
 import { ProofPlaceholder } from "./ProofPlaceholder";
 import { Reveal } from "./Reveal";
 import { SectionHead } from "./SectionHead";
@@ -16,7 +16,7 @@ const FEATURES: readonly { icon: LucideIcon; title: MarketingKey; desc: Marketin
   { icon: ClipboardCheck, title: "hxFirmFeatReviewTitle", desc: "hxFirmFeatReviewDesc" },
 ];
 
-export function FirmsBand({ base, locale }: LegacySectionProps) {
+export function FirmsBand({ base, locale }: SectionProps) {
   const text = useMarketingText(locale);
   const [selected, setSelected] = useState(TOUR_CLIENTS[0]?.id ?? "");
   const client = TOUR_CLIENTS.find((c) => c.id === selected) ?? TOUR_CLIENTS[0];

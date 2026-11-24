@@ -78,7 +78,7 @@ export default function ReceiptTab({ locale, text, reduced, autoPlay }: TabProps
         <div className="mz-tour-actions">
           <button
             type="button"
-            className="phase-primary"
+            className="phase-button phase-primary"
             data-testid="tour-scan"
             disabled={scan.running}
             onClick={scan.start}
