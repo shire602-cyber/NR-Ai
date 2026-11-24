@@ -658,33 +658,33 @@ async function handleSubscriptionDeleted(sub: Stripe.Subscription): Promise<void
     return;
   }
 
-  // Downgrade to free
-  if (subscription.stripeSubscriptionId && subscription.stripeSubscriptionId !== sub.id) return;
-  const freeLimits = PLAN_LIMITS.free;
-  const now = new Date();
-  const periodEnd = new Date(now);
-  periodEnd.setFullYear(periodEnd.getFullYear() + 100);
+  const downgraded = await storage.reconcileStripeSubscription(subscription, async (locked) => {
+    // Checkout may have linked a replacement while this deletion was waiting.
+    if (locked.stripeSubscriptionId && locked.stripeSubscriptionId !== sub.id) {
+      return { result: false };
+    }
+    const now = new Date();
+    const periodEnd = new Date(now);
+    periodEnd.setFullYear(periodEnd.getFullYear() + 100);
 
-  await storage.updateSubscription(subscription.id, {
-    planId: "free",
-    planName: "Free",
-    status: "active",
-    stripeSubscriptionId: null,
-    stripeCheckoutCompleted: true,
-    billingCycle: "monthly",
-    cancelAtPeriodEnd: false,
-    currentPeriodStart: now,
-    currentPeriodEnd: periodEnd,
-    maxUsers: freeLimits.maxUsers,
-    maxInvoices: freeLimits.maxInvoices,
-    maxReceipts: freeLimits.maxReceipts,
-    aiCreditsRemaining: freeLimits.aiCreditsRemaining,
-    maxCompanies: freeLimits.maxCompanies,
-    maxStorageMb: freeLimits.maxStorageMb,
-    aiCreditsPerMonth: freeLimits.aiCreditsPerMonth,
+    return {
+      result: true,
+      data: {
+        ...subscriptionPlanChangeFields("free", "monthly"),
+        status: "active",
+        stripeSubscriptionId: null,
+        stripeCheckoutCompleted: true,
+        cancelAtPeriodEnd: false,
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEnd,
+        aiCreditsRemaining: PLAN_LIMITS.free.aiCreditsRemaining,
+      },
+    };
   });
 
-  log.info({ companyId: subscription.companyId }, "Subscription cancelled, downgraded to free");
+  if (downgraded) {
+    log.info({ companyId: subscription.companyId }, "Subscription cancelled, downgraded to free");
+  }
 }
 
 // ─── Subscription invoices, dunning, referral rewards (W5-B, R19-11, R19-16) ──

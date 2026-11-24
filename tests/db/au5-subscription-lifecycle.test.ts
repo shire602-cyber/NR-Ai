@@ -113,6 +113,62 @@ describe("AU5 subscription lifecycle", () => {
     });
   });
 
+  it("keeps the replacement subscription when a stale deletion resumes during checkout", async () => {
+    const ids = await subscribedCompany(false);
+    const replacement = stripeSubscription(ids, professionalPrice);
+    const { storage } = await import("../../server/storage");
+    const getSubscription = storage.getSubscription.bind(storage);
+    let onDeletionRead!: (id: string | null | undefined) => void;
+    const deletionRead = new Promise<string | null | undefined>((resolve) => {
+      onDeletionRead = resolve;
+    });
+    let resumeDeletion!: () => void;
+    const checkoutHasLock = new Promise<void>((resolve) => {
+      resumeDeletion = resolve;
+    });
+    // Save the unlocked lookup so the deletion can resume with that snapshot even
+    // on PGlite, where it shares a single connection with the checkout transaction.
+    const lookup = vi
+      .spyOn(storage, "getSubscription")
+      .mockImplementationOnce(async (companyId) => {
+        const row = await getSubscription(companyId);
+        onDeletionRead(row?.stripeSubscriptionId);
+        await checkoutHasLock;
+        return row;
+      });
+    const deletion = deliver("customer.subscription.deleted", {
+      id: `sub_${randomUUID()}`,
+      customer: ids.customer,
+      status: "canceled",
+      metadata: { companyId: ids.companyId },
+    });
+
+    try {
+      expect(await Promise.race([deletionRead, deletion])).toBeNull();
+      retrieveSubscription.mockImplementationOnce(async () => {
+        resumeDeletion();
+        return replacement;
+      });
+      await deliver("checkout.session.completed", {
+        id: `cs_${randomUUID()}`,
+        customer: ids.customer,
+        subscription: ids.subscription,
+        metadata: replacement.metadata,
+      });
+      await deletion;
+
+      expect(await readPlan(ids.companyId)).toMatchObject({
+        stripe_subscription_id: ids.subscription,
+        plan_id: "professional",
+        billing_cycle: "yearly",
+      });
+    } finally {
+      resumeDeletion();
+      lookup.mockRestore();
+      await Promise.allSettled([deletion]);
+    }
+  });
+
   it("reflects a change to the yearly Professional price in the Stripe customer portal", async () => {
     const ids = await subscribedCompany();
     const updated = stripeSubscription(ids, professionalPrice);

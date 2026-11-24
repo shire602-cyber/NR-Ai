@@ -445,9 +445,6 @@ describe("Stripe checkout product trial and referral", () => {
     stripe.writeStripeReconciliation.mockImplementation(async (_subscription, patch) => {
       Object.assign(subscription, patch);
     });
-    stripe.updateSubscription.mockImplementation(async (_id, patch) =>
-      Object.assign(subscription, patch)
-    );
     await handleWebhookEvent({
       id: "checkout-event",
       type: "checkout.session.completed",
@@ -476,6 +473,7 @@ describe("Stripe checkout product trial and referral", () => {
       stripeSubscriptionId: null,
       stripeCheckoutCompleted: true,
     });
+    stripe.writeStripeReconciliation.mockClear();
     stripe.retrieveSubscription.mockResolvedValueOnce({
       ...currentStripeSubscription,
       status: "canceled",
@@ -492,7 +490,7 @@ describe("Stripe checkout product trial and referral", () => {
       },
     } as unknown as Stripe.Event);
     expect(subscription.stripeSubscriptionId).toBeNull();
-    expect(stripe.writeStripeReconciliation).toHaveBeenCalledTimes(1);
+    expect(stripe.writeStripeReconciliation).not.toHaveBeenCalled();
     stripe.listSessions.mockReturnValue([
       {
         mode: "subscription",
