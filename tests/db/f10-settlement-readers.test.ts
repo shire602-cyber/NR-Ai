@@ -64,7 +64,8 @@ describe("F10 settlement fragment readers", () => {
     const rows = await contactInvoices(co, contactId);
     const by = (id: string) => rows.find((r) => r.id === id)!;
     expect(by(partId).amountDue).toBe(650);
-    expect(by(partId).paymentStatus).toBe("partially_paid");
+    // Part-paid and past its due date: overdue (STEP5; a payment never hides an overdue balance).
+    expect(by(partId).paymentStatus).toBe("overdue");
     expect(by(cnId).amountDue).toBe(0);
     expect(by(cnId).paymentStatus).toBe("paid");
     expect(by(fullId).amountDue).toBe(1050);

@@ -73,8 +73,26 @@ async function tokenOf(invitationId: string) {
   return token;
 }
 
+/** A cookie-session visitor (the join page): CSRF token first, then the POST. */
+async function anonPost(url: string, body: unknown) {
+  const tokenRes = await fetch(h.baseUrl + "/api/csrf-token");
+  const cookie = (tokenRes.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
+  const csrf = ((await tokenRes.json()) as { csrfToken: string }).csrfToken;
+  const res = await fetch(h.baseUrl + url, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie, "x-csrf-token": csrf },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  return { status: res.status, text, body: text ? JSON.parse(text) : null };
+}
+
 /** Bind an existing (SaaS) user to a contact through the invitation. */
 async function bind(supplier: Tenant, cid: string, user: Tenant) {
+  // Accepting needs proof of the mailbox: the account's email must be verified.
+  await h.sql(`UPDATE users SET email_verified = true, email_verified_at = now() WHERE id = $1`, [
+    user.user.id,
+  ]);
   const r = await supplier.as.post(
     `/api/companies/${supplier.company.id}/customer-contacts/${cid}/portal-invitations`,
     { email: user.email, language: "en" }
@@ -130,7 +148,7 @@ describe("STEP5 portal product fixes", () => {
     expect(sharedStatus[dueToday.id]).toBe("unpaid");
   });
 
-  it("[S5-P7] a deactivated supplier: first visit lands on another active one, an explicit pick of the dead one is refused, none left is a clear 403", async () => {
+  it("[S5-P7] a deactivated supplier never shows another supplier's data by itself; the customer picks an active one, and with none left gets a clear 403", async () => {
     const s1 = await h.createTenant({ name: "Fallback One" });
     const s2 = await h.createTenant({ name: "Fallback Two" });
     const customer = await h.createTenant({ name: "Fallback Customer" });
@@ -140,30 +158,34 @@ describe("STEP5 portal product fixes", () => {
     const inv2 = await invoice(s2, c2, dubaiDate(5), 2000);
     const acc1 = await bind(s1, c1, customer);
     const acc2 = await bind(s2, c2, customer);
+    const withAccount = (id: string) => ({ headers: { "x-portal-account": id } });
 
-    // Supplier two is the newest binding; deactivate its contact.
+    // Supplier two (the newest) is deactivated: its data is refused, whether selected or not...
     await h.sql(`UPDATE customer_contacts SET is_active = false WHERE id = $1`, [c2]);
-    const firstVisit = await customer.as.get("/api/client-portal/invoices");
-    expect(firstVisit.status, firstVisit.text).toBe(200);
-    expect(firstVisit.body.map((i: any) => i.id)).toEqual([inv1.id]);
+    const unscoped = await customer.as.get("/api/client-portal/invoices");
+    expect(unscoped.status).toBe(403);
+    expect(unscoped.body.code).toBe("PORTAL_ACCESS_REVOKED");
+    const dead = await customer.as.get("/api/client-portal/invoices", withAccount(acc2));
+    expect(dead.status).toBe(403);
+    // ...the chooser lists only the active supplier, and picking it works.
     const accounts = await customer.as.get("/api/client-portal/accounts");
     expect(accounts.body.map((a: any) => a.id)).toEqual([acc1]);
-    // An explicit choice is never silently switched to another supplier's data.
-    const picked = await customer.as.get("/api/client-portal/invoices", {
-      headers: { "x-portal-account": acc2 },
-    });
-    expect(picked.status).toBe(403);
-    expect(picked.body.code).toBe("PORTAL_ACCESS_REVOKED");
+    const picked = await customer.as.get("/api/client-portal/invoices", withAccount(acc1));
+    expect(picked.status, picked.text).toBe(200);
+    expect(picked.body.map((i: any) => i.id)).toEqual([inv1.id]);
 
+    // The other way round: supplier one is deactivated, supplier two is chosen explicitly.
     await h.sql(`UPDATE customer_contacts SET is_active = true WHERE id = $1`, [c2]);
     await h.sql(`UPDATE customer_contacts SET is_active = false WHERE id = $1`, [c1]);
-    const viaOther = await customer.as.get("/api/client-portal/invoices");
-    expect(viaOther.body.map((i: any) => i.id)).toEqual([inv2.id]);
+    const viaTwo = await customer.as.get("/api/client-portal/invoices", withAccount(acc2));
+    expect(viaTwo.body.map((i: any) => i.id)).toEqual([inv2.id]);
 
+    // None left: a clear "removed" answer, not a dead end with data.
     await h.sql(`UPDATE customer_contacts SET is_active = false WHERE id = $1`, [c2]);
-    const none = await customer.as.get("/api/client-portal/invoices");
+    const none = await customer.as.get("/api/client-portal/invoices", withAccount(acc2));
     expect(none.status).toBe(403);
     expect(none.body.code).toBe("PORTAL_ACCESS_REVOKED");
+    expect((await customer.as.get("/api/client-portal/accounts")).body).toEqual([]);
   });
 
   it("[S5-P4] bulk invite without an email provider reports the invitations as queued, never as sent, and returns no links", async () => {
@@ -192,7 +214,7 @@ describe("STEP5 portal product fixes", () => {
       { language: "en", message: "Welcome aboard\nSee you soon" }
     );
     expect(r.status, r.text).toBe(201);
-    const view = await h.anon.post("/api/portal-invitations/lookup", {
+    const view = await anonPost("/api/portal-invitations/lookup", {
       token: await tokenOf(r.body.invitation.id),
     });
     expect(view.status, view.text).toBe(200);
@@ -202,7 +224,7 @@ describe("STEP5 portal product fixes", () => {
       `/api/companies/${t.company.id}/customer-contacts/${otherCid}/portal-invitations`,
       { language: "en" }
     );
-    const view2 = await h.anon.post("/api/portal-invitations/lookup", {
+    const view2 = await anonPost("/api/portal-invitations/lookup", {
       token: await tokenOf(none.body.invitation.id),
     });
     expect(view2.body.note).toBeNull();

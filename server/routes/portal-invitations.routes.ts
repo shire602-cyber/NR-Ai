@@ -154,7 +154,11 @@ export function registerPortalInvitationRoutes(app: Express): void {
             req,
           });
           // "queued" means saved in the outbox but not sent (no email provider): the dialog says so.
-          results.push({ contactId, outcome: "invited", delivery: created.delivery });
+          results.push({
+            contactId,
+            outcome: "invited",
+            ...(created.delivery === "queued" ? { delivery: "queued" } : {}),
+          });
         } catch (err) {
           const code = (err as { code?: string }).code;
           if (code === "PORTAL_INVITE_DELIVERY_FAILED") {

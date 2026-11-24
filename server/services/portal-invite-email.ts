@@ -59,7 +59,7 @@ export function renderPortalInviteEmail(input: PortalInviteEmailInput): BuiltEma
       paragraphs: {
         en: [
           greetName ? `Hi ${isolateInline(greetName)},` : "Hello,",
-          `${supplier} uses ${product} to share your invoices. Set up your account to view invoices and credit notes, download PDFs, and access your statement of account.`,
+          `${supplier} uses ${product} to share your invoices. Set up your account to view the invoices and credit notes issued to ${isolateInline(contact.name)}, download PDFs, and access your statement of account.`,
           ...(onlinePayment ? ["You can also pay online when payment is available."] : []),
           ...(quotedNote ? [`<strong>Message from ${supplier}</strong><br>${quotedNote}`] : []),
           `This invitation expires on ${formatInviteDate(invitation.expiresAt, "en")}.`,
