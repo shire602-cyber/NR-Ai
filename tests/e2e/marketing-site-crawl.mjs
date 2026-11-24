@@ -39,8 +39,8 @@ const editorialHeadings = {
 };
 const localizedHeadings = {
   "": [
-    "Accounting and VAT for UAE businesses",
-    "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات",
+    "Your books. Your VAT. Your e-invoices. Done.",
+    "دفاترك. ضريبتك. فواتيرك الإلكترونية. كلها منجزة.",
   ],
   "/product": [
     "Your books, invoices and VAT in one place",

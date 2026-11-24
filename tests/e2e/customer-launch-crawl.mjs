@@ -45,14 +45,14 @@ const LOCALIZED_HOMEPAGES = {
   "/en": {
     lang: "en",
     dir: "ltr",
-    title: "Accounting and VAT for UAE businesses",
-    providerChoice: "Choose one accredited provider per company",
+    title: "Your books. Your VAT. Your e-invoices. Done.",
+    providerChoice: "Included on every plan. No separate e-invoicing subscription from us.",
   },
   "/ar": {
     lang: "ar",
     dir: "rtl",
-    title: "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات",
-    providerChoice: "اختر مزوّد خدمة معتمدًا واحدًا لكل شركة",
+    title: "دفاترك. ضريبتك. فواتيرك الإلكترونية. كلها منجزة.",
+    providerChoice: "مشمولة في كل باقة، ولا نفرض اشتراكًا منفصلًا للفوترة الإلكترونية.",
   },
 };
 
@@ -497,7 +497,7 @@ async function main() {
   await crawlRoute("/en/product/vat");
   try {
     await page.getByRole("heading", { level: 1, name: "VAT 201", exact: true }).waitFor();
-    await page.locator('a[hreflang="ar"]').click();
+    await page.locator('header a[hreflang="ar"]').click();
     await page.waitForURL((url) => url.pathname === "/ar/product/vat");
     await page.getByRole("heading", { level: 1, name: "إقرار VAT 201", exact: true }).waitFor();
     await page.waitForFunction(() => document.documentElement.dir === "rtl");
