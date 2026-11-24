@@ -13,7 +13,7 @@ import arCatalog from "../../client/src/locales/ar/components.json";
 import enEvidence from "../../client/src/locales/en/documentsEvidence.json";
 import arEvidence from "../../client/src/locales/ar/documentsEvidence.json";
 import { localizeEvidenceText } from "../../shared/server-copy";
-import { BRAND_ALLOWLIST } from "../e2e/lib/latin-text.mjs";
+import { stripAllowlisted } from "../e2e/lib/latin-text.mjs";
 import { useHarness } from "./harness";
 
 const h = useHarness();
@@ -62,18 +62,9 @@ function collect(body: any): Pair[] {
   return out;
 }
 
-/** Latin words of 2+ letters left after dropping ALL-CAPS acronyms, numbers, ids and brand names. */
-const brandWords = new Set(
-  BRAND_ALLOWLIST.flatMap((token) => token.split(/[^A-Za-z]+/).filter((w) => w.length >= 2))
-);
-
+/** Latin words left after stripping allow-listed brands, acronyms, numbers and ids. */
 function latinWords(text: string): string[] {
-  return (
-    text
-      .replace(/[A-Z]{2,6}\b/g, " ")
-      .replace(/[A-Za-z]*[-_0-9][A-Za-z0-9_-]*/g, " ")
-      .match(/[A-Za-z]{2,}/g) ?? []
-  ).filter((word) => !brandWords.has(word));
+  return stripAllowlisted(text).match(/[A-Za-z]{2,}/g) ?? [];
 }
 
 describe("F13 evidence centre copy keys", () => {
