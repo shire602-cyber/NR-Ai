@@ -10,14 +10,14 @@ export class FixedWindowThrottle {
   async check(
     key: string,
     windowMs: number,
-    action: "peek" | "hit",
+    mode: "peek" | "hit",
     max = 0,
     now = Date.now()
   ): Promise<{ count: number; remainingMs: number }> {
     const redis = configuredThrottleRedis();
     if (redis) {
       const bucket = new RedisThrottleBucket(redis, `http:${this.namespace}`, windowMs);
-      const [count, remainingMs] = await bucket.eval(key, FIXED_WINDOW, 2, action, max);
+      const [count, remainingMs] = await bucket.eval(key, FIXED_WINDOW, 2, mode, max);
       return { count, remainingMs };
     }
 
@@ -29,7 +29,7 @@ export class FixedWindowThrottle {
     }
     const existing = this.windows.get(key);
     const window = existing && existing.expiresAt > now ? existing : undefined;
-    if (action === "peek") return { count: window?.count ?? 0, remainingMs: 0 };
+    if (mode === "peek") return { count: window?.count ?? 0, remainingMs: 0 };
 
     const count = (window?.count ?? 0) + 1;
     const expiresAt = window?.expiresAt ?? now + windowMs;

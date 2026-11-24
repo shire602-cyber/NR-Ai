@@ -663,6 +663,7 @@
   "serverErrors.TEMPLATE_NOT_FOUND": "The template could not be found.",
   "serverErrors.TERMINATION_BEFORE_JOIN": "The termination date cannot be before the join date.",
   "serverErrors.THREAD_NOT_FOUND": "The conversation could not be found.",
+  "serverErrors.THROTTLE_UNAVAILABLE": "The request limit service is temporarily unavailable. Please try again later.",
   "serverErrors.TOKEN_EXPIRED": "Your session expired. Sign in again.",
   "serverErrors.TOKEN_INVALID": "Your session is not valid. Sign in again.",
   "serverErrors.TOKEN_REVOKED": "Your session was ended. Sign in again.",
