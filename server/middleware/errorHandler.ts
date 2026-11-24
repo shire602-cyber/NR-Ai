@@ -1,3 +1,4 @@
+import { sizeErrorBody } from "../http/upload-errors";
 import type { Request, Response, NextFunction } from "express";
 import { ZodError } from "zod";
 import { RetentionViolationError } from "../services/retention.service";
@@ -148,7 +149,8 @@ export function requestTransportErrorHandler(
 ): void {
   const mapped = mapRequestTransportError(err);
   if (!mapped) return next(err);
-  res.status(mapped.status).json(withRequestId(mapped.body, req));
+  const body = mapped.status === 413 ? sizeErrorBody(req, "PAYLOAD_TOO_LARGE") : mapped.body;
+  res.status(mapped.status).json(withRequestId(body, req));
 }
 
 /**
@@ -203,7 +205,7 @@ export function globalErrorHandler(
   // Malformed JSON, oversize bodies, rejected CORS origins (incl. preflight).
   const transport = mapRequestTransportError(err);
   if (transport) {
-    res.status(transport.status).json(withRequestId(transport.body, req));
+    requestTransportErrorHandler(err, req, res, next);
     return;
   }
 
@@ -261,7 +263,11 @@ export function globalErrorHandler(
         operational: err.isOperational,
       });
     }
-    res.status(err.statusCode).json(withRequestId(err.toJSON(), req));
+    const body = err.toJSON();
+    if (err.statusCode === 413 && err.code === "FILE_TOO_LARGE") {
+      Object.assign(body, sizeErrorBody(req, err.code));
+    }
+    res.status(err.statusCode).json(withRequestId(body, req));
     return;
   }
 

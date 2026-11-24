@@ -1,10 +1,5 @@
-import {
-  EMAIL_INTAKE_LIMIT,
-  EMAIL_INTAKE_PATH,
-  LARGE_JSON_LIMIT,
-  VAT_EVIDENCE_JSON_LIMIT,
-  VAT_EVIDENCE_SCAN_PATH,
-} from "../http/body-limits";
+import { sizeErrorBody } from "../http/upload-errors";
+import { EMAIL_INTAKE_LIMIT, EMAIL_INTAKE_PATH, LARGE_JSON_LIMIT } from "../http/body-limits";
 import { portalInviteLogPath } from "../http/portal-invite-privacy";
 import helmet from "helmet";
 import cors from "cors";
@@ -297,14 +292,10 @@ export function applySecurityMiddleware(app: Express): void {
   // ─── Request Size Limits ──────────────────────────────────
   // Reject oversized declared bodies before allocating parser buffers.
   app.use((req: Request, res: Response, next: NextFunction) => {
-    const limit = EMAIL_INTAKE_PATH.test(req.path)
-      ? EMAIL_INTAKE_LIMIT
-      : VAT_EVIDENCE_SCAN_PATH.test(req.path)
-        ? VAT_EVIDENCE_JSON_LIMIT
-        : LARGE_JSON_LIMIT;
+    const limit = EMAIL_INTAKE_PATH.test(req.path) ? EMAIL_INTAKE_LIMIT : LARGE_JSON_LIMIT;
     const contentLength = parseInt(req.headers["content-length"] || "0", 10);
     if (contentLength > limit) {
-      return res.status(413).json({ message: "Request too large", code: "PAYLOAD_TOO_LARGE" });
+      return res.status(413).json(sizeErrorBody(req, "PAYLOAD_TOO_LARGE"));
     }
     next();
   });

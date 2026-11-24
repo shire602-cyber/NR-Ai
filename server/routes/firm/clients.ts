@@ -1,3 +1,4 @@
+import { assertUploadSize } from "../../http/upload-errors";
 // Firm client handlers: list, summary, create, update, assign staff, staff list, switch, archive and import.
 // Handlers moved from firm.routes.ts (R20-09); the route registrations (paths and
 // middleware order) stay in firm.routes.ts.
@@ -538,8 +539,9 @@ export const handlePostFirmClientsImport = async (req: Request, res: Response) =
         message: "Choose a CSV or XLSX file.",
       });
     }
+    const buffer = Buffer.from(body.fileData, "base64");
+    assertUploadSize(buffer.length);
     try {
-      const buffer = Buffer.from(body.fileData, "base64");
       rows = (await parseSpreadsheet(buffer, body.fileName)).rows;
     } catch {
       return res.status(400).json({

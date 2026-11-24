@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_BYTES } from "../../shared/upload-limits";
 /**
  * Document vault with real file storage (W4-D: R16-09, R16-10, R16-16).
  *
@@ -25,7 +26,7 @@ import { readReceiptImage, saveReceiptFile } from "./fileStorage";
 import { sniffFileType } from "./upload-guard";
 import { documentUploadBody, type DocumentUploadBody } from "../../shared/validators/portal";
 
-export const MAX_VAULT_FILE_BYTES = 20 * 1024 * 1024;
+export const MAX_VAULT_FILE_BYTES = MAX_UPLOAD_BYTES;
 
 export const VAULT_MIME_TYPES = [
   "application/pdf",

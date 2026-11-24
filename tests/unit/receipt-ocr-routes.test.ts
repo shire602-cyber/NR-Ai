@@ -113,7 +113,7 @@ async function post(app: express.Express, body: unknown) {
 
 function appWith(deps: { anthropic?: any; openai?: any }) {
   const app = express();
-  app.use(express.json({ limit: "12mb" }));
+  app.use(express.json({ limit: "3mb" }));
   registerOCRRoutes(app, { anthropic: deps.anthropic ?? null, openai: deps.openai ?? null });
   return app;
 }

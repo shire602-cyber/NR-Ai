@@ -1,3 +1,4 @@
+import { assertUploadSize } from "../http/upload-errors";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
@@ -107,11 +108,10 @@ interface AuditRow {
   created_at: string;
 }
 
-const CT_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 const CT_IMPORT_MAX_ROWS = 2000;
 
 const importFileSchema = z
-  .object({ fileName: z.string().max(255), fileDataBase64: z.string().max(15_000_000) })
+  .object({ fileName: z.string().max(255), fileDataBase64: z.string() })
   .strict();
 const emptyBodySchema = z.object({}).strict();
 
@@ -548,10 +548,11 @@ export function registerCorporateTaxRoutes(app: Express) {
           .json({ message: "Workbook payload is required", code: "CT_IMPORT_EMPTY" });
       }
       const buffer = Buffer.from(fileDataBase64, "base64");
-      if (buffer.length === 0 || buffer.length > CT_IMPORT_MAX_BYTES) {
+      assertUploadSize(buffer.length);
+      if (buffer.length === 0) {
         return res
           .status(400)
-          .json({ message: "Workbook must be between 1 byte and 10 MB", code: "CT_IMPORT_SIZE" });
+          .json({ message: "Workbook must be between 1 byte and 2 MB", code: "CT_IMPORT_SIZE" });
       }
       let rows: CtWorkpaperRow[];
       try {

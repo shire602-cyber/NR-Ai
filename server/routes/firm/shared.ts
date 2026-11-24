@@ -697,7 +697,7 @@ export const importPayloadSchema = z.object({
 export const firmClientsImportBody = z
   .object({
     rows: z.array(z.record(z.string(), z.any())).max(500).optional(),
-    fileData: z.string().max(20_000_000).optional(),
+    fileData: z.string().optional(),
     fileName: z.string().max(255).optional(),
   })
   .strict();

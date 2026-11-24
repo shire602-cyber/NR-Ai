@@ -425,7 +425,7 @@
   "adminConsole.docNamePlaceholder": "مثال: فاتورة رقم 001",
   "adminConsole.expiryIfAny": "تاريخ الانتهاء (إن وُجد)",
   "adminConsole.remindBefore": "التذكير قبل (بالأيام)",
-  "adminConsole.uploadFormats": "PDF وDOC وXLS وJPG وPNG (بحد أقصى 10 ميغابايت)",
+  "adminConsole.uploadFormats": "PDF وDOC وXLS وJPG وPNG (بحد أقصى 2 ميغابايت)",
   "adminConsole.expiredDaysAgo": "انتهى قبل {n} يومًا",
   "adminConsole.daysLeft": "متبقٍ {n} يومًا",
   "adminConsole.inviteEmail": "عنوان البريد الإلكتروني *",

@@ -1,3 +1,4 @@
+import { FixedWindowThrottle } from "../middleware/fixed-window-throttle";
 /**
  * Customer portal identity, tokens and throttling (W4-D: R16-04/05/06/07/16).
  *
@@ -158,11 +159,6 @@ export async function resolvePortalToken(raw: string): Promise<PortalTokenResolu
 
 // ─── Throttling ──────────────────────────────────────────────────────────────
 
-interface Window {
-  count: number;
-  resetAt: number;
-}
-
 export const PORTAL_LIMITS = {
   /** Any public portal/share request per IP per minute. */
   ipPerMinute: 120,
@@ -174,35 +170,13 @@ export const PORTAL_LIMITS = {
   codeRequestsPerHour: 5,
 };
 
-const windows = new Map<string, Window>();
-
-function hit(key: string, windowMs: number): number {
-  const now = Date.now();
-  const w = windows.get(key);
-  if (!w || w.resetAt <= now) {
-    windows.set(key, { count: 1, resetAt: now + windowMs });
-    return 1;
-  }
-  w.count += 1;
-  return w.count;
-}
-
-function peek(key: string): number {
-  const w = windows.get(key);
-  return w && w.resetAt > Date.now() ? w.count : 0;
-}
-
-let sweepAt = 0;
-function sweep(): void {
-  const now = Date.now();
-  if (now < sweepAt) return;
-  sweepAt = now + 60_000;
-  for (const [k, w] of windows) if (w.resetAt <= now) windows.delete(k);
-}
+const portalThrottle = new FixedWindowThrottle("portal");
+const MINUTE_MS = 60_000;
+const FAILURE_WINDOW_MS = 10 * MINUTE_MS;
 
 /** Tests only. */
 export function resetPortalThrottle(): void {
-  windows.clear();
+  portalThrottle.resetMemory();
 }
 
 export function clientIp(req: Request): string {
@@ -210,22 +184,47 @@ export function clientIp(req: Request): string {
 }
 
 /** Throttle check for a public request. Returns the reason when it must get a 429. */
-export function checkPortalThrottle(ip: string, tokenKey?: string | null): string | null {
-  sweep();
-  if (peek(`fail:${ip}`) >= PORTAL_LIMITS.ipFailuresPer10Min) return "too_many_failures";
-  if (hit(`ip:${ip}`, 60_000) > PORTAL_LIMITS.ipPerMinute) return "ip_rate";
-  if (tokenKey && hit(`tok:${tokenKey}`, 60_000) > PORTAL_LIMITS.tokenPerMinute) {
-    return "token_rate";
+export async function checkPortalThrottle(ip: string, tokenKey?: string | null) {
+  const failures = await portalThrottle.check(`fail:${ip}`, FAILURE_WINDOW_MS, "peek");
+  if (failures.count >= PORTAL_LIMITS.ipFailuresPer10Min) return "too_many_failures";
+
+  const requests = await portalThrottle.check(
+    `ip:${ip}`,
+    MINUTE_MS,
+    "hit",
+    PORTAL_LIMITS.ipPerMinute
+  );
+  if (requests.count > PORTAL_LIMITS.ipPerMinute) return "ip_rate";
+
+  if (tokenKey) {
+    const tokenHits = await portalThrottle.check(
+      `tok:${tokenKey}`,
+      MINUTE_MS,
+      "hit",
+      PORTAL_LIMITS.tokenPerMinute
+    );
+    if (tokenHits.count > PORTAL_LIMITS.tokenPerMinute) return "token_rate";
   }
   return null;
 }
 
-export function recordPortalFailure(ip: string): void {
-  hit(`fail:${ip}`, 10 * 60_000);
+export async function recordPortalFailure(ip: string): Promise<void> {
+  await portalThrottle.check(
+    `fail:${ip}`,
+    FAILURE_WINDOW_MS,
+    "hit",
+    PORTAL_LIMITS.ipFailuresPer10Min
+  );
 }
 
-export function allowCodeRequest(email: string): boolean {
-  return hit(`code:${email.toLowerCase()}`, 3_600_000) <= PORTAL_LIMITS.codeRequestsPerHour;
+export async function allowCodeRequest(email: string): Promise<boolean> {
+  const { count } = await portalThrottle.check(
+    `code:${email.toLowerCase()}`,
+    60 * MINUTE_MS,
+    "hit",
+    PORTAL_LIMITS.codeRequestsPerHour
+  );
+  return count <= PORTAL_LIMITS.codeRequestsPerHour;
 }
 
 export async function logPortalAccess(entry: {

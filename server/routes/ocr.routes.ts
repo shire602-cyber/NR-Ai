@@ -1,3 +1,4 @@
+import { sizeErrorBody } from "../http/upload-errors";
 import { type Express, type Request, type Response } from "express";
 import { parsedBody } from "../http/parsed-body";
 import { strictBody } from "../http/strict-body";
@@ -162,7 +163,13 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
           imageDataUrl = `data:${inspected.mime};base64,${inspected.buffer.toString("base64")}`;
         } catch (err) {
           if (err instanceof UploadRejectedError) {
-            return res.status(err.status).json({ message: err.message, code: err.code });
+            return res
+              .status(err.status)
+              .json(
+                err.code === "FILE_TOO_LARGE"
+                  ? sizeErrorBody(req, err.code)
+                  : { message: err.message, code: err.code }
+              );
           }
           throw err;
         }

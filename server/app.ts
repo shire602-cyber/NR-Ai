@@ -7,13 +7,13 @@ import "../shared/zod-config";
 import express from "express";
 import {
   EMAIL_INTAKE_LIMIT,
+  EXPORT_JSON_LIMIT,
+  EXPORT_JSON_PATH,
   EMAIL_INTAKE_PATH,
   LARGE_JSON_LIMIT,
   RAW_WEBHOOK_PREFIXES,
   SMALL_JSON_LIMIT,
   usesLargeJson,
-  VAT_EVIDENCE_JSON_LIMIT,
-  VAT_EVIDENCE_SCAN_PATH,
 } from "./http/body-limits";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
@@ -74,7 +74,7 @@ export async function createApp({ vercel = false } = {}) {
   // Route list shared with the DB test harness (server/http/body-limits.ts).
   const largeJson = express.json({ limit: LARGE_JSON_LIMIT });
   const smallJson = express.json({ limit: SMALL_JSON_LIMIT });
-  const vatEvidenceJson = express.json({ limit: VAT_EVIDENCE_JSON_LIMIT });
+  const exportJson = express.json({ limit: EXPORT_JSON_LIMIT });
 
   // The inbound email webhook needs the EXACT raw bytes to verify its HMAC
   // signature, so it gets a raw-body parser and is skipped by the JSON parser.
@@ -87,7 +87,7 @@ export async function createApp({ vercel = false } = {}) {
   app.use((req, res, next) => {
     if (EMAIL_INTAKE_PATH.test(req.path)) return next(); // raw body handled above
     if (RAW_WEBHOOK_PREFIXES.some((p) => req.path.startsWith(`${p}/`))) return next();
-    if (VAT_EVIDENCE_SCAN_PATH.test(req.path)) return vatEvidenceJson(req, res, next);
+    if (EXPORT_JSON_PATH.test(req.path)) return exportJson(req, res, next);
     const useLarge = usesLargeJson(req.path);
     return (useLarge ? largeJson : smallJson)(req, res, next);
   });

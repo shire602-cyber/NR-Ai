@@ -1,3 +1,4 @@
+import { assertUploadSize } from "../http/upload-errors";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
@@ -164,9 +165,11 @@ type StatementRequestBody = {
 };
 
 function statementBytes(body: StatementRequestBody): Buffer {
-  return body.fileBase64?.trim()
+  const bytes = body.fileBase64?.trim()
     ? Buffer.from(body.fileBase64, "base64")
     : Buffer.from(body.csvContent ?? "", "utf8");
+  assertUploadSize(bytes.length);
+  return bytes;
 }
 
 function statementOptions(body: StatementRequestBody): ParseOptions {

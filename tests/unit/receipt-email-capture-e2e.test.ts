@@ -1,3 +1,4 @@
+import { EMAIL_INTAKE_LIMIT } from "../../server/http/body-limits";
 /**
  * R05-19a - end-to-end: a signed sample email webhook produces a draft receipt.
  *
@@ -158,7 +159,7 @@ const samplePayload = JSON.stringify({
 
 async function postWebhook(body: string, signature?: string) {
   const app = express();
-  app.use("/api/webhooks/email-intake", express.raw({ type: "*/*", limit: "5mb" }));
+  app.use("/api/webhooks/email-intake", express.raw({ type: "*/*", limit: EMAIL_INTAKE_LIMIT }));
   app.use(express.json());
   registerEmailIntakeRoutes(app);
   const server = app.listen(0);

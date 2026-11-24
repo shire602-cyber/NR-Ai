@@ -1,3 +1,5 @@
+import { MAX_UPLOAD_BYTES } from "../../shared/upload-limits";
+import { sizeErrorBody } from "../http/upload-errors";
 import type { Express, Request, Response } from "express";
 import { parsedBody } from "../http/parsed-body";
 import { strictBody } from "../http/strict-body";
@@ -297,13 +299,8 @@ export function registerContactRoutes(app: Express) {
       }
 
       const buffer = Buffer.from(parsedBody.data.contentBase64, "base64");
-      if (buffer.byteLength > 5 * 1024 * 1024) {
-        return res
-          .status(413)
-          .json({
-            message: "Contact import file must be 5 MB or smaller",
-            code: "CONTACT_IMPORT_TOO_LARGE",
-          });
+      if (buffer.byteLength > MAX_UPLOAD_BYTES) {
+        return res.status(413).json(sizeErrorBody(req, "CONTACT_IMPORT_TOO_LARGE"));
       }
 
       const parsed = await parseSpreadsheet(buffer, parsedBody.data.fileName);

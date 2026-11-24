@@ -1,3 +1,4 @@
+import { assertUploadSize } from "../http/upload-errors";
 import { Router } from "express";
 import { parsedBody } from "../http/parsed-body";
 import type { Express, Request, Response } from "express";
@@ -242,6 +243,10 @@ router.post(
       { required: true }
     );
 
+    for (const { imageData } of items) {
+      const base64 = imageData.replace(/^data:[^;]+;base64,/, "");
+      assertUploadSize(Buffer.from(base64, "base64").length);
+    }
     const { anthropic, openai } = createOcrClients();
     if (!anthropic && !openai) {
       return res

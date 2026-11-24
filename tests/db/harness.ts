@@ -241,17 +241,17 @@ async function buildApp(): Promise<any> {
 
   const {
     EMAIL_INTAKE_LIMIT,
+    EXPORT_JSON_LIMIT,
+    EXPORT_JSON_PATH,
     EMAIL_INTAKE_PATH,
     LARGE_JSON_LIMIT,
     SMALL_JSON_LIMIT,
-    VAT_EVIDENCE_JSON_LIMIT,
-    VAT_EVIDENCE_SCAN_PATH,
     RAW_WEBHOOK_PREFIXES,
     usesLargeJson,
   } = await import("../../server/http/body-limits");
   const largeJson = express.json({ limit: LARGE_JSON_LIMIT });
   const smallJson = express.json({ limit: SMALL_JSON_LIMIT });
-  const vatEvidenceJson = express.json({ limit: VAT_EVIDENCE_JSON_LIMIT });
+  const exportJson = express.json({ limit: EXPORT_JSON_LIMIT });
   app.use(EMAIL_INTAKE_PATH, express.raw({ type: "*/*", limit: EMAIL_INTAKE_LIMIT }));
   // Same list as server/index.ts (server/http/body-limits.ts).
   const rawWebhookPrefixes = [...RAW_WEBHOOK_PREFIXES];
@@ -259,7 +259,7 @@ async function buildApp(): Promise<any> {
   app.use((req: any, res: any, next: any) => {
     if (EMAIL_INTAKE_PATH.test(req.path)) return next();
     if (rawWebhookPrefixes.some((p) => req.path.startsWith(`${p}/`))) return next();
-    if (VAT_EVIDENCE_SCAN_PATH.test(req.path)) return vatEvidenceJson(req, res, next);
+    if (EXPORT_JSON_PATH.test(req.path)) return exportJson(req, res, next);
     const useLarge = usesLargeJson(req.path);
     return (useLarge ? largeJson : smallJson)(req, res, next);
   });
