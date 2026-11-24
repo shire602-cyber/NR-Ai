@@ -467,6 +467,8 @@ async function reconcileReceiptRecoveries(
   trigger: { paymentId: string; reversalDate?: string; actorId?: string | null }
 ) {
   const q = ledgerQueryable(tx);
+  const { reversalDate } = trigger;
+  const removedPaymentId = reversalDate ? trigger.paymentId : null;
   const {
     rows: [basis],
   } = await q.query(
@@ -494,23 +496,18 @@ async function reconcileReceiptRecoveries(
             AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL
        ) posted ON true
       WHERE sp.invoice_id = $1 AND sp.company_id = $2 AND c.id = $3
-        AND sp.method <> 'write_off' AND ($6::boolean IS FALSE OR sp.created_at > c.created_at)
-        AND sp.id IS DISTINCT FROM $5::uuid
+        AND sp.method <> 'write_off' AND ($5::boolean IS FALSE OR sp.created_at > c.created_at)
       ORDER BY sp.created_at, sp.id`,
-    [
-      claim.invoiceId,
-      claim.companyId,
-      claim.id,
-      BAD_DEBT_SOURCE,
-      trigger.reversalDate ? trigger.paymentId : null,
-      ordered,
-    ]
+    [claim.invoiceId, claim.companyId, claim.id, BAD_DEBT_SOURCE, ordered]
   );
-  if (!trigger.reversalDate && !receipts.some((receipt) => receipt.id === trigger.paymentId)) {
+  if (!reversalDate && !receipts.some((receipt) => receipt.id === trigger.paymentId)) {
     return null;
   }
   // Legacy transaction-start timestamps cannot show which receipts the claim's settlement read saw.
-  if (!ordered && receipts.some((receipt) => Number(receipt.applied_fils) > 0)) {
+  if (
+    !ordered &&
+    receipts.some((receipt) => receipt.id !== removedPaymentId && Number(receipt.applied_fils) > 0)
+  ) {
     throw badDebtRecoveryReviewRequired(claim.id);
   }
   // Older claim journals recorded the outstanding amount using an AED-based rate.
@@ -523,39 +520,66 @@ async function reconcileReceiptRecoveries(
 
   await lockRecoveryPeriods(tx, claim.companyId);
   const cap = toFils(claim.vatAmount);
+  const recoveryTarget = (fils: number) => {
+    const received = Math.min(fils, outstandingFils);
+    return allocate(cap, [received, outstandingFils - received])[0];
+  };
   let receivedFils = 0;
+  let removedFils = 0;
   let previousTarget = 0;
   let paymentDate: string | undefined;
   let last: { id: string; date: string } | undefined;
   for (const receipt of receipts) {
-    receivedFils = Math.min(receivedFils + Number(receipt.applied_fils), outstandingFils);
-    const [target] = allocate(cap, [receivedFils, outstandingFils - receivedFils]);
-    const delta = target - previousTarget - Number(receipt.vat_fils);
+    const appliedFils = Number(receipt.applied_fils);
+    if (receipt.id === removedPaymentId) {
+      removedFils = appliedFils;
+      continue;
+    }
+    const priorReceivedFils = receivedFils;
+    receivedFils = Math.min(receivedFils + appliedFils, outstandingFils);
+    const target = recoveryTarget(receivedFils);
+    const receiptTarget = target - previousTarget;
     previousTarget = target;
+    const receiptVatDate = receipt.date < claim.claimDate ? claim.claimDate : receipt.date;
+    let postedFils = Number(receipt.vat_fils);
+    const hasRecovery = Number(receipt.entry_count) > 0;
+    // A receipt can commit before its callback runs. Catch up its original allocation on
+    // its ordinary VAT date, using the receipt order that still included the removed payment.
+    if (reversalDate && !hasRecovery) {
+      const originalFils =
+        recoveryTarget(receivedFils + removedFils) -
+        recoveryTarget(priorReceivedFils + removedFils);
+      if (originalFils) {
+        const date = await openRecoveryDate(tx, claim.companyId, receiptVatDate);
+        const entry = await postBadDebtVatRecovery(
+          tx,
+          claim,
+          originalFils,
+          date,
+          receipt.created_by,
+          PAYMENT_RECOVERY_REASON,
+          receipt.id
+        );
+        postedFils = originalFils;
+        last = { id: entry.id, date };
+      }
+    }
+    const delta = receiptTarget - postedFils;
     if (!delta) continue;
 
     // A removal changes the surviving receipts' allocation on the reversal date. The
     // ledger validates that period under the filing lock already held by this transaction.
-    const date =
-      trigger.reversalDate ??
-      (await openRecoveryDate(
-        tx,
-        claim.companyId,
-        receipt.date < claim.claimDate ? claim.claimDate : receipt.date
-      ));
-    const key = Number(receipt.entry_count)
-      ? `${receipt.id}:reconcile:${trigger.paymentId}`
-      : receipt.id;
+    const date = reversalDate ?? (await openRecoveryDate(tx, claim.companyId, receiptVatDate));
+    const reconcile = Boolean(reversalDate) || hasRecovery;
+    const key = reconcile ? `${receipt.id}:reconcile:${trigger.paymentId}` : receipt.id;
     const entry = await postBadDebtVatRecovery(
       tx,
       claim,
       delta,
       date,
-      (trigger.reversalDate || receipt.id === trigger.paymentId ? trigger.actorId : null) ??
+      (reversalDate || receipt.id === trigger.paymentId ? trigger.actorId : null) ??
         receipt.created_by,
-      Number(receipt.entry_count)
-        ? "Reconcile VAT after a change to bad-debt receipts"
-        : PAYMENT_RECOVERY_REASON,
+      reconcile ? "Reconcile VAT after a change to bad-debt receipts" : PAYMENT_RECOVERY_REASON,
       key
     );
     last = { id: entry.id, date };

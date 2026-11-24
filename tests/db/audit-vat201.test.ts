@@ -710,54 +710,63 @@ describe("Accounting audit — VAT 201", () => {
     expect(cash).toEqual([{ date: today }]);
   });
 
-  it("posts undated reversal rounding in the cash reversal quarter when VAT recovery moved quarters", async () => {
-    const t = await vatTenant();
-    const { invoiceId } = await claimedInvoice(t);
-    const companyId = t.company.id;
-    const { reverseInvoicePayment } = await import("../../server/services/invoice-payment.service");
-    const { reverseReliefOnPayment } = await import("../../server/tax/vat-adjustments.service");
-    const pay = await unprocessedReceipt(t, invoiceId);
-    const first = await pay(105.1, "2026-09-15");
-    await fileQ3(t);
-    const recover = (paymentId: string) =>
-      reverseReliefOnPayment({ companyId, invoiceId, paymentId });
-    expect(await recover(first.payment.id)).toMatchObject({
-      date: "2026-10-01",
-      remainingVatFils: 4500,
-    });
-    const second = await pay(105.01, "2026-10-05");
-    expect(await recover(second.payment.id)).toMatchObject({ remainingVatFils: 3999 });
-    expect((await vatBoxes(t, "2026-10-01", "2026-12-31")).box1bDubaiAdj).toBe(10.01);
-    await h.sql(
-      `INSERT INTO month_end_close (company_id, period_end, status, lock_type, lock_scope)
-       VALUES ($1, '2026-09-30', 'locked', 'hard', 'through')`,
-      [companyId]
-    );
-
-    const cashReversalDate = "2027-01-05";
-    const restoreTime = freezeTime(`${cashReversalDate}T12:00:00Z`);
-    try {
-      const reversal = await reverseInvoicePayment({
-        companyId,
-        paymentId: first.payment.id,
-        actorId: t.user.id,
-        reason: "Payment returned",
+  it.each([false, true])(
+    "posts undated reversal rounding in the cash reversal quarter (surviving callback pending: %s)",
+    async (pending) => {
+      const t = await vatTenant();
+      const { invoiceId } = await claimedInvoice(t);
+      const companyId = t.company.id;
+      const { reverseInvoicePayment } =
+        await import("../../server/services/invoice-payment.service");
+      const { reverseReliefOnPayment } = await import("../../server/tax/vat-adjustments.service");
+      const pay = await unprocessedReceipt(t, invoiceId);
+      const first = await pay(105.1, "2026-09-15");
+      await fileQ3(t);
+      const recover = (paymentId: string) =>
+        reverseReliefOnPayment({ companyId, invoiceId, paymentId });
+      expect(await recover(first.payment.id)).toMatchObject({
+        date: "2026-10-01",
+        remainingVatFils: 4500,
       });
-      expect(reversal.reversed).toBe(true);
-    } finally {
-      restoreTime();
-    }
+      const second = await pay(105.01, "2026-10-05");
+      if (!pending) {
+        expect(await recover(second.payment.id)).toMatchObject({ remainingVatFils: 3999 });
+      }
+      expect((await vatBoxes(t, "2026-10-01", "2026-12-31")).box1bDubaiAdj).toBe(
+        pending ? 5 : 10.01
+      );
+      await h.sql(
+        `INSERT INTO month_end_close (company_id, period_end, status, lock_type, lock_scope)
+       VALUES ($1, '2026-09-30', 'locked', 'hard', 'through')`,
+        [companyId]
+      );
 
-    const cash = await h.sql(
-      `SELECT (date + interval '4 hours')::date::text AS date
+      const cashReversalDate = "2027-01-05";
+      const restoreTime = freezeTime(`${cashReversalDate}T12:00:00Z`);
+      try {
+        const reversal = await reverseInvoicePayment({
+          companyId,
+          paymentId: first.payment.id,
+          actorId: t.user.id,
+          reason: "Payment returned",
+        });
+        expect(reversal.reversed).toBe(true);
+      } finally {
+        restoreTime();
+      }
+
+      const cash = await h.sql(
+        `SELECT (date + interval '4 hours')::date::text AS date
          FROM journal_entries WHERE company_id = $1 AND source = 'payment_reversal'
           AND reversed_entry_id = $2`,
-      [companyId, first.journalEntryId]
-    );
-    expect(cash).toEqual([{ date: cashReversalDate }]);
-    expect((await vatBoxes(t, "2026-10-01", "2026-12-31")).box1bDubaiAdj).toBe(5.01);
-    expect((await vatBoxes(t, "2027-01-01", "2027-03-31")).box1bDubaiAdj).toBe(-0.01);
-  });
+        [companyId, first.journalEntryId]
+      );
+      expect(cash).toEqual([{ date: cashReversalDate }]);
+      expect(await recover(second.payment.id)).toBeNull();
+      expect((await vatBoxes(t, "2026-10-01", "2026-12-31")).box1bDubaiAdj).toBe(5.01);
+      expect((await vatBoxes(t, "2027-01-01", "2027-03-31")).box1bDubaiAdj).toBe(-0.01);
+    }
+  );
 
   it("reopens a fully recovered claim when its AED 105 receipt is reversed and restores VAT on repayment", async () => {
     const t = await vatTenant();
