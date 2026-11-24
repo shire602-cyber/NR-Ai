@@ -29,8 +29,8 @@ function envInt(name: string, fallback: number): number {
 }
 
 const POOL_CONFIG = {
-  max: envInt("DB_POOL_MAX", 10),
-  min: envInt("DB_POOL_MIN", 1),
+  max: envInt("DB_POOL_MAX", process.env.VERCEL === "1" ? 2 : 10),
+  min: envInt("DB_POOL_MIN", process.env.VERCEL === "1" ? 0 : 1),
   idleTimeoutMillis: envInt("DB_POOL_IDLE_MS", 30_000),
   connectionTimeoutMillis: envInt("DB_POOL_CONN_MS", 10_000),
   // pg also honours `statement_timeout` per-connection; expose via env for

@@ -2,6 +2,8 @@
 
 Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
 
+For the Vercel production deployment, follow the [Vercel and UAE PostgreSQL runbook](vercel-uae-production-config.md).
+
 Owner-run. The first deploy of this branch applies 66 migrations (through 0149) that rewrite some production data
 (users, roles, FX rates, bank GL links and reconciliation rules, portal tokens, audit chain, subscriptions). Do not
 merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived or external items

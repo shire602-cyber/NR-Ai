@@ -94,7 +94,7 @@ export interface AIRouteDeps {
 export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
   const openai = deps.openaiClient !== undefined ? deps.openaiClient : createOpenAIClient();
   // Route-level AI rate limiter (also covers /api/ask, which is outside /api/ai/).
-  const aiLimiter = buildLimiter(limiterProfiles.ai);
+  const aiLimiter = buildLimiter("ai-routes", limiterProfiles.ai);
 
   // If OpenAI is not configured, register routes that return graceful errors
   if (!openai) {

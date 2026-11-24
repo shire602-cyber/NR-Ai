@@ -20,8 +20,13 @@ export const LARGE_JSON_ROUTES: readonly RegExp[] = [
   /^\/api\/companies\/[^/]+\/expense-claims\/receipts$/,
 ];
 
-export const LARGE_JSON_LIMIT = "10mb";
+export const LARGE_JSON_LIMIT = 10 * 1024 * 1024;
 export const SMALL_JSON_LIMIT = "1mb";
+// A 10 MiB VAT evidence file expands to about 13.34 MiB in base64.
+export const VAT_EVIDENCE_JSON_LIMIT = 15 * 1024 * 1024;
+export const VAT_EVIDENCE_SCAN_PATH = /^\/api\/firm\/vat-workpapers\/[^/]+\/scan\/?$/i;
+export const EMAIL_INTAKE_LIMIT = 20 * 1024 * 1024;
+export const EMAIL_INTAKE_PATH = /^\/api\/webhooks\/email-intake\/?$/i;
 
 export function usesLargeJson(path: string): boolean {
   return LARGE_JSON_ROUTES.some((rx) => rx.test(path));

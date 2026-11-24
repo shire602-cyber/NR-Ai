@@ -87,10 +87,9 @@ import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
 import { isPlaceholderPasswordHash, passwordPolicySchema } from "../auth";
 import {
-  LockoutTracker,
+  buildLockoutTracker,
   clientIp,
   credentialKey,
-  loginLockoutRules,
   type LockoutStatus,
 } from "../middleware/rateLimit";
 import {
@@ -511,12 +510,12 @@ function retryAfterBody(message: string, code: string, retryAfterMs: number, mes
 export function registerAuthRoutes(app: Express): void {
   const router = Router();
 
-  // Per-app trackers (rebuilt with the app; in-memory per instance).
-  const loginLockout = new LockoutTracker(loginLockoutRules());
-  const changePasswordLockout = new LockoutTracker(loginLockoutRules());
-  const forgotPasswordBudget = new LockoutTracker(loginLockoutRules());
-  const resetPasswordLockout = new LockoutTracker(loginLockoutRules());
-  const mfaLockout = new LockoutTracker(loginLockoutRules());
+  // Separate credential budgets shared by all production app instances.
+  const loginLockout = buildLockoutTracker("login");
+  const changePasswordLockout = buildLockoutTracker("change-password");
+  const forgotPasswordBudget = buildLockoutTracker("email-links");
+  const resetPasswordLockout = buildLockoutTracker("reset-password");
+  const mfaLockout = buildLockoutTracker("mfa");
 
   /** Body of a successful sign-in (password, or password + second factor). */
   async function loginResponse(
@@ -707,7 +706,7 @@ export function registerAuthRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const { email, password } = req.body as z.output<typeof loginBodySchema>;
       const key = credentialKey(req, email);
-      const lock = loginLockout.status(key);
+      const lock = await loginLockout.status(key);
       if (lock.locked) {
         res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
         return res
@@ -730,7 +729,7 @@ export function registerAuthRoutes(app: Express): void {
         : (await bcrypt.compare(password, DUMMY_HASH), false);
 
       if (!user || !isValid) {
-        const after = loginLockout.recordFailure(key);
+        const after = await loginLockout.recordFailure(key);
         if (user) {
           await auditSecurityEvent(req, "auth.login_failure", user.id, {
             reason: "invalid_password",
@@ -742,7 +741,7 @@ export function registerAuthRoutes(app: Express): void {
           .status(401)
           .json({ message: "Invalid credentials", code: "INVALID_CREDENTIALS" });
       }
-      loginLockout.reset(key);
+      await loginLockout.reset(key);
 
       // W5-E: MFA accounts get a short-lived pending token, never a session, until the
       // second factor is verified at /auth/mfa/verify-login.
@@ -775,7 +774,7 @@ export function registerAuthRoutes(app: Express): void {
         });
       }
       const key = `mfa|${pending.userId}`;
-      const lock = mfaLockout.status(key);
+      const lock = await mfaLockout.status(key);
       if (lock.locked) {
         res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
         return res
@@ -798,7 +797,7 @@ export function registerAuthRoutes(app: Express): void {
       }
       const verdict = await verifySecondFactor(user.id, code);
       if (!verdict.ok) {
-        const after = mfaLockout.recordFailure(key);
+        const after = await mfaLockout.recordFailure(key);
         await auditSecurityEvent(req, "auth.mfa_challenge_failed", user.id, {
           reason: verdict.code,
           failures: after.failures,
@@ -809,7 +808,7 @@ export function registerAuthRoutes(app: Express): void {
           code: verdict.code === "MFA_CODE_REUSED" ? "MFA_CODE_REUSED" : "MFA_CODE_INVALID",
         });
       }
-      mfaLockout.reset(key);
+      await mfaLockout.reset(key);
       await blacklistToken(mfaToken); // the pending token is single-use
       res.clearCookie(mfaPendingCookie(), authCookieBaseOptions());
       if (verdict.method === "recovery_code") {
@@ -1095,8 +1094,8 @@ export function registerAuthRoutes(app: Express): void {
       const captcha = await verifyCaptcha(captchaToken, clientIp(req));
       if (!captcha.ok) return captchaFailure(res, captcha.reason);
       const key = credentialKey(req, email);
-      const budget = forgotPasswordBudget.status(key);
-      if (budget.locked) {
+      const budget = await forgotPasswordBudget.recordFailure(key);
+      if (budget.locked && !budget.lockedNow) {
         res.setHeader("Retry-After", String(Math.ceil(budget.retryAfterMs / 1000)));
         return res
           .status(429)
@@ -1109,7 +1108,6 @@ export function registerAuthRoutes(app: Express): void {
             )
           );
       }
-      forgotPasswordBudget.recordFailure(key);
 
       const user = await storage.getUserByEmail(email);
       // Platform-level (not per-account), so it is no enumeration oracle: with no email
@@ -1177,7 +1175,7 @@ export function registerAuthRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const { token, password } = req.body as { token: string; password: string };
       const key = `reset|${clientIp(req)}`;
-      const lock = resetPasswordLockout.status(key);
+      const lock = await resetPasswordLockout.status(key);
       if (lock.locked) {
         res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
         return res
@@ -1205,7 +1203,7 @@ export function registerAuthRoutes(app: Express): void {
         ));
 
       if (!record || !reset) {
-        resetPasswordLockout.recordFailure(key);
+        await resetPasswordLockout.recordFailure(key);
         return res.status(400).json({
           message: "This reset link is invalid or has expired. Please request a new one.",
           code: "RESET_TOKEN_INVALID",
@@ -1237,7 +1235,7 @@ export function registerAuthRoutes(app: Express): void {
         typeof changePasswordBodySchema
       >;
       const key = `cp|${userId}`;
-      const lock = changePasswordLockout.status(key);
+      const lock = await changePasswordLockout.status(key);
       if (lock.locked) {
         res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
         return res
@@ -1257,7 +1255,7 @@ export function registerAuthRoutes(app: Express): void {
         !isPlaceholderPasswordHash(user.passwordHash) &&
         (await bcrypt.compare(currentPassword, user.passwordHash));
       if (!ok) {
-        changePasswordLockout.recordFailure(key);
+        await changePasswordLockout.recordFailure(key);
         return res
           .status(400)
           .json({ message: "Current password is incorrect", code: "CURRENT_PASSWORD_INVALID" });
@@ -1268,7 +1266,7 @@ export function registerAuthRoutes(app: Express): void {
           code: "PASSWORD_UNCHANGED",
         });
       }
-      changePasswordLockout.reset(key);
+      await changePasswordLockout.reset(key);
       if (await refuseBreachedPassword(res, newPassword)) return;
 
       await storage.updateUserPassword(userId, await bcrypt.hash(newPassword, 10));
@@ -1491,7 +1489,7 @@ export function registerAuthRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const { code } = req.body as z.output<typeof mfaCodeBodySchema>;
       const key = `mfa|${req.user!.id}`;
-      const lock = mfaLockout.status(key);
+      const lock = await mfaLockout.status(key);
       if (lock.locked) {
         res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
         return res
@@ -1507,7 +1505,7 @@ export function registerAuthRoutes(app: Express): void {
       }
       const verdict = await verifySecondFactor(req.user!.id, code);
       if (!verdict.ok) {
-        mfaLockout.recordFailure(key);
+        await mfaLockout.recordFailure(key);
         await auditSecurityEvent(req, "auth.mfa_challenge_failed", req.user!.id, {
           reason: verdict.code,
           stepUp: true,
@@ -1515,7 +1513,7 @@ export function registerAuthRoutes(app: Express): void {
         const status = verdict.code === "MFA_NOT_ENABLED" ? 409 : 400;
         return res.status(status).json({ message: "That code is not valid", code: verdict.code });
       }
-      mfaLockout.reset(key);
+      await mfaLockout.reset(key);
       const user = (await storage.getUser(req.user!.id))!;
       const token = refreshAccessWithMfa(req, res, user);
       await auditSecurityEvent(req, "mfa.step_up", user.id, { method: verdict.method });
@@ -1550,8 +1548,8 @@ export function registerAuthRoutes(app: Express): void {
       if (!user) return res.status(401).json({ message: "User not found", code: "USER_NOT_FOUND" });
       if (user.emailVerified) return res.json({ verified: true, sent: false });
       const key = `verify|${user.id}`;
-      const budget = forgotPasswordBudget.status(key);
-      if (budget.locked) {
+      const budget = await forgotPasswordBudget.recordFailure(key);
+      if (budget.locked && !budget.lockedNow) {
         res.setHeader("Retry-After", String(Math.ceil(budget.retryAfterMs / 1000)));
         return res
           .status(429)
@@ -1564,7 +1562,6 @@ export function registerAuthRoutes(app: Express): void {
             )
           );
       }
-      forgotPasswordBudget.recordFailure(key);
       const mail = await sendVerificationEmail(user);
       await auditSecurityEvent(req, "auth.email_verification_sent", user.id, {
         status: mail.status,

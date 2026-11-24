@@ -33,7 +33,7 @@ it("keeps invite credentials out of request logs, throttling, error reports and 
   );
   app.get(
     `${invitePath}/:legacyToken/limited`,
-    buildLimiter({ windowMs: 60_000, max: 1, message: "Slow down" }),
+    buildLimiter("portal-invite-test", { windowMs: 60_000, max: 1, message: "Slow down" }),
     (_req, res) => {
       res.sendStatus(204);
     }

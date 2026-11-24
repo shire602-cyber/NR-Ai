@@ -7,6 +7,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -30,6 +31,21 @@ export type UserType = "admin" | "client" | "customer" | "client_portal";
 // firm_admin: Access only to assigned client companies
 // null: Regular user — no NRA features visible
 export type FirmRole = "firm_owner" | "firm_admin" | null;
+
+// Shared sliding-window state for HTTP rate limits and credential lockouts.
+export const requestThrottleBuckets = pgTable(
+  "request_throttle_buckets",
+  {
+    namespace: text("namespace").notNull(),
+    keyHash: text("key_hash").notNull(),
+    events: jsonb("events").$type<{ at: number; id?: string }[]>().notNull().default([]),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.namespace, t.keyHash] }),
+    index("request_throttle_buckets_expiry_idx").on(t.expiresAt),
+  ]
+);
 
 // ===========================
 // Users

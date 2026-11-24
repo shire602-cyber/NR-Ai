@@ -9,7 +9,6 @@
  */
 
 import type { Express } from "express";
-import { createServer, type Server } from "http";
 import { createLogger } from "./config/logger";
 import { companyRolePolicy } from "./middleware/companyRolePolicy";
 import { rejectApiKeysOutsidePublicApi } from "./middleware/api-key-auth";
@@ -119,7 +118,7 @@ import { registerEvidenceCenterRoutes } from "./routes/evidence-center.routes";
 
 const log = createLogger("routes");
 
-export async function registerRoutes(app: Express): Promise<Server> {
+export async function registerRoutes(app: Express, { retireBankingOnStartup = true } = {}) {
   log.info("Registering route modules...");
   app.use(periodLockContextMiddleware); // W2-B: soft-lock override reason visible to write paths
 
@@ -195,7 +194,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerFinancialStatementRoutes(app);
   registerReconciliationRuleRoutes(app);
   registerInvoiceTemplateRoutes(app);
-  await registerBankRoutes(app);
+  await registerBankRoutes(app, retireBankingOnStartup);
   registerDocumentVersionRoutes(app);
   registerApiKeyRoutes(app);
   registerBillingRoutes(app);
@@ -264,6 +263,4 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerFirmVatWorkspaceRoutes(app);
 
   log.info("All route modules registered");
-
-  return createServer(app);
 }

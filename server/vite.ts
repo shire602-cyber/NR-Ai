@@ -376,7 +376,11 @@ export function serveStatic(app: Express) {
   const firmDocument = loadFirmDocument(distPath);
   app.use("*", (req, res) => {
     for (const [k, v] of Object.entries(NO_STORE_HEADERS)) res.setHeader(k, v);
-    if (firmDocument && req.method === "GET" && isFirmPath(req.originalUrl)) {
+    if (
+      firmDocument &&
+      (req.method === "GET" || req.method === "HEAD") &&
+      isFirmPath(req.originalUrl)
+    ) {
       const cookies = (req as Request & { cookies?: Record<string, string> }).cookies ?? {};
       setDocumentStatus(req, res)
         .type("html")

@@ -61,6 +61,7 @@ const VERCEL_BLOB_URL = /^https:\/\/[a-z0-9]+\.(?:public|private)\.blob\.vercel-
 // the store token, so a leaked URL alone is not enough. BLOB_ACCESS=public restores the legacy
 // unguessable-URL behaviour for stores that cannot create private blobs.
 function blobAccess(): "public" | "private" {
+  if (process.env.VERCEL === "1") return "private";
   return process.env.BLOB_ACCESS === "public" ? "public" : "private";
 }
 
@@ -154,7 +155,8 @@ async function streamToBuffer(body: unknown): Promise<Buffer> {
 // Keys are always "<prefix>/<name>" (Blob returns its full URL instead). Only the
 // prefixes below can be written or read, so a forged DB value cannot escape them.
 
-export const OBJECT_PREFIXES = ["receipts", "report-artifacts"] as const;
+export const VAT_EVIDENCE_PREFIX = "vat-workpapers";
+export const OBJECT_PREFIXES = ["receipts", "report-artifacts", VAT_EVIDENCE_PREFIX] as const;
 export type ObjectPrefix = (typeof OBJECT_PREFIXES)[number];
 
 /** Pluggable backend for tests (an in-memory bucket standing in for S3). */
@@ -182,8 +184,9 @@ export function hasDurableObjectStore(): boolean {
 
 /** Reject keys that escape the allowed prefixes (defence against forged DB values). */
 function assertSafeKey(key: string, prefixes: readonly string[] = OBJECT_PREFIXES): string {
+  if (key.includes("\\") || key.split("/").includes("..")) throw new Error("Invalid image path");
   const normalized = path.posix.normalize(key).replace(/^\/+/, "");
-  if (!prefixes.some((p) => normalized.startsWith(p + "/")) || normalized.includes("..")) {
+  if (!prefixes.some((p) => normalized.startsWith(p + "/"))) {
     throw new Error("Invalid image path");
   }
   return normalized;
@@ -209,7 +212,7 @@ export async function putObject(
   if (isVercelBlobConfigured()) {
     const { put } = await loadVercelBlob();
     const { url } = await put(key, buffer, {
-      access: blobAccess(),
+      access: prefix === VAT_EVIDENCE_PREFIX ? "private" : blobAccess(),
       contentType,
       addRandomSuffix: true, // unguessable URL
       token: process.env.BLOB_READ_WRITE_TOKEN,
@@ -231,6 +234,10 @@ export async function putObject(
     return key;
   }
 
+  if (process.env.VERCEL === "1") {
+    throw new Error("Private object storage is required for uploads on Vercel");
+  }
+
   const dir = path.join(projectRoot, "uploads", prefix);
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, safeName), buffer);
@@ -244,6 +251,11 @@ export async function getObject(
 ): Promise<{ buffer: Buffer; contentType: string } | null> {
   // Vercel Blob: the reference is a full (Blob-domain only) URL — fetch the bytes.
   if (VERCEL_BLOB_URL.test(ref)) {
+    const { hostname, pathname } = new URL(ref);
+    const prefix = prefixes.find((candidate) => pathname.startsWith(`/${candidate}/`));
+    if (!prefix || (prefix === VAT_EVIDENCE_PREFIX && !hostname.includes(".private."))) {
+      return null;
+    }
     try {
       // `redirect: "error"` hardens against SSRF: the URL is allow-listed to the
       // Blob domain, but a 3xx from that host could otherwise bounce us to an
