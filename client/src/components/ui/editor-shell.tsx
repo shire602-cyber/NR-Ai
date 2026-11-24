@@ -62,7 +62,7 @@ export function EditorShell({
   return (
     <div
       className={cn(
-        "flex min-h-[calc(100dvh-5.5rem)] flex-col max-md:min-h-[calc(100dvh-4.75rem-var(--mobile-nav-height))]",
+        "flex min-h-[calc(100dvh-var(--header-height)-var(--page-block-start)-var(--mobile-nav-height))] flex-col",
         className
       )}
       data-testid={testId ?? "editor-shell"}
@@ -88,11 +88,11 @@ export function EditorShell({
         />
         <div
           className={cn(
-            "grid gap-6",
-            preview && "lg:grid-cols-[minmax(0,1fr)_minmax(340px,440px)]"
+            "grid gap-stack lg:gap-8",
+            preview && "lg:grid-cols-[minmax(0,1fr)_minmax(340px,460px)]"
           )}
         >
-          <div className="min-w-0 space-y-6">{children}</div>
+          <div className="editor-surface min-w-0 space-y-6">{children}</div>
           {preview ? (
             <aside
               className={cn("min-w-0", mobilePreview === "first" && "max-lg:order-first")}
@@ -101,7 +101,7 @@ export function EditorShell({
               <button
                 type="button"
                 className={cn(
-                  "flex w-full items-center justify-between rounded-lg border border-border bg-card px-4 py-3 text-small font-medium text-foreground lg:hidden",
+                  "flex w-full items-center justify-between rounded-xl border border-border bg-card px-card py-3.5 text-small font-medium text-foreground shadow-card-soft lg:hidden",
                   mobilePreview === "first" && "hidden"
                 )}
                 aria-expanded={previewOpen}
@@ -123,7 +123,7 @@ export function EditorShell({
               <div
                 id={previewId}
                 className={cn(
-                  "mt-3 lg:sticky lg:top-6 lg:mt-0 lg:block",
+                  "mt-4 lg:sticky lg:top-8 lg:mt-0 lg:block",
                   previewOpen || mobilePreview === "first" ? "block" : "hidden"
                 )}
               >
@@ -134,12 +134,12 @@ export function EditorShell({
         </div>
       </div>
       <div
-        className="sticky bottom-0 z-20 -mx-4 mt-8 -mb-10 border-t border-border bg-card md:-mx-8 md:-mb-12"
+        className="surface-glass sticky bottom-0 z-20 -mx-gutter -mb-[var(--page-block-end)] mt-10 border-t border-border"
         data-testid="editor-shell-footer"
       >
-        <div className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-8">
+        <div className="flex w-full flex-wrap items-center justify-between gap-4 px-gutter py-4">
           <div className="min-w-0 text-small text-muted-foreground">{footerSummary}</div>
-          <div className="flex flex-wrap items-center justify-end gap-2">{footer}</div>
+          <div className="flex flex-wrap items-center justify-end gap-3">{footer}</div>
         </div>
       </div>
     </div>

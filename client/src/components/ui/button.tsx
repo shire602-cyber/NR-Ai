@@ -15,10 +15,10 @@ const SOLID_DISABLED =
   " disabled:opacity-100 disabled:border-transparent disabled:shadow-none disabled:bg-[hsl(var(--disabled-surface))] disabled:text-[hsl(var(--disabled-foreground))]";
 
 const buttonVariants = cva(
-  "relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium" +
+  "ui-btn relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium" +
     " select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" +
     " disabled:pointer-events-none disabled:opacity-50" +
-    " transition-[background-color,color,border-color,box-shadow] duration-fast ease-standard" +
+    " transition-[background-color,color,border-color,box-shadow,transform] duration-fast ease-standard" +
     " [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
@@ -41,12 +41,13 @@ const buttonVariants = cva(
       },
       size: {
         // X3 (J2): 44px minimum hit area on touch screens (CTO rule); compact on mouse.
-        default: "min-h-9 px-4 py-2 [@media(pointer:coarse)]:min-h-11",
-        sm: "min-h-8 px-3 text-[13px] gap-1.5 [@media(pointer:coarse)]:min-h-11",
-        lg: "min-h-10 px-5 text-sm [@media(pointer:coarse)]:min-h-11",
+        default: "min-h-control px-4 py-2 [@media(pointer:coarse)]:min-h-11",
+        sm: "min-h-control-sm px-3 text-[13px] gap-1.5 [@media(pointer:coarse)]:min-h-11",
+        lg: "min-h-control-lg px-5 text-sm [@media(pointer:coarse)]:min-h-11",
         xl: "min-h-12 rounded-lg px-6 text-base",
-        icon: "h-9 w-9 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11",
-        "icon-sm": "h-8 w-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11",
+        icon: "h-control w-control [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11",
+        "icon-sm":
+          "h-control-sm w-control-sm [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11",
       },
     },
     defaultVariants: {
@@ -65,7 +66,12 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
     return (
-      <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
+      <Comp
+        className={cn(buttonVariants({ variant, size, className }))}
+        data-variant={variant ?? "default"}
+        ref={ref}
+        {...props}
+      />
     );
   }
 );

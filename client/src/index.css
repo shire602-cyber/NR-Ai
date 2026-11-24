@@ -177,6 +177,55 @@
   --content-reading: 680px;
   --content-marketing: 1120px;
   --header-height: 3.5rem;
+
+  /* Fixed type steps as variables (Tailwind `text-h1` … `text-caption` read them). */
+  --text-h1-size: 1.5rem;
+  --text-h1-line: 2rem;
+  --text-h2-size: 1.125rem;
+  --text-h2-line: 1.625rem;
+  --text-h3-size: 0.9375rem;
+  --text-h3-line: 1.375rem;
+  --text-h4-size: 0.875rem;
+  --text-h4-line: 1.25rem;
+  --text-body-size: 0.875rem;
+  --text-body-line: 1.375rem;
+  --text-small-size: 0.8125rem;
+  --text-small-line: 1.25rem;
+  --text-caption-size: 0.75rem;
+  --text-caption-line: 1rem;
+
+  /* ── Spacing scale (4 px base). Named steps for layout rhythm; Tailwind exposes the semantic
+     ones as `p-card`, `gap-stack`, `space-y-section`, `px-gutter`, `h-control`. The signed-in
+     app surface (html[data-surface="app"], below) sets roomier values. ── */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 2.5rem;
+  --space-8: 3rem;
+  --space-9: 4rem;
+  --space-10: 5rem;
+  --page-gutter: var(--space-4);
+  --page-block-start: 1.25rem;
+  --page-block-end: var(--space-7);
+  --section-gap: var(--space-6);
+  --stack-gap: var(--space-4);
+  --card-pad: 1.25rem;
+  --control-h: 2.25rem;
+  --control-h-sm: 2rem;
+  --control-h-lg: 2.5rem;
+
+  /* ── Type weights. Utilities (`font-semibold`, `font-bold`) and the heading steps read these,
+     so a surface can calm its type without touching markup. ── */
+  --fw-heading: 600;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* ── Depth: sheen on raised surfaces and the pointer-tilt glare (see "Depth" below). ── */
+  --surface-sheen: 0;
+  --tilt-glare: 0.5;
   /* Height of the fixed mobile bottom nav (0 from 768 px); sticky footers sit above it. */
   --mobile-nav-height: calc(3.75rem + env(safe-area-inset-bottom, 0px));
 
@@ -350,12 +399,120 @@
 @media (min-width: 768px) {
   :root {
     --mobile-nav-height: 0px;
+    --page-gutter: var(--space-6);
+    --page-block-start: var(--space-6);
+    --page-block-end: var(--space-8);
     --text-display-xl-size: 3.5rem;
     --text-display-xl-line: 3.75rem;
     --text-display-size: 2.5rem;
     --text-display-line: 2.875rem;
     --text-kpi-size: 1.75rem;
     --text-kpi-line: 2rem;
+  }
+}
+
+/* ─── Signed-in app surface ───────────────────────────────────────────────────
+   The app shell sets <html data-surface="app"> (useAppSurface). Inside it the same tokens take
+   roomier, calmer, deeper values: more whitespace, medium type weights instead of semibold,
+   softer corners and layered shadows with a top highlight. Public pages never set the
+   attribute and keep the base values above. The selector outranks `.dark`, so every token
+   that differs by theme is restated in the dark block that follows. */
+html[data-surface="app"] {
+  /* Space */
+  --page-gutter: 1.25rem;
+  --page-block-start: var(--space-5);
+  --page-block-end: var(--space-8);
+  --section-gap: var(--space-7);
+  --stack-gap: 1.25rem;
+  --card-pad: 1.125rem;
+  --control-h: 2.5rem;
+  --control-h-sm: 2.25rem;
+  --control-h-lg: 2.75rem;
+  --header-height: 4rem;
+  --content-max: 1360px;
+  --content-narrow: 800px;
+
+  /* Shape */
+  --radius: 0.75rem; /* 12px: lg; md 10, sm 8, xl 16, 2xl 20 */
+
+  /* Type: one step larger, medium weight (500) for headings and emphasis. */
+  --fw-heading: 500;
+  --fw-semibold: 500;
+  --fw-bold: 600;
+  --text-h1-size: 1.5rem;
+  --text-h1-line: 2rem;
+  --text-h2-size: 1.25rem;
+  --text-h2-line: 1.75rem;
+  --text-h3-size: 1.0625rem;
+  --text-h3-line: 1.5rem;
+  --text-h4-size: 0.9375rem;
+  --text-h4-line: 1.375rem;
+  --text-body-size: 0.9375rem;
+  --text-body-line: 1.5rem;
+  --text-small-size: 0.875rem;
+  --text-small-line: 1.375rem;
+  --text-caption-size: 0.8125rem;
+  --text-caption-line: 1.125rem;
+  --text-kpi-size: 1.5rem;
+  --text-kpi-line: 2rem;
+
+  /* Depth (light): a white top edge, a contact shadow and a wide soft ambient shadow. */
+  --shadow-color: 220 35% 18%;
+  --card-shadow:
+    inset 0 1px 0 0 hsl(0 0% 100% / 0.9), 0 1px 1px 0 hsl(var(--shadow-color) / 0.03),
+    0 3px 6px -2px hsl(var(--shadow-color) / 0.05), 0 14px 28px -14px hsl(var(--shadow-color) / 0.1);
+  --card-shadow-hover:
+    inset 0 1px 0 0 hsl(0 0% 100% / 0.9), 0 2px 4px -1px hsl(var(--shadow-color) / 0.05),
+    0 10px 20px -6px hsl(var(--shadow-color) / 0.1),
+    0 28px 48px -20px hsl(var(--shadow-color) / 0.16);
+  --control-shadow:
+    inset 0 1px 0 0 hsl(0 0% 100% / 0.7), 0 1px 2px 0 hsl(var(--shadow-color) / 0.06);
+  --primary-shadow:
+    inset 0 1px 0 0 hsl(0 0% 100% / 0.22), 0 1px 2px 0 hsl(var(--shadow-color) / 0.14),
+    0 6px 14px -6px hsl(var(--primary) / 0.55);
+  --primary-shadow-hover:
+    inset 0 1px 0 0 hsl(0 0% 100% / 0.26), 0 2px 4px 0 hsl(var(--shadow-color) / 0.14),
+    0 12px 22px -8px hsl(var(--primary) / 0.6);
+  --surface-sheen: 0.6;
+  --tilt-glare: 0.1;
+  --canvas-glow: 0.16;
+}
+html[data-surface="app"].dark {
+  --shadow-color: 0 0% 0%;
+  --card-shadow:
+    inset 0 1px 0 0 hsl(0 0% 100% / 0.05), 0 1px 2px 0 hsl(0 0% 0% / 0.4),
+    0 16px 32px -18px hsl(0 0% 0% / 0.7);
+  --card-shadow-hover:
+    inset 0 1px 0 0 hsl(0 0% 100% / 0.08), 0 2px 4px 0 hsl(0 0% 0% / 0.45),
+    0 24px 44px -18px hsl(0 0% 0% / 0.8);
+  --control-shadow: inset 0 1px 0 0 hsl(0 0% 100% / 0.05), 0 1px 2px 0 hsl(0 0% 0% / 0.4);
+  --primary-shadow:
+    inset 0 1px 0 0 hsl(0 0% 100% / 0.16), 0 1px 2px 0 hsl(0 0% 0% / 0.5),
+    0 8px 18px -8px hsl(var(--primary) / 0.7);
+  --primary-shadow-hover:
+    inset 0 1px 0 0 hsl(0 0% 100% / 0.2), 0 2px 4px 0 hsl(0 0% 0% / 0.5),
+    0 14px 26px -10px hsl(var(--primary) / 0.8);
+  --surface-sheen: 0.035;
+  --tilt-glare: 0.14;
+  --canvas-glow: 0.1;
+}
+@media (min-width: 768px) {
+  html[data-surface="app"] {
+    --page-gutter: var(--space-7);
+    --page-block-start: var(--space-7);
+    --page-block-end: var(--space-9);
+    --section-gap: var(--space-8);
+    --stack-gap: var(--space-5);
+    --card-pad: 1.75rem;
+    --text-h1-size: 1.75rem;
+    --text-h1-line: 2.25rem;
+    --text-kpi-size: 2rem;
+    --text-kpi-line: 2.5rem;
+  }
+}
+@media (min-width: 1440px) {
+  html[data-surface="app"] {
+    --page-gutter: 3.5rem;
   }
 }
 
@@ -395,7 +552,7 @@
   [dir="rtl"] h2,
   [dir="rtl"] h3,
   [dir="rtl"] h4 {
-    font-weight: 600;
+    font-weight: var(--fw-heading);
     letter-spacing: normal;
   }
   [dir="rtl"] {
@@ -436,7 +593,7 @@
   /* Display lockup — one Latin face (Geist), set tight and confident. */
   .font-display {
     font-family: var(--font-display);
-    font-weight: 600;
+    font-weight: var(--fw-heading);
     letter-spacing: -0.022em;
   }
   [dir="rtl"] .font-display {
@@ -504,7 +661,7 @@
   .figure-display {
     font-size: var(--text-kpi-size);
     line-height: var(--text-kpi-line);
-    font-weight: 600;
+    font-weight: var(--fw-heading);
     letter-spacing: -0.02em;
   }
   [dir="rtl"] .figure-display {
@@ -516,7 +673,7 @@
   .eyebrow {
     font-size: 0.75rem;
     line-height: 1rem;
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: hsl(var(--muted-foreground));
@@ -532,14 +689,8 @@
     margin-inline: auto;
     width: 100%;
     max-width: var(--content-max);
-    padding-inline: 1rem;
-    padding-block: 1.25rem 2.5rem;
-  }
-  @media (min-width: 768px) {
-    .page-container {
-      padding-inline: 2rem;
-      padding-block: 2rem 3rem;
-    }
+    padding-inline: var(--page-gutter);
+    padding-block: var(--page-block-start) var(--page-block-end);
   }
 
   /* Ledger ruling (spec 2.6): the one brand motif. 1 px hairlines on an 8 px pitch with one
@@ -1064,6 +1215,284 @@
     box-shadow:
       0 0 0 2px hsl(var(--background)),
       0 0 0 4px hsl(var(--ring));
+  }
+}
+
+/* ─── Depth and motion (app surface) ──────────────────────────────────────────
+   Layered surfaces, pointer tilt, parallax and entrance motion. Tilt and parallax read custom
+   properties written by client/src/lib/motion/tilt.ts, which the shell loads lazily for a
+   mouse or trackpad only. Everything here stops under prefers-reduced-motion and under the
+   pause control (<html data-motion="off">); see the two blocks that follow. */
+@layer components {
+  /* App canvas: two wide, faint colour fields behind the content so white cards read as
+     raised. Mirrored in RTL so the brand glow stays at the inline end. */
+  .app-canvas {
+    background-image:
+      radial-gradient(
+        64rem 40rem at 100% -12%,
+        hsl(var(--brand-300) / var(--canvas-glow, 0)),
+        transparent 62%
+      ),
+      radial-gradient(
+        52rem 36rem at -8% 112%,
+        hsl(var(--chart-2) / calc(var(--canvas-glow, 0) * 0.5)),
+        transparent 60%
+      );
+  }
+  [dir="rtl"] .app-canvas {
+    background-image:
+      radial-gradient(
+        64rem 40rem at 0% -12%,
+        hsl(var(--brand-300) / var(--canvas-glow, 0)),
+        transparent 62%
+      ),
+      radial-gradient(
+        52rem 36rem at 108% 112%,
+        hsl(var(--chart-2) / calc(var(--canvas-glow, 0) * 0.5)),
+        transparent 60%
+      );
+  }
+
+  /* Raised surface: a faint top sheen over whatever fill the card has. */
+  :where(html[data-surface="app"]) .shadcn-card {
+    background-image: linear-gradient(
+      180deg,
+      hsl(0 0% 100% / var(--surface-sheen)),
+      hsl(0 0% 100% / 0) 6rem
+    );
+  }
+  :where(html[data-surface="app"]) .card-interactive:hover {
+    transform: translateY(-2px);
+  }
+
+  /* Tables: taller rows from tablet up (52 px body, 44 px header). Compact tables keep their
+     density. */
+  @media (min-width: 768px) {
+    html[data-surface="app"] table[data-density="default"] > tbody > tr > td {
+      height: 3.25rem;
+    }
+    html[data-surface="app"] table[data-density="default"] > thead > tr > th {
+      height: 2.75rem;
+    }
+  }
+
+  /* Document editors (EditorShell): each top-level form section is its own raised card
+     instead of a ruled block, so a long form reads as a stack of calm panels. */
+  html[data-surface="app"]
+    .editor-surface
+    [data-form-section]:not([data-form-section] [data-form-section]) {
+    border: 1px solid hsl(var(--card-border));
+    border-radius: calc(var(--radius) + 4px);
+    background-color: hsl(var(--card));
+    background-image: linear-gradient(
+      180deg,
+      hsl(0 0% 100% / var(--surface-sheen)),
+      hsl(0 0% 100% / 0) 6rem
+    );
+    box-shadow: var(--card-shadow);
+    padding: var(--card-pad);
+  }
+
+  /* Glass bar (top bar, sticky footers): translucent, blurred, with a soft drop edge. */
+  .surface-glass {
+    background: hsl(var(--background) / 0.72);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(16px) saturate(160%);
+    box-shadow:
+      inset 0 -1px 0 0 hsl(var(--border) / 0.7),
+      0 8px 24px -18px hsl(var(--shadow-color) / 0.35);
+  }
+
+  /* Hero panel: the one large layered surface at the top of a page. */
+  .surface-hero {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border-radius: calc(var(--radius) + 8px);
+    border: 1px solid hsl(var(--card-border));
+    background:
+      linear-gradient(135deg, hsl(var(--brand-100) / 0.55), hsl(var(--card) / 0) 55%),
+      hsl(var(--card));
+    box-shadow: var(--card-shadow);
+  }
+  .dark .surface-hero {
+    background:
+      linear-gradient(135deg, hsl(var(--brand-900) / 0.5), hsl(var(--card) / 0) 60%),
+      hsl(var(--card));
+  }
+  [dir="rtl"] .surface-hero {
+    background:
+      linear-gradient(225deg, hsl(var(--brand-100) / 0.55), hsl(var(--card) / 0) 55%),
+      hsl(var(--card));
+  }
+  .dark[dir="rtl"] .surface-hero,
+  .dark [dir="rtl"] .surface-hero {
+    background:
+      linear-gradient(225deg, hsl(var(--brand-900) / 0.5), hsl(var(--card) / 0) 60%),
+      hsl(var(--card));
+  }
+  /* Soft colour orb for hero panels (decorative; pair with .parallax-layer). */
+  .depth-orb {
+    position: absolute;
+    z-index: -1;
+    border-radius: 999px;
+    pointer-events: none;
+    filter: blur(40px);
+    background: hsl(var(--brand-400) / 0.22);
+  }
+  .dark .depth-orb {
+    background: hsl(var(--brand-500) / 0.2);
+  }
+
+  /* Controls: a pressed-in / raised feel. `.ui-btn` is set by <Button>. */
+  html[data-surface="app"] .ui-btn:active:not(:disabled) {
+    transform: translateY(1px) scale(0.985);
+  }
+  html[data-surface="app"] .ui-btn[data-variant="default"]:not(:disabled),
+  html[data-surface="app"] .ui-btn[data-variant="accent"]:not(:disabled),
+  html[data-surface="app"] .ui-btn[data-variant="destructive"]:not(:disabled) {
+    background-image: linear-gradient(180deg, hsl(0 0% 100% / 0.14), hsl(0 0% 100% / 0) 62%);
+  }
+  html[data-surface="app"] .ui-btn[data-variant="default"]:not(:disabled) {
+    box-shadow: var(--primary-shadow);
+  }
+  html[data-surface="app"] .ui-btn[data-variant="default"]:hover:not(:disabled):not(:active) {
+    box-shadow: var(--primary-shadow-hover);
+    transform: translateY(-1px);
+  }
+  html[data-surface="app"] .ui-btn[data-variant="outline"]:not(:disabled) {
+    box-shadow: var(--control-shadow);
+  }
+
+  /* Pointer tilt. The glare sits between the surface fill and its content. */
+  [data-tilt] {
+    position: relative;
+    isolation: isolate;
+    transition:
+      transform var(--duration-slow) var(--ease-out),
+      box-shadow var(--duration-slow) var(--ease-out),
+      border-color var(--duration-base) var(--ease-standard);
+  }
+  [data-tilt]::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(
+      20rem circle at var(--glare-x, 50%) var(--glare-y, 50%),
+      hsl(var(--brand-400) / var(--tilt-glare)),
+      transparent 62%
+    );
+    transition: opacity var(--duration-slow) var(--ease-standard);
+  }
+  [data-tilt][data-tilt-active] {
+    transform: perspective(900px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg))
+      translate3d(0, -2px, 0);
+    box-shadow: var(--card-shadow-hover);
+    z-index: 1;
+  }
+  [data-tilt][data-tilt-active]::before {
+    opacity: 1;
+  }
+
+  /* Parallax: a [data-parallax] scene sets --px / --py; each layer moves by its --depth. */
+  .parallax-layer {
+    transform: translate3d(
+      calc(var(--px, 0) * var(--depth, 8) * 1px),
+      calc(var(--py, 0) * var(--depth, 8) * 1px),
+      0
+    );
+    transition: transform 600ms var(--ease-out);
+  }
+
+  /* Entrance: children rise in one after another, once. Ends on `none` (see page-in). */
+  .stagger-in > * {
+    animation: rise-in 520ms var(--ease-out) both;
+  }
+  .stagger-in > *:nth-child(2) {
+    animation-delay: 60ms;
+  }
+  .stagger-in > *:nth-child(3) {
+    animation-delay: 120ms;
+  }
+  .stagger-in > *:nth-child(4) {
+    animation-delay: 180ms;
+  }
+  .stagger-in > *:nth-child(5) {
+    animation-delay: 240ms;
+  }
+  .stagger-in > *:nth-child(n + 6) {
+    animation-delay: 300ms;
+  }
+
+  /* Slow drift for decorative orbs. */
+  .drift {
+    animation: drift 14s ease-in-out infinite alternate;
+  }
+
+  /* Icon nudge on hover of the parent control (arrows follow the reading direction). */
+  .nudge-on-hover {
+    transition: transform var(--duration-base) var(--ease-out);
+  }
+  .group:hover .nudge-on-hover {
+    transform: translateX(3px);
+  }
+  [dir="rtl"] .group:hover .nudge-on-hover {
+    transform: translateX(-3px);
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes drift {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: 1.5rem -1rem;
+  }
+}
+
+/* ─── Motion pause control ────────────────────────────────────────────────
+   The top-bar pause button sets <html data-motion="off"> (lib/motion/preference.ts). It stops
+   the same things the reduced-motion block below stops, plus pointer tilt and parallax. */
+html[data-motion="off"] *,
+html[data-motion="off"] *::before,
+html[data-motion="off"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+html[data-motion="off"] [data-tilt],
+html[data-motion="off"] .parallax-layer,
+html[data-motion="off"] .card-interactive,
+html[data-motion="off"] .ui-btn,
+html[data-motion="off"] .nudge-on-hover {
+  transform: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-tilt],
+  .parallax-layer,
+  .card-interactive,
+  .ui-btn,
+  .nudge-on-hover {
+    transform: none !important;
+  }
+  .stagger-in > * {
+    animation-delay: 0s !important;
   }
 }
 

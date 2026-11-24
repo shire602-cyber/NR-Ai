@@ -25,6 +25,12 @@ the week's token budget for the work that needs it.
   Report catalog Arabic is the keyed overlay `client/src/locales/ar-catalog/reportCatalog.json`
   (`useCatalogText()`); `npm run e2e:arabic-runtime` must find 0 English text nodes on the 22
   launch routes in Arabic mode. The i18n ratchet also scans `client/src/lib` and `client/src/hooks`.
+- Design tokens live in `client/src/index.css`. The signed-in shells mount `<AppSurface />`, which
+  sets `<html data-surface="app">`: that scope carries the roomier spacing (`p-card`, `gap-stack`,
+  `space-y-section`, `h-control`), medium type weights and layered shadows; public pages keep the
+  base tokens. Depth is opt-in by attribute (`data-tilt`, `data-parallax` + `.parallax-layer`);
+  the pointer code is `client/src/lib/motion/` (lazy). All motion must stop under
+  `prefers-reduced-motion` and the top-bar pause control (`<html data-motion="off">`).
 - Two client bundles: `npm run build` runs `vite build` and `FIRM_BUILD=1 vite build` (`client/firm.html`;
   the signed-in app and the two firm landing screens as one entry chunk). `server/vite.ts` serves it for
   `/firm/*`; `shared/firm-boot.ts` is the shared route/catalog/API table. See
