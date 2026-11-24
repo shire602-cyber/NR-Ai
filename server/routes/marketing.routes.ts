@@ -22,7 +22,7 @@ const callbackRequest = z.object({
 export function registerMarketingRoutes(app: Express) {
   app.post(
     "/api/marketing/demo-request",
-    buildLimiter({
+    buildLimiter("marketing-demo", {
       windowMs: 15 * 60 * 1000,
       max: 5,
       message: "Try again later",

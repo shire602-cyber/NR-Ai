@@ -1,3 +1,10 @@
+import {
+  EMAIL_INTAKE_LIMIT,
+  EMAIL_INTAKE_PATH,
+  LARGE_JSON_LIMIT,
+  VAT_EVIDENCE_JSON_LIMIT,
+  VAT_EVIDENCE_SCAN_PATH,
+} from "../http/body-limits";
 import { portalInviteLogPath } from "../http/portal-invite-privacy";
 import helmet from "helmet";
 import cors from "cors";
@@ -228,14 +235,14 @@ export function applySecurityMiddleware(app: Express): void {
   );
 
   // ─── Rate Limiting (sliding window, configurable per route) ──
-  // Each limiter has its own in-memory sliding-window store, sized via
+  // Each route group has its own shared sliding-window budget, sized via
   // env vars (RL_*). Requests carrying a valid access token count against
   // the user; anonymous traffic counts against the client IP
   // (R01-10). Requests rejected with 429 are not counted (R17-06).
   // Order matters: more specific paths must be registered before /api/.
   app.use(
     "/api/auth/oauth/",
-    buildLimiter({
+    buildLimiter("oauth", {
       ...limiterProfiles.authOAuth,
       keyGenerator: clientIp,
       skipIf: (req) => isOAuthLimiterExempt(req.path),
@@ -248,7 +255,7 @@ export function applySecurityMiddleware(app: Express): void {
   // per-email progressive lockout lives in auth.routes (R01-12).
   app.use(
     "/api/auth/",
-    buildLimiter({
+    buildLimiter("auth", {
       ...limiterProfiles.auth,
       keyGenerator: clientIp,
       skipSuccessfulRequests: true,
@@ -258,42 +265,45 @@ export function applySecurityMiddleware(app: Express): void {
   // STEP5: accepting a portal invitation sets a password, so it shares the credential budget.
   app.use(
     "/api/portal-invitations/",
-    buildLimiter({
+    buildLimiter("portal-invitations", {
       ...limiterProfiles.auth,
       keyGenerator: clientIp,
       skipSuccessfulRequests: true,
       skipIf: (req) => req.method !== "POST" || !/^\/accept\/?$/i.test(req.path),
     })
   );
-  app.use("/api/ai/", buildLimiter(limiterProfiles.ai));
-  app.use("/api/ocr/", buildLimiter(limiterProfiles.ai));
-  app.use("/api/firm/bulk/ocr", buildLimiter(limiterProfiles.ai));
+  app.use("/api/ai/", buildLimiter("api-ai", limiterProfiles.ai));
+  app.use("/api/ocr/", buildLimiter("api-ocr", limiterProfiles.ai));
+  app.use("/api/firm/bulk/ocr", buildLimiter("firm-bulk-ocr", limiterProfiles.ai));
   // Two-tier general limiter: an active dashboard fires a dozen GETs per
   // page, so reads get a generous dedicated budget while mutations keep the
   // stricter cap. A single tier throttled normal navigation, 429'd
   // /api/auth/me, and the client then treated the user as logged out.
   app.use(
     "/api/",
-    buildLimiter({
+    buildLimiter("api-read", {
       ...limiterProfiles.read,
       skipIf: (req) => !["GET", "HEAD", "OPTIONS"].includes(req.method),
     })
   );
   app.use(
     "/api/",
-    buildLimiter({
+    buildLimiter("api-write", {
       ...limiterProfiles.api,
       skipMethods: ["GET", "HEAD", "OPTIONS"],
     })
   );
 
   // ─── Request Size Limits ──────────────────────────────────
-  // Hard ceiling: image-upload routes allow up to 10MB; the per-route
-  // body parser in index.ts enforces tighter per-route limits.
+  // Reject oversized declared bodies before allocating parser buffers.
   app.use((req: Request, res: Response, next: NextFunction) => {
+    const limit = EMAIL_INTAKE_PATH.test(req.path)
+      ? EMAIL_INTAKE_LIMIT
+      : VAT_EVIDENCE_SCAN_PATH.test(req.path)
+        ? VAT_EVIDENCE_JSON_LIMIT
+        : LARGE_JSON_LIMIT;
     const contentLength = parseInt(req.headers["content-length"] || "0", 10);
-    if (contentLength > 10_485_760) {
-      // 10MB
+    if (contentLength > limit) {
       return res.status(413).json({ message: "Request too large", code: "PAYLOAD_TOO_LARGE" });
     }
     next();

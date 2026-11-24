@@ -17,6 +17,11 @@ let server: Server;
 let origin: string;
 
 beforeAll(async () => {
+  vi.mocked(registerRoutes).mockImplementationOnce(async (app) => {
+    app.post("/api/webhooks/email-intake", (req, res) => {
+      res.json({ bytes: Buffer.isBuffer(req.body) ? req.body.length : null });
+    });
+  });
   const app = await createApp({ vercel: true });
   app.get("*", (_req, res) => res.type("html").send("<html>SPA</html>"));
   server = createServer(app).listen(0, "127.0.0.1");
@@ -34,6 +39,17 @@ afterEach(() => {
 });
 
 describe("Vercel HTTP app", () => {
+  it("parses a signed-email-sized raw body above the normal API ceiling", async () => {
+    const bytes = 11 * 1024 * 1024;
+    const response = await fetch(origin + "/api/webhooks/email-intake", {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: Buffer.alloc(bytes),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ bytes });
+  });
+
   it.each(["/api", "/api/missing?search=one", "/API/missing"])(
     "answers %s with an uncached API 404 before the document fallback",
     async (pathname) => {

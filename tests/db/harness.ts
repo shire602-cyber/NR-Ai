@@ -239,17 +239,27 @@ async function buildApp(): Promise<any> {
   applySecurityMiddleware(app);
   app.use(compression());
 
-  const { LARGE_JSON_LIMIT, SMALL_JSON_LIMIT, RAW_WEBHOOK_PREFIXES, usesLargeJson } =
-    await import("../../server/http/body-limits");
+  const {
+    EMAIL_INTAKE_LIMIT,
+    EMAIL_INTAKE_PATH,
+    LARGE_JSON_LIMIT,
+    SMALL_JSON_LIMIT,
+    VAT_EVIDENCE_JSON_LIMIT,
+    VAT_EVIDENCE_SCAN_PATH,
+    RAW_WEBHOOK_PREFIXES,
+    usesLargeJson,
+  } = await import("../../server/http/body-limits");
   const largeJson = express.json({ limit: LARGE_JSON_LIMIT });
   const smallJson = express.json({ limit: SMALL_JSON_LIMIT });
-  app.use("/api/webhooks/email-intake", express.raw({ type: "*/*", limit: "20mb" }));
+  const vatEvidenceJson = express.json({ limit: VAT_EVIDENCE_JSON_LIMIT });
+  app.use(EMAIL_INTAKE_PATH, express.raw({ type: "*/*", limit: EMAIL_INTAKE_LIMIT }));
   // Same list as server/index.ts (server/http/body-limits.ts).
   const rawWebhookPrefixes = [...RAW_WEBHOOK_PREFIXES];
   app.use(rawWebhookPrefixes, express.raw({ type: "*/*", limit: "1mb" }));
   app.use((req: any, res: any, next: any) => {
-    if (req.path === "/api/webhooks/email-intake") return next();
+    if (EMAIL_INTAKE_PATH.test(req.path)) return next();
     if (rawWebhookPrefixes.some((p) => req.path.startsWith(`${p}/`))) return next();
+    if (VAT_EVIDENCE_SCAN_PATH.test(req.path)) return vatEvidenceJson(req, res, next);
     const useLarge = usesLargeJson(req.path);
     return (useLarge ? largeJson : smallJson)(req, res, next);
   });

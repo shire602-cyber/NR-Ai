@@ -1093,6 +1093,13 @@
    "when": 1781430720000,
    "tag": "0155_cash_sale_buyer_and_checkout_reservation",
    "breakpoints": false
+  },
+  {
+   "idx": 156,
+   "version": "7",
+   "when": 1781430730000,
+   "tag": "0156_request_throttle_buckets",
+   "breakpoints": false
   }
  ]
 }

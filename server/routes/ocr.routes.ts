@@ -51,17 +51,17 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
     deps.anthropic === undefined && deps.openai === undefined ? createOcrClients() : null;
   const anthropic = deps.anthropic !== undefined ? deps.anthropic : (envClients?.anthropic ?? null);
   const openai = deps.openai !== undefined ? deps.openai : (envClients?.openai ?? null);
-  const aiLimiter = buildLimiter(limiterProfiles.ai);
+  const aiLimiter = buildLimiter("ocr-routes", limiterProfiles.ai);
   // X6b: one budget per company (not per user) so a company's scans cannot starve the platform
   // however many users it adds. Applied once the caller's access to the company is proven.
-  const companyLimiter = buildLimiter({
+  const companyLimiter = buildLimiter("ocr-company", {
     ...limiterProfiles.ocrCompany,
     keyGenerator: (req) => `ocr:${(req as Request & { ocrCompanyId?: string }).ocrCompanyId}`,
   });
   const applyCompanyLimit = (req: Request, res: Response, companyId: string) =>
-    new Promise<boolean>((resolve) => {
+    new Promise<boolean>((resolve, reject) => {
       (req as Request & { ocrCompanyId?: string }).ocrCompanyId = companyId;
-      companyLimiter(req, res, () => resolve(true));
+      companyLimiter(req, res, (err?: unknown) => (err ? reject(err) : resolve(true)));
       res.once("finish", () => resolve(false));
     });
 
