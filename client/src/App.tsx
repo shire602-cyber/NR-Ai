@@ -289,6 +289,9 @@ function ProtectedLayout({
   const { isFirmContext, isSwitchingClient } = useActiveCompany();
   const companiesFetching = useIsFetching({ queryKey: ["/api/companies"] });
   const pathname = pathnameOnly(location);
+  const isFirmRoute = pathname === "/firm" || pathname.startsWith("/firm/");
+  // Discard client-specific page state (including unsaved forms) on a company switch.
+  const pageKey = isFirmRoute ? location : JSON.stringify([location, company?.id]);
 
   useEffect(() => {
     // R18-08: the redirect is deterministic per-user state, not a per-session flag. While the
@@ -396,7 +399,7 @@ function ProtectedLayout({
               <RouteGuard>
                 {/* Content fades in + 4 px once per route change: CSS only (`page-enter`, which
                     reduced-motion neutralises), so the shell does not ship framer-motion. */}
-                <div key={location} className="page-enter">
+                <div key={pageKey} className="page-enter">
                   <SectionBoundary name={routeName(location)}>{children}</SectionBoundary>
                 </div>
               </RouteGuard>

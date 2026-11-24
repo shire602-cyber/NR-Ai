@@ -322,6 +322,57 @@ describe("Company MFA on firm client actions", () => {
     expect(health.body).toMatchObject([{ companyId: openId }]);
   });
 
+  it("requires MFA only for the client alerts included in the list", async () => {
+    const { owner, protectedId, openId, setCompanyMfaPolicy } = await createMfaClients("Alert MFA");
+    await h.sql(
+      `INSERT INTO firm_alerts (firm_id, company_id, alert_type, severity, message)
+       VALUES ($1, $2, 'overdue_balance', 'critical', 'Protected client alert'),
+              ($1, $3, 'overdue_balance', 'warning', 'Open client alert')`,
+      [owner.user.id, protectedId, openId]
+    );
+    await setCompanyMfaPolicy(protectedId, "all", owner.user.id);
+
+    const path = "/api/firm/command-center/alerts";
+    const blocked = await owner.as.get(path);
+    expect(blocked.status, blocked.text).toBe(403);
+    expect(blocked.body).toMatchObject({
+      code: "MFA_ENROLLMENT_REQUIRED",
+      details: { companyId: protectedId },
+    });
+    expect((await owner.as.request("HEAD", path)).status).toBe(403);
+    const warningOnly = await owner.as.get(`${path}?severity=warning`);
+    expect(warningOnly.status, warningOnly.text).toBe(200);
+    expect(warningOnly.body).toMatchObject([{ companyId: openId }]);
+  });
+
+  it("prevents alert updates after its client leaves the firm's scope", async () => {
+    const { owner, protectedId, openId } = await createMfaClients("Alert archive");
+    const [archivedAlert, openAlert] = await h.sql<{ id: string }>(
+      `INSERT INTO firm_alerts (firm_id, company_id, alert_type, severity, message)
+       VALUES ($1, $2, 'overdue_balance', 'critical', 'Archived client alert'),
+              ($1, $3, 'overdue_balance', 'warning', 'Open client alert')
+       RETURNING id`,
+      [owner.user.id, protectedId, openId]
+    );
+    const removed = await owner.as.request("DELETE", `/api/firm/clients/${protectedId}`);
+    expect(removed.status, removed.text).toBe(200);
+
+    const path = "/api/firm/command-center/alerts";
+    const remaining = await owner.as.get(path);
+    expect(remaining.status, remaining.text).toBe(200);
+    expect(remaining.body).toMatchObject([{ id: openAlert.id }]);
+    for (const action of ["read", "resolve"]) {
+      const denied = await owner.as.patch(`${path}/${archivedAlert.id}/${action}`, {});
+      expect(denied.status, denied.text).toBe(404);
+    }
+    expect(
+      await h.sql("SELECT is_read, resolved_at FROM firm_alerts WHERE id = $1", [archivedAlert.id])
+    ).toEqual([{ is_read: false, resolved_at: null }]);
+    const resolved = await owner.as.patch(`${path}/${openAlert.id}/resolve`, {});
+    expect(resolved.status, resolved.text).toBe(200);
+    expect(resolved.body).toMatchObject({ id: openAlert.id, isRead: true });
+  });
+
   it("checks the assigned companies in value operations summaries", async () => {
     const { owner, protectedId, openId, setCompanyMfaPolicy } = await createMfaClients("Summary");
     const actor = await h.createTenant({ name: "MFA Summary Firm Admin", firmRole: "firm_admin" });

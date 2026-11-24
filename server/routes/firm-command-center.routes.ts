@@ -257,16 +257,12 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   router.get(
     "/alerts",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = req.user!;
       const filters = alertFilterSchema.parse(req.query);
-      const accessible = new Set(
-        await resolveAccessibleClientIds(userId, req.user!.firmRole ?? null)
-      );
-      // Alerts are keyed per user; drop rows for clients no longer accessible
-      // (link revoked, unassigned) so a stale alert never leaks a client name.
-      const alerts = (await listFirmAlerts(userId, filters)).filter(
-        (a) => !a.companyId || accessible.has(a.companyId)
-      );
+      const alerts = await listFirmAlerts(firmContextOf(res), filters);
+      const companyIds = [
+        ...new Set(alerts.flatMap((alert) => (alert.companyId ? [alert.companyId] : []))),
+      ];
+      if (!(await requireFirmCompanyMfa(req.user!, res, companyIds))) return;
       res.json(alerts);
     })
   );
@@ -314,7 +310,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid alert id" });
       }
-      const updated = await markAlertRead(userId, parsed.data.id);
+      const updated = await markAlertRead(firmContextOf(res), parsed.data.id);
       if (!updated) return res.status(404).json({ message: "Alert not found" });
       await recordAudit({
         userId,
@@ -339,7 +335,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid alert id" });
       }
-      const updated = await resolveAlert(userId, parsed.data.id);
+      const updated = await resolveAlert(firmContextOf(res), parsed.data.id);
       if (!updated) return res.status(404).json({ message: "Alert not found" });
       await recordAudit({
         userId,
