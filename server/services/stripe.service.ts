@@ -5,6 +5,7 @@ import {
   PLAN_DEFINITIONS,
   isBillingCycle,
   isPaidPlanId,
+  type BillingCycle,
   type PlanLimits as SharedPlanLimits,
 } from "../../shared/plans";
 import Stripe from "stripe";
@@ -87,6 +88,29 @@ const PLAN_LIMITS: Record<string, PlanLimits> = {
   free: storedLimits(NO_PLAN_LIMITS),
   ...Object.fromEntries(PLAN_DEFINITIONS.map((p) => [p.id, storedLimits(p.limits)])),
 };
+
+function planForStripePrice(priceId: string | undefined) {
+  if (!priceId) return;
+  for (const planId of PAID_PLAN_IDS) {
+    const billingCycle = BILLING_CYCLES.find((cycle) => PLAN_PRICE_MAP[planId][cycle] === priceId);
+    if (billingCycle) return { planId, billingCycle };
+  }
+}
+
+function subscriptionPlanChangeFields(planId: string, billingCycle: BillingCycle) {
+  const limits = PLAN_LIMITS[planId] || PLAN_LIMITS.free;
+  return {
+    planId,
+    planName: planId.charAt(0).toUpperCase() + planId.slice(1),
+    billingCycle,
+    maxUsers: limits.maxUsers,
+    maxInvoices: limits.maxInvoices,
+    maxReceipts: limits.maxReceipts,
+    maxCompanies: limits.maxCompanies,
+    maxStorageMb: limits.maxStorageMb,
+    aiCreditsPerMonth: limits.aiCreditsPerMonth,
+  };
+}
 
 /** Seats billed: company members (min 1). Plans priced per seat set STRIPE_PER_SEAT=true. */
 export async function billableSeats(companyId: string): Promise<number> {
@@ -294,18 +318,9 @@ export async function changeSubscriptionPlan(
     proration_behavior: "create_prorations",
     metadata: { companyId, planId, billingCycle },
   });
-  const limits = PLAN_LIMITS[planId] || PLAN_LIMITS.free;
   await storage.updateSubscription(subscription.id, {
-    planId,
-    planName: planId.charAt(0).toUpperCase() + planId.slice(1),
-    billingCycle,
+    ...subscriptionPlanChangeFields(planId, billingCycle),
     seatCount: seats,
-    maxUsers: limits.maxUsers,
-    maxInvoices: limits.maxInvoices,
-    maxReceipts: limits.maxReceipts,
-    maxCompanies: limits.maxCompanies,
-    maxStorageMb: limits.maxStorageMb,
-    aiCreditsPerMonth: limits.aiCreditsPerMonth,
   });
   return { planId, billingCycle, seats };
 }
@@ -577,9 +592,13 @@ async function handleSubscriptionUpdated(sub: Stripe.Subscription): Promise<void
   const subscription = await resolveWebhookSubscription(sub);
   if (!subscription || subscription.stripeSubscriptionId !== sub.id) return;
 
+  const item = sub.items?.data?.[0];
+  // A portal change updates the billed price while the original checkout metadata can stay stale.
+  const plan = planForStripePrice(item?.price?.id);
   await storage.updateSubscription(subscription.id, {
     ...stripeSubscriptionState(sub),
-    seatCount: sub.items?.data?.[0]?.quantity ?? subscription.seatCount ?? 1,
+    ...(plan && subscriptionPlanChangeFields(plan.planId, plan.billingCycle)),
+    seatCount: item?.quantity ?? subscription.seatCount ?? 1,
   });
 }
 
