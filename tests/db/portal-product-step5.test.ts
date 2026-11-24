@@ -111,7 +111,7 @@ async function bind(supplier: Tenant, cid: string, user: Tenant) {
 
 describe("STEP5 portal product fixes", () => {
   it("[S5-P2] a partly paid invoice past its due date is overdue; due today is not; next due is never in the past", async () => {
-    const supplier = await h.createTenant({ name: "Overdue Supplier" });
+    const supplier = await h.createTenant({ emailVerified: true, name: "Overdue Supplier" });
     const customer = await h.createTenant({ name: "Overdue Customer" });
     const cid = await contact(supplier, "Overdue Buyer");
     const partlyPaidPast = await invoice(supplier, cid, dubaiDate(-10));
@@ -149,8 +149,8 @@ describe("STEP5 portal product fixes", () => {
   });
 
   it("[S5-P7] a deactivated supplier never shows another supplier's data by itself; the customer picks an active one, and with none left gets a clear 403", async () => {
-    const s1 = await h.createTenant({ name: "Fallback One" });
-    const s2 = await h.createTenant({ name: "Fallback Two" });
+    const s1 = await h.createTenant({ emailVerified: true, name: "Fallback One" });
+    const s2 = await h.createTenant({ emailVerified: true, name: "Fallback Two" });
     const customer = await h.createTenant({ name: "Fallback Customer" });
     const c1 = await contact(s1, "Buyer One");
     const c2 = await contact(s2, "Buyer Two");
@@ -189,7 +189,7 @@ describe("STEP5 portal product fixes", () => {
   });
 
   it("[S5-P4] bulk invite without an email provider reports the invitations as queued, never as sent, and returns no links", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const a = await contact(t, "Bulk Queue A");
     const b = await contact(t, "Bulk Queue B");
     const res = await t.as.post(`/api/companies/${t.company.id}/portal-invitations/bulk`, {
@@ -206,7 +206,7 @@ describe("STEP5 portal product fixes", () => {
   });
 
   it("[S5-P12] the join page data carries the personal note as plain text", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const email = `note-${uniq()}@example.test`;
     const cid = await contact(t, "Note Buyer", { email });
     const r = await t.as.post(
@@ -231,7 +231,7 @@ describe("STEP5 portal product fixes", () => {
   });
 
   it("[S5-P11] a portal customer can rename themselves, and only that", async () => {
-    const supplier = await h.createTenant({ name: "Rename Supplier" });
+    const supplier = await h.createTenant({ emailVerified: true, name: "Rename Supplier" });
     const customer = await h.createTenant({ name: "Rename Customer" });
     const stranger = await h.createTenant({ name: "Not A Customer" });
     const cid = await contact(supplier, "Rename Buyer");
