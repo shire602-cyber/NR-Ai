@@ -83,6 +83,14 @@ export interface OutboxResult {
   duplicate?: boolean;
 }
 
+/** A message whose body carries a live link or code must not rest in the table unsent. */
+function dropsBodyWhenUnsent(m: { category?: string | null; sensitive?: boolean | null }): boolean {
+  // The e-invoicing approver link is also returned to the inviter by the API, so its row keeps
+  // the body it needs to be retried when a provider appears.
+  if (m.category === "einvoice_approver_link") return false;
+  return m.category === "portal_invite" || m.sensitive === true;
+}
+
 export function backoffMs(attempts: number): number {
   return Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** Math.max(0, attempts - 1));
 }
@@ -149,10 +157,11 @@ export async function enqueueEmail(input: EnqueueEmailInput, executor = db): Pro
         replyTo: input.replyTo ?? null,
         fromName: input.fromName ?? null,
         subject: input.subject.slice(0, 998),
-        // R5-9: with no provider a portal invitation is never sent by this row, so its live link is
-        // not stored at all (Resend renders a fresh message with a fresh token).
-        html: !provider && input.category === "portal_invite" ? null : input.html,
-        textBody: !provider && input.category === "portal_invite" ? null : (input.text ?? null),
+        // R5-9 / STEP5 N-1: with no provider a sensitive message (portal invitation, email
+        // verification, password reset, sign-in code) is never sent by this row, so its live
+        // link or code is not stored at all. A resend renders a fresh message with a fresh token.
+        html: !provider && dropsBodyWhenUnsent(input) ? null : input.html,
+        textBody: !provider && dropsBodyWhenUnsent(input) ? null : (input.text ?? null),
         category: input.category ?? "generic",
         relatedEntityType: digest ? NOTIFICATION_DIGEST_ENTITY : (input.relatedEntityType ?? null),
         relatedEntityId: digest?.userId ?? input.relatedEntityId ?? null,
@@ -264,6 +273,9 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
   ) {
     return cancelPendingEmail(row.id);
   }
+  // A sensitive message that lost its body (stored while no provider existed) can never be sent
+  // by this row: the user asks again and gets a fresh link.
+  if (row.sensitive && !row.html && !row.textBody) return cancelPendingEmail(row.id);
   const deliveryGuard =
     row.category === "portal_invite"
       ? isCurrentPortalInvite
@@ -286,9 +298,9 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
         lockedUntil: null,
         lastError: "No email provider configured (RESEND_API_KEY or SMTP_HOST)",
         updatedAt: new Date(),
-        // R5-9: an unsent invitation keeps no live link at rest. The body is dropped; Resend
-        // issues a fresh token and renders a new message.
-        ...(row.category === "portal_invite" ? { html: null, textBody: null } : {}),
+        // R5-9 / N-1: an unsent sensitive message keeps no live link at rest. The body is dropped;
+        // a resend issues a fresh token and renders a new message.
+        ...(dropsBodyWhenUnsent(row) ? { html: null, textBody: null } : {}),
       })
       .where(eq(emailOutbox.id, row.id))
       .returning();
@@ -446,6 +458,7 @@ export async function processOutbox(limit = 50): Promise<Record<string, number>>
               updated_at = now() AT TIME ZONE 'UTC'
         WHERE status = 'blocked_no_provider'
           AND category <> 'portal_invite'
+          AND (NOT sensitive OR html IS NOT NULL)
           AND created_at > (now() AT TIME ZONE 'UTC') - CASE WHEN sensitive THEN interval '1 hour'
                                         ELSE interval '24 hours' END`
     );
@@ -478,7 +491,9 @@ export async function requeueOutboxMessage(
         eq(emailOutbox.id, id),
         eq(emailOutbox.companyId, companyId),
         inArray(emailOutbox.status, ["dead", "blocked_no_provider", "retrying"]),
-        sql`(${emailOutbox.category} <> 'portal_invite' OR (${isCurrentPortalInvite} AND ${emailOutbox.html} IS NOT NULL))`
+        sql`(${emailOutbox.category} <> 'portal_invite' OR ${isCurrentPortalInvite})`,
+        // A body-less (sensitive, never sent) row has nothing to retry: ask for a fresh message.
+        sql`(NOT ${emailOutbox.sensitive} OR ${emailOutbox.html} IS NOT NULL)`
       )
     )
     .returning();

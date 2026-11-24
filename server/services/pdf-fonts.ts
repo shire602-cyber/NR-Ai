@@ -637,12 +637,19 @@ export function isDraftStatus(status: string | null | undefined): boolean {
   return (status ?? "").trim().toLowerCase() === "draft";
 }
 
+/** True for a cancelled or voided document: no longer a live tax document. */
+export function isVoidedStatus(status: string | null | undefined): boolean {
+  const v = (status ?? "").trim().toLowerCase();
+  return v === "void" || v === "cancelled";
+}
+
 /**
  * X6d: stamps a diagonal "DRAFT / مسودة" watermark on every page of a buffered document so a
  * draft cannot be sent as a tax invoice. The document must be created with `bufferPages: true`;
  * call this immediately before `doc.end()`. It is drawn last so header bars cannot hide it.
  */
-export function stampDraftWatermark(doc: PdfDoc): void {
+export function stampDraftWatermark(doc: PdfDoc, variant: "draft" | "void" = "draft"): void {
+  const [en, ar] = variant === "void" ? ["VOID", "ملغاة"] : ["DRAFT", "مسودة"];
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
@@ -661,8 +668,8 @@ export function stampDraftWatermark(doc: PdfDoc): void {
         align: "center",
         singleLine: true,
       });
-    stamp("DRAFT", height / 2 - 95, 120);
-    stamp("مسودة", height / 2 + 25, 72);
+    stamp(en, height / 2 - 95, 120);
+    stamp(ar, height / 2 + 25, 72);
     doc.restore();
   }
 }
