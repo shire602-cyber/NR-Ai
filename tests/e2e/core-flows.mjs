@@ -531,6 +531,8 @@ async function noSideScroll(page, label) {
 async function portalInviteJourney(h, { phone }) {
   const lang = h.lang;
   const owner = await newOwner(phone ? "pinvph" : "pinv", lang);
+  // Portal invitations need a verified inviter (S5-SEC-4).
+  await dbRows("UPDATE users SET email_verified = true WHERE email = $1", [owner.email]);
   const viewport = phone ? { width: 390, height: 844 } : { width: 1440, height: 900 };
   const password = "Fake-Customer9Portal!";
   let seed;
@@ -1897,6 +1899,7 @@ const FLOWS = [
     "Customer portal invitation to an existing account: sign in, add the supplier",
     async (h) => {
       const supplier = await newOwner("pexs", h.lang);
+      await dbRows("UPDATE users SET email_verified = true WHERE email = $1", [supplier.email]);
       const buyer = await newOwner("pexb", h.lang);
       await dbRows("UPDATE users SET email_verified = true WHERE email = $1", [buyer.email]);
       const seed = await seedPortalCustomer(supplier, h.lang);
