@@ -16,7 +16,7 @@ const PREFIX: Record<InvoiceDocType, string> = {
   invoice: "INV",
   // CASH-SERIES (owner decision 2026-11-18): cash sales are tax invoices with their own
   // gap-free series (own prefix and counter per company), never shared with "invoice".
-  // Migration 0130 chooses a free alternative when another type already uses "CS".
+  // The cash-sale migrations assign an alternative where "CS" is already occupied.
   cash_sale: "CS",
   credit_note: "CN",
   // W3-A: debit notes (additional charges on an issued invoice) are tax
@@ -55,6 +55,18 @@ function sequenceYear(s: NumberingSettings, date: Date): number {
 export function formatDocumentNumber(s: NumberingSettings, year: number, n: number): string {
   const digits = String(n).padStart(s.padding, "0");
   return s.yearlyReset ? `${s.prefix}-${year}-${digits}` : `${s.prefix}-${digits}`;
+}
+
+function numberingSeriesOverlap(first: NumberingSettings, second: NumberingSettings): boolean {
+  if (first.prefix === second.prefix) return true;
+  if (first.yearlyReset === second.yearlyReset) return false;
+  const [yearly, continuous] = first.yearlyReset ? [first, second] : [second, first];
+  const stem = `${yearly.prefix}-`;
+  // Padding is a minimum width. Counters eventually have enough digits to overlap.
+  return (
+    continuous.prefix.startsWith(stem) &&
+    /^(0|[1-9][0-9]{0,3})$/.test(continuous.prefix.slice(stem.length))
+  );
 }
 
 /** Default format (INV-2026-00001); kept for callers and tests that format without settings. */
@@ -238,12 +250,12 @@ export async function saveNumberingSettings(
     };
     for (const other of NUMBERED_DOC_TYPES) {
       if (other === docType) continue;
-      if ((await getNumberingSettings(companyId, other, tx)).prefix === settings.prefix) {
+      if (numberingSeriesOverlap(settings, await getNumberingSettings(companyId, other, tx))) {
         throw new DomainError(
           "NUMBERING_PREFIX_IN_USE",
           409,
           { prefix: settings.prefix, docType: other },
-          "Another document type already uses this prefix"
+          "This prefix overlaps with another document numbering series"
         );
       }
     }

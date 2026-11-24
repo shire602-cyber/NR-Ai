@@ -6,22 +6,12 @@
 -- never from the tax-invoice series. Cash sales issued before this migration keep their
 -- numbers (INV-...) exactly; the invoice series is not touched.
 --
--- 1) When CS is occupied, choose the first unused alternative: CSL, CSL2, CSL3, ...
+-- 1) A company where another document type already uses the prefix "CS" gets "CSL" for cash
+--    sales, so the default can never collide with an existing prefix.
 INSERT INTO document_numbering_settings (company_id, doc_type, prefix, padding, yearly_reset, updated_at)
-SELECT occupied.company_id, 'cash_sale', candidate.prefix, 5, true, now()
-  FROM (SELECT DISTINCT company_id FROM document_numbering_settings
-         WHERE doc_type <> 'cash_sale' AND prefix = 'CS') occupied
- CROSS JOIN LATERAL (
-   SELECT CASE WHEN n = 1 THEN 'CSL' ELSE 'CSL' || n::text END AS prefix
-     FROM generate_series(1, 1 + (SELECT count(*)::integer FROM document_numbering_settings
-                                  WHERE company_id = occupied.company_id)) AS series(n)
-    WHERE NOT EXISTS (
-      SELECT 1 FROM document_numbering_settings s
-       WHERE s.company_id = occupied.company_id
-         AND s.prefix = CASE WHEN n = 1 THEN 'CSL' ELSE 'CSL' || n::text END
-    )
-    ORDER BY n LIMIT 1
- ) candidate
+SELECT DISTINCT s.company_id, 'cash_sale', 'CSL', 5, true, now()
+  FROM document_numbering_settings s
+ WHERE s.doc_type <> 'cash_sale' AND s.prefix = 'CS'
 ON CONFLICT (company_id, doc_type) DO NOTHING;
 --> statement-breakpoint
 -- 2) Start each cash-sale sequence above any number already written in its format (imported

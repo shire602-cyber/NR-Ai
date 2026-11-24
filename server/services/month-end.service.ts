@@ -763,33 +763,34 @@ export async function lockPeriod(
   }, outer);
 }
 
-/** The annual close and an existing hard month close have independent lifecycles. */
-async function getHardMonthClose(tx: LedgerTx, companyId: string, end: string) {
+/** The annual close and an existing period lock have independent lifecycles. */
+async function getPeriodLockAt(tx: LedgerTx, companyId: string, end: string) {
   const result = await tx.execute(sql`
     SELECT * FROM month_end_close
      WHERE company_id = ${companyId} AND period_end = ${end}::date
-       AND status = 'locked' AND lock_type = 'hard' AND lock_scope = 'month'
+       AND status = 'locked'
   `);
   const [row] = rowsOf<QueryResultRow>(result);
   return row ? formatCloseRecord(row) : null;
 }
 
-/** Used by the fiscal close after it acquires the exclusive lock and writes its fiscal record. */
 async function writePeriodLock(
   tx: LedgerTx,
   companyId: string,
   end: string,
   userId: string,
-  opts: LockOptions
+  opts: LockOptions,
+  fiscalYearLock = false
 ): Promise<MonthEndCloseRecord> {
   const result = await tx.execute(sql`
      INSERT INTO month_end_close
        (company_id, period_start, period_end, status, closed_by, closed_at, closing_entry_id,
-        lock_type, lock_scope, lock_reason, checklist_override, checklist_snapshot)
+        lock_type, lock_scope, lock_reason, checklist_override, checklist_snapshot, fiscal_year_lock)
      VALUES (${companyId}, date_trunc('month', ${end}::date), ${end}::date, 'locked', ${userId},
              now(), ${opts.closingEntryId || null}, ${opts.lockType ?? "hard"},
              ${opts.lockScope ?? "through"}, ${opts.reason ?? null},
-             ${opts.checklistOverride === true}, ${JSON.stringify(opts.checklistSnapshot) ?? null}::jsonb)
+             ${opts.checklistOverride === true}, ${JSON.stringify(opts.checklistSnapshot) ?? null}::jsonb,
+             ${fiscalYearLock})
      ON CONFLICT (company_id, period_end)
      DO UPDATE SET
        status = 'locked',
@@ -801,6 +802,7 @@ async function writePeriodLock(
        lock_reason = EXCLUDED.lock_reason,
        checklist_override = EXCLUDED.checklist_override,
        checklist_snapshot = EXCLUDED.checklist_snapshot,
+       fiscal_year_lock = EXCLUDED.fiscal_year_lock,
        updated_at = now()
      RETURNING *`);
   return formatCloseRecord(rowsOf<QueryResultRow>(result)[0]);
@@ -822,7 +824,7 @@ export async function isPeriodLocked(companyId: string, date: string): Promise<b
 export async function unlockPeriod(
   companyId: string,
   periodEnd: string,
-  opts: { userId?: string | null; reason?: string | null } = {},
+  opts: { userId?: string | null; reason?: string | null; fiscalYearLockOnly?: boolean } = {},
   outer?: LedgerTx
 ): Promise<MonthEndCloseRecord | null> {
   const end = parseReportDate(periodEnd, "periodEnd");
@@ -833,8 +835,9 @@ export async function unlockPeriod(
     const result = await tx.execute(sql`
       UPDATE month_end_close
          SET status = 'open', updated_at = now(), unlocked_by = ${opts.userId ?? null},
-             unlocked_at = now(), unlock_reason = ${opts.reason ?? null}
+             unlocked_at = now(), unlock_reason = ${opts.reason ?? null}, fiscal_year_lock = false
        WHERE company_id = ${companyId} AND period_end::date = ${end}::date AND status = 'locked'
+         AND (${opts.fiscalYearLockOnly === true} = false OR fiscal_year_lock)
        RETURNING *`);
     const [row] = rowsOf<QueryResultRow>(result);
     return row ? formatCloseRecord(row) : null;
@@ -1112,17 +1115,23 @@ export async function closeFiscalYear(
     if (!r.rows[0]) {
       throw new DomainError("FISCAL_YEAR_ALREADY_CLOSED", 409, { fiscalYearEnd: fye });
     }
-    const hardMonth = opts.hardClose ? null : await getHardMonthClose(tx, companyId, fye);
     const lock =
-      hardMonth ??
-      (await writePeriodLock(tx, companyId, fye, userId, {
-        lockType: opts.hardClose ? "hard" : "soft",
-        lockScope: "through",
-        reason: opts.reason ?? `Year-end close ${fye}`,
-        checklistOverride: opts.checklistOverride,
-        checklistSnapshot: opts.checklistSnapshot,
-        closingEntryId,
-      }));
+      (await getPeriodLockAt(tx, companyId, fye)) ??
+      (await writePeriodLock(
+        tx,
+        companyId,
+        fye,
+        userId,
+        {
+          lockType: opts.hardClose ? "hard" : "soft",
+          lockScope: "through",
+          reason: opts.reason ?? `Year-end close ${fye}`,
+          checklistOverride: opts.checklistOverride,
+          checklistSnapshot: opts.checklistSnapshot,
+          closingEntryId,
+        },
+        true
+      ));
     return {
       record: formatYearClose(r.rows[0]),
       summary: {
@@ -1167,8 +1176,8 @@ export async function reopenFiscalYear(
     if (row.hard_closed === true && !options.canReopenHardClose) {
       await assertNotInHardClosedYear(companyId, fye, tx, { exactYearEnd: true });
     }
-    // Mark both records reopened inside the exclusive transaction before the ledger reversal.
-    // If the reversal fails, both records are restored by rollback.
+    // Reopen the fiscal record and any lock it created before posting the reversal.
+    // A failed reversal rolls back both updates.
     const r = await q.query(
       `UPDATE fiscal_year_closes
         SET status = 'reopened', reopened_by = $3, reopened_at = now(), reopen_reason = $4,
@@ -1177,9 +1186,7 @@ export async function reopenFiscalYear(
       RETURNING ${YEAR_CLOSE_COLUMNS}`,
       [companyId, fye, userId, reason]
     );
-    if (row.hard_closed === true || !(await getHardMonthClose(tx, companyId, fye))) {
-      await unlockPeriod(companyId, fye, { userId, reason }, tx);
-    }
+    await unlockPeriod(companyId, fye, { userId, reason, fiscalYearLockOnly: true }, tx);
     if (row.closing_entry_id) {
       const lines = await q.query(
         `SELECT jl.account_id, ROUND(jl.debit * 100)::bigint AS d, ROUND(jl.credit * 100)::bigint AS c,

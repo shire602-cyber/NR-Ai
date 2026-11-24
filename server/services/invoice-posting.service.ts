@@ -1256,9 +1256,9 @@ export async function insertCreditNoteDocument(
       header = { discountType: original.discountType, discountValue: original.discountValue };
       totals = totalsForStoredDocument(original, originalLines);
     } else {
-      const remaining = await remainingCreditLines(tx, original, originalLines);
-      docLines = remaining.lines;
       const remainingTotal = totalFils - s.creditedFils;
+      const remaining = await remainingCreditLines(tx, original, originalLines, remainingTotal);
+      docLines = remaining.lines;
       const remainingVat = remainingTotal - remaining.subtotalFils;
       totals = {
         ...computeSalesDocument(docLines.map(storedLineToTotalsInput)),
@@ -1321,7 +1321,12 @@ export async function insertCreditNoteDocument(
   return { creditNote, mode };
 }
 
-async function remainingCreditLines(tx: LedgerTx, original: Invoice, originalLines: InvoiceLine[]) {
+async function remainingCreditLines(
+  tx: LedgerTx,
+  original: Invoice,
+  originalLines: InvoiceLine[],
+  remainingTotalFils: number
+) {
   const prior = await tx
     .select({ document: invoices, line: invoiceLines })
     .from(invoices)
@@ -1368,8 +1373,11 @@ async function remainingCreditLines(tx: LedgerTx, original: Invoice, originalLin
   add(original, originalLines, 1);
   for (const { document, lines } of documents.values()) add(document, lines, -1);
 
+  const subtotalFils = sumFils([...balances.values()].map(({ net }) => net));
+  const hasRemainingVat = remainingTotalFils !== subtotalFils;
   const lines = [...balances.values()]
-    .filter(({ net }) => net !== 0)
+    // VAT 201 allocates the document's VAT to taxable lines, including a zero-net rounding credit.
+    .filter(({ net, supply }) => net !== 0 || (hasRemainingVat && supply.chargedVatRate > 0))
     .map(({ supply, net, margin }) => {
       const marginVat = margin === null ? 0 : toBase(margin, String(supply.chargedVatRate));
       return {
@@ -1382,7 +1390,7 @@ async function remainingCreditLines(tx: LedgerTx, original: Invoice, originalLin
         marginPurchaseCost: margin === null ? null : Number(fromFils(net - margin)),
       };
     });
-  return { lines, subtotalFils: sumFils([...balances.values()].map(({ net }) => net)) };
+  return { lines, subtotalFils };
 }
 
 /** Issue a draft credit note: post its mirrored entry and move it to sent. */

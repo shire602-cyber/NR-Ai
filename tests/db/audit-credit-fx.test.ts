@@ -69,6 +69,32 @@ it("clears each VAT 201 box on the remaining credit of a partly credited mixed-s
   });
 });
 
+it("includes a VAT-only remaining credit in VAT 201", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const id = await issue(t, [standard(0.1), standard(0.1), standard(0.1)]);
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const reportUrl = `${base(t)}/reports/vat-return?from=2026-01-01&to=2026-03-31`;
+  const partial = await t.as.post(url, { date, lines: [standard(0.3)] });
+  expect(partial.status, partial.text).toBe(201);
+  expect(Number(partial.body.vatAmount)).toBe(-0.02);
+  const before = await t.as.get(reportUrl);
+  expect(before.status, before.text).toBe(200);
+  expect(before.body.boxes).toMatchObject({ box1bDubaiAmount: 0, box1bDubaiVat: 0.01 });
+
+  const remaining = await t.as.post(url, { date });
+  expect(remaining.status, remaining.text).toBe(201);
+  expect(Number(remaining.body.total)).toBe(-0.01);
+  expect(Number(remaining.body.vatAmount)).toBe(-0.01);
+  const after = await t.as.get(reportUrl);
+  expect(after.status, after.text).toBe(200);
+  expect(after.body.boxes).toMatchObject({
+    box1bDubaiAmount: 0,
+    box1bDubaiVat: 0,
+    box14PayableTax: 0,
+  });
+  expect(after.body.reconciliation.hasUnexplainedDifference).toBe(false);
+});
+
 it("fully settles a foreign invoice after an earlier part payment was reversed at the same rate", async () => {
   const t = await h.createTenant();
   const id = await issue(t, [exported(100)], { currency: "USD", exchangeRate: 3.67 });

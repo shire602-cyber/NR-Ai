@@ -699,8 +699,9 @@ async function collectInvoices(
       netByFamily.set(fam, (netByFamily.get(fam) ?? 0) + net);
     });
     const emirate = normaliseEmirate(inv.placeOfSupplyEmirate);
-    const needsEmirate = [...netByFamily.keys()].some(
-      (f) => familyNeedsEmirate(f) && (netByFamily.get(f) ?? 0) !== 0
+    const needsEmirate = [...netByFamily].some(
+      ([family, net]) =>
+        familyNeedsEmirate(family) && (net !== 0 || (family === "standard" && totals.vatFils !== 0))
     );
     if (needsEmirate && !emirate) {
       issues.push({

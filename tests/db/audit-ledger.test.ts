@@ -43,19 +43,40 @@ it("CASH-SERIES: a change of prefix also reserves numbers printed in prior open 
   expect(sale.body.number).toBe(`POS-${year}-00002`);
 });
 
-it("CASH-SERIES: migration 0130 chooses a free prefix when CS and CSL are in use", async () => {
+it("CASH-SERIES: forward repair resolves an already-applied 0130 collision and reserves printed numbers", async () => {
   const t = await h.createTenant();
+  const date = new Date("2025-04-12T00:00:00Z");
+  const { allocateInvoiceNumber, peekNextInvoiceNumber } =
+    await import("../../server/services/invoice-numbering.service");
+  const doc = {
+    date: "2025-04-12",
+    customerName: "Imported customer",
+    placeOfSupplyEmirate: "dubai",
+    lines: [{ description: "Sale", quantity: 1, unitPrice: 100, vatRate: 0.05 }],
+  };
+  for (const number of ["CSL-2025-00012", "CSL3-2025-00020"]) {
+    const imported = await t.as.post(`${base(t)}/invoices`, doc);
+    expect(imported.status, imported.text).toBe(200);
+    await h.sql("UPDATE invoices SET number = $1 WHERE id = $2", [number, imported.body.id]);
+  }
   // Both were valid settings before cash sales had their own document type.
   await h.sql(
-    `INSERT INTO document_numbering_settings (company_id, doc_type, prefix)
-     VALUES ($1, 'quote', 'CS'), ($1, 'invoice', 'CSL')`,
+    `INSERT INTO document_numbering_settings (company_id, doc_type, prefix, yearly_reset)
+     VALUES ($1, 'quote', 'CS', true), ($1, 'invoice', 'CSL', true),
+            ($1, 'debit_note', 'CSL2-2025', false)`,
     [t.company.id]
   );
-  const migration = readFileSync(
-    path.join(repoRoot, "migrations/0130_cash_sale_numbering.sql"),
-    "utf8"
-  );
-  for (const stmt of migration.split("--> statement-breakpoint")) await h.sql(stmt);
+  async function applyMigration(file: string) {
+    const migration = readFileSync(path.join(repoRoot, "migrations", file), "utf8");
+    for (const stmt of migration.split("--> statement-breakpoint")) await h.sql(stmt);
+  }
+  await applyMigration("0130_cash_sale_numbering.sql");
+  expect(await peekNextInvoiceNumber(t.company.id, "cash_sale", date)).toBe("CSL-2025-00013");
+  const repair = "0157_preserve_period_locks_and_repair_cash_sale_numbering.sql";
+  await applyMigration(repair);
+  await applyMigration(repair);
+  expect(await allocateInvoiceNumber(t.company.id, "cash_sale", date)).toBe("CSL3-2025-00021");
+  expect(await allocateInvoiceNumber(t.company.id, "invoice", date)).toBe("CSL-2025-00013");
   const result = await t.as.get(`${base(t)}/numbering`);
   expect(result.status, result.text).toBe(200);
   const settings = result.body.numbering as { docType: string; nextFormatted: string }[];
@@ -63,6 +84,21 @@ it("CASH-SERIES: migration 0130 chooses a free prefix when CS and CSL are in use
   expect(
     settings.filter((row) => row.docType !== "cash_sale").map((row) => row.nextFormatted)
   ).not.toContain(cash.nextFormatted);
+});
+
+it("CASH-SERIES: rejects a continuous prefix that overlaps yearly numbers before the first allocation", async () => {
+  const t = await h.createTenant();
+  const url = `${base(t)}/numbering/cash_sale`;
+  const response = await t.as.put(url, { prefix: "INV-2026", padding: 5, yearlyReset: false });
+  expect(response.status, response.text).toBe(409);
+  expect(response.body.code).toBe("NUMBERING_PREFIX_IN_USE");
+  const accepted = await t.as.put(url, { prefix: "POS-2026", padding: 5, yearlyReset: false });
+  expect(accepted.status, accepted.text).toBe(200);
+
+  const { allocateInvoiceNumber } = await import("../../server/services/invoice-numbering.service");
+  const date = new Date("2026-04-12T00:00:00Z");
+  expect(await allocateInvoiceNumber(t.company.id, "invoice", date)).toBe("INV-2026-00001");
+  expect(await allocateInvoiceNumber(t.company.id, "cash_sale", date)).toBe("POS-2026-00001");
 });
 
 it("CLOSE: a retry after a fiscal close record write fails sweeps earnings only once", async () => {
@@ -177,3 +213,42 @@ it("CLOSE: the default year-end close preserves a hard December month-end close"
   expect(await getEffectiveLock(t.company.id, "2025-06-15")).toMatchObject({ lockType: "soft" });
   expect(await getEffectiveLock(t.company.id, "2025-12-15")).toMatchObject({ lockType: "hard" });
 });
+
+it.each([
+  { lockScope: "through", hardClose: false },
+  { lockScope: "month", hardClose: true },
+] as const)(
+  "CLOSE: fiscal close (hard=$hardClose) and reopen preserve an independent hard $lockScope lock",
+  async ({ lockScope, hardClose }) => {
+    const t = await h.createTenant();
+    const { lockPeriod, closeFiscalYear, reopenFiscalYear, listLockedPeriods } =
+      await import("../../server/services/month-end.service");
+    const { getEffectiveLock } = await import("../../server/services/period-lock.service");
+    const yearEnd = "2025-12-31";
+    const december = "2025-12-15";
+    const june = "2025-06-15";
+    await lockPeriod(
+      t.company.id,
+      yearEnd,
+      t.user.id,
+      lockScope === "through" ? {} : { lockScope }
+    );
+    const independent = await listLockedPeriods(t.company.id);
+    expect(independent).toHaveLength(1);
+    await closeFiscalYear(t.company.id, yearEnd, t.user.id, { hardClose });
+    expect(await getEffectiveLock(t.company.id, june)).toMatchObject({
+      lockType: "hard",
+      lockScope: "through",
+    });
+    expect(await listLockedPeriods(t.company.id)).toEqual(independent);
+    await reopenFiscalYear(t.company.id, yearEnd, t.user.id, "Restatement approved", {
+      canReopenHardClose: true,
+    });
+    expect(await listLockedPeriods(t.company.id)).toEqual(independent);
+    expect(await getEffectiveLock(t.company.id, december)).toMatchObject({
+      lockType: "hard",
+      lockScope,
+    });
+    if (lockScope === "month") expect(await getEffectiveLock(t.company.id, june)).toBeNull();
+  }
+);
