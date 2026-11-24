@@ -507,6 +507,7 @@ async function checkBankingGuards() {
 }
 
 async function stageReleaseSchema(database) {
+  // Stage unrelated release changes before taking the bank repair baseline.
   for (const tag of [
     "0138_secure_portal_invitations",
     "0139_bind_portal_invite_and_verification_lifecycle",
@@ -516,6 +517,8 @@ async function stageReleaseSchema(database) {
     "0143_preserve_firm_grant_review",
     "0144_receipt_invoice_number",
     "0145_receipt_rate_and_capture",
+    "0154_postmerge_buyer_billing_payroll",
+    "0155_cash_sale_buyer_and_checkout_reservation",
   ]) {
     psql(database, readFileSync(path.join(migrationsFolder, tag + ".sql"), "utf8"));
   }

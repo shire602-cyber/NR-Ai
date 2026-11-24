@@ -813,6 +813,10 @@ export interface IStorage {
 
   // Customer Subscriptions
   getSubscription(companyId: string): Promise<Subscription | undefined>;
+  getSubscriptionByStripeIds(
+    subscriptionId: string,
+    customerId: string
+  ): Promise<Subscription | undefined>;
   createSubscription(subscription: InsertSubscription): Promise<Subscription>;
   updateSubscription(id: string, data: Partial<InsertSubscription>): Promise<Subscription>;
   applyStripeCheckout(
