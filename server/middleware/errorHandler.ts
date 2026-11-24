@@ -1,11 +1,11 @@
 import type { Request, Response, NextFunction } from "express";
 import { ZodError } from "zod";
-import { isProduction } from "../config/env";
 import { RetentionViolationError } from "../services/retention.service";
 import { AppError, RetentionError, ValidationError, AuthError } from "../errors";
 import { captureException } from "../services/monitoring";
 import { MoneyError } from "../../shared/money";
 import { flattenIssues, zodFieldErrors } from "../http/strict-body";
+import { portalInviteLogPath } from "../http/portal-invite-privacy";
 
 // Re-export AppError so existing imports of AppError from this module keep working.
 export { AppError };
@@ -16,15 +16,20 @@ function withRequestId<T extends object>(body: T, req: Request): T & { requestId
 
 /**
  * Walk an error's `cause` chain (max 5 hops) looking for a Postgres
- * SQLSTATE code in class 22 (data exception) or 23 (integrity constraint).
+ * SQLSTATE code for input errors, transaction conflicts, or temporary unavailability.
  * Drizzle wraps the underlying pg error in DrizzleQueryError, so the code
  * usually lives one level down.
  */
-function findPgClientErrorCode(err: unknown): string | null {
+function findMappedPgErrorCode(err: unknown): string | null {
   let current: unknown = err;
   for (let depth = 0; depth < 5 && current && typeof current === "object"; depth++) {
     const code = (current as { code?: unknown }).code;
-    if (typeof code === "string" && /^2[23][0-9A-Z]{3}$/.test(code)) return code;
+    if (
+      typeof code === "string" &&
+      (Object.hasOwn(PG_ERRORS, code) || /^2[23][0-9A-Z]{3}$/.test(code))
+    ) {
+      return code;
+    }
     current = (current as { cause?: unknown }).cause;
   }
   return null;
@@ -34,7 +39,27 @@ function findPgClientErrorCode(err: unknown): string | null {
  * Postgres SQLSTATEs caused by client input. The response never carries SQL
  * text, constraint names or column values — only a stable code.
  */
-const PG_CLIENT_ERRORS: Record<string, { status: number; code: string; message: string }> = {
+const PG_ERRORS: Record<string, { status: number; code: string; message: string }> = {
+  "40001": {
+    status: 409,
+    code: "TRANSACTION_CONFLICT",
+    message: "The operation conflicted with another update. Please retry.",
+  },
+  "40P01": {
+    status: 409,
+    code: "TRANSACTION_CONFLICT",
+    message: "The operation conflicted with another update. Please retry.",
+  },
+  "57P01": {
+    status: 503,
+    code: "DATABASE_UNAVAILABLE",
+    message: "The service is temporarily unavailable.",
+  },
+  "57P03": {
+    status: 503,
+    code: "DATABASE_UNAVAILABLE",
+    message: "The service is temporarily unavailable.",
+  },
   "22P02": { status: 400, code: "INVALID_IDENTIFIER", message: "Invalid identifier format" },
   "22007": { status: 400, code: "INVALID_DATE", message: "Invalid date or time value" },
   "22008": { status: 400, code: "INVALID_DATE", message: "Date or time value out of range" },
@@ -77,6 +102,9 @@ export function mapRequestTransportError(err: unknown): MappedTransportError | n
   if (!err || typeof err !== "object") return null;
   if (err instanceof Error && err.message === CORS_REJECTION_MESSAGE) {
     return { status: 403, body: { message: "Origin not allowed", code: "ORIGIN_NOT_ALLOWED" } };
+  }
+  if (err instanceof URIError && (err as HttpLikeError).status === 400) {
+    return { status: 400, body: { message: "Malformed request", code: "BAD_REQUEST" } };
   }
   const e = err as HttpLikeError;
   if (typeof e.type !== "string") return null;
@@ -129,16 +157,16 @@ export function requestTransportErrorHandler(
  *
  * Returns a consistent error shape:
  *   { message, code, requestId, details? }
- * In production, stack traces are never returned to the client. They are
- * always logged via pino with method/url/requestId for traceability.
+ * Unexpected failures are logged with method, route template and request ID.
  * Client-input failures never answer 500.
  */
 export function globalErrorHandler(
   err: Error,
   req: Request,
   res: Response,
-  _next: NextFunction
+  next: NextFunction
 ): void {
+  if (res.headersSent) return next(err);
   // FTA 5-year retention: cannot delete records still inside the window.
   // Translate the legacy service-thrown error into the new RetentionError.
   if (err instanceof RetentionViolationError) {
@@ -189,12 +217,36 @@ export function globalErrorHandler(
   // Postgres data/integrity errors caused by client input (bad uuid/date,
   // numeric overflow, duplicates, FK) — 400/409 with a stable code, never the
   // SQL text. Drizzle wraps the pg error, so walk the cause chain.
-  const pgCode = err instanceof AppError ? null : findPgClientErrorCode(err);
-  const pgMapped = pgCode ? PG_CLIENT_ERRORS[pgCode] : undefined;
+  const pgCode = err instanceof AppError ? null : findMappedPgErrorCode(err);
+  const pgMapped = pgCode ? PG_ERRORS[pgCode] : undefined;
   if (pgMapped) {
+    if (pgMapped.status === 503) res.setHeader("Retry-After", "1");
     res
       .status(pgMapped.status)
       .json(withRequestId({ message: pgMapped.message, code: pgMapped.code }, req));
+    return;
+  }
+
+  const invitePath = portalInviteLogPath(req.originalUrl || req.url);
+  if (invitePath && (!(err instanceof AppError) || !err.isOperational || err.statusCode >= 500)) {
+    captureException(new Error("Customer portal invitation request failed"), {
+      requestId: req.id,
+      method: req.method,
+      route: invitePath,
+    });
+    const status = err instanceof AppError ? err.statusCode : 500;
+    const deliveryFailed = err instanceof AppError && err.code === "PORTAL_INVITE_DELIVERY_FAILED";
+    res.status(status).json(
+      withRequestId(
+        deliveryFailed
+          ? {
+              message: "Could not deliver the invitation email",
+              code: "PORTAL_INVITE_DELIVERY_FAILED",
+            }
+          : { message: "Could not process the invitation", code: "INTERNAL_ERROR" },
+        req
+      )
+    );
     return;
   }
 
@@ -204,8 +256,7 @@ export function globalErrorHandler(
       captureException(err, {
         requestId: req.id,
         method: req.method,
-        url: req.url,
-        userId: req.user?.id,
+        route: typeof req.route?.path === "string" ? req.route.path : undefined,
         code: err.code,
         operational: err.isOperational,
       });
@@ -214,26 +265,19 @@ export function globalErrorHandler(
     return;
   }
 
-  // Anything else — unhandled. Always capture full detail; never leak stack
-  // to the client in production.
+  // Correlate unexpected failures with the request and registered route.
   captureException(err, {
     requestId: req.id,
     method: req.method,
-    url: req.url,
-    userId: req.user?.id,
+    route: typeof req.route?.path === "string" ? req.route.path : undefined,
     unhandled: true,
   });
 
-  // Platform admins get the underlying message even in production — they own
-  // the deployment and need it to diagnose schema/data drift without log
-  // access. Regular users still get the opaque message + requestId.
-  const isAdmin = Boolean(req.user?.isAdmin);
   res.status(500).json(
     withRequestId(
       {
-        message: isProduction() && !isAdmin ? "Internal Server Error" : err.message,
+        message: "Internal Server Error",
         code: "INTERNAL_ERROR",
-        ...(isAdmin && isProduction() ? { adminDetail: { name: err.name } } : {}),
       },
       req
     )
@@ -244,10 +288,11 @@ export function globalErrorHandler(
  * 404 handler for unmatched routes.
  */
 export function notFoundHandler(req: Request, res: Response): void {
+  const path = (req.originalUrl || req.url).split(/[?#]/, 1)[0];
   res.status(404).json(
     withRequestId(
       {
-        message: `Route ${req.method} ${req.path} not found`,
+        message: `Route ${req.method} ${portalInviteLogPath(path) ?? path} not found`,
         code: "ROUTE_NOT_FOUND",
       },
       req

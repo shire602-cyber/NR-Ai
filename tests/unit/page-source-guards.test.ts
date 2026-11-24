@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { readDashboardSource } from "./dashboardSource";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 
 const repoRoot = process.cwd();
 const read = (path: string) => readFileSync(join(repoRoot, path), "utf8");
@@ -187,22 +188,27 @@ describe("Mobile launch UX guards", () => {
   const source = read("client/src/pages/BankReconciliation.tsx");
 
   describe("Bank import launch UX", () => {
-    it("keeps a sample CSV path for buyers without live bank feeds", () => {
+    it("keeps a sample CSV available to buyers", () => {
       expect(source).toContain("muhasib-sample-bank-statement.csv");
-      expect(source).toContain('t["bankReconciliation.liveBankFeedsAreNot"]');
+      expect(source).toContain('t["pageLabels.bankCsvWorkflow"]');
+      for (const locale of ["en", "ar"] as const) {
+        const catalog = JSON.parse(read(`client/src/locales/${locale}/banking.json`));
+        expect(catalog["banking.emptyTransactionsDescription"]).toBe(bankStatementCopy[locale]);
+      }
       // Step 1 / F4: the supported-format lines are catalog copy (en and ar), not page literals.
-      for (const key of ["formatCsv", "formatDelimiters", "formatDrCr", "formatPdf"]) {
+      for (const key of ["formatCsv", "formatDelimiters", "formatDrCr", "csvRequired"]) {
         expect(source).toContain(`banking.import.${key}`);
       }
       const bankingEn = JSON.parse(readFileSync("client/src/locales/en/banking.json", "utf8"));
       expect(bankingEn["banking.import.formatCsv"]).toContain("Arabic/English generic");
       expect(bankingEn["banking.import.formatDelimiters"]).toBe(
-        "Comma, semicolon, and tab-delimited Excel exports are supported"
+        "CSV files can use commas, semicolons, or tabs"
       );
       expect(bankingEn["banking.import.formatDrCr"]).toBe(
         "Amount + Dr/Cr type columns are supported"
       );
       expect(source).toContain('data-testid="button-download-sample-bank-csv"');
+      expect(source).not.toContain("application/pdf");
     });
 
     it("keeps duplicate import feedback visible to users", () => {
@@ -235,7 +241,7 @@ describe("Mobile launch UX guards", () => {
         const catalog = JSON.parse(readFileSync(`client/src/locales/${loc}/banking.json`, "utf8"));
         expect(catalog["banking.import.columnMapping"]).toBe(text);
       }
-      expect(source).toContain(".xlsx");
+      expect(source).toContain('accept=".csv,text/csv"');
     });
 
     it("R06-11 ambiguity must be confirmed before importing", () => {
@@ -339,7 +345,11 @@ describe("welcome tour and onboarding redirect (source)", () => {
     const app = read("client/src/App.tsx");
     expect(app).not.toContain("onboarding_redirect_seen");
     expect(app).not.toContain("sessionStorage.getItem(REDIRECT_FLAG)");
-    expect(app).toContain('navigate("/onboarding")');
+    // The decision is the pure onboardingRedirectTarget (behaviour-tested in app-landing.test.ts,
+    // including "Open books" and in-flight refetches); the shell only navigates to its answer.
+    expect(app).toContain("onboardingRedirectTarget(");
+    expect(app).toContain("if (target) navigate(target)");
+    expect(read("client/src/lib/app-landing.ts")).toContain('"/onboarding"');
     // waits for in-flight company refetches so a just-finished wizard is not bounced back
     expect(app).toContain('useIsFetching({ queryKey: ["/api/companies"] })');
   });

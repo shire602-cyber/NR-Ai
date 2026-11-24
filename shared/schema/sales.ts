@@ -102,6 +102,8 @@ export const invoices = pgTable(
     // where the document came from (app | api | recurring | quote | cash_sale | import | shopify).
     documentLanguage: text("document_language"),
     source: text("source").notNull().default("app"),
+    einvoiceBuyerContactId: uuid("einvoice_buyer_contact_id"),
+    buyerType: text("buyer_type", { enum: ["consumer", "business", "government"] }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
@@ -116,6 +118,10 @@ export const invoices = pgTable(
     companyDateIdx: index("idx_invoices_company_date").on(table.companyId, table.date),
     companyStatusIdx: index("idx_invoices_company_status").on(table.companyId, table.status),
     contactIdIdx: index("idx_invoices_contact_id").on(table.contactId),
+    // 0133 (owner exception): the settlement rule's credited subquery filters on this column.
+    originalInvoiceIdx: index("idx_invoices_original_invoice_id")
+      .on(table.originalInvoiceId)
+      .where(sql`original_invoice_id IS NOT NULL`),
     legacyCreditNoteUnique: unique("invoices_legacy_credit_note_unique").on(
       table.legacyCreditNoteId
     ),
@@ -362,6 +368,10 @@ export const creditNotes = pgTable(
     ),
     companyIdIdx: index("idx_credit_notes_company_id").on(table.companyId),
     companyStatusIdx: index("idx_credit_notes_company_status").on(table.companyId, table.status),
+    // 0133 (owner exception): legacy credit notes in the settlement rule's credited subquery.
+    invoiceIdx: index("idx_credit_notes_invoice_id")
+      .on(table.invoiceId)
+      .where(sql`invoice_id IS NOT NULL`),
   })
 );
 

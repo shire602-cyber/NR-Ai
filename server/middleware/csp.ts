@@ -1,5 +1,5 @@
+import { portalInviteLogPath } from "../http/portal-invite-privacy";
 import crypto from "crypto";
-import { z } from "zod";
 import type { Request, Response, NextFunction } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
 import { isProduction } from "../config/env";
@@ -78,14 +78,13 @@ export function buildCspDirectives() {
  * Browsers evaluate it, block nothing, and POST any violation to
  * /api/csp-report.
  *
- * How to finish the job:
- *   1. Deploy. Exercise the app normally for a week.
- *   2. Grep the logs for "CSP violation reported" with
- *      effectiveDirective "style-src-elem" / "style-src-attr".
- *   3. Zero violations  -> promote these directives into buildCspDirectives()
- *                          and delete the report-only policy.
- *      Some violations  -> they name the exact file and line injecting the
- *                          style; nonce or remove those, then re-check.
+ * Exercise representative flows with the report-only header and confirm the
+ * report endpoint receives browser reports. Filter "CSP violation reported"
+ * log records by the `directive` field for `style-src-elem`, `style-src-attr`
+ * or the `style-src` fallback. The accompanying request ID identifies the
+ * report POST. Reproduce violations in browser DevTools to locate the
+ * injection site. Promote the policy only after verifying the reporting path
+ * and exercising the relevant flows without violations.
  *
  * `styleSrcAttr` deliberately keeps 'unsafe-inline': React's `style={{…}}`
  * needs it and removing it would require rewriting 219 call sites. The value
@@ -133,32 +132,45 @@ export function buildCspReportOnlyDirectives() {
   };
 }
 
-const cspReportBodySchema = z.record(z.string(), z.unknown());
+const cspReportDirectives = new Set([
+  "base-uri",
+  "connect-src",
+  "default-src",
+  "font-src",
+  "form-action",
+  "frame-ancestors",
+  "frame-src",
+  "img-src",
+  "manifest-src",
+  "media-src",
+  "object-src",
+  "script-src",
+  "script-src-attr",
+  "script-src-elem",
+  "style-src",
+  "style-src-attr",
+  "style-src-elem",
+  "worker-src",
+]);
 
 /**
- * CSP violation report endpoint. The browser POSTs JSON describing the
- * blocked resource. We log a structured warning so it shows up in pino output
- * and any downstream log aggregator without spamming at error level.
+ * CSP violation report endpoint. Reports log the recognized directive and
+ * the report request ID. Use browser diagnostics for source URLs and lines.
  */
 export function cspReportHandler(req: Request, res: Response): void {
-  // Browser-generated, unauthenticated and only logged: accept any JSON object, nothing is stored.
-  const parsed = cspReportBodySchema.safeParse(req.body);
-  const body = parsed.success ? parsed.data : {};
-  const nested = body["csp-report"];
-  const report: Record<string, unknown> =
-    nested && typeof nested === "object" ? (nested as Record<string, unknown>) : body;
-  log.warn(
-    {
-      blockedUri: report["blocked-uri"],
-      violatedDirective: report["violated-directive"],
-      effectiveDirective: report["effective-directive"],
-      documentUri: report["document-uri"],
-      sourceFile: report["source-file"],
-      lineNumber: report["line-number"],
-      ip: req.ip,
-      ua: req.headers["user-agent"],
-    },
-    "CSP violation reported"
-  );
+  // CSP reports may include full URLs and are also accepted from unauthenticated clients.
+  const report = req.body?.["csp-report"] ?? req.body;
+  const directive = report?.["effective-directive"];
+  if (typeof directive === "string" && cspReportDirectives.has(directive)) {
+    log.warn({ requestId: req.id, directive }, "CSP violation reported");
+  } else {
+    for (const field of ["document-uri", "blocked-uri", "source-file"]) {
+      if (typeof report?.[field] !== "string") continue;
+      const path = portalInviteLogPath(report[field]);
+      if (!path) continue;
+      log.warn({ requestId: req.id, path }, "CSP violation reported");
+      break;
+    }
+  }
   res.status(204).end();
 }

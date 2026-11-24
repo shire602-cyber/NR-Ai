@@ -7,7 +7,8 @@
  */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -74,7 +75,7 @@ function arabicModeEnglishLines(): string[] {
 const UNSUPPORTED_CLAIMS = [
   /FTA[-\s]?(accredited|compliant|registered|approved)/i,
   /submits? (your|the) (VAT )?return(s)? (to|with) the FTA automatically/i,
-  /bank feeds?/i,
+  /(?:connect to|sync from) (?:a |your )?(?:live )?bank\s+feeds?/i,
   /money-back/i,
   /UAE-hosted/i,
   // "Most popular" is a plan-card highlight the owner asked for (X6b); it states no user count.
@@ -82,25 +83,96 @@ const UNSUPPORTED_CLAIMS = [
   /SOC 2 (Type II )?(certified|compliant)/i,
 ];
 
+it.each([
+  ["en", "ltr"],
+  ["ar", "rtl"],
+] as const)(
+  "opens CSV import from the legacy banking URL in %s",
+  async (locale, direction) => {
+    const originalUrl = window.location.href;
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    try {
+      window.history.replaceState(null, "", "/bank-feeds");
+      await setLocale(locale);
+      queryClient.setQueryData(["/api/auth/me"], {
+        id: "owner",
+        userType: "customer",
+      });
+      const companies = [{ id: "company", name: "Test Company", onboardingCompleted: true }];
+      queryClient.setQueryData(["/api/companies"], companies);
+      queryClient.setQueryData(["/api/companies", "company", "billing", "subscription"], {
+        trialLocked: false,
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: RequestInfo | URL) =>
+          Response.json(String(input).endsWith("/api/companies") ? companies : [])
+        )
+      );
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          observe() {}
+          unobserve() {}
+          disconnect() {}
+        }
+      );
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn(() => ({
+          matches: false,
+          addEventListener() {},
+          removeEventListener() {},
+        }))
+      );
+
+      const [{ default: App }] = await Promise.all([
+        import("../../client/src/App"),
+        import("../../client/src/pages/BankReconciliation"),
+      ]);
+      await act(async () => root.render(createElement(App)));
+      await vi.waitFor(
+        async () => {
+          await act(async () => {});
+          expect(window.location.pathname + window.location.search).toBe(
+            "/bank-reconciliation?import=1"
+          );
+          expect(document.documentElement.dir).toBe(direction);
+          const dialog = document.querySelector('[role="dialog"]');
+          expect(dialog).not.toBeNull();
+          expect(dialog?.textContent).toContain(BANK_RECONCILIATION_COPY[locale]);
+        },
+        { timeout: 4000 }
+      );
+    } finally {
+      act(() => root.render(null));
+      queryClient.clear();
+      vi.unstubAllGlobals();
+      window.history.replaceState(null, "", originalUrl);
+    }
+  },
+  15000
+);
+
 describe("D1 public site", () => {
   it("[D1] the landing page leads with an honest value proposition and sets its SEO meta", async () => {
-    await render("MuhasibLanding");
-    const { t } = await import("../../client/src/lib/i18n");
+    const { default: PhaseSite } =
+      await import("../../client/src/components/marketing/phase/PhaseSite");
+    await act(async () => root.render(createElement(PhaseSite)));
     const h1 = container.querySelector("h1");
-    expect(h1?.textContent).toContain(t.en["marketing.heroTitleLead"]);
-    expect(document.title).toBe(t.en["marketing.seoHomeTitle"]);
-    expect(document.head.querySelector('meta[name="description"]')?.getAttribute("content")).toBe(
-      t.en["marketing.seoHomeDescription"]
-    );
+    expect(h1?.textContent).toBe("Accounting and VAT for UAE businesses");
+    expect(document.title).toContain(h1?.textContent);
+    expect(
+      document.head.querySelector('meta[name="description"]')?.getAttribute("content")
+    ).toContain("Send bilingual invoices");
     // Primary CTAs keep their routes.
     const register = container.querySelector('[data-testid="button-hero-start"]');
-    expect(register?.getAttribute("href")).toBe("/register");
+    expect(register?.getAttribute("href")).toBe("/register?step=account");
     expect(container.querySelector('[data-testid="button-hero-demo"]')?.getAttribute("href")).toBe(
-      "/demo"
+      "/en/book-demo"
     );
-    // The FTA boundary is stated, not implied.
-    expect(container.textContent).toContain(t.en["marketing.vatNote"]);
-    expect(t.en["marketing.faq1A"]).toMatch(/^No\./);
+    expect(container.textContent).toContain("then submit it in EmaraTax.");
+    expect(container.textContent).toContain("Upload a CSV exported from your bank");
     for (const claim of UNSUPPORTED_CLAIMS) {
       expect(container.textContent ?? "", String(claim)).not.toMatch(claim);
     }
@@ -117,12 +189,29 @@ describe("D1 public site", () => {
   });
 
   it("[D1] the landing page renders fully in Arabic (no stray English copy)", async () => {
-    await setLocale("ar");
-    await render("MuhasibLanding");
-    const { t } = await import("../../client/src/lib/i18n");
-    expect(container.querySelector("h1")?.textContent).toContain(t.ar["marketing.heroTitleLead"]);
-    expect(document.title).toBe(t.ar["marketing.seoHomeTitle"]);
-    expect(arabicModeEnglishLines()).toEqual([]);
+    const { default: PhaseRoot } =
+      await import("../../client/src/components/marketing/phase/PhaseRoot");
+    const previousUrl = window.location.href;
+    window.history.replaceState(null, "", "/ar");
+    try {
+      await act(async () => root.render(createElement(PhaseRoot)));
+      const title = "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات";
+      expect(container.querySelector("h1")?.textContent).toBe(title);
+      expect(document.title).toContain(title);
+      expect(container.querySelector('.phase-site[lang="ar"][dir="rtl"]')).not.toBeNull();
+      expect(container.querySelector(".phase-hero img")?.getAttribute("src")).toBe(
+        "/product/dashboard-ar.webp"
+      );
+      expect(container.querySelector('a[hreflang="en"]')?.getAttribute("href")).toBe("/en");
+      expect(container.textContent).toContain("اختر مزوّد خدمة معتمدًا واحدًا لكل شركة");
+      expect(container.textContent).toContain("ارفع كشف حسابك البنكي بصيغة CSV");
+      expect(container.querySelector('a[href="/ar/migration-guides/zoho"] bdi')?.textContent).toBe(
+        "Zoho Books"
+      );
+      expect(arabicModeEnglishLines()).toEqual([]);
+    } finally {
+      window.history.replaceState(null, "", previousUrl);
+    }
   });
 
   it("[D1] auth and legal pages share the shell in Arabic", async () => {
@@ -223,4 +312,17 @@ describe("D1 public site", () => {
     expect(container.querySelectorAll('[data-testid^="card-plan-"]').length).toBe(3);
     expect(container.querySelector('[data-testid="button-plan-enterprise"]')?.tagName).toBe("A");
   });
+
+  it.each([
+    ["en", "read-only", "A-Cube or Complyance"],
+    ["ar", "للقراءة فقط", "A-Cube أو Complyance"],
+  ] as const)(
+    "explains trial expiry and provider choice in %s pricing",
+    async (locale, lock, providers) => {
+      await setLocale(locale);
+      await render("Pricing");
+      expect(container.textContent).toContain(lock);
+      expect(container.textContent).toContain(providers);
+    }
+  );
 });

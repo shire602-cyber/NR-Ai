@@ -25,6 +25,7 @@ vi.mock("../../server/storage", () => ({
 
 // WQ7: the scan reads the per-company Automations switches; none is switched off here.
 vi.mock("../../server/platform/company-automations", () => ({
+  automationWritesAllowed: vi.fn(async () => true),
   companiesWithAutomationOff: vi.fn(async () => new Set<string>()),
   recordAutomationRun: vi.fn(async () => undefined),
 }));
@@ -61,6 +62,7 @@ vi.mock("../../server/services/report-render/delivery", () => ({
 }));
 
 import { storage } from "../../server/storage";
+import { automationWritesAllowed } from "../../server/platform/company-automations";
 import { executeReportDeliveryRun } from "../../server/services/report-render/delivery";
 import { createAndEmitNotification } from "../../server/services/socket.service";
 import { getReportDeliveryPlans } from "../../server/services/report-delivery.service";
@@ -209,6 +211,19 @@ describe("report delivery scheduler", () => {
         }),
       })
     );
+  });
+
+  it("skips expired companies before recording any scheduled delivery activity", async () => {
+    vi.mocked(automationWritesAllowed).mockResolvedValueOnce(false);
+
+    expect(await scanDueReportDeliveries(new Date("2026-06-22T09:00:00.000Z"))).toMatchObject({
+      scannedCompanies: 1,
+      scannedSubscriptions: 0,
+      queuedRuns: 0,
+    });
+    expect(storage.createReportDeliveryRun).not.toHaveBeenCalled();
+    expect(storage.createReportDeliverySchedulerScan).not.toHaveBeenCalled();
+    expect(executeReportDeliveryRun).not.toHaveBeenCalled();
   });
 
   it("does not create scheduled notifications without a company actor", async () => {

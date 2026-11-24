@@ -48,7 +48,7 @@ export function Segmented<V extends string>({
       aria-label={label}
       data-testid={testId}
       className={cn(
-        "grid h-9 auto-cols-fr grid-flow-col gap-0.5 rounded-lg bg-muted p-[3px]",
+        "grid h-9 auto-cols-fr grid-flow-col gap-0.5 rounded-lg bg-muted p-[3px] [@media(pointer:coarse)]:h-[3.25rem]",
         className
       )}
       onKeyDown={(e) => {

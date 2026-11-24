@@ -19,8 +19,6 @@ import {
   type Queryable,
 } from "../reporting";
 
-const db: Queryable = pool as unknown as Queryable;
-
 export type AnomalySeverity = "critical" | "warning" | "info";
 
 export type AnomalyRule =
@@ -110,8 +108,8 @@ export function zScore(
 /** receipts.date is a timestamp; compare on the UAE calendar date. */
 const RECEIPT_DATE_SQL = `((date + interval '4 hours')::date)`;
 
-async function duplicateAmounts(companyId: string, out: Anomaly[]) {
-  const receipts = await db.query(
+async function duplicateAmounts(companyId: string, out: Anomaly[], q: Queryable) {
+  const receipts = await q.query(
     `SELECT ${RECEIPT_DATE_SQL}::text AS d, amount, COUNT(*)::int AS n, (array_agg(id ORDER BY created_at))[1] AS first_id,
             string_agg(COALESCE(merchant, 'Unknown'), ', ') AS merchants
        FROM receipts
@@ -138,7 +136,7 @@ async function duplicateAmounts(companyId: string, out: Anomaly[]) {
       dedupeKey: `duplicate_amount:receipt:${r.first_id}`,
     });
   }
-  const invoices = await db.query(
+  const invoices = await q.query(
     `SELECT ((date + interval '4 hours')::date)::text AS d, total, COUNT(*)::int AS n,
             (array_agg(id ORDER BY created_at))[1] AS first_id,
             string_agg(customer_name, ', ') AS customers
@@ -168,8 +166,8 @@ async function duplicateAmounts(companyId: string, out: Anomaly[]) {
   }
 }
 
-async function unusualAmounts(companyId: string, out: Anomaly[]) {
-  const receipts = await db.query(
+async function unusualAmounts(companyId: string, out: Anomaly[], q: Queryable) {
+  const receipts = await q.query(
     `WITH s AS (
        SELECT AVG(amount) AS avg_amt, COUNT(*) AS n FROM receipts WHERE company_id = $1 AND amount > 0
      )
@@ -202,7 +200,7 @@ async function unusualAmounts(companyId: string, out: Anomaly[]) {
       dedupeKey: `unusual_amount:receipt:${r.id}`,
     });
   }
-  const invoices = await db.query(
+  const invoices = await q.query(
     `WITH s AS (
        SELECT AVG(total) AS avg_amt, COUNT(*) AS n FROM invoices
         WHERE company_id = $1 AND total > 0 AND status NOT IN ('void', 'cancelled', 'draft')
@@ -239,9 +237,9 @@ async function unusualAmounts(companyId: string, out: Anomaly[]) {
   }
 }
 
-async function weekendEntries(companyId: string, out: Anomaly[]) {
+async function weekendEntries(companyId: string, out: Anomaly[], q: Queryable) {
   // UAE weekend is Saturday/Sunday since January 2022; dates are UAE local.
-  const { rows } = await db.query(
+  const { rows } = await q.query(
     `SELECT je.id, je.entry_number, ${ENTRY_LOCAL_DATE_SQL}::text AS d,
             EXTRACT(DOW FROM ${ENTRY_LOCAL_DATE_SQL})::int AS dow,
             SUM(jl.debit) AS total_debit
@@ -272,8 +270,8 @@ async function weekendEntries(companyId: string, out: Anomaly[]) {
   }
 }
 
-async function roundNumbers(companyId: string, out: Anomaly[]) {
-  const { rows } = await db.query(
+async function roundNumbers(companyId: string, out: Anomaly[], q: Queryable) {
+  const { rows } = await q.query(
     `SELECT id, merchant, amount, ((date + interval '4 hours')::date)::text AS d FROM receipts
       WHERE company_id = $1 AND amount >= $2 AND MOD(amount::numeric, 1000) = 0`,
     [companyId, THRESHOLDS.MIN_ROUND_NUMBER_AMOUNT]
@@ -297,8 +295,8 @@ async function roundNumbers(companyId: string, out: Anomaly[]) {
   }
 }
 
-async function duplicateVendors(companyId: string, out: Anomaly[]) {
-  const { rows } = await db.query(
+async function duplicateVendors(companyId: string, out: Anomaly[], q: Queryable) {
+  const { rows } = await q.query(
     `SELECT id, merchant, amount, d, gap FROM (
        SELECT id, merchant, amount, ${RECEIPT_DATE_SQL}::text AS d,
               ${RECEIPT_DATE_SQL} - LAG(${RECEIPT_DATE_SQL}) OVER (PARTITION BY LOWER(TRIM(merchant)), amount ORDER BY ${RECEIPT_DATE_SQL}) AS gap
@@ -328,8 +326,8 @@ async function duplicateVendors(companyId: string, out: Anomaly[]) {
   }
 }
 
-async function duplicateSupplierInvoices(companyId: string, out: Anomaly[]) {
-  const { rows } = await db.query(
+async function duplicateSupplierInvoices(companyId: string, out: Anomaly[], q: Queryable) {
+  const { rows } = await q.query(
     `SELECT id, vendor_name, bill_number, total_amount, d FROM (
        SELECT id, vendor_name, bill_number, total_amount, ((bill_date + interval '4 hours')::date)::text AS d,
               ROW_NUMBER() OVER (PARTITION BY LOWER(TRIM(vendor_name)), LOWER(TRIM(bill_number)) ORDER BY created_at, id) AS rn
@@ -359,11 +357,11 @@ async function duplicateSupplierInvoices(companyId: string, out: Anomaly[]) {
   }
 }
 
-async function vatAndTrn(companyId: string, out: Anomaly[]) {
+async function vatAndTrn(companyId: string, out: Anomaly[], q: Queryable) {
   // UAE standard VAT is 5%; zero-rated and exempt supplies carry no VAT, so only
   // a non-zero VAT amount that is not 5% of the net is a mismatch.
   const tol = THRESHOLDS.VAT_TOLERANCE;
-  const inv = await db.query(
+  const inv = await q.query(
     `SELECT id, number, customer_name, subtotal, vat_amount, ((date + interval '4 hours')::date)::text AS d
        FROM invoices
       WHERE company_id = $1 AND status NOT IN ('void', 'cancelled', 'draft')
@@ -390,7 +388,7 @@ async function vatAndTrn(companyId: string, out: Anomaly[]) {
       dedupeKey: `vat_rate_mismatch:invoice:${r.id}`,
     });
   }
-  const rec = await db.query(
+  const rec = await q.query(
     `SELECT id, merchant, amount, vat_amount, ${RECEIPT_DATE_SQL}::text AS d FROM receipts
       WHERE company_id = $1 AND COALESCE(vat_amount, 0) <> 0
         AND ABS(vat_amount::numeric - ROUND(amount::numeric * 0.05, 2)) > $2`,
@@ -414,7 +412,7 @@ async function vatAndTrn(companyId: string, out: Anomaly[]) {
       dedupeKey: `vat_rate_mismatch:receipt:${r.id}`,
     });
   }
-  const bills = await db.query(
+  const bills = await q.query(
     `SELECT id, vendor_name, vendor_trn, subtotal, vat_amount, total_amount,
             ((bill_date + interval '4 hours')::date)::text AS d
        FROM vendor_bills
@@ -443,7 +441,7 @@ async function vatAndTrn(companyId: string, out: Anomaly[]) {
   }
 
   // Input VAT claimed without a supplier TRN, and malformed TRNs.
-  const trnBills = await db.query(
+  const trnBills = await q.query(
     `SELECT id, vendor_name, vendor_trn, vat_amount, total_amount, ((bill_date + interval '4 hours')::date)::text AS d
        FROM vendor_bills
       WHERE company_id = $1 AND COALESCE(status, 'pending') NOT IN ('void', 'cancelled', 'rejected')
@@ -474,7 +472,7 @@ async function vatAndTrn(companyId: string, out: Anomaly[]) {
       dedupeKey: `${rule}:vendor_bill:${r.id}`,
     });
   }
-  const trnInv = await db.query(
+  const trnInv = await q.query(
     `SELECT id, number, customer_name, customer_trn, total, ((date + interval '4 hours')::date)::text AS d
        FROM invoices
       WHERE company_id = $1 AND status NOT IN ('void', 'cancelled', 'draft')
@@ -505,11 +503,11 @@ async function vatAndTrn(companyId: string, out: Anomaly[]) {
  * Cross-period baseline: each expense account's current-month total against
  * the mean and standard deviation of the trailing completed months.
  */
-async function crossPeriodBaseline(companyId: string, out: Anomaly[]) {
+async function crossPeriodBaseline(companyId: string, out: Anomaly[], q: Queryable) {
   const today = uaeToday();
   const currentKey = today.slice(0, 7);
   const from = addMonths(monthStart(today), -6);
-  const { rows } = await db.query(
+  const { rows } = await q.query(
     `SELECT a.id AS account_id, a.name_en, to_char(${ENTRY_LOCAL_DATE_SQL}, 'YYYY-MM') AS ym,
             COALESCE(SUM(ROUND((jl.debit - jl.credit) * 100)), 0)::bigint AS fils
        FROM journal_lines jl
@@ -557,18 +555,28 @@ async function crossPeriodBaseline(companyId: string, out: Anomaly[]) {
   }
 }
 
-export async function detectAnomalies(companyId: string): Promise<AnomalyDetectionResult> {
+export async function detectAnomalies(
+  companyId: string,
+  q: Queryable = pool
+): Promise<AnomalyDetectionResult> {
   const anomalies: Anomaly[] = [];
-  await Promise.all([
-    duplicateAmounts(companyId, anomalies),
-    unusualAmounts(companyId, anomalies),
-    weekendEntries(companyId, anomalies),
-    roundNumbers(companyId, anomalies),
-    duplicateVendors(companyId, anomalies),
-    duplicateSupplierInvoices(companyId, anomalies),
-    vatAndTrn(companyId, anomalies),
-    crossPeriodBaseline(companyId, anomalies),
-  ]);
+  const rules = [
+    duplicateAmounts,
+    unusualAmounts,
+    weekendEntries,
+    roundNumbers,
+    duplicateVendors,
+    duplicateSupplierInvoices,
+    vatAndTrn,
+    crossPeriodBaseline,
+  ];
+  if (q === pool) {
+    await Promise.all(rules.map((run) => run(companyId, anomalies, q)));
+  } else {
+    // A caller's transaction runs on one connection. Finish each rule before
+    // the next so nothing is queued across a savepoint rollback on failure.
+    for (const run of rules) await run(companyId, anomalies, q);
+  }
 
   const severityOrder: Record<AnomalySeverity, number> = { critical: 0, warning: 1, info: 2 };
   anomalies.sort(

@@ -10,6 +10,7 @@
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -109,7 +110,7 @@ describe("[E3][J2-r3] register after an in-page language switch", () => {
 
     typeInto("input-name", "سارة");
     typeInto("input-email", "sara@example.ae");
-    typeInto("input-password", "Str0ng-pass-123");
+    typeInto("input-password", FAKE_PASSWORD);
     await act(async () => {
       (container.querySelector('[data-testid="button-register"]') as HTMLButtonElement).click();
     });
@@ -142,7 +143,7 @@ describe("[E3][J2-r3] register after an in-page language switch", () => {
     await settleUntil(() => !!i18n.t.ar["forms.errors.uaeTrn15Digits"]);
     typeInto("input-name", "سارة");
     typeInto("input-email", "sara@example.ae");
-    typeInto("input-password", "Str0ng-pass-123");
+    typeInto("input-password", FAKE_PASSWORD);
     typeInto("input-trn", "123");
     await act(async () => {
       (container.querySelector('[data-testid="button-register"]') as HTMLButtonElement).click();

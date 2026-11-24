@@ -16,6 +16,8 @@
  * direction. `lib/format.ts#formatCurrency` delegates here.
  */
 
+import { isolateLtrText, isolateRtlText } from "./format-bidi";
+
 export type MoneyLocale = "en" | "ar" | string;
 
 export interface MoneyFormatOptions {
@@ -92,12 +94,6 @@ export function formatMoneyParts(
   };
 }
 
-// Unicode isolates: LRI … PDI keeps sign + digits together left-to-right; RLI … PDI lays the
-// Arabic figure out right-to-left wherever the string is dropped.
-const LRI = "⁦";
-const RLI = "⁧";
-const PDI = "⁩";
-
 /** Plain-string money for non-markup contexts (tooltips, aria, toasts). */
 export function formatMoneyText(
   amount: number,
@@ -106,8 +102,11 @@ export function formatMoneyText(
   options: MoneyFormatOptions = {}
 ): string {
   const p = formatMoneyParts(amount, currency, locale, options);
-  const figure = `${LRI}${p.sign}${p.amount}${PDI}`;
-  if (p.currencyPosition === "end") return `${RLI}${figure} ${p.currency}${PDI}`;
+  const figure = isolateLtrText(`${p.sign}${p.amount}`);
+  if (p.currencyPosition === "end") {
+    const label = p.currency === "د.إ" ? p.currency : isolateLtrText(p.currency);
+    return isolateRtlText(`${figure} ${label}`);
+  }
   return `${p.currency} ${figure}`;
 }
 

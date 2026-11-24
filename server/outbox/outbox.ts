@@ -11,16 +11,30 @@
  *                    ↘ retrying → sending … → dead                   (after max_attempts)
  *   queued → blocked_no_provider → queued (when a provider appears, rows < 24h old)
  */
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import {
   emailDeliveryEvents,
   emailOutbox,
   emailOutboxAttachments,
+  notifications,
+  customerPortalInvitations,
+  oauthMailboxChallenges,
   type EmailOutboxRow,
   type EmailOutboxStatus,
 } from "../../shared/schema";
 import { createLogger } from "../config/logger";
+import { RETIRED_BANK_NOTIFICATION_PREFIX } from "../../shared/notification-copy";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
+import { refreshQueuedNotificationEmail } from "../services/notification-email-copy";
+import {
+  canDeliverCompanyNotification,
+  containsRetiredNotificationCopy,
+} from "../storage/notification-visibility";
+import {
+  NOTIFICATION_DIGEST_ENTITY,
+  rebuildNotificationDigest,
+} from "../services/notification-digest";
 import {
   EmailTransportError,
   activeProviderName,
@@ -31,10 +45,12 @@ import {
 const log = createLogger("email-outbox");
 
 export const DEFAULT_MAX_ATTEMPTS = 6;
+export const OAUTH_MAILBOX_CHALLENGE_ENTITY = "oauth_mailbox_challenge";
 const BASE_BACKOFF_MS = 60_000; // 1, 2, 4, 8, 16 min …
 const MAX_BACKOFF_MS = 6 * 60 * 60 * 1000;
 const LOCK_MS = 5 * 60 * 1000;
 const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
+const notificationRecipientKey = /^notif:.+:([\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12})$/i;
 
 export interface EnqueueEmailInput {
   to: string;
@@ -46,6 +62,7 @@ export interface EnqueueEmailInput {
   fromName?: string | null;
   companyId?: string | null;
   category?: string;
+  notificationDigest?: { userId: string; notificationIds: readonly string[] };
   relatedEntityType?: string | null;
   relatedEntityId?: string | null;
   attachments?: OutgoingAttachment[];
@@ -102,7 +119,7 @@ async function recordEvent(
 }
 
 /** Insert a message (and its attachments). Never sends. */
-export async function enqueueEmail(input: EnqueueEmailInput): Promise<OutboxResult> {
+export async function enqueueEmail(input: EnqueueEmailInput, executor = db): Promise<OutboxResult> {
   if (!input.to || !input.to.includes("@")) {
     throw new Error("enqueueEmail: a recipient address is required");
   }
@@ -112,14 +129,17 @@ export async function enqueueEmail(input: EnqueueEmailInput): Promise<OutboxResu
     throw new Error(`enqueueEmail: attachments exceed ${MAX_ATTACHMENT_BYTES} bytes`);
   }
   if (input.idempotencyKey) {
-    const [existing] = await db
+    const [existing] = await executor
       .select()
       .from(emailOutbox)
       .where(eq(emailOutbox.idempotencyKey, input.idempotencyKey));
     if (existing) return toResult(existing, true);
   }
   const provider = activeProviderName();
-  const row = await db.transaction(async (tx: typeof db) => {
+  const digest = input.notificationDigest;
+  const insert = async (tx: typeof db) => {
+    const now = new Date();
+    const digestAt = digest ? now : undefined;
     const [inserted] = await tx
       .insert(emailOutbox)
       .values({
@@ -132,9 +152,12 @@ export async function enqueueEmail(input: EnqueueEmailInput): Promise<OutboxResu
         html: input.html,
         textBody: input.text ?? null,
         category: input.category ?? "generic",
-        relatedEntityType: input.relatedEntityType ?? null,
-        relatedEntityId: input.relatedEntityId ?? null,
+        relatedEntityType: digest ? NOTIFICATION_DIGEST_ENTITY : (input.relatedEntityType ?? null),
+        relatedEntityId: digest?.userId ?? input.relatedEntityId ?? null,
         status: provider ? "queued" : "blocked_no_provider",
+        nextAttemptAt: now,
+        createdAt: now,
+        updatedAt: now,
         maxAttempts: input.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
         sensitive: input.sensitive === true,
         idempotencyKey: input.idempotencyKey ?? null,
@@ -143,6 +166,18 @@ export async function enqueueEmail(input: EnqueueEmailInput): Promise<OutboxResu
       .onConflictDoNothing()
       .returning();
     if (!inserted) return null;
+    if (digest && digestAt) {
+      await tx
+        .update(notifications)
+        .set({ digestedAt: digestAt })
+        .where(
+          and(
+            eq(notifications.userId, digest.userId),
+            isNull(notifications.digestedAt),
+            inArray(notifications.id, digest.notificationIds)
+          )
+        );
+    }
     for (const a of attachments) {
       await tx.insert(emailOutboxAttachments).values({
         outboxId: inserted.id,
@@ -153,32 +188,50 @@ export async function enqueueEmail(input: EnqueueEmailInput): Promise<OutboxResu
       });
     }
     return inserted as EmailOutboxRow;
-  });
+  };
+  const row = executor === db ? await db.transaction(insert) : await insert(executor);
   if (!row) {
     // Lost an idempotency race: return the winner.
-    const [existing] = await db
+    const [existing] = await executor
       .select()
       .from(emailOutbox)
       .where(eq(emailOutbox.idempotencyKey, input.idempotencyKey ?? ""));
     return toResult(existing, true);
   }
-  await recordEvent(row.id, row.status === "blocked_no_provider" ? "blocked" : "queued");
+  const eventType = row.status === "blocked_no_provider" ? "blocked" : "queued";
+  if (executor === db) await recordEvent(row.id, eventType);
+  else await executor.insert(emailDeliveryEvents).values({ outboxId: row.id, eventType });
   return toResult(row);
 }
+
+// A queued link can be superseded, revoked, or expire before a worker picks it up.
+const isCurrentPortalInvite = sql`EXISTS (
+  SELECT 1 FROM ${customerPortalInvitations} AS invite
+  WHERE invite.id = ${emailOutbox.relatedEntityId} AND invite.last_outbox_id = ${emailOutbox.id}
+    AND invite.status = 'pending' AND invite.expires_at > (now() AT TIME ZONE 'UTC')
+)`;
+
+// The challenge is deleted when consumed or when its permitted attempts are exhausted.
+const isCurrentMailboxChallenge = sql`EXISTS (
+  SELECT 1 FROM ${oauthMailboxChallenges} AS challenge
+  WHERE challenge.id = ${emailOutbox.relatedEntityId}
+    AND challenge.expires_at > (now() AT TIME ZONE 'UTC')
+)`;
 
 /** Claim rows for delivery (FOR UPDATE SKIP LOCKED); stale `sending` locks are reclaimed. */
 async function claim(ids: string[] | null, limit: number): Promise<EmailOutboxRow[]> {
   const params: unknown[] = [LOCK_MS, limit];
-  let filter = `(status IN ('queued','retrying') AND next_attempt_at <= now())
-                OR (status = 'sending' AND locked_until < now())`;
+  let filter = `(status IN ('queued','retrying') AND next_attempt_at <= (now() AT TIME ZONE 'UTC'))
+                OR (status = 'sending' AND locked_until < (now() AT TIME ZONE 'UTC'))`;
   if (ids) {
     params.push(ids);
     filter = `id = ANY($3::uuid[]) AND (status IN ('queued','retrying')
-              OR (status = 'sending' AND locked_until < now()))`;
+              OR (status = 'sending' AND locked_until < (now() AT TIME ZONE 'UTC')))`;
   }
   const { rows } = await pool.query(
     `UPDATE email_outbox SET status = 'sending',
-            locked_until = now() + ($1::int * interval '1 millisecond'), updated_at = now()
+            locked_until = (now() AT TIME ZONE 'UTC') + ($1::int * interval '1 millisecond'),
+            updated_at = now() AT TIME ZONE 'UTC'
       WHERE id IN (SELECT id FROM email_outbox WHERE ${filter}
                     ORDER BY next_attempt_at LIMIT $2 FOR UPDATE SKIP LOCKED)
       RETURNING id`,
@@ -197,6 +250,31 @@ async function claim(ids: string[] | null, limit: number): Promise<EmailOutboxRo
 }
 
 async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
+  let refreshed =
+    row.category === "notification"
+      ? refreshQueuedNotificationEmail(row.subject, row.textBody)
+      : null;
+  if (
+    !refreshed &&
+    (row.idempotencyKey?.startsWith(`notif:${RETIRED_BANK_NOTIFICATION_PREFIX}`) ||
+      (row.category === "notification" &&
+        containsRetiredNotificationCopy(`${row.subject} ${row.textBody ?? ""} ${row.html ?? ""}`)))
+  ) {
+    return cancelPendingEmail(row.id);
+  }
+  const deliveryGuard =
+    row.category === "portal_invite"
+      ? isCurrentPortalInvite
+      : row.relatedEntityType === OAUTH_MAILBOX_CHALLENGE_ENTITY
+        ? isCurrentMailboxChallenge
+        : null;
+  if (deliveryGuard) {
+    const [current] = await db
+      .select({ id: emailOutbox.id })
+      .from(emailOutbox)
+      .where(and(eq(emailOutbox.id, row.id), deliveryGuard));
+    if (!current) return cancelPendingEmail(row.id);
+  }
   const transport = resolveTransport();
   if (!transport) {
     const [blocked] = await db
@@ -218,15 +296,31 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     .where(eq(emailOutboxAttachments.outboxId, row.id));
   const attempts = row.attempts + 1;
   try {
+    if (row.category === "notification") {
+      // Historical and new notification keys end in the intended user id.
+      const recipientId = notificationRecipientKey.exec(row.idempotencyKey ?? "")?.[1];
+      if (
+        !recipientId ||
+        !row.companyId ||
+        !(await canDeliverCompanyNotification(recipientId, row.toAddress, row.companyId))
+      ) {
+        return await cancelPendingEmail(row.id);
+      }
+    }
+    if (row.category === "digest") {
+      refreshed = await rebuildNotificationDigest(row);
+      if (!refreshed) return await cancelPendingEmail(row.id);
+    }
+    const content = refreshed ?? row;
     const { providerMessageId } = await transport.send({
       outboxId: row.id,
       to: row.toAddress,
       cc: row.cc,
       replyTo: row.replyTo,
       fromName: row.fromName,
-      subject: row.subject,
-      html: row.html ?? "",
-      text: row.textBody,
+      subject: content.subject,
+      html: content.html ?? "",
+      text: content.textBody,
       attachments: attachments.map((a: typeof emailOutboxAttachments.$inferSelect) => ({
         filename: a.filename,
         contentType: a.contentType,
@@ -236,6 +330,7 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     const [sent] = await db
       .update(emailOutbox)
       .set({
+        ...refreshed,
         status: "sent",
         attempts,
         provider: transport.name,
@@ -252,12 +347,15 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     log.info({ outboxId: row.id, provider: transport.name }, "Email delivered to provider");
     return toResult(sent as EmailOutboxRow);
   } catch (err) {
-    const message = (err as Error)?.message || "Email provider error";
+    const message = row.sensitive
+      ? "Sensitive email delivery failed"
+      : (err as Error)?.message || "Email provider error";
     const permanent = err instanceof EmailTransportError && err.permanent;
     const dead = permanent || attempts >= row.maxAttempts;
     const [failed] = await db
       .update(emailOutbox)
       .set({
+        ...refreshed,
         status: dead ? "dead" : "retrying",
         attempts,
         provider: transport.name,
@@ -273,6 +371,23 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     log.warn({ outboxId: row.id, attempts, dead, err: message }, "Email delivery failed");
     return toResult(failed as EmailOutboxRow);
   }
+}
+
+async function cancelPendingEmail(id: string): Promise<OutboxResult> {
+  const [cancelled] = await db
+    .update(emailOutbox)
+    .set({
+      status: "cancelled",
+      lockedUntil: null,
+      updatedAt: new Date(),
+      html: null,
+      textBody: null,
+      lastError: null,
+    })
+    .where(eq(emailOutbox.id, id))
+    .returning();
+  await recordEvent(id, "cancelled");
+  return toResult(cancelled);
 }
 
 /** Try to deliver one message now (no-op unless it is claimable). */
@@ -292,10 +407,10 @@ export async function deliverOutboxMessage(id: string): Promise<OutboxResult | n
 export async function processOutbox(limit = 50): Promise<Record<string, number>> {
   if (activeProviderName()) {
     await pool.query(
-      `UPDATE email_outbox SET status = 'queued', next_attempt_at = now(), last_error = NULL,
-              updated_at = now()
+      `UPDATE email_outbox SET status = 'queued', next_attempt_at = now() AT TIME ZONE 'UTC', last_error = NULL,
+              updated_at = now() AT TIME ZONE 'UTC'
         WHERE status = 'blocked_no_provider'
-          AND created_at > now() - CASE WHEN sensitive THEN interval '1 hour'
+          AND created_at > (now() AT TIME ZONE 'UTC') - CASE WHEN sensitive THEN interval '1 hour'
                                         ELSE interval '24 hours' END`
     );
   }
@@ -326,7 +441,8 @@ export async function requeueOutboxMessage(
       and(
         eq(emailOutbox.id, id),
         eq(emailOutbox.companyId, companyId),
-        inArray(emailOutbox.status, ["dead", "blocked_no_provider", "retrying"])
+        inArray(emailOutbox.status, ["dead", "blocked_no_provider", "retrying"]),
+        sql`(${emailOutbox.category} <> 'portal_invite' OR ${isCurrentPortalInvite})`
       )
     )
     .returning();
@@ -345,11 +461,12 @@ export async function listOutboxForCompany(
 ) {
   const conds = [eq(emailOutbox.companyId, companyId)];
   if (opts.relatedEntityId) conds.push(eq(emailOutbox.relatedEntityId, opts.relatedEntityId));
-  return db
+  const rows = await db
     .select({
       id: emailOutbox.id,
       toAddress: emailOutbox.toAddress,
       subject: emailOutbox.subject,
+      idempotencyKey: emailOutbox.idempotencyKey,
       category: emailOutbox.category,
       relatedEntityType: emailOutbox.relatedEntityType,
       relatedEntityId: emailOutbox.relatedEntityId,
@@ -367,6 +484,18 @@ export async function listOutboxForCompany(
     .where(and(...conds))
     .orderBy(desc(emailOutbox.createdAt))
     .limit(Math.min(opts.limit ?? 100, 500));
+  return rows.map(({ idempotencyKey, ...row }) => ({
+    ...row,
+    subject:
+      idempotencyKey?.startsWith(`notif:${RETIRED_BANK_NOTIFICATION_PREFIX}`) ||
+      containsRetiredNotificationCopy(row.subject)
+        ? BANK_RECONCILIATION_COPY.en
+        : row.subject,
+    lastError:
+      row.lastError && containsRetiredNotificationCopy(row.lastError)
+        ? BANK_RECONCILIATION_COPY.en
+        : row.lastError,
+  }));
 }
 
 export type ProviderEventType = "delivered" | "bounced" | "complained" | "opened" | "failed";
@@ -394,9 +523,10 @@ export async function applyProviderEvent(evt: {
     row = byMsg as EmailOutboxRow | undefined;
   }
   if (!row) {
-    await recordEvent(null, evt.type, evt.detail, evt.provider, evt.providerMessageId);
+    await recordEvent(null, evt.type, null, evt.provider, evt.providerMessageId);
     return null;
   }
+  const detail = row.sensitive ? null : evt.detail;
   const now = new Date();
   const patch: Partial<typeof emailOutbox.$inferInsert> = { updatedAt: now };
   if (evt.type === "delivered" && ["sent", "sending", "retrying"].includes(row.status)) {
@@ -405,16 +535,16 @@ export async function applyProviderEvent(evt: {
   } else if (evt.type === "bounced") {
     patch.status = "bounced";
     patch.bouncedAt = now;
-    patch.lastError = evt.detail ?? "Bounced";
+    patch.lastError = detail ?? "Bounced";
   } else if (evt.type === "complained") {
     patch.status = "complained";
     patch.complainedAt = now;
   } else if (evt.type === "failed" && row.status !== "delivered") {
     patch.status = "dead";
     patch.deadAt = now;
-    patch.lastError = evt.detail ?? "Delivery failed";
+    patch.lastError = detail ?? "Delivery failed";
   }
   await db.update(emailOutbox).set(patch).where(eq(emailOutbox.id, row.id));
-  await recordEvent(row.id, evt.type, evt.detail, evt.provider, evt.providerMessageId);
+  await recordEvent(row.id, evt.type, detail, evt.provider, evt.providerMessageId);
   return row.id;
 }

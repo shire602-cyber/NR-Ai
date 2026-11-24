@@ -144,11 +144,13 @@ export const companies = pgTable("companies", {
       autopilotEnabled: boolean;
     }>(),
 
+  stripeFirstCheckoutExpiresAt: timestamp("stripe_first_checkout_expires_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const insertCompanySchema = createInsertSchema(companies).omit({
   id: true,
+  stripeFirstCheckoutExpiresAt: true,
   createdAt: true,
 });
 

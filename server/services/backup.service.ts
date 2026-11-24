@@ -31,13 +31,14 @@ import crypto from "node:crypto";
 import zlib from "node:zlib";
 import { pool } from "../db";
 import { pq, type Queryable } from "./connectors/pq";
-import { decryptSecret, encryptSecret } from "./secret-vault";
+import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secret-vault";
 import { DomainError } from "../errors";
 import { createLogger } from "../config/logger";
 
 const log = createLogger("backup-service");
 
 export const BACKUP_FORMAT_VERSION = "2.0";
+const BANK_GL_MIGRATION_FINDINGS = "bank_gl_migration_findings";
 
 /** Company-scoped tables deliberately NOT in a backup, and why. */
 export const BACKUP_EXCLUDED_TABLES: Readonly<Record<string, string>> = {
@@ -45,10 +46,14 @@ export const BACKUP_EXCLUDED_TABLES: Readonly<Record<string, string>> = {
   backup_schedules: "backup configuration",
   activity_logs: "audit trail: must survive every restore",
   company_users: "access control: a restore must not lock out or revive members",
+  firm_client_links: "access control: firm links follow the current client relationship",
+  firm_company_grants: "access control: firm grants follow current staff access",
   invitations: "access control",
   company_invitations: "access control",
   api_keys: "credentials: a restore must never revive a revoked key",
   bank_feed_oauth_states: "short-lived OAuth state",
+  [BANK_GL_MIGRATION_FINDINGS]:
+    "operator-only migration diagnostics can contain references to other companies and must survive tenant restores",
   portal_login_codes: "short-lived credentials",
   portal_access_tokens: "credentials",
   payslip_tokens: "credentials",
@@ -308,16 +313,53 @@ export async function captureSnapshot(
   return { version: BACKUP_FORMAT_VERSION, createdAt: new Date().toISOString(), companyId, tables };
 }
 
+const retiredBankCredentialColumns = [
+  "access_token",
+  "refresh_token",
+  "token_expires_at",
+  "consent_id",
+] as const;
+
+function withoutRetiredBankCredentials(snapshot: CompanySnapshot): CompanySnapshot {
+  const connections = snapshot.tables.bank_connections;
+  if (!connections) return snapshot;
+  let changed = false;
+  const rows = connections.map((row) => {
+    if (!row || typeof row !== "object") return row;
+    const connection = row as Record<string, unknown>;
+    if (
+      !connection.auto_sync &&
+      retiredBankCredentialColumns.every((key) => connection[key] == null)
+    )
+      return row;
+    changed = true;
+    const sanitized: Record<string, unknown> = { ...connection, auto_sync: false };
+    for (const column of retiredBankCredentialColumns) sanitized[column] = null;
+    return sanitized;
+  });
+  return changed
+    ? { ...snapshot, tables: { ...snapshot.tables, bank_connections: rows } }
+    : snapshot;
+}
+
+function snapshotChecksum(content: string): string {
+  return crypto.createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+function sealSnapshotJson(json: string): string {
+  const gz = zlib.gzipSync(Buffer.from(json, "utf8")).toString("base64");
+  return encryptSecret(`gz1:${gz}`)!;
+}
+
 export function sealSnapshot(snapshot: CompanySnapshot): {
   sealed: string;
   checksum: string;
   sizeBytes: number;
   counts: Record<string, number>;
 } {
-  const json = JSON.stringify(snapshot);
-  const checksum = crypto.createHash("sha256").update(json).digest("hex");
-  const gz = zlib.gzipSync(Buffer.from(json, "utf8")).toString("base64");
-  const sealed = encryptSecret(`gz1:${gz}`)!;
+  const json = JSON.stringify(withoutRetiredBankCredentials(snapshot));
+  const checksum = snapshotChecksum(json);
+  const sealed = sealSnapshotJson(json);
   const counts = Object.fromEntries(Object.entries(snapshot.tables).map(([k, v]) => [k, v.length]));
   return { sealed, checksum, sizeBytes: Buffer.byteLength(sealed, "utf8"), counts };
 }
@@ -326,9 +368,9 @@ export function sealSnapshot(snapshot: CompanySnapshot): {
 export function openSnapshot(
   stored: string,
   checksum: string | null
-): { json: string; snapshot: CompanySnapshot | LegacySnapshot } {
+): { json: string; snapshot: CompanySnapshot | LegacySnapshot; redacted?: CompanySnapshot } {
   let json: string;
-  if (stored.startsWith("enc:v1:")) {
+  if (isEncryptedSecret(stored)) {
     const plain = decryptSecret(stored) ?? "";
     json = plain.startsWith("gz1:")
       ? zlib.gunzipSync(Buffer.from(plain.slice(4), "base64")).toString("utf8")
@@ -337,8 +379,7 @@ export function openSnapshot(
     json = stored;
   }
   if (checksum) {
-    const actual = crypto.createHash("sha256").update(json).digest("hex");
-    if (actual !== checksum) {
+    if (snapshotChecksum(json) !== checksum) {
       throw new DomainError(
         "BACKUP_INTEGRITY_FAILED",
         409,
@@ -347,7 +388,35 @@ export function openSnapshot(
       );
     }
   }
-  return { json, snapshot: JSON.parse(json) };
+  const snapshot = JSON.parse(json) as CompanySnapshot | LegacySnapshot;
+  if ("tables" in snapshot) {
+    const redacted = withoutRetiredBankCredentials(snapshot);
+    if (redacted !== snapshot)
+      return { json: JSON.stringify(redacted), snapshot: redacted, redacted };
+  }
+  return { json, snapshot };
+}
+
+/** Produce both download formats from the same sanitized, verified snapshot. */
+export function exportBackupSnapshot(
+  stored: string,
+  checksum: string | null,
+  encrypted: boolean
+): { body: string; exportChecksum: string; contentDigest?: string } {
+  const { json, snapshot, redacted } = openSnapshot(stored, checksum);
+  const tables = "tables" in snapshot ? snapshot.tables : snapshot.data;
+  const hadFindings = tables && Object.hasOwn(tables, BANK_GL_MIGRATION_FINDINGS);
+  if (hadFindings) delete tables[BANK_GL_MIGRATION_FINDINGS];
+  const plaintext = hadFindings ? JSON.stringify(snapshot) : json;
+  const sanitized = hadFindings || !!redacted;
+  const body = encrypted
+    ? (!sanitized && isEncryptedSecret(stored) ? stored : sealSnapshotJson(plaintext))
+    : plaintext;
+  const exportChecksum = snapshotChecksum(body);
+  const contentDigest = !encrypted && sanitized
+    ? `sha-256=:${Buffer.from(exportChecksum, "hex").toString("base64")}:`
+    : undefined;
+  return { body, exportChecksum, ...(contentDigest ? { contentDigest } : {}) };
 }
 
 interface LegacySnapshot {
@@ -376,14 +445,35 @@ export interface BackupRecord {
   status: string;
 }
 
-export async function createCompanyBackup(args: {
+interface CreateCompanyBackupArgs {
   companyId: string;
   userId: string | null;
   name?: string | null;
   description?: string | null;
   backupType: "manual" | "scheduled" | "pre_restore";
   retentionDays?: number;
-}): Promise<BackupRecord & Record<string, unknown>> {
+}
+
+async function captureConsistentSnapshot(companyId: string): Promise<CompanySnapshot> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const snapshot = await captureSnapshot(companyId, client);
+    await client.query("COMMIT");
+    return snapshot;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function createCompanyBackup(
+  args: CreateCompanyBackupArgs,
+  transaction?: { client: Queryable; manifest: BackupManifest }
+): Promise<BackupRecord & Record<string, unknown>> {
+  const executor = transaction?.client ?? pool;
   const { rows } = await pq<BackupRecord>(
     `INSERT INTO backups (company_id, name, description, backup_type, status, created_by, format_version, encrypted)
           VALUES ($1, $2, $3, $4, 'in_progress', $5, $6, true) RETURNING id, company_id, name, status`,
@@ -394,23 +484,14 @@ export async function createCompanyBackup(args: {
       args.backupType,
       args.userId,
       BACKUP_FORMAT_VERSION,
-    ]
+    ],
+    executor
   );
   const backup = rows[0];
   try {
-    const client = await pool.connect();
-    let snapshot: CompanySnapshot;
-    try {
-      // One consistent read of every table.
-      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      snapshot = await captureSnapshot(args.companyId, client);
-      await client.query("COMMIT");
-    } catch (err) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw err;
-    } finally {
-      client.release();
-    }
+    const snapshot = transaction
+      ? await captureSnapshot(args.companyId, transaction.client, transaction.manifest)
+      : await captureConsistentSnapshot(args.companyId);
     const sealed = sealSnapshot(snapshot);
     const c = sealed.counts;
     const { rows: done } = await pq(
@@ -435,13 +516,16 @@ export async function createCompanyBackup(args: {
         c.receipts ?? 0,
         c.vat_returns ?? 0,
         String(args.retentionDays ?? 90),
-      ]
+      ],
+      executor
     );
     return done[0] as BackupRecord & Record<string, unknown>;
   } catch (err) {
-    await pq(`UPDATE backups SET status = 'failed' WHERE id = $1`, [backup.id]).catch(
-      () => undefined
-    );
+    if (!transaction) {
+      await pq(`UPDATE backups SET status = 'failed' WHERE id = $1`, [backup.id]).catch(
+        () => undefined
+      );
+    }
     throw err;
   }
 }
@@ -689,6 +773,9 @@ export const CLONE_SKIPPED_TABLES: Readonly<Record<string, string>> = {
   email_intake_messages: "provider message ids are globally unique",
   ecommerce_transactions: "marketplace transaction ids belong to the source company's store",
   ecommerce_integrations: "store connections are credentials of the source company",
+  webhook_endpoints: "outbound destinations and signing secrets belong to each company",
+  whatsapp_configs: "messaging credentials and settings belong to each company",
+  company_report_delivery_subscriptions: "report delivery recipients belong to each company",
   einvoice_archive: "immutable legal archive of the source company's transmissions",
   tax_return_archive: "immutable legal archive of the source company's filings",
   einvoice_documents: "transmission state belongs to the source company",
@@ -711,6 +798,14 @@ const CLONE_TARGET_ACTIVITY_TABLES = [
   "bank_transactions",
   "payroll_runs",
   "credit_notes",
+  "quotes",
+  "purchase_orders",
+  "expense_claims",
+  "recurring_invoices",
+  "inventory_movements",
+  "vat_returns",
+  "corporate_tax_returns",
+  "budget_plans",
 ] as const;
 
 /** Skipped tables plus child tables reached only through skipped parents (to a fixed point). */
@@ -825,54 +920,35 @@ export async function restoreBackupIntoCompany(args: {
     throw new DomainError("BACKUP_COMPANY_MISMATCH", 409);
   }
 
-  const { rows: cos } = await pq<{ id: string; base_currency: string | null }>(
-    `SELECT id, base_currency FROM companies WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
-    [[args.sourceCompanyId, args.targetCompanyId]]
-  );
-  const src = cos.find((c) => c.id === args.sourceCompanyId);
-  const dst = cos.find((c) => c.id === args.targetCompanyId);
-  if (!dst) throw new DomainError("NOT_FOUND", 404, undefined, "Target company not found");
-  if (src && (src.base_currency || "AED") !== (dst.base_currency || "AED")) {
-    throw new DomainError(
-      "BASE_CURRENCY_MISMATCH",
-      422,
-      { source: src.base_currency, target: dst.base_currency },
-      "The target company must use the same base currency as the backup's company."
-    );
-  }
-  for (const table of CLONE_TARGET_ACTIVITY_TABLES) {
-    const { rows: n } = await pq<{ n: string }>(
-      `SELECT count(*) AS n FROM ${q(table)} WHERE company_id = $1`,
-      [args.targetCompanyId]
-    );
-    if (Number(n[0].n) > 0) {
-      throw new DomainError(
-        "CLONE_TARGET_NOT_EMPTY",
-        409,
-        { table, rows: Number(n[0].n) },
-        "The target company already has accounting activity. Clone only into a new, empty company."
-      );
-    }
-  }
-
-  let preRestoreBackupId: string | null = null;
-  if (!args.dryRun) {
-    const pre = await createCompanyBackup({
-      companyId: args.targetCompanyId,
-      userId: args.userId,
-      name: `Pre-clone backup (before loading ${backup.name})`,
-      description: "Automatic backup created before restoring another company's backup here",
-      backupType: "pre_restore",
-    });
-    preRestoreBackupId = pre.id;
-  }
-
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
       `backup-restore:${args.targetCompanyId}`,
     ]);
+    if (!args.dryRun) {
+      // New accounting rows reference the company and acquire a conflicting FK
+      // key-share lock. Existing activity makes the target ineligible below.
+      await client.query("SELECT id FROM companies WHERE id = $1 FOR UPDATE", [
+        args.targetCompanyId,
+      ]);
+    }
+    const { rows: cos } = await pq<{ id: string; base_currency: string | null }>(
+      `SELECT id, base_currency FROM companies WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
+      [[args.sourceCompanyId, args.targetCompanyId]],
+      client
+    );
+    const src = cos.find((c) => c.id === args.sourceCompanyId);
+    const dst = cos.find((c) => c.id === args.targetCompanyId);
+    if (!dst) throw new DomainError("NOT_FOUND", 404, undefined, "Target company not found");
+    if (src && (src.base_currency || "AED") !== (dst.base_currency || "AED")) {
+      throw new DomainError(
+        "BASE_CURRENCY_MISMATCH",
+        422,
+        { source: src.base_currency, target: dst.base_currency },
+        "The target company must use the same base currency as the backup's company."
+      );
+    }
     const full = await buildBackupManifest(client);
     const skip = cloneSkipReasons(full.tables);
     const skippedTables = full.tables
@@ -883,6 +959,37 @@ export async function restoreBackupIntoCompany(args: {
         rows: (snapshot.tables[t.name] ?? []).length,
       }));
     const manifest = full.tables.filter((t) => !skip.has(t.name));
+
+    for (const table of CLONE_TARGET_ACTIVITY_TABLES) {
+      const { rows: n } = await pq<{ n: string }>(
+        `SELECT count(*) AS n FROM ${q(table)} WHERE company_id = $1`,
+        [args.targetCompanyId],
+        client
+      );
+      if (Number(n[0].n) > 0) {
+        throw new DomainError(
+          "CLONE_TARGET_NOT_EMPTY",
+          409,
+          { table, rows: Number(n[0].n) },
+          "The target company already has accounting activity. Clone only into a new, empty company."
+        );
+      }
+    }
+
+    let preRestoreBackupId: string | null = null;
+    if (!args.dryRun) {
+      const pre = await createCompanyBackup(
+        {
+          companyId: args.targetCompanyId,
+          userId: args.userId,
+          name: `Pre-clone backup (before loading ${backup.name})`,
+          description: "Automatic backup created before restoring another company's backup here",
+          backupType: "pre_restore",
+        },
+        { client, manifest: full }
+      );
+      preRestoreBackupId = pre.id;
+    }
     const { tables } = remapSnapshotForClone(
       snapshot.tables,
       manifest,

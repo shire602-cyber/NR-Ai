@@ -2,7 +2,7 @@
  * S5 generalised file storage (W5-A residual): one object store for receipts and report
  * delivery artifacts, prefix-guarded, with a pluggable adapter standing in for S3 in tests.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   __setObjectStoreForTests,
   deleteObject,
@@ -31,13 +31,25 @@ function memoryBucket() {
   return { bucket, adapter };
 }
 
-afterEach(() => __setObjectStoreForTests(null));
+afterEach(() => {
+  __setObjectStoreForTests(null);
+  vi.unstubAllEnvs();
+});
 
 describe("S5 object store", () => {
   it("is durable only with object storage (or the test adapter) configured", () => {
     expect(hasDurableObjectStore()).toBe(false);
     __setObjectStoreForTests(memoryBucket().adapter);
     expect(hasDurableObjectStore()).toBe(true);
+  });
+
+  it("requires object storage for Vercel uploads", async () => {
+    vi.stubEnv("VERCEL", "1");
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", undefined);
+    vi.stubEnv("S3_BUCKET", undefined);
+    await expect(putObject("receipts", "vercel.pdf", PDF, "application/pdf")).rejects.toThrow(
+      "Private object storage is required"
+    );
   });
 
   it("writes under the prefix with a sanitised name and reads back with the sniffed type", async () => {

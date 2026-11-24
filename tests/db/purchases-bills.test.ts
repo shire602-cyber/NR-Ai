@@ -233,6 +233,34 @@ describe("W3-B bills: state machine", () => {
 });
 
 describe("W3-B bills: payments", () => {
+  it("pages vendor payment history in bill currency without leaking another company's rows", async () => {
+    const t = await h.createTenant();
+    const bill = await approvedBill(t, { currency: "USD", exchange_rate: "3.6725" });
+    const paymentIds = [];
+    for (const amount of [10, 20]) {
+      const payment = await t.as.post(`/api/bills/${bill.id}/payments`, {
+        payment_date: "2026-02-01",
+        amount,
+        exchange_rate: "3.6725",
+      });
+      expect(payment.status, payment.text).toBe(200);
+      paymentIds.push(payment.body.payment.id);
+    }
+    const url = `${billsUrl(t)}/all-payments?limit=1`;
+    const first = await t.as.get(url);
+    expect(first.status, first.text).toBe(200);
+    expect(first.body.items).toHaveLength(1);
+    expect(first.body.items[0]).toMatchObject({ bill_id: bill.id, currency: "USD" });
+    const second = await t.as.get(`${url}&cursor=${first.body.nextCursor}`);
+    expect(second.status, second.text).toBe(200);
+    expect(second.body.items).toHaveLength(1);
+    expect(second.body.items[0]).toMatchObject({ bill_id: bill.id, currency: "USD" });
+    expect(second.body.nextCursor).toBeNull();
+    expect([first.body.items[0].id, second.body.items[0].id]).toEqual(paymentIds.sort().reverse());
+    const another = await h.createSecondTenant();
+    expect([403, 404]).toContain((await another.as.get(url)).status);
+  });
+
   it("[R04-14] exact fils: overpaying by 0.01 is 400; the chosen bank account is credited", async () => {
     const t = await h.createTenant();
     const bill = await approvedBill(t);
@@ -352,6 +380,15 @@ describe("W3-B bills: payments", () => {
     });
     expect(v.status, v.text).toBe(200);
     expect(v.body.bill_status).toBe("approved");
+    const history = await t.as.get(`${billsUrl(t)}/all-payments`);
+    expect(history.status, history.text).toBe(200);
+    expect(history.body.items).toHaveLength(2);
+    expect(history.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: p.body.payment.id, kind: "payment", status: "voided" }),
+        expect.objectContaining({ bill_id: bill.id, kind: "reversal", status: "active" }),
+      ])
+    );
     expect(await balanceFils(t, "2010")).toBe(105_000);
     expect(await balanceFils(t, "1020", "debit")).toBe(0);
     expect(
@@ -499,6 +536,7 @@ describe("W3-B debit notes, prepayments, vendors, approval rules, services", () 
       name: "Office rent",
       frequency: "monthly",
       next_run_on: "2026-02-01",
+      end_on: "2026-02-01",
       template: {
         vendor_name: "Landlord LLC",
         category: "rent",
@@ -507,6 +545,24 @@ describe("W3-B debit notes, prepayments, vendors, approval rules, services", () 
       },
     });
     expect(rec.status, rec.text).toBe(201);
+    const [schedule] = await h.sql("SELECT template FROM recurring_bills WHERE id = $1", [
+      rec.body.id,
+    ]);
+    await h.sql("UPDATE recurring_bills SET template = '{}'::jsonb WHERE id = $1", [rec.body.id]);
+    const failed = await t.as.post(
+      `/api/companies/${t.company.id}/recurring-bills/${rec.body.id}/run`,
+      {}
+    );
+    expect(failed.status).toBeGreaterThanOrEqual(400);
+    const [unadvanced] = await h.sql(
+      "SELECT next_run_on::text AS date FROM recurring_bills WHERE id = $1",
+      [rec.body.id]
+    );
+    expect(unadvanced.date).toBe("2026-02-01");
+    await h.sql("UPDATE recurring_bills SET template = $2 WHERE id = $1", [
+      rec.body.id,
+      schedule.template,
+    ]);
     const run = await t.as.post(
       `/api/companies/${t.company.id}/recurring-bills/${rec.body.id}/run`,
       {}
@@ -518,6 +574,12 @@ describe("W3-B debit notes, prepayments, vendors, approval rules, services", () 
       rec.body.id,
     ]);
     expect(next[0].d).toBe("2026-03-01");
+    expect(String(run.body.bill.bill_date).slice(0, 10)).toBe("2026-02-01");
+    const expired = await t.as.post(
+      `/api/companies/${t.company.id}/recurring-bills/${rec.body.id}/run`,
+      {}
+    );
+    expect(expired.body.created).toBe(false);
 
     const receipt = await h.sql<{ id: string }>(
       `INSERT INTO receipts (company_id, merchant, date, amount, vat_amount, currency, uploaded_by)

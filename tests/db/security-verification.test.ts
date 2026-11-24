@@ -76,6 +76,68 @@ describe("W5-E registration does not reveal existing accounts", () => {
 });
 
 describe("W5-E email verification", () => {
+  it("binds verification to the mailbox that received the link, including OAuth verification", async () => {
+    const user = await h.createTenant({ name: "Mailbox" });
+    const original = tokenFrom(sent.find((mail) => mail.to === user.email));
+    const replacement = `replacement-${uniq()}@example.test`;
+    // Change the storage directly so the test exercises the token binding independently of admin cleanup.
+    await h.sql("UPDATE users SET email = $2 WHERE id = $1", [user.user.id, replacement]);
+    const stale = await h.anon.post("/api/auth/verify-email", { token: original });
+    expect(stale.body.code).toBe("VERIFICATION_TOKEN_INVALID");
+    const { markOAuthLogin } = await import("../../server/services/oauth.service");
+    await markOAuthLogin(user.user.id, {
+      provider: "google",
+      issuer: "https://accounts.google.com",
+      subject: "synthetic-subject",
+      email: user.email,
+      emailVerified: true,
+      name: "Mailbox",
+      claims: {},
+    });
+    expect(await h.sql("SELECT email_verified FROM users WHERE id = $1", [user.user.id])).toEqual([
+      { email_verified: false },
+    ]);
+
+    expect((await user.as.post("/api/auth/verify-email/resend", {})).status).toBe(200);
+    const token = tokenFrom(sent.find((mail) => mail.to === replacement));
+    expect((await h.anon.post("/api/auth/verify-email", { token })).status).toBe(200);
+    expect(await h.sql("SELECT email_verified FROM users WHERE id = $1", [user.user.id])).toEqual([
+      { email_verified: true },
+    ]);
+  });
+
+  it("invalidates an old verification link when an admin changes an address away and back", async () => {
+    const user = await h.createTenant();
+    const admin = await h.createTenant({ isAdmin: true });
+    const token = tokenFrom(sent.find((mail) => mail.to === user.email));
+    const endpoint = `/api/admin/users/${user.user.id}`;
+    expect(
+      (await admin.as.patch(endpoint, { email: `change-${uniq()}@example.test` })).status
+    ).toBe(200);
+    expect((await admin.as.patch(endpoint, { email: user.email })).status).toBe(200);
+    expect((await h.anon.post("/api/auth/verify-email", { token })).body.code).toBe(
+      "VERIFICATION_TOKEN_INVALID"
+    );
+  });
+
+  it("rejects verification links from a server version that did not bind the mailbox", async () => {
+    const user = await h.createTenant();
+    const raw = randomBytes(32).toString("hex");
+    const { hashVerificationToken } =
+      await import("../../server/services/security/email-verification");
+    await h.sql(
+      `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
+      VALUES ($1, $2, now() + interval '1 hour')`,
+      [user.user.id, hashVerificationToken(raw)]
+    );
+    expect((await h.anon.post("/api/auth/verify-email", { token: raw })).body.code).toBe(
+      "VERIFICATION_TOKEN_INVALID"
+    );
+    expect(await h.sql("SELECT email_verified FROM users WHERE id = $1", [user.user.id])).toEqual([
+      { email_verified: false },
+    ]);
+  });
+
   it("[R01-11] the emailed link verifies the account once", async () => {
     const email = `verify-${uniq()}@example.test`;
     await h.anon.post("/api/auth/register", { name: "Ver", email, password: STRONG });

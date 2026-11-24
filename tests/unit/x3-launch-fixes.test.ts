@@ -165,26 +165,29 @@ describe("X3 invoice share / send by email", () => {
     );
   });
 
-  it("says sent only when the server says it was sent, and is Arabic in Arabic mode", async () => {
-    await setLocale("ar");
-    api.apiRequest
-      .mockResolvedValueOnce({ shareUrl: "/view/invoice/tok", token: "tok" })
-      .mockResolvedValueOnce({ sent: true, queued: false, emailConfigured: true });
-    await renderDialog();
-    typeEmail("buyer@example.com");
-    await act(async () => {
-      (q("button-send-invoice-email") as HTMLButtonElement).click();
-    });
-    expect(api.apiRequest).toHaveBeenLastCalledWith(
-      "POST",
-      "/api/companies/co-1/invoices/inv-1/send-email",
-      { to: "buyer@example.com", language: "ar" }
-    );
-    const { t } = await import("../../client/src/lib/i18n");
-    expect(q("invoice-share-email-sent")!.textContent).toBe(
-      t.ar["invoices.shareEmailSent"].replace("{to}", "buyer@example.com")
-    );
-  });
+  it.each(["en", "ar"] as const)(
+    "lets the server choose the email language from the %s dialog",
+    async (locale) => {
+      await setLocale(locale);
+      api.apiRequest
+        .mockResolvedValueOnce({ shareUrl: "/view/invoice/tok", token: "tok" })
+        .mockResolvedValueOnce({ sent: true, queued: false, emailConfigured: true });
+      await renderDialog();
+      typeEmail("buyer@example.com");
+      await act(async () => {
+        (q("button-send-invoice-email") as HTMLButtonElement).click();
+      });
+      expect(api.apiRequest).toHaveBeenLastCalledWith(
+        "POST",
+        "/api/companies/co-1/invoices/inv-1/send-email",
+        { to: "buyer@example.com" }
+      );
+      const { t } = await import("../../client/src/lib/i18n");
+      expect(q("invoice-share-email-sent")!.textContent).toBe(
+        t[locale]["invoices.shareEmailSent"].replace("{to}", "buyer@example.com")
+      );
+    }
+  );
 });
 
 describe("X3 Arabic legal pages", () => {
@@ -219,12 +222,12 @@ describe("X3 pricing makes only true claims", () => {
     const text = container.textContent ?? "";
     expect(text).not.toMatch(/AI OCR/i);
     // WP-B: qualifiers sit on a sub-line under the row label instead of inside it.
-    // WQ7: e-invoicing is in every plan (no partner named); sending needs an accredited
-    // provider. The comparison no longer lists an "AI receipt reading" row at all.
+    // E-invoicing is in every plan. A-Cube and Complyance are both named, with no default.
+    // The comparison no longer lists an "AI receipt reading" row at all.
     expect(text).not.toMatch(/AI receipt reading/i);
     expect(text).toContain("E-invoicing (PINT AE)");
-    expect(text).toContain("Sending needs an accredited service provider");
-    expect(text).not.toMatch(/coming soon/i);
+    expect(text).toContain("Choose A-Cube or Complyance for UAE e-invoicing. Setup with your chosen provider is required.");
+    expect(text).not.toMatch(/coming\s+soon/i);
   });
 });
 

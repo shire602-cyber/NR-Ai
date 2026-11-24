@@ -165,18 +165,18 @@ describe("D2 N5: a debit note on a disposal invoice", () => {
     expect(await linesOf(dnEntry.id)).toEqual({
       "1040": [2100, 0],
       "2020": [0, 100],
-      "4010": [0, 2000],
+      "4020": [0, 2000],
     });
     const adj = await adjustmentEntry(t, van, dn1.body.id);
     expect(adj.status).toBe("posted");
     expect(await linesOf(adj.id)).toEqual({
-      "4010": [2000, 0],
+      "4020": [2000, 0],
       "4080": [0, 1600],
       "5130": [0, 400],
     });
     expect(await register(van)).toMatchObject({ amount: 51000, vat: 2550 });
     // November P&L: no revenue; net gain 1,600 = 51,000 - 49,400.
-    expect(await glBalance(t, "4010", "2026-11-01", "2026-11-30")).toBe(0);
+    expect(await glBalance(t, "4020", "2026-11-01", "2026-11-30")).toBe(0);
     expect(await glBalance(t, "4080", "2026-11-01", "2026-11-30")).toBe(-1600);
     expect(await glBalance(t, "5130", "2026-11-01", "2026-11-30")).toBe(0);
 
@@ -188,7 +188,7 @@ describe("D2 N5: a debit note on a disposal invoice", () => {
     expect(await register(van)).toMatchObject({ amount: 49000, vat: 2450 });
     expect(await glBalance(t, "4080", "2026-11-01", "2026-11-30")).toBe(0);
     expect(await glBalance(t, "5130", "2026-11-01", "2026-11-30")).toBe(400);
-    expect(await glBalance(t, "4010", "2026-11-01", "2026-11-30")).toBe(0);
+    expect(await glBalance(t, "4020", "2026-11-01", "2026-11-30")).toBe(0);
 
     // A second debit note, then the buyer pays it: 2,000 is investing (proceeds), 100 operating.
     const dn2 = await debitNote();

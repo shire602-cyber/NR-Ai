@@ -42,6 +42,31 @@ async function drain() {
 }
 
 describe("W5-B public API keys", () => {
+  it("locks an existing key at trial expiry and restores it on an API-enabled paid plan", async () => {
+    process.env.BILLING_ENFORCEMENT = "true";
+    try {
+      const tenant = await h.createTenant();
+      const key = await createKey(tenant, ["read:accounts", "write:contacts"]);
+      const request = withKey(key.key);
+      expect((await h.anon.get("/api/v1/accounts", request)).status).toBe(200);
+
+      await h.sql("UPDATE subscriptions SET trial_ends_at = now() WHERE company_id = $1", [
+        tenant.company.id,
+      ]);
+      const read = await h.anon.get("/api/v1/accounts", request);
+      expect(read.status).toBe(402);
+      expect(read.body).toMatchObject({ code: "PLAN_REQUIRED", companyId: tenant.company.id });
+      expect((await h.anon.post("/api/v1/contacts", { name: "Locked" }, request)).status).toBe(402);
+
+      await h.sql("UPDATE subscriptions SET plan_id = 'enterprise' WHERE company_id = $1", [
+        tenant.company.id,
+      ]);
+      expect((await h.anon.get("/api/v1/accounts", request)).status).toBe(200);
+    } finally {
+      delete process.env.BILLING_ENFORCEMENT;
+    }
+  });
+
   it("[R19-01] a scoped key lists its own company's invoices over /api/v1 and sets last_used_at", async () => {
     const a = await h.createTenant();
     await issueInvoice(a);

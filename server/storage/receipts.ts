@@ -3,8 +3,8 @@
 // server/storage.ts (R20-09); import `storage` from "./storage", not these classes.
 
 import { receipts, type InsertReceipt, type JournalEntry, type Receipt } from "@shared/schema";
-import { db } from "../db";
-import { and, desc, eq } from "drizzle-orm";
+import { db, type AppDatabase } from "../db";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { DomainError } from "../errors";
 import { legacyLinesToInput } from "../ledger/legacy";
 import { postJournal, reverseBySource, withLedgerTx } from "../ledger";
@@ -31,9 +31,71 @@ export class ReceiptStorage extends SalesStorage {
     return receipt || undefined;
   }
 
-  async createReceipt(insertReceipt: InsertReceipt): Promise<Receipt> {
-    const [receipt] = await db.insert(receipts).values(insertReceipt).returning();
+  async createReceipt(
+    insertReceipt: InsertReceipt,
+    exec: Pick<AppDatabase, "insert"> = db
+  ): Promise<Receipt> {
+    const [receipt] = await exec.insert(receipts).values(insertReceipt).returning();
     return receipt;
+  }
+
+  async getCapturedReceipt(companyId: string, captureId: string): Promise<Receipt | undefined> {
+    const [receipt] = await db
+      .select()
+      .from(receipts)
+      .where(and(eq(receipts.companyId, companyId), eq(receipts.captureId, captureId)));
+    return receipt;
+  }
+
+  async createCapturedReceipt(data: InsertReceipt, confirmDuplicate: boolean) {
+    return withLedgerTx(async (tx) => {
+      if (data.contentSha256) {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${data.companyId}), hashtext(${data.contentSha256}))`
+        );
+      }
+      if (data.captureId) {
+        const [existing] = await tx
+          .select()
+          .from(receipts)
+          .where(
+            and(eq(receipts.companyId, data.companyId), eq(receipts.captureId, data.captureId))
+          );
+        if (existing) return { receipt: existing, replay: true };
+      }
+      if (data.contentSha256 && !confirmDuplicate) {
+        const [duplicate] = await tx
+          .select({
+            id: receipts.id,
+            merchant: receipts.merchant,
+            amount: receipts.amount,
+            date: receipts.date,
+          })
+          .from(receipts)
+          .where(
+            and(
+              eq(receipts.companyId, data.companyId),
+              eq(receipts.contentSha256, data.contentSha256)
+            )
+          )
+          .limit(1);
+        if (duplicate) return { duplicate };
+      }
+      const [created] = await tx
+        .insert(receipts)
+        .values(data)
+        .onConflictDoNothing({ target: [receipts.companyId, receipts.captureId] })
+        .returning();
+      if (created) return { receipt: created, replay: false };
+      const [existing] = await tx
+        .select()
+        .from(receipts)
+        .where(
+          and(eq(receipts.companyId, data.companyId), eq(receipts.captureId, data.captureId!))
+        );
+      if (!existing) throw new DomainError("RECEIPT_NOT_FOUND", 409);
+      return { receipt: existing, replay: true };
+    });
   }
 
   async getReceiptsByCompanyId(companyId: string): Promise<Receipt[]> {
@@ -90,13 +152,17 @@ export class ReceiptStorage extends SalesStorage {
    * so concurrent posts produce one entry and a failure leaves the receipt unposted (R05-02).
    */
   async postReceiptAtomic(
-    args: PostReceiptAtomicArgs
+    args: PostReceiptAtomicArgs,
+    outer?: typeof db
   ): Promise<{ receipt: Receipt; entry: JournalEntry }> {
     return await withLedgerTx(async (tx: typeof db) => {
       const [claimed] = await tx
         .update(receipts)
         .set({
           posted: true,
+          exchangeRate: args.exchangeRate,
+          exchangeRateSource: args.exchangeRateSource,
+          baseCurrencyAmount: args.baseCurrencyAmount,
           accountId: args.accountId,
           paymentAccountId: args.paymentAccountId,
         })
@@ -142,7 +208,7 @@ export class ReceiptStorage extends SalesStorage {
         .where(eq(receipts.id, args.receiptId))
         .returning();
       return { receipt, entry };
-    });
+    }, outer);
   }
 
   /**
@@ -151,7 +217,8 @@ export class ReceiptStorage extends SalesStorage {
    * cannot interleave.
    */
   async reviseReceiptAtomic(
-    args: ReviseReceiptAtomicArgs
+    args: ReviseReceiptAtomicArgs,
+    outer?: typeof db
   ): Promise<{ receipt: Receipt; entry: JournalEntry; reversal: JournalEntry }> {
     return await withLedgerTx(async (tx: typeof db) => {
       const [locked] = await tx
@@ -166,6 +233,14 @@ export class ReceiptStorage extends SalesStorage {
           409,
           { receiptId: args.receiptId },
           "Only a posted receipt can be revised. Edit unposted receipts with PUT."
+        );
+      }
+      if (locked.journalEntryId !== args.expectedEntryId) {
+        throw new DomainError(
+          "RECEIPT_POSTED",
+          409,
+          undefined,
+          "The receipt changed. Reload it before revising."
         );
       }
       const ctx = { actorId: args.userId, tx, companyId: args.companyId };
@@ -207,7 +282,7 @@ export class ReceiptStorage extends SalesStorage {
         .where(eq(receipts.id, args.receiptId))
         .returning();
       return { receipt, entry, reversal };
-    });
+    }, outer);
   }
 
   /** Split an unposted multi-receipt upload into separate receipts (the source row is replaced). */
@@ -236,6 +311,7 @@ export class ReceiptStorage extends SalesStorage {
             // Parts share the stored image; content hash is cleared so duplicate detection
             // does not treat the parts as one upload.
             contentSha256: null,
+            captureId: null,
             ...part,
           })
           .returning();

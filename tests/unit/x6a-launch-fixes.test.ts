@@ -188,7 +188,10 @@ describe("[X6a e-invoicing 2] Complyance link: the document must be this company
   it("checks the Connect company and seller tax ids when present; every identity must match", () => {
     expect(
       complyanceDocumentBelongsTo(
-        { attribution: { companyId: me.connectCompanyId }, seller: { tin: "0235:1001234567" } },
+        {
+          attribution: { companyId: me.connectCompanyId },
+          seller: { tin: me.tin, peppolId: `0235:${me.tin}`, trn: me.trn },
+        },
         me
       ).ok
     ).toBe(true);
@@ -200,13 +203,41 @@ describe("[X6a e-invoicing 2] Complyance link: the document must be this company
         },
         me
       )
-    ).toMatchObject({ ok: false, mismatched: ["sellerTaxId"] });
+    ).toMatchObject({ ok: false, mismatched: ["taxId"] });
   });
 
   it("refuses a document that names no seller at all", () => {
     expect(complyanceDocumentBelongsTo({ documentNumber: "INV-1" }, me)).toMatchObject({
       ok: false,
       checked: [],
+    });
+  });
+
+  it.each([
+    [{ source: `${me.sourceName}:v1`, sourceName: "another-source" }, ["source"]],
+    [
+      { source: { name: me.sourceName }, attribution: { sourceName: "another-source" } },
+      ["source"],
+    ],
+    [
+      { companyId: "another-company", attribution: { companyId: me.connectCompanyId } },
+      ["connectCompanyId"],
+    ],
+    [
+      {
+        seller: { tin: "1009999999" },
+        invoice: { parties: { seller: { tin: me.tin } } },
+        payload: { parties: { seller: { tin: me.tin, trn: me.trn } } },
+      },
+      ["taxpayerTin"],
+    ],
+    [{ seller: { taxIds: [{ value: me.trn, id: "100999999900003" }] } }, ["taxId"]],
+    [{ seller: { trn: `unverified:${me.trn}` } }, ["vatTrn"]],
+    [{ seller: { tin: me.trn, trn: me.tin } }, ["taxpayerTin", "vatTrn"]],
+  ])("rejects contradictory or malformed markers in %j", (data, mismatched) => {
+    expect(complyanceDocumentBelongsTo({ sourceName: me.sourceName, ...data }, me)).toMatchObject({
+      ok: false,
+      mismatched,
     });
   });
 });
@@ -228,10 +259,9 @@ describe("[X6a e-invoicing 3] 'needs link' is its own delivery state", () => {
         expect(c[k], `${locale} ${k}`).toBeTruthy();
         if (locale === "ar") expect(c[k]).toMatch(/[؀-ۿ]/);
       }
+      expect(c["einvoicing.needsLinkBody"]).toContain("{provider}");
+      expect(c["einvoicing.needsLinkBody"]).toContain(locale === "en" ? "portal" : "بوابة");
     }
-    expect(catalog("en", "einvoicing")["einvoicing.needsLinkBody"]).toMatch(
-      /not shown as rejected/
-    );
   });
 });
 

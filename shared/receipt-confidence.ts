@@ -27,6 +27,7 @@ export interface BandResult {
   band: ConfidenceBand;
   score: number;
   reasons: string[];
+  reasonCodes: string[];
 }
 
 export const HIGH_BAND_MIN = 0.85;
@@ -39,8 +40,12 @@ function clamp01(value: unknown): number | null {
 
 export function deriveConfidenceBand(input: BandInput): BandResult {
   const reasons: string[] = [];
+  const reasonCodes: string[] = [];
   const extraction = clamp01(input.extractionConfidence);
-  if (extraction === null) reasons.push("Model reported no confidence");
+  if (extraction === null) {
+    reasons.push("Model reported no confidence");
+    reasonCodes.push("MISSING_CONFIDENCE");
+  }
   let score = extraction ?? 0;
 
   const classifier = clamp01(input.classifierConfidence);
@@ -49,21 +54,26 @@ export function deriveConfidenceBand(input: BandInput): BandResult {
   if (input.classifierAgrees === false) {
     score = Math.min(score, 0.7);
     reasons.push("AI and internal classifier disagree on the category");
+    reasonCodes.push("CLASSIFIER_DISAGREEMENT");
   }
 
   const issues = input.issues ?? [];
-  if (issues.some((i) => i.severity === "error")) {
+  const errors = issues.filter((issue) => issue.severity === "error");
+  const warnings = issues.filter((issue) => issue.severity === "warning");
+  if (errors.length) {
     score = Math.min(score, 0.5);
-    reasons.push(...issues.filter((i) => i.severity === "error").map((i) => i.message));
   }
-  if (issues.some((i) => i.severity === "warning")) {
+  if (warnings.length) {
     score = Math.min(score, HIGH_BAND_MIN - 0.01);
-    reasons.push(...issues.filter((i) => i.severity === "warning").map((i) => i.message));
+  }
+  for (const issue of [...errors, ...warnings]) {
+    reasons.push(issue.message);
+    reasonCodes.push(issue.code);
   }
 
   const band: ConfidenceBand =
     score >= HIGH_BAND_MIN ? "high" : score >= REVIEW_BAND_MIN ? "review" : "low";
-  return { band, score: Math.round(score * 100) / 100, reasons };
+  return { band, score: Math.round(score * 100) / 100, reasons, reasonCodes };
 }
 
 // ---- UI helpers (en + ar) -----------------------------------------------------
@@ -82,7 +92,10 @@ export function bandRequiresReview(band: ConfidenceBand | undefined | null): boo
 export interface ReviewSnapshot {
   merchant?: string | null;
   date?: string | null;
+  invoiceNumber?: string | null;
   total?: number | null;
+  subtotal?: number | null;
+  currency?: string | null;
   vatAmount?: number | null;
   category?: string | null;
 }
@@ -94,10 +107,15 @@ export function receiptReviewDecision(
 ): "accepted" | "corrected" {
   if (!original) return "corrected";
   const cents = (v: number | null | undefined) => Math.round((Number(v) || 0) * 100);
+  const subtotal = (v: ReviewSnapshot) =>
+    v.subtotal == null ? cents(v.total) - cents(v.vatAmount) : cents(v.subtotal);
   const same =
     (original.merchant ?? "").trim() === (final.merchant ?? "").trim() &&
     (original.date ?? "") === (final.date ?? "") &&
+    (original.invoiceNumber ?? "").trim() === (final.invoiceNumber ?? "").trim() &&
     cents(original.total) === cents(final.total) &&
+    subtotal(original) === subtotal(final) &&
+    (original.currency ?? "AED") === (final.currency ?? "AED") &&
     cents(original.vatAmount) === cents(final.vatAmount) &&
     (original.category ?? "") === (final.category ?? "");
   return same ? "accepted" : "corrected";

@@ -16,7 +16,7 @@ import { EditorShell } from "@/components/ui/editor-shell";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { useEditorRoute } from "@/hooks/useEditorRoute";
 import { useState, useMemo, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
@@ -58,6 +58,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { SectionCard } from "@/components/ui/section-card";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -295,6 +296,8 @@ interface BillPayment {
   payment_date: string;
   amount: string;
   payment_method: string;
+  kind: "payment" | "reversal" | "vendor_credit" | "prepayment";
+  status: "active" | "voided";
   reference: string | null;
   notes: string | null;
   created_at: string;
@@ -303,6 +306,11 @@ interface BillPayment {
 interface BillDetail extends VendorBill {
   line_items: BillLineItem[];
   payments: BillPayment[];
+}
+
+interface BillPaymentPage {
+  items: Array<BillPayment & Pick<VendorBill, "vendor_name" | "bill_number" | "currency">>;
+  nextCursor: string | null;
 }
 
 interface BillSummary {
@@ -441,7 +449,12 @@ export default function BillPay() {
   // Queries
   // ===========================
 
-  const { data: bills = [], isLoading: billsLoading } = useQuery<VendorBill[]>({
+  const {
+    data: bills = [],
+    isLoading: billsLoading,
+    isLoadingError: billsFailed,
+    refetch: refetchBills,
+  } = useQuery<VendorBill[]>({
     queryKey: ["/api/companies", companyId, "bills"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/bills`),
     enabled: !!companyId,
@@ -465,16 +478,24 @@ export default function BillPay() {
     retry: false,
   });
 
-  const { data: summary } = useQuery<BillSummary>({
+  const {
+    data: summary,
+    error: summaryError,
+    refetch: refetchSummary,
+  } = useQuery<BillSummary>({
     queryKey: ["/api/companies", companyId, "bills", "summary"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/bills/summary`),
-    enabled: !!companyId,
+    enabled: !!companyId && activeTab === "summary",
   });
 
-  const { data: aging } = useQuery<AgingReport>({
+  const {
+    data: aging,
+    error: agingError,
+    refetch: refetchAging,
+  } = useQuery<AgingReport>({
     queryKey: ["/api/companies", companyId, "bills", "aging"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/bills/aging`),
-    enabled: !!companyId,
+    enabled: !!companyId && activeTab === "summary",
   });
 
   // WQ2 (8.15): pending bills and whether this user may sign the next step (approval rules).
@@ -496,38 +517,18 @@ export default function BillPay() {
     retry: false,
   });
 
-  // Get all payments across bills
-  const _allPayments = useMemo(() => {
-    if (!bills || bills.length === 0) return [];
-    // We'll collect payments from individual bill queries as they load
-    return [];
-  }, [bills]);
-
-  // Collect payments from bills for the Payments tab
-  const { data: paymentsData = [] } = useQuery<any[]>({
+  const paymentPages = useInfiniteQuery({
     queryKey: ["/api/companies", companyId, "bills", "all-payments"],
-    queryFn: async () => {
-      if (!bills || bills.length === 0) return [];
-      const paidBills = bills.filter((b) => b.status === "paid" || b.status === "partial");
-      const paymentPromises = paidBills.map(async (bill) => {
-        try {
-          const detail: BillDetail = await apiRequest("GET", `/api/bills/${bill.id}`);
-          return (detail.payments || []).map((p) => ({
-            ...p,
-            vendor_name: bill.vendor_name,
-            bill_number: bill.bill_number,
-          }));
-        } catch {
-          return [];
-        }
-      });
-      const results = await Promise.all(paymentPromises);
-      return results
-        .flat()
-        .sort((a, b) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime());
-    },
-    enabled: !!companyId && bills.length > 0,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }): Promise<BillPaymentPage> =>
+      apiRequest(
+        "GET",
+        `/api/companies/${companyId}/bills/all-payments${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ""}`
+      ),
+    getNextPageParam: (page) => page.nextCursor,
+    enabled: !!companyId && activeTab === "payments",
   });
+  const paymentsData = paymentPages.data?.pages.flatMap((page) => page.items) ?? [];
 
   // ===========================
   // Filtered bills
@@ -1835,7 +1836,16 @@ export default function BillPay() {
           </div>
 
           <DataTableCard
-            status={billsLoading ? "loading" : filteredBills.length === 0 ? "empty" : "ready"}
+            status={
+              billsLoading
+                ? "loading"
+                : billsFailed
+                  ? "error"
+                  : filteredBills.length === 0
+                    ? "empty"
+                    : "ready"
+            }
+            error={{ onRetry: () => void refetchBills() }}
             columnLabels={[t["pages.vendor"], t.date, t.amount, t.status]}
             testId="bills-table"
             empty={{
@@ -1843,6 +1853,15 @@ export default function BillPay() {
               title: t["pages.noBillsFound"],
               description:
                 bills.length === 0 ? t["screens.billsEmptyBody"] : t["screens.billsNoMatchBody"],
+              action:
+                bills.length === 0
+                  ? {
+                      label: t["pages.newBill"],
+                      href: "/bill-pay/new",
+                      permission: "documents.write",
+                      icon: Plus,
+                    }
+                  : undefined,
             }}
           >
             <Table className="row-cards">
@@ -2051,7 +2070,16 @@ export default function BillPay() {
             </p>
           </div>
           <DataTableCard
-            status={paymentsData.length === 0 ? "empty" : "ready"}
+            status={
+              paymentPages.isLoading
+                ? "loading"
+                : paymentPages.isLoadingError
+                  ? "error"
+                  : paymentsData.length === 0
+                    ? "empty"
+                    : "ready"
+            }
+            error={{ onRetry: () => void paymentPages.refetch() }}
             empty={{
               icon: Receipt,
               title: t["pages.noPaymentsYet"],
@@ -2070,7 +2098,7 @@ export default function BillPay() {
                     <T k="pages.amount" />
                   </TableHead>
                   <TableHead>
-                    <T k="pages.method" />
+                    <T k="screens.billHistoryTypeAndStatus" />
                   </TableHead>
                   <TableHead>
                     <T k="pages.reference" />
@@ -2078,7 +2106,7 @@ export default function BillPay() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paymentsData.map((payment: any) => (
+                {paymentsData.map((payment) => (
                   <TableRow key={payment.id}>
                     <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
                       {formatDate(payment.payment_date, locale)}
@@ -2098,11 +2126,22 @@ export default function BillPay() {
                     </TableCell>
                     <MoneyCell
                       amount={Number(payment.amount)}
+                      currency={payment.currency || "AED"}
                       className="font-medium"
                       data-cell="amount"
                     />
-                    <TableCell data-nowrap="" className="text-muted-foreground">
-                      {paymentMethodLabel(payment.payment_method || "bank_transfer")}
+                    <TableCell
+                      data-cell="status"
+                      data-nowrap=""
+                      className="text-muted-foreground max-md:text-caption"
+                    >
+                      <div>{t[`screens.billHistoryKind.${payment.kind}`]}</div>
+                      <div>{t[`screens.billHistoryStatus.${payment.status}`]}</div>
+                      {payment.kind === "payment" && payment.payment_method && (
+                        <div className="hidden md:block">
+                          {paymentMethodLabel(payment.payment_method)}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell data-nowrap="" className="text-muted-foreground">
                       <span dir="ltr" className="[unicode-bidi:isolate]">
@@ -2114,38 +2153,64 @@ export default function BillPay() {
               </TableBody>
             </Table>
           </DataTableCard>
+          {paymentPages.isFetchNextPageError ? (
+            <ErrorState compact onRetry={() => void paymentPages.fetchNextPage()} />
+          ) : paymentPages.hasNextPage ? (
+            <Button
+              variant="outline"
+              disabled={paymentPages.isFetchingNextPage}
+              onClick={() => void paymentPages.fetchNextPage()}
+            >
+              {paymentPages.isFetchingNextPage
+                ? t["components.ui.loading"]
+                : t["screens.loadMorePayments"]}
+            </Button>
+          ) : null}
         </TabsContent>
 
         {/* ================================== */}
         {/* SUMMARY TAB                        */}
         {/* ================================== */}
         <TabsContent value="summary" className="space-y-6 mt-0">
-          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4 mobile-keep-cols">
-            <StatCard
-              label={t["pages.pending"]}
-              value={<Money amount={summary?.pending.total || 0} />}
-              hint={formatMessage(t["screens.billsCount"], { count: summary?.pending.count || 0 })}
-              loading={!summary}
-            />
-            <StatCard
-              label={t["pages.approved"]}
-              value={<Money amount={summary?.approved.total || 0} />}
-              hint={formatMessage(t["screens.billsCount"], { count: summary?.approved.count || 0 })}
-              loading={!summary}
-            />
-            <StatCard
-              label={c.paidStatus}
-              value={<Money amount={summary?.paid.total || 0} />}
-              hint={formatMessage(t["screens.billsCount"], { count: summary?.paid.count || 0 })}
-              loading={!summary}
-            />
-            <StatCard
-              label={t["pages.overdue"]}
-              value={<Money amount={summary?.overdue.total || 0} />}
-              hint={formatMessage(t["screens.billsCount"], { count: summary?.overdue.count || 0 })}
-              loading={!summary}
-            />
-          </div>
+          {summaryError && !summary ? (
+            <ErrorState compact onRetry={() => void refetchSummary()} />
+          ) : (
+            <div
+              className="grid grid-cols-2 gap-4 xl:grid-cols-4 mobile-keep-cols"
+              data-testid={summary ? "bill-summary-balances" : undefined}
+            >
+              <StatCard
+                label={t["pages.pending"]}
+                value={<Money amount={summary?.pending.total || 0} />}
+                hint={formatMessage(t["screens.billsCount"], {
+                  count: summary?.pending.count || 0,
+                })}
+                loading={!summary}
+              />
+              <StatCard
+                label={t["pages.approved"]}
+                value={<Money amount={summary?.approved.total || 0} />}
+                hint={formatMessage(t["screens.billsCount"], {
+                  count: summary?.approved.count || 0,
+                })}
+                loading={!summary}
+              />
+              <StatCard
+                label={c.paidStatus}
+                value={<Money amount={summary?.paid.total || 0} />}
+                hint={formatMessage(t["screens.billsCount"], { count: summary?.paid.count || 0 })}
+                loading={!summary}
+              />
+              <StatCard
+                label={t["pages.overdue"]}
+                value={<Money amount={summary?.overdue.total || 0} />}
+                hint={formatMessage(t["screens.billsCount"], {
+                  count: summary?.overdue.count || 0,
+                })}
+                loading={!summary}
+              />
+            </div>
+          )}
 
           {/* Aging Report */}
           <SectionCard
@@ -2225,6 +2290,8 @@ export default function BillPay() {
                   </TableRow>
                 </TableFooter>
               </Table>
+            ) : agingError ? (
+              <ErrorState compact onRetry={() => void refetchAging()} />
             ) : (
               <div className="space-y-3 p-5">
                 {[1, 2, 3, 4, 5].map((i) => (

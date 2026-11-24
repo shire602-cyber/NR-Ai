@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
 import { accountDisplayName } from "@/lib/account-name";
@@ -79,6 +79,12 @@ export default function VatFilingActions({
 
   const [reference, setReference] = useState(vatReturn.ftaReferenceNumber ?? "");
   const [filedOn, setFiledOn] = useState(today >= earliest ? today : "");
+  const [reconciliationError, setReconciliationError] = useState<{
+    message: string;
+    input?: number;
+    output?: number;
+  } | null>(null);
+  const [reconciliationReason, setReconciliationReason] = useState("");
   const [payDate, setPayDate] = useState(today >= earliest ? today : "");
   const [payAccount, setPayAccount] = useState("");
   const [payRef, setPayRef] = useState("");
@@ -110,22 +116,50 @@ export default function VatFilingActions({
   };
   const fail = (title: string) => (err: Error) =>
     toast({ variant: "destructive", title, description: err?.message });
+  const setFilingOpen = (isOpen: boolean) => {
+    setReconciliationError(null);
+    setReconciliationReason("");
+    setOpen(isOpen ? "filing" : null);
+  };
 
   const filing = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/vat-returns/${vatReturn.id}/submit`, {
         ftaReferenceNumber: reference.trim(),
         filedOn,
+        ...(reconciliationError
+          ? { reconciliationOverrideReason: reconciliationReason.trim() }
+          : {}),
       }),
     onSuccess: () => {
       toast({
         title: t["compliance.vatFlow.filedDone"],
         description: t["compliance.vatFlow.noTransmit"],
       });
-      setOpen(null);
+      setFilingOpen(false);
       refresh();
     },
-    onError: fail(t["compliance.vatFlow.filingFailed"]),
+    onError: (error: Error) => {
+      if (error instanceof ApiError && error.body?.code === "VAT_RECONCILIATION_DIFFERENCE") {
+        if (open === "filing") {
+          const details = error.body.details as Record<string, unknown> | undefined;
+          setReconciliationError({
+            message: error.message,
+            input:
+              typeof details?.unexplainedInputVat === "number"
+                ? details.unexplainedInputVat
+                : undefined,
+            output:
+              typeof details?.unexplainedOutputVat === "number"
+                ? details.unexplainedOutputVat
+                : undefined,
+          });
+          setReconciliationReason("");
+        }
+        return;
+      }
+      fail(t["compliance.vatFlow.filingFailed"])(error);
+    },
   });
 
   const settle = useMutation({
@@ -170,7 +204,7 @@ export default function VatFilingActions({
       {next === "recordFiling" && (
         <Button
           size={size}
-          onClick={() => setOpen("filing")}
+          onClick={() => setFilingOpen(true)}
           data-testid={`button-record-filing-${vatReturn.id}`}
           {...gated}
         >
@@ -218,7 +252,7 @@ export default function VatFilingActions({
         </>
       )}
 
-      <Dialog open={open === "filing"} onOpenChange={(o) => setOpen(o ? "filing" : null)}>
+      <Dialog open={open === "filing"} onOpenChange={setFilingOpen}>
         <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>{t["compliance.vatFlow.recordFilingTitle"]}</DialogTitle>
@@ -249,14 +283,50 @@ export default function VatFilingActions({
               />
               <p className="text-xs text-muted-foreground">{t["compliance.vatFlow.filedOnHelp"]}</p>
             </div>
+            {reconciliationError && (
+              <div className="space-y-2">
+                <p role="alert" className="text-sm text-destructive">
+                  {reconciliationError.message}
+                </p>
+                {reconciliationError.input !== undefined &&
+                  reconciliationError.output !== undefined && (
+                    <dl className="grid grid-cols-[1fr_auto] gap-1 text-sm">
+                      <dt>{t["compliance.vatFilingOutputVat"]}</dt>
+                      <dd>
+                        <Money amount={reconciliationError.output} showCurrency={false} />
+                      </dd>
+                      <dt>{t["compliance.vatFilingInputVat"]}</dt>
+                      <dd>
+                        <Money amount={reconciliationError.input} showCurrency={false} />
+                      </dd>
+                    </dl>
+                  )}
+                <Label htmlFor={`filing-override-${vatReturn.id}`}>
+                  {t["compliance.vatFlow.reconciliationOverrideReason"]}
+                </Label>
+                <Textarea
+                  id={`filing-override-${vatReturn.id}`}
+                  data-testid="input-vat-filing-override"
+                  value={reconciliationReason}
+                  onChange={(event) => setReconciliationReason(event.target.value)}
+                  maxLength={2000}
+                  required
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(null)}>
+            <Button variant="outline" onClick={() => setFilingOpen(false)}>
               {t["compliance.vatFlow.cancel"]}
             </Button>
             <Button
               onClick={() => filing.mutate()}
-              disabled={!reference.trim() || !filedOn || filing.isPending}
+              disabled={
+                !reference.trim() ||
+                !filedOn ||
+                filing.isPending ||
+                (!!reconciliationError && !reconciliationReason.trim())
+              }
               data-testid="button-confirm-filing"
             >
               {filing.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}

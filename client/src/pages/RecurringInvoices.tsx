@@ -63,6 +63,7 @@ import {
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
+import { isolateLtrText } from "@/lib/format-bidi";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -484,7 +485,9 @@ export default function RecurringInvoices() {
       title={editingItem ? t["forms.recurring.editTitle"] : t["forms.recurring.newTitle"]}
       description={
         seededFrom && !editingItem
-          ? formatMessage(t["invoices.recurringFrom"], { number: seededFrom })
+          ? formatMessage(t["invoices.recurringFrom"], {
+              number: locale === "ar" ? isolateLtrText(seededFrom) : seededFrom,
+            })
           : t["forms.recurring.desc"]
       }
       footerSummary={

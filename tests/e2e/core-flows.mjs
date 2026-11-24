@@ -29,6 +29,8 @@ import { chromium } from "playwright-core";
 import { ARTIFACT_DIR, PASSWORD, apiClient, assertLocal } from "./lib/sweep-personas.mjs";
 import { englishWords } from "./lib/sweep-checks.mjs";
 
+import { readPortalInviteMail } from "./lib/portal-invite-mail.mjs";
+
 const BASE = (process.env.BASE_URL || "").replace(/\/$/, "");
 assertLocal(BASE);
 const TZ = process.env.E2E_TIMEZONE || "Asia/Dubai";
@@ -460,20 +462,6 @@ async function dbRows(sqlText, params = []) {
   }
 }
 
-/** The newest portal-invitation email of a company, read from the durable outbox. */
-async function inviteMail(companyId) {
-  const rows = await dbRows(
-    `SELECT subject, html FROM email_outbox
-      WHERE company_id = $1 AND category = 'portal_invite'
-      ORDER BY created_at DESC LIMIT 1`,
-    [companyId]
-  );
-  expect(rows.length === 1, "no portal invitation in the outbox");
-  const m = /href="([^"]*\/portal\/join#t=[0-9a-f]{64})"/.exec(rows[0].html);
-  expect(!!m, "no invitation link in the email");
-  return { subject: rows[0].subject, hash: new URL(m[1].replace(/&amp;/g, "&")).hash };
-}
-
 /** A customer with an email, an issued invoice, a partial payment and a credit note. */
 async function seedPortalCustomer(owner, lang) {
   const email = `cust-${Date.now()}${Math.floor(Math.random() * 1000)}@test.local`;
@@ -544,8 +532,9 @@ async function portalInviteJourney(h, { phone }) {
   const lang = h.lang;
   const owner = await newOwner(phone ? "pinvph" : "pinv", lang);
   const viewport = phone ? { width: 390, height: 844 } : { width: 1440, height: 900 };
-  const password = "Customer9Portal!x";
+  const password = "Fake-Customer9Portal!";
   let seed;
+  let invitationId;
   let hash;
   let customer;
   let cpage;
@@ -580,16 +569,25 @@ async function portalInviteJourney(h, { phone }) {
   );
 
   await h.step(
-    "Send invitation: the honest link panel (no email provider) and the Invited chip",
+    "Send invitation: email queued without revealing the link and the contact is Invited",
     async () => {
       await tid(page, "pa-send").scrollIntoViewIfNeeded();
-      await click(page, "pa-send");
-      expect(await visible(page, "pa-link-panel"), "no link panel without a provider");
-      await tid(page, "portal-access-sheet")
-        .locator("button")
-        .filter({ has: page.locator(".sr-only") })
-        .last()
-        .click();
+      const [response] = await Promise.all([
+        page.waitForResponse(
+          (res) => res.request().method() === "POST" && res.url().endsWith("/portal-invitations")
+        ),
+        click(page, "pa-send"),
+      ]);
+      const body = await response.json();
+      expect(
+        response.status() === 201 && body.delivery === "queued",
+        "invitation email was not queued"
+      );
+      expect(!body.inviteUrl, "the staff response contains an invitation link");
+      expect(!(await visible(page, "pa-link-panel")), "the staff UI displays an invitation link");
+      invitationId = body.invitation.id;
+      await page.keyboard.press("Escape");
+      await tid(page, "portal-access-sheet").waitFor({ state: "hidden" });
       await settle(page, 700);
       // The desktop table and the phone list both carry the chip; take the one on screen.
       const chip = page.locator(`[data-testid="portal-chip-${seed.contactId}"]:visible`).first();
@@ -601,7 +599,7 @@ async function portalInviteJourney(h, { phone }) {
   );
 
   await h.step("the invitation email is in the outbox in the contact's language", async () => {
-    const mail = await inviteMail(owner.companyId);
+    const mail = await readPortalInviteMail(invitationId);
     hash = mail.hash;
     expect(
       lang === "ar"
@@ -620,10 +618,24 @@ async function portalInviteJourney(h, { phone }) {
       await settle(cpage);
       expect(await visible(cpage, "join-form"), "join form not shown");
       const url = new URL(cpage.url());
-      expect(url.hash === "" && !url.href.includes("#t="), `token still in the URL: ${url.href}`);
+      expect(url.hash === "" && !url.href.includes("#t="), "token still in the URL");
       const dir = await cpage.evaluate(() => document.documentElement.dir);
       expect(dir === (h.ar ? "rtl" : "ltr"), `html dir ${dir}`);
       if (h.ar) await expectNoEnglish(cpage, "body");
+      const passwordLayout = await tid(cpage, "join-password").evaluate((input) => {
+        const toggle = input.parentElement.querySelector('[data-testid="join-toggle-password"]');
+        const { paddingLeft, paddingRight, direction } = getComputedStyle(input);
+        const bounds = input.getBoundingClientRect();
+        const button = toggle.getBoundingClientRect();
+        return {
+          direction,
+          clear:
+            button.left >= bounds.right - parseFloat(paddingRight) &&
+            bounds.left + parseFloat(paddingLeft) < button.left,
+        };
+      });
+      expect(passwordLayout.direction === "ltr", "password entry should stay left to right");
+      expect(passwordLayout.clear, "password toggle overlaps the editable text area");
       if (phone) {
         await noSideScroll(cpage, "join");
         const box = await tid(cpage, "join-submit").boundingBox();
@@ -778,7 +790,153 @@ async function portalInviteJourney(h, { phone }) {
   await customer?.context.close().catch(() => {});
 }
 
+async function expiredTrialJourney(h) {
+  const owner = await newOwner("trial-lock", h.lang);
+  const base = `/api/companies/${owner.companyId}`;
+  const invoice = await seedInvoice(owner);
+  const onboarding = await api(owner.token, "POST", `${base}/onboarding/complete`, {});
+  expect(onboarding.status === 200, `finish onboarding ${onboarding.status}`);
+  const page = await h.signIn(owner);
+  const saudi = h.ar ? "المملكة العربية السعودية" : "Saudi Arabia";
+
+  await h.step(
+    "company country picker excludes Saudi Arabia and preserves a legacy address",
+    async () => {
+      await goto(page, "/settings/company");
+      await click(page, "select-address-country");
+      expect(
+        (await page.getByRole("option", { name: saudi, exact: true }).count()) === 0,
+        "Saudi Arabia offered"
+      );
+      await page.keyboard.press("Escape");
+
+      const legacy = await api(owner.token, "PATCH", base, {
+        addressCountry: "SA",
+        addressStreet: "Legacy address",
+        addressCity: "Riyadh",
+      });
+      expect(legacy.status === 200, `seed existing Saudi address ${legacy.status}`);
+      await goto(page, "/settings/company");
+      await tid(page, "select-address-country").getByText(saudi, { exact: true }).waitFor();
+      await click(page, "select-address-country");
+      expect(
+        (await page.getByRole("option", { name: saudi, exact: true }).count()) === 0,
+        "legacy country is offered again"
+      );
+      await page.keyboard.press("Escape");
+      const saved = page.waitForResponse(
+        (res) => res.url().endsWith(base) && res.request().method() === "PATCH"
+      );
+      await fill(page, "input-address-street", "Legacy address updated");
+      await click(page, "button-save-company-settings");
+      expect((await saved).status() === 200, "company settings save failed");
+      const { body: company } = await api(owner.token, "GET", base);
+      expect(
+        company.addressCountry === "SA" &&
+          company.addressStreet === "Legacy address updated" &&
+          company.addressCity === "Riyadh",
+        "legacy address changed unexpectedly"
+      );
+    }
+  );
+
+  await h.step(
+    "expired owner can open an invoice, download its PDF, and read a report",
+    async () => {
+      await dbRows("UPDATE subscriptions SET trial_ends_at = now() WHERE company_id = $1", [
+        owner.companyId,
+      ]);
+      const banner = tid(page, "trial-readonly-banner");
+      await goto(page, `/invoices/${invoice.id}/edit`);
+      await banner.waitFor({ timeout: 15000 });
+      await tid(page, "issued-invoice-locked").waitFor();
+      expect(
+        await tid(page, "button-issued-add-payment").isDisabled(),
+        "payment action is enabled"
+      );
+      const [download] = await Promise.all([
+        page.waitForEvent("download", { timeout: 15000 }),
+        click(page, "button-issued-download-pdf"),
+      ]);
+      expect(/\.pdf$/i.test(download.suggestedFilename()), download.suggestedFilename());
+      expect(
+        (await page.locator("html").getAttribute("dir")) === (h.ar ? "rtl" : "ltr"),
+        "page direction is wrong"
+      );
+      await noSideScroll(page, "read-only invoice");
+
+      const reportResponse = page.waitForResponse(
+        (response) => response.url().includes(`${base}/reports/pl`) && response.ok()
+      );
+      await goto(page, "/reports?tab=pl&report=profit-loss&persona=owner");
+      await reportResponse;
+      await banner.waitFor();
+      await tid(page, "text-net-profit").waitFor();
+      await noSideScroll(page, "read-only profit and loss");
+    }
+  );
+
+  await h.step(
+    "plan choice and activation request remain available while workspace is locked",
+    async () => {
+      const choose = tid(page, "trial-readonly-banner").getByRole("link", {
+        name: h.ar ? "اختر خطة" : "Choose a plan",
+      });
+      await choose.click();
+      await page.waitForURL("**/subscription");
+      await click(page, "plan-choose-starter");
+      await tid(page, "button-activate-plan").waitFor();
+      await click(page, "button-activate-plan");
+      await tid(page, "activation-requested").waitFor();
+      expect(
+        (await tid(page, "settings-layout").count()) === 0,
+        "billing recovery mounted settings navigation"
+      );
+      expect(
+        (await tid(page, "button-sidebar-toggle").count()) === 0,
+        "billing recovery mounted workspace navigation"
+      );
+      await noSideScroll(page, "billing recovery");
+      expect(
+        (await api(owner.token, "DELETE", `/api/invoices/${invoice.id}`)).status === 402,
+        "pending activation allowed a write"
+      );
+    }
+  );
+
+  await h.step("the paid plan restores the same invoice and legacy company address", async () => {
+    await dbRows(
+      "UPDATE subscriptions SET plan_id = 'starter', status = 'active' WHERE company_id = $1",
+      [owner.companyId]
+    );
+    await goto(page, "/invoices");
+    const { status, body: restored } = await api(owner.token, "GET", `/api/invoices/${invoice.id}`);
+    expect(status === 200 && restored.id === invoice.id, "same invoice was not restored");
+    expect(
+      (await tid(page, "trial-readonly-banner").count()) === 0,
+      "paid workspace is still locked"
+    );
+    expect(
+      (await api(owner.token, "GET", base)).body.addressCountry === "SA",
+      "stored country was lost"
+    );
+  });
+}
+
 const FLOWS = [
+  flow(
+    "trial-lock",
+    "Trial lock, billing recovery and legacy country on desktop",
+    expiredTrialJourney
+  ),
+  flow(
+    "trial-lock-phone",
+    "Trial lock, billing recovery and legacy country on phone",
+    expiredTrialJourney,
+    {
+      viewport: { width: 390, height: 844 },
+    }
+  ),
   flow(
     "signup",
     "Sign up: choose a plan (59/119/229), account, trial starts with the choice recorded",
@@ -1738,9 +1896,10 @@ const FLOWS = [
     "portal-invite-existing",
     "Customer portal invitation to an existing account: sign in, add the supplier",
     async (h) => {
-      const supplier = await newOwner("pexs", "en");
-      const buyer = await newOwner("pexb", "en");
-      const seed = await seedPortalCustomer(supplier, "en");
+      const supplier = await newOwner("pexs", h.lang);
+      const buyer = await newOwner("pexb", h.lang);
+      await dbRows("UPDATE users SET email_verified = true WHERE email = $1", [buyer.email]);
+      const seed = await seedPortalCustomer(supplier, h.lang);
       let hash;
       let customer;
       await h.step("the supplier invites an email that already has an account", async () => {
@@ -1748,19 +1907,23 @@ const FLOWS = [
           supplier.token,
           "POST",
           `/api/companies/${supplier.companyId}/customer-contacts/${seed.contactId}/portal-invitations`,
-          { email: buyer.email, language: "en" }
+          { email: buyer.email, language: h.lang }
         );
         expect(res.status === 201, `invite ${res.status}`);
-        hash = new URL(res.body.inviteUrl).hash;
+        hash = (await readPortalInviteMail(res.body.invitation.id)).hash;
       });
       await h.step(
         "the join page asks to sign in; the login is prefilled and returns to the join page",
         async () => {
-          customer = await openContext("en", { viewport: { width: 1440, height: 900 } });
+          customer = await openContext(h.lang, { viewport: { width: 1440, height: 900 } });
           const p = customer.page;
           await p.goto(`${BASE}/portal/join${hash}`, { timeout: 45000 });
           await settle(p);
           expect(await visible(p, "join-existing"), "no existing-account state");
+          expect(
+            (await p.evaluate(() => document.documentElement.dir)) === (h.ar ? "rtl" : "ltr"),
+            "wrong document direction"
+          );
           await click(p, "join-sign-in");
           await p.waitForURL(/\/login/, { timeout: 20000 });
           const prefilled = await tid(p, "input-email").inputValue();
@@ -1792,8 +1955,7 @@ const FLOWS = [
         }
       );
       await customer?.context.close().catch(() => {});
-    },
-    { langs: ["en"] }
+    }
   ),
 
   flow("prices", "Owner prices on /pricing and /api/billing/plans", async (h) => {

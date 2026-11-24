@@ -87,7 +87,7 @@ describe("S5 plan gates fail closed (W5-B FAIL-OPEN)", () => {
     expect(rows).toEqual([{ plan_id: "free" }]);
   });
 
-  it("[S5-1] with enforcement on, a company with NO subscription row is never upgraded: its trial runs from its creation, then writes are refused", async () => {
+  it("[S5-1] with enforcement on, a company without a subscription has a trial from creation and becomes read-only after expiry", async () => {
     process.env.BILLING_ENFORCEMENT = "true";
     const t = await h.createTenant();
     await h.sql(`DELETE FROM subscriptions WHERE company_id = $1`, [t.company.id]);
@@ -100,9 +100,9 @@ describe("S5 plan gates fail closed (W5-B FAIL-OPEN)", () => {
     const central = await t.as.post(`/api/companies/${t.company.id}/fixed-assets`, {});
     expect(central.status, central.text).toBe(402);
     expect(central.body).toMatchObject({ code: "PLAN_REQUIRED", currentTier: null });
-    // Reads stay open (data is never hidden).
     const read = await t.as.get(`/api/companies/${t.company.id}/fixed-assets`);
     expect(read.status, read.text).toBe(200);
+    expect(read.body).toEqual([]);
 
     const pro = await h.createTenant({ planId: "professional" });
     const ok = await pro.as.post(`/api/companies/${pro.company.id}/fixed-assets`, {});
@@ -185,6 +185,325 @@ async function seedBooks(t: Tenant) {
 }
 
 describe("S5 backup restore into a different company (W5-B, R19-17)", () => {
+  it("keeps target webhook settings, messaging credentials and firm grants when cloning", async () => {
+    const t = await h.createTenant();
+    const staff = await h.createSecondTenant();
+    const { NR_FIRM_ID } = await import("../../server/services/firm/scope");
+    const target = await t.as.post("/api/companies", { name: "Target integration settings" });
+    expect([200, 201]).toContain(target.status);
+    const targetId = target.body.id as string;
+    await seedBooks(t);
+    for (const [companyId, label] of [
+      [t.company.id, "source"],
+      [targetId, "target"],
+    ]) {
+      await h.sql(
+        `INSERT INTO webhook_endpoints (company_id, url, secret, events, is_active)
+         VALUES ($1, $2, $3, 'invoice.issued', false)`,
+        [companyId, `https://${label}.example.test/webhook`, `${label}-signing`]
+      );
+      await h.sql(
+        `INSERT INTO whatsapp_configs (
+           company_id, phone_number_id, access_token, webhook_verify_token, is_active
+         ) VALUES ($1, $2, $3, $4, false)`,
+        [companyId, `${label}-phone`, `${label}-access`, `${label}-verify`]
+      );
+    }
+    const [link] = await h.sql<{ id: string }>(
+      `INSERT INTO firm_client_links (company_id, firm_id, status)
+       VALUES ($1, $2, 'active') RETURNING id`,
+      [targetId, NR_FIRM_ID]
+    );
+    const [grant] = await h.sql<{ id: string }>(
+      `INSERT INTO firm_company_grants (company_id, firm_id, user_id)
+       VALUES ($1, $2, $3) RETURNING id`,
+      [targetId, NR_FIRM_ID, staff.user.id]
+    );
+    for (const [companyId, recipient] of [
+      [t.company.id, "source@example.test"],
+      [targetId, "target@example.test"],
+    ]) {
+      await h.sql(
+        `INSERT INTO company_report_delivery_subscriptions
+           (company_id, subscription_id, enabled, recipients_override)
+         VALUES ($1, 'clone-fixture', true, $2)`,
+        [companyId, recipient]
+      );
+    }
+    const tables = [
+      "webhook_endpoints",
+      "whatsapp_configs",
+      "firm_client_links",
+      "firm_company_grants",
+      "company_report_delivery_subscriptions",
+    ];
+    const targetState = () =>
+      Promise.all(
+        tables.map((table) => h.sql(`SELECT * FROM ${table} WHERE company_id = $1`, [targetId]))
+      );
+    const before = await targetState();
+    expect(before[2]).toMatchObject([{ id: link.id, status: "active" }]);
+    expect(before[3]).toMatchObject([{ id: grant.id, user_id: staff.user.id }]);
+    const backup = await t.as.post(`/api/companies/${t.company.id}/backups`, {
+      name: "Source settings",
+    });
+    expect(backup.status, backup.text).toBe(201);
+    const fresh = await freshMfaClient(t);
+    const clone = await fresh.post(`/api/backups/${backup.body.id}/clone`, {
+      targetCompanyId: targetId,
+      confirmRestore: true,
+      confirmTargetName: target.body.name,
+    });
+    expect(clone.status, clone.text).toBe(200);
+    expect(clone.body.skippedTables).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ table: "webhook_endpoints", rows: 1 }),
+        expect.objectContaining({ table: "whatsapp_configs", rows: 1 }),
+      ])
+    );
+    expect(await targetState()).toEqual(before);
+  });
+
+  it.each([
+    ["quotes", "customer_name"],
+    ["purchase_orders", "vendor_name"],
+  ] as const)(
+    "rejects a target containing only a row in %s in preview and apply",
+    async (table, nameColumn) => {
+      const t = await h.createTenant();
+      const backup = await t.as.post(`/api/companies/${t.company.id}/backups`, { name: "Source" });
+      expect(backup.status, backup.text).toBe(201);
+      const target = await t.as.post("/api/companies", { name: "Target with a draft" });
+      expect([200, 201]).toContain(target.status);
+      const targetCompanyId = target.body.id;
+      const [document] = await h.sql(
+        `INSERT INTO ${table} (company_id, number, ${nameColumn}, date)
+       VALUES ($1, 'DRAFT-1', 'Counterparty', now()) RETURNING id`,
+        [targetCompanyId]
+      );
+      const fresh = await freshMfaClient(t);
+      const path = `/api/backups/${backup.body.id}/clone`;
+      const preview = await fresh.post(`${path}-preview`, { targetCompanyId });
+      const apply = await fresh.post(path, {
+        targetCompanyId,
+        confirmRestore: true,
+        confirmTargetName: target.body.name,
+      });
+      for (const result of [preview, apply]) {
+        expect(result.status, result.text).toBe(409);
+        expect(result.body.code).toBe("CLONE_TARGET_NOT_EMPTY");
+      }
+      expect(
+        await h.sql(`SELECT id FROM ${table} WHERE company_id = $1`, [targetCompanyId])
+      ).toEqual([document]);
+    }
+  );
+
+  it("rejects an approved-budget-only target in preview and apply", async () => {
+    const t = await h.createTenant();
+    const backup = await t.as.post(`/api/companies/${t.company.id}/backups`, { name: "Source" });
+    expect(backup.status, backup.text).toBe(201);
+    const target = await t.as.post("/api/companies", { name: "Target with approved budget" });
+    expect([200, 201]).toContain(target.status);
+    const targetCompanyId = target.body.id;
+    const budget = await t.as.post(`/api/companies/${targetCompanyId}/budget-plans`, {
+      name: "FY2026",
+      fiscalYear: 2026,
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+    });
+    expect(budget.status, budget.text).toBe(201);
+    const budgetPath = `/api/budget-plans/${budget.body.id}`;
+    const [account] = await h.sql<{ id: string }>(
+      "SELECT id FROM accounts WHERE company_id = $1 AND code = '4010'",
+      [targetCompanyId]
+    );
+    const line = await t.as.post(`${budgetPath}/lines`, {
+      accountId: account.id,
+      category: "Sales",
+      jan: 2500,
+    });
+    expect(line.status, line.text).toBe(201);
+    const approved = await t.as.post(`${budgetPath}/approve`);
+    expect(approved.status, approved.text).toBe(200);
+    expect(approved.body.status).toBe("approved");
+
+    const fresh = await freshMfaClient(t);
+    const path = `/api/backups/${backup.body.id}/clone`;
+    const preview = await fresh.post(`${path}-preview`, { targetCompanyId });
+    const apply = await fresh.post(path, {
+      targetCompanyId,
+      confirmRestore: true,
+      confirmTargetName: target.body.name,
+    });
+    for (const result of [preview, apply]) {
+      expect(result.status, result.text).toBe(409);
+      expect(result.body.code).toBe("CLONE_TARGET_NOT_EMPTY");
+    }
+    expect(await h.sql("SELECT status FROM budget_plans WHERE id = $1", [budget.body.id])).toEqual([
+      { status: "approved" },
+    ]);
+    expect(
+      await h.sql("SELECT id FROM budget_lines WHERE budget_id = $1", [budget.body.id])
+    ).toEqual([{ id: line.body.id }]);
+  });
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "queues a target invoice while another company posts during the clone",
+    async () => {
+      const t = await h.createTenant();
+      const other = await h.createSecondTenant();
+      const backup = await t.as.post(`/api/companies/${t.company.id}/backups`, { name: "Source" });
+      expect(backup.status, backup.text).toBe(201);
+      const target = await t.as.post("/api/companies", { name: "Target with concurrent invoice" });
+      expect([200, 201]).toContain(target.status);
+      const targetCompanyId = target.body.id;
+      await h.sql(
+        "INSERT INTO invoice_number_sequences (company_id, doc_type, year, last_value) VALUES ($1, 'invoice', $2, 4)",
+        [targetCompanyId, Number(today().slice(0, 4))]
+      );
+      const fresh = await freshMfaClient(t);
+      const { pool } = await import("../../server/db");
+      const blocker = await pool.connect();
+      const waiting = async (condition: string) => {
+        const [row] = await h.sql<{ waiting: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1 FROM pg_locks l JOIN pg_stat_activity a USING (pid)
+             WHERE NOT l.granted AND a.datname = current_database()
+               AND ${condition}
+           ) AS waiting`
+        );
+        return row.waiting;
+      };
+      let clone;
+      let invoice;
+      let otherInvoice;
+      let earlyResponse: string | undefined;
+      try {
+        await blocker.query("BEGIN");
+        // Pause the clone after its emptiness check, at the safety snapshot insert.
+        await blocker.query("LOCK TABLE backups IN SHARE MODE");
+        clone = fresh.post(`/api/backups/${backup.body.id}/clone`, {
+          targetCompanyId,
+          confirmRestore: true,
+          confirmTargetName: target.body.name,
+        });
+        await expect
+          .poll(() => waiting("relation = 'backups'::regclass AND mode = 'RowExclusiveLock'"))
+          .toBe(true);
+        let otherResult: unknown = "pending";
+        otherInvoice = seedBooks(other).then(
+          () => {
+            otherResult = "posted";
+          },
+          (error: unknown) => {
+            otherResult = error;
+          }
+        );
+        await expect.poll(() => otherResult, { timeout: 12000 }).toBe("posted");
+        invoice = fresh
+          .post(`/api/companies/${targetCompanyId}/invoices`, {
+            customerName: "Concurrent customer",
+            date: today(),
+            lines: [
+              {
+                description: "Service",
+                quantity: 1,
+                unitPrice: 150,
+                vatRate: 0,
+                vatSupplyType: "out_of_scope",
+              },
+            ],
+          })
+          .then((response) => {
+            earlyResponse = `${response.status} ${response.text}`;
+            return response;
+          });
+        await expect
+          .poll(
+            async () => {
+              expect(earlyResponse).toBeUndefined();
+              return waiting(
+                "locktype = 'transactionid' AND mode = 'ShareLock' AND a.query LIKE '%FOR KEY SHARE%'"
+              );
+            },
+            { timeout: 12000 }
+          )
+          .toBe(true);
+      } finally {
+        await blocker.query("ROLLBACK");
+        blocker.release();
+        await Promise.allSettled([clone, invoice, otherInvoice]);
+      }
+      const [cloned, created] = await Promise.all([clone!, invoice!]);
+      expect(cloned.status, cloned.text).toBe(200);
+      expect(created.status, created.text).toBe(200);
+      expect(
+        await h.sql("SELECT id FROM invoices WHERE company_id = $1", [targetCompanyId])
+      ).toEqual([{ id: created.body.id }]);
+    }
+  );
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "checks whether the target is empty while holding its lock for concurrent clones",
+    async () => {
+      const t = await h.createTenant();
+      await seedBooks(t);
+      const backup = await t.as.post(`/api/companies/${t.company.id}/backups`, {
+        name: "Concurrent source",
+      });
+      expect(backup.status, backup.text).toBe(201);
+      const target = await t.as.post("/api/companies", { name: "Concurrent clone target" });
+      expect([200, 201]).toContain(target.status);
+      const targetId = target.body.id as string;
+      const fresh = await freshMfaClient(t);
+      const { pool } = await import("../../server/db");
+      const blocker = await pool.connect();
+      const clone = () =>
+        fresh.post(`/api/backups/${backup.body.id}/clone`, {
+          targetCompanyId: targetId,
+          confirmRestore: true,
+          confirmTargetName: target.body.name,
+        });
+      let pending: ReturnType<typeof clone>[] = [];
+      try {
+        await blocker.query("BEGIN");
+        await blocker.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+          `backup-restore:${targetId}`,
+        ]);
+        pending = [clone(), clone()];
+        // Both requests must reach the target lock before either can change the target.
+        await expect
+          .poll(
+            async () => {
+              const [locks] = await h.sql<{ count: number }>(
+                `SELECT count(*)::int AS count FROM pg_locks
+             WHERE locktype = 'advisory' AND NOT granted
+               AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`
+              );
+              return locks.count;
+            },
+            { timeout: 15000 }
+          )
+          .toBe(2);
+      } finally {
+        await blocker.query("ROLLBACK");
+        blocker.release();
+      }
+      const results = await Promise.all(pending);
+      expect(results.map(({ status }) => status).sort()).toEqual([200, 409]);
+      expect(results.find(({ status }) => status === 409)?.body.code).toBe(
+        "CLONE_TARGET_NOT_EMPTY"
+      );
+      expect(
+        await h.sql(
+          "SELECT count(*)::int AS count FROM backups WHERE company_id = $1 AND backup_type = 'pre_restore'",
+          [targetId]
+        )
+      ).toEqual([{ count: 1 }]);
+    }
+  );
+
   it("[S5-2] loads a backup into a new empty company with fresh ids; the source is untouched; audited in both", async () => {
     const t = await h.createTenant();
     const { invoiceId } = await seedBooks(t);

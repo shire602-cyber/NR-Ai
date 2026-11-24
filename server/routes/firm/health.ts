@@ -2,7 +2,7 @@
 // Handlers moved from firm.routes.ts (R20-09); the route registrations (paths and
 // middleware order) stay in firm.routes.ts.
 import type { Request, Response } from "express";
-import { and, count, eq, inArray, lt, lte, max, ne, or, sql, sum } from "drizzle-orm";
+import { and, count, eq, inArray, lt, lte, max, sql } from "drizzle-orm";
 import {
   bankTransactions,
   companies,
@@ -10,6 +10,13 @@ import {
   receipts,
   vatReturns,
 } from "../../../shared/schema";
+import { firmReceivablesAed, sumReceivables } from "../../services/firm/receivables.service";
+import { buildBookkeeperDashboard } from "./bookkeeper-dashboard";
+import {
+  activeVatReturnFilter,
+  vatFilingOutstandingFilter,
+  vatFilingRecordedFilter,
+} from "../../tax/vat-filing-filter";
 import { db } from "../../db";
 import { aed, ledgerBalanceCheckByCompany } from "../../reporting";
 import { getAccessibleCompanyIds } from "../../middleware/rbac";
@@ -77,7 +84,7 @@ export const handleGetFirmHealth = async (req: Request, res: Response) => {
       maxPeriodEnd: max(vatReturns.periodEnd).as("max_period_end"),
     })
     .from(vatReturns)
-    .where(inArray(vatReturns.companyId, clientIds))
+    .where(and(inArray(vatReturns.companyId, clientIds), activeVatReturnFilter))
     .groupBy(vatReturns.companyId)
     .as("latest_vat");
 
@@ -85,6 +92,7 @@ export const handleGetFirmHealth = async (req: Request, res: Response) => {
     .select({
       companyId: vatReturns.companyId,
       status: vatReturns.status,
+      ftaReferenceNumber: vatReturns.ftaReferenceNumber,
       dueDate: vatReturns.dueDate,
       periodEnd: vatReturns.periodEnd,
       submittedAt: vatReturns.submittedAt,
@@ -95,7 +103,8 @@ export const handleGetFirmHealth = async (req: Request, res: Response) => {
       latestVatSub,
       and(
         eq(vatReturns.companyId, latestVatSub.companyId),
-        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd)
+        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd),
+        activeVatReturnFilter
       )
     );
 
@@ -106,12 +115,7 @@ export const handleGetFirmHealth = async (req: Request, res: Response) => {
       lastFiledDate: sql<Date | null>`max(coalesce(${vatReturns.submittedAt}, ${vatReturns.updatedAt}))`,
     })
     .from(vatReturns)
-    .where(
-      and(
-        inArray(vatReturns.companyId, clientIds),
-        or(eq(vatReturns.status, "filed"), eq(vatReturns.status, "submitted"))
-      )
-    )
+    .where(and(inArray(vatReturns.companyId, clientIds), vatFilingRecordedFilter))
     .groupBy(vatReturns.companyId)) as LastFiledVatRow[];
 
   // AR health per company: total open AR plus overdue count/value.
@@ -172,6 +176,7 @@ export const handleGetFirmHealth = async (req: Request, res: Response) => {
   type VatRow = {
     companyId: string;
     status: string;
+    ftaReferenceNumber: string | null;
     dueDate: Date;
     periodEnd: Date;
     submittedAt: Date | null;
@@ -282,8 +287,7 @@ export const handleGetFirmHealthDeadlines = async (req: Request, res: Response) 
   const ninetyDaysOut = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
 
   const whereClause = and(
-    ne(vatReturns.status, "filed"),
-    ne(vatReturns.status, "submitted"),
+    vatFilingOutstandingFilter,
     lte(vatReturns.dueDate, ninetyDaysOut),
     ...(accessibleIds !== null ? [inArray(vatReturns.companyId, accessibleIds)] : [])
   );
@@ -374,32 +378,12 @@ export const handleGetFirmOverview = async (req: Request, res: Response) => {
   }
 
   const now = new Date();
-  const monthAhead = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-  const [vatDueRow, arRow, missingDocsRow] = await Promise.all([
-    db
-      .select({ cnt: count() })
-      .from(vatReturns)
-      .where(
-        and(
-          inArray(vatReturns.companyId, clientIds),
-          ne(vatReturns.status, "filed"),
-          ne(vatReturns.status, "submitted"),
-          lte(vatReturns.dueDate, monthAhead)
-        )
-      )
-      .then((r: { cnt: number }[]) => r[0]),
-    db
-      .select({ total: sum(invoices.total) })
-      .from(invoices)
-      .where(
-        and(
-          inArray(invoices.companyId, clientIds),
-          or(eq(invoices.status, "sent"), eq(invoices.status, "partial")),
-          lt(invoices.dueDate, now)
-        )
-      )
-      .then((r: { total: string | null }[]) => r[0]),
+  const [dashboard, receivables, missingDocsRow] = await Promise.all([
+    // One VAT-due definition: the same cohort deadlines the portfolio "VAT due soon" filter uses.
+    buildBookkeeperDashboard(userId, firmRole ?? "", req.user?.isAdmin === true),
+    // Overdue A/R from the settlement rule, in AED (partial payments, credit notes, FX).
+    firmReceivablesAed(clientIds),
     // Clients without ANY invoices yet — proxy for "missing docs"
     db
       .select({ companyId: invoices.companyId })
@@ -412,21 +396,13 @@ export const handleGetFirmOverview = async (req: Request, res: Response) => {
   const clientsWithInvoices = new Set(missingDocsRow as string[]);
   const missingDocuments = clientIds.filter((id) => !clientsWithInvoices.has(id)).length;
 
-  const overdueAr = Number(arRow?.total ?? 0);
-  const vatDueThisMonth = Number(vatDueRow?.cnt ?? 0);
+  const overdueAr = sumReceivables(receivables).overdue;
+  const vatDueThisMonth = dashboard.summary.vatDue28Days;
 
   // "Needs attention" combines overdue VAT + clients with overdue AR
-  const overdueArCompanies = await db
-    .select({ companyId: invoices.companyId })
-    .from(invoices)
-    .where(
-      and(
-        inArray(invoices.companyId, clientIds),
-        or(eq(invoices.status, "sent"), eq(invoices.status, "partial")),
-        lt(invoices.dueDate, now)
-      )
-    )
-    .groupBy(invoices.companyId);
+  const overdueArCompanies = [...receivables.values()]
+    .filter((r) => r.overdueCount > 0)
+    .map((r) => ({ companyId: r.companyId }));
 
   const overdueVatCompanies = await db
     .select({ companyId: vatReturns.companyId })
@@ -434,8 +410,7 @@ export const handleGetFirmOverview = async (req: Request, res: Response) => {
     .where(
       and(
         inArray(vatReturns.companyId, clientIds),
-        ne(vatReturns.status, "filed"),
-        ne(vatReturns.status, "submitted"),
+        vatFilingOutstandingFilter,
         lt(vatReturns.dueDate, now)
       )
     )

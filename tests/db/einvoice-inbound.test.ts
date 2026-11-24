@@ -1,6 +1,6 @@
 /**
  * R04-23: inbound supplier e-invoices through the HMAC-signed webhook create
- * DRAFT vendor bills via bills.createDraftFromInbound, with duplicate
+ * DRAFT vendor bills via bills.prepareDraftFromInbound, with duplicate
  * detection by document id, validation, archive and honest 503s.
  */
 import crypto from "node:crypto";
@@ -8,6 +8,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import { PINT_AE_FIXTURES, fixtureCompany, type PintAeFixture } from "../fixtures/pint-ae/fixtures";
 
+const h = useHarness();
 type Generate = typeof import("../../server/services/einvoice.service").generateEInvoiceXML;
 let generateEInvoiceXML: Generate;
 beforeAll(async () => {
@@ -25,20 +26,22 @@ function signInbound(raw: Buffer, ts: string, companyId: string, secret: string)
   return `sha256=${mac}`;
 }
 
-const h = useHarness();
 const SECRET = "inbound-test-secret-0123456789abcdef";
 const BUYER_TRN = "100555666700003";
 
 /** A supplier invoice (Pearl Trading → the tenant), as the ASP would deliver it. */
-function supplierInvoice(over: { number?: string; buyerTrn?: string; breakCity?: boolean } = {}) {
+function supplierInvoice(
+  over: { number?: string; buyerTrn?: string; buyerVat?: boolean; breakCity?: boolean } = {}
+) {
   const f = PINT_AE_FIXTURES[0] as PintAeFixture;
   const invoice = {
     ...f.invoice,
     number: over.number ?? "SUP-2027-0042",
+    customerTrn: over.buyerVat === false ? null : (over.buyerTrn ?? BUYER_TRN),
   } as PintAeFixture["invoice"];
   const customer = {
     ...f.customer,
-    trn: over.buyerTrn ?? BUYER_TRN,
+    trn: invoice.customerTrn,
     endpointId: (over.buyerTrn ?? BUYER_TRN).slice(0, 10),
   };
   let { xml } = generateEInvoiceXML(invoice, f.lines, fixtureCompany, customer, f.opts);
@@ -68,6 +71,63 @@ afterEach(() => {
 });
 
 describe("W4-C inbound e-invoices → draft bills", () => {
+  it.each([
+    { einvoice_tin: BUYER_TRN.slice(0, 10) },
+    { corporate_tax_id: BUYER_TRN.slice(0, 10) + "00001" },
+  ])("matches signed XML against statutory identity $0 without VAT", async (companyColumns) => {
+    process.env.EINVOICE_INBOUND_WEBHOOK_SECRET = SECRET;
+    const t = await h.createTenant({ companyColumns, vatRegistered: false });
+    const xml = supplierInvoice({ buyerVat: false });
+    const first = await deliver(t, xml);
+    expect(first.status, first.text).toBe(201);
+    expect(first.body.status).toBe("bill_created");
+    const duplicate = await deliver(t, xml);
+    expect(duplicate.body).toMatchObject({ duplicate: true, billId: first.body.billId });
+  });
+
+  it("rejects signed XML when the buyer's 0235 endpoint conflicts with its matching VAT TRN", async () => {
+    process.env.EINVOICE_INBOUND_WEBHOOK_SECRET = SECRET;
+    const t = await tenant();
+    const xml = supplierInvoice().replace(
+      `schemeID="0235">${BUYER_TRN.slice(0, 10)}`,
+      'schemeID="0235">1009998887'
+    );
+    const result = await deliver(t, xml);
+    expect(result.status).toBe(422);
+    expect(result.body.code).toBe("EINVOICE_INBOUND_WRONG_RECIPIENT");
+    expect(
+      await h.sql("SELECT id FROM vendor_bills WHERE company_id = $1", [t.company.id])
+    ).toEqual([]);
+  });
+
+  it("compares the entire buyer VAT TRN independently of a matching 0235 number", async () => {
+    process.env.EINVOICE_INBOUND_WEBHOOK_SECRET = SECRET;
+    const t = await tenant();
+    const xml = supplierInvoice({ buyerTrn: BUYER_TRN.slice(0, 10) + "99903" });
+    const result = await deliver(t, xml);
+    expect(result.status).toBe(422);
+    expect(result.body.code).toBe("EINVOICE_INBOUND_WRONG_RECIPIENT");
+  });
+
+  it("matches an explicitly configured Peppol scheme and value without treating it as the TIN", async () => {
+    process.env.EINVOICE_INBOUND_WEBHOOK_SECRET = SECRET;
+    const endpoint = "9876543210128";
+    const t = await h.createTenant({
+      companyColumns: {
+        trn_vat_number: BUYER_TRN,
+        peppol_scheme: "0088",
+        peppol_participant_id: endpoint,
+      },
+    });
+    const xml = supplierInvoice().replace(
+      `schemeID="0235">${BUYER_TRN.slice(0, 10)}`,
+      `schemeID="0088">${endpoint}`
+    );
+    const result = await deliver(t, xml);
+    expect(result.status, result.text).toBe(201);
+    expect(result.body.status).toBe("bill_created");
+  });
+
   it("[R04-23] is disabled (503) without a webhook secret", async () => {
     const t = await tenant();
     const r = await deliver(t, supplierInvoice());
@@ -137,6 +197,12 @@ describe("W4-C inbound e-invoices → draft bills", () => {
     const dup = await deliver(t, xml);
     expect(dup.status).toBe(200);
     expect(dup.body).toMatchObject({ duplicate: true, billId: first.body.billId });
+    const changed = await deliver(
+      t,
+      xml.replace("Consulting services", "Changed consulting services")
+    );
+    expect(changed.status, changed.text).toBe(409);
+    expect(changed.body.code).toBe("EINVOICE_INBOUND_SOURCE_CONFLICT");
     expect(
       (
         await h.sql(`SELECT count(*)::int AS n FROM vendor_bills WHERE company_id = $1`, [
@@ -160,10 +226,21 @@ describe("W4-C inbound e-invoices → draft bills", () => {
     expect(wrong.status).toBe(422);
     expect(wrong.body.code).toBe("EINVOICE_INBOUND_WRONG_RECIPIENT");
 
-    const invalid = await deliver(t, supplierInvoice({ number: "SUP-BAD-1", breakCity: true }));
+    const invalidXml = supplierInvoice({ number: "SUP-BAD-1", breakCity: true });
+    const invalid = await deliver(t, invalidXml);
     expect(invalid.status).toBe(422);
     expect(invalid.body.code).toBe("EINVOICE_INBOUND_INVALID");
     expect(invalid.body.validation.schematron.errorCount).toBeGreaterThan(0);
+    const repeated = await deliver(t, invalidXml);
+    expect(repeated.status).toBe(422);
+    expect(repeated.body).toMatchObject({
+      code: "EINVOICE_INBOUND_INVALID",
+      duplicate: true,
+      id: invalid.body.id,
+      status: "invalid",
+      billId: null,
+      validation: invalid.body.validation,
+    });
     const rows = await h.sql(
       `SELECT status, bill_id FROM einvoice_inbound_documents WHERE company_id = $1`,
       [t.company.id]
@@ -179,14 +256,14 @@ describe("W4-C inbound e-invoices → draft bills", () => {
     process.env.EINVOICE_INBOUND_WEBHOOK_SECRET = SECRET;
     const t = await tenant();
     const registry = await import("../../server/platform/service-registry");
-    const original = registry.resolve<(...a: never[]) => unknown>("bills.createDraftFromInbound");
-    registry.resetServices("bills.createDraftFromInbound");
+    const original = registry.resolve<(...a: never[]) => unknown>("bills.prepareDraftFromInbound");
+    registry.resetServices("bills.prepareDraftFromInbound");
     try {
       const r = await deliver(t, supplierInvoice({ number: "SUP-503" }));
       expect(r.status).toBe(503);
       expect(r.body.code).toBe("SERVICE_UNAVAILABLE");
     } finally {
-      registry.provide("bills.createDraftFromInbound", original, { replace: true });
+      registry.provide("bills.prepareDraftFromInbound", original, { replace: true });
     }
     expect(
       (

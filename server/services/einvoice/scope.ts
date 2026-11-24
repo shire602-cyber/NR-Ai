@@ -2,11 +2,12 @@
  * UAE e-invoicing scope switch (R07-13): who must e-invoice and from when.
  *
  * Phased timeline as published by the UAE Ministry of Finance (Ministerial
- * Decisions 243 and 244 of 2025; NOT independently verified, so the UI presents them as guidance
- * to confirm per entity). Revenue threshold for "large" is AED 50 million. A
+ * Decisions 243 and 244 of 2025 and Decision 66 of 2026). Revenue threshold for "large" is AED 50 million. A
  * company may store an explicit go-live date (e.g. a voluntary early
  * adoption, or a revised FTA date) which overrides the band.
  */
+
+import { calendarDateKey, uaeToday } from "../../../shared/uae-date";
 
 export type EInvoiceScope = "b2b" | "b2g" | "b2b_b2g" | "none";
 export type TurnoverBand = "large" | "standard" | "government";
@@ -18,7 +19,7 @@ export const EINVOICE_TIMELINE: Record<
   { appointAspBy: string; goLive: string; label: { en: string; ar: string } }
 > = {
   large: {
-    appointAspBy: "2026-07-31",
+    appointAspBy: "2026-10-30",
     goLive: "2027-01-01",
     label: {
       en: "Revenue of AED 50 million or more",
@@ -54,9 +55,6 @@ export interface ScopeStatus {
   daysToGoLive: number | null;
 }
 
-const iso = (d: string | Date) =>
-  typeof d === "string" ? d.slice(0, 10) : d.toISOString().slice(0, 10);
-
 export function einvoicingScope(company: ScopeInput, today: Date = new Date()): ScopeStatus {
   const scope = (["b2b", "b2g", "b2b_b2g", "none"] as const).includes(
     company.einvoiceScope as EInvoiceScope
@@ -68,9 +66,9 @@ export function einvoicingScope(company: ScopeInput, today: Date = new Date()): 
   )
     ? (company.einvoiceTurnoverBand as TurnoverBand)
     : null;
-  const override = company.einvoiceGoLiveDate ? iso(company.einvoiceGoLiveDate) : null;
+  const override = calendarDateKey(company.einvoiceGoLiveDate) || null;
   const goLiveDate = override ?? (band ? EINVOICE_TIMELINE[band].goLive : null);
-  const todayIso = iso(today);
+  const todayIso = uaeToday(today);
   const daysToGoLive = goLiveDate
     ? Math.round((Date.parse(goLiveDate) - Date.parse(todayIso)) / 86_400_000)
     : null;

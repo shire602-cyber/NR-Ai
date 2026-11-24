@@ -8,7 +8,7 @@
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Download, Mail } from "lucide-react";
+import { ArrowRight, Download, Mail } from "lucide-react";
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -34,6 +34,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
+import { formatDate } from "@/lib/format-date";
 import { Money } from "@/components/ui/money";
 import { useTranslation } from "@/lib/i18n";
 import { statementUrl, type PartyKind } from "./partyStatementUrl";
@@ -65,7 +66,7 @@ interface Statement {
 }
 
 export default function PartyStatements() {
-  const { t } = useTranslation();
+  const { locale, t } = useTranslation();
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
   const [kind, setKind] = useState<PartyKind>("customer");
@@ -123,7 +124,10 @@ export default function PartyStatements() {
                 setPartyId("");
               }}
             >
-              <SelectTrigger data-testid="select-statement-kind">
+              <SelectTrigger
+                aria-label={t["reportCenter.partyStatementKind"]}
+                data-testid="select-statement-kind"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -141,7 +145,14 @@ export default function PartyStatements() {
               />
             </Label>
             <Select value={partyId} onValueChange={setPartyId}>
-              <SelectTrigger data-testid="select-statement-party">
+              <SelectTrigger
+                aria-label={
+                  kind === "customer"
+                    ? t["reportCenter.partyCustomer"]
+                    : t["reportCenter.partySupplier"]
+                }
+                data-testid="select-statement-party"
+              >
                 <SelectValue placeholder={t["reportCenter.partySelect"]} />
               </SelectTrigger>
               <SelectContent>
@@ -210,9 +221,9 @@ export default function PartyStatements() {
             ) : (
               statement.sections.map((section) => (
                 <div key={section.currency} className="space-y-2">
-                  <p className="text-sm font-medium" dir="ltr">
-                    {section.currency} ·{" "}
-                    <Money amount={section.openingBalance} currency={section.currency} /> →{" "}
+                  <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                    <Money amount={section.openingBalance} currency={section.currency} />
+                    <ArrowRight className="h-3.5 w-3.5 rtl:-scale-x-100" aria-hidden />
                     <Money amount={section.closingBalance} currency={section.currency} />
                   </p>
                   <Table>
@@ -238,19 +249,30 @@ export default function PartyStatements() {
                     <TableBody>
                       {section.lines.map((line, i) => (
                         <TableRow key={`${line.reference}-${i}`}>
-                          <TableCell className="text-xs">{line.date}</TableCell>
-                          <TableCell className="text-xs">
-                            {line.reference}
-                            {line.description ? ` · ${line.description}` : ""}
+                          <TableCell className="whitespace-nowrap text-xs">
+                            {formatDate(line.date, locale)}
                           </TableCell>
-                          <TableCell data-numeric className=" tabular-nums">
-                            {line.debit ? line.debit.toFixed(2) : ""}
+                          <TableCell className="break-words text-xs">
+                            <bdi dir="ltr" translate="no">
+                              {line.reference}
+                            </bdi>
+                            {line.description && (
+                              <>
+                                {" "}
+                                · <bdi>{line.description}</bdi>
+                              </>
+                            )}
                           </TableCell>
-                          <TableCell data-numeric className=" tabular-nums">
-                            {line.credit ? line.credit.toFixed(2) : ""}
+                          <TableCell data-numeric>
+                            {line.debit ? <Money amount={line.debit} showCurrency={false} /> : null}
                           </TableCell>
-                          <TableCell data-numeric className=" tabular-nums">
-                            {line.balance.toFixed(2)}
+                          <TableCell data-numeric>
+                            {line.credit ? (
+                              <Money amount={line.credit} showCurrency={false} />
+                            ) : null}
+                          </TableCell>
+                          <TableCell data-numeric>
+                            <Money amount={line.balance} showCurrency={false} />
                           </TableCell>
                         </TableRow>
                       ))}

@@ -105,11 +105,7 @@ describe("E2 Complyance webhook signature", () => {
 
 describe("E2 Complyance events -> inbox", () => {
   it("purchase.invoice.stored becomes document.received keyed like the poll", () => {
-    const ev = normaliseComplyanceEvent({
-      eventType: "purchase.invoice.stored",
-      eventId: "purchase:01JEXAMPLE0000000000000142",
-      body: fx.events["purchase.invoice.stored"],
-    });
+    const ev = normaliseComplyanceEvent(fx.events["purchase.invoice.stored"]);
     expect(ev).toMatchObject({
       type: "document.received",
       payload: {
@@ -123,42 +119,36 @@ describe("E2 Complyance events -> inbox", () => {
   });
 
   it("validation_failed purchases still arrive (for review), credit notes keep their type", () => {
-    const ev = normaliseComplyanceEvent({
-      eventType: null,
-      eventId: null,
-      body: fx.events["purchase.invoice.validation_failed"],
-    });
+    const ev = normaliseComplyanceEvent(fx.events["purchase.invoice.validation_failed"]);
     expect(ev?.payload).toMatchObject({ documentType: "credit-note", validationFailed: true });
   });
 
   it("invoice.passed asks for a status re-read; onboarding events re-sync the company", () => {
-    const passed = normaliseComplyanceEvent({
-      eventType: "invoice.passed",
-      eventId: "x",
-      body: fx.events["invoice.passed"],
-    });
+    const passed = normaliseComplyanceEvent(fx.events["invoice.passed"]);
     expect(passed).toMatchObject({
       type: "document.delivered",
       payload: { documentId: "01K5EXAMPLE00000000000142" },
     });
-    const company = normaliseComplyanceEvent({
-      eventType: "company.added.successfully",
-      eventId: "evt-1",
-      body: fx.events["company.added.successfully"],
-    });
+    const company = normaliseComplyanceEvent(fx.events["company.added.successfully"]);
     expect(company).toMatchObject({
       type: "legal_entity.synchronized",
-      payload: { eventId: "evt-1", legalEntityId: "66b9f0a1c2d3e4f567890123", tin: "1001234567" },
+      payload: {
+        eventId: "company:66b9f0a1c2d3e4f567890123:added",
+        legalEntityId: "66b9f0a1c2d3e4f567890123",
+        tin: "1001234567",
+      },
     });
-    expect(providerEventKey(company!.type, company!.payload)).toBe("evt-1");
+    expect(providerEventKey(company!.type, company!.payload)).toBe(
+      "company:66b9f0a1c2d3e4f567890123:added"
+    );
   });
 
   it("ignores events we do not act on", () => {
     expect(
-      normaliseComplyanceEvent({ eventType: "isv.credits.pool.low", eventId: "e", body: {} })
+      normaliseComplyanceEvent({ eventId: "e", data: { type: "isv.credits.pool.low" } })
     ).toBeNull();
     expect(
-      normaliseComplyanceEvent({ eventType: "purchase.invoice.stored", eventId: "e", body: {} })
+      normaliseComplyanceEvent({ eventId: "e", data: { type: "purchase.invoice.stored" } })
     ).toBeNull();
   });
 });

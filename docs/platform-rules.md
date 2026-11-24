@@ -40,6 +40,13 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   use `journalLifecycle` for the lifecycle. Year-end close posts through the kernel
   (`ledgerClosePostingPort`, kind `year_end_close`); FX revaluation posts kind `revaluation` with a
   linked next-day reversal; receipt post/revise use `postJournal` + `reverseBySource`.
+- Firm A/R (portfolio, `/firm/overview`, command centre, bookkeeper dashboard) comes only from
+  `server/reporting/firm-receivables.ts` (settlement fragments, grouped by company, base currency) and
+  `server/services/firm/receivables.service.ts` (AED through `fx.convert` with the company id). Never
+  sum `invoices.total` for a firm figure. Assigned staff come from `firm_staff_assignments`, never from
+  `users.is_admin`. `GET /firm/clients` is a fixed number of grouped queries and returns an allow-listed
+  column set (no WPS or IBAN fields); `GET /firm/client-links` is scoped like the client list; a client
+  outside the caller's firm is a 404 through `denyClientAccess`.
 - System journal text is a key, not English: an entry memo is `journalMemo(key, params)` and every
   system LINE description is `journalLine(key, params)` (`shared/journal-memo.ts`, columns
   `memo_key`/`memo_params` and `line_key`/`line_params`, migrations 0131/0132). Add the template
@@ -129,7 +136,7 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
 - Free trial (owner decision): every new company gets a `TRIAL_DAYS` (14) free trial of all
   features, no card required (`shared/trial.ts`, with the end behaviour constant). The trial start
   is the company's subscription row `created_at` (existing companies count from their row), and
-  `/billing/subscription` returns `trial { daysLeft, ended, ... }` for the free plan. Nothing is
+  `/billing/subscription` returns `trial { daysLeft, ended, ... }` for a company on no paid plan. Nothing is
   locked when it ends: the dashboard and subscription page show a trial banner ("X days left" /
   "Your trial has ended - contact us to choose a plan", mailto support@muhasib.ai), and monthly
   invoice/receipt/seat figures stay unenforced until the owner decides. The public "14-day free
@@ -230,8 +237,14 @@ One model for every migrating company (D1, accounting re-audit 3: N1-N4, N7, N14
 - Portal pages (`/client-portal`, `/portal`) are always open in `PLAN_LOCK_ALWAYS_OPEN`.
 - Overdue in the portal is a calendar rule (`contactInvoices`): an invoice with an open balance
   whose due date (Asia/Dubai date) is before today is overdue, partly paid or not; due today is
-  not. "Next payment due" is the earliest open invoice that is not overdue. A binding whose contact
-  was deactivated is skipped: requests fall back to another active supplier (`X-Portal-Account-Used`),
-  and only when none is left is access "removed". With no email provider the bulk invite returns each
-  `inviteUrl` (same as a single invite); the customer's display name is edited via
-  `PATCH /api/client-portal/profile` (name only).
+  not. "Next payment due" is the earliest open invoice that is not overdue. With no email provider
+  an invite (single or bulk) is `queued`, never reported as sent, and no link is returned to the
+  inviter; the bulk dialog says so. The customer's display name is edited via
+  `PATCH /api/client-portal/profile` (name only). The portal data is prefetched on sign-in (`client/src/lib/portal-prefetch.ts`).
+
+
+### Reviewing legacy firm access
+
+Offboarding and role downgrades that would leave higher company permissions in place return `UNRESOLVED_FIRM_ACCESS` with the company and membership IDs when a historical firm grant cannot be matched to its original membership. The transaction preserves the unresolved grant so the company owner can review it.
+
+The owner can list reviewable memberships with `GET /api/companies/:companyId/team/firm-access-review`. Use `POST` on the same path with `membershipId` and a `decision` of `independent` or `revoke`. Confirming independence keeps the company's direct membership. Revoking removes that membership. Retry offboarding after the listed memberships have been reviewed.

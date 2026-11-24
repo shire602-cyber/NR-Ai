@@ -24,9 +24,14 @@ import {
 import { createLogger } from "../config/logger";
 import { onDomainEvent, type DomainEvent } from "../platform/domain-events";
 import { listJobs, registerJob } from "../platform/job-registry";
-import { escapeHtml, renderBilingualEmail, sendEmail } from "./email.service";
+import { sendEmail } from "./email.service";
+import { renderQueuedNotificationEmail } from "./notification-email-copy";
 import { isCapabilityLive } from "../../shared/capabilities";
 import { notificationCopy, renderServerCopy } from "../../shared/server-copy";
+import { VAT_RECORDED_STATUSES } from "../../shared/vat-filing-status";
+import { customerVisibleNotification } from "../storage/notification-visibility";
+import { deliverOutboxMessage, enqueueEmail } from "../outbox/outbox";
+import { DIGEST_WINDOW_MS, renderNotificationDigest } from "./notification-digest";
 
 const log = createLogger("notification-engine");
 
@@ -38,7 +43,6 @@ export const NOTIFICATION_EVENT_TYPES = [
   "bill.approved",
   "bill.paid",
   "payroll.approved",
-  "bank.sync_failed",
   "compliance.deadline_due",
   "task.due",
 ] as const;
@@ -78,7 +82,6 @@ const TYPE_RULES: Record<
   "bill.approved": { category: null, emailByDefault: false, notificationType: "system" },
   "bill.paid": { category: null, emailByDefault: false, notificationType: "system" },
   "payroll.approved": { category: null, emailByDefault: true, notificationType: "system" },
-  "bank.sync_failed": { category: null, emailByDefault: true, notificationType: "system" },
   "compliance.deadline_due": {
     category: "vatDeadlines",
     emailByDefault: true,
@@ -136,6 +139,8 @@ export interface NotifyInput {
   relatedEntityType?: string | null;
   /** Default: every staff member of the company (client-portal users excluded). */
   userIds?: string[];
+  /** The user who performed the action already has its immediate confirmation. */
+  excludeUserId?: string | null;
   /** Idempotency suffix (default: entity id) — `<type>:<key>` is unique per user. */
   eventKey?: string;
 }
@@ -185,7 +190,7 @@ async function emitSocket(userId: string, row: unknown): Promise<void> {
 
 /** Fan one event out to its recipients on their allowed channels. */
 export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
-  const recipients = input.userIds
+  const eligible = input.userIds
     ? await db
         .select({ id: users.id, email: users.email })
         .from(users)
@@ -196,6 +201,7 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
           )})`
         )
     : await staffRecipients(input.companyId);
+  const recipients = eligible.filter(({ id }) => id !== input.excludeUserId);
   const prefs = await loadPrefs(recipients.map((r: { id: string }) => r.id));
   const pushLive = isCapabilityLive("push");
   const urgent = input.priority === "urgent";
@@ -237,16 +243,8 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
       }
     }
     if (ch.email && user.email) {
-      const html = renderBilingualEmail(
-        {
-          brandName: "Muhasib.ai",
-          heading: { en: input.title, ar: input.title },
-          paragraphs: { en: [escapeHtml(input.message)], ar: [] },
-          footer: "Muhasib.ai notifications — manage them under Settings → Notifications",
-        },
-        "en"
-      );
-      const r = await sendEmail(user.email, input.title, input.message, {
+      const { subject, html, textBody } = renderQueuedNotificationEmail(input);
+      const r = await sendEmail(user.email, subject, textBody, {
         html,
         companyId: input.companyId,
         category: "notification",
@@ -379,21 +377,6 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
         relatedEntityType: "payroll_run",
         actionUrl: "/payroll",
       };
-    case "bank.sync_failed":
-      return {
-        ...base,
-        type: "bank.sync_failed",
-        ...notificationCopy(
-          "notification.bankSyncFailed.title",
-          "notification.bankSyncFailed.message",
-          { provider: p.provider as string | undefined, reason: p.reason as string | undefined }
-        ),
-        priority: "high",
-        relatedEntityType: "bank_connection",
-        actionUrl: "/bank-feeds",
-        // One notification per failure day, not per retry.
-        eventKey: `${p.entityId}:${String(p.occurredAt).slice(0, 10)}`,
-      };
     case "compliance.deadline_due":
       return {
         ...base,
@@ -433,7 +416,12 @@ export function registerNotificationEngine(): void {
     subscribed = true;
     const handle = async (event: DomainEvent) => {
       const input = await notificationForEvent(event);
-      if (input) await notify(input);
+      if (!input) return;
+      const isSalesAction =
+        event.type === "invoice.issued" ||
+        event.type === "invoice.paid" ||
+        event.type === "payment.received";
+      await notify({ ...input, excludeUserId: isSalesAction ? event.payload.actorUserId : null });
     };
     for (const type of [
       "invoice.issued",
@@ -442,7 +430,6 @@ export function registerNotificationEngine(): void {
       "bill.approved",
       "bill.paid",
       "payroll.approved",
-      "bank.sync_failed",
       "compliance.deadline_due",
       "task.due",
     ] as const) {
@@ -516,14 +503,15 @@ export async function scanOverdueInvoices(now: Date = new Date()): Promise<numbe
   return n;
 }
 
-/** VAT returns not yet submitted that are due within 14 days (or overdue). */
+/** VAT returns with an outstanding external filing that are due within 14 days (or overdue). */
 export async function scanVatDeadlines(now: Date = new Date()): Promise<number> {
   const { rows } = await pool.query(
     `SELECT id, company_id, due_date::date::text AS due, period_end::date::text AS period_end
        FROM vat_returns
-      WHERE status NOT IN ('submitted', 'filed', 'amended')
+      WHERE status <> 'amended' AND NOT (status = ANY($2::text[])
+        AND NULLIF(BTRIM(fta_reference_number), '') IS NOT NULL)
         AND due_date::date <= ($1::date + 14)`,
-    [now.toISOString().slice(0, 10)]
+    [now.toISOString().slice(0, 10), VAT_RECORDED_STATUSES]
   );
   for (const r of rows) {
     await notify({
@@ -545,7 +533,7 @@ export async function scanVatDeadlines(now: Date = new Date()): Promise<number> 
 
 /** One digest email per opted-in user with the undigested notifications of the last day. */
 export async function sendDailyDigests(now: Date = new Date()): Promise<number> {
-  const since = new Date(now.getTime() - 26 * 3_600_000);
+  const since = new Date(now.getTime() - DIGEST_WINDOW_MS);
   const optedIn = await db
     .select({ userId: notificationPreferences.userId, email: users.email })
     .from(notificationPreferences)
@@ -564,45 +552,35 @@ export async function sendDailyDigests(now: Date = new Date()): Promise<number> 
       .where(
         and(
           eq(notifications.userId, u.userId),
+          customerVisibleNotification(),
           isNull(notifications.digestedAt),
           gte(notifications.createdAt, since)
         )
       )
+      .orderBy(notifications.createdAt, notifications.id)
       .limit(100);
     if (!rows.length || !u.email) continue;
     const day = now.toISOString().slice(0, 10);
-    const items = rows.map(
-      (r: typeof notifications.$inferSelect) =>
-        `<strong>${escapeHtml(r.title)}</strong> — ${escapeHtml(r.message)}`
-    );
-    const html = renderBilingualEmail(
-      {
-        brandName: "Muhasib.ai",
-        heading: { en: `Your daily summary (${day})`, ar: `ملخصك اليومي (${day})` },
-        paragraphs: { en: items, ar: [`لديك ${rows.length} إشعارات جديدة.`] },
-      },
-      "bilingual"
-    );
-    const r = await sendEmail(u.email, `Muhasib.ai daily summary — ${rows.length} update(s)`, "", {
-      html,
-      category: "digest",
-      idempotencyKey: `digest:${u.userId}:${day}`,
-    });
-    if (r.queued) {
-      await db
-        .update(notifications)
-        .set({ digestedAt: now })
-        .where(
-          sql`${notifications.id} IN (${sql.join(
-            rows.map((x: { id: string }) => sql`${x.id}`),
-            sql`, `
-          )})`
-        );
+    const { subject, html, textBody } = renderNotificationDigest(day, rows);
+    try {
+      const queued = await enqueueEmail({
+        to: u.email,
+        subject,
+        html,
+        text: textBody,
+        category: "digest",
+        idempotencyKey: `digest:${u.userId}:${day}`,
+        notificationDigest: { userId: u.userId, notificationIds: rows.map(({ id }) => id) },
+      });
+      if (queued.duplicate) continue;
       await db
         .update(notificationPreferences)
         .set({ lastDigestAt: now })
         .where(eq(notificationPreferences.userId, u.userId));
       sent++;
+      if (queued.status === "queued") await deliverOutboxMessage(queued.id);
+    } catch (err) {
+      log.error({ err, userId: u.userId }, "Could not queue or deliver notification digest");
     }
   }
   return sent;

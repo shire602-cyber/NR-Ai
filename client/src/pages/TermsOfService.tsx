@@ -1,3 +1,4 @@
+import { MARKETING_BRAND } from "@shared/marketing-brand";
 import { T } from "@/components/layout/T";
 import { LegalLayout } from "@/components/LegalLayout";
 import { TermsOfServiceAr } from "./legal/legalAr";
@@ -7,9 +8,10 @@ export default function TermsOfService() {
     <LegalLayout slug="terms" effectiveDate="2026-04-26" arabic={<TermsOfServiceAr />}>
       <p>
         These Terms of Service (<strong>"Terms"</strong>) govern your access to and use of the
-        Muhasib.ai platform (the <strong>"Service"</strong>) operated by Najma Al Raeda Accounting
-        and Bookkeeping (<strong>"NRA"</strong>, <strong>"we"</strong>, <strong>"us"</strong>). By
-        creating an account or using the Service, you agree to be bound by these Terms.
+        {MARKETING_BRAND.name.en} platform (the <strong>"Service"</strong>) operated by Najma Al
+        Raeda Accounting and Bookkeeping (<strong>"NRA"</strong>, <strong>"we"</strong>,{" "}
+        <strong>"us"</strong>). By creating an account or using the Service, you agree to be bound
+        by these Terms.
       </p>
 
       <h2>1. Eligibility</h2>
@@ -28,7 +30,7 @@ export default function TermsOfService() {
         </li>
         <li>
           You must notify us immediately of any unauthorised access at{" "}
-          <a href="mailto:security@muhasib.ai">security@muhasib.ai</a>.
+          <a href={`mailto:${MARKETING_BRAND.securityEmail}`}>{MARKETING_BRAND.securityEmail}</a>.
         </li>
         <li>
           <T k="pageLabels.youAreResponsibleForAllActivity" />
@@ -64,11 +66,11 @@ export default function TermsOfService() {
       <h2>6. Tax and accounting disclaimer</h2>
       {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
-        Muhasib.ai provides software tools to assist with bookkeeping, VAT computation, and FTA
-        filings. While the Service is designed to comply with FTA rules, the accuracy of any return
-        depends on the data you provide. Outputs of the Service do not constitute legal, tax, or
-        financial advice. You remain solely responsible for the accuracy of your filings and for
-        engaging a qualified tax agent where required.
+        {MARKETING_BRAND.name.en} provides software tools to assist with bookkeeping, VAT
+        computation, and FTA filings. While the Service is designed to comply with FTA rules, the
+        accuracy of any return depends on the data you provide. Outputs of the Service do not
+        constitute legal, tax, or financial advice. You remain solely responsible for the accuracy
+        of your filings and for engaging a qualified tax agent where required.
       </p>
 
       <h2>7. Service availability</h2>
@@ -127,8 +129,8 @@ export default function TermsOfService() {
       <h2>14. Contact</h2>
       <p>
         <T k="pageLabels.questionsAboutTheseTermsEmail" />{" "}
-        <a href="mailto:legal@muhasib.ai">legal@muhasib.ai</a> or write to: Najma Al Raeda
-        Accounting and Bookkeeping, Dubai, United Arab Emirates.
+        <a href={`mailto:${MARKETING_BRAND.legalEmail}`}>{MARKETING_BRAND.legalEmail}</a> or write
+        to: Najma Al Raeda Accounting and Bookkeeping, Dubai, United Arab Emirates.
       </p>
     </LegalLayout>
   );

@@ -45,7 +45,7 @@ function toRegex(pattern) {
 
 const serverRouteFiles = [
   ...walk('server/routes', (file) => file.endsWith('.routes.ts')),
-  ...['server/index.ts'].filter((file) => fs.existsSync(path.join(root, file))),
+  'server/app.ts',
 ];
 const serverPatterns = [];
 

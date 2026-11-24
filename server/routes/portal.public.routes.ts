@@ -23,6 +23,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { storage } from "../storage";
 import { db, pool } from "../db";
 import { authMiddleware } from "../middleware/auth";
+import { assertTrialAccess } from "../middleware/trialAccessPolicy";
 import { asyncHandler } from "../middleware/errorHandler";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
@@ -64,10 +65,16 @@ import {
   readValidatedUpload,
 } from "../services/document-vault.service";
 import { checkoutForInvoice, paymentsAvailability, publicBaseUrl } from "../services/payments";
-import { escapeHtml, renderBilingualEmail, sendEmail } from "../services/email.service";
+import { buildPortalCodeEmail, sendEmail } from "../services/email.service";
+import { resolveEmailLanguage } from "../services/email-layout";
 import { localDateSql, receivableSettledSql } from "../reporting/settlement";
 import { actorFromRequest, assertCompanyPermission } from "../services/approval-rules.service";
 import type { Permission } from "../../shared/permissions";
+import {
+  customerEInvoiceOutcome,
+  getCustomerEInvoiceOutcome,
+  type EInvoiceCustomerEvidence,
+} from "../services/einvoice/customer-outcome";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const ISSUED_STATUSES = ["sent", "posted", "partial", "paid"] as const;
@@ -155,6 +162,7 @@ async function staffContact(
   // /portal is outside the central company-role policy, so the staff routes check the role here:
   // a viewer may read link metadata but not mint or revoke links (J4).
   await assertCompanyPermission(actorFromRequest(req), contact.companyId, [permission]);
+  await assertTrialAccess(contact.companyId, req.user!);
   return contact;
 }
 
@@ -172,7 +180,12 @@ export interface PortalInvoiceRow {
   amountDue: number;
   status: string;
   paymentStatus: "paid" | "partially_paid" | "overdue" | "unpaid" | "credit";
-  einvoice: { status: string; uuid: string | null; hasXml: boolean } | null;
+  einvoice:
+    | (NonNullable<ReturnType<typeof customerEInvoiceOutcome>> & {
+        uuid: string | null;
+        hasXml: boolean;
+      })
+    | null;
 }
 
 /** Issued documents of one contact with their open balance (R16-04/R16-06). */
@@ -190,10 +203,17 @@ export async function contactInvoices(
   const { rows } = await pool.query(
     `SELECT i.id, i.number, i.invoice_type, i.date, i.due_date, i.currency, i.subtotal, i.vat_amount,
             i.total, i.status, i.einvoice_status, i.einvoice_uuid, (i.einvoice_xml IS NOT NULL) AS has_xml,
+            i.einvoice_provider, i.einvoice_provider_message_id,
+            CASE WHEN d.id IS NOT NULL THEN jsonb_build_object(
+              'status', d.status, 'provider', d.provider, 'providerMessageId', d.provider_message_id,
+              'providerStatus', d.provider_status, 'deliveryStatus', d.delivery_status,
+              'reportingStatus', d.reporting_status, 'validation', d.validation
+            ) END AS einvoice_evidence,
             ${receivableSettledSql("i")}::text AS settled,
             (i.due_date IS NOT NULL
               AND ${localDateSql("i.due_date")} < ${localDateSql("now()")}) AS past_due
        FROM invoices i
+       LEFT JOIN einvoice_documents d ON d.company_id = i.company_id AND d.invoice_id = i.id
       WHERE i.company_id = $1 AND i.contact_id = $2
         AND i.status IN ('sent', 'posted', 'partial', 'paid') ${extra}
       ORDER BY i.date DESC, i.number DESC`,
@@ -205,6 +225,14 @@ export async function contactInvoices(
     const settled = isCredit ? 0 : Number(r.settled);
     const due = isCredit ? 0 : Math.max(0, Math.round((total - settled) * 100) / 100);
     const dueDate = r.due_date ? new Date(r.due_date as string) : null;
+    const eInvoiceOutcome = customerEInvoiceOutcome(
+      {
+        einvoiceStatus: r.einvoice_status as string | null,
+        einvoiceProvider: r.einvoice_provider as string | null,
+        einvoiceProviderMessageId: r.einvoice_provider_message_id as string | null,
+      },
+      r.einvoice_evidence as EInvoiceCustomerEvidence | null
+    );
     return {
       id: r.id as string,
       number: r.number as string,
@@ -229,9 +257,9 @@ export async function contactInvoices(
             : settled > 0
               ? "partially_paid"
               : "unpaid",
-      einvoice: r.einvoice_status
+      einvoice: eInvoiceOutcome
         ? {
-            status: r.einvoice_status as string,
+            ...eInvoiceOutcome,
             uuid: (r.einvoice_uuid as string | null) ?? null,
             hasXml: r.has_xml === true,
           }
@@ -312,32 +340,18 @@ export function registerPortalPublicRoutes(app: Express) {
       });
       if (created) {
         const company = await storage.getCompany(companyId);
-        const html = renderBilingualEmail(
-          {
-            brandName: company?.name ?? "Muhasib.ai",
-            heading: { en: "Your sign-in code", ar: "رمز الدخول الخاص بك" },
-            paragraphs: {
-              en: [
-                `Use <strong style="font-size:20px;letter-spacing:4px;">${escapeHtml(created.code)}</strong> to open your customer portal. The code expires in 10 minutes.`,
-              ],
-              ar: [
-                `استخدم الرمز <strong dir="ltr">${escapeHtml(created.code)}</strong> للدخول إلى بوابة العملاء. تنتهي صلاحيته خلال 10 دقائق.`,
-              ],
-            },
-          },
-          "bilingual"
-        );
-        await sendEmail(
-          email,
-          `Your portal sign-in code: ${created.code}`,
-          `Code: ${created.code}`,
-          {
-            html,
-            companyId,
-            category: "portal_login",
-            sensitive: true,
-          }
-        );
+        const built = buildPortalCodeEmail({
+          companyName: company?.name ?? "Muhasib.ai",
+          code: created.code,
+          language: resolveEmailLanguage(null, created.contact.preferredLanguage),
+        });
+        await sendEmail(email, built.subject, built.text, {
+          html: built.html,
+          fromName: company?.name,
+          companyId,
+          category: "portal_login",
+          sensitive: true,
+        });
       }
       res.json(generic);
     })
@@ -375,24 +389,52 @@ export function registerPortalPublicRoutes(app: Express) {
   );
 
   // ─── Customer: token routes ───────────────────────────────────────────────
+  async function portalInfoOf(ctx: PortalCtx) {
+    const company = await storage.getCompany(ctx.companyId);
+    const payments = paymentsAvailability();
+    return {
+      customerName: ctx.contact.name,
+      customerNameAr: ctx.contact.nameAr ?? null,
+      contactPerson: ctx.contact.contactPerson || null,
+      companyId: ctx.companyId,
+      companyName: company?.name || "Muhasib.ai",
+      companyLogo: company?.logoUrl || null,
+      preferredLanguage: ctx.contact.preferredLanguage ?? null,
+      companyLocale: company?.locale === "ar" ? "ar" : "en",
+      onlinePayment: { available: payments.available, status: payments.status },
+    };
+  }
+
+  async function portalInvoicesOf(ctx: PortalCtx) {
+    const payments = paymentsAvailability();
+    const rows = await contactInvoices(ctx.companyId, ctx.contact.id);
+    return rows.map((r) => ({
+      ...r,
+      canPayOnline: payments.available && r.invoiceType !== "credit_note" && r.amountDue > 0,
+    }));
+  }
+
   app.get(
     "/api/portal/:token/info",
     portalGuard("portal"),
     asyncHandler(async (req: Request, res: Response) => {
       const ctx = await portalContact(req, res);
       if (!ctx) return;
-      const company = await storage.getCompany(ctx.companyId);
-      const payments = paymentsAvailability();
-      res.json({
-        customerName: ctx.contact.name,
-        customerNameAr: ctx.contact.nameAr ?? null,
-        contactPerson: ctx.contact.contactPerson || null,
-        companyId: ctx.companyId,
-        companyName: company?.name || "Muhasib.ai",
-        companyLogo: company?.logoUrl || null,
-        preferredLanguage: ctx.contact.preferredLanguage ?? null,
-        onlinePayment: { available: payments.available, status: payments.status },
-      });
+      res.json(await portalInfoOf(ctx));
+    })
+  );
+
+  // The first screen in one round trip: who and which company (info) and the invoice list.
+  // Statement, quotes and documents are fetched when their tab opens.
+  app.get(
+    "/api/portal/:token/overview",
+    portalGuard("portal"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const ctx = await portalContact(req, res);
+      if (!ctx) return;
+      res.setHeader("Cache-Control", "private, no-store");
+      const [info, invoices] = await Promise.all([portalInfoOf(ctx), portalInvoicesOf(ctx)]);
+      res.json({ info, invoices });
     })
   );
 
@@ -402,14 +444,7 @@ export function registerPortalPublicRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const ctx = await portalContact(req, res);
       if (!ctx) return;
-      const payments = paymentsAvailability();
-      const rows = await contactInvoices(ctx.companyId, ctx.contact.id);
-      res.json(
-        rows.map((r) => ({
-          ...r,
-          canPayOnline: payments.available && r.invoiceType !== "credit_note" && r.amountDue > 0,
-        }))
-      );
+      res.json(await portalInvoicesOf(ctx));
     })
   );
 
@@ -472,10 +507,12 @@ export function registerPortalPublicRoutes(app: Express) {
           .status(404)
           .json({ code: "EINVOICE_NOT_FOUND", message: "No e-invoice for this invoice" });
       }
+      const outcome = await getCustomerEInvoiceOutcome(invoice);
       res.set({
         "Content-Type": "application/xml; charset=utf-8",
         "Content-Disposition": `attachment; filename="einvoice-${invoice.number}.xml"`,
-        "X-Einvoice-Status": invoice.einvoiceStatus ?? "generated",
+        "X-Einvoice-Status": outcome?.status ?? "generated",
+        "X-Einvoice-Environment": outcome?.environment ?? "unknown",
       });
       res.send(invoice.einvoiceXml);
     })

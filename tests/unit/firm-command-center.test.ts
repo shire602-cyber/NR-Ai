@@ -57,6 +57,7 @@ function baseInputs(overrides: Partial<ClientHealthInputs> = {}): ClientHealthIn
     overdueBalance: 0,
     overdueInvoiceCount: 0,
     vatStatus: "filed",
+    vatReference: "ET-1",
     vatDueDate: new Date("2026-06-30T00:00:00Z"),
     receiptBacklog: 0,
     lastActivityAt: new Date("2026-04-29T00:00:00Z"),
@@ -72,6 +73,7 @@ function baseSnapshot(overrides: Partial<ClientSnapshot> = {}): ClientSnapshot {
     companyName: "Acme LLC",
     onboardingCompleted: true,
     vatStatus: "filed",
+    vatReference: "ET-1",
     vatDueDate: new Date("2026-06-30T00:00:00Z"),
     overdueBalance: 0,
     overdueInvoiceCount: 0,
@@ -140,8 +142,23 @@ describe("calculateHealthScore — boundary cases", () => {
     expect(result.score).toBe(90);
   });
 
-  it("treats submitted VAT identically to filed", () => {
-    expect(calculateHealthScore(baseInputs({ vatStatus: "submitted" })).score).toBe(100);
+  it("keeps the overdue warning until EmaraTax filing is recorded", () => {
+    const deadline = new Date("2026-04-01T00:00:00Z");
+    const prepared = baseInputs({
+      vatStatus: "submitted",
+      vatReference: null,
+      vatDueDate: deadline,
+    });
+    expect(calculateHealthScore(prepared).factors.vatOverdue).toBe(true);
+    expect(generateAlertsForClient(baseSnapshot(prepared), FIXED_NOW)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ alertType: "vat_deadline", severity: "critical" }),
+      ])
+    );
+    expect(
+      calculateHealthScore({ ...prepared, vatStatus: "filed", vatReference: "ET-9" }).factors
+        .vatOverdue
+    ).toBe(false);
   });
 
   it("does not penalize when no VAT return exists with -5", () => {

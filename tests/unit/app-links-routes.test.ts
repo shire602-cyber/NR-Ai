@@ -19,7 +19,7 @@ const appRoutes = [
 const redirectOnly = new Set(
   [
     ...readFileSync("client/src/App.tsx", "utf8").matchAll(
-      /<Route path="([^"]+)">\s*(?:\{\(params\) => )?<RedirectTo/g
+      /<Route path="([^"]+)">\s*(?:\{\(params\) => )?<Redirect(?:To)?\b/g
     ),
   ].map((m) => m[1])
 );
@@ -76,6 +76,7 @@ describe("stored in-app links resolve to client routes", () => {
     expect(invoiceHref("abc")).toBe("/invoices?open=abc");
     expect(matchesRoute(invoiceHref("abc"), { allowRedirects: false })).toBe(true);
     expect(redirectOnly.has("/banking")).toBe(true);
+    expect(redirectOnly.has("/bank-feeds")).toBe(true);
     expect(redirectOnly.has("/journal-entries")).toBe(true);
     expect(matchesRoute("/journal?status=draft", { allowRedirects: false })).toBe(true);
   });
@@ -91,6 +92,7 @@ describe("stored in-app links resolve to client routes", () => {
     for (const legacy of [
       "/invoices/3f2b8c1e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
       "/banking",
+      "/bank-feeds",
       "/compliance",
       "/settings",
       "/journal-entries?status=draft",

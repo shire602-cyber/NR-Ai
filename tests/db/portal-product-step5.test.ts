@@ -61,18 +61,30 @@ async function pay(t: Tenant, invoiceId: string, amount: number) {
   expect(r.status, r.text).toBeLessThan(300);
 }
 
-/** Bind an existing (SaaS) user to a contact through the invitation link. */
+/** The raw token only ever lives in the invitation email (here: the outbox, no provider). */
+async function tokenOf(invitationId: string) {
+  const [mail] = await h.sql(
+    `SELECT html FROM email_outbox WHERE category = 'portal_invite' AND related_entity_id = $1
+     ORDER BY created_at DESC LIMIT 1`,
+    [invitationId]
+  );
+  const token = TOKEN_RE.exec(mail?.html ?? "")?.[1];
+  if (!token) throw new Error("Missing invitation email in test outbox");
+  return token;
+}
+
+/** Bind an existing (SaaS) user to a contact through the invitation. */
 async function bind(supplier: Tenant, cid: string, user: Tenant) {
   const r = await supplier.as.post(
     `/api/companies/${supplier.company.id}/customer-contacts/${cid}/portal-invitations`,
     { email: user.email, language: "en" }
   );
   expect(r.status, r.text).toBe(201);
-  const token = TOKEN_RE.exec(r.body.inviteUrl)![1];
-  const res = await fetch(`${h.baseUrl}/api/portal-invitations/${token}/accept`, {
+  const token = await tokenOf(r.body.invitation.id);
+  const res = await fetch(`${h.baseUrl}/api/portal-invitations/accept`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${user.token}` },
-    body: JSON.stringify({ acceptTerms: true }),
+    body: JSON.stringify({ token, email: user.email, acceptTerms: true }),
   });
   const text = await res.text();
   expect(res.status, text).toBe(200);
@@ -118,7 +130,7 @@ describe("STEP5 portal product fixes", () => {
     expect(sharedStatus[dueToday.id]).toBe("unpaid");
   });
 
-  it("[S5-P7] a deactivated supplier falls back to another active one; none left is a clear 403", async () => {
+  it("[S5-P7] a deactivated supplier: first visit lands on another active one, an explicit pick of the dead one is refused, none left is a clear 403", async () => {
     const s1 = await h.createTenant({ name: "Fallback One" });
     const s2 = await h.createTenant({ name: "Fallback Two" });
     const customer = await h.createTenant({ name: "Fallback Customer" });
@@ -129,16 +141,19 @@ describe("STEP5 portal product fixes", () => {
     const acc1 = await bind(s1, c1, customer);
     const acc2 = await bind(s2, c2, customer);
 
+    // Supplier two is the newest binding; deactivate its contact.
     await h.sql(`UPDATE customer_contacts SET is_active = false WHERE id = $1`, [c2]);
-    // The selected supplier (two) is inactive: the request is answered for supplier one.
-    const viaSelected = await customer.as.get("/api/client-portal/invoices", {
-      headers: { "x-portal-account": acc2 },
-    });
-    expect(viaSelected.status, viaSelected.text).toBe(200);
-    expect(viaSelected.body.map((i: any) => i.id)).toEqual([inv1.id]);
-    expect(viaSelected.headers.get("x-portal-account-used")).toBe(acc1);
+    const firstVisit = await customer.as.get("/api/client-portal/invoices");
+    expect(firstVisit.status, firstVisit.text).toBe(200);
+    expect(firstVisit.body.map((i: any) => i.id)).toEqual([inv1.id]);
     const accounts = await customer.as.get("/api/client-portal/accounts");
     expect(accounts.body.map((a: any) => a.id)).toEqual([acc1]);
+    // An explicit choice is never silently switched to another supplier's data.
+    const picked = await customer.as.get("/api/client-portal/invoices", {
+      headers: { "x-portal-account": acc2 },
+    });
+    expect(picked.status).toBe(403);
+    expect(picked.body.code).toBe("PORTAL_ACCESS_REVOKED");
 
     await h.sql(`UPDATE customer_contacts SET is_active = true WHERE id = $1`, [c2]);
     await h.sql(`UPDATE customer_contacts SET is_active = false WHERE id = $1`, [c1]);
@@ -151,10 +166,10 @@ describe("STEP5 portal product fixes", () => {
     expect(none.body.code).toBe("PORTAL_ACCESS_REVOKED");
   });
 
-  it("[S5-P4] bulk invite without an email provider returns each link to share", async () => {
+  it("[S5-P4] bulk invite without an email provider reports the invitations as queued, never as sent, and returns no links", async () => {
     const t = await h.createTenant();
-    const a = await contact(t, "Bulk Link A");
-    const b = await contact(t, "Bulk Link B");
+    const a = await contact(t, "Bulk Queue A");
+    const b = await contact(t, "Bulk Queue B");
     const res = await t.as.post(`/api/companies/${t.company.id}/portal-invitations/bulk`, {
       contactIds: [a, b],
       language: "contact",
@@ -162,22 +177,24 @@ describe("STEP5 portal product fixes", () => {
     expect(res.status, res.text).toBe(200);
     for (const r of res.body.results) {
       expect(r.outcome).toBe("invited");
-      expect(r.delivery).toBe("link");
-      expect(r.inviteUrl).toMatch(/\/portal\/join#t=[0-9a-f]{64}$/);
+      expect(r.delivery).toBe("queued");
+      expect(r.inviteUrl).toBeUndefined();
     }
-    expect(new Set(res.body.results.map((r: any) => r.inviteUrl)).size).toBe(2);
+    expect(res.text).not.toMatch(/[0-9a-f]{64}/);
   });
 
   it("[S5-P12] the join page data carries the personal note as plain text", async () => {
     const t = await h.createTenant();
-    const cid = await contact(t, "Note Buyer");
+    const email = `note-${uniq()}@example.test`;
+    const cid = await contact(t, "Note Buyer", { email });
     const r = await t.as.post(
       `/api/companies/${t.company.id}/customer-contacts/${cid}/portal-invitations`,
       { language: "en", message: "Welcome aboard\nSee you soon" }
     );
     expect(r.status, r.text).toBe(201);
-    const token = TOKEN_RE.exec(r.body.inviteUrl)![1];
-    const view = await h.anon.get(`/api/portal-invitations/${token}`);
+    const view = await h.anon.post("/api/portal-invitations/lookup", {
+      token: await tokenOf(r.body.invitation.id),
+    });
     expect(view.status, view.text).toBe(200);
     expect(view.body.note).toBe("Welcome aboard\nSee you soon");
     const otherCid = await contact(t, "No note");
@@ -185,9 +202,9 @@ describe("STEP5 portal product fixes", () => {
       `/api/companies/${t.company.id}/customer-contacts/${otherCid}/portal-invitations`,
       { language: "en" }
     );
-    const view2 = await h.anon.get(
-      `/api/portal-invitations/${TOKEN_RE.exec(none.body.inviteUrl)![1]}`
-    );
+    const view2 = await h.anon.post("/api/portal-invitations/lookup", {
+      token: await tokenOf(none.body.invitation.id),
+    });
     expect(view2.body.note).toBeNull();
   });
 

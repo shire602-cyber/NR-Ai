@@ -10,6 +10,7 @@ import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { englishWords } from "../e2e/lib/sweep-checks.mjs";
+import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 import { afterTrialPlan, planPrice } from "../../shared/plans";
 import { parseSignupPlanFromPath } from "../../shared/validators/plans";
 import {
@@ -224,7 +225,7 @@ describe("sign-up payload and OAuth hand-off", () => {
     };
     type("input-name", "Sara Ali");
     type("input-email", "sara@example.ae");
-    type("input-password", "Str0ng-pass-123");
+    type("input-password", FAKE_PASSWORD);
     await click(q("button-register"));
     await settleUntil(() => calls.some((c) => c.url.endsWith("/api/auth/register")));
     return calls.find((c) => c.url.endsWith("/api/auth/register"))!.body;
@@ -484,4 +485,10 @@ describe.each(["en", "ar"] as const)("trial banner (%s)", (locale) => {
     expect(q("trial-banner")!.getAttribute("data-trial-state")).toBe("ended");
     expect(q("trial-activate")).not.toBeNull();
   });
+});
+
+it("starts the public trial at account creation without a plan selection", async () => {
+  await mountRegister("en", "?step=account", "signup-trial-offer");
+  expect(q("signup-plan-summary")).toBeNull();
+  expect(q("signup-trial-offer")?.textContent).toContain("AED 0 due today");
 });

@@ -188,6 +188,7 @@ export default function Notifications() {
                     t as Record<string, string>,
                     locale === "ar" ? "ar" : "en"
                   );
+                  const actionUrl = copy.actionUrl ?? notification.actionUrl;
                   const unread = !notification.isRead;
                   return (
                     <li
@@ -210,9 +211,9 @@ export default function Notifications() {
                             className={`text-body ${unread ? "font-semibold text-foreground" : "font-medium text-foreground/90"}`}
                             dir="auto"
                           >
-                            {notification.actionUrl ? (
+                            {actionUrl ? (
                               <a
-                                href={notification.actionUrl}
+                                href={actionUrl}
                                 className="after:absolute after:inset-0 after:content-['']"
                               >
                                 {copy.title}
@@ -259,11 +260,9 @@ export default function Notifications() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          {notification.actionUrl && (
+                          {actionUrl && (
                             <DropdownMenuItem asChild>
-                              <a href={notification.actionUrl}>
-                                {t["pageLabels.notificationOpen"]}
-                              </a>
+                              <a href={actionUrl}>{t["pageLabels.notificationOpen"]}</a>
                             </DropdownMenuItem>
                           )}
                           {unread && (

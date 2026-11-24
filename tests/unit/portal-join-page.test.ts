@@ -8,6 +8,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 import { englishWords } from "../e2e/lib/sweep-checks.mjs";
 
 const TOKEN = "ab".repeat(32);
@@ -159,9 +160,35 @@ for (const locale of ["en", "ar"] as const) {
       expect(window.location.href).not.toContain(TOKEN);
       expect(window.sessionStorage.getItem("muhasib.portalInvite")).toBe(TOKEN);
       expect(byId("join-form")).toBeTruthy();
-      expect(mocks.apiRequest).toHaveBeenCalledWith("GET", `/api/portal-invitations/${TOKEN}`);
+      expect(mocks.apiRequest).toHaveBeenCalledWith("POST", "/api/portal-invitations/lookup", {
+        token: TOKEN,
+      });
       expect((byId("join-name") as HTMLInputElement).value).toBe("Layla");
       expect(container.textContent).toContain("layla@alnoor.test");
+    });
+
+    it("rejects a malformed link without falling back to an earlier invitation", async () => {
+      window.sessionStorage.setItem("muhasib.portalInvite", TOKEN);
+      window.history.replaceState(null, "", `/portal/join#t=${TOKEN}extra`);
+      await mount();
+      expect(byId("join-state-invalid")).toBeTruthy();
+      expect(window.location.hash).toBe("");
+      expect(window.sessionStorage.getItem("muhasib.portalInvite")).toBeNull();
+      expect(mocks.apiRequest).not.toHaveBeenCalled();
+    });
+
+    it("keeps the password padding and visibility button in the same inline direction", async () => {
+      document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+      respondWith(() => invite({ language: locale }));
+      await mount();
+      const input = byId("join-password") as HTMLInputElement;
+      const toggle = byId("join-toggle-password")!;
+      expect(input.closest("[dir]")?.getAttribute("dir")).toBe("ltr");
+      expect(toggle.closest("[dir]")).toBe(input.closest("[dir]"));
+      expect(input.classList.contains("pe-12")).toBe(true);
+      expect(toggle.classList.contains("end-0")).toBe(true);
+      await click(toggle);
+      expect(input.type).toBe("text");
     });
 
     it("the checklist updates and Submit needs the terms and a valid password", async () => {
@@ -173,7 +200,7 @@ for (const locale of ["en", "ar"] as const) {
       expect(container.querySelector('[data-rule="length"]')!.getAttribute("data-met")).toBe(
         "false"
       );
-      await typeInto("join-password", "Portal9Strong!x");
+      await typeInto("join-password", FAKE_PASSWORD);
       for (const rule of ["length", "upper", "lower", "digit"]) {
         expect(container.querySelector(`[data-rule="${rule}"]`)!.getAttribute("data-met")).toBe(
           "true"
@@ -185,8 +212,8 @@ for (const locale of ["en", "ar"] as const) {
     });
 
     it("submits name, password and the terms; a server password error is inline and focused", async () => {
-      respondWith((method) =>
-        method === "GET"
+      respondWith((_method, url) =>
+        url === "/api/portal-invitations/lookup"
           ? invite({ language: locale })
           : new mocks.ApiError("Too common", 400, {
               code: "VALIDATION_ERROR",
@@ -194,21 +221,24 @@ for (const locale of ["en", "ar"] as const) {
             })
       );
       await mount();
-      await typeInto("join-password", "Portal9Strong!x");
+      await typeInto("join-password", FAKE_PASSWORD);
       await click(byId("join-terms"));
       await click(byId("join-submit"));
-      const post = mocks.apiRequest.mock.calls.find((c) => c[0] === "POST");
-      expect(post?.[1]).toBe(`/api/portal-invitations/${TOKEN}/accept`);
+      const post = mocks.apiRequest.mock.calls.find(
+        (c) => c[1] === "/api/portal-invitations/accept"
+      );
+      expect(post?.[0]).toBe("POST");
       expect(post?.[2]).toMatchObject({
+        token: TOKEN,
+        email: "layla@alnoor.test",
         name: "Layla",
-        password: "Portal9Strong!x",
+        password: FAKE_PASSWORD,
         acceptTerms: true,
       });
       const alert = container.querySelector("#join-password-error");
       expect(alert?.textContent).toBe("Too common");
       expect(alert?.getAttribute("role")).toBe("alert");
-      await flush(30);
-      expect(document.activeElement?.id).toBe("join-password");
+      await vi.waitFor(() => expect(document.activeElement).toBe(byId("join-password")));
     });
 
     it("renders each invitation state with its own screen", async () => {
@@ -256,8 +286,10 @@ for (const locale of ["en", "ar"] as const) {
       await mount();
       expect(byId("join-signed-in")).toBeTruthy();
       await click(byId("join-confirm-add"));
-      const post = mocks.apiRequest.mock.calls.find((c) => c[0] === "POST");
-      expect(post?.[2]).toEqual({ acceptTerms: true });
+      const post = mocks.apiRequest.mock.calls.find(
+        (c) => c[1] === "/api/portal-invitations/accept"
+      );
+      expect(post?.[2]).toEqual({ token: TOKEN, email: "layla@alnoor.test", acceptTerms: true });
       await act(async () => root.unmount());
       container.remove();
 
@@ -268,6 +300,28 @@ for (const locale of ["en", "ar"] as const) {
       await mount();
       expect(byId("join-other")).toBeTruthy();
       expect(byId("join-sign-out-continue")).toBeTruthy();
+    });
+
+    it("isolates both addresses and the supplier in the translated invitation", async () => {
+      const supplier = "Desert Rose Trading";
+      const email = "invoice-team+uae@example.test";
+      const current = "accounts+portal@example.test";
+      respondWith(() =>
+        invite({
+          account: "signed_in_other",
+          language: locale,
+          supplier: { name: supplier, logoUrl: null },
+          email,
+          signedInAs: current,
+        })
+      );
+      await mount();
+      expect(container.querySelector("h1 bdi[translate=no]")?.textContent).toBe(supplier);
+      expect(
+        Array.from(byId("join-other")!.querySelectorAll('bdi[dir="ltr"][translate=no]')).map(
+          (node) => node.textContent
+        )
+      ).toEqual([email, current]);
     });
 
     it(locale === "ar" ? "has no English text nodes" : "reads in English", async () => {

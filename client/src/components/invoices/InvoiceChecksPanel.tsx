@@ -17,7 +17,7 @@ export function InvoiceChecksPanel({
   /** The e-invoice validator is running. */
   checking?: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   if (checks.length === 0) {
     return (
       <div
@@ -34,6 +34,10 @@ export function InvoiceChecksPanel({
     <ul className="space-y-2" data-testid="invoice-checks-list">
       {checks.map((c) => {
         const text = formatMessage(t[c.messageKey] ?? c.messageKey, c.values ?? {});
+        const detail = c.message
+          ? (c.detailKey && t[c.detailKey]) ||
+            (locale === "ar" ? t["einvoicing.validationFinding"] : c.message)
+          : null;
         const Icon = c.severity === "error" ? AlertCircle : AlertTriangle;
         return (
           <li
@@ -52,7 +56,15 @@ export function InvoiceChecksPanel({
             />
             <div className="min-w-0 flex-1 space-y-1">
               <p className="text-foreground">{text}</p>
-              {c.message && <p className="text-caption text-muted-foreground">{c.message}</p>}
+              {detail && <p className="text-caption text-muted-foreground">{detail}</p>}
+              {c.ruleId && (
+                <p className="text-caption text-muted-foreground">
+                  {t["einvoicing.validationRule"]}{" "}
+                  <bdi dir="ltr" translate="no">
+                    {c.ruleId}
+                  </bdi>
+                </p>
+              )}
               {c.field ? (
                 <button
                   type="button"

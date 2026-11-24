@@ -2,6 +2,7 @@
 // Domain classes are chained with `extends` and composed into DatabaseStorage in
 // server/storage.ts (R20-09); import `storage` from "./storage", not these classes.
 
+import { randomBytes } from "node:crypto";
 import { journalMemo } from "@shared/journal-memo";
 import {
   accounts,
@@ -33,8 +34,8 @@ import {
   type QuoteLine,
   type RecurringInvoice,
 } from "@shared/schema";
-import { db, rowsFromResult } from "../db";
-import { and, desc, eq, getTableColumns, inArray, isNull, lte, sql } from "drizzle-orm";
+import { db, rowsFromResult, type AppDatabase } from "../db";
+import { and, desc, eq, getTableColumns, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { DomainError } from "../errors";
 import Decimal from "decimal.js";
 import {
@@ -201,8 +202,11 @@ export class SalesStorage extends LedgerStorage {
     return { items, nextCursor };
   }
 
-  async createInvoice(insertInvoice: InsertInvoice): Promise<Invoice> {
-    const [invoice] = await db.insert(invoices).values(insertInvoice).returning();
+  async createInvoice(
+    insertInvoice: InsertInvoice,
+    exec: Pick<AppDatabase, "insert"> = db
+  ): Promise<Invoice> {
+    const [invoice] = await exec.insert(invoices).values(insertInvoice).returning();
     return invoice;
   }
 
@@ -245,11 +249,30 @@ export class SalesStorage extends LedgerStorage {
     return invoice || undefined;
   }
 
-  async setInvoiceShareToken(id: string, token: string, expiresAt: Date): Promise<void> {
-    await db
+  async ensureInvoiceShareToken(
+    invoice: Pick<Invoice, "id" | "companyId" | "shareToken" | "shareTokenExpiresAt">
+  ): Promise<string> {
+    const now = new Date();
+    if (
+      invoice.shareToken &&
+      (!invoice.shareTokenExpiresAt || new Date(invoice.shareTokenExpiresAt) > now)
+    ) {
+      return invoice.shareToken;
+    }
+
+    const scope = and(eq(invoices.id, invoice.id), eq(invoices.companyId, invoice.companyId));
+    const token = randomBytes(16).toString("hex");
+    const expiresAt = new Date(now.getTime() + 90 * 86_400_000);
+    // Update only an expired or empty link. Concurrent callers use the winning token.
+    const [updated] = await db
       .update(invoices)
       .set({ shareToken: token, shareTokenExpiresAt: expiresAt })
-      .where(eq(invoices.id, id));
+      .where(and(scope, or(isNull(invoices.shareToken), lte(invoices.shareTokenExpiresAt, now))))
+      .returning({ token: invoices.shareToken });
+    if (updated?.token) return updated.token;
+    const [stored] = await db.select({ token: invoices.shareToken }).from(invoices).where(scope);
+    if (!stored?.token) throw new DomainError("INVOICE_NOT_FOUND", 404);
+    return stored.token;
   }
 
   // Invoice Lines
@@ -586,7 +609,7 @@ export class SalesStorage extends LedgerStorage {
         SELECT ${sql.raw(parts.paid)} AS paid,
                ${sql.raw(parts.credited)} AS credited,
                ${sql.raw(parts.applied)} AS applied
-          FROM (SELECT ${input.invoiceId}::uuid AS id) si
+          FROM (SELECT ${input.invoiceId}::uuid AS id, ${lockedInvoice.company_id}::uuid AS company_id) si
       `);
       const sumRows = rowsFromResult<{
         paid: number | string;

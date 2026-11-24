@@ -40,11 +40,14 @@ ALTER TABLE "user_onboarding" ADD COLUMN IF NOT EXISTS "tour_dismissed_at" times
 -- 0051 already revoked it; this repeats the revocation so any environment
 -- that replayed 0028 after 0051 (or skipped 0051) ends with an unusable,
 -- non-bcrypt password value, no firm role, no admin flag and no memberships.
+-- Preserve an existing revocation marker when replaying this migration.
 UPDATE "users"
-SET "password_hash" = '$revoked$' || gen_random_uuid()::text,
+SET "password_hash" = CASE WHEN "password_hash" LIKE '$revoked$%' THEN "password_hash"
+                          ELSE '$revoked$' || gen_random_uuid()::text END,
     "firm_role" = NULL,
     "is_admin" = false
-WHERE "email" IN ('test_firm_owner@nra.ae', 'nra.test.owner@testmail.com');
+WHERE "email" IN ('test_firm_owner@nra.ae', 'nra.test.owner@testmail.com')
+  AND ("password_hash" NOT LIKE '$revoked$%' OR "firm_role" IS NOT NULL OR "is_admin" IS DISTINCT FROM false);
 
 DELETE FROM "company_users"
 WHERE "user_id" IN (

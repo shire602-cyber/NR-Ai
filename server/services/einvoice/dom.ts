@@ -87,6 +87,22 @@ export function textAt(node: XNode | Document, path: string): string | null {
   return text(first(node, path));
 }
 
+export function partyVatTrn(party: XNode | null): string | null {
+  if (!party) return null;
+  const vat = all(party, "cac:PartyTaxScheme").find(
+    (tax) => textAt(tax, "cac:TaxScheme/cbc:ID") === "VAT"
+  );
+  return vat ? textAt(vat, "cbc:CompanyID") : null;
+}
+
+/** The scheme is part of the Peppol identifier and is never inferred from its digits. */
+export function partyPeppolEndpoint(party: XNode) {
+  const endpoint = first(party, "cbc:EndpointID");
+  const scheme = attr(endpoint, "schemeID");
+  const value = text(endpoint);
+  return scheme && value ? { scheme, value } : null;
+}
+
 export function attr(node: XNode | null | undefined, name: string): string | null {
   if (!node) return null;
   const v = node.getAttribute(name);

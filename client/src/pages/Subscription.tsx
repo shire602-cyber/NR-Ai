@@ -12,8 +12,8 @@ import {
 } from "@/components/marketing/plans";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { T } from "@/components/layout/T";
-import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { Fragment, useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { usePlanChoiceActions, useSubscription, type ChosenPlan } from "@/hooks/useSubscription";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -29,7 +29,7 @@ import { Progress } from "@/components/ui/progress";
 import { planPhase, planPhraseKey } from "@/lib/plan-state";
 import { useToast } from "@/hooks/use-toast";
 import { ApiError } from "@/lib/queryClient";
-import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
+import { planContactHref } from "@/lib/planContact";
 import {
   TOP_PLAN_ID,
   TRIAL_LIMITS,
@@ -54,14 +54,13 @@ import {
 /*
  * Settings › Billing (WQ7). Plans, prices and limits come from shared/plans.ts through the
  * marketing plan list, so this page, /pricing, GET /api/billing/plans and the server gates agree.
- * Status card: trial (days left), active plan, or trial ended (read-only until a plan is chosen).
+ * Status card: trial (days left), active plan, or workspace locked pending plan activation.
  * While online checkout is not configured, choosing a plan writes to us and an NR admin sets it.
  */
 
 /** "Contact us to upgrade" link while online checkout is not configured. */
 function contactHref(planName?: string): string {
-  const subject = encodeURIComponent(`Muhasib.ai plan${planName ? `: ${planName}` : ""}`);
-  return `mailto:${UPGRADE_CONTACT_EMAIL}?subject=${subject}`;
+  return planContactHref(planName);
 }
 
 function UsageMeter({
@@ -303,6 +302,7 @@ export default function Subscription() {
     entitlement,
     planState,
     trial,
+    trialLocked,
     isLoading,
     checkoutAvailable,
     chosenPlan,
@@ -319,28 +319,45 @@ export default function Subscription() {
   const { companyId } = useDefaultCompany();
   const { can } = useCompanyPermission();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const canManageBilling = can("billing.manage");
+  const hasStripeSubscription = Boolean(subscription?.stripeSubscriptionId);
   /** The paid plan the company is on (null during the trial and after it). */
   const paidPlan: PaidPlanId | null = planState === "active" ? (entitlement?.planId ?? null) : null;
 
-  const checkoutMutation = useMutation({
+  const planMutation = useMutation({
     mutationFn: (planId: string) => {
       if (!companyId) throw new Error("No company selected");
+      if (hasStripeSubscription) {
+        return apiRequest("POST", `/api/companies/${companyId}/billing/change-plan`, {
+          planId,
+          billingCycle,
+        });
+      }
       return apiRequest("POST", `/api/companies/${companyId}/billing/checkout`, {
         planId,
         billingCycle,
       });
     },
-    onSuccess: (data: { url: string }) => {
+    onSuccess: (data: { url?: string }) => {
       if (data.url) {
         window.location.href = data.url;
+        return;
       }
+      return queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "billing"],
+      });
     },
     onError: (error: Error) => {
       const unavailable = error instanceof ApiError && error.status === 503;
       toast({
-        title: t["pages.subscriptionCheckoutFailed"],
-        description: unavailable ? t["pages.subscriptionCheckoutUnavailable"] : error.message,
+        title: hasStripeSubscription
+          ? t["common.errorHeading.generic"]
+          : t["pages.subscriptionCheckoutFailed"],
+        description:
+          unavailable && !hasStripeSubscription
+            ? t["pages.subscriptionCheckoutUnavailable"]
+            : error.message,
         variant: "destructive",
       });
     },
@@ -413,8 +430,9 @@ export default function Subscription() {
           ? t[planNameKey(paidPlan)]
           : t["pages.subscriptionFirmBilled"];
 
+  const Layout = trialLocked ? Fragment : SettingsLayout;
   return (
-    <SettingsLayout>
+    <Layout>
       <div className="space-y-6">
         <PageHeader
           eyebrow={t["pages.companyProfileEyebrow"]}
@@ -749,12 +767,12 @@ export default function Subscription() {
                 <Button
                   className="h-10 w-full"
                   variant={plan.featured ? "default" : "outline"}
-                  onClick={() => checkoutMutation.mutate(plan.id)}
-                  disabled={checkoutMutation.isPending || !canManageBilling}
+                  onClick={() => planMutation.mutate(plan.id)}
+                  disabled={planMutation.isPending || !canManageBilling}
                   title={!canManageBilling ? t["common.noPermission"] : undefined}
                   data-testid={`plan-upgrade-${plan.id}`}
                 >
-                  {checkoutMutation.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                  {planMutation.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
                   {isDowngrade(plan.id)
                     ? t["pages.subscriptionDowngrade"]
                     : paidPlan
@@ -825,7 +843,7 @@ export default function Subscription() {
           </CardContent>
         </Card>
       </div>
-    </SettingsLayout>
+    </Layout>
   );
 }
 

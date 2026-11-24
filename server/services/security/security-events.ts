@@ -7,6 +7,9 @@
  * "global" and are listed per user in the login history.
  */
 import type { Request } from "express";
+import { eq } from "drizzle-orm";
+import { db } from "../../db";
+import { users } from "../../../shared/schema";
 import { createLogger } from "../../config/logger";
 import { storage } from "../../storage";
 import { clientIp } from "../../middleware/rateLimit";
@@ -155,6 +158,12 @@ export async function recordLoginSuccess(
 ): Promise<{ suspicious: boolean }> {
   const current = loginFingerprint(req);
   let suspicious = false;
+  try {
+    // Staff management shows "Last login": every successful password or MFA sign-in stamps it.
+    await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
+  } catch (err) {
+    log.warn({ err }, "Could not stamp last login");
+  }
   try {
     suspicious = isSuspicious(current, await priorFingerprints(user.id));
   } catch (err) {

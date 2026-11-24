@@ -8,6 +8,7 @@ import {
   jsonb,
   date as pgDate,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -170,6 +171,24 @@ export const insertBankTransactionSchema = createInsertSchema(bankTransactions).
 export type InsertBankTransaction = z.infer<typeof insertBankTransactionSchema>;
 export type BankTransaction = typeof bankTransactions.$inferSelect;
 
+/** Ownership defects found by the bank GL migration and retained for operator review. */
+export const bankGlMigrationFindings = pgTable(
+  "bank_gl_migration_findings",
+  {
+    bankTransactionId: uuid("bank_transaction_id").notNull(),
+    companyId: uuid("company_id").notNull(),
+    kind: text("kind").notNull(),
+    details: jsonb("details").notNull(),
+    foundAt: timestamp("found_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    transactionKindPk: primaryKey({
+      name: "bank_gl_migration_findings_pkey",
+      columns: [table.bankTransactionId, table.kind],
+    }),
+  })
+);
+
 // ===========================
 // W3-C banking (migration 0097)
 // ===========================
@@ -216,7 +235,7 @@ export const bankTransactionMatches = pgTable(
 );
 export type BankTransactionMatch = typeof bankTransactionMatches.$inferSelect;
 
-/** One statement file (or feed sync / AI import) per row, with undo (R06-22). */
+/** Import batch metadata and undo information (R06-22). */
 export const bankImportBatches = pgTable(
   "bank_import_batches",
   {
@@ -285,7 +304,7 @@ export const bankReconciliations = pgTable(
 );
 export type BankReconciliation = typeof bankReconciliations.$inferSelect;
 
-/** OAuth state issued on bank-feed connect, verified once on callback (R06-14). */
+/** OAuth state issued on provider authorization, verified once on return (R06-14). */
 export const bankFeedOauthStates = pgTable("bank_feed_oauth_states", {
   id: uuid("id")
     .primaryKey()

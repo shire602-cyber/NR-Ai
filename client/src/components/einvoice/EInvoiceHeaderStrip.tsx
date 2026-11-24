@@ -5,12 +5,22 @@
  * link. "Details" opens the full status sheet (checklist, history, resubmit).
  */
 import { useState } from "react";
+import { Link } from "wouter";
 import { AlertTriangle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
-import { EInvoiceSheet, EInvoiceTrackBadges } from "./EInvoiceStatus";
-import { errorKey, fieldLabelKey, rejectionSummary } from "./einvoice-meta";
+import { einvoiceFieldHint } from "@/lib/einvoice-issues";
+import { EInvoiceSheet } from "./EInvoiceSheet";
+import { EInvoiceTrackBadges } from "./EInvoiceTrackBadges";
+import {
+  errorKey,
+  fieldLabelKey,
+  isReportingOnlyFailure,
+  issueTextKey,
+  rejectionSummary,
+  trackOutcomeLabel,
+} from "./einvoice-meta";
 import { useEInvoiceStatus } from "./use-einvoice";
 
 /** Form control to focus for a validation issue field, or null when the fix is elsewhere. */
@@ -39,7 +49,18 @@ export function EInvoiceHeaderStrip({
   const status = useEInvoiceStatus(invoiceId);
   const view = status.data;
   if (!view?.tracks) return null;
+  if (view.applicable === false) {
+    return (
+      <div className="flex flex-wrap items-center gap-2" data-testid="einvoice-header-strip">
+        <span className="text-small font-medium">{t["einvoicing.headerTitle"]}</span>
+        <span className="text-small text-muted-foreground">
+          {t["einvoicing.reporting_not_required"]}
+        </span>
+      </div>
+    );
+  }
   const { delivery, reporting } = view.tracks;
+  const reportingOnlyFailure = isReportingOnlyFailure(delivery.status, reporting.status);
   const first = view.issues[0];
   const firstLabelKey = first ? fieldLabelKey(first.field) : null;
   const firstLabel = first ? (firstLabelKey ? t[firstLabelKey] : first.field) : "";
@@ -53,13 +74,19 @@ export function EInvoiceHeaderStrip({
         )
       : null;
   const rejection = rejectionSummary(view.rejection);
+  const rejectionReasonKey = rejection
+    ? (issueTextKey(rejection.rule ?? undefined) ??
+      errorKey(rejection.rule) ??
+      errorKey(rejection.errorCode))
+    : null;
+  const localizedRejection = rejectionReasonKey ? t[rejectionReasonKey] : null;
   const rejectionText = rejection
-    ? rejection.message ||
-      (errorKey(rejection.errorCode)
-        ? t[errorKey(rejection.errorCode) as string]
-        : t["einvoicing.err_unknown"])
+    ? (locale === "ar"
+        ? localizedRejection || rejection.message
+        : rejection.message || localizedRejection) || t["einvoicing.err_unknown"]
     : null;
   const target = first ? focusTargetFor(first.field) : null;
+  const fixHref = first ? einvoiceFieldHint(first.field, { contactId: view.contactId }).href : null;
 
   const fix = () => {
     const el = target
@@ -82,6 +109,12 @@ export function EInvoiceHeaderStrip({
         <EInvoiceTrackBadges
           delivery={delivery.status}
           reporting={reporting.status}
+          queuedForSubmission={view.submissionState === "queued"}
+          acknowledgement={view.transmission.recipientAcknowledgement}
+          deliveryConfirmationUnavailable={delivery.confirmationUnavailable}
+          confirmationUnavailable={reporting.confirmationUnavailable}
+          obligationKnown={reporting.obligationKnown}
+          environment={view.transmission.environment}
           showReportingLabel
         />
         {reportMeta && (
@@ -114,11 +147,18 @@ export function EInvoiceHeaderStrip({
           data-testid="einvoice-header-rejection"
         >
           <XCircle aria-hidden className="h-4 w-4 shrink-0 text-danger" />
-          <p className="min-w-0 flex-1 truncate text-small text-danger-subtle-foreground">
+          <p className="min-w-0 flex-1 text-small text-danger-subtle-foreground [overflow-wrap:anywhere]">
             <span className="font-medium">
-              {view.tracks.delivery.status === "rejected"
-                ? t["einvoicing.headerRejected"]
-                : t["einvoicing.headerDeliveryFailed"]}
+              {trackOutcomeLabel(
+                t,
+                reportingOnlyFailure
+                  ? "einvoicing.reporting_report_failed"
+                  : delivery.status === "rejected"
+                    ? "einvoicing.headerRejected"
+                    : "einvoicing.headerDeliveryFailed",
+                true,
+                view.rejection?.environment
+              )}
               {": "}
             </span>
             <span dir="auto" title={rejectionText ?? undefined}>
@@ -141,7 +181,9 @@ export function EInvoiceHeaderStrip({
             onClick={() => setOpen(true)}
             data-testid="einvoice-header-resubmit"
           >
-            {t["einvoicing.resubmit"]}
+            {view.rejection?.resubmittable && view.rejection.environment && !reportingOnlyFailure
+              ? trackOutcomeLabel(t, "einvoicing.resubmit", true, view.rejection.environment)
+              : t["einvoicing.headerDetails"]}
           </Button>
         </div>
       )}
@@ -160,15 +202,23 @@ export function EInvoiceHeaderStrip({
                   count: view.issues.length - 1,
                 })}
           </p>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={fix}
-            data-testid="einvoice-header-fix"
-          >
-            {t["einvoicing.headerFix"]}
-          </Button>
+          {fixHref ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href={fixHref} data-testid="einvoice-header-fix">
+                {t["einvoicing.headerFix"]}
+              </Link>
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={fix}
+              data-testid="einvoice-header-fix"
+            >
+              {t["einvoicing.headerFix"]}
+            </Button>
+          )}
         </div>
       )}
       {open && (

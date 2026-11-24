@@ -4,6 +4,10 @@
  * schematron (release 2026.5, vendored under server/assets/einvoice/) — the
  * rule id that checks each list is noted next to it.
  */
+import type {
+  EInvoiceSettingsPaymentMeansCode,
+  UNSPECIFIED_CARD_PAYMENT_MEANS_CODE,
+} from "../../../shared/einvoice-payment-means";
 
 /** Peppol participant identifier scheme for the UAE (TIN based). */
 export const PEPPOL_SCHEME_UAE_TIN = "0235";
@@ -50,7 +54,7 @@ export const CREDIT_NOTE_REASON_CODES = {
   "DL8.61.1.C": "VAT Decree-Law Art. 61(1)(c) adjustment",
   "DL8.61.1.D": "VAT Decree-Law Art. 61(1)(d) adjustment",
   "DL8.61.1.E": "VAT Decree-Law Art. 61(1)(e) adjustment",
-  VD: "Voluntary disclosure",
+  VD: "Volume discount",
 } as const;
 export type CreditNoteReasonCode = keyof typeof CREDIT_NOTE_REASON_CODES;
 export const DEFAULT_CREDIT_NOTE_REASON: CreditNoteReasonCode = "DL8.61.1.C";
@@ -92,18 +96,27 @@ export const DOCUMENT_TYPE = {
   invoice: "380",
   outOfScope: "480",
   creditNote: "381",
+  outOfScopeCreditNote: "81",
 } as const;
 
-/** UNCL4461 payment means codes offered in settings. */
-export const PAYMENT_MEANS = {
-  "1": "Instrument not defined",
-  "10": "In cash",
-  "30": "Credit transfer",
-  "42": "Payment to bank account",
-  "48": "Bank card",
-  "49": "Direct debit",
-} as const;
-export type PaymentMeansCode = keyof typeof PAYMENT_MEANS;
+export const PINT_AE_CREDIT_NOTE_TYPES: readonly string[] = [
+  DOCUMENT_TYPE.creditNote,
+  DOCUMENT_TYPE.outOfScopeCreditNote,
+];
+
+export function isPintAeCreditNoteType(value?: string | null): boolean {
+  return typeof value === "string" && PINT_AE_CREDIT_NOTE_TYPES.includes(value);
+}
+
+/** Classify references returned by an ASP, including self-billed credit notes. */
+export function isCreditNoteDocumentType(value?: string | null): boolean {
+  return isPintAeCreditNoteType(value) || value === "261" || value === "credit-note";
+}
+
+/** Keep the legacy code readable so preflight can identify an unspecified card. */
+export type PaymentMeansCode =
+  | EInvoiceSettingsPaymentMeansCode
+  | typeof UNSPECIFIED_CARD_PAYMENT_MEANS_CODE;
 
 /** Human text for the stored payment-terms code (BT-20). */
 export function paymentTermsText(terms: string | null | undefined): string | null {
@@ -133,8 +146,25 @@ export function isPintAeTrn(value: string | null | undefined): boolean {
   return typeof value === "string" && /^1\d{12}03$/.test(value);
 }
 
+/** Normalize display separators for ownership comparisons, while checking the entire VAT TRN. */
+export function normalizedVatTrn(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const digits = value.replace(/[\s-]/g, "");
+  return isPintAeTrn(digits) ? digits : null;
+}
+
 /** TRN → TIN (the first 10 digits), the TRN-based fallback participant id. */
 export function tinFromTrn(trn: string | null | undefined): string | null {
-  if (!trn || !/^\d{15}$/.test(trn)) return null;
-  return trn.slice(0, 10);
+  return trn && isPintAeTrn(trn) ? trn.slice(0, 10) : null;
+}
+
+/** The 0235 participant must identify the same UAE taxpayer as the statutory registration. */
+export function uaePeppolEndpointIssue(
+  scheme: string | null | undefined,
+  endpoint: string,
+  taxpayerTin: string | null
+): "invalid" | "mismatch" | null {
+  if (scheme !== PEPPOL_SCHEME_UAE_TIN) return null;
+  if (!isUaeTin(endpoint)) return "invalid";
+  return taxpayerTin && endpoint !== taxpayerTin ? "mismatch" : null;
 }

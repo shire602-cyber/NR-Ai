@@ -87,6 +87,13 @@ export type Vat201Key = (typeof VAT201_BOX_KEYS)[number];
 export type Vat201Fils = Record<Vat201Key, number>;
 export type Vat201Aed = Record<Vat201Key, number>;
 
+export function vatBox1Total(boxes: Vat201Fils, suffix: "Amount" | "Vat"): number {
+  return (
+    EMIRATES.reduce((sum, emirate) => sum + boxes[`${EMIRATE_BOX_PREFIX[emirate]}${suffix}`], 0) /
+    100
+  );
+}
+
 export const DERIVED_BOX_KEYS: ReadonlySet<string> = new Set([
   "box8TotalAmount",
   "box8TotalVat",

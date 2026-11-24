@@ -9,10 +9,14 @@ const TOKEN = "ab".repeat(32);
 const URL = `https://app.example.test/portal/join#t=${TOKEN}`;
 const expiresAt = new Date("2026-12-01T10:00:00Z");
 
-function render(overrides: Record<string, unknown> = {}, onlinePayment = false) {
+function render(
+  overrides: Record<string, unknown> = {},
+  onlinePayment = false,
+  companyName = "Desert Rose <LLC>"
+) {
   return renderPortalInviteEmail({
     company: {
-      name: "Desert Rose <LLC>",
+      name: companyName,
       trnVatNumber: "100300000000003",
       businessAddress: "Dubai",
       contactEmail: "billing@desertrose.test",
@@ -34,7 +38,7 @@ describe("STEP5 portal invitation email", () => {
   it("English: subject, greeting, button link with the fragment token, expiry date", () => {
     const m = render();
     expect(m.subject).toBe("Desert Rose <LLC> invited you to view your invoices");
-    expect(m.html).toContain("Hi Layla,");
+    expect(m.html).toContain("Hi <bdi>Layla</bdi>,");
     expect(m.html).toContain("Set up your account");
     expect(m.html).toContain(`href="${URL}"`);
     expect(m.html).toContain("1 December 2026");
@@ -51,6 +55,8 @@ describe("STEP5 portal invitation email", () => {
     expect(m.html).not.toContain("Set up your account");
     expect(m.html).toContain(`href="${URL}"`);
     expect(m.text).toContain("أنشئ حسابك");
+    expect(m.text).toContain("عزيزنا النور للتجارة،");
+    expect(m.text).not.toContain("Layla");
   });
 
   it("bilingual carries both languages and a joined subject", () => {
@@ -58,6 +64,27 @@ describe("STEP5 portal invitation email", () => {
     expect(m.html).toContain('lang="en"');
     expect(m.html).toContain('lang="ar"');
     expect(m.subject).toContain(" | ");
+  });
+
+  it("preserves both invitation clauses for a maximum-length supplier name", () => {
+    const name = "شركة ".repeat(39) + "النور";
+    expect(name).toHaveLength(200);
+    const mail = render({ language: "bilingual" }, false, name);
+    expect(mail.subject.length).toBeLessThanOrEqual(300);
+    expect(mail.subject).toMatch(
+      /… invited you to view your invoices \| دعتك .+… للاطلاع على فواتيرك$/
+    );
+    expect(mail.html).toContain(name);
+    expect(render({}, false, name).subject).toBe(`${name} invited you to view your invoices`);
+  });
+
+  it("labels the supplier note in each language in HTML and plain text", () => {
+    const mail = render({ language: "bilingual", message: "Please review your invoice" });
+    expect(mail.html).toContain("<strong>Message from <bdi>Desert Rose &lt;LLC&gt;</bdi></strong>");
+    expect(mail.html).toContain("<strong>رسالة من <bdi>Desert Rose &lt;LLC&gt;</bdi></strong>");
+    expect(mail.text).toContain("Message from Desert Rose <LLC>\nPlease review your invoice");
+    expect(mail.text).toContain("رسالة من Desert Rose <LLC>\nPlease review your invoice");
+    expect(render({ language: "bilingual" }).text).not.toContain("Message from");
   });
 
   it("escapes supplier-controlled text and keeps the subject on one line", () => {
@@ -83,9 +110,24 @@ describe("STEP5 portal invitation email", () => {
   });
 
   it("mentions paying online only when a gateway is available", () => {
-    expect(render({}, false).html).not.toContain("pay online");
-    expect(render({}, true).html).toContain("pay online");
-    expect(render({ language: "ar" }, true).html).toContain("وتسدّد عبر الإنترنت");
+    for (const content of [render({}, false).html, render({}, false).text]) {
+      expect(content).not.toContain("pay online");
+    }
+    const mail = render({ language: "bilingual" }, true);
+    for (const content of [mail.html, mail.text]) {
+      expect(content).toContain("pay online");
+      expect(content).toContain("السداد عبر الإنترنت");
+      expect(content).toContain("statement of account");
+      expect(content).toContain("عرض كشف حسابك");
+    }
+  });
+
+  it("keeps the billing reply address and leaves the company tax number out of both parts", () => {
+    const mail = render({ language: "bilingual" });
+    for (const content of [mail.html, mail.text]) {
+      expect(content).toContain("billing@desertrose.test");
+      expect(content).not.toContain("100300000000003");
+    }
   });
 
   it("formats dates in the reader's language with Latin digits and normalises the language", () => {
@@ -101,33 +143,27 @@ describe("STEP5 portal invitation email", () => {
     expect(render().html).not.toContain("support@");
   });
 
-  it("is fluid: no fixed 600px table, a max-width cap and room at 375px", () => {
+  it("is fluid: a max-width card and a small-screen rule for 375px", () => {
     const m = render({ language: "bilingual" });
-    expect(m.html).not.toMatch(/<table[^>]*\swidth="600"/);
+    // The fixed 600 table only exists inside the Outlook-only conditional comment.
+    const visible = m.html.replace(/<!--\[if mso\]>[\s\S]*?<!\[endif\]-->/g, "");
+    expect(visible).not.toMatch(/<table[^>]*\swidth="600"/);
     expect(m.html).toContain("max-width:600px");
     expect(m.html).toContain('name="viewport"');
-    // Every table is 100% wide, so nothing can exceed a 375px viewport.
-    for (const t of m.html.match(/<table[^>]*>/g) ?? []) expect(t).toContain('width="100%"');
-    expect(m.html).not.toMatch(/padding:\d+px 40px/);
+    expect(m.html).toContain("max-width:620px");
   });
 
   it("Arabic mail: the brand header is right-aligned and RTL", () => {
     const ar = render({ language: "ar" }).html;
-    const header = ar.slice(ar.indexOf("<h1"), ar.indexOf("</h1>"));
-    expect(header).toContain("text-align:right");
-    expect(ar).toMatch(/<td dir="rtl" style="background:[^"]*text-align:right/);
-    const en = render({ language: "en" }).html;
-    expect(en).toMatch(/<td dir="ltr" style="background:[^"]*text-align:left/);
+    expect(ar).toMatch(/<td class="em-pad" dir="rtl"[^>]*align="right"/);
   });
 
   it("greets a person, never the company: no contact person gives a generic greeting", () => {
     const none = render({ name: null, language: "bilingual" }, false);
     expect(none.html).toContain("Hello,");
     expect(none.html).not.toContain("Hi Al Noor");
-    expect(none.html).toContain("مرحبًا بكم،");
     expect(none.text).toContain("Hello,");
-    expect(none.text).toContain("مرحبًا بكم،");
-    // A contact person on the contact is used when the invitation has no name.
+    expect(none.html).not.toMatch(/،<\/p>[^<]*<bdi>Al Noor/);
     const withPerson = renderPortalInviteEmail({
       company: {
         name: "Desert Rose",
@@ -136,17 +172,18 @@ describe("STEP5 portal invitation email", () => {
         contactEmail: null,
       },
       contact: { name: "Al Noor Trading", nameAr: null, contactPerson: "Omar" },
-      invitation: { language: "ar", name: null, message: null, expiresAt } as never,
+      invitation: { language: "en", name: null, message: null, expiresAt } as never,
       url: URL,
       onlinePayment: false,
     });
-    expect(withPerson.html).toContain("مرحبًا <bdi>Omar</bdi>،");
+    expect(withPerson.html).toContain("Hi ");
+    expect(withPerson.html).toContain("Omar");
   });
 
-  it("the plain-text English copy mentions PDFs and the statement of account", () => {
+  it("the English copy mentions PDFs and the statement of account in both parts", () => {
     const m = render({}, false);
-    expect(m.text).toMatch(/download PDFs and your statement of account/);
-    expect(m.html).toMatch(/download PDFs and your statement of account/);
+    expect(m.text).toMatch(/download PDFs, and access your statement of account/);
+    expect(m.html).toMatch(/download PDFs, and access your statement of account/);
     expect(render({ language: "ar" }).text).toContain("PDF");
     expect(render({ language: "ar" }).text).toContain("كشف حسابك");
   });

@@ -66,7 +66,7 @@ describe("W4-B cost centres", () => {
     const invLines = await h.sql(
       `SELECT jl.cost_center_id FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
          JOIN accounts a ON a.id = jl.account_id
-        WHERE je.source_id = $1 AND a.code = '4010'`,
+        WHERE je.source_id = $1 AND a.code = '4020'`,
       [inv.body.id]
     );
     expect(invLines[0].cost_center_id).toBe(cc.id);

@@ -115,6 +115,10 @@ export async function runDueJournalTemplates(today: string = todayIso()): Promis
   const runs = new Map<string, { posted: number; error: string | null }>();
   for (const t of due) {
     if (off.has(String(t.companyId))) continue;
+    if (!runs.has(t.companyId) && !(await automations.automationWritesAllowed(t.companyId))) {
+      off.add(t.companyId);
+      continue;
+    }
     const run = runs.get(t.companyId) ?? { posted: 0, error: null };
     runs.set(t.companyId, run);
     let current: JournalTemplate | undefined = t;

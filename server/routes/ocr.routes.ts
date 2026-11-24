@@ -2,6 +2,7 @@ import { type Express, type Request, type Response } from "express";
 import { parsedBody } from "../http/parsed-body";
 import { strictBody } from "../http/strict-body";
 import { ocrProcessBody } from "../../shared/validators/route-bodies";
+import { EXCEL_EXPORT_LIMITS, excelWorkbookCellCount } from "../../shared/excel-export";
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
 import { z } from "zod";
@@ -50,17 +51,17 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
     deps.anthropic === undefined && deps.openai === undefined ? createOcrClients() : null;
   const anthropic = deps.anthropic !== undefined ? deps.anthropic : (envClients?.anthropic ?? null);
   const openai = deps.openai !== undefined ? deps.openai : (envClients?.openai ?? null);
-  const aiLimiter = buildLimiter(limiterProfiles.ai);
+  const aiLimiter = buildLimiter("ocr-routes", limiterProfiles.ai);
   // X6b: one budget per company (not per user) so a company's scans cannot starve the platform
   // however many users it adds. Applied once the caller's access to the company is proven.
-  const companyLimiter = buildLimiter({
+  const companyLimiter = buildLimiter("ocr-company", {
     ...limiterProfiles.ocrCompany,
     keyGenerator: (req) => `ocr:${(req as Request & { ocrCompanyId?: string }).ocrCompanyId}`,
   });
   const applyCompanyLimit = (req: Request, res: Response, companyId: string) =>
-    new Promise<boolean>((resolve) => {
+    new Promise<boolean>((resolve, reject) => {
       (req as Request & { ocrCompanyId?: string }).ocrCompanyId = companyId;
-      companyLimiter(req, res, () => resolve(true));
+      companyLimiter(req, res, (err?: unknown) => (err ? reject(err) : resolve(true)));
       res.once("finish", () => resolve(false));
     });
 
@@ -442,12 +443,18 @@ const genericExportSchema = z.object({
       z.object({
         sheetName: z.string().max(80).optional(),
         rtl: z.boolean().optional(),
-        columns: z.array(genericExportColumnSchema).min(1).max(100),
-        rows: z.array(z.record(z.string(), z.unknown())).max(5000),
+        columns: z
+          .array(genericExportColumnSchema)
+          .min(1)
+          .max(EXCEL_EXPORT_LIMITS.columnsPerWorksheet),
+        rows: z.array(z.record(z.string(), z.unknown())).max(EXCEL_EXPORT_LIMITS.rowsPerWorksheet),
       })
     )
     .min(1)
-    .max(30),
+    .max(EXCEL_EXPORT_LIMITS.worksheets)
+    .refine((sheets) => excelWorkbookCellCount(sheets) <= EXCEL_EXPORT_LIMITS.renderedCells, {
+      message: "Excel export exceeds the workbook cell limit",
+    }),
   filename: z.string().max(80).optional(),
 });
 
@@ -633,6 +640,7 @@ function buildResult(
     confidenceBand: band.band,
     confidenceScore: band.score,
     reviewReasons: band.reasons,
+    reviewReasonCodes: band.reasonCodes,
     validationIssues: issues,
     classifier,
     ocrSource: aiResult._ocrSource || "ai",

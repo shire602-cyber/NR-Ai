@@ -1,3 +1,4 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,8 +12,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ChangePasswordCard } from "@/pages/security/ChangePasswordCard";
 import { currentUserQueryKey, useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSessionActions } from "@/hooks/useSessionActions";
-import { ApiError, apiRequest } from "@/lib/queryClient";
-import { getSelectedPortalAccount, setSelectedPortalAccount } from "@/lib/auth";
+import { ApiError, apiRequest, portalQuery } from "@/lib/queryClient";
+import { setSelectedPortalAccount } from "@/lib/portal-state";
 import { useI18n, useTranslation } from "@/lib/i18n";
 
 interface PortalAccountRow {
@@ -26,18 +27,18 @@ interface PortalAccountRow {
  * suppliers whose portals they can open. Sign-out here clears the server session.
  */
 export default function PortalAccount() {
+  const selected = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
   const [, navigate] = useLocation();
-  const queryClient = useQueryClient();
   const { signOut } = useSessionActions();
   const { data: user } = useCurrentUser();
   const [busy, setBusy] = useState(false);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   // The display name is the one profile field a customer may change (email is theirs by invitation).
   const [draft, setDraft] = useState<string | null>(null);
   const name = draft ?? user?.name ?? "";
-  const setName = setDraft;
   const [savingName, setSavingName] = useState(false);
   const saveName = async (e: FormEvent) => {
     e.preventDefault();
@@ -59,12 +60,9 @@ export default function PortalAccount() {
     }
   };
   const { data: accounts = [] } = useQuery<PortalAccountRow[]>({
-    queryKey: ["portal-accounts"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/accounts"),
+    ...portalQuery("/api/client-portal/accounts", selected),
     staleTime: 5 * 60 * 1000,
   });
-  const selected = getSelectedPortalAccount();
-  const current = accounts.find((a) => a.id === selected) ?? accounts[0];
 
   const signOutEverywhere = async () => {
     setBusy(true);
@@ -96,7 +94,7 @@ export default function PortalAccount() {
               <Input
                 id="portal-account-name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => setDraft(e.target.value)}
                 maxLength={100}
                 autoComplete="name"
                 dir="auto"
@@ -114,10 +112,12 @@ export default function PortalAccount() {
             </Button>
           </form>
           <dl>
-            <div>
+            <div className="min-w-0">
               <dt className="text-caption text-muted-foreground">{t["portal.email"]}</dt>
-              <dd className="mt-0.5 break-all text-small font-medium" dir="ltr">
-                {user?.email ?? "—"}
+              <dd className="mt-0.5 text-small font-medium [overflow-wrap:anywhere]">
+                <bdi dir="ltr" translate="no">
+                  {user?.email ?? "—"}
+                </bdi>
               </dd>
             </div>
           </dl>
@@ -165,15 +165,27 @@ export default function PortalAccount() {
                     <Building2 className="h-4 w-4" aria-hidden />
                   </span>
                   <span className="min-w-0">
-                    <span className="block truncate text-small font-medium" dir="auto">
+                    <span
+                      className="block truncate text-small font-medium"
+                      dir="auto"
+                      translate="no"
+                      title={a.company.name}
+                    >
                       {a.company.name}
                     </span>
-                    <span className="block truncate text-caption text-muted-foreground" dir="auto">
+                    <span
+                      className="block truncate text-caption text-muted-foreground"
+                      dir="auto"
+                      translate="no"
+                      title={
+                        locale === "ar" && a.customer.nameAr ? a.customer.nameAr : a.customer.name
+                      }
+                    >
                       {locale === "ar" && a.customer.nameAr ? a.customer.nameAr : a.customer.name}
                     </span>
                   </span>
                 </span>
-                {a.id === current?.id ? (
+                {a.id === selected ? (
                   <span className="flex shrink-0 items-center gap-1 text-caption font-medium text-success">
                     <Check className="h-4 w-4" aria-hidden />
                     {t["portal.account.current"]}
@@ -185,9 +197,6 @@ export default function PortalAccount() {
                     className="min-h-11"
                     onClick={() => {
                       setSelectedPortalAccount(a.id);
-                      queryClient.removeQueries({
-                        predicate: (q) => String(q.queryKey[0]).startsWith("portal-"),
-                      });
                       navigate("/client-portal/dashboard");
                     }}
                   >
@@ -213,7 +222,7 @@ export default function PortalAccount() {
             onClick={() => void signOutEverywhere()}
             data-testid="portal-sign-out-all"
           >
-            <LogOut className="me-2 h-4 w-4 rtl:-scale-x-100" aria-hidden />
+            <LogOut className="h-4 w-4" aria-hidden />
             {t["portal.account.signOutAll"]}
           </Button>
         </CardContent>

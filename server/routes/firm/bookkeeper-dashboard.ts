@@ -1,6 +1,7 @@
 // Firm bookkeeper dashboard handler: per-client work queues, deadlines and intervention scoring.
 // Handlers moved from firm.routes.ts (R20-09); the route registrations (paths and
 // middleware order) stay in firm.routes.ts.
+import { isVatFilingRecorded } from "../../../shared/vat-filing-status";
 import { CLIENT_SERVICE_OPTIONS } from "@shared/client-services";
 import type { Request, Response } from "express";
 import {
@@ -15,13 +16,12 @@ import { and, count, eq, inArray, max, sql } from "drizzle-orm";
 import {
   bankTransactions,
   companies,
-  companyUsers,
   corporateTaxReturns,
   invoices,
   receipts,
-  users,
   vatReturns,
 } from "../../../shared/schema";
+import { firmReceivablesAed } from "../../services/firm/receivables.service";
 import { db } from "../../db";
 import { aed, ledgerBalanceCheckByCompany } from "../../reporting";
 import { getAccessibleCompanyIds } from "../../middleware/rbac";
@@ -37,6 +37,7 @@ import {
   mostRecentDate,
   priorityFromDueDays,
   priorityRank,
+  assignedStaffByCompany,
   servicePlanFromEngagement,
   shortIso,
   sortBookkeeperQueue,
@@ -45,11 +46,15 @@ import {
 /** GET /firm/bookkeeper-dashboard */
 export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Response) => {
   const { id: userId, firmRole } = req.user!;
-  const accessibleIds = await getAccessibleCompanyIds(
-    userId,
-    firmRole ?? "",
-    req.user?.isAdmin === true
-  );
+  res.json(await buildBookkeeperDashboard(userId, firmRole ?? "", req.user?.isAdmin === true));
+};
+
+/**
+ * The bookkeeper dashboard for the clients this user may see. The firm overview reads its
+ * summary (`vatDue28Days`) so the VAT-due count has one definition on every firm screen.
+ */
+export async function buildBookkeeperDashboard(userId: string, firmRole: string, isAdmin: boolean) {
+  const accessibleIds = await getAccessibleCompanyIds(userId, firmRole, isAdmin);
 
   type BookkeeperClientRow = {
     id: string;
@@ -78,7 +83,7 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
       .from(companies)
       .where(and(eq(companies.companyType, "client"), sql`${companies.deletedAt} IS NULL`));
   } else if (accessibleIds.length === 0) {
-    return res.json(emptyBookkeeperDashboard());
+    return emptyBookkeeperDashboard();
   } else {
     clientList = await db
       .select({
@@ -96,7 +101,7 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
   }
 
   const clientIds = clientList.map((client) => client.id);
-  if (clientIds.length === 0) return res.json(emptyBookkeeperDashboard());
+  if (clientIds.length === 0) return emptyBookkeeperDashboard();
   const servicePlans = await loadActiveServicePlans(clientIds);
 
   const now = new Date();
@@ -127,6 +132,7 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
     periodEnd: Date;
     dueDate: Date;
     status: string;
+    ftaReferenceNumber: string | null;
     payableTax: number;
     submittedAt: Date | null;
     updatedAt: Date | null;
@@ -142,8 +148,6 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
   type InvoiceOpsRow = {
     companyId: string;
     invoiceCount: number;
-    openAr: string | null;
-    overdueCount: string | null;
     missingCustomerTrnCount: string | null;
     latestInvoiceDate: Date | null;
   };
@@ -159,13 +163,6 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
     unreconciledCount: string | null;
     latestBankDate: Date | null;
   };
-  type StaffAssignmentRow = {
-    companyId: string;
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-  };
 
   const [
     vatRows,
@@ -174,7 +171,8 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
     receiptRows,
     bankRows,
     trialBalanceMap,
-    staffRows,
+    staffByCompany,
+    receivableMap,
   ] = await Promise.all([
     db
       .select({
@@ -183,6 +181,7 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
         periodEnd: vatReturns.periodEnd,
         dueDate: vatReturns.dueDate,
         status: vatReturns.status,
+        ftaReferenceNumber: vatReturns.ftaReferenceNumber,
         payableTax: vatReturns.box14PayableTax,
         submittedAt: vatReturns.submittedAt,
         updatedAt: vatReturns.updatedAt,
@@ -216,8 +215,6 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
       .select({
         companyId: invoices.companyId,
         invoiceCount: count(),
-        openAr: sql<string>`sum(case when ${invoices.status} in ('sent', 'partial') then ${invoices.total} else 0 end)`,
-        overdueCount: sql<string>`count(*) filter (where ${invoices.status} in ('sent', 'partial') and ${invoices.dueDate} < ${now})`,
         missingCustomerTrnCount: sql<string>`count(*) filter (where ${invoices.vatAmount} > 0 and (${invoices.customerTrn} is null or ${invoices.customerTrn} = ''))`,
         latestInvoiceDate: max(invoices.createdAt),
       })
@@ -245,19 +242,8 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
       .where(inArray(bankTransactions.companyId, clientIds))
       .groupBy(bankTransactions.companyId) as Promise<BankOpsRow[]>,
     ledgerBalanceCheckByCompany(clientIds),
-    db
-      .select({
-        companyId: companyUsers.companyId,
-        id: users.id,
-        name: users.name,
-        email: users.email,
-        role: companyUsers.role,
-      })
-      .from(companyUsers)
-      .innerJoin(users, eq(users.id, companyUsers.userId))
-      .where(and(inArray(companyUsers.companyId, clientIds), eq(users.isAdmin, true))) as Promise<
-      StaffAssignmentRow[]
-    >,
+    assignedStaffByCompany(clientIds),
+    firmReceivablesAed(clientIds),
   ]);
 
   const vatMap = new Map<string, VatRow>(vatRows.map((row) => [row.companyId, row]));
@@ -267,12 +253,7 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
   const invoiceMap = new Map<string, InvoiceOpsRow>(invoiceRows.map((row) => [row.companyId, row]));
   const receiptMap = new Map<string, ReceiptOpsRow>(receiptRows.map((row) => [row.companyId, row]));
   const bankMap = new Map<string, BankOpsRow>(bankRows.map((row) => [row.companyId, row]));
-  const staffMap = new Map<string, StaffAssignmentRow[]>();
-  for (const staff of staffRows) {
-    const existing = staffMap.get(staff.companyId) ?? [];
-    existing.push(staff);
-    staffMap.set(staff.companyId, existing);
-  }
+  const staffMap = staffByCompany;
 
   const clients = clientList.map((company) => {
     const servicePlan = servicePlans.get(company.id) ?? servicePlanFromEngagement(undefined);
@@ -295,8 +276,7 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
     const latestVat = vatMap.get(company.id) ?? null;
     const latestVatIsOpen =
       latestVat &&
-      latestVat.status !== "filed" &&
-      latestVat.status !== "submitted" &&
+      !isVatFilingRecorded(latestVat.status, latestVat.ftaReferenceNumber) &&
       new Date(latestVat.dueDate) <= plannedVat.dueDate;
     const vatWindow = latestVatIsOpen ? latestVat : plannedVat;
     const vatDueDate = latestVatIsOpen ? latestVat.dueDate : plannedVat.dueDate;
@@ -311,11 +291,11 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
     const missingCustomerTrnCount = Number(invoiceOps?.missingCustomerTrnCount ?? 0);
     const unpostedReceiptCount = Number(receiptOps?.unpostedCount ?? 0);
     const unreconciledBankCount = Number(bankOps?.unreconciledCount ?? 0);
-    const overdueInvoiceCount = Number(invoiceOps?.overdueCount ?? 0);
+    const overdueInvoiceCount = receivableMap.get(company.id)?.overdueCount ?? 0;
     const totalInvoices = Number(invoiceOps?.invoiceCount ?? 0);
     const totalReceipts = Number(receiptOps?.receiptCount ?? 0);
     const totalBankLines = Number(bankOps?.bankCount ?? 0);
-    const openAr = Number(invoiceOps?.openAr ?? 0);
+    const openAr = receivableMap.get(company.id)?.open ?? 0;
 
     const discrepancy = aed(trialBalance?.differenceFils ?? 0);
 
@@ -342,7 +322,7 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
 
     const vatFiled =
       latestVat &&
-      (latestVat.status === "filed" || latestVat.status === "submitted") &&
+      isVatFilingRecorded(latestVat.status, latestVat.ftaReferenceNumber) &&
       new Date(latestVat.periodEnd) >= plannedVat.periodEnd;
     const vatPriority = !hasVatService
       ? "on_track"
@@ -788,7 +768,7 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
     };
   });
 
-  res.json({
+  return {
     generatedAt: now.toISOString(),
     summary,
     serviceMatrix,
@@ -802,5 +782,5 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
       ).length,
     },
     clients: sortedClients,
-  });
-};
+  };
+}

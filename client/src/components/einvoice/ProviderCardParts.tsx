@@ -152,7 +152,13 @@ export function MandateTimeline({
       <h3 id={`${prefix}-timeline-title`} className="text-small font-semibold text-foreground">
         {t["einvoicing.timelineTitle"]}
       </h3>
-      <div className="overflow-x-auto rounded-lg border border-border">
+      {/* A scrolling region must be reachable by keyboard (axe: scrollable-region-focusable). */}
+      <div
+        className="overflow-x-auto rounded-lg border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        tabIndex={0}
+        role="region"
+        aria-labelledby={`${prefix}-timeline-title`}
+      >
         <table className="w-full text-small" data-testid={`${prefix}-timeline`}>
           <thead>
             <tr className="border-b border-border text-caption text-muted-foreground">

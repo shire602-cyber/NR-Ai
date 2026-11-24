@@ -1,3 +1,4 @@
+import { MARKETING_BRAND } from "@shared/marketing-brand";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import {
@@ -23,7 +24,7 @@ import { Checklist, SectionHeading, Tiles } from "@/components/marketing/Section
 // hype block and the VAT/CT/CSV/Help stat strip. Copy is catalog-driven
 // (marketing.svc*) and only states what the firm and the product do today.
 
-const CONSULT_HREF = "mailto:support@muhasib.ai?subject=Accounting%20services%20consultation";
+const CONSULT_HREF = `mailto:${MARKETING_BRAND.supportEmail}?subject=Accounting%20services%20consultation`;
 
 const SERVICES = [
   FileText,

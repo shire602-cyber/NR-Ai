@@ -1,11 +1,20 @@
 import { currencyLabel } from "@/lib/format-money";
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+// The light public root does not load the app shell's stylesheets; the invoice card needs the
+// mobile row-card tables and the RTL rules.
+import "@/styles/rtl.css";
+import "@/styles/mobile.css";
+import { customerEInvoiceLabel, type CustomerEInvoiceOutcome } from "@/lib/einvoice-outcome";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { DateText } from "@/components/documents/DateText";
 import { useParams } from "wouter";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import { LinkLanguageSwitch } from "@/components/customer-link/LinkLanguageSwitch";
+import { useDocumentTitle, useLinkLocale } from "@/lib/customer-link";
 import { Money } from "@/components/ui/money";
 import { Alert } from "@/components/ui/alert";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
@@ -19,13 +28,17 @@ import {
   LedgerSheet,
   LedgerTotals,
 } from "@/components/documents/LedgerSheet";
-import { Download, AlertCircle, Clock, CreditCard, Loader2 } from "lucide-react";
+import { Download, AlertCircle, Clock, CreditCard, Printer, RefreshCw } from "lucide-react";
 import { apiUrl } from "@/lib/api";
 
 interface PublicInvoiceData {
   /** W4-D (R16-14): present only when a payment gateway is live or in sandbox. */
   onlinePayment?: { available: boolean; status: string; provider: string | null };
-  einvoice?: { status: string; uuid: string | null } | null;
+  einvoice?: CustomerEInvoiceOutcome | null;
+  /** The customer's own language when the firm recorded one (en | ar). */
+  preferredLanguage?: string | null;
+  /** The company's language (en | ar): the page opens in it until the viewer switches. */
+  companyLocale?: string | null;
   invoice: {
     number: string;
     customerName: string;
@@ -77,38 +90,115 @@ const PAY_TONE: Record<NonNullable<PublicInvoiceData["invoice"]["paymentStatus"]
  * line table (stacked rows under 480 px), totals with the amount-due row; Download PDF is the
  * primary action and Pay appears only when a payment gateway is configured.
  */
+/** An answer from the invoice API: the HTTP status alone decides what the page says. */
+class InvoiceHttpError extends Error {
+  constructor(readonly status: number) {
+    super(String(status));
+  }
+}
+
+/** Catalogs this page reads (declared so an in-page language switch loads them). */
+const INVOICE_NAMESPACES = ["portal", "customerLink"];
+
+function InvoiceMessage({
+  icon: Icon,
+  title,
+  body,
+  action,
+}: {
+  icon: typeof Clock;
+  title: string;
+  body: string;
+  action?: React.ReactNode;
+}) {
+  const { locale } = useTranslation(INVOICE_NAMESPACES);
+  useDocumentTitle(title);
+  return (
+    <main
+      className="flex min-h-screen flex-col items-center justify-center gap-2 bg-background p-4"
+      dir={locale === "ar" ? "rtl" : "ltr"}
+      data-testid="public-invoice-state"
+    >
+      <div className="flex w-full max-w-md justify-end">
+        <LinkLanguageSwitch testId="invoice-language" />
+      </div>
+      <div className="w-full max-w-md rounded-lg border border-border bg-card px-6 py-12 text-center">
+        <span className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100 dark:bg-neutral-800">
+          <Icon className="h-5 w-5 text-muted-foreground" aria-hidden />
+        </span>
+        <h1 className="mb-2 text-h3 font-semibold text-foreground">{title}</h1>
+        <p className="text-small text-muted-foreground">{body}</p>
+        {action && <div className="mt-6">{action}</div>}
+      </div>
+    </main>
+  );
+}
+
+function InvoiceSkeleton() {
+  const { t, locale } = useTranslation(INVOICE_NAMESPACES);
+  return (
+    <main
+      className="min-h-screen bg-background px-4 py-6 sm:py-10"
+      dir={locale === "ar" ? "rtl" : "ltr"}
+      role="status"
+      aria-busy="true"
+    >
+      <span className="sr-only">{t["customerLink.loading"]}</span>
+      <div
+        className="mx-auto w-full max-w-[760px] space-y-6 rounded-lg border border-border bg-card p-6"
+        aria-hidden
+      >
+        <div className="flex justify-between gap-4">
+          <Skeleton className="h-6 w-40" />
+          <Skeleton className="h-8 w-28" />
+        </div>
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-20 w-48 ms-auto" />
+      </div>
+    </main>
+  );
+}
+
 export default function PublicInvoiceView() {
-  const { t, locale } = useTranslation();
+  const { t, locale } = useTranslation(INVOICE_NAMESPACES);
   const { token } = useParams<{ token: string }>();
 
-  const { data, isLoading, error } = useQuery<PublicInvoiceData>({
+  const { data, isLoading, error, refetch } = useQuery<PublicInvoiceData>({
     queryKey: ["public-invoice", token],
     queryFn: async () => {
       const res = await fetch(apiUrl(`/api/public/invoices/${token}`));
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.message || "Failed to load invoice");
-      }
-      return res.json();
+      // Always read the body so the connection is released (an unread body keeps the page "busy").
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new InvoiceHttpError(res.status);
+      return body as PublicInvoiceData;
     },
     enabled: !!token,
     retry: false,
   });
 
-  const handleDownloadPDF = () => {
-    window.open(apiUrl(`/api/public/invoices/${token}/pdf`), "_blank");
-  };
+  // An invalid or expired link has no language of its own: the browser's decides.
+  useLinkLocale(!!data || !!error, data?.preferredLanguage, data?.companyLocale);
+  useDocumentTitle(
+    data
+      ? formatMessage(t["customerLink.invoicePageTitle"], {
+          number: data.invoice.number,
+          company: data.company.name,
+        })
+      : ""
+  );
 
   const [paying, setPaying] = useState(false);
-  const [payError, setPayError] = useState<string | null>(null);
+  const [payError, setPayError] = useState(false);
   const paymentResult =
     typeof window !== "undefined"
       ? new URLSearchParams(window.location.search).get("payment")
       : null;
 
   const handlePay = async () => {
+    if (paying) return;
     setPaying(true);
-    setPayError(null);
+    setPayError(false);
     try {
       const res = await fetch(apiUrl(`/api/portal/public-invoices/${token}/pay`), {
         method: "POST",
@@ -116,43 +206,51 @@ export default function PublicInvoiceView() {
         body: "{}",
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.url) throw new Error(t["invoices.publicPayFailed"]);
+      if (!res.ok || !body.url) throw new Error("pay");
       window.location.assign(body.url);
     } catch {
-      setPayError(t["invoices.publicPayFailed"]);
+      setPayError(true);
       setPaying(false);
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="flex items-center gap-2 text-small text-muted-foreground" role="status">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          <T k="portal.doc.loading" />
-        </p>
-      </div>
-    );
-  }
+  if (isLoading) return <InvoiceSkeleton />;
 
   if (error || !data) {
-    const message = error instanceof Error ? error?.message : "Invoice not found";
-    const isExpired = message.includes("expired");
-    const Icon = isExpired ? Clock : AlertCircle;
+    const status = error instanceof InvoiceHttpError ? error.status : 0;
+    if (status === 410)
+      return (
+        <InvoiceMessage
+          icon={Clock}
+          title={t["customerLink.expiredTitle"]}
+          body={t["customerLink.invoiceExpiredBody"]}
+        />
+      );
+    if (status === 404)
+      return (
+        <InvoiceMessage
+          icon={AlertCircle}
+          title={t["customerLink.invalidTitle"]}
+          body={t["customerLink.invoiceInvalidBody"]}
+        />
+      );
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-4">
-        <div className="w-full max-w-md rounded-lg border border-border bg-card px-6 py-12 text-center">
-          <span className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100 dark:bg-neutral-800">
-            <Icon className="h-5 w-5 text-muted-foreground" aria-hidden />
-          </span>
-          <h1 className="text-h3 font-semibold text-foreground">
-            {isExpired ? t["portal.invoiceLinkExpired"] : t["portal.invoiceNotFound"]}
-          </h1>
-          <p className="mt-2 text-small text-muted-foreground">
-            {isExpired ? t["invoices.publicLinkExpiredBody"] : t["invoices.publicLinkInvalidBody"]}
-          </p>
-        </div>
-      </div>
+      <InvoiceMessage
+        icon={AlertCircle}
+        title={status === 429 ? t["customerLink.busyTitle"] : t["customerLink.loadFailedTitle"]}
+        body={status === 429 ? t["customerLink.busyBody"] : t["customerLink.loadFailedBody"]}
+        action={
+          <Button
+            variant="outline"
+            className="min-h-11"
+            onClick={() => void refetch()}
+            data-testid="public-invoice-retry"
+          >
+            <RefreshCw className="h-4 w-4 me-2" aria-hidden />
+            {t["customerLink.retry"]}
+          </Button>
+        }
+      />
     );
   }
 
@@ -164,7 +262,23 @@ export default function PublicInvoiceView() {
   const contact = [company.contactPhone, company.contactEmail].filter(Boolean) as string[];
 
   return (
-    <div className="min-h-screen bg-background px-4 py-6 sm:py-10">
+    <main
+      className="min-h-screen bg-background px-4 py-6 print:min-h-0 print:p-0 sm:py-10"
+      dir={locale === "ar" ? "rtl" : "ltr"}
+    >
+      <div className="mx-auto mb-3 flex w-full max-w-[760px] items-center justify-end gap-1 print:hidden">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="hidden min-h-11 sm:inline-flex"
+          onClick={() => window.print()}
+          data-testid="public-invoice-print"
+        >
+          <Printer className="h-4 w-4" aria-hidden />
+          <T k="customerLink.print" />
+        </Button>
+        <LinkLanguageSwitch testId="invoice-language" />
+      </div>
       <LedgerSheet data-testid="public-invoice">
         <LedgerHeader
           titleTestId="public-invoice-title"
@@ -174,7 +288,7 @@ export default function PublicInvoiceView() {
               lines={[
                 company.trnVatNumber && (
                   <>
-                    {t["invoices.publicTrn"]} <bdi>{company.trnVatNumber}</bdi>
+                    {t["customerLink.trn"]} <bdi>{company.trnVatNumber}</bdi>
                   </>
                 ),
                 company.businessAddress,
@@ -196,7 +310,7 @@ export default function PublicInvoiceView() {
             ) : isTax ? (
               <T k="portal.doc.taxInvoice" />
             ) : (
-              <T k="invoices.publicInvoice" />
+              <T k="customerLink.invoiceTitle" />
             )
           }
           aside={
@@ -205,7 +319,11 @@ export default function PublicInvoiceView() {
                 tone={PAY_TONE[invoice.paymentStatus] ?? "neutral"}
                 data-testid="public-invoice-payment-status"
               >
-                <T k={`invoices.payStatus.${invoice.paymentStatus}`} />
+                {invoice.paymentStatus === "void" ? (
+                  <T k="customerLink.statusVoid" />
+                ) : (
+                  <T k={`portal.payStatus.${invoice.paymentStatus}`} />
+                )}
               </StatusBadge>
             )
           }
@@ -222,7 +340,7 @@ export default function PublicInvoiceView() {
               value: <DateText value={invoice.date} locale={locale} />,
             },
             !!invoice.supplyDate && {
-              label: t["invoices.publicSupplyDate"],
+              label: t["customerLink.invoiceSupplyDate"],
               value: <DateText value={invoice.supplyDate} locale={locale} />,
             },
             !!invoice.dueDate && {
@@ -244,7 +362,7 @@ export default function PublicInvoiceView() {
             lines={[
               company.trnVatNumber && (
                 <>
-                  {t["invoices.publicTrn"]} <bdi>{company.trnVatNumber}</bdi>
+                  {t["customerLink.trn"]} <bdi>{company.trnVatNumber}</bdi>
                 </>
               ),
             ]}
@@ -255,7 +373,7 @@ export default function PublicInvoiceView() {
             lines={[
               invoice.customerTrn && (
                 <>
-                  {t["invoices.publicTrn"]} <bdi>{invoice.customerTrn}</bdi>
+                  {t["customerLink.trn"]} <bdi>{invoice.customerTrn}</bdi>
                 </>
               ),
             ]}
@@ -305,16 +423,18 @@ export default function PublicInvoiceView() {
         />
 
         {paymentResult === "success" && (
-          <Alert tone="success" data-testid="public-invoice-payment-success">
-            <T k="portal.paymentProcessing" />
+          <Alert tone="success" role="status" data-testid="public-invoice-payment-success">
+            <T k="customerLink.paymentSuccess" />
+          </Alert>
+        )}
+        {paymentResult === "cancelled" && (
+          <Alert tone="warning" role="status" data-testid="public-invoice-payment-cancelled">
+            <T k="customerLink.paymentCancelled" />
           </Alert>
         )}
         {data.einvoice && (
           <p className="text-small text-muted-foreground" data-testid="public-invoice-einvoice">
-            <T k="portal.doc.einvoice" />
-            {t[`einvoicing.delivery_${data.einvoice.status}`]
-              ? ` · ${t[`einvoicing.delivery_${data.einvoice.status}`]}`
-              : ""}
+            {customerEInvoiceLabel(data.einvoice, t)}
           </p>
         )}
 
@@ -328,38 +448,44 @@ export default function PublicInvoiceView() {
               </>
             )}
           </p>
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-col gap-2 print:hidden sm:flex-row">
             {data.onlinePayment?.available && (
               <Button
                 variant="outline"
+                className="min-h-11"
                 onClick={handlePay}
                 disabled={paying}
                 data-testid="public-invoice-pay-now"
               >
                 <CreditCard className="h-4 w-4 me-2" aria-hidden />
-                <T k="portal.payNow" />
-                {data.onlinePayment.status === "sandbox" && (
+                {paying ? <T k="customerLink.paying" /> : <T k="portal.payNow" />}
+                {!paying && data.onlinePayment.status === "sandbox" && (
                   <StatusBadge tone="neutral" className="ms-2">
                     <T k="portal.testMode" />
                   </StatusBadge>
                 )}
               </Button>
             )}
-            <Button onClick={handleDownloadPDF} data-testid="public-invoice-download">
+            <a
+              href={apiUrl(`/api/public/invoices/${token}/pdf`)}
+              download
+              className={cn(buttonVariants(), "min-h-11")}
+              data-testid="public-invoice-download"
+            >
               <Download className="h-4 w-4 me-2" aria-hidden />
-              <T k="portal.doc.downloadPdf" />
-            </Button>
+              <T k="customerLink.invoiceDownload" />
+            </a>
           </div>
         </div>
         {payError && (
-          <p className="text-small text-destructive" role="alert">
-            {payError}
+          <p className="text-small text-destructive print:hidden" role="alert">
+            {t["customerLink.payFailed"]}
           </p>
         )}
       </LedgerSheet>
       <LedgerFooter>
         <T k="portal.doc.sentWith" />
       </LedgerFooter>
-    </div>
+    </main>
   );
 }

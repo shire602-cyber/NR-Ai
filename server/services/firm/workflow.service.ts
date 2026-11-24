@@ -17,7 +17,6 @@
  */
 import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
 import { db } from "../../db";
-import { DomainError } from "../../errors";
 import { createLogger } from "../../config/logger";
 import { has, resolve } from "../../platform/service-registry";
 import { listJobs, registerJob } from "../../platform/job-registry";
@@ -340,16 +339,6 @@ export async function listFirmTasks(
       )
     )
     .orderBy(asc(firmTasks.dueDate));
-}
-
-export async function getFirmTask(ctx: FirmContext, taskId: string) {
-  const [row] = await db
-    .select()
-    .from(firmTasks)
-    .where(and(eq(firmTasks.id, taskId), eq(firmTasks.firmId, ctx.firmId)))
-    .limit(1);
-  if (!row) throw new DomainError("TASK_NOT_FOUND", 404);
-  return row;
 }
 
 /** Daily job across every active firm (idempotent). */

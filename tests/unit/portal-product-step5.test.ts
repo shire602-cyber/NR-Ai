@@ -23,12 +23,19 @@ const mocks = vi.hoisted(() => {
       super(message);
     }
   }
-  return { ApiError, apiRequest: vi.fn() };
+  const apiRequest = vi.fn();
+  // Same key shape as the real helper: [path without /api/client-portal/ prefixed "portal-", selection].
+  const portalQuery = (path: string, selection: string | null = null) => ({
+    queryKey: [path.replace(/^\/api\/client-portal\//, "portal-"), selection] as const,
+    queryFn: () => apiRequest("GET", path),
+  });
+  return { ApiError, apiRequest, portalQuery };
 });
 
 vi.mock("../../client/src/lib/queryClient", () => ({
   ApiError: mocks.ApiError,
   apiRequest: mocks.apiRequest,
+  portalQuery: mocks.portalQuery,
   queryClient: new (class {})(),
 }));
 vi.mock("../../client/src/lib/authSession", () => ({
@@ -48,6 +55,8 @@ import { BulkPortalInviteDialog } from "../../client/src/components/portal/BulkP
 import { PortalAccessSheet } from "../../client/src/components/portal/PortalAccessSheet";
 import PortalJoin from "../../client/src/pages/portal/PortalJoin";
 import { prefetchPortalData } from "../../client/src/lib/portal-prefetch";
+import { PortalAccountScope } from "../../client/src/lib/portal-scope";
+import { setSelectedPortalAccount } from "../../client/src/lib/portal-state";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -120,7 +129,12 @@ for (const locale of ["en", "ar"] as const) {
       window.history.replaceState(null, "", "/client-portal/invoices");
       mocks.apiRequest.mockImplementation(async (_m: string, url: string) =>
         url.endsWith("/company")
-          ? { name: "Gulf Horizon Logistics LLC", logoUrl: null, firmName: null }
+          ? {
+              name: "Gulf Horizon Logistics LLC",
+              logoUrl: null,
+              firmName: null,
+              portalAccountId: "a1",
+            }
           : url.endsWith("/accounts")
             ? [
                 {
@@ -136,6 +150,7 @@ for (const locale of ["en", "ar"] as const) {
               ]
             : []
       );
+      setSelectedPortalAccount("a1");
       await mount(createElement(PortalLayout, null, createElement("div", null, "body")));
       const navs = [...container.querySelectorAll("nav")];
       expect(navs).toHaveLength(2);
@@ -165,19 +180,25 @@ for (const locale of ["en", "ar"] as const) {
       expect(byId("portal-supplier-switcher")?.textContent).toContain("Gulf Horizon");
     });
 
-    it("[S5-P3] the invoice search field has no dir=auto, so its logical padding stays on the icon side", async () => {
+    it("[S5-P3] the invoice search field keeps its padding on the icon side (no dir=auto)", async () => {
       await mount(
-        createElement(PortalInvoiceList, { invoices: [], loading: false, onlinePayment: false })
+        createElement(
+          PortalAccountScope.Provider,
+          { value: "a1" },
+          createElement(PortalInvoiceList, { invoices: [], loading: false, onlinePayment: false })
+        )
       );
       const input = byId("portal-invoice-search") as HTMLInputElement;
       expect(input).toBeTruthy();
-      expect(input.hasAttribute("dir")).toBe(false);
+      // The input never uses dir=auto: its padding is pinned to the icon side in both directions.
+      expect(input.getAttribute("dir")).not.toBe("auto");
       expect(input.className).toContain("ps-9");
+      expect(input.className).toContain("rtl:pe-9");
       const icon = input.parentElement!.querySelector("svg")!;
       expect(icon.getAttribute("class")).toContain("start-3");
     });
 
-    it("[S5-P4] bulk invite with no email provider says so and offers each link, copy all and CSV", async () => {
+    it("[S5-P4] bulk invite without an email provider says nothing was sent and shows the invitations as queued", async () => {
       const contacts = [
         { id: "k1", name: "Al Noor Trading LLC", email: "a@alnoor.test" },
         { id: "k2", name: "Desert Rose", email: "b@rose.test" },
@@ -186,18 +207,8 @@ for (const locale of ["en", "ar"] as const) {
         method === "POST"
           ? {
               results: [
-                {
-                  contactId: "k1",
-                  outcome: "invited",
-                  delivery: "link",
-                  inviteUrl: `https://app.test/portal/join#t=${TOKEN}`,
-                },
-                {
-                  contactId: "k2",
-                  outcome: "invited",
-                  delivery: "link",
-                  inviteUrl: `https://app.test/portal/join#t=${"ef".repeat(32)}`,
-                },
+                { contactId: "k1", outcome: "invited", delivery: "queued" },
+                { contactId: "k2", outcome: "invited", delivery: "queued" },
               ],
             }
           : null
@@ -211,23 +222,27 @@ for (const locale of ["en", "ar"] as const) {
           summary: {},
         })
       );
-      // The help text never promises an email when none is configured.
+      // Before sending: the help text never promises an email when none is configured.
       const dialog = document.querySelector('[data-testid="bulk-portal-dialog"]')!;
-      expect(dialog.textContent).toContain(useI18n.getState().locale === "ar" ? "وإلا" : "If not");
+      expect(dialog.textContent).not.toMatch(/Each customer gets an email/);
+      expect(dialog.textContent).toContain(
+        locale === "ar" ? "تُحفظ الدعوات دون أن تُرسل" : "saved but not sent"
+      );
+      // The whole row is the label (44px tap target).
+      expect(dialog.querySelector("label[for='bulk-k1']")!.className).toContain("min-h-11");
       const send = document.querySelector('[data-testid="bulk-send"]') as HTMLButtonElement;
       await act(async () => {
         send.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       });
       await flush();
-      const panel = document.querySelector('[data-testid="bulk-links-panel"]');
+      const panel = document.querySelector('[data-testid="bulk-queued-panel"]');
       expect(panel).toBeTruthy();
       expect(panel!.textContent).toContain(
         locale === "ar" ? "البريد الإلكتروني غير مُعدّ" : "Email is not set up"
       );
-      expect(document.querySelector('[data-testid="bulk-copy-all"]')).toBeTruthy();
-      expect(document.querySelector('[data-testid="bulk-export-links"]')).toBeTruthy();
-      expect(document.querySelector('[data-testid="bulk-copy-k1"]')).toBeTruthy();
-      expect(document.querySelector('[data-testid="bulk-copy-k2"]')).toBeTruthy();
+      const rows = document.querySelector('[data-testid="bulk-results"]')!.textContent!;
+      expect(rows).toContain(locale === "ar" ? "في قائمة الانتظار" : "Queued, not sent");
+      expect(rows).not.toContain(locale === "ar" ? "تمت دعوته" : "Invited");
     });
 
     it("[S5-P8] the access sheet does not prefill an email that already has a pending invitation", async () => {
@@ -264,8 +279,8 @@ for (const locale of ["en", "ar"] as const) {
       expect(document.querySelector('[data-testid="pa-invite-i1"]')).toBeTruthy();
       expect(document.querySelector('[data-testid="pa-email-pending"]')).toBeNull();
       // The contact's name is isolated for mixed-direction text (no bare "LLC." wrapping).
-      const desc = document.querySelector('[data-testid="portal-access-sheet"] bdi');
-      expect(desc?.textContent).toBe("Gulf Horizon Logistics LLC");
+      const sheet = document.querySelector('[data-testid="portal-access-sheet"]')!;
+      expect(sheet.textContent).toMatch(/\u2068Gulf Horizon Logistics LLC\u2069/);
       // The awkward possessive is gone from the sheet copy.
       expect(document.body.textContent).not.toContain("LLC's");
     });
@@ -326,11 +341,13 @@ describe("STEP5 portal join page product fixes", () => {
 });
 
 describe("STEP5 portal prefetch", () => {
-  it("[S5-P13] warms the dashboard, invoices, documents, company and accounts under the pages' keys", async () => {
-    mocks.apiRequest.mockImplementation(async (_m: string, url: string) => ({ url }));
+  it("[S5-P13] warms the suppliers, then dashboard, invoices, documents and company under the pages' keys", async () => {
+    setSelectedPortalAccount(null);
+    mocks.apiRequest.mockImplementation(async (_m: string, url: string) =>
+      url.endsWith("/accounts") ? [{ id: "a1" }, { id: "a2" }] : { url }
+    );
     const qc = new QueryClient();
-    prefetchPortalData(qc);
-    await flush();
+    await prefetchPortalData(qc);
     const paths = mocks.apiRequest.mock.calls.map((c) => c[1]).sort();
     expect(paths).toEqual(
       [
@@ -341,11 +358,21 @@ describe("STEP5 portal prefetch", () => {
         "/api/client-portal/invoices",
       ].sort()
     );
-    expect(qc.getQueryData(["portal-dashboard"])).toEqual({ url: "/api/client-portal/dashboard" });
-    expect(qc.getQueryData(["portal-invoices"])).toEqual({ url: "/api/client-portal/invoices" });
+    // First visit: the newest supplier, under the keys PortalDashboard and PortalInvoices read.
+    expect(qc.getQueryData(["portal-dashboard", "a1"])).toEqual({
+      url: "/api/client-portal/dashboard",
+    });
+    expect(qc.getQueryData(["portal-invoices", "a1"])).toEqual({
+      url: "/api/client-portal/invoices",
+    });
     // A failing prefetch never throws; the page fetches again itself.
     mocks.apiRequest.mockRejectedValue(new Error("down"));
-    expect(() => prefetchPortalData(new QueryClient())).not.toThrow();
-    await flush();
+    await expect(prefetchPortalData(new QueryClient())).resolves.toBeUndefined();
+    // A customer who must choose a supplier is not prefetched for.
+    mocks.apiRequest.mockClear();
+    setSelectedPortalAccount("none");
+    await prefetchPortalData(new QueryClient());
+    expect(mocks.apiRequest).not.toHaveBeenCalled();
+    setSelectedPortalAccount(null);
   });
 });

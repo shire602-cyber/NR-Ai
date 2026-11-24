@@ -7,10 +7,12 @@ export interface ClientStats {
   invoiceCount: number;
   invoiceTotal: number;
   outstandingAr: number;
+  overdueAr?: number;
   lastReceiptDate: string | null;
   lastBankActivityDate: string | null;
   vatStatus: {
     status: string;
+    filingRecorded?: boolean;
     dueDate: string;
     periodEnd: string;
   } | null;
@@ -29,12 +31,6 @@ export interface FirmOverview {
   overdueAr: number;
   needsAttention: number;
   missingDocuments: number;
-}
-
-export interface ImportResult {
-  message: string;
-  created: { id: string; name: string }[];
-  errors: { row: number; name: string; error: string }[];
 }
 
 export type BookkeeperPriority = "on_track" | "attention" | "critical";

@@ -95,6 +95,27 @@ describe("R17-20 strictBody", () => {
     expect(r.json).toHaveProperty("formErrors");
   });
 
+  it.each(["constructor", "toString", "__proto__"])(
+    "reports the unknown key %s as a validation error",
+    (key) => {
+      const schema = z.object({});
+      const body = { [key]: true };
+      const result = run(strictBody(schema), body);
+      expect(result.status).toBe(400);
+      expect(Object.entries(result.json?.fields ?? {})).toEqual([[key, ["Unknown field"]]]);
+      expect(() => parseStrict(schema, body)).toThrow(ZodError);
+    }
+  );
+
+  it("flattens validation errors for schema fields with inherited object names", () => {
+    const schema = z.object({ constructor: z.number() });
+    const result = run(strictBody(schema), { constructor: "text" });
+    expect(result.status).toBe(400);
+    expect(Object.entries(result.json?.errors ?? {})).toEqual([
+      ["constructor", [expect.stringContaining("number")]],
+    ]);
+  });
+
   it("rejects non-object bodies", () => {
     for (const body of [[1, 2], "str", 5]) {
       const r = run(strictBody(createExpense), body);

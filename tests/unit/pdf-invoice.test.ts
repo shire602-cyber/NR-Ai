@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import {
   generateInvoicePDF,
   computeInvoicePdfTotals,
@@ -65,12 +66,28 @@ function lines(): InvoiceLine[] {
   ] as unknown as InvoiceLine[];
 }
 
+async function sellerPdfText(pdf: Buffer): Promise<string> {
+  const document = getDocument({ data: Uint8Array.from(pdf) });
+  try {
+    const firstPage = await (await document.promise).getPage(1);
+    const content = await firstPage.getTextContent();
+    return content.items
+      .flatMap((item) => ("str" in item ? [item.str] : []))
+      .join(" ")
+      .replace(/\p{Cc}/gu, "")
+      .replace(/\s+/g, " ");
+  } finally {
+    await document.destroy();
+  }
+}
+
 // Arabic font embedding takes ~4 s per PDF under v8 coverage on a 4-core runner.
 describe("pdf invoice content", { timeout: 30_000 }, () => {
   it("R03-09 Arabic customer, labels and line descriptions round-trip", async () => {
     const pdf = await generateInvoicePDF(invoice(), lines(), company());
     const text = await pdfToText(pdf);
     expect(text).toContain("Tax invoice");
+    expect(text).not.toContain("Scan to view");
     expect(text).toContain("فاتورة ضريبية");
     expect(text).toContain("رقم الفاتورة");
     expect(text).toContain("شركة النجمة للتجارة");
@@ -151,12 +168,32 @@ describe("pdf invoice content", { timeout: 30_000 }, () => {
     expect((await pdfToText(pdf)).replace(/\s+/g, " ")).toContain("Reverse charge");
   });
 
-  it("R03-19 QR is labelled as a TLV invoice QR, not an FTA submission", async () => {
-    const pdf = await generateInvoicePDF(invoice(), lines(), company());
-    const text = await pdfToText(pdf);
-    expect(text).toContain("Invoice QR (TLV)");
-    expect(text).not.toContain("FTA e-Invoice");
-  });
+  it.each(["en", "ar"] as const)(
+    "uses seller legal identity and a share QR in the %s layout",
+    async (locale) => {
+      const pdf = await generateInvoicePDF(
+        invoice({ shareToken: "shared-invoice" }),
+        lines(),
+        company({
+          name: "Seller Display Name",
+          legalName: "Pearl Commercial LLC",
+          legalNameAr: "شركة اللؤلؤة للتجارة",
+          addressAr: "شارع السعادة",
+          companyType: "client",
+          trnVatNumber: null,
+          locale,
+        })
+      );
+      const text = await sellerPdfText(pdf);
+      const compact = text.replace(/\s/g, "");
+      for (const value of ["Pearl Commercial LLC", "شركة اللؤلؤة للتجارة", "شارع السعادة"]) {
+        expect(compact.split(value.replace(/\s/g, "")), value).toHaveLength(3);
+      }
+      expect(text).not.toContain("Seller Display Name");
+      expect(text).not.toContain("NAJMA AL RAEDA");
+      expect(text).toContain("Scan to view");
+    }
+  );
 
   it("R14-21 ar-locale company gets Arabic-first labels and a mirrored table", async () => {
     const pdf = await generateInvoicePDF(invoice(), lines(), company({ locale: "ar" } as never));
@@ -184,8 +221,18 @@ describe("pdf invoice content", { timeout: 30_000 }, () => {
   });
 
   it("R03-09 NRA template renders an Arabic customer name", async () => {
-    const pdf = await generateInvoicePDF(invoice(), lines(), company(), { template: "nra" });
-    const text = await pdfToText(pdf);
-    expect(text).toContain("شركة النجمة للتجارة");
+    vi.stubEnv("NRA_INVOICE_ISSUER_COMPANY_ID", "firm-issuer");
+    try {
+      const pdf = await generateInvoicePDF(
+        invoice({ companyId: "firm-issuer" }),
+        lines(),
+        company({ id: "firm-issuer", trnVatNumber: null })
+      );
+      const text = await sellerPdfText(pdf);
+      expect(text).toContain("NAJMA AL RAEDA");
+      expect(text.replace(/\s/g, "")).toContain("شركةالنجمةللتجارة");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

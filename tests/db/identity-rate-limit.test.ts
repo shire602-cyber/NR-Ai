@@ -2,7 +2,10 @@
  * W2-C rate limiting and lockout (R01-09, R01-10, R01-12, R17-06).
  */
 import { randomBytes } from "node:crypto";
-import { afterEach, describe, expect, it } from "vitest";
+import { once } from "node:events";
+import type { AddressInfo } from "node:net";
+import express from "express";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { freezeTime, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -15,6 +18,85 @@ afterEach(async () => {
 const cheapWrite = (t: Tenant) =>
   t.as.post(`/api/companies/${t.company.id}/customer-contacts/import-preview`, {});
 
+describe("PR #96 shared throttle state", () => {
+  it("enforces a login or MFA lockout through a second store instance", async () => {
+    const { PostgresLockoutTracker } = await import("../../server/middleware/rateLimit");
+    for (const namespace of ["login", "mfa"]) {
+      const rules = [{ max: 2, windowMs: 60_000 }];
+      const first = new PostgresLockoutTracker(namespace, rules);
+      const second = new PostgresLockoutTracker(namespace, rules);
+      const key = mail();
+
+      expect(await first.recordFailure(key)).toMatchObject({ locked: false, failures: 1 });
+      expect(await second.recordFailure(key)).toMatchObject({ lockedNow: true, failures: 2 });
+      expect(await first.status(key)).toMatchObject({ locked: true, failures: 2 });
+      expect(await first.recordFailure(key)).toMatchObject({ lockedNow: false, failures: 2 });
+      await second.reset(key);
+      expect(await first.status(key)).toMatchObject({ locked: false, failures: 0 });
+    }
+  });
+
+  it("shares the HTTP budget and refunds the matching hit across instances", async () => {
+    const { PostgresSlidingWindowStore } = await import("../../server/middleware/rateLimit");
+    const first = new PostgresSlidingWindowStore("shared-test", 60_000, 2);
+    const second = new PostgresSlidingWindowStore("shared-test", 60_000, 2);
+    const key = mail();
+
+    if (h.concurrencySupported) {
+      const hits = await Promise.all([
+        first.incrementHit(key, "success"),
+        second.incrementHit(key, "failure"),
+      ]);
+      expect(hits.map(({ totalHits }) => totalHits).sort()).toEqual([1, 2]);
+    } else {
+      expect((await first.incrementHit(key, "success")).totalHits).toBe(1);
+      expect((await second.incrementHit(key, "failure")).totalHits).toBe(2);
+    }
+    expect((await first.increment(key)).totalHits).toBe(3);
+    await second.refundHit(key, "success");
+    await first.refundHit(key, "success");
+    expect((await second.increment(key)).totalHits).toBe(2);
+  });
+
+  it("refunds successful authentication before the HTTP response ends on Vercel", async () => {
+    const { buildLimiter } = await import("../../server/middleware/rateLimit");
+    const app = express();
+    vi.stubEnv("VERCEL", "1");
+    try {
+      for (const path of ["/first", "/second"]) {
+        app.post(
+          path,
+          buildLimiter("refund-test", {
+            windowMs: 60_000,
+            max: 1,
+            message: "Slow down",
+            skipSuccessfulRequests: true,
+          }),
+          (req, res) => res.sendStatus(req.query.success ? 200 : 401)
+        );
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    const server = app.listen(0, "127.0.0.1");
+    try {
+      await once(server, "listening");
+      const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const post = async (path: string) => {
+        const response = await fetch(origin + path, { method: "POST" });
+        await response.text();
+        return response.status;
+      };
+      expect(await post("/first?success=1")).toBe(200);
+      expect(await post("/second?success=1")).toBe(200);
+      expect(await post("/first")).toBe(401);
+      expect(await post("/second?success=1")).toBe(429);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
+
 describe("R01-10 per-user budgets after authentication", () => {
   it("R01-10: two users behind one IP get independent write budgets", async () => {
     const a = await h.createTenant({ name: "NatA" });
@@ -26,6 +108,24 @@ describe("R01-10 per-user budgets after authentication", () => {
     expect(fourth.body.code).toBe("RATE_LIMITED");
     // Same IP (127.0.0.1), different user: unaffected.
     expect((await cheapWrite(b)).status).not.toBe(429);
+  });
+
+  it("shares one signed-in budget across company and query contexts", async () => {
+    const tenant = await h.createTenant({ name: "SharedRateBudget" });
+    const other = await h.createSecondTenant({ name: "OtherRateContext" });
+    await h.setRateLimits({ api: 2 });
+    const endpoint = `/api/companies/${tenant.company.id}/customer-contacts/import-preview`;
+
+    expect((await tenant.as.post(endpoint, {})).status).not.toBe(429);
+    expect((await tenant.as.post(`${endpoint}?companyId=${other.company.id}`, {})).status).not.toBe(
+      429
+    );
+    const response = await tenant.as.post(
+      `/api/companies/${other.company.id}/customer-contacts/import-preview`,
+      {}
+    );
+    expect(response.status).toBe(429);
+    expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
   });
 
   it("R01-10: a refresh token or forged bearer does not buy a per-user bucket", async () => {

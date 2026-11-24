@@ -1,6 +1,7 @@
 import { errorHeading } from "@/lib/error-heading";
 import { translateNow } from "@/lib/i18n";
-import { useState } from "react";
+import { useContext, useState } from "react";
+import { TrialReadOnlyContext } from "@/lib/trial-access";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -190,6 +191,7 @@ function toForm(emp: Employee | null): FormState {
 }
 
 export function EmployeesTab({ companyId }: { companyId: string }) {
+  const readOnly = useContext(TrialReadOnlyContext);
   const { tx } = useHr();
   const { toast } = useToast();
   const key = [`/api/companies/${companyId}/employees`];
@@ -283,7 +285,7 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
         size="icon"
         variant="ghost"
         aria-label={tx("hr.edit")}
-        disabled={e.status === "terminated"}
+        disabled={readOnly || e.status === "terminated"}
         onClick={() => {
           setEditing(e);
           setForm(toForm(e));
@@ -296,7 +298,7 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
         size="icon"
         variant="ghost"
         aria-label={tx("hr.terminate")}
-        disabled={e.status === "terminated"}
+        disabled={readOnly || e.status === "terminated"}
         onClick={() => {
           setTerminating(e);
           setTermDate(new Date().toISOString().slice(0, 10));
@@ -308,6 +310,7 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
       <Button
         size="icon"
         variant="ghost"
+        disabled={readOnly}
         aria-label={tx("hr.archive")}
         onClick={() => archive.mutate(e.id)}
       >
@@ -316,6 +319,7 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
       <Button
         size="icon"
         variant="ghost"
+        disabled={readOnly}
         aria-label={tx("hr.delete")}
         onClick={() => remove.mutate(e.id)}
       >
@@ -347,6 +351,7 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
             setForm(toForm(null));
             setOpen(true);
           }}
+          disabled={readOnly}
           data-testid="button-add-employee"
         >
           <Plus className="me-2 h-4 w-4" />
@@ -557,7 +562,7 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 {tx("hr.cancel")}
               </Button>
-              <Button type="submit" className="sm:min-w-32" disabled={save.isPending}>
+              <Button type="submit" className="sm:min-w-32" disabled={readOnly || save.isPending}>
                 {tx("hr.save")}
               </Button>
             </FormActions>
@@ -595,7 +600,7 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
             </Button>
             <Button
               onClick={() => terminate.mutate()}
-              disabled={!termDate || !termReason || terminate.isPending}
+              disabled={readOnly || !termDate || !termReason || terminate.isPending}
             >
               {tx("hr.terminate")}
             </Button>

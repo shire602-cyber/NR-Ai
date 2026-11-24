@@ -4,7 +4,7 @@
  * GPSSA export, multi-currency and expiry alerts. Test names carry the
  * report-09 issue ids.
  */
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -447,7 +447,9 @@ describe("leave (R09-15)", () => {
         [i.employeeId, aeIban(++n)]
       );
     }
-    const sif = await t.as.get(`/api/payroll-runs/${run.id}/generate-sif`);
+    const sifPath = `/api/payroll-runs/${run.id}/generate-sif`;
+    expect((await t.as.post(sifPath, {})).status).toBe(204);
+    const sif = await t.as.get(sifPath);
     expect(sif.status, sif.text).toBe(200);
     expect(sif.headers.get("content-disposition")).toMatch(/1000000000123\d{12}\.SIF/);
     const edr = sif.text.split("\r\n").find((l) => l.startsWith("EDR,10012345678902"))!;
@@ -471,6 +473,49 @@ describe("leave (R09-15)", () => {
     });
     expect(rej.status).toBe(200);
     expect(rej.body.wps_status).toBe("rejected");
+  });
+
+  it("downloads saved files and reads leave data after expiry without changing payroll rows", async () => {
+    const owner = await h.createTenant();
+    const base = `/api/companies/${owner.company.id}`;
+    const employee = await createEmployee(owner, expat);
+    const run = await createRun(owner, 4);
+    const sifPath = `/api/payroll-runs/${run.id}/generate-sif`;
+    await h.sql(
+      `UPDATE payroll_runs SET sif_file_content = 'saved SIF', sif_file_name = 'saved.SIF',
+        sif_generated_at = '2026-04-30' WHERE id = $1`,
+      [run.id]
+    );
+    await h.sql("DELETE FROM leave_types WHERE company_id = $1 AND code = 'sick'", [
+      owner.company.id,
+    ]);
+    await h.sql(
+      "UPDATE subscriptions SET trial_ends_at = now() - interval '1 day' WHERE company_id = $1",
+      [owner.company.id]
+    );
+    const storedSif = () =>
+      h.sql(
+        "SELECT sif_file_content, sif_file_name, sif_generated_at FROM payroll_runs WHERE id = $1",
+        [run.id]
+      );
+    const leaveTypes = () =>
+      h.sql("SELECT * FROM leave_types WHERE company_id = $1 ORDER BY code", [owner.company.id]);
+    const before = { sif: await storedSif(), leave: await leaveTypes() };
+    vi.stubEnv("BILLING_ENFORCEMENT", "true");
+    try {
+      const downloaded = await owner.as.get(sifPath);
+      expect(downloaded.status, downloaded.text).toBe(200);
+      expect(downloaded.text).toBe("saved SIF");
+      expect((await owner.as.get(`${base}/payroll/leave-types`)).status).toBe(200);
+      expect((await owner.as.get(`/api/employees/${employee.id}/leave-balances`)).status).toBe(200);
+      const blocked = await owner.as.post(sifPath, {});
+      expect(blocked.status, blocked.text).toBe(402);
+      expect(blocked.body.code).toBe("PLAN_REQUIRED");
+      expect(await storedSif()).toEqual(before.sif);
+      expect(await leaveTypes()).toEqual(before.leave);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

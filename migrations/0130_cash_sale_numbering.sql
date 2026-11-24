@@ -16,7 +16,7 @@ ON CONFLICT (company_id, doc_type) DO NOTHING;
 --> statement-breakpoint
 -- 2) Start each cash-sale sequence above any number already written in its format (imported
 --    or hand-numbered documents), so the first cash sale can never reuse an existing number.
---    Sequences only move up (GREATEST), so re-running this is a no-op.
+--    Only write when the historical maximum advances the existing sequence.
 WITH fmt AS (
   SELECT c.id AS company_id,
          COALESCE(s.prefix, 'CS') AS prefix,
@@ -44,5 +44,5 @@ SELECT company_id, 'cash_sale', year, MAX(n), now()
   FROM hits
  GROUP BY company_id, year
 ON CONFLICT (company_id, doc_type, year)
-  DO UPDATE SET last_value = GREATEST(invoice_number_sequences.last_value, EXCLUDED.last_value),
-                updated_at = now();
+  DO UPDATE SET last_value = EXCLUDED.last_value, updated_at = now()
+  WHERE invoice_number_sequences.last_value < EXCLUDED.last_value;

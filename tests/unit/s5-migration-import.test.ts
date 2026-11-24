@@ -6,6 +6,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  getImportJob,
+  listImportJobs,
+  previewImport,
+  validateImport,
+} from "../../server/services/migration-import";
 
 interface Job {
   [k: string]: unknown;
@@ -125,9 +131,8 @@ beforeEach(async () => {
 });
 
 async function previewAndValidate(input: Record<string, unknown>) {
-  const svc = await import("../../server/services/migration-import");
-  const p = await svc.previewImport({ companyId: CO, userId: "u-1", ...input } as never);
-  const v = await svc.validateImport(CO, p.id);
+  const p = await previewImport({ companyId: CO, userId: "u-1", ...input } as never);
+  const v = await validateImport(CO, p.id);
   return { p, v, codes: v.issues.map((i) => i.code) };
 }
 
@@ -356,8 +361,7 @@ describe("S5 migration import preview + validation (unit)", () => {
     });
     expect(missing.codes).toContain("COLUMN_MISSING");
 
-    const svc = await import("../../server/services/migration-import");
-    expect((await svc.listImportJobs(CO)).length).toBeGreaterThan(3);
-    await expect(svc.getImportJob(CO, "nope")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect((await listImportJobs(CO)).length).toBeGreaterThan(3);
+    await expect(getImportJob(CO, "nope")).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });

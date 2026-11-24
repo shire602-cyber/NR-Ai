@@ -19,6 +19,7 @@ import type { z } from "zod";
 import { sql } from "drizzle-orm";
 import { users } from "./users";
 import { companies } from "./companies";
+import { companyUsers } from "./company-users";
 
 // ===========================
 // Firm Staff Assignments
@@ -158,10 +159,13 @@ export const firmCompanyGrants = pgTable(
     companyId: uuid("company_id")
       .notNull()
       .references(() => companies.id, { onDelete: "cascade" }),
+    // Retained for databases that recorded a grant before membership IDs were available.
     createdMembership: boolean("created_membership").notNull().default(true),
+    membershipId: uuid("membership_id").references(() => companyUsers.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
+    membershipIdx: index("idx_firm_company_grants_membership").on(table.membershipId),
     grantUnique: uniqueIndex("uniq_firm_company_grants").on(
       table.firmId,
       table.userId,

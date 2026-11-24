@@ -1,9 +1,11 @@
-# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0136)
+# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 through 0149)
 
 Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
 
-Owner-run. The first deploy of this branch applies 30 migrations that rewrite some production data
-(users, roles, FX rates, reconciliation rules, portal tokens, audit chain, subscriptions). Do not
+For the Vercel production deployment, follow the [Vercel and UAE PostgreSQL runbook](vercel-uae-production-config.md).
+
+Owner-run. The first deploy of this branch applies 66 migrations (through 0149) that rewrite some production data
+(users, roles, FX rates, bank GL links and reconciliation rules, portal tokens, audit chain, subscriptions). Do not
 merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived or external items
 (A-Cube, email, Stripe, WPS, GPSSA, FAF) are listed in section 9 and stay off until proven.
 
@@ -24,20 +26,28 @@ merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived o
 
 ## 2. Migration rehearsal on a restored production snapshot
 
-Restore the dump from section 1 (or a Railway snapshot) into a scratch database, never production:
+Restore the dump from section 1 (or a Railway snapshot) into a scratch database, never production.
+Use the release environment with `DATABASE_URL` pointed at that restored copy.
 
 ```
 export DATABASE_URL=postgres://.../rehearsal   # the restored copy
-\timing on                                     # in psql; or time the command below
-time npm run db:migrate                         # applies 0089-0136; record total and slowest file
-npm run build && PORT=<free port> npm start     # boot check: /health/ready 200, /api/version
+npm run build
+time node dist/migrate.js                       # applies migrations and runs the release schema guard
+PORT=<free port> npm start                      # boot check: /health/ready 200, /api/version
 ```
 
 Record timings per migration (the migrate log) and fail the rehearsal on any error or boot failure.
+Use a direct PostgreSQL connection for the release runner. The release schema guard builds the required VAT-group audit membership index concurrently. Its dedicated session gives each statement at least five minutes and holds an advisory lock to serialize retries. A failed build exits the release command with a nonzero status. Use the query below to verify the index after a successful release.
+
+```sql
+SELECT indisvalid
+  FROM pg_index
+ WHERE indexrelid = to_regclass('public.idx_audit_logs_vat_group_member_ids');
+```
 
 ### 2a. Capture BEFORE migrating (pre-state counts)
 
-Run on the restored snapshot before `db:migrate`:
+Run these checks on the restored snapshot before the release migration.
 
 ```sql
 -- 0092: placeholder users that become pending invitations / are deleted
@@ -59,9 +69,10 @@ SELECT (SELECT count(*) FROM companies) AS companies,
        count(*) FILTER (WHERE source <> 'fta') AS non_fta_rates,
        count(*) FILTER (WHERE source = 'manual') AS manual_rates
   FROM exchange_rates;
--- 0097: reconciliation rules that will be switched off
+-- 0097: reconciliation rules that will be switched off. account_id does not exist before 0097, so
+-- on a main schema every active rule counts as "without account" and is deactivated.
 SELECT count(*) FILTER (WHERE match_type NOT IN ('exact','contains','starts_with','regex','equals','equal','is')) AS bad_match_type,
-       count(*) FILTER (WHERE account_id IS NULL AND is_active) AS active_without_account
+       count(*) FILTER (WHERE is_active) AS active_rules_all_deactivated_by_0097
   FROM reconciliation_rules;
 -- 0103: plaintext portal tokens that will be hashed (links then expire within 90 days)
 SELECT count(*) FROM customer_contacts WHERE portal_access_token IS NOT NULL;
@@ -118,8 +129,9 @@ records it again (same date, amount, rate, reference) on the primary bank accoun
 already matched to a bank line, or dated in a locked period, are skipped and reported. Run the
 repair only after the owner has reviewed the findings, with a fresh backup.
 
-Pre-deploy SQL check (read-only, run on production or the snapshot BEFORE the deploy): parent/child
-posting accounts. Any parent (header) account that already carries posted journal lines needs an
+Pre-deploy SQL check (read-only): parent/child posting accounts. `accounts.parent_id` is created by
+0093, so on a pre-0089 (main) schema this script errors; run it on the MIGRATED rehearsal copy before
+the deploy (rehearsal: [MIGRATION-REHEARSAL.md](MIGRATION-REHEARSAL.md), finding 4). Any parent (header) account that already carries posted journal lines needs an
 owner decision before a build that refuses posting to parent accounts goes live:
 
 ```
@@ -170,7 +182,11 @@ SELECT table_name FROM information_schema.tables
  WHERE table_schema = 'public' AND table_name IN ('subscription_plans', 'user_subscriptions');
 ```
 
-#### Customer portal invitations (0136)
+#### Customer portal invitations (0136) and settlement indexes (0137)
+
+Migration `0137_combine_portal_invitations_and_settlement_indexes.sql` applies the settlement
+indexes and replays the portal invitation migration for databases that previously applied the
+settlement-only version of 0136.
 
 Migration `0136_step5_portal_invitations.sql` creates `customer_portal_invitations`, adds
 `invitation_id`, `last_seen_at` and `revoked_by` to `customer_portal_accounts`, and DELETES every
@@ -182,6 +198,24 @@ will be removed (expect only stray rows from the old staff bind flow):
 SELECT cu.company_id, u.email FROM company_users cu JOIN users u ON u.id = cu.user_id
  WHERE u.user_type = 'client_portal';
 ```
+
+#### Bank GL links, invoice payment claims, and journal provenance (0138–0141)
+
+Migration `0138` repairs eligible bank GL links, including on databases that already recorded
+`0097`. Migration `0139` reports invalid GL references and unsafe invoice payment links, including
+on databases that already recorded `0138`. Review the linked journals before resolving shared,
+ambiguous, mismatched, or competing payments. Migration `0140` restores the bank-created
+journal flag on provable legacy receipt allocations and reports competing claims when an earlier
+`0139` is already recorded. Migration `0141` restores the bank-created flag for legacy
+invoice-linked journals that point back to the same bank transaction and have no payment.
+The posted journals and external payment links are preserved during migration.
+[Bank GL findings query](../migration-rehearsal.md#review-bank-gl-findings)
+
+For pre-`0097` manual invoice matches, review the payment, journal, and scoped audit records
+together. A legacy match to an already-paid invoice may carry no payment or journal pointer.
+The unmatch service checks the current receivable balance before clearing that link. The
+migration finding still records the missing pointers for operator review.
+[Legacy invoice payment evidence](../migration-rehearsal.md#legacy-invoice-payment-evidence)
 
 #### Skipped `uq_employees_*` unique indexes (0118)
 
@@ -221,18 +255,26 @@ and attach to the PR:
 The owner reviews and signs off the findings before the deploy. Findings are flagged, not repaired:
 historic unbalanced entries and duplicate reversals need accountant review per tenant afterwards.
 
+### 2e. Scripted rehearsal and the 2026-11-18 record
+
+`docs/release/rehearsal/rehearse.sh` runs sections 1, 2a-2d, the idempotency re-runs and the
+section 7 restore in one command against a restored snapshot (never production). The production-like
+rehearsal record, with its findings (two missing indexes on the settlement rule, 0097 deactivating
+every pre-existing rule, 0109 time per audit row), is in [MIGRATION-REHEARSAL.md](MIGRATION-REHEARSAL.md).
+
 ## 3. Environment to set on Railway BEFORE the deploy
 
-| Variable                                       | Value / reason                                                                                                                                                                                                                                                                                                                                                                                            |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TOKEN_ENCRYPTION_KEY`                         | Random 32+ byte secret, **separate from `SESSION_SECRET`**. The secret vault falls back to `SESSION_SECRET` when unset (`server/services/secret-vault.ts`); set it before any secrets are stored, because rotating it later makes stored secrets unreadable.                                                                                                                                              |
-| `TRUST_PROXY_HOPS`                             | Number of proxies in front of the app (Railway: normally `1`). Needed for `req.ip` and per-IP rate limits; the server warns in production when unset and refuses `true`.                                                                                                                                                                                                                                  |
-| `RBAC_ENFORCE`                                 | `enforce` (default). Do not start on `report`: it reopens the audited R01-02 role hole. Keep `report` only as the rollback in section 7.                                                                                                                                                                                                                                                                  |
-| Durable file storage                           | Either S3 (`S3_BUCKET` and its credentials) or Vercel Blob (`BLOB_READ_WRITE_TOKEN`), with `STORAGE_STRICT=true` so the server refuses to start without it, or a Railway volume mounted at the uploads path. Without it receipts and report artifacts do not survive a redeploy. A production boot on plain local disk is refused unless `ALLOW_LOCAL_STORAGE=true`; do not set that on the live service. |
-| `JWT_SECRET`, `SESSION_SECRET`, `DATABASE_URL` | Already required. `JWT_SECRET_ROTATED_AFTER_BACKDOOR=true` only after rotation.                                                                                                                                                                                                                                                                                                                           |
-| `AUTH_PUBLIC_URL`                              | Public base URL used in emails and webhooks.                                                                                                                                                                                                                                                                                                                                                              |
-| `AUTO_MIGRATE_ON_BOOT`                         | Leave `false`; migrate in the release phase (`npm run db:migrate`).                                                                                                                                                                                                                                                                                                                                       |
-| Commit SHA on `/api/version`                   | See below.                                                                                                                                                                                                                                                                                                                                                                                                |
+| Variable                                       | Value / reason                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TOKEN_ENCRYPTION_KEY`                         | Random 32+ byte secret, **separate from `SESSION_SECRET`**. The secret vault falls back to `SESSION_SECRET` when unset (`server/services/secret-vault.ts`); set it before any secrets are stored, because rotating it later makes stored secrets unreadable.                                                                                                                                                         |
+| `TRUST_PROXY_HOPS`                             | Number of proxies in front of the app (Railway: normally `1`). Needed for `req.ip` and per-IP rate limits; the server warns in production when unset and refuses `true`.                                                                                                                                                                                                                                             |
+| `RBAC_ENFORCE`                                 | `enforce` (default). Do not start on `report`: it reopens the audited R01-02 role hole. Keep `report` only as the rollback in section 7.                                                                                                                                                                                                                                                                             |
+| Durable file storage                           | Either S3 (`S3_BUCKET` and its credentials) or Vercel Blob (`BLOB_READ_WRITE_TOKEN`), with `STORAGE_STRICT=true` so the server refuses to start without it, or a Railway volume mounted at the uploads path. Without it receipts and report artifacts do not survive a redeploy. A production boot on plain local disk is refused unless `ALLOW_LOCAL_STORAGE=true`; do not set that on the live service.            |
+| `JWT_SECRET`, `SESSION_SECRET`, `DATABASE_URL` | Already required. `JWT_SECRET_ROTATED_AFTER_BACKDOOR=true` only after rotation.                                                                                                                                                                                                                                                                                                                                      |
+| `AUTH_PUBLIC_URL`                              | Public base URL used in emails and webhooks.                                                                                                                                                                                                                                                                                                                                                                         |
+| `FRONTEND_URL`                                 | The public origin of the app (for example `https://app.example.com`), comma-separated extras in `CORS_ORIGIN`. In production the server refuses any request whose `Origin` is not listed (403 `ORIGIN_NOT_ALLOWED`), and browsers send `Origin` for module scripts, so **unset means every page loads blank** (all JS/CSS assets 403). `curl`-based checks do not catch it; open the site in a browser after deploy. |
+| `AUTO_MIGRATE_ON_BOOT`                         | Keep `false` and run `node dist/migrate.js` in the release phase.                                                                                                                                                                                                                                                                                                                                                    |
+| Commit SHA on `/api/version`                   | See below.                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 **Time zone.** The server process always runs in `TZ=UTC` (the Dockerfile and both compose files set
 it, and `server/config/pin-timezone.ts` pins it at startup even when the host says otherwise).
@@ -255,7 +297,7 @@ nothing reads them any more.
 1. Green CI on the PR (check, lint, coverage ratchet, audit gate, Railway install path, strict API
    coverage, build, bundle budget, `test:db`, boot gate, perf budget).
 2. Take the verified backup (section 1) immediately before.
-3. Merge to `main` (Railway deploys from `origin/main`). Run `npm run db:migrate` in the release phase.
+3. Merge to `main` (Railway deploys from `origin/main`). Railway runs `node dist/migrate.js` in the release phase.
 4. Watch the deploy log for migration errors; `/health/live` then `/health/ready` must be 200.
 
 ## 5. Post-deploy checks
@@ -279,7 +321,9 @@ network (SSH) once a key is registered.
 - **Invitations (0092):** placeholder users created by the old team invite became pending
   invitations with a new token that is never shown. Inviters must re-send pending invitations.
 - **Reconciliation rules (0097):** rules with an unknown match type or no GL account were
-  deactivated. Tenants review them in Banking and re-enable.
+  deactivated. Rules created before this release have no GL account, so on the first deploy that is
+  every active rule. Tenants choose an account for each in Banking and re-enable it. Customer notice (EN and AR, owner
+  sends; draft only): [CUSTOMER-NOTICE-0097.md](CUSTOMER-NOTICE-0097.md).
 - **Customer portal links (0103):** existing links keep working but expire within 90 days.
 - **Roles (0092):** free-text roles were mapped (`cfo`/`manager` to admin, read-only to viewer,
   anything else to employee). Tell owners to review team roles.
@@ -310,12 +354,21 @@ sign-off), FAF export (check against the current FTA specification). The e-invoi
 and the 14-day reporting window are assumptions shown as guidance in the UI; confirm them with the MoF
 and FTA. The PR description must say so, so "394 fixed" is not read as "certified".
 
+**STEP4 checkout.** Stripe uses the company's existing product trial deadline when at least 48
+hours remain. Otherwise checkout starts a paid subscription immediately. A qualifying referral
+still discounts the first paid invoice even if the trial has expired.
+
+**Production registration.** Set `TURNSTILE_SECRET_KEY` and the corresponding public
+`TURNSTILE_SITE_KEY` in the deployment environment before opening signup. When the secret is
+missing, the server starts with a warning and registration and password reset accept requests
+without a CAPTCHA.
+
 ### 9a. Migration 0117 and the e-invoice provider switch
 
 Migration `0117_e2_einvoice_complyance.sql` (journal idx 116) adds the nullable column
 `einvoice_legal_entities.provider_details jsonb`. It is additive and idempotent (`IF NOT EXISTS`);
 safe to re-run, no data rewrite, no lock beyond a brief catalog change. Rehearse it with the rest of
-0089-0135, then run it a second time to confirm it is a no-op.
+0089 through 0149, then run it a second time to confirm it is a no-op.
 
 One provider is active at a time, selected by `EINVOICE_PROVIDER` (unset = e-invoicing off; a
 provider that is selected but not fully configured stays hidden/"Not connected"):

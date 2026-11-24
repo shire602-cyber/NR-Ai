@@ -68,7 +68,8 @@ describe("customer launch E2E surface", () => {
     expect(scriptSource).toContain("function isExpectedAnonymousAuthFailure(response)");
     expect(scriptSource).toContain('response.url().includes("/api/auth/refresh")');
     expect(scriptSource).toContain("status === 400 || status === 401");
-    expect(scriptSource).toContain("if (isExpectedAnonymousAuthFailure(r)) return;");
+    expect(scriptSource).toContain("if (!signedIn && isExpectedAnonymousAuthFailure(r)) return;");
+    expect(scriptSource).not.toContain("|| r.status() === 401");
   });
 
   it("fails before browser launch when full mode points at a remote URL without approval", () => {
@@ -174,6 +175,21 @@ describe("customer launch E2E surface", () => {
     expect(scriptSource).toContain("SOC 2 Type II");
     expect(scriptSource).toContain("Trusted by 500\\+ UAE businesses");
     expect(scriptSource).toContain("direct EmaraTax");
+  });
+
+  it("opens the CSV statement import dialog and scans the signed-in route in both directions", () => {
+    expect(scriptSource).toMatch(/lang: "en",\s*dir: "ltr",\s*title: "Bank reconciliation"/);
+    expect(scriptSource).toMatch(/lang: "ar",\s*dir: "rtl",\s*title: "التسوية البنكية"/);
+    expect(scriptSource).toContain('crawlRoute("/bank-reconciliation", {');
+    expect(scriptSource).toContain("findBankFeedMention(bodyText)");
+    expect(scriptSource).toContain('getByTestId("button-import-transactions")');
+    expect(scriptSource).toContain("await importAction.click()");
+    expect(scriptSource).toContain('page.route("**/api/bank/providers"');
+    expect(scriptSource).toContain("await page.goto(`${BASE}/bank-feeds`)");
+    expect(scriptSource).toContain("isConfigured: true");
+    expect(scriptSource).toContain(
+      'importDialog.getByTestId("select-import-bank-account").waitFor()'
+    );
   });
 
   it("actively probes NR-only and admin surfaces as forbidden for customers", () => {

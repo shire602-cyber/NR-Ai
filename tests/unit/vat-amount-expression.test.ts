@@ -40,6 +40,13 @@ describe("evaluateAmountExpression", () => {
     expect(evaluateAmountExpression("10/3")).toBe(3.33);
   });
 
+  it("rounds positive and negative half-fils away from zero in English and Arabic", () => {
+    expect(evaluateAmountExpression("1.07 + 0.005")).toBe(1.08);
+    expect(evaluateAmountExpression("-1.07 - 0.005")).toBe(-1.08);
+    expect(evaluateAmountExpression("-١٫٠٧ - ٠٫٠٠٥")).toBe(-1.08);
+    expect(evaluateAmountExpression(-1.075)).toBe(-1.08);
+  });
+
   it("returns 0 for empty / null / undefined", () => {
     expect(evaluateAmountExpression("")).toBe(0);
     expect(evaluateAmountExpression(null)).toBe(0);

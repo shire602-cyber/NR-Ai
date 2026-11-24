@@ -12,6 +12,7 @@ import { z } from "zod";
 import { and, eq, gte, inArray, isNull, lt, or, sql, sum } from "drizzle-orm";
 
 import { authMiddleware } from "../middleware/auth";
+import { denyClientAccess } from "./firm/shared";
 import {
   firmContextOf,
   requireFirmAdmin,
@@ -23,6 +24,7 @@ import { createLogger } from "../config/logger";
 import { db } from "../db";
 import { companies, invoices, receipts } from "../../shared/schema";
 import { recordAudit } from "../services/audit.service";
+import { requireFirmCompanyMfa } from "../services/security/policy";
 import {
   buildClientSnapshots,
   clientEInvoicingStates,
@@ -109,6 +111,7 @@ function snapshotToHealthScore(snap: ClientSnapshot): ClientHealthScore {
     overdueBalance: snap.overdueBalance,
     overdueInvoiceCount: snap.overdueInvoiceCount,
     vatStatus: snap.vatStatus,
+    vatReference: snap.vatReference,
     vatDueDate: snap.vatDueDate,
     receiptBacklog: snap.receiptBacklog,
     lastActivityAt: snap.lastActivityAt,
@@ -158,7 +161,9 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = req.user!;
       const skipCache = req.query.skipCache === "true";
-      const result = await buildFirmDashboard(userId, firmRole ?? null, { skipCache });
+      const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
+      if (!(await requireFirmCompanyMfa(req.user!, res, companyIds))) return;
+      const result = await buildFirmDashboard(userId, companyIds, { skipCache });
       res.json(result);
     })
   );
@@ -174,6 +179,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       });
 
       const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
+      if (!(await requireFirmCompanyMfa(req.user!, res, companyIds))) return;
       if (companyIds.length === 0) {
         // firm_admin with no assigned clients — return empty list instead of
         // running aggregations that hit Postgres with `IN ()` or a placeholder
@@ -231,8 +237,10 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
 
       const accessible = await resolveAccessibleClientIds(userId, firmRole ?? null);
       if (!accessible.includes(companyId)) {
-        return res.status(403).json({ message: "Access denied to this client" });
+        // 404 outside the firm, 403 only for an own-firm client this member is not assigned to.
+        return denyClientAccess(res, companyId);
       }
+      if (!(await requireFirmCompanyMfa(req.user!, res, [companyId]))) return;
 
       const snapshots = await buildClientSnapshots([companyId]);
       const snap = snapshots[0];

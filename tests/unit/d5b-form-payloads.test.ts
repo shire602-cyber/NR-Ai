@@ -29,6 +29,7 @@ import {
 } from "./helpers/form-harness";
 import { act } from "react";
 import { loadLocale } from "../../client/src/lib/i18n";
+import Invoices from "../../client/src/pages/Invoices";
 
 vi.mock("../../client/src/lib/queryClient", () => formHarnessQueryClientMock());
 vi.mock("../../client/src/hooks/useDefaultCompany", () => formHarnessCompanyMock());
@@ -171,7 +172,6 @@ const body = (method: string, url: string) => {
 describe("[D5b] invoice form payload unchanged", () => {
   it("POSTs the same invoice body", async () => {
     setFixtures({ [`${C}/invoices?limit=50`]: { items: [], nextCursor: null } });
-    const { default: Invoices } = await import("../../client/src/pages/Invoices");
     await renderPage(Invoices);
     await click(byTestId("button-create-invoice"));
     await type(byTestId("input-customer-name"), "Gulf Horizon Logistics");
@@ -426,6 +426,7 @@ describe("[D5b] contact form payload unchanged", () => {
       addressBuilding: null,
       addressDistrict: null,
       postalCode: null,
+      preferredLanguage: null,
       isCustomer: true,
       isSupplier: false,
       partyType: "business",
@@ -723,7 +724,6 @@ describe("[D5b] company settings forms payload unchanged", () => {
 describe("[D5b] validation: summary on submit, inline errors, focus first invalid", () => {
   it("invoice: empty submit shows the summary, marks the field and sends nothing", async () => {
     setFixtures({ [`${C}/invoices?limit=50`]: { items: [], nextCursor: null } });
-    const { default: Invoices } = await import("../../client/src/pages/Invoices");
     await renderPage(Invoices);
     await click(byTestId("button-create-invoice"));
     await submit(byTestId("button-submit-invoice"));

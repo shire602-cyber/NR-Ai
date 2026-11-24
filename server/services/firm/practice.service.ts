@@ -9,7 +9,7 @@
  * record "filed on" + the FTA reference number here. Nothing in this module
  * submits anything to the FTA.
  */
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { db } from "../../db";
 import { DomainError } from "../../errors";
 import {
@@ -23,7 +23,7 @@ import {
   vatReturns,
 } from "../../../shared/schema";
 import { FTA_TRN_LOOKUP_URL } from "../firm-clients.service";
-import type { FirmContext } from "./scope";
+import { accessibleClientsQuery, type FirmContext } from "./scope";
 
 // ─── Request lists ───────────────────────────────────────────────────────────
 
@@ -71,11 +71,12 @@ export async function reviewRequest(
   requestId: string,
   input: { decision: "accept" | "reject" | "cancel"; note?: string }
 ) {
-  const [row] = await db
-    .select()
-    .from(firmDocumentRequests)
-    .where(and(eq(firmDocumentRequests.id, requestId), eq(firmDocumentRequests.firmId, ctx.firmId)))
-    .limit(1);
+  const scope = and(
+    eq(firmDocumentRequests.id, requestId),
+    eq(firmDocumentRequests.firmId, ctx.firmId),
+    inArray(firmDocumentRequests.companyId, accessibleClientsQuery(ctx))
+  );
+  const [row] = await db.select().from(firmDocumentRequests).where(scope).limit(1);
   if (!row) throw new DomainError("REQUEST_NOT_FOUND", 404);
   let status: string;
   if (input.decision === "cancel") {
@@ -94,9 +95,10 @@ export async function reviewRequest(
       reviewNote: input.note ?? null,
       updatedAt: new Date(),
     })
-    .where(eq(firmDocumentRequests.id, requestId))
+    .where(and(scope, eq(firmDocumentRequests.status, row.status)))
     .returning();
-  return { companyId: row.companyId, request: updated };
+  if (!updated) throw new DomainError("TRANSACTION_CONFLICT", 409);
+  return updated;
 }
 
 async function assertMember(userId: string, companyId: string) {
@@ -137,13 +139,11 @@ export async function fulfilRequest(
   documentId: string
 ) {
   await assertMember(userId, companyId);
-  const [req] = await db
-    .select()
-    .from(firmDocumentRequests)
-    .where(
-      and(eq(firmDocumentRequests.id, requestId), eq(firmDocumentRequests.companyId, companyId))
-    )
-    .limit(1);
+  const scope = and(
+    eq(firmDocumentRequests.id, requestId),
+    eq(firmDocumentRequests.companyId, companyId)
+  );
+  const [req] = await db.select().from(firmDocumentRequests).where(scope).limit(1);
   if (!req) throw new DomainError("REQUEST_NOT_FOUND", 404);
   if (req.status !== "requested" && req.status !== "rejected") {
     throw new DomainError("REQUEST_NOT_OPEN", 409);
@@ -163,8 +163,9 @@ export async function fulfilRequest(
       uploadedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(firmDocumentRequests.id, requestId))
+    .where(and(scope, eq(firmDocumentRequests.status, req.status)))
     .returning();
+  if (!updated) throw new DomainError("TRANSACTION_CONFLICT", 409);
   return updated;
 }
 

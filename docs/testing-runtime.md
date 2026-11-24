@@ -71,6 +71,53 @@ BASE_URL=http://localhost:<port> CORS_ORIGIN=http://localhost:<port> node dist/i
   `SWEEP_ROUTES`, `SWEEP_CLICKS=false`, `SWEEP_MOBILE=false`, `SWEEP_PALETTE=false` (header of
   `tests/e2e/broken-path-sweep.mjs`). A full run takes 2-3 hours on 4 CPUs; run it under the
   heavy-step lock.
+- Customer links: `BASE_URL=http://localhost:<port> DATABASE_URL=<app db> npm run e2e:customer-links`
+  (`tests/e2e/customer-links-flow.mjs`; local production build with FRONTEND_URL = BASE_URL, no e-mail
+  provider, restart the app between runs). Sends invoice, reminder, quote, statement and EmaraTax
+  approval mail for an English company, an Arabic company and an Arabic-preferring contact, reads
+  it from the outbox, opens every link signed out at iPhone 13 and 1440x900 and checks language,
+  absolute links, console, overflow, 44 px targets, PDF/print and no TRN. Route-level twin:
+  `tests/db/customer-links-flow.test.ts`. `SHOT_DIR` saves screenshots.
+- Per-client e-invoicing: `BASE_URL=http://localhost:<port> DATABASE_URL=<app db> npm run e2e:einvoice-client`
+  (`tests/e2e/einvoice-client-flow.mjs`; local production build, no provider credentials). From a
+  client's books (company owner, and NR firm staff via "Open books") at iPhone 13, 360 px and
+  1440x900 in English and Arabic: settings and provider choice (none pre-selected), generate with
+  the two coded buyer issues, the status sheet and XML/PDF download, submit refused without a
+  provider, the approval request, the bilingual approver e-mail, the no-login page (done, used,
+  expired, revoked, invalid), the outcome in the client's page and the firm column, failing lists,
+  and every customer e-mail template rendered at 375/700/1000 px. `SHOT_DIR` saves screenshots.
+- Sign-in, recovery, pricing and client portal: same target, `npm run e2e:auth-portal`
+  (`tests/e2e/auth-portal-flow.mjs`; also writes a client-portal member through `DATABASE_URL`). For
+  iPhone SE, a 360x740 Android, iPhone 13 and 1440x900 in English and Arabic it opens `/login` (empty,
+  wrong password, keyboard open), `/forgot-password`, `/reset-password`, `/pricing` and the five
+  `/client-portal/*` pages and checks console, requests, overflow, 16 px inputs, 44 px targets, text
+  under 12 px, English in Arabic, axe serious/critical, autocomplete attributes, the localized Enterprise
+  mailto subject, the light portal root (no signed-in app, motion or socket) and the PDF download and
+  its failure message. Restart the app between runs (sign-in throttling); about 15 minutes.
+- Accounting pages: same target, `npm run e2e:books-pages` (`tests/e2e/books-pages-flow.mjs`; writes
+  the admin flag through `DATABASE_URL`). Seeds a company through the app's APIs (69 journals incl.
+  reversed and draft, invoices, a bill, a 45-line bank import with matches and rules), an empty
+  company and a platform admin, then opens Journal, entry detail, account ledger, bank
+  reconciliation (all tabs), Reports plus 26 report screens and Admin documents at 1440, iPhone 13
+  and 360 px in en and ar, with empty, failing-API (route interception) and unknown-id states, and
+  checks console, requests, overflow, 44 px targets, raw keys, English in Arabic and axe. About
+  20-30 minutes in one process (`E2E_VIEWPORTS`, `E2E_LANGS`, `E2E_ONLY` narrow it). The 360 px
+  customer links run is `E2E_VIEWPORTS=android npm run e2e:customer-links` on a restarted app.
+- Firm and accountant tools: same target, `npm run e2e:firm-tools` (`tests/e2e/firm-tools-flow.mjs`;
+  writes firm roles through `DATABASE_URL`; `CHROMIUM_PATH` falls back to
+  `/opt/pw-browsers/chromium-1243/chrome-linux64/chrome`). Seeds an NR firm owner whose own company is not
+  onboarded, an assigned and an unassigned preparer, 28 clients, assignments, a part-paid invoice and an
+  e-invoice state. For an iPhone 13, a 360 px Android and 1440x900 in English and Arabic it opens the
+  firm dashboard, client list, "Open books" (must land on the client's `/dashboard`, never `/onboarding`),
+  client profile, the invoice list and e-invoicing settings in a client's books, the staff views and
+  failing-API variants, and checks console, requests, overflow, raw catalog keys, 44 px targets in the
+  content area, English in Arabic, axe serious/critical and that the firm workspace downloads no
+  report-catalog or admin chunk. It ends with a first-load budget (iPhone 13, 4x CPU, Slow 4G, cold
+  cache, both landing screens, en and ar): served from the firm build, at most 50 requests and 25
+  scripts, largest contentful paint under 9 s (about 4.7-5.1 s measured; the margin is for slow
+  runners, it is a tripwire for a return to the shared-chunk layout, not the target). Run it on a
+  fresh database: the "Unassigned" count assumes the seeded clients are the only ones.
+  `SHOT_DIR` saves screenshots.
 - Core release flows: same target, `npm run e2e:flows` (`tests/e2e/core-flows.mjs`; `FLOWS=id,..`
   and `FLOWS_LANGS` narrow it). Steps in areas still being built are tagged `wip` and reported as
   "in progress" (`FLOWS_STRICT_WIP=true` makes them fail). Report:
@@ -150,3 +197,27 @@ BASE_URL=http://localhost:<port> CORS_ORIGIN=http://localhost:<port> node dist/i
   write on `journal_entries`/`journal_lines` outside `server/ledger/`; baseline 0), and
   `check-i18n-ratchet.mjs` (hard-coded JSX strings). Baselines in `scripts/guard-baselines/` may
   only move down (`--update` after real progress).
+
+## Firm first load (defect 14)
+
+`npm run build` makes two client bundles of the same sources: `vite build` (public, portal, no-login
+links and the whole app) and `FIRM_BUILD=1 vite build` (`client/firm.html` -> `src/firm-main.tsx`,
+written to `dist/public/firm.html` and `dist/public/firm-assets/`, never touching the first). In the
+firm build the signed-in app and the two landing screens (`/firm/clients`, `/firm/command-center`) are
+static imports, so the first load is one entry chunk plus about nine vendor chunks (the main bundle
+needed about 45 shared chunks, each a round trip on a phone over HTTP/1.1). `server/vite.ts` serves
+`firm.html` for `/firm` and `/firm/*`; on the two landing screens it also preloads the first-screen
+catalogs of the language cookie (`muhasib_locale`, set when signed in) and, when a session cookie is
+present, starts the first-screen reads from an inline nonce script before any JavaScript arrives
+(`client/src/lib/bootFetch.ts` adopts them). `shared/firm-boot.ts` is the one table behind all of it.
+`scripts/precompress-assets.mjs` writes brotli (quality 11) twins of every JS/CSS asset and the server
+sends them to browsers that accept brotli (about 15% smaller than the on-the-fly stream).
+
+- Unit: `tests/unit/firm-boot.test.ts` (route table, catalog scope, document, brotli middleware),
+  `tests/unit/firm-first-screen-keys.test.ts` (no first-screen key outside the first-screen
+  catalogs), `tests/unit/first-load-chunks.test.ts` (build output: chunk count and weight of the
+  firm entry, no firm chunk reachable from public/portal roots, no framer-motion in the shell).
+- When a firm landing screen starts reading a catalog key from another namespace, move or copy the
+  key into `firm.json` (as was done for the e-invoicing state labels) or add the namespace to
+  `FIRM_FIRST_SCREEN_NAMESPACES`; the key test fails otherwise.
+- Measure with the Playwright profile in `tests/e2e/firm-tools-flow.mjs` (`firstLoadBudget`).

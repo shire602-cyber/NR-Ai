@@ -1,6 +1,7 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { getAuthHeaders, hasAuthHint, refreshSession } from "./auth";
 import { apiUrl } from "./api";
+import { takeBootFetch } from "./bootFetch";
 import { withCsrfHeader, clearCsrfToken } from "./csrf";
 import { isOnline, queueForSync } from "./pwa";
 import {
@@ -10,6 +11,11 @@ import {
 } from "./validation-messages";
 import { loadNamespaces, useI18n } from "./i18n";
 import { announcePlanLimit } from "./plan-limit";
+import {
+  clearRevokedPortalSelection,
+  getPortalAccountSelection,
+  portalRequestHeaders,
+} from "./portal-state";
 import {
   PERIOD_LOCK_REASON_HEADER,
   askLockReason,
@@ -32,7 +38,15 @@ export class ApiError extends Error {
   }
 }
 
-async function throwIfResNotOk(res: Response) {
+/** Preparation failed before the mutation was submitted or queued. */
+export class ApiRequestNotSentError extends ApiError {
+  constructor(message: string) {
+    super(message, 0);
+    this.name = "ApiRequestNotSentError";
+  }
+}
+
+async function throwIfResNotOk(res: Response, portalSelection?: string | null) {
   if (!res.ok) {
     let errorMessage = res.statusText;
     let body: Record<string, unknown> | undefined;
@@ -53,6 +67,13 @@ async function throwIfResNotOk(res: Response) {
       }
     } catch {
       errorMessage = res.statusText;
+    }
+    if (
+      portalSelection !== undefined &&
+      res.status === 403 &&
+      body?.code === "PORTAL_ACCESS_REVOKED"
+    ) {
+      clearRevokedPortalSelection(portalSelection);
     }
     // E3 (J2-r3): the localised error copy lives in `forms`, which public routes do not load.
     await loadNamespaces(useI18n.getState().locale, SERVER_ERROR_NAMESPACES).catch(() => undefined);
@@ -100,10 +121,11 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 async function buildRequestHeaders(
   method: string,
-  data?: unknown
+  data: unknown,
+  authHeaders: Record<string, string>
 ): Promise<Record<string, string>> {
   let headers: Record<string, string> = {
-    ...getAuthHeaders(),
+    ...authHeaders,
   };
 
   if (data !== undefined) {
@@ -118,45 +140,89 @@ async function buildRequestHeaders(
   return headers;
 }
 
-export async function apiRequest(
+/** Multipart and binary portal requests use the same selection and revocation handling. */
+export async function fetchPortalResource(path: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers ?? portalRequestHeaders());
+  const res = await fetch(apiUrl(path), { ...init, credentials: "include", headers });
+  await throwIfResNotOk(res, headers.get("X-Portal-Account"));
+  return res;
+}
+
+const PORTAL_API_PREFIX = /^\/api\/client-portal\//;
+
+/** The cache and request use the same supplier even if a retry runs after a selection change. */
+export function portalQuery<T = any>(
+  path: `/api/client-portal/${string}`,
+  selection = getPortalAccountSelection()
+) {
+  return {
+    queryKey: [path.replace(PORTAL_API_PREFIX, "portal-"), selection] as const,
+    queryFn: (): Promise<T> =>
+      requestWithHeaders("GET", path, undefined, portalRequestHeaders(selection)),
+  };
+}
+
+export function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
   /** Extra request headers, e.g. `X-Period-Lock-Reason` for an audited soft-lock override. */
-  extraHeaders?: Record<string, string>
+  extraHeaders?: Record<string, string>,
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean }
+): Promise<any> {
+  const authHeaders = PORTAL_API_PREFIX.test(url) ? portalRequestHeaders() : getAuthHeaders();
+  return requestWithHeaders(method, url, data, authHeaders, extraHeaders, options);
+}
+
+async function requestWithHeaders(
+  method: string,
+  url: string,
+  data: unknown,
+  authHeaders: Record<string, string>,
+  extraHeaders?: Record<string, string>,
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean }
 ): Promise<any> {
   const withExtra = (h: Record<string, string>) => (extraHeaders ? { ...h, ...extraHeaders } : h);
-  let headers = withExtra(await buildRequestHeaders(method, data));
+  const upperMethod = method.toUpperCase();
+  const isMutation = MUTATING_METHODS.has(upperMethod);
+  const immediateOnly = isMutation && options?.queueWhenOffline === false;
+  if (immediateOnly && !isOnline()) throw new ApiRequestNotSentError("You are offline.");
+
+  let headers: Record<string, string>;
+  try {
+    headers = withExtra(await buildRequestHeaders(method, data, authHeaders));
+  } catch (error) {
+    if (immediateOnly) throw new ApiRequestNotSentError("Could not prepare the request.");
+    throw error;
+  }
 
   const fullUrl = apiUrl(url);
-  const upperMethod = method.toUpperCase();
   const body = data !== undefined ? JSON.stringify(data) : undefined;
+  const send = (requestHeaders: Record<string, string>) =>
+    fetch(fullUrl, {
+      method,
+      headers: requestHeaders,
+      body,
+      credentials: "include",
+      keepalive: options?.keepalive,
+    });
 
   // If we're offline and this is a mutation, queue it for the service worker
   // to replay once connectivity returns. Reads are not queued — they should
   // surface a clear error so the UI can render its offline state.
-  if (!isOnline() && MUTATING_METHODS.has(upperMethod)) {
+  if (isMutation && !isOnline()) {
+    if (immediateOnly) throw new ApiRequestNotSentError("You are offline.");
     await queueForSync({ url: fullUrl, method: upperMethod, headers, body });
     throw new ApiError("You are offline. This change will sync when you reconnect.", 0);
   }
 
-  let res = await fetch(fullUrl, {
-    method,
-    headers,
-    body,
-    credentials: "include",
-  });
+  let res = await send(headers);
 
   if (res.status === 401) {
     const refreshed = await refreshSession();
     if (refreshed) {
-      headers = withExtra(await buildRequestHeaders(method, data));
-      res = await fetch(fullUrl, {
-        method,
-        headers,
-        body,
-        credentials: "include",
-      });
+      headers = withExtra(await buildRequestHeaders(method, data, authHeaders));
+      res = await send(headers);
     }
   }
 
@@ -166,12 +232,7 @@ export async function apiRequest(
   if (await isCsrfInvalidResponse(res)) {
     clearCsrfToken();
     const retryHeaders = await withCsrfHeader(method, { ...headers });
-    res = await fetch(fullUrl, {
-      method,
-      headers: retryHeaders,
-      body,
-      credentials: "include",
-    });
+    res = await send(retryHeaders);
     if (await isCsrfInvalidResponse(res)) {
       clearCsrfToken();
     }
@@ -183,19 +244,17 @@ export async function apiRequest(
     if (lockBody) {
       const reason = await askLockReason(lockBody);
       if (reason) {
-        const lockHeaders = withExtra(await buildRequestHeaders(method, data));
+        const lockHeaders = withExtra(await buildRequestHeaders(method, data, authHeaders));
         lockHeaders[PERIOD_LOCK_REASON_HEADER] = encodeLockReason(reason);
-        res = await fetch(fullUrl, {
-          method,
-          headers: lockHeaders,
-          body,
-          credentials: "include",
-        });
+        res = await send(lockHeaders);
       }
     }
   }
 
-  await throwIfResNotOk(res);
+  await throwIfResNotOk(
+    res,
+    PORTAL_API_PREFIX.test(url) ? new Headers(headers).get("X-Portal-Account") : undefined
+  );
   return parseResponseBody(res);
 }
 
@@ -223,10 +282,12 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
       if (unauthorizedBehavior === "returnNull") return null as never;
       throw new ApiError("Not signed in", 401);
     }
-    let res = await fetch(url, {
-      credentials: "include",
-      headers: getAuthHeaders(),
-    });
+    let res =
+      (await takeBootFetch(url)) ??
+      (await fetch(url, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      }));
 
     if (res.status === 401) {
       const refreshed = await refreshSession();

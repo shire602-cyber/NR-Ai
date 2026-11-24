@@ -28,3 +28,41 @@ export function landingPathFor(user: LandingUser | null | undefined): string {
 export function skipsOnboardingRedirect(pathname: string): boolean {
   return pathname === "/onboarding" || /^\/(admin|firm)(\/|$)/.test(pathname);
 }
+
+export interface OnboardingRedirectState {
+  pathname: string;
+  companyLoading: boolean;
+  /** The active company is a firm-managed client. */
+  isFirmContext: boolean;
+  /** "Open books" committed a client switch and the company list has not caught up yet. */
+  switchingClient: boolean;
+  /** /api/companies is being fetched. */
+  companiesFetching: boolean;
+  hasNoCompanies: boolean;
+  company:
+    | { onboardingCompleted?: boolean | null; hasPostedDocuments?: boolean }
+    | undefined
+    | null;
+  /** The viewer may run the setup wizard for `company` (owner). */
+  canRunOnboarding: boolean;
+}
+
+/**
+ * Where the signed-in shell sends the user for onboarding, or null to stay. A firm staffer who
+ * opens a client's books must land on that client's dashboard even while their own home company
+ * is not onboarded: the redirect never runs while a client switch is in flight or committed.
+ */
+export function onboardingRedirectTarget(s: OnboardingRedirectState): string | null {
+  if (s.companyLoading || skipsOnboardingRedirect(s.pathname)) return null;
+  if (s.isFirmContext || s.switchingClient) return null;
+  if (s.companiesFetching) return null;
+  if (s.hasNoCompanies) return "/onboarding";
+  if (
+    s.company &&
+    !s.company.onboardingCompleted &&
+    !s.company.hasPostedDocuments &&
+    s.canRunOnboarding
+  )
+    return "/onboarding";
+  return null;
+}

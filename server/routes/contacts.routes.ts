@@ -55,6 +55,8 @@ const contactFields = {
   emirate: zEmirate.optional().nullable(),
   notes: optText(2000),
   isActive: z.boolean().optional(),
+  // The language this contact's e-mails and portal open in (null = both languages).
+  preferredLanguage: z.enum(["en", "ar"]).optional().nullable(),
   // WQ5: customer and/or supplier role, structured address, typed registrations, defaults,
   // buyer legal identifier (einvoice_buyer_endpoints).
   ...contactIdentityFields,
@@ -466,68 +468,75 @@ export function registerContactRoutes(app: Express) {
   );
 
   // Update customer contact
+  const updateContact = asyncHandler(async (req: Request, res: Response) => {
+    const { companyId, id } = req.params;
+    const userId = req.user!.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
+    }
+
+    // Verify contact belongs to this company
+    const existing = await storage.getCustomerContact(id);
+    if (!existing || existing.companyId !== companyId) {
+      return res.status(404).json({ message: "Contact not found", code: "CONTACT_NOT_FOUND" });
+    }
+
+    // S-M1: allowlist update fields (tenant scope cannot be changed here).
+    // S-L3: scope the write to the company.
+    const { rest, legal } = splitLegal(contactUpdateSchema.parse(req.body ?? {}));
+    const updateData = withLegacyAddress(
+      reconcileTaxRegistrations(rest, {
+        trnNumber: existing.trnNumber,
+        taxRegistrations: existing.taxRegistrations,
+      }),
+      existing
+    );
+    if (updateData.trnNumber && !/^[0-9]{15}$/.test(updateData.trnNumber)) {
+      return res.status(422).json({
+        message: "UAE TRN must be exactly 15 digits.",
+        code: "INVALID_TRN",
+      });
+    }
+    const isCustomer = updateData.isCustomer ?? existing.isCustomer;
+    const isSupplier = updateData.isSupplier ?? existing.isSupplier;
+    if (!isCustomer && !isSupplier) {
+      throw new DomainError(
+        "CONTACT_ROLE_REQUIRED",
+        422,
+        undefined,
+        "A contact is a customer, a supplier or both"
+      );
+    }
+    await assertContactDefaults(companyId, updateData as never);
+    // WQ5: keep the linked vendors row in step (or create it when the role is switched on).
+    const merged = { ...existing, ...updateData } as Record<string, unknown>;
+    const vendorId = await syncSupplierVendor(companyId, {
+      ...(merged as Record<string, never>),
+      name: String(merged.name),
+      isSupplier,
+      vendorId: existing.vendorId ?? null,
+    });
+    const contact = await storage.updateCustomerContact(
+      id,
+      { ...(updateData as Partial<InsertCustomerContact>), vendorId },
+      companyId
+    );
+    await syncBuyerLegalId(companyId, id, legal);
+    res.json(withLegalId(contact, await buyerLegalIds(companyId)));
+  });
   app.put(
     "/api/companies/:companyId/customer-contacts/:id",
     authMiddleware,
     requireCustomer,
-    asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, id } = req.params;
-      const userId = req.user!.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
-      }
-
-      // Verify contact belongs to this company
-      const existing = await storage.getCustomerContact(id);
-      if (!existing || existing.companyId !== companyId) {
-        return res.status(404).json({ message: "Contact not found", code: "CONTACT_NOT_FOUND" });
-      }
-
-      // S-M1: allowlist update fields (tenant scope cannot be changed here).
-      // S-L3: scope the write to the company.
-      const { rest, legal } = splitLegal(contactUpdateSchema.parse(req.body ?? {}));
-      const updateData = withLegacyAddress(
-        reconcileTaxRegistrations(rest, {
-          trnNumber: existing.trnNumber,
-          taxRegistrations: existing.taxRegistrations,
-        }),
-        existing
-      );
-      if (updateData.trnNumber && !/^[0-9]{15}$/.test(updateData.trnNumber)) {
-        return res.status(422).json({
-          message: "UAE TRN must be exactly 15 digits.",
-          code: "INVALID_TRN",
-        });
-      }
-      const isCustomer = updateData.isCustomer ?? existing.isCustomer;
-      const isSupplier = updateData.isSupplier ?? existing.isSupplier;
-      if (!isCustomer && !isSupplier) {
-        throw new DomainError(
-          "CONTACT_ROLE_REQUIRED",
-          422,
-          undefined,
-          "A contact is a customer, a supplier or both"
-        );
-      }
-      await assertContactDefaults(companyId, updateData as never);
-      // WQ5: keep the linked vendors row in step (or create it when the role is switched on).
-      const merged = { ...existing, ...updateData } as Record<string, unknown>;
-      const vendorId = await syncSupplierVendor(companyId, {
-        ...(merged as Record<string, never>),
-        name: String(merged.name),
-        isSupplier,
-        vendorId: existing.vendorId ?? null,
-      });
-      const contact = await storage.updateCustomerContact(
-        id,
-        { ...(updateData as Partial<InsertCustomerContact>), vendorId },
-        companyId
-      );
-      await syncBuyerLegalId(companyId, id, legal);
-      res.json(withLegalId(contact, await buyerLegalIds(companyId)));
-    })
+    updateContact
+  );
+  app.patch(
+    "/api/companies/:companyId/customer-contacts/:id",
+    authMiddleware,
+    requireCustomer,
+    updateContact
   );
 
   // Delete customer contact

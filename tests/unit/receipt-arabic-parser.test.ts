@@ -162,7 +162,59 @@ describe("R05-23 receipt review helpers (en + ar)", () => {
     };
     expect(receiptReviewDecision(original, { ...original })).toBe("accepted");
     expect(receiptReviewDecision(original, { ...original, total: 106 })).toBe("corrected");
+    expect(
+      receiptReviewDecision({ ...original, subtotal: 90 }, { ...original, subtotal: 100 })
+    ).toBe("corrected");
+    expect(receiptReviewDecision(original, { ...original, invoiceNumber: "POS-721" })).toBe(
+      "corrected"
+    );
     expect(receiptReviewDecision(original, { ...original, category: "Other" })).toBe("corrected");
     expect(receiptReviewDecision(undefined, original)).toBe("corrected");
+  });
+
+  it("keeps receipt review decisions stable across legacy and populated fields", () => {
+    const legacy = {};
+    const empty = {
+      merchant: null,
+      date: null,
+      invoiceNumber: null,
+      total: null,
+      subtotal: null,
+      currency: null,
+      vatAmount: null,
+      category: null,
+    };
+    expect(receiptReviewDecision(legacy, empty)).toBe("accepted");
+
+    const receipt = {
+      merchant: "Spinneys",
+      date: "2026-11-10",
+      invoiceNumber: "POS-721",
+      total: 105,
+      subtotal: 100,
+      currency: "AED",
+      vatAmount: 5,
+      category: "Meals",
+    };
+    expect(
+      receiptReviewDecision(receipt, { ...receipt, invoiceNumber: " POS-721 ", subtotal: null })
+    ).toBe("accepted");
+    for (const correction of [
+      { merchant: "Another merchant" },
+      { date: "2026-11-11" },
+      { currency: "USD" },
+      { vatAmount: 4 },
+    ]) {
+      expect(receiptReviewDecision(receipt, { ...receipt, ...correction })).toBe("corrected");
+    }
+  });
+});
+
+it("rejects an OCR subtotal that disagrees with the displayed total and VAT", async () => {
+  const { approvedReceiptAmounts } = await import("../../client/src/lib/receipt-review-amounts");
+  expect(approvedReceiptAmounts({ subtotal: 100, vatAmount: 5, total: 95 })).toBeNull();
+  expect(approvedReceiptAmounts({ subtotal: 90, vatAmount: 5, total: 95 })).toEqual({
+    net: 9000,
+    vat: 500,
   });
 });

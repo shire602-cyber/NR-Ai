@@ -1,7 +1,6 @@
 // AI reconciliation and bank-transaction handlers: reconcile, list, manual entry and statement import.
 // Handlers moved from ai.routes.ts (R20-09); the route registrations (paths and
 // middleware order) stay in ai.routes.ts.
-import type { AiStatementImportBody } from "../../../shared/validators/banking";
 import { DATA_BLOCK_INSTRUCTION, wrapUserData } from "../../services/ai/data-blocks";
 import { DomainError, errorMessage, errorStatus, errorStatusCode } from "../../errors";
 import type { Request, Response } from "express";
@@ -231,44 +230,8 @@ export const handlePostCompaniesBankTransactionsImport = async (req: Request, re
   if (!(await storage.hasCompanyAccess(userId, companyId))) {
     return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
   }
-  const body = parsedBody<AiStatementImportBody>(req);
-  const rows = aiRowsToParsedRows(body.transactions);
-  if (!rows.some((r) => r.errors.length === 0)) {
-    return res.status(400).json({
-      code: "NO_VALID_TRANSACTIONS",
-      message: "No valid transactions found",
-      rowErrors: rows.map((r) => ({ rowIndex: r.rowIndex, errors: r.errors })).slice(0, 100),
-    });
-  }
-  const fingerprint = createHash("sha256")
-    .update(
-      JSON.stringify(
-        rows.map((r) => [r.date?.toISOString() ?? "", r.description, r.amount, r.reference])
-      )
-    )
-    .digest("hex");
-  const result = await importStatementRows({
-    companyId,
-    bankAccountId: body.bankAccountId,
-    rows,
-    kind: "csv",
-    fileFingerprint: fingerprint,
-    importSource: `pdf_ai:${fingerprint.slice(0, 16)}`,
-    source: "pdf_ai",
-    fileName: body.fileName ?? null,
-    format: "pdf_ai",
-    actorId: userId,
-    allowDuplicates: body.allowDuplicates,
-  });
-  res.status(201).json({
-    imported: result.imported.length,
-    batchId: result.batchId,
-    continuityWarning: result.continuityWarning,
-    skipped: result.plan.skipped.map(({ rowIndex, reason, detail }) => ({
-      rowIndex,
-      reason,
-      detail,
-    })),
-    transactions: result.imported,
+  res.status(410).json({
+    code: "STATEMENT_CSV_REQUIRED",
+    message: "Choose a bank CSV export.",
   });
 };

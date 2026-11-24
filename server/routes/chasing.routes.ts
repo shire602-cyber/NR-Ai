@@ -12,6 +12,8 @@
  * /firm middleware split mirrors invoices.routes.ts.
  */
 
+import { getInvoiceBalances } from "../services/invoice-balances";
+import type { InvoiceBalanceFields } from "../../shared/invoice-balance";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
@@ -49,18 +51,30 @@ async function findInvoiceForUser(userId: string, invoiceId: string, firmRole?: 
   return undefined;
 }
 
+/** Settled amount per invoice, from the settlement rule, in the shape the chasing maths takes. */
+function settledAsPayments(
+  invoices: Array<{ id: string; total: unknown }>,
+  balances: Map<string, InvoiceBalanceFields>
+): ChasePayment[] {
+  return invoices.map((inv) => {
+    const total = Number(inv.total) || 0;
+    const open = balances.get(inv.id)?.openBalance ?? total;
+    return { invoiceId: inv.id, amount: Math.max(0, total - open) };
+  });
+}
+
 async function loadAgingRows(companyId: string): Promise<ChaseAgingRow[]> {
   // Fetch invoices and all their payments in two queries, not 1+N. Each
   // invoice row only needs its own payments, but a single SELECT scoped to
   // companyId is far cheaper than fanning out per-invoice on a large book.
-  const [invoices, payments] = await Promise.all([
+  // PR-61 port: the amount settled comes from the one settlement rule
+  // (server/reporting/settlement.ts: payments + credit notes + applied credits), so a
+  // partly credited invoice is chased for what is really open, not its full total.
+  const [invoices, balances] = await Promise.all([
     storage.getInvoicesByCompanyId(companyId),
-    storage.getInvoicePaymentsByCompanyId(companyId),
+    getInvoiceBalances(companyId),
   ]);
-  const flatPayments: ChasePayment[] = payments.map((p) => ({
-    invoiceId: p.invoiceId,
-    amount: Number(p.amount) || 0,
-  }));
+  const flatPayments = settledAsPayments(invoices, balances);
   return invoices.map((inv) =>
     buildAgingRow(
       {
@@ -227,7 +241,10 @@ export function registerChasingRoutes(app: Express) {
         "en") as ChaseLanguage;
 
       // Build aging row from this invoice + payments
-      const payments = await storage.getInvoicePaymentsByInvoiceId(invoice.id);
+      const payments = settledAsPayments(
+        [invoice],
+        await getInvoiceBalances(invoice.companyId, [invoice.id])
+      );
       const row = buildAgingRow(
         {
           id: invoice.id,

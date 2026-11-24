@@ -29,8 +29,8 @@ import {
   type CustomerContact,
 } from "../../shared/schema";
 import {
+  portalAccountForUser,
   portalAccountsForUser,
-  type PortalBinding,
   touchPortalAccount,
 } from "../services/portal-access.service";
 import { buildCustomerStatement, renderStatementPdf } from "../services/customer-statement.service";
@@ -47,6 +47,7 @@ import {
   type PortalProfileBody,
 } from "../../shared/validators/portal";
 import { contactInvoices, ISSUED_STATUSES } from "./portal.public.routes";
+import { getCustomerEInvoiceOutcome } from "../services/einvoice/customer-outcome";
 import { checkoutForInvoice, paymentsAvailability, publicBaseUrl } from "../services/payments";
 import { fromFils, sumFils, toFils } from "../../shared/money";
 
@@ -64,43 +65,25 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /**
  * A signed-in user with an active binding to an active contact. The binding is the only source of
  * access: the user's type and any company membership are irrelevant here. `X-Portal-Account`
- * picks one of the user's OWN bindings (a foreign id is ignored).
+ * picks one of the user's OWN bindings. An unavailable selection fails without switching scope.
  */
 async function requirePortalUser(req: Request, res: Response, next: NextFunction): Promise<void> {
+  res.set("Cache-Control", "no-store");
   const user = req.user as { id: string } | undefined;
   if (!user) {
     res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
     return;
   }
   const header = req.headers["x-portal-account"];
-  const preferred =
-    typeof header === "string" && UUID_RE.test(header) ? header.toLowerCase() : null;
-  const bindings = await portalAccountsForUser(user.id);
-  // The selected binding first, then the others newest first. A binding whose contact was
-  // deactivated (or whose company is gone) is skipped so the customer lands on another supplier
-  // that is still active instead of a dead end; only when none is usable is access "removed".
-  const ordered = preferred
-    ? [...bindings.filter((x) => x.id === preferred), ...bindings.filter((x) => x.id !== preferred)]
-    : bindings;
-  let usable: { binding: PortalBinding; company: Company; contact: CustomerContact } | null = null;
-  for (const candidate of ordered) {
-    const [company, contact] = await Promise.all([
-      storage.getCompany(candidate.companyId),
-      storage.getCustomerContact(candidate.contactId),
-    ]);
-    if (company && contact && contact.companyId === company.id && contact.isActive) {
-      usable = { binding: candidate, company, contact };
-      break;
-    }
-  }
-  if (!usable) {
-    const [removed] = bindings.length
-      ? [{ id: bindings[0].id }]
-      : await db
-          .select({ id: customerPortalAccounts.id })
-          .from(customerPortalAccounts)
-          .where(eq(customerPortalAccounts.userId, user.id))
-          .limit(1);
+  const preferred = typeof header === "string" && UUID_RE.test(header) ? header : null;
+  const binding =
+    header === undefined || preferred ? await portalAccountForUser(user.id, preferred) : null;
+  if (!binding) {
+    const [removed] = await db
+      .select({ id: customerPortalAccounts.id })
+      .from(customerPortalAccounts)
+      .where(eq(customerPortalAccounts.userId, user.id))
+      .limit(1);
     res.status(403).json(
       removed
         ? {
@@ -115,9 +98,17 @@ async function requirePortalUser(req: Request, res: Response, next: NextFunction
     );
     return;
   }
-  const { binding, company, contact } = usable;
-  // Tell the client which supplier answered, so its switcher can follow a server-side fallback.
-  res.setHeader("X-Portal-Account-Used", binding.id);
+  const [company, contact] = await Promise.all([
+    storage.getCompany(binding.companyId),
+    storage.getCustomerContact(binding.contactId),
+  ]);
+  if (!company || !contact || contact.companyId !== company.id || !contact.isActive) {
+    res.status(403).json({
+      code: "PORTAL_ACCESS_REVOKED",
+      message: "Your access to this customer portal was removed.",
+    });
+    return;
+  }
   void touchPortalAccount(binding.id);
   (req as Request & { portal: PortalScope }).portal = {
     companyId: company.id,
@@ -179,11 +170,22 @@ export function registerClientPortalRoutes(app: Express): void {
     },
   ];
 
+  const pinnedWriteChain: RequestHandler[] = [
+    authMiddleware as RequestHandler,
+    (req, res, next) => {
+      if (!req.get("X-Portal-Account")) {
+        res.set("Cache-Control", "no-store");
+        return next(new DomainError("PORTAL_ACCESS_REVOKED", 403));
+      }
+      requirePortalUser(req, res, next).catch(next);
+    },
+  ];
+
   app.get(
     "/api/client-portal/company",
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      const { company, contact } = scopeOf(req);
+      const { accountId, company, contact } = scopeOf(req);
       // The accounting firm serving this client (active engagement), for the portal header.
       const [firm] = await db
         .select({ name: firms.name })
@@ -192,6 +194,7 @@ export function registerClientPortalRoutes(app: Express): void {
         .where(and(eq(firmClientLinks.companyId, company.id), eq(firmClientLinks.status, "active")))
         .limit(1);
       res.json({
+        portalAccountId: accountId,
         firmName: firm?.name ?? null,
         id: company.id,
         name: company.name,
@@ -207,6 +210,7 @@ export function registerClientPortalRoutes(app: Express): void {
     "/api/client-portal/accounts",
     authMiddleware as RequestHandler,
     asyncHandler(async (req: Request, res: Response) => {
+      res.set("Cache-Control", "no-store");
       const userId = (req.user as { id: string }).id;
       const bindings = await portalAccountsForUser(userId);
       const out = [];
@@ -215,7 +219,7 @@ export function registerClientPortalRoutes(app: Express): void {
           storage.getCompany(b.companyId),
           storage.getCustomerContact(b.contactId),
         ]);
-        if (!company || !contact || !contact.isActive) continue;
+        if (!company || !contact || contact.companyId !== company.id || !contact.isActive) continue;
         out.push({
           id: b.id,
           company: { id: company.id, name: company.name, logoUrl: company.logoUrl ?? null },
@@ -321,10 +325,12 @@ export function registerClientPortalRoutes(app: Express): void {
           .status(404)
           .json({ code: "EINVOICE_NOT_FOUND", message: "No e-invoice for this invoice" });
       }
+      const outcome = await getCustomerEInvoiceOutcome(invoice);
       res.set({
         "Content-Type": "application/xml; charset=utf-8",
         "Content-Disposition": `attachment; filename="einvoice-${invoice.number}.xml"`,
-        "X-Einvoice-Status": invoice.einvoiceStatus ?? "generated",
+        "X-Einvoice-Status": outcome?.status ?? "generated",
+        "X-Einvoice-Environment": outcome?.environment ?? "unknown",
       });
       res.send(invoice.einvoiceXml);
     })
@@ -369,10 +375,13 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.post(
     "/api/client-portal/documents",
-    ...chain,
+    ...pinnedWriteChain,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, contact, userId } = scopeOf(req);
+      const { companyId, contact, userId, accountId } = scopeOf(req);
       const { meta, file } = await readValidatedUpload(req);
+      if (!(await portalAccountForUser(userId, accountId))) {
+        throw new DomainError("PORTAL_ACCESS_REVOKED", 403);
+      }
       const doc = await createVaultDocument({
         companyId,
         uploadedBy: userId,
@@ -395,7 +404,7 @@ export function registerClientPortalRoutes(app: Express): void {
     "/api/client-portal/statements",
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, contact } = scopeOf(req);
+      const { companyId, contact, accountId } = scopeOf(req);
       const q = statementQuery.parse(req.query);
       const st = await buildCustomerStatement({
         companyId,
@@ -411,7 +420,7 @@ export function registerClientPortalRoutes(app: Express): void {
         });
         return res.send(pdf);
       }
-      res.json(st);
+      res.json({ ...st, accountId });
     })
   );
 
@@ -437,10 +446,10 @@ export function registerClientPortalRoutes(app: Express): void {
 
   app.post(
     "/api/client-portal/messages",
-    ...chain,
+    ...pinnedWriteChain,
     strictBody(portalMessageBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, contact, userId } = scopeOf(req);
+      const { companyId, contact, userId, accountId } = scopeOf(req);
       const body = parsedBody<PortalMessageBody>(req);
       if (body.threadId) {
         const [thread] = await db
@@ -456,6 +465,9 @@ export function registerClientPortalRoutes(app: Express): void {
           )
           .limit(1);
         if (!thread) throw new DomainError("THREAD_NOT_FOUND", 404, undefined, "Thread not found");
+      }
+      if (!(await portalAccountForUser(userId, accountId))) {
+        throw new DomainError("PORTAL_ACCESS_REVOKED", 403);
       }
       const [message] = await db
         .insert(messages)

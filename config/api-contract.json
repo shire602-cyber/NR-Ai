@@ -63,6 +63,14 @@
         "buildReportCatalogDiscovery",
         "isReportCatalogPersona"
       ]
+    },
+    {
+      "name": "legacy e-invoice environment verification",
+      "file": "server/routes/einvoice.routes.ts",
+      "mustContain": [
+        "'/api/invoices/:id/einvoice/confirm-environment'",
+        "confirmLegacyEInvoiceEnvironment"
+      ]
     }
   ]
 }

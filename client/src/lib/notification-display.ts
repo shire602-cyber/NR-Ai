@@ -5,16 +5,18 @@
  * shared templates. Configuration problems are phrased for users with a "Set up email" link
  * instead of environment variable names.
  */
-import { EMAIL_SETUP_HREF, isEmailNotSetUpMessage } from "@shared/notification-copy";
+import { BANK_STATEMENT_REVIEW_TITLE, EMAIL_SETUP_HREF, isEmailNotSetUpMessage } from "@shared/notification-copy";
+import { BANK_RECONCILIATION_COPY } from "@shared/bank-reconciliation-copy";
 import {
+  bankStatementUpdateFailureCopy,
   describeNotificationCopy,
   renderDescriptor,
   type NotificationCopyDescriptor,
 } from "@shared/server-copy";
-import { reportDeliverySubscriptions } from "@/lib/reportCatalog";
+import { deliverySubscriptionIdForTitle } from "@/lib/deliveryTitleRegistry";
 import { formatAedText } from "@/lib/format";
 import { formatMoneyText } from "@/lib/format-money";
-import { formatDate, formatEmbeddedDates } from "@/lib/format-date";
+import { ARABIC_DISPLAY_LOCALE, formatDate, formatEmbeddedDates } from "@/lib/format-date";
 
 const ISO_DAY_PARAM = /^\d{4}-\d{2}-\d{2}(?:T[\d:.]+Z?)?$/;
 
@@ -45,6 +47,7 @@ function localizeAmounts(text: string): string {
 type NotificationLike = {
   title: string;
   message: string;
+  eventKey?: string | null;
   copy?: NotificationCopyDescriptor | null;
 };
 
@@ -55,8 +58,8 @@ export function localizeDeliverySubscriptionTitle(
   title: string,
   t: Record<string, string | undefined>
 ): string {
-  const sub = reportDeliverySubscriptions.find((s) => s.title === title);
-  return (sub && t[SUBSCRIPTION_TITLE_KEY(sub.id)]) || title;
+  const id = deliverySubscriptionIdForTitle(title);
+  return (id && t[SUBSCRIPTION_TITLE_KEY(id)]) || title;
 }
 
 /** "AED 15000.00" / "15000.00" (server string) -> locale money text, or null when not an amount. */
@@ -71,7 +74,7 @@ function monthYearLabel(month: string, year: string, locale: "en" | "ar"): strin
   const mo = Number(month);
   const yr = Number(year);
   if (!Number.isInteger(mo) || mo < 1 || mo > 12 || !Number.isInteger(yr)) return null;
-  return new Intl.DateTimeFormat(locale === "ar" ? "ar-AE" : "en-AE", {
+  return new Intl.DateTimeFormat(locale === "ar" ? ARABIC_DISPLAY_LOCALE : "en-AE", {
     month: "long",
     year: "numeric",
     timeZone: "UTC",
@@ -83,7 +86,15 @@ export function localizeNotification(
   n: NotificationLike,
   t: Record<string, string | undefined>,
   locale: "en" | "ar" = "en"
-): { title: string; message: string; setupEmailHref?: string } {
+): { title: string; message: string; actionUrl?: string; setupEmailHref?: string } {
+  const bankFailure = bankStatementUpdateFailureCopy(n);
+  if (bankFailure) {
+    return {
+      title: BANK_STATEMENT_REVIEW_TITLE[locale],
+      message: BANK_RECONCILIATION_COPY[locale],
+      actionUrl: bankFailure.actionUrl,
+    };
+  }
   const copy = n.copy ?? describeNotificationCopy(n);
   const titleParams = localizeDateParams({ ...copy.titleParams }, locale);
   if (titleParams.title) {

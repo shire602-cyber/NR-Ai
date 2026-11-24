@@ -6,16 +6,84 @@ import {
   sheetsExportBody,
   sheetsImportBody,
 } from "../../shared/validators/route-bodies";
+import { parseIsoDate } from "../../shared/validators/primitives";
+import { db } from "../db";
+import { ValidationError } from "../errors";
 import { storage } from "../storage";
 import * as googleSheets from "../integrations/googleSheets";
+import type { LedgerTx } from "../ledger/types";
 import { authMiddleware, requireCompanyAccess, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { insertWaitlistSchema } from "../../shared/schema";
 import { createLogger } from "../config/logger";
 import { getCapability } from "../../shared/capabilities";
 import { connectorStatuses } from "../services/connectors/oauth";
+import { assertPeriodNotLocked, lockPeriodPolicy } from "../services/period-lock.service";
 
 const log = createLogger("integrations");
+
+type SheetImportKind = "invoices" | "expenses";
+
+function sheetImportDate(value: string, kind: SheetImportKind): string {
+  const input = value.trim();
+  const slashDate = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/.exec(input);
+  let candidate = input;
+  if (slashDate) {
+    const [, first, second, year] = slashDate;
+    // The invoice importer historically used US slash dates; expenses used day first.
+    const [month, day] = kind === "invoices" ? [first, second] : [second, first];
+    const fullYear = year.length === 4 ? year : `${Number(year) < 50 ? "20" : "19"}${year}`;
+    candidate = `${fullYear}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+  const date = parseIsoDate(candidate);
+  if (!date) throw new ValidationError("Spreadsheet rows must have valid calendar dates.");
+  return date;
+}
+
+async function saveSheetImport<Row>(
+  input: {
+    companyId: string;
+    sheetUrl: string;
+    dataType: SheetImportKind;
+    rows: Row[];
+    dateOf: (row: Row) => string;
+  },
+  create: (row: Row, date: Date, tx: LedgerTx) => Promise<unknown>
+): Promise<number> {
+  const { companyId, sheetUrl, dataType, rows, dateOf } = input;
+  return db.transaction(async (tx) => {
+    await lockPeriodPolicy(tx, companyId, "shared");
+    const prepared = rows.map((row) => ({ row, date: sheetImportDate(dateOf(row), dataType) }));
+    for (const date of new Set(prepared.map((entry) => entry.date))) {
+      await assertPeriodNotLocked(companyId, date, tx);
+    }
+
+    let createdCount = 0;
+    for (const { row, date } of prepared) {
+      try {
+        // Keep the import's row-level failure handling without aborting the outer transaction.
+        await tx.transaction((rowTx) => create(row, new Date(date), rowTx));
+        createdCount++;
+      } catch {
+        log.warn({ dataType }, "Could not save spreadsheet import row");
+      }
+    }
+
+    await storage.createIntegrationSync(
+      {
+        companyId,
+        integrationType: "google_sheets",
+        syncType: "import",
+        dataType,
+        status: "completed",
+        recordCount: createdCount,
+        externalUrl: sheetUrl,
+      },
+      tx
+    );
+    return createdCount;
+  });
+}
 
 export function registerIntegrationRoutes(app: Express) {
   // =====================================
@@ -30,12 +98,10 @@ export function registerIntegrationRoutes(app: Express) {
       // Check if email already exists
       const existing = await storage.getWaitlistByEmail(validated.email);
       if (existing) {
-        return res
-          .status(400)
-          .json({
-            code: "WAITLIST_EMAIL_EXISTS",
-            message: "Email already registered for waitlist",
-          });
+        return res.status(400).json({
+          code: "WAITLIST_EMAIL_EXISTS",
+          message: "Email already registered for waitlist",
+        });
       }
 
       const entry = await storage.createWaitlistEntry(validated);
@@ -393,37 +459,30 @@ export function registerIntegrationRoutes(app: Express) {
       // Import invoices from sheet
       const invoices = await googleSheets.importInvoicesFromSheet(spreadsheetId);
 
-      // Create invoices in database
-      let createdCount = 0;
-      for (const invoiceData of invoices) {
-        try {
-          await storage.createInvoice({
-            companyId,
-            number: invoiceData.invoiceNumber,
-            customerName: invoiceData.customerName,
-            customerTrn: invoiceData.customerTrn,
-            date: new Date(invoiceData.issueDate),
-            subtotal: invoiceData.subtotal,
-            vatAmount: invoiceData.vatAmount,
-            total: invoiceData.total,
-            status: invoiceData.status || "draft",
-          });
-          createdCount++;
-        } catch (err) {
-          log.error({ err }, "Error creating invoice");
-        }
-      }
-
-      // Log the sync
-      await storage.createIntegrationSync({
-        companyId,
-        integrationType: "google_sheets",
-        syncType: "import",
-        dataType: "invoices",
-        status: "completed",
-        recordCount: createdCount,
-        externalUrl: sheetUrl,
-      });
+      const createdCount = await saveSheetImport(
+        {
+          companyId,
+          sheetUrl,
+          dataType: "invoices",
+          rows: invoices,
+          dateOf: (row) => row.issueDate,
+        },
+        (invoiceData, date, tx) =>
+          storage.createInvoice(
+            {
+              companyId,
+              number: invoiceData.invoiceNumber,
+              customerName: invoiceData.customerName,
+              customerTrn: invoiceData.customerTrn,
+              date,
+              subtotal: invoiceData.subtotal,
+              vatAmount: invoiceData.vatAmount,
+              total: invoiceData.total,
+              status: invoiceData.status || "draft",
+            },
+            tx
+          )
+      );
 
       res.json({
         message: "Invoices imported successfully",
@@ -442,12 +501,10 @@ export function registerIntegrationRoutes(app: Express) {
       const userId = req.user?.id;
       const { companyId, sheetUrl } = parsedBody<{ companyId: string; sheetUrl: string }>(req);
       if (!companyId || !sheetUrl || !userId) {
-        return res
-          .status(400)
-          .json({
-            code: "SHEET_URL_REQUIRED",
-            message: "Company ID, sheet URL, and user authentication required",
-          });
+        return res.status(400).json({
+          code: "SHEET_URL_REQUIRED",
+          message: "Company ID, sheet URL, and user authentication required",
+        });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();
@@ -470,38 +527,24 @@ export function registerIntegrationRoutes(app: Express) {
       // Import expenses from sheet
       const expenses = await googleSheets.importExpensesFromSheet(spreadsheetId);
 
-      // Create expenses in database
-      let createdCount = 0;
-      for (const expenseData of expenses) {
-        try {
-          await storage.createReceipt({
-            companyId,
-            // The sheet gives a YYYY-MM-DD string; the column is a timestamp.
-            date: new Date(expenseData.date),
-            merchant: expenseData.merchant,
-            category: expenseData.category,
-            amount: expenseData.amount,
-            vatAmount: expenseData.vatAmount,
-            uploadedBy: userId,
-            posted: false,
-            currency: "AED",
-          });
-          createdCount++;
-        } catch (err) {
-          log.error({ err }, "Error creating expense");
-        }
-      }
-
-      // Log the sync
-      await storage.createIntegrationSync({
-        companyId,
-        integrationType: "google_sheets",
-        syncType: "import",
-        dataType: "expenses",
-        status: "completed",
-        recordCount: createdCount,
-        externalUrl: sheetUrl,
-      });
+      const createdCount = await saveSheetImport(
+        { companyId, sheetUrl, dataType: "expenses", rows: expenses, dateOf: (row) => row.date },
+        (expenseData, date, tx) =>
+          storage.createReceipt(
+            {
+              companyId,
+              date,
+              merchant: expenseData.merchant,
+              category: expenseData.category,
+              amount: expenseData.amount,
+              vatAmount: expenseData.vatAmount,
+              uploadedBy: userId,
+              posted: false,
+              currency: "AED",
+            },
+            tx
+          )
+      );
 
       res.json({
         message: "Expenses imported successfully",
@@ -525,12 +568,10 @@ export function registerIntegrationRoutes(app: Express) {
         sheets: Array<{ name: string; headers: string[]; rows: (string | number | null)[][] }>;
       }>(req);
       if (!companyId || !title || !sheets) {
-        return res
-          .status(400)
-          .json({
-            code: "SHEETS_EXPORT_INPUT_REQUIRED",
-            message: "Company ID, title, and sheets data required",
-          });
+        return res.status(400).json({
+          code: "SHEETS_EXPORT_INPUT_REQUIRED",
+          message: "Company ID, title, and sheets data required",
+        });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();

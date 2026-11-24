@@ -7,7 +7,7 @@ import { useForm, useFieldArray, type UseFormReturn } from "react-hook-form";
 import type { TermsFormShape } from "@/components/invoices/InvoiceTermsFields";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
-import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
+import { format, startOfDay } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,13 +83,17 @@ import { invoiceStatusTargets } from "@/lib/invoice-status";
 import { invoiceDisplayStatus } from "@shared/invoice-balance";
 import { statusLabelKey } from "@/components/ui/status-meta";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { isolateLtrText } from "@/lib/format-bidi";
 import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import {
   einvoiceFieldHint,
+  einvoiceIssueTextKey,
   einvoiceIssuesFromError,
+  einvoiceRuleTextKey,
   type EInvoiceIssueItem,
 } from "@/lib/einvoice-issues";
 import { EInvoiceListCell } from "@/components/einvoice/EInvoiceListCell";
+import { useEInvoiceListEvidence } from "@/components/einvoice/use-einvoice";
 import { InvoiceCurrencyFields } from "@/components/invoices/InvoiceCurrencyFields";
 import { LineItemPicker } from "@/components/invoices/LineItemPicker";
 import { LineIncomeAccountPicker } from "@/components/invoices/LineIncomeAccountPicker";
@@ -113,6 +117,7 @@ import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import {
   downloadServerFile,
   exportToExcel,
@@ -159,6 +164,8 @@ import {
   isVatRegisteredCompany,
 } from "@/lib/invoice-defaults";
 import {
+  collectInvoiceExportRows,
+  filterInvoiceDates,
   invoiceStatusQuery,
   parseInvoiceStatusFilter,
   type InvoiceStatusFilter,
@@ -288,7 +295,7 @@ const BLANK_HEADER = {
 /** An e-invoice validator answer (GET /api/invoices/:id/einvoice/validate). */
 interface EInvoiceValidation {
   valid: boolean;
-  issues: Array<{ field: string; message: string }>;
+  issues: EInvoiceIssueItem[];
 }
 
 const isoDay = (d: Date) => format(d, "yyyy-MM-dd");
@@ -434,6 +441,8 @@ export default function Invoices() {
   const [addPaymentDialogOpen, setAddPaymentDialogOpen] = useState(false);
   const [einvoiceIssues, setEinvoiceIssues] = useState<{
     number: string;
+    invoiceId: string;
+    contactId: string | null;
     issues: EInvoiceIssueItem[];
   } | null>(null);
   const [viewPaymentsDialogOpen, setViewPaymentsDialogOpen] = useState(false);
@@ -468,7 +477,15 @@ export default function Invoices() {
   };
 
   // R20-05: cursor-paginated list (50 per page) with infinite scroll; exports
-  // fetch the full list explicitly with all=true.
+  // walk the same status and source filters through every page.
+  const invoicePageFilters = `${invoiceStatusQuery(statusFilter)}${sourceFilter !== "all" ? `&source=${encodeURIComponent(sourceFilter)}` : ""}`;
+  const fetchInvoicePage = (
+    cursor?: string | null
+  ): Promise<{ items: Invoice[]; nextCursor: string | null }> =>
+    apiRequest(
+      "GET",
+      `/api/companies/${selectedCompanyId}/invoices?limit=50${invoicePageFilters}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+    );
   const invoicePages = useInfiniteQuery<{ items: Invoice[]; nextCursor: string | null }>({
     queryKey: [
       "/api/companies",
@@ -478,11 +495,7 @@ export default function Invoices() {
       statusFilter ?? "all",
       sourceFilter,
     ],
-    queryFn: ({ pageParam }) =>
-      apiRequest(
-        "GET",
-        `/api/companies/${selectedCompanyId}/invoices?limit=50${invoiceStatusQuery(statusFilter)}${sourceFilter !== "all" ? `&source=${encodeURIComponent(sourceFilter)}` : ""}${pageParam ? `&cursor=${encodeURIComponent(String(pageParam))}` : ""}`
-      ),
+    queryFn: ({ pageParam }) => fetchInvoicePage(typeof pageParam === "string" ? pageParam : null),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
     enabled: !!selectedCompanyId,
@@ -508,8 +521,6 @@ export default function Invoices() {
     observer.observe(el);
     return () => observer.disconnect();
   }, [invoicePages]);
-  const fetchAllInvoices = async (): Promise<Invoice[]> =>
-    apiRequest("GET", `/api/companies/${selectedCompanyId}/invoices?all=true`);
 
   const { data: contacts = [] } = useQuery<
     Array<{
@@ -964,7 +975,12 @@ export default function Invoices() {
           ? einvoiceIssuesFromError(error.body)
           : [];
       if (issues.length > 0) {
-        setEinvoiceIssues({ number: invoice.number, issues });
+        setEinvoiceIssues({
+          number: invoice.number,
+          invoiceId: invoice.id,
+          contactId: invoice.contactId ?? null,
+          issues,
+        });
         return;
       }
       toast({
@@ -1320,61 +1336,56 @@ export default function Invoices() {
     finalise();
   };
 
-  const filteredInvoices = useMemo(() => {
-    if (!invoices || invoices.length === 0) return [];
-    if (!dateRange.from && !dateRange.to) return invoices;
+  const filteredInvoices = useMemo(
+    () => filterInvoiceDates(invoices, dateRange),
+    [invoices, dateRange]
+  );
 
-    const fromDate = dateRange.from ? startOfDay(dateRange.from) : null;
-    const toDate = dateRange.to ? endOfDay(dateRange.to) : null;
+  const evidenceBatches = useMemo(() => {
+    const displayed = new Set(filteredInvoices.map(({ id }) => id));
+    return (
+      invoicePages.data?.pages.map(({ items }) =>
+        items.map(({ id }) => id).filter((id) => displayed.has(id))
+      ) ?? []
+    );
+  }, [filteredInvoices, invoicePages.data]);
+  const einvoiceEvidence = useEInvoiceListEvidence(selectedCompanyId, evidenceBatches);
 
-    return invoices.filter((invoice) => {
-      if (!invoice.date) return false;
-
-      const invoiceDate =
-        typeof invoice.date === "string"
-          ? parseCalendarDate(invoice.date)
-          : parseCalendarDate(invoice.date);
-
-      if (fromDate && toDate) {
-        return isWithinInterval(invoiceDate, { start: fromDate, end: toDate });
-      }
-      if (fromDate) {
-        return invoiceDate >= fromDate;
-      }
-      if (toDate) {
-        return invoiceDate <= toDate;
-      }
-      return true;
-    });
-  }, [invoices, dateRange.from, dateRange.to]);
-
-  const handleExportExcel = () => {
-    if (!filteredInvoices.length) {
-      toast({
-        variant: "destructive",
-        title: t["invoices.toastNoData"],
-        description: t["invoices.noInvoicesToExport"],
-      });
-      return;
-    }
+  const handleExportExcel = async () => {
+    if (!selectedCompanyId) return;
 
     const dateRangeStr =
       dateRange.from && dateRange.to
         ? `_${format(dateRange.from, "yyyy-MM-dd")}_to_${format(dateRange.to, "yyyy-MM-dd")}`
         : "";
 
-    exportToExcel([prepareInvoicesForExport(filteredInvoices, locale)], `invoices${dateRangeStr}`);
-    if (invoicePages.hasNextPage) {
-      void fetchAllInvoices().then((all) =>
-        exportToExcel([prepareInvoicesForExport(all, locale)], `invoices-all${dateRangeStr}`)
-      );
+    setIsExporting(true);
+    try {
+      const matching = await collectInvoiceExportRows(fetchInvoicePage, dateRange);
+      if (!matching.length) {
+        toast({
+          variant: "destructive",
+          title: t["invoices.toastNoData"],
+          description: t["invoices.noInvoicesToExport"],
+        });
+        return;
+      }
+      await exportToExcel([prepareInvoicesForExport(matching, locale)], `invoices${dateRangeStr}`);
+      toast({
+        title: t["invoices.toastExportOk"],
+        description: formatMessage(t["invoices.toastExportExcelBody"], {
+          count: matching.length,
+        }),
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: t["invoices.toastExportFailed"],
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setIsExporting(false);
     }
-    toast({
-      title: t["invoices.toastExportOk"],
-      description: formatMessage(t["invoices.toastExportExcelBody"], {
-        count: filteredInvoices.length,
-      }),
-    });
   };
 
   const handleExportGoogleSheets = async () => {
@@ -1482,6 +1493,7 @@ export default function Invoices() {
             size="sm"
             onClick={() => setInvoiceToShare(editingInvoice)}
             data-testid="button-issued-share"
+            {...gate("documents.write")}
           >
             <Share2 aria-hidden />
             {t["invoices.actionShare"]}
@@ -1519,6 +1531,7 @@ export default function Invoices() {
           size="sm"
           onClick={() => openRecurring(editingInvoice)}
           data-testid="button-issued-make-recurring"
+          {...gate("documents.write")}
         >
           <RefreshCw aria-hidden />
           {t["invoices.makeRecurring"]}
@@ -1537,7 +1550,10 @@ export default function Invoices() {
       title={
         editingInvoice
           ? isIssued
-            ? formatMessage(t["forms.invoice.viewTitle"], { number: editingInvoice.number })
+            ? formatMessage(t["forms.invoice.viewTitle"], {
+                number:
+                  locale === "ar" ? isolateLtrText(editingInvoice.number) : editingInvoice.number,
+              })
             : t["forms.invoice.editTitle"]
           : t.newInvoice
       }
@@ -2267,7 +2283,8 @@ export default function Invoices() {
           <DialogHeader>
             <DialogTitle>
               {formatMessage(t["invoices.einvoiceIssuesTitle"], {
-                number: einvoiceIssues?.number ?? "",
+                // Isolated so "INV-2026-00001" keeps its order inside Arabic text.
+                number: `\u2068${einvoiceIssues?.number ?? ""}\u2069`,
               })}
             </DialogTitle>
             <DialogDescription>
@@ -2277,20 +2294,35 @@ export default function Invoices() {
           <ul className="max-h-80 space-y-2 overflow-y-auto text-sm">
             {(einvoiceIssues?.issues ?? []).map((issue, i) => {
               // X5 (J1 L3): a readable field name and where to fix it, never a raw data path.
-              const hint = einvoiceFieldHint(issue.field);
-              const label = hint.labelKey ? t[hint.labelKey] : hint.ruleLabel;
+              const hint = einvoiceFieldHint(issue.field, einvoiceIssues ?? undefined);
+              const label = hint.labelKey ? t[hint.labelKey] : null;
+              const fixKey = einvoiceIssueTextKey(issue.code) ?? einvoiceRuleTextKey(issue.ruleId);
+              const detail =
+                (fixKey && t[fixKey]) ||
+                (locale === "ar" ? t["einvoicing.validationFinding"] : issue.message);
               return (
                 <li key={`${issue.field}-${i}`} className="rounded-md border p-2">
                   {label && (
                     <span className="block text-xs font-medium text-muted-foreground">{label}</span>
                   )}
-                  {issue.message}
+                  {issue.ruleId && (
+                    <p className="text-xs text-muted-foreground">
+                      {t["einvoicing.validationRule"]}{" "}
+                      <bdi dir="ltr" translate="no">
+                        {issue.ruleId}
+                      </bdi>
+                    </p>
+                  )}
+                  <span data-testid={issue.code ? `einvoice-issue-${issue.code}` : undefined}>
+                    {detail}
+                  </span>
                   {hint.whereKey && (
                     <span className="mt-1 block text-xs">
                       {hint.href ? (
                         <Link
                           href={hint.href}
-                          className="text-accent hover:underline"
+                          onClick={() => setEinvoiceIssues(null)}
+                          className="inline-flex min-h-11 items-center text-accent hover:underline sm:min-h-0"
                           data-testid={`link-einvoice-fix-${i}`}
                         >
                           {t[hint.whereKey]}
@@ -2454,7 +2486,12 @@ export default function Invoices() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t["invoices.nudgeTitle"]}</AlertDialogTitle>
             <AlertDialogDescription>
-              {formatMessage(t["invoices.nudgeBody"], { number: draftNudge?.number ?? "" })}
+              {formatMessage(t["invoices.nudgeBody"], {
+                number:
+                  locale === "ar"
+                    ? isolateLtrText(draftNudge?.number ?? "")
+                    : (draftNudge?.number ?? ""),
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -2549,6 +2586,14 @@ export default function Invoices() {
 
           {isLoading ? (
             <TableSkeleton rows={8} columns={6} />
+          ) : invoicePages.isError ? (
+            <LoadErrorState
+              error={invoicePages.error}
+              onRetry={() => void invoicePages.refetch()}
+              title={t["firm.invoicesLoadErrorTitle"]}
+              description={t["firm.invoicesLoadErrorBody"]}
+              testId="invoices-load-error"
+            />
           ) : (
             <>
               {/* Mobile row-cards (CTO 3/8): line 1 name + amount, line 2 number · date + status. */}
@@ -2620,8 +2665,8 @@ export default function Invoices() {
                         <OverdueBadge invoice={invoice} />
                         <WrittenOffBadge invoice={invoice} />
                         <EInvoiceListCell
-                          companyId={selectedCompanyId}
                           invoice={invoice}
+                          evidence={einvoiceEvidence[invoice.id]}
                           onEdit={() => openInvoiceEditor(invoice)}
                         />
                       </div>
@@ -2654,19 +2699,35 @@ export default function Invoices() {
                             <DropdownMenuItem
                               onSelect={() => setInvoiceToShare(invoice)}
                               data-testid={`mobile-button-share-invoice-${invoice.id}`}
+                              {...gate("documents.write")}
                             >
                               <Share2 aria-hidden />
                               {t["invoices.actionShare"]}
                             </DropdownMenuItem>
                           )}
                           {invoiceRowActions(invoice).canRecordPayment && (
-                            <DropdownMenuItem onSelect={() => openAddPayment(invoice)}>
+                            <DropdownMenuItem
+                              onSelect={() => openAddPayment(invoice)}
+                              {...gate("ledger.post")}
+                            >
                               <DollarSign aria-hidden />
                               <T k="invoices.actionAddPayment" />
                             </DropdownMenuItem>
                           )}
+                          {/* The phone card offers the same e-invoice action as the table row. */}
+                          {invoiceRowActions(invoice).canGenerateEinvoice && (
+                            <DropdownMenuItem
+                              onSelect={() => void generateEinvoice(invoice)}
+                              data-testid={`mobile-button-einvoice-${invoice.id}`}
+                              {...gate("documents.write")}
+                            >
+                              <FileCode aria-hidden />
+                              <T k="invoices.actionGenerateEinvoice" />
+                            </DropdownMenuItem>
+                          )}
                         </>
                       }
+                      menuTestId={`mobile-button-invoice-actions-${invoice.id}`}
                     />
                   </div>
                 ))}
@@ -2768,8 +2829,8 @@ export default function Invoices() {
                             <WrittenOffBadge invoice={invoice} />
                             {/* E1: two-track e-invoice status; opens the status sheet. */}
                             <EInvoiceListCell
-                              companyId={selectedCompanyId}
                               invoice={invoice}
+                              evidence={einvoiceEvidence[invoice.id]}
                               onEdit={() => openInvoiceEditor(invoice)}
                             />
                           </TableCell>
@@ -2792,6 +2853,7 @@ export default function Invoices() {
                                     <DropdownMenuItem
                                       onSelect={() => setInvoiceToShare(invoice)}
                                       data-testid={`button-share-invoice-${invoice.id}`}
+                                      {...gate("documents.write")}
                                     >
                                       <Share2 aria-hidden />
                                       {t["invoices.actionShare"]}
@@ -2821,6 +2883,7 @@ export default function Invoices() {
                                     <DropdownMenuItem
                                       onSelect={() => void generateEinvoice(invoice)}
                                       data-testid={`button-einvoice-${invoice.id}`}
+                                      {...gate("documents.write")}
                                     >
                                       <FileCode aria-hidden />
                                       <T k="invoices.actionGenerateEinvoice" />
@@ -2829,6 +2892,7 @@ export default function Invoices() {
                                   <DropdownMenuItem
                                     onSelect={() => openRecurring(invoice)}
                                     data-testid={`button-set-recurring-${invoice.id}`}
+                                    {...gate("documents.write")}
                                   >
                                     <RefreshCw aria-hidden />
                                     {t["invoices.makeRecurring"]}
@@ -2848,6 +2912,7 @@ export default function Invoices() {
                                       <DropdownMenuItem
                                         onSelect={() => setInvoiceToWriteOff(invoice)}
                                         data-testid={`button-write-off-${invoice.id}`}
+                                        {...gate("ledger.post")}
                                       >
                                         <XCircle aria-hidden />
                                         <T k="invoices.actionWriteOff" />
@@ -2863,6 +2928,7 @@ export default function Invoices() {
                                         disabled={deleteMutation.isPending}
                                         className="text-destructive focus:text-destructive"
                                         data-testid={`button-delete-invoice-${invoice.id}`}
+                                        {...gate("documents.write")}
                                       >
                                         <Trash2 aria-hidden />
                                         <T k="invoices.actionDelete" />
@@ -3000,21 +3066,27 @@ export default function Invoices() {
           <div className="space-y-4">
             <div className="max-h-[300px] overflow-y-auto space-y-2">
               {similarInvoices.map((invoice, idx) => (
-                <div key={idx} className="p-3 border rounded-md bg-muted/50">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-medium">{invoice.number}</p>
-                      <p className="text-sm">{invoice.customerName}</p>
+                <div key={idx} className="rounded-md border bg-muted/50 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="break-words font-medium">
+                        <bdi dir="ltr" translate="no">
+                          {invoice.number}
+                        </bdi>
+                      </p>
+                      <p className="break-words text-sm">
+                        <bdi translate="no">{invoice.customerName}</bdi>
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         {formatDate(invoice.date, locale)}
                       </p>
-                      <Badge variant="outline" className="mt-1">
-                        {invoice.status}
-                      </Badge>
+                      <InvoiceStatusBadge className="mt-1" status={invoice.status} />
                     </div>
-                    <p className="font-semibold">
-                      {formatCurrency(invoice.total || 0, "AED", locale)}
-                    </p>
+                    <Money
+                      amount={Number(invoice.total || 0)}
+                      currency={invoice.currency || "AED"}
+                      className="font-semibold"
+                    />
                   </div>
                 </div>
               ))}
@@ -3490,7 +3562,7 @@ function InvoiceStatusTiles({
   onSelect: (status: InvoiceStatusFilter | null) => void;
 }) {
   const { t } = useTranslation();
-  const { data: all = [] } = useQuery<InvoiceListItem[]>({
+  const { data: all = [], isError } = useQuery<InvoiceListItem[]>({
     queryKey: ["/api/companies", companyId, "invoices"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/invoices?all=true`),
     enabled: !!companyId,
@@ -3507,6 +3579,9 @@ function InvoiceStatusTiles({
       label: labels[b.key],
     }));
   }, [all, t]);
+
+  // A failed load must not read as "0 invoices": the list shows the error and the tiles hide.
+  if (isError) return null;
 
   return (
     <div

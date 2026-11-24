@@ -221,7 +221,7 @@ describe("Reports in Arabic: no English UI text", () => {
       ],
     });
     expect(englishLines()).toEqual([]);
-    expect(container.textContent).toContain("1–19 نوفمبر 2026");
+    expect(container.textContent?.replace(/\p{Bidi_Control}/gu, "")).toContain("1–19 نوفمبر 2026");
   });
 
   it("month-end close and audit trail: checks from the catalog, no raw ids", async () => {

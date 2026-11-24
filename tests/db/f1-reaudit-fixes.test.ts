@@ -185,20 +185,21 @@ describe("[G7] e-invoice validate agrees with generate", () => {
     expect(g.status, g.text).toBe(200);
   });
 
-  it("[G7] fixture 2: a buyer without an address fails ibr-144-ae on validate and generate (422)", async () => {
+  it("[G7] fixture 2: a buyer without an address gets the named customer.address fix on validate and generate (422)", async () => {
     const t = await h.createTenant({ companyColumns: SELLER_COLUMNS });
     const id = await issuedFor(t, null);
     const { v, g } = await validateAndGenerate(t, id);
     expect(g.status, g.text).toBe(422);
-    expect(g.body.code).toBe("EINVOICE_SCHEMA_INVALID");
+    expect(g.body.code).toBe("EINVOICE_VALIDATION_FAILED");
     expect(v.valid).toBe(false);
-    expect(v.document.valid).toBe(false);
-    const ruleIds = (v.issues as Array<{ ruleId?: string }>).map((i) => i.ruleId);
-    expect(ruleIds).toContain("ibr-144-ae");
-    const genIds = ["xsd", "schematron", "rules"].flatMap((l) =>
-      (g.body.validation[l].errors as Array<{ id: string }>).map((e) => e.id)
+    const named = (v.issues as Array<{ field?: string; code?: string }>).find(
+      (i) => i.field === "customer.address"
     );
-    expect(new Set(ruleIds)).toEqual(new Set(genIds));
+    expect(named?.code).toBe("EINVOICE_BUYER_ADDRESS_MISSING");
+    // validate and generate agree, and the rule id is no longer the only signal.
+    expect(
+      (g.body.issues as Array<{ field: string; code?: string }>).map((i) => [i.field, i.code])
+    ).toContainEqual(["customer.address", "EINVOICE_BUYER_ADDRESS_MISSING"]);
     const stored = await h.sql("SELECT einvoice_xml FROM invoices WHERE id = $1", [id]);
     expect(stored[0].einvoice_xml).toBeNull();
   });

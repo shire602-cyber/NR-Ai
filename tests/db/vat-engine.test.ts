@@ -137,7 +137,24 @@ describe("W4-E VAT engine: report 07 scenario", () => {
     );
     expect(rep.status, rep.text).toBe(200);
     expect(rep.body.boxes).toMatchObject(EXPECTED_07);
-    expect(rep.body.box8_netVatDue).toBe(30);
+    expect(rep.body).toMatchObject({
+      period: { from: "2026-07-01", to: "2026-09-30" },
+      box1_standardRatedSupplies: 1000,
+      box2_zeroRatedSupplies: 500,
+      box3_exemptSupplies: 250,
+      box4_totalSupplies: 1750,
+      box5_outputVat: 233.63,
+      box8_netVatDue: 30,
+      excluded: { outOfScopeAmount: 100 },
+    });
+    const canonical = await t.as.get(
+      `/api/companies/${t.company.id}/vat/compute?from=2026-07-01&to=2026-09-30`
+    );
+    expect(canonical.status, canonical.text).toBe(200);
+    expect(canonical.body.boxes).toMatchObject(EXPECTED_07);
+    expect(canonical.body.excluded.outOfScopeFils).toBe(10000);
+    expect(canonical.body).not.toHaveProperty("box8_netVatDue");
+    expect(rep.headers.get("link")).toContain("/vat/compute");
 
     const sum = await t.as.get(
       `/api/companies/${t.company.id}/reports/vat-summary?from=2026-07-01&to=2026-09-30`
@@ -251,7 +268,7 @@ describe("W4-E VAT engine: report 07 scenario", () => {
       `/api/companies/${t.company.id}/reports/vat-return?from=2026-07-01&to=2026-09-30`
     );
     expect(rep.status, rep.text).toBe(200);
-    expect(rep.body.box5_outputVat).toBe(50);
+    expect(rep.body.boxes.box12TotalDueTax).toBe(50);
     expect(rep.body.boxes.box1cSharjahAdj).toBe(50);
     expect(rep.body.reconciliation.hasUnexplainedDifference).toBe(false);
     const row = rep.body.reconciliation.byCategory.find(
@@ -323,7 +340,7 @@ describe("W4-E VAT engine: report 07 scenario", () => {
     expect(rep.body.boxes.box1cSharjahVat).toBe(450);
     expect(rep.body.boxes.box1cSharjahAdj).toBe(0);
     expect(rep.body.boxes.box4ZeroRatedAmount).toBe(2000);
-    expect(rep.body.box5_outputVat).toBe(450);
+    expect(rep.body.boxes.box12TotalDueTax).toBe(450);
     expect(rep.body.reconciliation.hasUnexplainedDifference).toBe(false);
     const row = rep.body.reconciliation.byCategory.find(
       (r: { category: string }) => r.category === "fixed_asset_disposals"
@@ -370,15 +387,22 @@ describe("W4-E VAT engine: report 07 scenario", () => {
     expect(ok.status, ok.text).toBe(200);
     expect(ok.body.status).toBe("ready");
     expect(ok.body.reconciliationOverrideReason).toContain("restored");
+    const sub = await t.as.post(`/api/vat-returns/${gen.body.id}/submit`, {});
+    expect(sub.status, sub.text).toBe(200);
+    expect(sub.body.status).toBe("submitted");
+    const { filingReconciliation, ...approvalEvidence } = sub.body.reconciliationSnapshot;
+    expect(approvalEvidence).toEqual(ok.body.reconciliationSnapshot);
+    expect(filingReconciliation).toMatchObject({
+      unexplainedInputFils: approvalEvidence.unexplainedInputFils,
+      unexplainedOutputFils: approvalEvidence.unexplainedOutputFils,
+    });
+    expect(sub.body.reconciliationOverrideAt).toBe(ok.body.reconciliationOverrideAt);
+    expect(sub.body.filing.transmittedByMuhasib).toBe(false);
     const audit = await h.sql(
       `SELECT 1 FROM audit_logs WHERE action = 'vat_return.reconciliation_override' AND resource_id = $1`,
       [gen.body.id]
     );
-    expect(audit.length).toBe(1);
-    const sub = await t.as.post(`/api/vat-returns/${gen.body.id}/submit`, {});
-    expect(sub.status, sub.text).toBe(200);
-    expect(sub.body.status).toBe("submitted");
-    expect(sub.body.filing.transmittedByMuhasib).toBe(false);
+    expect(audit).toHaveLength(1);
   });
 });
 

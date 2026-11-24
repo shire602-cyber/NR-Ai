@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { useContext } from "react";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useTranslation } from "@/lib/i18n";
+import { TrialReadOnlyContext } from "@/lib/trial-access";
 import {
   canPerform,
   companyAccessQueryKey,
@@ -8,6 +10,9 @@ import {
   type CompanyRole,
   type Permission,
 } from "@/lib/auth";
+
+/** Catalogs the permission tooltips read (declared so a public page that reaches this hook loads them). */
+const PERMISSION_NAMESPACES = ["common"];
 
 /**
  * Client view of the signed-in user's permissions in the active company
@@ -20,7 +25,8 @@ import {
  */
 export function useCompanyPermission() {
   const { companyId } = useDefaultCompany();
-  const { t } = useTranslation();
+  const readOnly = useContext(TrialReadOnlyContext);
+  const { t } = useTranslation(PERMISSION_NAMESPACES);
   const { data: access, isLoading } = useQuery<CompanyAccess>({
     queryKey: companyAccessQueryKey(companyId),
     enabled: !!companyId,
@@ -28,12 +34,19 @@ export function useCompanyPermission() {
   });
   // Anything that is not a real access record (loading, error, malformed) counts as unknown.
   const known = !!access && Array.isArray(access.permissions);
-  const can = (permission: Permission): boolean => !known || canPerform(access, permission);
+  const locked = (permission: Permission) =>
+    readOnly && permission !== "reports.read" && permission !== "billing.manage";
+  const canRead = (permission: Permission): boolean => !known || canPerform(access, permission);
+  const can = (permission: Permission): boolean => !locked(permission) && canRead(permission);
   /** Props that disable a control (with an explanatory tooltip) when `permission` is missing. */
   const gate = (permission: Permission) =>
     can(permission)
       ? {}
-      : { disabled: true, title: t["common.noPermission"], "data-permission-denied": "true" };
+      : {
+          disabled: true,
+          title: locked(permission) ? t["common.workspaceReadOnly"] : t["common.noPermission"],
+          "data-permission-denied": "true",
+        };
   /**
    * E2 (J3-r2): props for an approve / review control. Disabled with the reason when the role
    * lacks `permission`, or when the signed-in user prepared the item (`makerId`) and another
@@ -53,6 +66,7 @@ export function useCompanyPermission() {
   };
   return {
     can,
+    canRead,
     gate,
     gateApproval,
     role: (access?.role ?? null) as CompanyRole | null,

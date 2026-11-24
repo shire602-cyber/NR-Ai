@@ -4,7 +4,8 @@ on:
   push:
     branches: [main, refactor/platform-overhaul]
   pull_request:
-    branches: [main, refactor/platform-overhaul]
+    # The release line (PR #67) is stacked work: PRs into it (e.g. #68) get the full suite too.
+    branches: [main, refactor/platform-overhaul, claude/eloquent-maxwell-kjxxjc]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -133,6 +134,14 @@ jobs:
       - name: npm run test:db
         run: npm run test:db
 
+      - name: Migration rehearsal (disposable Postgres 16)
+        run: npm run test:migration-rehearsal
+
+      - name: UAE calendar date regressions
+        env:
+          TZ: Asia/Dubai
+        run: npm run test:db -- tests/db/e3-vat-lifecycle-periods.test.ts tests/db/purchases-bills.test.ts
+
   e2e:
     name: Browser E2E · full route crawl
     # Pinned: Playwright has no Chromium build for ubuntu-latest (26.04) yet.
@@ -197,6 +206,26 @@ jobs:
 
       - name: Browser E2E
         run: npm run e2e
+
+      - name: Public launch crawl
+        run: npm run e2e:customer:public
+
+      - name: Owner report pack downloads
+        run: npm run e2e:owner-report-pack
+
+      - name: Excel export feedback
+        run: node tests/e2e/excel-export-feedback.mjs
+
+      - name: Bilingual marketing route and accessibility crawl
+        run: npm run e2e:marketing
+
+      - name: Bilingual firm website crawl
+        run: |
+          python3 -m http.server 8080 --bind 127.0.0.1 --directory sites/najma-al-raeda-website > /tmp/firm-site.log 2>&1 &
+          firm_site_pid=$!
+          trap 'kill "$firm_site_pid"' EXIT
+          curl --fail --silent --retry 5 --retry-connrefused http://127.0.0.1:8080/ -o /dev/null
+          npm run e2e:firm-site
 
       - name: Server log on failure
         if: failure()
@@ -268,6 +297,25 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
         run: npm run build
+
+      - name: Install Chromium for provider flow
+        run: npx playwright-core install --with-deps chromium
+
+      - name: Bilingual e-invoicing provider browser flow
+        env:
+          DATABASE_URL: postgres://muhasib@127.0.0.1:5432/einvoice_browser
+        run: |
+          node --input-type=module <<'JS'
+          import pg from 'pg';
+          const admin = new pg.Client({ connectionString: 'postgres://muhasib@127.0.0.1:5432/postgres' });
+          await admin.connect();
+          try {
+            await admin.query('CREATE DATABASE einvoice_browser');
+          } finally {
+            await admin.end();
+          }
+          JS
+          npx tsx tests/e2e/einvoice-infrastructure-flow.mjs
 
       - name: Start server
         run: |

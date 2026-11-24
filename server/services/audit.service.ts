@@ -16,6 +16,8 @@ interface AuditParams {
   after?: unknown;
   req?: Request;
   extra?: Record<string, unknown>;
+  /** The operation relies on the audit row as durable evidence. */
+  required?: boolean;
   /**
    * Write the row inside this transaction (F2): it then commits or rolls back with the document
    * it describes, instead of a detached after-commit write whose failure is only logged. The
@@ -27,8 +29,8 @@ interface AuditParams {
 /**
  * Persist an audit-log row for a critical financial operation.
  *
- * Failures are logged and swallowed — audit logging must never block the
- * underlying business operation. Use sparingly: only on operations that
+ * Failures are logged and swallowed unless the operation requires durable evidence.
+ * Use sparingly: only on operations that
  * change posted ledger state, money movement, access control, or user
  * permissions.
  */
@@ -63,5 +65,6 @@ export async function recordAudit(params: AuditParams): Promise<void> {
     await storage.createAuditLog(row);
   } catch (err) {
     log.error({ err: (err as Error).message }, "failed to record audit log");
+    if (params.required) throw err;
   }
 }

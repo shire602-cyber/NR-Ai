@@ -27,6 +27,26 @@ describe("Environment Validation", () => {
     expect(env.NODE_ENV).toBe("test");
   });
 
+  it.each(["production", "development"] as const)(
+    "warns about missing CAPTCHA only in production (%s)",
+    async (environment) => {
+      process.env.NODE_ENV = environment;
+      delete process.env.TURNSTILE_SECRET_KEY;
+      const warning = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+      try {
+        const { validateEnv } = await import("../../server/config/env");
+        validateEnv();
+        expect(
+          warning.mock.calls.some(([message]) =>
+            String(message).includes("TURNSTILE_SECRET_KEY is unset")
+          )
+        ).toBe(environment === "production");
+      } finally {
+        warning.mockRestore();
+      }
+    }
+  );
+
   it("should reject missing DATABASE_URL", async () => {
     delete process.env.DATABASE_URL;
     process.env.SESSION_SECRET = "a".repeat(32);

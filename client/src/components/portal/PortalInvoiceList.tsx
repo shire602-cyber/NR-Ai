@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { usePortalAccountScope } from "@/lib/portal-scope";
+import { useMemo, useRef, useState } from "react";
 import { CreditCard, FileCode2, FileDown, FileText, Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,11 +17,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { DateText } from "@/components/documents/DateText";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { getAuthHeaders } from "@/lib/auth";
-import { apiUrl } from "@/lib/api";
+import { portalRequestHeaders } from "@/lib/portal-state";
+import { downloadPortalFile } from "@/lib/portal-files";
+import { formatInteger } from "@/lib/format";
+import { isolateLtrText } from "@/lib/format-bidi";
+import { customerEInvoiceLabel, type CustomerEInvoiceOutcome } from "@/lib/einvoice-outcome";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 
 export interface PortalInvoice {
@@ -33,7 +38,7 @@ export interface PortalInvoice {
   total: number;
   amountDue: number;
   paymentStatus: "paid" | "partially_paid" | "overdue" | "unpaid" | "credit";
-  einvoice: { status: string; hasXml: boolean } | null;
+  einvoice: (CustomerEInvoiceOutcome & { hasXml: boolean }) | null;
 }
 
 const STATUS_TONE: Record<string, StatusTone> = {
@@ -64,21 +69,6 @@ const matches = (inv: PortalInvoice, f: Filter): boolean =>
           ? inv.paymentStatus === "paid"
           : inv.paymentStatus === "credit";
 
-async function download(path: string, filename: string): Promise<boolean> {
-  const res = await fetch(apiUrl(path), { credentials: "include", headers: getAuthHeaders() });
-  if (!res.ok) return false;
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  return true;
-}
-
 /**
  * The customer's invoices and credit notes: filter tabs with counts, search by number, a table on
  * wide screens and cards on phones, PDF and e-invoice XML downloads with a spinner on the row, and
@@ -93,11 +83,14 @@ export function PortalInvoiceList({
   loading?: boolean;
   onlinePayment: boolean;
 }) {
+  const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const filters = useRef<HTMLDivElement>(null);
+  const filterFade = useEdgeFade(filters);
 
   const counts = useMemo(
     () => Object.fromEntries(FILTERS.map((f) => [f, invoices.filter((i) => matches(i, f)).length])),
@@ -110,10 +103,12 @@ export function PortalInvoiceList({
 
   const run = async (key: string, job: Job) => {
     setBusy(key);
+    const failureTitle =
+      t[key.startsWith("pdf:") ? "portal.doc.downloadFailed" : "portal.list.downloadFailed"];
     try {
-      if (!(await job())) toast({ title: t["portal.list.downloadFailed"], variant: "destructive" });
+      if (!(await job())) toast({ title: failureTitle, variant: "destructive" });
     } catch {
-      toast({ title: t["portal.list.downloadFailed"], variant: "destructive" });
+      toast({ title: failureTitle, variant: "destructive" });
     } finally {
       setBusy(null);
     }
@@ -121,7 +116,12 @@ export function PortalInvoiceList({
 
   const pay = (inv: PortalInvoice) =>
     run(`pay:${inv.id}`, async () => {
-      const res = (await apiRequest("POST", `/api/client-portal/invoices/${inv.id}/pay`, {})) as {
+      const res = (await apiRequest(
+        "POST",
+        `/api/client-portal/invoices/${inv.id}/pay`,
+        {},
+        portalRequestHeaders(supplier)
+      )) as {
         url?: string;
       };
       if (!res?.url) return false;
@@ -131,20 +131,21 @@ export function PortalInvoiceList({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div
-          className="flex gap-1 overflow-x-auto [scrollbar-width:none]"
-          role="tablist"
+          ref={filters}
+          style={filterFade}
+          className="flex min-w-0 snap-x snap-proximity gap-1 overflow-x-auto [scrollbar-width:none]"
+          role="group"
           aria-label={t["portal.list.filters"]}
         >
           {FILTERS.map((f) => (
             <button
               key={f}
               type="button"
-              role="tab"
-              aria-selected={filter === f}
+              aria-pressed={filter === f}
               onClick={() => setFilter(f)}
-              className={`flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-small font-medium ${
+              className={`flex min-h-11 shrink-0 snap-start items-center gap-2 whitespace-nowrap rounded-md px-3 text-small font-medium ${
                 filter === f
                   ? "bg-muted text-foreground"
                   : "text-muted-foreground hover:bg-muted/60"
@@ -153,14 +154,12 @@ export function PortalInvoiceList({
             >
               {t[`portal.list.filter.${f}`]}
               <span className="rounded-full bg-background px-1.5 text-caption tabular-nums">
-                {counts[f]}
+                {formatInteger(counts[f], locale)}
               </span>
             </button>
           ))}
         </div>
-        <div className="relative sm:w-64">
-          {/* No dir="auto" on the input: logical padding (ps-9) follows the input's own direction,
-              so it must inherit the page direction to stay on the icon's side in Arabic. */}
+        <div className="relative sm:w-64 sm:shrink-0">
           <Search
             className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden
@@ -171,7 +170,8 @@ export function PortalInvoiceList({
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t["portal.list.search"]}
             aria-label={t["portal.list.search"]}
-            className="h-11 ps-9 text-base"
+            className="h-11 ps-9 text-base rtl:pe-9 rtl:ps-3 rtl:placeholder:text-end"
+            dir="ltr"
             data-testid="portal-invoice-search"
           />
         </div>
@@ -223,16 +223,27 @@ export function PortalInvoiceList({
                 {rows.map((inv) => {
                   const isCredit = inv.paymentStatus === "credit";
                   const canPay = onlinePayment && !isCredit && inv.amountDue > 0;
+                  const einvoiceLabel = inv.einvoice && customerEInvoiceLabel(inv.einvoice, t);
                   return (
                     <TableRow key={inv.id} data-testid={`portal-invoice-row-${inv.id}`}>
                       <TableCell data-cell="title" className="font-medium text-foreground">
-                        <MiddleTruncate text={String(inv.number ?? "")} />
-                        {isCredit ? (
-                          <span className="ms-2 text-caption text-muted-foreground">
-                            {t["portal.payStatus.credit"]}
+                        <span translate="no">
+                          <MiddleTruncate text={String(inv.number ?? "")} />
+                        </span>
+                        {einvoiceLabel && (
+                          <span className="mt-1 hidden text-caption text-muted-foreground md:block">
+                            {einvoiceLabel}
                           </span>
-                        ) : null}
+                        )}
                       </TableCell>
+                      {einvoiceLabel && (
+                        <TableCell
+                          data-cell="detail"
+                          className="text-caption text-muted-foreground md:hidden"
+                        >
+                          {einvoiceLabel}
+                        </TableCell>
+                      )}
                       <TableCell
                         data-nowrap=""
                         data-cell="meta"
@@ -265,7 +276,10 @@ export function PortalInvoiceList({
                           {t[`portal.payStatus.${inv.paymentStatus}`] ?? t["portal.doc.status"]}
                         </StatusBadge>
                       </TableCell>
-                      <TableCell data-cell="actions">
+                      <TableCell
+                        data-cell="actions"
+                        className="max-md:!order-5 max-md:!basis-full max-md:!me-0"
+                      >
                         <div className="flex flex-wrap items-center gap-2">
                           {canPay ? (
                             <Button
@@ -288,12 +302,13 @@ export function PortalInvoiceList({
                             size="sm"
                             className="min-h-11"
                             disabled={busy !== null}
-                            aria-label={`${t["portal.doc.downloadPdf"]} ${inv.number}`}
+                            aria-label={`${t["portal.doc.downloadPdf"]} ${isolateLtrText(inv.number)}`}
                             onClick={() =>
                               void run(`pdf:${inv.id}`, () =>
-                                download(
+                                downloadPortalFile(
                                   `/api/client-portal/invoices/${inv.id}/pdf`,
-                                  `invoice-${inv.number}.pdf`
+                                  `invoice-${inv.number}.pdf`,
+                                  supplier
                                 )
                               )
                             }
@@ -312,12 +327,13 @@ export function PortalInvoiceList({
                               size="sm"
                               className="min-h-11"
                               disabled={busy !== null}
-                              aria-label={`${t["portal.list.einvoiceXml"]} ${inv.number}`}
+                              aria-label={`${t["portal.list.einvoiceXml"]} ${isolateLtrText(inv.number)}`}
                               onClick={() =>
                                 void run(`xml:${inv.id}`, () =>
-                                  download(
+                                  downloadPortalFile(
                                     `/api/client-portal/invoices/${inv.id}/einvoice`,
-                                    `einvoice-${inv.number}.xml`
+                                    `einvoice-${inv.number}.xml`,
+                                    supplier
                                   )
                                 )
                               }

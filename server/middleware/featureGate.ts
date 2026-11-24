@@ -1,3 +1,5 @@
+import { sql } from "drizzle-orm";
+import type { AppDatabase } from "../db";
 import type { Request, Response, NextFunction } from "express";
 import { createLogger } from "../config/logger";
 import { isStripeConfigured } from "../services/stripe.service";
@@ -31,9 +33,8 @@ const log = createLogger("feature-gate");
 // gates. A company's entitlement (shared/plans.ts resolveEntitlement) is one of:
 //   trial   — no paid plan, inside the 14-day trial: the top plan's features (TRIAL_LIMITS caps);
 //   active  — a paid plan: its features and limits;
-//   expired — trial over without a plan: read-only (writes refused with 402 PLAN_REQUIRED).
-// Feature gates refuse WRITES only: a module the plan does not include stays readable, so data is
-// never hidden or lost when a plan changes (owner decision 2026-11-18).
+//   expired — trial over without a paid plan: workspace access is locked by trialAccessPolicy.
+// Feature gates refuse writes to modules outside an active plan.
 
 /** Plan id stored for a company with no paid plan (legacy name; it is not a plan). */
 export const FREE_PLAN_ID = NO_PLAN_ID;
@@ -72,15 +73,16 @@ export interface CompanyEntitlement extends Entitlement {
  * 404) or is NR-managed client books (company_type = 'client', firm-billed: explicit exemption,
  * keyed on a field only platform admins / NR staff can set). Fails closed: a company without a
  * subscription row has no paid plan, so it is on its trial (from the company's creation) and then
- * read-only — never an implicit upgrade.
+ * locked — never an implicit upgrade.
  */
 export async function companyEntitlement(
   companyId: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  tx?: Pick<AppDatabase, "execute">
 ): Promise<CompanyEntitlement | null> {
   if (!companyId || !UUID_RE.test(companyId)) return null;
   const { pq } = await import("../services/connectors/pq");
-  const { rows } = await pq<{
+  type EntitlementRow = {
     company_type: string | null;
     company_created_at: Date | string | null;
     plan_id: string | null;
@@ -92,8 +94,8 @@ export async function companyEntitlement(
     chosen_plan_source: string | null;
     chosen_plan_at: Date | string | null;
     plan_activation_requested_at: Date | string | null;
-  }>(
-    `SELECT c.company_type, c.created_at AS company_created_at,
+  };
+  const query = `SELECT c.company_type, c.created_at AS company_created_at,
             s.plan_id, s.status, s.created_at AS sub_created_at, s.trial_ends_at,
             s.chosen_plan_id, s.chosen_billing_cycle, s.chosen_plan_source, s.chosen_plan_at,
             s.plan_activation_requested_at
@@ -104,9 +106,10 @@ export async function companyEntitlement(
            FROM subscriptions
           WHERE company_id = c.id ORDER BY created_at DESC LIMIT 1
        ) s ON true
-      WHERE c.id = $1`,
-    [companyId]
-  );
+      WHERE c.id = `;
+  const { rows } = tx
+    ? await tx.execute<EntitlementRow>(sql`${sql.raw(query)}${companyId}`)
+    : await pq<EntitlementRow>(query + "$1", [companyId]);
   const row = rows[0];
   if (!row || isFirmBilledCompany({ companyType: row.company_type })) return null;
   const trialStartedAt = row.sub_created_at ?? row.company_created_at;
@@ -242,13 +245,29 @@ export function logBillingEnforcementStatus(): void {
 
 export const UPGRADE_URL = "/subscription";
 
+export const TRIAL_LOCK_MESSAGE =
+  "Your free trial has ended. Choose and activate a paid plan to make changes. Your data is saved.";
+
+export function refuseExpiredTrial(res: Response, companyId?: string): void {
+  res
+    .set("Cache-Control", "private, no-store")
+    .status(402)
+    .json({
+      message: TRIAL_LOCK_MESSAGE,
+      code: "PLAN_REQUIRED",
+      messageKey: "forms.serverErrors.PLAN_REQUIRED",
+      currentTier: null,
+      ...(companyId && { companyId }),
+      upgrade: { url: UPGRADE_URL },
+    });
+}
+
 /** 402 PLAN_REQUIRED (trial over, no plan) or 403 TIER_LOCKED (the plan lacks the module). */
 function refuseFeature(res: Response, ent: Entitlement, feature: PlanFeature): void {
   const requiredTier = requiredPlanFor(feature);
   if (ent.state === "expired") {
     res.status(402).json({
-      message:
-        "Your free trial has ended. Choose a plan and activate it to add or change records; your data stays readable.",
+      message: TRIAL_LOCK_MESSAGE,
       code: "PLAN_REQUIRED",
       messageKey: "forms.serverErrors.PLAN_REQUIRED",
       feature,
@@ -678,7 +697,7 @@ function usageRefusal(
   res.status(402).json({
     message:
       ent?.state === "expired"
-        ? "Your free trial has ended. Choose a plan to add new records; your data stays readable."
+        ? TRIAL_LOCK_MESSAGE
         : `Monthly ${metric.replace("_", " ")} limit reached on your plan. Upgrade for more.`,
     code: ent?.state === "expired" ? "PLAN_REQUIRED" : "USAGE_LIMIT_REACHED",
     messageKey:

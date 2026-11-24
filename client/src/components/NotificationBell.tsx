@@ -43,10 +43,10 @@ export function NotificationBell() {
     (n) => !n.isRead && (n.priority === "urgent" || /overdue/i.test(n.type ?? ""))
   );
 
-  function handleClick(n: AppNotification) {
+  function handleClick(n: AppNotification, actionUrl: string | null | undefined) {
     if (!n.isRead) markAsRead(n.id);
-    if (n.actionUrl) {
-      navigate(n.actionUrl);
+    if (actionUrl) {
+      navigate(actionUrl);
       setOpen(false);
     }
   }
@@ -120,7 +120,7 @@ export function NotificationBell() {
               return (
                 <div
                   key={n.id}
-                  onClick={() => handleClick(n)}
+                  onClick={() => handleClick(n, view.actionUrl ?? n.actionUrl)}
                   className={cn(
                     "flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-muted/60 transition-colors duration-fast border-b border-border last:border-0",
                     !n.isRead && "bg-primary/[0.03]"

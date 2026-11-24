@@ -21,7 +21,7 @@ import { PensionTab } from "./payroll/PensionTab";
 export default function Payroll() {
   const { tx } = useHr();
   const { companyId, isLoading } = useDefaultCompany();
-  const { can, known } = useCompanyPermission();
+  const { canRead } = useCompanyPermission();
   const { t } = useTranslation();
 
   if (isLoading) {
@@ -40,7 +40,7 @@ export default function Payroll() {
   }
 
   // X6b: payroll data needs payroll.manage or payroll.approve; a viewer gets a notice, not 403s.
-  if (known && !can("payroll.manage") && !can("payroll.approve")) {
+  if (!canRead("payroll.manage") && !canRead("payroll.approve")) {
     return (
       <div className="space-y-6">
         <PageHeader eyebrow="HR & Payroll" title={tx("hr.title")} description={tx("hr.subtitle")} />

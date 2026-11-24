@@ -2,7 +2,10 @@
  * WQ5: the numbered EmaraTax steps for appointing the accredited partner. Shown in Settings and
  * on the no-login approver page. Provider-neutral: the partner's name comes from the server.
  */
+import { bidiIsolate as isolate } from "@/lib/customer-link";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+
+const STEPS_NAMESPACES = ["einvoicing"];
 
 export interface StepsPartner {
   displayName: string;
@@ -33,20 +36,25 @@ export function EmaraTaxSteps({
   companyName: string;
   withDone?: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t } = useTranslation(STEPS_NAMESPACES);
   const partnerLabel = partner
     ? formatMessage(t["einvoicing.appoint.partnerLabel"], {
-        name: partner.displayName,
-        legal: partner.legalName,
-        number: partner.accreditationNumber,
+        // One left-to-right chunk, brackets included: a bracket between two Latin names in an
+        // Arabic sentence would otherwise flip to the wrong side.
+        name: isolate(`${partner.displayName} (${partner.legalName})`),
+        number: isolate(partner.accreditationNumber),
       })
     : t["einvoicing.appoint.partnerUnknown"];
   const steps = [
-    formatMessage(t["einvoicing.appoint.step1"], { company: companyName }),
+    formatMessage(t["einvoicing.appoint.step1"], { company: isolate(companyName) }),
     t["einvoicing.appoint.step2"],
     // Sweep: the partner's display / legal names are proper names; they render in a
     // translate="no" span so Arabic text around them is not read as untranslated copy.
-    withSlot(t["einvoicing.appoint.step3"], "partner", <span translate="no">{partnerLabel}</span>),
+    withSlot(
+      t["einvoicing.appoint.step3"],
+      "partner",
+      <span translate="no">{isolate(partnerLabel)}</span>
+    ),
     t["einvoicing.appoint.step4"],
     ...(withDone ? [t["einvoicing.appoint.step5Done"]] : [t["einvoicing.appoint.step5"]]),
   ];

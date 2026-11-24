@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { isolateLtrText } from "@/lib/format-bidi";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface SendQuoteOutcome {
@@ -39,7 +40,7 @@ export function SendQuoteDialog({
   defaultEmail?: string | null;
   onClose: () => void;
 }) {
-  const { t } = useTranslation();
+  const { locale, t } = useTranslation();
   const { toast } = useToast();
   const [to, setTo] = useState(defaultEmail ?? "");
   const [message, setMessage] = useState("");
@@ -55,7 +56,9 @@ export function SendQuoteDialog({
         r.sent
           ? {
               title: t["invoices.quoteSend.sentTitle"],
-              description: formatMessage(t["invoices.quoteSend.sentBody"], { to: to.trim() }),
+              description: formatMessage(t["invoices.quoteSend.sentBody"], {
+                to: locale === "ar" ? isolateLtrText(to.trim()) : to.trim(),
+              }),
             }
           : {
               title: t["invoices.quoteSend.queuedTitle"],
@@ -80,7 +83,9 @@ export function SendQuoteDialog({
       <DialogContent data-testid="dialog-send-quote">
         <DialogHeader>
           <DialogTitle>
-            {formatMessage(t["invoices.quoteSend.title"], { number: quote?.number ?? "" })}
+            {formatMessage(t["invoices.quoteSend.title"], {
+              number: locale === "ar" ? isolateLtrText(quote?.number ?? "") : (quote?.number ?? ""),
+            })}
           </DialogTitle>
           <DialogDescription>{t["invoices.quoteSend.desc"]}</DialogDescription>
         </DialogHeader>

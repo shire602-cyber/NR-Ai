@@ -66,7 +66,10 @@ const FIRM_ROUTES = [
   "/firm/pipeline",
 ];
 
-const FAIL_TEXT = /something went wrong|an error occurred|failed to load|unexpected error/i;
+// Also a dead link: the in-app not-found page ("This page is not in the ledger.") and the
+// "no longer exists" / "Client not found" states a stale id lands on.
+const FAIL_TEXT =
+  /something went wrong|an error occurred|failed to load|unexpected error|this page is not in the ledger|this item no longer exists|client not found/i;
 const LOGIN_PATH = "/api/auth/login";
 
 function requireEnv() {
@@ -154,6 +157,16 @@ async function main() {
     args: ["--no-sandbox"],
   });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  // The SPA only probes /api/auth/me when this browser holds the sign-in hint the login page sets
+  // (client/src/lib/authHint.ts, R18-04). Signing in through the API alone leaves it unset, so
+  // without this every route redirected to /login.
+  await ctx.addInitScript(() => {
+    try {
+      window.localStorage.setItem("muhasib_auth_hint", "1");
+    } catch {
+      /* storage blocked: the app falls back to probing */
+    }
+  });
   const page = await ctx.newPage();
 
   const failures = [];

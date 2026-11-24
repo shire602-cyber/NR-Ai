@@ -40,6 +40,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { SERVER_ERROR_NAMESPACES, serverErrorCopy } from "@/lib/validation-messages";
 import type { Company } from "@shared/schema";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -76,7 +77,7 @@ interface BulkInvoiceResult {
   success: boolean;
   invoiceId?: string;
   invoiceNumber?: string;
-  error?: string;
+  code?: string;
 }
 
 interface PeriodCloseStatus {
@@ -528,7 +529,7 @@ function VatQueueTab({ clients: _clients }: { clients: ClientWithStats[] }) {
 // ─── Tab 3: Bulk Invoicing ────────────────────────────────────────────────────
 
 function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
-  const { t } = useTranslation();
+  const { locale, t } = useTranslation(SERVER_ERROR_NAMESPACES);
   const { toast } = useToast();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [serviceDescription, setServiceDescription] = useState("");
@@ -768,7 +769,13 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
                           <T k="pages.created" />
                         </Badge>
                       ) : (
-                        <Badge variant="destructive" title={r.error}>
+                        <Badge
+                          variant="destructive"
+                          title={
+                            (r.code && serverErrorCopy(locale, r.code)) ||
+                            t["bulkOperations.failedToGenerateInvoices"]
+                          }
+                        >
                           <XCircle className="w-3 h-3 me-1" />
                           <T k="pages.failed" />
                         </Badge>

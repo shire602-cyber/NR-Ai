@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Download, Loader2, Send } from "lucide-react";
+import { Loader2, Send } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -15,6 +15,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { ApiError, apiRequest } from "@/lib/queryClient";
+import { formatInteger } from "@/lib/format";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import type { PortalSheetContact } from "@/components/portal/PortalAccessSheet";
 import { portalSummaryKey } from "@/lib/portal-invite";
@@ -27,19 +28,14 @@ type Outcome =
   | "already_active"
   | "pending"
   | "not_found"
+  | "delivery_failed"
   | "rate_limited";
 
 interface BulkResult {
   contactId: string;
   outcome: Outcome;
-  delivery?: "email" | "queued" | "link";
-  inviteUrl?: string;
-}
-
-/** One CSV cell, quoted, with a leading formula character neutralised (spreadsheet injection). */
-function csvCell(value: string): string {
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return `"${safe.replace(/"/g, '""')}"`;
+  /** "queued": saved in the outbox but not sent (no email provider); "email": handed to the provider. */
+  delivery?: "email" | "queued";
 }
 
 interface BulkProps {
@@ -51,7 +47,7 @@ interface BulkProps {
 }
 
 function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const eligible = useMemo(
@@ -67,7 +63,6 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
     () => new Set(eligible.slice(0, PORTAL_BULK_MAX).map((c) => c.id))
   );
   const [results, setResults] = useState<BulkResult[] | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const send = useMutation({
     mutationFn: () =>
@@ -79,9 +74,9 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
       setResults(res.results);
       void queryClient.invalidateQueries({ queryKey: portalSummaryKey(companyId) });
       const n = res.results.filter((r) => r.outcome === "invited").length;
-      const unsent = res.results.some((r) => r.inviteUrl);
+      const queued = res.results.some((r) => r.delivery === "queued");
       toast({
-        title: formatMessage(t[unsent ? "portal.bulk.doneLinks" : "portal.bulk.done"], {
+        title: formatMessage(t[queued ? "portal.bulk.doneQueued" : "portal.bulk.done"], {
           count: n,
         }),
       });
@@ -94,35 +89,8 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
   });
 
   const nameOf = (id: string) => contacts.find((c) => c.id === id)?.name ?? id;
-  const emailOf = (id: string) => contacts.find((c) => c.id === id)?.email ?? "";
-  // With no email provider nothing was sent: the links are for the supplier to share.
-  const links = (results ?? []).filter((r) => r.inviteUrl);
-  const copy = async (text: string, key: string, doneToast: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedId(key);
-      toast({ title: doneToast });
-    } catch {
-      toast({ title: t["portal.bulk.copyFailed"], variant: "destructive" });
-    }
-  };
-  const exportCsv = () => {
-    const rows = [
-      [t["portal.bulk.csv.customer"], t["portal.bulk.csv.email"], t["portal.bulk.csv.link"]],
-      ...links.map((r) => [nameOf(r.contactId), emailOf(r.contactId), r.inviteUrl ?? ""]),
-    ];
-    const blob = new Blob(["\uFEFF" + rows.map((r) => r.map(csvCell).join(",")).join("\r\n")], {
-      type: "text/csv;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "portal-invitation-links.csv";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
+  // With no email provider nothing was sent: say so instead of "Invited".
+  const anyQueued = (results ?? []).some((r) => r.delivery === "queued");
   const toggle = (id: string, on: boolean) =>
     setPicked((p) => {
       const next = new Set(p);
@@ -139,74 +107,26 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
       </DialogHeader>
       {results ? (
         <div className="space-y-3">
-          {links.length > 0 && (
-            <Alert tone="info" title={t["portal.bulk.linksTitle"]} data-testid="bulk-links-panel">
-              <p className="mb-2 text-small">{t["portal.bulk.linksBody"]}</p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  className="min-h-11"
-                  onClick={() =>
-                    void copy(
-                      links.map((r) => `${nameOf(r.contactId)}\t${r.inviteUrl}`).join("\n"),
-                      "all",
-                      t["portal.bulk.linksCopied"]
-                    )
-                  }
-                  data-testid="bulk-copy-all"
-                >
-                  {copiedId === "all" ? (
-                    <Check className="me-2 h-4 w-4" aria-hidden />
-                  ) : (
-                    <Copy className="me-2 h-4 w-4" aria-hidden />
-                  )}
-                  {t["portal.bulk.copyAll"]}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="min-h-11"
-                  onClick={exportCsv}
-                  data-testid="bulk-export-links"
-                >
-                  <Download className="me-2 h-4 w-4" aria-hidden />
-                  {t["portal.bulk.exportLinks"]}
-                </Button>
-              </div>
+          {anyQueued && (
+            <Alert
+              tone="warning"
+              title={t["portal.bulk.queuedTitle"]}
+              data-testid="bulk-queued-panel"
+            >
+              {t["portal.bulk.queuedBody"]}
             </Alert>
           )}
           <ul className="max-h-72 space-y-1 overflow-y-auto text-small" data-testid="bulk-results">
             {results.map((r) => (
               <li key={r.contactId} className="flex items-center justify-between gap-3 py-1">
-                <span className="truncate" dir="auto">
+                <bdi className="min-w-0 truncate" translate="no" title={nameOf(r.contactId)}>
                   {nameOf(r.contactId)}
+                </bdi>
+                <span className="shrink-0 text-muted-foreground">
+                  {r.outcome === "invited" && r.delivery === "queued"
+                    ? t["portal.bulk.outcome.queued"]
+                    : t[`portal.bulk.outcome.${r.outcome}`]}
                 </span>
-                {r.inviteUrl ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="min-h-11 shrink-0"
-                    onClick={() =>
-                      void copy(
-                        r.inviteUrl!,
-                        r.contactId,
-                        t["customerContacts.linkCopiedToClipboard"]
-                      )
-                    }
-                    aria-label={`${t["portal.invite.copyLink"]}: ${nameOf(r.contactId)}`}
-                    data-testid={`bulk-copy-${r.contactId}`}
-                  >
-                    {copiedId === r.contactId ? (
-                      <Check className="me-1.5 h-4 w-4" aria-hidden />
-                    ) : (
-                      <Copy className="me-1.5 h-4 w-4" aria-hidden />
-                    )}
-                    {t["portal.invite.copyLink"]}
-                  </Button>
-                ) : (
-                  <span className="shrink-0 text-muted-foreground">
-                    {t[`portal.bulk.outcome.${r.outcome}`]}
-                  </span>
-                )}
               </li>
             ))}
           </ul>
@@ -220,8 +140,8 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
           <div className="flex items-center justify-between gap-3 text-small">
             <span>
               {formatMessage(t["portal.bulk.selected"], {
-                count: picked.size,
-                total: eligible.length,
+                count: formatInteger(picked.size, locale),
+                total: formatInteger(eligible.length, locale),
               })}
             </span>
             <Button
@@ -254,12 +174,21 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
                     className="h-5 w-5"
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-small font-medium" dir="auto">
+                    <bdi
+                      className="block truncate text-small font-medium"
+                      translate="no"
+                      title={c.name}
+                    >
                       {c.name}
-                    </span>
-                    <span className="block truncate text-caption text-muted-foreground" dir="ltr">
+                    </bdi>
+                    <bdi
+                      className="block truncate text-caption text-muted-foreground"
+                      dir="ltr"
+                      translate="no"
+                      title={c.email ?? undefined}
+                    >
                       {c.email}
-                    </span>
+                    </bdi>
                   </span>
                 </Label>
               </li>

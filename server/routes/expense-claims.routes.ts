@@ -23,6 +23,7 @@ import { DomainError } from "../errors";
 import { ACCOUNT_CODES } from "../constants";
 import { recordAudit } from "../services/audit.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { loadRecoveryRules, resolveRecovery } from "../tax/vat-recovery";
 import {
   buildExpenseClaimApprovalLines,
   buildExpenseClaimFxPaymentLines,
@@ -185,6 +186,7 @@ async function prepareItems(
 ): Promise<PreparedItem[]> {
   const settings = await claimSettings(companyId);
   const base = await loadBaseCurrency(companyId);
+  const recoveryRules = await loadRecoveryRules(companyId);
   const out: PreparedItem[] = [];
   for (const [i, item] of items.entries()) {
     const type = item.item_type ?? "expense";
@@ -238,7 +240,13 @@ async function prepareItems(
       exchange_rate: rate,
       supplier_trn: item.supplier_trn ?? null,
       has_tax_invoice: hasTaxInvoice,
-      vat_recoverable: hasTaxInvoice && vatAed > 0,
+      // PR-61 port: the same Art. 53 recoverability rules bills and receipts use
+      // (entertainment, personal-use vehicles, company rules). A claim item's VAT is all or
+      // nothing, so a partly recoverable rule (< 100%) keeps the whole VAT in the expense.
+      vat_recoverable:
+        hasTaxInvoice &&
+        vatAed > 0 &&
+        resolveRecovery({ category: item.category }, recoveryRules).percent >= 100,
       receipt_url: item.receipt_url ?? null,
       // WQ2 (8.7): an uploaded receipt is referenced by a ref signed for this company only.
       receipt_path: item.receipt_ref ? verifyReceiptRef(companyId, item.receipt_ref) : null,

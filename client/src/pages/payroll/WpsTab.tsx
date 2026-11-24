@@ -1,6 +1,7 @@
 import { translateNow } from "@/lib/i18n";
 import { errorHeading } from "@/lib/error-heading";
-import { useState } from "react";
+import { useContext, useState } from "react";
+import { TrialReadOnlyContext } from "@/lib/trial-access";
 import { FileDrop } from "@/components/ui/file-drop";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatDate } from "@/lib/format-date";
@@ -142,6 +143,7 @@ interface PayrollSettings {
 }
 
 function LegalSettingsCard({ companyId }: { companyId: string }) {
+  const readOnly = useContext(TrialReadOnlyContext);
   const { tx } = useHr();
   const { toast } = useToast();
   const key = [`/api/companies/${companyId}/payroll/settings`];
@@ -207,6 +209,7 @@ function LegalSettingsCard({ companyId }: { companyId: string }) {
           <Label htmlFor="adviser-confirmed">{tx("hr.adviserConfirmed")}</Label>
           <Switch
             id="adviser-confirmed"
+            disabled={readOnly || update.isPending}
             checked={data.adviserConfirmed}
             onCheckedChange={(v) => update.mutate({ adviserConfirmed: v })}
           />
@@ -215,6 +218,7 @@ function LegalSettingsCard({ companyId }: { companyId: string }) {
           <Label htmlFor="single-owner">{tx("hr.allowSingleOwner")}</Label>
           <Switch
             id="single-owner"
+            disabled={readOnly || update.isPending}
             checked={data.allowSingleOwnerApproval}
             onCheckedChange={(v) => update.mutate({ allowSingleOwnerApproval: v })}
           />
@@ -238,6 +242,7 @@ interface ExpiryRow {
 }
 
 export function WpsTab({ companyId }: { companyId: string }) {
+  const readOnly = useContext(TrialReadOnlyContext);
   const { tx, locale } = useHr();
   const { toast } = useToast();
   const runsKey = [`/api/companies/${companyId}/payroll-runs`];
@@ -314,7 +319,7 @@ export function WpsTab({ companyId }: { companyId: string }) {
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
           />
-          <Button disabled={!runId || setWps.isPending} onClick={() => setWps.mutate()}>
+          <Button disabled={readOnly || !runId || setWps.isPending} onClick={() => setWps.mutate()}>
             {tx("hr.save")}
           </Button>
         </CardContent>

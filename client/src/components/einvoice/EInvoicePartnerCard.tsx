@@ -2,11 +2,9 @@
  * WQ5: Settings › E-invoicing "Your e-invoicing partner" card.
  *
  * Every accredited provider compiled into this build is offered (the list comes from the
- * server registry, so this file names none of them). There is no default: the company picks.
- * EINVOICE_PROVIDER decides which one this deployment can actually connect; any other choice
- * reads "Not connected on this workspace". "Verify with partner" only runs when the chosen
- * partner is the configured one (it calls that provider's own sync route). Otherwise the
- * company can record "Confirmed by you, not yet verified".
+ * server registry, so this file names none of them). Each company makes its own choice.
+ * "Verify with partner" uses the selected provider's sync route when credentials are available
+ * for this company. The company can also record its EmaraTax appointment itself.
  *
  * Appointment: "I'll approve it" shows the EmaraTax steps; "Someone else approves" creates a
  * single-purpose, expiring (14 days), revocable no-login link.
@@ -46,7 +44,7 @@ export interface PartnerViewData {
   liveProvider: string | null;
   verifyAvailable: boolean;
   appointment: {
-    state: "not_started" | "awaiting_approval" | "self_confirmed" | "verified";
+    state: "not_started" | "awaiting_approval" | "approver_done" | "self_confirmed" | "verified";
     confirmedAt: string | null;
     legalEntityStatus: string | null;
   };
@@ -67,6 +65,7 @@ export interface ApproverLinkRow {
 const APPOINTMENT_TONE: Record<PartnerViewData["appointment"]["state"], StatusTone> = {
   not_started: "neutral",
   awaiting_approval: "info",
+  approver_done: "info",
   self_confirmed: "warning",
   verified: "success",
 };
@@ -92,7 +91,8 @@ export function EInvoicePartnerCard({
 }) {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { gate, can } = useCompanyPermission();
+  const { gate, can, known } = useCompanyPermission();
+  // `can` answers true while the role is unknown; do not ask the admin-only list until it is.
   const isAdmin = can("settings.company");
   const view = useQuery<PartnerViewData>({
     queryKey: partnerKey(companyId),
@@ -102,9 +102,9 @@ export function EInvoicePartnerCard({
   const links = useQuery<ApproverLinkRow[]>({
     queryKey: linksKey(companyId),
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/einvoicing/approver-links`),
-    enabled: isAdmin,
+    enabled: known && isAdmin,
   });
-  const [who, setWho] = useState<"me" | "someone">("me");
+  const [whoChoice, setWho] = useState<"me" | "someone" | null>(null);
   const [approverName, setApproverName] = useState("");
   const [approverEmail, setApproverEmail] = useState("");
   const [created, setCreated] = useState<ApproverLinkRow | null>(null);
@@ -124,7 +124,19 @@ export function EInvoicePartnerCard({
   const choose = useMutation({
     mutationFn: (partner: string | null) =>
       apiRequest("PUT", `/api/companies/${companyId}/einvoicing/partner`, { partner }),
-    onSuccess: refresh,
+    onSuccess: (next: PartnerViewData) => {
+      setCreated(null);
+      setCopied(false);
+      setWho(null);
+      setApproverName("");
+      setApproverEmail("");
+      refresh(next);
+      for (const query of ["provider", "settings"]) {
+        void queryClient.invalidateQueries({
+          queryKey: ["/api/companies", companyId, "einvoicing", query],
+        });
+      }
+    },
     onError,
   });
   const selfConfirm = useMutation({
@@ -168,6 +180,8 @@ export function EInvoicePartnerCard({
     onError,
   });
 
+  // With requests already sent, show them (and their outcome) without another click.
+  const who: "me" | "someone" = whoChoice ?? (links.data?.length ? "someone" : "me");
   const data = view.data;
   const chosen = data?.partners.find((p) => p.id === data.chosen) ?? null;
   const missing = identity.data?.missing.length ?? 0;
@@ -186,7 +200,14 @@ export function EInvoicePartnerCard({
         )
       }
     >
-      {!data ? (
+      {!data && view.isError ? (
+        <div className="flex flex-wrap items-center gap-2" role="alert">
+          <p className="text-small text-muted-foreground">{t["einvoicing.loadFailed"]}</p>
+          <Button variant="link" className="min-h-11" onClick={() => void view.refetch()}>
+            {t["einvoicing.retry"]}
+          </Button>
+        </div>
+      ) : !data ? (
         <div className="h-24 animate-pulse rounded-lg bg-muted" aria-busy="true" />
       ) : (
         <div className="space-y-6">
@@ -215,9 +236,11 @@ export function EInvoicePartnerCard({
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-semibold text-foreground">{p.displayName}</p>
+                        <p className="font-semibold text-foreground">
+                          <bdi>{p.displayName}</bdi>
+                        </p>
                         <p className="truncate text-caption text-muted-foreground" translate="no">
-                          {p.legalName}
+                          <bdi>{p.legalName}</bdi>
                         </p>
                       </div>
                       {selected && (
@@ -232,7 +255,9 @@ export function EInvoicePartnerCard({
                     <StatusBadge tone={p.live ? "success" : "neutral"} className="mt-2">
                       {p.live
                         ? t["einvoicing.partnerChoice.live"]
-                        : t["einvoicing.partnerChoice.notConnected"]}
+                        : selected
+                          ? t["einvoicing.providerNotConfigured"]
+                          : t["einvoicing.partnerChoice.notConnected"]}
                     </StatusBadge>
                   </button>
                 );
@@ -440,7 +465,7 @@ export function EInvoicePartnerCard({
                   </p>
                 )}
                 {state !== "verified" && (
-                  <label className="flex items-start gap-2 text-small text-foreground">
+                  <label className="flex min-h-11 items-start gap-2 py-1 text-small text-foreground">
                     <Checkbox
                       checked={!!data.appointment.confirmedAt}
                       disabled={!isAdmin || selfConfirm.isPending}

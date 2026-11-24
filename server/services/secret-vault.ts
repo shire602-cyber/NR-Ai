@@ -1,12 +1,10 @@
 /**
- * Application-layer encryption for secrets stored in database columns
- * (bank connection tokens, future API credentials).
+ * Application-layer encryption for credentials stored in database columns.
  *
  * AES-256-GCM. The key comes from TOKEN_ENCRYPTION_KEY (32+ chars) when set,
  * otherwise it is derived from SESSION_SECRET via HKDF so encryption is
- * always on without new deployment configuration. Note: rotating the source
- * secret invalidates stored ciphertexts — for bank tokens that simply means
- * the user reconnects their bank.
+ * always on without new deployment configuration. Rotating the source secret
+ * invalidates ciphertext encrypted with the previous key.
  *
  * Format: enc:v1:<iv b64>:<tag b64>:<ciphertext b64>
  * decryptSecret passes legacy plaintext (no prefix) through unchanged, so

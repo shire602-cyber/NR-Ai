@@ -39,6 +39,7 @@ import { bankCurrencyOf } from "../services/fx/bank-currency";
 import { loadBaseCurrency, postJournal, withLedgerTx } from "../ledger";
 import { emitDomainEvent } from "../platform/domain-events";
 import { recordAudit } from "../services/audit.service";
+import { isB2cCashSale } from "../services/einvoice/applicability";
 import { lineRow, prepareNewDocument } from "./invoices.routes";
 
 const userOf = (req: Request): string => (req as Request & { user: { id: string } }).user.id;
@@ -374,6 +375,7 @@ export function registerSalesReceiptRoutes(app: Express) {
             templateId: body.templateId ?? null,
             documentLanguage: body.documentLanguage ?? null,
             source: "cash_sale",
+            buyerType: body.buyerType,
             status: "draft",
             invoiceType: "invoice",
           })
@@ -392,7 +394,13 @@ export function registerSalesReceiptRoutes(app: Express) {
           createdBy: userId,
           tx,
         });
-        return { invoice: paid.invoice, issued: issued.invoice, payment: paid.payment, paid };
+        return {
+          invoice: paid.invoice,
+          issued: issued.invoice,
+          payment: paid.payment,
+          paid,
+          einvoiceApplicable: !isB2cCashSale(paid.invoice),
+        };
       });
 
       emitDomainEvent("invoice.created", {
@@ -427,6 +435,7 @@ export function registerSalesReceiptRoutes(app: Express) {
       const lines = await storage.getInvoiceLinesByInvoiceId(result.invoice.id);
       res.status(201).json({
         ...result.invoice,
+        einvoiceApplicable: result.einvoiceApplicable,
         lines,
         payment: result.payment,
         journalEntryId: result.paid.journalEntryId,

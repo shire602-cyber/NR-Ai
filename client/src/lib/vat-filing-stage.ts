@@ -1,3 +1,5 @@
+import { isVatFilingRecorded } from "@shared/vat-filing-status";
+
 /**
  * E2 (J3-r2): one reading of where a VAT return is in its filing life, used by the Returns list,
  * the hero card and its checklist. The server's return status (draft / ready / submitted /
@@ -15,6 +17,7 @@ export type VatFilingStage =
 
 export interface VatReturnStageInput {
   status: string;
+  ftaReferenceNumber?: string | null;
   paymentStatus?: string | null;
   box14PayableTax?: number | string | null;
 }
@@ -22,10 +25,11 @@ export interface VatReturnStageInput {
 export function vatFilingStage(r: VatReturnStageInput): VatFilingStage {
   const net = Number(r.box14PayableTax ?? 0) || 0;
   if (r.status === "amended") return "amended";
-  if (r.status === "submitted" || r.status === "filed") {
+  if (isVatFilingRecorded(r.status, r.ftaReferenceNumber)) {
     if (r.paymentStatus === "paid") return net < 0 ? "refunded" : "paid";
-    return r.status === "filed" ? "filed" : "submitted";
+    return "filed";
   }
+  if (["submitted", "filed", "paid", "accepted"].includes(r.status)) return "submitted";
   if (r.status === "ready") return "ready";
   return "draft";
 }
@@ -70,7 +74,7 @@ export function vatChecklist(r: VatReturnStageInput | null | undefined): VatChec
     };
   const stage = vatFilingStage(r);
   const net = Number(r.box14PayableTax ?? 0) || 0;
-  const filed = ["submitted", "filed", "paid", "refunded", "amended"].includes(stage);
+  const filed = isVatFilingRecorded(r.status, r.ftaReferenceNumber);
   return {
     calculated: true,
     ready: stage !== "draft",

@@ -1,53 +1,32 @@
-import { describe, it, expect } from "vitest";
-import {
-  buildEInvoiceQrPayload,
-  decodeEInvoiceQrPayload,
-  EINVOICE_QR_TAGS,
-} from "../../server/services/einvoice-qr.service";
+import QRCode from "qrcode";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderInvoiceShareQrPng } from "../../server/services/einvoice-qr.service";
 
-describe("e-invoice QR TLV payload", () => {
-  const fields = {
-    sellerName: "Acme Trading LLC",
-    vatRegistrationNumber: "100123456700003",
-    timestamp: new Date("2026-04-01T10:30:00.000Z"),
-    invoiceTotalWithVat: 1050.0,
-    vatAmount: 50.0,
-  };
+describe("public invoice share QR", () => {
+  const shared = { shareToken: "shared-invoice", shareTokenExpiresAt: null, status: "sent" };
 
-  it("round-trips through decode", () => {
-    const base64 = buildEInvoiceQrPayload(fields);
-    const decoded = decodeEInvoiceQrPayload(base64);
-    expect(decoded[EINVOICE_QR_TAGS.SELLER_NAME]).toBe(fields.sellerName);
-    expect(decoded[EINVOICE_QR_TAGS.VAT_REG_NUMBER]).toBe(fields.vatRegistrationNumber);
-    expect(decoded[EINVOICE_QR_TAGS.TIMESTAMP]).toBe("2026-04-01T10:30:00.000Z");
-    expect(decoded[EINVOICE_QR_TAGS.INVOICE_TOTAL_WITH_VAT]).toBe("1050.00");
-    expect(decoded[EINVOICE_QR_TAGS.VAT_AMOUNT]).toBe("50.00");
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
-  it("encodes TLV with correct tag bytes and length prefixes", () => {
-    const base64 = buildEInvoiceQrPayload(fields);
-    const buf = Buffer.from(base64, "base64");
-    // First record: tag=1, length=Buffer.byteLength(sellerName)
-    expect(buf[0]).toBe(1);
-    expect(buf[1]).toBe(Buffer.byteLength(fields.sellerName, "utf-8"));
-  });
-
-  it("rejects missing TRN", () => {
-    expect(() => buildEInvoiceQrPayload({ ...fields, vatRegistrationNumber: "" })).toThrow(/TRN/);
-  });
-
-  it("handles unicode (Arabic) seller names within 255-byte limit", () => {
-    const arabic = { ...fields, sellerName: "شركة أكمي للتجارة" };
-    const base64 = buildEInvoiceQrPayload(arabic);
-    const decoded = decodeEInvoiceQrPayload(base64);
-    expect(decoded[EINVOICE_QR_TAGS.SELLER_NAME]).toBe(arabic.sellerName);
-  });
-
-  it("formats amounts with two decimals for FTA compliance", () => {
-    const decoded = decodeEInvoiceQrPayload(
-      buildEInvoiceQrPayload({ ...fields, invoiceTotalWithVat: 100, vatAmount: 4.7619 })
+  it("renders a PNG with the same URL as the public invoice link", async () => {
+    vi.stubEnv("FRONTEND_URL", "https://invoices.example.test/");
+    const encode = vi.spyOn(QRCode, "toBuffer");
+    const png = await renderInvoiceShareQrPng(shared);
+    expect(encode).toHaveBeenCalledWith(
+      "https://invoices.example.test/view/invoice/shared-invoice",
+      expect.objectContaining({ type: "png", margin: 4 })
     );
-    expect(decoded[EINVOICE_QR_TAGS.INVOICE_TOTAL_WITH_VAT]).toBe("100.00");
-    expect(decoded[EINVOICE_QR_TAGS.VAT_AMOUNT]).toBe("4.76");
+    expect(png?.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+  });
+
+  it.each([
+    { shareToken: null },
+    { shareTokenExpiresAt: new Date(0) },
+    { status: "draft" },
+    { status: "cancelled" },
+  ])("omits QR for an unavailable public share (%j)", async (overrides) => {
+    expect(await renderInvoiceShareQrPng({ ...shared, ...overrides })).toBeNull();
   });
 });

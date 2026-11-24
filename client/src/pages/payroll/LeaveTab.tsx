@@ -1,5 +1,6 @@
 import { errorHeading } from "@/lib/error-heading";
-import { useState } from "react";
+import { useContext, useState } from "react";
+import { TrialReadOnlyContext } from "@/lib/trial-access";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -60,6 +61,7 @@ interface Balance {
 }
 
 export function LeaveTab({ companyId }: { companyId: string }) {
+  const readOnly = useContext(TrialReadOnlyContext);
   const { tx, locale } = useHr();
   const { toast } = useToast();
   const reqKey = [`/api/companies/${companyId}/payroll/leave-requests`];
@@ -182,7 +184,14 @@ export function LeaveTab({ companyId }: { companyId: string }) {
           <div className="flex items-end">
             <Button
               onClick={() => create.mutate()}
-              disabled={!employeeId || !leaveTypeId || !startDate || !endDate || create.isPending}
+              disabled={
+                readOnly ||
+                !employeeId ||
+                !leaveTypeId ||
+                !startDate ||
+                !endDate ||
+                create.isPending
+              }
             >
               <Plus className="me-2 h-4 w-4" />
               {tx("hr.requestLeave")}
@@ -250,6 +259,7 @@ export function LeaveTab({ companyId }: { companyId: string }) {
                         <>
                           <Button
                             size="sm"
+                            disabled={readOnly || decide.isPending}
                             onClick={() => decide.mutate({ id: r.id, decision: "approve" })}
                           >
                             <Check className="me-1 h-4 w-4" />
@@ -258,6 +268,7 @@ export function LeaveTab({ companyId }: { companyId: string }) {
                           <Button
                             size="sm"
                             variant="outline"
+                            disabled={readOnly || decide.isPending}
                             onClick={() => decide.mutate({ id: r.id, decision: "reject" })}
                           >
                             <X className="me-1 h-4 w-4" />
@@ -269,6 +280,7 @@ export function LeaveTab({ companyId }: { companyId: string }) {
                         <Button
                           size="sm"
                           variant="ghost"
+                          disabled={readOnly || decide.isPending}
                           onClick={() => decide.mutate({ id: r.id, decision: "cancel" })}
                         >
                           {tx("hr.cancelLeave")}

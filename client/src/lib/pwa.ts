@@ -40,6 +40,8 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
       scope: "/",
     });
 
+    if (!registration) return null;
+
     swRegistration = registration;
     syncSessionMarkerToServiceWorker();
 

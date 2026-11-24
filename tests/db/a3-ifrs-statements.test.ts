@@ -61,6 +61,51 @@ async function issuedInvoice(t: Tenant, body: Record<string, unknown>) {
   return c.body as { id: string; number: string };
 }
 
+it("presents a deposit and an unrelated bank overdraft gross", async () => {
+  const t = await tenant("Bank overdraft");
+  const base = `/api/companies/${t.company.id}`;
+  const deposit = await t.as.post(`${base}/bank-accounts`, {
+    nameEn: "Deposit account",
+    bankName: "Bank A",
+  });
+  expect(deposit.status, deposit.text).toBe(201);
+  const overdraft = await t.as.post(`${base}/bank-accounts`, {
+    nameEn: "Overdrawn account",
+    bankName: "Bank B",
+  });
+  expect(overdraft.status, overdraft.text).toBe(201);
+  await postJournalEntry(t, {
+    date: "2026-10-31",
+    lines: [
+      { accountId: deposit.body.glAccountId, debit: 6000 },
+      { accountId: overdraft.body.glAccountId, credit: 2136.25 },
+      { code: "3010", credit: 3863.75 },
+    ],
+  });
+  const report = await get(t, `${base}/reports/balance-sheet?asOf=2026-10-31`);
+  expect(report.statement.assets.current).toEqual({
+    total: 6000,
+    lines: [expect.objectContaining({ accountId: deposit.body.glAccountId, amount: 6000 })],
+  });
+  expect(report.statement.liabilities.current).toEqual({
+    total: 2136.25,
+    lines: [expect.objectContaining({ accountId: overdraft.body.glAccountId, amount: 2136.25 })],
+  });
+  expect(report.statement.assets.total).toBe(6000);
+  expect(report.statement.liabilities.total).toBe(2136.25);
+  expect(report.warnings).toEqual([
+    {
+      code: "OVERDRAWN_CASH_ACCOUNTS",
+      accounts: [
+        expect.objectContaining({ accountId: overdraft.body.glAccountId, amount: -2136.25 }),
+      ],
+    },
+  ]);
+  expect(report.isBalanced).toBe(true);
+  const legacy = await get(t, `${base}/financial-statements/balance-sheet?asOf=2026-10-31`);
+  expect(legacy.warnings).toEqual(report.warnings);
+});
+
 describe("A3 S7 fixed assets: revaluation, impairment, disposal and the cash flow", () => {
   it("[C5][H4][H5][H11] IAS 7 indirect cash flow, IAS 36 impairment via surplus, OCI and register", async () => {
     const t = await tenant("A3S7");
@@ -362,6 +407,42 @@ describe("A3 S3 foreign currency: aging after revaluation and FX effect on cash"
 });
 
 describe("A3 S1 bad debts: write-off, VAT relief and the allowance", () => {
+  it("[H1] prorates bad-debt relief to the exact fil below a half-fil boundary", async () => {
+    const t = await tenant("A3ExactBadDebt");
+    const cid = t.company.id;
+    const bank = await accountByCode(t, "1020");
+    const inv = await issuedInvoice(t, {
+      date: "2026-03-01",
+      dueDate: "2026-03-31",
+      lines: [
+        { description: "Consulting", quantity: 1, unitPrice: 1_000_000_000_000.01, vatRate: 5 },
+      ],
+    });
+    const part = await t.as.post(`/api/companies/${cid}/invoices/${inv.id}/payments`, {
+      amount: 524_999_999_998.85,
+      date: "2026-04-01",
+      paymentAccountId: bank.id,
+    });
+    expect(part.status, part.text).toBe(201);
+    const writtenOff = await t.as.post(`/api/companies/${cid}/invoices/${inv.id}/write-off`, {
+      date: "2026-10-15",
+      reason: "Customer in liquidation",
+    });
+    expect(writtenOff.status, writtenOff.text).toBe(201);
+    const claim = await t.as.post(`/api/companies/${cid}/vat/bad-debt-relief`, {
+      invoiceId: inv.id,
+      claimDate: "2026-10-20",
+      writtenOff: true,
+      customerNotified: true,
+    });
+    expect(claim.status, claim.text).toBe(201);
+    expect(Number(claim.body.vatAmount)).toBe(25_000_000_000.05);
+    expect(await linesOf(claim.body.journalEntryId)).toEqual({
+      "2020": [25_000_000_000.05, 0],
+      "5120": [0, 25_000_000_000.05],
+    });
+  });
+
   it("[H1][M5] write-off settles the invoice, Art. 64 relief on the written-off amount, allowance reconciles", async () => {
     const t = await tenant("A3S1");
     const cid = t.company.id;
