@@ -47,7 +47,7 @@ export function assertStatementDatesValid(parsed: BankParseResult): void {
       "BANK_STATEMENT_INVALID_DATE",
       400,
       { rowIndex: invalidDate.rowIndex },
-      "Import canceled. Correct any missing or invalid transaction dates in the CSV and try again."
+      `Import canceled. Correct the missing or invalid transaction date in CSV row ${invalidDate.rowIndex} and try again.`
     );
   }
 }

@@ -81,13 +81,15 @@ async function mountPage(locale: "en" | "ar") {
   queryClient.clear();
   const { ActiveCompanyProvider } =
     await import("../../client/src/components/ActiveCompanyProvider");
+  const { Toaster } = await import("../../client/src/components/ui/toaster");
   const { default: BankReconciliation } = await import("../../client/src/pages/BankReconciliation");
   await act(async () => {
     root.render(
       createElement(
         QueryClientProvider,
         { client: queryClient },
-        createElement(ActiveCompanyProvider, null, createElement(BankReconciliation))
+        createElement(ActiveCompanyProvider, null, createElement(BankReconciliation)),
+        createElement(Toaster)
       )
     );
   });
@@ -111,7 +113,7 @@ async function chooseStatement(body: string, name = "statement.csv") {
   await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
 }
 
-function recordStatementRequests() {
+function recordStatementRequests(importResponse = json({ imported: 1 })) {
   const previews: Array<{ payload: unknown; respond: (value: Response) => void }> = [];
   const imports: unknown[] = [];
   const original = vi.mocked(fetch).getMockImplementation()!;
@@ -124,7 +126,7 @@ function recordStatementRequests() {
     }
     if (url.endsWith("/bank-statements/import")) {
       imports.push(JSON.parse(String(init?.body)));
-      return json({ imported: 1 });
+      return importResponse;
     }
     return original(input, init);
   });
@@ -229,6 +231,41 @@ describe("bank statement import dialog", () => {
           acknowledgeAmbiguity: false,
         },
       ]);
+    }
+  );
+
+  it.each([
+    ["en", "Correct the missing or invalid transaction date in CSV row 3"],
+    ["ar", "صحّح تاريخ الحركة المفقود أو غير الصالح في الصف 3 من ملف CSV"],
+  ] as const)(
+    "shows the first CSV row needing a date correction in the %s toast",
+    async (locale, copy) => {
+      const message =
+        "Import canceled. Correct the missing or invalid transaction date in CSV row 3 and try again.";
+      const { previews } = recordStatementRequests(
+        new Response(
+          JSON.stringify({
+            code: "BANK_STATEMENT_INVALID_DATE",
+            message,
+            details: { rowIndex: 3 },
+          }),
+          { status: 400, headers: { "content-type": "application/json" } }
+        )
+      );
+      await mountPage(locale);
+      await selectImportAccount();
+      await chooseStatement(
+        "Date,Description,Amount\n2026-03-10,Stationery,-12.50\n2026-02-30,Deposit,100.00"
+      );
+      await vi.waitFor(() => expect(previews).toHaveLength(1));
+      await act(async () => previews[0].respond(previewResponse("Stationery")));
+      await click(action());
+      await vi.waitFor(() => {
+        const messages = [...document.querySelectorAll('.destructive[data-state="open"]')].map(
+          (toast) => toast.textContent
+        );
+        expect(messages).toContainEqual(expect.stringContaining(copy));
+      });
     }
   );
 

@@ -251,6 +251,13 @@ export function localizeApiError(body: Record<string, unknown> | undefined): str
   if (!body) return undefined;
   const { locale } = useI18n.getState();
   const code = typeof body.code === "string" ? body.code : undefined;
+  if (code === "BANK_STATEMENT_INVALID_DATE") {
+    const rowIndex = (body.details as { rowIndex?: unknown } | undefined)?.rowIndex;
+    const copy = serverErrorCopy(locale, `${code}.row`);
+    if (copy && typeof rowIndex === "number" && Number.isSafeInteger(rowIndex) && rowIndex > 0) {
+      return formatMessage(copy, { rowIndex });
+    }
+  }
   // These responses can carry legacy provider details or reconnect steps for API callers.
   if (
     code &&

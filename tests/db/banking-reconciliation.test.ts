@@ -2087,6 +2087,7 @@ describe("CSV statement import regressions", () => {
     expect(response.status, response.text).toBe(400);
     expect(response.body).toMatchObject({
       code: "BANK_STATEMENT_INVALID_DATE",
+      message: expect.stringContaining("CSV row 3"),
       details: { rowIndex: 3 },
     });
     expect(await lines(t, account.id)).toHaveLength(0);
