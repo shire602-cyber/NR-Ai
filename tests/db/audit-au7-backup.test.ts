@@ -37,11 +37,16 @@ async function makeLegacy(
   ]);
 }
 
-function replace(t: Tenant, backup: { id: string; name: string }, key?: string) {
+function restore(
+  t: Tenant,
+  backup: { id: string; name: string },
+  mode: "merge" | "replace",
+  key?: string
+) {
   return t.as.post(
     `/api/backups/${backup.id}/restore`,
     {
-      mode: "replace",
+      mode,
       confirmRestore: true,
       confirmName: backup.name,
     },
@@ -49,10 +54,15 @@ function replace(t: Tenant, backup: { id: string; name: string }, key?: string) 
   );
 }
 
-async function expectReplaceConflict(
+function replace(t: Tenant, backup: { id: string; name: string }, key?: string) {
+  return restore(t, backup, "replace", key);
+}
+
+async function expectRestoreConflict(
   t: Tenant,
   backup: { id: string; name: string },
-  table: string
+  table: string,
+  mode: "merge" | "replace"
 ) {
   const preRestoreBackups = () =>
     h.sql(
@@ -61,8 +71,8 @@ async function expectReplaceConflict(
     );
   const before = await preRestoreBackups();
   for (const response of [
-    await t.as.post(`/api/backups/${backup.id}/restore-preview`, { mode: "replace" }),
-    await replace(t, backup),
+    await t.as.post(`/api/backups/${backup.id}/restore-preview`, { mode }),
+    await restore(t, backup, mode),
   ]) {
     expect(response.status, response.text).toBe(409);
     expect(response.body).toMatchObject({
@@ -71,6 +81,10 @@ async function expectReplaceConflict(
     });
   }
   expect(await preRestoreBackups()).toEqual(before);
+}
+
+function expectReplaceConflict(t: Tenant, backup: { id: string; name: string }, table: string) {
+  return expectRestoreConflict(t, backup, table, "replace");
 }
 
 async function draftInvoice(t: Tenant, contactId?: string): Promise<string> {
@@ -500,6 +514,12 @@ describe("AU7 accounting backup integrity", () => {
     await expectReplaceConflict(t, backup, "payment_links");
 
     const backupWithNote = await snapshot(t);
+    for (const response of [
+      await t.as.post(`/api/backups/${backupWithNote.id}/restore-preview`, { mode: "merge" }),
+      await restore(t, backupWithNote, "merge"),
+    ]) {
+      expect(response.status, response.text).toBe(200);
+    }
     await makeLegacy(backupWithNote.id, (tables) => {
       tables.journal_lines = tables.journal_lines.filter(
         (line) => (line as { entry_id: string }).entry_id !== lines[0].entry_id
@@ -511,30 +531,53 @@ describe("AU7 accounting backup integrity", () => {
     expect(await journalLines(t, noteId)).toEqual(lines);
   });
 
-  it("rejects a snapshot-only credit note that would reduce an open checkout balance", async () => {
+  it.each(["replace", "merge"] as const)(
+    "rejects a %s snapshot-only credit note that would reduce an open checkout balance",
+    async (mode) => {
+      const t = await h.createTenant();
+      const bank = await accountByCode(t, "1020");
+      const invoiceId = await partiallyPaidInvoice(t, bank.id);
+      const invoiceRows = () => h.sql("SELECT * FROM invoices WHERE id = $1", [invoiceId]);
+      const before = await invoiceRows();
+      expect(before[0].status).toBe("partial");
+      const backupWithoutNote = await snapshot(t);
+      const noteId = await issuePartialCreditNote(t, invoiceId);
+      expect(await invoiceRows()).toEqual(before);
+      expect((await journalLines(t, noteId)).length).toBeGreaterThan(0);
+      const backupWithNote = await snapshot(t);
+
+      const restored = await replace(t, backupWithoutNote);
+      expect(restored.status, restored.text).toBe(200);
+      const noteRows = () => h.sql("SELECT id FROM invoices WHERE id = $1", [noteId]);
+      expect(await noteRows()).toEqual([]);
+      await startCheckout(t, invoiceId, bank.id, 9000);
+      const checkoutInvoice = await invoiceRows();
+
+      await expectRestoreConflict(t, backupWithNote, "payment_links", mode);
+      expect(await invoiceRows()).toEqual(checkoutInvoice);
+      expect(await noteRows()).toEqual([]);
+      expect(await journalLines(t, noteId)).toEqual([]);
+    }
+  );
+
+  it("keeps the effective deposit bank currency while checkout can still settle", async () => {
     const t = await h.createTenant();
-    const bank = await accountByCode(t, "1020");
-    const invoiceId = await partiallyPaidInvoice(t, bank.id);
-    const invoiceRows = () => h.sql("SELECT * FROM invoices WHERE id = $1", [invoiceId]);
-    const before = await invoiceRows();
-    expect(before[0].status).toBe("partial");
-    const backupWithoutNote = await snapshot(t);
-    const noteId = await issuePartialCreditNote(t, invoiceId);
-    expect(await invoiceRows()).toEqual(before);
-    expect((await journalLines(t, noteId)).length).toBeGreaterThan(0);
-    const backupWithNote = await snapshot(t);
+    const invoiceId = await draftInvoice(t);
+    await issueInvoice(t, invoiceId);
+    const account = await accountByCode(t, "1020");
+    const [bank] = await h.sql<{ id: string }>(
+      `INSERT INTO bank_accounts (company_id, name_en, bank_name, currency, gl_account_id)
+       VALUES ($1, 'Checkout deposits', 'Other', 'EUR', $2) RETURNING id`,
+      [t.company.id, account.id]
+    );
+    const backup = await snapshot(t);
+    await h.sql("UPDATE bank_accounts SET currency = 'AED' WHERE id = $1", [bank.id]);
+    await startCheckout(t, invoiceId, account.id, 12000);
 
-    const restored = await replace(t, backupWithoutNote);
-    expect(restored.status, restored.text).toBe(200);
-    const noteRows = () => h.sql("SELECT id FROM invoices WHERE id = $1", [noteId]);
-    expect(await noteRows()).toEqual([]);
-    await startCheckout(t, invoiceId, bank.id, 9000);
-    const checkoutInvoice = await invoiceRows();
-
-    await expectReplaceConflict(t, backupWithNote, "payment_links");
-    expect(await invoiceRows()).toEqual(checkoutInvoice);
-    expect(await noteRows()).toEqual([]);
-    expect(await journalLines(t, noteId)).toEqual([]);
+    await expectReplaceConflict(t, backup, "payment_links");
+    expect(await h.sql("SELECT currency FROM bank_accounts WHERE id = $1", [bank.id])).toEqual([
+      { currency: "AED" },
+    ]);
   });
 
   it("keeps the configured deposit account eligible while checkout can still settle", async () => {

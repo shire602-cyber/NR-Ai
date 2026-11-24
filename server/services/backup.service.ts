@@ -916,11 +916,57 @@ const SETTLING_LINKS = `settling_links AS (
   SELECT invoice_id, deposit_account_id, expires_at, provider_session_id FROM payment_links
   WHERE company_id = $1
     AND ((status = 'active' AND expires_at >= now() AT TIME ZONE 'UTC')
-         OR (status IN ('active', 'cancelled', 'expired') AND provider_session_id IS NOT NULL))
+         OR (status IN ('active', 'cancelled', 'expired') AND provider_session_id IS NOT NULL)
+         OR status = 'processing')
 )`;
 const LINKED_CREDIT_NOTE =
   "t.invoice_type = 'credit_note' AND t.original_invoice_id IN (SELECT invoice_id FROM settling_links)";
 const LINKED_LEGACY_CREDIT_NOTE = "t.invoice_id IN (SELECT invoice_id FROM settling_links)";
+
+async function validateMergeCheckoutCreditNotes(
+  client: Queryable,
+  companyId: string,
+  plan: RestoreTable[]
+): Promise<void> {
+  const values = [companyId];
+  const conflicts: string[] = [];
+  for (const { table, json, rowCount } of plan) {
+    if (!rowCount || !["invoices", "credit_notes"].includes(table.name)) continue;
+    const linkedNote = table.name === "invoices" ? LINKED_CREDIT_NOTE : LINKED_LEGACY_CREDIT_NOTE;
+    const linkColumn = table.name === "invoices" ? "original_invoice_id" : "invoice_id";
+    if (!table.columns.includes(linkColumn)) continue;
+    // Merge's ON CONFLICT DO NOTHING also skips secondary unique-key collisions.
+    const uniqueMatches = [
+      pkMatch(table, "live", "t"),
+      "(live.company_id, live.number) = (t.company_id, t.number)",
+    ];
+    if (table.name === "invoices") {
+      uniqueMatches.push(
+        "live.legacy_credit_note_id = t.legacy_credit_note_id",
+        "live.share_token = t.share_token"
+      );
+    }
+    values.push(json);
+    conflicts.push(`EXISTS (
+      SELECT 1 FROM json_populate_recordset(NULL::${q(table.name)}, $${values.length}::json) t
+      WHERE t.company_id = $1 AND ${linkedNote}
+        AND NOT EXISTS (SELECT 1 FROM ${q(table.name)} live WHERE ${uniqueMatches.join(" OR ")})
+    )`);
+  }
+  if (!conflicts.length) return;
+  const { rows } = await client.query(
+    `WITH ${SETTLING_LINKS} SELECT 1 WHERE ${conflicts.join(" OR ")}`,
+    values
+  );
+  if (rows.length) {
+    throw new DomainError(
+      "BACKUP_RESTORE_CONFLICT",
+      409,
+      { table: "payment_links" },
+      "Merge restore would add a credit note to an invoice while a payment link or checkout session can still settle."
+    );
+  }
+}
 
 // Project only the columns the guards read. Older snapshots leave omitted
 // columns unchanged on updates and use the column defaults on inserts.
@@ -970,6 +1016,28 @@ async function replaceBlocksCheckoutPosting(
 ): Promise<boolean> {
   const values = [companyId];
   const conflicts: string[] = [];
+  if (plan.some(({ table }) => table.name === "bank_accounts")) {
+    const restoredBanks = replacementRows(plan, values, "bank_accounts", {
+      gl_account_id: "NULL",
+      currency: "'AED'",
+      is_active: "true",
+      created_at: "now()",
+    });
+    // Use the same account precedence as bankCurrencyOf and the same base-currency fallback
+    // as receipt posting. A relink, deletion or activation can change the effective currency.
+    const currencyFor = (banks: string) => `(SELECT NULLIF(upper(b.currency), '') FROM ${banks} b
+      WHERE b.gl_account_id = link.deposit_account_id
+      ORDER BY b.is_active DESC, b.created_at LIMIT 1)`;
+    const restoredCurrency = currencyFor(`(${restoredBanks})`);
+    const liveCurrency = currencyFor("(SELECT * FROM bank_accounts WHERE company_id = $1)");
+    const baseCurrency = "COALESCE(NULLIF(upper(btrim(c.base_currency)), ''), 'AED')";
+    conflicts.push(`EXISTS (
+      SELECT 1 FROM settling_links link
+      JOIN companies c ON c.id = $1
+      WHERE COALESCE(${restoredCurrency}, ${baseCurrency})
+        IS DISTINCT FROM COALESCE(${liveCurrency}, ${baseCurrency})
+    )`);
+  }
   if (plan.some(({ table }) => table.name === "accounts")) {
     const resultingAccounts = replacementRows(plan, values, "accounts", {
       parent_id: "NULL",
@@ -1118,7 +1186,7 @@ async function validateReplaceExternalState(
       "BACKUP_RESTORE_CONFLICT",
       409,
       { table: "payment_links" },
-      "Replace restore would change a payable invoice, its accounting records, deposit account eligibility, or posting availability while a payment link or checkout session can still settle."
+      "Replace restore would change a payable invoice, its accounting records, deposit account currency or eligibility, or posting availability while a payment link or checkout session can still settle."
     );
   }
 
@@ -1466,20 +1534,34 @@ export async function restoreCompanyBackup(
     }
     const snapshot = snapshotForRestore(backup);
     const manifest = await buildBackupManifest(client);
-    if (!args.dryRun && args.mode === "replace") {
+    if (!args.dryRun) {
       await client.query("SELECT id FROM companies WHERE id = $1 FOR UPDATE", [args.companyId]);
       await lockRestoreRows(client, args.companyId, {
         fks: manifest.fks,
-        tables: [
-          ...externalCompanyTables(["payment_links", "payslip_tokens", ...EINVOICE_HISTORY_TABLES]),
-          ...manifest.tables,
-        ],
+        tables:
+          args.mode === "replace"
+            ? [
+                ...externalCompanyTables([
+                  "payment_links",
+                  "payslip_tokens",
+                  ...EINVOICE_HISTORY_TABLES,
+                ]),
+                ...manifest.tables,
+              ]
+            : [
+                ...externalCompanyTables(["payment_links"]),
+                ...manifest.tables.filter(
+                  ({ name }) => name === "invoices" || name === "credit_notes"
+                ),
+              ],
       });
     }
     const plan = planRestore(snapshot, manifest, manifest.tables);
     await validateSnapshotRows(client, plan);
     if (args.mode === "replace") {
       await validateReplaceExternalState(client, args.companyId, plan);
+    } else {
+      await validateMergeCheckoutCreditNotes(client, args.companyId, plan);
     }
     const diffs: TableDiff[] = [];
     for (const { table, json } of plan) {
