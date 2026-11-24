@@ -425,6 +425,7 @@ export function registerBankStatementRoutes(app: Express) {
         validRows,
         errorRows: errorRows.length,
         ignoredRows: parsed.ignored.length,
+        firstInvalidDateRow: parsed.rows.find((row) => row.date === null)?.rowIndex ?? null,
         sampleRows: parsed.rows.slice(0, 10).map((r) => ({
           rowIndex: r.rowIndex,
           date: r.date ? r.date.toISOString().slice(0, 10) : null,

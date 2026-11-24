@@ -144,6 +144,7 @@ function previewResponse(description: string, requiresChoice = false) {
     totalRows: 1,
     validRows: 1,
     errorRows: 0,
+    firstInvalidDateRow: null,
     sampleRows: [{ rowIndex: 1, date: "2026-11-13", description, debit: 0, credit: 0, errors: [] }],
     warnings: [],
     requiresChoice,
@@ -214,13 +215,83 @@ describe("bank statement import dialog", () => {
     ["ar", "صحّح تاريخ الحركة المفقود أو غير الصالح في الصف 2 من ملف CSV ثم عاين الملف مجددًا."],
   ] as const)("blocked bank statement preview in %s", (locale, copy) => {
     it.each([
-      ["blank", "", "Missing date"],
-      ["invalid", "2026-02-30", "Invalid date '2026-02-30' for YYYY-MM-DD"],
-    ])("shows CSV row 2 when the only transaction date is %s", async (_kind, date, parserError) => {
+      ["blank", "", "100.00", "Missing date", []],
+      [
+        "invalid",
+        "2026-02-30",
+        "bad",
+        "Invalid date '2026-02-30' for DD/MM/YYYY",
+        ["Invalid amount 'bad'"],
+      ],
+    ] as const)(
+      "shows CSV row 2 when the only transaction date is %s",
+      async (_kind, date, amount, parserError, otherErrors) => {
+        const { previews, imports } = recordStatementRequests();
+        await mountPage(locale);
+        await selectImportAccount();
+        await chooseStatement(`Date,Description,Amount\n${date},Deposit,${amount}`);
+        await vi.waitFor(() => expect(previews).toHaveLength(1));
+        await act(async () =>
+          previews[0].respond(
+            json({
+              kind: "csv",
+              detectedFormat: "generic",
+              decimalSeparator: ".",
+              dateOrder: null,
+              headerRow: 1,
+              headers: ["Date", "Description", "Amount"],
+              mapping: { date: 0, description: 1, amount: 2 },
+              totalRows: 1,
+              validRows: 0,
+              errorRows: 1,
+              firstInvalidDateRow: 2,
+              sampleRows: [
+                {
+                  rowIndex: 2,
+                  date: null,
+                  description: "Deposit",
+                  debit: 0,
+                  credit: amount === "bad" ? 0 : 100,
+                  errors: [...otherErrors, parserError],
+                },
+              ],
+              warnings: [],
+              requiresChoice: false,
+            })
+          )
+        );
+
+        expect(action().disabled).toBe(true);
+        expect(
+          mapper()?.querySelector('[role="alert"][data-testid="text-statement-preview-date-error"]')
+            ?.textContent
+        ).toBe(copy);
+        expect(mapper()?.querySelector("tbody tr")?.getAttribute("title")).toBe(
+          [copy, ...otherErrors].join("; ")
+        );
+        expect(imports).toEqual([]);
+      }
+    );
+
+    it("shows CSV row 12 when the first date error is beyond the preview sample", async () => {
       const { previews, imports } = recordStatementRequests();
+      const sampleRows = Array.from({ length: 10 }, (_, index) => ({
+        rowIndex: index + 2,
+        date: "2026-03-10",
+        description: "Deposit",
+        debit: 0,
+        credit: 0,
+        errors: ["Missing amount"],
+      }));
       await mountPage(locale);
       await selectImportAccount();
-      await chooseStatement(`Date,Description,Amount\n${date},Deposit,100.00`);
+      await chooseStatement(
+        [
+          "Date,Description,Amount",
+          ...sampleRows.map((row) => `${row.date},${row.description},`),
+          "2026-02-30,Deposit,100.00",
+        ].join("\n")
+      );
       await vi.waitFor(() => expect(previews).toHaveLength(1));
       await act(async () =>
         previews[0].respond(
@@ -228,23 +299,15 @@ describe("bank statement import dialog", () => {
             kind: "csv",
             detectedFormat: "generic",
             decimalSeparator: ".",
-            dateOrder: null,
+            dateOrder: "YMD",
             headerRow: 1,
             headers: ["Date", "Description", "Amount"],
             mapping: { date: 0, description: 1, amount: 2 },
-            totalRows: 1,
+            totalRows: 11,
             validRows: 0,
-            errorRows: 1,
-            sampleRows: [
-              {
-                rowIndex: 2,
-                date: null,
-                description: "Deposit",
-                debit: 0,
-                credit: 100,
-                errors: [parserError],
-              },
-            ],
+            errorRows: 11,
+            firstInvalidDateRow: 12,
+            sampleRows,
             warnings: [],
             requiresChoice: false,
           })
@@ -253,10 +316,8 @@ describe("bank statement import dialog", () => {
 
       expect(action().disabled).toBe(true);
       expect(
-        mapper()?.querySelector('[role="alert"][data-testid="text-statement-preview-date-error"]')
-          ?.textContent
-      ).toBe(copy);
-      expect(mapper()?.querySelector("tbody tr")?.getAttribute("title")).toBe(copy);
+        mapper()?.querySelector('[data-testid="text-statement-preview-date-error"]')?.textContent
+      ).toBe(copy.replace("2", "12"));
       expect(imports).toEqual([]);
     });
   });

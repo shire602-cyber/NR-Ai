@@ -126,7 +126,33 @@ describe("statement import copy", () => {
         csvContent: `Date,Description,Debit,Credit\n${date},Test line,0,12.50\n`,
       });
       expect(reply.status, reply.text).toBe(200);
-      expect(reply.body).toMatchObject({ detectedFormatLabel, validRows });
+      expect(reply.body).toMatchObject({
+        detectedFormatLabel,
+        validRows,
+        firstInvalidDateRow: validRows ? null : 2,
+      });
+    }
+  );
+
+  it.each([10, 50])(
+    "reports the first date error after %i rows with missing amounts",
+    async (count) => {
+      const t = await h.createTenant({ name: "Bank CSV preview" });
+      const reply = await t.as.post(`${base(t)}/bank-statements/preview`, {
+        csvContent: [
+          "Date,Description,Amount",
+          ...Array<string>(count).fill("2026-03-10,Deposit,"),
+          "2026-02-30,Deposit,100.00",
+          ",Deposit,100.00",
+        ].join("\n"),
+      });
+
+      expect(reply.status, reply.text).toBe(200);
+      expect(reply.body).toMatchObject({ validRows: 0, firstInvalidDateRow: count + 2 });
+      expect(reply.body.sampleRows).toHaveLength(10);
+      expect(reply.body.sampleRows.map((row: { errors: string[] }) => row.errors)).toEqual(
+        Array(10).fill(["Missing amount"])
+      );
     }
   );
 

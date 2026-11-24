@@ -239,6 +239,7 @@ interface StatementPreview {
   totalRows: number;
   validRows: number;
   errorRows: number;
+  firstInvalidDateRow: number | null;
   sampleRows: Array<{
     rowIndex: number;
     date: string | null;
@@ -356,8 +357,8 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
       : null;
   const firstInvalidDateRow =
     !previewLoading && statementPreview?.validRows === 0
-      ? statementPreview.sampleRows.find((row) => row.date === null)
-      : undefined;
+      ? statementPreview.firstInvalidDateRow
+      : null;
   const canConfirmImport = Boolean(
     statementPreview &&
     bankAccounts?.some((account) => account.id === selectedBankAccount) &&
@@ -1488,14 +1489,14 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                   )}
                 </p>
 
-                {firstInvalidDateRow && (
+                {firstInvalidDateRow != null && (
                   <p
                     role="alert"
                     className="text-xs text-destructive"
                     data-testid="text-statement-preview-date-error"
                   >
                     {formatMessage(t["banking.import.invalidDateRow"], {
-                      rowIndex: firstInvalidDateRow.rowIndex,
+                      rowIndex: firstInvalidDateRow,
                     })}
                   </p>
                 )}
@@ -1624,9 +1625,17 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                               className={row.errors.length > 0 ? "text-destructive" : undefined}
                               title={
                                 row.date === null
-                                  ? formatMessage(t["banking.import.invalidDateRow"], {
-                                      rowIndex: row.rowIndex,
-                                    })
+                                  ? [
+                                      formatMessage(t["banking.import.invalidDateRow"], {
+                                        rowIndex: row.rowIndex,
+                                      }),
+                                      ...row.errors.filter(
+                                        (error) =>
+                                          !/^(Missing date$|(Invalid|Unrecognised) date )/.test(
+                                            error
+                                          )
+                                      ),
+                                    ].join("; ")
                                   : row.errors.join("; ")
                               }
                             >
