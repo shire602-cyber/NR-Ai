@@ -49,7 +49,7 @@ Other pages (`phase/pages/`)
 - `ToolsIndex.tsx`: tool cards with previews computed by the real calculators.
 - `SolutionPage.tsx`: firms and small-business pages reuse the firms band and migration block.
 - Route aliases in `route-content.ts`: `/e-invoicing`, `/compare/zoho-books`, `/free-tools`,
-  `/accounting-firms`, `/small-business`. Each serves the target page with the target's canonical
+  `/accounting-firms`, `/small-business`, plus the bare redirects `/compare` and `/compare/wafeq`. Each serves the target page with the target's canonical
   and hreflang, and is left out of the sitemap.
 - The language toggle keeps the page and the scroll position.
 

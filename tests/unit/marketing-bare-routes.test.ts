@@ -11,6 +11,8 @@ const BARE: Array<[string, string]> = [
   ["/free-tools", "/en/tools"],
   ["/accounting-firms", "/en/solutions/accounting-firms"],
   ["/small-business", "/en/solutions/small-business"],
+  ["/compare", "/en/compare"],
+  ["/compare/wafeq", "/en/compare/wafeq"],
   ["/compare/zoho-books", "/en/compare/zoho"],
 ];
 
