@@ -21,7 +21,7 @@
  *            order) — the company's data equals the snapshot afterwards
  *   dryRun   either mode, computed and rolled back: per-table insert / update / delete counts
  * Append-only tables (einvoice_archive, tax_return_archive) are only ever
- * topped up, never rewritten. The audit entry is written after the commit.
+ * topped up, never rewritten. Restore receipts and audit events commit with the data.
  *
  * Point-in-time recovery is a database-host setting (WAL archiving / PITR on
  * the managed Postgres) and an off-site copy of these snapshots is an
@@ -32,8 +32,11 @@ import zlib from "node:zlib";
 import { pool } from "../db";
 import { pq, type Queryable } from "./connectors/pq";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secret-vault";
-import { DomainError } from "../errors";
+import { DomainError, errorCode } from "../errors";
 import { createLogger } from "../config/logger";
+import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
+import { recordAudit } from "./audit.service";
+import type { Request } from "express";
 
 const log = createLogger("backup-service");
 
@@ -46,6 +49,7 @@ export const BACKUP_EXCLUDED_TABLES: Readonly<Record<string, string>> = {
   backup_schedules: "backup configuration",
   activity_logs: "audit trail: must survive every restore",
   company_users: "access control: a restore must not lock out or revive members",
+  company_security_policies: "access control: company MFA requirements remain in effect",
   firm_client_links: "access control: firm links follow the current client relationship",
   firm_company_grants: "access control: firm grants follow current staff access",
   invitations: "access control",
@@ -54,6 +58,15 @@ export const BACKUP_EXCLUDED_TABLES: Readonly<Record<string, string>> = {
   bank_feed_oauth_states: "short-lived OAuth state",
   [BANK_GL_MIGRATION_FINDINGS]:
     "operator-only migration diagnostics can contain references to other companies and must survive tenant restores",
+  customer_portal_accounts: "access control: portal bindings follow current grants",
+  customer_portal_invitations: "access control: portal invitations follow current grants",
+  company_groups: "group-wide data",
+  company_group_members: "group-wide data",
+  intercompany_account_maps: "group-wide data",
+  elimination_journals: "group-wide data",
+  elimination_lines: "group-wide data",
+  consolidation_runs: "group-wide data",
+  ledger_repair_findings: "operator-only migration diagnostics",
   portal_login_codes: "short-lived credentials",
   portal_access_tokens: "credentials",
   payslip_tokens: "credentials",
@@ -64,9 +77,20 @@ export const BACKUP_EXCLUDED_TABLES: Readonly<Record<string, string>> = {
   subscriptions: "billing state is owned by the billing provider",
   billing_credits: "billing state",
   billing_documents: "billing state",
+  domain_event_outbox: "event dispatch queue",
+  domain_event_deliveries: "event handler delivery receipts",
+  ai_gl_queue: "processing queue",
+  payment_gateway_events: "provider event processing receipts",
+  einvoice_documents: "external transmission state",
+  einvoice_approver_links: "access control: revocable approval links",
+  einvoice_document_events: "external transmission history",
+  einvoice_provider_events: "provider event processing queue and receipts",
+  einvoice_legal_entities: "external provider provisioning state",
+  payroll_expiry_alerts: "alert emission receipts",
   email_outbox: "delivery queue (re-sending on restore would spam customers)",
   email_outbox_attachments: "delivery queue",
   email_delivery_events: "delivery log",
+  reminder_logs: "customer reminder delivery history",
   webhook_deliveries: "delivery log",
   company_report_delivery_scheduler_scans: "scheduler telemetry",
   company_report_delivery_runs: "delivery log",
@@ -107,6 +131,9 @@ export interface ManifestTable {
   predicate: string;
   pk: string[];
   columns: string[]; // insertable (non-generated) columns
+  notNull: string[];
+  required: string[]; // NOT NULL without a database default
+  protectedFromDelete?: string;
   /** FK columns inserted NULL first and set afterwards (breaks FK cycles). */
   deferred: string[];
   appendOnly: boolean;
@@ -114,9 +141,15 @@ export interface ManifestTable {
 
 export interface BackupManifest {
   tables: ManifestTable[]; // FK-safe insert order
+  fks: FkRow[];
 }
 
 const q = (ident: string) => `"${ident.replace(/"/g, '""')}"`;
+
+const EXCLUDED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  customer_contacts: ["portal_access_token", "portal_access_expires_at"],
+  compliance_calendar: ["reminders_sent"],
+};
 
 interface FkRow {
   table_name: string;
@@ -124,6 +157,8 @@ interface FkRow {
   ref_table: string;
   ref_column: string;
   is_nullable: string;
+  columns: string[];
+  ref_columns: string[];
 }
 
 export async function buildBackupManifest(client: Queryable = pool): Promise<BackupManifest> {
@@ -141,8 +176,10 @@ export async function buildBackupManifest(client: Queryable = pool): Promise<Bac
       column_name: string;
       is_generated: string;
       identity_generation: string | null;
+      is_nullable: string;
+      column_default: string | null;
     }>(
-      `SELECT table_name, column_name, is_generated, identity_generation
+      `SELECT table_name, column_name, is_generated, identity_generation, is_nullable, column_default
          FROM information_schema.columns WHERE table_schema = 'public'
         ORDER BY table_name, ordinal_position`,
       [],
@@ -165,11 +202,15 @@ export async function buildBackupManifest(client: Queryable = pool): Promise<Bac
     await pq<FkRow>(
       `SELECT c.conrelid::regclass::text AS table_name, a.attname AS column_name,
               c.confrelid::regclass::text AS ref_table, af.attname AS ref_column,
-              CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END AS is_nullable
+              CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END AS is_nullable,
+              ARRAY(SELECT attname::text FROM unnest(c.conkey) WITH ORDINALITY k(num, ord)
+                    JOIN pg_attribute ON attrelid = c.conrelid AND attnum = k.num ORDER BY k.ord) AS columns,
+              ARRAY(SELECT attname::text FROM unnest(c.confkey) WITH ORDINALITY k(num, ord)
+                    JOIN pg_attribute ON attrelid = c.confrelid AND attnum = k.num ORDER BY k.ord) AS ref_columns
          FROM pg_constraint c
          JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
          JOIN pg_attribute af ON af.attrelid = c.confrelid AND af.attnum = c.confkey[1]
-        WHERE c.contype = 'f' AND array_length(c.conkey, 1) = 1
+        WHERE c.contype = 'f'
           AND c.connamespace = 'public'::regnamespace`,
       [],
       client
@@ -181,10 +222,19 @@ export async function buildBackupManifest(client: Queryable = pool): Promise<Bac
   }));
 
   const colsOf = new Map<string, string[]>();
+  const notNullOf = new Map<string, string[]>();
+  const requiredOf = new Map<string, string[]>();
   const hasCompanyId = new Set<string>();
   for (const c of cols) {
     if (c.column_name === "company_id") hasCompanyId.add(c.table_name);
     if (c.is_generated === "ALWAYS" || c.identity_generation === "ALWAYS") continue;
+    if (EXCLUDED_COLUMNS[c.table_name]?.includes(c.column_name)) continue;
+    if (c.is_nullable === "NO") {
+      notNullOf.set(c.table_name, [...(notNullOf.get(c.table_name) ?? []), c.column_name]);
+      if (c.column_default === null && c.identity_generation === null) {
+        requiredOf.set(c.table_name, [...(requiredOf.get(c.table_name) ?? []), c.column_name]);
+      }
+    }
     const list = colsOf.get(c.table_name) ?? [];
     list.push(c.column_name);
     colsOf.set(c.table_name, list);
@@ -193,16 +243,25 @@ export async function buildBackupManifest(client: Queryable = pool): Promise<Bac
   for (const p of pks) pkOf.set(p.table_name, [...(pkOf.get(p.table_name) ?? []), p.column_name]);
 
   const included = new Map<string, ManifestTable>();
+  const columnInfo = (name: string) => ({
+    pk: pkOf.get(name) ?? [],
+    columns: colsOf.get(name) ?? [],
+    notNull: notNullOf.get(name) ?? [],
+    required: requiredOf.get(name) ?? [],
+    deferred: [] as string[],
+    appendOnly: APPEND_ONLY_TABLES.has(name),
+  });
   for (const t of tables) {
     if (!hasCompanyId.has(t) || exclusionReason(t)) continue;
     included.set(t, {
       name: t,
       scope: "company",
-      predicate: `t.company_id = $1`,
-      pk: pkOf.get(t) ?? [],
-      columns: colsOf.get(t) ?? [],
-      deferred: [],
-      appendOnly: APPEND_ONLY_TABLES.has(t),
+      // Generated obligations are recomputed by the scheduler and track reminders.
+      predicate:
+        t === "compliance_calendar"
+          ? "t.company_id = $1 AND t.source <> 'generated'"
+          : "t.company_id = $1",
+      ...columnInfo(t),
     });
   }
   // Children: tables without company_id that reference included tables (to a fixed point).
@@ -218,17 +277,15 @@ export async function buildBackupManifest(client: Queryable = pool): Promise<Bac
         .map((f) => {
           const parent = included.get(f.ref_table)!;
           const inner = parent.predicate.replace(/\bt\./g, "p.");
-          return `t.${q(f.column_name)} IN (SELECT p.${q(f.ref_column)} FROM ${q(f.ref_table)} p WHERE ${inner})`;
+          return `(${f.columns.map((c) => `t.${q(c)}`).join(", ")}) IN
+            (SELECT ${f.ref_columns.map((c) => `p.${q(c)}`).join(", ")} FROM ${q(f.ref_table)} p WHERE ${inner})`;
         })
         .join(" OR ");
       included.set(t, {
         name: t,
         scope: "child",
         predicate: `(${predicate})`,
-        pk: pkOf.get(t) ?? [],
-        columns: colsOf.get(t) ?? [],
-        deferred: [],
-        appendOnly: APPEND_ONLY_TABLES.has(t),
+        ...columnInfo(t),
       });
       changed = true;
     }
@@ -257,7 +314,11 @@ export async function buildBackupManifest(client: Queryable = pool): Promise<Bac
     // Cycle: defer one nullable edge inside the remaining set.
     const victim =
       active.find(
-        (e) => remaining.has(e.table_name) && remaining.has(e.ref_table) && e.is_nullable === "YES"
+        (e) =>
+          remaining.has(e.table_name) &&
+          remaining.has(e.ref_table) &&
+          e.is_nullable === "YES" &&
+          !included.get(e.table_name)!.pk.includes(e.column_name)
       ) ?? null;
     if (!victim) {
       // Unbreakable cycle (NOT NULL both ways): emit alphabetically; restore may fail loudly.
@@ -269,7 +330,7 @@ export async function buildBackupManifest(client: Queryable = pool): Promise<Bac
     included.get(victim.table_name)!.deferred.push(victim.column_name);
     active = active.filter((e) => e !== victim);
   }
-  return { tables: order.map((t) => included.get(t)!) };
+  return { tables: order.map((t) => included.get(t)!), fks };
 }
 
 /** Company-scoped tables (with company_id) for the coverage test. */
@@ -293,6 +354,7 @@ export interface CompanySnapshot {
   createdAt: string;
   companyId: string;
   tables: Record<string, unknown[]>;
+  schema?: Record<string, { columns: string[]; primaryKey: string[] }>;
 }
 
 export async function captureSnapshot(
@@ -304,13 +366,21 @@ export async function captureSnapshot(
   const tables: Record<string, unknown[]> = {};
   for (const t of m.tables) {
     const { rows } = await pq<{ data: unknown[] }>(
-      `SELECT COALESCE(json_agg(to_jsonb(t)), '[]'::json) AS data FROM ${q(t.name)} t WHERE ${t.predicate}`,
-      [companyId],
+      `SELECT COALESCE(json_agg(to_jsonb(t) - $2::text[]), '[]'::json) AS data FROM ${q(t.name)} t WHERE ${t.predicate}`,
+      [companyId, EXCLUDED_COLUMNS[t.name] ?? []],
       client
     );
     tables[t.name] = rows[0]?.data ?? [];
   }
-  return { version: BACKUP_FORMAT_VERSION, createdAt: new Date().toISOString(), companyId, tables };
+  return {
+    version: BACKUP_FORMAT_VERSION,
+    createdAt: new Date().toISOString(),
+    companyId,
+    tables,
+    schema: Object.fromEntries(
+      m.tables.map((t) => [t.name, { columns: t.columns, primaryKey: t.pk }])
+    ),
+  };
 }
 
 const retiredBankCredentialColumns = [
@@ -405,17 +475,35 @@ export function exportBackupSnapshot(
 ): { body: string; exportChecksum: string; contentDigest?: string } {
   const { json, snapshot, redacted } = openSnapshot(stored, checksum);
   const tables = "tables" in snapshot ? snapshot.tables : snapshot.data;
-  const hadFindings = tables && Object.hasOwn(tables, BANK_GL_MIGRATION_FINDINGS);
-  if (hadFindings) delete tables[BANK_GL_MIGRATION_FINDINGS];
-  const plaintext = hadFindings ? JSON.stringify(snapshot) : json;
-  const sanitized = hadFindings || !!redacted;
+  let filtered = false;
+  for (const table of Object.keys(tables ?? {})) {
+    if (exclusionReason(table)) {
+      delete tables[table];
+      if ("schema" in snapshot && snapshot.schema) delete snapshot.schema[table];
+      filtered = true;
+      continue;
+    }
+    for (const row of tables[table]) {
+      for (const column of EXCLUDED_COLUMNS[table] ?? []) {
+        if (row && typeof row === "object" && Object.hasOwn(row, column)) {
+          delete (row as Record<string, unknown>)[column];
+          filtered = true;
+        }
+      }
+    }
+  }
+  const plaintext = filtered ? JSON.stringify(snapshot) : json;
+  const sanitized = filtered || !!redacted;
   const body = encrypted
-    ? (!sanitized && isEncryptedSecret(stored) ? stored : sealSnapshotJson(plaintext))
+    ? !sanitized && isEncryptedSecret(stored)
+      ? stored
+      : sealSnapshotJson(plaintext)
     : plaintext;
   const exportChecksum = snapshotChecksum(body);
-  const contentDigest = !encrypted && sanitized
-    ? `sha-256=:${Buffer.from(exportChecksum, "hex").toString("base64")}:`
-    : undefined;
+  const contentDigest =
+    !encrypted && sanitized
+      ? `sha-256=:${Buffer.from(exportChecksum, "hex").toString("base64")}:`
+      : undefined;
   return { body, exportChecksum, ...(contentDigest ? { contentDigest } : {}) };
 }
 
@@ -555,6 +643,10 @@ function pkMatch(t: ManifestTable, a: string, b: string): string {
   return t.pk.map((c) => `${a}.${q(c)} IS NOT DISTINCT FROM ${b}.${q(c)}`).join(" AND ");
 }
 
+function preservesPortalValue(table: ManifestTable, column: string): boolean {
+  return table.name === "customer_contacts" && ["email", "is_active"].includes(column);
+}
+
 async function diffTable(
   client: Queryable,
   t: ManifestTable,
@@ -562,10 +654,17 @@ async function diffTable(
   rowsJson: string
 ): Promise<TableDiff> {
   const snap = `json_populate_recordset(NULL::${q(t.name)}, $2::json)`;
+  const changed = t.columns
+    .map((c) => {
+      const differs = `to_jsonb(cur.${q(c)}) IS DISTINCT FROM to_jsonb(s.${q(c)})`;
+      return preservesPortalValue(t, c) ? `(cur.backup_can_delete AND ${differs})` : differs;
+    })
+    .join(" OR ");
+  const canDelete = t.protectedFromDelete ? `NOT (${t.protectedFromDelete})` : "true";
   if (!t.pk.length) {
     const { rows } = await pq<{ s: string; c: string }>(
       `SELECT (SELECT count(*) FROM ${snap}) AS s,
-              (SELECT count(*) FROM ${q(t.name)} t WHERE ${t.predicate}) AS c`,
+              (SELECT count(*) FROM ${q(t.name)} t WHERE ${deletionScope(t)}) AS c`,
       [companyId, rowsJson],
       client
     );
@@ -575,12 +674,12 @@ async function diffTable(
   }
   const { rows } = await pq<Record<string, string>>(
     `WITH s AS (SELECT * FROM ${snap}),
-          cur AS (SELECT * FROM ${q(t.name)} t WHERE ${t.predicate})
+          cur AS (SELECT t.*, ${canDelete} AS backup_can_delete FROM ${q(t.name)} t WHERE ${t.predicate})
      SELECT (SELECT count(*) FROM s) AS snapshot_rows,
             (SELECT count(*) FROM cur) AS current_rows,
             (SELECT count(*) FROM s WHERE NOT EXISTS (SELECT 1 FROM ${q(t.name)} x WHERE ${pkMatch(t, "x", "s")})) AS ins,
-            (SELECT count(*) FROM s JOIN cur ON ${pkMatch(t, "cur", "s")} WHERE to_jsonb(cur) IS DISTINCT FROM to_jsonb(s)) AS upd,
-            (SELECT count(*) FROM cur WHERE NOT EXISTS (SELECT 1 FROM s WHERE ${pkMatch(t, "cur", "s")})) AS del`,
+            (SELECT count(*) FROM s JOIN cur ON ${pkMatch(t, "cur", "s")} WHERE ${changed || "false"}) AS upd,
+            (SELECT count(*) FROM cur WHERE backup_can_delete AND NOT EXISTS (SELECT 1 FROM s WHERE ${pkMatch(t, "cur", "s")})) AS del`,
     [companyId, rowsJson],
     client
   );
@@ -595,159 +694,441 @@ async function diffTable(
   };
 }
 
-async function applyTable(
-  client: Queryable,
-  t: ManifestTable,
-  companyId: string,
-  rowsJson: string,
-  mode: RestoreMode,
-  phase: "delete" | "upsert" | "deferred"
-): Promise<void> {
-  // Statements bind only the parameters they use: $1 = company (predicate), $2 = rows.
-  const snap = `json_populate_recordset(NULL::${q(t.name)}, $2::json)`;
-  const snap1 = `json_populate_recordset(NULL::${q(t.name)}, $1::json)`;
-  const replace = mode === "replace" && !t.appendOnly;
-  if (phase === "delete") {
-    if (!replace) return;
-    if (t.deferred.length) {
-      await client.query(
-        `UPDATE ${q(t.name)} t SET ${t.deferred.map((c) => `${q(c)} = NULL`).join(", ")} WHERE ${t.predicate}`,
-        [companyId]
-      );
-    }
-    const keep = t.pk.length
-      ? `AND NOT EXISTS (SELECT 1 FROM ${snap} s WHERE ${pkMatch(t, "t", "s")})`
-      : "";
-    await client.query(
-      `DELETE FROM ${q(t.name)} t WHERE ${t.predicate} ${keep}`,
-      t.pk.length ? [companyId, rowsJson] : [companyId]
-    );
-    return;
-  }
-  if (phase === "deferred") {
-    if (!t.deferred.length || !t.pk.length) return;
-    await client.query(
-      `UPDATE ${q(t.name)} t SET ${t.deferred.map((c) => `${q(c)} = s.${q(c)}`).join(", ")}
-         FROM ${snap1} s WHERE ${pkMatch(t, "t", "s")}`,
-      [rowsJson]
-    );
-    return;
-  }
-  // upsert / insert-missing
-  const cols = t.columns;
-  const insertList = cols.map(q).join(", ");
-  const selectList = cols.map((c) => (t.deferred.includes(c) ? "NULL" : `s.${q(c)}`)).join(", ");
-  if (!t.pk.length) {
-    // No primary key: in replace mode the scoped rows were deleted above; merge adds absent rows.
-    const notExists = replace
-      ? ""
-      : `WHERE NOT EXISTS (SELECT 1 FROM ${q(t.name)} x WHERE to_jsonb(x) = to_jsonb(s))`;
-    await client.query(
-      `INSERT INTO ${q(t.name)} (${insertList}) SELECT ${selectList} FROM ${snap1} s ${notExists}`,
-      [rowsJson]
-    );
-    return;
-  }
-  const nonPk = cols.filter((c) => !t.pk.includes(c) && !t.deferred.includes(c));
-  const conflict =
-    replace && nonPk.length
-      ? `ON CONFLICT (${t.pk.map(q).join(", ")}) DO UPDATE SET ${nonPk
-          .map((c) => `${q(c)} = EXCLUDED.${q(c)}`)
-          .join(", ")}`
-      : `ON CONFLICT DO NOTHING`;
-  await client.query(
-    `INSERT INTO ${q(t.name)} (${insertList}) SELECT ${selectList} FROM ${snap1} s ${conflict}`,
-    [rowsJson]
+interface RestoreTable {
+  table: ManifestTable;
+  json: string;
+  rowCount: number;
+}
+
+function incompatible(table: string, reason: string): never {
+  throw new DomainError(
+    "BACKUP_SCHEMA_INCOMPATIBLE",
+    422,
+    { table, reason },
+    `The backup cannot be safely restored into the current schema (${table}: ${reason}).`
   );
 }
 
-/**
- * Restore (or dry-run) a backup. Throws on checksum mismatch before touching
- * anything. The caller writes the audit entry after this resolves.
- */
-export async function restoreCompanyBackup(args: {
-  backupId: string;
-  companyId: string;
-  userId: string;
-  mode: RestoreMode;
-  dryRun: boolean;
-}): Promise<RestoreResult> {
+function planRestore(
+  snapshot: CompanySnapshot,
+  manifest: BackupManifest,
+  included: ManifestTable[]
+): RestoreTable[] {
+  const represented = included.filter((t) => Object.hasOwn(snapshot.tables, t.name));
+  const plan = represented.map((t) => {
+    const archived = snapshot.tables[t.name] as Record<string, unknown>[];
+    if (
+      !Array.isArray(archived) ||
+      archived.some((row) => !row || typeof row !== "object" || Array.isArray(row))
+    ) {
+      incompatible(t.name, "invalid snapshot rows");
+    }
+    const rows =
+      t.name === "compliance_calendar"
+        ? archived.filter((row) => row.source !== "generated")
+        : archived;
+    const schema = snapshot.schema?.[t.name];
+    if (
+      snapshot.schema &&
+      (!schema || JSON.stringify(schema.primaryKey) !== JSON.stringify(t.pk))
+    ) {
+      incompatible(t.name, "primary key changed or table schema is missing");
+    }
+
+    // Legacy v2 records have all their original columns on each row. An empty
+    // array is still an explicit instruction to replace the represented table.
+    const captured = new Set(schema?.columns ?? rows.flatMap((row) => Object.keys(row)));
+    const columns = t.columns.filter((c) => captured.has(c));
+    if (rows.length) {
+      for (const c of [...t.pk, ...t.required]) {
+        if (!columns.includes(c)) incompatible(t.name, `missing required column ${c}`);
+      }
+      for (const c of columns) {
+        if (
+          rows.some((row) => !Object.hasOwn(row, c) || (row[c] === null && t.notNull.includes(c)))
+        ) {
+          incompatible(t.name, `missing or invalid value for ${c}`);
+        }
+      }
+    }
+
+    return {
+      table: { ...t, columns, deferred: t.deferred.filter((c) => columns.includes(c)) },
+      json: JSON.stringify(rows.map((row) => Object.fromEntries(columns.map((c) => [c, row[c]])))),
+      rowCount: rows.length,
+    };
+  });
+  const replaced = new Map(
+    plan.filter(({ table }) => !table.appendOnly).map(({ table }) => [table.name, table])
+  );
+  for (const { table } of plan) {
+    // Live grants, group references and tables or FK columns added since the
+    // backup can still depend on a row the snapshot would otherwise delete.
+    table.protectedFromDelete = manifest.fks
+      .filter((f) => {
+        if (f.ref_table !== table.name) return false;
+        const child = replaced.get(f.table_name);
+        return (
+          !child || (child.columns.length > 0 && f.columns.some((c) => !child.columns.includes(c)))
+        );
+      })
+      .map(
+        (f) =>
+          `EXISTS (SELECT 1 FROM ${q(f.table_name)} d WHERE ${f.columns
+            .map((c, i) => `d.${q(c)} = t.${q(f.ref_columns[i])}`)
+            .join(" AND ")})`
+      )
+      .join(" OR ");
+  }
+  return plan;
+}
+
+function deletionScope(t: ManifestTable): string {
+  return t.protectedFromDelete
+    ? `(${t.predicate}) AND NOT (${t.protectedFromDelete})`
+    : t.predicate;
+}
+
+async function validateSnapshotRows(client: Queryable, plan: RestoreTable[]): Promise<void> {
+  for (const { table, json } of plan) {
+    if (json === "[]") continue;
+    try {
+      await client.query(
+        `SELECT count(*) FROM json_populate_recordset(NULL::${q(table.name)}, $1::json)`,
+        [json]
+      );
+    } catch (error) {
+      if (errorCode(error)?.startsWith("22")) incompatible(table.name, "invalid column value");
+      throw error;
+    }
+  }
+}
+
+async function deleteTableRows(
+  client: Queryable,
+  { table: t, json }: RestoreTable,
+  companyId: string,
+  clear: boolean
+): Promise<void> {
+  const pred = deletionScope(t);
+  if (t.deferred.length) {
+    await client.query(
+      `UPDATE ${q(t.name)} t SET ${t.deferred.map((c) => `${q(c)} = NULL`).join(", ")}
+       WHERE ${pred}`,
+      [companyId]
+    );
+  }
+  const keep =
+    !clear && t.pk.length
+      ? `AND NOT EXISTS (
+        SELECT 1 FROM json_populate_recordset(NULL::${q(t.name)}, $2::json) s
+        WHERE ${pkMatch(t, "t", "s")})`
+      : "";
+  await client.query(
+    `DELETE FROM ${q(t.name)} t WHERE ${pred} ${keep}`,
+    keep ? [companyId, json] : [companyId]
+  );
+}
+
+async function insertTableRows(
+  client: Queryable,
+  { table: t, json }: RestoreTable,
+  replace: boolean,
+  clone: boolean
+): Promise<unknown[]> {
+  if (json === "[]") return [];
+  const snap = `json_populate_recordset(NULL::${q(t.name)}, $1::json)`;
+  const selectList = t.columns
+    .map((c) => (t.deferred.includes(c) ? "NULL" : `s.${q(c)}`))
+    .join(", ");
+  const update = t.columns.filter((c) => !t.pk.includes(c) && !t.deferred.includes(c));
+  if (!update.length && t.deferred.length) update.push(...t.pk);
+  const replacement = (column: string) => {
+    const incoming = `EXCLUDED.${q(column)}`;
+    const current = `t.${q(column)}`;
+    if (clone && t.name === CLONE_COUNTERS && column === "last_value") {
+      return `GREATEST(${current}, ${incoming})`;
+    }
+    // Changing these fields can enable or invalidate an existing portal grant.
+    if (t.protectedFromDelete && preservesPortalValue(t, column)) {
+      return `CASE WHEN ${t.protectedFromDelete} THEN ${current} ELSE ${incoming} END`;
+    }
+    return incoming;
+  };
+  const conflict =
+    replace && t.pk.length && update.length
+      ? `ON CONFLICT (${t.pk.map(q).join(", ")}) DO UPDATE SET
+          ${update.map((c) => `${q(c)} = ${replacement(c)}`).join(", ")}`
+      : "ON CONFLICT DO NOTHING";
+  const sameValues = t.columns
+    .map((c) => `to_jsonb(x.${q(c)}) IS NOT DISTINCT FROM to_jsonb(s.${q(c)})`)
+    .join(" AND ");
+  const missing =
+    !replace && !t.pk.length
+      ? `WHERE NOT EXISTS (SELECT 1 FROM ${q(t.name)} x WHERE ${sameValues})`
+      : "";
+  const returning = t.deferred.length && t.pk.length ? `RETURNING ${t.pk.map(q).join(", ")}` : "";
+  const { rows } = await client.query(
+    `INSERT INTO ${q(t.name)} AS t (${t.columns.map(q).join(", ")})
+     SELECT ${selectList} FROM ${snap} s ${missing} ${conflict} ${returning}`,
+    [json]
+  );
+  return rows;
+}
+
+async function applyRestore(
+  client: Queryable,
+  plan: RestoreTable[],
+  companyId: string,
+  mode: RestoreMode,
+  clone = false
+): Promise<void> {
+  const replaces = (t: ManifestTable) => mode === "replace" && !t.appendOnly;
+  for (const entry of [...plan].reverse()) {
+    if (replaces(entry.table) && !(clone && entry.table.name === CLONE_COUNTERS))
+      await deleteTableRows(client, entry, companyId, clone);
+  }
+  const deferred: { entry: RestoreTable; keys: unknown[] }[] = [];
+  for (const entry of plan) {
+    const keys = await insertTableRows(client, entry, replaces(entry.table), clone);
+    if (keys.length) deferred.push({ entry, keys });
+  }
+  for (const {
+    entry: { table: t, json },
+    keys,
+  } of deferred) {
+    const records = `json_populate_recordset(NULL::${q(t.name)},`;
+    await client.query(
+      `UPDATE ${q(t.name)} t SET ${t.deferred.map((c) => `${q(c)} = s.${q(c)}`).join(", ")}
+         FROM ${records} $1::json) s JOIN ${records} $2::json) k ON ${pkMatch(t, "s", "k")}
+        WHERE ${pkMatch(t, "t", "k")}`,
+      [json, JSON.stringify(keys)]
+    );
+  }
+}
+
+async function lockRestoreTarget(client: Queryable, companyId: string, manifest: BackupManifest) {
+  // The company lock conflicts with FK checks on ordinary inserts into the
+  // company. Tables without that FK need a table lock to cover the first write.
+  await client.query("SELECT id FROM companies WHERE id = $1 FOR UPDATE", [companyId]);
+  const directFks = new Set(
+    manifest.fks
+      .filter(
+        (f) =>
+          f.ref_table === "companies" &&
+          f.column_name === "company_id" &&
+          f.ref_column === "id" &&
+          f.columns.length === 1
+      )
+      .map((f) => f.table_name)
+  );
+  const unguarded = manifest.tables
+    .filter((t) => t.scope === "company" && !directFks.has(t.name))
+    .map((t) => t.name)
+    .sort();
+  if (unguarded.length) {
+    await client.query(`LOCK TABLE ${unguarded.map(q).join(", ")} IN SHARE ROW EXCLUSIVE MODE`);
+  }
+  // Lock existing parent rows against concurrent changes and new children,
+  // including rows referenced by tables outside the accounting snapshot.
+  if (manifest.tables.length) {
+    const lockingReads = manifest.tables.map(
+      (t) => `SELECT 1 FROM (SELECT 1 FROM ${q(t.name)} t WHERE ${t.predicate} FOR UPDATE) row_lock`
+    );
+    await client.query(`SELECT count(*) FROM (${lockingReads.join(" UNION ALL ")}) locked`, [
+      companyId,
+    ]);
+  }
+}
+
+interface RestoreAuditContext {
+  requestKey?: string;
+  req?: Request;
+}
+
+async function loadRestoreBackup(
+  client: Queryable,
+  backupId: string,
+  companyId: string,
+  lock: "" | "FOR UPDATE" | "FOR SHARE"
+) {
   const { rows } = await pq<{
-    id: string;
     company_id: string;
     status: string;
     data_snapshot: string | null;
     checksum: string | null;
     name: string;
-  }>(`SELECT id, company_id, status, data_snapshot, checksum, name FROM backups WHERE id = $1`, [
-    args.backupId,
-  ]);
+  }>(
+    `SELECT id, company_id, status, data_snapshot, checksum, name FROM backups WHERE id = $1 ${lock}`,
+    [backupId],
+    client
+  );
   const backup = rows[0];
-  if (!backup || backup.company_id !== args.companyId) {
+  if (!backup || backup.company_id !== companyId) {
     throw new DomainError("NOT_FOUND", 404, undefined, "Backup not found");
   }
   if (backup.status !== "completed" || !backup.data_snapshot) {
     throw new DomainError("BACKUP_NOT_COMPLETE", 409, undefined, "Backup is not complete");
   }
-  const { snapshot: raw } = openSnapshot(backup.data_snapshot, backup.checksum);
-  const snapshot = asV2(raw);
-  if (snapshot.companyId !== args.companyId) {
+  return { ...backup, data_snapshot: backup.data_snapshot };
+}
+
+function snapshotForRestore(backup: {
+  company_id: string;
+  data_snapshot: string;
+  checksum: string | null;
+}) {
+  const snapshot = asV2(openSnapshot(backup.data_snapshot, backup.checksum).snapshot);
+  if (snapshot.companyId !== backup.company_id) {
     throw new DomainError("BACKUP_COMPANY_MISMATCH", 409);
   }
+  return snapshot;
+}
 
-  let preRestoreBackupId: string | null = null;
-  if (!args.dryRun && args.mode === "replace") {
-    const pre = await createCompanyBackup({
-      companyId: args.companyId,
-      userId: args.userId,
-      name: `Pre-restore backup (before restoring ${backup.name})`,
-      description: "Automatic backup created before a replace-mode restore",
-      backupType: "pre_restore",
-    });
-    preRestoreBackupId = pre.id;
+async function readRestoreReceipt<T>(
+  client: Queryable,
+  args: RestoreAuditContext & { backupId: string; userId: string },
+  companyId: string,
+  action: "backup.restore" | "backup.clone",
+  mode?: RestoreMode
+): Promise<T | undefined> {
+  if (!args.requestKey) return;
+  const { rows } = await pq<{ result: T }>(
+    `SELECT details::jsonb -> 'result' AS result FROM audit_logs
+      WHERE resource_id = $1 AND user_id = $2 AND company_id = $3 AND action = $4
+        AND details::jsonb ->> 'requestKey' = $5`,
+    [args.backupId, args.userId, companyId, action, args.requestKey],
+    client
+  );
+  if (rows[0] && mode && (rows[0].result as RestoreResult).mode !== mode) {
+    throw new DomainError("IDEMPOTENCY_KEY_REUSED", 409);
   }
+  return rows[0]?.result;
+}
 
+async function restoreActivity(
+  client: Queryable,
+  args: { backupId: string; userId: string },
+  companyId: string,
+  action: "update" | "export",
+  description: string,
+  metadata: unknown
+) {
+  await client.query(
+    `INSERT INTO activity_logs (company_id, user_id, action, entity_type, entity_id, description, metadata)
+     VALUES ($1, $2, $3, 'backup', $4, $5, $6)`,
+    [companyId, args.userId, action, args.backupId, description, JSON.stringify(metadata)]
+  );
+}
+
+/**
+ * Restore (or dry-run) a backup. Throws on checksum mismatch before touching
+ * anything. The data, metadata and audit receipt commit together.
+ */
+export async function restoreCompanyBackup(
+  args: {
+    backupId: string;
+    companyId: string;
+    userId: string;
+    mode: RestoreMode;
+    dryRun: boolean;
+  } & RestoreAuditContext
+): Promise<RestoreResult> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
       `backup-restore:${args.companyId}`,
     ]);
-    const manifest = await buildBackupManifest(client);
-    const json = new Map<string, string>();
-    for (const t of manifest.tables)
-      json.set(t.name, JSON.stringify(snapshot.tables[t.name] ?? []));
-
-    const diffs: TableDiff[] = [];
-    for (const t of manifest.tables) {
-      const d = await diffTable(client, t, args.companyId, json.get(t.name)!);
-      const replace = args.mode === "replace" && !t.appendOnly;
-      diffs.push(replace ? d : { ...d, update: 0, delete: 0 });
-    }
+    const backup = await loadRestoreBackup(
+      client,
+      args.backupId,
+      args.companyId,
+      args.dryRun ? "" : "FOR UPDATE"
+    );
     if (!args.dryRun) {
-      for (const t of [...manifest.tables].reverse()) {
-        await applyTable(client, t, args.companyId, json.get(t.name)!, args.mode, "delete");
-      }
-      for (const t of manifest.tables) {
-        await applyTable(client, t, args.companyId, json.get(t.name)!, args.mode, "upsert");
-      }
-      for (const t of manifest.tables) {
-        await applyTable(client, t, args.companyId, json.get(t.name)!, args.mode, "deferred");
+      const receipt = await readRestoreReceipt<RestoreResult>(
+        client,
+        args,
+        args.companyId,
+        "backup.restore",
+        args.mode
+      );
+      if (receipt) {
+        await client.query("COMMIT");
+        return receipt;
       }
     }
-    await client.query(args.dryRun ? "ROLLBACK" : "COMMIT");
-    const changed = diffs.filter((d) => d.insert || d.update || d.delete);
-    return {
+    const snapshot = snapshotForRestore(backup);
+    const manifest = await buildBackupManifest(client);
+    if (!args.dryRun && args.mode === "replace") {
+      await lockRestoreTarget(client, args.companyId, manifest);
+    }
+    const plan = planRestore(snapshot, manifest, manifest.tables);
+    await validateSnapshotRows(client, plan);
+    const diffs: TableDiff[] = [];
+    for (const { table, json } of plan) {
+      const d = await diffTable(client, table, args.companyId, json);
+      const replace = args.mode === "replace" && !table.appendOnly;
+      if (d.insert || (replace && (d.update || d.delete))) {
+        diffs.push(replace ? d : { ...d, update: 0, delete: 0 });
+      }
+    }
+    const result: RestoreResult = {
       mode: args.mode,
       dryRun: args.dryRun,
-      tables: changed,
+      tables: diffs,
       totals: {
-        insert: changed.reduce((s, d) => s + d.insert, 0),
-        update: changed.reduce((s, d) => s + d.update, 0),
-        delete: changed.reduce((s, d) => s + d.delete, 0),
+        insert: diffs.reduce((s, d) => s + d.insert, 0),
+        update: diffs.reduce((s, d) => s + d.update, 0),
+        delete: diffs.reduce((s, d) => s + d.delete, 0),
       },
-      preRestoreBackupId,
+      preRestoreBackupId: null,
     };
+    if (!args.dryRun) {
+      if (args.mode === "replace") {
+        const pre = await createCompanyBackup(
+          {
+            companyId: args.companyId,
+            userId: args.userId,
+            name: `Pre-restore backup (before restoring ${backup.name})`,
+            description: "Automatic backup created before a replace-mode restore",
+            backupType: "pre_restore",
+          },
+          { client, manifest }
+        );
+        result.preRestoreBackupId = pre.id;
+      }
+      await applyRestore(client, plan, args.companyId, args.mode);
+      await client.query(
+        "UPDATE backups SET last_restore_mode = $2, last_restored_at = now() WHERE id = $1",
+        [args.backupId, args.mode]
+      );
+      const { insert, update, delete: deleted } = result.totals;
+      await restoreActivity(
+        client,
+        args,
+        args.companyId,
+        "update",
+        `Restored from backup "${backup.name}" in ${args.mode} mode (inserted ${insert}, updated ${update}, deleted ${deleted})`,
+        { mode: args.mode, totals: result.totals, preRestoreBackupId: result.preRestoreBackupId }
+      );
+      await recordAudit({
+        userId: args.userId,
+        companyId: args.companyId,
+        action: "backup.restore",
+        entityType: "backup",
+        entityId: args.backupId,
+        before: { preRestoreBackupId: result.preRestoreBackupId },
+        after: { mode: args.mode, totals: result.totals },
+        req: args.req,
+        extra: { requestKey: args.requestKey, result },
+        required: true,
+        client,
+      });
+    }
+    await client.query(args.dryRun ? "ROLLBACK" : "COMMIT");
+    return result;
   } catch (err) {
     await client.query("ROLLBACK").catch(() => undefined);
     log.warn({ err: (err as Error).message, backupId: args.backupId }, "Restore rolled back");
@@ -769,7 +1150,6 @@ export async function restoreCompanyBackup(args: {
 /** Tables never cloned into another company (globally unique external identities). */
 export const CLONE_SKIPPED_TABLES: Readonly<Record<string, string>> = {
   payment_links: "payment links carry provider sessions and public tokens",
-  payment_gateway_events: "provider event ids are globally unique",
   email_intake_messages: "provider message ids are globally unique",
   ecommerce_transactions: "marketplace transaction ids belong to the source company's store",
   ecommerce_integrations: "store connections are credentials of the source company",
@@ -778,7 +1158,6 @@ export const CLONE_SKIPPED_TABLES: Readonly<Record<string, string>> = {
   company_report_delivery_subscriptions: "report delivery recipients belong to each company",
   einvoice_archive: "immutable legal archive of the source company's transmissions",
   tax_return_archive: "immutable legal archive of the source company's filings",
-  einvoice_documents: "transmission state belongs to the source company",
   company_report_delivery_artifacts:
     "delivery files of the source company's delivery log (runs are not cloned; S8)",
 };
@@ -789,24 +1168,67 @@ export const CLONE_CLEARED_COLUMNS: Readonly<Record<string, readonly string[]>> 
   customer_contacts: ["portal_access_token"],
 };
 
-/** Activity tables: B must have none of these rows to be a clone target. */
-const CLONE_TARGET_ACTIVITY_TABLES = [
-  "journal_entries",
-  "invoices",
-  "receipts",
-  "vendor_bills",
-  "bank_transactions",
-  "payroll_runs",
-  "credit_notes",
-  "quotes",
-  "purchase_orders",
-  "expense_claims",
-  "recurring_invoices",
-  "inventory_movements",
-  "vat_returns",
-  "corporate_tax_returns",
-  "budget_plans",
-] as const;
+const CLONE_COUNTERS = "invoice_number_sequences";
+
+async function countCloneTarget(
+  client: Queryable,
+  tables: ManifestTable[],
+  companyId: string
+): Promise<number> {
+  // Counters can be reserved before the first document is saved. Preserve
+  // them and take the greater value if the source has the same counter.
+  const checked = tables.filter((t) => t.name !== CLONE_COUNTERS);
+  if (!checked.length) return 0;
+  const counts = checked.map(
+    (t, idx) => `SELECT ${idx} AS idx, count(*) AS n FROM ${q(t.name)} t WHERE ${t.predicate}`
+  );
+  const { rows } = await pq<{ idx: number; n: string }>(
+    `SELECT idx, n FROM (${counts.join(" UNION ALL ")}) AS clone_rows WHERE n > 0 ORDER BY idx`,
+    [companyId],
+    client
+  );
+  let replacedRows = 0;
+  for (const { idx, n } of rows) {
+    const t = checked[idx];
+    const count = Number(n);
+    if (t.name === "accounts") {
+      const seeds = createDefaultAccountsForCompany(companyId).map((a) => ({
+        code: a.code,
+        name_en: a.nameEn,
+        name_ar: a.nameAr ?? null,
+        description: a.description ?? null,
+        type: a.type,
+        sub_type: a.subType ?? null,
+        is_vat_account: a.isVatAccount,
+        vat_type: a.vatType ?? null,
+        is_system_account: a.isSystemAccount,
+        is_active: a.isActive,
+        is_archived: a.isArchived,
+        parent_id: null,
+        tax_tag: null,
+        updated_at: null,
+      }));
+      const { rows: custom } = await pq<{ present: boolean }>(
+        `SELECT EXISTS (SELECT 1 FROM accounts t WHERE t.company_id = $1
+           AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements($2::jsonb) seed
+                            WHERE to_jsonb(t) - ARRAY['id', 'company_id', 'created_at'] = seed)) AS present`,
+        [companyId, JSON.stringify(seeds)],
+        client
+      );
+      if (!custom[0].present) {
+        replacedRows += count;
+        continue;
+      }
+    }
+    throw new DomainError(
+      "CLONE_TARGET_NOT_EMPTY",
+      409,
+      { table: t.name, rows: count },
+      "The target company already has accounting activity. Clone only into a new, empty company."
+    );
+  }
+  return replacedRows;
+}
 
 /** Skipped tables plus child tables reached only through skipped parents (to a fixed point). */
 export function cloneSkipReasons(
@@ -879,16 +1301,18 @@ export interface CloneResult {
 
 /**
  * Restore (or dry-run) `backupId` into a different company. The caller checks permissions
- * (backups.manage in both companies), fresh MFA, and writes the audit entries after this
- * resolves.
+ * (backups.manage in both companies) and fresh MFA. Both companies' audit
+ * events commit in the same transaction as the load.
  */
-export async function restoreBackupIntoCompany(args: {
-  backupId: string;
-  sourceCompanyId: string;
-  targetCompanyId: string;
-  userId: string;
-  dryRun: boolean;
-}): Promise<CloneResult> {
+export async function restoreBackupIntoCompany(
+  args: {
+    backupId: string;
+    sourceCompanyId: string;
+    targetCompanyId: string;
+    userId: string;
+    dryRun: boolean;
+  } & RestoreAuditContext
+): Promise<CloneResult> {
   if (args.sourceCompanyId === args.targetCompanyId) {
     throw new DomainError(
       "CLONE_TARGET_IS_SOURCE",
@@ -897,44 +1321,33 @@ export async function restoreBackupIntoCompany(args: {
       "Choose a different company; use restore to roll this company back."
     );
   }
-  const { rows } = await pq<{
-    id: string;
-    company_id: string;
-    status: string;
-    data_snapshot: string | null;
-    checksum: string | null;
-    name: string;
-  }>(`SELECT id, company_id, status, data_snapshot, checksum, name FROM backups WHERE id = $1`, [
-    args.backupId,
-  ]);
-  const backup = rows[0];
-  if (!backup || backup.company_id !== args.sourceCompanyId) {
-    throw new DomainError("NOT_FOUND", 404, undefined, "Backup not found");
-  }
-  if (backup.status !== "completed" || !backup.data_snapshot) {
-    throw new DomainError("BACKUP_NOT_COMPLETE", 409, undefined, "Backup is not complete");
-  }
-  const { snapshot: raw } = openSnapshot(backup.data_snapshot, backup.checksum);
-  const snapshot = asV2(raw);
-  if (snapshot.companyId !== args.sourceCompanyId) {
-    throw new DomainError("BACKUP_COMPANY_MISMATCH", 409);
-  }
-
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
       `backup-restore:${args.targetCompanyId}`,
     ]);
+    const backup = await loadRestoreBackup(
+      client,
+      args.backupId,
+      args.sourceCompanyId,
+      args.dryRun ? "" : "FOR SHARE"
+    );
     if (!args.dryRun) {
-      // New accounting rows reference the company and acquire a conflicting FK
-      // key-share lock. Existing activity makes the target ineligible below.
-      await client.query("SELECT id FROM companies WHERE id = $1 FOR UPDATE", [
+      const receipt = await readRestoreReceipt<CloneResult>(
+        client,
+        args,
         args.targetCompanyId,
-      ]);
+        "backup.clone"
+      );
+      if (receipt) {
+        await client.query("COMMIT");
+        return receipt;
+      }
     }
-    const { rows: cos } = await pq<{ id: string; base_currency: string | null }>(
-      `SELECT id, base_currency FROM companies WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
+    const snapshot = snapshotForRestore(backup);
+    const { rows: cos } = await pq<{ id: string; name: string; base_currency: string | null }>(
+      `SELECT id, name, base_currency FROM companies WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
       [[args.sourceCompanyId, args.targetCompanyId]],
       client
     );
@@ -958,25 +1371,41 @@ export async function restoreBackupIntoCompany(args: {
         reason: skip.get(t.name)!,
         rows: (snapshot.tables[t.name] ?? []).length,
       }));
-    const manifest = full.tables.filter((t) => !skip.has(t.name));
-
-    for (const table of CLONE_TARGET_ACTIVITY_TABLES) {
-      const { rows: n } = await pq<{ n: string }>(
-        `SELECT count(*) AS n FROM ${q(table)} WHERE company_id = $1`,
-        [args.targetCompanyId],
-        client
-      );
-      if (Number(n[0].n) > 0) {
-        throw new DomainError(
-          "CLONE_TARGET_NOT_EMPTY",
-          409,
-          { table, rows: Number(n[0].n) },
-          "The target company already has accounting activity. Clone only into a new, empty company."
-        );
-      }
+    const cloneTables = full.tables.filter((t) => !skip.has(t.name));
+    if (!args.dryRun) {
+      await lockRestoreTarget(client, args.targetCompanyId, { ...full, tables: cloneTables });
     }
 
-    let preRestoreBackupId: string | null = null;
+    // A clone's seed exceptions apply only to the target's chart and counters.
+    // Check all other accounting tables, including those absent in old backups.
+    const seedRows = await countCloneTarget(client, cloneTables, args.targetCompanyId);
+    const { tables } = remapSnapshotForClone(
+      Object.fromEntries(
+        cloneTables
+          .filter((t) => Object.hasOwn(snapshot.tables, t.name))
+          .map((t) => [t.name, snapshot.tables[t.name]])
+      ),
+      cloneTables,
+      args.sourceCompanyId,
+      args.targetCompanyId
+    );
+    const plan = planRestore({ ...snapshot, tables }, full, cloneTables);
+    await validateSnapshotRows(client, plan);
+    const counts = plan
+      .map(({ table, rowCount }) => ({ table: table.name, rows: rowCount }))
+      .filter((entry) => entry.rows > 0);
+    const result: CloneResult = {
+      dryRun: args.dryRun,
+      sourceCompanyId: args.sourceCompanyId,
+      targetCompanyId: args.targetCompanyId,
+      tables: counts,
+      totals: {
+        insert: counts.reduce((sum, c) => sum + c.rows, 0),
+        replacedTargetRows: plan.some(({ table }) => table.name === "accounts") ? seedRows : 0,
+      },
+      skippedTables: skippedTables.filter((t) => t.rows > 0),
+      preRestoreBackupId: null,
+    };
     if (!args.dryRun) {
       const pre = await createCompanyBackup(
         {
@@ -988,64 +1417,52 @@ export async function restoreBackupIntoCompany(args: {
         },
         { client, manifest: full }
       );
-      preRestoreBackupId = pre.id;
-    }
-    const { tables } = remapSnapshotForClone(
-      snapshot.tables,
-      manifest,
-      args.sourceCompanyId,
-      args.targetCompanyId
-    );
-    const empty = "[]";
-    let replacedTargetRows = 0;
-    for (const t of manifest) {
-      const { rows: c } = await pq<{ n: string }>(
-        `SELECT count(*) AS n FROM ${q(t.name)} t WHERE ${t.predicate}`,
-        [args.targetCompanyId],
-        client
+      result.preRestoreBackupId = pre.id;
+      await applyRestore(client, plan, args.targetCompanyId, "replace", true);
+      const detail = `inserted ${result.totals.insert} row(s), replaced ${result.totals.replacedTargetRows}`;
+      await restoreActivity(
+        client,
+        args,
+        args.targetCompanyId,
+        "update",
+        `Loaded backup "${backup.name}" from another company (${detail})`,
+        { sourceCompanyId: args.sourceCompanyId, totals: result.totals, preRestoreBackupId: pre.id }
       );
-      replacedTargetRows += Number(c[0].n);
-    }
-    const counts = manifest
-      .map((t) => ({ table: t.name, rows: (tables[t.name] ?? []).length }))
-      .filter((c) => c.rows > 0);
-    if (!args.dryRun) {
-      // Clear the target's scoped rows (children first), then insert the remapped snapshot.
-      const asReplace = manifest.map((t) => ({ ...t, appendOnly: false }));
-      for (const t of [...asReplace].reverse()) {
-        await applyTable(client, t, args.targetCompanyId, empty, "replace", "delete");
-      }
-      for (const t of asReplace) {
-        await applyTable(
+      await restoreActivity(
+        client,
+        args,
+        args.sourceCompanyId,
+        "export",
+        `Backup "${backup.name}" was loaded into company "${dst.name}"`,
+        { targetCompanyId: args.targetCompanyId }
+      );
+      // Acquire the audit-chain locks in stable order across concurrent clones.
+      for (const companyId of [args.sourceCompanyId, args.targetCompanyId].sort()) {
+        await recordAudit({
+          userId: args.userId,
+          companyId,
+          action: "backup.clone",
+          entityType: "backup",
+          entityId: args.backupId,
+          before: { preRestoreBackupId: pre.id },
+          after: {
+            sourceCompanyId: args.sourceCompanyId,
+            targetCompanyId: args.targetCompanyId,
+            totals: result.totals,
+            skippedTables: result.skippedTables.map((t) => t.table),
+          },
+          req: args.req,
+          extra:
+            companyId === args.targetCompanyId
+              ? { requestKey: args.requestKey, result }
+              : undefined,
+          required: true,
           client,
-          t,
-          args.targetCompanyId,
-          JSON.stringify(tables[t.name] ?? []),
-          "replace",
-          "upsert"
-        );
-      }
-      for (const t of asReplace) {
-        await applyTable(
-          client,
-          t,
-          args.targetCompanyId,
-          JSON.stringify(tables[t.name] ?? []),
-          "replace",
-          "deferred"
-        );
+        });
       }
     }
     await client.query(args.dryRun ? "ROLLBACK" : "COMMIT");
-    return {
-      dryRun: args.dryRun,
-      sourceCompanyId: args.sourceCompanyId,
-      targetCompanyId: args.targetCompanyId,
-      tables: counts,
-      totals: { insert: counts.reduce((sum, c) => sum + c.rows, 0), replacedTargetRows },
-      skippedTables: skippedTables.filter((t) => t.rows > 0),
-      preRestoreBackupId,
-    };
+    return result;
   } catch (err) {
     await client.query("ROLLBACK").catch(() => undefined);
     log.warn(

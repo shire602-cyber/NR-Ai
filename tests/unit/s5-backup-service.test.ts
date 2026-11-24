@@ -119,8 +119,17 @@ function answer(text: string, params: unknown[] = []) {
     );
   if (sql.includes("constraint_type = 'PRIMARY KEY'"))
     return out(schema.pks.map(([t, c]) => ({ table_name: t, column_name: c })));
-  if (sql.includes("FROM pg_constraint")) return out(schema.fks);
-  const agg = sql.match(/json_agg\(to_jsonb\(t\)\), '\[\]'::json\) AS data FROM "([^"]+)"/);
+  if (sql.includes("FROM pg_constraint"))
+    return out(
+      schema.fks.map((f) => ({
+        ...f,
+        columns: [f.column_name],
+        ref_columns: [f.ref_column],
+      }))
+    );
+  const agg = sql.match(
+    /json_agg\(to_jsonb\(t\) - \$2::text\[\]\), '\[\]'::json\) AS data FROM "([^"]+)"/
+  );
   if (agg) return out([{ data: snapshotTables[agg[1]] ?? [] }]);
   if (sql.startsWith("INSERT INTO backups"))
     return out([{ id: "bk-new", company_id: params[0], name: params[1], status: "in_progress" }]);
@@ -135,9 +144,10 @@ function answer(text: string, params: unknown[] = []) {
       { id: CO, base_currency: "AED" },
       { id: TARGET, base_currency: "AED" },
     ]);
-  if (/^SELECT count\(\*\) AS n FROM "[^"]+" WHERE company_id = \$1$/.test(sql))
-    return out([{ n: String(targetActivity) }]);
-  if (sql.startsWith("SELECT count(*) AS n FROM")) return out([{ n: "2" }]);
+  if (sql.includes("AS clone_rows"))
+    return out(targetActivity ? [{ idx: 0, n: String(targetActivity) }] : []);
+  if (sql.startsWith('INSERT INTO "invoices"') && sql.includes("RETURNING"))
+    return out([{ id: INV }]);
   if (sql.includes("AS snapshot_rows"))
     return out([{ snapshot_rows: "1", current_rows: "1", ins: "1", upd: "1", del: "1" }]);
   if (sql.includes("(SELECT count(*) FROM json_populate_recordset"))
@@ -157,6 +167,9 @@ vi.mock("../../server/db", () => ({
   },
   db: {},
 }));
+
+// The SQL transaction path must write the audit row through the fake pg client.
+vi.mock("../../server/storage", () => ({ storage: {} }));
 
 beforeEach(() => {
   log.length = 0;
@@ -314,6 +327,9 @@ describe("S5 restore + clone orchestration (fake pool)", () => {
     });
     expect(rep.preRestoreBackupId).toBe("bk-new");
     expect(rep.totals.delete).toBeGreaterThan(0);
+    const audit = log.findIndex((q) => q.startsWith("INSERT INTO audit_logs"));
+    expect(audit).toBeGreaterThan(-1);
+    expect(log.indexOf("COMMIT")).toBeGreaterThan(audit);
     expect(log.some((q) => q.startsWith('DELETE FROM "invoices"'))).toBe(true);
     expect(
       log.some((q) => q.startsWith('UPDATE "invoices" t SET "credit_of" = s."credit_of"'))
