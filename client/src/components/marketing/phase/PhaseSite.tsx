@@ -1,42 +1,22 @@
-import {
-  lazy,
-  Suspense,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import {
-  ArrowUpRight,
-  ChevronDown,
-  Menu,
-  X,
-  ScanLine,
-  Landmark,
-  ClipboardCheck,
-  PanelsTopLeft,
-  ArrowRight,
-} from "lucide-react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ChevronDown, Menu, X } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
 import { usePageMeta } from "../hooks";
 import { useI18n } from "@/lib/i18n";
 import { loadWithChunkRetry } from "@/lib/lazyWithReload";
 import { Link, useLocation } from "wouter";
-import {
-  bankCopy,
-  featureBySlug,
-  features,
-  starterPrice,
-  tools,
-  vatCopy,
-  type Bilingual,
-} from "./content";
+import { featureBySlug, features, tools, type Bilingual } from "./content";
 import { DemoRequest, FreeTool } from "./Forms";
-import { MARKETING_BRAND, supportEmail } from "@shared/marketing-brand";
+import { MARKETING_BRAND } from "@shared/marketing-brand";
 import { siteLocale, type SiteLocale } from "./routes";
 import { editorialPages, editorialPath, launchPagePath, launchPages } from "./editorial/pages";
 import { LaunchPages } from "./LaunchPages";
+import { audiences } from "./audiences";
+import { Home } from "./home/Home";
+import { FinalCta } from "./home/FinalCta";
+import { SiteFooter } from "./home/SiteFooter";
+import { useMarketingText } from "./home/text";
+import { Picture, Plans, type Translate } from "./shared";
 import {
   demoTitle,
   featurePath,
@@ -49,7 +29,6 @@ import "@fontsource/noto-sans-arabic/arabic-400.css";
 import "@fontsource/noto-sans-arabic/arabic-700.css";
 import "./phase.css";
 
-const MonthlyPlans = lazy(() => import("./MonthlyPlans"));
 const EditorialContent = lazy(() =>
   loadWithChunkRetry(() => import("./editorial/EditorialContent"), {
     key: "marketing-editorial",
@@ -76,70 +55,7 @@ function EditorialUnavailable({ locale }: { locale: SiteLocale }) {
 const start = ["Start free trial", "ابدأ التجربة المجانية"] as const;
 const demo = demoTitle;
 const pricing = ["Pricing", "الأسعار"] as const;
-const workflows = [
-  { feature: "receipt-scanning", label: ["Scan a receipt", "امسح إيصالًا"], icon: ScanLine },
-  {
-    feature: "bank-reconciliation",
-    label: ["Reconcile a bank CSV", "طابق كشفًا بنكيًا بصيغة CSV"],
-    icon: Landmark,
-  },
-  { feature: "vat", label: ["Review VAT 201", "راجع إقرار VAT 201"], icon: ClipboardCheck },
-  { feature: "client-portal", label: ["Client portal", "بوابة العملاء"], icon: PanelsTopLeft },
-] as const;
-const audiences = [
-  {
-    slug: "small-business",
-    title: ["Small and medium businesses", "الشركات الصغيرة والمتوسطة"],
-    lead: [
-      "Send your invoices, capture expenses and give your accountant access to the same books.",
-      "أرسل فواتيرك وسجّل مصروفاتك وامنح محاسبك وصولاً إلى الدفاتر نفسها.",
-    ],
-    links: ["invoicing", "receipt-scanning", "vat", "bank-reconciliation"],
-  },
-  {
-    slug: "accounting-firms",
-    title: ["Accounting firms", "مكاتب المحاسبة"],
-    lead: [
-      "Work across client companies, review their books and invite clients to the portal.",
-      "اعمل عبر شركات عملائك وراجع دفاترهم وادعهم إلى بوابة العملاء.",
-    ],
-    links: ["bookkeeping", "reporting", "vat", "client-portal"],
-  },
-] as const;
-type Translate = (text: Bilingual) => string;
 type Item = { href: string; title: Bilingual };
-
-function Picture({
-  image,
-  locale,
-  alt,
-  high = false,
-}: {
-  image: string;
-  locale: string;
-  alt: string;
-  high?: boolean;
-}) {
-  // React 18 forwards this HTML attribute verbatim.
-  const priority = high ? { fetchpriority: "high" } : undefined;
-  return (
-    <img
-      className="phase-shot"
-      src={`/product/${image}-${locale}.webp`}
-      srcSet={
-        image === "dashboard"
-          ? `/product/dashboard-${locale}-small.webp 720w, /product/dashboard-${locale}.webp 1280w`
-          : undefined
-      }
-      sizes={image === "dashboard" ? "(max-width: 760px) calc(100vw - 34px), 56vw" : undefined}
-      alt={alt}
-      width={1280}
-      height={800}
-      loading={high ? "eager" : "lazy"}
-      {...priority}
-    />
-  );
-}
 
 function Header({ base, path, tr }: { base: string; path: string; tr: Translate }) {
   const [open, setOpen] = useState<string>();
@@ -340,379 +256,6 @@ function Header({ base, path, tr }: { base: string; path: string; tr: Translate 
   );
 }
 
-function Heading({ title, children }: { title: string; children?: ReactNode }) {
-  return (
-    <div className="phase-heading">
-      <h2>{title}</h2>
-      {children && <p>{children}</p>}
-    </div>
-  );
-}
-
-function Workflows({ base, locale, tr }: { base: string; locale: string; tr: Translate }) {
-  const [selected, setSelected] = useState(0);
-  const tabList = useRef<HTMLDivElement>(null);
-  return (
-    <section id="product" className="phase-section phase-workflow">
-      <div className="phase-wrap">
-        <Heading title={tr(["See how it works", "تعرّف على طريقة العمل"])} />
-        <div className="phase-workbench">
-          <div
-            className="phase-tabs"
-            role="tablist"
-            aria-label={tr(["Product workflows", "مسارات العمل"])}
-            ref={tabList}
-            onKeyDown={(e) => {
-              const last = workflows.length - 1;
-              const next =
-                e.key === "Home"
-                  ? 0
-                  : e.key === "End"
-                    ? last
-                    : e.key === "ArrowRight"
-                      ? (selected + (locale === "ar" ? last : 1)) % workflows.length
-                      : e.key === "ArrowLeft"
-                        ? (selected + (locale === "ar" ? 1 : last)) % workflows.length
-                        : undefined;
-              if (next === undefined) return;
-              e.preventDefault();
-              setSelected(next);
-              tabList.current?.querySelectorAll("button")[next]?.focus();
-            }}
-          >
-            {workflows.map((w, i) => (
-              <button
-                key={w.feature}
-                id={`phase-tab-${i}`}
-                type="button"
-                role="tab"
-                aria-controls={`phase-panel-${i}`}
-                aria-selected={i === selected}
-                tabIndex={i === selected ? 0 : -1}
-                onClick={() => setSelected(i)}
-              >
-                <w.icon aria-hidden="true" />
-                {tr(w.label)}
-              </button>
-            ))}
-          </div>
-          {workflows.map((w, i) => {
-            const f = featureBySlug(w.feature);
-            return (
-              <div
-                key={w.feature}
-                id={`phase-panel-${i}`}
-                role="tabpanel"
-                aria-labelledby={`phase-tab-${i}`}
-                className="phase-workflow-panel"
-                hidden={i !== selected}
-              >
-                {i === selected && (
-                  <>
-                    <div>
-                      <h3>{tr(w.label)}</h3>
-                      <p>{tr(f.lead)}</p>
-                      <Link className="phase-textlink" href={`${base}${featurePath(f.slug)}`}>
-                        {tr(["Explore feature", "استكشف الميزة"])} <ArrowRight aria-hidden="true" />
-                      </Link>
-                    </div>
-                    {f.image && <Picture image={f.image} locale={locale} alt={tr(f.title)} />}
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Plans({ tr, immediate = false }: { tr: Translate; immediate?: boolean }) {
-  const grid = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-  const showPlans = immediate || visible || typeof IntersectionObserver === "undefined";
-  useEffect(() => {
-    if (showPlans) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setVisible(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "600px" }
-    );
-    if (grid.current) observer.observe(grid.current);
-    return () => observer.disconnect();
-  }, [showPlans]);
-  return (
-    <div className="phase-plan-grid" ref={grid}>
-      <div className="phase-plan-intro">
-        <p>
-          {tr([
-            "Try Enterprise free for 14 days. No card required.",
-            "جرّب باقة المؤسسات مجانًا لمدة ١٤ يومًا دون الحاجة إلى بطاقة.",
-          ])}
-        </p>
-      </div>
-      {showPlans && (
-        <Suspense fallback={null}>
-          <MonthlyPlans />
-        </Suspense>
-      )}
-    </div>
-  );
-}
-
-function Closing({ base, tr }: { base: string; tr: Translate }) {
-  return (
-    <section className="phase-section phase-closing">
-      <div className="phase-wrap">
-        <h2>
-          {tr([
-            "See what your books look like in one place.",
-            "اطّلع على دفاترك مجتمعةً في مكان واحد.",
-          ])}
-        </h2>
-        <div className="phase-cta-row">
-          <Link className="phase-button phase-white" href={trialSignupPath}>
-            {tr(start)}
-          </Link>
-          <Link className="phase-button phase-light-outline" href={`${base}/book-demo`}>
-            {tr(demo)}
-          </Link>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-const faqs: readonly [Bilingual, Bilingual][] = [
-  [["How do I reconcile my bank statement?", "كيف أطابق كشف حسابي البنكي؟"], bankCopy],
-  [["How do I file my VAT return?", "كيف أقدّم إقرار ضريبة القيمة المضافة؟"], vatCopy],
-  [
-    ["Do I need a card to try it?", "هل أحتاج إلى بطاقة مصرفية للتجربة؟"],
-    [
-      "No. Start a 14-day free trial without entering card details.",
-      "يمكنك بدء تجربة مجانية لمدة ١٤ يومًا دون إدخال بيانات البطاقة.",
-    ],
-  ],
-  [
-    ["Can I bring my existing records?", "هل يمكنني نقل سجلاتي الحالية؟"],
-    [
-      "Use CSV imports for supported records and keep a copy of your previous system’s exports for reference.",
-      "استورد السجلات المدعومة بصيغة CSV واحتفظ بنسخة من ملفات التصدير من نظامك السابق للرجوع إليها.",
-    ],
-  ],
-  [
-    ["Who handles e-invoice transmission?", "من يتولى إرسال الفواتير الإلكترونية؟"],
-    [
-      "Choose A-Cube or Complyance for your company, then complete setup before testing the exchange.",
-      "اختر A-Cube أو Complyance لشركتك واستكمل الإعداد قبل اختبار التبادل.",
-    ],
-  ],
-];
-
-function Home({ base, locale, tr }: { base: string; locale: string; tr: Translate }) {
-  return (
-    <>
-      <section className="phase-hero">
-        <div className="phase-wrap phase-hero-grid">
-          <div>
-            <h1>{tr(homeTitle)}</h1>
-            <p>{tr(homeLead)}</p>
-            <div className="phase-cta-row">
-              <Link
-                className="phase-button phase-primary"
-                href={trialSignupPath}
-                data-testid="button-hero-start"
-              >
-                {tr(start)} <ArrowUpRight aria-hidden="true" />
-              </Link>
-              <Link
-                className="phase-button phase-outline"
-                href={`${base}/book-demo`}
-                data-testid="button-hero-demo"
-              >
-                {tr(demo)}
-              </Link>
-              <Link className="phase-textlink" href="/demo">
-                {tr(["Explore the sample workspace", "استكشف مساحة العمل التجريبية"])}
-              </Link>
-            </div>
-            <p className="phase-trial">
-              {tr([
-                `From AED ${starterPrice}/month, 14-day free Enterprise trial, no card`,
-                `ابتداءً من ${starterPrice} درهماً شهريًا، تجربة مجانية لباقة المؤسسات لمدة ١٤ يومًا، دون بطاقة مصرفية`,
-              ])}
-            </p>
-          </div>
-          <figure className="phase-hero-image">
-            <Picture
-              image="dashboard"
-              locale={locale}
-              alt={tr([
-                "Accounting dashboard with demo balances and financial charts",
-                "لوحة المحاسبة بأرصدة تجريبية ورسوم بيانية مالية",
-              ])}
-              high
-            />
-            <figcaption>
-              {tr(["Product screenshot with sample data", "لقطة من التطبيق ببيانات تجريبية"])}
-            </figcaption>
-          </figure>
-        </div>
-      </section>
-      <Workflows base={base} locale={locale} tr={tr} />
-      <section className="phase-section phase-einvoice">
-        <div className="phase-wrap phase-split">
-          <div>
-            <Heading
-              title={tr(["Get ready for UAE e-invoicing", "استعد للفوترة الإلكترونية في الإمارات"])}
-            >
-              {tr(featureBySlug("e-invoicing").lead)}
-            </Heading>
-            <Link
-              className="phase-button phase-primary"
-              href={`${base}/tools/e-invoicing-readiness`}
-            >
-              {tr(["Check your readiness", "تحقّق من جاهزيتك"])}
-            </Link>
-          </div>
-          <div className="phase-partners">
-            <p>
-              {tr([
-                "Choose one accredited provider per company",
-                "اختر مزوّد خدمة معتمدًا واحدًا لكل شركة",
-              ])}
-            </p>
-            <div>
-              {["A-Cube", "Complyance"].map((provider) => (
-                <bdi key={provider} lang="en" translate="no">
-                  {provider}
-                </bdi>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-      <section className="phase-section">
-        <div className="phase-wrap">
-          <Heading
-            title={tr(["Built for the way you work", "لأعمالك ومكتب المحاسبة الذي يدعمك"])}
-          />
-          <div className="phase-split">
-            {audiences.map((a) => (
-              <article className="phase-card" key={a.slug}>
-                <h3>{tr(a.title)}</h3>
-                <p>{tr(a.lead)}</p>
-                <Link className="phase-textlink" href={`${base}/solutions/${a.slug}`}>
-                  {tr(["Explore solution", "استكشف الحل"])} <ArrowRight aria-hidden="true" />
-                </Link>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-      <section className="phase-section phase-features">
-        <div className="phase-wrap">
-          <Heading
-            title={tr(["From the first invoice to month-end", "من أول فاتورة إلى إقفال الشهر"])}
-          />
-          <div className="phase-feature-grid">
-            {(
-              [
-                "invoicing",
-                "receipt-scanning",
-                "vat",
-                "reporting",
-                "payroll",
-                "bank-reconciliation",
-              ] as const
-            ).map((slug) => {
-              const f = featureBySlug(slug);
-              return (
-                <Link
-                  className="phase-card phase-feature-card"
-                  key={f.slug}
-                  href={`${base}${featurePath(f.slug)}`}
-                >
-                  <h3>
-                    {tr(f.title)} <ArrowUpRight aria-hidden="true" />
-                  </h3>
-                  <p>{tr(f.lead)}</p>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-      <section className="phase-section">
-        <div className="phase-wrap phase-split phase-migration">
-          <div>
-            <Heading title={tr(["Bring your books with you", "انقل دفاترك معك"])}>
-              {tr([
-                "Plan your cutover, import supported CSV records and verify opening balances before you start posting.",
-                "خطّط للانتقال، واستورد السجلات المدعومة بصيغة CSV، وتحقّق من الأرصدة الافتتاحية قبل بدء الترحيل.",
-              ])}
-            </Heading>
-            <Link className="phase-textlink" href={`${base}/migration-guides`}>
-              {tr(["Read migration guides", "اقرأ أدلة الانتقال"])}{" "}
-              <ArrowRight aria-hidden="true" />
-            </Link>
-          </div>
-          <ul>
-            {(
-              [
-                ["excel", "Excel"],
-                ["wafeq", "Wafeq"],
-                ["mazeed", "Mazeed"],
-                ["zoho", "Zoho Books"],
-              ] as const
-            ).map(([source, name]) => (
-              <li key={source}>
-                <Link href={`${base}/migration-guides/${source}`}>
-                  <bdi translate="no">{name}</bdi>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-      <section className="phase-section phase-features">
-        <div className="phase-wrap">
-          <Heading title={tr(["Three plans, priced in AED", "ثلاث باقات بالدرهم الإماراتي"])} />
-          <Plans tr={tr} />
-          <Link className="phase-textlink" href={`${base}/pricing`}>
-            {tr(["Compare plans", "قارن الباقات"])} <ArrowRight aria-hidden="true" />
-          </Link>
-        </div>
-      </section>
-      <section className="phase-section">
-        <div className="phase-wrap phase-split phase-faq">
-          <div>
-            <Heading title={tr(["Frequently asked questions", "الأسئلة الشائعة"])} />
-            <Link className="phase-textlink" href={`${base}/tools/invoice-template`}>
-              {tr(["Inspect a sample tax invoice", "راجع نموذج فاتورة ضريبية"])}
-            </Link>
-          </div>
-          <div>
-            {faqs.map(([q, a]) => (
-              <details key={q[0]}>
-                <summary>
-                  {tr(q)} <ChevronDown aria-hidden="true" />
-                </summary>
-                <p>{tr(a)}</p>
-              </details>
-            ))}
-          </div>
-        </div>
-      </section>
-    </>
-  );
-}
-
 export default function PhaseSite() {
   const [location] = useLocation();
   const path = location.split(/[?#]/, 1)[0] || "/";
@@ -725,9 +268,9 @@ export default function PhaseSite() {
     main.current?.focus({ preventScroll: true });
   }, [path]);
   useEffect(() => {
-    if (window.location.hash === "#product") {
-      document.getElementById("product")?.scrollIntoView();
-    }
+    // "#product" is the old id of the homepage tour section.
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (id) document.getElementById(id === "product" ? "tour" : id)?.scrollIntoView();
   }, [path]);
   const preference = useI18n((state) => state.locale);
   const explicitLocale = siteLocale(path);
@@ -738,6 +281,7 @@ export default function PhaseSite() {
     }
   }, [explicitLocale]);
   const tr: Translate = (content) => content[locale === "ar" ? 1 : 0];
+  const text = useMarketingText(locale);
   const base = `/${locale}`;
   const [, , route, slug, extra] = path.replace(/\/$/, "").split("/");
   const section = extra ? "404" : route;
@@ -823,26 +367,13 @@ export default function PhaseSite() {
               {feature?.slug === "e-invoicing" && (
                 <div className="phase-form">
                   <h2>{tr(["PDFs and structured invoices", "ملفات PDF والفواتير المهيكلة"])}</h2>
-                  <p>
-                    {tr([
-                      "A PDF is a readable invoice copy. A structured e-invoice sends machine-readable invoice data through the provider you select.",
-                      "ملف PDF نسخة مقروءة من الفاتورة. أمّا الفاتورة الإلكترونية المهيكلة فترسل بيانات قابلة للقراءة آليًا عبر مزوّد الخدمة الذي تختاره.",
-                    ])}
-                  </p>
-                  <p>
-                    {tr([
-                      "E-invoicing is available on every plan. Choose A-Cube or Complyance in e-invoicing settings. No provider is preselected. Confirm setup and any separate fees with your chosen provider.",
-                      "تتوفر الفوترة الإلكترونية في جميع الباقات. اختر A-Cube أو Complyance من إعدادات الفوترة الإلكترونية. يبدأ الإعداد دون مزوّد محدّد. تحقّق من خطوات الإعداد وأي رسوم منفصلة مع المزوّد الذي تختاره.",
-                    ])}
-                  </p>
+                  <p>{text("einvPageStructured", { brand: MARKETING_BRAND.name[locale] })}</p>
+                  <p>{text("einvPageIncluded")}</p>
                   <a
                     className="phase-textlink"
                     href="https://mof.gov.ae/en/about-us/initiatives/einvoicing/einvoicing-accredited-service-providers-asps/"
                   >
-                    {tr([
-                      "Ministry of Finance provider register",
-                      "سجل مزوّدي الخدمات لدى وزارة المالية",
-                    ])}
+                    {text("einvPageSource")}
                   </a>
                   <Link className="phase-textlink" href={`${base}/tools/e-invoicing-readiness`}>
                     {tr(["Review the setup checklist", "راجع قائمة خطوات الإعداد"])}
@@ -901,28 +432,9 @@ export default function PhaseSite() {
             </div>
           </section>
         )}
-        {(home || feature || audience || plans) && <Closing base={base} tr={tr} />}
+        {(feature || audience || plans) && <FinalCta base={base} locale={locale} />}
       </main>
-      <footer className="phase-footer">
-        <div className="phase-wrap">
-          <Link className="phase-brand" href={base} translate="no">
-            <BrandMark size="sm" />
-            <bdi>{MARKETING_BRAND.name[base === "/ar" ? "ar" : "en"]}</bdi>
-          </Link>
-          <nav aria-label={tr(["Footer", "روابط التذييل"])}>
-            <Link href={`${base}/trust`}>{tr(editorialPages["/trust"].title)}</Link>
-            <Link href={`${base}/about`}>{tr(["About", "عن الشركة"])}</Link>
-            <Link href={`${base}/contact`}>{tr(["Contact", "تواصل معنا"])}</Link>
-            <Link href="/cookies">{tr(["Cookies", "ملفات تعريف الارتباط"])}</Link>
-            <Link href="/privacy">{tr(["Privacy", "الخصوصية"])}</Link>
-            <Link href="/terms">{tr(["Terms", "الشروط"])}</Link>
-            <Link href="/help">{tr(["Help", "المساعدة"])}</Link>
-            <a href={`mailto:${supportEmail}`} dir="ltr">
-              {supportEmail}
-            </a>
-          </nav>
-        </div>
-      </footer>
+      <SiteFooter base={base} locale={locale} tr={tr} />
     </div>
   );
 }

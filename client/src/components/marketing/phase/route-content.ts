@@ -5,13 +5,16 @@ import { siteLocale } from "./routes";
 
 export const trialSignupPath = "/register?step=account";
 
+// These two stay `[en, ar]` tuples because the server imports this file to render the h1, title
+// and meta description of the homepage. They must match marketing.hxHeroTitle / hxHeroSub in
+// locales/{en,ar}/marketing.json (tests/unit/public-site-design.test.ts checks they do).
 export const homeTitle: Bilingual = [
-  "Accounting and VAT for UAE businesses",
-  "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات",
+  "Your books. Your VAT. Your e-invoices. Done.",
+  "دفاترك. ضريبتك. فواتيرك الإلكترونية. كلها منجزة.",
 ];
 export const homeLead: Bilingual = [
-  "Send bilingual invoices, scan receipts with AI, prepare your VAT return and give your accountant access to your books.",
-  "أرسل فواتير ثنائية اللغة، وامسح الإيصالات بالذكاء الاصطناعي، وأعدّ إقرار ضريبة القيمة المضافة، وامنح محاسبك وصولاً إلى دفاترك.",
+  `Bilingual tax invoices, AI receipt capture, VAT 201 ready for EmaraTax and e-invoicing on every plan, from AED ${starterPrice} a month.`,
+  `فواتير ضريبية ثنائية اللغة، والتقاط الإيصالات بالذكاء الاصطناعي، وإقرار VAT 201 جاهز لـ EmaraTax، وفوترة إلكترونية في كل باقة، ابتداءً من ${starterPrice} درهمًا شهريًا.`,
 ];
 
 export const demoTitle: Bilingual = ["Request a demo", "اطلب عرضًا توضيحيًا"];

@@ -1,0 +1,470 @@
+/*
+ * Homepage design system ("mz-" prefix). Scope: .phase-site. Logical properties only (RTL).
+ * Tokens, bands, type scale, chips/cards/badges and motion utilities live here; section files
+ * under phase/home/ only add their own section-specific rules (prefix them with their id).
+ */
+.phase-site {
+  --mz-emerald: #0b6a4a;
+  --mz-emerald-deep: #074b35;
+  --mz-ink: #0a1713;
+  --mz-ink-soft: #14241e;
+  --mz-sand: #f3ecdf;
+  --mz-sand-deep: #e4d8c0;
+  --mz-paper: #ffffff;
+  /* The one bright signal colour: live states only (.mz-live, status dots). */
+  --mz-mint: #5df2b4;
+  --mz-mint-ink: #05261b;
+  --mz-muted-light: #43584d;
+  --mz-muted-dark: #b9cec3;
+  --mz-line-light: #d3ddd6;
+  --mz-line-dark: rgb(255 255 255 / 0.16);
+  --mz-radius: 18px;
+  --mz-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --mz-reveal-distance: 18px;
+}
+
+/* ---------- Bands ---------- */
+.phase-site .mz-band {
+  position: relative;
+  isolation: isolate;
+  padding-block: clamp(56px, 8vw, 116px);
+  background: var(--mz-bg);
+  color: var(--mz-fg);
+  scroll-margin-block-start: 86px;
+}
+.phase-site .mz-band--tight {
+  padding-block: clamp(18px, 2.4vw, 30px);
+}
+.phase-site .mz-band :is(h1, h2, h3) {
+  color: var(--mz-fg);
+}
+.phase-site .mz-band p {
+  color: var(--mz-fg-muted);
+}
+.phase-site .mz-band .phase-textlink {
+  color: var(--mz-link);
+}
+.phase-site .mz-band :focus-visible {
+  outline-color: var(--mz-focus);
+}
+
+.phase-site .mz-band--light {
+  --mz-bg: var(--mz-paper);
+  --mz-fg: var(--mz-ink-soft);
+  --mz-fg-muted: var(--mz-muted-light);
+  --mz-link: var(--mz-emerald);
+  --mz-line: var(--mz-line-light);
+  --mz-focus: #087450;
+}
+.phase-site .mz-band--sand {
+  --mz-bg: var(--mz-sand);
+  --mz-fg: var(--mz-ink-soft);
+  --mz-fg-muted: #4a5a50;
+  --mz-link: var(--mz-emerald-deep);
+  --mz-line: var(--mz-sand-deep);
+  --mz-focus: #087450;
+}
+.phase-site .mz-band--dark {
+  --mz-bg: var(--mz-ink);
+  --mz-fg: #f3f8f5;
+  --mz-fg-muted: var(--mz-muted-dark);
+  --mz-link: #b8f5da;
+  --mz-line: var(--mz-line-dark);
+  --mz-focus: #ffffff;
+  background:
+    radial-gradient(60% 80% at 85% 0%, rgb(11 106 74 / 0.55), transparent 62%),
+    radial-gradient(50% 70% at 0% 100%, rgb(93 242 180 / 0.08), transparent 60%),
+    linear-gradient(180deg, #0a1713, #0d1f19);
+}
+/* Grain: tiny inline SVG noise, no image file. */
+.phase-site .mz-band--dark::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.07;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Buttons inside bands */
+.phase-site .mz-band--dark .phase-primary {
+  background: #fff;
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-band--dark .phase-primary:hover {
+  background: var(--mz-sand);
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-band--dark .phase-outline {
+  background: transparent;
+  color: #fff;
+  border-color: rgb(255 255 255 / 0.42);
+}
+.phase-site .mz-band--dark .phase-outline:hover {
+  background: rgb(255 255 255 / 0.1);
+}
+.phase-site .mz-band:not(.mz-band--dark) .phase-outline {
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-band--dark .phase-card {
+  background: rgb(255 255 255 / 0.06);
+  border-color: var(--mz-line-dark);
+  color: var(--mz-fg);
+}
+.phase-site .mz-band--dark .phase-card:hover {
+  background: rgb(255 255 255 / 0.1);
+  border-color: rgb(255 255 255 / 0.4);
+}
+.phase-site .mz-band--dark details,
+.phase-site .mz-band--dark summary {
+  color: var(--mz-fg);
+}
+.phase-site .mz-band--sand .phase-card,
+.phase-site .mz-band--sand .phase-feature-card {
+  background: #fffdf8;
+  border-color: var(--mz-sand-deep);
+}
+.phase-site .mz-band--sand .phase-card :is(h3, p) {
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-band--sand .phase-card p {
+  color: #4a5a50;
+}
+
+/* ---------- Type scale ---------- */
+.phase-site .mz-display {
+  font-size: clamp(44px, 7.4vw, 88px);
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+  font-weight: 700;
+  max-inline-size: 16ch;
+  text-wrap: balance;
+}
+.phase-site .mz-h2 {
+  font-size: clamp(32px, 4.4vw, 56px);
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+  font-weight: 700;
+  text-wrap: balance;
+}
+.phase-site .mz-eyebrow {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-block-end: 14px;
+}
+.phase-site .mz-band--light .mz-eyebrow,
+.phase-site .mz-band--sand .mz-eyebrow {
+  color: var(--mz-emerald);
+}
+.phase-site .mz-band--dark .mz-eyebrow {
+  color: var(--mz-mint);
+}
+.phase-site .mz-lead {
+  font-size: clamp(17px, 1.6vw, 22px);
+  line-height: 1.55;
+  max-inline-size: 58ch;
+  margin-block-start: 18px;
+}
+.phase-site .mz-head {
+  margin-block-end: clamp(24px, 3.4vw, 44px);
+}
+/* Arabic: no negative tracking, taller lines, display sizes tuned separately. */
+.phase-site[lang="ar"] .mz-display {
+  font-size: clamp(38px, 6vw, 72px);
+  line-height: 1.2;
+  letter-spacing: 0;
+  max-inline-size: 18ch;
+}
+.phase-site[lang="ar"] .mz-h2 {
+  font-size: clamp(28px, 3.7vw, 48px);
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+.phase-site[lang="ar"] .mz-eyebrow {
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 15px;
+}
+.phase-site[lang="ar"] .mz-lead {
+  line-height: 1.75;
+}
+
+/* ---------- Chips, cards, badges, live pill ---------- */
+.phase-site .mz-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  padding: 0;
+  list-style: none;
+}
+.phase-site .mz-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--mz-line, var(--mz-line-light));
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--mz-fg, var(--mz-ink-soft));
+  background: transparent;
+}
+.phase-site .mz-card {
+  background: var(--mz-paper);
+  color: var(--mz-ink-soft);
+  border: 1px solid var(--mz-line-light);
+  border-radius: var(--mz-radius);
+  padding: clamp(20px, 2.6vw, 32px);
+  box-shadow: 0 1px 2px rgb(10 23 19 / 0.04);
+}
+.phase-site .mz-band--dark .mz-card {
+  background: rgb(255 255 255 / 0.06);
+  color: var(--mz-fg);
+  border-color: var(--mz-line-dark);
+}
+.phase-site .mz-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 650;
+  background: #e3f1e9;
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-band--dark .mz-badge {
+  background: rgb(255 255 255 / 0.12);
+  color: #fff;
+}
+/* Signal pill for live states only. */
+.phase-site .mz-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--mz-mint);
+  color: var(--mz-mint-ink);
+}
+.phase-site .mz-live::before {
+  content: "";
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--mz-mint-ink);
+  animation: mz-pulse 1.8s ease-in-out infinite;
+}
+.phase-site .mz-proof-placeholder {
+  margin-block: 18px;
+  padding: 14px 18px;
+  border: 2px dashed currentcolor;
+  border-radius: 12px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+/* ---------- Announcement bar ---------- */
+.phase-site .mz-announcement {
+  background: var(--mz-emerald-deep);
+  color: #fff;
+}
+.phase-site .mz-announcement-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-block-size: 44px;
+  padding-block: 8px;
+  font-size: 14px;
+}
+.phase-site .mz-announcement p {
+  color: #fff;
+  line-height: 1.45;
+}
+.phase-site .mz-announcement a {
+  color: #fff;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.phase-site .mz-announcement button {
+  display: grid;
+  place-items: center;
+  min-inline-size: 44px;
+  min-block-size: 44px;
+  color: #fff;
+  flex: none;
+}
+.phase-site .mz-announcement button svg {
+  inline-size: 18px;
+  block-size: 18px;
+}
+.phase-site .mz-announcement :focus-visible {
+  outline-color: #fff;
+}
+
+/* ---------- Hero ---------- */
+.phase-site .mz-hero {
+  padding-block: clamp(48px, 7vw, 108px) clamp(40px, 5vw, 80px);
+}
+.phase-site .mz-hero-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+  margin-block-start: 30px;
+}
+.phase-site .mz-hero-primary {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+.phase-site .mz-hero-primary small {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mz-fg-muted);
+}
+.phase-site .mz-hero-visual {
+  margin: clamp(36px, 5vw, 64px) 0 0;
+  max-inline-size: 1120px;
+  margin-inline: auto;
+}
+.phase-site .mz-hero-visual .phase-shot {
+  border: 1px solid var(--mz-line-dark);
+  border-radius: 20px;
+  box-shadow: 0 30px 80px rgb(0 0 0 / 0.5);
+}
+.phase-site .mz-hero-visual figcaption {
+  margin-block-start: 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--mz-fg-muted);
+}
+
+/* ---------- Final CTA ---------- */
+.phase-site .mz-final .phase-wrap {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 28px;
+}
+.phase-site .mz-final .phase-cta-row {
+  justify-content: center;
+}
+
+/* ---------- Motion ---------- */
+/* Only hidden once JS has marked it data-inview="false", so no-JS visitors still see content. */
+.phase-site .mz-reveal {
+  transition:
+    opacity 0.7s var(--mz-ease),
+    transform 0.7s var(--mz-ease);
+  transition-delay: var(--mz-delay, 0ms);
+}
+.phase-site .mz-reveal[data-inview="false"] {
+  opacity: 0;
+  transform: translateY(var(--mz-reveal-distance));
+}
+.phase-site .mz-reveal[data-inview="true"] {
+  opacity: 1;
+  transform: none;
+}
+.phase-site .mz-count {
+  font-variant-numeric: tabular-nums;
+  animation: mz-count-in 0.5s var(--mz-ease) both;
+}
+/* Scan: a bright line sweeping over a positioned element. */
+.phase-site .mz-scan {
+  position: relative;
+  overflow: hidden;
+}
+.phase-site .mz-scan::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 0;
+  block-size: 2px;
+  background: var(--mz-mint);
+  box-shadow: 0 0 14px 2px var(--mz-mint);
+  animation: mz-scan 2.2s ease-in-out infinite;
+}
+/* Draw: SVG shapes with pathLength="1" draw themselves in. */
+.phase-site .mz-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: mz-draw 1.4s var(--mz-ease) forwards;
+}
+@keyframes mz-count-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mz-scan {
+  0% {
+    inset-block-start: 0;
+    opacity: 0;
+  }
+  10%,
+  90% {
+    opacity: 1;
+  }
+  100% {
+    inset-block-start: calc(100% - 2px);
+    opacity: 0;
+  }
+}
+@keyframes mz-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes mz-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Catch-all so later sections cannot forget: nothing mz- moves. */
+  .phase-site [class*="mz-"],
+  .phase-site [class*="mz-"]::before,
+  .phase-site [class*="mz-"]::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .phase-site .mz-reveal,
+  .phase-site .mz-reveal[data-inview] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .phase-site .mz-count,
+  .phase-site .mz-live::before,
+  .phase-site .mz-draw {
+    animation: none;
+  }
+  .phase-site .mz-draw {
+    stroke-dashoffset: 0;
+  }
+  .phase-site .mz-scan::after {
+    display: none;
+  }
+}
