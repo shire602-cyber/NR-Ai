@@ -114,6 +114,47 @@ async function createPaymentLinkFixture(t: Tenant, invoiceId: string) {
   return { invoiceId, linkId: link.id, token };
 }
 
+async function startCheckout(
+  t: Tenant,
+  invoiceId: string,
+  depositAccountId: string,
+  amountFils: number
+) {
+  const { setStripeFetch } = await import("../../server/services/payments");
+  vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_au7");
+  vi.stubEnv("INVOICE_PAYMENTS_ENABLED", "true");
+  vi.stubEnv("STRIPE_INVOICE_WEBHOOK_SECRET", "whsec_test_au7");
+  const sessionId = `cs_test_${invoiceId}`;
+  setStripeFetch(async (_url, init) => {
+    expect(new URLSearchParams(init.body).get("line_items[0][price_data][unit_amount]")).toBe(
+      String(amountFils)
+    );
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: sessionId,
+        url: `https://checkout.stripe.com/c/pay/${sessionId}`,
+      }),
+    };
+  });
+  try {
+    const link = await t.as.post(
+      `/api/companies/${t.company.id}/invoices/${invoiceId}/payment-links`,
+      { depositAccountId }
+    );
+    expect(link.status, link.text).toBe(201);
+    const checkout = await h.anon.get(new URL(link.body.url).pathname);
+    expect(checkout.status, checkout.text).toBe(303);
+    expect(
+      await h.sql("SELECT provider_session_id FROM payment_links WHERE id = $1", [link.body.id])
+    ).toEqual([{ provider_session_id: sessionId }]);
+  } finally {
+    setStripeFetch(null);
+    vi.unstubAllEnvs();
+  }
+}
+
 async function seedPaymentLink(t: Tenant) {
   const [invoice] = await h.sql<{ id: string }>(
     `INSERT INTO invoices (company_id, number, customer_name, date, total)
@@ -402,6 +443,84 @@ describe("AU7 accounting backup integrity", () => {
       expect(await journalLines(t, second.body.allocationId)).toEqual(lines);
     }
   );
+
+  it("protects an issued credit note and its journal when checkout quotes the reduced balance", async () => {
+    const t = await h.createTenant();
+    const base = `/api/companies/${t.company.id}`;
+    const invoiceId = await draftInvoice(t);
+    await issueInvoice(t, invoiceId);
+    const bank = await accountByCode(t, "1020");
+    const payment = await t.as.post(`${base}/invoices/${invoiceId}/payments`, {
+      date: new Date().toISOString().slice(0, 10),
+      method: "bank",
+      amount: 30,
+      paymentAccountId: bank.id,
+    });
+    expect(payment.status, payment.text).toBe(201);
+    const invoiceRows = () => h.sql("SELECT * FROM invoices WHERE id = $1", [invoiceId]);
+    const before = await invoiceRows();
+    expect(before[0].status).toBe("partial");
+    const backup = await snapshot(t);
+
+    const note = await t.as.post(`${base}/invoices/${invoiceId}/credit-note`, {
+      lines: [
+        {
+          description: "Partial credit",
+          quantity: 1,
+          unitPrice: 20,
+          vatRate: 0,
+          vatSupplyType: "zero_rated",
+        },
+      ],
+    });
+    expect(note.status, note.text).toBe(201);
+    const noteId = note.body.id;
+    expect(await invoiceRows()).toEqual(before);
+    await startCheckout(t, invoiceId, bank.id, 7000);
+
+    const noteRows = () => h.sql("SELECT * FROM invoices WHERE id = $1", [noteId]);
+    const issued = await noteRows();
+    expect(issued).toHaveLength(1);
+    const lines = await journalLines(t, noteId);
+    expect(lines.length).toBeGreaterThan(0);
+    await expectReplaceConflict(t, backup, "payment_links");
+
+    const backupWithNote = await snapshot(t);
+    await makeLegacy(backupWithNote.id, (tables) => {
+      tables.journal_lines = tables.journal_lines.filter(
+        (line) => (line as { entry_id: string }).entry_id !== lines[0].entry_id
+      );
+    });
+    await expectReplaceConflict(t, backupWithNote, "payment_links");
+    expect(await invoiceRows()).toEqual(before);
+    expect(await noteRows()).toEqual(issued);
+    expect(await journalLines(t, noteId)).toEqual(lines);
+  });
+
+  it("keeps the configured deposit account eligible while checkout can still settle", async () => {
+    const t = await h.createTenant();
+    const invoiceId = await draftInvoice(t);
+    await issueInvoice(t, invoiceId);
+    const bank = await t.as.post(`/api/companies/${t.company.id}/accounts`, {
+      code: "1029",
+      nameEn: "Checkout deposits",
+      type: "asset",
+      subType: "bank",
+    });
+    expect(bank.status, bank.text).toBe(201);
+    const accountId = bank.body.id;
+    const archived = await t.as.post(`/api/accounts/${accountId}/archive`, {});
+    expect(archived.status, archived.text).toBe(200);
+    const backup = await snapshot(t);
+    const unarchived = await t.as.post(`/api/accounts/${accountId}/unarchive`, {});
+    expect(unarchived.status, unarchived.text).toBe(200);
+    await startCheckout(t, invoiceId, accountId, 12000);
+
+    await expectReplaceConflict(t, backup, "payment_links");
+    expect(
+      await h.sql("SELECT is_active, is_archived FROM accounts WHERE id = $1", [accountId])
+    ).toEqual([{ is_active: true, is_archived: false }]);
+  });
 
   it("keeps a payslip token and its payroll run through replace", async () => {
     const t = await h.createTenant();

@@ -875,7 +875,7 @@ async function replaceChangesProtectedRows(
   return rows.length > 0;
 }
 
-const PROTECTED_INVOICE_ACCOUNTING = `protected_credit_allocations AS (
+const protectedInvoiceAccounting = (additionalJournals = "") => `protected_credit_allocations AS (
   SELECT id, journal_entry_id FROM customer_credit_allocations
   WHERE company_id = $1 AND invoice_id IN (SELECT id FROM protected_invoices)
 ), protected_journals AS (
@@ -887,6 +887,7 @@ const PROTECTED_INVOICE_ACCOUNTING = `protected_credit_allocations AS (
   WHERE company_id = $1 AND invoice_id IN (SELECT id FROM protected_invoices)
   UNION
   SELECT journal_entry_id FROM protected_credit_allocations
+  ${additionalJournals}
 )`;
 const PROTECTED_JOURNAL_CHECKS = [
   { table: "journal_entries", where: "t.id IN (SELECT id FROM protected_journals)" },
@@ -928,20 +929,40 @@ async function validateReplaceExternalState(
       client,
       companyId,
       plan,
-      `protected_invoices AS (
-        SELECT invoice_id AS id FROM payment_links
+      `settling_links AS (
+        SELECT invoice_id, deposit_account_id FROM payment_links
         WHERE company_id = $1
           AND ((status = 'active' AND expires_at >= now() AT TIME ZONE 'UTC')
                OR (status IN ('active', 'cancelled', 'expired') AND provider_session_id IS NOT NULL))
-      ), ${PROTECTED_INVOICE_ACCOUNTING}`,
+      ), protected_credit_notes AS (
+        SELECT id FROM invoices WHERE company_id = $1 AND invoice_type = 'credit_note'
+          AND original_invoice_id IN (SELECT invoice_id FROM settling_links)
+      ), protected_legacy_credit_notes AS (
+        SELECT id, journal_entry_id FROM credit_notes WHERE company_id = $1
+          AND invoice_id IN (SELECT invoice_id FROM settling_links)
+      ), protected_invoices AS (
+        SELECT invoice_id AS id FROM settling_links
+        UNION SELECT id FROM protected_credit_notes
+      ), ${protectedInvoiceAccounting("UNION SELECT journal_entry_id FROM protected_legacy_credit_notes")}`,
       [
         {
           table: "invoices",
-          where: "t.id IN (SELECT id FROM protected_invoices)",
+          where: "t.id IN (SELECT invoice_id FROM settling_links)",
           columns: ["status", "invoice_type", "currency", "total", "exchange_rate"],
           columnMatches: {
             status: "(s.status = t.status OR s.status IN ('sent', 'posted', 'partial'))",
           },
+        },
+        { table: "invoices", where: "t.id IN (SELECT id FROM protected_credit_notes)" },
+        {
+          table: "invoice_lines",
+          where: "t.invoice_id IN (SELECT id FROM protected_credit_notes)",
+        },
+        { table: "credit_notes", where: "t.id IN (SELECT id FROM protected_legacy_credit_notes)" },
+        {
+          table: "accounts",
+          where: "t.id IN (SELECT deposit_account_id FROM settling_links)",
+          columns: ["type", "sub_type", "is_active", "is_archived"],
         },
         { table: "invoice_payments", where: "t.invoice_id IN (SELECT id FROM protected_invoices)" },
         PROTECTED_CREDIT_ALLOCATION_CHECK,
@@ -953,7 +974,7 @@ async function validateReplaceExternalState(
       "BACKUP_RESTORE_CONFLICT",
       409,
       { table: "payment_links" },
-      "Replace restore would rewind a payable invoice or its accounting records while a payment link or checkout session can still settle."
+      "Replace restore would rewind a payable invoice, its accounting records, or deposit account eligibility while a payment link or checkout session can still settle."
     );
   }
 
@@ -1015,7 +1036,7 @@ async function validateReplaceExternalState(
         SELECT id FROM invoices WHERE company_id = $1
           AND (id IN (${history.join(" UNION ALL ")})
                OR einvoice_submitted_at IS NOT NULL OR einvoice_provider_message_id IS NOT NULL)
-      ), ${PROTECTED_INVOICE_ACCOUNTING}`,
+      ), ${protectedInvoiceAccounting()}`,
       [
         {
           table: "invoices",
