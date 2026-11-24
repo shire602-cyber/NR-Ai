@@ -86,20 +86,13 @@ export const ISSUED_STATUSES = ["sent", "posted", "partial", "paid"] as const;
 export function portalGuard(scope: string): RequestHandler {
   return asyncHandler(async (req, res, next) => {
     const ip = clientIp(req);
-<<<<<<< HEAD
     const bodyToken = (req.body as { token?: unknown } | undefined)?.token;
     const raw =
       req.params.token ??
       req.params.shareToken ??
-      (scope === "invite"
-        ? req.get("x-portal-invite-token") || (typeof bodyToken === "string" ? bodyToken : null)
-        : null) ??
+      (scope === "invite" && typeof bodyToken === "string" ? bodyToken : null) ??
       null;
-    const reason = checkPortalThrottle(ip, raw ? `${scope}:${hashPortalToken(raw)}` : null);
-=======
-    const raw = req.params.token ?? req.params.shareToken ?? null;
     const reason = await checkPortalThrottle(ip, raw ? `${scope}:${hashPortalToken(raw)}` : null);
->>>>>>> origin/claude/eloquent-maxwell-kjxxjc
     if (reason) {
       void logPortalAccess({ req, outcome: "throttled" });
       res.setHeader("Retry-After", "600");
