@@ -48,6 +48,17 @@ describe("X6d draft watermark on PDFs", { timeout: 60_000 }, () => {
     expect(sent).toEqual({ en: false, ar: false });
   });
 
+  it("invoice: cancelled and void are stamped VOID / ملغاة, never DRAFT", async () => {
+    for (const status of ["cancelled", "void"]) {
+      const pdf = await generateInvoicePDF({ ...base, status } as never, [line] as never, company);
+      const set = new Set((await pdfWords(pdf)).map((w) => w.text));
+      const arabic = (await pdfToText(pdf)).normalize("NFKC").replace(/\s+/g, "");
+      expect(set.has("VOID") || ["V", "O", "I", "D"].every((l) => set.has(l))).toBe(true);
+      expect(arabic.includes("ملغاة") || arabic.includes("ةاغلم")).toBe(true);
+      expect(set.has("DRAFT")).toBe(false);
+    }
+  });
+
   it("quote and credit note: draft watermarked, issued not", async () => {
     for (const [status, expected] of [
       ["draft", true],

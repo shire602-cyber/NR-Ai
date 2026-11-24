@@ -87,6 +87,15 @@ describe("WQ5 company e-invoicing identity", () => {
     expect(badEid.body.code).toBe("SELLER_ID_EID_FORMAT");
   });
 
+  it("pins the TIN from the VAT TRN when the company has no CT TRN", async () => {
+    const t = await h.createTenant({ companyColumns: { ...SELLER, corporate_tax_id: null } });
+    const saved = await t.as.put(`${base(t)}/identity`, { addressDistrict: "Trade Centre" });
+    expect(saved.status, saved.text).toBe(200);
+    expect(saved.body).toMatchObject({ einvoiceTin: "1001234567", tinSource: "stored" });
+    const [row] = await h.sql(`SELECT einvoice_tin FROM companies WHERE id = $1`, [t.company.id]);
+    expect(row).toEqual({ einvoice_tin: "1001234567" });
+  });
+
   it("only admins write the identity; another company gets no access", async () => {
     const owner = await h.createTenant({ companyColumns: SELLER });
     const viewer = await h.createSecondTenant();

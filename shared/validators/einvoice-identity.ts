@@ -62,6 +62,12 @@ export function effectiveTin(company: TinSource): string | null {
   return tinFromTaxNumber(company.corporateTaxId) ?? tinFromTaxNumber(company.trnVatNumber);
 }
 
+/** The TIN to store once when none is stored: CT TRN first, then the VAT TRN (same order as effectiveTin). */
+export function derivedTinToStore(company: TinSource): string | null {
+  if (company.einvoiceTin) return null;
+  return tinFromTaxNumber(company.corporateTaxId) ?? tinFromTaxNumber(company.trnVatNumber);
+}
+
 /**
  * Why a TIN is refused (null when it is fine). The TIN must match the CT TRN and the VAT TRN
  * when those are full 15-digit numbers, because all three come from the same registration.

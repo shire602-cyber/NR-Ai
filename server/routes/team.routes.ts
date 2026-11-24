@@ -114,7 +114,9 @@ async function deliverInvitation(
   const result = await sendEmail(
     inv.email,
     `You're invited to ${companyName} on Muhasib`,
-    `You have been invited to join ${companyName} as ${inv.role}.\n\nAccept the invitation: ${inviteUrl}\n\nThis link expires on ${inv.expiresAt.toUTCString()}.`
+    `You have been invited to join ${companyName} as ${inv.role}.\n\nAccept the invitation: ${inviteUrl}\n\nThis link expires on ${inv.expiresAt.toUTCString()}.`,
+    // The link is a live credential: the outbox keeps no body once the message is sent.
+    { sensitive: true }
   ).catch((err: Error) => ({ sent: false, error: err.message }));
   if (result.sent) return { delivery: "email" };
   log.warn({ invitationId: inv.id }, "Invitation email failed; returning link to inviter");
