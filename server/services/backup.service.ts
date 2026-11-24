@@ -152,6 +152,13 @@ const EXCLUDED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   compliance_calendar: ["reminders_sent"],
 };
 
+const EINVOICE_HISTORY_TABLES = ["einvoice_documents", "einvoice_document_events"];
+
+const PAYSLIP_ITEM_PARENT_COLUMNS: Readonly<Record<string, string>> = {
+  payroll_runs: "payroll_run_id",
+  employees: "employee_id",
+};
+
 interface FkRow {
   table_name: string;
   column_name: string;
@@ -765,7 +772,7 @@ function planRestore(
   for (const { table } of plan) {
     // Live grants, group references and tables or FK columns added since the
     // backup can still depend on a row the snapshot would otherwise delete.
-    table.protectedFromDelete = manifest.fks
+    const protections = manifest.fks
       .filter((f) => {
         if (f.ref_table !== table.name) return false;
         const child = replaced.get(f.table_name);
@@ -778,8 +785,17 @@ function planRestore(
           `EXISTS (SELECT 1 FROM ${q(f.table_name)} d WHERE ${f.columns
             .map((c, i) => `d.${q(c)} = t.${q(f.ref_columns[i])}`)
             .join(" AND ")})`
-      )
-      .join(" OR ");
+      );
+    const payslipParentColumn = PAYSLIP_ITEM_PARENT_COLUMNS[table.name];
+    if (payslipParentColumn) {
+      // A payslip-protected item still needs its run and employee. Deleting
+      // the run cascades through the item, while the employee FK restricts deletion.
+      protections.push(`EXISTS (
+        SELECT 1 FROM payroll_items i JOIN payslip_tokens p ON p.payroll_item_id = i.id
+        WHERE i.${q(payslipParentColumn)} = t.id
+      )`);
+    }
+    table.protectedFromDelete = protections.join(" OR ");
   }
   return plan;
 }
@@ -802,6 +818,56 @@ async function validateSnapshotRows(client: Queryable, plan: RestoreTable[]): Pr
       if (errorCode(error)?.startsWith("22")) incompatible(table.name, "invalid column value");
       throw error;
     }
+  }
+}
+
+async function validateReplaceExternalState(
+  client: Queryable,
+  companyId: string,
+  plan: RestoreTable[]
+): Promise<void> {
+  if (plan.some(({ table }) => !table.appendOnly)) {
+    // A paid link and its webhook receipt survive replace. The snapshot can
+    // rewind its payment, ledger, credits and invoice independently. Processing
+    // links can also be between posting the payment and saving its identifiers.
+    const { rows: payments } = await client.query(
+      `SELECT 1 FROM payment_links WHERE company_id = $1
+          AND (status IN ('paid', 'processing') OR invoice_payment_id IS NOT NULL
+               OR fee_journal_entry_id IS NOT NULL)
+        LIMIT 1`,
+      [companyId]
+    );
+    if (payments.length) {
+      throw new DomainError(
+        "BACKUP_RESTORE_CONFLICT",
+        409,
+        { table: "payment_links" },
+        "Replace restore is unavailable while this company has settled or processing payment links."
+      );
+    }
+  }
+
+  const invoices = plan.find(({ table }) => table.name === "invoices");
+  if (!invoices) return;
+  const history = EINVOICE_HISTORY_TABLES.map(
+    (table) => `SELECT invoice_id FROM ${q(table)} WHERE company_id = $1`
+  );
+  const { rows: transmissions } = await client.query(
+    `SELECT 1 FROM (${history.join(" UNION ALL ")}) h
+       JOIN invoices i ON i.id = h.invoice_id AND i.company_id = $1
+       WHERE NOT EXISTS (
+         SELECT 1 FROM json_populate_recordset(NULL::invoices, $2::json) s WHERE s.id = i.id
+       )
+     LIMIT 1`,
+    [companyId, invoices.json]
+  );
+  if (transmissions.length) {
+    throw new DomainError(
+      "BACKUP_RESTORE_CONFLICT",
+      409,
+      { table: "invoices" },
+      "Replace restore would remove an invoice with e-invoice transmission history."
+    );
   }
 }
 
@@ -908,11 +974,19 @@ async function applyRestore(
   }
 }
 
-async function lockRestoreRows(client: Queryable, companyId: string, manifest: BackupManifest) {
+function externalCompanyTables(names: string[]) {
+  return names.map((name) => ({ name, scope: "company" as const, predicate: "t.company_id = $1" }));
+}
+
+async function lockRestoreRows(
+  client: Queryable,
+  companyId: string,
+  { tables, fks }: { tables: Pick<ManifestTable, "name" | "scope" | "predicate">[]; fks: FkRow[] }
+) {
   // The company lock conflicts with FK checks on ordinary inserts into the
   // company. Tables without that FK need a table lock to cover the first write.
   const directFks = new Set(
-    manifest.fks
+    fks
       .filter(
         (f) =>
           f.ref_table === "companies" &&
@@ -922,7 +996,7 @@ async function lockRestoreRows(client: Queryable, companyId: string, manifest: B
       )
       .map((f) => f.table_name)
   );
-  const unguarded = manifest.tables
+  const unguarded = tables
     .filter((t) => t.scope === "company" && !directFks.has(t.name))
     .map((t) => t.name)
     .sort();
@@ -931,8 +1005,8 @@ async function lockRestoreRows(client: Queryable, companyId: string, manifest: B
   }
   // Lock existing parent rows against concurrent changes and new children,
   // including rows referenced by tables outside the accounting snapshot.
-  if (manifest.tables.length) {
-    const lockingReads = manifest.tables.map(
+  if (tables.length) {
+    const lockingReads = tables.map(
       (t) => `SELECT 1 FROM (SELECT 1 FROM ${q(t.name)} t WHERE ${t.predicate} FOR UPDATE) row_lock`
     );
     await client.query(`SELECT count(*) FROM (${lockingReads.join(" UNION ALL ")}) locked`, [
@@ -1063,10 +1137,19 @@ export async function restoreCompanyBackup(
     const manifest = await buildBackupManifest(client);
     if (!args.dryRun && args.mode === "replace") {
       await client.query("SELECT id FROM companies WHERE id = $1 FOR UPDATE", [args.companyId]);
-      await lockRestoreRows(client, args.companyId, manifest);
+      await lockRestoreRows(client, args.companyId, {
+        fks: manifest.fks,
+        tables: [
+          ...externalCompanyTables(["payment_links", ...EINVOICE_HISTORY_TABLES]),
+          ...manifest.tables,
+        ],
+      });
     }
     const plan = planRestore(snapshot, manifest, manifest.tables);
     await validateSnapshotRows(client, plan);
+    if (args.mode === "replace") {
+      await validateReplaceExternalState(client, args.companyId, plan);
+    }
     const diffs: TableDiff[] = [];
     for (const { table, json } of plan) {
       const d = await diffTable(client, table, args.companyId, json);
@@ -1181,7 +1264,7 @@ const CLONE_TARGET_IGNORED_TABLES = new Set([
 
 async function countCloneTarget(
   client: Queryable,
-  tables: ManifestTable[],
+  tables: Pick<ManifestTable, "name" | "predicate">[],
   companyId: string
 ): Promise<number> {
   // Counters can be reserved before the first document is saved. Preserve
@@ -1388,7 +1471,11 @@ export async function restoreBackupIntoCompany(
         rows: (snapshot.tables[t.name] ?? []).length,
       }));
     const cloneTables = full.tables.filter((t) => !skip.has(t.name));
-    const targetTables = full.tables.filter((t) => !CLONE_TARGET_IGNORED_TABLES.has(t.name));
+    const targetTables = [
+      ...full.tables.filter((t) => !CLONE_TARGET_IGNORED_TABLES.has(t.name)),
+      // Transmission history remains live outside the backup manifest.
+      ...externalCompanyTables(EINVOICE_HISTORY_TABLES),
+    ];
     if (!args.dryRun) {
       await lockRestoreRows(client, args.targetCompanyId, { ...full, tables: targetTables });
     }

@@ -116,6 +116,70 @@ describe("AU7 accounting backup integrity", () => {
     ).toEqual([{ payment_link_id: linkId }]);
   });
 
+  it("keeps a payslip token and its payroll run through replace", async () => {
+    const t = await h.createTenant();
+    const backup = await snapshot(t);
+    const [employee] = await h.sql(
+      `INSERT INTO employees (company_id, full_name) VALUES ($1, 'Fixture employee') RETURNING id`,
+      [t.company.id]
+    );
+    const [run] = await h.sql(
+      `INSERT INTO payroll_runs (company_id, period_month, period_year)
+       VALUES ($1, 1, 2025), ($1, 2, 2025) RETURNING id`,
+      [t.company.id]
+    );
+    const [item] = await h.sql(
+      `INSERT INTO payroll_items (payroll_run_id, employee_id) VALUES ($1, $2) RETURNING id`,
+      [run.id, employee.id]
+    );
+    const [token] = await h.sql(
+      `INSERT INTO payslip_tokens (company_id, payroll_item_id, token_hash, expires_at)
+       VALUES ($1, $2, $3, now() + interval '1 day') RETURNING *`,
+      [t.company.id, item.id, randomUUID()]
+    );
+
+    const restored = await replace(t, backup);
+    expect(restored.status, restored.text).toBe(200);
+    expect(await h.sql("SELECT * FROM payslip_tokens WHERE id = $1", [token.id])).toEqual([token]);
+    expect(await h.sql("SELECT id FROM payroll_items WHERE id = $1", [item.id])).toEqual([item]);
+    expect(
+      await h.sql("SELECT id FROM payroll_runs WHERE company_id = $1", [t.company.id])
+    ).toEqual([run]);
+    expect(await h.sql("SELECT id FROM employees WHERE id = $1", [employee.id])).toEqual([
+      employee,
+    ]);
+  });
+
+  it("rejects replace that would remove an invoice with e-invoice transmission history", async () => {
+    const t = await h.createTenant();
+    const backup = await snapshot(t);
+    const [invoice] = await h.sql(
+      `INSERT INTO invoices (company_id, number, customer_name, date, total)
+       VALUES ($1, 'AU7-TRANSMITTED', 'Fixture customer', now(), 120) RETURNING id`,
+      [t.company.id]
+    );
+    const [document] = await h.sql(
+      `INSERT INTO einvoice_documents (company_id, invoice_id, status, provider_message_id)
+       VALUES ($1, $2, 'submitted', 'au7-transmission') RETURNING *`,
+      [t.company.id, invoice.id]
+    );
+
+    for (const response of [
+      await t.as.post(`/api/backups/${backup.id}/restore-preview`, { mode: "replace" }),
+      await replace(t, backup),
+    ]) {
+      expect(response.status, response.text).toBe(409);
+      expect(response.body).toMatchObject({
+        code: "BACKUP_RESTORE_CONFLICT",
+        details: { table: "invoices" },
+      });
+    }
+    expect(await h.sql("SELECT id FROM invoices WHERE id = $1", [invoice.id])).toEqual([invoice]);
+    expect(await h.sql("SELECT * FROM einvoice_documents WHERE id = $1", [document.id])).toEqual([
+      document,
+    ]);
+  });
+
   it("merge preserves a bank transaction's invoice match made after the snapshot", async () => {
     const t = await h.createTenant();
     const [invoice] = await h.sql<{ id: string }>(
@@ -178,6 +242,16 @@ describe("AU7 accounting backup integrity", () => {
       "einvoice_archive",
       `INSERT INTO einvoice_archive (company_id, direction, kind, document_number, xml, sha256, retain_until)
        VALUES ($1, 'outbound', 'submitted', 'ARCHIVE-1', '<Invoice/>', repeat('a', 64), '2035-01-01')`,
+    ],
+    [
+      "einvoice_documents",
+      `INSERT INTO einvoice_documents (company_id, invoice_id, status)
+       VALUES ($1, gen_random_uuid(), 'submitted')`,
+    ],
+    [
+      "einvoice_document_events",
+      `INSERT INTO einvoice_document_events (company_id, invoice_id, track, to_status)
+       VALUES ($1, gen_random_uuid(), 'delivery', 'submitted')`,
     ],
   ])("clone refuses a target with only seeded accounts and %s history", async (table, insert) => {
     const t = await h.createTenant();
