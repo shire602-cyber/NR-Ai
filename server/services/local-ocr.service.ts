@@ -1,3 +1,4 @@
+import { addAbortListener } from "node:events";
 import os from "node:os";
 import path from "node:path";
 import Tesseract from "tesseract.js";
@@ -30,12 +31,18 @@ function ocrTimeoutMs(): number {
   return Number.isFinite(raw) && raw >= 5_000 ? raw : DEFAULT_TIMEOUT_MS;
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  signal?: AbortSignal
+): Promise<T> {
   let timeout: NodeJS.Timeout | undefined;
+  let listener: ReturnType<typeof addAbortListener> | undefined;
   try {
     return await Promise.race([
       promise,
       new Promise<T>((_, reject) => {
+        if (signal) listener = addAbortListener(signal, () => reject(signal.reason));
         timeout = setTimeout(
           () => reject(new Error(`Local OCR timed out after ${timeoutMs}ms`)),
           timeoutMs
@@ -43,13 +50,16 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
       }),
     ]);
   } finally {
+    listener?.[Symbol.dispose]();
     if (timeout) clearTimeout(timeout);
   }
 }
 
 export async function extractReceiptWithLocalOcr(
-  imageData: string
+  imageData: string,
+  signal?: AbortSignal
 ): Promise<LocalReceiptOcrResult> {
+  signal?.throwIfAborted();
   const buffer = decodeImageData(imageData);
   if (buffer.length === 0) {
     throw new Error("Image payload was empty");
@@ -59,9 +69,11 @@ export async function extractReceiptWithLocalOcr(
   const timeoutMs = ocrTimeoutMs();
   const startedAt = Date.now();
 
-  const recognize = (langs: string) =>
-    withTimeout(
-      Tesseract.recognize(buffer, langs, {
+  const recognize = async (langs: string) => {
+    let worker: Tesseract.Worker | undefined;
+    let stopped = false;
+    const run = async () => {
+      worker = await Tesseract.createWorker(langs, Tesseract.OEM.LSTM_ONLY, {
         cachePath,
         logger: (message) => {
           if (message.status === "recognizing text" && message.progress >= 1) {
@@ -71,9 +83,21 @@ export async function extractReceiptWithLocalOcr(
         errorHandler: (err) => {
           log.warn({ err: err?.message || err }, "Local OCR worker error");
         },
-      }),
-      timeoutMs
-    );
+      });
+      // Worker startup cannot be cancelled through Tesseract's API.
+      if (stopped) {
+        await worker.terminate();
+        throw new Error("Local OCR stopped during worker startup");
+      }
+      return worker.recognize(buffer);
+    };
+    try {
+      return await withTimeout(run(), timeoutMs, signal);
+    } finally {
+      stopped = true;
+      await worker?.terminate();
+    }
+  };
 
   // Arabic + English by default (R05-16). If the Arabic model cannot be loaded (offline,
   // blocked CDN) fall back to English only rather than failing the whole OCR path.
@@ -82,11 +106,13 @@ export async function extractReceiptWithLocalOcr(
   try {
     result = await recognize(langs);
   } catch (err) {
+    signal?.throwIfAborted();
     if (langs === "eng") throw err;
     log.warn({ err: (err as Error)?.message, langs }, "Multi-language OCR failed; retrying eng");
     result = await recognize("eng");
   }
 
+  signal?.throwIfAborted();
   const text = result.data.text || "";
   if (text.trim().length < MIN_TEXT_LENGTH) {
     throw new Error("Local OCR could not read enough text from the image");

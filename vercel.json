@@ -12,6 +12,7 @@
   },
   "functions": {
     "api/http.js": {
+      "maxDuration": 60,
       "includeFiles": "{dist/public/{index.html,firm.html,marketing-preloads.json,firm-preloads.json},server/assets/**}"
     }
   },

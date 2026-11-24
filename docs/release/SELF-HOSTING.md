@@ -18,7 +18,8 @@ Do not go live on a commit where that job is red. Still do a dry run on the real
 
 ## 2. Layout and files
 
-Everything persistent lives on the host under `/srv/muhasib` (create with `sudo mkdir -p`):
+Local persistent data lives on the host under `/srv/muhasib` (create with `sudo mkdir -p`). Firm VAT
+evidence lives in private object storage (section 3).
 
 | Path                      | Contents                                       |
 | ------------------------- | ---------------------------------------------- |
@@ -48,18 +49,37 @@ JWT_SECRET=<openssl rand -hex 32>
 TOKEN_ENCRYPTION_KEY=<openssl rand -hex 32>   # separate from SESSION_SECRET; store a copy in the password vault
 AUTH_PUBLIC_URL=https://app.example.ae
 RBAC_ENFORCE=enforce
+UPSTASH_REDIS_REST_URL=https://<redis-rest-host>
+UPSTASH_REDIS_REST_TOKEN=<writable-redis-rest-token>
+
+# Private VAT evidence storage. Uncomment one backend and fill in its settings.
+# BLOB_READ_WRITE_TOKEN=<private-blob-store-token>
+
+# S3_BUCKET=<private-bucket>
+# S3_ACCESS_KEY_ID=<access-key-id>
+# S3_SECRET_ACCESS_KEY=<secret-access-key>
+# S3_REGION=<aws-region>
+# S3_ENDPOINT=https://<s3-compatible-endpoint>
 ```
 
 Compose sets `NODE_ENV=production`, `DATABASE_URL` (internal `db` host), `AUTO_MIGRATE_ON_BOOT=false`,
 `TRUST_PROXY_HOPS=1` and `UPLOADS_PERSISTENT=true` for you. Add the other runbook variables (section 3 of
 DEPLOY-RUNBOOK) as needed; feature variables (`EINVOICE_PROVIDER`, `ACUBE_*`, Stripe, email provider) stay unset until proven. Losing `TOKEN_ENCRYPTION_KEY` makes stored secrets unreadable.
 
-**Storage choice.** Production refuses to boot on local disk unless storage is durable
-(`server/services/fileStorage.ts`). For an on-prem server the right choice is the host directory
-`/srv/muhasib/uploads` bind-mounted into the container plus `UPLOADS_PERSISTENT=true` (already set in
-compose); this declares the volume durable and is covered by the backups below. Do not use
-`ALLOW_LOCAL_STORAGE=true` (that only silences the guard). If you prefer off-site object storage, set
-`S3_BUCKET`, `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (and `STORAGE_STRICT=true`).
+**Shared request throttling.** Both Redis variables are required in production. Use the HTTPS REST URL
+and writable token for this environment's Redis database. Missing configuration blocks startup. A Redis
+outage causes throttled requests to fail closed. Memory fallback is available only in development and test.
+
+**File storage.** The bind mount at `/srv/muhasib/uploads` provides durable disk storage for file flows that
+support it and is covered by the backups below. Firm VAT evidence requires a private object store. Set
+`BLOB_READ_WRITE_TOKEN` for a private Vercel Blob store, or set `S3_BUCKET`, `S3_ACCESS_KEY_ID`, and
+`S3_SECRET_ACCESS_KEY` with `S3_REGION` for AWS S3 or `S3_ENDPOINT` for an S3-compatible service. Choose a
+store that meets the UAE data residency requirement in section 8.
+
+Before upgrading, copy existing `uploads/vat-workpapers/` evidence into the private store. Preserve the
+stored object keys with S3-compatible storage, or update the attachment references to the corresponding
+private Blob URLs. Verify existing evidence downloads through the authorized VAT workpaper route before
+switching traffic.
 
 ## 4. First deploy and every release
 
@@ -135,6 +155,9 @@ The script writes `db-<ts>.dump.age`, `uploads-<ts>.tar.age` and a checksum file
 to the UAE target and pings an optional dead-man URL (`HEALTHCHECK_URL`) so a silent failure alerts you. Keep 30
 daily + 12 monthly copies off-site using the storage provider's lifecycle rules. The off-site copy is mandatory:
 a fire, theft or flood in the office takes the server and the local backup disk together.
+
+Include the private VAT evidence store in the backup and restore drill. The local uploads archive covers
+the bind mount. Back up object-store evidence separately and verify that restored references resolve.
 
 **Recovery point objective (RPO).** With the nightly dump the RPO is up to 24 hours: everything entered since the
 last dump is lost if the server and its disks are lost. Say so to the owner and accept it explicitly, or reduce it:

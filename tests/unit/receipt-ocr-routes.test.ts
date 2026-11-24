@@ -421,3 +421,58 @@ describe("X6b OCR fails fast and is rate limited per company", () => {
     }
   });
 });
+
+describe("Receipt OCR request deadline", () => {
+  it("returns an application 504 and cancels a stuck provider without starting a fallback", async () => {
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(deadline.signal);
+    const localOcr = vi.mocked(extractReceiptWithLocalOcr);
+    localOcr.mockClear();
+    const create = vi.fn((_params: unknown, options: { signal: AbortSignal }) => {
+      expect(options.signal).toBe(deadline.signal);
+      return new Promise<never>((_, reject) => {
+        options.signal.addEventListener("abort", () => reject(options.signal.reason), {
+          once: true,
+        });
+        setImmediate(() => deadline.abort());
+      });
+    });
+    try {
+      const res = await post(appWith({ anthropic: { messages: { create } } }), {
+        companyId: COMPANY,
+        imageData: PNG_URL,
+      });
+      expect(timeout).toHaveBeenCalledWith(40_000);
+      expect(res.status).toBe(504);
+      expect(res.body.code).toBe("OCR_TIMEOUT");
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(localOcr).not.toHaveBeenCalled();
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it("enforces the same deadline when the local fallback stalls", async () => {
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(deadline.signal);
+    const create = vi.fn().mockRejectedValue(new Error("Provider unavailable"));
+    const localOcr = vi.mocked(extractReceiptWithLocalOcr);
+    localOcr.mockImplementationOnce(async (_image, signal) => {
+      expect(signal).toBe(deadline.signal);
+      setImmediate(() => deadline.abort());
+      return new Promise<never>(() => {});
+    });
+    try {
+      const res = await post(appWith({ anthropic: { messages: { create } } }), {
+        companyId: COMPANY,
+        imageData: PNG_URL,
+      });
+      expect(res.status).toBe(504);
+      expect(res.body.code).toBe("OCR_TIMEOUT");
+      expect(create).toHaveBeenCalled();
+      expect(classifier.calls).toHaveLength(0);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+});

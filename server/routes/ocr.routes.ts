@@ -1,3 +1,4 @@
+import { addAbortListener } from "node:events";
 import { sizeErrorBody } from "../http/upload-errors";
 import { type Express, type Request, type Response } from "express";
 import { parsedBody } from "../http/parsed-body";
@@ -41,6 +42,44 @@ import { errorCode, errorMessage, errorProperty } from "../errors";
 
 const log = createLogger("ocr");
 
+// Leave 20 seconds of the Vercel function budget for setup and the response.
+const OCR_REQUEST_TIMEOUT_MS = 40_000;
+
+function withOcrDeadline(
+  handle: (
+    req: Request,
+    res: Response,
+    signal: AbortSignal,
+    waitForStep: <T>(work: Promise<T>) => Promise<T>
+  ) => Promise<unknown>
+) {
+  return asyncHandler(async (req, res) => {
+    const signal = AbortSignal.timeout(OCR_REQUEST_TIMEOUT_MS);
+    const waitForStep = async <T>(work: Promise<T>): Promise<T> => {
+      let listener: ReturnType<typeof addAbortListener> | undefined;
+      try {
+        return await Promise.race([
+          work,
+          new Promise<never>((_, reject) => {
+            listener = addAbortListener(signal, () => reject(signal.reason));
+          }),
+        ]);
+      } finally {
+        listener?.[Symbol.dispose]();
+      }
+    };
+    try {
+      await handle(req, res, signal, waitForStep);
+    } catch (err) {
+      if (!signal.aborted) throw err;
+      res.status(504).json({
+        code: "OCR_TIMEOUT",
+        message: "Receipt reading took too long. Please try again.",
+      });
+    }
+  });
+}
+
 export interface OcrRouteDeps {
   /** Inject (mock) provider clients. Omit to build them from the environment. */
   anthropic?: Anthropic | null;
@@ -66,8 +105,7 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
       res.once("finish", () => resolve(false));
     });
 
-  // X3 (J2): lets the Receipts page say up front that automatic reading is not enabled, instead
-  // of letting a scan spin for ~90 seconds (local OCR fallback) and then fail.
+  // X3 (J2): lets the Receipts page say up front that automatic reading is not enabled.
   app.get(
     "/api/ocr/status",
     authMiddleware,
@@ -85,7 +123,7 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
     authMiddleware,
     aiLimiter,
     strictBody(ocrProcessBody, { allowServerOwned: ["companyId"] }),
-    asyncHandler(async (req: Request, res: Response) => {
+    withOcrDeadline(async (req, res, signal, waitForStep) => {
       const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized", code: "AUTH_REQUIRED" });
@@ -110,7 +148,7 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
       // company A's model bleeding into a receipt being processed for company B.
       let companyId: string;
       if (requestedCompanyId && typeof requestedCompanyId === "string") {
-        const hasAccess = await storage.hasCompanyAccess(userId, requestedCompanyId);
+        const hasAccess = await waitForStep(storage.hasCompanyAccess(userId, requestedCompanyId));
         if (!hasAccess) {
           return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
         }
@@ -119,7 +157,7 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
         // Backwards-compat fallback for older clients: only safe when the user
         // has exactly one company. For multi-company users we require an
         // explicit companyId so we never silently pick the wrong tenant.
-        const companies = await storage.getCompaniesByUserId(userId);
+        const companies = await waitForStep(storage.getCompaniesByUserId(userId));
         if (companies.length === 0) {
           return res.status(404).json({ message: "No company found", code: "COMPANY_NOT_FOUND" });
         }
@@ -132,9 +170,8 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
         companyId = companies[0].id;
       }
 
-      // X6b (J2): with no AI provider an image cannot be read, so answer at once instead of
-      // spinning the local Tesseract fallback for ~90 seconds before the same 503. Pasted text
-      // still goes through the instant deterministic parser below.
+      // X6b (J2): with no AI provider, fail image-only requests early. Pasted text
+      // still goes through the deterministic parser below.
       if (!anthropic && !openai && imageData && !content) {
         return res.status(503).json({
           message: "Automatic receipt reading is not enabled on this server.",
@@ -142,7 +179,9 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
         });
       }
 
+      // The limiter can write its own response and its Redis call has a 3-second timeout.
       if (!(await applyCompanyLimit(req, res, companyId))) return;
+      signal.throwIfAborted();
 
       const sanitizedContent = content ? String(content).slice(0, 10000) : "";
       const sanitizedMessageId = messageId ? String(messageId).slice(0, 100) : null;
@@ -159,7 +198,7 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
       let imageDataUrl: string | null = null;
       if (imageData) {
         try {
-          const inspected = await inspectUpload(String(imageData));
+          const inspected = await waitForStep(inspectUpload(String(imageData)));
           imageDataUrl = `data:${inspected.mime};base64,${inspected.buffer.toString("base64")}`;
         } catch (err) {
           if (err instanceof UploadRejectedError) {
@@ -178,8 +217,9 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
       // Monthly AI cap (R05-26): applies before any provider call, local fallbacks stay free.
       if (anthropic || openai) {
         try {
-          await assertAiQuota(companyId);
+          await waitForStep(assertAiQuota(companyId));
         } catch (err: unknown) {
+          signal.throwIfAborted();
           if (errorCode(err) === "AI_QUOTA_EXCEEDED") {
             return res.status(429).json({
               message: errorMessage(err),
@@ -241,7 +281,7 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
         ocrSource: string
       ) => {
         result._ocrSource = result._ocrSource || ocrSource;
-        await enrichWithInternalClassifier(result);
+        await waitForStep(enrichWithInternalClassifier(result));
         return res.json(
           buildResult(result, rawText, companyId, sanitizedMessageId, validCategories)
         );
@@ -251,7 +291,7 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
       const tryLocalImageFallback = async (reason: string) => {
         if (!imageDataUrl) return null;
         try {
-          const localResult = await extractReceiptWithLocalOcr(imageDataUrl);
+          const localResult = await waitForStep(extractReceiptWithLocalOcr(imageDataUrl, signal));
           localOcrErrorDetail = null;
           log.warn(
             {
@@ -263,6 +303,7 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
           );
           return localResult;
         } catch (err: unknown) {
+          signal.throwIfAborted();
           localOcrErrorDetail = summarizeOcrProviderError(err);
           log.error({ err: localOcrErrorDetail, reason }, "Local OCR fallback failed");
           return null;
@@ -303,9 +344,10 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
       // Strategy 1: Vision API with image (Anthropic preferred, OpenAI fallback)
       if (imageDataUrl) {
         try {
-          const aiResult = await runVisionOCR(imageDataUrl, clients, ocrCtx);
+          const aiResult = await waitForStep(runVisionOCR(imageDataUrl, clients, ocrCtx, signal));
           return respondWithResult(aiResult, sanitizedContent, "ai-vision");
         } catch (visionError: unknown) {
+          signal.throwIfAborted();
           if (errorCode(visionError) === "AI_QUOTA_EXCEEDED") {
             return res.status(429).json({
               message: errorMessage(visionError),
@@ -336,9 +378,10 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
       // Strategy 2: Text-based extraction (no image, or vision failed but text given)
       if (sanitizedContent) {
         try {
-          const aiResult = await runTextOCR(sanitizedContent, clients, ocrCtx);
+          const aiResult = await waitForStep(runTextOCR(sanitizedContent, clients, ocrCtx, signal));
           return respondWithResult(aiResult, sanitizedContent, "ai-text");
         } catch (textError: unknown) {
+          signal.throwIfAborted();
           if (errorCode(textError) === "AI_QUOTA_EXCEEDED") {
             return res.status(429).json({
               message: errorMessage(textError),
@@ -522,23 +565,25 @@ function toAiResult(outcome: Awaited<ReturnType<typeof extractReceipt>>): LooseO
 async function runVisionOCR(
   imageData: string,
   clients: ExtractionClients,
-  ctx: AiContext
+  ctx: AiContext,
+  signal: AbortSignal
 ): Promise<LooseOcrResult> {
   if (!clients.anthropic && !clients.openai) throw new Error("No vision client available");
   const { base64, mediaType } = parseImageDataUrl(imageData);
   return toAiResult(
-    await extractReceipt({ clients, input: { kind: "image", base64, mediaType }, ctx })
+    await extractReceipt({ clients, input: { kind: "image", base64, mediaType }, ctx, signal })
   );
 }
 
 async function runTextOCR(
   textContent: string,
   clients: ExtractionClients,
-  ctx: AiContext
+  ctx: AiContext,
+  signal: AbortSignal
 ): Promise<LooseOcrResult> {
   if (!clients.anthropic && !clients.openai) throw new Error("No text client available");
   return toAiResult(
-    await extractReceipt({ clients, input: { kind: "text", text: textContent }, ctx })
+    await extractReceipt({ clients, input: { kind: "text", text: textContent }, ctx, signal })
   );
 }
 
