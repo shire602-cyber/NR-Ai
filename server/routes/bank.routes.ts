@@ -1,3 +1,4 @@
+import { assertUploadSize } from "../http/upload-errors";
 import type { Express, Request, Response } from "express";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -49,7 +50,7 @@ async function ownedConnection(req: Request, id: string, companyId?: string) {
 
 const connectionImportBody = z
   .object({
-    csvContent: z.string().min(1).max(5_000_000),
+    csvContent: z.string().min(1),
     acknowledgeAmbiguity: z.boolean().optional(),
   })
   .strict();
@@ -171,7 +172,9 @@ export async function registerBankRoutes(app: Express, retireOnStartup = true) {
         parsedBody<z.output<typeof connectionImportBody>>(req);
       let parsed;
       try {
-        parsed = parseStatementCsv(Buffer.from(csvContent, "utf8"));
+        const bytes = Buffer.from(csvContent, "utf8");
+        assertUploadSize(bytes.length);
+        parsed = parseStatementCsv(bytes);
         if (parsed.rows.length === 0 && parsed.ignored.length === 0) {
           throw new Error("CSV file must contain a header row and at least one data row");
         }

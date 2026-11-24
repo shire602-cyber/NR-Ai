@@ -257,7 +257,7 @@ export function registerPortalInvitationRoutes(app: Express): void {
       const r = await resolveInvitation(token);
       if (r.status === "invalid") {
         // Malformed and unknown tokens are answered identically and count against the IP.
-        notePortalFailure(req);
+        await notePortalFailure(req);
         await logInviteEvent(req, "invite_invalid");
         return res.status(404).json(invalidBody);
       }
@@ -320,7 +320,7 @@ export function registerPortalInvitationRoutes(app: Express): void {
         });
       } catch (err) {
         const code = err instanceof DomainError ? err.code : undefined;
-        if (code === "PORTAL_INVITE_INVALID") notePortalFailure(req);
+        if (code === "PORTAL_INVITE_INVALID") await notePortalFailure(req);
         await logInviteEvent(req, `invite_accept_${(code ?? "error").toLowerCase()}`);
         throw err;
       }

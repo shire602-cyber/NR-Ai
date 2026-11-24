@@ -19,8 +19,8 @@ if (/npm ci[^\n]*\|\|\s*npm install/.test(dockerfile)) {
   failures.push('Dockerfile must fail fast on npm ci; remove npm install fallbacks so lockfile drift breaks the build.');
 }
 
-if (railwayConfig?.deploy?.healthcheckPath !== '/api/version') {
-  failures.push('railway.json must health-check /api/version so deploy readiness is DB-free; keep DB checks on /health/ready.');
+if (railwayConfig?.deploy?.healthcheckPath !== '/health/live') {
+  failures.push('railway.json must health-check /health/live so the probe is independent of Redis and the database.');
 }
 
 for (const file of walk(clientRoot)) {

@@ -165,14 +165,14 @@ export type BillPaymentInput = z.output<typeof billPaymentSchema>;
 
 export const billAttachmentSchema = z.object({
   /** base64 or data: URL of a JPEG/PNG/WebP/GIF/PDF (sniffed server-side). */
-  file: z.string().min(16).max(12_000_000),
+  file: z.string().min(16),
   filename: zText(200).optional().nullable(),
 });
 
 /** WQ2 (8.2): read a supplier invoice into a bill draft (nothing is stored or posted). */
 export const billCaptureSchema = z
   .object({
-    file: z.string().min(16).max(12_000_000),
+    file: z.string().min(16),
     filename: zText(200).optional().nullable(),
   })
   .strict();

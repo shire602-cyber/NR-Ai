@@ -98,6 +98,7 @@ import { scopedGet } from "../tenancy";
 import { parseReportDate, uaeToday } from "../reporting";
 import { readReceiptImage } from "../services/fileStorage";
 import { captureBillFromDocument, storePurchaseFile } from "../services/bill-capture.service";
+import { withOcrDeadline } from "../http/ocr-deadline";
 import { billApprovalQueue } from "../services/bill-approval-queue";
 import { docRateSql, payableOpenSql, payableSettledSql } from "../reporting/settlement";
 
@@ -772,11 +773,13 @@ export function registerBillPayRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     strictBody(billCaptureSchema),
-    asyncHandler(async (req: Request, res: Response) => {
+    withOcrDeadline(async (req, res, signal, waitForStep) => {
       const { companyId } = req.params;
-      await assertCompanyAccess(req, companyId);
+      await waitForStep(assertCompanyAccess(req, companyId));
       const { file } = parsedBody<{ file: string }>(req);
-      const result = await captureBillFromDocument({ companyId, userId: req.user!.id, file });
+      const result = await waitForStep(
+        captureBillFromDocument({ companyId, userId: req.user!.id, file, signal })
+      );
       res.json(result);
     })
   );

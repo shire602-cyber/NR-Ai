@@ -1,9 +1,10 @@
+import { MAX_UPLOAD_BYTES } from "./upload-limits";
 export const EXCEL_EXPORT_LIMITS = {
   worksheets: 100,
   rowsPerWorksheet: 5_000,
   columnsPerWorksheet: 100,
   renderedCells: 200_000,
-  requestBytes: 10 * 1024 * 1024,
+  requestBytes: MAX_UPLOAD_BYTES,
 } as const;
 
 type WorksheetDimensions = { columns: readonly unknown[]; rows: readonly unknown[] };

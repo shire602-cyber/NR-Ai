@@ -18,7 +18,7 @@
  * Identity is the contact id carried by the token. Only issued documents (sent, posted,
  * partial, paid) are ever listed or downloadable; drafts, void and cancelled are 404.
  */
-import type { Express, NextFunction, Request, RequestHandler, Response } from "express";
+import type { Express, Request, RequestHandler, Response } from "express";
 import { and, eq, inArray } from "drizzle-orm";
 import { storage } from "../storage";
 import { db, pool } from "../db";
@@ -84,8 +84,9 @@ export const ISSUED_STATUSES = ["sent", "posted", "partial", "paid"] as const;
  * Retry-After when the caller is over the limit.
  */
 export function portalGuard(scope: string): RequestHandler {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return asyncHandler(async (req, res, next) => {
     const ip = clientIp(req);
+<<<<<<< HEAD
     const bodyToken = (req.body as { token?: unknown } | undefined)?.token;
     const raw =
       req.params.token ??
@@ -95,6 +96,10 @@ export function portalGuard(scope: string): RequestHandler {
         : null) ??
       null;
     const reason = checkPortalThrottle(ip, raw ? `${scope}:${hashPortalToken(raw)}` : null);
+=======
+    const raw = req.params.token ?? req.params.shareToken ?? null;
+    const reason = await checkPortalThrottle(ip, raw ? `${scope}:${hashPortalToken(raw)}` : null);
+>>>>>>> origin/claude/eloquent-maxwell-kjxxjc
     if (reason) {
       void logPortalAccess({ req, outcome: "throttled" });
       res.setHeader("Retry-After", "600");
@@ -105,12 +110,12 @@ export function portalGuard(scope: string): RequestHandler {
       return;
     }
     next();
-  };
+  });
 }
 
 /** Count a bad credential against the caller's IP (used by share-link routes too). */
-export function notePortalFailure(req: Request, outcome = "invalid"): void {
-  recordPortalFailure(clientIp(req));
+export async function notePortalFailure(req: Request, outcome = "invalid"): Promise<void> {
+  await recordPortalFailure(clientIp(req));
   if (req.path.startsWith("/api/public/")) void logPortalAccess({ req, outcome });
 }
 
@@ -124,7 +129,7 @@ interface PortalCtx {
 async function portalContact(req: Request, res: Response): Promise<PortalCtx | null> {
   const r = await resolvePortalToken(req.params.token);
   if (r.status !== "ok") {
-    notePortalFailure(req);
+    await notePortalFailure(req);
     await logPortalAccess({
       req,
       outcome: r.status,
@@ -337,7 +342,7 @@ export function registerPortalPublicRoutes(app: Express) {
         message:
           "If this email belongs to a customer of this company, a sign-in code is on its way.",
       };
-      if (!allowCodeRequest(email)) return res.json(generic);
+      if (!(await allowCodeRequest(email))) return res.json(generic);
       const created = await createLoginCode(companyId, email);
       await logPortalAccess({
         req,
@@ -376,7 +381,7 @@ export function registerPortalPublicRoutes(app: Express) {
       }>(req);
       const session = await verifyLoginCode(companyId, email, code);
       if (!session) {
-        notePortalFailure(req);
+        await notePortalFailure(req);
         await logPortalAccess({ req, outcome: "code_invalid" });
         throw new DomainError(
           "PORTAL_CODE_INVALID",

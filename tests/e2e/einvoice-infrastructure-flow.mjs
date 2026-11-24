@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Run after npm run build with Chromium and a disposable local Postgres database.
+ * Run after npm run build with OpenSSL, Chromium and a disposable local Postgres database.
  * DATABASE_URL=postgresql://postgres@127.0.0.1:55452/einvoice_qa \
  * CHROMIUM_PATH=/usr/bin/chromium npx tsx tests/e2e/einvoice-infrastructure-flow.mjs
  *
@@ -11,7 +11,10 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { once } from "node:events";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import pg from "pg";
 import { chromium } from "playwright-core";
@@ -20,6 +23,7 @@ import {
   sealCompanyCredentials,
 } from "../../server/services/einvoice/providers/company-credentials.ts";
 import { apiClient, PASSWORD } from "./lib/sweep-personas.mjs";
+import { createRedisRestCertificate, startRedisRestFixture } from "../fixtures/redis-rest.mjs";
 
 const database = new URL(process.env.DATABASE_URL ?? "postgresql://invalid/");
 assert.ok(
@@ -1295,7 +1299,12 @@ async function verifyPublicOutcome(browser, persona) {
 }
 
 let browser;
+let redis;
+const redisDirectory = await mkdtemp(join(tmpdir(), "einvoice-redis-"));
 try {
+  createRedisRestCertificate(redisDirectory);
+  redis = await startRedisRestFixture({ directory: redisDirectory, token: randomUUID() });
+  Object.assign(appEnv, redis.env);
   assert.equal((await once(start("migrate"), "exit"))[0], 0, "Local migration failed.");
   await db.connect();
   await startApp();
@@ -1378,6 +1387,8 @@ try {
 } finally {
   await browser?.close();
   await stopApp();
+  await redis?.close();
+  await rm(redisDirectory, { recursive: true, force: true });
   mock.close();
   mock.closeAllConnections();
   await db.end();

@@ -96,7 +96,8 @@ async function callAnthropic(
   model: string,
   input: ExtractionInput,
   ctx: AiContext,
-  feedback?: string
+  feedback?: string,
+  signal?: AbortSignal
 ): Promise<unknown> {
   const prompt =
     input.kind === "text"
@@ -125,13 +126,16 @@ async function callAnthropic(
   }
   content.push({ type: "text", text: prompt });
 
-  const response: Anthropic.Message = await client.messages.create({
-    model,
-    max_tokens: 1500,
-    tools: [ANTHROPIC_RECEIPT_TOOL as unknown as Anthropic.Tool],
-    tool_choice: { type: "tool", name: ANTHROPIC_RECEIPT_TOOL.name },
-    messages: [{ role: "user", content }],
-  });
+  const response: Anthropic.Message = await client.messages.create(
+    {
+      model,
+      max_tokens: 1500,
+      tools: [ANTHROPIC_RECEIPT_TOOL as unknown as Anthropic.Tool],
+      tool_choice: { type: "tool", name: ANTHROPIC_RECEIPT_TOOL.name },
+      messages: [{ role: "user", content }],
+    },
+    signal ? { signal } : undefined
+  );
   await recordAiUsage(ctx, "anthropic", model, {
     inputTokens: response?.usage?.input_tokens,
     outputTokens: response?.usage?.output_tokens,
@@ -149,7 +153,8 @@ async function callOpenAi(
   model: string,
   input: ExtractionInput,
   ctx: AiContext,
-  feedback?: string
+  feedback?: string,
+  signal?: AbortSignal
 ): Promise<unknown> {
   const userContent: ChatCompletionContentPart[] = [];
   if (input.kind === "image") {
@@ -174,26 +179,33 @@ async function callOpenAi(
 
   let response: ChatCompletion;
   try {
-    response = await client.chat.completions.create({
-      model,
-      messages,
-      response_format: openAiReceiptResponseFormat(),
-      max_tokens: 1500,
-      temperature: 0,
-    });
+    response = await client.chat.completions.create(
+      {
+        model,
+        messages,
+        response_format: openAiReceiptResponseFormat(),
+        max_tokens: 1500,
+        temperature: 0,
+      },
+      signal ? { signal } : undefined
+    );
   } catch (err: unknown) {
+    signal?.throwIfAborted();
     // Older models reject json_schema; degrade to json_object (still zod-validated).
     if (
       errorStatus(err) === 400 &&
       /response_format|json_schema/i.test(String(errorMessage(err)))
     ) {
-      response = await client.chat.completions.create({
-        model,
-        messages,
-        response_format: { type: "json_object" },
-        max_tokens: 1500,
-        temperature: 0,
-      });
+      response = await client.chat.completions.create(
+        {
+          model,
+          messages,
+          response_format: { type: "json_object" },
+          max_tokens: 1500,
+          temperature: 0,
+        },
+        signal ? { signal } : undefined
+      );
     } else {
       throw err;
     }
@@ -218,8 +230,9 @@ export async function extractReceipt(args: {
   ctx: AiContext;
   today?: string;
   env?: Record<string, string | undefined>;
+  signal?: AbortSignal;
 }): Promise<ExtractionOutcome> {
-  const { clients, ctx } = args;
+  const { clients, ctx, signal } = args;
   await assertAiQuota(ctx.companyId);
 
   // Optional PII masking for text sent to external providers (images cannot be masked).
@@ -240,7 +253,10 @@ export async function extractReceipt(args: {
   ): Promise<ExtractionOutcome> => {
     const result = await runStructured({
       schema: receiptExtractionSchema,
-      call,
+      call: (feedback) => {
+        signal?.throwIfAborted();
+        return call(feedback);
+      },
       sanity: (d) => sanityCheckReceipt(d, { today: args.today }),
     });
     const data = redactor
@@ -253,9 +269,10 @@ export async function extractReceipt(args: {
     const model = resolveOcrModel("anthropic", args.env);
     try {
       return await attempt("anthropic", model, (fb) =>
-        callAnthropic(clients.anthropic!, model, input, { ...ctx, task: "ocr" }, fb)
+        callAnthropic(clients.anthropic!, model, input, { ...ctx, task: "ocr" }, fb, signal)
       );
     } catch (err) {
+      signal?.throwIfAborted();
       if (errorCode(err) === "AI_QUOTA_EXCEEDED") throw err;
       failures.push({ provider: "Anthropic", error: err });
       if (clients.openai && !isPdf) {
@@ -271,9 +288,10 @@ export async function extractReceipt(args: {
     const model = resolveOcrModel("openai", args.env);
     try {
       return await attempt("openai", model, (fb) =>
-        callOpenAi(clients.openai!, model, input, { ...ctx, task: "ocr" }, fb)
+        callOpenAi(clients.openai!, model, input, { ...ctx, task: "ocr" }, fb, signal)
       );
     } catch (err) {
+      signal?.throwIfAborted();
       if (errorCode(err) === "AI_QUOTA_EXCEEDED") throw err;
       failures.push({ provider: "OpenAI", error: err });
     }

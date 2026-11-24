@@ -1,3 +1,4 @@
+import { assertUploadSize } from "../http/upload-errors";
 import type { Request, Response } from "express";
 import { Router } from "express";
 import type { Express } from "express";
@@ -881,6 +882,7 @@ export function registerAdminRoutes(app: Express): void {
 
       // Convert base64 to buffer
       const buffer = Buffer.from(fileData, "base64");
+      assertUploadSize(buffer.length);
 
       let parsed;
       try {

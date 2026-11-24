@@ -1,3 +1,5 @@
+import { MAX_UPLOAD_BYTES } from "../../shared/upload-limits";
+import { AppError } from "../errors";
 // Receipt upload guard (R05-06, R05-07, R05-08, R05-20, R17-11).
 //
 // Everything about an uploaded receipt is derived from its BYTES, never from the data-URL
@@ -17,7 +19,7 @@ import type sharpType from "sharp";
 
 const log = createLogger("upload-guard");
 
-export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // 8 MB per file
+export { MAX_UPLOAD_BYTES };
 export const MAX_IMAGE_SIDE_PX = 12_000;
 export const MAX_IMAGE_PIXELS = 100_000_000; // 100 megapixels
 
@@ -44,11 +46,11 @@ const EXT_BY_MIME: Record<UploadMime, string> = {
   "application/pdf": "pdf",
 };
 
-export class UploadRejectedError extends Error {
+export class UploadRejectedError extends AppError {
   constructor(
     message: string,
     public readonly status: number,
-    public readonly code:
+    code:
       | "UNSUPPORTED_FILE"
       | "FILE_TOO_LARGE"
       | "IMAGE_TOO_LARGE"
@@ -56,8 +58,7 @@ export class UploadRejectedError extends Error {
       | "SCAN_UNAVAILABLE"
       | "STORAGE_QUOTA_EXCEEDED"
   ) {
-    super(message);
-    this.name = "UploadRejectedError";
+    super({ message, statusCode: status, code });
   }
 }
 
@@ -425,7 +426,7 @@ export async function inspectUpload(
   if (typeof imageData !== "string" || imageData.length === 0) {
     throw new UploadRejectedError("Invalid image data", 400, "UNSUPPORTED_FILE");
   }
-  const maxBytes = opts.maxBytes ?? MAX_UPLOAD_BYTES;
+  const maxBytes = Math.min(opts.maxBytes ?? MAX_UPLOAD_BYTES, MAX_UPLOAD_BYTES);
   const { declaredMime, base64 } = parseDataUrl(imageData);
 
   // Reject before decoding: base64 expands by 4/3.
