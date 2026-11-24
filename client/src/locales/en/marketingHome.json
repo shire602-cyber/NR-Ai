@@ -337,7 +337,7 @@
   "marketing.hxTrustTitle": "Trust and security",
   "marketing.hxTrustLead": "Role-based access, an audit trail, encrypted connections and data export at any time.",
   "marketing.hxTrustLink": "Read about trust and security",
-  "marketing.hxTrustResidency": "Data residency in the UAE",
+  "marketing.hxTrustResidency": "Production runs on Vercel, with the database hosted in the UAE.",
   "marketing.hxTrustListLabel": "Security facts",
   "marketing.hxTrustRolesTitle": "Role-based access",
   "marketing.hxTrustRolesDesc": "Each person gets only the permissions their role allows.",

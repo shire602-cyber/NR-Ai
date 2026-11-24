@@ -1,4 +1,5 @@
 import { MARKETING_BRAND } from "@shared/marketing-brand";
+import { SHOW_DATA_RESIDENCY } from "@/components/marketing/phase/home/flags";
 /**
  * Arabic reading copies of the three public legal documents. They are convenience translations:
  * the English documents (PrivacyPolicy / TermsOfService / CookiePolicy) remain authoritative, and
@@ -102,8 +103,9 @@ export function PrivacyPolicyAr() {
 
       <h2>8. النقل الدولي للبيانات</h2>
       <p>
-        تُستضاف بيانات العملاء في دولة الإمارات العربية المتحدة. وعندما يكون النقل خارج الإمارات
-        ضرورياً، نطبّق الضمانات المناسبة وفق ما يقتضيه قانون حماية البيانات الشخصية.
+        {SHOW_DATA_RESIDENCY &&
+          "يعمل الإنتاج على منصة Vercel، وقاعدة البيانات مستضافة في دولة الإمارات. "}
+        وعندما يكون النقل خارج الإمارات ضرورياً، نطبّق الضمانات المناسبة وفق ما يقتضيه قانون حماية البيانات الشخصية.
       </p>
 
       <h2>9. الأطفال</h2>

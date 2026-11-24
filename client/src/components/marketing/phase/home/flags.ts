@@ -7,8 +7,9 @@
 // only so marketing can see where real proof goes; always off in production builds.
 export const SHOW_PROOF_PLACEHOLDERS: boolean = import.meta.env.DEV === true;
 
-// TODO(owner): confirm. Only enable once data is actually stored in the UAE and the owner has
-// signed off on the wording.
+// TODO(owner): confirm. Only enable once the database is actually hosted in the UAE and the owner has
+// signed off on the wording. The most any public page may say is: production runs on Vercel with
+// the database hosted in the UAE.
 export const SHOW_DATA_RESIDENCY = false;
 
 // TODO(owner): confirm. WhatsApp contact in the footer (needs a real number and the
