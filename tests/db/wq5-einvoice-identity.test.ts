@@ -173,6 +173,60 @@ describe("WQ5 partner choice and the provider gate", () => {
 });
 
 describe("WQ5 no-login approver link", () => {
+  it("withdraws both types of approval when the taxpayer's full VAT registration changes", async () => {
+    const t = await h.createTenant({ companyColumns: { ...SELLER, einvoice_partner: "acube" } });
+    const create = async () => {
+      const link = await t.as.post(`${base(t)}/approver-links`, {});
+      expect(link.status, link.text).toBe(201);
+      return String(link.body.url).split("/portal/einvoicing-approve/")[1];
+    };
+    const portal = (token: string) => `/api/portal/einvoicing-approve/${token}`;
+    const completed = await create();
+    const pending = await create();
+    expect((await h.anon.post(`${portal(completed)}/done`, {})).body.state).toBe("completed");
+    expect(
+      (await t.as.post(`${base(t)}/partner/self-confirm`, { confirmed: true })).body.appointment
+        .state
+    ).toBe("self_confirmed");
+
+    // The TIN and selected provider are unchanged. The full VAT registration is not.
+    const { storage } = await import("../../server/storage");
+    await storage.updateCompany(t.company.id, { trnVatNumber: "100123456710003" });
+    const { firmEInvoicingStates } = await import("../../server/services/einvoice/identity");
+    expect((await t.as.get(`${base(t)}/partner`)).body.appointment).toMatchObject({
+      state: "not_started",
+      confirmedAt: null,
+    });
+    expect((await firmEInvoicingStates([t.company.id])).get(t.company.id)?.state).toBe(
+      "appoint_partner"
+    );
+    expect(
+      (await t.as.get(`${base(t)}/approver-links`)).body.map((l: { state: string }) => l.state)
+    ).toEqual(["revoked", "revoked"]);
+    expect((await h.anon.get(portal(completed))).status).toBe(410);
+    expect((await h.anon.post(`${portal(pending)}/done`, {})).status).toBe(410);
+    await storage.updateCompany(t.company.id, { trnVatNumber: SELLER.trn_vat_number });
+    expect((await h.anon.get(portal(completed))).status).toBe(410);
+    expect((await t.as.get(`${base(t)}/partner`)).body.appointment.state).toBe("not_started");
+    await h.sql("UPDATE companies SET trn_vat_number = '100123456710003' WHERE id = $1", [
+      t.company.id,
+    ]);
+
+    const current = await create();
+    expect((await h.anon.post(`${portal(current)}/done`, {})).body.state).toBe("completed");
+    expect((await t.as.get(`${base(t)}/partner`)).body.appointment.state).toBe("approver_done");
+    expect((await firmEInvoicingStates([t.company.id])).get(t.company.id)?.state).toBe(
+      "approver_done"
+    );
+    // A read must verify the scope even if the restoration bypassed the application write path.
+    await h.sql("UPDATE companies SET trn_vat_number = $2 WHERE id = $1", [
+      t.company.id,
+      SELLER.trn_vat_number,
+    ]);
+    expect((await h.anon.get(portal(current))).status).toBe(410);
+    expect((await t.as.get(`${base(t)}/partner`)).body.appointment.state).toBe("not_started");
+  });
+
   it("works without login, shows no TRN, notifies the owner, expires and can be revoked", async () => {
     const t = await h.createTenant({ companyColumns: SELLER });
     const noPartner = await t.as.post(`${base(t)}/approver-links`, { approverName: "Huda" });
@@ -448,6 +502,67 @@ describe("WQ5 unified contacts", () => {
 });
 
 describe("WQ5 firm console e-invoicing column", () => {
+  it("projects readiness for the current taxpayer in both the company and firm views", async () => {
+    const { clientEInvoicingStates } =
+      await import("../../server/services/firm-command-center.service");
+    const { companyCredentialVariable, sealCompanyCredentials } =
+      await import("../../server/services/einvoice/providers/company-credentials");
+    const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
+    const { randomUUID } = await import("node:crypto");
+    const t = await h.createTenant({ companyColumns: { ...SELLER, einvoice_partner: "acube" } });
+    const context = { companyId: t.company.id, provider: "acube", environment: "sandbox" } as const;
+    const envVar = companyCredentialVariable(context);
+    process.env[envVar] = sealCompanyCredentials(context, {
+      email: "sandbox@example.test",
+      password: randomUUID(),
+    });
+    try {
+      const setup = async (tin: string) =>
+        upsertLegalEntity(t.company.id, "acube", "sandbox", tin, {
+          status: "active",
+          legalEntityId: `entity-${tin}`,
+        });
+      const partner = async () => (await t.as.get(`${base(t)}/partner`)).body;
+      const firm = async () => (await clientEInvoicingStates([t.company.id])).get(t.company.id);
+
+      await setup("1001234567");
+      expect(await partner()).toMatchObject({
+        verifyAvailable: true,
+        appointment: { state: "verified", legalEntityStatus: "active" },
+      });
+      expect(await firm()).toMatchObject({ state: "connected" });
+
+      await h.sql("UPDATE companies SET trn_vat_number = '100999999900003' WHERE id = $1", [
+        t.company.id,
+      ]);
+      expect(await partner()).toMatchObject({
+        verifyAvailable: false,
+        appointment: { state: "not_started", legalEntityStatus: null },
+      });
+      expect(await firm()).toMatchObject({ state: "appoint_partner" });
+
+      await setup("1009999999");
+      expect(await partner()).toMatchObject({
+        verifyAvailable: true,
+        appointment: { state: "verified", legalEntityStatus: "active" },
+      });
+      expect(await firm()).toMatchObject({ state: "connected" });
+    } finally {
+      delete process.env[envVar];
+    }
+  });
+
+  it("exposes approvals by company and sending by invoice without a firm-wide endpoint", () => {
+    const routes = h.routes().filter(({ path }) => /einvoic|approver-links/i.test(path));
+    expect(routes).toEqual(
+      expect.arrayContaining([
+        { method: "POST", path: "/api/companies/:companyId/einvoicing/approver-links" },
+        { method: "POST", path: "/api/invoices/:id/einvoice/submit" },
+      ])
+    );
+    expect(routes.filter(({ path }) => /^\/api\/firm(?:[/-]|$)/.test(path))).toEqual([]);
+  });
+
   it("one state per client, and never 'connected' without a configured provider", async () => {
     const { clientEInvoicingStates } =
       await import("../../server/services/firm-command-center.service");
@@ -483,5 +598,31 @@ describe("WQ5 firm console e-invoicing column", () => {
     } finally {
       if (saved !== undefined) process.env.EINVOICE_PROVIDER = saved;
     }
+  });
+});
+
+describe("approver outcome shows back (2026-11-19)", () => {
+  it("a used approver link moves the client to approver_done; a new partner withdraws it", async () => {
+    const { clientEInvoicingStates } =
+      await import("../../server/services/firm-command-center.service");
+    const t = await h.createTenant({ name: "Approved", companyColumns: SELLER });
+    const [p, q] = await partnerIds(t);
+    await t.as.put(`${base(t)}/partner`, { partner: p });
+    const link = await t.as.post(`${base(t)}/approver-links`, { approverName: "Khalid" });
+    expect(link.status, link.text).toBeLessThan(300);
+    const token = (link.body.url as string).split("/").pop()!;
+    const state = async () => (await t.as.get(`${base(t)}/partner`)).body.appointment.state;
+    expect(await state()).toBe("awaiting_approval");
+    const done = await h.anon.post(`/api/portal/einvoicing-approve/${token}/done`, {});
+    expect(done.status, done.text).toBe(200);
+    // The approver finished: the client sees it, and so does the firm column.
+    expect(await state()).toBe("approver_done");
+    const states = await clientEInvoicingStates([t.company.id]);
+    expect(states.get(t.company.id)?.state).toBe("approver_done");
+    // A different partner is a different appointment: the approval no longer applies.
+    await t.as.put(`${base(t)}/partner`, { partner: q });
+    expect(await state()).toBe("not_started");
+    const used = await h.anon.get(`/api/portal/einvoicing-approve/${token}`);
+    expect(used.status).toBe(410);
   });
 });

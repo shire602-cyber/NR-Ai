@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
 import { PINT_AE_FIXTURES, fixtureCompany } from "../fixtures/pint-ae/fixtures";
 import { generateEInvoiceXML } from "../../server/services/einvoice.service";
 import { first, parseXml, textAt } from "../../server/services/einvoice/dom";
-import { companyTin } from "../../server/services/einvoice/legal-entities";
+import { companyTin, requireCompanyTin } from "../../server/services/einvoice/legal-entities";
 
 function supplierEndpoint(company: typeof fixtureCompany) {
   const f = PINT_AE_FIXTURES[0];
@@ -37,6 +37,28 @@ describe("E1 supplier EndpointID scheme for A-Cube", () => {
       value: "1001234567", // first 10 digits of TRN 100123456700003
     });
     expect(companyTin(company)).toBe("1001234567");
+  });
+
+  it("allows a valid legacy 0235 identity when no statutory registration is stored", () => {
+    expect(requireCompanyTin({ peppolScheme: "0235", peppolParticipantId: "1001234567" })).toBe(
+      "1001234567"
+    );
+    expect(() =>
+      requireCompanyTin({ peppolScheme: "9922", peppolParticipantId: "1001234567" })
+    ).toThrow(expect.objectContaining({ code: "EINVOICE_TIN_MISSING" }));
+  });
+
+  it("refuses inconsistent Peppol, stored TIN and statutory TRN values", () => {
+    const registered = { trnVatNumber: "100123456700003" };
+    expect(() => requireCompanyTin({ ...registered, peppolParticipantId: "1005555555" })).toThrow(
+      expect.objectContaining({ code: "EINVOICE_SUPPLIER_ENDPOINT_MISMATCH" })
+    );
+    expect(() => requireCompanyTin({ ...registered, einvoiceTin: "1005555555" })).toThrow(
+      expect.objectContaining({ code: "EINVOICE_SUPPLIER_ENDPOINT_MISMATCH" })
+    );
+    expect(() => requireCompanyTin({ ...registered, corporateTaxId: "100555555500003" })).toThrow(
+      expect.objectContaining({ code: "EINVOICE_SUPPLIER_ENDPOINT_MISMATCH" })
+    );
   });
 
   it("stays configurable per company (e.g. the 9922 identifier in A-Cube's Formats sample)", () => {

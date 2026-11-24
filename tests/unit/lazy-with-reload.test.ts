@@ -101,6 +101,15 @@ describe("loadWithChunkRetry", () => {
     expect(reload).not.toHaveBeenCalled();
   });
 
+  it("retries once and lets the caller render its manual recovery action", async () => {
+    const factory = vi.fn().mockRejectedValue(CHUNK_ERR);
+    await expect(
+      loadWithChunkRetry(factory, { key: "k", reload: false, storage, delayMs: 0 })
+    ).rejects.toThrow(CHUNK_ERR);
+    expect(factory).toHaveBeenCalledTimes(2);
+    expect(storage.getItem("chunk-reload:k")).toBeNull();
+  });
+
   it("clearChunkReloadGuards removes only reload guard keys", () => {
     storage.setItem("chunk-reload:a", "1");
     storage.setItem("chunk-reload:b", "1");

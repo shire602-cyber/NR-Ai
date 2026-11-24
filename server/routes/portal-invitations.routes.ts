@@ -11,8 +11,8 @@
  *   DELETE /api/companies/:companyId/portal-accounts/:portalAccountId
  *
  * Customer (public, throttled, logged; CSRF-protected, not exempt):
- *   GET  /api/portal-invitations/:token           the invitation as the join page needs it
- *   POST /api/portal-invitations/:token/accept    consumes the invitation (never the GET)
+ *   POST /api/portal-invitations/lookup   the invitation as the join page needs it
+ *   POST /api/portal-invitations/accept   consumes the invitation
  */
 import type { Express, Request, RequestHandler, Response } from "express";
 import { storage } from "../storage";
@@ -26,10 +26,9 @@ import { scopedGet } from "../tenancy";
 import { customerContacts } from "../../shared/schema";
 import {
   portalAcceptBody,
-  portalAcceptWithTokenBody,
-  PORTAL_INVITE_TOKEN_HEADER,
   portalBulkInviteBody,
   portalInviteBody,
+  portalInviteLookupBody,
   type PortalAcceptBody,
   type PortalBulkInviteBody,
   type PortalInviteBody,
@@ -153,6 +152,10 @@ export function registerPortalInvitationRoutes(app: Express): void {
           results.push({ contactId, outcome: "invited" });
         } catch (err) {
           const code = (err as { code?: string }).code;
+          if (code === "PORTAL_INVITE_DELIVERY_FAILED") {
+            results.push({ contactId, outcome: "delivery_failed" });
+            continue;
+          }
           const outcome =
             code === "CONTACT_EMAIL_REQUIRED"
               ? "skipped_no_email"
@@ -230,12 +233,19 @@ export function registerPortalInvitationRoutes(app: Express): void {
     message: "This link is not valid",
   };
 
-  // S5-SEC-1: the token travels in a header (view) or the body (accept), never in the path, so it
-  // cannot land in an access log. The path forms are kept for links already in the wild; the
-  // request logger redacts them.
-  const viewInvitation = (tokenOf: (req: Request) => string) =>
+  // Credentials belong only in bodies, including on read-only lookup requests.
+  app.use("/api/portal-invitations", (_req, res, next) => {
+    res.set("Cache-Control", "no-store");
+    next();
+  });
+
+  app.post(
+    "/api/portal-invitations/lookup",
+    portalGuard("invite"),
+    strictBody(portalInviteLookupBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const r = await resolveInvitation(tokenOf(req));
+      const { token } = parsedBody<{ token: string }>(req);
+      const r = await resolveInvitation(token);
       if (r.status === "invalid") {
         // Malformed and unknown tokens are answered identically and count against the IP.
         notePortalFailure(req);
@@ -260,7 +270,6 @@ export function registerPortalInvitationRoutes(app: Express): void {
         signedIn ? { id: signedIn.id, email: signedIn.email } : null
       );
       await logInviteEvent(req, "invite_view", r.invitation);
-      res.set("Cache-Control", "no-store");
       res.json({
         status: "pending",
         supplier: {
@@ -278,32 +287,28 @@ export function registerPortalInvitationRoutes(app: Express): void {
         signedInAs: signedIn && account === "signed_in_other" ? signedIn.email : null,
         onlinePayment: { available: paymentsAvailability().available },
       });
-    });
-
-  const headerToken = (req: Request) => String(req.get(PORTAL_INVITE_TOKEN_HEADER) ?? "");
-  app.get("/api/portal-invitations/current", portalGuard("invite"), viewInvitation(headerToken));
-  app.get(
-    "/api/portal-invitations/:token",
-    portalGuard("invite"),
-    viewInvitation((req) => req.params.token)
+    })
   );
 
-  const acceptInvite = (tokenOf: (req: Request, body: PortalAcceptBody) => string) =>
+  app.post(
+    "/api/portal-invitations/accept",
+    portalGuard("invite"),
+    strictBody(portalAcceptBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const body = parsedBody<PortalAcceptBody & { token?: string }>(req);
+      const body = parsedBody<PortalAcceptBody>(req);
       const signedIn = await optionalAuthUser(req);
       let outcome;
       try {
         outcome = await acceptInvitation({
-          rawToken: tokenOf(req, body),
+          rawToken: body.token,
+          email: body.email,
           signedIn: signedIn ? { id: signedIn.id, email: signedIn.email } : null,
           name: body.name,
           password: body.password,
           req,
-          res,
         });
       } catch (err) {
-        const code = (err as { code?: string }).code;
+        const code = err instanceof DomainError ? err.code : undefined;
         if (code === "PORTAL_INVITE_INVALID") notePortalFailure(req);
         await logInviteEvent(req, `invite_accept_${(code ?? "error").toLowerCase()}`);
         throw err;
@@ -324,20 +329,7 @@ export function registerPortalInvitationRoutes(app: Express): void {
           userType: user.userType,
         };
       }
-      res.set("Cache-Control", "no-store");
       res.json(payload);
-    });
-
-  app.post(
-    "/api/portal-invitations/accept",
-    portalGuard("invite"),
-    strictBody(portalAcceptWithTokenBody),
-    acceptInvite((_req, body) => String((body as { token?: string }).token ?? ""))
-  );
-  app.post(
-    "/api/portal-invitations/:token/accept",
-    portalGuard("invite"),
-    strictBody(portalAcceptBody),
-    acceptInvite((req) => req.params.token)
+    })
   );
 }

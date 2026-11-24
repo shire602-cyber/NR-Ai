@@ -102,7 +102,8 @@ describe("[WP-B] /pricing", () => {
     expect(featured?.getAttribute("data-featured")).toBe("true");
     expect(featured?.textContent).toContain("Most popular");
     expect(text()).toContain("Pay yearly and get 2 months free.");
-    expect(text()).not.toMatch(/coming soon|A-Cube|Complyance/i);
+    expect(text()).toContain("A-Cube or Complyance");
+    expect(text()).not.toMatch(/coming\s+soon/i);
   });
 
   it("collapses comparison groups but keeps their rows in the table", async () => {
@@ -200,6 +201,43 @@ describe("[WP-B] auth", () => {
       "This link has expired"
     );
     expect(container.querySelector("[data-testid=input-password]")).toBeNull();
+  });
+
+  it("asks for Microsoft mailbox proof and submits Arabic digits as an eight-digit code", async () => {
+    window.history.replaceState({}, "", "/login?microsoft_mailbox=1");
+    const { useI18n } = await import("../../client/src/lib/i18n");
+    act(() => useI18n.getState().setLocale("ar"));
+    const fetchMock = vi.fn(async (url: string) =>
+      url.includes("/api/csrf-token")
+        ? Response.json({ csrfToken: "test-csrf" })
+        : Response.json({ code: "OAUTH_MAILBOX_CODE_INVALID" }, { status: 400 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { default: Login } = await import("../../client/src/pages/Login");
+    await render(createElement(Login));
+    const challenge = container.querySelector('[data-testid="microsoft-mailbox-challenge"]')!;
+    expect(challenge.textContent).toContain("تحقّق من بريدك الإلكتروني");
+    const input = challenge.querySelector("input")!;
+    const button = challenge.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    const testCode = Array.from({ length: 8 }, (_, index) => index + 1).join("");
+    expect(button.disabled).toBe(true);
+    expect(input.dir).toBe("ltr");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "١٢٣٤٥٦٧٨"
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => button.click());
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/auth/oauth/microsoft/verify-mailbox",
+      expect.objectContaining({
+        body: JSON.stringify({ code: testCode }),
+        credentials: "include",
+      })
+    );
+    expect(challenge.querySelector('[role="alert"]')?.textContent).toContain("انتهت صلاحيته");
   });
 
   it("never mentions email delivery set-up after a reset request", async () => {

@@ -8,7 +8,7 @@
  * the event id (same on every retry), `X-Webhook-Timestamp` the time of this delivery attempt.
  *
  * Replay: the timestamp is NOT covered by the HMAC, so it cannot prove freshness; the real replay
- * defence is the durable inbox, unique on the event id (a replayed event is a duplicate and is not
+ * defence is the durable inbox, unique on identifiers from the signed body (a replayed event is a duplicate and is not
  * processed twice). We still refuse a delivery whose timestamp header is older than the window
  * (COMPLYANCE_WEBHOOK_MAX_AGE_SECONDS, default 1 hour; Complyance retries for ~36 minutes and
  * stamps each attempt) as a cheap filter for naive replays.

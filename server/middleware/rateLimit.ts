@@ -1,9 +1,12 @@
+import { portalInviteLogPath } from "../http/portal-invite-privacy";
+import { randomUUID } from "node:crypto";
 import rateLimit, { type Options } from "express-rate-limit";
 import type { Request } from "express";
 import jwt from "jsonwebtoken";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { getAccessTokenFromRequest } from "../services/auth-cookies.service";
+import { PostgresThrottleBucket, usesPostgresThrottle } from "./postgres-throttle";
 
 const log = createLogger("rate-limit");
 
@@ -90,10 +93,52 @@ export class SlidingWindowStore {
   }
 }
 
+export class PostgresSlidingWindowStore {
+  private readonly bucket: PostgresThrottleBucket;
+
+  constructor(
+    namespace: string,
+    private readonly windowMs: number,
+    private readonly max: number
+  ) {
+    this.bucket = new PostgresThrottleBucket(`http:${namespace}`, windowMs);
+  }
+
+  async increment(key: string) {
+    return this.incrementHit(key);
+  }
+
+  async incrementHit(key: string, id?: string) {
+    return this.bucket.mutate(key, (events, now) => {
+      const overLimit = events.length >= this.max;
+      if (!overLimit) events.push({ at: now, id });
+      return {
+        totalHits: events.length + (overLimit ? 1 : 0),
+        resetTime: new Date((events[0]?.at ?? now) + this.windowMs),
+      };
+    });
+  }
+
+  async decrement(key: string): Promise<void> {
+    await this.bucket.mutate(key, (events) => events.pop());
+  }
+
+  async refundHit(key: string, id: string): Promise<void> {
+    await this.bucket.mutate(key, (events) => {
+      const index = events.findIndex((event) => event.id === id);
+      if (index >= 0) events.splice(index, 1);
+    });
+  }
+
+  resetKey(key: string): Promise<void> {
+    return this.bucket.reset(key);
+  }
+}
+
 // ─── Request identity (R01-10) ──────────────────────────────────────────────
 
 export type RateLimitIdentity =
-  | { kind: "user"; userId: string; companyId: string | null; key: string }
+  | { kind: "user"; userId: string; key: string }
   | { kind: "ip"; ip: string; key: string };
 
 const IDENTITY = Symbol.for("muhasib.rateLimitIdentity");
@@ -102,19 +147,11 @@ export function clientIp(req: Request): string {
   return req.ip || req.socket?.remoteAddress || "unknown";
 }
 
-function companyIdFromRequest(req: Request): string | null {
-  const url = req.originalUrl || req.url || "";
-  const m = /^\/api\/companies\/([0-9a-fA-F-]{36})(?:[/?#]|$)/.exec(url);
-  if (m) return m[1].toLowerCase();
-  const q = (req.query as Record<string, unknown> | undefined)?.companyId;
-  return typeof q === "string" && q ? q : null;
-}
-
 /**
  * Who a request counts against. The general limiters run before body parsing
  * and before the route's authMiddleware, so the identity is derived here: a
  * request that carries a correctly signed ACCESS token counts against
- * `userId:companyId` (users behind one office NAT get independent budgets);
+ * its user (users behind one office NAT get independent budgets);
  * everything else (anonymous, forged, refresh-token-as-bearer) counts against
  * the client IP. Signature verification is a local HMAC check; revocation is
  * still enforced later by authMiddleware.
@@ -134,12 +171,10 @@ export function rateLimitIdentity(req: Request): RateLimitIdentity {
         type?: unknown;
       };
       if (decoded.type === "access" && typeof decoded.userId === "string") {
-        const companyId = companyIdFromRequest(req);
         identity = {
           kind: "user",
           userId: decoded.userId,
-          companyId,
-          key: `u:${decoded.userId}:${companyId ?? "-"}`,
+          key: `u:${decoded.userId}`,
         };
       }
     } catch {
@@ -154,7 +189,7 @@ export function rateLimitIdentity(req: Request): RateLimitIdentity {
   return identity;
 }
 
-/** Default limiter key: per user+company when authenticated, else per IP. */
+/** Default limiter key: per user when authenticated, else per IP. */
 export const compositeKey = (req: Request): string => rateLimitIdentity(req).key;
 
 interface RouteLimit {
@@ -173,20 +208,48 @@ interface RouteLimit {
 }
 
 /**
- * Build a route-scoped sliding-window limiter. Stores state in memory; each
- * call returns its own store so independent counters don't bleed across
- * route groups (auth, ai, api, etc.).
+ * Build a sliding-window limiter with a stable namespace for each route group.
  */
-export function buildLimiter(cfg: RouteLimit) {
-  const store = new SlidingWindowStore(cfg.max);
-  store.startGc();
+export function buildLimiter(namespace: string, cfg: RouteLimit) {
+  const store = usesPostgresThrottle()
+    ? new PostgresSlidingWindowStore(namespace, cfg.windowMs, cfg.max)
+    : new SlidingWindowStore(cfg.max);
+  if (store instanceof SlidingWindowStore) store.startGc();
+  const keyGenerator = cfg.keyGenerator ?? compositeKey;
+  // Give refundable hits a request ID so an overlapping request cannot
+  // refund another hit. Await the refund before ending a serverless response.
+  const refundable = cfg.skipSuccessfulRequests && store instanceof PostgresSlidingWindowStore;
+  const decodeKey = (key: string) => JSON.parse(key) as [identity: string, requestId: string];
+  const limiterStore = refundable
+    ? {
+        increment: (key: string) => store.incrementHit(...decodeKey(key)),
+        decrement: (key: string) => store.refundHit(...decodeKey(key)),
+        resetKey: (key: string) => store.resetKey(decodeKey(key)[0]),
+      }
+    : store;
   const limiter = rateLimit({
     windowMs: cfg.windowMs,
     max: cfg.max,
     standardHeaders: "draft-7", // RFC RateLimit-* + X-RateLimit-* headers
     legacyHeaders: false,
-    keyGenerator: cfg.keyGenerator ?? compositeKey,
-    skipSuccessfulRequests: cfg.skipSuccessfulRequests ?? false,
+    keyGenerator: refundable
+      ? (req, res) => {
+          const key = keyGenerator(req);
+          const id = randomUUID();
+          const end = res.end;
+          res.end = (...args: unknown[]) => {
+            res.end = end;
+            if (res.statusCode >= 400) return Reflect.apply(end, res, args);
+            void store
+              .refundHit(key, id)
+              .catch((err: unknown) => log.warn({ err }, "Failed to refund a rate-limit hit"))
+              .then(() => Reflect.apply(end, res, args));
+            return res;
+          };
+          return JSON.stringify([key, id]);
+        }
+      : keyGenerator,
+    skipSuccessfulRequests: !refundable && Boolean(cfg.skipSuccessfulRequests),
     // We validate trust proxy ourselves (configureTrustProxy) and key on
     // more than the IP; silence express-rate-limit's IP heuristics.
     validate: false,
@@ -204,9 +267,8 @@ export function buildLimiter(cfg: RouteLimit) {
         : Math.ceil((options.windowMs as number) / 1000);
       log.warn(
         {
-          ip: req.ip,
-          key: rateLimitIdentity(req).key,
-          path: req.path,
+          requestId: req.id,
+          path: portalInviteLogPath(req.originalUrl || req.url) ?? undefined,
           retryAfter,
           resetTime: resetTime?.toISOString(),
         },
@@ -220,7 +282,7 @@ export function buildLimiter(cfg: RouteLimit) {
         details: { retryAfterSeconds: retryAfter },
       });
     },
-    store,
+    store: limiterStore,
   });
   return Object.assign(limiter, { store });
 }
@@ -268,7 +330,7 @@ export const limiterProfiles = {
   read: {
     // GET-heavy dashboards fire 8-15 requests per page view, so the ceiling
     // must sit well above real navigation and report review. The key is
-    // `userId:companyId` for authenticated traffic (rateLimitIdentity), so
+    // user ID for authenticated traffic (rateLimitIdentity), so
     // this budget is per user, not per office.
     windowMs: envInt("RL_READ_WINDOW_MS", 60_000),
     max: envInt("RL_READ_MAX", 600),
@@ -287,6 +349,18 @@ export interface LockoutStatus {
   locked: boolean;
   retryAfterMs: number;
   failures: number;
+}
+
+function lockoutStatus(rules: LockoutRule[], failures: number[], now: number): LockoutStatus {
+  let retryAfterMs = 0;
+  for (const rule of rules) {
+    const inWindow = failures.filter((at) => at > now - rule.windowMs);
+    if (inWindow.length >= rule.max) {
+      const unlockAt = inWindow[inWindow.length - rule.max] + rule.windowMs;
+      retryAfterMs = Math.max(retryAfterMs, unlockAt - now);
+    }
+  }
+  return { locked: retryAfterMs > 0, retryAfterMs, failures: failures.length };
 }
 
 /**
@@ -311,22 +385,13 @@ export class LockoutTracker {
   }
 
   status(key: string, now = Date.now()): LockoutStatus {
-    const arr = this.fresh(key, now);
-    let retryAfterMs = 0;
-    for (const rule of this.rules) {
-      const inWindow = arr.filter((t) => t > now - rule.windowMs);
-      if (inWindow.length >= rule.max) {
-        // Unlocks when enough failures leave the window to drop below max.
-        const unlockAt = inWindow[inWindow.length - rule.max] + rule.windowMs;
-        retryAfterMs = Math.max(retryAfterMs, unlockAt - now);
-      }
-    }
-    return { locked: retryAfterMs > 0, retryAfterMs, failures: arr.length };
+    return lockoutStatus(this.rules, this.fresh(key, now), now);
   }
 
   /** Record a failure; returns the status after recording. */
   recordFailure(key: string, now = Date.now()): LockoutStatus & { lockedNow: boolean } {
     const before = this.status(key, now);
+    if (before.locked) return { ...before, lockedNow: false };
     const arr = this.fresh(key, now);
     arr.push(now);
     this.failures.set(key, arr);
@@ -341,6 +406,45 @@ export class LockoutTracker {
   resetAll(): void {
     this.failures.clear();
   }
+}
+
+export class PostgresLockoutTracker {
+  private readonly bucket: PostgresThrottleBucket;
+  private readonly horizonMs: number;
+
+  constructor(namespace: string, private readonly rules: LockoutRule[]) {
+    this.horizonMs = Math.max(...rules.map((rule) => rule.windowMs));
+    this.bucket = new PostgresThrottleBucket(`credential:${namespace}`, this.horizonMs);
+  }
+
+  async status(key: string): Promise<LockoutStatus> {
+    const { events, now } = await this.bucket.read(key);
+    const failures = events.map((event) => event.at).filter((at) => at > now - this.horizonMs);
+    return lockoutStatus(this.rules, failures, now);
+  }
+
+  recordFailure(key: string) {
+    return this.bucket.mutate(key, (events, now) => {
+      const failures = events.map((event) => event.at);
+      const before = lockoutStatus(this.rules, failures, now);
+      if (before.locked) return { ...before, lockedNow: false };
+      events.push({ at: now });
+      failures.push(now);
+      const after = lockoutStatus(this.rules, failures, now);
+      return { ...after, lockedNow: after.locked };
+    });
+  }
+
+  reset(key: string): Promise<void> {
+    return this.bucket.reset(key);
+  }
+}
+
+export function buildLockoutTracker(namespace: string) {
+  const rules = loginLockoutRules();
+  return usesPostgresThrottle()
+    ? new PostgresLockoutTracker(namespace, rules)
+    : new LockoutTracker(rules);
 }
 
 export function loginLockoutRules(): LockoutRule[] {

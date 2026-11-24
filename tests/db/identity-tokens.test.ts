@@ -2,9 +2,11 @@
  * W2-C identity: token types, revocation on password reset/change, device
  * sessions (R17-04, R01-06, R01-13).
  */
+import { readFileSync } from "node:fs";
 import jwt from "jsonwebtoken";
 import { describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 
 const h = useHarness();
 
@@ -45,6 +47,88 @@ describe("R17-04 refresh tokens are not access tokens", () => {
 });
 
 describe("R01-06 password reset and change revoke outstanding tokens", () => {
+  it("discards an outstanding old-mailbox reset when upgrading from unbound tokens", async () => {
+    const t = await h.createTenant();
+    const { generateRandomToken, hashToken } =
+      await import("../../server/services/auth-tokens.service");
+    const token = generateRandomToken();
+    await h.sql("ALTER TABLE password_reset_tokens DROP COLUMN IF EXISTS email");
+    await h.sql(
+      "INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, now() + interval '1 day')",
+      [t.user.id, hashToken(token)]
+    );
+    const replacement = `replacement-${t.email}`;
+    // The old version updated the address without invalidating the reset link.
+    await h.sql("UPDATE users SET email = $2 WHERE id = $1", [t.user.id, replacement]);
+    expect(
+      await h.sql("SELECT id FROM password_reset_tokens WHERE user_id = $1", [t.user.id])
+    ).toHaveLength(1);
+
+    const migration = readFileSync(
+      "migrations/0139_bind_portal_invite_and_verification_lifecycle.sql",
+      "utf8"
+    );
+    await h.sql(migration);
+    expect(
+      await h.sql("SELECT id FROM password_reset_tokens WHERE user_id = $1", [t.user.id])
+    ).toHaveLength(0);
+    const rejected = await h.anon.post("/api/auth/reset-password", {
+      token,
+      password: FAKE_PASSWORD,
+    });
+    expect(rejected.body.code).toBe("RESET_TOKEN_INVALID");
+    await login({ ...t, email: replacement });
+
+    const forgot = await h.anon.post("/api/auth/forgot-password", { email: replacement });
+    const fresh = new URL(forgot.body.devResetUrl).searchParams.get("token");
+    await h.sql(migration); // Reapplying the migration preserves mailbox-bound tokens.
+    const reset = await h.anon.post("/api/auth/reset-password", {
+      token: fresh,
+      password: FAKE_PASSWORD,
+    });
+    expect(reset.status, reset.text).toBe(200);
+    await login({ ...t, email: replacement }, FAKE_PASSWORD);
+  });
+  it("invalidates old mailbox reset links on email change and accepts a link issued to the replacement", async () => {
+    const t = await h.createTenant();
+    const admin = await h.createTenant({ isAdmin: true });
+    const endpoint = `/api/admin/users/${t.user.id}`;
+    async function requestReset(email: string) {
+      const result = await h.anon.post("/api/auth/forgot-password", { email });
+      expect(result.status).toBe(200);
+      return new URL(result.body.devResetUrl).searchParams.get("token");
+    }
+    const oldToken = await requestReset(t.email);
+    const replacement = `replacement-${t.email}`;
+    expect((await admin.as.patch(endpoint, { email: replacement })).status).toBe(200);
+    expect(
+      await h.sql("SELECT id FROM password_reset_tokens WHERE user_id = $1", [t.user.id])
+    ).toHaveLength(0);
+
+    const password = "Replacement9Password!";
+    const stale = await h.anon.post("/api/auth/reset-password", { token: oldToken, password });
+    expect(stale.body.code).toBe("RESET_TOKEN_INVALID");
+    await login({ ...t, email: replacement });
+
+    const newToken = await requestReset(replacement);
+    expect(
+      (await h.anon.post("/api/auth/reset-password", { token: newToken, password })).status
+    ).toBe(200);
+    await login({ ...t, email: replacement }, password);
+  });
+
+  it("rejects a mailbox-bound reset if the current address differs at redemption", async () => {
+    const t = await h.createTenant();
+    const forgot = await h.anon.post("/api/auth/forgot-password", { email: t.email });
+    const token = new URL(forgot.body.devResetUrl).searchParams.get("token");
+    // Change the mailbox without the application cleanup to exercise the redemption check.
+    const replacement = `replacement-${t.email}`;
+    await h.sql("UPDATE users SET email = $2 WHERE id = $1", [t.user.id, replacement]);
+    const stale = await h.anon.post("/api/auth/reset-password", { token, password: FAKE_PASSWORD });
+    expect(stale.body.code).toBe("RESET_TOKEN_INVALID");
+    await login({ ...t, email: replacement });
+  });
+
   it("R01-06: old access and refresh tokens fail after a password reset", async () => {
     const t = await h.createTenant({ name: "Reset" });
     const old = await login(t);

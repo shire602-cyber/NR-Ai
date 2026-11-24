@@ -7,10 +7,12 @@ import {
   invoiceLines as invoiceLinesTable,
   recurringInvoices as recurringInvoicesTable,
   type Company,
+  type Invoice,
   type ReminderSetting,
 } from "../../shared/schema";
 import { createLogger } from "../config/logger";
-import { assertPeriodNotLocked } from "./period-lock.service";
+import { errorCode } from "../errors";
+import { assertPeriodNotLocked, lockPeriodPolicy } from "./period-lock.service";
 import { allocateInvoiceNumber } from "./invoice-numbering.service";
 import { salesLinesSchema, type SalesLineInput } from "../../shared/validators/invoices";
 import { dueDateFromTerms, prepareSalesLines, termsFromDays } from "./invoice-lifecycle";
@@ -19,12 +21,8 @@ import { getRate } from "./fx/rates";
 import { fromFils, mulRate } from "../../shared/money";
 import { isCapabilityLive } from "../../shared/capabilities";
 import { generateInvoicePDF } from "./pdf-invoice.service";
-import {
-  buildReminderEmail,
-  sendEmail,
-  sendInvoiceEmail,
-  type EmailLanguage,
-} from "./email.service";
+import { resolveEmailLanguage } from "./email-layout";
+import { buildReminderEmail, sendEmail, sendInvoiceEmail } from "./email.service";
 import { registerOutboxJob, type OutgoingAttachment } from "../outbox";
 import { registerEventOutboxJob } from "../platform/event-outbox";
 import { registerObjectDeletionJob } from "./object-deletion-queue";
@@ -34,6 +32,7 @@ import { purgeExpiredAuthTokens } from "./auth-tokens.service";
 import { scanDueReportDeliveries } from "./report-delivery-scheduler.service";
 import { listJobs, registerJob, startRegisteredJobs } from "../platform/job-registry";
 import {
+  automationWritesAllowed,
   companiesWithAutomationOff,
   recordAutomationRun,
   runForCompany,
@@ -242,20 +241,8 @@ async function settleLog(
 }
 
 /** A view/pay link for the customer: the invoice share link (it shows Pay now when live). */
-async function customerInvoiceLink(invoice: {
-  id: string;
-  shareToken: string | null;
-  shareTokenExpiresAt: Date | null;
-}) {
-  let token = invoice.shareToken;
-  if (
-    !token ||
-    (invoice.shareTokenExpiresAt && new Date(invoice.shareTokenExpiresAt) < new Date())
-  ) {
-    const crypto = await import("crypto");
-    token = crypto.randomBytes(16).toString("hex");
-    await storage.setInvoiceShareToken(invoice.id, token, new Date(Date.now() + 90 * DAY_MS));
-  }
+async function customerInvoiceLink(invoice: Invoice) {
+  const token = await storage.ensureInvoiceShareToken(invoice);
   const { publicBaseUrl } = await import("./payments");
   return `${publicBaseUrl()}/view/invoice/${token}`;
 }
@@ -400,21 +387,21 @@ async function dunOne(args: {
       summary.failed++;
       return;
     }
-    const lang =
-      setting.language === "bilingual" &&
-      (contact.preferredLanguage === "en" || contact.preferredLanguage === "ar")
-        ? contact.preferredLanguage
-        : (setting.language as EmailLanguage);
+    const language = resolveEmailLanguage(setting.language, contact.preferredLanguage);
+    const { sharedInvoicePayment } = await import("./payments");
+    const openFils = Number(inv.open_fils);
     const { subject, html, text } = buildReminderEmail({
       invoice,
       company,
       customerName: contact.name,
-      openFils: Number(inv.open_fils),
+      customerNameAr: contact.nameAr ?? null,
+      openFils,
       level,
       daysOverdue,
-      payUrl: setting.includePayLink ? link : null,
+      payUrl:
+        setting.includePayLink && sharedInvoicePayment(invoice, openFils).available ? link : null,
       portalUrl: link,
-      language: lang,
+      language,
       customSubject: setting.emailSubject,
       customTemplate: setting.emailTemplate,
     });
@@ -492,10 +479,11 @@ export async function runDunningScan(
       ).rows.map((r: { company_id: string }) => r.company_id);
   for (const companyId of ids) {
     try {
-      // WQ7: the scheduled scan respects the company's Automations switch; an explicit run for
-      // one company (opts.companyId) is the user asking, so it runs regardless.
+      // An explicit run bypasses the Automations switch, but still needs write entitlement.
       if (opts.companyId) {
-        await dunCompany(companyId, now, summary);
+        if (await automationWritesAllowed(companyId, now)) {
+          await dunCompany(companyId, now, summary);
+        }
       } else {
         const before = { sent: summary.sent, queued: summary.queued };
         await runForCompany(
@@ -708,6 +696,9 @@ export async function generateDueRecurringInvoices(): Promise<number> {
         seen.add(template.id);
         claimed = true;
         const now = new Date();
+        if (!(await automationWritesAllowed(template.companyId, now, tx))) {
+          return { skipped: true };
+        }
         const note = async (status: string, message: string, disable = false) => {
           await tx
             .update(recurringInvoicesTable)
@@ -757,11 +748,14 @@ export async function generateDueRecurringInvoices(): Promise<number> {
 
         const dateIso = now.toISOString().slice(0, 10);
         const invoiceDate = new Date(`${dateIso}T00:00:00.000Z`);
+        await lockPeriodPolicy(tx, template.companyId, "shared");
         try {
-          await assertPeriodNotLocked(template.companyId, invoiceDate);
+          await assertPeriodNotLocked(template.companyId, invoiceDate, tx);
         } catch (err) {
+          const code = errorCode(err);
+          if (code !== "PERIOD_LOCKED" && code !== "PERIOD_SOFT_LOCKED") throw err;
           log.warn(
-            { err: (err as Error)?.message, templateId: template.id },
+            { code, templateId: template.id },
             "Skipping recurring invoice generation — target period is locked"
           );
           return note("period_locked", "Target period is locked; will retry");
@@ -771,7 +765,7 @@ export async function generateDueRecurringInvoices(): Promise<number> {
         let rate = 1;
         if (currency !== "AED") {
           try {
-            rate = (await getRate(template.companyId, currency, "AED", dateIso)).rate;
+            rate = (await getRate(template.companyId, currency, "AED", dateIso, { tx })).rate;
           } catch (err) {
             return note(
               "no_exchange_rate",
@@ -793,7 +787,8 @@ export async function generateDueRecurringInvoices(): Promise<number> {
               placeOfSupplyEmirate: template.placeOfSupplyEmirate,
               date: dateIso,
             },
-            { dueDateFromTerms, termsFromDays }
+            { dueDateFromTerms, termsFromDays },
+            tx
           );
         } catch {
           return note("invalid", "Template contact no longer exists; template disabled", true);
@@ -952,6 +947,7 @@ async function finishGeneratedInvoice(
     const pdf = await generateInvoicePDF(fresh, lines, company);
     // WQ1 (7.13): always through the durable outbox. With no provider the email is queued
     // (blocked_no_provider) and delivered once one is configured — never reported as sent.
+    const contact = fresh.contactId ? await storage.getCustomerContact(fresh.contactId) : null;
     const result = await sendInvoiceEmail(
       template.sendToEmail,
       fresh,
@@ -959,7 +955,11 @@ async function finishGeneratedInvoice(
       pdf,
       undefined,
       undefined,
-      { throwOnFailure: false }
+      {
+        throwOnFailure: false,
+        language: resolveEmailLanguage(null, contact?.preferredLanguage),
+        customerNameAr: contact?.nameAr ?? null,
+      }
     );
     if (!result.sent) {
       return {

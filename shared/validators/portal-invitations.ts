@@ -13,7 +13,7 @@ export const PORTAL_INVITE_RESEND_COOLDOWN_S = 60;
 export const PORTAL_INVITE_MAX_SENDS_PER_DAY = 5;
 export const PORTAL_INVITE_MAX_PER_HOUR = 60;
 export const PORTAL_INVITE_MAX_PER_DAY = 300;
-/** Trial companies are capped lower: a brand-new account cannot mail hundreds of strangers. */
+/** A company still on its free trial may send far fewer invitations a day. */
 export const PORTAL_INVITE_MAX_PER_DAY_TRIAL = 20;
 export const PORTAL_INVITE_MESSAGE_MAX = 500;
 export const PORTAL_BULK_MAX = 100;
@@ -24,7 +24,7 @@ export type PortalInviteLanguage = (typeof PORTAL_INVITE_LANGUAGES)[number];
 export const portalInviteBody = z.object({
   email: zEmail.optional(),
   name: zText(100).optional(),
-  language: z.enum(PORTAL_INVITE_LANGUAGES).default("en"),
+  language: z.enum(PORTAL_INVITE_LANGUAGES).optional(),
   message: zText(PORTAL_INVITE_MESSAGE_MAX).optional(),
   saveEmailToContact: z.boolean().optional(),
 });
@@ -36,15 +36,14 @@ export const portalBulkInviteBody = z.object({
 });
 export type PortalBulkInviteBody = z.output<typeof portalBulkInviteBody>;
 
-export const portalAcceptBody = z.object({
+export const PORTAL_INVITE_TOKEN_RE = /^[0-9a-f]{64}$/i;
+
+export const portalInviteLookupBody = z.object({ token: z.string().max(256) });
+
+export const portalAcceptBody = portalInviteLookupBody.extend({
+  email: zEmail,
   name: zText(100, { min: 1 }).optional(),
   password: z.string().max(256).optional(),
   acceptTerms: z.literal(true),
 });
 export type PortalAcceptBody = z.output<typeof portalAcceptBody>;
-/** S5-SEC-1: the accept form that carries the token in the body, not the URL path. */
-export const portalAcceptWithTokenBody = portalAcceptBody.extend({ token: z.string().max(200) });
-/** Header that carries the token for the join page's read. */
-export const PORTAL_INVITE_TOKEN_HEADER = "x-portal-invite-token";
-
-export const PORTAL_INVITE_TOKEN_RE = /^[0-9a-f]{64}$/i;

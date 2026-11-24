@@ -15,7 +15,23 @@
  */
 
 import { db } from "../db";
-import { and, count, desc, eq, gte, inArray, isNull, lt, max, ne, or, sql, sum } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  max,
+  notInArray,
+  or,
+  sql,
+  sum,
+} from "drizzle-orm";
+import { NON_RECEIVABLE_INVOICE_STATUSES } from "../reporting/settlement";
+import { firmReceivablesAed, sumReceivables } from "./firm/receivables.service";
 import {
   bankTransactions,
   companies,
@@ -31,6 +47,9 @@ import {
 import { listAccessibleClientIds, resolveFirmContext, type FirmContext } from "./firm/scope";
 import { assignStaff, staffWorkloadInput } from "./firm/staff.service";
 
+import { isVatFilingRecorded } from "../../shared/vat-filing-status";
+import { activeVatReturnFilter, vatFilingOutstandingFilter } from "../tax/vat-filing-filter";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface ClientHealthInputs {
@@ -43,7 +62,8 @@ export interface ClientHealthInputs {
   /** Number of overdue invoices. */
   overdueInvoiceCount: number;
   /** Latest VAT return status, or null if none filed yet. */
-  vatStatus: "draft" | "pending_review" | "submitted" | "filed" | "amended" | null;
+  vatStatus: string | null;
+  vatReference?: string | null;
   /** Due date of latest VAT return, or null. */
   vatDueDate: Date | null;
   /** Receipts uploaded but not yet posted to GL. */
@@ -109,6 +129,7 @@ export interface ClientSnapshot {
   companyName: string;
   onboardingCompleted: boolean;
   vatStatus: ClientHealthInputs["vatStatus"];
+  vatReference?: string | null;
   vatDueDate: Date | null;
   overdueBalance: number;
   overdueInvoiceCount: number;
@@ -162,14 +183,13 @@ export function calculateHealthScore(inputs: ClientHealthInputs): ClientHealthSc
   else if (inputs.overdueBalance > 0) balancePenalty = 3;
   score -= balancePenalty;
 
-  // VAT status: filed = no penalty, submitted = no penalty, draft + overdue = -20,
-  // draft + due-soon (<=14 days) = -10, no return = -5.
+  // An open filing has a penalty when it is overdue or due within 14 days.
   let vatOnTime = true;
   let vatOverdue = false;
   if (inputs.vatStatus === null) {
     score -= 5;
     vatOnTime = false;
-  } else if (inputs.vatStatus !== "filed" && inputs.vatStatus !== "submitted") {
+  } else if (!isVatFilingRecorded(inputs.vatStatus, inputs.vatReference)) {
     if (inputs.vatDueDate) {
       const msUntilDue = inputs.vatDueDate.getTime() - now.getTime();
       const daysUntilDue = Math.floor(msUntilDue / (1000 * 60 * 60 * 24));
@@ -241,7 +261,10 @@ export function generateAlertsForClient(
   const alerts: AlertCandidate[] = [];
 
   // 1. VAT deadline approaching / overdue
-  if (snapshot.vatDueDate && snapshot.vatStatus !== "filed" && snapshot.vatStatus !== "submitted") {
+  if (
+    snapshot.vatDueDate &&
+    !isVatFilingRecorded(snapshot.vatStatus ?? "", snapshot.vatReference)
+  ) {
     const msUntilDue = snapshot.vatDueDate.getTime() - now.getTime();
     const daysUntilDue = Math.floor(msUntilDue / (1000 * 60 * 60 * 24));
     if (msUntilDue < 0) {
@@ -492,7 +515,7 @@ export function scopeBatchToAccessible(
  */
 export async function buildClientSnapshots(
   companyIds: string[],
-  now: Date = new Date()
+  _now: Date = new Date()
 ): Promise<ClientSnapshot[]> {
   if (companyIds.length === 0) return [];
 
@@ -505,24 +528,8 @@ export async function buildClientSnapshots(
     .from(companies)
     .where(inArray(companies.id, companyIds));
 
-  // Overdue invoices per company.
-  type OverdueRow = { companyId: string; balance: string | null; cnt: number };
-  const overdueRows = (await db
-    .select({
-      companyId: invoices.companyId,
-      balance: sum(invoices.total),
-      cnt: count(),
-    })
-    .from(invoices)
-    .where(
-      and(
-        inArray(invoices.companyId, companyIds),
-        or(eq(invoices.status, "sent"), eq(invoices.status, "partial")),
-        lt(invoices.dueDate, now)
-      )
-    )
-    .groupBy(invoices.companyId)) as OverdueRow[];
-  const overdueMap = new Map(overdueRows.map((r) => [r.companyId, r]));
+  // Overdue invoices per company: settlement rule, AED (partial payments, credit notes, FX).
+  const receivables = await firmReceivablesAed(companyIds);
 
   // Latest VAT return per company.
   const latestVatSub = db
@@ -531,19 +538,21 @@ export async function buildClientSnapshots(
       maxPeriodEnd: max(vatReturns.periodEnd).as("max_period_end"),
     })
     .from(vatReturns)
-    .where(inArray(vatReturns.companyId, companyIds))
+    .where(and(inArray(vatReturns.companyId, companyIds), activeVatReturnFilter))
     .groupBy(vatReturns.companyId)
     .as("latest_vat_phase6");
 
   type VatRow = {
     companyId: string;
     status: string;
+    ftaReferenceNumber: string | null;
     dueDate: Date;
   };
   const vatRows = (await db
     .select({
       companyId: vatReturns.companyId,
       status: vatReturns.status,
+      ftaReferenceNumber: vatReturns.ftaReferenceNumber,
       dueDate: vatReturns.dueDate,
     })
     .from(vatReturns)
@@ -551,7 +560,8 @@ export async function buildClientSnapshots(
       latestVatSub,
       and(
         eq(vatReturns.companyId, latestVatSub.companyId),
-        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd)
+        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd),
+        activeVatReturnFilter
       )
     )) as VatRow[];
   const vatMap = new Map(vatRows.map((r) => [r.companyId, r]));
@@ -598,16 +608,17 @@ export async function buildClientSnapshots(
   }
 
   return companyRows.map((c: { id: string; name: string; onboardingCompleted: boolean }) => {
-    const overdue = overdueMap.get(c.id);
+    const overdue = receivables.get(c.id);
     const vat = vatMap.get(c.id);
     return {
       companyId: c.id,
       companyName: c.name,
       onboardingCompleted: c.onboardingCompleted,
       vatStatus: (vat?.status as ClientSnapshot["vatStatus"]) ?? null,
+      vatReference: vat?.ftaReferenceNumber,
       vatDueDate: vat?.dueDate ?? null,
-      overdueBalance: Number(overdue?.balance ?? 0),
-      overdueInvoiceCount: Number(overdue?.cnt ?? 0),
+      overdueBalance: overdue?.overdue ?? 0,
+      overdueInvoiceCount: overdue?.overdueCount ?? 0,
       // Phase 6 doesn't yet model "missing documents" as a first-class concept;
       // we approximate by checking onboardingCompleted (Phase 5 builds the doc
       // chase queue separately). 0 here = no signal; UI can layer in document
@@ -651,25 +662,11 @@ export async function buildDashboardSummary(
       .select({ total: sum(invoices.total) })
       .from(invoices)
       .where(and(inArray(invoices.companyId, companyIds), eq(invoices.status, "paid"))),
-    db
-      .select({ total: sum(invoices.total) })
-      .from(invoices)
-      .where(
-        and(
-          inArray(invoices.companyId, companyIds),
-          or(eq(invoices.status, "sent"), eq(invoices.status, "partial"))
-        )
-      ),
+    firmReceivablesAed(companyIds),
     db
       .select({ liability: sum(vatReturns.box14PayableTax) })
       .from(vatReturns)
-      .where(
-        and(
-          inArray(vatReturns.companyId, companyIds),
-          ne(vatReturns.status, "filed"),
-          ne(vatReturns.status, "submitted")
-        )
-      ),
+      .where(and(inArray(vatReturns.companyId, companyIds), vatFilingOutstandingFilter)),
     db
       .select({ cnt: count() })
       .from(receipts)
@@ -677,14 +674,21 @@ export async function buildDashboardSummary(
     db
       .select({ cnt: count() })
       .from(invoices)
-      .where(and(inArray(invoices.companyId, companyIds), gte(invoices.createdAt, monthStart))),
+      .where(
+        and(
+          inArray(invoices.companyId, companyIds),
+          notInArray(invoices.status, [...NON_RECEIVABLE_INVOICE_STATUSES]),
+          sql`coalesce(${invoices.invoiceType}, 'invoice') <> 'credit_note'`,
+          gte(invoices.date, monthStart)
+        )
+      ),
   ]);
 
   return {
     totalClients: companyRows.length,
     activeClients: companyRows.filter((c: { isActive: boolean }) => c.isActive).length,
     totalRevenue: Number(revenueRow[0]?.total ?? 0),
-    totalOutstandingAr: Number(arRow[0]?.total ?? 0),
+    totalOutstandingAr: sumReceivables(arRow).open,
     totalVatLiability: Number(vatRow[0]?.liability ?? 0),
     receiptsProcessedThisMonth: Number(monthReceipts[0]?.cnt ?? 0),
     invoicesIssuedThisMonth: Number(monthInvoices[0]?.cnt ?? 0),
@@ -731,8 +735,10 @@ export async function fetchPeriodMetric(
       .where(
         and(
           inArray(invoices.companyId, companyIds),
-          gte(invoices.createdAt, range.start),
-          lt(invoices.createdAt, range.end)
+          notInArray(invoices.status, [...NON_RECEIVABLE_INVOICE_STATUSES]),
+          sql`coalesce(${invoices.invoiceType}, 'invoice') <> 'credit_note'`,
+          gte(invoices.date, range.start),
+          lt(invoices.date, range.end)
         )
       ),
   ]);
@@ -963,23 +969,27 @@ export async function resolveAccessibleClientIds(
  * health scores, and alert counts in one pass, applying caching when possible.
  */
 export async function buildFirmDashboard(
-  firmId: string,
-  firmRole: string | null,
+  userId: string,
+  companyIds: string[],
   options: { skipCache?: boolean } = {}
 ): Promise<{
   summary: FirmDashboardSummary;
   healthScores: ClientHealthScore[];
 }> {
   const cacheKey = "dashboard_summary";
+  // Scope may change while a per-user dashboard is still fresh.
+  const scope = [...companyIds].sort().join(",");
   if (!options.skipCache) {
     const cached = await readMetricsCache<{
+      scope: string;
       summary: FirmDashboardSummary;
       healthScores: ClientHealthScore[];
-    }>(firmId, cacheKey);
-    if (cached) return cached;
+    }>(userId, cacheKey);
+    if (cached?.scope === scope) {
+      return { summary: cached.summary, healthScores: cached.healthScores };
+    }
   }
 
-  const companyIds = await resolveAccessibleClientIds(firmId, firmRole);
   const [summary, snapshots] = await Promise.all([
     buildDashboardSummary(companyIds),
     buildClientSnapshots(companyIds),
@@ -993,6 +1003,7 @@ export async function buildFirmDashboard(
       overdueBalance: s.overdueBalance,
       overdueInvoiceCount: s.overdueInvoiceCount,
       vatStatus: s.vatStatus,
+      vatReference: s.vatReference,
       vatDueDate: s.vatDueDate,
       receiptBacklog: s.receiptBacklog,
       lastActivityAt: s.lastActivityAt,
@@ -1012,7 +1023,12 @@ export async function buildFirmDashboard(
       warning: sql<number>`sum(case when ${firmAlerts.severity} = 'warning' and ${firmAlerts.resolvedAt} is null then 1 else 0 end)`,
     })
     .from(firmAlerts)
-    .where(eq(firmAlerts.firmId, firmId));
+    .where(
+      and(
+        eq(firmAlerts.firmId, userId),
+        or(isNull(firmAlerts.companyId), inArray(firmAlerts.companyId, companyIds))
+      )
+    );
 
   const enrichedSummary: FirmDashboardSummary = {
     ...summary,
@@ -1023,7 +1039,7 @@ export async function buildFirmDashboard(
 
   const result = { summary: enrichedSummary, healthScores };
   if (!options.skipCache) {
-    await writeMetricsCache(firmId, cacheKey, result);
+    await writeMetricsCache(userId, cacheKey, { scope, ...result });
   }
   return result;
 }

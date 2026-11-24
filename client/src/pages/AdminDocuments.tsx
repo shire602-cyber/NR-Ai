@@ -3,6 +3,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { formatDate, parseCalendarDate } from "@/lib/format-date";
 import { PageHeader } from "@/components/ui/page-header";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { differenceInDays } from "date-fns";
@@ -132,11 +133,23 @@ export default function AdminDocuments() {
     reminderDays: 30,
   });
 
-  const { data: companies, isLoading: isLoadingCompanies } = useQuery<Company[]>({
+  const {
+    data: companies,
+    isLoading: isLoadingCompanies,
+    isError: companiesFailed,
+    error: companiesError,
+    refetch: refetchCompanies,
+  } = useQuery<Company[]>({
     queryKey: ["/api/admin/documents/companies"],
   });
 
-  const { data: documents, isLoading: isLoadingDocs } = useQuery<Document[]>({
+  const {
+    data: documents,
+    isLoading: isLoadingDocs,
+    isError: docsFailed,
+    error: docsError,
+    refetch: refetchDocs,
+  } = useQuery<Document[]>({
     queryKey: ["/api/companies", selectedCompanyId, "documents"],
     enabled: !!selectedCompanyId,
   });
@@ -350,7 +363,11 @@ export default function AdminDocuments() {
         </CardHeader>
         <CardContent>
           <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
-            <SelectTrigger className="w-full md:w-[400px]" data-testid="select-client-company">
+            <SelectTrigger
+              className="w-full md:w-[400px]"
+              aria-label={t["pages.selectClient"]}
+              data-testid="select-client-company"
+            >
               <SelectValue placeholder={t["adminDocuments.selectAClientCompany"]} />
             </SelectTrigger>
             <SelectContent>
@@ -361,7 +378,7 @@ export default function AdminDocuments() {
                     <span>{company.name}</span>
                     {company.trnNumber && (
                       <span className="text-muted-foreground text-xs">
-                        (TRN: {company.trnNumber})
+                        ({t["forms.preview.trnShort"]}: <bdi>{company.trnNumber}</bdi>)
                       </span>
                     )}
                   </div>
@@ -369,7 +386,14 @@ export default function AdminDocuments() {
               ))}
             </SelectContent>
           </Select>
-          {!isLoadingCompanies && (companies?.length ?? 0) === 0 && (
+          {companiesFailed && (
+            <LoadErrorState
+              error={companiesError}
+              onRetry={() => void refetchCompanies()}
+              testId="admin-documents-companies-error"
+            />
+          )}
+          {!isLoadingCompanies && !companiesFailed && (companies?.length ?? 0) === 0 && (
             <p
               className="mt-3 text-sm text-muted-foreground"
               data-testid="text-no-writable-clients"
@@ -456,7 +480,11 @@ export default function AdminDocuments() {
                   />
                 </div>
                 <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                  <SelectTrigger className="w-[200px]" data-testid="select-category-filter">
+                  <SelectTrigger
+                    className="w-[200px]"
+                    aria-label={t["pages.category"]}
+                    data-testid="select-category-filter"
+                  >
                     <Filter className="w-4 h-4 me-2" />
                     <SelectValue placeholder={t["adminDocuments.filterByCategory"]} />
                   </SelectTrigger>
@@ -480,6 +508,12 @@ export default function AdminDocuments() {
                     <Skeleton key={i} className="h-16" />
                   ))}
                 </div>
+              ) : docsFailed ? (
+                <LoadErrorState
+                  error={docsError}
+                  onRetry={() => void refetchDocs()}
+                  testId="admin-documents-list-error"
+                />
               ) : filteredDocuments.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -652,7 +686,11 @@ export default function AdminDocuments() {
                   value={newDocument.category}
                   onValueChange={(value) => setNewDocument({ ...newDocument, category: value })}
                 >
-                  <SelectTrigger data-testid="select-document-category">
+                  <SelectTrigger
+                    aria-label={t["adminConsole.docCategory"]}
+                    id="category"
+                    data-testid="select-document-category"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

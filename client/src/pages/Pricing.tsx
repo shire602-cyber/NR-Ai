@@ -38,7 +38,7 @@ import {
   type PlanId,
 } from "@/components/marketing/plans";
 import { formatAmountDigits, formatMoneyText } from "@/lib/format-money";
-import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
+import { planContactHref } from "@/lib/planContact";
 
 /*
  * /pricing (WP-B, spec 3.1): the same header, section heading, card and closing band as the
@@ -144,7 +144,7 @@ function CompareTable({ cycle }: { cycle: BillingCycle }) {
               <PriceShort id={plan.id} cycle={cycle} />
               {plan.cta === "contact" ? (
                 <Button asChild variant="outline" size="sm">
-                  <a href={`mailto:${UPGRADE_CONTACT_EMAIL}?subject=Muhasib.ai%20Enterprise`}>
+                  <a href={planContactHref(t[planNameKey(plan.id)])}>
                     {t["marketing.pricingTalkToUs"]}
                   </a>
                 </Button>

@@ -14,7 +14,6 @@ import { createLogger } from "../config/logger";
 
 const log = createLogger("auth-tokens");
 
-const RESET_TOKEN_TTL_HOURS = 24;
 const VERIFY_TOKEN_TTL_HOURS = 24 * 7;
 
 export function hashToken(token: string): string {
@@ -68,30 +67,6 @@ export async function purgeExpiredBlacklistEntries(): Promise<number> {
 }
 
 // ─────────────────────── Password reset tokens ───────────────────────
-
-export async function createPasswordResetToken(userId: string): Promise<string> {
-  const token = generateRandomToken();
-  const tokenHash = hashToken(token);
-  const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_HOURS * 60 * 60 * 1000);
-  await db.insert(passwordResetTokens).values({ userId, tokenHash, expiresAt });
-  return token;
-}
-
-export async function consumePasswordResetToken(token: string): Promise<string | null> {
-  const tokenHash = hashToken(token);
-  const [row] = await db
-    .select()
-    .from(passwordResetTokens)
-    .where(eq(passwordResetTokens.tokenHash, tokenHash));
-  if (!row) return null;
-  if (row.expiresAt.getTime() < Date.now()) {
-    await db.delete(passwordResetTokens).where(eq(passwordResetTokens.id, row.id));
-    return null;
-  }
-  // Single-use: delete on consumption.
-  await db.delete(passwordResetTokens).where(eq(passwordResetTokens.id, row.id));
-  return row.userId;
-}
 
 export async function purgeExpiredPasswordResetTokens(): Promise<number> {
   try {

@@ -1,3 +1,4 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -20,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { apiRequest } from "@/lib/queryClient";
+import { portalQuery } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { DateText } from "@/components/documents/DateText";
 
@@ -43,19 +44,17 @@ interface PortalDocumentRow {
  * documents shared with the accountant. Content width 960, centred.
  */
 export default function PortalDashboard() {
+  const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const { data, isLoading } = useQuery({
-    queryKey: ["portal-dashboard"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/dashboard"),
+    ...portalQuery("/api/client-portal/dashboard", supplier),
   });
   const { data: documents = [] } = useQuery<PortalDocumentRow[]>({
-    queryKey: ["portal-documents"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/documents"),
+    ...portalQuery("/api/client-portal/documents", supplier),
   });
 
   const { data: company } = useQuery<{ name?: string }>({
-    queryKey: ["portal-company"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/company"),
+    ...portalQuery("/api/client-portal/company", supplier),
     staleTime: 5 * 60 * 1000,
   });
   const [welcome, setWelcome] = useState(() => {
@@ -129,7 +128,10 @@ export default function PortalDashboard() {
             <T k="portal.doc.recentInvoices" />
           </CardTitle>
           {recentInvoices.length > 0 && (
-            <Link href="/client-portal/invoices" className="text-small font-medium text-accent">
+            <Link
+              href="/client-portal/invoices"
+              className="inline-flex min-h-11 items-center text-small font-medium text-accent"
+            >
               <T k="portal.doc.viewAll" />
             </Link>
           )}
@@ -137,6 +139,7 @@ export default function PortalDashboard() {
         <CardContent className="p-0">
           {!isLoading && recentInvoices.length === 0 ? (
             <EmptyState
+              headingLevel="h2"
               icon={FileText}
               title={t["portal.doc.noInvoicesTitle"]}
               description={t["portal.doc.noInvoicesBody"]}
@@ -193,7 +196,10 @@ export default function PortalDashboard() {
             <T k="portal.doc.recentDocuments" />
           </CardTitle>
           {documents.length > 0 && (
-            <Link href="/client-portal/documents" className="text-small font-medium text-accent">
+            <Link
+              href="/client-portal/documents"
+              className="inline-flex min-h-11 items-center text-small font-medium text-accent"
+            >
               <T k="portal.doc.viewAll" />
             </Link>
           )}
@@ -201,7 +207,8 @@ export default function PortalDashboard() {
         <CardContent className={documents.length ? "p-0" : undefined}>
           {documents.length === 0 ? (
             <EmptyState
-              size="sm"
+              compact
+              headingLevel="h2"
               icon={FolderOpen}
               title={t["portal.doc.noDocumentsTitle"]}
               description={t["portal.doc.documentsHint"]}

@@ -58,15 +58,16 @@ async function issuedInvoice(t: Tenant, body: Record<string, unknown>) {
   return r.body as { id: string; number: string };
 }
 
-async function postedRevenueCodes(t: Tenant, invoiceId: string) {
-  const rows = await h.sql<{ code: string }>(
-    `SELECT a.code FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+async function postedRevenueCredits(t: Tenant, invoiceId: string) {
+  return h.sql<{ code: string; credit: string }>(
+    `SELECT a.code, SUM(jl.credit)::text AS credit
+       FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
        JOIN accounts a ON a.id = jl.account_id
-      WHERE je.source = 'invoice' AND je.source_id = $1 AND a.type = 'income' AND jl.credit > 0
-      ORDER BY a.code`,
-    [invoiceId]
+      WHERE je.company_id = $1 AND je.source = 'invoice' AND je.source_id = $2
+        AND je.status = 'posted' AND a.type = 'income' AND jl.credit > 0
+      GROUP BY a.code ORDER BY a.code`,
+    [t.company.id, invoiceId]
   );
-  return rows.map((r) => r.code);
 }
 
 describe("[J1-D1] payments land on the real bank account", () => {
@@ -425,7 +426,7 @@ describe("[J1-D7] VAT 201 for a period that has not ended", () => {
 });
 
 describe("[J1-L1] service lines post to service revenue", () => {
-  it("a line linked to a service product credits 4020, a free-text line 4010", async () => {
+  it("service products and free-text lines credit 4020, while goods credit 4010", async () => {
     const t = await h.createTenant({
       name: "LaylaSvc",
       companyColumns: { trn_vat_number: TRN, emirate: "dubai" },
@@ -435,13 +436,28 @@ describe("[J1-L1] service lines post to service revenue", () => {
        VALUES ($1, 'Consulting Services', 500, 0.05, 'service', false) RETURNING id`,
       [t.company.id]
     );
+    const [goods] = await h.sql<{ id: string }>(
+      `INSERT INTO products (company_id, name, unit_price, vat_rate, product_type, track_inventory)
+       VALUES ($1, 'Printed brochure', 100, 0.05, 'inventory', false) RETURNING id`,
+      [t.company.id]
+    );
     const inv = await issuedInvoice(t, {
       lines: [
         { description: "Consulting", quantity: 2, unitPrice: 500, vatRate: 5, productId: svc.id },
-        { description: "Printed brochure", quantity: 1, unitPrice: 100, vatRate: 5 },
+        { description: "Installation", quantity: 1, unitPrice: 250, vatRate: 5 },
+        {
+          description: "Printed brochure",
+          quantity: 1,
+          unitPrice: 100,
+          vatRate: 5,
+          productId: goods.id,
+        },
       ],
     });
-    expect(await postedRevenueCodes(t, inv.id)).toEqual(["4010", "4020"]);
+    expect(await postedRevenueCredits(t, inv.id)).toEqual([
+      { code: "4010", credit: "100.00" },
+      { code: "4020", credit: "1250.00" },
+    ]);
     const credit = await t.as.post(`${base(t)}/invoices/${inv.id}/credit-note`, {});
     expect(credit.status, credit.text).toBeLessThan(300);
     const net = await h.sql<{ code: string; net: string }>(

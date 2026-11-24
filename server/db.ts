@@ -1,10 +1,12 @@
 // ✅ Must come first before any usage of process.env
 import "dotenv/config";
+import "./config/pin-timezone";
 
 import { sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { Pool as PgPool } from "pg";
 import * as schema from "@shared/schema";
+import { databaseSessionOptions } from "./config/database-time";
 import { createLogger } from "./config/logger";
 import { errorCode, errorMessage, errorProperty } from "./errors";
 
@@ -27,13 +29,14 @@ function envInt(name: string, fallback: number): number {
 }
 
 const POOL_CONFIG = {
-  max: envInt("DB_POOL_MAX", 10),
-  min: envInt("DB_POOL_MIN", 1),
+  max: envInt("DB_POOL_MAX", process.env.VERCEL === "1" ? 2 : 10),
+  min: envInt("DB_POOL_MIN", process.env.VERCEL === "1" ? 0 : 1),
   idleTimeoutMillis: envInt("DB_POOL_IDLE_MS", 30_000),
   connectionTimeoutMillis: envInt("DB_POOL_CONN_MS", 10_000),
   // pg also honours `statement_timeout` per-connection; expose via env for
   // long-running analytical queries that should be killed to protect the pool.
   statement_timeout: envInt("DB_STATEMENT_TIMEOUT_MS", 30_000),
+  ...databaseSessionOptions,
 };
 
 // Both drivers expose the node-postgres Pool / Drizzle API surface the app uses;
@@ -51,6 +54,7 @@ if (isNeon) {
   const { drizzle: neonDrizzle } = await import("drizzle-orm/neon-serverless");
   const ws = await import("ws");
   neonConfig.webSocketConstructor = ws.default;
+  neonConfig.poolQueryViaFetch = false;
   const neonPool = new NeonPool({ connectionString: DATABASE_URL, ...POOL_CONFIG });
   pool = neonPool as unknown as PgPool;
   db = neonDrizzle({ client: neonPool, schema }) as unknown as AppDatabase;
@@ -67,6 +71,10 @@ if (isNeon) {
   db = pgDrizzle({ client: pool, schema });
   _driver = "pg";
 }
+// Prevent unhandled 'error' events from crashing the process on idle clients.
+pool.on("error", (err: Error) => {
+  log.error({ err: err.message }, "Unexpected pool client error");
+});
 
 /** Rows of a raw `db.execute` result (node-postgres QueryResult or a bare row array). */
 export function rowsFromResult<T extends QueryRow = QueryRow>(result: unknown): T[] {
@@ -196,13 +204,79 @@ export async function runMigrations(migrationsFolder: string): Promise<void> {
   }
 }
 
+// Use the same expressions for DDL and comparison with PostgreSQL's catalog deparser.
+const vatGroupAuditMembershipExpression = `CASE
+    WHEN octet_length(details) <= 2048 THEN string_to_array(lower(details), '"'::text)
+    ELSE regexp_split_to_array(lower(details), '"|[^"]{37,}'::text)
+END`;
+const vatGroupAuditMembershipPredicate =
+  "resource_type = 'vat_group'::text AND action = 'vat.group.upsert'::text";
+
+async function ensureVatGroupAuditMembershipIndex(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    // Indexing older histories can take longer than the normal request deadline.
+    await client.query("SELECT set_config('statement_timeout', $1, false)", [
+      String(Math.max(POOL_CONFIG.statement_timeout, 300_000)),
+    ]);
+    // Serialize release runners while checking for and repairing an interrupted build.
+    await client.query(
+      "SELECT pg_advisory_lock(hashtextextended('schema:idx_audit_logs_vat_group_member_ids', 0))"
+    );
+    const {
+      rows: [index],
+    } = await client.query<{
+      indisvalid: boolean;
+      on_audit_logs: boolean;
+      expected_key_type: boolean;
+      expression: string | null;
+      predicate: string | null;
+    }>(
+      `SELECT i.indisvalid, i.indrelid = 'public.audit_logs'::regclass AS on_audit_logs,
+              (am.amname = 'gin' AND i.indnkeyatts = 1 AND i.indnatts = 1
+                AND i.indcollation[0] = 'pg_catalog."default"'::regcollation
+                AND opc.opcnamespace = 'pg_catalog'::regnamespace
+                AND opc.opcname = 'array_ops') AS expected_key_type,
+              pg_get_expr(i.indexprs, i.indrelid, true) AS expression,
+              pg_get_expr(i.indpred, i.indrelid, true) AS predicate
+         FROM pg_index i
+         JOIN pg_class c ON c.oid = i.indexrelid
+         JOIN pg_am am ON am.oid = c.relam
+         JOIN pg_opclass opc ON opc.oid = i.indclass[0]
+        WHERE i.indexrelid = to_regclass('public.idx_audit_logs_vat_group_member_ids')`
+    );
+    const normalize = (value: string | null) => value?.replace(/\s+/g, " ").trim();
+    const definitionMatches =
+      index?.expected_key_type &&
+      normalize(index.expression) === normalize(vatGroupAuditMembershipExpression) &&
+      normalize(index.predicate) === vatGroupAuditMembershipPredicate;
+    if (index && (!index.on_audit_logs || (index.indisvalid && !definitionMatches))) {
+      throw new Error("Unexpected index definition for idx_audit_logs_vat_group_member_ids");
+    }
+    if (index?.indisvalid) return;
+    if (index) {
+      await client.query("DROP INDEX CONCURRENTLY public.idx_audit_logs_vat_group_member_ids");
+    }
+    // Limit index keys for oversized payloads, including malformed legacy audit text.
+    await client.query(`
+      CREATE INDEX CONCURRENTLY idx_audit_logs_vat_group_member_ids
+        ON public.audit_logs USING gin ((${vatGroupAuditMembershipExpression}))
+        WHERE ${vatGroupAuditMembershipPredicate}
+    `);
+  } finally {
+    // Closing the dedicated connection releases the session lock even if the build fails.
+    client.release(true);
+  }
+}
+
 /**
  * Belt-and-suspenders schema guard: ensures critical columns exist regardless
- * of Drizzle migration tracking state. Every statement uses IF NOT EXISTS so
- * it is always safe to re-run. Covers migrations 0003-0020 which may have
- * been tracked-but-not-executed in the production database.
+ * of Drizzle migration tracking state. The steps are safe to rerun. The release
+ * path also requires the VAT-group audit index to be ready.
  */
-export async function ensureCriticalSchema(): Promise<void> {
+export async function ensureCriticalSchema({
+  requireVatGroupAuditMembershipIndex = false,
+}: { requireVatGroupAuditMembershipIndex?: boolean } = {}): Promise<void> {
   const schemaSteps: Array<{ name: string; sql: ReturnType<typeof sql> }> = [
     // ── 0003: invoice share token ────────────────────────────────────────
     {
@@ -1296,6 +1370,17 @@ export async function ensureCriticalSchema(): Promise<void> {
       failed++;
     }
   }
+  try {
+    await ensureVatGroupAuditMembershipIndex();
+    ok++;
+  } catch (err: unknown) {
+    failed++;
+    log.error(
+      { step: "audit_logs.vat_group_member_ids index", err: errorMessage(err) },
+      "Schema guard step failed"
+    );
+    if (requireVatGroupAuditMembershipIndex) throw err;
+  }
   log.info({ ok, failed, mode: "schema-only" }, "Critical schema guard completed");
 }
 
@@ -1340,7 +1425,17 @@ export function getPoolStats(): {
 /** Drain and close the pool. Bounded by `timeoutMs` so shutdown is never stuck. */
 export async function closePool(timeoutMs = 10_000): Promise<void> {
   if (!pool?.end) return;
-  await Promise.race([pool.end(), new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      pool.end(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export { pool, db };

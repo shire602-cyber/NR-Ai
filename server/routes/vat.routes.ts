@@ -9,7 +9,8 @@ import { isNraFirmRole } from "../../shared/access";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { assertReportAccess, deprecate } from "../reporting/http";
+import { readRange } from "../reporting";
 import { recordAudit } from "../services/audit.service";
 import {
   addVatWorkpaperRow,
@@ -51,6 +52,7 @@ import {
   vatWorkpaperStatusBody,
 } from "../../shared/validators/vat";
 import { computeVat201 } from "../tax/vat-engine";
+import { vatBox1Total } from "../tax/vat-boxes";
 import {
   getVatReturnSettlement,
   reverseVatReturnSettlement,
@@ -58,11 +60,9 @@ import {
 } from "../tax/vat-settlement.service";
 import {
   amendVatReturn,
-  assertReconciledOrOverridden,
   generateVatReturn,
   markVatReturnReady,
-  postReturnApportionment,
-  vatReturnMachine,
+  submitVatReturn,
 } from "../tax/vat-returns.service";
 import {
   addReturnAdjustment,
@@ -81,7 +81,6 @@ import {
   upsertRecoveryRule,
 } from "../tax/vat-recovery";
 import { parseIsoDate } from "../tax/vat-periods";
-import { todayIso } from "../ledger/normalize";
 import { sendTabular } from "../reporting/http";
 import {
   prepareVat201ForExport,
@@ -553,26 +552,68 @@ export function registerVATRoutes(app: Express) {
 
   // Preview of the VAT 201 for any range (reports-grade: blocking issues are returned, not
   // thrown). Generation is stricter (aligned period, TRN, emirate per supply).
+  const vatPreview = asyncHandler(async (req: Request, res: Response) => {
+    const { companyId } = req.params;
+    if (!(await requireCompanyAccess(req, res, companyId))) return;
+    const { from, to } = readPeriod(req.query as Record<string, unknown>);
+    const c = await computeVat201({ companyId, from, to, allowIncomplete: true });
+    res.json({
+      engineVersion: c.engineVersion,
+      period: c.period,
+      boxes: c.boxes,
+      issues: c.issues,
+      complete: c.complete,
+      excluded: c.excluded,
+      counts: c.counts,
+      partialExemption: c.partialExemption,
+      reconciliation: c.reconciliation,
+      group: c.group,
+      contributions: req.query.detail === "true" ? c.contributions : undefined,
+    });
+  });
+  app.get("/api/companies/:companyId/vat/compute", authMiddleware, vatPreview);
   app.get(
-    "/api/companies/:companyId/vat/compute",
+    "/api/companies/:companyId/reports/vat-return",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      if (!(await requireCompanyAccess(req, res, companyId))) return;
-      const { from, to } = readPeriod(req.query as Record<string, unknown>);
-      const c = await computeVat201({ companyId, from, to, allowIncomplete: true });
+      deprecate(res, `/api/companies/${companyId}/vat/compute`);
+      const q = req.query as Record<string, string | undefined>;
+      const fromQ = q.from ?? q.startDate ?? q.periodStart;
+      const toQ = q.to ?? q.endDate ?? q.periodEnd;
+      if (!fromQ || !toQ) {
+        return res.status(400).json({
+          message: "from and to date params are required (YYYY-MM-DD)",
+          code: "REPORT_RANGE_REQUIRED",
+        });
+      }
+      const range = readRange({ from: fromQ, to: toQ });
+      await assertReportAccess(req, companyId);
+      const c = await computeVat201({
+        companyId,
+        from: range.from!,
+        to: range.to,
+        allowIncomplete: true,
+      });
+      const b = c.boxes;
+      const standard = vatBox1Total(c.boxesFils, "Amount");
       res.json({
+        period: { from: range.from, to: range.to },
         engineVersion: c.engineVersion,
-        period: c.period,
-        boxes: c.boxes,
+        box1_standardRatedSupplies: standard,
+        box2_zeroRatedSupplies: b.box4ZeroRatedAmount,
+        box3_exemptSupplies: b.box5ExemptAmount,
+        box4_totalSupplies:
+          Math.round((standard + b.box4ZeroRatedAmount + b.box5ExemptAmount) * 100) / 100,
+        box5_outputVat: b.box12TotalDueTax,
+        box6_standardRatedExpenses: b.box9ExpensesAmount,
+        box7_inputVatRecoverable: b.box13RecoverableTax,
+        box8_netVatDue: b.box14PayableTax,
+        boxes: b,
         issues: c.issues,
         complete: c.complete,
-        excluded: c.excluded,
-        counts: c.counts,
-        partialExemption: c.partialExemption,
+        excluded: { outOfScopeAmount: c.excluded.outOfScopeFils / 100 },
         reconciliation: c.reconciliation,
-        group: c.group,
-        contributions: req.query.detail === "true" ? c.contributions : undefined,
       });
     })
   );
@@ -696,6 +737,7 @@ export function registerVATRoutes(app: Express) {
       const body = parsedBody<Body<typeof markVatReturnReadyBody>>(req);
       const updated = await markVatReturnReady({
         id: access.existing.id,
+        companyId: access.existing.companyId,
         userId: access.userId,
         overrideReason: body.overrideReason ?? null,
         req,
@@ -703,9 +745,6 @@ export function registerVATRoutes(app: Express) {
       res.json(updated);
     })
   );
-
-  /** A stored period boundary (UTC end-of-day timestamp) as YYYY-MM-DD. */
-  const isoDateOf = (d: unknown) => new Date(d as string).toISOString().slice(0, 10);
 
   // Submit VAT return. Never transmits anything to the FTA.
   app.post(
@@ -716,78 +755,17 @@ export function registerVATRoutes(app: Express) {
       const access = await requireReturnAccess(req, res);
       if (!access) return;
       const { existing, userId } = access;
+      await assertCompanyPermission(req, existing.companyId, "tax.submit");
       const body = parsedBody<Body<typeof submitVatReturnBody>>(req);
-      const reference = body.ftaReferenceNumber?.trim() ? body.ftaReferenceNumber.trim() : null;
-      const target = reference ? "filed" : "submitted";
-      if (!vatReturnMachine.can(existing.status, target) && existing.status !== target) {
-        throw new DomainError("INVALID_TRANSITION", 409, { from: existing.status, to: target });
-      }
-      // E2 (J3-r2): the EmaraTax filing date. Only with a reference; never in the future and
-      // never before the tax period has ended (EmaraTax opens the return after the period).
-      const filedOn = body.filedOn ?? null;
-      if (filedOn) {
-        const periodEndIso = isoDateOf(existing.periodEnd);
-        if (!reference) {
-          throw new DomainError(
-            "VALIDATION_ERROR",
-            400,
-            { fields: { ftaReferenceNumber: ["Enter the EmaraTax reference number"] } },
-            "A filing date needs the EmaraTax reference number"
-          );
-        }
-        if (filedOn > todayIso()) {
-          throw new DomainError(
-            "VAT_FILED_ON_FUTURE",
-            422,
-            { fields: { filedOn: ["The filing date cannot be in the future"] } },
-            "The filing date cannot be in the future"
-          );
-        }
-        if (filedOn <= periodEndIso) {
-          throw new DomainError(
-            "VAT_FILED_ON_IN_PERIOD",
-            422,
-            { periodEnd: periodEndIso, fields: { filedOn: ["File after the tax period ends"] } },
-            "A VAT return is filed after its tax period ends"
-          );
-        }
-      }
-      // Submitting the return finalises the VAT settlement against periodEnd.
-      await assertPeriodNotLocked(existing.companyId, existing.periodEnd);
-      // A1 (C6): irrecoverable input VAT (partial exemption) is in the GL before the return is final.
-      if (existing.status !== "submitted") await postReturnApportionment(existing, userId);
-      // The same reconciliation gate as "ready" applies when a draft is submitted directly.
-      if (existing.status !== "ready" && existing.status !== "submitted") {
-        await assertReconciledOrOverridden({
-          vatReturn: existing,
-          userId,
-          overrideReason: body.reconciliationOverrideReason ?? null,
-          req,
-        });
-      }
-
-      const vatReturn = await storage.updateVatReturn(existing.id, {
-        status: target,
-        notes: body.notes ?? existing.notes ?? null,
-        ftaReferenceNumber: reference,
-        submittedBy: userId,
-        submittedAt: filedOn ? new Date(`${filedOn}T08:00:00Z`) : new Date(),
-        // D2 (N13): the filing date the user stated (the VAT 201 declaration date); the
-        // settlement of the filed return cannot predate it.
-        ...(filedOn ? { declarationDate: new Date(`${filedOn}T08:00:00Z`) } : {}),
-        declarantName: body.declarantName ?? existing.declarantName ?? null,
-        declarantPosition: body.declarantPosition ?? existing.declarantPosition ?? null,
-      });
-      await recordAudit({
-        userId,
+      const vatReturn = await submitVatReturn({
+        ...body,
+        id: existing.id,
         companyId: existing.companyId,
-        action: `vat_return.${target}`,
-        entityType: "vat_return",
-        entityId: existing.id,
-        before: { status: existing.status },
-        after: { status: target, ftaReferenceNumber: reference },
+        userId,
+        overrideReason: body.reconciliationOverrideReason,
         req,
       });
+      const reference = vatReturn.ftaReferenceNumber;
 
       res.json({
         ...vatReturn,
@@ -795,8 +773,8 @@ export function registerVATRoutes(app: Express) {
           transmittedByMuhasib: false,
           channel: reference ? "manual-emaratax" : "none",
           message: reference
-            ? `Recorded as filed with FTA reference ${reference}. Muhasib did not transmit this return; this is your record of a filing you made through the official channel.`
-            : "Finalised for review. Muhasib does NOT file with the FTA — you must still submit this return through EmaraTax, then record the FTA reference number here.",
+            ? "Filing recorded with the EmaraTax reference you entered."
+            : "Ready to file. Submit your return in EmaraTax, then record the FTA reference number here.",
         },
       });
     })
@@ -814,6 +792,7 @@ export function registerVATRoutes(app: Express) {
       const body = parsedBody<Body<typeof amendVatReturnBody>>(req);
       const result = await amendVatReturn({
         id: access.existing.id,
+        companyId: access.existing.companyId,
         userId: access.userId,
         reason: body.reason,
         req,
@@ -890,13 +869,23 @@ export function registerVATRoutes(app: Express) {
       const access = await requireReturnAccess(req, res);
       if (!access) return;
       const body = parsedBody<Body<typeof patchVatReturnBody>>(req);
-      const vatReturn = await storage.updateVatReturn(access.existing.id, {
-        ...(body.notes !== undefined ? { notes: body.notes } : {}),
-        ...(body.declarantName !== undefined ? { declarantName: body.declarantName } : {}),
-        ...(body.declarantPosition !== undefined
-          ? { declarantPosition: body.declarantPosition }
-          : {}),
-      });
+      const { existing } = access;
+      if (!["draft", "pending_review", "ready", "submitted"].includes(existing.status)) {
+        throw new DomainError("INVALID_TRANSITION", 409);
+      }
+      const vatReturn = await storage.updateUnfiledVatReturn(
+        existing.companyId,
+        existing.id,
+        existing.status,
+        {
+          ...(body.notes !== undefined ? { notes: body.notes } : {}),
+          ...(body.declarantName !== undefined ? { declarantName: body.declarantName } : {}),
+          ...(body.declarantPosition !== undefined
+            ? { declarantPosition: body.declarantPosition }
+            : {}),
+        }
+      );
+      if (!vatReturn) throw new DomainError("INVALID_TRANSITION", 409);
       res.json(vatReturn);
     })
   );

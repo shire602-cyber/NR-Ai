@@ -178,7 +178,7 @@
   "dashboard.cashIn": "Cash in",
   "dashboard.cashOut": "Cash out",
   "dashboard.bankVsGlTitle": "Bank statement against the ledger",
-  "dashboard.bankVsGlNoAccounts": "No bank account is linked yet. Add one in Banking to compare statements with the ledger.",
+  "dashboard.bankVsGlNoAccounts": "Add a bank account in Banking to compare statements with the ledger.",
   "dashboard.bankColStatement": "Statement",
   "dashboard.bankColLedger": "Ledger",
   "dashboard.bankColDifference": "Difference",

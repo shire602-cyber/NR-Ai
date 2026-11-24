@@ -80,29 +80,31 @@ function translateCell(value: unknown, key: string, dict: Record<string, string>
     if (mapped.some((part, i) => part !== parts[i])) return mapped.join("، ");
   }
   // Machine dates inside text ("2026-11", "2026-11-01 to 2026-11-30") read as Arabic dates.
-  return formatEmbeddedDates(value, "ar");
+  return formatEmbeddedDates(value, "ar", { plain: true });
 }
 
 /**
  * Localise workbook sheets for `locale`. English sheets pass through unchanged; Arabic sheets get
- * Arabic names, headings, labels and codes, plus `rtl: true`. `dict` is the English → Arabic
- * label table (`EXPORT_AR`).
+ * Arabic names, headings, labels and codes, plus `rtl: true`. Heading-only labels never
+ * apply to row values, which can contain tenant-entered strings.
  */
 export function localizeExportSheetsWith(
   sheets: ExportData[],
   locale: ExportLocale,
-  dict: Record<string, string>
+  dict: Record<string, string>,
+  headings: Record<string, string> = {}
 ): ExportData[] {
   if (locale !== "ar") return sheets;
+  const headingLabels = { ...dict, ...headings };
   return sheets.map((sheet) => ({
     ...sheet,
     rtl: true,
     sheetName: sheet.sheetName
-      ? (translateLabel(sheet.sheetName, dict) ?? sheet.sheetName).slice(0, SHEET_NAME_MAX)
+      ? (translateLabel(sheet.sheetName, headingLabels) ?? sheet.sheetName).slice(0, SHEET_NAME_MAX)
       : sheet.sheetName,
     columns: sheet.columns.map((column) => ({
       ...column,
-      header: translateLabel(column.header, dict) ?? column.header,
+      header: translateLabel(column.header, headingLabels) ?? column.header,
     })),
     rows: sheet.rows.map((row) => {
       const out: Record<string, unknown> = {};
@@ -115,9 +117,13 @@ export function localizeExportSheetsWith(
 /** `localizeExportSheetsWith` for the current user's language; loads the Arabic table on demand. */
 export async function localizeExportSheets(
   sheets: ExportData[],
-  locale: ExportLocale = currentExportLocale()
+  locale: ExportLocale = currentExportLocale(),
+  reportPack = false
 ): Promise<ExportData[]> {
   if (locale !== "ar") return sheets;
-  const { EXPORT_AR } = await import("./export-ar");
-  return localizeExportSheetsWith(sheets, locale, EXPORT_AR);
+  const [{ EXPORT_AR }, pack] = await Promise.all([
+    import("./export-ar"),
+    reportPack ? import("./export-ar-pack") : undefined,
+  ]);
+  return localizeExportSheetsWith(sheets, locale, EXPORT_AR, pack?.EXPORT_AR_PACK_HEADINGS);
 }

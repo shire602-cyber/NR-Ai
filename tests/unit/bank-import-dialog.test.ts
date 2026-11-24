@@ -8,7 +8,9 @@ import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { clearAuthHint, setAuthHint } from "../../client/src/lib/authHint";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
+import { click, pickOption } from "./helpers/form-harness";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -33,6 +35,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  setAuthHint();
   window.history.pushState({}, "", "/bank-reconciliation?import=1");
   vi.stubGlobal(
     "fetch",
@@ -62,6 +65,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  clearAuthHint();
   act(() => root.unmount());
   container.remove();
   document.body.innerHTML = "";
@@ -91,6 +95,62 @@ async function mountPage(locale: "en" | "ar") {
 }
 
 const dialog = () => document.querySelector('[role="dialog"]') as HTMLElement | null;
+const action = () =>
+  dialog()!.querySelector<HTMLButtonElement>('[data-testid="button-confirm-import"]')!;
+const mapper = () => dialog()!.querySelector('[data-testid="panel-statement-mapper"]');
+
+async function chooseStatement(body: string, name = "statement.csv") {
+  const input = dialog()!.querySelector<HTMLInputElement>(
+    '[data-testid="input-bank-statement-file"]'
+  )!;
+  const file = new File([body], name, { type: "text/csv" });
+  Object.defineProperty(file, "arrayBuffer", {
+    value: async () => new TextEncoder().encode(body).buffer,
+  });
+  Object.defineProperty(input, "files", { configurable: true, value: [file] });
+  await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+}
+
+function recordStatementRequests() {
+  const previews: Array<{ payload: unknown; respond: (value: Response) => void }> = [];
+  const imports: unknown[] = [];
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/bank-statements/preview")) {
+      return new Promise<Response>((respond) =>
+        previews.push({ payload: JSON.parse(String(init?.body)), respond })
+      );
+    }
+    if (url.endsWith("/bank-statements/import")) {
+      imports.push(JSON.parse(String(init?.body)));
+      return json({ imported: 1 });
+    }
+    return original(input, init);
+  });
+  return { previews, imports };
+}
+
+function previewResponse(description: string, requiresChoice = false) {
+  return json({
+    kind: "csv",
+    detectedFormat: "generic",
+    decimalSeparator: ".",
+    dateOrder: requiresChoice ? "DMY" : "YMD",
+    headers: [],
+    mapping: {},
+    totalRows: 1,
+    validRows: 1,
+    errorRows: 0,
+    sampleRows: [{ rowIndex: 1, date: "2026-11-13", description, debit: 0, credit: 0, errors: [] }],
+    warnings: [],
+    requiresChoice,
+  });
+}
+
+async function selectImportAccount() {
+  await pickOption(dialog()!.querySelector('[data-testid="select-import-bank-account"]'), /الحساب/);
+}
 
 describe("bank statement import dialog", () => {
   it("in Arabic: every line is Arabic, including the supported formats and the Import button", async () => {
@@ -106,8 +166,9 @@ describe("bank statement import dialog", () => {
     expect(lines.filter((line) => isEnglishLine(line))).toEqual([]);
     const text = d!.textContent ?? "";
     expect(text).toContain("استيراد");
-    expect(text).toContain("الصيغ المدعومة");
-    expect(text).toContain("PDF");
+    expect(text).toContain("متطلبات ملف CSV");
+    expect(text).toContain("CSV");
+    expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT|OFX/);
     expect(d!.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
       "استيراد"
     );
@@ -116,10 +177,102 @@ describe("bank statement import dialog", () => {
   it("in English: the same lines come from the catalog", async () => {
     await mountPage("en");
     const text = dialog()?.textContent ?? "";
-    expect(text).toContain("Comma, semicolon, and tab-delimited Excel exports are supported");
+    expect(text).toContain("CSV files can use commas, semicolons, or tabs");
+    expect(text).not.toMatch(/PDF|XLSX|MT940|CAMT|OFX/);
     expect(dialog()?.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
       "Import"
     );
+  });
+
+  it.each([
+    ["en", "Choose a CSV file exported from your bank."],
+    ["ar", "اختر ملف CSV صدّرته من مصرفك."],
+  ] as const)("rejects a non-CSV selection without calling preview in %s", async (locale, copy) => {
+    await mountPage(locale);
+    const input = dialog()?.querySelector<HTMLInputElement>(
+      '[data-testid="input-bank-statement-file"]'
+    );
+    expect(input?.getAttribute("accept")).toBe(".csv,text/csv");
+    Object.defineProperty(input, "files", { value: [new File(["report"], "statement.xlsx")] });
+    await act(async () => {
+      input?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const error = dialog()?.querySelector('[data-testid="text-statement-preview-error"]');
+    expect(error?.textContent).toBe(copy);
+    expect(
+      vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("/bank-statements/preview"))
+    ).toBe(false);
+  });
+
+  it.each(["en", "ar"] as const)(
+    "only imports the bytes from the latest successful preview in %s",
+    async (locale) => {
+      const { previews, imports } = recordStatementRequests();
+      await mountPage(locale);
+      await selectImportAccount();
+
+      await chooseStatement("first CSV");
+      await chooseStatement("different CSV with the same name");
+      await vi.waitFor(() => expect(previews).toHaveLength(2));
+      await act(async () => previews[0].respond(previewResponse("old sample")));
+      expect(action().disabled).toBe(true);
+      expect(mapper()).toBeNull();
+
+      await act(async () => previews[1].respond(previewResponse("current sample")));
+      expect(action().disabled).toBe(false);
+      expect(mapper()?.textContent).toContain("current sample");
+      await click(action());
+      expect(imports).toEqual([
+        {
+          ...(previews[1].payload as object),
+          bankAccountId: "b-1",
+          acknowledgeAmbiguity: false,
+        },
+      ]);
+    }
+  );
+
+  it("keeps a failed newer preview blocked when an older request finishes afterwards", async () => {
+    const { previews, imports } = recordStatementRequests();
+    await mountPage("en");
+    await selectImportAccount();
+    await chooseStatement("first CSV");
+    await chooseStatement("unreadable CSV");
+    await vi.waitFor(() => expect(previews).toHaveLength(2));
+
+    await act(async () =>
+      previews[1].respond(
+        new Response(JSON.stringify({ message: "Unreadable CSV" }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        })
+      )
+    );
+    expect(action().disabled).toBe(true);
+    await act(async () => previews[0].respond(previewResponse("old sample")));
+    expect(action().disabled).toBe(true);
+    expect(mapper()).toBeNull();
+    expect(dialog()?.querySelector('[data-testid="text-statement-preview-error"]')).toBeTruthy();
+    expect(imports).toEqual([]);
+  });
+
+  it("ignores a result from the previous dialog after close and reopen", async () => {
+    const { previews, imports } = recordStatementRequests();
+    await mountPage("en");
+    await selectImportAccount();
+    await chooseStatement("first CSV");
+    await vi.waitFor(() => expect(previews).toHaveLength(1));
+
+    await click([...dialog()!.querySelectorAll("button")].find((b) => b.textContent === "Cancel")!);
+    await click(document.querySelector('[data-testid="button-import-transactions"]'));
+    await chooseStatement("new CSV");
+    await vi.waitFor(() => expect(previews).toHaveLength(2));
+
+    await act(async () => previews[1].respond(previewResponse("current sample", true)));
+    await act(async () => previews[0].respond(previewResponse("closed dialog sample")));
+    expect(mapper()?.textContent).toContain("current sample");
+    expect(action().disabled).toBe(true);
+    expect(imports).toEqual([]);
   });
 
   it("lets the dialog content shrink to a phone (single minmax(0,1fr) column, no min-content growth)", async () => {

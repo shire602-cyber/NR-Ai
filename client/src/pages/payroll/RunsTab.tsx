@@ -1,5 +1,6 @@
 import { errorHeading } from "@/lib/error-heading";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { useSubscription } from "@/hooks/useSubscription";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
 import { accountDisplayName } from "@/lib/account-name";
@@ -85,7 +86,8 @@ interface Account {
 }
 
 export function RunsTab({ companyId }: { companyId: string }) {
-  const { gate } = useCompanyPermission();
+  const { can, gate } = useCompanyPermission();
+  const { canWrite } = useSubscription();
   const { tx, locale } = useHr();
   const { toast } = useToast();
   const runsKey = [`/api/companies/${companyId}/payroll-runs`];
@@ -214,16 +216,20 @@ export function RunsTab({ companyId }: { companyId: string }) {
 
   const downloadSif = async (r: PayrollRun) => {
     try {
-      const pre = (await apiRequest("GET", `/api/payroll-runs/${r.id}/sif-prevalidation`)) as {
-        ready: boolean;
-        issues: SifIssue[];
-      };
-      if (!pre.ready) {
-        setIssues(pre.issues);
-        return;
+      const path = `/api/payroll-runs/${r.id}/generate-sif`;
+      if (can("payroll.manage") && canWrite("payroll")) {
+        const pre = (await apiRequest("GET", `/api/payroll-runs/${r.id}/sif-prevalidation`)) as {
+          ready: boolean;
+          issues: SifIssue[];
+        };
+        if (!pre.ready) {
+          setIssues(pre.issues);
+          return;
+        }
+        await apiRequest("POST", path, {}, undefined, { queueWhenOffline: false });
+        refresh();
       }
-      await downloadFile(`/api/payroll-runs/${r.id}/generate-sif`, "payroll.SIF");
-      refresh();
+      await downloadFile(path, "payroll.SIF");
       toast({ title: tx("hr.sifDownloaded"), description: tx("hr.sifExternalNote") });
     } catch (err) {
       fail(err);
@@ -287,6 +293,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
         <Button
           size="sm"
           variant="outline"
+          {...gate("payroll.manage")}
           onClick={() => {
             setPayAccount((cur) => cur || defaultPaymentAccountId(accounts, managedBanks));
             setPayRun(r);
@@ -301,7 +308,10 @@ export function RunsTab({ companyId }: { companyId: string }) {
           r.status === "calculated" || r.status === "approved" || r.status === "paid" ? (
             <>
               {r.status === "calculated" && (
-                <DropdownMenuItem onSelect={() => action.mutate({ id: r.id, path: "calculate" })}>
+                <DropdownMenuItem
+                  disabled={!can("payroll.manage")}
+                  onSelect={() => action.mutate({ id: r.id, path: "calculate" })}
+                >
                   <Calculator aria-hidden />
                   {tx("hr.calculate")}
                 </DropdownMenuItem>
@@ -311,13 +321,19 @@ export function RunsTab({ companyId }: { companyId: string }) {
                 {tx("hr.downloadSif")}
               </DropdownMenuItem>
               {r.status === "approved" && (
-                <DropdownMenuItem onSelect={() => setReverseRun({ run: r, action: "unapprove" })}>
+                <DropdownMenuItem
+                  disabled={!can("payroll.approve")}
+                  onSelect={() => setReverseRun({ run: r, action: "unapprove" })}
+                >
                   <Undo2 aria-hidden />
                   {tx("hr.unapprove")}
                 </DropdownMenuItem>
               )}
               {r.status === "paid" && (
-                <DropdownMenuItem onSelect={() => setReverseRun({ run: r, action: "unpay" })}>
+                <DropdownMenuItem
+                  disabled={!can("payroll.approve")}
+                  onSelect={() => setReverseRun({ run: r, action: "unpay" })}
+                >
                   <Undo2 aria-hidden />
                   {tx("hr.unpay")}
                 </DropdownMenuItem>
@@ -469,7 +485,11 @@ export function RunsTab({ companyId }: { companyId: string }) {
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
                 {tx("hr.cancel")}
               </Button>
-              <Button type="submit" className="sm:min-w-28" disabled={create.isPending}>
+              <Button
+                type="submit"
+                className="sm:min-w-28"
+                disabled={!can("payroll.manage") || create.isPending}
+              >
                 {tx("hr.create")}
               </Button>
             </FormActions>
@@ -518,7 +538,10 @@ export function RunsTab({ companyId }: { companyId: string }) {
               <Button type="button" variant="outline" onClick={() => setPayRun(null)}>
                 {tx("hr.cancel")}
               </Button>
-              <Button type="submit" disabled={!payAccount || action.isPending}>
+              <Button
+                type="submit"
+                disabled={!can("payroll.manage") || !payAccount || action.isPending}
+              >
                 {tx("hr.recordPayment")}
               </Button>
             </FormActions>
@@ -549,7 +572,11 @@ export function RunsTab({ companyId }: { companyId: string }) {
               <Button type="button" variant="outline" onClick={() => setReverseRun(null)}>
                 {tx("hr.cancel")}
               </Button>
-              <Button type="submit" variant="destructive" disabled={!reason || action.isPending}>
+              <Button
+                type="submit"
+                variant="destructive"
+                disabled={!can("payroll.approve") || !reason || action.isPending}
+              >
                 {tx("hr.confirm")}
               </Button>
             </FormActions>
@@ -617,7 +644,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
               <Button type="button" variant="outline" onClick={() => setGratuityGap(null)}>
                 {tx("hr.cancel")}
               </Button>
-              <Button type="submit" disabled={saveOpening.isPending}>
+              <Button type="submit" disabled={!can("payroll.manage") || saveOpening.isPending}>
                 {tx("hr.openingGratuity.save")}
               </Button>
             </FormActions>
@@ -680,7 +707,9 @@ function RunDetail({
   });
   const [editing, setEditing] = useState<PayrollItem | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
-  const editable = run.status === "draft" || run.status === "calculated";
+  const { can } = useCompanyPermission();
+  const canEdit = can("payroll.manage");
+  const editable = canEdit && (run.status === "draft" || run.status === "calculated");
 
   const save = useMutation({
     mutationFn: () => {
@@ -852,7 +881,7 @@ function RunDetail({
             <Button variant="outline" onClick={() => setEditing(null)}>
               {tx("hr.cancel")}
             </Button>
-            <Button onClick={() => save.mutate()} disabled={save.isPending}>
+            <Button onClick={() => save.mutate()} disabled={!canEdit || save.isPending}>
               {tx("hr.save")}
             </Button>
           </DialogFooter>

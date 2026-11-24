@@ -259,7 +259,7 @@ This audit analyzed **40+ AI bookkeeping and accounting platforms** worldwide ac
 - **AI**: Limited AI; focuses on automation and compliance
 - **Pricing**: From $15-19/month (unlimited users)
 - **Languages**: Arabic + English
-- **What they have that Muhasib.ai doesn't**: Unlimited users on base plan, ZATCA compliance (Saudi), 24/7 support, banking integrations (Wio), RemotePass HR partnership
+- **What they have that Muhasib.ai doesn't**: Unlimited users on base plan, ZATCA compliance (Saudi), 24/7 support, RemotePass HR partnership
 - **What Muhasib.ai has that they don't**: AI OCR scanning, AI CFO advisor, AI anomaly detection, AI auto-reconciliation, AI chat assistant, AI cash flow forecasting, WhatsApp messaging, client portal, PWA/offline, referral program, onboarding wizard
 
 #### CrossVal
@@ -337,7 +337,7 @@ This audit analyzed **40+ AI bookkeeping and accounting platforms** worldwide ac
 #### Pennylane (France)
 - **AI**: ComptAssistant AI for accountants, document processing, smart categorization, cash flow forecasting
 - **Pricing**: Custom
-- **What they have that Muhasib.ai doesn't**: Deep French accounting integration, banking embedded in platform, $4.25B valuation ecosystem
+- **What they have that Muhasib.ai doesn't**: Deep French accounting integration, $4.25B valuation ecosystem. [Historical comparison excerpt redacted.]
 - **What Muhasib.ai has that they don't**: Arabic RTL, UAE compliance, HR/payroll, WPS, WhatsApp, PWA/offline (Pennylane is France-only)
 
 #### Holded (Spain)
@@ -408,18 +408,25 @@ Scored across 8 dimensions (10 points each, 80 max):
 | 16 | Botkeeper | 41/80 | Per-client model for firms, 97% AI accuracy | English-only, no end-user features |
 | 17 | Truewind | 40/80 | Strong AI agent, anomaly detection | English-only, limited feature scope |
 | 18 | Qoyod | 39/80 | Arabic-first, ZATCA compliant, 25K users | Saudi-focused, limited AI, no WhatsApp |
-| 19 | Pennylane | 38/80 | $4.25B valuation, banking integrated | France-only, no Arabic, no UAE |
+| 19 | Pennylane | 38/80 | $4.25B valuation | France-only, no Arabic, no UAE |
 | 20 | Basis | 37/80 | $1.15B unicorn, Big Four adoption | Firm tooling only, not end-user accounting |
+
+**Bank reconciliation.** Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 
 ---
 
 ## 4. REMAINING GAPS (What Muhasib.ai Could Add)
 
+Bank reconciliation uses CSV statement imports.
+
 ### Critical Gaps (Would Strengthen Competitive Position)
+
+Muhasib uses CSV statement uploads for bank reconciliation. QuickBooks, Xero,
+Sage, and Wafeq support direct transaction imports in supported markets.
 
 | Gap | Who Has It | Priority | Impact |
 |-----|-----------|----------|--------|
-| **Open Banking / Live Bank Feeds** | QuickBooks, Xero, Sage, Wafeq | HIGH | Real-time transaction import vs. CSV upload |
+| **Bank statement reconciliation** | QuickBooks, Xero, Sage, Wafeq | HIGH | Upload a CSV statement and review suggested matches against the books |
 | **Native Mobile Apps (iOS/Android)** | QuickBooks, Xero, Zoho, Wafeq, Fiskl | HIGH | PWA is good but native apps rank in app stores |
 | **App Marketplace / API Ecosystem** | QuickBooks (750+), Xero (1000+), Zoho (50+) | MEDIUM | Third-party integrations expand functionality |
 | **SOC 2 / ISO 27001 Certification** | Truewind, Tyms, Zeni, Ramp | MEDIUM | Required for enterprise/investor credibility |

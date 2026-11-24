@@ -3,7 +3,7 @@ import PDFDocument from "pdfkit";
 import { loadCompanyLogo } from "./pdf-logo";
 import { calendarParts } from "../../shared/uae-date";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
-import { renderEInvoiceQrPng } from "./einvoice-qr.service";
+import { renderInvoiceShareQrPng } from "./einvoice-qr.service";
 import {
   isArabic,
   isDraftStatus,
@@ -37,7 +37,6 @@ const HEADER_FILL = "#E6E6E6";
 export type InvoicePdfTemplate = "standard" | "nra";
 
 export interface GenerateInvoicePdfOptions {
-  template?: InvoicePdfTemplate;
   /** Document language; defaults to the company's `locale` (en/ar). */
   locale?: PdfLocale;
   /** Payments received so far. Defaults to the full total for `paid` invoices, else 0. */
@@ -74,7 +73,9 @@ export interface InvoicePdfBranding {
 }
 
 export function invoicePdfTemplateForCompany(company: Company): InvoicePdfTemplate {
-  return company.companyType === "client" ? "nra" : "standard";
+  return company.id === process.env.NRA_INVOICE_ISSUER_COMPANY_ID && !company.trnVatNumber
+    ? "nra"
+    : "standard";
 }
 
 export async function generateInvoicePDF(
@@ -83,7 +84,7 @@ export async function generateInvoicePDF(
   company: Company,
   options: GenerateInvoicePdfOptions = {}
 ): Promise<Buffer> {
-  const template = options.template ?? invoicePdfTemplateForCompany(company);
+  const template = invoicePdfTemplateForCompany(company);
   if (template === "nra") {
     return generateNraInvoicePDF(invoice, lines);
   }
@@ -178,22 +179,26 @@ async function generateStandardInvoicePDF(
   company: Company,
   options: GenerateInvoicePdfOptions = {}
 ): Promise<Buffer> {
-  let qrPng: Buffer | null = null;
-  if (company.trnVatNumber) {
-    try {
-      qrPng = await renderEInvoiceQrPng({
-        sellerName: company.name,
-        vatRegistrationNumber: company.trnVatNumber,
-        timestamp: invoice.date instanceof Date ? invoice.date : new Date(invoice.date),
-        invoiceTotalWithVat: invoice.total,
-        vatAmount: invoice.vatAmount,
-      });
-    } catch {
-      qrPng = null;
-    }
-  }
-
+  const qrPng = await renderInvoiceShareQrPng(invoice).catch(() => null);
   const locale = options.locale ?? pdfLocale(company);
+  const legalName = company.legalName?.trim() || company.name;
+  const legalNameAr = company.legalNameAr?.trim();
+  const sellerNames = [
+    ...new Set(
+      (locale === "ar" ? [legalNameAr, legalName] : [legalName, legalNameAr]).filter(
+        (value): value is string => Boolean(value)
+      )
+    ),
+  ];
+  const [sellerName, ...otherSellerNames] = sellerNames;
+  const sellerAddresses = [
+    ...new Set(
+      (locale === "ar"
+        ? [company.addressAr?.trim(), company.businessAddress?.trim()]
+        : [company.businessAddress?.trim(), company.addressAr?.trim()]
+      ).filter((value): value is string => Boolean(value))
+    ),
+  ];
   const totals = computeInvoicePdfTotals(invoice, options);
   const customer = {
     name: options.customer?.displayName || invoice.customerName || options.customer?.name || "",
@@ -218,19 +223,20 @@ async function generateStandardInvoicePDF(
     accent: brand?.primaryColor,
     info: {
       Title: `Invoice ${invoice.number}`,
-      Author: company.name,
+      Author: legalName,
       Subject: "Tax Invoice",
     },
   });
   const m = (n: number) => money(n, totals.currency);
 
   ledger.header({
-    companyName: company.name,
+    companyName: sellerName,
     logo,
     details: [
+      ...otherSellerNames,
+      ...sellerAddresses,
       ...companyDetails(ledger, {
         trn: isVATRegistered ? company.trnVatNumber : null,
-        address: company.businessAddress,
         phone: company.contactPhone,
         email: company.contactEmail,
       }),
@@ -264,10 +270,11 @@ async function generateStandardInvoicePDF(
   ledger.parties([
     {
       label: bi("From", "من"),
-      name: company.legalName || company.name,
+      name: sellerName,
       lines: [
+        ...otherSellerNames,
         trnLine(ledger, isVATRegistered ? company.trnVatNumber : null),
-        company.businessAddress,
+        ...sellerAddresses,
       ],
     },
     {
@@ -418,7 +425,7 @@ async function generateStandardInvoicePDF(
   if (qrPng) {
     ledger.doc.image(qrPng, ledger.x(0, qrSize), qrY, { width: qrSize, height: qrSize });
     sideBottom =
-      text(ledger.doc, ledger.inline(bi("Invoice QR (TLV)", "رمز الفاتورة")), {
+      text(ledger.doc, ledger.inline(bi("Scan to view", "امسح للعرض")), {
         x: ledger.x(0, qrSize + 60),
         y: qrY + qrSize + 3,
         width: qrSize + 60,

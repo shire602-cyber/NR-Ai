@@ -98,22 +98,22 @@ async function net(t: Tenant, code: string): Promise<number> {
 }
 
 describe("[X6a REQUIRED 1] sub-accounts under system posting accounts keep posting working", () => {
-  it("with sub-accounts under 4010, 1040, 2020, 1050 and 1010: invoice issue, bill approval, payments, payroll approval and VAT postings succeed", async () => {
+  it("with sub-accounts under 4020, 1040, 2020, 1050 and 1010: invoice issue, bill approval, payments, payroll approval and VAT postings succeed", async () => {
     const t = await vatTenant("X6aHeaders");
-    await subAccount(t, "4010", "4011");
+    await subAccount(t, "4020", "4021");
     await subAccount(t, "1040", "1041");
     await subAccount(t, "2020", "2021");
     await subAccount(t, "1050", "1051");
     await subAccount(t, "2010", "2011");
     const cashLeaf = await subAccount(t, "1010", "1011");
 
-    // Invoice issue posts Dr 1040 / Cr 4010 / Cr 2020 to the parents.
+    // Invoice issue posts Dr 1040 / Cr 4020 / Cr 2020 to the parents.
     const inv = await draftInvoice(t, [
       { description: "Consulting", quantity: 1, unitPrice: 1000, vatRate: 5 },
     ]);
     const issued = await issue(inv.id, t);
     expect(issued.status, issued.text).toBe(200);
-    expect(await net(t, "4010")).toBe(-1000);
+    expect(await net(t, "4020")).toBe(-1000);
     expect(await net(t, "2020")).toBe(-50);
     expect(await net(t, "1040")).toBe(1050);
 

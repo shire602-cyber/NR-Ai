@@ -10,7 +10,7 @@ import { z } from "zod";
 import { objectShapeOf, strictBody } from "../../server/http/strict-body";
 import { zUuid } from "../../shared/validators/primitives";
 import { zOptionalUaeTrn } from "../../shared/validators/vat";
-import { zCompanyRole } from "../../shared/permissions";
+import { zCompanyRole } from "../../shared/validators/company-role";
 import { insertInvoiceLineSchema, insertInvoicePaymentSchema } from "../../shared/schema";
 import { zodResolver } from "../../client/src/lib/zod-resolver";
 import pkg from "../../package.json";

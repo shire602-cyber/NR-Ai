@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { useContext } from "react";
 import { Clock, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatMessage, useTranslation } from "@/lib/i18n";
@@ -6,6 +7,7 @@ import { formatDate } from "@/lib/format-date";
 import { planCta, planPhase, planPhraseKey } from "@/lib/plan-state";
 import { useSubscription, type ChosenPlan } from "@/hooks/useSubscription";
 import type { TrialState } from "@shared/trial";
+import { TrialReadOnlyContext } from "@/lib/trial-access";
 
 /** The trial banner goes to the warning tone this many days before the end. */
 const WARN_DAYS = 3;
@@ -16,10 +18,10 @@ const WARN_DAYS = 3;
  *   running + no choice   days left, "choose a plan, then activate it"        -> See plans
  *   running + chosen      days left + "You chose X. Activate it before D"     -> See plan / Activate X (last days)
  *   running + requested   days left + "Activation requested on D. We'll confirm by email."  -> See plan
- *   ended   + no choice   read-only until a plan is chosen                     -> Choose a plan
- *   ended   + chosen      "Your trial ended on D. Read-only until X is activated"  -> Activate X
- *   ended   + requested   "Activation requested on D..." + still read-only    -> See plan
- * Data stays readable and nothing is deleted (shared/plans.ts). Pass `trial` / `chosen` /
+ *   ended   + no choice   locked until a plan is active                     -> Choose a plan
+ *   ended   + chosen      "Your trial ended on D. Locked until X is activated"  -> Activate X
+ *   ended   + requested   "Activation requested on D..." + still locked    -> See plan
+ * Data is kept (shared/plans.ts). Pass `trial` / `chosen` /
  * `activationRequestedAt` to render without the subscription query (tests).
  */
 export function TrialBanner({
@@ -27,18 +29,22 @@ export function TrialBanner({
   chosen: givenChosen,
   activationRequestedAt: givenRequested,
   className = "",
+  endedOnly = false,
 }: {
   trial?: TrialState | null;
   chosen?: ChosenPlan | null;
   activationRequestedAt?: string | null;
   className?: string;
+  /** Show only once the trial has ended (settings pages that show the trial status). */
+  endedOnly?: boolean;
 }) {
   const { t, locale } = useTranslation();
+  const readOnly = useContext(TrialReadOnlyContext);
   const { trial: fetched, chosenPlan, activationRequestedAt } = useSubscription();
   const trial = given === undefined ? fetched : given;
   const chosen = givenChosen === undefined ? chosenPlan : givenChosen;
   const requestedAt = givenRequested === undefined ? activationRequestedAt : givenRequested;
-  if (!trial) return null;
+  if (readOnly || !trial || (endedOnly && !trial.ended)) return null;
   const phase = planPhase({
     trialEnded: trial.ended,
     chosen: !!chosen,

@@ -10,6 +10,7 @@
  *   dotted field paths) into Arabic text that keeps the field names.
  */
 import type { z } from "zod";
+import { bankStatementCopy } from "@shared/bank-statement-copy";
 import { formatMessage, loadNamespaces, t, useI18n } from "./i18n";
 
 type RawIssue = z.core.$ZodRawIssue;
@@ -149,6 +150,7 @@ export function issueSlug(message: string): string {
 }
 
 export function localizeServerIssue(message: string): string {
+  if (message === bankStatementCopy.en) return bankStatementCopy.ar;
   const issue = dict("ar")[`serverErrors.issue.${issueSlug(message)}`];
   if (issue) return issue;
   const shared = SHARED_MESSAGE_KEYS[message];
@@ -249,6 +251,17 @@ export function localizeApiError(body: Record<string, unknown> | undefined): str
   if (!body) return undefined;
   const { locale } = useI18n.getState();
   const code = typeof body.code === "string" ? body.code : undefined;
+  // These responses can carry legacy provider details or reconnect steps for API callers.
+  if (
+    code &&
+    (code.startsWith("BANK_FEED_") ||
+      code === "BANK_CONNECTION_NOT_FOUND" ||
+      code === "INVALID_OAUTH_STATE" ||
+      code === "REDIRECT_URI_NOT_ALLOWED")
+  ) {
+    const copy = serverErrorCopy(locale, code);
+    if (copy) return copy;
+  }
   if (locale !== "ar") {
     if (!code) return undefined;
     const hasFields = !!body.fields && typeof body.fields === "object";

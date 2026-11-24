@@ -1,5 +1,6 @@
 import { T } from "@/components/layout/T";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { isolateLtrText } from "@/lib/format-bidi";
 import { formatDate } from "@/lib/format-date";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { PORTAL_LINK_TTL_DAYS } from "@shared/validators/portal";
@@ -74,6 +75,7 @@ import { Badge } from "@/components/ui/badge";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useOpenInvoiceParam } from "@/hooks/use-open-invoice-param";
 import type { CustomerContact } from "@shared/schema";
 import { ContactForm } from "@/components/contacts/ContactForm";
 import { PortalAccessSheet, type PortalSheetContact } from "@/components/portal/PortalAccessSheet";
@@ -178,7 +180,7 @@ export default function CustomerContacts() {
     expiresAt: "",
     ttlDays: 0,
   };
-  const { can: canDo, gate } = useCompanyPermission();
+  const { can: canDo, gate, known: permissionsKnown } = useCompanyPermission();
   const canManagePortal = canDo("documents.write");
   const portalAccessKey = [`/api/portal/contacts/${portalLinkDialog.contactId}/access`] as const;
   // The state (active / expired / revoked) is derived in `select`, not during render.
@@ -225,6 +227,14 @@ export default function CustomerContacts() {
     queryKey: ["/api/companies", companyId, "customer-contacts"],
     enabled: !!companyId,
   });
+  useOpenInvoiceParam(
+    (id) => {
+      const contact = contacts.find((entry) => entry.id === id);
+      if (contact && canDo("documents.write")) setEditContact(contact);
+    },
+    "/contacts",
+    !!companyId && !isLoading && permissionsKnown
+  );
 
   const importMutation = useMutation({
     mutationFn: async (data: any[]) => {
@@ -948,14 +958,39 @@ export default function CustomerContacts() {
                           {previewData.slice(0, 20).map((row, idx) => (
                             <TableRow key={idx}>
                               <TableCell className={!row.name ? "text-destructive" : ""}>
-                                {row.name || t["screens.missing"]}
+                                {row.name ? (
+                                  <bdi translate="no">{row.name}</bdi>
+                                ) : (
+                                  t["screens.missing"]
+                                )}
                               </TableCell>
                               <TableCell className={!row.email ? "text-destructive" : ""}>
-                                {row.email || t["screens.missing"]}
+                                {row.email ? (
+                                  <bdi
+                                    dir="ltr"
+                                    translate="no"
+                                    title={row.email}
+                                    className="inline-block max-w-52 truncate align-bottom"
+                                  >
+                                    {row.email}
+                                  </bdi>
+                                ) : (
+                                  t["screens.missing"]
+                                )}
                               </TableCell>
-                              <TableCell>{row.phone || "-"}</TableCell>
-                              <TableCell>{row.trnNumber || "-"}</TableCell>
-                              <TableCell>{row.city || "-"}</TableCell>
+                              <TableCell>
+                                <bdi dir="ltr" translate="no">
+                                  {row.phone || "—"}
+                                </bdi>
+                              </TableCell>
+                              <TableCell>
+                                <bdi dir="ltr" translate="no">
+                                  {row.trnNumber || "—"}
+                                </bdi>
+                              </TableCell>
+                              <TableCell>
+                                <bdi translate="no">{row.city || "—"}</bdi>
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -1073,7 +1108,7 @@ export default function CustomerContacts() {
       </Tabs>
 
       <Dialog open={!!editContact} onOpenChange={(open) => !open && setEditContact(null)}>
-        <DialogContent size="md">
+        <DialogContent size="md" data-testid="edit-customer-contact">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.editContact" />
@@ -1148,16 +1183,18 @@ export default function CustomerContacts() {
           </DialogHeader>
           <div className="space-y-4">
             {portalLinkDialog.url && (
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <Input
+                  ltr
                   readOnly
                   value={portalLinkDialog.url}
-                  className="text-sm"
+                  className="min-w-0 text-sm"
                   data-testid="input-portal-link"
                 />
                 <Button
                   variant="outline"
                   size="icon"
+                  className="shrink-0"
                   onClick={() => {
                     navigator.clipboard.writeText(portalLinkDialog.url);
                     toast({ title: t["customerContacts.linkCopiedToClipboard"] });
@@ -1313,14 +1350,13 @@ export default function CustomerContacts() {
                 )}
                 <div className="space-y-2">
                   <Label htmlFor="clear-all-confirm">
-                    <T k="consolidation.kind" />
-                    <strong>
-                      <T k="pageLabels.dELETEALL" />
-                    </strong>{" "}
-                    to confirm:
+                    {formatMessage(t["customerContacts.clearAllConfirmLabel"], {
+                      phrase: locale === "ar" ? isolateLtrText("DELETE ALL") : "DELETE ALL",
+                    })}
                   </Label>
                   <Input
                     id="clear-all-confirm"
+                    ltr
                     value={clearAllConfirmation}
                     onChange={(e) => setClearAllConfirmation(e.target.value)}
                     placeholder="DELETE ALL"

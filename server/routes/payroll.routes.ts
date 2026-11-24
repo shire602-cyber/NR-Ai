@@ -82,12 +82,7 @@ import {
   unapproveRun,
   unpayRun,
 } from "../services/payroll/runs";
-import {
-  ensureDefaultLeaveTypes,
-  leaveBalances,
-  requestSpanDays,
-  unpaidLeaveDaysBetween,
-} from "../services/payroll/leave";
+import { leaveBalances, requestSpanDays, unpaidLeaveDaysBetween } from "../services/payroll/leave";
 import {
   createPayslipToken,
   emailPayslips,
@@ -104,7 +99,13 @@ import {
   scanExpiryAlerts,
   upcomingExpiries,
 } from "../services/payroll/gpssa";
-import { generateRunSif, setWpsStatus, sifPrevalidation, wpsEvents } from "../services/payroll/wps";
+import {
+  downloadRunSif,
+  generateRunSif,
+  setWpsStatus,
+  sifPrevalidation,
+  wpsEvents,
+} from "../services/payroll/wps";
 import { parseSif } from "../services/wps-sif.service";
 import { dayOf, q, q1, type Row } from "../services/payroll/sql";
 import { createLogger } from "../config/logger";
@@ -312,7 +313,6 @@ export function registerPayrollRoutes(app: Express) {
       const asOf = zDate.safeParse(req.query.asOf ?? new Date().toISOString().slice(0, 10));
       if (!asOf.success)
         throw new DomainError("INVALID_DATE", 400, undefined, "asOf must be YYYY-MM-DD");
-      await ensureDefaultLeaveTypes(emp.company_id);
       res.json(await leaveBalances(emp.company_id, emp.id, asOf.data));
     })
   );
@@ -550,10 +550,22 @@ export function registerPayrollRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { run } = await runRow(req, ["payroll.manage"]);
-      const file = await generateRunSif(run.company_id, run.id);
+      const file = await downloadRunSif(run.company_id, run.id);
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${file.fileName}"`);
       res.send(file.content);
+    })
+  );
+
+  app.post(
+    "/api/payroll-runs/:id/generate-sif",
+    authMiddleware,
+    requireCustomer,
+    strictBody(z.object({}).strict()),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { run } = await runRow(req, ["payroll.manage"]);
+      await generateRunSif(run.company_id, run.id);
+      res.status(204).end();
     })
   );
 
@@ -873,7 +885,6 @@ export function registerPayrollRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = await companyAccess(req);
-      await ensureDefaultLeaveTypes(companyId);
       res.json(
         await q(`SELECT * FROM leave_types WHERE company_id = $1 ORDER BY code`, [companyId])
       );

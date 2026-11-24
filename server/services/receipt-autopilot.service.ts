@@ -21,6 +21,7 @@ import { createMeteredOpenAI } from "./ai/usage-meter";
 import { rememberVendorAccount } from "./vendor-memory.service";
 import { storage } from "../storage";
 import { pool } from "../db";
+import { baseCurrencyOf } from "../ledger/currency";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "./period-lock.service";
@@ -265,6 +266,7 @@ export async function runAutopilot(
     !!paymentAccountId &&
     netAmount > 0 &&
     isAed &&
+    baseCurrencyOf(await storage.getCompany(companyId)) === "AED" &&
     !ocr.needsReview;
 
   if (!shouldAutoPost) {
@@ -449,7 +451,8 @@ export async function autoPostManualReceipt(args: {
   if (!config.autopilotEnabled) return skip("autopilot_disabled");
   if (!userKeptSuggestion) return skip("user_overrode_category");
   if (!(net > 0)) return skip("non_positive_amount");
-  if (currency !== "AED") return skip("non_aed");
+  if (currency !== "AED" || baseCurrencyOf(await storage.getCompany(companyId)) !== "AED")
+    return skip("non_aed");
 
   const accounts = await storage.getAccountsByCompanyId(companyId);
   const expenseAccounts = accounts.filter(

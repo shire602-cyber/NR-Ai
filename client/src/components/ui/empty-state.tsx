@@ -44,6 +44,8 @@ export interface EmptyStateProps {
   /** lg only: columns in the default ghost preview (default 4). `0` hides the preview. */
   previewColumns?: number;
   className?: string;
+  /** md: heading level of the title (default h3); use h2 where the page has no h2 above it. */
+  headingLevel?: "h2" | "h3";
   /** @deprecated use `size="sm"` or `size="md"`; kept so existing screens compile. */
   compact?: boolean;
   testId?: string;
@@ -64,9 +66,11 @@ export function EmptyState({
   preview,
   previewColumns = 4,
   className,
+  headingLevel = "h3",
   compact = false,
   testId,
 }: EmptyStateProps) {
+  const Heading = headingLevel;
   const resolved: EmptyStateSize = size ?? "md";
 
   if (resolved === "sm") {
@@ -84,7 +88,7 @@ export function EmptyState({
           <EmptyStateButton
             {...action}
             variant="link"
-            className="mt-1 h-auto min-h-0 p-0 text-small [@media(pointer:coarse)]:min-h-0"
+            className="mt-1 min-h-11 p-0 text-small md:h-auto md:min-h-0"
           />
         ) : null}
       </div>
@@ -97,7 +101,7 @@ export function EmptyState({
         data-testid={testId ?? "empty-state"}
         data-size="lg"
         className={cn(
-          "relative isolate overflow-hidden rounded-xl border border-border bg-card px-6 pb-8 pt-12 text-center sm:px-10 sm:pt-16",
+          "relative isolate overflow-hidden rounded-xl border border-border bg-card px-4 pb-6 pt-9 text-center sm:px-10 sm:pb-8 sm:pt-14",
           className
         )}
       >
@@ -136,13 +140,13 @@ export function EmptyState({
       data-testid={testId ?? "empty-state"}
       data-size="md"
       className={cn(
-        "flex flex-col items-center justify-center px-6 text-center",
+        "flex flex-col items-center justify-center px-4 text-center sm:px-6",
         compact ? "py-8" : "py-12",
         className
       )}
     >
       {Icon && <EmptyIconTile icon={Icon} />}
-      <h3 className="text-h3 text-foreground">{title}</h3>
+      <Heading className="text-h3 text-foreground">{title}</Heading>
       {description && (
         <p className="mt-1 max-w-sm text-small text-muted-foreground text-pretty">{description}</p>
       )}
@@ -161,7 +165,7 @@ export function EmptyState({
 function EmptyIconTile({ icon: Icon }: { icon: LucideIcon }) {
   return (
     <div
-      className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400"
+      className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-accent"
       aria-hidden="true"
     >
       <Icon className="h-5 w-5" strokeWidth={1.5} />

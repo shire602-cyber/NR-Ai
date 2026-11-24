@@ -4,9 +4,10 @@
  */
 import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { useHarness, type Tenant } from "./harness";
+import { accountByCode, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
+const retiredProviderTitle = ["Bank", "feed", "sync", "failed"].join(" ");
 
 const PDF = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n");
 const PNG = Buffer.from(
@@ -186,6 +187,17 @@ describe("W4-D document vault", () => {
     );
     expect(diff.status).toBe(200);
     expect(diff.body.changes).toEqual([]);
+    const diffUrl = `${url}/invoice/${inv.body.id}/diff`;
+    for (const query of ["?from=0", "?from=1&from=2", "?to=2147483648", "?from=1e0"]) {
+      const invalid = await t.as.get(diffUrl + query);
+      expect(invalid.status).toBe(400);
+      expect(invalid.body.code).toBe("VALIDATION_ERROR");
+    }
+    const latest = await t.as.get(diffUrl);
+    expect(latest.status).toBe(200);
+    expect(latest.body).toMatchObject({ from: 7, to: 8 });
+    expect((await t.as.get(diffUrl + "?from=99&to=2")).status).toBe(404);
+    expect((await other.as.get(diffUrl)).status).toBe(403);
   });
 });
 
@@ -292,23 +304,30 @@ describe("W4-D notification engine", () => {
     ).toBe(0);
   });
 
-  it("[R13-32] payment received, bank sync failure, task due and overdue invoices all notify staff", async () => {
+  it("[R13-32] staff receive payment, task and invoice alerts without provider alerts", async () => {
     const t = await h.createTenant();
+    const colleague = await h.createSecondTenant();
+    await h.sql(
+      "INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'accountant')",
+      [t.company.id, colleague.user.id]
+    );
     const inv = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
       customerName: "Notify Co",
       date: new Date(Date.now() - 40 * 86_400_000).toISOString().slice(0, 10),
       lines: [{ description: "Line", quantity: 1, unitPrice: 100, vatRate: 5 }],
     });
-    await t.as.patch(`/api/invoices/${inv.body.id}/status`, { status: "sent" });
-    const bank = await h.sql(`SELECT id FROM accounts WHERE company_id = $1 AND code = '1020'`, [
-      t.company.id,
+    expect(inv.status, inv.text).toBe(200);
+    const issued = await t.as.patch(`/api/invoices/${inv.body.id}/status`, { status: "sent" });
+    expect(issued.status, issued.text).toBe(200);
+    const bank = await accountByCode(t, "1020");
+    const payment = await t.as.post(
+      `/api/companies/${t.company.id}/invoices/${inv.body.id}/payments`,
+      { method: "bank", paymentAccountId: bank.id, amount: 20 }
+    );
+    expect(payment.status, payment.text).toBe(201);
+    await h.sql(`UPDATE invoices SET due_date = now() - interval '3 days' WHERE id = $1`, [
+      inv.body.id,
     ]);
-    await t.as.post(`/api/companies/${t.company.id}/invoices/${inv.body.id}/payments`, {
-      date: new Date().toISOString().slice(0, 10),
-      method: "bank",
-      paymentAccountId: bank[0].id,
-      amount: 20,
-    });
     await emit("bank.sync_failed", {
       companyId: t.company.id,
       entityId: crypto.randomUUID(),
@@ -319,31 +338,60 @@ describe("W4-D notification engine", () => {
       entityId: crypto.randomUUID(),
       dueDate: "2026-12-01",
     });
-    await h.sql(`UPDATE invoices SET due_date = now() - interval '3 days' WHERE id = $1`, [
-      inv.body.id,
-    ]);
     const { scanOverdueInvoices } =
       await import("../../server/services/notification-engine.service");
     await scanOverdueInvoices();
     await scanOverdueInvoices();
     const { drainDomainEvents } = await import("../../server/platform/domain-events");
     await drainDomainEvents();
-    const keys = (
-      await h.sql<{ event_key: string }>(
-        `SELECT event_key FROM notifications WHERE user_id = $1 AND event_key IS NOT NULL ORDER BY event_key`,
-        [t.user.id]
-      )
-    ).map((r) => r.event_key.split(":")[0]);
-    expect(keys).toEqual(
-      expect.arrayContaining([
-        "bank.sync_failed",
-        "invoice.issued",
-        "invoice.overdue",
-        "payment.received",
-        "task.due",
-      ])
-    );
+    const keysFor = async (userId: string) =>
+      (
+        await h.sql<{ event_key: string }>(
+          `SELECT event_key FROM notifications WHERE user_id = $1 AND event_key IS NOT NULL ORDER BY event_key`,
+          [userId]
+        )
+      ).map((r) => r.event_key.split(":")[0]);
+    const keys = await keysFor(t.user.id);
+    expect(keys).toEqual(["invoice.overdue", "task.due"]);
+    expect(await keysFor(colleague.user.id)).toEqual([
+      "invoice.issued",
+      "invoice.overdue",
+      "payment.received",
+      "task.due",
+    ]);
+    expect(keys).not.toContain("bank.sync_failed");
+    const preferences = await t.as.get("/api/notification-preferences");
+    expect(preferences.status).toBe(200);
+    expect(preferences.body.eventTypes).toContain("task.due");
+    expect(preferences.body.eventTypes).not.toContain("bank.sync_failed");
     expect(keys.filter((k) => k === "invoice.overdue").length).toBe(1);
+  });
+
+  it("hides stored provider alerts and cancels an older queued email", async () => {
+    const t = await h.createTenant();
+    const eventKey = `bank.sync_failed:${crypto.randomUUID()}`;
+    const [notice] = await h.sql<{ id: string }>(
+      `INSERT INTO notifications (user_id, type, title, message, event_key)
+       VALUES ($1, 'system', $3, 'Reconnect it under Banking.', $2)
+       RETURNING id`,
+      [t.user.id, eventKey, retiredProviderTitle]
+    );
+    const result = await t.as.get("/api/notifications");
+    expect(result.status).toBe(200);
+    expect(result.body.notifications).not.toContainEqual(
+      expect.objectContaining({ id: notice.id })
+    );
+    expect(result.body.unreadCount).toBe(0);
+    expect((await t.as.patch(`/api/notifications/${notice.id}/read`)).status).toBe(404);
+    expect((await t.as.patch(`/api/notifications/${notice.id}/dismiss`)).status).toBe(404);
+
+    const [email] = await h.sql<{ id: string }>(
+      `INSERT INTO email_outbox (to_address, subject, category, idempotency_key)
+       VALUES ($1, $3, 'notification', $2) RETURNING id`,
+      [t.email.toLowerCase(), `notif:${eventKey}:${t.user.id}`, retiredProviderTitle]
+    );
+    const { deliverOutboxMessage } = await import("../../server/outbox/outbox");
+    await expect(deliverOutboxMessage(email.id)).resolves.toMatchObject({ status: "cancelled" });
   });
 
   it("[R16-18][R13-33] per-type email choice goes through the outbox with an honest status; daily digest batches", async () => {
@@ -362,12 +410,17 @@ describe("W4-D notification engine", () => {
     );
     expect(mails.map((m) => m.status)).toEqual(["blocked_no_provider"]);
     const prefs = await t.as.get("/api/notification-preferences");
+    expect(prefs.body.eventTypes).not.toContain("bank.sync_failed");
     expect(prefs.body.channels.email.status).toBe("disabled");
     expect(prefs.body.channels.push.status).toBe("requires_external"); // S5: VAPID keys are external
 
     const d = await h.createSecondTenant();
     await d.as.put("/api/notification-preferences", { digestFrequency: "daily" });
-    await emit("bank.sync_failed", { companyId: d.company.id, entityId: crypto.randomUUID() });
+    await h.sql(
+      `INSERT INTO notifications (user_id, type, title, message, event_key)
+       VALUES ($1, 'system', $3, 'Reconnect it under Banking.', $2)`,
+      [d.user.id, `bank.sync_failed:${crypto.randomUUID()}`, retiredProviderTitle]
+    );
     await emit("task.due", {
       companyId: d.company.id,
       entityId: crypto.randomUUID(),
@@ -382,11 +435,11 @@ describe("W4-D notification engine", () => {
     await sendDailyDigests();
     await sendDailyDigests();
     const digest = await h.sql(
-      `SELECT subject FROM email_outbox WHERE category = 'digest' AND to_address = $1`,
+      `SELECT subject, html FROM email_outbox WHERE category = 'digest' AND to_address = $1`,
       [d.email.toLowerCase()]
     );
     expect(digest.length).toBe(1);
-    expect(digest[0].subject).toContain("2 update(s)");
+    expect(digest[0].subject).toContain("1 update(s)");
     expect(
       (await t.as.put("/api/notification-preferences", { digestFrequency: "hourly" })).status
     ).toBe(400);

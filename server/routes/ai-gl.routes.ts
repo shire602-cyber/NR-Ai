@@ -22,7 +22,7 @@ import { describeCategorisationReason } from "../../shared/server-copy";
 const log = createLogger("ai-gl-routes");
 
 export function registerAIGLRoutes(app: Express) {
-  const aiLimiter = buildLimiter(limiterProfiles.ai);
+  const aiLimiter = buildLimiter("ai-gl-routes", limiterProfiles.ai);
 
   // =====================================
   // AI GL Queue — List items

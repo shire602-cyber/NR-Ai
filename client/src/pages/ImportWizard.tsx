@@ -45,6 +45,13 @@ type Kind =
   | "open_bills";
 type Source = "xero" | "quickbooks" | "zoho" | "wafeq" | "generic";
 
+const SOURCE_BRANDS = {
+  xero: "Xero",
+  quickbooks: "QuickBooks Online",
+  zoho: "Zoho Books",
+  wafeq: "Wafeq",
+} satisfies Record<Exclude<Source, "generic">, string>;
+
 interface Issue {
   row: number | null;
   level: "error" | "warning";
@@ -116,10 +123,7 @@ const COPY = {
       open_bills: "Open bills",
     } as Record<Kind, string>,
     sources: {
-      xero: "Xero",
-      quickbooks: "QuickBooks Online",
-      zoho: "Zoho Books",
-      wafeq: "Wafeq",
+      ...SOURCE_BRANDS,
       generic: "Template / other",
     } as Record<Source, string>,
     order:
@@ -131,7 +135,7 @@ const COPY = {
     eyebrow: "الإعداد",
     title: "استيراد البيانات",
     description:
-      "انقل دفاترك من زيرو أو كويك بوكس أونلاين أو زوهو بوكس أو وافق. تتم معاينة كل ملف والتحقق منه قبل كتابة أي شيء.",
+      "انقل دفاترك من Xero أو QuickBooks Online أو Zoho Books أو Wafeq. عاين كل ملف وتحقّق منه قبل اعتماد الاستيراد.",
     step1: "١. اختر ما تريد استيراده",
     kind: "البيانات",
     source: "مُصدَّرة من",
@@ -173,10 +177,7 @@ const COPY = {
       open_bills: "فواتير الموردين المفتوحة",
     } as Record<Kind, string>,
     sources: {
-      xero: "زيرو",
-      quickbooks: "كويك بوكس أونلاين",
-      zoho: "زوهو بوكس",
-      wafeq: "وافق",
+      ...SOURCE_BRANDS,
       generic: "نموذج / أخرى",
     } as Record<Source, string>,
     order:
@@ -316,7 +317,7 @@ export default function ImportWizard() {
                 <SelectContent>
                   {SOURCES.map((s) => (
                     <SelectItem key={s} value={s}>
-                      {c.sources[s]}
+                      <bdi>{c.sources[s]}</bdi>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -474,7 +475,9 @@ export default function ImportWizard() {
                 {(history.data ?? []).map((j) => (
                   <TableRow key={j.id}>
                     <TableCell>{c.kinds[j.kind] ?? j.kind}</TableCell>
-                    <TableCell>{c.sources[j.sourceSystem] ?? j.sourceSystem}</TableCell>
+                    <TableCell>
+                      <bdi>{c.sources[j.sourceSystem] ?? j.sourceSystem}</bdi>
+                    </TableCell>
                     <TableCell>{j.fileName ?? ""}</TableCell>
                     <TableCell>
                       <Badge variant={j.status === "committed" ? "default" : "outline"}>

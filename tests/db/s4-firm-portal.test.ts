@@ -52,6 +52,71 @@ async function firmB() {
 }
 
 describe("S4 VAT workpaper maker-checker uses canPrepare/canReviewFirmWorkpaper", () => {
+  it("PR #96 stores VAT evidence privately and checks workpaper access before reading", async () => {
+    const { __setObjectStoreForTests } = await import("../../server/services/fileStorage");
+    const owner = await nrOwner();
+    const unassigned = await nrStaff("firm_admin", "EvidenceUnassigned");
+    const client = await createClient(owner, "VAT Evidence Client LLC");
+    const created = await owner.as.post("/api/firm/vat-workpapers", {
+      companyId: client.id,
+      periodStart: "2026-07-01",
+      periodEnd: "2026-09-30",
+    });
+    expect(created.status, created.text).toBe(201);
+    const base = `/api/firm/vat-workpapers/${created.body.id}`;
+    const objects = new Map<string, { buffer: Buffer; contentType: string }>();
+    const reads: string[] = [];
+    __setObjectStoreForTests({
+      put: async (key, buffer, contentType) => {
+        objects.set(key, { buffer, contentType });
+        return key;
+      },
+      get: async (key) => {
+        reads.push(key);
+        return objects.get(key) ?? null;
+      },
+      del: async (key) => {
+        objects.delete(key);
+      },
+    });
+
+    try {
+      const evidence = "VAT evidence";
+      const scan = {
+        attachment: {
+          fileName: "receipt.txt",
+          mimeType: "text/plain",
+          fileDataBase64: Buffer.from(evidence).toString("base64"),
+        },
+        draftRow: { rowCategory: "standard_expense", taxableAmount: 100, vatAmount: 5 },
+      };
+      const rejected = await owner.as.post(`${base}/scan`, {
+        ...scan,
+        draftRow: { ...scan.draftRow, documentDate: "2026-10-01" },
+      });
+      expect(rejected.status, rejected.text).toBe(422);
+      expect(objects.size).toBe(0);
+
+      const uploaded = await owner.as.post(`${base}/scan`, scan);
+      expect(uploaded.status, uploaded.text).toBe(201);
+      const { id, filePath } = uploaded.body.attachment;
+      expect(filePath).toMatch(/^vat-workpapers\//);
+      expect(objects.get(filePath)?.buffer.toString()).toBe(evidence);
+
+      const url = `${base}/attachments/${id}/download`;
+      expect((await unassigned.as.get(url)).status).toBe(403);
+      expect(reads).toEqual([]);
+      const downloaded = await owner.as.get(url);
+      expect(downloaded.status, downloaded.text).toBe(200);
+      expect(downloaded.headers.get("content-disposition")).toContain("receipt.txt");
+      expect(downloaded.headers.get("cache-control")).toBe("private, no-store");
+      expect(downloaded.text).toBe(evidence);
+      expect(reads).toEqual([filePath]);
+    } finally {
+      __setObjectStoreForTests(null);
+    }
+  });
+
   it("[S4-vat-maker-checker] a reviewer cannot prepare, a preparer cannot review; each side does its own step", async () => {
     const owner = await nrOwner();
     const preparer = await nrStaff("preparer", "S4Preparer");
@@ -260,6 +325,7 @@ describe("S4 client-side firm screens (invitation, engagement letter, request up
       { reason: "Changed accountant" }
     );
     expect(revoked.status, revoked.text).toBe(200);
-    expect((await b.as.get(`/api/firm/clients/${cid}/summary`)).status).toBe(403);
+    // The ended link puts the company outside the firm: another tenant, so 404 (not 403).
+    expect((await b.as.get(`/api/firm/clients/${cid}/summary`)).status).toBe(404);
   });
 });

@@ -124,7 +124,7 @@ describe("G1: journal lines carry keys and render Arabic", () => {
     }
 
     // 3. The account ledger and the journal entry return the key to the UI.
-    const rev = await accountByCode(t, "4010");
+    const rev = await accountByCode(t, "4020");
     const ledger = await t.as.get(`/api/accounts/${rev.id}/ledger`);
     expect(ledger.status, ledger.text).toBe(200);
     const row = (ledger.body.entries as Array<{ lineKey: string | null }>).find(

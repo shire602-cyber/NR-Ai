@@ -177,6 +177,7 @@ interface ReturnStateRow {
   id: string;
   period_end: string;
   status: string;
+  fta_reference_number?: string | null;
 }
 
 async function vatReturnStates(companyId: string): Promise<Map<string, ReturnStateRow>> {
@@ -185,7 +186,7 @@ async function vatReturnStates(companyId: string): Promise<Map<string, ReturnSta
     // `YYYY-MM-DDT23:59:59.999Z`, vat-returns.service toEndTs), so the period's own date is the
     // UTC date part. Shifting by +4h first turned a 31 Mar period into 1 Apr, so a filed return
     // never matched its obligation (`vatPeriodsDueInYear` keys by the calendar period end).
-    `SELECT id, (period_end::date)::text AS period_end, status
+    `SELECT id, (period_end::date)::text AS period_end, status, fta_reference_number
        FROM vat_returns WHERE company_id = $1 ORDER BY created_at`,
     [companyId]
   );
@@ -193,7 +194,12 @@ async function vatReturnStates(companyId: string): Promise<Map<string, ReturnSta
   for (const row of r.rows as ReturnStateRow[]) {
     const prev = out.get(row.period_end);
     // Prefer a filed row over a draft for the same period.
-    if (!prev || isFiledReturnStatus(row.status)) out.set(row.period_end, row);
+    if (
+      !prev ||
+      isFiledReturnStatus(row.status, row.fta_reference_number) ||
+      !isFiledReturnStatus(prev.status, prev.fta_reference_number)
+    )
+      out.set(row.period_end, row);
   }
   return out;
 }
@@ -301,7 +307,7 @@ export async function buildObligationSpecs(
         periodStart: p.periodStart,
         periodEnd: p.periodEnd,
         legalSource: "FDL 8/2017 Art. 64; Executive Regulation Art. 59 (28 days)",
-        completed: state ? isFiledReturnStatus(state.status) : false,
+        completed: state ? isFiledReturnStatus(state.status, state.fta_reference_number) : false,
         relatedEntityId: state?.id ?? null,
         detail: state ? `Return status: ${state.status}` : "No VAT return prepared yet",
       });

@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Link, useLocation } from "wouter";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   Sidebar,
   SidebarContent,
@@ -34,7 +33,7 @@ import { removeToken } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient } from "@tanstack/react-query";
 import { CompanySwitcher } from "@/components/CompanySwitcher";
-import { BrandMark } from "@/components/BrandMark";
+import { BrandMark, ProductWordmark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSubscription } from "@/hooks/useSubscription";
 import { featureForRoute } from "@/lib/plan-routes";
@@ -89,7 +88,7 @@ export function AppSidebar() {
     return feature ? isReadOnly || !canWrite(feature) : false;
   };
   const { setLocale } = useI18n();
-  const { isRTL, rtlValue } = useRTL();
+  const { isRTL } = useRTL();
   const queryClient = useQueryClient();
   const { data: currentUser } = useCurrentUser();
 
@@ -194,25 +193,16 @@ export function AppSidebar() {
           <span className="min-w-0 truncate" title={groupTitle}>
             {groupTitle}
           </span>
-          <motion.div
-            className="ms-auto"
-            animate={{ rotate: isExpanded ? 180 : 0 }}
-            transition={{ duration: 0.16 }}
+          <div
+            className={cn("ms-auto transition-transform duration-150", isExpanded && "rotate-180")}
           >
             <ChevronDown className="w-3.5 h-3.5 text-sidebar-muted" />
-          </motion.div>
+          </div>
         </SidebarMenuButton>
 
-        <AnimatePresence initial={false}>
-          {isExpanded && (
-            <motion.div
-              key="sub"
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.18, ease: "easeOut" }}
-              style={{ overflow: "hidden" }}
-            >
+        {isExpanded && (
+          <div className="shell-group-open">
+            <div>
               <SidebarMenuSub
                 className={cn(
                   group.key === "reports" &&
@@ -259,9 +249,9 @@ export function AppSidebar() {
                   );
                 })}
               </SidebarMenuSub>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </div>
+          </div>
+        )}
       </SidebarMenuItem>
     );
   };
@@ -288,24 +278,20 @@ export function AppSidebar() {
 
   return (
     <Sidebar side={isRTL ? "right" : "left"}>
-      <motion.div
-        initial={{ opacity: 0, x: rtlValue(-6, 6) }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.18, ease: "easeOut" }}
-      >
+      <div className="shell-slide-in">
         {/* Spec 3.5: logo + wordmark only (no tagline); the company switcher sits directly
             under it for every user type. */}
         <SidebarHeader className="px-3 pt-4 pb-3 space-y-3">
           <div className="flex items-center gap-2.5 px-1">
             <BrandMark size="md" />
-            {/* i18n-ignore: brand name */}
-            <div className="font-semibold text-[15px] tracking-tight text-sidebar-accent-foreground leading-tight">
-              Muhasib<span className="text-sidebar-primary">.ai</span>
-            </div>
+            <ProductWordmark
+              className="font-semibold text-[15px] tracking-tight text-sidebar-accent-foreground leading-tight"
+              accentClassName="text-sidebar-primary"
+            />
           </div>
           <CompanySwitcher />
         </SidebarHeader>
-      </motion.div>
+      </div>
 
       <SidebarContent ref={scrollRef} className="px-1.5" style={scrollFade}>
         {/* ── Client portal — simplified flat view ── */}

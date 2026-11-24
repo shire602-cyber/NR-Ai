@@ -101,6 +101,25 @@ describe("R07-04 mandatory PINT AE content", () => {
     expect(textAt(root, "cac:PaymentTerms/cbc:Note")).toBe("Net 30 days");
   });
 
+  it.each([
+    ["2026-12-31T19:59:59.999Z", "2026-12-31", "23:59:59"],
+    ["2026-12-31T20:00:00.000Z", "2027-01-01", "00:00:00"],
+    ["2026-12-31T20:30:45.000Z", "2027-01-01", "00:30:45"],
+    ["2027-01-01T00:00:00.000Z", "2027-01-01", "00:00:00"],
+    ["2027-01-01T23:59:59.999Z", "2027-01-01", "23:59:59"],
+  ])("pairs %s with its UAE business date and clock time", (date, expectedDate, expectedTime) => {
+    const f = PINT_AE_FIXTURES[0];
+    const { xml: issued } = generateEInvoiceXML(
+      { ...f.invoice, date: new Date(date) },
+      f.lines,
+      fixtureCompany,
+      f.customer
+    );
+    const document = parseXml(issued).documentElement;
+    expect(textAt(document, "cbc:IssueDate")).toBe(expectedDate);
+    expect(textAt(document, "cbc:IssueTime")).toBe(expectedTime);
+  });
+
   it("states document and line allowances so the totals reconcile", () => {
     const docAllowance = children(root, "cac:AllowanceCharge")[0];
     expect(textAt(docAllowance, "cbc:Amount")).toBe("50.00");

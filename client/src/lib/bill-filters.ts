@@ -139,13 +139,10 @@ export interface InboundDocument {
   id: string;
   supplierName: string | null;
   documentNumber: string;
-  documentType: string | null;
-  status: string;
-  billId: string | null;
-  receivedAt: string;
+  vendorCreditReviewable: boolean;
 }
 
-/** Supplier credit notes (UBL type 381) still waiting for review (W4-C residual). */
+/** PINT AE supplier credit notes still waiting for review (W4-C residual). */
 export function pendingSupplierCreditNotes(items: readonly InboundDocument[]): InboundDocument[] {
-  return items.filter((d) => d.documentType === "381" && d.status === "received" && !d.billId);
+  return items.filter((document) => document.vendorCreditReviewable);
 }

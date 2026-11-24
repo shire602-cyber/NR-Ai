@@ -1,3 +1,4 @@
+import { MARKETING_BRAND } from "@shared/marketing-brand";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Download, FilePen, Loader2 } from "lucide-react";
@@ -31,7 +32,7 @@ const COPY = {
     amend: "Amend return",
     amendReason: "Reason for the amendment",
     amendDone: "Amended return created as a draft",
-    notFiled: "Preparation file only. Muhasib does not file with the FTA.",
+    notFiled: `Preparation file only. ${MARKETING_BRAND.name.en} does not file with the FTA.`,
     failed: "Action failed",
   },
   ar: {
@@ -48,7 +49,7 @@ const COPY = {
     amend: "تعديل الإقرار",
     amendReason: "سبب التعديل",
     amendDone: "تم إنشاء إقرار معدل كمسودة",
-    notFiled: "ملف تحضيري فقط. محاسب لا يقدم الإقرارات إلى الهيئة.",
+    notFiled: `ملف تحضيري فقط. ${MARKETING_BRAND.name.ar} لا يقدم الإقرارات إلى الهيئة.`,
     failed: "تعذر تنفيذ الإجراء",
   },
 } as const;

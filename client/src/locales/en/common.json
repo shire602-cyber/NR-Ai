@@ -1,4 +1,5 @@
 {
+  "common.workspaceReadOnly": "This workspace is read-only.",
   "common.cancel": "Cancel",
   "common.close": "Close",
   "common.loading": "Loading…",

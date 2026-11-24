@@ -27,8 +27,10 @@ import { createLogger } from "../../config/logger";
 import { has, resolve } from "../../platform/service-registry";
 import { postJournal } from "../../ledger";
 import { fromFils } from "../../../shared/money";
+import { marketingBrand as PRODUCT_NAME } from "../../../shared/marketing-brand";
 import { invoiceOpenFils, isIssuedStatus } from "../invoice-posting.service";
-import { escapeHtml, renderBilingualEmail, sendEmail } from "../email.service";
+import { buildReceiptEmail, sendEmail } from "../email.service";
+import { resolveEmailLanguage } from "../email-layout";
 import type { CapabilityStatus } from "../../../shared/capabilities";
 import { defaultChartOfAccounts } from "../../defaultChartOfAccounts";
 import { stripeAdapter } from "./stripe";
@@ -99,6 +101,23 @@ export function paymentsAvailability(): PaymentsAvailability {
           en: `Complete merchant onboarding with a payment gateway: Stripe (STRIPE_SECRET_KEY, INVOICE_PAYMENTS_ENABLED, STRIPE_INVOICE_WEBHOOK_SECRET), ${UAE_GATEWAY_ACTIONS.telr.en}`,
           ar: `أكمل تسجيل التاجر لدى بوابة دفع: Stripe أو ${UAE_GATEWAY_ACTIONS.telr.ar}`,
         },
+  };
+}
+
+export function sharedInvoicePayment(
+  invoice: Pick<Invoice, "status" | "invoiceType">,
+  openFils: number
+) {
+  const payments = paymentsAvailability();
+  return {
+    available:
+      payments.available &&
+      openFils > 0 &&
+      invoice.status !== "void" &&
+      invoice.status !== "paid" &&
+      invoice.invoiceType !== "credit_note",
+    status: payments.status,
+    provider: payments.available ? payments.provider : null,
   };
 }
 
@@ -544,6 +563,7 @@ async function applyPaidEvent(
       notes: `Online payment via ${adapter.label.en} (link ${link.id})`,
       paymentAccountId: depositAccountId,
       createdBy: actor,
+      actorUserId: null,
       // The customer has paid this money: any excess over the open balance is a credit.
       allowCredit: true,
     });
@@ -601,7 +621,7 @@ async function applyPaidEvent(
     })
     .where(eq(paymentLinks.id, link.id));
 
-  await emailReceipt(link, amountFils, event).catch((err) =>
+  await emailReceipt(link, amountFils).catch((err) =>
     log.warn({ err: (err as Error)?.message, linkId: link.id }, "Receipt email not queued")
   );
   return {
@@ -611,7 +631,7 @@ async function applyPaidEvent(
   };
 }
 
-async function emailReceipt(link: PaymentLink, amountFils: number, event: VerifiedPaymentEvent) {
+async function emailReceipt(link: PaymentLink, amountFils: number) {
   const [invoice] = await db.select().from(invoices).where(eq(invoices.id, link.invoiceId));
   if (!invoice?.contactId) return;
   const [contact] = await db
@@ -620,47 +640,26 @@ async function emailReceipt(link: PaymentLink, amountFils: number, event: Verifi
     .where(eq(customerContacts.id, invoice.contactId));
   if (!contact?.email) return;
   const [company] = await db.select().from(companies).where(eq(companies.id, link.companyId));
-  const amount = `${link.currency} ${fromFils(amountFils)}`;
-  const html = renderBilingualEmail(
-    {
-      brandName: company?.name ?? "Muhasib.ai",
-      heading: { en: "Payment received — thank you", ar: "تم استلام الدفعة — شكراً لكم" },
-      paragraphs: {
-        en: [
-          `Dear ${escapeHtml(contact.name)},`,
-          `We received your online payment of <strong>${escapeHtml(amount)}</strong> for invoice <strong>${escapeHtml(invoice.number)}</strong>.`,
-        ],
-        ar: [
-          `عزيزنا ${escapeHtml(contact.name)}،`,
-          `استلمنا دفعتكم الإلكترونية بمبلغ <strong dir="ltr">${escapeHtml(amount)}</strong> عن الفاتورة رقم <strong>${escapeHtml(invoice.number)}</strong>.`,
-        ],
-      },
-      summary: [
-        { label: { en: "Invoice", ar: "الفاتورة" }, value: invoice.number },
-        { label: { en: "Amount paid", ar: "المبلغ المدفوع" }, value: amount, strong: true },
-        {
-          label: { en: "Reference", ar: "المرجع" },
-          value: event.paymentReference ?? event.eventId,
-        },
-      ],
-    },
-    contact.preferredLanguage === "ar"
-      ? "ar"
-      : contact.preferredLanguage === "en"
-        ? "en"
-        : "bilingual"
-  );
-  await sendEmail(
-    contact.email,
-    `Payment receipt — invoice ${invoice.number}`,
-    `Payment received: ${amount}`,
-    {
-      html,
-      companyId: link.companyId,
-      category: "payment_receipt",
-      relatedEntityType: "invoice",
-      relatedEntityId: invoice.id,
-      idempotencyKey: `payment_receipt:${link.id}`,
-    }
-  );
+  const built = buildReceiptEmail({
+    company: company ?? { name: PRODUCT_NAME, businessAddress: null, contactEmail: null },
+    customerName: contact.name,
+    customerNameAr: contact.nameAr ?? null,
+    invoiceNumber: invoice.number,
+    amount: Number(fromFils(amountFils)),
+    currency: link.currency,
+    // No provider reference (payment intent / event ids are internal); invoice number and
+    // date identify the payment for the customer.
+    paidAt: new Date(),
+    language: resolveEmailLanguage(null, contact.preferredLanguage),
+  });
+  await sendEmail(contact.email, built.subject, built.text, {
+    html: built.html,
+    fromName: company?.name,
+    replyTo: company?.contactEmail ?? null,
+    companyId: link.companyId,
+    category: "payment_receipt",
+    relatedEntityType: "invoice",
+    relatedEntityId: invoice.id,
+    idempotencyKey: `payment_receipt:${link.id}`,
+  });
 }

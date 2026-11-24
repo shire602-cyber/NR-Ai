@@ -108,7 +108,7 @@ export function StatCard({
         </div>
       </div>
       {hint && !loading && (
-        <div className="mt-1 truncate text-small text-muted-foreground">{hint}</div>
+        <div className="mt-1 line-clamp-2 break-words text-small text-muted-foreground">{hint}</div>
       )}
       {sparkline && sparkline.length >= 2 && !loading && (
         <Sparkline values={sparkline} tone={sparklineTone} className="mt-4" />

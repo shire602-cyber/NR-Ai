@@ -12,6 +12,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import PortalStatements from "../../client/src/pages/portal/PortalStatements";
 import { loadLocale, useI18n } from "../../client/src/lib/i18n";
 import { formatMoneyText, stripBidiControls } from "../../client/src/lib/format-money";
+import { portalQuery } from "../../client/src/lib/queryClient";
+import { PortalAccountScope } from "../../client/src/lib/portal-scope";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -69,10 +71,19 @@ describe("WP10 portal statement money uses the shared formatter", () => {
 
   function renderStatement() {
     const qc = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
-    qc.setQueryData(["portal-statements"], statement);
+    const supplier = "test-supplier";
+    qc.setQueryData(portalQuery("/api/client-portal/statements", supplier).queryKey, statement);
     act(() => {
       root.render(
-        createElement(QueryClientProvider, { client: qc }, createElement(PortalStatements))
+        createElement(
+          QueryClientProvider,
+          { client: qc },
+          createElement(
+            PortalAccountScope.Provider,
+            { value: supplier },
+            createElement(PortalStatements)
+          )
+        )
       );
     });
     // <Money> lays sign, digits and currency out in separate spans; compare without spaces.

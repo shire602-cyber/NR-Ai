@@ -5,17 +5,24 @@
  * through the durable email outbox, exactly once per level, with catch-up after missed runs.
  * The harness has no email provider, so every message is honestly `blocked_no_provider`.
  */
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
 const DAY = 86_400_000;
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-async function contact(t: Tenant, name: string, email: string | null = "ap@customer.example") {
+async function contact(
+  t: Tenant,
+  name: string,
+  email: string | null = "ap@customer.example",
+  preferredLanguage?: "en" | "ar"
+) {
   const r = await t.as.post(`/api/companies/${t.company.id}/customer-contacts`, {
     name,
     ...(email ? { email } : {}),
+    preferredLanguage,
     phone: "0501234567",
   });
   expect(r.status, r.text).toBeLessThan(300);
@@ -77,6 +84,114 @@ const outboxFor = (invoiceId: string) =>
   );
 
 describe("W4-D dunning engine", () => {
+  it("[PR94] the hourly scan reminds customers on active trials only", async () => {
+    const active = await h.createTenant();
+    const expired = await h.createTenant();
+    const activeInvoice = await invoice(active, await contact(active, "Active Payer"));
+    const expiredInvoice = await invoice(expired, await contact(expired, "Expired Payer"));
+    await setting(active, { attachPdf: false });
+    await setting(expired, { attachPdf: false });
+    await h.sql(
+      `UPDATE subscriptions SET plan_id = 'free', trial_ends_at =
+         CASE WHEN company_id = $1 THEN now() + interval '1 day' ELSE now() - interval '1 day' END
+       WHERE company_id IN ($1, $2)`,
+      [active.company.id, expired.company.id]
+    );
+
+    vi.stubEnv("BILLING_ENFORCEMENT", "true");
+    try {
+      await dun();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    const logs = (id: string) =>
+      h.sql(`SELECT outbox_id FROM reminder_logs WHERE related_entity_id = $1`, [id]);
+    const activeOutbox = await outboxFor(activeInvoice);
+    expect(activeOutbox).toHaveLength(1);
+    expect(await logs(activeInvoice)).toEqual([{ outbox_id: activeOutbox[0].id }]);
+    expect(await logs(expiredInvoice)).toEqual([]);
+    expect(await outboxFor(expiredInvoice)).toEqual([]);
+    const counters = await h.sql(`SELECT id, reminder_count FROM invoices WHERE id IN ($1, $2)`, [
+      activeInvoice,
+      expiredInvoice,
+    ]);
+    expect(counters).toHaveLength(2);
+    expect(counters).toEqual(
+      expect.arrayContaining([
+        { id: activeInvoice, reminder_count: 1 },
+        { id: expiredInvoice, reminder_count: 0 },
+      ])
+    );
+  });
+
+  it("migrates legacy rules to their effective language and lets staff switch to both", async () => {
+    const t = await h.createTenant();
+    const cid = await contact(t, "Arabic Payer", "legacy-arabic@example.test", "ar");
+    const inv = await invoice(t, cid);
+    const migration = readFileSync("migrations/0140_preserve_reminder_language.sql", "utf8");
+    await h.sql("ALTER TABLE reminder_settings ALTER COLUMN language SET DEFAULT 'bilingual'");
+    const [legacy] = await h.sql<{ id: string; language: string }>(
+      `INSERT INTO reminder_settings (company_id, reminder_type, days_after_due)
+       VALUES ($1, 'invoice_overdue', 1) RETURNING id, language`,
+      [t.company.id]
+    );
+    expect(legacy.language).toBe("bilingual");
+    const fixed = await setting(t, { language: "en", isEnabled: false });
+
+    await h.sql(migration);
+    const rows = await h.sql(`SELECT id, language FROM reminder_settings WHERE company_id = $1`, [
+      t.company.id,
+    ]);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        { id: legacy.id, language: "contact" },
+        { id: fixed, language: "en" },
+      ])
+    );
+    const [newRule] = await h.sql(
+      `INSERT INTO reminder_settings (company_id, reminder_type, is_enabled)
+      VALUES ($1, 'vat_deadline', false) RETURNING language`,
+      [t.company.id]
+    );
+    expect(newRule.language).toBe("contact");
+
+    await dun();
+    const [first] = await outboxFor(inv);
+    expect(first.html).toContain('<div dir="rtl" lang="ar"');
+    expect(first.html).not.toContain('<div dir="ltr" lang="en"');
+    const edited = await t.as.patch(`/api/reminder-settings/${legacy.id}`, {
+      language: "bilingual",
+    });
+    expect(edited.status, edited.text).toBe(200);
+    await h.sql(migration);
+    const nextInvoice = await invoice(t, cid);
+    await dun();
+    const [second] = await outboxFor(nextInvoice);
+    expect(second.html).toContain('<div dir="rtl" lang="ar"');
+    expect(second.html).toContain('<div dir="ltr" lang="en"');
+  });
+
+  it.each([
+    { language: "bilingual", english: true },
+    { language: "contact", english: false },
+    { language: undefined, english: false },
+  ])(
+    "uses the $language language setting for an Arabic-preferring contact",
+    async ({ language, english }) => {
+      const t = await h.createTenant();
+      const cid = await contact(t, "Arabic Payer", "arabic@example.test", "ar");
+      const inv = await invoice(t, cid);
+      await setting(t, language ? { language } : {});
+      await dun();
+      const mails = await outboxFor(inv);
+      expect(mails).toHaveLength(1);
+      expect(mails[0].html).toContain('<div dir="rtl" lang="ar"');
+      expect(mails[0].html.includes('<div dir="ltr" lang="en"')).toBe(english);
+      expect(mails[0].subject.includes(" | ")).toBe(english);
+    }
+  );
+
   it("[R16-02] enabled settings queue a level-1 customer email for an overdue issued invoice exactly once across three runs", async () => {
     const t = await h.createTenant();
     const cid = await contact(t, "Late Payer LLC");
@@ -90,6 +205,10 @@ describe("W4-D dunning engine", () => {
     expect(mails[0].to_address).toBe("ap@customer.example");
     // No provider in the harness: queued and honestly blocked, never "sent".
     expect(mails[0].status).toBe("blocked_no_provider");
+    expect(mails[0].html).toContain('<div dir="ltr" lang="en"');
+    expect(mails[0].html).toContain('<div dir="rtl" lang="ar"');
+    expect(mails[0].html).toContain("عرض الفاتورة");
+    expect(mails[0].html).not.toContain("ادفع الآن");
     const att = await h.sql(
       `SELECT filename, content_type, size_bytes FROM email_outbox_attachments WHERE outbox_id = $1`,
       [mails[0].id]

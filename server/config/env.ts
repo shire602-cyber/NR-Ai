@@ -75,15 +75,6 @@ const envSchema = z.object({
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().optional(),
 
-  // === Open Banking (Wio Bank) ===
-  WIO_CLIENT_ID: z.string().optional(),
-  WIO_CLIENT_SECRET: z.string().optional(),
-  WIO_API_BASE_URL: z.string().optional(),
-
-  // === Open Banking (Lean Technologies aggregator) ===
-  LEAN_APP_TOKEN: z.string().optional(),
-  LEAN_API_BASE_URL: z.string().optional(),
-
   // === Logging ===
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 
@@ -160,6 +151,12 @@ export function validateEnv(): Env {
     process.stderr.write(`\nEnvironment validation failed:\n\n${errorMessages}\n\n`);
     process.stderr.write("Please check your .env file or environment variables.\n");
     process.exit(1);
+  }
+
+  if (result.data.NODE_ENV === "production" && !process.env.TURNSTILE_SECRET_KEY?.trim()) {
+    process.stderr.write(
+      "WARNING: TURNSTILE_SECRET_KEY is unset. Public registration and password reset are accepting requests without CAPTCHA.\n"
+    );
   }
 
   _env = result.data;

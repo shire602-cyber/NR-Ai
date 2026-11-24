@@ -5,7 +5,7 @@
  * the sent / viewed log (7.25), document language (7.21), source filter (13.5), quote by email
  * (7.5).
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { accountByCode, ledgerTotals, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -93,7 +93,7 @@ describe("WQ1 cash sale (7.7)", () => {
     expect(await linesBySource(t, ["invoice", "payment"])).toEqual([
       "invoice 1040 525.00/0.00",
       "invoice 2020 0.00/25.00",
-      "invoice 4010 0.00/500.00",
+      "invoice 4020 0.00/500.00",
       "payment 1021 525.00/0.00",
       "payment 1040 0.00/525.00",
     ]);
@@ -325,7 +325,7 @@ describe("WQ1 partial credit note from an invoice (7.15)", () => {
 describe("WQ1 make recurring from an invoice (7.13)", () => {
   it("creates the schedule and the next run emails through the outbox: queued, never sent", async () => {
     const t = await h.createTenant();
-    const c = await contact(t);
+    const c = await contact(t, "Gulf Retail LLC", { preferredLanguage: "ar" });
     const inv = await issued(t, { contactId: c.id });
     // The row action seeds the recurring editor from the invoice; it saves through the one
     // recurring-invoice route with email automatically on.
@@ -349,13 +349,19 @@ describe("WQ1 make recurring from an invoice (7.13)", () => {
       [t.company.id, inv.id]
     );
     expect(gen).toMatchObject({ status: "sent", source: "recurring" });
-    const outbox = await h.sql<{ status: string; to_address: string; category: string }>(
-      `SELECT status, to_address, category FROM email_outbox WHERE related_entity_id = $1`,
-      [gen.id]
-    );
-    expect(outbox).toEqual([
+    const outbox = await h.sql<{
+      status: string;
+      to_address: string;
+      category: string;
+      html: string;
+    }>(`SELECT status, to_address, category, html FROM email_outbox WHERE related_entity_id = $1`, [
+      gen.id,
+    ]);
+    expect(outbox).toMatchObject([
       { status: "blocked_no_provider", to_address: "ap@gulfretail.example", category: "invoice" },
     ]);
+    expect(outbox[0].html).toContain('<div dir="rtl" lang="ar"');
+    expect(outbox[0].html).not.toContain('<div dir="ltr" lang="en"');
     const [row] = await h.sql<{ last_run_status: string; last_run_message: string }>(
       `SELECT last_run_status, last_run_message FROM recurring_invoices WHERE id = $1`,
       [tpl.body.id]
@@ -392,7 +398,7 @@ describe("WQ1 cost centre on an invoice line (7.2i / 6.9)", () => {
         WHERE jl.cost_center_id = $1 GROUP BY a.code`,
       [cc.body.id]
     );
-    expect(rows).toEqual([{ code: "4010", credit: "1000.00" }]);
+    expect(rows).toEqual([{ code: "4020", credit: "1000.00" }]);
     const report = await t.as.get(`${base(t)}/cost-centers/${cc.body.id}/report`);
     expect(report.status, report.text).toBe(200);
     expect(JSON.stringify(report.body)).toMatch(/1000/);
@@ -488,19 +494,48 @@ describe("WQ1 attachments, document language, sent / viewed log (7.2g, 7.21, 7.2
     expect((await h.anon.get(`/api/public/invoices/${share.body.token}`)).status).toBe(200);
     // A refresh within the throttle window is one view.
     expect((await h.anon.get(`/api/public/invoices/${share.body.token}`)).status).toBe(200);
-    const log = await t.as.get(`/api/invoices/${inv.id}/activity`);
-    expect(log.status, log.text).toBe(200);
-    expect(
-      log.body.map((e: { kind: string; sent: boolean; status: string | null }) => e.kind).sort()
-    ).toEqual(["emailed", "viewed"]);
-    const emailed = log.body.find((e: { kind: string }) => e.kind === "emailed");
-    expect(emailed).toMatchObject({
-      recipient: "ap@gulfretail.example",
-      status: "blocked_no_provider",
-      sent: false,
-    });
+    // The public route records views in the background.
+    await vi.waitFor(
+      async () => {
+        const log = await t.as.get(`/api/invoices/${inv.id}/activity`);
+        expect(log.status, log.text).toBe(200);
+        expect(log.body.map((e: { kind: string }) => e.kind).sort()).toEqual([
+          "emailed",
+          "viewed",
+        ]);
+        const emailed = log.body.find((e: { kind: string }) => e.kind === "emailed");
+        expect(emailed).toMatchObject({
+          recipient: "ap@gulfretail.example",
+          status: "blocked_no_provider",
+          sent: false,
+        });
+      },
+      { timeout: 5000 }
+    );
     const stranger = await h.createSecondTenant();
     expect((await stranger.as.get(`/api/invoices/${inv.id}/activity`)).status).toBe(404);
+  });
+
+  it("records just one view when invoice share requests overlap", async (ctx) => {
+    if (!h.concurrencySupported) return ctx.skip();
+    const t = await h.createTenant();
+    const { id } = await issued(t, { customerName: "Gulf Retail LLC" });
+    const { recordInvoiceView, VIEW_THROTTLE_MS } = await import(
+      "../../server/services/invoice-activity.service"
+    );
+    const invoice = { id, companyId: t.company.id };
+    const now = new Date();
+
+    const recorded = await Promise.all(
+      Array.from({ length: 8 }, () => recordInvoiceView(invoice, now))
+    );
+    expect(recorded.filter(Boolean)).toHaveLength(1);
+    expect(await recordInvoiceView(invoice, new Date(now.getTime() + VIEW_THROTTLE_MS))).toBe(true);
+    const views = await h.sql(
+      "SELECT id FROM invoice_events WHERE invoice_id = $1 AND kind = 'viewed'",
+      [id]
+    );
+    expect(views).toHaveLength(2);
   });
 });
 

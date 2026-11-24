@@ -592,7 +592,7 @@ export default function AccountLedger() {
                   <Link
                     href={`/journal/${entry.journalEntryId}`}
                     dir="ltr"
-                    className="tabular-nums text-accent [unicode-bidi:isolate] hover:underline"
+                    className="tabular-nums text-accent [unicode-bidi:isolate] hover:underline max-md:inline-flex max-md:min-h-11 max-md:items-center"
                   >
                     {entry.entryNumber.slice(-12)}
                   </Link>

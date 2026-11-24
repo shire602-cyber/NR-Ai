@@ -11,18 +11,38 @@ import {
   type CompanyUser,
   type InsertCompany,
   type InsertCompanyUser,
-  type User,
 } from "@shared/schema";
 import {
   NR_FIRM_ID,
   accessibleClientCondition,
   canAccessFirmClient,
+  hasFirmCreatedCompanyMembership,
+  reconcileCompanyMembershipOrigin,
+  lockFirmClientAccess,
+  lockFirmTimerUser,
+  resolveFirmContext,
+  settleClientTimersAtAccessLoss,
   type FirmContext,
 } from "../services/firm/scope";
-import { db } from "../db";
+import { updateCompanyWithApprovalScope } from "../services/einvoice/appointment-scope";
+import { db, type AppDatabase } from "../db";
+import { DomainError } from "../errors";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
-import { scopedDelete, scopedGet, scopedUpdate } from "../tenancy";
+import { isScopedIdPair, scopedGet } from "../tenancy";
 import { UserStorage } from "./users";
+import type { CompanyMemberWithUser } from "./types";
+import { firmRoleHasPermission } from "@shared/access";
+
+const companyMemberUserColumns = {
+  id: users.id,
+  email: users.email,
+  name: users.name,
+  userType: users.userType,
+  avatarUrl: users.avatarUrl,
+  emailVerified: users.emailVerified,
+  lastLoginAt: users.lastLoginAt,
+  createdAt: users.createdAt,
+};
 
 /** users.user_type of a customer-portal login (never a company member). */
 const PORTAL_USER_TYPE = "client_portal";
@@ -107,14 +127,16 @@ export class CompanyStorage extends UserStorage {
     return out;
   }
 
-  async createCompany(insertCompany: InsertCompany): Promise<Company> {
-    const [company] = await db.insert(companies).values(insertCompany).returning();
+  async createCompany(
+    insertCompany: InsertCompany,
+    exec: Pick<AppDatabase, "insert"> = db
+  ): Promise<Company> {
+    const [company] = await exec.insert(companies).values(insertCompany).returning();
     return company;
   }
 
   async updateCompany(id: string, data: Partial<InsertCompany>): Promise<Company> {
-    const [company] = await db.update(companies).set(data).where(eq(companies.id, id)).returning();
-    return company;
+    return updateCompanyWithApprovalScope(id, data);
   }
 
   // Company Users
@@ -247,37 +269,96 @@ export class CompanyStorage extends UserStorage {
   async updateCompanyUser(
     companyId: string,
     id: string,
-    data: Pick<Partial<InsertCompanyUser>, "role">
+    data: Pick<Partial<InsertCompanyUser>, "role">,
+    tx?: Pick<AppDatabase, "select" | "update">
   ): Promise<CompanyUser | undefined> {
-    return scopedUpdate(companyUsers, companyId, id, data);
+    if (!isScopedIdPair(companyId, id)) return undefined;
+    if (data.role === undefined) return scopedGet(companyUsers, companyId, id);
+    if (!tx) return db.transaction((conn) => this.updateCompanyUser(companyId, id, data, conn));
+    const scope = and(eq(companyUsers.companyId, companyId), eq(companyUsers.id, id));
+    const [member] = await tx
+      .select({ userId: companyUsers.userId })
+      .from(companyUsers)
+      .where(scope);
+    if (!member) return undefined;
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, member.userId)).for("update");
+    await reconcileCompanyMembershipOrigin(companyId, member.userId, tx);
+    if (
+      data.role === "owner" &&
+      (await hasFirmCreatedCompanyMembership(companyId, member.userId, tx))
+    ) {
+      throw new DomainError("ROLE_NOT_GRANTABLE", 403);
+    }
+    const [updated] = await tx.update(companyUsers).set(data).where(scope).returning();
+    return updated;
   }
 
-  async deleteCompanyUser(companyId: string, id: string): Promise<boolean> {
-    return scopedDelete(companyUsers, companyId, id);
+  async deleteCompanyUser(
+    companyId: string,
+    id: string,
+    tx?: Pick<AppDatabase, "select" | "delete">
+  ): Promise<boolean> {
+    if (!isScopedIdPair(companyId, id)) return false;
+    if (!tx) return db.transaction((conn) => this.deleteCompanyUser(companyId, id, conn));
+    const scope = and(eq(companyUsers.companyId, companyId), eq(companyUsers.id, id));
+    const [member] = await tx
+      .select({ userId: companyUsers.userId })
+      .from(companyUsers)
+      .where(scope);
+    if (!member) return false;
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, member.userId)).for("update");
+    const [removed] = await tx.delete(companyUsers).where(scope).returning({ id: companyUsers.id });
+    return !!removed;
   }
 
   async getCompanyUser(companyId: string, id: string): Promise<CompanyUser | undefined> {
     return scopedGet(companyUsers, companyId, id);
   }
 
-  async getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]> {
+  // PR-62 port: the joined user is a PUBLIC projection. Firm and admin client screens send
+  // this list straight to the browser, so password_hash, token_version and the MFA flags
+  // must never be selected here.
+  async getCompanyUserWithUser(companyId: string): Promise<CompanyMemberWithUser[]> {
     const results = await db
-      .select()
+      .select({ member: companyUsers, user: companyMemberUserColumns })
       .from(companyUsers)
       .innerJoin(users, eq(companyUsers.userId, users.id))
       .where(eq(companyUsers.companyId, companyId));
 
-    return results.map((r) => ({
-      ...r.company_users,
-      user: r.users,
-    }));
+    return results.map((r) => ({ ...r.member, user: r.user }));
   }
 
   // Admin Company Management
-  async deleteCompany(id: string): Promise<void> {
-    await db
-      .update(companies)
-      .set({ deletedAt: new Date(), isActive: false })
-      .where(eq(companies.id, id));
+  async deleteCompany(
+    id: string,
+    firmActor?: Pick<FirmContext, "userId" | "firmId">
+  ): Promise<Date | null> {
+    return db.transaction(async (tx) => {
+      if (firmActor) await lockFirmTimerUser(tx, firmActor.userId);
+      await lockFirmClientAccess(tx, id);
+      const [active] = await tx
+        .select({ companyType: companies.companyType })
+        .from(companies)
+        .where(and(eq(companies.id, id), isNull(companies.deletedAt)));
+      if (!active) return null;
+      if (firmActor) {
+        const current = await resolveFirmContext({ id: firmActor.userId }, tx);
+        if (
+          active.companyType !== "client" ||
+          current?.firmId !== firmActor.firmId ||
+          !firmRoleHasPermission(current.role, "firm.clients.archive") ||
+          !(await canAccessFirmClient(current, id, tx))
+        ) {
+          return null;
+        }
+      }
+      const archivedAt = new Date();
+      await settleClientTimersAtAccessLoss(tx, id, archivedAt);
+      await tx
+        .update(companies)
+        .set({ deletedAt: archivedAt, isActive: false })
+        .where(eq(companies.id, id));
+      return archivedAt;
+    });
   }
 }

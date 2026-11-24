@@ -36,6 +36,7 @@ import {
 } from "../../client/src/lib/export";
 import {
   currentExportLocale,
+  localizeExportSheets,
   localizeExportSheetsWith,
   type ExportLocale,
 } from "../../client/src/lib/export-localize";
@@ -489,6 +490,32 @@ const figures = (sheets: ExportData[]) =>
   );
 
 describe("E1: report Excel exports in the exporting user's language", () => {
+  it("translates pack headings without translating the same text in tenant rows", async () => {
+    const row = { workspace: "Workspace", memo: "Pack Summary", ref: "RPT-0002" };
+    const [sheet] = await localizeExportSheets(
+      [
+        {
+          sheetName: "Pack Summary",
+          columns: [
+            { header: "Workspace", key: "workspace" },
+            { header: "Payment Amount (AED)", key: "memo" },
+            { header: "Reference", key: "ref" },
+          ],
+          rows: [row],
+        },
+      ],
+      "ar",
+      true
+    );
+    expect(sheet.sheetName).toBe("ملخص الحزمة");
+    expect(sheet.columns.map(({ header }) => header)).toEqual([
+      "مساحة العمل",
+      "مبلغ السداد (درهم)",
+      "المرجع",
+    ]);
+    expect(sheet.rows).toEqual([row]);
+  });
+
   it("Arabic user: every label, heading, code and date is Arabic and the sheet is right-to-left", () => {
     setLocale("ar");
     expect(currentExportLocale()).toBe("ar");

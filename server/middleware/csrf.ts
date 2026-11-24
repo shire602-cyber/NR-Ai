@@ -35,8 +35,8 @@ const CSRF_BEARER_EXEMPT = [
   /^\/api\/webhooks\/email-intake$/,
   /^\/api\/webhooks\/stripe$/,
   /^\/api\/webhooks\/einvoice\/[^/]+\/inbound$/, // W4-C: HMAC-signed ASP delivery
-  /^\/api\/webhooks\/einvoice\/acube\/(sandbox|production)$/, // E1: Ed25519-signed A-Cube events
-  /^\/api\/webhooks\/einvoice\/complyance\/(sandbox|production)$/, // E2: HMAC-signed Complyance events
+  /^\/api\/webhooks\/einvoice\/acube\/(sandbox|production)(?:\/[0-9a-f-]{36})?$/i, // E1: Ed25519-signed A-Cube events
+  /^\/api\/webhooks\/einvoice\/complyance\/(sandbox|production)(?:\/[0-9a-f-]{36})?$/i, // E2: HMAC-signed Complyance events
   // W4-D: invoice payment gateways and email delivery events (signed by the provider).
   /^\/api\/webhooks\/invoice-payments\/[a-z]+$/,
   /^\/api\/webhooks\/email-events\/[a-z-]+$/,
@@ -92,7 +92,7 @@ function readCookieFromHeader(req: Request, name: string): string | undefined {
   return undefined;
 }
 
-function readCsrfIdentifierCookie(req: Request): string | undefined {
+export function readCsrfIdentifierCookie(req: Request): string | undefined {
   const name = csrfIdentifierCookieName();
   const parsed = normalizeCookieValue(req.cookies?.[name]);
   return parsed || readCookieFromHeader(req, name);

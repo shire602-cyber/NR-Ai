@@ -3,7 +3,7 @@
  *
  * Every assertion reads the real ledger (journal_lines × accounts) of a fresh tenant.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -81,7 +81,7 @@ describe("W3-A sales cycle", () => {
     expect(v.body.status).toBe("void");
     const after = await balances(t);
     expect(after["1040"] ?? 0).toBe(0);
-    expect(after["4010"] ?? 0).toBe(0);
+    expect(after["4020"] ?? 0).toBe(0);
     expect(after["2020"] ?? 0).toBe(0);
     const lines = await entryLinesOf(t, inv.id);
     const reversal = lines.filter((l) => l.entry_kind === "reversal");
@@ -95,7 +95,7 @@ describe("W3-A sales cycle", () => {
     );
   });
 
-  it("[R03-04][R07-01] a partial credit note on a zero-rated line debits 4060, not 4010", async () => {
+  it("[R03-04][R07-01] a partial credit note on a zero-rated line debits 4060, not 4020", async () => {
     const t = await h.createTenant();
     const inv = await mkIssued(t, {}, [
       { description: "Std", quantity: 1, unitPrice: 1000, vatRate: 5 },
@@ -124,7 +124,7 @@ describe("W3-A sales cycle", () => {
     expect(debited).toEqual(["4060"]);
     const b = await balances(t);
     expect(b["4060"]).toBe(-300);
-    expect(b["4010"]).toBe(-1000);
+    expect(b["4020"]).toBe(-1000);
     expect(b["1040"]).toBe(1550 - 200);
   });
 
@@ -244,7 +244,7 @@ describe("W3-A sales cycle", () => {
       Zero: "zero_rated",
     });
     const b = await balances(t);
-    expect(b["4010"]).toBe(-1000);
+    expect(b["4020"]).toBe(-1000);
     expect(b["4060"]).toBe(-500);
     expect(b["4070"]).toBe(-250);
     expect(b["4030"]).toBe(-100);
@@ -283,7 +283,7 @@ describe("W3-A sales cycle", () => {
       discount_amount: "100.00",
     });
     const b = await balances(t);
-    expect(b["4010"]).toBe(-900);
+    expect(b["4020"]).toBe(-900);
     expect(b["2020"]).toBe(-45);
     expect(b["1040"]).toBe(945);
 
@@ -386,7 +386,7 @@ describe("W3-A sales cycle", () => {
     expect(voided.body.status).toBe("void");
     const after = await balances(t);
     expect(after["1040"]).toBe(1050);
-    expect(after["4010"]).toBe(-1000);
+    expect(after["4020"]).toBe(-1000);
     expect(after["2020"]).toBe(-50);
 
     const dn = await t.as.post(`/api/companies/${t.company.id}/invoices/${inv.id}/debit-note`, {
@@ -513,6 +513,54 @@ describe("W3-A sales cycle", () => {
     expect(status[0].status).toBe("converted");
   });
 
+  it("[PR93-3] skips expired auto-issue templates before changing invoices, journals or schedules", async () => {
+    const active = await h.createTenant();
+    const expired = await h.createSecondTenant();
+    async function due(t: Tenant) {
+      const created = await t.as.post(`/api/companies/${t.company.id}/recurring-invoices`, {
+        customerName: "Monthly Customer",
+        frequency: "monthly",
+        startDate: today(),
+        autoIssue: true,
+        lines: [{ description: "Retainer", quantity: 1, unitPrice: 100, vatRate: 5 }],
+      });
+      expect(created.status, created.text).toBe(200);
+      return created.body.id as string;
+    }
+    const activeId = await due(active);
+    const expiredId = await due(expired);
+    await h.sql(
+      "UPDATE subscriptions SET trial_ends_at = now() - interval '1 day' WHERE company_id = $1",
+      [expired.company.id]
+    );
+    const state = async (tenant: Tenant, id: string) => ({
+      invoices: await h.sql("SELECT id, status FROM invoices WHERE company_id = $1 ORDER BY id", [
+        tenant.company.id,
+      ]),
+      journal: await h.sql("SELECT id FROM journal_entries WHERE company_id = $1 ORDER BY id", [
+        tenant.company.id,
+      ]),
+      schedule: await h.sql("SELECT * FROM recurring_invoices WHERE id = $1", [id]),
+    });
+    const beforeExpired = await state(expired, expiredId);
+    const beforeActive = await state(active, activeId);
+    const { generateDueRecurringInvoices } =
+      await import("../../server/services/scheduler.service");
+    vi.stubEnv("BILLING_ENFORCEMENT", "true");
+    try {
+      await generateDueRecurringInvoices();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(await state(expired, expiredId)).toEqual(beforeExpired);
+    const afterActive = await state(active, activeId);
+    expect(afterActive.invoices).toEqual([{ id: expect.any(String), status: "sent" }]);
+    expect(afterActive.journal).toHaveLength(beforeActive.journal.length + 1);
+    expect(afterActive.schedule[0].next_run_date).not.toEqual(
+      beforeActive.schedule[0].next_run_date
+    );
+  });
+
   it("[R03-12][R03-23] a EUR recurring template generates an invoice at the company EUR rate with the correct AED posting", async () => {
     const t = await h.createTenant();
     const rate = await t.as.post(`/api/companies/${t.company.id}/exchange-rates`, {
@@ -571,7 +619,7 @@ describe("W3-A sales cycle", () => {
     expect(gen.status).toBe("sent");
     const b = await balances(t);
     expect(b["1040"]).toBe(620); // 155 EUR × 4
-    expect(b["4010"]).toBe(-400);
+    expect(b["4020"]).toBe(-400);
     expect(b["4060"]).toBe(-200);
     expect(b["2020"]).toBe(-20);
     const tplRow = await h.sql(
@@ -673,7 +721,7 @@ describe("W3-A sales cycle", () => {
     expect(cn.status, cn.text).toBe(201);
     const b = await balances(t);
     // 950 USD left at 3.6725 = 3,488.88 (revenue 900×3.6725 + VAT 45×3.6725 rounded per leg)
-    expect(b["4010"]).toBeCloseTo(-(3672.5 - 367.25), 2);
+    expect(b["4020"]).toBeCloseTo(-(3672.5 - 367.25), 2);
     const r = await pay(t, inv.id, { amount: 945, exchangeRate: 3.7 });
     expect(r.status, r.text).toBe(201);
     expect(r.body.status).toBe("paid");

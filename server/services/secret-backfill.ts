@@ -17,7 +17,6 @@ const TARGETS: Array<{ table: string; columns: string[] }> = [
     table: "ecommerce_integrations",
     columns: ["api_key", "access_token", "refresh_token", "webhook_secret"],
   },
-  { table: "bank_connections", columns: ["access_token", "refresh_token"] },
 ];
 
 export async function backfillPlaintextSecrets(): Promise<void> {

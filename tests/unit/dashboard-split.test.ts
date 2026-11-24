@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error - plain .mjs script without type declarations
 import { scanPages } from "../../scripts/i18n-scan.mjs";
+import { brandOnlyPageLabels } from "../helpers/brand-only-page-labels";
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
 
@@ -28,6 +29,7 @@ describe("S6a: dashboard split and i18n long tail", () => {
     const ar = JSON.parse(read("client/src/locales/ar/pageLabels.json")) as Record<string, string>;
     expect(Object.keys(en).length).toBeGreaterThan(600);
     for (const [key, value] of Object.entries(en)) {
+      if (brandOnlyPageLabels.has(key)) continue;
       expect(ar[key], key).toMatch(/[؀-ۿ]/);
       if (!/^[A-Za-z0-9.]+$/.test(value)) expect(ar[key], key).not.toBe(value);
     }

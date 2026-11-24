@@ -189,7 +189,7 @@ describe("[J1-L3] e-invoice hints", () => {
     expect(einvoiceFieldHint("company.addressCity")).toEqual({
       labelKey: "invoices.einvoiceField.city",
       whereKey: "invoices.einvoiceWhere.companyProfile",
-      href: "/company-profile",
+      href: "/settings/company",
       ruleLabel: null,
     });
     expect(einvoiceFieldHint("lines[2].unitPrice").labelKey).toBe(
@@ -198,6 +198,30 @@ describe("[J1-L3] e-invoice hints", () => {
     expect(einvoiceFieldHint("customer.address").href).toBe("/contacts");
     expect(einvoiceFieldHint("PINT AE rule ibr-143-ae").ruleLabel).toBe("PINT AE rule ibr-143-ae");
     expect(einvoiceFieldHint("something.unknown")).toMatchObject({ labelKey: null, href: null });
+  });
+
+  it("links tax identity and payment fields to the controls that save them", () => {
+    expect(einvoiceFieldHint("company.einvoiceTin").href).toBe(
+      "/settings/company#company-tax-id-tin"
+    );
+    expect(einvoiceFieldHint("company.sellerIdCountry").href).toBe(
+      "/settings/company#company-tax-id-seller-id-country"
+    );
+    expect(einvoiceFieldHint("company.tradeLicenceNo").href).toBe(
+      "/settings/einvoicing#trade-licence"
+    );
+    expect(einvoiceFieldHint("company.einvoicePayeeIban").href).toBe("/settings/einvoicing#iban");
+  });
+
+  it("links a named buyer or invoice issue to its saved record", () => {
+    const source = { contactId: "contact & id", invoiceId: "invoice-id" };
+    expect(einvoiceFieldHint("customer.endpointId", source).href).toBe(
+      "/contacts?open=contact%20%26%20id"
+    );
+    expect(einvoiceFieldHint("PINT AE rule ibr-144-ae", source).href).toBe(
+      "/contacts?open=contact%20%26%20id"
+    );
+    expect(einvoiceFieldHint("invoice.dueDate", source).href).toBe("/invoices?open=invoice-id");
   });
 });
 

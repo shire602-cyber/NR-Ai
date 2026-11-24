@@ -244,7 +244,10 @@ export function LedgerTotals({
         {due && (
           <div className="mt-3 flex items-baseline justify-between gap-4 rounded-md bg-primary px-4 py-3 text-primary-foreground">
             <dt className="font-semibold">{due.label}</dt>
-            <dd className="text-h3 font-semibold tabular-nums" data-testid={due.testId}>
+            <dd
+              className="text-h3 font-semibold tabular-nums [&_.money-currency]:text-inherit"
+              data-testid={due.testId}
+            >
               {due.value}
             </dd>
           </div>

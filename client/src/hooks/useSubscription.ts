@@ -43,6 +43,7 @@ interface SubscriptionData {
     billingCycle: string;
     currentPeriodEnd: string;
     stripeCustomerId: string | null;
+    stripeSubscriptionId: string | null;
     invoicesCreatedThisMonth: number;
     receiptsCreatedThisMonth: number;
     aiCreditsUsedThisMonth: number;
@@ -50,6 +51,7 @@ interface SubscriptionData {
   limits: Record<string, number>;
   entitlement?: EntitlementData;
   enforcement?: boolean;
+  trialLocked?: boolean;
   /** False while Stripe is not configured: the plan buttons become "Contact us". */
   checkoutAvailable?: boolean;
   trial?: TrialState | null;
@@ -72,14 +74,10 @@ interface UsageData {
  *   canAccess(f)  — may the module be opened? (always true: data is never hidden)
  *   canWrite(f)   — may records be added or changed? (false → show the locked state)
  */
-export function useSubscription() {
+export function useCompanySubscription(watchTrial = false, enabled = true) {
   const { companyId } = useDefaultCompany();
 
-  const {
-    data: subData,
-    isLoading: subLoading,
-    isError: subError,
-  } = useQuery<SubscriptionData>({
+  return useQuery<SubscriptionData | null>({
     queryKey: ["/api/companies", companyId, "billing", "subscription"],
     // 404 = billing module not deployed in this environment; resolve null
     // instead of erroring so the UI fails open without retry noise.
@@ -88,10 +86,26 @@ export function useSubscription() {
         if (err?.status === 404) return null;
         throw err;
       }),
-    enabled: !!companyId,
+    enabled: enabled && !!companyId,
     staleTime: 30000,
     retry: 1,
+    refetchInterval: watchTrial
+      ? ({ state: { data } }) => {
+          if (!data?.enforcement) return false;
+          if (data.trialLocked) return 15_000;
+          if (data.entitlement?.state !== "trial" || !data.entitlement.trialEndsAt) return false;
+          return Math.max(
+            1000,
+            Math.min(30_000, Date.parse(data.entitlement.trialEndsAt) - Date.now())
+          );
+        }
+      : false,
   });
+}
+
+export function useSubscription() {
+  const { companyId } = useDefaultCompany();
+  const { data: subData, isLoading: subLoading, isError: subError } = useCompanySubscription();
 
   const { data: usageData, isLoading: usageLoading } = useQuery<UsageData>({
     queryKey: ["/api/companies", companyId, "billing", "usage"],
@@ -136,14 +150,15 @@ export function useSubscription() {
     planState,
     /** Plan limits are enforced (server billingEnforced()). */
     enforcement: subData?.enforcement === true,
+    trialLocked: subData?.trialLocked === true,
     checkoutAvailable: subData?.checkoutAvailable === true,
     trial: subData?.trial ?? null,
     chosenPlan: entitlement?.chosenPlan ?? null,
     activationRequestedAt: entitlement?.activationRequestedAt ?? null,
     tierName,
-    /** Trial over without a plan, with enforcement on: the workspace is read-only. */
+    /** Trial over with no active plan. The protected shell handles the workspace lock. */
     isReadOnly: !gatesOpen && planState === "expired",
-    /** @deprecated there is no free plan; kept for older callers (true = read-only workspace). */
+    /** @deprecated there is no free plan; kept for older callers (true = expired trial). */
     isFreeTier: !gatesOpen && planState === "expired",
     canAccess,
     canWrite,

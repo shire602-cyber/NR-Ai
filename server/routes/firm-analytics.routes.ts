@@ -1,3 +1,4 @@
+import { vatFilingOutstandingFilter } from "../tax/vat-filing-filter";
 import type { Request, Response } from "express";
 import { Router } from "express";
 import type { Express } from "express";
@@ -38,7 +39,6 @@ import {
   gte,
   lt,
   or,
-  ne,
   sql,
   notInArray,
   type SQL,
@@ -298,8 +298,7 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
         .where(
           and(
             inArray(vatReturns.companyId, clientIds),
-            ne(vatReturns.status, "filed"),
-            ne(vatReturns.status, "submitted"),
+            vatFilingOutstandingFilter,
             lt(vatReturns.dueDate, now)
           )
         )

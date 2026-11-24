@@ -23,7 +23,11 @@ const MONTH_AR: Record<string, string> = {
 
 /** "Jan / Apr / Jul / Oct" -> Arabic month names (cohort labels come from the server in English). */
 export function localizeMonths(text: string): string {
-  return text.replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/g, (m) => MONTH_AR[m]);
+  return text
+    .replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/g, (m) => MONTH_AR[m])
+    .replace(/^Monthly$/, "شهري")
+    .replace(/^Quarterly$/, "ربع سنوي")
+    .replace(/ annual$/, " سنويًا");
 }
 
 const VAT_NAME_AR: Record<string, string> = {

@@ -94,7 +94,7 @@ export interface AIRouteDeps {
 export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
   const openai = deps.openaiClient !== undefined ? deps.openaiClient : createOpenAIClient();
   // Route-level AI rate limiter (also covers /api/ask, which is outside /api/ai/).
-  const aiLimiter = buildLimiter(limiterProfiles.ai);
+  const aiLimiter = buildLimiter("ai-routes", limiterProfiles.ai);
 
   // If OpenAI is not configured, register routes that return graceful errors
   if (!openai) {
@@ -124,13 +124,13 @@ export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
     asyncHandler(handlePostAiCategorize({ getAI }))
   );
 
-  // AI Bank Statement Parser Route
+  // Legacy endpoint directs callers to CSV upload.
   app.post(
     "/api/ai/parse-bank-statement",
     authMiddleware,
     aiLimiter,
     strictBody(parseBankStatementBody, { allowServerOwned: ["companyId"] }),
-    asyncHandler(handlePostAiParseBankStatement({ getAI }))
+    asyncHandler(handlePostAiParseBankStatement)
   );
 
   // AI CFO Advice Route (R05-09, R05-25, R05-26)
@@ -205,8 +205,7 @@ export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
     asyncHandler(handleGetCompaniesBankTransactions)
   );
 
-  // One manually keyed bank line (S3): same shared import pipeline as statement files and AI/PDF
-  // rows — a managed bank account is required, the row is strictly validated (no NaN, no
+  // One manually keyed bank line (S3): same shared import pipeline as statement files. A managed bank account is required. The row is strictly validated (no NaN, no
   // client-set reconciliation state), deduplicated and recorded in an import batch with undo.
   app.post(
     "/api/companies/:companyId/bank-transactions",
@@ -216,9 +215,7 @@ export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
     asyncHandler(handlePostCompaniesBankTransactions)
   );
 
-  // PDF / AI-extracted statement rows (W3-C, R06-12): requires a managed bank account and goes
-  // through the shared import pipeline (parser row shape, strict validation, dedupe, import
-  // batch with undo, continuity check). Invalid rows are reported, never stored as NaN.
+  // Legacy statement endpoint directs callers to CSV upload.
   app.post(
     "/api/companies/:companyId/bank-transactions/import",
     authMiddleware,

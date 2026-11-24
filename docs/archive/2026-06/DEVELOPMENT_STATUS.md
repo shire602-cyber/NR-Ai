@@ -42,9 +42,10 @@ page, sidebar EN/AR, and an E2E flow):
 Quotes · Credit Notes (auto reversing journal entries via
 `createJournalEntryWithLines`) · Purchase Orders · Cost Centers (journal-line
 allocation) · Financial Statements · Reconciliation Rules · Invoice
-Templates · Bank Import (connections, CSV/OFX statements, Lean-ready
-open-banking connect/callback/sync endpoints). Employee management lives in
+Templates · CSV Bank Statement Import and Reconciliation. Employee management lives in
 **Payroll** (the old duplicate module/page was deleted).
+
+Upload a CSV exported from your bank, review suggested matches, and reconcile against your books
 
 Premium UI system (Geist/Instrument Serif, editorial PageHeader on ~65 pages,
 split-screen auth, Filing Pulse with fix-it actions, express onboarding,
@@ -86,8 +87,7 @@ decision, not just code: `billing` + `stripe.service` (monetization; flip
 3. **Arabic coverage** for all new strings (auth panel, eyebrows, Filing
    Pulse, express onboarding, new sidebar entries) + RTL audit.
 4. **Billing/Stripe rehab** when keys exist → flip BILLING_ENFORCEMENT.
-5. **Lean credentials** → live bank feeds through the already-shipped
-   connect/sync endpoints.
+5. **Bank reconciliation.** Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 6. **E-invoicing readiness** (UAE Peppol wave) — research plan first.
 7. PageHeader v2 (icon/back slots) for the ~25 intentionally skipped pages;
    dark-mode/mobile polish; layout-matching skeletons.

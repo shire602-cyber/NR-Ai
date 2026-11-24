@@ -155,7 +155,7 @@ for MFA users, and each restore is written to the audit chain.
 ## Incident checklist
 
 1. **Contain** — rotate `SESSION_SECRET`/`TOKEN_ENCRYPTION_KEY` (note: vault
-   re-encryption required; bank reconnects acceptable), revoke affected API
+   re-encryption required; re-authorization acceptable), revoke affected API
    keys (`DELETE /api/api-keys/:id`), disable affected webhook endpoints.
 2. **Assess** — query audit logs for the affected window (user, IP, action);
    check Stripe events table for replayed webhooks.
@@ -166,6 +166,10 @@ for MFA users, and each restore is written to the audit chain.
 5. **Notify** — UAE PDPL (Federal Decree-Law 45/2021) breach notification
    obligations to the UAE Data Office and affected data subjects without
    undue delay.
+
+## Bank reconciliation
+
+Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 
 ## Known limitations (honest list)
 
@@ -179,8 +183,5 @@ for MFA users, and each restore is written to the audit chain.
   edge provider. Neither is active until configured.
 - E-invoice XML validates locally against PINT AE shape; live ASP/FTA
   submission awaits provider credentials and is marked "not connected".
-- Bank feeds run on the provider abstraction with manual import as the
-  production path until a provider (Tarabut/Dapi/Salt Edge/FINX) is
-  contracted.
 - Rate-limit stores are in-memory per instance; multi-instance deployments
   need a shared store before horizontal scaling.

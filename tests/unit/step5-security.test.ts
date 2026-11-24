@@ -1,62 +1,14 @@
 /**
- * STEP5 security fixes that are pure functions: the URL redactor (S5-SEC-1), the invitation note
+ * STEP5 security fixes that are pure functions: the invitation note
  * neutraliser and the sender name constraint (S5-SEC-4), and the message DTO (S5-SEC-6).
  */
 import { describe, expect, it } from "vitest";
-import { redactUrl, looksLikeToken } from "../../server/http/redact-url";
 import {
   neutraliseInviteNote,
   renderPortalInviteEmail,
 } from "../../server/services/portal-invite-email";
 import { inviteSenderName } from "../../server/services/portal-invitations.service";
 import { portalMessageDto } from "../../server/routes/client-portal.routes";
-
-const HEX = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
-const B64 = "Zm9vYmFyLXRva2VuX1NlY3JldDEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm9w";
-const UUID = "0f8fad5b-d9cb-469f-a165-70867728950e";
-
-describe("S5-SEC-1 redactUrl", () => {
-  it("redacts long hex and base64url tokens in any path position", () => {
-    expect(redactUrl(`/api/portal-invitations/${HEX}`)).toBe("/api/portal-invitations/:token");
-    expect(redactUrl(`/api/portal-invitations/${HEX}/accept`)).toBe(
-      "/api/portal-invitations/:token/accept"
-    );
-    expect(redactUrl(`/api/portal/${HEX}/invoices/${UUID}/pdf`)).toBe(
-      `/api/portal/:token/invoices/${UUID}/pdf`
-    );
-    expect(redactUrl(`/api/public/${B64}/summary`)).toBe("/api/public/:token/summary");
-  });
-
-  it("redacts secret query parameters and token-looking values, keeps the rest", () => {
-    expect(redactUrl("/api/auth/reset?token=abc&page=2")).toBe(
-      "/api/auth/reset?token=[REDACTED]&page=2"
-    );
-    expect(redactUrl("/api/auth/oauth/google/callback?state=s1&code=c1")).toBe(
-      "/api/auth/oauth/google/callback?state=[REDACTED]&code=[REDACTED]"
-    );
-    expect(redactUrl(`/api/x?ref=${HEX}&limit=10`)).toBe(`/api/x?ref=[REDACTED]&limit=10`);
-    expect(redactUrl(`/api/x?q=hello&limit=10`)).toBe(`/api/x?q=hello&limit=10`);
-  });
-
-  it("drops fragments and leaves ordinary ids and words alone", () => {
-    expect(redactUrl(`/page#t=${HEX}`)).not.toContain(HEX);
-    expect(redactUrl(`/api/companies/${UUID}/invoices`)).toBe(`/api/companies/${UUID}/invoices`);
-    expect(redactUrl("/api/companies/x/portal-invitations/bulk")).toBe(
-      "/api/companies/x/portal-invitations/bulk"
-    );
-    expect(redactUrl("/api/some-really-long-descriptive-route-name-without-digits")).toBe(
-      "/api/some-really-long-descriptive-route-name-without-digits"
-    );
-    expect(redactUrl(undefined)).toBe("");
-  });
-
-  it("looksLikeToken needs length, letters and digits and rejects UUIDs", () => {
-    expect(looksLikeToken(HEX)).toBe(true);
-    expect(looksLikeToken(B64)).toBe(true);
-    expect(looksLikeToken(UUID)).toBe(false);
-    expect(looksLikeToken("short1")).toBe(false);
-  });
-});
 
 describe("S5-SEC-4 invitation note and sender", () => {
   it("removes URLs, addresses and bare domains from the note", () => {

@@ -40,7 +40,7 @@ function ShareInvoiceDialogBody({
   companyId: string | undefined;
   onClose: () => void;
 }) {
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [link, setLink] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -91,7 +91,7 @@ function ShareInvoiceDialogBody({
       const res = await apiRequest(
         "POST",
         `/api/companies/${companyId}/invoices/${invoice.id}/send-email`,
-        { to, language: locale === "ar" ? "ar" : "en" }
+        { to }
       );
       setOutcome(res?.sent ? "sent" : res?.emailConfigured === false ? "not_configured" : "queued");
     } catch {
@@ -120,11 +120,12 @@ function ShareInvoiceDialogBody({
                 <AlertDescription>{linkError}</AlertDescription>
               </Alert>
             ) : (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2 sm:flex-nowrap">
                 <Input
                   id="invoice-share-link"
                   readOnly
                   dir="ltr"
+                  className="min-w-0 flex-1 basis-40"
                   value={link}
                   placeholder={t["invoices.shareCreating"]}
                   data-testid="input-invoice-share-link"
@@ -150,11 +151,12 @@ function ShareInvoiceDialogBody({
               <label htmlFor="invoice-share-email" className="text-sm font-medium">
                 {t["invoices.shareEmailLabel"]}
               </label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2 sm:flex-nowrap">
                 <Input
                   id="invoice-share-email"
                   type="email"
                   dir="ltr"
+                  className="min-w-0 flex-1 basis-40"
                   value={to}
                   onChange={(e) => setTo(e.target.value)}
                   placeholder={t["invoices.shareEmailTo"]}
@@ -162,7 +164,7 @@ function ShareInvoiceDialogBody({
                 />
                 <Button
                   type="button"
-                  className="min-h-11 shrink-0"
+                  className="min-h-11 max-w-full shrink-0 whitespace-normal"
                   disabled={sending || !to || !link}
                   onClick={() => void send()}
                   data-testid="button-send-invoice-email"

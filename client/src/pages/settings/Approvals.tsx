@@ -432,6 +432,7 @@ export default function ApprovalsSettings() {
           <CardContent className="flex items-center justify-between gap-4">
             <Label htmlFor="self-approval">{t["settingsPages.approvalsSelfLabel"]}</Label>
             <Switch
+              touchTarget
               id="self-approval"
               checked={rules.data?.allowSingleMemberSelfApproval ?? true}
               disabled={!canManage || selfApproval.isPending}

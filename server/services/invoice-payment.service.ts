@@ -15,10 +15,13 @@
 // write and no journal. Online payment, when built, must call this service.
 
 import { journalLine, journalMemo } from "@shared/journal-memo";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   accounts,
+  auditLogs,
+  bankTransactionMatches,
+  bankTransactions,
   customerCreditAllocations,
   customerCredits,
   invoicePayments,
@@ -26,6 +29,7 @@ import {
   journalEntries,
   type CustomerCredit,
   type Invoice,
+  type BankTransaction,
 } from "../../shared/schema";
 import { storage } from "../storage";
 import { DomainError } from "../errors";
@@ -115,6 +119,8 @@ export interface RecordPaymentInput {
   /** AED per unit of the invoice currency on the payment date (realised FX). */
   paymentExchangeRate?: number | null;
   createdBy: string;
+  /** Explicit null when the payment was received without an acting staff user. */
+  actorUserId?: string | null;
   allowCredit?: boolean;
   /**
    * WQ1: run inside the caller's ledger transaction (one receipt over several invoices, a cash
@@ -157,7 +163,7 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
   ) {
     const target = invoice;
     const { written, open } = await withLedgerTx(async (tx) => ({
-      written: await invoiceWrittenOffFils(tx, target.id),
+      written: await invoiceWrittenOffFils(tx, target.companyId, target.id),
       open: await invoiceOpenFils(tx, target),
     }));
     const wanted = toFils(input.amount, { rounding: "halfUp" });
@@ -321,19 +327,20 @@ async function afterPaymentRecorded(
       log.error({ err, invoiceId: input.invoiceId }, "bad-debt relief reversal on payment failed");
     }
   }
+  const actorUserId = input.actorUserId === undefined ? input.createdBy : input.actorUserId;
   emitDomainEvent("payment.received", {
     companyId: input.companyId,
     entityId: result.payment.id,
     invoiceId: input.invoiceId,
     amountFils,
-    actorUserId: input.createdBy,
+    actorUserId,
   });
   if (result.invoice.status === "paid") {
     emitDomainEvent("invoice.paid", {
       companyId: input.companyId,
       entityId: input.invoiceId,
       amountFils: toFils(result.invoice.total, { rounding: "halfUp" }),
-      actorUserId: input.createdBy,
+      actorUserId,
     });
   }
   return badDebtReliefReversal;
@@ -357,6 +364,94 @@ export interface ReverseInvoicePaymentInput {
   date?: string | null;
   /** Run inside the caller's ledger transaction (bank unmatch, compensation). */
   tx?: LedgerTx;
+  /** Validate a stored bank allocation again after obtaining the payment lock. */
+  expectedAllocation?: {
+    matchId: string;
+    bankTransactionId: string;
+    invoiceId: string;
+    journalEntryId: string;
+    /** The bank unmatch caller holds the bank line lock and can unlink externally owned payments. */
+    legacyUnmatch?: boolean;
+  };
+}
+
+function reversalReviewRequired(): DomainError {
+  return new DomainError(
+    "PAYMENT_REVERSAL_REVIEW_REQUIRED",
+    409,
+    undefined,
+    "Review the payment and journal links before reversing this transaction."
+  );
+}
+
+function auditObject(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function legacyAuditDetails(value: string | null): Record<string, unknown> | undefined {
+  if (!value) return undefined;
+  try {
+    return auditObject(JSON.parse(value));
+  } catch {
+    return undefined;
+  }
+}
+
+function auditIdEquals(value: unknown, id: string | null): boolean {
+  return id !== null && typeof value === "string" && value.toLowerCase() === id;
+}
+
+/**
+ * The historical bank audit identifies the invoice, while multiple installments can
+ * have different payments and journals. Review a different line only when its audit
+ * explicitly references this payment or journal.
+ */
+async function assertLegacyPaymentLink(
+  tx: LedgerTx,
+  payment: typeof invoicePayments.$inferSelect,
+  bank: BankTransaction
+): Promise<void> {
+  const { id, companyId, invoiceId, journalEntryId } = payment;
+  if (
+    !journalEntryId ||
+    !bank.isReconciled ||
+    bank.matchStatus !== "matched" ||
+    bank.matchedInvoiceId !== invoiceId ||
+    bank.matchedJournalEntryId !== journalEntryId ||
+    bank.matchedReceiptId !== null ||
+    (bank.matchedType && bank.matchedType !== "invoice")
+  )
+    throw reversalReviewRequired();
+
+  // Audit rows can survive their original bank transactions. Scope to the bank
+  // audit itself and use exact parsed IDs after narrowing the text search.
+  const audits = await tx
+    .select({ resourceId: auditLogs.resourceId, details: auditLogs.details })
+    .from(auditLogs)
+    .where(
+      and(
+        or(eq(auditLogs.companyId, companyId), isNull(auditLogs.companyId)),
+        eq(auditLogs.action, "bank.reconcile"),
+        eq(auditLogs.resourceType, "bank_transaction"),
+        or(ilike(auditLogs.details, `%${id}%`), ilike(auditLogs.details, `%${journalEntryId}%`))
+      )
+    );
+  for (const audit of audits) {
+    if (auditIdEquals(audit.resourceId, bank.id)) continue;
+    const details = legacyAuditDetails(audit.details);
+    if (!details || !auditIdEquals(details.companyId, companyId)) continue;
+    const after = auditObject(details.after);
+    if (
+      auditIdEquals(details.paymentId, id) ||
+      auditIdEquals(details.journalEntryId, journalEntryId) ||
+      (after?.matchedType === "journal" && auditIdEquals(after.matchedId, journalEntryId)) ||
+      (Array.isArray(after?.journalEntryIds) &&
+        after.journalEntryIds.some((entry) => auditIdEquals(entry, journalEntryId)))
+    )
+      throw reversalReviewRequired();
+  }
 }
 
 /**
@@ -377,22 +472,131 @@ export async function reverseInvoicePayment(
       .select({ invoiceId: invoicePayments.invoiceId })
       .from(invoicePayments)
       .where(where);
+    const expected = input.expectedAllocation;
+    if (expected && peek?.invoiceId !== expected.invoiceId) throw reversalReviewRequired();
     if (!peek) return { reversed: false, invoice: null };
     // Same lock order as recordInvoicePayment: invoice first, then the payment row.
     const invoice = await lockInvoice(tx, peek.invoiceId, input.companyId);
     const [payment] = await tx.select().from(invoicePayments).where(where).for("update");
+    if (
+      expected &&
+      (payment?.invoiceId !== expected.invoiceId ||
+        payment.journalEntryId !== expected.journalEntryId)
+    ) {
+      throw reversalReviewRequired();
+    }
     if (!payment) return { reversed: false, invoice: null };
+
+    // Check globally unique IDs without a tenant filter so corrupted links cannot hide a claim.
+    // A legacy allocation can claim the exact invoice/journal even with a missing or wrong payment ID.
+    const claims = await tx
+      .select({
+        match: bankTransactionMatches,
+        bank: bankTransactions,
+      })
+      .from(bankTransactionMatches)
+      .leftJoin(bankTransactions, eq(bankTransactions.id, bankTransactionMatches.bankTransactionId))
+      .where(
+        and(
+          inArray(bankTransactionMatches.status, ["active", "pending"]),
+          or(
+            eq(bankTransactionMatches.paymentId, payment.id),
+            payment.journalEntryId
+              ? and(
+                  eq(bankTransactionMatches.targetType, "invoice"),
+                  eq(bankTransactionMatches.targetId, payment.invoiceId),
+                  eq(bankTransactionMatches.journalEntryId, payment.journalEntryId)
+                )
+              : undefined
+          )
+        )
+      )
+      .limit(2);
+    const [claim] = claims;
+    let legacyBank: BankTransaction | undefined;
+    if (expected) {
+      if (
+        claims.length !== 1 ||
+        !claim.bank ||
+        claim.bank.companyId !== input.companyId ||
+        claim.match.companyId !== input.companyId ||
+        claim.match.id !== expected.matchId ||
+        claim.match.bankTransactionId !== expected.bankTransactionId ||
+        claim.match.status !== "active" ||
+        claim.match.targetType !== "invoice" ||
+        claim.match.targetId !== payment.invoiceId ||
+        claim.match.journalEntryId !== payment.journalEntryId ||
+        claim.match.createdJournal
+      )
+        throw reversalReviewRequired();
+      if (claim.match.idempotencyKey) {
+        if (
+          claim.match.paymentId !== payment.id ||
+          !claim.match.createdBy ||
+          claim.match.createdBy !== payment.createdBy ||
+          payment.method !== "bank_reconciliation"
+        )
+          throw reversalReviewRequired();
+      } else {
+        if (
+          !expected.legacyUnmatch ||
+          !input.tx ||
+          (claim.match.paymentId !== null && claim.match.paymentId !== payment.id)
+        ) {
+          throw reversalReviewRequired();
+        }
+        legacyBank = claim.bank;
+      }
+    } else if (claims.length !== 0) {
+      throw reversalReviewRequired();
+    }
+
     if (payment.journalEntryId) {
       const [je] = await tx
-        .select({ reversedBy: journalEntries.reversedByEntryId, status: journalEntries.status })
+        .select({
+          reversedBy: journalEntries.reversedByEntryId,
+          status: journalEntries.status,
+          source: journalEntries.source,
+          sourceId: journalEntries.sourceId,
+        })
         .from(journalEntries)
         .where(
           and(
             eq(journalEntries.id, payment.journalEntryId),
             eq(journalEntries.companyId, input.companyId)
           )
-        );
-      if (je && je.status === "posted" && !je.reversedBy) {
+        )
+        .for("update");
+      if (
+        !je ||
+        (expected &&
+          (je.status !== "posted" ||
+            je.reversedBy ||
+            je.source !== "payment" ||
+            je.sourceId !== invoice.id))
+      ) {
+        throw reversalReviewRequired();
+      }
+      if (je.status === "posted" && !je.reversedBy) {
+        // The ledger kernel reverses the whole entry. That would also undo the
+        // cash/receivable effect of every sibling payment on a shared journal.
+        const [sibling] = await tx
+          .select({ id: invoicePayments.id })
+          .from(invoicePayments)
+          .where(
+            and(
+              eq(invoicePayments.journalEntryId, payment.journalEntryId),
+              ne(invoicePayments.id, payment.id)
+            )
+          )
+          .limit(1);
+        if (sibling) throw reversalReviewRequired();
+        if (legacyBank) {
+          // The older route never recorded which payment the bank line created.
+          // The exact match is safe to unlink while retaining the payment and journal.
+          await assertLegacyPaymentLink(tx, payment, legacyBank);
+          return { reversed: false, invoice: null };
+        }
         await reverseEntry(
           payment.journalEntryId,
           {
@@ -816,10 +1020,15 @@ async function ensureReceivableAccount(companyId: string, code: "5120" | "1045")
 }
 
 /** Written-off amount (document-currency fils) still standing on an invoice. */
-export async function invoiceWrittenOffFils(tx: LedgerTx, invoiceId: string): Promise<number> {
+export async function invoiceWrittenOffFils(
+  tx: LedgerTx,
+  companyId: string,
+  invoiceId: string
+): Promise<number> {
   const res = await tx.execute(
     sql`SELECT COALESCE(SUM(ROUND(amount * 100)), 0)::text AS f FROM invoice_payments
-         WHERE invoice_id = ${invoiceId} AND method = ${WRITE_OFF_METHOD}`
+         WHERE company_id = ${companyId} AND invoice_id = ${invoiceId}
+           AND method = ${WRITE_OFF_METHOD}`
   );
   const rows = ((res as { rows?: unknown[] }).rows ?? res) as Array<{ f: string }>;
   return Number(rows[0]?.f ?? 0);

@@ -14,10 +14,17 @@ import {
   buildFirmValueOps,
 } from "../services/firm-value-ops.service";
 import { resolveAccessibleClientIds } from "../services/firm-command-center.service";
+import { requireFirmCompanyMfa } from "../services/security/policy";
 
 const logger = createLogger("firm-value-ops-routes");
 
 const companyIdParamSchema = z.object({ companyId: z.string().guid() });
+
+async function mfaCheckedAggregateClients(req: Request, res: Response): Promise<string[] | null> {
+  const user = req.user!;
+  const companyIds = await resolveAccessibleClientIds(user.id, user.firmRole ?? null);
+  return (await requireFirmCompanyMfa(user, res, companyIds)) ? companyIds : null;
+}
 
 async function requireAccessibleClient(req: Request, res: Response): Promise<string | null> {
   const parsed = companyIdParamSchema.safeParse(req.params);
@@ -32,8 +39,8 @@ async function requireAccessibleClient(req: Request, res: Response): Promise<str
     res.status(403).json({ message: "Access denied to this client" });
     return null;
   }
-
-  return parsed.data.companyId;
+  const { companyId } = parsed.data;
+  return (await requireFirmCompanyMfa(req.user!, res, [companyId])) ? companyId : null;
 }
 
 export function registerFirmValueOpsRoutes(app: Express): void {
@@ -46,8 +53,8 @@ export function registerFirmValueOpsRoutes(app: Express): void {
   router.get(
     "/",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = req.user!;
-      const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
+      const companyIds = await mfaCheckedAggregateClients(req, res);
+      if (!companyIds) return;
       const dashboard = await buildFirmValueOps(companyIds);
       res.json(dashboard);
     })
@@ -56,8 +63,8 @@ export function registerFirmValueOpsRoutes(app: Express): void {
   router.get(
     "/review-queue",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = req.user!;
-      const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
+      const companyIds = await mfaCheckedAggregateClients(req, res);
+      if (!companyIds) return;
       const queue = await buildFirmReviewQueue(companyIds);
       res.json(queue);
     })
@@ -66,8 +73,8 @@ export function registerFirmValueOpsRoutes(app: Express): void {
   router.get(
     "/action-brief",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = req.user!;
-      const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
+      const companyIds = await mfaCheckedAggregateClients(req, res);
+      if (!companyIds) return;
       const brief = await buildFirmActionBrief(companyIds);
       res.json(brief);
     })

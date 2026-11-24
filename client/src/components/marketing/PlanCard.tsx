@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatMoneyParts, formatMoneyText } from "@/lib/format-money";
 import { formatMessage, useTranslation } from "@/lib/i18n";
-import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
+import { planContactHref } from "@/lib/planContact";
 import { signupPlanUrl } from "@/components/auth/signup-plan";
 import {
   planAudienceKey,
@@ -81,6 +81,7 @@ export interface PlanCardProps {
   /** Hide the bullets (the landing strip shows the header only). */
   compact?: boolean;
   headingLevel?: "h2" | "h3";
+  showFeaturedCaption?: boolean;
   className?: string;
 }
 
@@ -90,6 +91,7 @@ export function PlanCard({
   action,
   compact,
   headingLevel = "h2",
+  showFeaturedCaption = true,
   className,
 }: PlanCardProps) {
   const { t, locale } = useTranslation();
@@ -105,7 +107,7 @@ export function PlanCard({
       <>
         <Button asChild variant="outline" className={cn("h-10 w-full", featured && "border-0")}>
           <a
-            href={`mailto:${UPGRADE_CONTACT_EMAIL}?subject=${encodeURIComponent(`Muhasib.ai ${name}`)}`}
+            href={planContactHref(name)}
             data-testid={`button-plan-${plan.id}`}
           >
             {t["marketing.pricingTalkToUs"]}
@@ -142,7 +144,7 @@ export function PlanCard({
       data-testid={`card-plan-${plan.id}`}
     >
       {/* Every card reserves the caption row so names and prices align across the row. */}
-      <p
+      {showFeaturedCaption && <p
         className={cn(
           "mb-2 min-h-4 text-caption font-semibold uppercase tracking-[0.08em] text-brand-300 rtl:normal-case rtl:tracking-normal",
           !featured && "max-[719px]:hidden"
@@ -150,7 +152,7 @@ export function PlanCard({
         aria-hidden={featured ? undefined : true}
       >
         {featured ? t["marketing.pricingMostPopular"] : null}
-      </p>
+      </p>}
       <Heading className="text-[0.9375rem] font-semibold leading-[1.375rem]">{name}</Heading>
       <p
         className={cn(

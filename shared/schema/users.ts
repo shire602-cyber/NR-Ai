@@ -7,6 +7,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -30,6 +31,21 @@ export type UserType = "admin" | "client" | "customer" | "client_portal";
 // firm_admin: Access only to assigned client companies
 // null: Regular user — no NRA features visible
 export type FirmRole = "firm_owner" | "firm_admin" | null;
+
+// Shared sliding-window state for HTTP rate limits and credential lockouts.
+export const requestThrottleBuckets = pgTable(
+  "request_throttle_buckets",
+  {
+    namespace: text("namespace").notNull(),
+    keyHash: text("key_hash").notNull(),
+    events: jsonb("events").$type<{ at: number; id?: string }[]>().notNull().default([]),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.namespace, t.keyHash] }),
+    index("request_throttle_buckets_expiry_idx").on(t.expiresAt),
+  ]
+);
 
 // ===========================
 // Users
@@ -200,8 +216,33 @@ export const insertOAuthLoginStateSchema = createInsertSchema(oauthLoginStates).
 export type InsertOAuthLoginState = z.infer<typeof insertOAuthLoginStateSchema>;
 export type OAuthLoginState = typeof oauthLoginStates.$inferSelect;
 
+/** Browser-bound, one-time mailbox proof for a completed Microsoft callback. */
+export const oauthMailboxChallenges = pgTable(
+  "oauth_mailbox_challenges",
+  {
+    challengeHash: text("challenge_hash").primaryKey(),
+    id: uuid("id")
+      .notNull()
+      .unique()
+      .default(sql`gen_random_uuid()`),
+    codeHash: text("code_hash").notNull(),
+    issuer: text("issuer").notNull(),
+    providerSubject: text("provider_subject").notNull(),
+    email: text("email").notNull(),
+    displayName: text("display_name").notNull(),
+    avatarUrl: text("avatar_url"),
+    nextPath: text("next_path").notNull(),
+    expectedUserId: uuid("expected_user_id").references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+  },
+  (table) => ({
+    expiresAtIdx: index("idx_oauth_mailbox_challenges_expires_at").on(table.expiresAt),
+  })
+);
+
 // One-time tokens issued by /auth/forgot-password and consumed by /auth/reset-password.
-// usedAt is set the moment the token is redeemed so a captured token cannot be replayed.
+// Successful resets delete the token. usedAt is retained to reject redeemed legacy rows.
 export const passwordResetTokens = pgTable(
   "password_reset_tokens",
   {
@@ -211,6 +252,7 @@ export const passwordResetTokens = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    email: text("email"), // Normalized mailbox that received the link. Unbound tokens are rejected.
     tokenHash: text("token_hash").notNull().unique(), // SHA-256 of the token; raw token only ever lives in the email
     expiresAt: timestamp("expires_at").notNull(),
     usedAt: timestamp("used_at"),
@@ -239,6 +281,7 @@ export const emailVerificationTokens = pgTable("email_verification_tokens", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   tokenHash: text("token_hash").notNull().unique(),
+  email: text("email"), // Legacy tokens without an address cannot verify an account.
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

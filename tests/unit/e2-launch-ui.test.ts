@@ -9,18 +9,21 @@ import {
   COMPANY,
   COMPANY_ID,
   apiCalls,
+  buttonByText,
   byTestId,
   click,
   flush,
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
   renderPage,
+  rerenderPage,
+  setWorkspaceCompany,
   resetHarness,
   setFixtures,
   type,
   unmountPage,
 } from "./helpers/form-harness";
-import { loadLocale } from "../../client/src/lib/i18n";
+import { loadLocale, useI18n } from "../../client/src/lib/i18n";
 import { permissionsForRole, type CompanyRole } from "../../shared/permissions";
 
 vi.mock("../../client/src/lib/queryClient", () => formHarnessQueryClientMock());
@@ -67,6 +70,7 @@ beforeAll(async () => {
 beforeEach(() => resetHarness());
 afterEach(async () => {
   await unmountPage();
+  useI18n.getState().setLocale("en");
 });
 
 const text = () => document.body.textContent ?? "";
@@ -162,8 +166,62 @@ describe("[E2][J3-r2] VAT return after 'ready'", () => {
     expect((post?.body as { date: string }).date > "2026-09-30").toBe(true);
   });
 
+  it.each(["en", "ar"] as const)("offers a fresh reconciliation override in %s", async (locale) => {
+    useI18n.getState().setLocale(locale);
+    await renderVat({ status: "ready" });
+    const { ApiError, apiRequest } = await import("../../client/src/lib/queryClient");
+    const request = vi.mocked(apiRequest).mockClear();
+    const message =
+      locale === "en" ? "Review the changed VAT difference." : "راجع فرق الضريبة المتغيّر.";
+    const failure = Object.assign(new ApiError(message, 409), {
+      body: {
+        code: "VAT_RECONCILIATION_DIFFERENCE",
+        details: { unexplainedInputVat: 1.25, unexplainedOutputVat: -25.01 },
+      },
+    });
+    const record = all(`button-record-filing-${RID}`)[0];
+    await click(record);
+    await type(byTestId("input-fta-reference"), "ET-NEW-DIFFERENCE");
+    const confirm = () => byTestId("button-confirm-filing") as HTMLButtonElement;
+    const reason = () => byTestId("input-vat-filing-override") as HTMLTextAreaElement | null;
+    expect(reason()).toBeNull();
+    request.mockRejectedValueOnce(failure);
+    await click(confirm());
+    await flush(5);
+    const url = `/api/vat-returns/${RID}/submit`;
+    const initial = { ftaReferenceNumber: "ET-NEW-DIFFERENCE", filedOn: expect.any(String) };
+    expect(request).toHaveBeenLastCalledWith("POST", url, initial);
+    const filedOn = (request.mock.lastCall?.[2] as { filedOn: string }).filedOn;
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.querySelector('[role="alert"]')?.textContent).toBe(message);
+    expect(dialog.querySelector("dl")?.textContent).toContain("25.01");
+    expect(dialog.querySelector("dl")?.textContent).toContain("1.25");
+    expect(reason()?.labels?.[0].textContent).toBe(
+      locale === "en" ? "Explain the difference for the audit log" : "اشرح الفرق لسجل التدقيق"
+    );
+    expect(reason()?.value).toBe("");
+    expect(confirm().disabled).toBe(true);
+    await type(reason(), "Discarded explanation");
+    await click(buttonByText(locale === "en" ? /^Cancel$/ : /^إلغاء$/, dialog));
+
+    await click(record);
+    expect(reason()).toBeNull();
+    request.mockRejectedValueOnce(failure);
+    await click(confirm());
+    await flush(5);
+    expect(reason()?.value).toBe("");
+    await type(reason(), "Reviewed current difference");
+    await click(confirm());
+    await flush(5);
+    expect(request).toHaveBeenLastCalledWith("POST", url, {
+      ftaReferenceNumber: "ET-NEW-DIFFERENCE",
+      filedOn,
+      reconciliationOverrideReason: "Reviewed current difference",
+    });
+  });
+
   it("a refund return offers Record refund", async () => {
-    await renderVat({ status: "filed", box14PayableTax: -190 });
+    await renderVat({ status: "filed", ftaReferenceNumber: "ET-1", box14PayableTax: -190 });
     const btn = all(`button-record-settlement-${RID}`)[0];
     expect(btn.textContent).toMatch(/Record refund/);
   });
@@ -171,6 +229,7 @@ describe("[E2][J3-r2] VAT return after 'ready'", () => {
   it("a paid return shows Paid, the last checklist step done, and offers a reversal", async () => {
     await renderVat({
       status: "filed",
+      ftaReferenceNumber: "ET-1",
       paymentStatus: "paid",
       paymentDate: "2026-10-20T00:00:00Z",
     });
@@ -180,6 +239,22 @@ describe("[E2][J3-r2] VAT return after 'ready'", () => {
     await click(all(`button-reverse-settlement-${RID}`)[0]);
     const confirm = byTestId("button-confirm-reverse-settlement") as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
+  });
+
+  it("closes Company A's workbook when Company B becomes active", async () => {
+    await renderVat({ status: "draft" });
+    await click(byTestId("button-hero-edit-return") ?? byTestId(`button-edit-${RID}`));
+    expect(byTestId("vat201-workbook-page")).not.toBeNull();
+    const other = {
+      ...COMPANY,
+      id: "c0000000-0000-4000-8000-000000000002",
+      name: "Other taxpayer",
+    };
+    setWorkspaceCompany(other);
+    setFixtures({ [`/api/companies/${other.id}`]: other });
+    const { default: VATFiling } = await import("../../client/src/pages/VATFiling");
+    await rerenderPage(VATFiling);
+    expect(byTestId("vat201-workbook-page")).toBeNull();
   });
 
   it("a viewer sees the step but cannot use it", async () => {

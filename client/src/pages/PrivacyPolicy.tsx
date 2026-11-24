@@ -1,3 +1,4 @@
+import { MARKETING_BRAND } from "@shared/marketing-brand";
 import { T } from "@/components/layout/T";
 import { LegalLayout } from "@/components/LegalLayout";
 import { PrivacyPolicyAr } from "./legal/legalAr";
@@ -8,7 +9,8 @@ export default function PrivacyPolicy() {
       <p>
         This Privacy Policy describes how Najma Al Raeda Accounting and Bookkeeping (
         <strong>"NRA"</strong>,<strong>"we"</strong>, <strong>"us"</strong>, or{" "}
-        <strong>"our"</strong>) collects, uses, and protects personal data through the Muhasib.ai
+        <strong>"our"</strong>) collects, uses, and protects personal data through the{" "}
+        {MARKETING_BRAND.name.en}
         platform (the <strong>"Service"</strong>). We are committed to handling your data in
         accordance with UAE Federal Decree-Law No. 45 of 2021 on the Protection of Personal Data
         (PDPL) and applicable Federal Tax Authority (FTA) requirements.
@@ -117,7 +119,7 @@ export default function PrivacyPolicy() {
         Subject to UAE PDPL, you have the right to access, correct, delete, or restrict processing
         of your personal data, to object to certain processing, and to receive a portable copy of
         your data. To exercise these rights, contact us at{" "}
-        <a href="mailto:privacy@muhasib.ai">privacy@muhasib.ai</a>.
+        <a href={`mailto:${MARKETING_BRAND.privacyEmail}`}>{MARKETING_BRAND.privacyEmail}</a>.
       </p>
 
       <h2>8. International transfers</h2>
@@ -143,8 +145,8 @@ export default function PrivacyPolicy() {
       <h2>11. Contact</h2>
       <p>
         For privacy questions, contact our Data Protection Officer at{" "}
-        <a href="mailto:privacy@muhasib.ai">privacy@muhasib.ai</a> or write to: Najma Al Raeda
-        Accounting and Bookkeeping, Dubai, United Arab Emirates.
+        <a href={`mailto:${MARKETING_BRAND.privacyEmail}`}>{MARKETING_BRAND.privacyEmail}</a> or
+        write to: Najma Al Raeda Accounting and Bookkeeping, Dubai, United Arab Emirates.
       </p>
     </LegalLayout>
   );

@@ -51,6 +51,7 @@ export interface CostCenterProfitabilityReport {
 }
 
 export interface BalanceSheetReport {
+  warnings?: Array<{ code: string }>;
   assets: AccountLineItem[];
   liabilities: AccountLineItem[];
   equity: AccountLineItem[];
@@ -491,7 +492,11 @@ export interface ReceiptReportRow {
   vatAmount: number | null;
   currency: string | null;
   exchangeRate: number;
+  journalEntryId?: string | null;
+  paymentAccountId?: string | null;
   baseCurrencyAmount: number;
+  exchangeRateSource?: "manual" | "lookup" | null;
+  reverseCharge?: boolean;
   category: string | null;
   posted: boolean;
   autoPosted: boolean;

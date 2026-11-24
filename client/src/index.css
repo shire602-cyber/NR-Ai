@@ -25,7 +25,9 @@
   --brand-400: 157 48% 49%;
   --brand-500: 159 66% 36%;
   --brand-600: 160 78% 26.5%;
-  --brand-700: 161 80% 23%;
+  --brand-700: 159.789474 81.196581% 22.941176%; /* #0B6A4A */
+  --brand-ink: 157.5 28.571429% 10.980392%; /* #14241E */
+  --brand-paper: 75 22.222222% 96.470588%; /* #F7F8F4 */
   --brand-800: 162 78% 18%;
   --brand-900: 163 72% 13%;
   --brand-950: 165 70% 8%;
@@ -75,8 +77,8 @@
   --negative: var(--danger-subtle-foreground);
 
   /* ── Layer 3 · Surface roles ── */
-  --background: var(--neutral-25);
-  --foreground: var(--neutral-900);
+  --background: var(--brand-paper);
+  --foreground: var(--brand-ink);
   --surface-sunken: var(--neutral-50);
 
   --border: var(--neutral-200);
@@ -84,11 +86,11 @@
   --input: var(--neutral-300);
 
   --card: var(--neutral-0);
-  --card-foreground: var(--neutral-900);
+  --card-foreground: var(--brand-ink);
   --card-border: var(--neutral-200);
 
   --popover: var(--neutral-0);
-  --popover-foreground: var(--neutral-900);
+  --popover-foreground: var(--brand-ink);
   --popover-border: var(--neutral-200);
 
   --primary: var(--brand-700);
@@ -99,7 +101,7 @@
   --muted: var(--neutral-100);
   --muted-foreground: var(--neutral-500);
   /* `accent` = brand text/fill on light surfaces (eyebrows, links, icons). */
-  --accent: var(--brand-600);
+  --accent: var(--brand-700);
   --accent-foreground: 0 0% 100%;
   --destructive: var(--danger);
   --destructive-foreground: var(--danger-foreground);
@@ -121,7 +123,7 @@
      so every step keeps AA (>= 4.5:1) on card and muted surfaces. */
   /* WP-A (spec 2.3): brand, slate blue, ochre, plum, teal. Money in = chart-1, money out =
      chart-neutral (never red, never brown). Red is used in charts only for a negative net. */
-  --chart-1: 160 78% 26.5%;
+  --chart-1: var(--brand-700);
   --chart-2: 215 45% 45%;
   --chart-3: 38 72% 40%;
   --chart-4: 280 24% 48%;
@@ -135,7 +137,7 @@
 
   /* WP-A (spec 2.3): one inverse surface for the auth panel, the featured pricing card and
      marketing dark bands. */
-  --surface-inverse: var(--neutral-900);
+  --surface-inverse: var(--brand-ink);
   --surface-inverse-foreground: var(--neutral-50);
   --surface-inverse-muted: 220 12% 72%;
   --surface-inverse-border: 222 20% 20%;
@@ -489,7 +491,8 @@
     font-feature-settings: "tnum" 1;
   }
   .money-currency {
-    font-size: 0.8em;
+    /* Never below 12px (an 11px table cell used to give a 9px currency code). */
+    font-size: max(0.8em, 0.75rem);
     font-weight: 500;
     color: hsl(var(--muted-foreground));
     unicode-bidi: isolate;
@@ -601,6 +604,27 @@
   /* Page content enters once per route change (spec 2.5). */
   .page-enter {
     animation: page-in var(--duration-base) var(--ease-out) both;
+  }
+
+  .shell-slide-in {
+    animation: shell-slide-in 180ms ease-out both;
+  }
+  [dir="rtl"] .shell-slide-in {
+    --shell-slide-from: 6px;
+  }
+  .shell-group-open {
+    display: grid;
+    animation: shell-group-open 180ms ease-out both;
+  }
+  .shell-group-open > * {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .shell-fade-in {
+    animation: shell-fade-in 150ms ease-out both;
+  }
+  .shell-sheet-up {
+    animation: shell-sheet-up 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
   /* Hairline-divided list surface */
@@ -795,6 +819,48 @@
        position:fixed descendant (bottom action bars). */
     to {
       opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Shell motion that framer-motion used to drive (kept CSS-only so the app shell does not ship
+     the library): sidebar header slide-in (mirrored in RTL), group expand, mobile sheet. */
+  @keyframes shell-slide-in {
+    from {
+      opacity: 0;
+      transform: translateX(var(--shell-slide-from, -6px));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes shell-group-open {
+    from {
+      grid-template-rows: 0fr;
+      opacity: 0;
+    }
+    to {
+      grid-template-rows: 1fr;
+      opacity: 1;
+    }
+  }
+
+  @keyframes shell-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes shell-sheet-up {
+    from {
+      transform: translateY(100%);
+    }
+    to {
       transform: none;
     }
   }

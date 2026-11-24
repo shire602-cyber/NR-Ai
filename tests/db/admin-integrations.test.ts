@@ -2,12 +2,38 @@
  * STEP1 F6: Admin > Integrations reads real status from the server and the Google Sheets test is
  * a real, admin-only call (it was a hard-coded "Connected" badge and a button that did nothing).
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { useHarness } from "./harness";
 
 const h = useHarness();
 
 describe("STEP1 F6 admin integrations", () => {
+  it("lists manual statement import as available without provider setup", async () => {
+    const admin = await h.createTenant({ name: "BankStatementAdmin", isAdmin: true });
+    const status = await admin.as.get("/api/admin/integration-status");
+    expect(status.status, status.text).toBe(200);
+    expect(status.body.integrations).toContainEqual({
+      key: "bankStatementCsvImport",
+      name: "CSV statement import",
+      configured: true,
+      detail: BANK_RECONCILIATION_COPY.en,
+      requiredEnv: [],
+      unlocks: "Statement reconciliation",
+    });
+    expect(status.body.integrations).not.toContainEqual(
+      expect.objectContaining({ key: "openBanking" })
+    );
+    vi.stubEnv("LEAN_APP_TOKEN", "sandbox-fixture");
+    try {
+      const configured = await admin.as.get("/api/admin/integration-status");
+      expect(configured.status, configured.text).toBe(200);
+      expect(configured.body).toEqual(status.body);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("[F6-status] an admin reads configured/not configured; a customer is refused", async () => {
     const admin = await h.createTenant({ name: "IntegrationsAdmin", isAdmin: true });
     const customer = await h.createTenant({ name: "IntegrationsCustomer" });

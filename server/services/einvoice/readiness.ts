@@ -14,11 +14,10 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { customerContacts, products, type Company } from "../../../shared/schema";
-import { getEInvoiceProvider } from "../einvoice-provider";
 import { validateForEInvoicing } from "../einvoice.service";
 import { getLegalEntity } from "./legal-entities";
+import { companyProviderHealth } from "./providers/company-provider";
 import { einvoicingScope, EINVOICE_TIMELINE } from "./scope";
-import { providerRequiresLegalEntity } from "./workflow";
 
 export type ReadinessKey =
   | "scope"
@@ -128,9 +127,6 @@ function contactIssues(
   )
     .filter((i) => i.field === "customer.address" || i.field === "invoice.customerTrn")
     .map((i) => i.field);
-  // A B2B buyer must state its full address even when none has been entered yet (ibr-144-ae
-  // only fires once one part is present, so a fully blank address is checked here).
-  if (!contact.address && !contact.city && !contact.emirate) found.push("customer.address");
   return [...new Set(found)];
 }
 
@@ -173,21 +169,15 @@ export async function computeEInvoiceReadiness(
   );
 
   // 5. Provider: real provider with an active legal entity.
-  let provider: string | null = null;
-  let environment: string | null = null;
-  let reason: EInvoiceReadiness["transmission"]["reason"] = "no_provider";
-  try {
-    const p = getEInvoiceProvider();
-    provider = p.name;
-    environment = p.environment;
-    if (p.environment === "mock") reason = "test_provider";
-    else if (providerRequiresLegalEntity(p)) {
-      const le = await getLegalEntity(company.id, p.name, p.environment);
-      reason = le?.status === "active" ? null : "legal_entity_not_active";
-    } else reason = null;
-  } catch {
-    reason = "no_provider";
-  }
+  const health = await companyProviderHealth(company);
+  const linked = health.provider
+    ? await getLegalEntity(company.id, health.provider.id, health.provider.environment)
+    : null;
+  const reason = !health.provider
+    ? "no_provider"
+    : linked?.status === "active"
+      ? null
+      : "legal_entity_not_active";
 
   const items: ReadinessItem[] = [
     {
@@ -248,7 +238,12 @@ export async function computeEInvoiceReadiness(
       source: scope.source,
       timeline: EINVOICE_TIMELINE,
     },
-    transmission: { enabled: reason === null, provider, environment, reason },
+    transmission: {
+      enabled: reason === null,
+      provider: health.chosenProvider,
+      environment: health.environment,
+      reason,
+    },
     items,
     done: items.filter((i) => i.status === "done").length,
     total: items.length,

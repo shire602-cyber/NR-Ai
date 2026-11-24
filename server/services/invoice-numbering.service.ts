@@ -107,6 +107,9 @@ export async function allocateInvoiceNumber(
   date: Date = new Date(),
   executor: Executor = db
 ): Promise<string> {
+  // Take the same company key-share lock as the invoice FK before writing the
+  // sequence, so a clone can't wait on a sequence row held by a blocked writer.
+  await executor.execute(sql`SELECT id FROM companies WHERE id = ${companyId} FOR KEY SHARE`);
   const settings = await getNumberingSettings(companyId, docType, executor);
   const year = sequenceYear(settings, date);
   const result = await executor.execute(sql`

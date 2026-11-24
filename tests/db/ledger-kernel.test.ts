@@ -10,7 +10,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { allocate } from "../../shared/money";
 import { accountByCode, ledgerTotals, useHarness, type Tenant } from "./harness";
 
@@ -108,6 +108,49 @@ describe("R02-01 / R02-18 exact balance in integer fils", () => {
     expect(r.body.details?.reason).toBe("MONEY_TOO_PRECISE");
   });
 
+  it("R02-18: journals whose aggregate exceeds safe integer precision are refused", async () => {
+    const before = await entryCount(t.company.id);
+    const lines = Array.from({ length: 9 }, () => [
+      { accountId: cash, debit: "9999999999999.99" },
+      { accountId: capital, credit: "9999999999999.99" },
+    ]).flat();
+    lines.push(
+      { accountId: cash, debit: "9999999999999.97" },
+      { accountId: capital, credit: "9999999999999.97" },
+      { accountId: capital, credit: "0.01" }
+    );
+    const r = await post({ ...simple(1), lines });
+    expect(r.status, r.text).toBe(422);
+    expect(r.body).toMatchObject({
+      code: "INVALID_AMOUNT",
+      details: { reason: "MONEY_OUT_OF_RANGE" },
+    });
+    expect(await entryCount(t.company.id)).toBe(before);
+  });
+
+  it("R02-01: a legacy unbalanced entry cannot produce an unbalanced reversal", async () => {
+    const [original] = await h.sql<{ id: string }>(
+      `INSERT INTO journal_entries (company_id, entry_number, date, source, status, created_by)
+       VALUES ($1, 'JE-UNBALANCED-IMPORT', $2, 'manual', 'posted', $3) RETURNING id`,
+      [t.company.id, today(), t.user.id]
+    );
+    await h.sql(
+      `INSERT INTO journal_lines (entry_id, account_id, debit, credit)
+       VALUES ($1, $2, 100.01, 0), ($1, $3, 0, 100.00)`,
+      [original.id, cash, capital]
+    );
+    const reverse = await t.as.post(`/api/journal/${original.id}/reverse`, {});
+    expect(reverse.status, reverse.text).toBe(422);
+    expect(reverse.body.code).toBe("ENTRY_UNBALANCED");
+    expect(
+      await h.sql(`SELECT id FROM journal_entries WHERE reversed_entry_id = $1`, [original.id])
+    ).toHaveLength(0);
+    await h.sql(`UPDATE journal_lines SET debit = 100 WHERE entry_id = $1 AND account_id = $2`, [
+      original.id,
+      cash,
+    ]);
+  });
+
   it("R02-18: 1,000 random balanced entries leave a trial-balance difference of exactly 0", async () => {
     const tb = await h.createTenant({ name: "TB" });
     const acc = await h.sql<{ id: string }>(
@@ -167,6 +210,114 @@ describe("R02-01 / R02-18 exact balance in integer fils", () => {
       expect(Number(totals.sumDebits)).toBeCloseTo(Number(totals.sumCredits), 6);
     }
   }, 240_000);
+});
+
+describe.skipIf(process.env.HARNESS_MODE !== "postgres")("R02-11 period lock concurrency", () => {
+  it("a period lock waits for a posting transaction, then blocks new dated postings", async () => {
+    const { postJournal } = await import("../../server/ledger");
+    const { withLedgerTx } = await import("../../server/ledger/tx");
+    const { lockPeriod } = await import("../../server/services/month-end.service");
+    const tenant = await h.createTenant({ name: "LockPublication" });
+    const [debit, credit] = await Promise.all([
+      accountByCode(tenant, "1020"),
+      accountByCode(tenant, "3010"),
+    ]);
+    const companyId = tenant.company.id;
+    const date = daysAgo(10);
+    const input = {
+      companyId,
+      date,
+      status: "posted" as const,
+      lines: [
+        { accountId: debit.id, debit: 1 },
+        { accountId: credit.id, credit: 1 },
+      ],
+    };
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started = () => {};
+    const inserted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const posting = withLedgerTx(async (tx) => {
+      await postJournal(input, { actorId: tenant.user.id, tx });
+      started();
+      await held;
+    });
+    await Promise.race([inserted, posting]);
+    const closing = lockPeriod(companyId, date, tenant.user.id);
+    try {
+      await vi.waitFor(async () => {
+        const [waiting] = await h.sql<{ waiting: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1 FROM pg_locks
+              WHERE locktype = 'advisory' AND mode = 'ExclusiveLock' AND NOT granted
+                AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+           ) AS waiting`
+        );
+        expect(waiting.waiting).toBe(true);
+      });
+    } finally {
+      release();
+      await Promise.all([posting, closing]);
+    }
+    await expect(postJournal(input, { actorId: tenant.user.id })).rejects.toMatchObject({
+      code: "PERIOD_LOCKED",
+    });
+    expect(await entryCount(companyId)).toBe(1);
+  });
+
+  it("a draft post checks the edited date after waiting for the draft row", async () => {
+    const { pool } = await import("../../server/db");
+    const { lockPeriod } = await import("../../server/services/month-end.service");
+    const tenant = await h.createTenant({ name: "LockDraftEdit" });
+    const [debit, credit] = await Promise.all([
+      accountByCode(tenant, "1020"),
+      accountByCode(tenant, "3010"),
+    ]);
+    const date = daysAgo(10);
+    const created = await post(
+      {
+        date: today(),
+        status: "draft",
+        lines: [
+          { accountId: debit.id, debit: 1 },
+          { accountId: credit.id, credit: 1 },
+        ],
+      },
+      tenant
+    );
+    expect(created.status, created.text).toBe(200);
+    await lockPeriod(tenant.company.id, date, tenant.user.id);
+    const client = await pool.connect();
+    let posting: ReturnType<Tenant["as"]["post"]> | undefined;
+    try {
+      await client.query("BEGIN");
+      await client.query("UPDATE journal_entries SET date = $1 WHERE id = $2", [
+        date,
+        created.body.id,
+      ]);
+      posting = tenant.as.post(`/api/journal/${created.body.id}/post`, {});
+      await vi.waitFor(async () => {
+        const [waiting] = await h.sql<{ waiting: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
+               AND wait_event_type = 'Lock' AND query LIKE '%"journal_entries"%for update%'
+           ) AS waiting`
+        );
+        expect(waiting.waiting).toBe(true);
+      });
+      await client.query("COMMIT");
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
+    }
+    const result = await posting!;
+    expect(result.status, result.text).toBe(403);
+    expect(result.body.code).toBe("PERIOD_LOCKED");
+  });
 });
 
 describe("R02-07 bad input is 4xx with a code, never 500", () => {

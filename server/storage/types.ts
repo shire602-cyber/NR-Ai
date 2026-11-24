@@ -1,6 +1,7 @@
 // Storage interface (IStorage) and the argument/result types it uses.
 // Part of server/storage.ts (split per domain, R20-09); import from "./storage".
 
+
 import type {
   Account,
   ActivityLog,
@@ -129,11 +130,15 @@ import type {
   WhatsappConfig,
   WhatsappMessage,
 } from "@shared/schema";
-import type { db } from "../db";
+import type { AppDatabase, db } from "../db";
+import type { FirmContext } from "../services/firm/scope";
 
 export type JournalLineInsert = Omit<InsertJournalLine, "entryId">;
 
 export interface PostReceiptAtomicArgs {
+  exchangeRate?: number;
+  exchangeRateSource?: "manual" | "lookup" | null;
+  baseCurrencyAmount?: number;
   receiptId: string;
   companyId: string;
   userId: string;
@@ -147,6 +152,7 @@ export interface PostReceiptAtomicArgs {
 }
 
 export interface ReviseReceiptAtomicArgs {
+  expectedEntryId: string | null;
   receiptId: string;
   companyId: string;
   userId: string;
@@ -204,6 +210,19 @@ export type InvoiceSummary = Pick<
 >;
 
 /** A new user: the register payload, or an already-hashed password (invites, admin). */
+/** Public projection of a member's user row (never password_hash / token_version / MFA). */
+export interface CompanyMemberUser {
+  id: string;
+  email: string;
+  name: string;
+  userType: string;
+  avatarUrl: string | null;
+  emailVerified: boolean;
+  lastLoginAt: Date | null;
+  createdAt: Date;
+}
+export type CompanyMemberWithUser = CompanyUser & { user: CompanyMemberUser };
+
 export type NewUserInput = Omit<InsertUser, "password"> & {
   password?: string;
   passwordHash?: string;
@@ -217,16 +236,16 @@ export interface IStorage {
   updateUserPassword(userId: string, passwordHash: string): Promise<void>;
 
   // Password reset tokens
-  createPasswordResetToken(input: {
+  replacePasswordResetToken(input: {
     userId: string;
+    email: string;
     tokenHash: string;
     expiresAt: Date;
-  }): Promise<void>;
+  }): Promise<boolean>;
   findValidPasswordResetToken(
     tokenHash: string
   ): Promise<{ id: string; userId: string } | undefined>;
-  markPasswordResetTokenUsed(id: string): Promise<void>;
-  deletePasswordResetTokensForUser(userId: string): Promise<void>;
+  resetPasswordWithToken(userId: string, tokenHash: string, passwordHash: string): Promise<boolean>;
 
   // Companies
   getCompany(id: string): Promise<Company | undefined>;
@@ -234,7 +253,7 @@ export interface IStorage {
   ownerHasCompanyNamed(userId: string, name: string, excludeCompanyId?: string): Promise<boolean>;
   companyHasPostedJournal(companyId: string): Promise<boolean>;
   getCompaniesByUserId(userId: string): Promise<Company[]>;
-  createCompany(company: InsertCompany): Promise<Company>;
+  createCompany(company: InsertCompany, conn?: Pick<AppDatabase, "insert">): Promise<Company>;
   updateCompany(id: string, data: Partial<InsertCompany>): Promise<Company>;
 
   // Company Users
@@ -393,14 +412,16 @@ export interface IStorage {
     companyId: string,
     opts?: { limit?: number; offset?: number }
   ): Promise<InvoiceSummary[]>;
-  createInvoice(invoice: InsertInvoice): Promise<Invoice>;
+  createInvoice(invoice: InsertInvoice, exec?: Pick<AppDatabase, "insert">): Promise<Invoice>;
   updateInvoice(id: string, companyId: string, data: Partial<InsertInvoice>): Promise<Invoice>;
   updateInvoiceStatus(id: string, companyId: string, status: string): Promise<Invoice>;
   deleteInvoice(id: string, companyId: string): Promise<void>;
 
   // Invoice Share Token
   getInvoiceByShareToken(token: string): Promise<Invoice | undefined>;
-  setInvoiceShareToken(id: string, token: string, expiresAt: Date): Promise<void>;
+  ensureInvoiceShareToken(
+    invoice: Pick<Invoice, "id" | "companyId" | "shareToken" | "shareTokenExpiresAt">
+  ): Promise<string>;
 
   // Invoice Lines
   createInvoiceLine(line: InsertInvoiceLine): Promise<InvoiceLine>;
@@ -410,7 +431,19 @@ export interface IStorage {
 
   // Receipts
   getReceipt(id: string, companyId: string): Promise<Receipt | undefined>;
-  createReceipt(receipt: InsertReceipt): Promise<Receipt>;
+  createReceipt(receipt: InsertReceipt, exec?: Pick<AppDatabase, "insert">): Promise<Receipt>;
+  getCapturedReceipt(companyId: string, captureId: string): Promise<Receipt | undefined>;
+  createCapturedReceipt(
+    data: InsertReceipt,
+    confirmDuplicate: boolean
+  ): Promise<
+    | { receipt: Receipt; replay: boolean; duplicate?: never }
+    | {
+        duplicate: Pick<Receipt, "id" | "merchant" | "amount" | "date">;
+        receipt?: never;
+        replay?: never;
+      }
+  >;
   getReceiptsByCompanyId(companyId: string): Promise<Receipt[]>;
   updateReceipt(id: string, companyId: string, data: Partial<InsertReceipt>): Promise<Receipt>;
   updateReceiptIfUnposted(
@@ -419,10 +452,12 @@ export interface IStorage {
     data: Partial<InsertReceipt>
   ): Promise<Receipt>;
   postReceiptAtomic(
-    args: PostReceiptAtomicArgs
+    args: PostReceiptAtomicArgs,
+    tx?: typeof db
   ): Promise<{ receipt: Receipt; entry: JournalEntry }>;
   reviseReceiptAtomic(
-    args: ReviseReceiptAtomicArgs
+    args: ReviseReceiptAtomicArgs,
+    tx?: typeof db
   ): Promise<{ receipt: Receipt; entry: JournalEntry; reversal: JournalEntry }>;
   splitReceiptAtomic(args: SplitReceiptAtomicArgs): Promise<Receipt[]>;
   deleteReceipt(id: string, companyId: string): Promise<void>;
@@ -451,7 +486,10 @@ export interface IStorage {
   getWaitlistByEmail(email: string): Promise<Waitlist | undefined>;
 
   // Integration Syncs
-  createIntegrationSync(sync: InsertIntegrationSync): Promise<IntegrationSync>;
+  createIntegrationSync(
+    sync: InsertIntegrationSync,
+    exec?: Pick<AppDatabase, "insert">
+  ): Promise<IntegrationSync>;
   getIntegrationSyncsByCompanyId(companyId: string): Promise<IntegrationSync[]>;
   getIntegrationSyncsByType(companyId: string, integrationType: string): Promise<IntegrationSync[]>;
 
@@ -633,7 +671,12 @@ export interface IStorage {
   getVatReturnsByCompanyId(companyId: string): Promise<VatReturn[]>;
   getVatReturn(id: string): Promise<VatReturn | undefined>;
   createVatReturn(vatReturn: InsertVatReturn): Promise<VatReturn>;
-  updateVatReturn(id: string, data: Partial<InsertVatReturn>): Promise<VatReturn>;
+  updateUnfiledVatReturn(
+    companyId: string,
+    id: string,
+    previousStatus: string,
+    data: Partial<InsertVatReturn>
+  ): Promise<VatReturn | undefined>;
   deleteVatReturn(id: string): Promise<void>;
 
   // Corporate Tax Returns
@@ -659,11 +702,16 @@ export interface IStorage {
   updateCompanyUser(
     companyId: string,
     id: string,
-    data: Pick<Partial<InsertCompanyUser>, "role">
+    data: Pick<Partial<InsertCompanyUser>, "role">,
+    tx?: Pick<AppDatabase, "select" | "update">
   ): Promise<CompanyUser | undefined>;
-  deleteCompanyUser(companyId: string, id: string): Promise<boolean>;
+  deleteCompanyUser(
+    companyId: string,
+    id: string,
+    tx?: Pick<AppDatabase, "select" | "delete">
+  ): Promise<boolean>;
   getCompanyUser(companyId: string, id: string): Promise<CompanyUser | undefined>;
-  getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]>;
+  getCompanyUserWithUser(companyId: string): Promise<CompanyMemberWithUser[]>;
 
   // Admin Stats
   getAllUsers(): Promise<User[]>;
@@ -717,7 +765,10 @@ export interface IStorage {
   getActivityLogs(limit?: number): Promise<ActivityLog[]>;
   getActivityLogsByCompany(companyId: string, limit?: number): Promise<ActivityLog[]>;
   getActivityLogsByUser(userId: string, limit?: number): Promise<ActivityLog[]>;
-  createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
+  createActivityLog(
+    log: InsertActivityLog,
+    conn?: Pick<AppDatabase, "insert">
+  ): Promise<ActivityLog>;
 
   // Client Notes (Admin internal notes)
   getClientNotes(companyId: string): Promise<ClientNote[]>;
@@ -730,7 +781,10 @@ export interface IStorage {
   deleteUser(id: string): Promise<void>;
 
   // Admin Company Management
-  deleteCompany(id: string): Promise<void>;
+  deleteCompany(
+    id: string,
+    firmActor?: Pick<FirmContext, "userId" | "firmId">
+  ): Promise<Date | null>;
 
   // Client Engagements
   getEngagements(): Promise<Engagement[]>;
@@ -759,8 +813,16 @@ export interface IStorage {
 
   // Customer Subscriptions
   getSubscription(companyId: string): Promise<Subscription | undefined>;
+  getSubscriptionByStripeIds(
+    subscriptionId: string,
+    customerId: string
+  ): Promise<Subscription | undefined>;
   createSubscription(subscription: InsertSubscription): Promise<Subscription>;
   updateSubscription(id: string, data: Partial<InsertSubscription>): Promise<Subscription>;
+  applyStripeCheckout(
+    subscription: Subscription,
+    data: Partial<InsertSubscription>
+  ): Promise<boolean>;
 
   // User type management
   updateUserType(id: string, userType: string): Promise<User>;

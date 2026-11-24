@@ -12,7 +12,14 @@ function setMeta(selector: string, attr: "name" | "property", key: string, conte
 }
 
 /** Per-route <title>, description and social tags, restored on unmount. */
-export function usePageMeta(title: string | undefined, description: string | undefined) {
+export function usePageMeta(
+  title: string | undefined,
+  description: string | undefined,
+  page?: { canonical: string; en: string; ar: string }
+) {
+  const canonical = page?.canonical;
+  const en = page?.en;
+  const ar = page?.ar;
   useEffect(() => {
     if (!title) return;
     const previousTitle = document.title;
@@ -26,13 +33,32 @@ export function usePageMeta(title: string | undefined, description: string | und
       setMeta('meta[property="og:description"]', "property", "og:description", description);
       setMeta('meta[name="twitter:description"]', "name", "twitter:description", description);
     }
+    const headLinks = [
+      ["canonical", "", canonical],
+      ["alternate", "en-AE", en],
+      ["alternate", "ar-AE", ar],
+      ["alternate", "x-default", en],
+    ] as const;
+    for (const [rel, hreflang, href] of headLinks) {
+      const selector = `link[rel="${rel}"]${hreflang ? `[hreflang="${hreflang}"]` : ""}`;
+      const old = document.head.querySelector<HTMLLinkElement>(selector);
+      if (!href) {
+        old?.remove();
+        continue;
+      }
+      const link = old ?? document.createElement("link");
+      link.rel = rel;
+      if (hreflang) link.hreflang = hreflang;
+      link.href = href;
+      if (!old) document.head.appendChild(link);
+    }
     return () => {
       document.title = previousTitle;
       if (previousDescription) {
         setMeta('meta[name="description"]', "name", "description", previousDescription);
       }
     };
-  }, [title, description]);
+  }, [title, description, canonical, en, ar]);
 }
 
 /**

@@ -17,8 +17,10 @@ Wafeq, Zoho Books, QuickBooks, Xero, and all other AI/non-AI accounting
 software." That claim is too broad and the zip has concrete blockers:
 dependency vulnerabilities, failing lint, a broken formatting script, a
 cross-user notification mutation bug, likely webhook SSRF exposure, incomplete
-e-invoicing, no direct EmaraTax filing, no live bank feeds, no third-party
+e-invoicing, no direct EmaraTax filing, CSV-only banking, no third-party
 security/compliance certification, and no production customer evidence.
+
+Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 
 Best honest positioning:
 
@@ -26,7 +28,7 @@ Best honest positioning:
   if the target is VAT/corporate-tax workpapers, Arabic/RTL, WhatsApp-driven
   chasing, client operations, and firm portfolio management.
 - Not currently better than Digits for AI-native bookkeeping automation,
-  bank/payroll connectivity, native mobile, MCP/developer ecosystem, or
+  payroll connectivity, native mobile, MCP/developer ecosystem, or
   security posture claims.
 - Not currently better than Wafeq or Zoho Books for market trust, certification
   posture, direct VAT filing, mature regional accounting operations, and live
@@ -104,7 +106,7 @@ Strong foundations observed:
 - Password reset tokens are hashed in the database.
 - Login rate limiting is scoped to credential paths.
 - Company-access middleware exists and is covered by tests.
-- Bank connection tokens are encrypted via AES-256-GCM in `secret-vault.ts`.
+- Stored financial-data authorization tokens are encrypted via AES-256-GCM in `secret-vault.ts`.
 - Historical migration backdoor accounts are revoked by migration 0051 and new
   bcrypt/user-row seed patterns are blocked by `check:migrations`.
 
@@ -206,7 +208,7 @@ Required mitigation:
 
 ### P2 - Secrets Are Not Uniformly Vaulted
 
-Bank connections use `encryptSecret`/`decryptSecret`. However, e-commerce
+Stored financial-data authorization tokens use `encryptSecret`/`decryptSecret`. However, e-commerce
 integration fields such as `apiKey`, `accessToken`, `refreshToken`, and
 `webhookSecret` are stored through `analytics.routes.ts`/storage without clear
 encryption in the inspected code.
@@ -247,7 +249,7 @@ Current public positioning from Digits:
 Assessment:
 
 - Muhasib has stronger UAE compliance depth and firm-specific UAE workflows.
-- Digits is ahead on AI-native ledger maturity, bank/payroll connectivity,
+- Digits is ahead on AI-native ledger maturity, payroll connectivity,
   mobile, MCP, public market trust, and security posture.
 
 ### Wafeq
@@ -291,8 +293,8 @@ Assessment:
 
 Current public positioning from QuickBooks:
 
-- Broad small-business accounting with invoicing, payments, expenses, bank
-  connections, reports, budgeting, payroll/time/inventory/project features.
+- Broad small-business accounting with invoicing, payments, expenses,
+  reports, budgeting, payroll/time/inventory/project features.
 - Public page now emphasizes Accounting AI: automated workflows, AI
   reconciliation, profit/loss insights, error finding, sales-tax automation,
   finance/project/customer AI, and chat insights.
@@ -307,7 +309,7 @@ Assessment:
 
 Current public positioning from Xero:
 
-- Cloud accounting with bank feeds, invoicing, expenses, bills, payroll,
+- Cloud accounting with invoicing, expenses, bills, payroll,
   analytics, practice tools, app store, mobile, support, and accountant
   collaboration.
 - Xero highlights JAX AI, Syft analytics, Workpapers, Xero HQ, Xero Practice
@@ -316,7 +318,7 @@ Current public positioning from Xero:
 Assessment:
 
 - Muhasib has stronger UAE-specific product intent.
-- Xero is far ahead on maturity, ecosystem, bank feeds, partner network, and
+- Xero is far ahead on maturity, ecosystem, partner network, and
   practice management proof.
 
 ## Feature Scorecard
@@ -331,7 +333,7 @@ They are not user-research scores.
 | UAE e-invoicing readiness | 3/10 | Planned, not implemented. Wafeq markets e-invoicing now. |
 | AI bookkeeping automation | 5/10 | Many AI surfaces, but Digits/QBO market deeper AI-native automation. |
 | Firm/accountant operations | 8/10 | Strong differentiator if UX and security are fixed. |
-| Bank feeds and reconciliation | 4/10 | CSV/import exists; live feeds require credentials/provider. Digits/QBO/Xero lead. |
+| Bank reconciliation | 4/10 | Upload a CSV exported from your bank, review suggested matches, and reconcile against your books. |
 | Security engineering | 6/10 | Good foundation, but vuln audit, SSRF, notification scoping, cert gaps hurt. |
 | Compliance/certification proof | 3/10 | No SOC 2/ISO/FTA accreditation evidence in repo; Wafeq/Zoho claim stronger proof. |
 | Test automation | 8/10 | 509 unit tests and build/check pass; E2E claim not locally verified here. |
@@ -361,10 +363,10 @@ ecosystem scale and avoids fighting Digits on pure AI-native ledger automation.
 5. Add `prettier` and make `format:check` pass.
 6. Make lint exit 0; warnings can be tracked separately, but errors must be gone.
 7. Implement actual production password reset email delivery.
-8. Encrypt every credential-bearing DB column, not only bank connections.
+8. Encrypt every credential-bearing DB column, including stored financial-data authorization tokens.
 9. Implement UAE e-invoicing/PINT AE validation and ASP adapter.
 10. Add or integrate direct EmaraTax VAT filing if the goal is to beat Zoho in UAE compliance.
-11. Turn live bank feeds from "prepared" into working provider integrations.
+11. Verify the bank reconciliation workflow. Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 12. Run full E2E locally/CI and keep the route crawl passing.
 13. Get third-party security review, then SOC 2/ISO roadmap if selling to firms.
 14. Get accountant pilot customers and measure time saved versus Wafeq/Zoho/manual workflows.

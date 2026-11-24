@@ -6,8 +6,8 @@
  * exemption, error codes, settings card, locale keys) that docs/einvoicing-providers.md lists;
  * tests/unit/einvoice-provider-discard.test.ts keeps that list complete.
  *
- * Selection is explicit: EINVOICE_PROVIDER names one provider, and it is only exposed once its
- * credentials are configured. Credentials of a provider that is not selected are never used.
+ * Company selection and credentials are resolved by company-provider.ts. The environment-only
+ * helpers remain available for the standalone adapter and its legacy integration contracts.
  */
 import type { EInvoiceProviderModule, ProviderEnvironment } from "./types";
 import { MOF_ASP_REGISTER_URL } from "./types";
@@ -77,7 +77,13 @@ export function publicProviderInfo(
   env: NodeJS.ProcessEnv = process.env
 ): PublicProviderInfo | null {
   const m = activeProviderModule(env);
-  if (!m) return null;
+  return m ? providerInfo(m, env) : null;
+}
+
+export function providerInfo(
+  m: EInvoiceProviderModule,
+  env: NodeJS.ProcessEnv
+): PublicProviderInfo {
   return {
     id: m.id,
     displayName: m.displayName,

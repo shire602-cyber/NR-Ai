@@ -7,8 +7,12 @@
  * transaction edit / exclude / delete / import undo / continuity.
  */
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
+import pg from "pg";
 import { describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { bankStatementCopy, statementRecognized } from "../../shared/bank-statement-copy";
 
 const h = useHarness();
 const base = (t: Tenant) => `/api/companies/${t.company.id}`;
@@ -109,6 +113,84 @@ async function liveEntries(companyId: string, source: string) {
     [companyId, source]
   );
 }
+
+describe("statement import copy", () => {
+  it.each([
+    ["2026-10-03", statementRecognized.en, 1],
+    ["invalid-date", null, 0],
+  ] as const)(
+    "reports a recognized statement only when it has valid rows (%s)",
+    async (date, detectedFormatLabel, validRows) => {
+      const t = await vatTenant();
+      const reply = await t.as.post(`${base(t)}/bank-statements/preview`, {
+        csvContent: `Date,Description,Debit,Credit\n${date},Test line,0,12.50\n`,
+      });
+      expect(reply.status, reply.text).toBe(200);
+      expect(reply.body).toMatchObject({ detectedFormatLabel, validRows });
+    }
+  );
+
+  it("prompts for CSV when either statement entry point receives empty input", async () => {
+    const t = await vatTenant();
+    const ba = await bankAccount(t);
+    for (const action of ["preview", "import"]) {
+      for (const source of [{}, { csvContent: " ", fileBase64: "" }]) {
+        const reply = await t.as.post(`${base(t)}/bank-statements/${action}`, {
+          bankAccountId: ba.id,
+          ...source,
+        });
+        expect(reply.status, reply.text).toBe(400);
+        expect(reply.body.fields).toEqual({ _root: [bankStatementCopy.en] });
+        expect(reply.text).not.toMatch(/XLSX|fileBase64/);
+      }
+    }
+  });
+
+  it("rejects a non-CSV upload and keeps CSV import and duplicate notices format-neutral", async () => {
+    const t = await vatTenant();
+    const ba = await bankAccount(t);
+    const importPath = `${base(t)}/bank-statements/import`;
+    const unsupported = await t.as.post(importPath, {
+      bankAccountId: ba.id,
+      fileName: "statement.sta",
+      fileBase64: readFileSync("tests/fixtures/bank-statements/statement.sta", "base64"),
+    });
+    expect(unsupported.status, unsupported.text).toBe(400);
+    expect(unsupported.body.code).toBe("STATEMENT_CSV_REQUIRED");
+    expect(await lines(t, ba.id)).toEqual([]);
+
+    const upload = {
+      bankAccountId: ba.id,
+      fileName: "statement.csv",
+      fileBase64: Buffer.from("Date,Description,Debit,Credit\n2026-10-03,Test,0,12.50").toString(
+        "base64"
+      ),
+    };
+    const first = await t.as.post(importPath, upload);
+    const duplicate = await t.as.post(importPath, upload);
+    expect(first.status, first.text).toBe(201);
+    expect(first.body.imported).toBe(1);
+    expect(duplicate.status, duplicate.text).toBe(201);
+    expect(duplicate.body.imported).toBe(0);
+    expect(duplicate.body.skippedDuplicates).toBe(first.body.imported);
+    await expect
+      .poll(async () => {
+        const list = await t.as.get("/api/notifications");
+        expect(list.status, list.text).toBe(200);
+        const notices = list.body.notifications.filter(
+          (n: { type: string }) => n.type === "bank_import"
+        );
+        expect(JSON.stringify(notices)).not.toMatch(/MT940|OFX|format/i);
+        return notices.map((n: { message: string }) => n.message);
+      })
+      .toEqual(
+        expect.arrayContaining([
+          `${first.body.imported} transaction(s) imported from Emirates NBD`,
+          `No new transactions from Emirates NBD; ${first.body.imported} already imported`,
+        ])
+      );
+  });
+});
 
 describe("W3-C banking: GL link and accounts", () => {
   it("[R06-01] an account created without a GL account gets one and its imported rows reconcile", async () => {
@@ -220,6 +302,1052 @@ describe("W3-C banking: match and unmatch integrity", () => {
     expect(again.status, again.text).toBe(201);
     expect(again.body.matchedJournalEntryId).toBeTruthy();
     expect(await liveEntries(t.company.id, "payment")).toHaveLength(1);
+  });
+
+  it.each([
+    { method: "bank_transfer", withPaymentId: true },
+    { method: "bank_reconciliation", withPaymentId: true },
+    { method: "bank_transfer", withPaymentId: false },
+  ])(
+    "unlinks an independently posted $method payment (stored ID: $withPaymentId)",
+    async ({ method, withPaymentId }) => {
+      const t = await vatTenant();
+      const ba = await bankAccount(t);
+      const inv = await invoice(t, 1000);
+      const description = "Previously recorded settlement";
+      await importCsv(t, ba.id, [["2026-10-06", description, "", "1050.00"]]);
+      const bankLine = await line(t, ba.id, description);
+      const posted = await t.as.post(`${base(t)}/invoices/${inv.id}/payments`, {
+        amount: 1050,
+        date: "2026-10-06",
+        method,
+        notes: `Reconciled from bank statement: ${description}`,
+        paymentAccountId: ba.glAccountId,
+      });
+      expect(posted.status, posted.text).toBe(201);
+      const payment = posted.body.payment;
+      expect(payment.journalEntryId).toBeTruthy();
+      await h.sql(
+        `UPDATE bank_transactions SET is_reconciled = true, matched_type = 'invoice',
+         matched_invoice_id = $2, matched_journal_entry_id = $3 WHERE id = $1`,
+        [bankLine.id, inv.id, payment.journalEntryId]
+      );
+      const [{ id: matchId }] = await h.sql(
+        `INSERT INTO bank_transaction_matches
+         (company_id, bank_transaction_id, match_group_id, target_type, target_id,
+          amount, journal_entry_id, payment_id, status)
+       VALUES ($1, $2, gen_random_uuid(), 'invoice', $3, 1050.00, $4, $5, 'active') RETURNING id`,
+        [
+          t.company.id,
+          bankLine.id,
+          inv.id,
+          payment.journalEntryId,
+          withPaymentId ? payment.id : null,
+        ]
+      );
+      if (method === "bank_reconciliation") {
+        // A later legacy bank event records the link, while the exact invoice audit
+        // still proves the payment came from the direct payment endpoint.
+        const { recordAudit } = await import("../../server/services/audit.service");
+        await recordAudit({
+          userId: t.user.id,
+          companyId: t.company.id,
+          action: "bank.reconcile",
+          entityType: "bank_transaction",
+          entityId: bankLine.id,
+          before: { matchStatus: "unmatched" },
+          after: { matchedType: "invoice", matchedId: inv.id, matchStatus: "matched" },
+        });
+      }
+      const { reverseInvoicePayment } =
+        await import("../../server/services/invoice-payment.service");
+      await expect(
+        reverseInvoicePayment({
+          companyId: t.company.id,
+          paymentId: payment.id,
+          actorId: t.user.id,
+          reason: "Legacy allocation lacks bank creation provenance",
+          expectedAllocation: {
+            matchId,
+            bankTransactionId: bankLine.id,
+            invoiceId: inv.id,
+            journalEntryId: payment.journalEntryId,
+          },
+        })
+      ).rejects.toMatchObject({ code: "PAYMENT_REVERSAL_REVIEW_REQUIRED" });
+
+      const unmatch = await t.as.delete(`${base(t)}/bank-statements/${bankLine.id}/match`);
+      expect(unmatch.status, unmatch.text).toBe(200);
+      expect(unmatch.body).toMatchObject({
+        isReconciled: false,
+        matchedInvoiceId: null,
+        matchedJournalEntryId: null,
+        reversedPayments: [],
+        reversedEntryIds: [],
+      });
+      expect(await invoiceStatus(inv.id)).toBe("paid");
+      expect(await glBalance(t.company.id, ba.glAccountId)).toBe(1050);
+      expect(
+        await h.sql(`SELECT id, journal_entry_id FROM invoice_payments WHERE id = $1`, [payment.id])
+      ).toEqual([{ id: payment.id, journal_entry_id: payment.journalEntryId }]);
+      expect(
+        await h.sql(`SELECT status FROM bank_transaction_matches WHERE id = $1`, [matchId])
+      ).toEqual([{ status: "reversed" }]);
+      expect(
+        await h.sql(`SELECT id FROM journal_entries WHERE reversed_entry_id = $1`, [
+          payment.journalEntryId,
+        ])
+      ).toEqual([]);
+    }
+  );
+
+  it("prevents an upgraded historical deposit from posting again after unlinking", async () => {
+    const t = await vatTenant();
+    const ba = await bankAccount(t);
+    const inv = await invoice(t, 200);
+    await importCsv(t, ba.id, [["2026-10-06", "Legacy partial payment", "", "100.00"]]);
+    const bankLine = await line(t, ba.id, "Legacy partial payment");
+    const { recordInvoicePayment } = await import("../../server/services/invoice-payment.service");
+    const { journalEntryId } = await recordInvoicePayment({
+      companyId: t.company.id,
+      invoiceId: inv.id,
+      amount: 100,
+      date: new Date("2026-10-06T00:00:00.000Z"),
+      method: "bank_reconciliation",
+      paymentAccountId: ba.glAccountId,
+      createdBy: t.user.id,
+    });
+    await h.sql(
+      `UPDATE bank_transactions SET is_reconciled = true, match_status = 'matched',
+       matched_invoice_id = $2, matched_journal_entry_id = $3 WHERE id = $1`,
+      [bankLine.id, inv.id, journalEntryId]
+    );
+    // Run the real upgrade backfill on the historical summary.
+    const migration = readFileSync("migrations/0097_w3c_banking.sql", "utf8");
+    const start = migration.indexOf("WITH legacy_matches AS");
+    expect(start).toBeGreaterThan(-1);
+    await h.sql(migration.slice(start, migration.indexOf("--> statement-breakpoint", start)));
+
+    const url = `${base(t)}/bank-statements/${bankLine.id}/match`;
+    const unmatch = await t.as.delete(url);
+    expect(unmatch.status, unmatch.text).toBe(200);
+    const rematch = await t.as.post(url, { matchedType: "invoice", matchedId: inv.id });
+    expect(rematch.status, rematch.text).toBe(409);
+    expect(rematch.body.code).toBe("BANK_RETAINED_PAYMENT_REVIEW_REQUIRED");
+    expect(await glBalance(t.company.id, ba.glAccountId)).toBe(100);
+    expect(await liveEntries(t.company.id, "payment")).toHaveLength(1);
+  });
+
+  it.each([
+    "historical invoice audit",
+    "same-line retry",
+    "actorless link and retry",
+    "prior same-line journal link",
+    "interrupted same-line retry",
+    "missing audit",
+    "newer non-legacy audit",
+    "payment before import",
+  ])("only unlinks a legacy payment with no creation proof (%s)", async (evidence) => {
+    const t = await vatTenant();
+    const ba = await bankAccount(t);
+    const inv = await invoice(t, 1000);
+    const description = "Legacy manual-bank-match receipt";
+    await importCsv(t, ba.id, [["2026-10-06", description, "", "1120.00"]]);
+    const bankLine = await line(t, ba.id, description);
+    const { recordInvoicePayment } = await import("../../server/services/invoice-payment.service");
+    const { recordAudit } = await import("../../server/services/audit.service");
+    // Record the payment independently without the old best-effort direct-payment
+    // audit. Editable metadata can exactly match what the bank route would write.
+    const { payment, journalEntryId } = await recordInvoicePayment({
+      companyId: t.company.id,
+      invoiceId: inv.id,
+      amount: 1050,
+      date: new Date("2026-10-06T00:00:00.000Z"),
+      method: "bank_reconciliation",
+      notes: `Reconciled from bank statement: ${description}`,
+      paymentAccountId: ba.glAccountId,
+      createdBy: t.user.id,
+    });
+    if (evidence === "actorless link and retry") {
+      // The old AI journal matcher attached this existing entry without an audit
+      // and left match_status unchanged. The invoice matcher then kept the pointer.
+      await h.sql(
+        `UPDATE bank_transactions SET is_reconciled = true, matched_journal_entry_id = $2
+         WHERE id = $1`,
+        [bankLine.id, journalEntryId]
+      );
+    }
+    await h.sql(
+      `UPDATE bank_transactions SET is_reconciled = true, match_status = 'matched', matched_type = 'invoice',
+           matched_invoice_id = $2, matched_journal_entry_id = $3 WHERE id = $1`,
+      [bankLine.id, inv.id, journalEntryId]
+    );
+    const [{ id: matchId }] = await h.sql(
+      `INSERT INTO bank_transaction_matches (company_id, bank_transaction_id, match_group_id,
+           target_type, target_id, amount, journal_entry_id, payment_id, status)
+         VALUES ($1, $2, gen_random_uuid(), 'invoice', $3, 1120.00, $4, $5, 'active') RETURNING id`,
+      [t.company.id, bankLine.id, inv.id, journalEntryId, payment.id]
+    );
+    const audit = {
+      userId: t.user.id,
+      companyId: t.company.id,
+      action: "bank.reconcile",
+      entityType: "bank_transaction",
+      entityId: bankLine.id,
+      before: { matchStatus: "unmatched" },
+    };
+    if (evidence === "prior same-line journal link") {
+      await recordAudit({
+        ...audit,
+        after: { matchedType: "journal", matchedId: journalEntryId, matchStatus: "matched" },
+      });
+    }
+    if (evidence !== "missing audit") {
+      await recordAudit({
+        ...audit,
+        after: { matchedType: "invoice", matchedId: inv.id, matchStatus: "matched" },
+      });
+    }
+    if (evidence === "interrupted same-line retry") {
+      await recordAudit({ ...audit, action: "bank.unmatch", after: { matchStatus: "unmatched" } });
+    }
+    if (
+      evidence === "same-line retry" ||
+      evidence === "actorless link and retry" ||
+      evidence === "interrupted same-line retry"
+    ) {
+      await recordAudit({
+        ...audit,
+        before: { matchStatus: "matched" },
+        after: { matchedType: "invoice", matchedId: inv.id, matchStatus: "matched" },
+      });
+    }
+    if (evidence === "newer non-legacy audit") {
+      await recordAudit({
+        ...audit,
+        after: { target: `invoice:${inv.id}`, journalEntryIds: [journalEntryId] },
+      });
+    }
+
+    if (evidence === "payment before import") {
+      await h.sql(
+        `UPDATE bank_transactions SET created_at = now() + interval '1 second' WHERE id = $1`,
+        [bankLine.id]
+      );
+    }
+
+    expect(await invoiceStatus(inv.id)).toBe("paid");
+    expect(await glBalance(t.company.id, ba.glAccountId)).toBe(1050);
+    expect(
+      await h.sql(
+        `SELECT id FROM audit_logs WHERE action = 'invoice.payment' AND resource_id = $1`,
+        [inv.id]
+      )
+    ).toEqual([]);
+    const result = await t.as.delete(`${base(t)}/bank-statements/${bankLine.id}/match`);
+    expect(result.status, result.text).toBe(200);
+    expect(result.body).toMatchObject({
+      reversedPayments: [],
+      reversedEntryIds: [],
+      isReconciled: false,
+    });
+    expect(await invoiceStatus(inv.id)).toBe("paid");
+    expect(await glBalance(t.company.id, ba.glAccountId)).toBe(1050);
+    expect((await line(t, ba.id, description)).isReconciled).toBe(false);
+    expect(await h.sql(`SELECT id FROM invoice_payments WHERE id = $1`, [payment.id])).toEqual([
+      { id: payment.id },
+    ]);
+    expect(
+      await h.sql(`SELECT id FROM journal_entries WHERE reversed_entry_id = $1`, [journalEntryId])
+    ).toEqual([]);
+    expect(
+      await h.sql(`SELECT status FROM bank_transaction_matches WHERE id = $1`, [matchId])
+    ).toEqual([{ status: "reversed" }]);
+  });
+
+  it.each([false, true])(
+    "preserves an existing payment when a removed line also references the invoice (exact rival: %s)",
+    async (exactRival) => {
+      const t = await vatTenant();
+      const ba = await bankAccount(t);
+      const inv = await invoice(t, 1000);
+      const previous = await t.as.post(`${base(t)}/invoices/${inv.id}/payments`, {
+        amount: 730.8,
+        date: "2026-10-05",
+        method: "bank_transfer",
+        paymentAccountId: ba.glAccountId,
+      });
+      expect(previous.status, previous.text).toBe(201);
+      const description = "Two historical lines with the same metadata";
+      await importCsv(t, ba.id, [
+        ["2026-10-06", description, "", "329.20"],
+        ["2026-10-06", description, "", "339.20"],
+      ]);
+      const imported = await lines(t, ba.id);
+      const first = imported.find((row) => Number(row.amount) === 329.2)!;
+      const second = imported.find((row) => Number(row.amount) === 339.2)!;
+      expect(first.id).not.toBe(second.id);
+      const { recordInvoicePayment } =
+        await import("../../server/services/invoice-payment.service");
+      const { recordAudit } = await import("../../server/services/audit.service");
+      const { payment, journalEntryId } = await recordInvoicePayment({
+        invoiceId: inv.id,
+        companyId: t.company.id,
+        amount: 319.2,
+        date: new Date("2026-10-06T00:00:00.000Z"),
+        method: "bank_reconciliation",
+        notes: `Reconciled from bank statement: ${description}`,
+        paymentAccountId: ba.glAccountId,
+        createdBy: t.user.id,
+      });
+      const markMatched = (id: string) =>
+        h.sql(
+          `UPDATE bank_transactions SET is_reconciled = true, match_status = 'matched',
+           matched_type = 'invoice', matched_invoice_id = $2, matched_journal_entry_id = $3
+         WHERE id = $1`,
+          [id, inv.id, journalEntryId]
+        );
+      const recordHistoricalMatch = (id: string, upperCase = false) =>
+        recordAudit({
+          userId: t.user.id,
+          companyId: upperCase ? t.company.id.toUpperCase() : t.company.id,
+          action: "bank.reconcile",
+          entityType: "bank_transaction",
+          entityId: upperCase ? id.toUpperCase() : id,
+          before: { matchStatus: "unmatched" },
+          after: {
+            matchedType: "invoice",
+            matchedId: upperCase ? inv.id.toUpperCase() : inv.id,
+            matchStatus: "matched",
+          },
+        });
+
+      await markMatched(first.id);
+      await recordHistoricalMatch(first.id, true);
+      if (exactRival) {
+        await recordAudit({
+          userId: t.user.id,
+          companyId: t.company.id,
+          action: "bank.reconcile",
+          entityType: "bank_transaction",
+          entityId: first.id,
+          before: { matchStatus: "unmatched" },
+          after: {
+            matchedType: "journal",
+            matchedId: journalEntryId.toUpperCase(),
+            matchStatus: "matched",
+          },
+        });
+      }
+      // The old DELETE cleared the bank pointers without reversing payment or
+      // recording an unmatch event. An older bank line can therefore survive only in audit.
+      await h.sql(
+        `UPDATE bank_transactions SET is_reconciled = false, match_status = 'unmatched',
+           matched_invoice_id = NULL, matched_journal_entry_id = NULL, matched_type = NULL
+         WHERE id = $1`,
+        [first.id]
+      );
+      await h.sql(`DELETE FROM bank_transactions WHERE id = $1`, [first.id]);
+      // The old journal-link path could supply the payment JE without an audit.
+      // Matching the already-paid invoice then kept that pointer and logged a normal invoice match.
+      await markMatched(second.id);
+      await recordHistoricalMatch(second.id);
+      const [{ id: matchId }] = await h.sql(
+        `INSERT INTO bank_transaction_matches (company_id, bank_transaction_id, match_group_id,
+           target_type, target_id, amount, journal_entry_id, payment_id, status)
+         VALUES ($1, $2, gen_random_uuid(), 'invoice', $3, 339.20, $4, $5, 'active') RETURNING id`,
+        [t.company.id, second.id, inv.id, journalEntryId, payment.id]
+      );
+      const scopedLines = () =>
+        h.sql(
+          `SELECT id, is_reconciled, matched_invoice_id, matched_journal_entry_id
+         FROM bank_transactions WHERE id IN ($1, $2) ORDER BY id`,
+          [first.id, second.id]
+        );
+      const before = await scopedLines();
+      const result = await t.as.delete(`${base(t)}/bank-statements/${second.id}/match`);
+      expect(result.status, result.text).toBe(exactRival ? 409 : 200);
+      if (exactRival) {
+        expect(result.body.code).toBe("PAYMENT_REVERSAL_REVIEW_REQUIRED");
+        expect(result.text).not.toContain(first.id);
+        expect(await scopedLines()).toEqual(before);
+      } else {
+        expect(result.body).toMatchObject({ reversedPayments: [], reversedEntryIds: [] });
+        expect(await scopedLines()).toEqual([
+          {
+            id: second.id,
+            is_reconciled: false,
+            matched_invoice_id: null,
+            matched_journal_entry_id: null,
+          },
+        ]);
+      }
+      expect(await invoiceStatus(inv.id)).toBe("paid");
+      expect(await glBalance(t.company.id, ba.glAccountId)).toBe(1050);
+      expect(
+        await h.sql(`SELECT id FROM invoice_payments WHERE invoice_id = $1`, [inv.id])
+      ).toEqual(expect.arrayContaining([{ id: previous.body.payment.id }, { id: payment.id }]));
+      expect(
+        await h.sql(`SELECT id FROM journal_entries WHERE reversed_entry_id = $1`, [journalEntryId])
+      ).toEqual([]);
+      expect(
+        await h.sql(`SELECT status FROM bank_transaction_matches WHERE id = $1`, [matchId])
+      ).toEqual([{ status: exactRival ? "active" : "reversed" }]);
+    }
+  );
+
+  it.each(["legacy", "current"])(
+    "unmatches two %s installments on one invoice independently",
+    async (kind) => {
+      const t = await vatTenant();
+      const ba = await bankAccount(t);
+      const inv = await invoice(t, 1000);
+      const installments = [
+        { date: "2026-10-06", name: "First installment", amount: 500 },
+        { date: "2026-10-07", name: "Second installment", amount: 550 },
+      ];
+      await importCsv(
+        t,
+        ba.id,
+        installments.map(({ date, name, amount }) => [date, name, "", amount.toFixed(2)])
+      );
+      const { recordInvoicePayment } =
+        await import("../../server/services/invoice-payment.service");
+      const { recordAudit } = await import("../../server/services/audit.service");
+      const links = [];
+      for (const installment of installments) {
+        const bankLine = await line(t, ba.id, installment.name);
+        if (kind === "current") {
+          const result = await t.as.post(`${base(t)}/bank-statements/${bankLine.id}/match`, {
+            matchedType: "invoice",
+            matchedId: inv.id,
+          });
+          expect(result.status, result.text).toBe(201);
+        } else {
+          const { payment, journalEntryId } = await recordInvoicePayment({
+            companyId: t.company.id,
+            invoiceId: inv.id,
+            amount: installment.amount,
+            date: new Date(`${installment.date}T00:00:00.000Z`),
+            method: "bank_reconciliation",
+            notes: `Reconciled from bank statement: ${installment.name}`,
+            paymentAccountId: ba.glAccountId,
+            createdBy: t.user.id,
+          });
+          await h.sql(
+            `UPDATE bank_transactions SET is_reconciled = true, match_status = 'matched', matched_type = 'invoice',
+               matched_invoice_id = $2, matched_journal_entry_id = $3 WHERE id = $1`,
+            [bankLine.id, inv.id, journalEntryId]
+          );
+          await h.sql(
+            `INSERT INTO bank_transaction_matches (company_id, bank_transaction_id, match_group_id,
+               target_type, target_id, amount, journal_entry_id, payment_id, status)
+             VALUES ($1, $2, gen_random_uuid(), 'invoice', $3, $4, $5, $6, 'active')`,
+            [t.company.id, bankLine.id, inv.id, installment.amount, journalEntryId, payment.id]
+          );
+          await recordAudit({
+            userId: t.user.id,
+            companyId: t.company.id,
+            action: "bank.reconcile",
+            entityType: "bank_transaction",
+            entityId: bankLine.id,
+            before: { matchStatus: "unmatched" },
+            after: { matchedType: "invoice", matchedId: inv.id, matchStatus: "matched" },
+          });
+        }
+        const [link] = await h.sql<{ payment_id: string; journal_entry_id: string }>(
+          `SELECT payment_id, journal_entry_id FROM bank_transaction_matches WHERE bank_transaction_id = $1`,
+          [bankLine.id]
+        );
+        links.push({ ...link, lineId: bankLine.id });
+      }
+      expect(links[0].payment_id).not.toBe(links[1].payment_id);
+      expect(links[0].journal_entry_id).not.toBe(links[1].journal_entry_id);
+      expect(await invoiceStatus(inv.id)).toBe("paid");
+      const reverses = kind === "current";
+      for (const link of links) {
+        const result = await t.as.delete(`${base(t)}/bank-statements/${link.lineId}/match`);
+        expect(result.status, result.text).toBe(200);
+        expect(result.body).toMatchObject({
+          reversedPayments: reverses ? [link.payment_id] : [],
+          reversedEntryIds: reverses ? [link.journal_entry_id] : [],
+          isReconciled: false,
+        });
+        if (link === links[0]) {
+          expect(
+            await h.sql(`SELECT id FROM invoice_payments WHERE id = $1`, [links[1].payment_id])
+          ).toEqual([{ id: links[1].payment_id }]);
+          expect(
+            await h.sql(`SELECT reversed_by_entry_id FROM journal_entries WHERE id = $1`, [
+              links[1].journal_entry_id,
+            ])
+          ).toEqual([{ reversed_by_entry_id: null }]);
+        }
+      }
+      expect(await invoiceStatus(inv.id)).toBe(reverses ? "sent" : "paid");
+      expect(await glBalance(t.company.id, ba.glAccountId)).toBe(reverses ? 0 : 1050);
+      expect(
+        await h.sql(`SELECT id FROM invoice_payments WHERE invoice_id = $1`, [inv.id])
+      ).toHaveLength(reverses ? 0 : 2);
+    }
+  );
+
+  it.each([true, false])(
+    "unlinks only an actually settled invoice when a legacy allocation has no journal (paid: %s)",
+    async (paid) => {
+      const t = await vatTenant();
+      const ba = await bankAccount(t);
+      const inv = await invoice(t, 1000);
+      const description = "Already-paid invoice statement line";
+      await importCsv(t, ba.id, [["2026-10-06", description, "", "1050.00"]]);
+      const bankLine = await line(t, ba.id, description);
+      if (paid) {
+        const result = await t.as.post(`${base(t)}/invoices/${inv.id}/payments`, {
+          amount: 1050,
+          date: "2026-10-05",
+          method: "bank_transfer",
+          paymentAccountId: ba.glAccountId,
+        });
+        expect(result.status, result.text).toBe(201);
+      } else {
+        // An old status flag without actual settlement is insufficient.
+        await h.sql(`UPDATE invoices SET status = 'paid' WHERE id = $1`, [inv.id]);
+      }
+      await h.sql(
+        `UPDATE bank_transactions SET is_reconciled = true, match_status = 'matched', matched_type = 'invoice',
+           matched_invoice_id = $2 WHERE id = $1`,
+        [bankLine.id, inv.id]
+      );
+      const [{ id: matchId }] = await h.sql(
+        `INSERT INTO bank_transaction_matches (company_id, bank_transaction_id, match_group_id,
+           target_type, target_id, amount, status)
+         VALUES ($1, $2, gen_random_uuid(), 'invoice', $3, 1050.00, 'active') RETURNING id`,
+        [t.company.id, bankLine.id, inv.id]
+      );
+      const paymentRows = () =>
+        h.sql(`SELECT id, journal_entry_id FROM invoice_payments WHERE invoice_id = $1`, [inv.id]);
+      const journalRows = () =>
+        h.sql(
+          `SELECT id, reversed_by_entry_id FROM journal_entries WHERE company_id = $1 ORDER BY id`,
+          [t.company.id]
+        );
+      const beforePayments = await paymentRows();
+      const beforeJournals = await journalRows();
+
+      const result = await t.as.delete(`${base(t)}/bank-statements/${bankLine.id}/match`);
+      expect(result.status, result.text).toBe(paid ? 200 : 409);
+      if (paid) {
+        expect(result.body).toMatchObject({
+          isReconciled: false,
+          matchedInvoiceId: null,
+          reversedPayments: [],
+          reversedEntryIds: [],
+        });
+      } else {
+        expect(result.body.code).toBe("PAYMENT_REVERSAL_REVIEW_REQUIRED");
+      }
+      expect(await invoiceStatus(inv.id)).toBe("paid");
+      expect(await paymentRows()).toEqual(beforePayments);
+      expect(await journalRows()).toEqual(beforeJournals);
+      expect(
+        await h.sql(`SELECT status FROM bank_transaction_matches WHERE id = $1`, [matchId])
+      ).toEqual([{ status: paid ? "reversed" : "active" }]);
+    }
+  );
+
+  it.each(["none", "foreign invoice", "foreign payment reference", "rival pending allocation"])(
+    "checks journal-only invoice unmatch before reversing (conflict: %s)",
+    async (conflict) => {
+      const t = await vatTenant();
+      const ba = await bankAccount(t);
+      const inv = await invoice(t, 1000);
+      const description = "Legacy bank-owned journal";
+      await importCsv(t, ba.id, [
+        ["2026-10-06", description, "", "1050.00"],
+        ["2026-10-07", "Other bank line", "", "25.00"],
+      ]);
+      const bankLine = await line(t, ba.id, description);
+      const receivables = await accountByCode(t, "1040");
+      const { postJournal } = await import("../../server/ledger");
+      const {
+        entry: { id: entryId },
+      } = await postJournal(
+        {
+          companyId: t.company.id,
+          date: "2026-10-06",
+          memo: "Legacy reconciliation of an invoice",
+          source: "bank_reconciliation",
+          sourceId: bankLine.id,
+          status: "posted",
+          lines: [
+            { accountId: ba.glAccountId, debitFils: 105000 },
+            { accountId: receivables.id, creditFils: 105000, controlLeg: "receivables" },
+          ],
+        },
+        { actorId: t.user.id }
+      );
+      const [revenue] = await h.sql(
+        `SELECT id FROM journal_entries WHERE source = 'invoice' AND source_id = $1 AND company_id = $2`,
+        [inv.id, t.company.id]
+      );
+      expect(revenue.id).toBeTruthy();
+      let invoiceId = inv.id;
+      let foreignCompanyId: string | undefined;
+      if (conflict === "foreign invoice" || conflict === "foreign payment reference") {
+        const foreign = await h.createSecondTenant();
+        foreignCompanyId = foreign.company.id;
+        const other = await invoice(foreign, 1000, "2026-10-01", "Other company's customer");
+        if (conflict === "foreign invoice") {
+          invoiceId = other.id;
+        } else {
+          const foreignAccount = await bankAccount(foreign);
+          const payment = await foreign.as.post(`${base(foreign)}/invoices/${other.id}/payments`, {
+            amount: 1050,
+            method: "bank_transfer",
+            date: "2026-10-06",
+            paymentAccountId: foreignAccount.glAccountId,
+          });
+          expect(payment.status, payment.text).toBe(201);
+          await h.sql(`UPDATE invoice_payments SET journal_entry_id = $2 WHERE id = $1`, [
+            payment.body.payment.id,
+            entryId,
+          ]);
+        }
+      } else if (conflict === "rival pending allocation") {
+        const rival = await line(t, ba.id, "Other bank line");
+        await h.sql(
+          `INSERT INTO bank_transaction_matches
+             (company_id, bank_transaction_id, match_group_id, target_type, journal_entry_id, status)
+           VALUES ($1, $2, gen_random_uuid(), 'journal', $3, 'pending')`,
+          [t.company.id, rival.id, entryId]
+        );
+      }
+      // Emulate a pre-0141 backfill with no recorded payment or ownership flag.
+      const [{ id: matchId }] = await h.sql(
+        `INSERT INTO bank_transaction_matches
+           (company_id, bank_transaction_id, match_group_id, target_type, target_id,
+            amount, journal_entry_id, status)
+         VALUES ($1, $2, gen_random_uuid(), 'invoice', $3, 1050.00, $4, 'active') RETURNING id`,
+        [t.company.id, bankLine.id, invoiceId, entryId]
+      );
+      await h.sql(
+        `UPDATE bank_transactions SET is_reconciled = true, matched_type = 'invoice',
+           matched_invoice_id = $2, matched_journal_entry_id = $3 WHERE id = $1`,
+        [bankLine.id, invoiceId, entryId]
+      );
+      expect(await glBalance(t.company.id, receivables.id)).toBe(0);
+
+      const unmatch = await t.as.delete(`${base(t)}/bank-statements/${bankLine.id}/match`);
+      const safe = conflict === "none";
+      expect(unmatch.status, unmatch.text).toBe(safe ? 200 : 409);
+      if (safe) {
+        expect(unmatch.body).toMatchObject({
+          isReconciled: false,
+          reversedPayments: [],
+          reversedEntryIds: [entryId],
+        });
+      } else {
+        expect(unmatch.body.code).toBe("PAYMENT_REVERSAL_REVIEW_REQUIRED");
+        if (foreignCompanyId) expect(unmatch.text).not.toContain(foreignCompanyId);
+      }
+      expect(await invoiceStatus(inv.id)).toBe("sent");
+      expect((await line(t, ba.id, description)).isReconciled).toBe(!safe);
+      expect(await glBalance(t.company.id, ba.glAccountId)).toBe(safe ? 0 : 1050);
+      expect(await glBalance(t.company.id, receivables.id)).toBe(safe ? 1050 : 0);
+      expect(
+        await h.sql(`SELECT id, status, reversed_by_entry_id FROM journal_entries WHERE id = $1`, [
+          revenue.id,
+        ])
+      ).toEqual([{ id: revenue.id, status: "posted", reversed_by_entry_id: null }]);
+
+      expect(
+        await h.sql(`SELECT id FROM journal_entries WHERE reversed_entry_id = $1`, [entryId])
+      ).toHaveLength(safe ? 1 : 0);
+      expect(
+        await h.sql(`SELECT status FROM bank_transaction_matches WHERE id = $1`, [matchId])
+      ).toEqual([{ status: safe ? "reversed" : "active" }]);
+    }
+  );
+
+  it.each(["wrong invoice payment", "shared payment journal"])(
+    "requires review before unmatching an invoice allocation with a %s",
+    async (problem) => {
+      const t = await vatTenant();
+      const ba = await bankAccount(t);
+      const first = await invoice(t, 1000);
+      const second = await invoice(t, 2000);
+      await importCsv(t, ba.id, [
+        ["2026-10-06", "First customer payment", "", "1050.00"],
+        ["2026-10-07", "Second customer payment", "", "2100.00"],
+      ]);
+      const firstLine = await line(t, ba.id, "First customer payment");
+      const secondLine = await line(t, ba.id, "Second customer payment");
+      for (const [txn, inv] of [
+        [firstLine, first],
+        [secondLine, second],
+      ] as const) {
+        const result = await t.as.post(`${base(t)}/bank-statements/${txn.id}/match`, {
+          matchedType: "invoice",
+          matchedId: inv.id,
+        });
+        expect(result.status, result.text).toBe(201);
+      }
+      const [firstMatch, secondMatch] = await h.sql<{
+        id: string;
+        payment_id: string;
+        journal_entry_id: string;
+      }>(
+        `SELECT id, payment_id, journal_entry_id FROM bank_transaction_matches
+         WHERE bank_transaction_id IN ($1, $2) ORDER BY (bank_transaction_id = $1) DESC`,
+        [firstLine.id, secondLine.id]
+      );
+      if (problem === "wrong invoice payment") {
+        await h.sql(`UPDATE bank_transaction_matches SET payment_id = $1 WHERE id = $2`, [
+          secondMatch.payment_id,
+          firstMatch.id,
+        ]);
+      } else {
+        // Both allocations still identify their exact invoice/payment/journal triple.
+        await h.sql(`UPDATE invoice_payments SET journal_entry_id = $1 WHERE id = $2`, [
+          firstMatch.journal_entry_id,
+          secondMatch.payment_id,
+        ]);
+        await h.sql(`UPDATE bank_transaction_matches SET journal_entry_id = $1 WHERE id = $2`, [
+          firstMatch.journal_entry_id,
+          secondMatch.id,
+        ]);
+        await h.sql(`UPDATE bank_transactions SET matched_journal_entry_id = $1 WHERE id = $2`, [
+          firstMatch.journal_entry_id,
+          secondLine.id,
+        ]);
+        const { reverseInvoicePayment } =
+          await import("../../server/services/invoice-payment.service");
+        await expect(
+          reverseInvoicePayment({
+            companyId: t.company.id,
+            paymentId: firstMatch.payment_id,
+            actorId: t.user.id,
+            reason: "Shared journal rehearsal",
+          })
+        ).rejects.toMatchObject({ code: "PAYMENT_REVERSAL_REVIEW_REQUIRED" });
+        const secondUnmatch = await t.as.delete(
+          `${base(t)}/bank-statements/${secondLine.id}/match`
+        );
+        expect(secondUnmatch.status, secondUnmatch.text).toBe(409);
+        expect(secondUnmatch.body.code).toBe("PAYMENT_REVERSAL_REVIEW_REQUIRED");
+      }
+
+      const result = await t.as.delete(`${base(t)}/bank-statements/${firstLine.id}/match`);
+      expect(result.status, result.text).toBe(409);
+      expect(result.body.code).toBe("PAYMENT_REVERSAL_REVIEW_REQUIRED");
+      expect((await lines(t, ba.id)).every((txn) => txn.isReconciled)).toBe(true);
+      expect(await invoiceStatus(first.id)).toBe("paid");
+      expect(await invoiceStatus(second.id)).toBe("paid");
+      expect(await glBalance(t.company.id, ba.glAccountId)).toBe(3150);
+      expect(
+        await h.sql(`SELECT id FROM invoice_payments WHERE id IN ($1, $2)`, [
+          firstMatch.payment_id,
+          secondMatch.payment_id,
+        ])
+      ).toHaveLength(2);
+      expect(
+        await h.sql(`SELECT id FROM journal_entries WHERE reversed_entry_id IN ($1, $2)`, [
+          firstMatch.journal_entry_id,
+          secondMatch.journal_entry_id,
+        ])
+      ).toEqual([]);
+    }
+  );
+
+  it.each(["receipt-owned", "bank-created", "missing", "foreign receipt"])(
+    "unmatches a legacy receipt allocation with a %s journal",
+    async (provenance) => {
+      const t = await vatTenant();
+      const ba = await bankAccount(t);
+      const expense = await accountByCode(t, "5000");
+      const draft = await t.as.post(`${base(t)}/receipts`, {
+        merchant: "Receipt cash-side test",
+        date: "2026-10-08",
+        amount: 100,
+        vatAmount: 5,
+        currency: "AED",
+        category: "Office",
+      });
+      expect(draft.status, draft.text).toBe(200);
+      const posted = await t.as.post(`/api/receipts/${draft.body.id}/post`, {
+        accountId: expense.id,
+        paymentAccountId: ba.glAccountId,
+      });
+      expect(posted.status, posted.text).toBe(200);
+      const receiptJournal = posted.body.journalEntryId as string;
+      expect(receiptJournal).toBeTruthy();
+      await importCsv(t, ba.id, [["2026-10-08", "Paid office receipt", "105.00", ""]]);
+      const bankLine = (await lines(t, ba.id))[0];
+      const bankOwned = provenance === "bank-created" || provenance === "foreign receipt";
+      let targetReceipt = draft.body.id as string;
+      if (provenance === "foreign receipt") {
+        const other = await h.createSecondTenant();
+        const created = await other.as.post(`${base(other)}/receipts`, {
+          merchant: "Other company receipt",
+          date: "2026-10-08",
+          amount: 105,
+          currency: "AED",
+          category: "Office",
+        });
+        expect(created.status, created.text).toBe(200);
+        targetReceipt = created.body.id;
+      }
+      const match = !bankOwned
+        ? await t.as.post(`${base(t)}/bank-statements/${bankLine.id}/match`, {
+            matchedType: "receipt",
+            matchedId: draft.body.id,
+          })
+        : await t.as.post(`${base(t)}/bank-statements/${bankLine.id}/create-entry`, {
+            accountId: expense.id,
+          });
+      expect(match.status, match.text).toBe(201);
+      const [{ journal_entry_id: matchedJournal }] = await h.sql(
+        `SELECT journal_entry_id FROM bank_transaction_matches WHERE bank_transaction_id = $1`,
+        [bankLine.id]
+      );
+      expect(matchedJournal).toBeTruthy();
+      await h.sql(
+        `UPDATE bank_transaction_matches SET target_type = 'receipt', target_id = $2,
+           created_journal = true WHERE bank_transaction_id = $1`,
+        [bankLine.id, targetReceipt]
+      );
+      await h.sql(
+        `UPDATE bank_transactions SET matched_type = 'receipt', matched_receipt_id = $2 WHERE id = $1`,
+        [bankLine.id, targetReceipt]
+      );
+      if (provenance === "missing") {
+        await h.sql(
+          `UPDATE bank_transaction_matches SET journal_entry_id = NULL WHERE bank_transaction_id = $1`,
+          [bankLine.id]
+        );
+      }
+      expect(await glBalance(t.company.id, ba.glAccountId)).toBe(bankOwned ? -210 : -105);
+
+      const unmatch = await t.as.delete(`${base(t)}/bank-statements/${bankLine.id}/match`);
+      if (provenance === "missing" || provenance === "foreign receipt") {
+        expect(unmatch.status, unmatch.text).toBe(409);
+        expect(unmatch.body.code).toBe("BANK_MATCH_REVIEW_REQUIRED");
+        expect((await line(t, ba.id, "Paid office receipt")).isReconciled).toBe(true);
+      } else {
+        expect(unmatch.status, unmatch.text).toBe(200);
+        expect(unmatch.body.isReconciled).toBe(false);
+        expect(unmatch.body.reversedEntryIds).toEqual(
+          provenance === "bank-created" ? [matchedJournal] : []
+        );
+      }
+      expect(await glBalance(t.company.id, ba.glAccountId)).toBe(
+        provenance === "foreign receipt" ? -210 : -105
+      );
+      expect(
+        await h.sql(`SELECT posted, journal_entry_id FROM receipts WHERE id = $1`, [draft.body.id])
+      ).toEqual([{ posted: true, journal_entry_id: receiptJournal }]);
+      expect(
+        await h.sql(`SELECT id FROM journal_entries WHERE reversed_entry_id = $1`, [receiptJournal])
+      ).toEqual([]);
+    }
+  );
+
+  it.each(["same-tenant exact", "foreign exact", "inferred with a conflicting payment ID"])(
+    "refuses a payment reversal with a %s claim",
+    async (rivalKind) => {
+      const t = await vatTenant();
+      const rival = rivalKind === "foreign exact" ? await h.createSecondTenant() : t;
+      const ba = await bankAccount(t);
+      const rivalAccount = rival === t ? ba : await bankAccount(rival);
+      const inv = await invoice(t, 1000);
+      await importCsv(t, ba.id, [["2026-10-08", "Original settlement", "", "1050.00"]]);
+      await importCsv(rival, rivalAccount.id, [["2026-10-09", "Rival settlement", "", "1050.00"]]);
+      const ownerLine = await line(t, ba.id, "Original settlement");
+      const rivalLine = await line(rival, rivalAccount.id, "Rival settlement");
+      const initial = await t.as.post(`${base(t)}/bank-statements/${ownerLine.id}/match`, {
+        matchedType: "invoice",
+        matchedId: inv.id,
+      });
+      expect(initial.status, initial.text).toBe(201);
+      const [claim] = await h.sql(
+        `SELECT id, payment_id, journal_entry_id FROM bank_transaction_matches WHERE bank_transaction_id = $1`,
+        [ownerLine.id]
+      );
+      const { reverseInvoicePayment } =
+        await import("../../server/services/invoice-payment.service");
+      const reversal = {
+        companyId: t.company.id,
+        paymentId: claim.payment_id,
+        actorId: t.user.id,
+        reason: "Competing bank allocation rehearsal",
+      };
+      await expect(reverseInvoicePayment(reversal)).rejects.toMatchObject({
+        code: "PAYMENT_REVERSAL_REVIEW_REQUIRED",
+      });
+      await h.sql(
+        `INSERT INTO bank_transaction_matches
+           (company_id, bank_transaction_id, match_group_id, target_type, target_id,
+            amount, journal_entry_id, payment_id, status)
+         VALUES ($1, $2, gen_random_uuid(), 'invoice', $3, 1050.00, $4, $5, 'active')`,
+        [
+          rival.company.id,
+          rivalLine.id,
+          inv.id,
+          claim.journal_entry_id,
+          rivalKind === "inferred with a conflicting payment ID" ? randomUUID() : claim.payment_id,
+        ]
+      );
+      await expect(
+        reverseInvoicePayment({
+          ...reversal,
+          expectedAllocation: {
+            matchId: claim.id,
+            bankTransactionId: ownerLine.id,
+            invoiceId: inv.id,
+            journalEntryId: claim.journal_entry_id,
+          },
+        })
+      ).rejects.toMatchObject({ code: "PAYMENT_REVERSAL_REVIEW_REQUIRED" });
+
+      const blocked = await t.as.delete(`${base(t)}/bank-statements/${ownerLine.id}/match`);
+      expect(blocked.status, blocked.text).toBe(409);
+      expect(blocked.body.code).toBe("PAYMENT_REVERSAL_REVIEW_REQUIRED");
+      expect(blocked.text).not.toContain(rivalLine.id);
+      expect((await line(t, ba.id, "Original settlement")).isReconciled).toBe(true);
+      expect(await invoiceStatus(inv.id)).toBe("paid");
+      expect(await glBalance(t.company.id, ba.glAccountId)).toBe(1050);
+      expect(
+        await h.sql(`SELECT id FROM invoice_payments WHERE id = $1`, [claim.payment_id])
+      ).toEqual([{ id: claim.payment_id }]);
+      expect(
+        await h.sql(`SELECT id FROM journal_entries WHERE reversed_entry_id = $1`, [
+          claim.journal_entry_id,
+        ])
+      ).toEqual([]);
+      expect(
+        (
+          await h.sql(
+            `SELECT status FROM bank_transaction_matches WHERE bank_transaction_id IN ($1, $2)`,
+            [ownerLine.id, rivalLine.id]
+          )
+        ).map((m) => m.status)
+      ).toEqual(["active", "active"]);
+    }
+  );
+
+  it.each(["pending row with another company", "group row with another company's bank line"])(
+    "refuses to clear a bank line with a %s",
+    async (corruption) => {
+      const t = await vatTenant();
+      const other = await h.createSecondTenant();
+      const ba = await bankAccount(t);
+      const otherAccount = await bankAccount(other);
+      await importCsv(t, ba.id, [["2026-10-08", "Owned expense", "200.00", ""]]);
+      await importCsv(other, otherAccount.id, [["2026-10-08", "Unrelated expense", "200.00", ""]]);
+      const owned = await line(t, ba.id, "Owned expense");
+      const foreign = await line(other, otherAccount.id, "Unrelated expense");
+      const expense = await accountByCode(t, "5000");
+      const match = await t.as.post(`${base(t)}/bank-statements/${owned.id}/create-entry`, {
+        accountId: expense.id,
+      });
+      expect(match.status, match.text).toBe(201);
+      const [original] = await h.sql(
+        `SELECT match_group_id FROM bank_transaction_matches WHERE bank_transaction_id = $1`,
+        [owned.id]
+      );
+      const pending = corruption === "pending row with another company";
+      const [bad] = await h.sql(
+        `INSERT INTO bank_transaction_matches
+           (company_id, bank_transaction_id, match_group_id, target_type, status)
+         VALUES ($1, $2, $3, 'entry', $4) RETURNING id`,
+        [
+          pending ? other.company.id : t.company.id,
+          pending ? owned.id : foreign.id,
+          pending ? randomUUID() : original.match_group_id,
+          pending ? "pending" : "active",
+        ]
+      );
+      const blocked = await t.as.delete(`${base(t)}/bank-statements/${owned.id}/match`);
+      expect(blocked.status, blocked.text).toBe(409);
+      expect(blocked.body.code).toBe("BANK_MATCH_REVIEW_REQUIRED");
+      for (const value of [other.company.id, foreign.id, bad.id]) {
+        expect(blocked.text).not.toContain(value);
+      }
+      expect((await line(t, ba.id, "Owned expense")).isReconciled).toBe(true);
+      expect((await line(other, otherAccount.id, "Unrelated expense")).isReconciled).toBe(false);
+      expect(await glBalance(t.company.id, ba.glAccountId)).toBe(-200);
+      expect(
+        await h.sql(`SELECT status FROM bank_transaction_matches WHERE id = $1`, [bad.id])
+      ).toEqual([{ status: pending ? "pending" : "active" }]);
+    }
+  );
+
+  it("preserves a newer allocation committed while unmatch is waiting for the bank row", async ({
+    skip,
+  }) => {
+    if (!h.concurrencySupported) return skip();
+    const t = await vatTenant();
+    const ba = await bankAccount(t);
+    await importCsv(t, ba.id, [["2026-10-08", "Ledger expense", "200.00", ""]]);
+    const bankLine = await line(t, ba.id, "Ledger expense");
+    const match = await t.as.post(`${base(t)}/bank-statements/${bankLine.id}/create-entry`, {
+      accountId: (await accountByCode(t, "5000")).id,
+    });
+    expect(match.status, match.text).toBe(201);
+    const [{ journal_entry_id: journalEntryId }] = await h.sql(
+      `SELECT journal_entry_id FROM bank_transaction_matches WHERE bank_transaction_id = $1`,
+      [bankLine.id]
+    );
+    expect(journalEntryId).toBeTruthy();
+    const blocker = new pg.Client({ connectionString: h.databaseUrl });
+    const replacement = randomUUID();
+    await blocker.connect();
+    let settled = false;
+    try {
+      await blocker.query("BEGIN");
+      const backend = (await blocker.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+      await blocker.query("SELECT id FROM bank_transactions WHERE id = $1 FOR UPDATE", [
+        bankLine.id,
+      ]);
+      const unmatch = t.as.delete(`${base(t)}/bank-statements/${bankLine.id}/match`);
+      let waiting = false;
+      for (let attempt = 0; attempt < 100 && !waiting; attempt++) {
+        const [activity] = await h.sql(
+          `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+                           WHERE datname = current_database() AND $1 = ANY(pg_blocking_pids(pid))) AS waiting`,
+          [backend]
+        );
+        waiting = activity.waiting;
+        if (!waiting) await delay(25);
+      }
+      expect(waiting).toBe(true);
+      await blocker.query(
+        "UPDATE bank_transaction_matches SET status = 'reversed' WHERE bank_transaction_id = $1",
+        [bankLine.id]
+      );
+      await blocker.query(
+        `INSERT INTO bank_transaction_matches
+           (id, company_id, bank_transaction_id, match_group_id, target_type, journal_entry_id, status)
+         VALUES ($1, $2, $3, gen_random_uuid(), 'journal', $4, 'active')`,
+        [replacement, t.company.id, bankLine.id, journalEntryId]
+      );
+      await blocker.query("UPDATE bank_transactions SET matched_type = 'journal' WHERE id = $1", [
+        bankLine.id,
+      ]);
+      await blocker.query("COMMIT");
+      settled = true;
+      const blocked = await unmatch;
+      expect(blocked.status, blocked.text).toBe(409);
+      expect(blocked.body.code).toBe("BANK_MATCH_REVIEW_REQUIRED");
+    } finally {
+      if (!settled) await blocker.query("ROLLBACK");
+      await blocker.end();
+    }
+    expect((await line(t, ba.id, "Ledger expense")).isReconciled).toBe(true);
+    expect(
+      await h.sql(`SELECT status FROM bank_transaction_matches WHERE id = $1`, [replacement])
+    ).toEqual([{ status: "active" }]);
+    expect(await glBalance(t.company.id, ba.glAccountId)).toBe(-200);
   });
 
   it("[R06-03] an inward transfer matching a sent invoice pays it, debits the bank GL and never links the revenue entry", async () => {
@@ -689,6 +1817,41 @@ describe("W3-C banking: split, transfer, VAT, fee", () => {
 });
 
 describe("W3-C banking: statement and transactions", () => {
+  it.each([false, true])(
+    "requires actual CSV content (format hint present: %s)",
+    async (withHint) => {
+      const t = await vatTenant();
+      const account = await bankAccount(t);
+      const endpoint = `${base(t)}/bank-statements`;
+      const renamed = {
+        fileName: "renamed.csv",
+        fileBase64: Buffer.from(
+          ":20:REF\n:25:AE400000000\n:28C:00001/001\n:60F:C261001AED100,00\n:61:2610011001D10,00NTRFREF\n:86:Payment\n:62F:C261001AED90,00"
+        ).toString("base64"),
+      };
+      for (const path of ["preview", "import"]) {
+        const refused = await t.as.post(`${endpoint}/${path}`, {
+          ...renamed,
+          bankAccountId: account.id,
+          ...(withHint ? { expectedKind: "csv" } : {}),
+        });
+        expect(refused.status, refused.text).toBe(400);
+        expect(refused.body.code).toBe("STATEMENT_CSV_REQUIRED");
+      }
+      expect(await lines(t, account.id)).toEqual([]);
+      const accepted = await t.as.post(`${endpoint}/import`, {
+        bankAccountId: account.id,
+        fileName: "actual.csv",
+        ...(withHint ? { expectedKind: "csv" } : {}),
+        fileBase64: Buffer.from("Date,Description,Debit,Credit\n2026-10-01,Payment,10,0").toString(
+          "base64"
+        ),
+      });
+      expect(accepted.status, accepted.text).toBe(201);
+      expect(accepted.body.imported).toBe(1);
+    }
+  );
+
   it("[R06-20] reconciliation statement difference is 0 on a fixture, then sign-off and export", async () => {
     const t = await vatTenant();
     const ba = await bankAccount(t);
@@ -832,45 +1995,218 @@ describe("W3-C banking: statement and transactions", () => {
   });
 });
 
-describe("W3-C banking: PDF / AI statement import", () => {
-  it("[R06-12] the PDF/AI import requires a bank account, rejects bad rows and dedupes", async () => {
+describe("CSV statement import isolation", () => {
+  it("serializes concurrent imports without losing genuinely repeated rows", async () => {
     const t = await vatTenant();
     const ba = await bankAccount(t);
-    const url = `${base(t)}/bank-transactions/import`;
-    const rows = [
-      { date: "2026-10-03", description: "POS CARREFOUR", amount: "-105.00", reference: null },
-      { date: "2026-10-04", description: "SALARY", amount: 2000 },
-      { date: "31/13/2026", description: "BAD DATE", amount: "1.00" },
-      { date: "2026-10-05", description: "NAN", amount: "abc" },
+    const otherAccount = await bankAccount(t);
+    const rows: Row[] = [
+      ["2026-10-03", "REPEATED POS", "10.00", ""],
+      ["2026-10-03", "REPEATED POS", "10.00", ""],
     ];
-    expect((await t.as.post(url, { transactions: rows })).status).toBe(400);
-    const r = await t.as.post(url, { bankAccountId: ba.id, transactions: rows });
-    expect(r.status, r.text).toBe(201);
-    expect(r.body.imported).toBe(2);
+    // Hold batch creation so both requests can reach the old pre-transaction duplicate read.
+    await h.sql(`CREATE FUNCTION test_delay_csv_batch() RETURNS trigger AS $$
+      BEGIN PERFORM pg_sleep(0.5); RETURN NEW; END; $$ LANGUAGE plpgsql`);
+    await h.sql(`CREATE TRIGGER test_delay_csv_batch BEFORE INSERT ON bank_import_batches
+      FOR EACH ROW EXECUTE FUNCTION test_delay_csv_batch()`);
+    try {
+      const [a, b, independent] = await Promise.all([
+        importCsv(t, ba.id, rows),
+        importCsv(t, ba.id, rows),
+        importCsv(t, otherAccount.id, rows),
+      ]);
+      expect([a.imported, b.imported].sort()).toEqual([0, 2]);
+      expect([a.batchId, b.batchId].filter(Boolean)).toHaveLength(1);
+      expect(independent.imported).toBe(2);
+      expect(await lines(t, ba.id)).toHaveLength(2);
+      expect(await lines(t, otherAccount.id)).toHaveLength(2);
+    } finally {
+      await h.sql("DROP TRIGGER test_delay_csv_batch ON bank_import_batches");
+      await h.sql("DROP FUNCTION test_delay_csv_batch()");
+    }
+  });
+
+  it("rolls back the batch with the rows when the database rejects a CSV import", async () => {
+    const t = await vatTenant();
+    const ba = await bankAccount(t);
+    const path = `${base(t)}/bank-statements/import`;
+    const csvContent = "Date,Description,Amount\n2026-10-03,RETRY ATOMIC IMPORT,-25.00";
+    await h.sql(`CREATE FUNCTION test_reject_csv_row() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'fixture rejected insert'; END; $$ LANGUAGE plpgsql`);
+    await h.sql(`CREATE TRIGGER test_reject_csv_row BEFORE INSERT ON bank_transactions
+      FOR EACH ROW EXECUTE FUNCTION test_reject_csv_row()`);
+    try {
+      const failed = await t.as.post(path, { bankAccountId: ba.id, csvContent });
+      expect(failed.status).toBe(500);
+      expect(
+        await h.sql("SELECT id FROM bank_import_batches WHERE bank_account_id = $1", [ba.id])
+      ).toHaveLength(0);
+      expect(await lines(t, ba.id)).toHaveLength(0);
+    } finally {
+      await h.sql("DROP TRIGGER test_reject_csv_row ON bank_transactions");
+      await h.sql("DROP FUNCTION test_reject_csv_row()");
+    }
+    const retry = await t.as.post(path, { bankAccountId: ba.id, csvContent });
+    expect(retry.status, retry.text).toBe(201);
+    expect(retry.body.imported).toBe(1);
+  });
+
+  it("deduplicates across the account and compatibility CSV endpoints", async () => {
+    const t = await vatTenant();
+    const ba = await bankAccount(t);
+    const connection = await t.as.post(`${base(t)}/bank-connections`, {
+      bankName: "Emirates NBD",
+      bankAccountId: ba.id,
+    });
+    expect(connection.status, connection.text).toBe(201);
+    const csvContent = "Date,Description,Debit,Credit\n2026-10-03,ONE ACCOUNT LINE,10.00,";
+    const [current, compatibility] = await Promise.all([
+      t.as.post(`${base(t)}/bank-statements/import`, { bankAccountId: ba.id, csvContent }),
+      t.as.post(`${base(t)}/bank-connections/${connection.body.id}/import`, { csvContent }),
+    ]);
+    expect(current.status, current.text).toBe(201);
+    expect(compatibility.status, compatibility.text).toBe(200);
+    expect([current.body.imported, compatibility.body.imported].sort()).toEqual([0, 1]);
+    expect(await lines(t, ba.id)).toHaveLength(1);
     expect(
-      r.body.skipped.filter((s: { reason: string }) => s.reason === "invalid_row")
-    ).toHaveLength(2);
-    const stored = await h.sql<{
-      amount: string;
+      await h.sql("SELECT id FROM bank_import_batches WHERE bank_account_id = $1", [ba.id])
+    ).toHaveLength(1);
+  });
+});
+
+describe("CSV statement import regressions", () => {
+  it("requires the same ambiguity confirmation on the managed and compatibility CSV endpoints", async () => {
+    const t = await h.createTenant();
+    const account = await bankAccount(t);
+    const connections = `${base(t)}/bank-connections`;
+    const connection = await t.as.post(connections, {
+      bankName: "Emirates NBD",
+      bankAccountId: account.id,
+    });
+    expect(connection.status, connection.text).toBe(201);
+    const csvContent = "Date,Description,Debit,Credit\n03/04/2026,Card purchase,17.25,";
+    const legacy = `${connections}/${connection.body.id}/import`;
+    const main = await t.as.post(`${base(t)}/bank-statements/import`, {
+      bankAccountId: account.id,
+      csvContent,
+    });
+    const unconfirmed = await t.as.post(legacy, { csvContent });
+    expect(main.status, main.text).toBe(409);
+    expect(main.body.code).toBe("CHOICE_REQUIRED");
+    expect(unconfirmed.status, unconfirmed.text).toBe(409);
+    expect(unconfirmed.body).toEqual(main.body);
+    expect(await lines(t, account.id)).toHaveLength(0);
+    const confirmed = await t.as.post(legacy, { csvContent, acknowledgeAmbiguity: true });
+    expect(confirmed.status, confirmed.text).toBe(200);
+    expect(confirmed.body.imported).toBe(1);
+    expect(await lines(t, account.id)).toHaveLength(1);
+  });
+
+  it("links prior statement rows to the managed account without duplicating overlapping CSV rows", async () => {
+    const t = await h.createTenant();
+    const account = await bankAccount(t);
+    const connections = `${base(t)}/bank-connections`;
+    const connection = await t.as.post(connections, { bankName: "Emirates NBD" });
+    expect(connection.status, connection.text).toBe(201);
+    const prefix = `${connections}/${connection.body.id}`;
+    const repeated = "2026-10-03,Identical card purchase,17.25,0.00";
+    const separate = "2026-10-04,Separate card purchase,52.10,0.00";
+    const csv = (...rows: string[]) => ["Date,Description,Debit,Credit", ...rows].join("\n");
+    const original = csv(repeated, repeated, separate);
+    const imported = await t.as.post(`${prefix}/import`, { csvContent: original });
+    expect(imported.status, imported.text).toBe(200);
+    expect(imported.body.imported).toBe(3);
+
+    const overlap = await t.as.post(`${base(t)}/bank-statements/import`, {
+      bankAccountId: account.id,
+      csvContent: csv(repeated),
+    });
+    expect(overlap.status, overlap.text).toBe(201);
+    const linked = await t.as.post(`${prefix}/link`, { bankAccountId: account.id });
+    expect(linked.status, linked.text).toBe(200);
+
+    expect((await lines(t, account.id)).map((row) => row.description).sort()).toEqual([
+      "Identical card purchase",
+      "Identical card purchase",
+      "Separate card purchase",
+    ]);
+    const legacyRows = await h.sql<{
       bank_statement_account_id: string;
       bank_account_id: string;
+      deleted: boolean;
+      deleted_by: string | null;
+      import_batch_id: string;
     }>(
-      `SELECT amount::text, bank_statement_account_id, bank_account_id FROM bank_transactions WHERE company_id = $1 ORDER BY amount`,
-      [t.company.id]
+      `SELECT bank_statement_account_id, bank_account_id, deleted_at IS NOT NULL AS deleted,
+              deleted_by, import_batch_id
+         FROM bank_transactions WHERE company_id = $1 AND bank_connection_id = $2`,
+      [t.company.id, connection.body.id]
     );
-    expect(stored.map((s) => s.amount)).toEqual(["-105.00", "2000.00"]);
+    expect(legacyRows).toHaveLength(3);
+    expect(legacyRows.filter((row) => !row.deleted)).toHaveLength(2);
+    expect(legacyRows.find((row) => row.deleted)?.deleted_by).toBe(t.user.id);
+    expect(legacyRows.every((row) => row.bank_statement_account_id === account.id)).toBe(true);
+    expect(legacyRows.every((row) => row.bank_account_id === account.glAccountId)).toBe(true);
     expect(
-      stored.every(
-        (s) => s.bank_statement_account_id === ba.id && s.bank_account_id === ba.glAccountId
+      await h.sql("SELECT bank_account_id FROM bank_import_batches WHERE id = $1", [
+        legacyRows[0].import_batch_id,
+      ])
+    ).toEqual([{ bank_account_id: account.id }]);
+
+    const replay = await t.as.post(`${prefix}/import`, { csvContent: original });
+    expect(replay.status, replay.text).toBe(200);
+    expect(replay.body).toMatchObject({ imported: 0, duplicates: 3 });
+  });
+
+  it("imports and replays all 6000 valid rows shown by CSV preview", async () => {
+    const t = await h.createTenant();
+    const account = await bankAccount(t);
+    const csvContent = [
+      "Date,Description,Debit,Credit,Reference",
+      ...Array.from({ length: 6000 }, (_, i) => `2026-10-03,Payment ${i},5.00,0.00,ref-${i}`),
+    ].join("\n");
+    const url = `${base(t)}/bank-statements`;
+    const preview = await t.as.post(`${url}/preview`, { csvContent });
+    expect(preview.status, preview.text).toBe(200);
+    expect(preview.body.validRows).toBe(6000);
+    const request = { bankAccountId: account.id, csvContent, acknowledgeAmbiguity: true };
+    const imported = await t.as.post(`${url}/import`, request);
+    expect(imported.status, imported.status >= 400 ? imported.text : "").toBe(201);
+    expect(imported.body.imported).toBe(6000);
+    expect(
+      await h.sql(
+        `SELECT count(*)::int AS total, count(DISTINCT reference)::int AS unique_refs
+           FROM bank_transactions WHERE company_id = $1 AND import_batch_id = $2`,
+        [t.company.id, imported.body.batchId]
       )
-    ).toBe(true);
-    const again = await t.as.post(url, { bankAccountId: ba.id, transactions: rows });
-    expect(again.body.imported).toBe(0);
-    const otherAccount = await h.createSecondTenant();
-    const foreign = await t.as.post(url, {
-      bankAccountId: (await bankAccount(otherAccount)).id,
-      transactions: rows,
-    });
-    expect(foreign.status).toBe(404);
+    ).toEqual([{ total: 6000, unique_refs: 6000 }]);
+    const replay = await t.as.post(`${url}/import`, request);
+    expect(replay.status, replay.status >= 400 ? replay.text : "").toBe(201);
+    expect(replay.body).toMatchObject({ imported: 0, batchId: null, skippedDuplicates: 6000 });
+  });
+
+  it("directs retired statement extraction and row import to CSV without writing a batch", async () => {
+    const t = await h.createTenant();
+    const account = await bankAccount(t);
+    const legacyRequests = [
+      ["/api/ai/parse-bank-statement", { companyId: t.company.id, text: "2026-10-03 CARD 17.25" }],
+      [
+        `${base(t)}/bank-transactions/import`,
+        {
+          bankAccountId: account.id,
+          transactions: [{ date: "2026-10-03", description: "CARD", amount: -17.25 }],
+        },
+      ],
+    ] as const;
+    for (const [url, body] of legacyRequests) {
+      const response = await t.as.post(url, body);
+      expect(response.status, response.text).toBe(410);
+      expect(response.body).toMatchObject({ code: "STATEMENT_CSV_REQUIRED" });
+      expect(response.body.message).toContain("CSV");
+    }
+    expect(await lines(t, account.id)).toHaveLength(0);
+    expect(
+      await h.sql("SELECT id FROM bank_import_batches WHERE company_id = $1", [t.company.id])
+    ).toHaveLength(0);
   });
 });

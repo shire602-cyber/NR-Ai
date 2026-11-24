@@ -7,19 +7,29 @@
  * whether the company's TRN may appear here; until then it does not.
  */
 import { useState } from "react";
+// The light public root does not load the app shell's stylesheets; these pages need the
+// mobile row-card tables and the RTL rules.
+import "@/styles/rtl.css";
+import "@/styles/mobile.css";
 import { useParams } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CheckCircle2, Clock, FileCheck2, Languages } from "lucide-react";
+import { CheckCircle2, Clock, FileCheck2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { apiUrl } from "@/lib/api";
-import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { bidiIsolate, useDocumentTitle, useLinkLocale } from "@/lib/customer-link";
+import { LinkLanguageSwitch } from "@/components/customer-link/LinkLanguageSwitch";
 import { formatDate } from "@/lib/format-date";
 import { EmaraTaxSteps, type StepsPartner } from "@/components/einvoice/EmaraTaxSteps";
+
+const APPROVE_NAMESPACES = ["einvoicing", "customerLink"];
 
 interface ApproverPageData {
   state: "active" | "completed";
   companyName: string;
+  /** The company's language (en | ar). */
+  locale?: string | null;
   approverName: string | null;
   expiresAt: string;
   completedAt: string | null;
@@ -29,6 +39,7 @@ interface ApproverPageData {
 type LoadResult =
   | { kind: "ok"; data: ApproverPageData }
   | { kind: "gone"; state: "expired" | "revoked" }
+  | { kind: "busy" }
   | { kind: "invalid" };
 
 async function load(token: string): Promise<LoadResult> {
@@ -39,14 +50,22 @@ async function load(token: string): Promise<LoadResult> {
     const body = await res.json().catch(() => ({}));
     return { kind: "gone", state: body.state === "revoked" ? "revoked" : "expired" };
   }
-  if (!res.ok) return { kind: "invalid" };
+  // Read the body even when it is not used: an unread response keeps the request open.
+  if (res.status === 429) {
+    await res.text().catch(() => "");
+    return { kind: "busy" };
+  }
+  if (res.status === 404 || res.status === 400) {
+    await res.text().catch(() => "");
+    return { kind: "invalid" };
+  }
+  if (!res.ok) throw new Error(String(res.status));
   return { kind: "ok", data: (await res.json()) as ApproverPageData };
 }
 
 export default function EInvoicingApprove() {
   const { token = "" } = useParams<{ token: string }>();
-  const { t, locale } = useTranslation();
-  const setLocale = useI18n((s) => s.setLocale);
+  const { t, locale } = useTranslation(APPROVE_NAMESPACES);
   const [doneData, setDoneData] = useState<ApproverPageData | null>(null);
   const query = useQuery<LoadResult>({
     queryKey: ["einvoicing-approve", token],
@@ -72,6 +91,25 @@ export default function EInvoicingApprove() {
 
   const result = query.data;
   const data = doneData ?? (result?.kind === "ok" ? result.data : null);
+  useLinkLocale(!query.isLoading, null, data?.locale);
+  const company = data ? bidiIsolate(data.companyName) : "";
+  useDocumentTitle(
+    data
+      ? formatMessage(t["customerLink.approveTitle"], { company: data.companyName })
+      : result?.kind === "gone"
+        ? t[
+            result.state === "revoked"
+              ? "einvoicing.appoint.revokedTitle"
+              : "einvoicing.appoint.expiredTitle"
+          ]
+        : result?.kind === "busy"
+          ? t["customerLink.busyTitle"]
+          : query.isError
+            ? t["customerLink.loadFailedTitle"]
+            : result?.kind === "invalid"
+              ? t["einvoicing.appoint.invalidTitle"]
+              : t["einvoicing.appoint.pageEyebrow"]
+  );
 
   return (
     <main
@@ -85,27 +123,17 @@ export default function EInvoicingApprove() {
             <FileCheck2 className="h-5 w-5 text-brand-600" aria-hidden />
             {t["einvoicing.appoint.pageEyebrow"]}
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setLocale(locale === "ar" ? "en" : "ar")}
-            data-testid="approve-language"
-          >
-            <Languages className="h-4 w-4" aria-hidden />
-            {/* Sweep: the target language's name, in that language and marked as such (as in
-                the site's LocaleToggle); it read "English · الإنجليزية" untagged before. */}
-            <span
-              lang={locale === "ar" ? "en" : "ar"}
-              title={t["einvoicing.appoint.switchLanguage"]}
-            >
-              {locale === "ar" ? "English" : "العربية"}
-            </span>
-          </Button>
+          <LinkLanguageSwitch testId="approve-language" />
         </div>
 
         <section className="space-y-5 rounded-2xl border border-border bg-card p-6 shadow-sm">
           {query.isLoading && (
-            <div className="h-40 animate-pulse rounded-lg bg-muted" aria-busy="true" />
+            <div
+              className="h-40 animate-pulse rounded-lg bg-muted motion-reduce:animate-none"
+              role="status"
+              aria-busy="true"
+              aria-label={t["customerLink.loading"]}
+            />
           )}
           {result?.kind === "invalid" && (
             <div className="space-y-2" data-testid="approve-invalid">
@@ -113,6 +141,31 @@ export default function EInvoicingApprove() {
               <p className="text-small text-muted-foreground">
                 {t["einvoicing.appoint.invalidBody"]}
               </p>
+            </div>
+          )}
+          {(result?.kind === "busy" || query.isError) && (
+            <div className="space-y-3" data-testid="approve-retry">
+              <h1 className="text-h2 font-semibold">
+                {
+                  t[
+                    result?.kind === "busy"
+                      ? "customerLink.busyTitle"
+                      : "customerLink.loadFailedTitle"
+                  ]
+                }
+              </h1>
+              <p className="text-small text-muted-foreground">
+                {
+                  t[
+                    result?.kind === "busy"
+                      ? "customerLink.busyBody"
+                      : "customerLink.loadFailedBody"
+                  ]
+                }
+              </p>
+              <Button variant="outline" onClick={() => void query.refetch()}>
+                {t["customerLink.retry"]}
+              </Button>
             </div>
           )}
           {result?.kind === "gone" && (
@@ -130,19 +183,15 @@ export default function EInvoicingApprove() {
             <>
               <div className="space-y-1">
                 <h1 className="text-h2 font-semibold" data-testid="approve-title">
-                  {formatMessage(t["einvoicing.appoint.pageTitle"], {
-                    company: data.companyName,
-                  })}
+                  {formatMessage(t["einvoicing.appoint.pageTitle"], { company })}
                 </h1>
                 <p className="text-small text-muted-foreground">
                   {data.approverName
                     ? formatMessage(t["einvoicing.appoint.pageIntroNamed"], {
-                        name: data.approverName,
-                        company: data.companyName,
+                        name: bidiIsolate(data.approverName),
+                        company,
                       })
-                    : formatMessage(t["einvoicing.appoint.pageIntro"], {
-                        company: data.companyName,
-                      })}
+                    : formatMessage(t["einvoicing.appoint.pageIntro"], { company })}
                 </p>
               </div>
               <EmaraTaxSteps partner={data.partner} companyName={data.companyName} withDone />
@@ -152,11 +201,7 @@ export default function EInvoicingApprove() {
                   data-testid="approve-completed"
                 >
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                  <span>
-                    {formatMessage(t["einvoicing.appoint.doneThanks"], {
-                      company: data.companyName,
-                    })}
-                  </span>
+                  <span>{formatMessage(t["einvoicing.appoint.doneThanks"], { company })}</span>
                 </div>
               ) : (
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -166,6 +211,7 @@ export default function EInvoicingApprove() {
                     })}
                   </StatusBadge>
                   <Button
+                    className="min-h-11"
                     onClick={() => done.mutate()}
                     disabled={done.isPending}
                     data-testid="approve-done"

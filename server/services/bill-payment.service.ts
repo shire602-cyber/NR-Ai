@@ -30,6 +30,7 @@ import {
   type LedgerTx,
   type PostJournalLineInput,
 } from "../ledger";
+import { ledgerQueryable } from "../ledger/tx";
 import { emitDomainEventInTx } from "../platform/event-outbox";
 import { has, provide, resolve } from "../platform/service-registry";
 import { registerJob, listJobs } from "../platform/job-registry";
@@ -90,14 +91,15 @@ export async function resolveDocRate(
   companyId: string,
   currency: string | null | undefined,
   dateIso: string,
-  given?: string | null
+  given?: string | null,
+  tx?: LedgerTx
 ): Promise<string> {
-  const base = await loadBaseCurrency(companyId);
+  const base = await loadBaseCurrency(companyId, tx);
   const cur = documentCurrency(currency, base);
   if (cur === base) return "1";
   if (given) return given;
   const getRate = resolve<FxGetRate>("fx.getRate");
-  const r = await getRate(companyId, cur, base, dateIso);
+  const r = await getRate(companyId, cur, base, dateIso, { tx });
   return r.rateText;
 }
 
@@ -272,7 +274,8 @@ interface PreparedBill {
 async function prepareBill(
   companyId: string,
   input: BillFieldsInput,
-  existing: BillRow | null
+  existing: BillRow | null,
+  tx?: LedgerTx
 ): Promise<PreparedBill> {
   const warnings: Array<{ code: string; message: string }> = [];
   const header: Record<string, unknown> = {};
@@ -285,11 +288,15 @@ async function prepareBill(
     input.vendor_name !== undefined ||
     input.vendor_trn !== undefined
   ) {
-    const v = await resolveVendor(companyId, {
-      vendor_id: input.vendor_id ?? null,
-      vendor_name: input.vendor_name ?? (existing?.vendor_name || null),
-      vendor_trn: input.vendor_trn ?? null,
-    });
+    const v = await resolveVendor(
+      companyId,
+      {
+        vendor_id: input.vendor_id ?? null,
+        vendor_name: input.vendor_name ?? (existing?.vendor_name || null),
+        vendor_trn: input.vendor_trn ?? null,
+      },
+      tx
+    );
     if (v) {
       header.vendor_id = v.vendorId;
       header.vendor_name = v.vendorName;
@@ -321,7 +328,7 @@ async function prepareBill(
   if (input.recoverable_vat_percent !== undefined)
     header.recoverable_vat_percent = input.recoverable_vat_percent;
 
-  const companyBase = await loadBaseCurrency(companyId);
+  const companyBase = await loadBaseCurrency(companyId, tx);
   const currency = documentCurrency(
     String(get("currency", existing?.currency ?? companyBase)),
     companyBase
@@ -340,7 +347,7 @@ async function prepareBill(
         ? String(existing.exchange_rate)
         : null);
     header.currency = currency;
-    header.exchange_rate = await resolveDocRate(companyId, currency, billDate, given);
+    header.exchange_rate = await resolveDocRate(companyId, currency, billDate, given, tx);
   }
   header.reverse_charge = reverseCharge || isImport;
   header.is_import = isImport;
@@ -377,10 +384,10 @@ async function prepareBill(
     }));
     if (src && input.line_items) {
       // A2 (C3): an edit keeps each line's purchase-order link so the bill still clears GRNI.
-      await linkPurchaseOrderLines(companyId, existing, input.line_items, src);
+      await linkPurchaseOrderLines(companyId, existing, input.line_items, src, tx);
     }
     if (!src && existing) {
-      const r = await pool.query(
+      const r = await ledgerQueryable(tx).query(
         `SELECT * FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
         [existing.id]
       );
@@ -402,9 +409,19 @@ async function prepareBill(
     if (src) {
       await assertCostCenters(
         companyId,
-        src.map((l) => l.costCenterId)
+        src.map((l) => l.costCenterId),
+        tx
       );
-      await assertRefsOwned(pool, companyId, {
+      const refsQueryable = tx
+        ? {
+            query: async (text: string, params: unknown[]) => ({
+              rows: (await ledgerQueryable(tx).query(text, params)).rows.map((row) => ({
+                id: String(row.id),
+              })),
+            }),
+          }
+        : pool;
+      await assertRefsOwned(refsQueryable, companyId, {
         account: src.map((l) => l.accountId),
         product: src.map((l) => l.productId),
       });
@@ -413,7 +430,8 @@ async function prepareBill(
       // line's product, VAT through its VAT rate, the payable is the bill itself.
       await assertChosenAccountsNotControl(
         companyId,
-        src.map((l, i) => ({ field: `line_items[${i}].account_id`, accountId: l.accountId }))
+        src.map((l, i) => ({ field: `line_items[${i}].account_id`, accountId: l.accountId })),
+        { tx }
       );
     }
     const totals = computeBillTotals({
@@ -460,7 +478,7 @@ async function prepareBill(
     | null
     | undefined;
   // WQ2 (4.7): one of our own sales invoices is never a purchase.
-  await assertNotOwnTrn(companyId, trn);
+  await assertNotOwnTrn(companyId, trn, tx);
   if (!trn && !(header.reverse_charge as boolean)) {
     warnings.push({
       code: "VENDOR_TRN_MISSING",
@@ -484,14 +502,15 @@ async function linkPurchaseOrderLines(
   companyId: string,
   existing: BillRow | null,
   input: Array<{ product_id?: string | null; purchase_order_line_id?: string | null }>,
-  src: Array<{ productId: string | null; poLineId: string | null }>
+  src: Array<{ productId: string | null; poLineId: string | null }>,
+  tx?: LedgerTx
 ): Promise<void> {
   const poId = existing
     ? ((existing as unknown as { purchase_order_id?: string | null }).purchase_order_id ?? null)
     : null;
   const prev = existing
     ? ((
-        await pool.query(
+        await ledgerQueryable(tx).query(
           `SELECT product_id, purchase_order_line_id FROM bill_line_items
             WHERE bill_id = $1 ORDER BY created_at, id`,
           [existing.id]
@@ -526,14 +545,14 @@ async function linkPurchaseOrderLines(
     );
   }
   if (!explicit.length) return;
-  const { rows } = await pool.query(
+  const { rows } = await ledgerQueryable(tx).query(
     `SELECT pol.id FROM purchase_order_lines pol
        JOIN purchase_orders po ON po.id = pol.purchase_order_id
       WHERE pol.id = ANY($1::uuid[]) AND po.company_id = $2
         AND ($3::uuid IS NULL OR po.id = $3)`,
     [explicit, companyId, poId]
   );
-  const found = new Set(rows.map((r: { id: string }) => r.id));
+  const found = new Set(rows.map((r) => String(r.id)));
   const missing = explicit.find((id) => !found.has(id));
   if (missing) {
     throw new DomainError(
@@ -573,14 +592,18 @@ async function writeLines(tx: LedgerTx, billId: string, lines: Array<Record<stri
 }
 
 /** R10-11: every bill line cost centre must exist in the company (404 otherwise). */
-async function assertCostCenters(companyId: string, ids: Array<string | null>): Promise<void> {
+async function assertCostCenters(
+  companyId: string,
+  ids: Array<string | null>,
+  tx?: LedgerTx
+): Promise<void> {
   const wanted = [...new Set(ids.filter((v): v is string => !!v))];
   if (wanted.length === 0) return;
-  const { rows } = await pool.query(
+  const { rows } = await ledgerQueryable(tx).query(
     `SELECT id FROM cost_centers WHERE company_id = $1 AND id = ANY($2::uuid[])`,
     [companyId, wanted]
   );
-  const found = new Set(rows.map((r: { id: string }) => r.id));
+  const found = new Set(rows.map((r) => String(r.id)));
   const missing = wanted.filter((id) => !found.has(id));
   if (missing.length) {
     throw new DomainError(
@@ -636,7 +659,7 @@ async function updateHeader(
   ]);
 }
 
-export async function createBill(args: {
+type CreateBillArgs = {
   companyId: string;
   actorId: string;
   input: BillCreateInput;
@@ -646,18 +669,23 @@ export async function createBill(args: {
   purchaseOrderId?: string | null;
   poLineIds?: Array<string | null>;
   tx?: LedgerTx;
-}): Promise<BillWriteResult> {
+  onCreated?: (tx: LedgerTx, bill: BillRow) => Promise<void>;
+};
+
+/** Resolve and validate bill inputs before the caller acquires a write transaction. */
+async function prepareBillCreate(args: CreateBillArgs) {
   const { companyId, actorId, input } = args;
-  await assertPeriodNotLocked(companyId, input.bill_date);
-  const prepared = await prepareBill(companyId, input as BillFieldsInput, null);
+  await assertPeriodNotLocked(companyId, input.bill_date, args.tx);
+  const prepared = await prepareBill(companyId, input as BillFieldsInput, null, args.tx);
   if (args.poLineIds && prepared.lines) {
     prepared.lines.forEach((l, i) => (l.purchase_order_line_id = args.poLineIds![i] ?? null));
   }
   const status = args.status ?? (input.save_as_draft ? "draft" : "pending");
   if (!prepared.header.due_date && prepared.header.vendor_id) {
-    const v = await pool.query(`SELECT payment_terms_days FROM vendors WHERE id = $1`, [
-      prepared.header.vendor_id,
-    ]);
+    const v = await ledgerQueryable(args.tx).query(
+      `SELECT payment_terms_days FROM vendors WHERE id = $1`,
+      [prepared.header.vendor_id]
+    );
     const days = Number(v.rows[0]?.payment_terms_days ?? 0);
     if (days > 0) {
       const d = new Date(`${input.bill_date}T00:00:00.000Z`);
@@ -665,7 +693,7 @@ export async function createBill(args: {
       prepared.header.due_date = d.toISOString().slice(0, 10);
     }
   }
-  return withLedgerTx(async (tx) => {
+  return async (tx: LedgerTx): Promise<BillWriteResult> => {
     const h = prepared.header;
     const rows = await txRows<BillRow & Record<string, unknown>>(
       tx,
@@ -723,8 +751,13 @@ export async function createBill(args: {
       `SELECT * FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
       [bill.id]
     );
+    await args.onCreated?.(tx, bill);
     return { bill, lines, warnings: prepared.warnings };
-  }, args.tx);
+  };
+}
+
+export async function createBill(args: CreateBillArgs): Promise<BillWriteResult> {
+  return withLedgerTx(await prepareBillCreate(args), args.tx);
 }
 
 /** Edit a bill that has no journal yet (draft / pending / rejected). */
@@ -1877,12 +1910,12 @@ export async function batchPaymentCsv(companyId: string, billIds: string[]) {
  * Create a DRAFT bill from a structured inbound document (e-invoice, OCR, email intake). The
  * draft has no journal; it goes through the normal submit → approve flow.
  */
-export async function createDraftFromParsedInbound(
+function inboundDraftArgs(
   companyId: string,
   actorId: string,
   doc: InboundBillInput
-): Promise<BillWriteResult> {
-  return createBill({
+): CreateBillArgs {
+  return {
     companyId,
     actorId,
     status: "draft",
@@ -1907,7 +1940,15 @@ export async function createDraftFromParsedInbound(
         account_id: l.accountId ?? null,
       })),
     } as BillCreateInput,
-  });
+  };
+}
+
+export async function createDraftFromParsedInbound(
+  companyId: string,
+  actorId: string,
+  doc: InboundBillInput
+): Promise<BillWriteResult> {
+  return createBill(inboundDraftArgs(companyId, actorId, doc));
 }
 
 /**
@@ -1920,6 +1961,13 @@ export async function createDraftFromInbound(
   raw: unknown
 ): Promise<BillWriteResult> {
   return createDraftFromParsedInbound(companyId, actorId, parseStrict(inboundBillSchema, raw));
+}
+
+/** Prepare the usual inbound draft so its write can commit with the caller's document linkage. */
+export async function prepareDraftFromInbound(companyId: string, actorId: string, raw: unknown) {
+  return prepareBillCreate(
+    inboundDraftArgs(companyId, actorId, parseStrict(inboundBillSchema, raw))
+  );
 }
 
 function advance(dateIso: string, frequency: string): string {
@@ -1966,28 +2014,18 @@ export async function runRecurringBill(
   companyId?: string
 ): Promise<BillWriteResult | null> {
   const r = await pool.query(
-    `SELECT * FROM recurring_bills WHERE id = $1 AND ($2::uuid IS NULL OR company_id = $2)`,
+    `SELECT *, next_run_on::date::text AS run_on_date, end_on::date::text AS end_on_date
+       FROM recurring_bills WHERE id = $1 AND ($2::uuid IS NULL OR company_id = $2)`,
     [id, companyId ?? null]
   );
   const rec = r.rows[0];
   if (!rec) throw new DomainError("RECURRING_BILL_NOT_FOUND", 404);
   if (!rec.is_active) return null;
-  const runOn =
-    rec.next_run_on instanceof Date
-      ? rec.next_run_on.toISOString().slice(0, 10)
-      : String(rec.next_run_on).slice(0, 10);
-  if (
-    rec.end_on &&
-    runOn > String(rec.end_on instanceof Date ? rec.end_on.toISOString().slice(0, 10) : rec.end_on)
-  ) {
+  const runOn: string = rec.run_on_date;
+  if (rec.end_on_date && runOn > rec.end_on_date) {
     await pool.query(`UPDATE recurring_bills SET is_active = false WHERE id = $1`, [id]);
     return null;
   }
-  const claimed = await pool.query(
-    `UPDATE recurring_bills SET next_run_on = $2 WHERE id = $1 AND next_run_on = $3 RETURNING id`,
-    [id, advance(runOn, rec.frequency), runOn]
-  );
-  if (!claimed.rowCount) return null; // another runner took this occurrence
   const t = rec.template as Record<string, unknown> & { due_in_days?: number };
   const dueInDays = typeof t.due_in_days === "number" ? t.due_in_days : null;
   const { due_in_days: _drop, ...template } = t;
@@ -1997,19 +2035,29 @@ export async function runRecurringBill(
     d.setUTCDate(d.getUTCDate() + dueInDays);
     due = d.toISOString().slice(0, 10);
   }
-  const result = await createBill({
-    companyId: rec.company_id,
-    actorId: rec.created_by,
-    status: "pending",
-    origin: "recurring",
-    originRef: rec.id,
-    input: { ...(template as unknown as BillCreateInput), bill_date: runOn, due_date: due },
-  });
-  await pool.query(`UPDATE recurring_bills SET last_bill_id = $2 WHERE id = $1`, [
-    id,
-    result.bill.id,
-  ]);
-  return result;
+  const alreadyClaimed = new Error("Recurring occurrence already claimed");
+  try {
+    return await createBill({
+      companyId: rec.company_id,
+      actorId: rec.created_by,
+      status: "pending",
+      origin: "recurring",
+      originRef: rec.id,
+      input: { ...(template as unknown as BillCreateInput), bill_date: runOn, due_date: due },
+      onCreated: async (tx, bill) => {
+        const claimed = await txRows(
+          tx,
+          `UPDATE recurring_bills SET next_run_on = $2, last_bill_id = $4
+            WHERE id = $1 AND is_active AND next_run_on = $3 RETURNING id`,
+          [id, advance(runOn, rec.frequency), runOn, bill.id]
+        );
+        if (!claimed.length) throw alreadyClaimed;
+      },
+    });
+  } catch (error) {
+    if (error === alreadyClaimed) return null;
+    throw error;
+  }
 }
 
 export async function runDueRecurringBills(today = new Date().toISOString().slice(0, 10)) {
@@ -2025,6 +2073,10 @@ export async function runDueRecurringBills(today = new Date().toISOString().slic
   for (const row of due.rows) {
     const companyId = String(row.company_id);
     if (off.has(companyId)) continue;
+    if (!runs.has(companyId) && !(await automations.automationWritesAllowed(companyId))) {
+      off.add(companyId);
+      continue;
+    }
     const run = runs.get(companyId) ?? { created: 0, failed: 0, error: null };
     runs.set(companyId, run);
     try {
@@ -2095,6 +2147,8 @@ export function registerBillServices(): void {
   if (!has("bills.reversePayment")) provide("bills.reversePayment", reverseBillPayment);
   if (!has("bills.createDraftFromInbound"))
     provide("bills.createDraftFromInbound", createDraftFromInbound);
+  if (!has("bills.prepareDraftFromInbound"))
+    provide("bills.prepareDraftFromInbound", prepareDraftFromInbound);
   if (!has("bills.createVendorCreditFromInbound"))
     provide("bills.createVendorCreditFromInbound", createVendorCreditFromInbound);
   if (!listJobs().some((j) => j.name === "bills.recurring")) {

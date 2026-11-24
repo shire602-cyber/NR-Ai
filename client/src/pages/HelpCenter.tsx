@@ -1,3 +1,4 @@
+import { MARKETING_BRAND } from "@shared/marketing-brand";
 import { Link } from "wouter";
 import {
   ArrowRight,
@@ -16,7 +17,7 @@ import { Checklist, SectionHeading, Tiles } from "@/components/marketing/Section
 
 // R3 (CTO 8): same section system as the home page (line eyebrow, sentence case, hairline
 // tiles); customer-facing hero instead of launch copy. Support mailbox as published since L1.
-const SUPPORT_EMAIL = "support@muhasib.ai";
+const SUPPORT_EMAIL = MARKETING_BRAND.supportEmail;
 
 const GUIDES = [
   { icon: BookOpen, n: 1 },

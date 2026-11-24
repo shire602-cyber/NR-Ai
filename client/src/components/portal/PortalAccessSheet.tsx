@@ -1,17 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Check,
-  Copy,
-  Link2,
-  Loader2,
-  Mail,
-  RotateCw,
-  Send,
-  UserRoundX,
-  XCircle,
-} from "lucide-react";
-import { Alert } from "@/components/ui/alert";
+import { Link2, Loader2, Mail, RotateCw, Send, UserRoundX, XCircle } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,6 +27,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { ApiError, apiRequest } from "@/lib/queryClient";
+import { bidiIsolate } from "@/lib/customer-link";
+import { isolateLtrText } from "@/lib/format-bidi";
 import { formatDate } from "@/lib/format-date";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { defaultInviteLanguage, portalAccessKey, portalSummaryKey } from "@/lib/portal-invite";
@@ -76,8 +67,7 @@ interface AccessData {
 }
 
 interface InviteResponse {
-  delivery: "email" | "queued" | "link";
-  inviteUrl?: string;
+  delivery: "email" | "queued";
   invitation: { id: string; email: string };
 }
 
@@ -103,15 +93,16 @@ function InviteForm({
   supplierName,
   canInvite,
   onDelivered,
+  onFailed,
 }: {
   contact: PortalSheetContact;
   companyId: string;
   supplierName: string;
   canInvite: boolean;
   onDelivered: (res: InviteResponse) => void;
+  onFailed: (err: unknown) => void;
 }) {
   const { t } = useTranslation();
-  const { toast } = useToast();
   const { gate } = useCompanyPermission();
   const [email, setEmail] = useState(contact.email ?? "");
   const [name, setName] = useState(contact.contactPerson ?? "");
@@ -137,11 +128,7 @@ function InviteForm({
       setNote("");
       onDelivered(res);
     },
-    onError: (err) =>
-      toast({
-        title: err instanceof ApiError ? err.message : t["portal.invite.failed"],
-        variant: "destructive",
-      }),
+    onError: onFailed,
   });
 
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -150,11 +137,13 @@ function InviteForm({
     const en = {
       lang: "en",
       // The English subject mirrors server/services/portal-invite-email.ts.
-      text: `${supplierName} invited you to view your invoices`, // i18n-ignore: the English email subject
+      text: `${bidiIsolate(supplierName)} invited you to view your invoices`, // i18n-ignore: the English email subject
     };
     const ar = {
       lang: "ar",
-      text: formatMessage(t["portal.invite.previewSubjectAr"], { supplier: supplierName }),
+      text: formatMessage(t["portal.invite.previewSubjectAr"], {
+        supplier: bidiIsolate(supplierName),
+      }),
     };
     return language === "ar" ? [ar] : language === "bilingual" ? [en, ar] : [en];
   }, [language, supplierName, t]);
@@ -241,8 +230,10 @@ function InviteForm({
           dir="auto"
           data-testid="pa-note"
         />
-        <p className="mt-1 text-end text-caption text-muted-foreground tabular-nums">
-          {note.length}/{PORTAL_INVITE_MESSAGE_MAX}
+        <p className="mt-1 text-end text-caption text-muted-foreground">
+          <bdi dir="ltr" className="tabular-nums">
+            {note.length}/{PORTAL_INVITE_MESSAGE_MAX}
+          </bdi>
         </p>
       </div>
       <div className="rounded-lg bg-muted/50 p-3" data-testid="pa-preview">
@@ -316,8 +307,6 @@ export function PortalAccessSheet({
     staleTime: 0,
   });
 
-  const [shownLink, setShownLink] = useState<{ contactId: string; url: string } | null>(null);
-  const [copied, setCopied] = useState(false);
   const [confirm, setConfirm] = useState<Confirm>(null);
   // A clock for the Resend countdown: it ticks once a second only while a cooldown is running.
   const [now, setNow] = useState(() => Date.now());
@@ -330,25 +319,25 @@ export function PortalAccessSheet({
     return () => window.clearInterval(id);
   }, [cooling]);
 
-  const linkUrl = shownLink && shownLink.contactId === contactId ? shownLink.url : null;
-
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: portalAccessKey(companyId, contactId) });
     void queryClient.invalidateQueries({ queryKey: portalSummaryKey(companyId) });
     setNow(Date.now());
   };
-  const fail = (err: unknown) =>
+  const fail = (err: unknown) => {
     toast({
       title: err instanceof ApiError ? err.message : t["portal.invite.failed"],
       variant: "destructive",
     });
+    if (err instanceof ApiError && err.body?.code === "PORTAL_INVITE_DELIVERY_FAILED") refresh();
+  };
   const reportDelivery = (res: InviteResponse) => {
-    if (res.delivery === "link" && res.inviteUrl) {
-      setShownLink({ contactId, url: res.inviteUrl });
-      setCopied(false);
-      toast({ title: t["portal.invite.linkCreated"] });
-    } else if (res.delivery === "email") {
-      toast({ title: formatMessage(t["portal.invite.sentTo"], { email: res.invitation.email }) });
+    if (res.delivery === "email") {
+      toast({
+        title: formatMessage(t["portal.invite.sentTo"], {
+          email: isolateLtrText(res.invitation.email),
+        }),
+      });
     } else {
       toast({ title: t["portal.invite.queued"] });
     }
@@ -379,17 +368,6 @@ export function PortalAccessSheet({
     onError: fail,
   });
 
-  const copyLink = async () => {
-    if (!linkUrl) return;
-    try {
-      await navigator.clipboard.writeText(linkUrl);
-      setCopied(true);
-      toast({ title: t["customerContacts.linkCopiedToClipboard"] });
-    } catch {
-      /* the field is selectable */
-    }
-  };
-
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -401,8 +379,10 @@ export function PortalAccessSheet({
         >
           <SheetHeader className="border-b border-border p-5 pb-4">
             <SheetTitle>{t["customerContacts.portalAccess"]}</SheetTitle>
-            <SheetDescription dir="auto">
-              {contact ? formatMessage(t["portal.access.forName"], { name: contact.name }) : ""}
+            <SheetDescription>
+              {contact
+                ? formatMessage(t["portal.access.forName"], { name: bidiIsolate(contact.name) })
+                : ""}
             </SheetDescription>
           </SheetHeader>
 
@@ -427,15 +407,21 @@ export function PortalAccessSheet({
                       data-testid={`pa-person-${p.id}`}
                     >
                       <span className="min-w-0">
-                        <span className="block truncate text-small font-medium" dir="auto">
+                        <bdi
+                          className="block truncate text-small font-medium"
+                          translate="no"
+                          title={p.name}
+                        >
                           {p.name}
-                        </span>
-                        <span
+                        </bdi>
+                        <bdi
                           className="block truncate text-caption text-muted-foreground"
                           dir="ltr"
+                          translate="no"
+                          title={p.email}
                         >
                           {p.email}
-                        </span>
+                        </bdi>
                         <span className="block text-caption text-muted-foreground">
                           {p.lastSeenAt
                             ? formatMessage(t["portal.access.lastSeen"], {
@@ -483,9 +469,14 @@ export function PortalAccessSheet({
                         data-status={inv.status}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <span className="min-w-0 truncate text-small font-medium" dir="ltr">
+                          <bdi
+                            className="min-w-0 truncate text-small font-medium"
+                            dir="ltr"
+                            translate="no"
+                            title={inv.email}
+                          >
                             {inv.email}
-                          </span>
+                          </bdi>
                           <StatusBadge tone={STATUS_TONE[inv.status] ?? "neutral"}>
                             {t[`portal.access.status.${inv.status}`]}
                           </StatusBadge>
@@ -544,37 +535,6 @@ export function PortalAccessSheet({
               )}
             </section>
 
-            {linkUrl && (
-              <Alert tone="info" title={t["portal.invite.linkTitle"]} data-testid="pa-link-panel">
-                <p className="mb-2 text-small">{t["portal.invite.linkBody"]}</p>
-                <div className="flex items-center gap-2">
-                  <Input
-                    readOnly
-                    value={linkUrl}
-                    dir="ltr"
-                    className="h-11 text-sm"
-                    onFocus={(e) => e.currentTarget.select()}
-                    aria-label={t["portal.invite.linkTitle"]}
-                    data-testid="pa-link-input"
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-11 w-11 shrink-0"
-                    onClick={() => void copyLink()}
-                    aria-label={t["portal.invite.copyLink"]}
-                    data-testid="pa-copy-link"
-                  >
-                    {copied ? (
-                      <Check className="h-4 w-4" aria-hidden />
-                    ) : (
-                      <Copy className="h-4 w-4" aria-hidden />
-                    )}
-                  </Button>
-                </div>
-              </Alert>
-            )}
-
             {/* Invite someone */}
             <section aria-labelledby="pa-invite">
               <h3 id="pa-invite" className="text-small font-semibold">
@@ -588,6 +548,7 @@ export function PortalAccessSheet({
                   supplierName={supplierName}
                   canInvite={canInvite}
                   onDelivered={reportDelivery}
+                  onFailed={fail}
                 />
               )}
             </section>
@@ -622,9 +583,13 @@ export function PortalAccessSheet({
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirm?.kind === "remove"
-                ? formatMessage(t["portal.access.removeConfirm"], { name: confirm.name })
+                ? formatMessage(t["portal.access.removeConfirm"], {
+                    name: bidiIsolate(confirm.name),
+                  })
                 : confirm?.kind === "revoke"
-                  ? formatMessage(t["portal.access.revokeConfirm"], { email: confirm.email })
+                  ? formatMessage(t["portal.access.revokeConfirm"], {
+                      email: isolateLtrText(confirm.email),
+                    })
                   : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>

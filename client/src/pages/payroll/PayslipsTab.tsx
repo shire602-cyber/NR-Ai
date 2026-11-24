@@ -1,5 +1,6 @@
 import { errorHeading } from "@/lib/error-heading";
-import { useState } from "react";
+import { useContext, useState } from "react";
+import { TrialReadOnlyContext } from "@/lib/trial-access";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Download, Link2, Mail } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +40,7 @@ interface EmailResult {
 }
 
 export function PayslipsTab({ companyId }: { companyId: string }) {
+  const readOnly = useContext(TrialReadOnlyContext);
   const { tx, locale } = useHr();
   const { toast } = useToast();
   const { data: runs = [] } = useQuery<PayrollRun[]>({
@@ -104,7 +106,7 @@ export function PayslipsTab({ companyId }: { companyId: string }) {
               ))}
             </SelectContent>
           </Select>
-          <Button disabled={!runId || email.isPending} onClick={() => email.mutate()}>
+          <Button disabled={readOnly || !runId || email.isPending} onClick={() => email.mutate()}>
             <Mail className="me-2 h-4 w-4" />
             {tx("hr.emailPayslips")}
           </Button>
@@ -148,6 +150,7 @@ export function PayslipsTab({ companyId }: { companyId: string }) {
                         size="sm"
                         variant="ghost"
                         aria-label={tx("hr.selfServiceLink")}
+                        disabled={readOnly || link.isPending}
                         onClick={() => link.mutate(r.id)}
                       >
                         <Link2 className="h-4 w-4" />

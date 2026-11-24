@@ -40,7 +40,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { ServiceScopeBadges } from "./portfolio/badges";
+import { ServiceScopeBadges, VatStatusBadge } from "./portfolio/badges";
 import { ClientDocumentsTab } from "./client-profile/ClientDocumentsTab";
 import { ClientTasksTab } from "./client-profile/ClientTasksTab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -54,6 +54,10 @@ import {
   type ClientServiceCode,
   type ClientServicePlan,
 } from "@shared/client-services";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { classifyLoadError } from "@/lib/loadError";
+import { useFirmPermissions } from "@/hooks/useFirmPermissions";
+import { FIRM_UI_PERMISSIONS } from "@shared/access";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 
 interface AssignedStaff {
@@ -71,6 +75,7 @@ interface ClientStats {
   lastBankActivityDate: string | null;
   vatStatus: {
     status: string;
+    filingRecorded?: boolean;
     dueDate: string;
     periodEnd: string;
   } | null;
@@ -161,6 +166,9 @@ export default function ClientProfile() {
     });
   const { toast } = useToast();
   const { setActiveClientCompany } = useActiveCompany();
+  // Assigning staff needs firm.staff.manage (the route refuses everyone else).
+  const { can } = useFirmPermissions();
+  const canManageStaff = can(FIRM_UI_PERMISSIONS.manageStaff);
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState<ClientEditData>({});
   const [assignOpen, setAssignOpen] = useState(false);
@@ -168,8 +176,9 @@ export default function ClientProfile() {
 
   const switchMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/firm/clients/${companyId}/switch`),
-    onSuccess: () => {
-      if (companyId) setActiveClientCompany(companyId);
+    onSuccess: async () => {
+      // Commit the switch (cache reset) before navigating: the shell must see the client first.
+      if (companyId) await setActiveClientCompany(companyId);
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       navigate("/dashboard");
     },
@@ -186,10 +195,11 @@ export default function ClientProfile() {
     data: summary,
     isLoading,
     error: summaryError,
+    refetch: refetchSummary,
   } = useQuery<ClientSummary>({
+    // The default retry policy skips 4xx, so a 403/404 is requested once.
     queryKey: [`/api/firm/clients/${companyId}/summary`],
     enabled: !!companyId,
-    retry: 1,
   });
 
   const { data: firmStaff = [] } = useQuery<StaffMember[]>({
@@ -254,30 +264,34 @@ export default function ClientProfile() {
   }
 
   if (!summary) {
-    // Surface the server's actual reason — access denied, not-a-client, and
-    // genuinely-missing are different problems with different fixes.
-    const rawMessage: string = (summaryError as any)?.message || "Client not found";
-    const lowerMessage = rawMessage.toLowerCase();
-    // The server sends English reasons; map the known ones to catalog copy.
-    const message = lowerMessage.includes("access")
-      ? t["clientProfile.accessDenied"]
-      : lowerMessage.includes("not found")
-        ? t["clientProfile.notFound"]
-        : rawMessage;
+    // Each cause has its own translated copy: a server failure is never reported as "not found",
+    // and the server's own message (or the browser's "Failed to fetch") is never shown.
+    const kind = classifyLoadError(summaryError);
+    const backToPortfolio = (
+      <Button variant="ghost" onClick={() => navigate("/firm/clients")}>
+        <T k="pages.backToPortfolio" />
+      </Button>
+    );
+    if (kind === "server" || kind === "offline") {
+      return (
+        <div className="space-y-3">
+          <LoadErrorState error={summaryError} onRetry={() => void refetchSummary()} />
+          <div className="flex justify-center">{backToPortfolio}</div>
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
-        <AlertCircle className="w-10 h-10 text-muted-foreground mb-3" />
-        <p className="font-medium">{message}</p>
+        <AlertCircle className="w-10 h-10 text-muted-foreground mb-3" aria-hidden />
+        <h1 className="font-medium">
+          {kind === "forbidden" ? t["clientProfile.accessDenied"] : t["clientProfile.notFound"]}
+        </h1>
         <p className="text-sm text-muted-foreground mt-1 max-w-md">
-          {lowerMessage.includes("access")
+          {kind === "forbidden"
             ? t["clientProfile.accessDeniedHelp"]
-            : lowerMessage.includes("not an nra client")
-              ? t["clientProfile.notFirmClient"]
-              : t["clientProfile.linkOutdated"]}
+            : t["clientProfile.linkOutdated"]}
         </p>
-        <Button variant="ghost" onClick={() => navigate("/firm/clients")}>
-          <T k="pages.backToPortfolio" />
-        </Button>
+        {backToPortfolio}
       </div>
     );
   }
@@ -404,7 +418,7 @@ export default function ClientProfile() {
                 <p className="text-sm font-semibold mt-0.5">
                   {stats.lastReceiptDate
                     ? formatDate(stats.lastReceiptDate, locale)
-                    : t["banking.feeds.never"]}
+                    : t["banking.common.never"]}
                 </p>
               </CardContent>
             </Card>
@@ -415,20 +429,7 @@ export default function ClientProfile() {
                 </p>
                 {stats.vatStatus ? (
                   <div className="mt-0.5">
-                    <Badge
-                      className={
-                        stats.vatStatus.status === "filed"
-                          ? "bg-success-subtle text-success-subtle-foreground border-success/30"
-                          : "bg-warning-subtle text-warning-subtle-foreground border-warning/30"
-                      }
-                    >
-                      {statusLabel(t, stats.vatStatus.status)}
-                    </Badge>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {formatMessage(t["firmOps.chaseDue"], {
-                        date: formatDate(stats.vatStatus.dueDate, locale),
-                      })}
-                    </p>
+                    <VatStatusBadge vatStatus={stats.vatStatus} />
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground mt-0.5">
@@ -658,10 +659,12 @@ export default function ClientProfile() {
               <CardTitle className="text-base">
                 <T k="pages.assignedNraStaff" />
               </CardTitle>
-              <Button size="sm" variant="outline" onClick={() => setAssignOpen(true)}>
-                <UserPlus className="w-4 h-4 me-1.5" />
-                <T k="pages.assignStaff" />
-              </Button>
+              {canManageStaff && (
+                <Button size="sm" variant="outline" onClick={() => setAssignOpen(true)}>
+                  <UserPlus className="w-4 h-4 me-1.5" />
+                  <T k="pages.assignStaff" />
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
               {stats.assignedStaff.length === 0 ? (
@@ -688,18 +691,25 @@ export default function ClientProfile() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline">{statusLabel(t, staff.role)}</Badge>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={() =>
-                            assignMutation.mutate({ staffUserId: staff.id, action: "unassign" })
-                          }
-                          disabled={assignMutation.isPending}
-                        >
-                          <UserMinus className="w-4 h-4" />
-                        </Button>
+                        <Badge variant="outline">
+                          {t[`firm.assignmentRole.${staff.role}`] ?? statusLabel(t, staff.role)}
+                        </Badge>
+                        {canManageStaff && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            aria-label={formatMessage(t["firm.unassignStaff"], {
+                              name: staff.name,
+                            })}
+                            className="text-muted-foreground hover:text-destructive"
+                            onClick={() =>
+                              assignMutation.mutate({ staffUserId: staff.id, action: "unassign" })
+                            }
+                            disabled={assignMutation.isPending}
+                          >
+                            <UserMinus className="w-4 h-4" aria-hidden />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ))}

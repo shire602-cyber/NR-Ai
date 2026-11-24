@@ -65,6 +65,7 @@ import {
   type SalesDocumentTotals,
 } from "./document-totals.service";
 import { invoiceMachine, settlementStatus } from "./invoice-state-machine";
+import { assertNoOutstandingEInvoiceHandoff } from "./einvoice/store";
 import { has, resolve } from "../platform/service-registry";
 import { receivableSettlementPartsSql } from "../reporting/settlement";
 
@@ -333,7 +334,7 @@ export async function invoiceSettlement(
     SELECT ${sql.raw(parts.paid)}::text AS paid,
            ${sql.raw(parts.credited)}::text AS credited,
            ${sql.raw(parts.applied)}::text AS applied
-      FROM (SELECT ${invoiceId}::uuid AS id) si
+      FROM invoices si WHERE si.id = ${invoiceId}
   `);
   const row = (((res as { rows?: unknown[] }).rows ?? res) as Array<Record<string, string>>)[0];
   return {
@@ -413,9 +414,8 @@ function revenueBuckets(totals: SalesDocumentTotals, lines: RevenueLineHint[]) {
 }
 
 /**
- * X5 (J1 L1): income account per line by item type. A line linked to a service product posts
- * to the chart's service revenue account (4020 "Service Revenue", when the chart has it as an
- * active income account); goods and free-text lines post to sales revenue (4010) as before.
+ * Service products and unlinked service lines default to active Service Revenue (4020).
+ * An explicit income account takes precedence, while goods use the chart sales default.
  */
 export async function revenueLineHints(
   tx: LedgerTx,
@@ -448,19 +448,17 @@ export async function revenueLineHints(
   const explicit = (l: { revenueAccountId?: string | null }) =>
     l.revenueAccountId && chosen.has(l.revenueAccountId) ? l.revenueAccountId : null;
   const productIds = [...new Set(lines.map((l) => l.productId).filter(Boolean) as string[])];
-  if (productIds.length === 0) {
-    return lines.map((l) => ({
-      costCenterId: l.costCenterId ?? null,
-      revenueAccountId: explicit(l),
-    }));
-  }
-  const products: Array<{ id: string; productType: string | null }> = await tx
-    .select({ id: products_.id, productType: products_.productType })
-    .from(products_)
-    .where(and(eq(products_.companyId, companyId), inArray(products_.id, productIds)));
+  const products: Array<{ id: string; productType: string | null }> = productIds.length
+    ? await tx
+        .select({ id: products_.id, productType: products_.productType })
+        .from(products_)
+        .where(and(eq(products_.companyId, companyId), inArray(products_.id, productIds)))
+    : [];
   const services = new Set(products.filter((p) => p.productType === "service").map((p) => p.id));
   let serviceAccount: string | null = null;
-  if (services.size > 0) {
+  const isService = (line: { productId?: string | null }) =>
+    !line.productId || services.has(line.productId);
+  if (lines.some((line) => !explicit(line) && isService(line))) {
     const [row]: Array<{ id: string }> = await tx
       .select({ id: accounts.id })
       .from(accounts)
@@ -477,8 +475,7 @@ export async function revenueLineHints(
   }
   return lines.map((l) => ({
     costCenterId: l.costCenterId ?? null,
-    revenueAccountId:
-      explicit(l) ?? (l.productId && services.has(l.productId) ? serviceAccount : null),
+    revenueAccountId: explicit(l) ?? (isService(l) ? serviceAccount : null),
   }));
 }
 
@@ -758,6 +755,7 @@ export async function voidInvoice(
   return withDocumentLock(invoiceId, LOCK_NS.INVOICE_POSTING, async (tx) => {
     const inv = await lockInvoice(tx, invoiceId, companyId);
     if (inv.status === target) return { invoice: inv, reversedEntryIds: [] };
+    await assertNoOutstandingEInvoiceHandoff(companyId, invoiceId, tx);
     // B1 (NH3): the invoice that billed an asset disposal carries the disposal's receivable and
     // VAT; voiding it alone would leave the disposal moving proceeds that were never invoiced.
     const disposal = await tx.execute(sql`
@@ -1243,7 +1241,7 @@ export async function insertCreditNoteDocument(
       const orig = totalsForStoredDocument(original, originalLines);
       const remainingSub =
         toFils(original.subtotal, { rounding: "halfUp" }) -
-        (await loadPriorCreditedSubtotal(tx, original.id));
+        (await loadPriorCreditedSubtotal(tx, original));
       const remainingTotal = totalFils - s.creditedFils;
       const remainingVat = remainingTotal - remainingSub;
       docLines = [
@@ -1318,10 +1316,14 @@ export async function insertCreditNoteDocument(
   return { creditNote, mode };
 }
 
-async function loadPriorCreditedSubtotal(tx: LedgerTx, invoiceId: string): Promise<number> {
+async function loadPriorCreditedSubtotal(
+  tx: LedgerTx,
+  invoice: Pick<Invoice, "id" | "companyId">
+): Promise<number> {
   const res = await tx.execute(sql`
     SELECT COALESCE(SUM(-subtotal), 0)::text AS sub FROM invoices
-     WHERE original_invoice_id = ${invoiceId} AND invoice_type = 'credit_note'
+     WHERE original_invoice_id = ${invoice.id} AND company_id = ${invoice.companyId}
+       AND invoice_type = 'credit_note'
        AND status NOT IN ('void', 'cancelled', 'draft')`);
   const row = (((res as { rows?: unknown[] }).rows ?? res) as Array<Record<string, string>>)[0];
   return toFils(row?.sub ?? "0", { rounding: "halfUp" });
@@ -1487,6 +1489,7 @@ export async function voidCreditNote(
   return withDocumentLock(lockId, LOCK_NS.INVOICE_POSTING, async (tx) => {
     const fresh = await lockInvoice(tx, creditNoteId, companyId);
     if (fresh.status === "void") return fresh;
+    await assertNoOutstandingEInvoiceHandoff(companyId, creditNoteId, tx);
     if (fresh.status === "draft") {
       const row = await transitionRow<Invoice>(
         tx,
@@ -1619,11 +1622,12 @@ export async function resolveCustomerHeader(
   helpers: {
     dueDateFromTerms: (d: string, t: string | null | undefined) => string | null;
     termsFromDays: (n: number | null | undefined) => string | null;
-  }
+  },
+  tx: LedgerTx = db
 ): Promise<CustomerHeader> {
   let contact: typeof customerContacts.$inferSelect | undefined;
   if (input.contactId) {
-    [contact] = await db
+    [contact] = await tx
       .select()
       .from(customerContacts)
       .where(
@@ -1651,7 +1655,7 @@ export async function resolveCustomerHeader(
     input.paymentTerms ?? (contact ? helpers.termsFromDays(contact.paymentTerms) : null) ?? "net30";
   let emirate = input.placeOfSupplyEmirate ?? contact?.emirate ?? null;
   if (!emirate) {
-    const [co] = await db
+    const [co] = await tx
       .select({ emirate: companies.emirate })
       .from(companies)
       .where(eq(companies.id, companyId));
@@ -1672,10 +1676,11 @@ export async function resolveCustomerHeader(
 export async function assertPlaceOfSupply(
   companyId: string,
   emirate: string | null,
-  supplyTypes: string[]
+  supplyTypes: string[],
+  tx: LedgerTx = db
 ): Promise<void> {
   if (emirate || !supplyTypes.includes("standard_rated")) return;
-  const [co] = await db
+  const [co] = await tx
     .select({ trn: companies.trnVatNumber })
     .from(companies)
     .where(eq(companies.id, companyId));

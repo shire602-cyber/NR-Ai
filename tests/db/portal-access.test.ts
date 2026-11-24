@@ -138,7 +138,7 @@ describe("W4-D portal identity and visibility", () => {
     expect(access.body.links.length).toBe(2);
     expect(JSON.stringify(access.body)).not.toContain(hash);
     // Another tenant cannot mint or read access for this contact.
-    const other = await h.createSecondTenant();
+    const other = await h.createSecondTenant({ emailVerified: true });
     expect((await other.as.post("/api/portal/generate-access", { contactId: cid })).status).toBe(
       404
     );
@@ -152,6 +152,7 @@ describe("W4-D portal identity and visibility", () => {
     await invoice(t, theirs);
     // STEP5: the binding comes from an invitation (no company membership, no staff bind route).
     const pu = await h.createSecondTenant({ userType: "client_portal" });
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [pu.user.id]);
     // Not linked yet → no data at all.
     const unlinked = await pu.as.get("/api/client-portal/invoices");
     expect(unlinked.status).toBe(403);
@@ -164,8 +165,11 @@ describe("W4-D portal identity and visibility", () => {
     const csrf = await fetch(`${h.baseUrl}/api/csrf-token`);
     const cookie = (csrf.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
     const csrfToken = ((await csrf.json()) as { csrfToken: string }).csrfToken;
-    const inviteToken = /#t=([0-9a-f]{64})/.exec(inv.body.inviteUrl)![1];
-    const bind = await fetch(`${h.baseUrl}/api/portal-invitations/${inviteToken}/accept`, {
+    const [mail] = await h.sql("SELECT html FROM email_outbox WHERE related_entity_id = $1", [
+      inv.body.invitation.id,
+    ]);
+    const inviteToken = /#t=([0-9a-f]{64})/.exec(mail.html)![1];
+    const bind = await fetch(`${h.baseUrl}/api/portal-invitations/accept`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -173,7 +177,7 @@ describe("W4-D portal identity and visibility", () => {
         cookie,
         "x-csrf-token": csrfToken,
       },
-      body: JSON.stringify({ acceptTerms: true }),
+      body: JSON.stringify({ token: inviteToken, email: pu.email, acceptTerms: true }),
     });
     expect(bind.status, await bind.text()).toBe(200);
     expect(
@@ -185,6 +189,14 @@ describe("W4-D portal identity and visibility", () => {
     const list = await pu.as.get("/api/client-portal/invoices");
     expect(list.status).toBe(200);
     expect(list.body.map((i: { id: string }) => i.id)).toEqual([myInv.id]);
+    await h.sql(
+      `UPDATE invoices SET einvoice_status = 'cleared', einvoice_provider = 'acube',
+         einvoice_provider_message_id = $2, einvoice_xml = '<Invoice/>' WHERE id = $1`,
+      [myInv.id, crypto.randomUUID()]
+    );
+    const xml = await pu.as.get(`/api/client-portal/invoices/${myInv.id}/einvoice`);
+    expect(xml.status, xml.text).toBe(200);
+    expect(xml.headers.get("x-einvoice-status")).toBe("submitted");
 
     const staff = await t.as.post(`/api/companies/${t.company.id}/messages`, {
       content: "internal: chase this customer",
@@ -204,7 +216,14 @@ describe("W4-D portal identity and visibility", () => {
     expect(msgs.body.map((m: { content: string }) => m.content)).toEqual([
       "Hello, your statement is ready",
     ]);
-    const reply = await pu.as.post("/api/client-portal/messages", { content: "Thanks!" });
+    const portalCompany = await pu.as.get("/api/client-portal/company");
+    const reply = await pu.as.post(
+      "/api/client-portal/messages",
+      { content: "Thanks!" },
+      {
+        headers: { "X-Portal-Account": portalCompany.body.portalAccountId },
+      }
+    );
     expect(reply.status, reply.text).toBe(201);
     // S5-SEC-6: a DTO without internal ids; the row itself is bound to the contact.
     expect(reply.body.contactId).toBeUndefined();
@@ -296,7 +315,7 @@ describe("W4-D statements of account", () => {
     );
     expect(att[0].content_type).toBe("application/pdf");
     // Other tenants cannot read it.
-    const other = await h.createSecondTenant();
+    const other = await h.createSecondTenant({ emailVerified: true });
     expect(
       (await other.as.get(`/api/companies/${t.company.id}/customer-statements/${cid}`)).status
     ).toBe(403);
@@ -427,23 +446,84 @@ describe("W4-D customer self-service", () => {
     expect(dl.text).toContain("customer trade licence");
   });
 
-  it("[R16-19] the portal shows the e-invoice status and serves the e-invoice XML when one exists", async () => {
+  it("[R16-19] public and token portal outcomes require evidence and XML stays downloadable", async () => {
     const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "E-Invoice Co");
     const inv = await invoice(t, cid);
     await h.sql(
-      `UPDATE invoices SET einvoice_status = 'accepted', einvoice_uuid = 'uuid-123',
+      `UPDATE invoices SET einvoice_status = 'cleared', einvoice_uuid = 'uuid-123',
+              einvoice_provider = 'acube', einvoice_provider_message_id = $2,
               einvoice_xml = '<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"/>'
         WHERE id = $1`,
+      [inv.id, crypto.randomUUID()]
+    );
+    await h.sql(
+      `INSERT INTO einvoice_documents (company_id, invoice_id, status, provider, provider_message_id,
+         provider_status, delivery_status, reporting_status, validation)
+       SELECT company_id, id, 'cleared', 'acube', einvoice_provider_message_id,
+         'processed', 'delivered', 'reported', '{"submission":{"scope":"private"}}'::jsonb
+       FROM invoices WHERE id = $1`,
       [inv.id]
     );
     const { token } = await portalLink(t, cid);
-    const list = await h.anon.get(`/api/portal/${token}/invoices`);
-    expect(list.body[0].einvoice).toEqual({ status: "accepted", uuid: "uuid-123", hasXml: true });
-    const xml = await h.anon.get(`/api/portal/${token}/invoices/${inv.id}/einvoice`);
+    const share = await t.as.post(`/api/invoices/${inv.id}/share`);
+    expect(share.status, share.text).toBe(200);
+    const shareToken = share.body.shareUrl.split("/").at(-1);
+    const readStatus = async (
+      status: string,
+      environment: "sandbox" | "production" | null = null
+    ) => {
+      const list = await h.anon.get(`/api/portal/${token}/invoices`);
+      expect(list.body[0].einvoice).toEqual({
+        status,
+        environment,
+        uuid: "uuid-123",
+        hasXml: true,
+      });
+      const view = await h.anon.get(`/api/public/invoices/${shareToken}`);
+      expect(view.status, view.text).toBe(200);
+      expect(view.body.einvoice).toEqual({ status, environment, uuid: "uuid-123" });
+      const xml = await h.anon.get(`/api/portal/${token}/invoices/${inv.id}/einvoice`);
+      expect(xml.headers.get("x-einvoice-status")).toBe(status);
+      expect(xml.headers.get("x-einvoice-environment")).toBe(environment ?? "unknown");
+      return xml;
+    };
+    const xml = await readStatus("submitted");
     expect(xml.status).toBe(200);
     expect(xml.headers.get("content-type")).toContain("application/xml");
     expect(xml.text).toContain("ubl:schema");
+
+    await h.sql(
+      `UPDATE einvoice_documents SET provider_status = 'delivered' WHERE invoice_id = $1`,
+      [inv.id]
+    );
+    await readStatus("delivered");
+
+    await h.sql(
+      `UPDATE einvoice_documents SET provider_status = 'accepted',
+         validation = jsonb_set(validation, '{submission,environment}', '"sandbox"')
+       WHERE invoice_id = $1`,
+      [inv.id]
+    );
+    await readStatus("accepted", "sandbox");
+
+    await h.sql(`UPDATE invoices SET einvoice_provider = 'complyance' WHERE id = $1`, [inv.id]);
+    await h.sql(
+      `UPDATE einvoice_documents SET provider = 'complyance', provider_status = 'final_valid'
+       WHERE invoice_id = $1`,
+      [inv.id]
+    );
+    await readStatus("accepted", "sandbox");
+
+    await h.sql(
+      `UPDATE einvoice_documents SET validation =
+       jsonb_set(
+         jsonb_set(validation, '{submission,reportingEvidence}', '{"reported":"2026-01-01T00:00:00Z"}'),
+         '{submission,environment}', '"production"'
+       ) WHERE invoice_id = $1`,
+      [inv.id]
+    );
+    await readStatus("cleared", "production");
   });
 });
 
@@ -469,5 +549,37 @@ describe("J4 portal link management follows the company role", () => {
     expect(days).toBe(PORTAL_LINK_TTL_DAYS);
     expect((await t.as.post("/api/portal/revoke-access", { contactId: cid })).status).toBe(200);
     expect((await h.anon.get(`/api/portal/${token}/invoices`)).status).toBe(410);
+  });
+});
+
+describe("PR-62 client-portal users are confined to the portal API", () => {
+  it("PR-62: a bound client_portal member cannot read the company's books, dashboard or team", async () => {
+    const t = await h.createTenant({ emailVerified: true });
+    const pu = await h.createSecondTenant({ userType: "client_portal" });
+    await h.sql(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')`, [
+      t.company.id,
+      pu.user.id,
+    ]);
+    for (const p of [
+      "reports/profit-loss",
+      "reports/balance-sheet",
+      "dashboard/stats",
+      "team",
+      "invoices",
+    ]) {
+      const r = await pu.as.get(`/api/companies/${t.company.id}/${p}`);
+      expect(r.status, p).toBe(403);
+      expect(["PORTAL_SCOPE", "PORTAL_USER_APP_DENIED"]).toContain(r.body?.code);
+    }
+    // The app shell's company list answers an empty list (no supplier row, no failed call).
+    const companies = await pu.as.get("/api/companies");
+    expect(companies.status).toBe(200);
+    expect(companies.body).toEqual([]);
+    expect((await pu.as.post("/api/companies", { name: "Nope LLC" })).status).toBe(403);
+    // The portal API and the session endpoints stay open.
+    expect((await pu.as.get("/api/auth/me")).status).toBe(200);
+    expect((await pu.as.get("/api/client-portal/invoices")).status).toBe(403); // unbound: own guard
+    // A staff member of the same company is unaffected.
+    expect((await t.as.get(`/api/companies/${t.company.id}/reports/profit-loss`)).status).toBe(200);
   });
 });

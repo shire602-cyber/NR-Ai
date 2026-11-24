@@ -1,16 +1,13 @@
 import { portalAccountsForUser } from "../services/portal-access.service";
-import {
-  isUnverifiedPortalAccount,
-  reclaimUnverifiedPortalAccount,
-} from "../services/portal-invitations.service";
 import type { Request, Response } from "express";
 import { Router } from "express";
 import type { Express } from "express";
 import bcrypt from "bcryptjs";
-import { randomBytes, createHash, randomUUID } from "crypto";
+import { randomBytes, createHash, createHmac, randomUUID } from "crypto";
 import { z } from "zod";
 
 import { storage } from "../storage";
+import { errorCode, errorProperty } from "../errors";
 import { getEnv, isProduction } from "../config/env";
 import { notificationCopy } from "../../shared/server-copy";
 import {
@@ -75,6 +72,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
 import { ensureFreeSubscription } from "../middleware/featureGate";
 import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
 import { forgotPasswordSchema, resetPasswordSchema } from "../../shared/validators";
 import { zEmail, zText, zUuid } from "../../shared/validators/primitives";
 import {
@@ -89,27 +87,36 @@ import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
 import { isPlaceholderPasswordHash, passwordPolicySchema } from "../auth";
 import {
-  LockoutTracker,
+  buildLockoutTracker,
   clientIp,
   credentialKey,
-  loginLockoutRules,
   type LockoutStatus,
 } from "../middleware/rateLimit";
 import {
   consumeOAuthState,
   createOAuthAuthorizationUrl,
   exchangeOAuthCallback,
+  frontendBaseUrl,
   getAuthIdentity,
   getOAuthProviderInfo,
   getUserByNormalizedOAuthEmail,
+  hasOAuthMailboxProof,
   isOAuthProviderId,
   linkAuthIdentity,
   markOAuthLogin,
   oauthCallbackFailureUrl,
+  oauthCallbackMfaUrl,
   oauthCallbackSuccessUrl,
   oauthRedirectUri,
+  OAUTH_STATE_TTL_MS,
+  OAuthIdentityError,
   type OAuthIdentityProfile,
 } from "../services/oauth.service";
+import {
+  consumeMicrosoftMailboxChallenge,
+  OAUTH_MAILBOX_TTL_MS,
+  startMicrosoftMailboxChallenge,
+} from "../services/oauth-mailbox.service";
 
 const log = createLogger("auth");
 
@@ -126,6 +133,16 @@ function publicUser(user: Record<string, unknown>) {
 /** httpOnly cookie carrying the MFA-pending token after a social sign-in. */
 function mfaPendingCookie(): string {
   return isProduction() ? "__Host-muhasib-mfa" : "muhasib-mfa";
+}
+
+function microsoftCookie(step: "state" | "mailbox"): string {
+  return `${isProduction() ? "__Host-" : ""}muhasib-microsoft-${step}`;
+}
+
+function microsoftBrowserProof(state: string): string {
+  return createHmac("sha256", getEnv().SESSION_SECRET)
+    .update(`microsoft-browser:${state}`)
+    .digest("hex");
 }
 
 function readCookie(req: Request, name: string): string | null {
@@ -241,7 +258,7 @@ async function createOAuthCustomer(
     userType: "customer",
     isAdmin: false,
     passwordHash,
-    emailVerified: true,
+    emailVerified: hasOAuthMailboxProof(profile),
     avatarUrl: profile.picture,
   } as unknown as Parameters<typeof storage.createUser>[0]);
   const company = await provisionCustomerCompany(user.id, `${profile.name}'s Company`);
@@ -255,36 +272,68 @@ async function createOAuthCustomer(
 async function resolveOAuthUser(
   req: Request,
   profile: OAuthIdentityProfile,
-  signupPlan: SignupPlanChoice | null = null
+  signupPlan: SignupPlanChoice | null = null,
+  expectedUserId?: string | null
 ): Promise<{ user: User; mode: "existing_identity" | "linked_existing" | "created_customer" }> {
+  // Legacy Microsoft links may have been marked verified without a verified email claim.
+  if (profile.provider === "microsoft" && !hasOAuthMailboxProof(profile)) {
+    throw new OAuthIdentityError("Microsoft sign-in requires mailbox proof");
+  }
   const identity = await getAuthIdentity(profile);
   if (identity) {
-    const user = await storage.getUser(identity.userId);
-    if (!user) throw new Error("OAuth identity is linked to a missing user");
-    await markOAuthLogin(user.id, profile);
-    return { user: (await storage.getUser(user.id)) ?? user, mode: "existing_identity" };
+    if (expectedUserId !== undefined && identity.userId !== expectedUserId) {
+      throw new OAuthIdentityError("OAuth account changed during mailbox verification");
+    }
+    const user = await markOAuthLogin(identity.userId, profile);
+    return { user, mode: "existing_identity" };
   }
 
   const existingUser = await getUserByNormalizedOAuthEmail(profile.email);
+  if (expectedUserId !== undefined && (existingUser?.id ?? null) !== expectedUserId) {
+    throw new OAuthIdentityError("OAuth account changed during mailbox verification");
+  }
   if (existingUser) {
-    // S5-SEC-2: a portal account made from a link that never reached the inbox was not proven by
-    // anyone. The provider-verified owner of the address takes it over; the earlier credential,
-    // bindings and sessions are dropped, never inherited.
-    if (profile.emailVerified && isUnverifiedPortalAccount(existingUser)) {
-      await reclaimUnverifiedPortalAccount(existingUser.id);
+    if (!hasOAuthMailboxProof(profile)) {
+      throw new OAuthIdentityError(
+        "A verified provider email is required to link an existing account"
+      );
     }
     await linkAuthIdentity(existingUser.id, profile);
-    await markOAuthLogin(existingUser.id, profile);
-    return {
-      user: (await storage.getUser(existingUser.id)) ?? existingUser,
-      mode: "linked_existing",
-    };
+    const user = await markOAuthLogin(existingUser.id, profile);
+    return { user, mode: "linked_existing" };
   }
 
   const createdUser = await createOAuthCustomer(req, profile, signupPlan);
   await linkAuthIdentity(createdUser.id, profile);
-  await markOAuthLogin(createdUser.id, profile);
-  return { user: (await storage.getUser(createdUser.id)) ?? createdUser, mode: "created_customer" };
+  const user = await markOAuthLogin(createdUser.id, profile);
+  return { user, mode: "created_customer" };
+}
+
+async function completeOAuthSignIn(
+  req: Request,
+  res: Response,
+  profile: OAuthIdentityProfile,
+  nextPath: string,
+  expectedUserId?: string | null
+): Promise<string> {
+  const { user, mode } = await resolveOAuthUser(
+    req,
+    profile,
+    parseSignupPlanFromPath(nextPath),
+    expectedUserId
+  );
+  if (await isMfaEnabled(user.id)) {
+    clearAuthCookies(res);
+    res.cookie(mfaPendingCookie(), generateMfaPendingToken(user), {
+      ...authCookieBaseOptions(),
+      maxAge: 5 * 60 * 1000,
+    });
+    return oauthCallbackMfaUrl(nextPath);
+  }
+  await issueAuthTokens(req, res, user);
+  await recordLoginSuccess(req, user, { method: "oauth", provider: profile.provider, mode });
+  log.info({ provider: profile.provider, userId: user.id, mode }, "OAuth login completed");
+  return oauthCallbackSuccessUrl(nextPath);
 }
 
 function callbackUrlFromRequest(req: Request, provider: "google" | "microsoft"): URL {
@@ -336,7 +385,7 @@ async function seedChartOfAccounts(
   }
 }
 
-/** Company + owner membership + chart of accounts + free plan for a new customer. */
+/** Company + owner membership + chart of accounts + trial state for a new customer. */
 async function provisionCustomerCompany(
   userId: string,
   companyName: string,
@@ -360,7 +409,7 @@ async function provisionCustomerCompany(
 }
 
 function isUniqueViolation(err: unknown): boolean {
-  return (err as { code?: string } | null)?.code === "23505";
+  return errorCode(err) === "23505" || errorCode(errorProperty(err, "cause")) === "23505";
 }
 
 // ─── Request schemas ──────────────────────────────────────────────────────
@@ -400,6 +449,7 @@ const mfaDisableSchema = z.object({
   code: mfaCodeSchema,
 });
 const verifyEmailSchema = z.object({ token: z.string().min(1).max(256) });
+const microsoftMailboxSchema = z.object({ code: z.string().regex(/^[0-9]{8}$/) });
 const loginHistoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
@@ -460,12 +510,12 @@ function retryAfterBody(message: string, code: string, retryAfterMs: number, mes
 export function registerAuthRoutes(app: Express): void {
   const router = Router();
 
-  // Per-app trackers (rebuilt with the app; in-memory per instance).
-  const loginLockout = new LockoutTracker(loginLockoutRules());
-  const changePasswordLockout = new LockoutTracker(loginLockoutRules());
-  const forgotPasswordBudget = new LockoutTracker(loginLockoutRules());
-  const resetPasswordLockout = new LockoutTracker(loginLockoutRules());
-  const mfaLockout = new LockoutTracker(loginLockoutRules());
+  // Separate credential budgets shared by all production app instances.
+  const loginLockout = buildLockoutTracker("login");
+  const changePasswordLockout = buildLockoutTracker("change-password");
+  const forgotPasswordBudget = buildLockoutTracker("email-links");
+  const resetPasswordLockout = buildLockoutTracker("reset-password");
+  const mfaLockout = buildLockoutTracker("mfa");
 
   /** Body of a successful sign-in (password, or password + second factor). */
   async function loginResponse(
@@ -567,11 +617,9 @@ export function registerAuthRoutes(app: Express): void {
       // Checked before the account lookup so the answer never depends on the email.
       if (await refuseBreachedPassword(res, body.password)) return;
       const existingUser = await storage.getUserByEmail(body.email);
-      // A placeholder, or an unverified portal account (S5-SEC-2), with no company is claimable.
-      const squatted = !!existingUser && isUnverifiedPortalAccount(existingUser);
       const claimable =
         !!existingUser &&
-        (isPlaceholderPasswordHash(existingUser.passwordHash) || squatted) &&
+        isPlaceholderPasswordHash(existingUser.passwordHash) &&
         (await storage.getCompaniesByUserId(existingUser.id)).length === 0;
 
       // Hash first in every branch so timing does not reveal the outcome.
@@ -596,9 +644,8 @@ export function registerAuthRoutes(app: Express): void {
       let user;
       try {
         if (claimable && existingUser) {
-          if (squatted) await reclaimUnverifiedPortalAccount(existingUser.id);
-          await storage.updateUserPassword(existingUser.id, passwordHash);
-          user = await storage.updateUser(existingUser.id, { name: body.name });
+          user = await storage.claimUncredentialedUser(existingUser, body.name, passwordHash);
+          if (!user) return res.json(genericRegisterBody());
         } else {
           user = await storage.createUser({
             name: body.name,
@@ -610,7 +657,9 @@ export function registerAuthRoutes(app: Express): void {
           } as Parameters<typeof storage.createUser>[0]);
         }
       } catch (err) {
-        if (isUniqueViolation(err)) return res.json(genericRegisterBody());
+        if (isUniqueViolation(err) || errorCode(err) === "PORTAL_INVITE_EMAIL_RESERVED") {
+          return res.json(genericRegisterBody());
+        }
         throw err;
       }
 
@@ -657,7 +706,7 @@ export function registerAuthRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const { email, password } = req.body as z.output<typeof loginBodySchema>;
       const key = credentialKey(req, email);
-      const lock = loginLockout.status(key);
+      const lock = await loginLockout.status(key);
       if (lock.locked) {
         res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
         return res
@@ -680,7 +729,7 @@ export function registerAuthRoutes(app: Express): void {
         : (await bcrypt.compare(password, DUMMY_HASH), false);
 
       if (!user || !isValid) {
-        const after = loginLockout.recordFailure(key);
+        const after = await loginLockout.recordFailure(key);
         if (user) {
           await auditSecurityEvent(req, "auth.login_failure", user.id, {
             reason: "invalid_password",
@@ -692,7 +741,7 @@ export function registerAuthRoutes(app: Express): void {
           .status(401)
           .json({ message: "Invalid credentials", code: "INVALID_CREDENTIALS" });
       }
-      loginLockout.reset(key);
+      await loginLockout.reset(key);
 
       // W5-E: MFA accounts get a short-lived pending token, never a session, until the
       // second factor is verified at /auth/mfa/verify-login.
@@ -725,7 +774,7 @@ export function registerAuthRoutes(app: Express): void {
         });
       }
       const key = `mfa|${pending.userId}`;
-      const lock = mfaLockout.status(key);
+      const lock = await mfaLockout.status(key);
       if (lock.locked) {
         res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
         return res
@@ -748,7 +797,7 @@ export function registerAuthRoutes(app: Express): void {
       }
       const verdict = await verifySecondFactor(user.id, code);
       if (!verdict.ok) {
-        const after = mfaLockout.recordFailure(key);
+        const after = await mfaLockout.recordFailure(key);
         await auditSecurityEvent(req, "auth.mfa_challenge_failed", user.id, {
           reason: verdict.code,
           failures: after.failures,
@@ -759,7 +808,7 @@ export function registerAuthRoutes(app: Express): void {
           code: verdict.code === "MFA_CODE_REUSED" ? "MFA_CODE_REUSED" : "MFA_CODE_INVALID",
         });
       }
-      mfaLockout.reset(key);
+      await mfaLockout.reset(key);
       await blacklistToken(mfaToken); // the pending token is single-use
       res.clearCookie(mfaPendingCookie(), authCookieBaseOptions());
       if (verdict.method === "recovery_code") {
@@ -799,6 +848,7 @@ export function registerAuthRoutes(app: Express): void {
   router.get(
     "/auth/oauth/:provider/start",
     asyncHandler(async (req: Request, res: Response) => {
+      res.set("Cache-Control", "no-store");
       const provider = req.params.provider;
       if (!isOAuthProviderId(provider)) {
         return res
@@ -808,11 +858,21 @@ export function registerAuthRoutes(app: Express): void {
 
       try {
         const redirectTo = await createOAuthAuthorizationUrl(provider, req, req.query.next);
+        if (provider === "microsoft") {
+          const state = redirectTo.searchParams.get("state");
+          if (!state) throw new OAuthIdentityError("Microsoft authorization state is missing");
+          res.clearCookie(microsoftCookie("mailbox"), authCookieBaseOptions());
+          res.cookie(microsoftCookie("state"), microsoftBrowserProof(state), {
+            ...authCookieBaseOptions(),
+            sameSite: "lax",
+            maxAge: OAUTH_STATE_TTL_MS,
+          });
+        }
         log.info({ provider, ip: req.ip }, "OAuth login started");
         return res.redirect(redirectTo.toString());
       } catch (err) {
         log.warn({ err, provider, ip: req.ip }, "OAuth login start failed");
-        return res.redirect(oauthCallbackFailureUrl());
+        return res.redirect(oauthCallbackFailureUrl(req.query.next));
       }
     })
   );
@@ -820,48 +880,92 @@ export function registerAuthRoutes(app: Express): void {
   router.get(
     "/auth/oauth/:provider/callback",
     asyncHandler(async (req: Request, res: Response) => {
+      res.set("Cache-Control", "no-store");
+      res.set("Referrer-Policy", "no-referrer");
       const provider = req.params.provider;
       if (!isOAuthProviderId(provider)) {
         return res.redirect(oauthCallbackFailureUrl());
       }
 
+      let nextPath: string | undefined;
       try {
+        if (provider === "microsoft") {
+          const browserState = readCookie(req, microsoftCookie("state"));
+          const state = req.query.state;
+          if (
+            typeof state !== "string" ||
+            !state ||
+            browserState !== microsoftBrowserProof(state)
+          ) {
+            throw new OAuthIdentityError("Microsoft authorization did not start in this browser");
+          }
+          res.clearCookie(microsoftCookie("state"), {
+            ...authCookieBaseOptions(),
+            sameSite: "lax",
+          });
+        }
         const state = await consumeOAuthState(provider, req.query.state);
+        nextPath = state.nextPath;
         const profile = await exchangeOAuthCallback(
           provider,
           callbackUrlFromRequest(req, provider),
           state
         );
-        const { user, mode } = await resolveOAuthUser(
-          req,
-          profile,
-          parseSignupPlanFromPath(state.nextPath)
-        );
-
-        // W5-E: social sign-in does not skip MFA. The pending token travels in a
-        // short-lived httpOnly cookie; the login page asks for the code.
-        if (await isMfaEnabled(user.id)) {
+        if (provider === "microsoft" && !profile.emailVerified) {
+          const secret = await startMicrosoftMailboxChallenge(profile, state.nextPath);
           clearAuthCookies(res);
-          res.cookie(mfaPendingCookie(), generateMfaPendingToken(user), {
+          res.cookie(microsoftCookie("mailbox"), secret, {
             ...authCookieBaseOptions(),
-            maxAge: 5 * 60 * 1000,
+            maxAge: OAUTH_MAILBOX_TTL_MS,
           });
-          return res.redirect(oauthCallbackFailureUrl().replace("oauth_error=1", "mfa=1"));
+          return res.redirect(`${frontendBaseUrl()}/login?microsoft_mailbox=1`);
         }
-
-        await issueAuthTokens(req, res, user);
-        await recordLoginSuccess(req, user, {
-          method: "oauth",
-          provider: profile.provider,
-          mode,
-        });
-        log.info({ provider, userId: user.id, mode }, "OAuth login completed");
-
-        return res.redirect(oauthCallbackSuccessUrl(state.nextPath));
+        return res.redirect(await completeOAuthSignIn(req, res, profile, state.nextPath));
       } catch (err) {
-        log.warn({ err, provider, ip: req.ip }, "OAuth login callback failed");
+        log.warn({ code: errorCode(err), provider, ip: req.ip }, "OAuth login callback failed");
         clearAuthCookies(res);
-        return res.redirect(oauthCallbackFailureUrl());
+        return res.redirect(oauthCallbackFailureUrl(nextPath));
+      }
+    })
+  );
+
+  router.post(
+    "/auth/oauth/microsoft/verify-mailbox",
+    strictBody(microsoftMailboxSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      res.set("Cache-Control", "no-store");
+      const { code } = parsedBody<z.output<typeof microsoftMailboxSchema>>(req);
+      const pending = await consumeMicrosoftMailboxChallenge(
+        readCookie(req, microsoftCookie("mailbox")),
+        code
+      );
+      if (!pending) {
+        return res.status(400).json({
+          code: "OAUTH_MAILBOX_CODE_INVALID",
+          message: "The Microsoft verification code is invalid or expired.",
+        });
+      }
+      res.clearCookie(microsoftCookie("mailbox"), authCookieBaseOptions());
+      try {
+        const redirectTo = await completeOAuthSignIn(
+          req,
+          res,
+          pending.profile,
+          pending.nextPath,
+          pending.expectedUserId
+        );
+        return res.json({ redirectTo });
+      } catch (err) {
+        // Log neither the submitted code nor browser secret.
+        log.warn(
+          { code: errorCode(err) },
+          "Microsoft sign-in could not complete after mailbox verification"
+        );
+        clearAuthCookies(res);
+        return res.status(403).json({
+          code: "OAUTH_MAILBOX_ACCOUNT_CHANGED",
+          message: "Microsoft sign-in could not be completed. Start again from the sign-in page.",
+        });
       }
     })
   );
@@ -990,8 +1094,8 @@ export function registerAuthRoutes(app: Express): void {
       const captcha = await verifyCaptcha(captchaToken, clientIp(req));
       if (!captcha.ok) return captchaFailure(res, captcha.reason);
       const key = credentialKey(req, email);
-      const budget = forgotPasswordBudget.status(key);
-      if (budget.locked) {
+      const budget = await forgotPasswordBudget.recordFailure(key);
+      if (budget.locked && !budget.lockedNow) {
         res.setHeader("Retry-After", String(Math.ceil(budget.retryAfterMs / 1000)));
         return res
           .status(429)
@@ -1004,7 +1108,6 @@ export function registerAuthRoutes(app: Express): void {
             )
           );
       }
-      forgotPasswordBudget.recordFailure(key);
 
       const user = await storage.getUserByEmail(email);
       // Platform-level (not per-account), so it is no enumeration oracle: with no email
@@ -1025,8 +1128,13 @@ export function registerAuthRoutes(app: Express): void {
       const tokenHash = hashResetToken(rawToken);
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-      await storage.deletePasswordResetTokensForUser(user.id);
-      await storage.createPasswordResetToken({ userId: user.id, tokenHash, expiresAt });
+      const issued = await storage.replacePasswordResetToken({
+        userId: user.id,
+        email: user.email,
+        tokenHash,
+        expiresAt,
+      });
+      if (!issued) return res.json(genericResponse);
       await auditSecurityEvent(req, "auth.password_reset_requested", user.id, {});
 
       const env = getEnv();
@@ -1067,7 +1175,7 @@ export function registerAuthRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const { token, password } = req.body as { token: string; password: string };
       const key = `reset|${clientIp(req)}`;
-      const lock = resetPasswordLockout.status(key);
+      const lock = await resetPasswordLockout.status(key);
       if (lock.locked) {
         res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
         return res
@@ -1086,19 +1194,22 @@ export function registerAuthRoutes(app: Express): void {
 
       const tokenHash = hashResetToken(token);
       const record = await storage.findValidPasswordResetToken(tokenHash);
+      const reset =
+        record &&
+        (await storage.resetPasswordWithToken(
+          record.userId,
+          tokenHash,
+          await bcrypt.hash(password, 10)
+        ));
 
-      if (!record) {
-        resetPasswordLockout.recordFailure(key);
+      if (!record || !reset) {
+        await resetPasswordLockout.recordFailure(key);
         return res.status(400).json({
           message: "This reset link is invalid or has expired. Please request a new one.",
           code: "RESET_TOKEN_INVALID",
         });
       }
 
-      const passwordHash = await bcrypt.hash(password, 10);
-      await storage.updateUserPassword(record.userId, passwordHash);
-      await storage.markPasswordResetTokenUsed(record.id);
-      await storage.deletePasswordResetTokensForUser(record.userId);
       // R01-06: every device signed in before the reset is signed out.
       await revokeAllUserTokens(record.userId);
       await auditSecurityEvent(req, "auth.password_reset", record.userId, {});
@@ -1124,7 +1235,7 @@ export function registerAuthRoutes(app: Express): void {
         typeof changePasswordBodySchema
       >;
       const key = `cp|${userId}`;
-      const lock = changePasswordLockout.status(key);
+      const lock = await changePasswordLockout.status(key);
       if (lock.locked) {
         res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
         return res
@@ -1144,7 +1255,7 @@ export function registerAuthRoutes(app: Express): void {
         !isPlaceholderPasswordHash(user.passwordHash) &&
         (await bcrypt.compare(currentPassword, user.passwordHash));
       if (!ok) {
-        changePasswordLockout.recordFailure(key);
+        await changePasswordLockout.recordFailure(key);
         return res
           .status(400)
           .json({ message: "Current password is incorrect", code: "CURRENT_PASSWORD_INVALID" });
@@ -1155,7 +1266,7 @@ export function registerAuthRoutes(app: Express): void {
           code: "PASSWORD_UNCHANGED",
         });
       }
-      changePasswordLockout.reset(key);
+      await changePasswordLockout.reset(key);
       if (await refuseBreachedPassword(res, newPassword)) return;
 
       await storage.updateUserPassword(userId, await bcrypt.hash(newPassword, 10));
@@ -1378,7 +1489,7 @@ export function registerAuthRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const { code } = req.body as z.output<typeof mfaCodeBodySchema>;
       const key = `mfa|${req.user!.id}`;
-      const lock = mfaLockout.status(key);
+      const lock = await mfaLockout.status(key);
       if (lock.locked) {
         res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
         return res
@@ -1394,7 +1505,7 @@ export function registerAuthRoutes(app: Express): void {
       }
       const verdict = await verifySecondFactor(req.user!.id, code);
       if (!verdict.ok) {
-        mfaLockout.recordFailure(key);
+        await mfaLockout.recordFailure(key);
         await auditSecurityEvent(req, "auth.mfa_challenge_failed", req.user!.id, {
           reason: verdict.code,
           stepUp: true,
@@ -1402,7 +1513,7 @@ export function registerAuthRoutes(app: Express): void {
         const status = verdict.code === "MFA_NOT_ENABLED" ? 409 : 400;
         return res.status(status).json({ message: "That code is not valid", code: verdict.code });
       }
-      mfaLockout.reset(key);
+      await mfaLockout.reset(key);
       const user = (await storage.getUser(req.user!.id))!;
       const token = refreshAccessWithMfa(req, res, user);
       await auditSecurityEvent(req, "mfa.step_up", user.id, { method: verdict.method });
@@ -1437,8 +1548,8 @@ export function registerAuthRoutes(app: Express): void {
       if (!user) return res.status(401).json({ message: "User not found", code: "USER_NOT_FOUND" });
       if (user.emailVerified) return res.json({ verified: true, sent: false });
       const key = `verify|${user.id}`;
-      const budget = forgotPasswordBudget.status(key);
-      if (budget.locked) {
+      const budget = await forgotPasswordBudget.recordFailure(key);
+      if (budget.locked && !budget.lockedNow) {
         res.setHeader("Retry-After", String(Math.ceil(budget.retryAfterMs / 1000)));
         return res
           .status(429)
@@ -1451,7 +1562,6 @@ export function registerAuthRoutes(app: Express): void {
             )
           );
       }
-      forgotPasswordBudget.recordFailure(key);
       const mail = await sendVerificationEmail(user);
       await auditSecurityEvent(req, "auth.email_verification_sent", user.id, {
         status: mail.status,

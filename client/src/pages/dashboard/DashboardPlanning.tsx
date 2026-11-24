@@ -55,7 +55,7 @@ function FilingRow({
       <div className="min-w-0">
         <Link
           href={href}
-          className="text-small font-medium text-foreground hover:underline"
+          className="inline-flex min-h-11 items-center text-small font-medium text-foreground hover:underline md:min-h-0"
           title={linkLabel}
         >
           {label}

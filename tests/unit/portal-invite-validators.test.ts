@@ -13,10 +13,10 @@ import { routeWritesAreGated } from "../../client/src/lib/plan-routes";
 const UUID = "11111111-1111-4111-8111-111111111111";
 
 describe("STEP5 portal invitation validators", () => {
-  it("invite body: language defaults to en, email is normalised, the note is capped", () => {
+  it("invite body: missing language is resolved by the sender, email is normalised, and the note is capped", () => {
     const ok = portalInviteBody.parse({ email: "  Layla@Example.TEST " });
     expect(ok.email).toBe("layla@example.test");
-    expect(ok.language).toBe("en");
+    expect(ok.language).toBeUndefined();
     expect(
       portalInviteBody.safeParse({ message: "x".repeat(PORTAL_INVITE_MESSAGE_MAX + 1) }).success
     ).toBe(false);
@@ -35,9 +35,16 @@ describe("STEP5 portal invitation validators", () => {
     expect(portalBulkInviteBody.safeParse({ contactIds: ["nope"] }).success).toBe(false);
   });
 
-  it("accept body: the terms must be accepted (true), nothing else is required", () => {
-    expect(portalAcceptBody.safeParse({ acceptTerms: true }).success).toBe(true);
-    expect(portalAcceptBody.safeParse({ acceptTerms: false }).success).toBe(false);
+  it("requires the token, invited email and accepted terms", () => {
+    const credentials = { token: "a".repeat(64), email: "contact@example.test" };
+    expect(portalAcceptBody.safeParse({ ...credentials, acceptTerms: true }).success).toBe(true);
+    expect(portalAcceptBody.safeParse({ ...credentials, acceptTerms: false }).success).toBe(false);
+    expect(
+      portalAcceptBody.safeParse({ token: credentials.token, acceptTerms: true }).success
+    ).toBe(false);
+    expect(
+      portalAcceptBody.safeParse({ email: credentials.email, acceptTerms: true }).success
+    ).toBe(false);
     expect(portalAcceptBody.safeParse({}).success).toBe(false);
   });
 

@@ -1,6 +1,7 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Building2, Check, Languages, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,8 +9,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ChangePasswordCard } from "@/pages/security/ChangePasswordCard";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSessionActions } from "@/hooks/useSessionActions";
-import { apiRequest } from "@/lib/queryClient";
-import { getSelectedPortalAccount, setSelectedPortalAccount } from "@/lib/auth";
+import { apiRequest, portalQuery } from "@/lib/queryClient";
+import { setSelectedPortalAccount } from "@/lib/portal-state";
 import { useI18n, useTranslation } from "@/lib/i18n";
 
 interface PortalAccountRow {
@@ -23,20 +24,17 @@ interface PortalAccountRow {
  * suppliers whose portals they can open. Sign-out here clears the server session.
  */
 export default function PortalAccount() {
+  const selected = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
   const [, navigate] = useLocation();
-  const queryClient = useQueryClient();
   const { signOut } = useSessionActions();
   const { data: user } = useCurrentUser();
   const [busy, setBusy] = useState(false);
   const { data: accounts = [] } = useQuery<PortalAccountRow[]>({
-    queryKey: ["portal-accounts"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/accounts"),
+    ...portalQuery("/api/client-portal/accounts", selected),
     staleTime: 5 * 60 * 1000,
   });
-  const selected = getSelectedPortalAccount();
-  const current = accounts.find((a) => a.id === selected) ?? accounts[0];
 
   const signOutEverywhere = async () => {
     setBusy(true);
@@ -59,16 +57,18 @@ export default function PortalAccount() {
         </CardHeader>
         <CardContent className="space-y-4">
           <dl className="grid gap-3 sm:grid-cols-2">
-            <div>
+            <div className="min-w-0">
               <dt className="text-caption text-muted-foreground">{t["portal.join.nameLabel"]}</dt>
-              <dd className="mt-0.5 text-small font-medium" dir="auto">
-                {user?.name ?? "—"}
+              <dd className="mt-0.5 text-small font-medium [overflow-wrap:anywhere]">
+                <bdi translate="no">{user?.name ?? "—"}</bdi>
               </dd>
             </div>
-            <div>
+            <div className="min-w-0">
               <dt className="text-caption text-muted-foreground">{t["portal.email"]}</dt>
-              <dd className="mt-0.5 break-all text-small font-medium" dir="ltr">
-                {user?.email ?? "—"}
+              <dd className="mt-0.5 text-small font-medium [overflow-wrap:anywhere]">
+                <bdi dir="ltr" translate="no">
+                  {user?.email ?? "—"}
+                </bdi>
               </dd>
             </div>
           </dl>
@@ -116,15 +116,27 @@ export default function PortalAccount() {
                     <Building2 className="h-4 w-4" aria-hidden />
                   </span>
                   <span className="min-w-0">
-                    <span className="block truncate text-small font-medium" dir="auto">
+                    <span
+                      className="block truncate text-small font-medium"
+                      dir="auto"
+                      translate="no"
+                      title={a.company.name}
+                    >
                       {a.company.name}
                     </span>
-                    <span className="block truncate text-caption text-muted-foreground" dir="auto">
+                    <span
+                      className="block truncate text-caption text-muted-foreground"
+                      dir="auto"
+                      translate="no"
+                      title={
+                        locale === "ar" && a.customer.nameAr ? a.customer.nameAr : a.customer.name
+                      }
+                    >
                       {locale === "ar" && a.customer.nameAr ? a.customer.nameAr : a.customer.name}
                     </span>
                   </span>
                 </span>
-                {a.id === current?.id ? (
+                {a.id === selected ? (
                   <span className="flex shrink-0 items-center gap-1 text-caption font-medium text-success">
                     <Check className="h-4 w-4" aria-hidden />
                     {t["portal.account.current"]}
@@ -136,9 +148,6 @@ export default function PortalAccount() {
                     className="min-h-11"
                     onClick={() => {
                       setSelectedPortalAccount(a.id);
-                      queryClient.removeQueries({
-                        predicate: (q) => String(q.queryKey[0]).startsWith("portal-"),
-                      });
                       navigate("/client-portal/dashboard");
                     }}
                   >
@@ -164,7 +173,7 @@ export default function PortalAccount() {
             onClick={() => void signOutEverywhere()}
             data-testid="portal-sign-out-all"
           >
-            <LogOut className="me-2 h-4 w-4 rtl:-scale-x-100" aria-hidden />
+            <LogOut className="h-4 w-4" aria-hidden />
             {t["portal.account.signOutAll"]}
           </Button>
         </CardContent>

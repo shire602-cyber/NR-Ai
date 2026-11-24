@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { landingPathFor, skipsOnboardingRedirect } from "../../client/src/lib/app-landing";
+import {
+  landingPathFor,
+  onboardingRedirectTarget,
+  skipsOnboardingRedirect,
+  type OnboardingRedirectState,
+} from "../../client/src/lib/app-landing";
 
 describe("STEP1 F7: default landing page after sign-in", () => {
   it("customers land on the dashboard", () => {
@@ -32,5 +37,40 @@ describe("STEP1 F11: onboarding redirect exemptions (item 10)", () => {
     for (const p of ["/dashboard", "/invoices", "/administration", "/firmware", "/reports"]) {
       expect(skipsOnboardingRedirect(p), p).toBe(false);
     }
+  });
+});
+
+describe("firm audit defect 3: Open books never lands in an onboarding wizard", () => {
+  const base: OnboardingRedirectState = {
+    pathname: "/dashboard",
+    companyLoading: false,
+    isFirmContext: false,
+    switchingClient: false,
+    companiesFetching: false,
+    hasNoCompanies: false,
+    company: { onboardingCompleted: false },
+    canRunOnboarding: true,
+  };
+  it("sends a staffer whose own company is not onboarded to the wizard on ordinary pages", () => {
+    expect(onboardingRedirectTarget(base)).toBe("/onboarding");
+  });
+  it("keeps owners in established books even if onboarding was never marked complete", () => {
+    expect(
+      onboardingRedirectTarget({
+        ...base,
+        company: { onboardingCompleted: false, hasPostedDocuments: true },
+      })
+    ).toBeNull();
+  });
+  it("stays on the client's books while the switch is in flight (own company still active)", () => {
+    expect(onboardingRedirectTarget({ ...base, switchingClient: true })).toBeNull();
+  });
+  it("stays on the client's books once the client company is active", () => {
+    expect(onboardingRedirectTarget({ ...base, isFirmContext: true })).toBeNull();
+  });
+  it("waits for company refetches and never leaves the wizard or NR console", () => {
+    expect(onboardingRedirectTarget({ ...base, companiesFetching: true })).toBeNull();
+    expect(onboardingRedirectTarget({ ...base, pathname: "/firm/clients" })).toBeNull();
+    expect(onboardingRedirectTarget({ ...base, canRunOnboarding: false })).toBeNull();
   });
 });

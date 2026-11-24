@@ -20,34 +20,53 @@ describe("X6d Ties to GL badge rule", () => {
 
 describe("X6d compliance tracks (shared by status view and list pills)", () => {
   const base = {
-    invoiceDate: new Date("2026-03-01T00:00:00Z"),
     invoiceStatus: "sent",
     legacyStatus: "not_generated",
     doc: null,
+    obligation: { required: true, known: true, reportBy: "2026-03-15" },
   };
   it("gives a report-by date and marks it overdue once past", () => {
-    const early = deriveInvoiceTracks({ ...base, required: true, now: new Date("2026-03-05") });
+    const early = deriveInvoiceTracks({ ...base, now: new Date("2026-03-05") });
     expect(early.reportBy).toBe("2026-03-15");
     expect(early.overdue).toBe(false);
     expect(early.reporting).toBe("pending");
-    const late = deriveInvoiceTracks({ ...base, required: true, now: new Date("2026-04-01") });
+    const late = deriveInvoiceTracks({ ...base, now: new Date("2026-04-01") });
     expect(late.overdue).toBe(true);
   });
   it("has no deadline for a draft or an unreported-not-required invoice", () => {
-    expect(
-      deriveInvoiceTracks({ ...base, invoiceStatus: "draft", required: true }).reportBy
-    ).toBeNull();
-    const none = deriveInvoiceTracks({ ...base, required: false });
+    expect(deriveInvoiceTracks({ ...base, invoiceStatus: "draft" }).reportBy).toBeNull();
+    const none = deriveInvoiceTracks({
+      ...base,
+      obligation: { required: false, known: true, reportBy: null },
+    });
     expect(none.reportBy).toBeNull();
     expect(none.reporting).toBe("not_required");
   });
-  it("prefers the stored document tracks", () => {
+  it("shows delivered only when the stored track includes a recipient receipt", () => {
     const t = deriveInvoiceTracks({
       ...base,
-      required: true,
-      doc: { deliveryStatus: "delivered", reportingStatus: "reported", reportBy: "2026-03-10" },
+      doc: {
+        provider: "complyance",
+        providerMessageId: "provider-document",
+        providerStatus: "delivery_success",
+        deliveryStatus: "delivered",
+        reportingStatus: "reported",
+        validation: { submission: { reportingEvidence: { reported: "2026-03-04T09:00:00Z" } } },
+      },
     });
     expect(t).toMatchObject({ delivery: "delivered", reporting: "reported", overdue: false });
+    const missingReference = deriveInvoiceTracks({
+      ...base,
+      doc: {
+        provider: "complyance",
+        providerStatus: "delivery_success",
+        deliveryStatus: "delivered",
+      },
+    });
+    expect(missingReference).toMatchObject({
+      delivery: "queued",
+      deliveryConfirmationUnavailable: true,
+    });
   });
 });
 

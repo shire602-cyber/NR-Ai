@@ -31,6 +31,7 @@ import type { QueryResultRow } from "pg";
 
 export type VatFrequency = "monthly" | "quarterly";
 export type VatPeriodStatus = "draft" | "ready" | "submitted" | "accepted";
+type VatPeriodDisplayStatus = "draft" | "ready" | "filed" | "paid";
 
 export interface VatPeriod {
   start: Date;
@@ -136,7 +137,7 @@ export interface VatPeriodSummary {
   periodEnd: string;
   dueDate: string;
   frequency: VatFrequency;
-  status: VatPeriodStatus;
+  status: VatPeriodDisplayStatus;
   outputVat: number;
   inputVat: number;
   netVatPayable: number;
@@ -152,7 +153,7 @@ export interface DueDateView {
   trnVatNumber: string | null;
   periodEnd: Date;
   dueDate: Date;
-  status: VatPeriodStatus;
+  status: VatPeriodDisplayStatus;
   daysUntilDue: number;
   level: DeadlineStatus["level"];
   lifecycle: ReturnLifecycle | null;
@@ -185,8 +186,8 @@ export async function loadReturnLifecycle(
   // period_end is stored as the period's last instant in UTC (vat-returns.service toEndTs), so
   // the calendar date is its UTC date part (as in compliance-obligations.service).
   const r = await pool.query(
-    `SELECT id, company_id, (period_end::date)::text AS period_end, status, payment_status,
-            payment_date, box12_total_due_tax::numeric AS output_vat,
+    `SELECT id, company_id, (period_end::date)::text AS period_end, status, payment_status, fta_reference_number,
+            payment_date::date::text AS payment_date, box12_total_due_tax::numeric AS output_vat,
             box13_recoverable_tax::numeric AS input_vat,
             box14_payable_tax::numeric AS net_vat
        FROM vat_returns
@@ -199,14 +200,20 @@ export async function loadReturnLifecycle(
     const byEnd = out.get(cid) ?? new Map<string, ReturnLifecycle>();
     out.set(cid, byEnd);
     const status = String(row.status);
-    const filed = isFiledReturnStatus(status);
+    const filed = isFiledReturnStatus(status, row.fta_reference_number as string | null);
     const paid = filed && row.payment_status === "paid";
     const entry: ReturnLifecycle = {
       returnId: String(row.id),
       returnStatus: status,
-      stage: paid ? "paid" : filed ? "filed" : status === "ready" ? "ready" : "draft",
+      stage: paid
+        ? "paid"
+        : filed
+          ? "filed"
+          : ["ready", "submitted", "filed", "paid", "accepted"].includes(status)
+            ? "ready"
+            : "draft",
       filed,
-      paymentDate: row.payment_date ? new Date(row.payment_date as string).toISOString() : null,
+      paymentDate: row.payment_date as string | null,
       outputVat: Number(row.output_vat) || 0,
       inputVat: Number(row.input_vat) || 0,
       netVatPayable: Number(row.net_vat) || 0,
@@ -234,10 +241,10 @@ function lifecycleDeadline(dueDate: Date, now: Date, lifecycle: ReturnLifecycle 
 function lifecycleStatus(
   stored: VatPeriodStatus | undefined,
   lifecycle: ReturnLifecycle | null
-): VatPeriodStatus {
-  if (lifecycle?.filed) return lifecycle.stage === "paid" ? "accepted" : "submitted";
-  if (lifecycle?.stage === "ready" && (!stored || stored === "draft")) return "ready";
-  return stored || "draft";
+): VatPeriodDisplayStatus {
+  if (lifecycle?.filed) return lifecycle.stage === "paid" ? "paid" : "filed";
+  if (lifecycle?.stage === "ready" || (stored && stored !== "draft")) return "ready";
+  return "draft";
 }
 
 // ─── Pure helpers (testable without a DB) ────────────────────────────────────

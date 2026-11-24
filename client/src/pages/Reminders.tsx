@@ -2,6 +2,7 @@ import { useMemo, useState, type ChangeEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Bell, Mail, MailCheck, MessageSquare, Plus } from "lucide-react";
 import type { ReminderLog, ReminderSetting } from "@shared/schema";
+import type { ReminderLanguage } from "@shared/validators/reminders";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -83,8 +84,42 @@ const BLANK_RULE = {
   sendInApp: true,
   emailSubject: "",
   emailTemplate: "",
-  language: "bilingual" as "en" | "ar" | "bilingual",
+  language: "contact" as ReminderLanguage,
 };
+
+function ReminderLanguageSelect({
+  id,
+  value,
+  onChange,
+  disabled,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: ReminderLanguage) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{t["invoices.reminders.emailLanguage"]}</Label>
+      <Select
+        value={value}
+        onValueChange={(language) => onChange(language as ReminderLanguage)}
+        disabled={disabled}
+      >
+        <SelectTrigger id={id} data-testid={id}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="contact">{t["invoices.reminders.langContact"]}</SelectItem>
+          <SelectItem value="bilingual">{t["invoices.reminders.langBoth"]}</SelectItem>
+          <SelectItem value="en">{t["invoices.reminders.langEn"]}</SelectItem>
+          <SelectItem value="ar">{t["invoices.reminders.langAr"]}</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
 
 export function AutomaticEmailRules({ companyId }: { companyId?: string }) {
   const { t } = useTranslation();
@@ -125,10 +160,16 @@ export function AutomaticEmailRules({ companyId }: { companyId?: string }) {
   const updateRule = useMutation({
     mutationFn: ({ id, ...data }: { id: string } & Partial<ReminderSetting>) =>
       apiRequest("PATCH", `/api/reminder-settings/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: settingsKey(companyId) });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: settingsKey(companyId) });
       toast({ title: t["pages.remindersUpdated"] });
     },
+    onError: (error: Error) =>
+      toast({
+        title: translateNow("toasts.error"),
+        description: error.message,
+        variant: "destructive",
+      }),
   });
 
   return (
@@ -174,7 +215,7 @@ export function AutomaticEmailRules({ companyId }: { companyId?: string }) {
             {settings.map((rule) => (
               <li
                 key={rule.id}
-                className="flex items-center justify-between gap-4 px-4 py-3"
+                className="flex flex-wrap items-center justify-between gap-4 px-4 py-3"
                 data-testid={`card-setting-${rule.id}`}
               >
                 <div className="min-w-0">
@@ -198,14 +239,22 @@ export function AutomaticEmailRules({ companyId }: { companyId?: string }) {
                     })}
                   </p>
                 </div>
-                <Switch
-                  checked={rule.isEnabled}
-                  onCheckedChange={(checked) =>
-                    updateRule.mutate({ id: rule.id, isEnabled: checked })
-                  }
-                  aria-label={tt[`invoices.reminders.type.${rule.reminderType}`]}
-                  data-testid={`switch-enable-${rule.id}`}
-                />
+                <div className="flex flex-wrap items-end gap-4">
+                  <ReminderLanguageSelect
+                    id={`select-reminder-language-${rule.id}`}
+                    value={rule.language}
+                    disabled={updateRule.isPending && updateRule.variables?.id === rule.id}
+                    onChange={(language) => updateRule.mutate({ id: rule.id, language })}
+                  />
+                  <Switch
+                    checked={rule.isEnabled}
+                    onCheckedChange={(checked) =>
+                      updateRule.mutate({ id: rule.id, isEnabled: checked })
+                    }
+                    aria-label={tt[`invoices.reminders.type.${rule.reminderType}`]}
+                    data-testid={`switch-enable-${rule.id}`}
+                  />
+                </div>
               </li>
             ))}
           </ul>
@@ -347,24 +396,11 @@ function CreateRuleDialog({
               ))}
             </div>
           </fieldset>
-          <div className="space-y-1.5">
-            <Label>{tt["invoices.reminders.emailLanguage"]}</Label>
-            <Select
-              value={rule.language}
-              onValueChange={(value) =>
-                setRule({ ...rule, language: value as typeof BLANK_RULE.language })
-              }
-            >
-              <SelectTrigger data-testid="select-reminder-language">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="bilingual">{tt["invoices.reminders.langBoth"]}</SelectItem>
-                <SelectItem value="en">{tt["invoices.reminders.langEn"]}</SelectItem>
-                <SelectItem value="ar">{tt["invoices.reminders.langAr"]}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <ReminderLanguageSelect
+            id="select-reminder-language"
+            value={rule.language}
+            onChange={(language) => setRule({ ...rule, language })}
+          />
           <div className="space-y-1.5">
             <Label id="rule-subject-label">{tt["invoices.reminders.optionalSubject"]}</Label>
             <TokenEditor

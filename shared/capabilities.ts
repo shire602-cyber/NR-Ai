@@ -24,9 +24,6 @@ export type CapabilityId =
   | "ai"
   | "stripe_billing"
   | "invoice_payments"
-  | "bank_feed_lean"
-  | "bank_feed_tarabut"
-  | "bank_feed_wio"
   | "einvoicing_asp"
   | "shopify"
   | "stripe_payouts"
@@ -49,7 +46,7 @@ export interface Capability {
   id: CapabilityId;
   status: CapabilityStatus;
   label: LocalizedText;
-  /** What must happen externally for the capability to be live. */
+  /** Setup instructions or the available workflow. */
   externalAction: LocalizedText;
   /** Env vars that configure it (names only, never values). */
   envVars: readonly string[];
@@ -166,54 +163,6 @@ const DEFS: readonly CapabilityDef[] = [
       if (!set(env, "STRIPE_SECRET_KEY") || !flag(env, "INVOICE_PAYMENTS_ENABLED")) return null;
       return (env.STRIPE_SECRET_KEY ?? "").startsWith("sk_live_") ? "live" : "sandbox";
     },
-  },
-  {
-    id: "bank_feed_lean",
-    label: { en: "Bank feeds via Lean", ar: "الربط البنكي عبر Lean" },
-    externalAction: {
-      en: "Sign a Lean Technologies contract and obtain a production app token.",
-      ar: "وقّع عقداً مع Lean Technologies واحصل على رمز تطبيق إنتاجي.",
-    },
-    envVars: ["LEAN_APP_TOKEN", "LEAN_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      set(env, "LEAN_APP_TOKEN")
-        ? looksSandbox(env.LEAN_API_BASE_URL) || !set(env, "LEAN_API_BASE_URL")
-          ? "sandbox"
-          : "live"
-        : null,
-  },
-  {
-    id: "bank_feed_tarabut",
-    label: { en: "Bank feeds via Tarabut", ar: "الربط البنكي عبر Tarabut" },
-    externalAction: {
-      en: "Sign a Tarabut Gateway contract and obtain production client credentials.",
-      ar: "وقّع عقداً مع Tarabut Gateway واحصل على بيانات اعتماد إنتاجية.",
-    },
-    envVars: ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET", "TARABUT_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      all(env, ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET"])
-        ? looksSandbox(env.TARABUT_API_BASE_URL) || !set(env, "TARABUT_API_BASE_URL")
-          ? "sandbox"
-          : "live"
-        : null,
-  },
-  {
-    id: "bank_feed_wio",
-    label: { en: "Wio Bank feed", ar: "الربط مع بنك Wio" },
-    externalAction: {
-      en: "Register with Wio Business open-banking and obtain production client credentials.",
-      ar: "سجّل في الخدمات المصرفية المفتوحة لدى Wio Business واحصل على بيانات اعتماد إنتاجية.",
-    },
-    envVars: ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET", "WIO_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      all(env, ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET"])
-        ? looksSandbox(env.WIO_API_BASE_URL) || !set(env, "WIO_API_BASE_URL")
-          ? "sandbox"
-          : "live"
-        : null,
   },
   {
     id: "einvoicing_asp",
@@ -349,7 +298,7 @@ const DEFS: readonly CapabilityDef[] = [
       ar: "اضبط FX_RATE_FEED (cbuae أو ecb أو كلاهما) وروابط المزود (FX_RATE_FEED_CBUAE_URL و FX_RATE_FEED_ECB_URL) المتفق عليها مع مزود الأسعار.",
     },
     envVars: ["FX_RATE_FEED", "FX_RATE_FEED_CBUAE_URL", "FX_RATE_FEED_ECB_URL", "FX_RATE_API_KEY"],
-    // W5-C (R14-14): the adapters exist; a live feed needs the provider arrangement.
+    // W5-C (R14-14): adapter status depends on provider configuration.
     whenUnconfigured: "requires_external",
     detect: (env) => (set(env, "FX_RATE_FEED") ? "live" : null),
   },

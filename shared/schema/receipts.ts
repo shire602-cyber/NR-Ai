@@ -10,6 +10,7 @@ import {
   text,
   timestamp,
   uuid,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import type { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -31,12 +32,15 @@ export const receipts = pgTable(
       .notNull()
       .references(() => companies.id, { onDelete: "cascade" }),
     merchant: text("merchant"),
+    invoiceNumber: text("invoice_number"),
     date: timestamp("date"),
     amount: money("amount"),
     vatAmount: money("vat_amount"),
     currency: text("currency").default("AED"),
-    exchangeRate: rate("exchange_rate").notNull().default(1), // Rate to AED at time of transaction
-    baseCurrencyAmount: money("base_currency_amount").notNull().default(0), // Amount in AED
+    exchangeRateSource: text("exchange_rate_source"),
+    captureId: uuid("capture_id"),
+    exchangeRate: rate("exchange_rate").notNull().default(1), // Rate to functional currency at posting
+    baseCurrencyAmount: money("base_currency_amount").notNull().default(0), // Amount in functional currency
     category: text("category"),
     accountId: uuid("account_id").references(() => accounts.id), // Expense account to debit
     paymentAccountId: uuid("payment_account_id").references(() => accounts.id), // Cash/Bank account to credit
@@ -73,6 +77,10 @@ export const receipts = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
+    companyCaptureIdx: uniqueIndex("uniq_receipts_company_capture").on(
+      table.companyId,
+      table.captureId
+    ),
     companyIdIdx: index("idx_receipts_company_id").on(table.companyId),
     companyDateIdx: index("idx_receipts_company_date").on(table.companyId, table.date),
     companyPostedIdx: index("idx_receipts_company_posted").on(table.companyId, table.posted),

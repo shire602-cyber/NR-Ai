@@ -1,4 +1,5 @@
 {
+  "statements.overdrawnCashAccounts": "Overdrawn cash and bank accounts are shown as current liabilities.",
   "statements.outOfBalance": "This statement does not balance: difference {amount}. Review one-sided or unposted entries before relying on it.",
   "statements.balanced": "Balanced",
   "statements.notBalanced": "Not balanced",

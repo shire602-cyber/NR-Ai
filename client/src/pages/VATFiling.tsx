@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -31,6 +32,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
+import { effectiveCompanyId } from "@/lib/activeCompany";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { isVatRegistered } from "@shared/vat-registration";
@@ -212,6 +214,11 @@ const DEFAULT_VAT_DATA = {
 type VatWorksheetData = typeof DEFAULT_VAT_DATA;
 
 export default function VATFiling() {
+  const workspace = useDefaultCompany();
+  return <CompanyVatFiling key={workspace.companyId} workspace={workspace} />;
+}
+
+function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefaultCompany> }) {
   const search = useSearch();
   const [, navigate] = useLocation();
   const tabParam = new URLSearchParams(search).get("tab");
@@ -223,7 +230,7 @@ export default function VATFiling() {
   const { t, locale } = useTranslation();
   const dfOpts = dateFnsOptions(locale);
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId, companies, isLoading: isLoadingCompany } = workspace;
   const { gate } = useCompanyPermission();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -234,12 +241,22 @@ export default function VATFiling() {
   const [notes, setNotes] = useState("");
   const [vatFormData, setVatFormData] = useState<VatWorksheetData>(DEFAULT_VAT_DATA);
 
-  const { data: company } = useQuery<Company>({
+  const {
+    data: company,
+    isLoading: companyProfileLoading,
+    error: companyError,
+    refetch: refetchCompany,
+  } = useQuery<Company>({
     queryKey: ["/api/companies", companyId],
     enabled: !!companyId,
   });
 
-  const { data: vatReturns, isLoading: isLoadingReturns } = useQuery<VATReturn[]>({
+  const {
+    data: vatReturns,
+    isLoading: isLoadingReturns,
+    error: returnsError,
+    refetch: refetchReturns,
+  } = useQuery<VATReturn[]>({
     queryKey: ["/api/companies", companyId, "vat-returns"],
     enabled: !!companyId,
   });
@@ -316,8 +333,7 @@ export default function VATFiling() {
       pending: vatReturns.filter((r) => r.status === "draft" || r.status === "pending_review")
         .length,
       submitted: vatReturns.filter((r) => r.status === "submitted").length,
-      // E2: "Filed" counts every return filed on EmaraTax (submitted or filed, paid or not).
-      filed: vatReturns.filter((r) => r.status === "filed" || r.status === "submitted").length,
+      filed: vatReturns.filter((r) => r.status !== "amended" && vatChecklist(r).filed).length,
       totalPayable: vatReturns.reduce((sum, r) => sum + (r.box14PayableTax || 0), 0),
     };
   }, [vatReturns]);
@@ -419,8 +435,8 @@ export default function VATFiling() {
       case "submitted":
         return (
           <Badge variant="default" className="bg-info-subtle text-info-subtle-foreground">
-            <Send className="w-3 h-3 me-1" />
-            <T k="pages.submitted" />
+            <Clock className="w-3 h-3 me-1" />
+            {t["compliance.vatFlow.statusReady"]}
           </Badge>
         );
       case "filed":
@@ -559,7 +575,7 @@ export default function VATFiling() {
   };
 
   const handleSaveReturn = () => {
-    if (!selectedReturn) return;
+    if (!selectedReturn || effectiveCompanyId(companies, companyId) !== companyId) return;
     // W4-E: boxes come from the VAT engine; only descriptive fields are editable. Corrections
     // go through return adjustments (tourist refunds, corrections) so they are audited.
     updateMutation.mutate({
@@ -569,7 +585,7 @@ export default function VATFiling() {
   };
 
   const handleSubmitReturn = () => {
-    if (!selectedReturn) return;
+    if (!selectedReturn || effectiveCompanyId(companies, companyId) !== companyId) return;
     submitMutation.mutate({ id: selectedReturn.id });
   };
 
@@ -873,7 +889,7 @@ export default function VATFiling() {
     }
   };
 
-  if (isLoadingCompany) {
+  if (isLoadingCompany || companyProfileLoading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
@@ -887,9 +903,47 @@ export default function VATFiling() {
     );
   }
 
+  const workbookDetails = selectedReturn &&
+    company && {
+      companyInfo: {
+        nameEn: company.legalName || company.name,
+        nameAr: company.nameAr || undefined,
+        trnNumber: company.trnVatNumber || undefined,
+        address:
+          companyAddressLine(company, (code) => {
+            const key = `pageLabels.companySettings.country.${code.toUpperCase()}`;
+            return t[key] && t[key] !== key ? t[key] : code;
+          }) ||
+          company.address ||
+          undefined,
+        phone: company.contactPhone || company.phone || undefined,
+      },
+      periodInfo: {
+        periodStart: formatDisplayDate(selectedReturn.periodStart, locale),
+        periodEnd: formatDisplayDate(selectedReturn.periodEnd, locale),
+        dueDate: formatDisplayDate(selectedReturn.dueDate, locale),
+        taxYearEnd: selectedReturn.taxYearEnd
+          ? formatDisplayDate(selectedReturn.taxYearEnd, locale)
+          : undefined,
+        vatStagger: vatStaggerLabel(
+          selectedReturn.vatStagger || company.vatFilingFrequency || "Quarterly",
+          company.vatPeriodStartMonth,
+          (m) => format(new Date(2000, m - 1, 1), "MMM", dfOpts),
+          (frequency, months) => {
+            if (months.length) {
+              return formatMessage(t["compliance.vatWorkbookQuarterlyStagger"], {
+                months: months.join(locale === "ar" ? "، " : ", "),
+              });
+            }
+            return /^month/i.test(frequency) ? t["onboarding.v3Monthly"] : frequency;
+          }
+        ),
+      },
+    };
+
   // Spec 3.12 (WP-D): editing a return is a full-page VAT 201 workbook, not a dialog, so the
   // boxes have room on mobile. Same form, same handlers; Cancel returns to the list.
-  if (editDialogOpen && selectedReturn && company) {
+  if (editDialogOpen && selectedReturn && workbookDetails) {
     return (
       <div className="space-y-6 pb-24" data-testid="vat201-workbook-page">
         <PageHeader
@@ -906,36 +960,18 @@ export default function VATFiling() {
         <VAT201Form
           data={vatFormData}
           onChange={setVatFormData}
-          companyInfo={{
-            nameEn: company.legalName || company.name,
-            nameAr: company.nameAr || undefined,
-            trnNumber: company.trnVatNumber || undefined,
-            address: companyAddressLine(company) || company.address || undefined,
-            phone: company.contactPhone || company.phone || undefined,
-          }}
-          periodInfo={{
-            periodStart: formatDisplayDate(selectedReturn.periodStart, locale),
-            periodEnd: formatDisplayDate(selectedReturn.periodEnd, locale),
-            dueDate: formatDisplayDate(selectedReturn.dueDate, locale),
-            taxYearEnd: selectedReturn.taxYearEnd
-              ? formatDisplayDate(selectedReturn.taxYearEnd, locale)
-              : undefined,
-            vatStagger: vatStaggerLabel(
-              selectedReturn.vatStagger || company.vatFilingFrequency || "Quarterly",
-              company.vatPeriodStartMonth,
-              (m) => format(new Date(2000, m - 1, 1), "MMM", dfOpts)
-            ),
-          }}
+          {...workbookDetails}
           readOnly={true}
           summaryOffsetClassName="bottom-[4.5rem]"
         />
         <section className="max-w-[760px] space-y-2">
-          <Label htmlFor="vat-return-notes">{locale === "ar" ? "ملاحظات" : "Notes"}</Label>
+          <Label htmlFor="vat-return-notes">{t["pages.notes"]}</Label>
           <Textarea
             id="vat-return-notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder={locale === "ar" ? "أضف ملاحظات..." : "Add notes..."}
+            placeholder={t["compliance.vatWorkbookNotesPlaceholder"]}
+            dir="auto"
             className="min-h-20"
           />
         </section>
@@ -961,6 +997,24 @@ export default function VATFiling() {
             {t["compliance.vatFilingSubmitForFiling"]}
           </Button>
         </div>
+      </div>
+    );
+  }
+
+  if ((companyError && !company) || (returnsError && !vatReturns)) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Compliance"
+          title={locale === "ar" ? "إقرار ضريبة القيمة المضافة 201" : "UAE VAT 201 return"}
+          description={t["pageLabels.vat201Workflow"]}
+        />
+        <ErrorState
+          onRetry={() => {
+            if (companyError) void refetchCompany();
+            if (returnsError) void refetchReturns();
+          }}
+        />
       </div>
     );
   }
@@ -996,11 +1050,7 @@ export default function VATFiling() {
       <PageHeader
         eyebrow={locale === "ar" ? "الامتثال الضريبي" : "Compliance"}
         title={locale === "ar" ? "إقرار ضريبة القيمة المضافة 201" : "UAE VAT 201 return"}
-        description={
-          locale === "ar"
-            ? "إعداد أرقام VAT 201 ومراجعتها وتصديرها لاستخدامها في قناة التقديم الرسمية"
-            : "Prepare VAT 201 totals, review the worksheet evidence, and export filing support for the official channel."
-        }
+        description={t["pageLabels.vat201Workflow"]}
         backHref="/reports"
         backLabel={t["compliance.vatFilingBackToReports"]}
         actions={
@@ -1193,8 +1243,7 @@ export default function VATFiling() {
             </p>
             {(() => {
               const d = currentFiling.daysUntilDue;
-              const filed =
-                currentFiling.status === "filed" || currentFiling.status === "submitted";
+              const filed = vatChecklist(currentFiling.return).filed;
               const tone = filed ? "success" : d < 0 ? "danger" : d <= 7 ? "warning" : "neutral";
               const label = filed
                 ? locale === "ar"
@@ -1690,30 +1739,11 @@ export default function VATFiling() {
               )}
             </DialogDescription>
           </DialogHeader>
-          {selectedReturn && company && (
+          {workbookDetails && (
             <VAT201Form
               data={vatFormData}
               onChange={() => {}}
-              companyInfo={{
-                nameEn: company.legalName || company.name,
-                nameAr: company.nameAr || undefined,
-                trnNumber: company.trnVatNumber || undefined,
-                address: companyAddressLine(company) || company.address || undefined,
-                phone: company.contactPhone || company.phone || undefined,
-              }}
-              periodInfo={{
-                periodStart: formatDisplayDate(selectedReturn.periodStart, locale),
-                periodEnd: formatDisplayDate(selectedReturn.periodEnd, locale),
-                dueDate: formatDisplayDate(selectedReturn.dueDate, locale),
-                taxYearEnd: selectedReturn.taxYearEnd
-                  ? formatDisplayDate(selectedReturn.taxYearEnd, locale)
-                  : undefined,
-                vatStagger: vatStaggerLabel(
-                  selectedReturn.vatStagger || company.vatFilingFrequency || "Quarterly",
-                  company.vatPeriodStartMonth,
-                  (m) => format(new Date(2000, m - 1, 1), "MMM", dfOpts)
-                ),
-              }}
+              {...workbookDetails}
               readOnly={true}
             />
           )}

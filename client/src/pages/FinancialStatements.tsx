@@ -85,6 +85,7 @@ interface ProfitLossData {
 }
 
 interface BalanceSheetData {
+  warnings?: Array<{ code: string }>;
   asOfDate: string;
   assets: {
     total: number;
@@ -561,6 +562,14 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
 
       {data && (
         <>
+          {data.warnings?.some((warning) => warning.code === "OVERDRAWN_CASH_ACCOUNTS") && (
+            <p
+              role="status"
+              className="rounded-md bg-warning-subtle p-3 text-small text-warning-subtle-foreground"
+            >
+              <T k="statements.overdrawnCashAccounts" />
+            </p>
+          )}
           {/* Balance Check */}
           <div className="flex items-center gap-2">
             {data.isBalanced ? (

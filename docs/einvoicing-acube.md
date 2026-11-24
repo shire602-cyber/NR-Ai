@@ -10,24 +10,23 @@ against doc-derived fixtures and must be confirmed in the A-Cube sandbox (see th
 
 ## Configuration
 
-`EINVOICE_PROVIDER=acube` with `ACUBE_EMAIL` / `ACUBE_PASSWORD` (secret store only), `ACUBE_ENV`
-(`sandbox` default, `production`), `ACUBE_WEBHOOK_BASE_URL` (public https base), optional
-`ACUBE_WEBHOOK_TOKEN`. All variables are listed in `.env.example`. Without them every transmission
-call keeps answering 503 `EINVOICE_PROVIDER_NOT_CONFIGURED`, the invoice panel says "Generated and
-validated — not sent", and the settings card says A-Cube is not connected.
+Select A-Cube in the company's settings and provision its encrypted login bundle. `ACUBE_ENV`
+defaults to `sandbox`. Set `ACUBE_WEBHOOK_BASE_URL` for the callback URL shown in settings. The
+company configuration check shows `not_configured` when the local credential bundle is missing.
+[Company e-invoicing configuration](einvoicing-company-runtime.md)
 
 ## Adapter (`server/services/einvoice/providers/acube.ts`)
 
 | Need                 | Implementation                                                                                                                                                                                       |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Auth                 | `POST common.api.acubeapi.com/login {email,password,environment}` → JWT (24 h); cached, refreshed 1 h before `exp`; a 401 triggers one fresh login and one retry; credentials are never logged       |
-| Submit               | raw XML, `Content-Type: application/xml`; invoices `ACUBE_INVOICE_SUBMIT_PATH` (default `/invoices/outgoing`), credit notes (381) `ACUBE_CREDIT_NOTE_SUBMIT_PATH` (default `/credit-notes/outgoing`) |
+| Submit               | Raw XML with `Content-Type: application/xml`. Invoices use `ACUBE_INVOICE_SUBMIT_PATH` (default `/invoices`). Credit note codes 81, 261 and 381 use `ACUBE_CREDIT_NOTE_SUBMIT_PATH` (default `/credit-notes`). The response `uuid` identifies the document for status and source lookups. |
 | Errors               | 422 `violations[]` → rejection reasons (field = `propertyPath`, rule = `code`); 400/404 → rejected; 5xx/408/429/transport → retryable                                                                |
-| Status               | `GET /{invoices\|credit-notes}/{id}`; both status vocabularies mapped (`tracks.ts`); unknown → `delivery_failed`, never success                                                                      |
-| FTA reporting        | `GET /{kind}/{id}/tdd`: 200 = reported, 204/404 = pending                                                                                                                                            |
-| Inbound              | `GET /{kind}?direction=incoming` then `/{kind}/{id}/source` → `processInboundEInvoice` → draft bill (`origin = einvoice`)                                                                            |
-| Legal entities       | `POST /legal-entities {tin}` (reserve), `GET /legal-entities/{id}`                                                                                                                                   |
-| Webhook destinations | `POST /event-destinations` per event (`invoice.outbound`, `invoice.inbound`, `credit_note.*`, `legal_entity.synchronized`)                                                                           |
+| Status               | `GET /{invoices\|credit-notes}/{id}` distinguishes Peppol handover, recipient receipt and the final Message Level Status (MLS) decision. |
+| FTA reporting        | Required reports remain pending. `GET /{kind}/{id}/tdd` documents retrieval of the tax-data file. Confirmation requires a separate FTA acknowledgment. |
+| Inbound              | Page through both incoming collections, then fetch `/{kind}/{id}/source` using the document's collection and preserve the original UTF-8 XML before importing a draft bill. |
+| Legal entities       | `POST /legal-entities {tin}` reserves the TIN. The response `uuid` identifies the entity in `GET /legal-entities/{uuid}`.                                                                                |
+| Webhook destinations | Page through `GET /event-destinations`. Create missing event targets with `POST /event-destinations`. Update authentication for a matching target with `PUT /event-destinations/{uuid}`. |
 | Cancel               | none: `capabilities.cancel = false`; a sent invoice is corrected with a credit note                                                                                                                  |
 
 ## Two-track status
@@ -35,15 +34,17 @@ validated — not sent", and the settings card says A-Cube is not connected.
 `einvoice_documents` (migration 0116) carries `delivery_status` (draft, validated, queued, sending,
 delivered, delivery_failed, rejected) and `reporting_status` (not_required, pending, reported,
 report_failed) with their timestamps, `report_by`, `provider_status`, `last_error_code` and the
-full history in `einvoice_document_events`. The legacy single `einvoice_status` is derived with
-`legacyFromTracks` (delivered + pending → `accepted`; delivered + reported → `cleared`).
+full history in `einvoice_document_events`. A-Cube reports `processed` at Peppol handover and
+`delivered` when the recipient's provider confirms receipt. Both stages remain in flight. The
+recipient's MLS yields `accepted` or `rejected` and can arrive before the receipt notification.
+[A-Cube invoice lifecycle](https://docs.acubeapi.com/documentation/gov-ae/documents/lifecycle)
 
 - Reporting is required for B2B/B2G invoices (buyer TRN present) unless the company scope is
   `none`; B2C invoices are `not_required`.
 - **Report-by date** = invoice date + `EINVOICE_REPORT_WINDOW_DAYS` (default 14). ASSUMPTION: the
   14-day window must be confirmed against the FTA's published procedure before it is relied on.
-- A provider-reported delivery failure is shown, not auto-retried (it needs a corrected document
-  or buyer address); only transport failures before hand-over are retried with backoff.
+- A-Cube retries its `sending_failed` and `delivery_failed` attempts. The app keeps polling the
+  existing document. An uncertain submission is reconciled using the original source XML.
 
 ## Onboarding and gating
 
@@ -67,23 +68,30 @@ not the linked TIN (422 `EINVOICE_SUPPLIER_ENDPOINT_MISMATCH`). Tested in
 
 ## Webhooks and idempotency
 
-`POST /api/webhooks/einvoice/acube/:environment` (raw body; CSRF-exempt):
+`POST /api/webhooks/einvoice/acube/:environment/:companyId` accepts the raw, signed request:
 
-1. optional token header (`ACUBE_WEBHOOK_TOKEN`, header `ACUBE_WEBHOOK_TOKEN_HEADER`);
+1. Optional company webhook token in the `ACUBE_WEBHOOK_TOKEN_HEADER` header.
 2. RFC 9421 HTTP Message Signature, Ed25519, keyid `acube`, covering `@method @authority
 @target-uri date content-digest`; `content-digest` is checked against the raw body; the public key
    comes from `common.api.acubeapi.com/signature-public-key` (cached 6 h, re-fetched once on a bad
    signature) or `ACUBE_SIGNATURE_PUBLIC_KEY`; `created` must be within 12 h (A-Cube retries ~10 h);
-3. the event is stored in `einvoice_provider_events` (unique per provider event id; document events
-   are keyed `doc:<id>:<status>`) and answered 200 at once; the `einvoice.providerEvents` job
+3. The event is stored in `einvoice_provider_events`, deduplicated per company and environment, and
+   answered 200 at once. The `einvoice.providerEvents` job
    (every minute, lease + backoff, dead after 10 attempts) processes it, re-reading the resource
    from A-Cube rather than trusting the payload.
 
-Submissions are idempotent: the invoice's e-invoice UUID is kept across regenerations, a
-submission is claimed (`submit_claimed_at`, 2-minute lease) and the invoice re-read under the
-claim, and after an ambiguous transport failure the outgoing list is searched for the invoice
-number before posting again. `einvoice.acubePoll` (every 10 minutes) refreshes in-flight documents
-and enqueues incoming ones with the same keys as the webhooks.
+Registering destinations with `POST /api/companies/:companyId/einvoicing/acube/webhooks` uses the
+credentials for that company and environment. The registrations belong to the A-Cube credential
+account. Use a company-dedicated account because the A-Cube API does not provide a taxpayer filter
+for destinations. The settings page shows the URL computed from the configured public HTTPS origin.
+[A-Cube UAE OpenAPI](https://docs.acubeapi.com/openapi/gov-ae-api.json)
+
+The worker claims the durable queue with a five-minute lease and sends the stored, validated XML.
+After a lost response, it searches numbered pages of the outgoing collection and compares the
+complete original UTF-8 source, including any BOM or trailing whitespace. Unresolved deliveries
+require reconciliation after the retry budget expires. The `einvoice.acubePoll` job refreshes
+in-flight documents and enqueues incoming ones every ten minutes.
+[A-Cube document pagination](https://docs.acubeapi.com/documentation/gov-ae/documents/search-for-documents)
 
 ## Mandate timeline shown in product
 
@@ -96,10 +104,10 @@ copy is changed. The UI labels the dates with their source and points to mof.gov
 
 ## To verify against the live A-Cube sandbox
 
-1. Submit path `/invoices/outgoing` vs `/invoices`; whether POST selects the legal entity from the
-   supplier EndpointID; whether our PINT AE fixtures pass A-Cube's validation unchanged.
+1. Confirm that `POST /invoices` and `POST /credit-notes` select the legal entity from the supplier
+   EndpointID and accept our PINT AE fixtures. [A-Cube UAE OpenAPI](https://docs.acubeapi.com/openapi/gov-ae-api.json)
 2. Real 422 body and status words; whether a re-post with the same UUID is refused.
-3. TDD semantics (built vs accepted by the FTA) and the MLS rejection flow → `report_failed`.
+3. The separate FTA acknowledgment and rejection events for the reporting track.
 4. Webhook event names actually delivered (`document.*` vs `invoice.outbound` etc.), the
    delivery-error payload, retry re-signing, the public-key format, and `@target-uri` behind our
    proxy (set `ACUBE_WEBHOOK_BASE_URL`).

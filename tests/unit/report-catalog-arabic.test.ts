@@ -38,7 +38,7 @@ const overlay = JSON.parse(
 const ARABIC = /[؀-ۿ]/;
 // Latin words allowed inside Arabic overlay values (brands, formats, codes).
 const ALLOWED_LATIN =
-  /^(?:PDF|Excel|Google|Sheets|VAT|WPS|SIF|AED|FX|NBV|OCR|UTC|CTA|KPI|API|A\/R|A\/P|P&L|DSO|DPO|Roll-up)$/;
+  /^(?:PDF|CSV|Excel|Google|Sheets|VAT|WPS|SIF|AED|FX|NBV|OCR|UTC|CTA|KPI|API|A\/R|A\/P|P&L|DSO|DPO|Roll-up)$/;
 
 function sourceFile(rel: string): string {
   return readFileSync(join(process.cwd(), rel), "utf8");
@@ -219,6 +219,16 @@ describe("F14 report catalog Arabic overlay", () => {
       if (words?.length) stray.push(`${key}: ${words.join(" ")}`);
     }
     expect(stray).toEqual([]);
+  });
+
+  it("guides cash-control setup through CSV reconciliation in both locales", () => {
+    const starter = catalog.reportAutomationStarters.find(
+      (s) => s.id === "owner-cash-control-autopilot"
+    );
+    expect(starter?.setupSteps[0]).toBe("Review invoices and upload a CSV bank statement");
+    expect(overlay["reportCatalog.starter.owner-cash-control-autopilot.setupSteps.0"]).toBe(
+      "راجع الفواتير وارفع كشف حساب بنكي بصيغة CSV"
+    );
   });
 
   it("[F14] the same English text never maps to two different Arabic strings", () => {

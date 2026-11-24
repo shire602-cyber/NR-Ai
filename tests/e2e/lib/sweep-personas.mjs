@@ -22,11 +22,12 @@ import { spawnSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readPortalInviteMail } from "./portal-invite-mail.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ARTIFACT_DIR = path.join(__dirname, "..", ".artifacts");
 const CACHE = path.join(ARTIFACT_DIR, "sweep-personas.json");
-export const PASSWORD = "SweepPass123!";
+export const PASSWORD = "Fake-Sweep-Password-123";
 
 export function assertLocal(base) {
   if (!/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(base)) {
@@ -323,19 +324,20 @@ export async function setupPersonas(base, { log = console.log } = {}) {
         name,
         language: "ar",
       });
-      if (res.status !== 201 || !res.body?.inviteUrl) {
-        throw new Error(`portal invite ${email}: ${res.status} ${JSON.stringify(res.body)}`);
+      if (res.status !== 201) {
+        throw new Error(`portal invite ${email}: ${res.status}`);
       }
-      return /#t=([0-9a-f]{64})/.exec(res.body.inviteUrl)[1];
+      return (await readPortalInviteMail(res.body.invitation.id)).token;
     };
     const inviteToken = await send(portalEmail, "بوابة التجربة");
     // A fresh cookie jar, like the customer's own browser.
-    const accept = await apiClient(BASE_OF.get(api))(
-      "",
-      "POST",
-      `/api/portal-invitations/${inviteToken}/accept`,
-      { name: "بوابة التجربة", password: PASSWORD, acceptTerms: true }
-    );
+    const accept = await apiClient(BASE_OF.get(api))("", "POST", "/api/portal-invitations/accept", {
+      token: inviteToken,
+      email: portalEmail,
+      name: "بوابة التجربة",
+      password: PASSWORD,
+      acceptTerms: true,
+    });
     if (accept.status >= 300) {
       throw new Error(`portal accept: ${accept.status} ${JSON.stringify(accept.body)}`);
     }

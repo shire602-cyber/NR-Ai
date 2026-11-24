@@ -9,6 +9,7 @@ import { formatMessage, useTranslation } from "@/lib/i18n";
 export type FirmEInvoicingState =
   | "connected"
   | "self_confirmed"
+  | "approver_done"
   | "awaiting_approval"
   | "appoint_partner"
   | "partner_not_chosen"
@@ -23,6 +24,7 @@ export interface FirmEInvoicingValue {
 const TONE: Record<FirmEInvoicingState, StatusTone> = {
   connected: "success",
   self_confirmed: "warning",
+  approver_done: "info",
   awaiting_approval: "info",
   appoint_partner: "accent",
   partner_not_chosen: "neutral",
@@ -34,8 +36,8 @@ export function FirmEInvoicingCell({ value }: { value: FirmEInvoicingValue | nul
   if (!value) return <span className="text-muted-foreground">—</span>;
   const label =
     value.state === "identity_missing"
-      ? formatMessage(t["einvoicing.firmState.identity_missing"], { count: value.missing })
-      : t[`einvoicing.firmState.${value.state}`];
+      ? formatMessage(t["firm.einvoicingState.identity_missing"], { count: value.missing })
+      : t[`firm.einvoicingState.${value.state}`];
   return (
     <StatusBadge tone={TONE[value.state]} data-testid={`firm-einvoicing-${value.state}`}>
       {label}

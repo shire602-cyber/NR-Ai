@@ -13,7 +13,7 @@ import {
   type JournalEntry,
   type JournalLine,
 } from "@shared/schema";
-import { db } from "../db";
+import { db, type AppDatabase } from "../db";
 import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
 import { createJournalEntryCompat } from "../ledger/legacy";
 import { previewEntryNumber } from "../ledger/numbering";
@@ -99,31 +99,31 @@ export class LedgerStorage extends ReportDeliveryStorage {
       .where(and(eq(accounts.companyId, companyId), eq(accounts.isVatAccount, true)));
   }
 
-  async createBulkAccounts(accountsData: InsertAccount[]): Promise<Account[]> {
+  async createBulkAccounts(
+    accountsData: InsertAccount[],
+    tx?: Pick<AppDatabase, "insert">
+  ): Promise<Account[]> {
     if (accountsData.length === 0) return [];
-
+    if (!tx) return db.transaction((conn) => this.createBulkAccounts(accountsData, conn));
     const expectedCount = accountsData.length;
-    const createdAccounts = await db.transaction(async (tx) => {
-      const inserted = await tx
-        .insert(accounts)
-        .values(accountsData)
-        .onConflictDoNothing()
-        .returning();
-
-      if (inserted.length < expectedCount) {
-        throw new Error(
-          `PARTIAL_INSERT: Only ${inserted.length}/${expectedCount} accounts were created. Some accounts already exist.`
-        );
-      }
-
-      return inserted;
-    });
-
-    return createdAccounts;
+    const inserted = await tx
+      .insert(accounts)
+      .values(accountsData)
+      .onConflictDoNothing()
+      .returning();
+    if (inserted.length < expectedCount) {
+      throw new Error(
+        `PARTIAL_INSERT: Only ${inserted.length}/${expectedCount} accounts were created. Some accounts already exist.`
+      );
+    }
+    return inserted;
   }
 
-  async companyHasAccounts(companyId: string): Promise<boolean> {
-    const existingAccounts = await db
+  async companyHasAccounts(
+    companyId: string,
+    conn: Pick<AppDatabase, "select"> = db
+  ): Promise<boolean> {
+    const existingAccounts = await conn
       .select({ id: accounts.id })
       .from(accounts)
       .where(eq(accounts.companyId, companyId))

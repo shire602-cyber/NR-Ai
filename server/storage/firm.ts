@@ -301,6 +301,22 @@ export class FirmStorage extends ComplianceStorage {
     return subscription || undefined;
   }
 
+  async getSubscriptionByStripeIds(
+    subscriptionId: string,
+    customerId: string
+  ): Promise<Subscription | undefined> {
+    const [subscription] = await db
+      .select()
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.stripeSubscriptionId, subscriptionId),
+          eq(subscriptions.stripeCustomerId, customerId)
+        )
+      );
+    return subscription;
+  }
+
   async createSubscription(insertSubscription: InsertSubscription): Promise<Subscription> {
     const [subscription] = await db.insert(subscriptions).values(insertSubscription).returning();
     return subscription;
@@ -313,6 +329,24 @@ export class FirmStorage extends ComplianceStorage {
       .where(eq(subscriptions.id, id))
       .returning();
     return subscription;
+  }
+
+  async applyStripeCheckout(
+    subscription: Subscription,
+    data: Partial<InsertSubscription>
+  ): Promise<boolean> {
+    const [updated] = await db
+      .update(subscriptions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(
+        and(
+          eq(subscriptions.id, subscription.id),
+          isNull(subscriptions.stripeSubscriptionId),
+          eq(subscriptions.stripeCheckoutCompleted, subscription.stripeCheckoutCompleted)
+        )
+      )
+      .returning({ id: subscriptions.id });
+    return Boolean(updated);
   }
 
   // Backups

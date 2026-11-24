@@ -1,3 +1,4 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
 import { useState } from "react";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { T } from "@/components/layout/T";
@@ -10,7 +11,8 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, portalQuery } from "@/lib/queryClient";
+import { portalRequestHeaders } from "@/lib/portal-state";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/format-date";
 
@@ -30,6 +32,7 @@ function formatStamp(value: string, locale: string): string {
  * bottom of the thread.
  */
 export default function PortalMessages() {
+  const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -37,12 +40,12 @@ export default function PortalMessages() {
   const [content, setContent] = useState("");
 
   const { data: messages = [], isLoading } = useQuery<any[]>({
-    queryKey: ["portal-messages"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/messages"),
+    ...portalQuery("/api/client-portal/messages", supplier),
   });
 
   const sendMutation = useMutation({
-    mutationFn: (payload: any) => apiRequest("POST", "/api/client-portal/messages", payload),
+    mutationFn: (payload: { subject: string | null; content: string }) =>
+      apiRequest("POST", "/api/client-portal/messages", payload, portalRequestHeaders(supplier)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-messages"] });
       setSubject("");
@@ -84,6 +87,7 @@ export default function PortalMessages() {
             </div>
           ) : thread.length === 0 ? (
             <EmptyState
+              headingLevel="h2"
               icon={MessageSquare}
               title={t["portal.doc.noMessagesTitle"]}
               description={t["portal.doc.noMessagesBody"]}
@@ -123,6 +127,7 @@ export default function PortalMessages() {
             }}
           >
             <Input
+              className="h-11 md:h-9"
               aria-label={t["portal.doc.messageSubject"]}
               placeholder={t["portal.doc.messageSubject"]}
               value={subject}

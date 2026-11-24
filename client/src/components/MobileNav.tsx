@@ -1,5 +1,4 @@
 import { useLocation } from "wouter";
-import { motion } from "framer-motion";
 import {
   LayoutDashboard,
   FileText,
@@ -178,24 +177,12 @@ export function MobileNav() {
     <>
       {/* More menu overlay */}
       {moreOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="mobile-nav-overlay"
-          onClick={() => setMoreOpen(false)}
-        />
+        <div className="mobile-nav-overlay shell-fade-in" onClick={() => setMoreOpen(false)} />
       )}
 
       {/* More menu sheet */}
       {moreOpen && (
-        <motion.div
-          initial={{ y: "100%" }}
-          animate={{ y: 0 }}
-          exit={{ y: "100%" }}
-          transition={{ type: "spring", damping: 30, stiffness: 400 }}
-          className="mobile-nav-more-sheet"
-        >
+        <div className="mobile-nav-more-sheet shell-sheet-up">
           <div className="mobile-nav-more-handle" />
           <nav aria-label={t["shell.moreSectionWorkspace"]} data-testid="mobile-more-nav">
             {sections.map((section) => (
@@ -258,7 +245,7 @@ export function MobileNav() {
               </li>
             </ul>
           </div>
-        </motion.div>
+        </div>
       )}
 
       {/* Bottom tab bar */}

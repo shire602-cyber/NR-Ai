@@ -23,6 +23,10 @@ import { canAccessNraCenter } from "@shared/access";
 import { useTranslation } from "@/lib/i18n";
 import { NewCompanyDialog } from "@/components/NewCompanyDialog";
 import { canCreateCompany } from "@/lib/company-create";
+import { matchesSearchText } from "@shared/arabic-text";
+
+/** Above this many companies the switcher gets a type-ahead and a link to the full client list. */
+const SWITCHER_SEARCH_THRESHOLD = 8;
 
 /**
  * Switch which company the rest of the UI is scoped to. Hidden when the
@@ -34,9 +38,11 @@ import { canCreateCompany } from "@/lib/company-create";
  */
 export function CompanySwitcher({
   variant = "sidebar",
+  allowCreate = true,
 }: {
   /** sidebar: full-width outline button. compact: the mobile top-bar company name button. */
   variant?: "sidebar" | "compact";
+  allowCreate?: boolean;
 } = {}) {
   const { toast } = useToast();
   const { t } = useTranslation();
@@ -51,8 +57,9 @@ export function CompanySwitcher({
   const canReturnToFirm = canAccessNraCenter(currentUser);
   // Broken-path sweep: a customer (owner) can add another company from here; the plan's company
   // cap is enforced by the server and explained by the PlanLimitDialog.
-  const canCreate = canCreateCompany(currentUser);
+  const canCreate = allowCreate && canCreateCompany(currentUser);
   const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState("");
 
   // Render when there's something to switch between, OR when an NRA-eligible
   // user is inside a client file and needs a way back to the firm workspace.
@@ -122,6 +129,8 @@ export function CompanySwitcher({
       });
     }
   };
+
+  const visibleCompanies = companies.filter((c) => matchesSearchText(query, c.name));
 
   const compact = variant === "compact";
   const trigger = compact ? (
@@ -204,8 +213,28 @@ export function CompanySwitcher({
             </>
           )}
           <DropdownMenuLabel>{t["components.switcherSwitchCompany"]}</DropdownMenuLabel>
+          {companies.length > SWITCHER_SEARCH_THRESHOLD && (
+            <div className="px-2 pb-2">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                // Keep typing in the box: the menu would otherwise treat letters as typeahead.
+                onKeyDown={(e) => e.stopPropagation()}
+                placeholder={t["firm.switcherSearch"]}
+                aria-label={t["firm.switcherSearch"]}
+                data-testid="company-switcher-search"
+                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm max-md:h-11"
+              />
+            </div>
+          )}
           <DropdownMenuSeparator />
-          {companies.map((c) => (
+          {visibleCompanies.length === 0 && (
+            <p className="px-2 py-3 text-center text-sm text-muted-foreground">
+              {t["firm.switcherNoMatch"]}
+            </p>
+          )}
+          {visibleCompanies.map((c) => (
             <DropdownMenuItem
               key={c.id}
               onSelect={() => void handleSelect(c.id)}
@@ -218,6 +247,16 @@ export function CompanySwitcher({
               {c.id === active.id && <Check className="w-3.5 h-3.5 text-primary" />}
             </DropdownMenuItem>
           ))}
+          {canReturnToFirm && companies.length > SWITCHER_SEARCH_THRESHOLD && (
+            <DropdownMenuItem
+              onSelect={() => navigate("/firm/clients")}
+              className="flex items-center gap-2"
+              data-testid="company-switcher-all-clients"
+            >
+              <Briefcase className="w-3.5 h-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <span>{t["firm.switcherAllClients"]}</span>
+            </DropdownMenuItem>
+          )}
           {canCreate && (
             <>
               <DropdownMenuSeparator />

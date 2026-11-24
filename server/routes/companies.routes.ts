@@ -1,8 +1,9 @@
-import type { Express, NextFunction, Request, Response } from "express";
+import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { checkCompanyQuota } from "../middleware/featureGate";
+import { billingEnforced, checkCompanyQuota } from "../middleware/featureGate";
+import { bypassesTrialLock, companyTrialLocked } from "../middleware/trialAccessPolicy";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { assertUaeVatRate } from "../http/vat-rate-guard";
@@ -20,7 +21,9 @@ import { deleteReceiptImage, readReceiptImage, saveReceiptFile } from "../servic
 import { z } from "zod";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
-import { ensureCriticalSchema } from "../db";
+import { db, ensureCriticalSchema } from "../db";
+import { and, eq, exists, inArray } from "drizzle-orm";
+import { companies as companyTable, journalEntries } from "../../shared/schema";
 import { withNrClientVatGroup } from "../services/firm-clients.service";
 
 const log = createLogger("companies");
@@ -197,6 +200,12 @@ export function registerCompanyRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = req.user!;
+      // A client_portal user sees its supplier only through /api/client-portal/company. The app
+      // shell still lists companies on every page, so answer that with nothing instead of a 403
+      // (no failed call, and no supplier company row leaks to the customer).
+      if (req.user!.userType === "client_portal" && !req.user!.isAdmin) {
+        return res.json([]);
+      }
       const companies = await storage.getAccessibleCompanies(
         userId,
         firmRole,
@@ -205,11 +214,55 @@ export function registerCompanyRoutes(app: Express) {
       // myRole lets the client keep owner-only flows (the setup wizard) away from
       // invited members. Firm-accessible client companies have no direct membership.
       const roles = await storage.getCompanyRolesByUserId(userId);
-      res.json(
-        companies.map((company) => ({
-          ...withNrClientVatGroup(company),
-          myRole: roles[company.id] ?? null,
-        }))
+      const pendingOwnerCompanies = companies
+        .filter(({ id, onboardingCompleted }) => roles[id] === "owner" && !onboardingCompleted)
+        .map(({ id }) => id);
+      const postedDocuments =
+        pendingOwnerCompanies.length === 0
+          ? []
+          : await db
+              .select({ companyId: companyTable.id })
+              .from(companyTable)
+              .where(
+                and(
+                  inArray(companyTable.id, pendingOwnerCompanies),
+                  exists(
+                    db
+                      .select({ id: journalEntries.id })
+                      .from(journalEntries)
+                      .where(
+                        and(
+                          eq(journalEntries.companyId, companyTable.id),
+                          eq(journalEntries.status, "posted"),
+                          inArray(journalEntries.source, ["invoice", "receipt", "bill"])
+                        )
+                      )
+                  )
+                )
+              );
+      const bookedCompanyIds = new Set(postedDocuments.map(({ companyId }) => companyId));
+      const enforceTrialLock = billingEnforced() && !bypassesTrialLock(req.user!);
+      res.set("Cache-Control", "private, no-store").json(
+        await Promise.all(
+          companies.map(async (company) => {
+            const myRole = roles[company.id] ?? null;
+            if (enforceTrialLock && (await companyTrialLocked(company.id))) {
+              // The company switcher and billing need identity and role, but no business data.
+              return {
+                id: company.id,
+                name: company.name,
+                companyType: company.companyType,
+                onboardingCompleted: company.onboardingCompleted,
+                myRole,
+              };
+            }
+            return {
+              ...withNrClientVatGroup(company),
+              myRole,
+              hasPostedDocuments: bookedCompanyIds.has(company.id),
+            };
+          })
+        )
       );
     })
   );
@@ -217,17 +270,7 @@ export function registerCompanyRoutes(app: Express) {
   app.post(
     "/api/companies",
     authMiddleware,
-    // S5-SEC-5: a customer-portal account is not a SaaS customer; it cannot own a company.
-    (req: Request, res: Response, next: NextFunction) => {
-      if (req.user?.userType === "client_portal") {
-        return res.status(403).json({
-          message: "Customer portal accounts cannot use the company app",
-          code: "PORTAL_USER_APP_DENIED",
-        });
-      }
-      next();
-    },
-    // H8: the free tier's caps (1 user, 20 invoices/month) were bypassable by
+    // H8: the old plan caps were bypassable by
     // simply creating another company. maxCompanies is now actually enforced.
     checkCompanyQuota(),
     strictBody(createCompanyBody),

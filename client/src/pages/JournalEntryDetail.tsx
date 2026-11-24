@@ -34,6 +34,8 @@ import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { classifyLoadError } from "@/lib/loadError";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
 import { Money, MoneyCell } from "@/components/ui/money";
@@ -100,6 +102,7 @@ export default function JournalEntryDetail() {
     data: entry,
     isLoading,
     error,
+    refetch,
   } = useQuery<JournalEntry>({
     queryKey: [`/api/journal/${id}`],
     enabled: !!id,
@@ -252,11 +255,35 @@ export default function JournalEntryDetail() {
     );
   }
 
+  // A failed load (server error, offline) must not read as "not found": it can be retried.
+  if (error && classifyLoadError(error) !== "notFound") {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          backHref="/journal"
+          backLabel={t["pageLabels.viewAllEntries"]}
+          title={t["firm.loadFailedTitle"]}
+        />
+        <LoadErrorState
+          error={error}
+          onRetry={() => void refetch()}
+          testId="journal-entry-load-error"
+        />
+      </div>
+    );
+  }
+
   if (error || !entry) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Button asChild variant="ghost" size="icon" data-testid="button-back-to-journal">
+          <Button
+            asChild
+            variant="ghost"
+            size="icon"
+            aria-label={t["pageLabels.returnToJournal"]}
+            data-testid="button-back-to-journal"
+          >
             <Link href="/journal">
               <ArrowLeft className="w-5 h-5 rtl:-scale-x-100" />
             </Link>

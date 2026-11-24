@@ -16,7 +16,7 @@ import { planCta, planPhase, planPhraseKey } from "@/lib/plan-state";
 import { PLAN_LIMIT_EVENT, type PlanLimitDetail } from "@/lib/plan-limit";
 import { planFeatureLabelKey } from "@/lib/plan-routes";
 import { useSubscription } from "@/hooks/useSubscription";
-import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
+import { planContactHref } from "@/lib/planContact";
 import type { PlanFeature } from "@shared/plans";
 
 /**
@@ -75,7 +75,7 @@ export function PlanLimitDialog() {
             : (t[`components.planLimitUsageBody_${detail.resource ?? "default"}`] ??
               t["components.planLimitUsageBody_default"]);
 
-  const subject = encodeURIComponent(`Muhasib.ai plan${plan ? `: ${plan}` : ""}`);
+  const contactHref = planContactHref(plan || undefined);
 
   return (
     <Dialog open onOpenChange={(open) => (!open ? setDetail(null) : undefined)}>
@@ -121,10 +121,7 @@ export function PlanLimitDialog() {
             </Button>
           ) : (
             <Button asChild>
-              <a
-                href={`mailto:${UPGRADE_CONTACT_EMAIL}?subject=${subject}`}
-                data-testid="plan-limit-contact"
-              >
+              <a href={contactHref} data-testid="plan-limit-contact">
                 {t["components.planLimitContactUs"]}
               </a>
             </Button>
