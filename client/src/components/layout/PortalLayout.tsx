@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { Suspense, lazy, useEffect, useRef, useSyncExternalStore } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -39,8 +39,10 @@ import { PortalAccountScope } from "@/lib/portal-scope";
 import { useActiveIntoView, useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { bidiIsolate } from "@/lib/customer-link";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
-import { MotionToggle } from "@/components/ui/motion-toggle";
-import { AppSurface } from "@/components/layout/AppSurface";
+import { useAppSurface } from "@/lib/motion/surface";
+
+// The pause control and the pointer-depth loader arrive after first paint, in their own chunk.
+const PortalMotion = lazy(() => import("@/components/layout/PortalMotion"));
 
 const NAV_ITEMS = [
   { labelKey: "shell.portalDashboard", href: "/client-portal/dashboard", icon: LayoutDashboard },
@@ -58,6 +60,7 @@ interface PortalAccountRow {
 }
 
 export function PortalLayout({ children }: { children: React.ReactNode }) {
+  useAppSurface();
   const [location, navigate] = useLocation();
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
@@ -180,7 +183,6 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-canvas flex h-screen w-full bg-background supports-[height:100dvh]:h-dvh">
-      <AppSurface />
       {/* Sidebar (desktop) */}
       <aside className="hidden w-60 flex-shrink-0 flex-col border-e border-border bg-sidebar/80 md:flex lg:w-64">
         {/* Company header */}
@@ -273,7 +275,9 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            <MotionToggle className="hidden sm:inline-flex" />
+            <Suspense fallback={null}>
+              <PortalMotion />
+            </Suspense>
             <span className="hidden max-w-[280px] truncate text-caption text-muted-foreground sm:inline">
               {company?.firmName ? (
                 <>
