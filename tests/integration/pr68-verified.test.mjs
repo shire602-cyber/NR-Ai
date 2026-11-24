@@ -85,6 +85,8 @@ async function main() {
   const B = await signup("pr68-b");
   const staffB = await signup("pr68-staffb");
   const staffA = await signup("pr68-staffa");
+  // Portal invitations need a verified inviter (S5-SEC-4).
+  await q("UPDATE users SET email_verified = true WHERE id = $1", [A.userId]);
   await q(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1,$2,'accountant')`, [
     B.companyId,
     staffB.userId,
