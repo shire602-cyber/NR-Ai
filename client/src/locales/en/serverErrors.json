@@ -86,6 +86,8 @@
   "serverErrors.BANK_FEE_BASE_CURRENCY_ONLY": "Record the fee on an account in your base currency.",
   "serverErrors.BANK_FEE_TOO_LARGE": "The fee must be less than the amount received.",
   "serverErrors.BANK_GL_CODE_EXHAUSTED": "No free account code is left for a new bank ledger account. Link an existing account instead.",
+  "serverErrors.BANK_STATEMENT_INVALID_DATE": "Import canceled. Correct any missing or invalid transaction dates in the CSV and try again.",
+  "serverErrors.BANK_STATEMENT_INVALID_DATE.row": "Import canceled. Correct the missing or invalid transaction date in CSV row {rowIndex} and try again.",
   "serverErrors.BANK_STATEMENT_LINK_CONFLICT": "Review the existing statement rows before changing their bank account.",
   "serverErrors.BANK_TRANSACTION_NOT_FOUND": "The bank transaction could not be found.",
   "serverErrors.BASE_CURRENCY_LOCKED": "The base currency cannot be changed after journal entries have been posted.",

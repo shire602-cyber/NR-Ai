@@ -126,7 +126,33 @@ describe("statement import copy", () => {
         csvContent: `Date,Description,Debit,Credit\n${date},Test line,0,12.50\n`,
       });
       expect(reply.status, reply.text).toBe(200);
-      expect(reply.body).toMatchObject({ detectedFormatLabel, validRows });
+      expect(reply.body).toMatchObject({
+        detectedFormatLabel,
+        validRows,
+        firstInvalidDateRow: validRows ? null : 2,
+      });
+    }
+  );
+
+  it.each([10, 50])(
+    "reports the first date error after %i rows with missing amounts",
+    async (count) => {
+      const t = await h.createTenant({ name: "Bank CSV preview" });
+      const reply = await t.as.post(`${base(t)}/bank-statements/preview`, {
+        csvContent: [
+          "Date,Description,Amount",
+          ...Array<string>(count).fill("2026-03-10,Deposit,"),
+          "2026-02-30,Deposit,100.00",
+          ",Deposit,100.00",
+        ].join("\n"),
+      });
+
+      expect(reply.status, reply.text).toBe(200);
+      expect(reply.body).toMatchObject({ validRows: 0, firstInvalidDateRow: count + 2 });
+      expect(reply.body.sampleRows).toHaveLength(10);
+      expect(reply.body.sampleRows.map((row: { errors: string[] }) => row.errors)).toEqual(
+        Array(10).fill(["Missing amount"])
+      );
     }
   );
 
@@ -2075,6 +2101,24 @@ describe("CSV statement import isolation", () => {
 });
 
 describe("CSV statement import regressions", () => {
+  it("rejects a managed CSV with an invalid date before importing any rows", async () => {
+    const t = await h.createTenant();
+    const account = await bankAccount(t);
+    const csvContent =
+      "Date,Description,Amount\n2026-03-10,Stationery,-12.50\n2026-02-30,Deposit,100.00";
+    const response = await t.as.post(`${base(t)}/bank-statements/import`, {
+      bankAccountId: account.id,
+      csvContent,
+    });
+    expect(response.status, response.text).toBe(400);
+    expect(response.body).toMatchObject({
+      code: "BANK_STATEMENT_INVALID_DATE",
+      message: expect.stringContaining("CSV row 3"),
+      details: { rowIndex: 3 },
+    });
+    expect(await lines(t, account.id)).toHaveLength(0);
+  });
+
   it("requires the same ambiguity confirmation on the managed and compatibility CSV endpoints", async () => {
     const t = await h.createTenant();
     const account = await bankAccount(t);

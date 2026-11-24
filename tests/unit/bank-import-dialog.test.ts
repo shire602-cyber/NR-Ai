@@ -81,13 +81,15 @@ async function mountPage(locale: "en" | "ar") {
   queryClient.clear();
   const { ActiveCompanyProvider } =
     await import("../../client/src/components/ActiveCompanyProvider");
+  const { Toaster } = await import("../../client/src/components/ui/toaster");
   const { default: BankReconciliation } = await import("../../client/src/pages/BankReconciliation");
   await act(async () => {
     root.render(
       createElement(
         QueryClientProvider,
         { client: queryClient },
-        createElement(ActiveCompanyProvider, null, createElement(BankReconciliation))
+        createElement(ActiveCompanyProvider, null, createElement(BankReconciliation)),
+        createElement(Toaster)
       )
     );
   });
@@ -111,7 +113,7 @@ async function chooseStatement(body: string, name = "statement.csv") {
   await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
 }
 
-function recordStatementRequests() {
+function recordStatementRequests(importResponse = json({ imported: 1 })) {
   const previews: Array<{ payload: unknown; respond: (value: Response) => void }> = [];
   const imports: unknown[] = [];
   const original = vi.mocked(fetch).getMockImplementation()!;
@@ -124,7 +126,7 @@ function recordStatementRequests() {
     }
     if (url.endsWith("/bank-statements/import")) {
       imports.push(JSON.parse(String(init?.body)));
-      return json({ imported: 1 });
+      return importResponse;
     }
     return original(input, init);
   });
@@ -142,6 +144,7 @@ function previewResponse(description: string, requiresChoice = false) {
     totalRows: 1,
     validRows: 1,
     errorRows: 0,
+    firstInvalidDateRow: null,
     sampleRows: [{ rowIndex: 1, date: "2026-11-13", description, debit: 0, credit: 0, errors: [] }],
     warnings: [],
     requiresChoice,
@@ -204,6 +207,121 @@ describe("bank statement import dialog", () => {
     ).toBe(false);
   });
 
+  describe.each([
+    [
+      "en",
+      "Correct the missing or invalid transaction date in CSV row 2 and preview the file again.",
+    ],
+    ["ar", "صحّح تاريخ الحركة المفقود أو غير الصالح في الصف 2 من ملف CSV ثم عاين الملف مجددًا."],
+  ] as const)("blocked bank statement preview in %s", (locale, copy) => {
+    it.each([
+      ["blank", "", "100.00", "Missing date", []],
+      [
+        "invalid",
+        "2026-02-30",
+        "bad",
+        "Invalid date '2026-02-30' for DD/MM/YYYY",
+        ["Invalid amount 'bad'"],
+      ],
+    ] as const)(
+      "shows CSV row 2 when the only transaction date is %s",
+      async (_kind, date, amount, parserError, otherErrors) => {
+        const { previews, imports } = recordStatementRequests();
+        await mountPage(locale);
+        await selectImportAccount();
+        await chooseStatement(`Date,Description,Amount\n${date},Deposit,${amount}`);
+        await vi.waitFor(() => expect(previews).toHaveLength(1));
+        await act(async () =>
+          previews[0].respond(
+            json({
+              kind: "csv",
+              detectedFormat: "generic",
+              decimalSeparator: ".",
+              dateOrder: null,
+              headerRow: 1,
+              headers: ["Date", "Description", "Amount"],
+              mapping: { date: 0, description: 1, amount: 2 },
+              totalRows: 1,
+              validRows: 0,
+              errorRows: 1,
+              firstInvalidDateRow: 2,
+              sampleRows: [
+                {
+                  rowIndex: 2,
+                  date: null,
+                  description: "Deposit",
+                  debit: 0,
+                  credit: amount === "bad" ? 0 : 100,
+                  errors: [...otherErrors, parserError],
+                },
+              ],
+              warnings: [],
+              requiresChoice: false,
+            })
+          )
+        );
+
+        expect(action().disabled).toBe(true);
+        expect(
+          mapper()?.querySelector('[role="alert"][data-testid="text-statement-preview-date-error"]')
+            ?.textContent
+        ).toBe(copy);
+        expect(mapper()?.querySelector("tbody tr")?.getAttribute("title")).toBe(
+          [copy, ...otherErrors].join("; ")
+        );
+        expect(imports).toEqual([]);
+      }
+    );
+
+    it("shows CSV row 12 when the first date error is beyond the preview sample", async () => {
+      const { previews, imports } = recordStatementRequests();
+      const sampleRows = Array.from({ length: 10 }, (_, index) => ({
+        rowIndex: index + 2,
+        date: "2026-03-10",
+        description: "Deposit",
+        debit: 0,
+        credit: 0,
+        errors: ["Missing amount"],
+      }));
+      await mountPage(locale);
+      await selectImportAccount();
+      await chooseStatement(
+        [
+          "Date,Description,Amount",
+          ...sampleRows.map((row) => `${row.date},${row.description},`),
+          "2026-02-30,Deposit,100.00",
+        ].join("\n")
+      );
+      await vi.waitFor(() => expect(previews).toHaveLength(1));
+      await act(async () =>
+        previews[0].respond(
+          json({
+            kind: "csv",
+            detectedFormat: "generic",
+            decimalSeparator: ".",
+            dateOrder: "YMD",
+            headerRow: 1,
+            headers: ["Date", "Description", "Amount"],
+            mapping: { date: 0, description: 1, amount: 2 },
+            totalRows: 11,
+            validRows: 0,
+            errorRows: 11,
+            firstInvalidDateRow: 12,
+            sampleRows,
+            warnings: [],
+            requiresChoice: false,
+          })
+        )
+      );
+
+      expect(action().disabled).toBe(true);
+      expect(
+        mapper()?.querySelector('[data-testid="text-statement-preview-date-error"]')?.textContent
+      ).toBe(copy.replace("2", "12"));
+      expect(imports).toEqual([]);
+    });
+  });
+
   it.each(["en", "ar"] as const)(
     "only imports the bytes from the latest successful preview in %s",
     async (locale) => {
@@ -229,6 +347,41 @@ describe("bank statement import dialog", () => {
           acknowledgeAmbiguity: false,
         },
       ]);
+    }
+  );
+
+  it.each([
+    ["en", "Correct the missing or invalid transaction date in CSV row 3"],
+    ["ar", "صحّح تاريخ الحركة المفقود أو غير الصالح في الصف 3 من ملف CSV"],
+  ] as const)(
+    "shows the first CSV row needing a date correction in the %s toast",
+    async (locale, copy) => {
+      const message =
+        "Import canceled. Correct the missing or invalid transaction date in CSV row 3 and try again.";
+      const { previews } = recordStatementRequests(
+        new Response(
+          JSON.stringify({
+            code: "BANK_STATEMENT_INVALID_DATE",
+            message,
+            details: { rowIndex: 3 },
+          }),
+          { status: 400, headers: { "content-type": "application/json" } }
+        )
+      );
+      await mountPage(locale);
+      await selectImportAccount();
+      await chooseStatement(
+        "Date,Description,Amount\n2026-03-10,Stationery,-12.50\n2026-02-30,Deposit,100.00"
+      );
+      await vi.waitFor(() => expect(previews).toHaveLength(1));
+      await act(async () => previews[0].respond(previewResponse("Stationery")));
+      await click(action());
+      await vi.waitFor(() => {
+        const messages = [...document.querySelectorAll('.destructive[data-state="open"]')].map(
+          (toast) => toast.textContent
+        );
+        expect(messages).toContainEqual(expect.stringContaining(copy));
+      });
     }
   );
 
