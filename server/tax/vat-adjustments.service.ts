@@ -68,6 +68,7 @@ import { appliedReceiptAmountSql, salesTaxPointSql } from "./sales-tax-point";
 import { assertAlignedPeriod } from "./vat-periods";
 
 const log = createLogger("vat-adjustments");
+const INVOICE_LOCK_RECEIPT_ORDER = "invoice_lock";
 
 export const BAD_DEBT_SOURCE = "vat_bad_debt_relief";
 export const BAD_DEBT_EXPENSE_CODE = "5120";
@@ -243,6 +244,7 @@ export async function createBadDebtReliefClaim(input: {
         ...journalMemo("badDebtRelief", {
           ref: inv.number,
           outstandingDocFils: String(outstandingDoc),
+          receiptOrder: INVOICE_LOCK_RECEIPT_ORDER,
         }),
         status: "posted",
         source: BAD_DEBT_SOURCE,
@@ -462,9 +464,20 @@ async function openRecoveryDate(tx: LedgerTx, companyId: string, date: string) {
 async function reconcileReceiptRecoveries(
   tx: LedgerTx,
   claim: BadDebtReliefClaim,
-  trigger: { paymentId: string; removing?: boolean; actorId?: string | null }
+  trigger: { paymentId: string; reversalDate?: string; actorId?: string | null }
 ) {
   const q = ledgerQueryable(tx);
+  const {
+    rows: [basis],
+  } = await q.query(
+    `SELECT (je.memo_params ->> 'outstandingDocFils')::bigint AS outstanding_doc_fils,
+            je.memo_params ->> 'receiptOrder' AS receipt_order, i.currency, i.exchange_rate
+       FROM invoices i
+       LEFT JOIN journal_entries je ON je.id = $3 AND je.company_id = i.company_id
+      WHERE i.id = $1 AND i.company_id = $2`,
+    [claim.invoiceId, claim.companyId, claim.journalEntryId]
+  );
+  const ordered = basis.receipt_order === INVOICE_LOCK_RECEIPT_ORDER;
   const { rows: receipts } = await q.query(
     `SELECT sp.id, sp.created_by, ${localDateSql("sp.date")}::text AS date,
             ROUND(${appliedReceiptAmountSql("sp")} * 100) AS applied_fils,
@@ -481,7 +494,7 @@ async function reconcileReceiptRecoveries(
             AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL
        ) posted ON true
       WHERE sp.invoice_id = $1 AND sp.company_id = $2 AND c.id = $3
-        AND sp.method <> 'write_off' AND sp.created_at > c.created_at
+        AND sp.method <> 'write_off' AND ($6::boolean IS FALSE OR sp.created_at > c.created_at)
         AND sp.id IS DISTINCT FROM $5::uuid
       ORDER BY sp.created_at, sp.id`,
     [
@@ -489,23 +502,17 @@ async function reconcileReceiptRecoveries(
       claim.companyId,
       claim.id,
       BAD_DEBT_SOURCE,
-      trigger.removing ? trigger.paymentId : null,
+      trigger.reversalDate ? trigger.paymentId : null,
+      ordered,
     ]
   );
-  if (!trigger.removing && !receipts.some((receipt) => receipt.id === trigger.paymentId)) {
+  if (!trigger.reversalDate && !receipts.some((receipt) => receipt.id === trigger.paymentId)) {
     return null;
   }
-
-  const {
-    rows: [basis],
-  } = await q.query(
-    `SELECT (je.memo_params ->> 'outstandingDocFils')::bigint AS outstanding_doc_fils,
-            i.currency, i.exchange_rate
-       FROM invoices i
-       LEFT JOIN journal_entries je ON je.id = $3 AND je.company_id = i.company_id
-      WHERE i.id = $1 AND i.company_id = $2`,
-    [claim.invoiceId, claim.companyId, claim.journalEntryId]
-  );
+  // Legacy transaction-start timestamps cannot show which receipts the claim's settlement read saw.
+  if (!ordered && receipts.some((receipt) => Number(receipt.applied_fils) > 0)) {
+    throw badDebtRecoveryReviewRequired(claim.id);
+  }
   // Older claim journals recorded the outstanding amount using an AED-based rate.
   const legacyRate =
     (basis.currency || "AED").toUpperCase() === "AED" ? 1 : Number(basis.exchange_rate || 1);
@@ -527,11 +534,15 @@ async function reconcileReceiptRecoveries(
     previousTarget = target;
     if (!delta) continue;
 
-    const date = await openRecoveryDate(
-      tx,
-      claim.companyId,
-      receipt.date < claim.claimDate ? claim.claimDate : receipt.date
-    );
+    // A removal changes the surviving receipts' allocation on the reversal date. The
+    // ledger validates that period under the filing lock already held by this transaction.
+    const date =
+      trigger.reversalDate ??
+      (await openRecoveryDate(
+        tx,
+        claim.companyId,
+        receipt.date < claim.claimDate ? claim.claimDate : receipt.date
+      ));
     const key = Number(receipt.entry_count)
       ? `${receipt.id}:reconcile:${trigger.paymentId}`
       : receipt.id;
@@ -540,7 +551,7 @@ async function reconcileReceiptRecoveries(
       claim,
       delta,
       date,
-      (trigger.removing || receipt.id === trigger.paymentId ? trigger.actorId : null) ??
+      (trigger.reversalDate || receipt.id === trigger.paymentId ? trigger.actorId : null) ??
         receipt.created_by,
       Number(receipt.entry_count)
         ? "Reconcile VAT after a change to bad-debt receipts"
@@ -625,7 +636,7 @@ function badDebtRecoveryReviewRequired(claimId: string) {
     "BAD_DEBT_RECOVERY_REVIEW_REQUIRED",
     409,
     { claimId },
-    "Review this bad-debt relief recovery before reversing the receipt."
+    "Review this bad-debt relief claim and its receipts before adjusting the recovered VAT."
   );
 }
 
@@ -706,6 +717,7 @@ export async function undoReliefRecoveryOnPayment(input: {
       rows: [payment],
     } = await q.query(
       `SELECT sp.created_at > c.created_at AS eligible,
+              ${localDateSql("sp.date")}::text AS date,
               split_part(last.idempotency_key, ':', 3) = 'recover' AS keyed,
               split_part(last.idempotency_key, ':', 4) = 'manual' AS manual
          FROM invoice_payments sp
@@ -738,6 +750,7 @@ export async function undoReliefRecoveryOnPayment(input: {
     }
     if (!manuallyClosed && claim !== claims[0]) throw badDebtRecoveryReviewRequired(claim.id);
 
+    let reversalDate: string | undefined;
     if (legacy) {
       const date = input.date ?? legacy.date;
       if (date < legacy.date) {
@@ -752,10 +765,10 @@ export async function undoReliefRecoveryOnPayment(input: {
         input.reason,
         `legacy-undo:${paymentId}`
       );
+      reversalDate = date;
     }
 
     let reversedFils = 0;
-    let reversalDate: string | undefined;
     for (const recovery of recoveries) {
       const { reversal } = await reverseEntry(
         recovery.id,
@@ -779,7 +792,11 @@ export async function undoReliefRecoveryOnPayment(input: {
         );
       }
     } else {
-      await reconcileReceiptRecoveries(tx, claim, { paymentId, removing: true, actorId });
+      await reconcileReceiptRecoveries(tx, claim, {
+        paymentId,
+        reversalDate: reversalDate ?? input.date ?? payment.date,
+        actorId,
+      });
     }
   }
 }

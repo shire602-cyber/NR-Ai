@@ -77,7 +77,7 @@ async function writtenOffInvoice(t: Tenant) {
   return invoiceId;
 }
 
-async function claimRelief(t: Tenant, invoiceId: string) {
+async function claimRelief(t: Tenant, invoiceId: string, expectedVat = 50) {
   const claim = await t.as.post(`/api/companies/${t.company.id}/vat/bad-debt-relief`, {
     invoiceId,
     claimDate: "2026-08-20",
@@ -86,7 +86,7 @@ async function claimRelief(t: Tenant, invoiceId: string) {
     customerNotifiedAt: "2026-08-19",
   });
   expect(claim.status, claim.text).toBe(201);
-  expect(Number(claim.body.vatAmount)).toBe(50);
+  expect(Number(claim.body.vatAmount)).toBe(expectedVat);
   return claim.body.id as string;
 }
 
@@ -500,6 +500,63 @@ describe("Accounting audit — VAT 201", () => {
   });
 
   it.each([false, true])(
+    "does not recover VAT on a receipt included in the claim calculation (historical: %s)",
+    async (historical) => {
+      const t = await vatTenant();
+      const companyId = t.company.id;
+      const invoiceId = await issueService(t, "2026-01-05", "2026-01-05");
+      const bank = await accountByCode(t, "1020");
+      const pay = async (date: string) => {
+        const response = await t.as.post(
+          `/api/companies/${companyId}/invoices/${invoiceId}/payments`,
+          {
+            amount: 105,
+            date,
+            paymentAccountId: bank.id,
+          }
+        );
+        expect(response.status, response.text).toBe(201);
+        return response.body;
+      };
+      const beforeClaim = await pay("2026-08-17");
+      const writeOff = await t.as.post(
+        `/api/companies/${companyId}/invoices/${invoiceId}/write-off`,
+        {
+          date: "2026-08-18",
+          reason: "Insolvency",
+        }
+      );
+      expect(writeOff.status, writeOff.text).toBe(201);
+      const claimId = await claimRelief(t, invoiceId, 45);
+      if (historical) {
+        // Model a claim transaction that started before the receipt but read settlement after it.
+        await h.sql(
+          `UPDATE bad_debt_relief_claims SET created_at = (
+             SELECT created_at - interval '1 second' FROM invoice_payments WHERE id = $2
+           ) WHERE id = $1`,
+          [claimId, beforeClaim.payment.id]
+        );
+        await h.sql(
+          `UPDATE journal_entries SET memo_params = memo_params - 'receiptOrder'
+            WHERE id = (SELECT journal_entry_id FROM bad_debt_relief_claims WHERE id = $1)`,
+          [claimId]
+        );
+      }
+
+      const afterClaim = await pay("2026-10-05");
+      expect(afterClaim.badDebtReliefReversal).toMatchObject(
+        historical
+          ? { status: "failed", code: "BAD_DEBT_RECOVERY_REVIEW_REQUIRED" }
+          : { status: "reversed", remainingVatFils: 4000 }
+      );
+      expect((await vatBoxes(t, "2026-07-01", "2026-09-30")).box1bDubaiAdj).toBe(-45);
+      expect((await vatBoxes(t, "2026-10-01", "2026-12-31")).box1bDubaiAdj).toBe(
+        historical ? 0 : 5
+      );
+    }
+  );
+
+  it.each([false, true])(
     "checks legacy VAT recovery attribution before reversing a receipt (ambiguous: %s)",
     async (ambiguous) => {
       const t = await vatTenant();
@@ -556,45 +613,49 @@ describe("Accounting audit — VAT 201", () => {
     }
   );
 
-  it("rebalances the VAT rounding of a surviving receipt and its replacement after filing", async () => {
-    const t = await vatTenant();
-    const { invoiceId } = await claimedInvoice(t);
-    const companyId = t.company.id;
-    const bank = await accountByCode(t, "1020");
-    const { reverseInvoicePayment } = await import("../../server/services/invoice-payment.service");
-    const pay = async (amount: number, date: string) => {
-      const response = await t.as.post(
-        `/api/companies/${companyId}/invoices/${invoiceId}/payments`,
-        {
-          amount,
-          date,
-          paymentAccountId: bank.id,
-        }
-      );
-      expect(response.status, response.text).toBe(201);
-      return response.body;
-    };
-    const first = await pay(105.1, "2026-09-15");
-    const second = await pay(105.01, "2026-09-16");
-    expect(first.badDebtReliefReversal.remainingVatFils).toBe(4500);
-    expect(second.badDebtReliefReversal.remainingVatFils).toBe(3999);
-    await fileQ3(t);
-    const reversal = await reverseInvoicePayment({
-      companyId,
-      paymentId: first.payment.id,
-      actorId: t.user.id,
-      reason: "Payment returned",
-      date: "2026-10-06",
-    });
-    expect(reversal.reversed).toBe(true);
-    expect((await vatBoxes(t, "2026-07-01", "2026-09-30")).box1bDubaiAdj).toBe(-39.99);
-    expect((await vatBoxes(t, "2026-10-01", "2026-12-31")).box1bDubaiAdj).toBe(-5.01);
-    const replacement = await pay(105.1, "2026-10-07");
-    expect(replacement.badDebtReliefReversal.remainingVatFils).toBe(3999);
-    const q4 = await vatReturn(t, "2026-10-01", "2026-12-31");
-    expect(q4.boxes.box1bDubaiAdj).toBe(0);
-    expect(q4.reconciliation.hasUnexplainedDifference).toBe(false);
-  });
+  it.each([false, true])(
+    "rebalances the VAT rounding in the reversal quarter (receipt quarter filed: %s)",
+    async (filed) => {
+      const t = await vatTenant();
+      const { invoiceId } = await claimedInvoice(t);
+      const companyId = t.company.id;
+      const bank = await accountByCode(t, "1020");
+      const { reverseInvoicePayment } =
+        await import("../../server/services/invoice-payment.service");
+      const pay = async (amount: number, date: string) => {
+        const response = await t.as.post(
+          `/api/companies/${companyId}/invoices/${invoiceId}/payments`,
+          {
+            amount,
+            date,
+            paymentAccountId: bank.id,
+          }
+        );
+        expect(response.status, response.text).toBe(201);
+        return response.body;
+      };
+      const first = await pay(105.1, "2026-09-15");
+      const second = await pay(105.01, "2026-09-16");
+      expect(first.badDebtReliefReversal.remainingVatFils).toBe(4500);
+      expect(second.badDebtReliefReversal.remainingVatFils).toBe(3999);
+      if (filed) await fileQ3(t);
+      const reversal = await reverseInvoicePayment({
+        companyId,
+        paymentId: first.payment.id,
+        actorId: t.user.id,
+        reason: "Payment returned",
+        date: "2026-10-06",
+      });
+      expect(reversal.reversed).toBe(true);
+      expect((await vatBoxes(t, "2026-07-01", "2026-09-30")).box1bDubaiAdj).toBe(-39.99);
+      expect((await vatBoxes(t, "2026-10-01", "2026-12-31")).box1bDubaiAdj).toBe(-5.01);
+      const replacement = await pay(105.1, "2026-10-07");
+      expect(replacement.badDebtReliefReversal.remainingVatFils).toBe(3999);
+      const q4 = await vatReturn(t, "2026-10-01", "2026-12-31");
+      expect(q4.boxes.box1bDubaiAdj).toBe(0);
+      expect(q4.reconciliation.hasUnexplainedDifference).toBe(false);
+    }
+  );
 
   it("reopens a fully recovered claim when its AED 105 receipt is reversed and restores VAT on repayment", async () => {
     const t = await vatTenant();
