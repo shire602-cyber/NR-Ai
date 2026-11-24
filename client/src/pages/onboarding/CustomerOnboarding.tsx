@@ -46,7 +46,7 @@ import {
   StepHeading,
 } from "./OnboardingShell";
 import { isEmail, sendTeamInvite } from "./invite";
-import { newCompanyPayload } from "./company-payload";
+import { existingCompanyPatch, newCompanyPayload } from "./company-payload";
 import {
   FIRST_TASK_HREF,
   openingBalancesHref,
@@ -230,7 +230,11 @@ function Wizard({
     try {
       let saved = target;
       if (saved) {
-        await apiRequest("PATCH", `/api/companies/${saved.id}`, payload);
+        await apiRequest(
+          "PATCH",
+          `/api/companies/${saved.id}`,
+          existingCompanyPatch(payload, saved.locale, locale)
+        );
       } else {
         saved = await createCompany.mutateAsync(payload);
         setTarget(saved);

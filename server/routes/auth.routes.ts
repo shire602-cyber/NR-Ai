@@ -389,12 +389,12 @@ async function seedChartOfAccounts(
 async function provisionCustomerCompany(
   userId: string,
   companyName: string,
-  extra: { trnVatNumber?: string } = {}
+  extra: { trnVatNumber?: string; locale?: "en" | "ar" } = {}
 ) {
   const company = await storage.createCompany({
     name: companyName,
     baseCurrency: "AED",
-    locale: "en",
+    locale: extra.locale === "ar" ? "ar" : "en",
     companyType: "customer", // Self-signup companies are customer type (not managed by NR)
     ...(extra.trnVatNumber ? { trnVatNumber: extra.trnVatNumber } : {}),
   } as Parameters<typeof storage.createCompany>[0]);
@@ -425,6 +425,8 @@ const registerBodySchema = z.object({
     .regex(/^\d{15}$/, "TRN must be exactly 15 digits")
     .optional(),
   phone: zText(40).optional(),
+  /** Language the owner signed up in; becomes the company's default locale. */
+  locale: z.enum(["en", "ar"]).optional(),
   /** Cloudflare Turnstile token; required only when TURNSTILE_SECRET_KEY is set. */
   captchaToken: z.string().max(4096).optional(),
   /** STEP4: plan chosen on the sign-up plan step (recorded for after the trial, never a gate). */
@@ -667,6 +669,7 @@ export function registerAuthRoutes(app: Express): void {
       const companyName = body.companyName?.trim() || `${body.name}'s Company`;
       const company = await provisionCustomerCompany(user.id, companyName, {
         trnVatNumber: body.trn,
+        locale: body.locale,
       });
 
       // STEP4: freeze the trial end the sign-up screen showed, and record the chosen plan.

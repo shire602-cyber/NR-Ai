@@ -16,3 +16,17 @@ export function newCompanyPayload(
     companyType: "customer",
   };
 }
+
+/**
+ * Body of PATCH /api/companies/:id from the wizard's company step. Signup provisions the company
+ * in the owner's language, but a company still on the default "en" while the owner is working in
+ * Arabic (older signups, English-provisioned rows) is moved to "ar". An owner who is in English
+ * never has an existing locale overwritten.
+ */
+export function existingCompanyPatch(
+  data: Record<string, unknown>,
+  currentLocale: string | null | undefined,
+  uiLocale: string
+): Record<string, unknown> {
+  return uiLocale === "ar" && currentLocale !== "ar" ? { ...data, locale: "ar" } : data;
+}
