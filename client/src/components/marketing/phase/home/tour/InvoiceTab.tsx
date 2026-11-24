@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useMarketingText } from "../text";
 import { invoiceTotals, moneyPlain, parseQty, parseUnitFils, money } from "./model";
-import { INVOICE_CUSTOMER, INVOICE_LINES, INVOICE_NUMBER, type SampleLine } from "./sample";
+import type { DocLine, TourInvoice } from "./invoiceState";
+import { INVOICE_CUSTOMER, INVOICE_LINES, INVOICE_NUMBER } from "./sample";
 import { useAutoStart, useSequence } from "./sequence";
 import { Money, Sample, type TabProps } from "./shared";
 
@@ -15,13 +16,6 @@ const LAYOUTS: readonly {
   { id: "both", key: "hxTourLayoutBoth" },
 ];
 const STEP_KEYS = ["hxTourStep1", "hxTourStep2", "hxTourStep3", "hxTourStep4"] as const;
-
-interface DocLine {
-  line: SampleLine;
-  qty: number;
-  unitFils: number;
-  amountFils: number;
-}
 
 /** The invoice itself, one column per language, so the bilingual layout is the same document. */
 function InvoiceDoc({
@@ -119,19 +113,18 @@ function InvoiceDoc({
   );
 }
 
-export default function InvoiceTab({ locale, text, reduced, autoPlay }: TabProps) {
-  const [qty, setQty] = useState(() => INVOICE_LINES.map((l) => String(l.qty)));
-  const [price, setPrice] = useState(() => INVOICE_LINES.map((l) => moneyPlain(l.unitFils)));
+export default function InvoiceTab({
+  locale,
+  text,
+  reduced,
+  autoPlay,
+  invoice,
+}: TabProps & { invoice: TourInvoice }) {
+  const { qty, price, setQty, setPrice, lines, totals } = invoice;
   const [layout, setLayout] = useState<Layout>(locale === "ar" ? "ar" : "en");
   const issue = useSequence(3, 850, reduced);
   useAutoStart(autoPlay, issue.start, 900);
 
-  const lines: DocLine[] = INVOICE_LINES.map((line, i) => {
-    const q = parseQty(qty[i] ?? "");
-    const unitFils = parseUnitFils(price[i] ?? "");
-    return { line, qty: q, unitFils, amountFils: q * unitFils };
-  });
-  const totals = invoiceTotals(lines);
   const edit = (set: typeof setQty, i: number, value: string) => {
     set((all) => all.map((v, at) => (at === i ? value : v)));
     issue.reset();

@@ -150,6 +150,33 @@
   opacity: 0.55;
   cursor: not-allowed;
 }
+.phase-site .mz-tour-control {
+  display: flex;
+  justify-content: flex-end;
+  margin-block-end: 10px;
+}
+.phase-site .mz-tour-pause {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-block-size: 44px;
+  padding-block: 0;
+  padding-inline: 14px;
+  border: 1px solid var(--mz-line, #d6e0d9);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--mz-ink, #10241a);
+  font-weight: 650;
+  cursor: pointer;
+}
+.phase-site .mz-tour-pause svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+.phase-site .mz-tour-pause:focus-visible {
+  outline: 2px solid var(--mz-emerald);
+  outline-offset: 2px;
+}
 .phase-site .mz-tour-link {
   color: var(--mz-emerald);
   font-weight: 650;

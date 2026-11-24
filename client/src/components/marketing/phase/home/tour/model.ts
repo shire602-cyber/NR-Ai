@@ -1,6 +1,12 @@
 /** Pure logic behind the homepage tour. Money is integer fils; no React, no I/O. */
 import { formatFils, mulRate, tryToFils } from "@shared/money";
-import { BANK_ROWS, TOUR_TRANSACTIONS, type BankRow, type TourTransaction } from "./sample";
+import {
+  BANK_ROWS,
+  INVOICE_NUMBER,
+  TOUR_TRANSACTIONS,
+  type BankRow,
+  type TourTransaction,
+} from "./sample";
 
 export const VAT_RATE = 0.05;
 export const MAX_QTY = 999;
@@ -56,6 +62,13 @@ export interface TourDocument extends TourTransaction {
 export function withVat(tx: TourTransaction): TourDocument {
   const vatFils = tx.rate === "standard" && tx.netFils > 0 ? mulRate(tx.netFils, VAT_RATE) : 0;
   return { ...tx, vatFils, totalFils: tx.netFils + vatFils };
+}
+
+/** The tour ledger with INV-2001 repriced to the sample invoice as the visitor edited it. */
+export function transactionsWithInvoice(invoiceNetFils: number): TourTransaction[] {
+  return TOUR_TRANSACTIONS.map((t) =>
+    t.ref === INVOICE_NUMBER ? { ...t, netFils: invoiceNetFils } : t
+  );
 }
 
 export interface BoxFigure {

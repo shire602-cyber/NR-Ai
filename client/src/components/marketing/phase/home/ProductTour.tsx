@@ -7,13 +7,24 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { ArrowRight, ClipboardCheck, FileText, Landmark, ScanLine, Users } from "lucide-react";
+import {
+  ArrowRight,
+  ClipboardCheck,
+  FileText,
+  Landmark,
+  Pause,
+  Play,
+  ScanLine,
+  Users,
+} from "lucide-react";
 import { Link } from "wouter";
 import { featurePath } from "../route-content";
 import type { SectionProps } from "./types";
 import { SectionHead } from "./SectionHead";
 import { useMarketingText } from "./text";
 import { useInView, usePrefersReducedMotion } from "./motion";
+import { MOTION_LABELS } from "./motionText";
+import { useTourInvoice } from "./tour/invoiceState";
 import { nextTabIndex } from "./tour/model";
 import "./tour.css";
 
@@ -38,17 +49,40 @@ export function ProductTour({ base, locale }: SectionProps) {
   const near = useInView(sectionRef, { rootMargin: "400px 0px", threshold: 0 });
   const visible = useInView(sectionRef, { once: false, rootMargin: "0px", threshold: 0.3 });
   const [selected, setSelected] = useState(0);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const invoice = useTourInvoice();
   const [interacted, setInteracted] = useState(false);
+  const [userPaused, setUserPaused] = useState(false);
+  const [hovering, setHovering] = useState(false);
+  const labels = MOTION_LABELS[locale];
 
-  // Any pointer or key press inside the tour ends auto-advance for good.
+  // Keyboard focus entering, or any pointer or key press inside, ends auto-advance until the
+  // visitor presses Play. Hovering only holds it while the pointer is over the tour.
   const touch = useCallback(() => setInteracted(true), []);
 
-  const advancing = near && visible && !interacted && !reduced;
+  const playing = !interacted && !userPaused;
+  const advancing = near && visible && playing && !hovering && !reduced;
   useEffect(() => {
     if (!advancing) return;
-    const id = setTimeout(() => setSelected((s) => (s + 1) % TABS.length), TOUR_ADVANCE_MS);
+    const id = setTimeout(() => {
+      // Never swap the panel out from under a focused control.
+      if (shellRef.current?.contains(document.activeElement)) {
+        setInteracted(true);
+        return;
+      }
+      setSelected((s) => (s + 1) % TABS.length);
+    }, TOUR_ADVANCE_MS);
     return () => clearTimeout(id);
   }, [advancing, selected]);
+
+  const togglePlay = () => {
+    if (playing) {
+      setUserPaused(true);
+    } else {
+      setUserPaused(false);
+      setInteracted(false);
+    }
+  };
 
   const onTabKeys = (e: KeyboardEvent<HTMLDivElement>) => {
     const next = nextTabIndex(e.key, selected, TABS.length, locale === "ar");
@@ -67,10 +101,28 @@ export function ProductTour({ base, locale }: SectionProps) {
     >
       <div className="phase-wrap">
         <SectionHead title={text("hxTourTitle")} lead={text("hxTourLead")} />
+        {!reduced && (
+          <div className="mz-tour-control">
+            <button
+              type="button"
+              className="mz-tour-pause"
+              data-testid="tour-pause"
+              data-playing={playing}
+              onClick={togglePlay}
+            >
+              {playing ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
+              <span>{playing ? labels.tourPause : labels.tourPlay}</span>
+            </button>
+          </div>
+        )}
         <div
+          ref={shellRef}
           className="mz-tour-shell"
           onPointerDownCapture={touch}
           onKeyDownCapture={touch}
+          onFocus={touch}
+          onPointerEnter={() => setHovering(true)}
+          onPointerLeave={() => setHovering(false)}
           data-interacted={interacted}
         >
           <div
@@ -133,7 +185,8 @@ export function ProductTour({ base, locale }: SectionProps) {
                             tab={selected}
                             locale={locale}
                             reduced={reduced}
-                            autoPlay={!interacted && !reduced}
+                            autoPlay={playing && !reduced}
+                            invoice={invoice}
                           />
                         </Suspense>
                       ) : (

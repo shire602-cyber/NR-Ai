@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { Check, Download } from "lucide-react";
 import { MARKETING_BRAND } from "@shared/marketing-brand";
-import { vat201Boxes, type Vat201Boxes } from "./model";
+import type { TourInvoice } from "./invoiceState";
+import { transactionsWithInvoice, vat201Boxes, type Vat201Boxes } from "./model";
 import { useAutoStart, useSequence } from "./sequence";
 import { Money, type TabProps } from "./shared";
 
@@ -14,8 +15,15 @@ const ROWS = [
   { id: "14", box: "box14", key: "hxTourBox14" },
 ] as const satisfies readonly { id: string; box: keyof Vat201Boxes; key: string }[];
 
-export default function VatTab({ locale, text, reduced, autoPlay }: TabProps) {
-  const boxes = useMemo(() => vat201Boxes(), []);
+export default function VatTab({
+  locale,
+  text,
+  reduced,
+  autoPlay,
+  invoice,
+}: TabProps & { invoice: TourInvoice }) {
+  const subtotalFils = invoice.totals.subtotalFils;
+  const boxes = useMemo(() => vat201Boxes(transactionsWithInvoice(subtotalFils)), [subtotalFils]);
   const seq = useSequence(ROWS.length, 550, reduced);
   const [exported, setExported] = useState(false);
   useAutoStart(autoPlay, seq.start, 700);

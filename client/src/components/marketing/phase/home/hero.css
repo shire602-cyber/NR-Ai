@@ -33,6 +33,45 @@
   }
 }
 
+.phase-site .mz-stage-wrap {
+  position: relative;
+  inline-size: 100%;
+  max-inline-size: 480px;
+  margin-inline: auto;
+}
+@media (min-width: 720px) {
+  .phase-site .mz-stage-wrap {
+    max-inline-size: none;
+  }
+}
+.phase-site .mz-stage-pause {
+  position: absolute;
+  inset-block-end: 0.7rem;
+  inset-inline-start: 0.7rem;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 44px;
+  padding-block: 0;
+  padding-inline: 12px;
+  border: 1px solid var(--mz-line-dark);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.92);
+  color: var(--mz-ink);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.phase-site .mz-stage-pause svg {
+  inline-size: 14px;
+  block-size: 14px;
+}
+.phase-site .mz-stage-pause:focus-visible {
+  outline: 2px solid var(--mz-emerald);
+  outline-offset: 2px;
+}
+
 .phase-site .mz-stage-inner {
   position: absolute;
   inset: 0;
