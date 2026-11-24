@@ -223,9 +223,17 @@ describe("D1 public site", () => {
       expect(container.querySelector("h1")?.textContent).toBe(title);
       expect(document.title).toContain(title);
       expect(container.querySelector('.phase-site[lang="ar"][dir="rtl"]')).not.toBeNull();
-      expect(container.querySelector(".mz-hero img")?.getAttribute("src")).toBe(
-        "/product/dashboard-ar.webp"
-      );
+      // The hero stage is lazy-loaded; wait for the live stage to replace its placeholder.
+      for (let i = 0; i < 30 && !container.querySelector('[data-testid="hero-stage"]'); i++) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+      }
+      const stage = container.querySelector('.mz-hero [data-testid="hero-stage"]');
+      expect(stage?.getAttribute("role")).toBe("img");
+      expect(stage?.getAttribute("aria-label")).toMatch(/[؀-ۿ]{3}/);
+      expect(stage?.textContent).toContain("بيانات تجريبية");
+      expect(container.querySelector(".mz-hero img")).toBeNull();
       expect(container.querySelector('a[hreflang="en"]')?.getAttribute("href")).toBe("/en");
       expect(container.textContent).toContain("عبر مزوّد خدمة معتمد مدمج في");
       expect(container.textContent).not.toMatch(/A-?Cube|Complyance/i);

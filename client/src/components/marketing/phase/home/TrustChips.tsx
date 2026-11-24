@@ -1,13 +1,22 @@
+import {
+  BadgeCheck,
+  Banknote,
+  CreditCard,
+  FileCheck2,
+  Languages,
+  Receipt,
+  type LucideIcon,
+} from "lucide-react";
 import type { SectionProps } from "./types";
 import { useMarketingText, type MarketingKey } from "./text";
 
-const CHIPS: readonly MarketingKey[] = [
-  "hxChipPrices",
-  "hxChipBilingual",
-  "hxChipVat",
-  "hxChipPint",
-  "hxChipWps",
-  "hxChipNoCard",
+const CHIPS: readonly { key: MarketingKey; Icon: LucideIcon }[] = [
+  { key: "hxChipPrices", Icon: Banknote },
+  { key: "hxChipBilingual", Icon: Languages },
+  { key: "hxChipVat", Icon: Receipt },
+  { key: "hxChipPint", Icon: FileCheck2 },
+  { key: "hxChipWps", Icon: BadgeCheck },
+  { key: "hxChipNoCard", Icon: CreditCard },
 ];
 
 export function TrustChips({ locale }: SectionProps) {
@@ -21,8 +30,9 @@ export function TrustChips({ locale }: SectionProps) {
     >
       <div className="phase-wrap">
         <ul className="mz-chips">
-          {CHIPS.map((key) => (
+          {CHIPS.map(({ key, Icon }) => (
             <li className="mz-chip" key={key}>
+              <Icon aria-hidden="true" size={16} />
               {text(key)}
             </li>
           ))}

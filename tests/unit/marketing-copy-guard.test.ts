@@ -3,7 +3,7 @@
 // client/src/components/marketing/). Much of that copy never renders on a single route (feature
 // flags, legacy tuples, other pages, comments that become copy later), so a render-based test
 // cannot cover it. It pins the hard rules in docs/site-rebuild/REBUILD-BRIEF.md section 0: no
-// ZATCA/Saudi/KSA references, no live bank-feed claims, and no named e-invoicing providers.
+// ZATCA/Saudi/KSA references, no claims of a direct bank connection, and no named e-invoicing providers.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";

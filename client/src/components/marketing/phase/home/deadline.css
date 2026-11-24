@@ -1,0 +1,406 @@
+/* E-invoicing deadline finder (dark band). Logical properties only; RTL via the section's dir. */
+.phase-site .mz-dl {
+  --mz-dl-amber: #ffc86b;
+  --mz-dl-amber-soft: rgb(255 200 107 / 0.14);
+  --mz-dl-track: rgb(255 255 255 / 0.16);
+}
+
+/* ---------- Segmented control ---------- */
+.phase-site .mz-dl .mz-dl-segments {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  max-inline-size: 100%;
+  padding: 4px;
+  border: 1px solid var(--mz-line-dark);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.05);
+}
+.phase-site .mz-dl .mz-dl-segment {
+  min-block-size: 44px;
+  padding-inline: 20px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--mz-fg);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.25;
+  cursor: pointer;
+  transition:
+    background-color 0.25s var(--mz-ease),
+    color 0.25s var(--mz-ease);
+}
+.phase-site .mz-dl .mz-dl-segment:hover {
+  background: rgb(255 255 255 / 0.1);
+}
+.phase-site .mz-dl .mz-dl-segment[data-active="true"] {
+  background: #fff;
+  color: var(--mz-ink);
+}
+.phase-site .mz-dl .mz-dl-segment:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* ---------- Stage: result + timeline ---------- */
+.phase-site .mz-dl .mz-dl-stage {
+  display: grid;
+  gap: clamp(20px, 3vw, 40px);
+  margin-block: clamp(24px, 3vw, 36px);
+  padding: clamp(20px, 3vw, 36px);
+  border: 1px solid var(--mz-line-dark);
+  border-radius: calc(var(--mz-radius) + 4px);
+  background: rgb(255 255 255 / 0.05);
+}
+@media (min-width: 900px) {
+  .phase-site .mz-dl .mz-dl-stage {
+    grid-template-columns: minmax(240px, 320px) 1fr;
+    align-items: center;
+  }
+}
+
+.phase-site .mz-dl .mz-dl-result {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+.phase-site .mz-dl .mz-dl-count {
+  font-size: clamp(64px, 9vw, 112px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--mz-mint);
+}
+.phase-site .mz-dl .mz-dl-sentence {
+  margin: 0;
+  font-size: clamp(18px, 1.8vw, 22px);
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--mz-fg);
+}
+.phase-site .mz-dl .mz-dl-note {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--mz-fg-muted);
+}
+.phase-site .mz-dl .mz-dl-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+  background: var(--mz-dl-amber-soft);
+  color: var(--mz-dl-amber);
+  border: 1px solid rgb(255 200 107 / 0.45);
+}
+.phase-site .mz-dl .mz-dl-flag svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+/* ---------- Timeline ---------- */
+.phase-site .mz-dl .mz-dl-timeline {
+  min-inline-size: 0;
+}
+.phase-site .mz-dl .mz-dl-track {
+  position: relative;
+  block-size: 6px;
+  margin-block: 56px 32px;
+  margin-inline: 14px;
+  border-radius: 999px;
+  background: var(--mz-dl-track);
+}
+.phase-site .mz-dl .mz-dl-fill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: var(--mz-dl-today);
+  border-radius: inherit;
+  background: linear-gradient(to right, var(--mz-emerald), var(--mz-mint));
+  transition: inline-size 1.2s var(--mz-ease);
+}
+.phase-site .mz-dl[dir="rtl"] .mz-dl-fill {
+  background: linear-gradient(to left, var(--mz-emerald), var(--mz-mint));
+}
+.phase-site .mz-dl .mz-dl-stage[data-ready="false"] .mz-dl-fill {
+  inline-size: 0;
+}
+.phase-site .mz-dl .mz-dl-pin {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: var(--mz-dl-x);
+  translate: -50% -50%;
+  display: grid;
+  place-items: center;
+  transition: inset-inline-start 0.8s var(--mz-ease);
+}
+.phase-site .mz-dl[dir="rtl"] .mz-dl-pin {
+  translate: 50% -50%;
+}
+.phase-site .mz-dl .mz-dl-pin--today {
+  --mz-dl-x: var(--mz-dl-today);
+  z-index: 2;
+}
+.phase-site .mz-dl .mz-dl-pin--appoint {
+  --mz-dl-x: var(--mz-dl-appoint);
+}
+.phase-site .mz-dl .mz-dl-pin--live {
+  --mz-dl-x: var(--mz-dl-live);
+}
+.phase-site .mz-dl .mz-dl-dot {
+  inline-size: 16px;
+  block-size: 16px;
+  border-radius: 50%;
+  background: var(--mz-mint);
+  box-shadow: 0 0 0 5px rgb(93 242 180 / 0.25);
+  animation: mz-dl-pulse 2s ease-in-out infinite;
+}
+.phase-site .mz-dl .mz-dl-pin-label {
+  position: absolute;
+  inset-block-end: 24px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--mz-mint);
+  color: var(--mz-mint-ink);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.phase-site .mz-dl .mz-dl-node {
+  display: grid;
+  place-items: center;
+  inline-size: 28px;
+  block-size: 28px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: var(--mz-ink);
+  color: var(--mz-ink);
+}
+.phase-site .mz-dl .mz-dl-node-core {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: #fff;
+}
+.phase-site .mz-dl .mz-dl-node svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+.phase-site .mz-dl .mz-dl-pin[data-tone="warn"] .mz-dl-node {
+  border-color: var(--mz-dl-amber);
+  background: var(--mz-dl-amber);
+}
+.phase-site .mz-dl .mz-dl-pin[data-tone="later"] .mz-dl-node {
+  border-color: rgb(255 255 255 / 0.55);
+}
+
+.phase-site .mz-dl .mz-dl-milestones {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.phase-site .mz-dl .mz-dl-milestone {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--mz-line-dark);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.04);
+}
+.phase-site .mz-dl .mz-dl-milestone[data-tone="warn"] {
+  border-color: rgb(255 200 107 / 0.5);
+  background: var(--mz-dl-amber-soft);
+}
+.phase-site .mz-dl .mz-dl-ms-name {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--mz-fg-muted);
+}
+.phase-site .mz-dl .mz-dl-ms-date {
+  font-size: clamp(18px, 2vw, 22px);
+  font-weight: 700;
+  color: var(--mz-fg);
+}
+.phase-site .mz-dl .mz-dl-ms-status {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mz-fg);
+}
+.phase-site .mz-dl .mz-dl-milestone[data-tone="warn"] .mz-dl-ms-status {
+  color: var(--mz-dl-amber);
+}
+.phase-site .mz-dl .mz-dl-milestone[data-tone="next"] .mz-dl-ms-status {
+  color: var(--mz-mint);
+}
+
+/* Narrow screens: the track runs top to bottom and the milestone cards stack. */
+@media (max-width: 640px) {
+  .phase-site .mz-dl .mz-dl-segments {
+    display: grid;
+    grid-auto-flow: row;
+    inline-size: 100%;
+    border-radius: 24px;
+  }
+  .phase-site .mz-dl .mz-dl-track {
+    inline-size: 6px;
+    block-size: 180px;
+    margin-block: 8px 24px;
+    margin-inline: 14px 0;
+  }
+  .phase-site .mz-dl .mz-dl-fill {
+    inset-block: 0 auto;
+    inset-inline: 0;
+    inline-size: auto;
+    block-size: var(--mz-dl-today);
+    transition-property: block-size;
+  }
+  .phase-site .mz-dl .mz-dl-stage[data-ready="false"] .mz-dl-fill {
+    inline-size: auto;
+    block-size: 0;
+  }
+  .phase-site .mz-dl .mz-dl-pin,
+  .phase-site .mz-dl[dir="rtl"] .mz-dl-pin {
+    inset-block-start: var(--mz-dl-x);
+    inset-inline-start: 50%;
+    translate: -50% -50%;
+    transition-property: inset-block-start;
+  }
+  .phase-site .mz-dl[dir="rtl"] .mz-dl-pin {
+    translate: 50% -50%;
+  }
+  .phase-site .mz-dl .mz-dl-pin-label {
+    inset-block-end: auto;
+    inset-inline-start: 26px;
+  }
+  .phase-site .mz-dl .mz-dl-milestones {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- Penalty, steps, footnote ---------- */
+.phase-site .mz-dl .mz-dl-penalty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-block-end: clamp(24px, 3vw, 36px);
+  padding: 14px 18px;
+  border: 1px solid rgb(255 200 107 / 0.5);
+  border-radius: 14px;
+  background: var(--mz-dl-amber-soft);
+}
+.phase-site .mz-dl .mz-dl-penalty svg {
+  flex: none;
+  inline-size: 22px;
+  block-size: 22px;
+  color: var(--mz-dl-amber);
+}
+.phase-site .mz-dl .mz-dl-penalty p {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--mz-dl-amber);
+}
+.phase-site .mz-dl .mz-dl-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin: 0 0 clamp(24px, 3vw, 36px);
+  padding: 0;
+  list-style: none;
+}
+.phase-site .mz-dl .mz-dl-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--mz-line-dark);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.04);
+  font-size: 16px;
+  line-height: 1.45;
+  font-weight: 600;
+  color: var(--mz-fg);
+}
+.phase-site .mz-dl .mz-dl-step-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 40px;
+  block-size: 40px;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.1);
+  color: #fff;
+}
+.phase-site .mz-dl .mz-dl-step-icon svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+.phase-site .mz-dl .mz-dl-included {
+  margin-block-end: 24px;
+}
+.phase-site .mz-dl .mz-dl-included p {
+  margin: 0 0 6px;
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--mz-fg);
+}
+.phase-site .mz-dl .mz-dl-arrow {
+  inline-size: 18px;
+  block-size: 18px;
+}
+.phase-site[lang="ar"] .mz-dl .mz-dl-arrow,
+.phase-site .mz-dl[dir="rtl"] .mz-dl-arrow {
+  transform: scaleX(-1);
+}
+.phase-site .mz-dl .mz-dl-footnote {
+  max-inline-size: 78ch;
+  margin-block: 28px 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--mz-fg-muted);
+}
+.phase-site .mz-dl .mz-dl-link {
+  color: var(--mz-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.phase-site .mz-dl .mz-dl-sr {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes mz-dl-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px rgb(93 242 180 / 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 9px rgb(93 242 180 / 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phase-site .mz-dl .mz-dl-fill,
+  .phase-site .mz-dl .mz-dl-pin,
+  .phase-site .mz-dl .mz-dl-segment {
+    transition: none;
+  }
+  .phase-site .mz-dl .mz-dl-dot {
+    animation: none;
+  }
+}
