@@ -5,6 +5,7 @@ import { starterPrice } from "../content";
 import { trialSignupPath } from "../route-content";
 import type { SectionProps } from "./types";
 import { useMarketingText } from "./text";
+import { metaText } from "../meta-text";
 import "./hero.css";
 
 const HeroStage = lazy(() => import("./HeroStage"));
@@ -26,13 +27,17 @@ function StagePlaceholder({ locale }: SectionProps) {
 }
 
 export function Hero({ base, locale }: SectionProps) {
-  const text = useMarketingText(locale);
+  // The h1, lead and CTA labels come from the statically imported marketingMeta catalog (the one
+  // the server renders from), so a cold visit never swaps the server-rendered heading for an empty
+  // one while the lazy marketing chunks load.
+  const copy = (key: Parameters<typeof metaText>[1]) =>
+    metaText(locale, key, { price: starterPrice });
   return (
     <section id="hero" data-testid="section-hero" className="mz-band mz-band--dark mz-hero">
       <div className="phase-wrap">
         <div className="mz-hero-copy">
-          <h1 className="mz-display">{text("hxHeroTitle")}</h1>
-          <p className="mz-lead">{text("hxHeroSub", { price: starterPrice })}</p>
+          <h1 className="mz-display">{copy("hxHeroTitle")}</h1>
+          <p className="mz-lead">{copy("hxHeroSub")}</p>
           <div className="mz-hero-cta">
             <div className="mz-hero-primary">
               <Link
@@ -40,22 +45,22 @@ export function Hero({ base, locale }: SectionProps) {
                 href={trialSignupPath}
                 data-testid="button-hero-start"
               >
-                {text("hxHeroCtaPrimary")} <ArrowUpRight aria-hidden="true" />
+                {copy("hxHeroCtaPrimary")} <ArrowUpRight aria-hidden="true" />
               </Link>
-              <small>{text("hxHeroCtaMicro")}</small>
+              <small>{copy("hxHeroCtaMicro")}</small>
             </div>
             <a className="phase-button phase-outline" href="#tour">
-              {text("hxHeroCtaTour")}
+              {copy("hxHeroCtaTour")}
             </a>
             <Link className="phase-textlink" href="/demo">
-              {text("hxHeroCtaSample")}
+              {copy("hxHeroCtaSample")}
             </Link>
             <Link
               className="phase-textlink"
               href={`${base}/book-demo`}
               data-testid="button-hero-demo"
             >
-              {text("hxHeroCtaDemo")}
+              {copy("hxHeroCtaDemo")}
             </Link>
           </div>
         </div>

@@ -23,7 +23,7 @@ import type { SectionProps } from "./types";
 import { SectionHead } from "./SectionHead";
 import { useMarketingText } from "./text";
 import { useInView, usePrefersReducedMotion } from "./motion";
-import { MOTION_LABELS } from "./motionText";
+import { metaText } from "../meta-text";
 import { useTourInvoice } from "./tour/invoiceState";
 import { nextTabIndex } from "./tour/model";
 import "./tour.css";
@@ -54,7 +54,6 @@ export function ProductTour({ base, locale }: SectionProps) {
   const [interacted, setInteracted] = useState(false);
   const [userPaused, setUserPaused] = useState(false);
   const [hovering, setHovering] = useState(false);
-  const labels = MOTION_LABELS[locale];
 
   // Keyboard focus entering, or any pointer or key press inside, ends auto-advance until the
   // visitor presses Play. Hovering only holds it while the pointer is over the tour.
@@ -111,7 +110,7 @@ export function ProductTour({ base, locale }: SectionProps) {
               onClick={togglePlay}
             >
               {playing ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
-              <span>{playing ? labels.tourPause : labels.tourPlay}</span>
+              <span>{metaText(locale, playing ? "hxMotionTourPause" : "hxMotionTourPlay")}</span>
             </button>
           </div>
         )}

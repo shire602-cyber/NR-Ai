@@ -3,8 +3,7 @@ import { Pause, Play } from "lucide-react";
 import type { SiteLocale } from "../routes";
 import { useCountUp, useInView, usePrefersReducedMotion } from "./motion";
 import { useMarketingText, type MarketingKey } from "./text";
-import { MOTION_LABELS } from "./motionText";
-import { FLIP_INVOICE, type InvoiceLabels } from "./hero/flipText";
+import { metaText } from "../meta-text";
 import {
   FINAL_FRAME,
   FRAMES,
@@ -48,7 +47,6 @@ function usePageHidden(): boolean {
  * Without IntersectionObserver (jsdom) or under reduced motion the static final frame is shown.
  */
 export default function HeroStage({ locale }: { locale: SiteLocale }) {
-  // Only the active locale's catalog; the flip frame reads FLIP_INVOICE instead of a second one.
   const text = useMarketingText(locale);
   const ref = useRef<HTMLDivElement>(null);
   const reduced = usePrefersReducedMotion();
@@ -57,7 +55,6 @@ export default function HeroStage({ locale }: { locale: SiteLocale }) {
   const animated = !reduced && typeof IntersectionObserver !== "undefined";
   const [paused, setPaused] = useState(false);
   const running = animated && inView && !hidden && !paused;
-  const labels = MOTION_LABELS[locale];
 
   const [position, setPosition] = useState(0);
   const [cycle, setCycle] = useState(0);
@@ -80,17 +77,17 @@ export default function HeroStage({ locale }: { locale: SiteLocale }) {
 
   const frame = animated ? FRAMES[position] : FINAL_FRAME;
   const invoiceLocale = frame.flip ? other(locale) : locale;
-  const inv: InvoiceLabels = frame.flip
-    ? FLIP_INVOICE[invoiceLocale]
-    : {
-        title: text("hxHeroInvTitle"),
-        customer: text("hxHeroInvCustomer"),
-        line1: text("hxHeroInvLine1"),
-        line2: text("hxHeroInvLine2"),
-        subtotal: text("hxHeroInvSubtotal"),
-        vat: text("hxHeroInvVat"),
-        total: text("hxHeroInvTotal"),
-      };
+  // The invoice copy sits in the statically imported marketingMeta catalog, so the flip frame can
+  // read the other language without loading a second catalog.
+  const inv = {
+    title: metaText(invoiceLocale, "hxHeroInvTitle"),
+    customer: metaText(invoiceLocale, "hxHeroInvCustomer"),
+    line1: metaText(invoiceLocale, "hxHeroInvLine1"),
+    line2: metaText(invoiceLocale, "hxHeroInvLine2"),
+    subtotal: metaText(invoiceLocale, "hxHeroInvSubtotal"),
+    vat: metaText(invoiceLocale, "hxHeroInvVat"),
+    total: metaText(invoiceLocale, "hxHeroInvTotal"),
+  };
   const lineLabels = [inv.line1, inv.line2];
   const count = useCountUp(VAT_PAYABLE_AED, { durationMs: 1500, enabled: frame.step >= 5 });
   const vatShown = animated ? count : VAT_PAYABLE_AED;
@@ -221,7 +218,7 @@ export default function HeroStage({ locale }: { locale: SiteLocale }) {
           onClick={() => setPaused((value) => !value)}
         >
           {paused ? <Play aria-hidden="true" /> : <Pause aria-hidden="true" />}
-          <span>{paused ? labels.heroPlay : labels.heroPause}</span>
+          <span>{metaText(locale, paused ? "hxMotionHeroPlay" : "hxMotionHeroPause")}</span>
         </button>
       )}
     </div>
