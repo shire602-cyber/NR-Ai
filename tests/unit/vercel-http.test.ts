@@ -148,4 +148,32 @@ describe("Vercel HTTP app", () => {
       expect(await response.json()).toMatchObject({ checks: { database } });
     }
   });
+
+  it("keeps liveness available when a throttled API read fails closed", async () => {
+    const redis = createServer((_req, res) => res.writeHead(503).end()).listen(0, "127.0.0.1");
+    await once(redis, "listening");
+    try {
+      vi.stubEnv(
+        "UPSTASH_REDIS_REST_URL",
+        `http://127.0.0.1:${(redis.address() as AddressInfo).port}`
+      );
+      vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "outage-test");
+      const app = await createApp();
+      const appServer = app.listen(0, "127.0.0.1");
+      try {
+        await once(appServer, "listening");
+        const base = `http://127.0.0.1:${(appServer.address() as AddressInfo).port}`;
+        const api = await fetch(base + "/api/version");
+        expect(api.status).toBe(503);
+        expect(await api.json()).toMatchObject({ code: "THROTTLE_UNAVAILABLE" });
+        const live = await fetch(base + "/health/live");
+        expect(live.status).toBe(200);
+        expect(await live.json()).toMatchObject({ status: "ok" });
+      } finally {
+        await new Promise<void>((resolve) => appServer.close(() => resolve()));
+      }
+    } finally {
+      await new Promise<void>((resolve) => redis.close(() => resolve()));
+    }
+  });
 });

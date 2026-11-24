@@ -142,8 +142,7 @@ export async function createApp({ vercel = false } = {}) {
     res.status(200).json({ status: "ok", uptime: process.uptime() });
   });
 
-  // Railway healthcheck endpoint. This must stay DB-free so deploy readiness is
-  // about whether the HTTP server is alive, not whether downstream services are.
+  // Build metadata for smoke tests and deployment verification.
   app.get("/api/version", (_req, res) => {
     res.status(200).json({
       status: "ok",
