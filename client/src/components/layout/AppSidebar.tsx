@@ -221,7 +221,7 @@ export function AppSidebar() {
                         isActive={isActive}
                         className={cn(
                           "w-full justify-start text-start",
-                          description ? "h-auto min-h-10 py-1.5" : undefined
+                          description ? "h-auto min-h-12 py-2" : undefined
                         )}
                         data-testid={`link-${item.testId ?? item.titleKey}`}
                       >
@@ -281,11 +281,11 @@ export function AppSidebar() {
       <div className="shell-slide-in">
         {/* Spec 3.5: logo + wordmark only (no tagline); the company switcher sits directly
             under it for every user type. */}
-        <SidebarHeader className="px-3 pt-4 pb-3 space-y-3">
-          <div className="flex items-center gap-2.5 px-1">
+        <SidebarHeader className="space-y-5 px-4 pb-4 pt-6">
+          <div className="flex items-center gap-3 px-1">
             <BrandMark size="md" />
             <ProductWordmark
-              className="font-semibold text-[15px] tracking-tight text-sidebar-accent-foreground leading-tight"
+              className="font-medium text-[17px] tracking-tight text-sidebar-accent-foreground leading-tight"
               accentClassName="text-sidebar-primary"
             />
           </div>
@@ -293,11 +293,11 @@ export function AppSidebar() {
         </SidebarHeader>
       </div>
 
-      <SidebarContent ref={scrollRef} className="px-1.5" style={scrollFade}>
+      <SidebarContent ref={scrollRef} className="px-2.5" style={scrollFade}>
         {/* ── Client portal — simplified flat view ── */}
         {userType === "client" && (
           <>
-            <div className="px-3 pt-5 pb-1.5 text-caption font-medium text-sidebar-muted">
+            <div className="px-3 pb-2.5 pt-7 text-caption font-medium text-sidebar-muted">
               {t["shell.sidebarWorkspace"]}
             </div>
             <SidebarMenu className="px-1.5">
@@ -313,21 +313,21 @@ export function AppSidebar() {
               </SidebarMenuItem>
             </SidebarMenu>
 
-            <div className="px-3 pt-5 pb-1.5 text-caption font-medium text-sidebar-muted">
+            <div className="px-3 pb-2.5 pt-7 text-caption font-medium text-sidebar-muted">
               {t["shell.sidebarDocuments"]}
             </div>
             <SidebarMenu className="px-1.5">
               {CLIENT_PORTAL_DOCUMENT_ITEMS.map(renderClientPortalItem)}
             </SidebarMenu>
 
-            <div className="px-3 pt-5 pb-1.5 text-caption font-medium text-sidebar-muted">
+            <div className="px-3 pb-2.5 pt-7 text-caption font-medium text-sidebar-muted">
               {t.compliance ?? "Compliance"}
             </div>
             <SidebarMenu className="px-1.5">
               {CLIENT_PORTAL_COMPLIANCE_ITEMS.map(renderClientPortalItem)}
             </SidebarMenu>
 
-            <div className="px-3 pt-5 pb-1.5 text-caption font-medium text-sidebar-muted">
+            <div className="px-3 pb-2.5 pt-7 text-caption font-medium text-sidebar-muted">
               {t["shell.sidebarInsights"]}
             </div>
             <SidebarMenu className="px-1.5">
@@ -350,7 +350,7 @@ export function AppSidebar() {
             userType must never strand the owner with an empty sidebar. */}
         {userType !== "client" && (
           <>
-            <div className="px-3 pt-5 pb-1.5 text-caption font-medium text-sidebar-muted">
+            <div className="px-3 pb-2.5 pt-7 text-caption font-medium text-sidebar-muted">
               {t["shell.sidebarOverview"]}
             </div>
             <SidebarMenu className="px-1.5">
@@ -366,23 +366,25 @@ export function AppSidebar() {
               </SidebarMenuItem>
             </SidebarMenu>
 
-            <div className="px-3 pt-5 pb-1.5 text-caption font-medium text-sidebar-muted">
+            <div className="px-3 pb-2.5 pt-7 text-caption font-medium text-sidebar-muted">
               {t["shell.sidebarOperations"]}
             </div>
-            <SidebarMenu className="px-1.5 pb-4">{allGroups.map(renderNavGroup)}</SidebarMenu>
+            <SidebarMenu className="gap-1.5 px-1.5 pb-6">
+              {allGroups.map(renderNavGroup)}
+            </SidebarMenu>
           </>
         )}
       </SidebarContent>
 
-      <SidebarFooter className="px-2.5 py-2.5 border-t border-sidebar-border space-y-0.5">
+      <SidebarFooter className="space-y-1 border-t border-sidebar-border px-3.5 py-4">
         <button
           type="button"
           onClick={toggleLanguage}
           data-testid="button-language-toggle"
-          className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/70 transition-colors duration-fast"
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-sidebar-foreground hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/70 transition-colors duration-base"
         >
           <Languages className="w-4 h-4 text-sidebar-muted" />
-          <span className="text-[13px]" lang={locale === "en" ? "ar" : "en"}>
+          <span className="text-[13.5px]" lang={locale === "en" ? "ar" : "en"}>
             {locale === "en" ? "العربية" : "English"}
           </span>
           <span className="ms-auto kbd">{locale === "en" ? "AR" : "EN"}</span>
@@ -392,10 +394,10 @@ export function AppSidebar() {
           type="button"
           onClick={handleLogout}
           data-testid="button-logout"
-          className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground hover:text-danger hover:bg-danger/10 transition-colors duration-fast"
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-sidebar-foreground hover:text-danger hover:bg-danger/10 transition-colors duration-base"
         >
           <LogOut className="w-4 h-4 text-sidebar-muted rtl:-scale-x-100" />
-          <span className="text-[13px]">{t.logout}</span>
+          <span className="text-[13.5px]">{t.logout}</span>
         </button>
       </SidebarFooter>
     </Sidebar>

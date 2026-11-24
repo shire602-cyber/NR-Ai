@@ -222,6 +222,8 @@ import { SkipLink } from "@/components/SkipLink";
 import { RedirectTo } from "@/components/layout/RedirectTo";
 import { openCommandPalette } from "@/lib/commandPalette";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { MotionToggle } from "@/components/ui/motion-toggle";
+import { AppSurface } from "@/components/layout/AppSurface";
 import { BrandMark } from "@/components/BrandMark";
 import { CompanySwitcher } from "@/components/CompanySwitcher";
 
@@ -322,19 +324,20 @@ function ProtectedLayout({
   ]);
 
   const style = {
-    "--sidebar-width": "16rem",
+    "--sidebar-width": "17.5rem",
     "--sidebar-width-icon": "3rem",
   };
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
       <SkipLink />
-      <div className="flex h-screen w-full bg-background">
+      <AppSurface />
+      <div className="app-canvas flex h-screen w-full bg-background">
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0">
           <header
             role="banner"
-            className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background/85 px-3 backdrop-blur-md supports-[backdrop-filter]:bg-background/70 md:px-6"
+            className="surface-glass sticky top-0 z-20 flex h-header shrink-0 items-center justify-between gap-4 px-3 md:px-gutter"
           >
             <div className="flex min-w-0 flex-1 items-center gap-2">
               {/* Desktop: sidebar toggle. Mobile (CTO 8): brand mark + company name button
@@ -356,14 +359,14 @@ function ProtectedLayout({
               </div>
             </div>
 
-            <div className="flex shrink-0 items-center gap-0.5 md:gap-1.5">
+            <div className="flex shrink-0 items-center gap-0.5 md:gap-2">
               <button
                 type="button"
                 onClick={openCommandPalette}
                 data-testid="button-command-palette"
                 title={t["shell.searchAndCommands"]}
                 aria-keyshortcuts="Control+K Meta+K"
-                className="me-1 hidden h-8 w-56 items-center gap-2 rounded-md border border-input bg-card ps-2.5 pe-1.5 text-muted-foreground shadow-xs transition-colors duration-fast hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex lg:w-64"
+                className="me-2 hidden h-10 w-60 items-center gap-2.5 rounded-full border border-input bg-card/80 ps-4 pe-2.5 text-muted-foreground shadow-[var(--control-shadow)] transition-[border-color,color,box-shadow,width] duration-base ease-out hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex lg:w-72 lg:hover:w-80"
               >
                 <Search className="h-4 w-4 shrink-0" aria-hidden />
                 <span className="flex-1 text-start text-small">{t["shell.search"]}</span>
@@ -381,6 +384,8 @@ function ProtectedLayout({
               </button>
               <OfflineIndicator />
               {/* On mobile the theme choice lives in the More sheet (CTO 8). */}
+              {/* Visible pause / play for decorative motion (also in the account menu). */}
+              <MotionToggle className="hidden md:inline-flex" />
               <ThemeToggle className="hidden md:inline-flex" />
               <NotificationBell />
               {/* R3 (CTO 23): avatar menu with a persistent Help / talk-to-an-accountant entry. */}
