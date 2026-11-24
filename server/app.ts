@@ -33,6 +33,7 @@ import {
 } from "./middleware/errorHandler";
 import { csrfProtection, csrfTokenHandler, csrfErrorHandler } from "./middleware/csrf";
 import { registerRoutes } from "./routes";
+import { startOcrDeadline } from "./http/ocr-deadline";
 import { pingDb, pool } from "./db";
 import { createHealthHandler } from "./routes/admin-health.routes";
 import "./auth";
@@ -61,6 +62,8 @@ export async function createApp({ vercel = false } = {}) {
       next();
     });
   }
+
+  app.use(startOcrDeadline);
 
   // ─── Security middleware (helmet, CORS, rate limiting) ──────
   applySecurityMiddleware(app);

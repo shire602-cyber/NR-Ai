@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { assertUploadSize } from "../http/upload-errors";
 import { ocrTimeoutBody, withOcrDeadline } from "../http/ocr-deadline";
 import { Router } from "express";
@@ -94,21 +95,16 @@ function extractJson(raw: string): BulkOcrJson {
 
 const ALLOWED_OCR_MIME_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
-async function runOCR(
-  imageData: string,
-  anthropic: Anthropic | null,
-  openai: OpenAI | null,
-  signal: AbortSignal
-): Promise<{
-  merchant: string;
-  date: string;
-  amount: number;
-  vatAmount: number;
-  currency: string;
-  category: string;
-}> {
-  // Validate MIME type from the data URL prefix; reject unknown/unsafe types up front.
-  // Bare base64 (no data URL prefix) is rejected — clients must declare a MIME type.
+function bulkOcrCaptureId(image: Buffer): string {
+  // UUIDv8 derived from the bytes so retried uploads share the company/capture constraint.
+  const hash = createHash("sha256").update("firm-bulk-ocr\0").update(image).digest();
+  hash[6] = (hash[6] & 0x0f) | 0x80;
+  hash[8] = (hash[8] & 0x3f) | 0x80;
+  const hex = hash.toString("hex", 0, 16);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function validateBulkOcrMime(imageData: string): void {
   const dataUrlMatch = imageData.match(/^data:([^;]+);base64,/);
   if (!dataUrlMatch) {
     throw Object.assign(
@@ -120,8 +116,21 @@ async function runOCR(
   if (!ALLOWED_OCR_MIME_TYPES.includes(declaredMime)) {
     throw Object.assign(new Error(`Unsupported image MIME type: ${declaredMime}`), { status: 400 });
   }
-  const dataUrl = imageData;
+}
 
+async function runOCR(
+  dataUrl: string,
+  anthropic: Anthropic | null,
+  openai: OpenAI | null,
+  signal: AbortSignal
+): Promise<{
+  merchant: string;
+  date: string;
+  amount: number;
+  vatAmount: number;
+  currency: string;
+  category: string;
+}> {
   let rawText = "";
   const failures: Array<{ provider: "Anthropic" | "OpenAI"; error: unknown }> = [];
   if (anthropic) {
@@ -256,10 +265,11 @@ router.post(
       )
     );
 
-    for (const { imageData } of items) {
-      const base64 = imageData.replace(/^data:[^;]+;base64,/, "");
-      assertUploadSize(Buffer.from(base64, "base64").length);
-    }
+    const uploads = items.map((item) => {
+      const bytes = Buffer.from(item.imageData.replace(/^data:[^;]+;base64,/, ""), "base64");
+      assertUploadSize(bytes.length);
+      return { ...item, captureId: bulkOcrCaptureId(bytes) };
+    });
     const { anthropic, openai } = createOcrClients();
     if (!anthropic && !openai) {
       return res
@@ -275,16 +285,19 @@ router.post(
       error?: string;
     }> = [];
 
-    for (const item of items) {
+    for (const item of uploads) {
       try {
         signal.throwIfAborted();
-        const extracted = await waitForStep(runOCR(item.imageData, anthropic, openai, signal));
-        const receipt = await waitForStep(
-          db.transaction(async (tx) => {
-            signal.throwIfAborted();
-            const saved = await storage.createReceipt(
+        validateBulkOcrMime(item.imageData);
+        let receipt = await waitForStep(storage.getCapturedReceipt(item.companyId, item.captureId));
+        if (!receipt) {
+          const extracted = await waitForStep(runOCR(item.imageData, anthropic, openai, signal));
+          // The unique capture ID makes this safe to retry even if COMMIT outlives the deadline.
+          const saved = await waitForStep(
+            storage.createCapturedReceipt(
               {
                 companyId: item.companyId,
+                captureId: item.captureId,
                 merchant: extracted.merchant,
                 date: extracted.date ? new Date(extracted.date) : null,
                 amount: extracted.amount,
@@ -296,13 +309,13 @@ router.post(
                 posted: false,
                 uploadedBy: userId,
               },
-              tx
-            );
-            // Roll back if the insert finishes after the request deadline.
-            signal.throwIfAborted();
-            return saved;
-          })
-        );
+              true,
+              signal
+            )
+          );
+          if (!saved.receipt) throw new Error("Unable to save bulk OCR receipt");
+          receipt = saved.receipt;
+        }
         results.push({
           companyId: item.companyId,
           filename: item.filename,
