@@ -1,10 +1,11 @@
 import { Check } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 import { PlanCard } from "../PlanCard";
-import { PLANS } from "../plans";
+import { PLANS, type BillingCycle } from "../plans";
 import "./home/pricing.css";
 
-export default function MonthlyPlans() {
+/** The three plan cards for the chosen billing cycle (monthly unless the pricing page says yearly). */
+export default function MonthlyPlans({ cycle = "monthly" }: { cycle?: BillingCycle }) {
   const { t } = useTranslation();
   return (
     <>
@@ -18,7 +19,7 @@ export default function MonthlyPlans() {
             <Check aria-hidden="true" size={14} />
             {t["marketing.hxPriceBadge"]}
           </span>
-          <PlanCard plan={plan} cycle="monthly" headingLevel="h3" showFeaturedCaption={false} />
+          <PlanCard plan={plan} cycle={cycle} headingLevel="h3" showFeaturedCaption={false} />
         </div>
       ))}
     </>

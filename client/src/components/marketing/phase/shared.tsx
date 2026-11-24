@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Bilingual } from "./content";
+import type { BillingCycle } from "../plans";
 
 export type Translate = (text: Bilingual) => string;
 
@@ -51,8 +52,10 @@ export function Plans({
   tr,
   immediate = false,
   intro = true,
+  cycle = "monthly",
 }: {
   tr: Translate;
+  cycle?: BillingCycle;
   immediate?: boolean;
   /** The "Try Enterprise free" line above the cards (the homepage says it in its own lead). */
   intro?: boolean;
@@ -88,7 +91,7 @@ export function Plans({
       )}
       {showPlans && (
         <Suspense fallback={null}>
-          <MonthlyPlans />
+          <MonthlyPlans cycle={cycle} />
         </Suspense>
       )}
     </div>

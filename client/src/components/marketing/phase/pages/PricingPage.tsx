@@ -1,11 +1,16 @@
-import { Link } from "wouter";
+import { useState } from "react";
 import { ArrowRight } from "lucide-react";
+import { Segmented } from "../../Segmented";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatAmountDigits, formatMoneyText } from "@/lib/format-money";
 import {
+  BILLING_CYCLES,
   COMPARE_GROUPS,
   PLANS,
+  YEARLY_FREE,
   planNameKey,
   planPrice,
+  type BillingCycle,
   type Cell,
   type CompareGroup,
   type CompareRow,
@@ -146,9 +151,16 @@ export function FeatureMatrix({ locale }: Pick<LegacySectionProps, "locale">) {
   );
 }
 
+const CYCLE_LABEL: Record<BillingCycle, string> = {
+  monthly: "marketing.prCycleMonthly",
+  yearly: "marketing.prCycleYearly",
+};
+
 /** Body of /en/pricing and /ar/pricing; the page wrapper renders the h1. */
 export function PricingPage({ base, locale, tr }: LegacySectionProps) {
   const text = useMarketingText(locale);
+  const { t } = useTranslation();
+  const [cycle, setCycle] = useState<BillingCycle>("monthly");
   return (
     <div className="mz-price-page" data-testid="pricing-page">
       <section
@@ -158,14 +170,31 @@ export function PricingPage({ base, locale, tr }: LegacySectionProps) {
       >
         <div className="phase-wrap">
           <SectionHead title={text("hxPriceTitle")} lead={text("hxPriceLead")} />
-          <PlanCards base={base} locale={locale} tr={tr} immediate />
+          <div className="mz-price-cycle">
+            <Segmented
+              value={cycle}
+              onChange={setCycle}
+              label={t["marketing.pricingBillingPeriod"]}
+              testId="billing-cycle"
+              optionTestId={(c) => `billing-cycle-${c}`}
+              options={BILLING_CYCLES.map((c) => ({ value: c, label: t[CYCLE_LABEL[c]] }))}
+            />
+            <p className="mz-price-note" data-testid="billing-cycle-note">
+              {formatMessage(t["marketing.prYearlyNote"], { months: YEARLY_FREE })}
+            </p>
+          </div>
+          <PlanCards base={base} locale={locale} tr={tr} immediate cycle={cycle} />
           <p className="mz-price-note mz-price-readonly" data-testid="price-readonly">
             {text("hxPriceReadOnly")}
           </p>
           <p className="mz-price-links">
-            <Link className="phase-textlink" href="/pricing" data-testid="link-price-legacy">
+            <a
+              className="phase-textlink"
+              href={`${base}/pricing#plan-matrix`}
+              data-testid="link-price-matrix"
+            >
               {text("hxPriceFullComparison")} <ArrowRight aria-hidden="true" />
-            </Link>
+            </a>
           </p>
         </div>
       </section>
