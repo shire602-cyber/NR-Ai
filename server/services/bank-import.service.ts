@@ -40,6 +40,18 @@ export function parseStatementCsv(bytes: Buffer, options: ParseOptions = {}): Ba
   return parseBankCsvText(text, options, fingerprintBytes(bytes));
 }
 
+export function assertStatementDatesValid(parsed: BankParseResult): void {
+  const invalidDate = parsed.rows.find((row) => row.date === null);
+  if (invalidDate) {
+    throw new DomainError(
+      "BANK_STATEMENT_INVALID_DATE",
+      400,
+      { rowIndex: invalidDate.rowIndex },
+      "Import canceled. Correct any missing or invalid transaction dates in the CSV and try again."
+    );
+  }
+}
+
 export function statementImportChoice(parsed: BankParseResult, acknowledged?: boolean) {
   if (acknowledged || !parsed.warnings.some((warning) => warning.requiresChoice)) return null;
   return {

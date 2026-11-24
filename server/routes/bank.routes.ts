@@ -16,6 +16,7 @@ import {
   sanitizeConnection,
 } from "../services/bank-feeds";
 import {
+  assertStatementDatesValid,
   importConnectionStatement,
   linkConnectionStatement,
   parseStatementCsv,
@@ -184,6 +185,7 @@ export async function registerBankRoutes(app: Express, retireOnStartup = true) {
           "Could not read the statement"
         );
       }
+      assertStatementDatesValid(parsed);
       if (!parsed.rows.some((row) => row.date && row.errors.length === 0))
         throw new DomainError(
           "NO_VALID_TRANSACTIONS",

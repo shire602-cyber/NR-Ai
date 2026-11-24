@@ -2075,6 +2075,23 @@ describe("CSV statement import isolation", () => {
 });
 
 describe("CSV statement import regressions", () => {
+  it("rejects a managed CSV with an invalid date before importing any rows", async () => {
+    const t = await h.createTenant();
+    const account = await bankAccount(t);
+    const csvContent =
+      "Date,Description,Amount\n2026-03-10,Stationery,-12.50\n2026-02-30,Deposit,100.00";
+    const response = await t.as.post(`${base(t)}/bank-statements/import`, {
+      bankAccountId: account.id,
+      csvContent,
+    });
+    expect(response.status, response.text).toBe(400);
+    expect(response.body).toMatchObject({
+      code: "BANK_STATEMENT_INVALID_DATE",
+      details: { rowIndex: 3 },
+    });
+    expect(await lines(t, account.id)).toHaveLength(0);
+  });
+
   it("requires the same ambiguity confirmation on the managed and compatibility CSV endpoints", async () => {
     const t = await h.createTenant();
     const account = await bankAccount(t);

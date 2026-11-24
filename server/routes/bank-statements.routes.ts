@@ -25,6 +25,7 @@ import {
   type ParseOptions,
 } from "../services/bank-statement-parser.service";
 import {
+  assertStatementDatesValid,
   importStatementRows,
   parseStatementCsv,
   statementImportChoice,
@@ -471,6 +472,7 @@ export function registerBankStatementRoutes(app: Express) {
           .status(400)
           .json({ message: "Could not read the statement file", code: "STATEMENT_UNREADABLE" });
       }
+      assertStatementDatesValid(parsedFile);
       const format = parsedFile.format;
       const parseErrors = summarizeRowErrors(parsedFile);
       const validRows = parsedFile.rows.filter((r) => r.errors.length === 0 && r.date);

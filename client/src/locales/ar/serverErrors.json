@@ -86,6 +86,7 @@
   "serverErrors.BANK_FEE_BASE_CURRENCY_ONLY": "سجّل الرسوم على حساب بالعملة الأساسية.",
   "serverErrors.BANK_FEE_TOO_LARGE": "يجب أن تكون الرسوم أقل من المبلغ المستلم.",
   "serverErrors.BANK_GL_CODE_EXHAUSTED": "لا يوجد رمز حساب شاغر لحساب بنكي جديد. اربط حسابًا موجودًا بدلًا من ذلك.",
+  "serverErrors.BANK_STATEMENT_INVALID_DATE": "أُلغي الاستيراد. صحّح تواريخ الحركات المفقودة أو غير الصالحة في ملف CSV ثم أعد المحاولة.",
   "serverErrors.BANK_STATEMENT_LINK_CONFLICT": "راجع حركات كشف الحساب الحالية قبل تغيير حسابها البنكي.",
   "serverErrors.BANK_TRANSACTION_NOT_FOUND": "تعذّر العثور على الحركة البنكية.",
   "serverErrors.BASE_CURRENCY_LOCKED": "لا يمكن تغيير العملة الأساسية بعد ترحيل قيود يومية.",
