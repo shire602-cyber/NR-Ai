@@ -164,7 +164,17 @@ it("[PR94] changes Starter to Professional on the existing Stripe subscription",
   const { PLAN_PRICE_MAP } = await import("../../server/services/stripe.service");
   const oldPrice = PLAN_PRICE_MAP.professional.monthly;
   PLAN_PRICE_MAP.professional.monthly = "price-professional";
-  stripe.retrieveSubscription.mockResolvedValue({ items: { data: [{ id: "existing-item" }] } });
+  const current = {
+    id: "fixture-subscription",
+    customer: "fixture-customer",
+    status: "active",
+    current_period_start: Math.floor(Date.now() / 1000),
+    current_period_end: Math.floor(Date.now() / 1000) + 30 * 86_400,
+    items: { data: [{ id: "existing-item", price: { id: "price-professional" }, quantity: 1 }] },
+  };
+  stripe.retrieveSubscription
+    .mockResolvedValueOnce({ items: { data: [{ id: "existing-item" }] } })
+    .mockResolvedValue(current);
   try {
     const result = await t.as.post(`/api/companies/${companyId}/billing/change-plan`, {
       planId: "professional",
@@ -294,16 +304,15 @@ it.each([
         yield completed;
       }
     });
-    if (completesAfterSubscriptionList) stripe.retrieveSubscription.mockResolvedValue(active);
-    else stripe.listSubscriptions.mockReturnValue([active]);
+    stripe.retrieveSubscription.mockResolvedValue(active);
+    if (!completesAfterSubscriptionList) stripe.listSubscriptions.mockReturnValue([active]);
     const retry = await checkout();
     expect(retry.status).toBe(200);
     expect(retry.body).toEqual({ url: expect.stringMatching(/\/subscription\?success=true$/) });
     expect(stripe.listSubscriptions).toHaveBeenCalledWith({ customer, status: "all" });
     if (sessionOnly)
       expect(stripe.listSessions).toHaveBeenCalledWith({ subscription: subscriptionId });
-    if (completesAfterSubscriptionList)
-      expect(stripe.retrieveSubscription).toHaveBeenCalledWith(subscriptionId);
+    expect(stripe.retrieveSubscription).toHaveBeenCalledWith(subscriptionId);
     expect(stripe.createSession).toHaveBeenCalledTimes(returning ? 1 : 0);
     const billing = await t.as.get(`/api/companies/${companyId}/billing/subscription`);
     expect(billing.body).toMatchObject({
@@ -311,10 +320,12 @@ it.each([
       entitlement: { state: "active", planId: "starter" },
     });
     if (sessionOnly && !canceledDuringRecovery) {
+      const scheduledCancellation = { ...active, cancel_at_period_end: true };
+      stripe.retrieveSubscription.mockResolvedValue(scheduledCancellation);
       await handleWebhookEvent({
         id: "fixture-subscription-updated",
         type: "customer.subscription.updated",
-        data: { object: { ...active, cancel_at_period_end: true } },
+        data: { object: scheduledCancellation },
       } as unknown as Stripe.Event);
       const scheduled = await t.as.get(`/api/companies/${companyId}/billing/subscription`);
       expect(scheduled.body).toMatchObject({ subscription: { cancelAtPeriodEnd: true } });

@@ -1,7 +1,6 @@
 // Storage interface (IStorage) and the argument/result types it uses.
 // Part of server/storage.ts (split per domain, R20-09); import from "./storage".
 
-
 import type {
   Account,
   ActivityLog,
@@ -816,14 +815,18 @@ export interface IStorage {
   getSubscription(companyId: string): Promise<Subscription | undefined>;
   getSubscriptionByStripeIds(
     subscriptionId: string,
-    customerId: string
+    customerId: string,
+    includeUnlinked?: boolean
   ): Promise<Subscription | undefined>;
   createSubscription(subscription: InsertSubscription): Promise<Subscription>;
   updateSubscription(id: string, data: Partial<InsertSubscription>): Promise<Subscription>;
-  applyStripeCheckout(
+  reconcileStripeSubscription<T>(
     subscription: Subscription,
-    data: Partial<InsertSubscription>
-  ): Promise<boolean>;
+    readChanges: (locked: Subscription) => Promise<{
+      result: T;
+      data?: Partial<InsertSubscription>;
+    }>
+  ): Promise<T | undefined>;
 
   // User type management
   updateUserType(id: string, userType: string): Promise<User>;
