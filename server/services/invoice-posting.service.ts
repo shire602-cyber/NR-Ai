@@ -291,10 +291,10 @@ const dateOnly = (d: Date | string) =>
 
 /** Compute a stored document's totals from its stored lines. */
 export function totalsForStoredDocument(
-  invoice: Pick<Invoice, "discountType" | "discountValue" | "reverseCharge">,
+  invoice: Pick<Invoice, "discountType" | "discountValue" | "reverseCharge" | "vatAmount">,
   lines: InvoiceLine[]
 ): SalesDocumentTotals {
-  return computeSalesDocument(
+  const totals = computeSalesDocument(
     lines.map((l) =>
       storedLineToTotalsInput({
         ...l,
@@ -308,6 +308,10 @@ export function totalsForStoredDocument(
       reverseCharge: invoice.reverseCharge,
     }
   );
+  // Use the tax printed on the document, including on invoices issued under the earlier
+  // rounding method and credits that clear the exact VAT remaining after partial credits.
+  const vatFils = toFils(Math.abs(Number(invoice.vatAmount)), { rounding: "halfUp" });
+  return { ...totals, vatFils, totalFils: totals.subtotalFils + vatFils };
 }
 
 /** Evaluate under the invoice lock to order new VAT claims and receipts across transactions.
@@ -982,22 +986,23 @@ async function postCreditNoteInTx(args: {
         debits.push({ leg, base: leg.remainingBase, foreign: leg.remainingForeign });
     }
   } else {
-    // Net per revenue role (document currency) → split over that role's legs
-    // (e.g. two cost centres) by their remaining amounts, at the original rate.
-    const perRole = new Map<RevenueAccountRole, number>();
-    for (const l of totals.lines) {
-      const role = l.classification.revenueAccountRole;
-      perRole.set(role, (perRole.get(role) ?? 0) + l.netFils);
-    }
-    for (const [role, docFils] of perRole) {
-      if (docFils <= 0) continue;
-      const roleLegs = revenueLegs.filter((l) => l.role === role && l.remainingBase > 0);
+    // Reserve all explicitly named centres before distributing unassigned credits.
+    const buckets = revenueBuckets(totals, args.lines).sort(
+      (a, b) => Number(b.costCenterId !== null) - Number(a.costCenterId !== null)
+    );
+    for (const { role, netFils: docFils, costCenterId } of buckets) {
+      const roleLegs = revenueLegs.filter(
+        (leg) =>
+          leg.role === role &&
+          leg.remainingBase > 0 &&
+          (costCenterId === null || leg.costCenterId === costCenterId)
+      );
       if (!roleLegs.length) {
         throw new DomainError(
           "CREDIT_LINE_NOT_ON_INVOICE",
           422,
-          { role },
-          `The invoice has no ${role.replace(/_/g, " ")} revenue left to credit.`
+          { role, costCenterId },
+          `The invoice has no ${role.replace(/_/g, " ")} revenue left to credit at the requested cost centre.`
         );
       }
       const base = toBase(docFils, rate);
@@ -1019,7 +1024,10 @@ async function postCreditNoteInTx(args: {
         roleLegs.map((l) => l.remainingBase)
       );
       roleLegs.forEach((leg, i) => {
-        if (baseParts[i] > 0) debits.push({ leg, base: baseParts[i], foreign: docParts[i] });
+        if (baseParts[i] > 0) {
+          debits.push({ leg, base: baseParts[i], foreign: docParts[i] });
+          leg.remainingBase -= baseParts[i];
+        }
       });
     }
     if (totals.vatFils > 0) {
@@ -1248,29 +1256,15 @@ export async function insertCreditNoteDocument(
       header = { discountType: original.discountType, discountValue: original.discountValue };
       totals = totalsForStoredDocument(original, originalLines);
     } else {
-      // Remaining balance after earlier partial credits: one line per role.
-      const orig = totalsForStoredDocument(original, originalLines);
-      const remainingSub =
-        toFils(original.subtotal, { rounding: "halfUp" }) -
-        (await loadPriorCreditedSubtotal(tx, original));
+      const remaining = await remainingCreditLines(tx, original, originalLines);
+      docLines = remaining.lines;
       const remainingTotal = totalFils - s.creditedFils;
-      const remainingVat = remainingTotal - remainingSub;
-      docLines = [
-        {
-          description: `Remaining balance of ${original.number}`,
-          quantity: 1,
-          unitPrice: Number(fromFils(Math.max(0, remainingSub))),
-          vatRate: remainingVat > 0 ? 0.05 : 0,
-          vatSupplyType: remainingVat > 0 ? "standard_rated" : "zero_rated",
-        },
-      ];
+      const remainingVat = remainingTotal - remaining.subtotalFils;
       totals = {
-        ...orig,
-        lines: [],
-        subtotalFils: Math.max(0, remainingSub),
-        vatFils: Math.max(0, remainingVat),
+        ...computeSalesDocument(docLines.map(storedLineToTotalsInput)),
+        subtotalFils: remaining.subtotalFils,
+        vatFils: remainingVat,
         totalFils: remainingTotal,
-        discountFils: 0,
       };
     }
   }
@@ -1327,17 +1321,68 @@ export async function insertCreditNoteDocument(
   return { creditNote, mode };
 }
 
-async function loadPriorCreditedSubtotal(
-  tx: LedgerTx,
-  invoice: Pick<Invoice, "id" | "companyId">
-): Promise<number> {
-  const res = await tx.execute(sql`
-    SELECT COALESCE(SUM(-subtotal), 0)::text AS sub FROM invoices
-     WHERE original_invoice_id = ${invoice.id} AND company_id = ${invoice.companyId}
-       AND invoice_type = 'credit_note'
-       AND status NOT IN ('void', 'cancelled', 'draft')`);
-  const row = (((res as { rows?: unknown[] }).rows ?? res) as Array<Record<string, string>>)[0];
-  return toFils(row?.sub ?? "0", { rounding: "halfUp" });
+async function remainingCreditLines(tx: LedgerTx, original: Invoice, originalLines: InvoiceLine[]) {
+  const prior = await tx
+    .select({ document: invoices, line: invoiceLines })
+    .from(invoices)
+    .innerJoin(invoiceLines, eq(invoiceLines.invoiceId, invoices.id))
+    .where(
+      and(
+        eq(invoices.companyId, original.companyId),
+        eq(invoices.originalInvoiceId, original.id),
+        eq(invoices.invoiceType, "credit_note"),
+        sql`${invoices.status} NOT IN ('void', 'cancelled', 'draft')`
+      )
+    );
+  const documents = new Map<string, { document: Invoice; lines: InvoiceLine[] }>();
+  for (const { document, line } of prior) {
+    const previous = documents.get(document.id);
+    if (previous) previous.lines.push(line);
+    else documents.set(document.id, { document, lines: [line] });
+  }
+
+  const balances = new Map<
+    string,
+    {
+      supply: SalesDocumentTotals["lines"][number]["classification"];
+      net: number;
+      margin: number | null;
+    }
+  >();
+  function add(document: Invoice, lines: InvoiceLine[], sign: number) {
+    totalsForStoredDocument(document, lines).lines.forEach((line, i) => {
+      const key = `${line.classification.supplyType}:${line.marginFils !== null}`;
+      const balance = balances.get(key) ?? {
+        supply: line.classification,
+        net: 0,
+        margin: line.marginFils === null ? null : 0,
+      };
+      const storedNet = lines[i].netAmount;
+      balance.net +=
+        sign *
+        (storedNet == null ? line.netFils : Math.abs(toFils(storedNet, { rounding: "halfUp" })));
+      if (balance.margin !== null) balance.margin += sign * (line.marginFils ?? 0);
+      balances.set(key, balance);
+    });
+  }
+  add(original, originalLines, 1);
+  for (const { document, lines } of documents.values()) add(document, lines, -1);
+
+  const lines = [...balances.values()]
+    .filter(({ net }) => net !== 0)
+    .map(({ supply, net, margin }) => {
+      const marginVat = margin === null ? 0 : toBase(margin, String(supply.chargedVatRate));
+      return {
+        description: `Remaining balance of ${original.number}`,
+        quantity: 1,
+        unitPrice: Number(fromFils(net + marginVat)),
+        vatRate: supply.chargedVatRate,
+        vatSupplyType: supply.supplyType,
+        marginScheme: margin !== null,
+        marginPurchaseCost: margin === null ? null : Number(fromFils(net - margin)),
+      };
+    });
+  return { lines, subtotalFils: sumFils([...balances.values()].map(({ net }) => net)) };
 }
 
 /** Issue a draft credit note: post its mirrored entry and move it to sent. */

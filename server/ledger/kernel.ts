@@ -485,7 +485,7 @@ function compactAttributes(a: JournalLineAttributes): JournalLineAttributes {
 }
 
 function entryIso(entry: Pick<JournalEntry, "date">): string {
-  return new Date(entry.date).toISOString().slice(0, 10);
+  return todayIso(new Date(entry.date));
 }
 
 function notFound(entryId: string): DomainError {
@@ -728,7 +728,7 @@ async function reverseInTx(
   const reason = opts.reason ? String(opts.reason).slice(0, 1000) : null;
   const n: NormalizedEntry = {
     companyId: original.companyId,
-    dateIso: date.toISOString().slice(0, 10),
+    dateIso: todayIso(date),
     dateAt: date,
     ...(opts.memo
       ? {

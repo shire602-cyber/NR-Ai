@@ -763,6 +763,17 @@ export async function lockPeriod(
   }, outer);
 }
 
+/** The annual close and an existing hard month close have independent lifecycles. */
+async function getHardMonthClose(tx: LedgerTx, companyId: string, end: string) {
+  const result = await tx.execute(sql`
+    SELECT * FROM month_end_close
+     WHERE company_id = ${companyId} AND period_end = ${end}::date
+       AND status = 'locked' AND lock_type = 'hard' AND lock_scope = 'month'
+  `);
+  const [row] = rowsOf<QueryResultRow>(result);
+  return row ? formatCloseRecord(row) : null;
+}
+
 /** Used by the fiscal close after it acquires the exclusive lock and writes its fiscal record. */
 async function writePeriodLock(
   tx: LedgerTx,
@@ -1101,14 +1112,17 @@ export async function closeFiscalYear(
     if (!r.rows[0]) {
       throw new DomainError("FISCAL_YEAR_ALREADY_CLOSED", 409, { fiscalYearEnd: fye });
     }
-    const lock = await writePeriodLock(tx, companyId, fye, userId, {
-      lockType: opts.hardClose ? "hard" : "soft",
-      lockScope: "through",
-      reason: opts.reason ?? `Year-end close ${fye}`,
-      checklistOverride: opts.checklistOverride,
-      checklistSnapshot: opts.checklistSnapshot,
-      closingEntryId,
-    });
+    const hardMonth = opts.hardClose ? null : await getHardMonthClose(tx, companyId, fye);
+    const lock =
+      hardMonth ??
+      (await writePeriodLock(tx, companyId, fye, userId, {
+        lockType: opts.hardClose ? "hard" : "soft",
+        lockScope: "through",
+        reason: opts.reason ?? `Year-end close ${fye}`,
+        checklistOverride: opts.checklistOverride,
+        checklistSnapshot: opts.checklistSnapshot,
+        closingEntryId,
+      }));
     return {
       record: formatYearClose(r.rows[0]),
       summary: {
@@ -1163,7 +1177,9 @@ export async function reopenFiscalYear(
       RETURNING ${YEAR_CLOSE_COLUMNS}`,
       [companyId, fye, userId, reason]
     );
-    await unlockPeriod(companyId, fye, { userId, reason }, tx);
+    if (row.hard_closed === true || !(await getHardMonthClose(tx, companyId, fye))) {
+      await unlockPeriod(companyId, fye, { userId, reason }, tx);
+    }
     if (row.closing_entry_id) {
       const lines = await q.query(
         `SELECT jl.account_id, ROUND(jl.debit * 100)::bigint AS d, ROUND(jl.credit * 100)::bigint AS c,

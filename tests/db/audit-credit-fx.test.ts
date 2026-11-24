@@ -49,8 +49,7 @@ async function pay(t: Tenant, invoice: string, amount: number, allowCredit = fal
   return response.body;
 }
 
-// Remaining PR #83 follow-up. Keep it from blocking this PR's CI.
-it.skip("clears each VAT 201 box on the remaining credit of a partly credited mixed-supply invoice", async () => {
+it("clears each VAT 201 box on the remaining credit of a partly credited mixed-supply invoice", async () => {
   const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
   const id = await issue(t, [standard(100), exported(100)]);
   const url = `${base(t)}/invoices/${id}/credit-note`;
@@ -99,8 +98,7 @@ it("fully settles a foreign invoice after an earlier part payment was reversed a
   });
 });
 
-// Remaining PR #83 follow-up. Keep it from blocking this PR's CI.
-it.skip("shows a USD overpayment liability in the USD trial balance", async () => {
+it("shows a USD overpayment liability in the USD trial balance", async () => {
   const t = await h.createTenant();
   const id = await issue(t, [exported(100)], { currency: "USD", exchangeRate: 3.67 });
   await pay(t, id, 150, true);
@@ -114,8 +112,7 @@ it.skip("shows a USD overpayment liability in the USD trial balance", async () =
   expect(credit).toMatchObject({ credit: 50, baseCredit: 183.5 });
 });
 
-// Remaining PR #83 follow-up. Keep it from blocking this PR's CI.
-it.skip("debits the cost centre named on a partial credit for a specific invoice line", async () => {
+it("debits the cost centre named on a partial credit for a specific invoice line", async () => {
   const t = await h.createTenant({ planId: "enterprise" });
   async function center(code: string): Promise<string> {
     const response = await t.as.post(`${base(t)}/cost-centers`, { code, name: code });
@@ -125,7 +122,12 @@ it.skip("debits the cost centre named on a partial credit for a specific invoice
   const a = await center("Job-A");
   const b = await center("Job-B");
   const jobA = { ...standard(100), description: "Job A", costCenterId: a };
-  const id = await issue(t, [jobA, { ...standard(100), description: "Job B", costCenterId: b }]);
+  const jobB = { ...standard(100), description: "Job B", costCenterId: b };
+  const revenueAccountId = (await accountByCode(t, "4010")).id;
+  const id = await issue(
+    t,
+    [jobA, jobB].map((line) => ({ ...line, revenueAccountId }))
+  );
   const cn = await t.as.post(`${base(t)}/invoices/${id}/credit-note`, { date, lines: [jobA] });
   expect(cn.status, cn.text).toBe(201);
   const ledger = await h.sql<{ code: string; debit: number }>(
@@ -138,8 +140,7 @@ it.skip("debits the cost centre named on a partial credit for a specific invoice
   expect(ledger).toEqual([{ code: "Job-A", debit: 100 }]);
 });
 
-// Remaining PR #83 follow-up. Keep it from blocking this PR's CI.
-it.skip("uses the refund date's exchange rate for a foreign customer credit paid from an AED bank", async () => {
+it("uses the refund date's exchange rate for a foreign customer credit paid from an AED bank", async () => {
   const t = await h.createTenant();
   const invoice = await issue(t, [exported(100)], { currency: "USD", exchangeRate: 3.67 });
   await pay(t, invoice, 100);

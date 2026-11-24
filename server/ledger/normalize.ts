@@ -53,14 +53,13 @@ export function todayIso(now: Date = new Date()): string {
 
 /**
  * Parse a journal date. Strings may be "YYYY-MM-DD" or an ISO datetime (the
- * calendar date part is the posting date). Returns the ISO calendar date and
- * the timestamp to store (UTC midnight for strings; the Date itself for Date
- * input, so legacy callers keep their exact stored value).
+ * calendar date part is the posting date). Date objects represent instants.
+ * Use their UAE calendar date for posting rules and store the original timestamp.
  */
 export function parseLedgerDate(value: unknown, field = "date"): { iso: string; at: Date } {
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) fail("INVALID_DATE", `${field} is not a valid date`);
-    const iso = value.toISOString().slice(0, 10);
+    const iso = todayIso(value);
     assertYear(iso, field);
     return { iso, at: value };
   }
