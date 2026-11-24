@@ -28,7 +28,7 @@ export function PeriodSelector({ choice, onChange, locale }: PeriodSelectorProps
       <div
         role="group"
         aria-label={ar ? "الفترة" : "Period"}
-        className="grid w-full grid-cols-4 items-stretch gap-0.5 rounded-lg bg-muted p-0.5 sm:inline-flex sm:h-9 sm:w-auto sm:items-center"
+        className="grid w-full grid-cols-4 items-stretch gap-1 rounded-xl bg-muted p-1 shadow-[inset_0_1px_2px_hsl(var(--shadow-color)/0.06)] sm:inline-flex sm:h-11 sm:w-auto sm:items-center"
       >
         {DASHBOARD_PRESETS.map((preset) => {
           const active = choice.preset === preset;
@@ -40,9 +40,9 @@ export function PeriodSelector({ choice, onChange, locale }: PeriodSelectorProps
               onClick={() => onChange({ ...choice, preset })}
               data-testid={`dashboard-period-${preset}`}
               className={cn(
-                "min-w-0 rounded-md px-1.5 text-caption font-medium leading-tight sm:h-8 sm:whitespace-nowrap transition-[color,background-color,box-shadow] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3 sm:text-small",
+                "min-h-9 min-w-0 rounded-lg px-1.5 text-caption font-medium leading-tight sm:h-9 sm:whitespace-nowrap transition-[color,background-color,box-shadow] duration-base ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4 sm:text-small",
                 active
-                  ? "bg-card text-foreground shadow-sm dark:bg-neutral-800"
+                  ? "bg-card text-foreground shadow-card-soft dark:bg-neutral-800"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -60,14 +60,14 @@ export function PeriodSelector({ choice, onChange, locale }: PeriodSelectorProps
             aria-label={ar ? "من" : "From"}
             value={choice.from ?? ""}
             onChange={(value) => onChange({ ...choice, from: value })}
-            className="h-9 min-w-0 flex-1 sm:w-[10.5rem] sm:flex-none"
+            className="h-control min-w-0 flex-1 sm:w-[11rem] sm:flex-none"
           />
           <span className="text-muted-foreground text-xs">{ar ? "إلى" : "to"}</span>
           <DatePicker
             aria-label={ar ? "إلى" : "To"}
             value={choice.to ?? ""}
             onChange={(value) => onChange({ ...choice, to: value })}
-            className="h-9 min-w-0 flex-1 sm:w-[10.5rem] sm:flex-none"
+            className="h-control min-w-0 flex-1 sm:w-[11rem] sm:flex-none"
           />
           {!isCompleteChoice(choice) && (
             <span className="w-full text-xs text-muted-foreground">

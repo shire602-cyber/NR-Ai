@@ -29,8 +29,26 @@ export function DashboardHero({ m, empty = false }: { m: DashboardModel; empty?:
   const range = stats ? formatDateRange(stats.period.from, stats.period.to, locale) : "";
 
   return (
-    <header className="space-y-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+    <header className="space-y-6">
+      {/* Hero panel: a layered surface. The orbs and the ledger ruling are decorative and drift
+          with the pointer (parallax); they stop under reduced motion and the pause control. */}
+      <div
+        className="surface-hero flex flex-col gap-6 px-card py-7 sm:flex-row sm:items-center sm:justify-between sm:gap-8 md:py-9"
+        data-parallax
+        data-testid="dashboard-hero-panel"
+      >
+        <span
+          aria-hidden
+          className="depth-orb parallax-layer drift -end-12 -top-20 h-56 w-56 [--depth:18]"
+        />
+        <span
+          aria-hidden
+          className="depth-orb parallax-layer -bottom-24 end-1/3 h-44 w-44 opacity-60 [--depth:-12]"
+        />
+        <span
+          aria-hidden
+          className="bg-ledger-ruling parallax-layer pointer-events-none absolute -inset-4 -z-10 opacity-40 [--depth:5]"
+        />
         <div className="min-w-0">
           <h1
             className="text-h2 text-foreground md:text-h1"
@@ -40,7 +58,7 @@ export function DashboardHero({ m, empty = false }: { m: DashboardModel; empty?:
             {tt["dashboard.overviewTitle"]}
           </h1>
           <p
-            className="mt-1 truncate text-small text-muted-foreground"
+            className="mt-2 truncate text-body text-muted-foreground"
             data-testid="dashboard-period-summary"
           >
             {range ? (
@@ -61,14 +79,19 @@ export function DashboardHero({ m, empty = false }: { m: DashboardModel; empty?:
             )}
           </p>
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Button asChild variant="outline" data-testid="button-quick-receipt">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <Button asChild variant="outline" size="lg" data-testid="button-quick-receipt">
             <Link href="/receipts">
               <Receipt aria-hidden />
               {(t as any).scanReceipt ?? t["dashboard.quickScanReceipt"]}
             </Link>
           </Button>
-          <Button asChild className="flex-1 sm:flex-none" data-testid="button-quick-invoice">
+          <Button
+            asChild
+            size="lg"
+            className="flex-1 sm:flex-none"
+            data-testid="button-quick-invoice"
+          >
             <Link href={planCta?.href ?? "/invoices?new=1"}>
               <FileText aria-hidden />
               {planCta?.label ?? (t as any).newInvoice ?? t["dashboardHero.newInvoice"]}
@@ -113,7 +136,7 @@ export function DashboardHero({ m, empty = false }: { m: DashboardModel; empty?:
 
       {/* An empty company has no period to choose and nothing that needs it yet. */}
       {!empty && (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-5">
           <PeriodSelector choice={periodChoice} onChange={setPeriodChoice} locale={locale} />
           {/* R3 (CTO 16): linked "needs you" chips replace the one-line insight sentence. */}
           <NeedsYouStrip

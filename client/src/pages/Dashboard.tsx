@@ -29,8 +29,9 @@ function CustomerDashboard() {
   const m = useCustomerDashboardModel();
   const empty = isEmptyCompany(m);
   return (
-    // Rhythm (spec 2.2): 32px between sections, 16px inside them.
-    <div className="space-y-8">
+    // Rhythm: one section gap between sections (`--section-gap`), one stack gap inside them.
+    // Sections rise in one after another on first render (`stagger-in`, index.css).
+    <div className="stagger-in space-y-section">
       <TrialBanner />
       <DashboardHero m={m} empty={empty} />
       {m.statsError && !m.stats ? (

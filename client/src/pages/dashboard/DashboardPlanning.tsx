@@ -18,7 +18,7 @@ export function DashboardPlanning({ m }: { m: DashboardModel }) {
   const { locale, selectedCompanyId, stats, statsLoading } = m;
   return (
     <>
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-5">
+      <section className="grid grid-cols-1 gap-stack xl:grid-cols-5">
         <div className="xl:col-span-3">
           <PeriodComparison stats={stats} loading={statsLoading} locale={locale} />
         </div>
@@ -26,7 +26,7 @@ export function DashboardPlanning({ m }: { m: DashboardModel }) {
           <BudgetVsActualWidget companyId={selectedCompanyId} asOf={stats?.asOf} locale={locale} />
         </div>
       </section>
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <section className="grid grid-cols-1 gap-stack lg:grid-cols-2">
         <CashMovement stats={stats} loading={statsLoading} locale={locale} />
         <OverdueSummary stats={stats} loading={statsLoading} locale={locale} />
       </section>
@@ -51,7 +51,7 @@ function FilingRow({
 }) {
   const t = m.t as any;
   return (
-    <div className="flex items-center justify-between gap-3 py-3">
+    <div className="flex items-center justify-between gap-4 py-4">
       <div className="min-w-0">
         <Link
           href={href}
@@ -83,7 +83,7 @@ export function CompliancePanel({ m }: { m: DashboardModel }) {
   const checks = issues > 0 ? openAuditChecks(compliance.auditReadiness) : [];
   return (
     <Card className="flex h-full flex-col" data-testid="dashboard-filing-pulse">
-      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0 pb-2">
+      <CardHeader className="flex-row items-center justify-between gap-3 space-y-0 pb-3">
         <CardTitle>{tt.filingPulse ?? t["dashboardPlanning.filingPulse"]}</CardTitle>
         <Link
           href="/compliance-calendar"
@@ -94,7 +94,7 @@ export function CompliancePanel({ m }: { m: DashboardModel }) {
         </Link>
       </CardHeader>
       <CardContent className="flex-1 pt-0">
-        <div className="flex items-center gap-4 pb-3">
+        <div className="flex items-center gap-5 pb-4">
           <ScoreRing score={compliance.auditReadiness?.score ?? 0} />
           <div className="min-w-0">
             <div className="text-small font-medium text-foreground">
@@ -129,14 +129,11 @@ export function CompliancePanel({ m }: { m: DashboardModel }) {
           // The open items live in the compliance calendar (spec 3.6), one click away.
           <Link
             href="/compliance-calendar?filter=open"
-            className="group flex items-center justify-between gap-2 border-t border-border pt-3 text-small font-medium text-foreground hover:text-accent"
+            className="group flex items-center justify-between gap-3 border-t border-border pt-4 text-small font-medium text-foreground hover:text-accent"
             data-testid="link-raise-score"
           >
             {formatMessage(tt["dashboard.raiseScoreLink"], { count: checks.length })}
-            <ArrowRight
-              className="h-3.5 w-3.5 text-muted-foreground rtl:-scale-x-100"
-              aria-hidden
-            />
+            <ArrowRight className="nudge-on-hover h-3.5 w-3.5 text-muted-foreground" aria-hidden />
           </Link>
         )}
       </CardContent>
