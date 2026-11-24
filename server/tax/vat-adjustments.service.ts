@@ -750,7 +750,6 @@ export async function undoReliefRecoveryOnPayment(input: {
     }
     if (!manuallyClosed && claim !== claims[0]) throw badDebtRecoveryReviewRequired(claim.id);
 
-    let reversalDate: string | undefined;
     if (legacy) {
       const date = input.date ?? legacy.date;
       if (date < legacy.date) {
@@ -765,10 +764,10 @@ export async function undoReliefRecoveryOnPayment(input: {
         input.reason,
         `legacy-undo:${paymentId}`
       );
-      reversalDate = date;
     }
 
     let reversedFils = 0;
+    let recoveryReversalDate: string | undefined;
     for (const recovery of recoveries) {
       const { reversal } = await reverseEntry(
         recovery.id,
@@ -776,16 +775,16 @@ export async function undoReliefRecoveryOnPayment(input: {
         { actorId, tx, companyId }
       );
       reversedFils += Number(recovery.vat_fils);
-      reversalDate = uaeToday(reversal.date);
+      recoveryReversalDate = uaeToday(reversal.date);
     }
 
     if (manuallyClosed) {
-      if (reversedFils && reversalDate) {
+      if (reversedFils && recoveryReversalDate) {
         await postBadDebtVatRecovery(
           tx,
           claim,
           reversedFils,
-          reversalDate,
+          recoveryReversalDate,
           actorId,
           "Maintain manual withdrawal of bad-debt relief after receipt reversal",
           `manual:${paymentId}`
@@ -794,7 +793,7 @@ export async function undoReliefRecoveryOnPayment(input: {
     } else {
       await reconcileReceiptRecoveries(tx, claim, {
         paymentId,
-        reversalDate: reversalDate ?? input.paymentReversalDate,
+        reversalDate: input.paymentReversalDate,
         actorId,
       });
     }
