@@ -46,6 +46,7 @@ import {
   StepHeading,
 } from "./OnboardingShell";
 import { isEmail, sendTeamInvite } from "./invite";
+import { newCompanyPayload } from "./company-payload";
 import {
   FIRST_TASK_HREF,
   openingBalancesHref,
@@ -194,12 +195,7 @@ function Wizard({
 
   const createCompany = useMutation({
     mutationFn: (data: Record<string, unknown>): Promise<Company> =>
-      apiRequest("POST", "/api/companies", {
-        ...data,
-        baseCurrency: "AED",
-        locale: "en",
-        companyType: "customer",
-      }),
+      apiRequest("POST", "/api/companies", newCompanyPayload(data, locale)),
     onSuccess: (created) => {
       queryClient.setQueryData<Company[]>(["/api/companies"], (old) =>
         old ? [...old, created] : [created]
