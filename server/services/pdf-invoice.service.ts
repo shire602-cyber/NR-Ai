@@ -7,6 +7,7 @@ import { renderInvoiceShareQrPng } from "./einvoice-qr.service";
 import {
   isArabic,
   isDraftStatus,
+  isVoidedStatus,
   pdfLocale,
   preparePdfDocument,
   stampDraftWatermark,
@@ -464,6 +465,7 @@ async function generateStandardInvoicePDF(
 
   return ledger.finish((doc) => {
     if (isDraftStatus(invoice.status)) stampDraftWatermark(doc);
+    else if (isVoidedStatus(invoice.status)) stampDraftWatermark(doc, "void");
   });
 }
 

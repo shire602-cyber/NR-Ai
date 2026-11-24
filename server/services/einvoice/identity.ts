@@ -26,6 +26,7 @@ import {
   sellerIdProblem,
   sellerLegalId,
   tinFromTaxNumber,
+  derivedTinToStore,
   tinProblem,
   type CompanyTaxIdentityBody,
   type TaxReadyField,
@@ -166,7 +167,8 @@ function taxIdentityPatch(company: CompanyRow, body: CompanyTaxIdentityBody) {
 
   // Store the TIN derived from the CT TRN once, so the EndpointID no longer moves with the TRN.
   if (patch.einvoiceTin === undefined && !company.einvoiceTin) {
-    const derived = tinFromTaxNumber(company.corporateTaxId);
+    // Same order as effectiveTin: CT TRN first, then the VAT TRN (a company with only a VAT TRN).
+    const derived = derivedTinToStore(company);
     if (derived) patch.einvoiceTin = derived;
   }
 

@@ -134,9 +134,11 @@ function address(node: XNode | null) {
 }
 
 function party(node: XNode | null) {
-  if (!node) return { party: undefined, scheme: null, authority: null };
+  if (!node) return { party: undefined, scheme: null, authority: null, passportCountry: null };
   const endpoint = first(node, "cbc:EndpointID");
   const legalId = first(node, "cac:PartyLegalEntity/cbc:CompanyID");
+  const registrationType = attr(legalId, "schemeAgencyID") ?? attr(legalId, "schemeID") ?? "TL";
+  const agencyName = attr(legalId, "schemeAgencyName");
   const vat = all(node, "cac:PartyTaxScheme")
     .filter((p) => textAt(p, "cac:TaxScheme/cbc:ID") === "VAT")
     .map((p) => textAt(p, "cbc:CompanyID"))
@@ -151,7 +153,7 @@ function party(node: XNode | null) {
       registrationNumbers: legalId
         ? [
             {
-              type: attr(legalId, "schemeAgencyID") ?? attr(legalId, "schemeID") ?? "TL",
+              type: registrationType,
               value: text(legalId),
             },
           ]
@@ -164,7 +166,8 @@ function party(node: XNode | null) {
       },
     },
     scheme: attr(endpoint, "schemeID"),
-    authority: attr(legalId, "schemeAgencyName"),
+    authority: registrationType === "PAS" ? null : agencyName,
+    passportCountry: registrationType === "PAS" ? agencyName : null,
   };
 }
 
@@ -232,6 +235,12 @@ export function ublToGets(xml: string): GetsDocument {
       ? taxTotals.find((t) => attr(first(t, "cbc:TaxAmount"), "currencyID") === taxCurrency)
       : undefined;
   const rate = num(textAt(root, "cac:TaxExchangeRate/cbc:CalculationRate"));
+  const aedTotalRef =
+    currency !== "AED"
+      ? children(root, "cac:AdditionalDocumentReference").find(
+          (ref) => textAt(ref, "cbc:DocumentTypeCode") === "aedtotal-incl-vat"
+        )
+      : undefined;
 
   const lineItems = lines.map((l) => {
     const taxable = amount(l, "cbc:LineExtensionAmount") ?? 0;
@@ -346,6 +355,11 @@ export function ublToGets(xml: string): GetsDocument {
       peppol_buyer_peppolIdScheme: buyer.scheme,
       ae_seller_authorityName: seller.authority,
       ae_buyer_authorityName: buyer.authority,
+      ae_seller_passportIssuingCountry: seller.passportCountry,
+      ae_buyer_passportCountry: buyer.passportCountry,
+      ae_totalAmountIncludingTaxInAED: aedTotalRef
+        ? amount(aedTotalRef, "cbc:DocumentDescription")
+        : undefined,
       peppol_buyerAccountingReference: textAt(root, "cbc:BuyerReference"),
       peppol_precedingInvoiceIssueDate: preceding ? textAt(preceding, "cbc:IssueDate") : undefined,
       ae_creditNoteReasonCode: reasonCode

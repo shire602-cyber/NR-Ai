@@ -63,7 +63,10 @@ export function VirtualTable<T>({
           key={col.key}
           role="columnheader"
           className={cn(
-            "truncate px-4",
+            "px-4",
+            // Ellipsis only for text headers: a control (e.g. a checkbox) wider
+            // than a narrow column's content box would otherwise sprout a "…".
+            typeof col.header === "string" && "truncate",
             col.align === "right" && "text-end",
             col.align === "center" && "text-center",
             col.headerClassName
