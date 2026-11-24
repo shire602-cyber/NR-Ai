@@ -203,7 +203,8 @@ describe("D1 public site", () => {
         "/product/dashboard-ar.webp"
       );
       expect(container.querySelector('a[hreflang="en"]')?.getAttribute("href")).toBe("/en");
-      expect(container.textContent).toContain("اختر مزوّد خدمة معتمدًا واحدًا لكل شركة");
+      expect(container.textContent).toContain("وتتم عبر مزوّد خدمة معتمد");
+      expect(container.textContent).not.toMatch(/A-Cube|Complyance|أكيوب|كومبلاينس/i);
       expect(container.textContent).toContain("ارفع كشف حسابك البنكي بصيغة CSV");
       expect(container.querySelector('a[href="/ar/migration-guides/zoho"] bdi')?.textContent).toBe(
         "Zoho Books"
