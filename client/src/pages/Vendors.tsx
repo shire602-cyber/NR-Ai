@@ -203,6 +203,9 @@ export default function Vendors() {
   const listView = queryView(vendorsQuery, company);
   const agingView = queryView(agingQuery, company);
   const statementView = queryView(statementQuery, company);
+  // Credits and the GL reconciliation are facts only about a current, successful answer: a
+  // paused/failed refresh (status can still be "success" with cached data) or stale data hides them.
+  const agingVerified = agingView.kind === "data" && !agingView.stale && !agingQuery.isStale;
   const noMatch = !!searchTerm.trim() && vendors.length > 0;
   const statementTypeLabel = (type: string) => {
     const key = `pages.vendorsStatementType.${type}`;
@@ -390,7 +393,7 @@ export default function Vendors() {
                 : { icon: Truck, title: c.noPayables, description: c.noPayablesBody }
             }
             footer={
-              aging ? (
+              aging && agingVerified ? (
                 <>
                   <span>
                     {c.unappliedCredits}: <Money amount={aging.unappliedCredits} />

@@ -117,7 +117,15 @@ const line = (kind: string, i: number) => ({
 });
 
 type Reply = unknown | "fail" | "hang";
-let replies: { vendors: Reply; aging: Reply; statement: Reply; contacts: Reply };
+let replies: {
+  vendors: Reply;
+  aging: Reply;
+  statement: Reply;
+  contacts: Reply;
+  clearPreview: Reply;
+};
+// Both counts differ from the one cached contact, so a `contacts.length` fallback cannot pass.
+const PREVIEW = { contactCount: 7, linkedInvoiceCount: 3 };
 let container: HTMLDivElement;
 let root: Root;
 /** Every request the pages made, with the signal each one carried. */
@@ -146,6 +154,7 @@ beforeEach(() => {
     aging: AGING,
     statement: { lines: [], closingBalance: 0 },
     contacts: [CONTACT],
+    clearPreview: PREVIEW,
   };
   calls = [];
   vi.stubGlobal(
@@ -168,9 +177,11 @@ beforeEach(() => {
             ? replies.statement
             : url.endsWith("/customer-contacts")
               ? replies.contacts
-              : url.endsWith("/portal-summary")
-                ? {}
-                : [];
+              : url.endsWith("/customer-contacts/clear-preview")
+                ? replies.clearPreview
+                : url.endsWith("/portal-summary")
+                  ? {}
+                  : [];
       if (reply === "hang") {
         // A real fetch rejects with an AbortError when its signal aborts.
         return new Promise<Response>((_resolve, reject) => {
@@ -455,6 +466,99 @@ describe("supplier aging query states", () => {
     expect($('[data-testid="query-stale-error"]')).toBeTruthy();
     expect(text()).toContain("Nothing in the last saved copy");
     expect(text()).not.toContain("Nothing owed to suppliers");
+  });
+});
+
+describe("supplier aging footer", () => {
+  it.each([
+    ["fail", "query-stale-error", "Couldn't refresh"],
+    ["paused", "query-stale-paused", "Refresh is paused"],
+  ] as const)(
+    "shows credits and reconciliation only until a refresh is %s",
+    async (how, noticeId, copy) => {
+      replies.aging = {
+        ...AGING,
+        vendors: [{ vendorId: "v-9", name: "Aging Cached Co", total: 50000 }],
+      };
+      await mount(Vendors);
+      await openAging();
+      expect(text()).toContain("Unapplied supplier credits");
+      expect(text()).toContain("Reconciled to GL 2010");
+
+      if (how === "fail") replies.aging = "fail";
+      else await goOffline();
+      await refresh();
+
+      expect(text()).toContain("Aging Cached Co");
+      expect($(`[data-testid="${noticeId}"]`)?.textContent).toContain(copy);
+      expect(text()).not.toContain("Unapplied supplier credits");
+      expect(text()).not.toContain("Reconciled to GL 2010");
+    }
+  );
+});
+
+describe("delete-all-contacts dialog counts", () => {
+  const UNVERIFIED =
+    "This will permanently delete all contacts for this company. This action cannot be undone.";
+  const alert = () => $('[role="alertdialog"]')!;
+  const previewGets = () => calls.filter((c) => c.url.endsWith("/clear-preview"));
+  const openClearAll = async () => {
+    await act(async () => {
+      $('[data-testid="button-contacts-more"]')!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })
+      );
+    });
+    await settle();
+    await click($('[data-testid="button-clear-all-contacts"]'));
+    await settle();
+  };
+  const expectCountFree = (body = UNVERIFIED) => {
+    expect(alert().querySelector("p")!.textContent).toBe(body);
+    expect(alert().textContent).not.toMatch(/\d+ (contacts?|invoices?)/);
+    expect(alert().textContent).not.toContain("linked to these contacts");
+  };
+
+  it("shows the server preview counts, not the cached list length", async () => {
+    await mount(CustomerContacts);
+    await openClearAll();
+    expect(alert().textContent).toContain("permanently delete 7 contacts");
+    expect(alert().textContent).toContain("3 invoices are linked to these contacts.");
+  });
+
+  it.each(["hang", "fail", "paused"] as const)(
+    "warns without a count when the first preview is %s",
+    async (how) => {
+      await mount(CustomerContacts);
+      if (how === "paused") await goOffline();
+      else replies.clearPreview = how;
+      await openClearAll();
+      expect(previewGets()).toHaveLength(how === "paused" ? 0 : 1);
+      expectCountFree();
+    }
+  );
+
+  it.each(["fail", "paused"] as const)(
+    "drops the saved counts after a %s preview refresh",
+    async (how) => {
+      await mount(CustomerContacts);
+      await openClearAll();
+      expect(alert().textContent).toContain("permanently delete 7 contacts");
+      expect(alert().textContent).toContain("3 invoices are linked");
+
+      if (how === "fail") replies.clearPreview = "fail";
+      else await goOffline();
+      await refresh();
+      expectCountFree();
+    }
+  );
+
+  it("gives the count-free warning in Arabic", async () => {
+    replies.clearPreview = "hang";
+    await mount(CustomerContacts, "ar");
+    await openClearAll();
+    expect(alert().querySelector("p")!.textContent).toBe(
+      "سيؤدي هذا إلى حذف جميع جهات الاتصال لهذه الشركة نهائيًا. لا يمكن التراجع عن هذا الإجراء."
+    );
   });
 });
 

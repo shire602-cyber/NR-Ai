@@ -245,13 +245,9 @@ export default function CustomerContacts() {
   const contactsQuery = useQuery<CustomerContact[]>({
     queryKey: contactsKey,
     queryFn: ({ signal }) =>
-      apiRequest(
-        "GET",
-        `/api/companies/${companyId}/customer-contacts`,
-        undefined,
-        undefined,
-        { signal }
-      ),
+      apiRequest("GET", `/api/companies/${companyId}/customer-contacts`, undefined, undefined, {
+        signal,
+      }),
     enabled: !!companyId,
   });
   const contacts = contactsQuery.data ?? [];
@@ -347,10 +343,22 @@ export default function CustomerContacts() {
     },
   });
 
-  const { data: clearPreview } = useQuery<{ contactCount: number; linkedInvoiceCount: number }>({
+  const clearPreviewQuery = useQuery<{ contactCount: number; linkedInvoiceCount: number }>({
     queryKey: ["/api/companies", companyId, "customer-contacts/clear-preview"],
     enabled: !!companyId && showClearAllDialog,
   });
+  const clearPreviewView = queryView(clearPreviewQuery, {
+    companyId,
+    isLoading: companyLoading,
+    isPaused: companyPaused,
+    error: companyError,
+  });
+  // Counts are shown only for a current, successful answer: a paused or failed refresh (which can
+  // still report status "success" with cached data) or stale data must not qualify.
+  const clearPreview =
+    clearPreviewView.kind === "data" && !clearPreviewView.stale && !clearPreviewQuery.isStale
+      ? clearPreviewQuery.data
+      : undefined;
 
   const clearAllMutation = useMutation({
     mutationFn: async () => {
@@ -1470,9 +1478,11 @@ export default function CustomerContacts() {
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm">
                 <p>
-                  {formatMessage(t["pages.contactsDeleteAllBody"], {
-                    count: clearPreview?.contactCount ?? contacts.length,
-                  })}
+                  {clearPreview
+                    ? formatMessage(t["pages.contactsDeleteAllBody"], {
+                        count: clearPreview.contactCount,
+                      })
+                    : t["customerContacts.clearAllBodyUnverified"]}
                 </p>
                 {clearPreview && clearPreview.linkedInvoiceCount > 0 && (
                   <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3">
