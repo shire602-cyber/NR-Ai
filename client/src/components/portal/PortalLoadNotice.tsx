@@ -3,15 +3,17 @@ import { onlineManager } from "@tanstack/react-query";
 import { ErrorState } from "@/components/ui/error-state";
 import { LoadErrorState } from "@/components/ui/load-error-state";
 import { useTranslation } from "@/lib/i18n";
+import { classifyLoadError } from "@/lib/loadError";
 
 const subscribeOnline = (onChange: () => void) => onlineManager.subscribe(onChange);
 const isOnline = () => onlineManager.isOnline();
 
 /**
- * Why a portal list is not current: React Query paused the request (offline, or online and waiting
- * for the window to regain focus before retrying), the load or refresh failed, or a retry the
- * customer queued while a load or refresh was paused is now fetching (with no earlier error to
- * keep on screen). Renders nothing otherwise.
+ * Why a portal list is not current, in order of precedence: React Query paused the request (offline,
+ * or online and waiting for the window to regain focus before retrying); a retry the customer asked
+ * for is fetching with no error, or with a retained one that offers no retry of its own, which shows
+ * a disabled, spinning "Try again"; or the load or refresh failed (a retryable failure keeps this
+ * notice, with its button busy, while retrying). Renders nothing otherwise.
  */
 export function PortalLoadNotice({
   error,
@@ -49,8 +51,10 @@ export function PortalLoadNotice({
       />
     );
   }
-  // Queued from a paused load or refresh, so there is no earlier error to keep on screen.
-  if (!error && retryPending && retrying) {
+  // A retryable error keeps its own notice while retrying, so the same button stays mounted and
+  // keyboard focus is not lost. The generic notice only covers states that have no such button.
+  const kind = error ? classifyLoadError(error) : null;
+  if (retryPending && retrying && (!kind || kind === "forbidden" || kind === "notFound")) {
     return (
       <ErrorState
         title={t["portal.retryingTitle"]}

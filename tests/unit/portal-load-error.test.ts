@@ -537,6 +537,64 @@ describe("portal manual retry queued while offline", () => {
     }
   );
 
+  it.each([403, 404])(
+    "shows a busy Try again over a retained %i error once a queued retry fetches",
+    async (status) => {
+      useI18n.setState({ locale: "en" });
+      const path = "/api/client-portal/documents";
+      const queryKey = mocks.portalQuery(path, "a1").queryKey;
+      const load = vi.fn().mockResolvedValue([{ id: "d1", name: "Trade license" }]);
+      mocks.apiRequest.mockImplementation((_method, requestPath) =>
+        requestPath === path ? load() : Promise.resolve({})
+      );
+      const client = await mount(
+        createElement(
+          PortalAccountScope.Provider,
+          { value: "a1" },
+          createElement(PortalDocuments)
+        )
+      );
+      expect(container.textContent).toContain("Trade license");
+
+      // An online refresh fails with an error that offers no retry of its own.
+      load.mockRejectedValueOnce(new mocks.ApiError("denied", status));
+      await act(async () => {
+        await client.invalidateQueries({ queryKey });
+      });
+      await flush();
+      expect(byId("portal-documents-load-error")).not.toBeNull();
+      expect(byId("portal-documents-load-error")!.querySelector("button")).toBeNull();
+
+      // Another refresh starts offline, so it pauses and offers Try again.
+      await act(async () => onlineManager.setOnline(false));
+      await act(async () => {
+        void client.invalidateQueries({ queryKey });
+      });
+      await flush();
+      await act(async () => retryButton("documents", "offline").click());
+      await flush();
+      expectQueued(retryButton("documents", "offline"));
+      expect(container.textContent).toContain("Trade license");
+      expect(load).toHaveBeenCalledTimes(2);
+
+      let fail!: (reason: unknown) => void;
+      load.mockImplementationOnce(() => new Promise((_resolve, reject) => (fail = reject)));
+      await act(async () => onlineManager.setOnline(true));
+      await flush();
+      expect(load).toHaveBeenCalledTimes(3);
+      expectFetching(retryButton("documents", "retrying"));
+      expect(byId("portal-documents-load-error")).toBeNull();
+      expect(container.textContent).toContain("Trade license");
+
+      await act(async () => fail(new mocks.ApiError("denied", status)));
+      await flush();
+      expect(byId("portal-documents-retrying")).toBeNull();
+      expect(byId("portal-documents-load-error")).not.toBeNull();
+      expect(byId("portal-documents-load-error")!.querySelector("button")).toBeNull();
+      expect(container.textContent).toContain("Trade license");
+    }
+  );
+
   it("keeps cached rows and a disabled Try again while a failed refresh retry is queued", async () => {
     useI18n.setState({ locale: "en" });
     const path = "/api/client-portal/documents";
