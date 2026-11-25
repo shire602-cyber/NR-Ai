@@ -103,7 +103,7 @@ describe("[WP-B] /pricing", () => {
     expect(featured?.textContent).toContain("Most popular");
     expect(text()).toContain("Pay yearly and get 2 months free.");
     expect(text()).toContain("delivered through an accredited service provider");
-    expect(text()).not.toMatch(/A-Cube|Complyance/i);
+    expect(text()).not.toMatch(/A-?Cube|Complyance/i);
     expect(text()).not.toMatch(/coming\s+soon/i);
   });
 

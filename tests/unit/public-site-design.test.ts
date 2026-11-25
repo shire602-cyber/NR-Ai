@@ -160,11 +160,11 @@ describe("D1 public site", () => {
       await import("../../client/src/components/marketing/phase/PhaseSite");
     await act(async () => root.render(createElement(PhaseSite)));
     const h1 = container.querySelector("h1");
-    expect(h1?.textContent).toBe("Accounting and VAT for UAE businesses");
+    expect(h1?.textContent).toBe("Your books. Your VAT. Your e-invoices. Done.");
     expect(document.title).toContain(h1?.textContent);
     expect(
       document.head.querySelector('meta[name="description"]')?.getAttribute("content")
-    ).toContain("Send bilingual invoices");
+    ).toContain("Bilingual tax invoices, AI receipt capture");
     // Primary CTAs keep their routes.
     const register = container.querySelector('[data-testid="button-hero-start"]');
     expect(register?.getAttribute("href")).toBe("/register?step=account");
@@ -172,6 +172,30 @@ describe("D1 public site", () => {
       "/en/book-demo"
     );
     expect(container.textContent).toContain("then submit it in EmaraTax.");
+    // Every homepage section is present, under its own stable anchor.
+    for (const id of [
+      "announcement",
+      "hero",
+      "e-invoicing-deadlines",
+      "tour",
+      "savings",
+      "compare",
+      "features",
+      "firms",
+      "trust",
+      "migration",
+      "pricing",
+      "faq",
+      "final-cta",
+    ]) {
+      expect(
+        container.querySelector(`section#${id}[data-testid="section-${id}"]`),
+        id
+      ).not.toBeNull();
+    }
+    // No provider is named; the e-invoicing answer says it is built in and included.
+    expect(container.textContent).not.toMatch(/A-?Cube|Complyance/i);
+    expect(container.textContent).toContain("accredited service provider, built into");
     expect(container.textContent).toContain("Upload a CSV exported from your bank");
     for (const claim of UNSUPPORTED_CLAIMS) {
       expect(container.textContent ?? "", String(claim)).not.toMatch(claim);
@@ -195,16 +219,24 @@ describe("D1 public site", () => {
     window.history.replaceState(null, "", "/ar");
     try {
       await act(async () => root.render(createElement(PhaseRoot)));
-      const title = "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات";
+      const title = "دفاترك. ضريبتك. فواتيرك الإلكترونية. كلها منجزة.";
       expect(container.querySelector("h1")?.textContent).toBe(title);
       expect(document.title).toContain(title);
       expect(container.querySelector('.phase-site[lang="ar"][dir="rtl"]')).not.toBeNull();
-      expect(container.querySelector(".phase-hero img")?.getAttribute("src")).toBe(
-        "/product/dashboard-ar.webp"
-      );
+      // The hero stage is lazy-loaded; wait for the live stage to replace its placeholder.
+      for (let i = 0; i < 30 && !container.querySelector('[data-testid="hero-stage"]'); i++) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+      }
+      const stage = container.querySelector('.mz-hero [data-testid="hero-stage"]');
+      expect(stage?.getAttribute("role")).toBe("img");
+      expect(stage?.getAttribute("aria-label")).toMatch(/[؀-ۿ]{3}/);
+      expect(stage?.textContent).toContain("بيانات تجريبية");
+      expect(container.querySelector(".mz-hero img")).toBeNull();
       expect(container.querySelector('a[hreflang="en"]')?.getAttribute("href")).toBe("/en");
-      expect(container.textContent).toContain("وتتم عبر مزوّد خدمة معتمد");
-      expect(container.textContent).not.toMatch(/A-Cube|Complyance|أكيوب|كومبلاينس/i);
+      expect(container.textContent).toContain("عبر مزوّد خدمة معتمد مدمج في");
+      expect(container.textContent).not.toMatch(/A-?Cube|Complyance|أكيوب|كومبلاينس/i);
       expect(container.textContent).toContain("ارفع كشف حسابك البنكي بصيغة CSV");
       expect(container.querySelector('a[href="/ar/migration-guides/zoho"] bdi')?.textContent).toBe(
         "Zoho Books"
@@ -284,6 +316,22 @@ describe("D1 public site", () => {
     }
   });
 
+  it.each(["en", "ar"] as const)(
+    "[help] the review request mailto subject follows the %s locale",
+    async (locale) => {
+      await setLocale(locale);
+      await render("HelpCenter");
+      const { t } = await import("../../client/src/lib/i18n");
+      const link = [...container.querySelectorAll<HTMLAnchorElement>('a[href^="mailto:"]')].find(
+        (a) => a.getAttribute("href")!.includes("subject=")
+      );
+      expect(link).toBeDefined();
+      const subject = new URL(link!.getAttribute("href")!).searchParams.get("subject");
+      expect(subject).toBe(t[locale]["marketing.helpReviewMailSubject"]);
+      if (locale === "ar") expect(subject).not.toBe("Migration review");
+    }
+  );
+
   it("[D1b] the product preview shows the post-D2 dashboard strip with shared money and status components", async () => {
     await render("MuhasibLanding");
     const preview = container.querySelector("figure.mk-app");
@@ -315,16 +363,24 @@ describe("D1 public site", () => {
   });
 
   it.each([
-    ["en", "read-only", "UAE e-invoicing is built in and included on every plan, delivered through an accredited service provider."],
-    ["ar", "للقراءة فقط", "الفوترة الإلكترونية في الإمارات مدمجة ومشمولة في كل باقة، وتتم عبر مزوّد خدمة معتمد."],
+    [
+      "en",
+      "read-only",
+      "UAE e-invoicing is built in and included on every plan, delivered through an accredited service provider.",
+    ],
+    [
+      "ar",
+      "للقراءة فقط",
+      "الفوترة الإلكترونية في الإمارات مدمجة ومشمولة في كل باقة، وتتم عبر مزوّد خدمة معتمد.",
+    ],
   ] as const)(
-    "explains trial expiry and provider choice in %s pricing",
-    async (locale, lock, providerCopy) => {
+    "explains trial expiry and included e-invoicing in %s pricing",
+    async (locale, lock, einvoicing) => {
       await setLocale(locale);
       await render("Pricing");
       expect(container.textContent).toContain(lock);
-      expect(container.textContent).toContain(providerCopy);
-      expect(container.textContent).not.toMatch(/A-Cube|Complyance/i);
+      expect(container.textContent).toContain(einvoicing);
+      expect(container.textContent).not.toMatch(/A-?Cube|Complyance/i);
     }
   );
 });
