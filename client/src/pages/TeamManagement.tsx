@@ -1,7 +1,7 @@
 import { T } from "@/components/layout/T";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { PageHeader } from "@/components/ui/page-header";
-import { Suspense, useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,8 @@ import {
   type CompanyAccess,
   type CompanyRole,
 } from "@/lib/auth";
-import { lazyWithReload } from "@/lib/lazyWithReload";
+import { OnDemandDialogStatus } from "@/components/team/onDemandDialog";
+import { useOnDemandDialog } from "@/components/team/useOnDemandDialog";
 import {
   UserPlus,
   Users,
@@ -121,9 +122,7 @@ const ROLE_COLORS: Record<CompanyRole, string> = {
   viewer: ROLE_PILL,
 };
 
-const PermissionsMatrixDialog = lazyWithReload(
-  () => import("@/components/team/PermissionsMatrixDialog")
-);
+const loadPermissionsMatrixDialog = () => import("@/components/team/PermissionsMatrixDialog");
 
 export default function TeamManagement() {
   const { t, locale } = useTranslation();
@@ -132,7 +131,12 @@ export default function TeamManagement() {
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
-  const [permissionsDialogLoaded, setPermissionsDialogLoaded] = useState(false);
+  const permissionsDialog = useOnDemandDialog(loadPermissionsMatrixDialog);
+  const permissionsTrigger = useRef<HTMLButtonElement>(null);
+  const openPermissions = () => {
+    setPermissionsDialogOpen(true);
+    permissionsDialog.request();
+  };
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<CompanyRole>("accountant");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
@@ -306,16 +310,23 @@ export default function TeamManagement() {
           actions={
             <>
               <Button
+                ref={permissionsTrigger}
                 variant="outline"
-                onClick={() => {
-                  setPermissionsDialogLoaded(true);
-                  setPermissionsDialogOpen(true);
-                }}
+                onClick={openPermissions}
                 data-testid="button-view-permissions"
               >
                 <Shield className="w-4 h-4 me-2" />
                 {t["settingsPages.permissions"]}
               </Button>
+              <OnDemandDialogStatus
+                status={permissionsDialog.status}
+                onRetry={() => {
+                  // The retry button goes away while loading; keep focus on the trigger.
+                  permissionsTrigger.current?.focus();
+                  openPermissions();
+                }}
+                testId="permissions-dialog"
+              />
               {canManage && (
                 <Button
                   onClick={() => setInviteDialogOpen(true)}
@@ -740,13 +751,11 @@ export default function TeamManagement() {
         </Dialog>
 
         {/* Loaded on first open and kept mounted afterwards so the close animation still plays. */}
-        {permissionsDialogLoaded && (
-          <Suspense fallback={null}>
-            <PermissionsMatrixDialog
-              open={permissionsDialogOpen}
-              onOpenChange={setPermissionsDialogOpen}
-            />
-          </Suspense>
+        {permissionsDialog.Component && (
+          <permissionsDialog.Component
+            open={permissionsDialogOpen}
+            onOpenChange={setPermissionsDialogOpen}
+          />
         )}
 
         <AlertDialog

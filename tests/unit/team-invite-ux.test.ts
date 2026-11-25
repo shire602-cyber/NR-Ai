@@ -21,6 +21,31 @@ vi.mock("../../client/src/hooks/useDefaultCompany", () => ({
   }),
 }));
 
+// The on-demand dialog chunks: the real retry loader runs, but each import attempt can be held or
+// made to fail the way a browser reports a chunk it could not fetch.
+const chunk = vi.hoisted(() => ({
+  attempts: 0,
+  fail: false,
+  gate: null as Promise<void> | null,
+  reload: [] as unknown[],
+}));
+vi.mock("../../client/src/lib/lazyWithReload", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../client/src/lib/lazyWithReload")>();
+  const loadWithChunkRetry: typeof actual.loadWithChunkRetry = (factory, opts) => {
+    chunk.reload.push(opts.reload);
+    return actual.loadWithChunkRetry(
+      async () => {
+        chunk.attempts += 1;
+        await chunk.gate;
+        if (chunk.fail) throw new TypeError("Failed to fetch dynamically imported module: /x.js");
+        return factory();
+      },
+      { ...opts, delayMs: 0 }
+    );
+  };
+  return { ...actual, loadWithChunkRetry };
+});
+
 let container: HTMLDivElement;
 let root: Root;
 let routes: Array<[string, () => { status?: number; body: unknown }]> = [];
@@ -50,6 +75,7 @@ beforeEach(() => {
   routes = [];
   holds = [];
   seenUrls.length = 0;
+  Object.assign(chunk, { attempts: 0, fail: false, gate: null, reload: [] });
   localStorage.setItem("muhasib_auth_hint", "1");
   vi.stubGlobal(
     "fetch",
@@ -77,6 +103,7 @@ beforeEach(() => {
 afterEach(async () => {
   onlineManager.setOnline(true);
   Reflect.deleteProperty(navigator, "clipboard");
+  Reflect.deleteProperty(navigator, "onLine");
   act(() => root.unmount());
   container.remove();
   document.body.innerHTML = "";
@@ -712,3 +739,169 @@ describe("TeamManagement", { timeout: 30_000 }, () => {
     expect(has("members-no-match")).toBe(false);
   });
 });
+
+const DIALOG_PAGES = [
+  {
+    name: "TeamManagement",
+    page: () => import("../../client/src/pages/TeamManagement"),
+    arrange: () => {
+      routes.push([
+        "GET .*/team$",
+        () => ({
+          body: [
+            {
+              id: "m1",
+              userId: "u1",
+              companyId: "c-1",
+              role: "viewer",
+              createdAt: new Date().toISOString(),
+              user: { id: "u1", email: "person1@example.com", name: "Person 1" },
+            },
+          ],
+        }),
+      ]);
+      routes.push(["GET .*/team/me", () => ({ body: ACCESS })]);
+    },
+    trigger: "button-view-permissions",
+    status: "permissions-dialog",
+    row: '[data-testid="member-m1"]',
+    dialog: '[role="dialog"]',
+  },
+  {
+    name: "UserInvitations",
+    page: () => import("../../client/src/pages/UserInvitations"),
+    arrange: () => {
+      routes.push([
+        "GET /api/admin/invitations",
+        () => ({ body: [invite("a", "live@example.com", "pending", 3)] }),
+      ]);
+    },
+    trigger: "button-send-invite",
+    status: "invite-dialog",
+    row: '[data-testid="row-invite-a"]',
+    dialog: '[data-testid="button-submit-invite"]',
+  },
+];
+
+describe.each(DIALOG_PAGES)(
+  "$name on-demand dialog",
+  { timeout: 30_000 },
+  ({ page, arrange, trigger, status, row, dialog }) => {
+    const find = (selector: string) => document.querySelector(selector) as HTMLElement | null;
+    const byId = (testId: string) => find(`[data-testid="${testId}"]`);
+
+    async function open() {
+      arrange();
+      const { default: Page } = await page();
+      await mount(createElement(Page));
+      expect(find(row)).not.toBeNull();
+    }
+
+    async function click(testId: string) {
+      await act(async () => byId(testId)!.click());
+      await flush();
+    }
+
+    /** Run what lets the import proceed, and keep act open until the module has loaded. */
+    async function dialogAppears(start: () => void) {
+      await act(async () => {
+        start();
+        await vi.dynamicImportSettled();
+      });
+      expect(find(dialog)).not.toBeNull();
+    }
+
+    async function pressEscape() {
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      });
+      await flush();
+    }
+
+    const setBrowserOnline = (online: boolean) =>
+      Object.defineProperty(navigator, "onLine", { configurable: true, get: () => online });
+
+    it("imports only on request, shows a pending status once, and keeps the loaded dialog", async () => {
+      let release!: () => void;
+      chunk.gate = new Promise<void>((resolve) => (release = resolve));
+      await open();
+      expect(chunk.attempts).toBe(0);
+      expect(byId(`${status}-loading`)).toBeNull();
+
+      await click(trigger);
+      expect(byId(`${status}-loading`)?.getAttribute("role")).toBe("status");
+      expect(byId(`${status}-loading`)?.textContent).toBe("Loading…");
+      expect(find(dialog)).toBeNull();
+      expect(find(row)).not.toBeNull();
+      await click(trigger);
+      expect(chunk.attempts).toBe(1);
+
+      await dialogAppears(release);
+      expect(byId(`${status}-loading`)).toBeNull();
+
+      await pressEscape();
+      expect(find(dialog)).toBeNull();
+      // Already loaded: reopening needs neither the network nor another import.
+      setBrowserOnline(false);
+      await click(trigger);
+      expect(find(dialog)).not.toBeNull();
+      expect(byId(`${status}-error`)).toBeNull();
+      expect(chunk.attempts).toBe(1);
+    });
+
+    it.each(["retry", "reopen"] as const)(
+      "keeps rows usable after a failed import and recovers on %s",
+      async (how) => {
+        chunk.fail = true;
+        await open();
+        await click(trigger);
+
+        expect(byId(`${status}-error`)?.textContent).toContain("Could not load this data");
+        expect(byId(`${status}-loading`)).toBeNull();
+        expect(find(dialog)).toBeNull();
+        expect(find(row)).not.toBeNull();
+        // The first try plus the loader's one automatic re-try, never with a page reload.
+        expect(chunk.attempts).toBe(2);
+
+        chunk.fail = false;
+        let release!: () => void;
+        chunk.gate = new Promise<void>((resolve) => (release = resolve));
+        await click(how === "retry" ? `${status}-retry` : trigger);
+        expect(byId(`${status}-loading`)).not.toBeNull();
+        expect(byId(`${status}-error`)).toBeNull();
+        if (how === "retry") expect(document.activeElement).toBe(byId(trigger));
+
+        await dialogAppears(release);
+        expect(byId(`${status}-loading`)).toBeNull();
+        expect(find(row)).not.toBeNull();
+        expect(chunk.reload).toEqual([false, false]);
+      }
+    );
+
+    it.each(["en", "ar"] as const)(
+      "does not import while the browser is offline, then loads on retry (%s)",
+      async (locale) => {
+        await setLocale(locale);
+        await open();
+        setBrowserOnline(false);
+        await click(trigger);
+
+        const error = byId(`${status}-error`);
+        expect(error?.getAttribute("role")).toBe("alert");
+        if (locale === "ar") expect(error!.textContent).toMatch(/[؀-ۿ]/);
+        else expect(error!.textContent).toContain("You are offline");
+        await click(`${status}-retry`);
+        expect(byId(`${status}-error`)).not.toBeNull();
+        expect(chunk.attempts).toBe(0);
+        expect(find(dialog)).toBeNull();
+        expect(find(row)).not.toBeNull();
+
+        setBrowserOnline(true);
+        await dialogAppears(() => byId(`${status}-retry`)!.click());
+        expect(byId(`${status}-error`)).toBeNull();
+        expect(chunk.attempts).toBe(1);
+        expect(find(row)).not.toBeNull();
+      }
+    );
+  }
+);

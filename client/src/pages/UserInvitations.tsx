@@ -1,8 +1,9 @@
 import { T } from "@/components/layout/T";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
-import { Suspense, useRef, useState } from "react";
-import { lazyWithReload } from "@/lib/lazyWithReload";
+import { useRef, useState } from "react";
+import { OnDemandDialogStatus } from "@/components/team/onDemandDialog";
+import { useOnDemandDialog } from "@/components/team/useOnDemandDialog";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Mail,
@@ -58,7 +59,7 @@ import { dateFnsOptions } from "@/lib/date-locale";
 import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import type { Invitation, Company } from "@shared/schema";
 
-const InviteClientDialog = lazyWithReload(() => import("@/components/team/InviteClientDialog"));
+const loadInviteClientDialog = () => import("@/components/team/InviteClientDialog");
 
 export default function UserInvitations() {
   const { t, locale } = useTranslation();
@@ -66,7 +67,12 @@ export default function UserInvitations() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
-  const [inviteDialogLoaded, setInviteDialogLoaded] = useState(false);
+  const inviteDialog = useOnDemandDialog(loadInviteClientDialog);
+  const inviteTrigger = useRef<HTMLButtonElement>(null);
+  const openInviteDialog = () => {
+    setInviteDialogOpen(true);
+    inviteDialog.request();
+  };
   const [emailError, setEmailError] = useState<string | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
 
@@ -308,33 +314,36 @@ export default function UserInvitations() {
         testId="text-invitations-title"
         description={t["portal.inviteSubtitle"]}
         actions={
-          <Button
-            onClick={() => {
-              setInviteDialogLoaded(true);
-              setInviteDialogOpen(true);
-            }}
-            data-testid="button-send-invite"
-          >
-            <Mail className="w-4 h-4 me-2" />
-            <T k="pageLabels.sendInvitation" />
-          </Button>
+          <>
+            <Button ref={inviteTrigger} onClick={openInviteDialog} data-testid="button-send-invite">
+              <Mail className="w-4 h-4 me-2" />
+              <T k="pageLabels.sendInvitation" />
+            </Button>
+            <OnDemandDialogStatus
+              status={inviteDialog.status}
+              onRetry={() => {
+                // The retry button goes away while loading; keep focus on the trigger.
+                inviteTrigger.current?.focus();
+                openInviteDialog();
+              }}
+              testId="invite-dialog"
+            />
+          </>
         }
       />
       {/* Loaded on first open and kept mounted afterwards so the close animation still plays. */}
-      {inviteDialogLoaded && (
-        <Suspense fallback={null}>
-          <InviteClientDialog
-            open={inviteDialogOpen}
-            onOpenChange={setInviteDialogOpen}
-            onSubmit={handleSendInvitation}
-            emailError={emailError}
-            onEmailChange={() => setEmailError(null)}
-            clients={clients}
-            selectedCompanyId={selectedCompanyId}
-            onCompanyChange={setSelectedCompanyId}
-            isPending={createInvitationMutation.isPending}
-          />
-        </Suspense>
+      {inviteDialog.Component && (
+        <inviteDialog.Component
+          open={inviteDialogOpen}
+          onOpenChange={setInviteDialogOpen}
+          onSubmit={handleSendInvitation}
+          emailError={emailError}
+          onEmailChange={() => setEmailError(null)}
+          clients={clients}
+          selectedCompanyId={selectedCompanyId}
+          onCompanyChange={setSelectedCompanyId}
+          isPending={createInvitationMutation.isPending}
+        />
       )}
 
       <Dialog open={manualLink !== null} onOpenChange={(open) => !open && setManualLink(null)}>
