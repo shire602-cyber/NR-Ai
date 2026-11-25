@@ -185,6 +185,7 @@ export default function PurchaseOrders() {
     isLoading,
     isError,
     isPaused,
+    isSuccess,
     refetch,
   } = useQuery<PurchaseOrder[]>({
     queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
@@ -213,6 +214,7 @@ export default function PurchaseOrders() {
     searchQuery.trim() !== "" &&
     (purchaseOrders?.length ?? 0) > 0 &&
     visibleOrders.length === 0;
+  const showEmpty = hasSearchNoMatches || (isSuccess && purchaseOrders?.length === 0);
   const stockProducts = products.filter((p) => p.isActive !== false);
 
   const form = useForm<PurchaseOrderFormData>({
@@ -897,9 +899,9 @@ export default function PurchaseOrders() {
       />
 
       {(purchaseOrders?.length ?? 0) > 0 && (
-        <div className="relative w-full sm:w-72">
+        <div className="relative flex w-full items-center sm:w-72">
           <Search
-            className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            className="pointer-events-none absolute start-3 h-4 w-4 text-muted-foreground"
             aria-hidden
           />
           <Input
@@ -923,11 +925,11 @@ export default function PurchaseOrders() {
         status={
           loadPaused || loadFailed
             ? "error"
-            : isLoading
+            : purchaseOrders === undefined
               ? "loading"
-              : visibleOrders.length > 0
-                ? "ready"
-                : "empty"
+              : showEmpty
+                ? "empty"
+                : "ready"
         }
         columnLabels={[t["pages.vendor"], t.date, t.total, t.status]}
         testId="purchase-orders-table"

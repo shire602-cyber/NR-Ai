@@ -10,6 +10,7 @@ import arStatuses from "../../client/src/locales/ar/components.json";
 import { stripArabicMarks } from "../../shared/arabic-text";
 import {
   COMPANY_ID,
+  apiCalls,
   buttonByText,
   byTestId,
   click,
@@ -28,7 +29,18 @@ import { queryClient } from "../../client/src/lib/queryClient";
 import PurchaseOrders from "../../client/src/pages/PurchaseOrders";
 
 vi.mock("../../client/src/lib/queryClient", () => formHarnessQueryClientMock());
-vi.mock("../../client/src/hooks/useDefaultCompany", () => formHarnessCompanyMock());
+const noCompany = vi.hoisted(() => ({ value: false }));
+vi.mock("../../client/src/hooks/useDefaultCompany", () => {
+  const base = formHarnessCompanyMock();
+  return {
+    useDefaultCompany: () => {
+      const result = base.useDefaultCompany();
+      return noCompany.value
+        ? { ...result, company: undefined, companyId: undefined, isLoading: true }
+        : result;
+    },
+  };
+});
 vi.mock("../../client/src/hooks/useSubscription", () => ({
   useSubscription: () => ({ canAccess: () => true, isLoading: false }),
 }));
@@ -155,6 +167,8 @@ describe("purchase order search UI", () => {
       expect(icon?.matches(`:dir(${direction})`)).toBe(true);
       expect(search.matches(`:dir(${direction})`)).toBe(true);
       expect(icon?.classList.contains("start-3")).toBe(true);
+      expect(icon?.classList.contains("top-1/2")).toBe(false);
+      expect(search.parentElement?.classList.contains("items-center")).toBe(true);
       expect(search.classList.contains("ps-9")).toBe(true);
       expect(byTestId("purchase-orders-table")?.textContent).toContain("PO-002");
     }
@@ -294,6 +308,41 @@ describe("purchase order list load states", () => {
     expect(byTestId("offline-purchase-orders")).toBeNull();
   });
 
+  it("shows loading, no empty message and no request while there is no company", async () => {
+    noCompany.value = true;
+    try {
+      await renderPage(PurchaseOrders);
+      await flush();
+
+      expect(byTestId("purchase-orders-table")).not.toBeNull();
+      expect(byTestId("table-skeleton")).not.toBeNull();
+      expectNoEmptyState();
+      expect(byTestId("error-purchase-orders")).toBeNull();
+      expect(byTestId("offline-purchase-orders")).toBeNull();
+      expect(document.body.textContent).not.toContain("No purchase orders yet");
+      expect(fetchOrders).not.toHaveBeenCalled();
+      expect(apiCalls()).toEqual([]);
+    } finally {
+      noCompany.value = false;
+    }
+  });
+
+  it("does not show the normal empty message when a refresh fails over a cached empty list", async () => {
+    fetchOrders.mockResolvedValueOnce([]);
+    await renderPage(PurchaseOrders);
+    await flushUntil(() => !!byTestId("empty-purchase-orders"));
+
+    fetchOrders.mockRejectedValueOnce(new Error("boom"));
+    await refresh();
+
+    expect(queryClient.getQueryState(queryKey)?.status).toBe("error");
+    expect(table()).not.toBeNull();
+    expect(byTestId("table-skeleton")).toBeNull();
+    expectNoEmptyState();
+    expect(byTestId("error-purchase-orders")).toBeNull();
+    expect(byTestId("offline-purchase-orders")).toBeNull();
+  });
+
   it.each(["failed", "paused"] as const)(
     "keeps cached rows and search usable when a background refresh is %s",
     async (mode) => {
@@ -314,6 +363,7 @@ describe("purchase order list load states", () => {
 
       await type(byTestId("input-search-po"), "no-such-order");
       expect(byTestId("empty-purchase-orders-search")).not.toBeNull();
+      expect(queryClient.getQueryData(queryKey)).toEqual([row]);
     }
   );
 });
