@@ -1090,8 +1090,9 @@ export function registerEInvoiceRoutes(app: Express) {
       const body = validated<BuyerEndpointBody>(req);
       const scheme = body.scheme ?? PEPPOL_SCHEME_UAE_TIN;
       const participantId = normalizePeppolParticipantId(body.participantId, scheme);
+      const storedTrn = contact.trnNumber ? toAsciiDigits(contact.trnNumber.trim()) : undefined;
       const endpointIssue = participantId
-        ? uaePeppolEndpointIssue(scheme, participantId, tinFromTrn(contact.trnNumber?.trim()))
+        ? uaePeppolEndpointIssue(scheme, participantId, tinFromTrn(storedTrn))
         : null;
       if (endpointIssue === "invalid") {
         throw new DomainError("VALIDATION_ERROR", 400, {
