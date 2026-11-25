@@ -491,8 +491,17 @@ it("parses redis and rediss URLs", () => {
   expect(tls.useTls).toBe(true);
   expect(tls.password).toBeNull();
   expect(tls.db).toBeNull();
+  expect(parseRedisUrl("redis://[::1]:6379").host).toBe("::1");
+  expect(parseRedisUrl("rediss://[2001:db8::1]:6380/2")).toMatchObject({
+    host: "2001:db8::1",
+    port: 6380,
+    db: 2,
+    useTls: true,
+  });
   expect(() => parseRedisUrl("https://example.test")).toThrow(/REDIS_URL/);
   expect(() => parseRedisUrl("redis://example.test/nope")).toThrow(/REDIS_URL/);
+  expect(() => parseRedisUrl("redis://")).toThrow(/REDIS_URL/);
+  expect(() => parseRedisUrl("redis:///0")).toThrow(/REDIS_URL/);
 });
 
 it("uses REDIS_URL in production without Upstash", async () => {
@@ -649,14 +658,19 @@ it("closes the previous TCP socket when Redis configuration changes", async () =
 
 it("cancels an in-flight rediss connect when configuration changes", async () => {
   const sockets = new Set<net.Socket>();
-  let accept: (socket: net.Socket) => void = () => {};
-  const accepted = new Promise<net.Socket>((resolve) => {
-    accept = resolve;
+  let gotTls: (socket: net.Socket) => void = () => {};
+  const tlsBytes = new Promise<net.Socket>((resolve) => {
+    gotTls = resolve;
   });
   const server = net.createServer((socket) => {
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
-    accept(socket);
+    let announced = false;
+    socket.on("data", () => {
+      if (announced) return;
+      announced = true;
+      gotTls(socket);
+    });
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -670,7 +684,7 @@ it("cancels an in-flight rediss connect when configuration changes", async () =>
     const client = configuredThrottleRedis();
     expect(client).toBeInstanceOf(RedisUrlThrottleClient);
     const pending = client!.command("PING");
-    const socket = await accepted;
+    const socket = await tlsBytes;
     const closed = once(socket, "close");
     const started = Date.now();
     vi.stubEnv("UPSTASH_REDIS_REST_URL", url);
@@ -744,6 +758,25 @@ it("retires the previous client when production REDIS_URL is removed, then resto
     expect(replaced).not.toBe(restored);
     expect(await replaced!.command("PING")).toBe("PONG");
     expect(redis.connections()).toBe(3);
+
+    let current = replaced;
+    for (const invalid of ["redis://", "redis:///0"]) {
+      const closedHostless = redis.nextClose();
+      vi.stubEnv("REDIS_URL", invalid);
+      expect(() => configuredThrottleRedis()).toThrow(/REDIS_URL/);
+      await closedHostless;
+      expect(redis.openSockets()).toBe(0);
+      await expect(current!.command("PING")).rejects.toMatchObject({
+        code: "THROTTLE_UNAVAILABLE",
+        statusCode: 503,
+      });
+      vi.stubEnv("REDIS_URL", redis.url);
+      const fresh = configuredThrottleRedis();
+      expect(fresh).not.toBe(current);
+      expect(await fresh!.command("PING")).toBe("PONG");
+      current = fresh;
+    }
+    expect(redis.connections()).toBe(5);
   } finally {
     await redis.close();
   }

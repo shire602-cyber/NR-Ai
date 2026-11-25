@@ -83,8 +83,15 @@ export function parseRedisUrl(raw: string): ParsedRedisUrl {
   if (db !== null && (!Number.isInteger(db) || db < 0)) {
     throw new Error("REDIS_URL must be a valid redis:// or rediss:// URL");
   }
+  const host =
+    parsed.hostname.startsWith("[") && parsed.hostname.endsWith("]")
+      ? parsed.hostname.slice(1, -1)
+      : parsed.hostname;
+  if (host === "") {
+    throw new Error("REDIS_URL must be a valid redis:// or rediss:// URL");
+  }
   return {
-    host: parsed.hostname,
+    host,
     port: parsed.port ? Number(parsed.port) : parsed.protocol === "rediss:" ? 6380 : 6379,
     username: parsed.username ? decodeURIComponent(parsed.username) : null,
     password: parsed.password ? decodeURIComponent(parsed.password) : null,
