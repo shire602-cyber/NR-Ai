@@ -2,6 +2,7 @@
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
 import { BalanceCheck, StatementDownloads } from "../StatementParts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
@@ -12,7 +13,8 @@ import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function BalanceSheetTab() {
-  const { balanceSheet, bsLoading, dateRange, selectedCompanyId, t } = useReportsPageContext();
+  const { balanceSheet, bsLoading, dateRange, reportLoadErrors, selectedCompanyId, t } =
+    useReportsPageContext();
   const { locale } = useTranslation();
   // SWEEP: Arabic statements showed English account names and dates.
   const accountLabel = (item: { accountName?: string | null; accountNameAr?: string | null }) =>
@@ -53,6 +55,12 @@ export default function BalanceSheetTab() {
         <CardContent>
           {bsLoading ? (
             <Skeleton className="h-96" />
+          ) : reportLoadErrors.bs ? (
+            <LoadErrorState
+              error={reportLoadErrors.bs.error}
+              onRetry={reportLoadErrors.bs.retry}
+              testId="report-bs-load-error"
+            />
           ) : (
             <div className="space-y-6">
               {balanceSheet?.warnings?.some(

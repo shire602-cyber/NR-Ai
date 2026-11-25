@@ -3,6 +3,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, TrendingDown, TrendingUp } from "lucide-react";
 import { ProfitLossSections, StatementDownloads } from "../StatementParts";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
@@ -13,7 +14,8 @@ import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function ProfitLossTab() {
-  const { dateRange, plLoading, profitLoss, selectedCompanyId, t } = useReportsPageContext();
+  const { dateRange, plLoading, profitLoss, reportLoadErrors, selectedCompanyId, t } =
+    useReportsPageContext();
   const { locale } = useTranslation();
   // SWEEP: Arabic statements showed English account names and dates.
   const accountLabel = (item: { accountName?: string | null; accountNameAr?: string | null }) =>
@@ -35,7 +37,11 @@ export default function ProfitLossTab() {
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="text-kpi tabular-nums" data-testid="text-total-revenue">
-                <Money amount={profitLoss?.totalRevenue || 0} currency={"AED"} />
+                {reportLoadErrors.pl ? (
+                  "—"
+                ) : (
+                  <Money amount={profitLoss?.totalRevenue || 0} currency={"AED"} />
+                )}
               </div>
             )}
           </CardContent>
@@ -55,7 +61,11 @@ export default function ProfitLossTab() {
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="text-kpi tabular-nums" data-testid="text-total-expenses">
-                <Money amount={profitLoss?.totalExpenses || 0} currency={"AED"} />
+                {reportLoadErrors.pl ? (
+                  "—"
+                ) : (
+                  <Money amount={profitLoss?.totalExpenses || 0} currency={"AED"} />
+                )}
               </div>
             )}
           </CardContent>
@@ -75,7 +85,11 @@ export default function ProfitLossTab() {
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="text-kpi tabular-nums" data-testid="text-net-profit">
-                <Money amount={profitLoss?.netProfit || 0} currency={"AED"} />
+                {reportLoadErrors.pl ? (
+                  "—"
+                ) : (
+                  <Money amount={profitLoss?.netProfit || 0} currency={"AED"} />
+                )}
               </div>
             )}
           </CardContent>
@@ -102,6 +116,12 @@ export default function ProfitLossTab() {
         <CardContent>
           {plLoading ? (
             <Skeleton className="h-64" />
+          ) : reportLoadErrors.pl ? (
+            <LoadErrorState
+              error={reportLoadErrors.pl.error}
+              onRetry={reportLoadErrors.pl.retry}
+              testId="report-pl-load-error"
+            />
           ) : profitLoss?.sections ? (
             <ProfitLossSections report={profitLoss} />
           ) : (

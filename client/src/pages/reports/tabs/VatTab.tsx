@@ -1,6 +1,7 @@
 // Reports > vat tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
 import { useTranslation } from "@/lib/i18n";
@@ -9,7 +10,7 @@ import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function VatTab() {
-  const { dateRange, t, vatLoading, vatSummary } = useReportsPageContext();
+  const { dateRange, reportLoadErrors, t, vatLoading, vatSummary } = useReportsPageContext();
   const { locale } = useTranslation();
   return (
     <>
@@ -25,6 +26,12 @@ export default function VatTab() {
         <CardContent>
           {vatLoading ? (
             <Skeleton className="h-64" />
+          ) : reportLoadErrors.vat ? (
+            <LoadErrorState
+              error={reportLoadErrors.vat.error}
+              onRetry={reportLoadErrors.vat.retry}
+              testId="report-vat-load-error"
+            />
           ) : (
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-6">
