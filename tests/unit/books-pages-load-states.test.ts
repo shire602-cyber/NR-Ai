@@ -6,21 +6,28 @@
  *  - JournalEntryDetail: 500 -> load-error state with Retry; 404 -> "Journal entry not found".
  *  - AdminDocuments: the companies call failing is not "no clients you can upload for"; the
  *    company and category selects have accessible names; the TRN label is localised.
+ *  - FixedAssets: Retry recovers an initial load failure and cached rows stay searchable.
  */
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Route, Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import {
+  COMPANY_ID,
+  byTestId,
+  click,
   flush,
+  flushUntil,
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
   renderPage,
   resetHarness,
   setFixtures,
+  type as typeInput,
   unmountPage,
 } from "./helpers/form-harness";
 import { loadLocale } from "../../client/src/lib/i18n";
+import { queryClient } from "../../client/src/lib/queryClient";
 
 const mode = vi.hoisted(() => ({ failWith: null as null | { status: number }, failKeys: /$^/ }));
 
@@ -122,4 +129,70 @@ describe("admin documents", () => {
     const trigger = document.querySelector('[data-testid="select-client-company"]');
     expect(trigger?.getAttribute("aria-label")).toBeTruthy();
   });
+});
+
+it("recovers the fixed asset register with Retry and keeps search focused after a failed refetch", async () => {
+  const assetsPath = `/api/companies/${COMPANY_ID}/fixed-assets`;
+  mode.failKeys = /\/fixed-assets$/;
+  mode.failWith = { status: 500 };
+  setFixtures({
+    [assetsPath]: [
+      {
+        id: "van",
+        asset_name: "Delivery van",
+        category: "Vehicles",
+        purchase_cost: "1000",
+        status: "active",
+      },
+      {
+        id: "desk",
+        asset_name: "Office desk",
+        category: "Furniture",
+        purchase_cost: "500",
+        status: "active",
+      },
+    ],
+  });
+  const searchInput = () =>
+    document.querySelector<HTMLInputElement>(
+      'input[aria-label="Search by name, category or number"]'
+    );
+  const tableText = () => document.querySelector("tbody")?.textContent;
+
+  const { default: FixedAssets } = await import("../../client/src/pages/FixedAssets");
+  await renderPage(FixedAssets);
+  const loadError = () => byTestId("error-state-fixed-assets");
+  await flushUntil(() => !!loadError());
+  expect(loadError()).toBeTruthy();
+  expect(searchInput()).toBeNull();
+
+  mode.failWith = null;
+  await click(loadError()!.querySelector("button"));
+  await flushUntil(() => !!searchInput());
+  expect(loadError()).toBeNull();
+  expect(tableText()).toContain("Delivery van");
+  expect(tableText()).toContain("Office desk");
+
+  const search = searchInput()!;
+  search.focus();
+  await typeInput(search, "van");
+  expect(tableText()).toContain("Delivery van");
+  expect(tableText()).not.toContain("Office desk");
+
+  mode.failWith = { status: 500 };
+  const queryKey = [assetsPath];
+  await act(async () => {
+    await queryClient.refetchQueries({ queryKey, exact: true });
+  });
+  await flush();
+  expect(queryClient.getQueryState(queryKey)?.status).toBe("error");
+  expect(loadError()).toBeNull();
+  expect(searchInput()).toBe(search);
+  expect(document.activeElement).toBe(search);
+  expect(tableText()).toContain("Delivery van");
+  expect(tableText()).not.toContain("Office desk");
+
+  await typeInput(search, "desk");
+  expect(tableText()).toContain("Office desk");
+  expect(tableText()).not.toContain("Delivery van");
 });

@@ -619,6 +619,7 @@ export default function FixedAssets() {
     matchesAssetSearch(asset, searchQuery, t[`forms.asset.cat.${asset.category}`])
   );
   const hasSearch = searchQuery.trim().length > 0;
+  const showAssetsError = assetsFailed && assets.length === 0;
 
   // ─── Loading State ─────────────────────────────────────
 
@@ -715,7 +716,7 @@ export default function FixedAssets() {
 
       {/* Assets */}
       <section className="space-y-3">
-        {!assetsFailed && (assets.length > 0 || searchQuery) && (
+        {!showAssetsError && (assets.length > 0 || searchQuery) && (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="relative w-full sm:w-80">
               <Search
@@ -739,7 +740,7 @@ export default function FixedAssets() {
           status={
             isLoadingAssets
               ? "loading"
-              : assetsFailed && assets.length === 0
+              : showAssetsError
                 ? "error"
                 : filteredAssets.length === 0
                   ? "empty"
