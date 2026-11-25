@@ -251,6 +251,7 @@ export default function FixedAssets() {
     queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
     enabled: !!companyId,
   });
+  const categories = summary?.byCategory ?? [];
 
   // ─── Forms ──────────────────────────────────────────────
 
@@ -929,7 +930,7 @@ export default function FixedAssets() {
       </section>
 
       {/* Category breakdown */}
-      {summary && summary.byCategory.length > 0 && (
+      {categories.length > 0 && (
         <SectionCard title={t["pageLabels.assetCategoryBreakdown"]} flush>
           <Table className="mobile-fit">
             <TableHeader>
@@ -952,7 +953,7 @@ export default function FixedAssets() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {summary.byCategory.map((cat) => (
+              {categories.map((cat) => (
                 <TableRow key={cat.category}>
                   <TableCell className="font-medium">
                     {t[`forms.asset.cat.${cat.category}`] || cat.category}
