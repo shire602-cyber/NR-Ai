@@ -67,7 +67,7 @@ S4 = ops/evidence.
 | S04 | blocked (partly) | Provider contract terms need the operator; code trace not started |
 | S06 | blocked | Needs deployed headers from staging |
 | S07 | blocked | Needs operator backup/encryption evidence and an isolated restore |
-| S08 | open | Role matrix not started; needs a disposable DB |
+| S08 | **fixed awaiting verification** | Role matrix traced from `shared/access.ts` → `server/middleware/rbac.ts` → firm routes. The model: `isAdmin=true` or `firm_owner` → full scope (all clients); `firm_admin` → assigned-clients-only; `customer`/`client_portal` → rejected at `requireNraAccess`. `requireFirmOwner` gates destructive endpoints (alerts/refresh, alerts/mark-read, alerts/resolve in firm-command-center; assign-staff in firm.routes uses an inline `firmRole !== "firm_owner"` check). `getAccessibleCompanyIds` unions both `firmStaffAssignments` and `companyUsers` for `firm_admin` to avoid silently hiding clients auto-assigned at creation. Test: `tests/unit/role-matrix.test.ts` (20 assertions: pure-function matrix + source guards). **Still open:** a DB-backed integration test that issues 403 to a live `firm_admin` request to assign-staff; audit of company-users → hasCompanyAccess escalation path at scale. |
 
 ### Public website and buyer journey
 
@@ -93,8 +93,8 @@ S4 = ops/evidence.
 ## 3. Counts
 
 - Original items: 32. Verified dispositions: **0**.
-- Fixed awaiting verification: **13** (F01–F07, S01, S02+S03, S05, W01–W06+W08, O04, O07) plus ENV-01.
-- Open: 7 · Blocked or partly blocked: 10 (W07, W09, W10 newly blocked; + F05 scheduled-items, S04, S06, S07, O01, O02, O06).
+- Fixed awaiting verification: **14** (F01–F07, S01, S02+S03, S05, W01–W06+W08, O04, O07, S08) plus ENV-01.
+- Open: 6 · Blocked or partly blocked: 10 (W07, W09, W10 newly blocked; + F05 scheduled-items, S04, S06, S07, O01, O02, O06).
 - Handoff to Astra 6.2: **not eligible**.
 
 ## 4. Commands run (local, Node 18.16, Windows)
