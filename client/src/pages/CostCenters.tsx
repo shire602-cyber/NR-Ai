@@ -71,6 +71,11 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import {
+  costCenterDisplayName,
+  costCenterPeriodLabel,
+  filterCostCenters,
+} from "@/lib/cost-center-view";
 import { exportToExcel, prepareCostCenterProfitabilityForExport } from "@/lib/export";
 
 // ─── Types ───────────────────────────────────────────────
@@ -153,18 +158,27 @@ export default function CostCenters() {
 
   // ─── Queries ───────────────────────────────────────────
 
-  const { data: costCenters = [], isLoading } = useQuery<CostCenter[]>({
+  const {
+    data: costCenters = [],
+    isLoading,
+    isError: isCostCentersError,
+    refetch: refetchCostCenters,
+  } = useQuery<CostCenter[]>({
     queryKey: [`/api/companies/${companyId}/cost-centers`],
     enabled: !!companyId,
   });
 
-  const { data: profitabilityReport, isLoading: isLoadingProfitability } =
-    useQuery<CostCenterProfitabilityReport>({
-      queryKey: [`/api/companies/${companyId}/cost-centers/profitability`],
-      enabled: !!companyId,
-    });
+  const {
+    data: profitabilityReport,
+    isLoading: isLoadingProfitability,
+    isError: isProfitabilityError,
+    refetch: refetchProfitability,
+  } = useQuery<CostCenterProfitabilityReport>({
+    queryKey: [`/api/companies/${companyId}/cost-centers/profitability`],
+    enabled: !!companyId,
+  });
 
-  const { data: report } = useQuery<CostCenterReport>({
+  const { data: report, isError: isReportError } = useQuery<CostCenterReport>({
     queryKey: [`/api/companies/${companyId}/cost-centers/${selectedCostCenterId}/report`],
     enabled: !!companyId && !!selectedCostCenterId,
   });
@@ -328,7 +342,7 @@ export default function CostCenters() {
   const getParentName = (parentId: string | null | undefined): string => {
     if (!parentId) return "-";
     const parent = costCenters.find((cc) => cc.id === parentId);
-    return parent ? parent.name : "-";
+    return parent ? costCenterDisplayName(parent, locale) : "-";
   };
 
   const getAvailableParents = (): CostCenter[] => {
@@ -336,15 +350,7 @@ export default function CostCenters() {
     return costCenters.filter((cc) => cc.id !== editingCostCenter.id);
   };
 
-  const filteredCostCenters = costCenters.filter((cc) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      cc.code.toLowerCase().includes(q) ||
-      cc.name.toLowerCase().includes(q) ||
-      (cc.description?.toLowerCase().includes(q) ?? false)
-    );
-  });
+  const filteredCostCenters = filterCostCenters(costCenters, searchQuery);
 
   const activeCount = costCenters.filter((cc) => cc.isActive).length;
   const inactiveCount = costCenters.filter((cc) => !cc.isActive).length;
@@ -358,12 +364,16 @@ export default function CostCenters() {
     totalExpenses: 0,
     netIncome: 0,
   };
-  const profitabilityPeriodLabel =
-    profitabilityReport?.periodStart || profitabilityReport?.periodEnd
-      ? `${profitabilityReport.periodStart ?? "Beginning"} to ${
-          profitabilityReport.periodEnd ?? "today"
-        }`
-      : t["costCenters.allPostedPeriods"];
+  const profitabilityPeriodLabel = costCenterPeriodLabel(
+    profitabilityReport?.periodStart,
+    profitabilityReport?.periodEnd,
+    {
+      beginning: cc.beginning,
+      today: cc.today,
+      range: cc.periodRange,
+      allPeriods: t["costCenters.allPostedPeriods"],
+    }
+  );
 
   if (!canAccess("costCenters")) {
     return <UpgradePrompt feature="costCenters" requiredTier={getRequiredTier("costCenters")} />;
@@ -382,7 +392,7 @@ export default function CostCenters() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={cc.eyebrow}
         title={t["screens.costCenters"]}
         description={t["screens.costCentersDescription"]}
         backHref="/reports"
@@ -454,13 +464,21 @@ export default function CostCenters() {
             status={
               isLoadingProfitability
                 ? "loading"
-                : profitabilityRows.length === 0
-                  ? "empty"
-                  : "ready"
+                : isProfitabilityError
+                  ? "error"
+                  : profitabilityRows.length === 0
+                    ? "empty"
+                    : "ready"
             }
             empty={{
               icon: Building2,
               title: t["pageLabels.noCostCenterAllocationsHaveBeenPostedYet"],
+            }}
+            error={{
+              title: cc.loadErrorTitle,
+              description: cc.loadErrorBody,
+              onRetry: () => void refetchProfitability(),
+              testId: "cost-center-pl-error",
             }}
           >
             <Table className="row-cards">
@@ -587,11 +605,19 @@ export default function CostCenters() {
           </div>
         </div>
         <DataTableCard
-          status={filteredCostCenters.length === 0 ? "empty" : "ready"}
+          status={
+            isCostCentersError ? "error" : filteredCostCenters.length === 0 ? "empty" : "ready"
+          }
+          error={{
+            title: cc.loadErrorTitle,
+            description: cc.loadErrorBody,
+            onRetry: () => void refetchCostCenters(),
+            testId: "cost-center-register-error",
+          }}
           empty={{
             icon: Building2,
-            title: searchQuery ? t["screens.noCostCenterMatch"] : t["screens.noCostCenters"],
-            action: searchQuery
+            title: searchQuery.trim() ? t["screens.noCostCenterMatch"] : t["screens.noCostCenters"],
+            action: searchQuery.trim()
               ? undefined
               : { label: t["pageLabels.addCostCenter"], onClick: handleOpenCreateDialog },
           }}
@@ -635,7 +661,7 @@ export default function CostCenters() {
                     {center.code}
                   </TableCell>
                   <TableCell data-truncate="" data-cell="title" dir="auto" className="font-medium">
-                    {center.name}
+                    {costCenterDisplayName(center, locale)}
                   </TableCell>
                   <TableCell data-truncate="" className="text-muted-foreground">
                     {center.description || "—"}
@@ -682,7 +708,8 @@ export default function CostCenters() {
         <SectionCard
           title={
             <>
-              {t["screens.plSummary"]} · <span dir="auto">{selectedCostCenter.name}</span>{" "}
+              {t["screens.plSummary"]} ·{" "}
+              <span dir="auto">{costCenterDisplayName(selectedCostCenter, locale)}</span>{" "}
               <span className="tabular-nums text-muted-foreground">
                 ({selectedCostCenter.code})
               </span>
@@ -720,8 +747,12 @@ export default function CostCenters() {
               </div>
             </dl>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              <T k="pageLabels.noReportDataAvailableForThisCostCenter" />
+            <p className="text-sm text-muted-foreground" role={isReportError ? "alert" : undefined}>
+              {isReportError ? (
+                cc.reportError
+              ) : (
+                <T k="pageLabels.noReportDataAvailableForThisCostCenter" />
+              )}
             </p>
           )}
         </SectionCard>
@@ -829,7 +860,7 @@ export default function CostCenters() {
                             <SelectItem value="_none">{t["screens.cc2NoneTopLevel"]}</SelectItem>
                             {getAvailableParents().map((parent) => (
                               <SelectItem key={parent.id} value={parent.id}>
-                                {parent.code} — {parent.name}
+                                {parent.code} — {costCenterDisplayName(parent, locale)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -917,6 +948,13 @@ const CC_COPY = {
     lines: "Lines",
     active: "Active",
     inactive: "Inactive",
+    eyebrow: "Accounting",
+    beginning: "the beginning",
+    today: "today",
+    periodRange: "{start} to {end}",
+    loadErrorTitle: "Could not load cost centers",
+    loadErrorBody: "Check your connection and try again. Nothing was changed.",
+    reportError: "Could not load the report for this cost center. Try again later.",
   },
   ar: {
     nameAr: "الاسم بالعربية",
@@ -929,5 +967,12 @@ const CC_COPY = {
     lines: "البنود",
     active: "نشط",
     inactive: "غير نشط",
+    eyebrow: "المحاسبة",
+    beginning: "البداية",
+    today: "اليوم",
+    periodRange: "من {start} إلى {end}",
+    loadErrorTitle: "تعذّر تحميل مراكز التكلفة",
+    loadErrorBody: "تحقق من اتصالك وحاول مرة أخرى. لم يتم تغيير أي شيء.",
+    reportError: "تعذّر تحميل تقرير مركز التكلفة هذا. حاول لاحقًا.",
   },
 } as const;
