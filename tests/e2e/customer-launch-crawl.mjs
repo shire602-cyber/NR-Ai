@@ -46,13 +46,13 @@ const LOCALIZED_HOMEPAGES = {
     lang: "en",
     dir: "ltr",
     title: "Accounting and VAT for UAE businesses",
-    providerChoice: "Choose one accredited provider per company",
+    providerChoice: "Works with UAE accredited e-invoicing providers",
   },
   "/ar": {
     lang: "ar",
     dir: "rtl",
     title: "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات",
-    providerChoice: "اختر مزوّد خدمة معتمدًا واحدًا لكل شركة",
+    providerChoice: "يعمل مع مزوّدي خدمة الفوترة الإلكترونية المعتمدين في الإمارات",
   },
 };
 
