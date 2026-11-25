@@ -222,6 +222,27 @@ describe("tour render", () => {
     expect(byId("tour-total").textContent).toBe("10,502,362.50");
   });
 
+  it("keeps nonzero totals for Arabic-Indic quantity and price through focus and blur", async () => {
+    await mount("ar");
+    const qty = byId("tour-qty-0") as HTMLInputElement;
+    const price = byId("tour-price-0") as HTMLInputElement;
+    type(qty, "٣");
+    type(price, "٥٠٠٫٢٠");
+    // 3 x 500.20 + 1,200.00 = 2,700.60; VAT 135.03 (Arabic decimal separator).
+    expect(byId("tour-vat").textContent).toBe("135.03");
+    expect(byId("tour-total").textContent).toBe("2,835.63");
+
+    for (const input of [qty, price]) {
+      act(() => input.focus());
+      act(() => input.blur());
+    }
+    expect(byId("tour-vat").textContent).toBe("135.03");
+    expect(byId("tour-total").textContent).toBe("2,835.63");
+    // The fields now hold the numeric values rather than the typed Arabic digits.
+    expect(Number((byId("tour-qty-0") as HTMLInputElement).value)).toBe(3);
+    expect(Number((byId("tour-price-0") as HTMLInputElement).value)).toBe(500.2);
+  });
+
   it("switches the invoice layout, bilingual shows both languages", async () => {
     await mount("en");
     const doc = () => byId("tour-invoice-doc");

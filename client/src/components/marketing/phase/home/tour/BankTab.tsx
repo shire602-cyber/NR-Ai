@@ -5,9 +5,9 @@ import { BANK_FILE_NAME, BANK_ROWS } from "./sample";
 import { useAutoStart, useSequence } from "./sequence";
 import { Sample, type TabProps } from "./shared";
 
-export default function BankTab({ text, reduced, autoPlay }: TabProps) {
+export default function BankTab({ text, reduced, autoPlay, paused, onActivity }: TabProps) {
   const results = useMemo(() => reconcileBank(), []);
-  const seq = useSequence(BANK_ROWS.length, 650, reduced);
+  const seq = useSequence(BANK_ROWS.length, 650, reduced, paused, onActivity);
   useAutoStart(autoPlay, seq.start, 700);
   const matched = results.filter((r) => r.ref !== null).length;
   const review = results.length - matched;

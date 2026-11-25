@@ -30,6 +30,8 @@ const CHECKED = COMPETITOR_PRICES.lastChecked;
 const WAFEQ_SRC = COMPETITOR_PRICES.wafeq.source;
 const ZOHO_SRC = COMPETITOR_PRICES.zoho.source;
 const ZOHO_EINVOICING_SRC = "https://www.zoho.com/ae/books/e-invoicing/";
+const ZOHO_EINVOICING_HELP_SRC = "https://www.zoho.com/ae/books/help/e-invoicing/";
+const ZOHO_SIGNUP_SRC = "https://www.zoho.com/ae/books/signup/";
 
 const wafeq = (cell: ComparisonCell = {}): ComparisonCell => ({
   source: WAFEQ_SRC,
@@ -48,8 +50,9 @@ function includingVat(aed: number): number {
 }
 
 /*
- * Vendor pricing pages cover prices and trials. Zoho's e-invoicing page details its included
- * allowance and additional packs. Cells with no `key` render as a dash.
+ * Vendor pricing pages cover prices. Zoho's sign-up page covers its trial; its e-invoicing page
+ * covers the included allowance and packs, and its e-invoicing help page the bilingual PDF for
+ * Peppol invoices. Cells with no `key` render as a dash.
  */
 export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   {
@@ -82,7 +85,11 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
     cells: {
       muhasib: { key: "hxCmpTrialMuhasib" },
       wafeq: wafeq({ key: "hxCmpTrialWafeq" }),
-      zoho: zoho({ key: "hxCmpTrialZoho" }),
+      zoho: zoho({
+        key: "hxCmpTrialZoho",
+        source: ZOHO_SIGNUP_SRC,
+        sourceLabelKey: "hxCmpSrcZohoSignup",
+      }),
     },
   },
   {
@@ -101,7 +108,15 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   {
     id: "bilingual",
     labelKey: "hxCmpRowBilingual",
-    cells: { muhasib: yes, wafeq: wafeq(), zoho: zoho() },
+    cells: {
+      muhasib: yes,
+      wafeq: wafeq(),
+      zoho: zoho({
+        key: "hxCmpBilingualZoho",
+        source: ZOHO_EINVOICING_HELP_SRC,
+        sourceLabelKey: "hxCmpSrcZohoEinv",
+      }),
+    },
   },
   {
     id: "vat201",

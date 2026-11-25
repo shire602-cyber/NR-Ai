@@ -115,6 +115,59 @@ describe("product tour motion", () => {
     expect(byId("tour-pause").textContent).toBe("تشغيل الجولة");
   });
 
+  // Fake timers are active before mounting, and the lazy app module is resolved first, so the
+  // demo's own timers (auto start 900 ms, stage 850 ms) are driven by the fake clock.
+  async function mountWithFakeTimers() {
+    vi.useFakeTimers();
+    await import("../../client/src/components/marketing/phase/home/tour/TourApp");
+    await mount("en");
+    await act(async () => {});
+    await act(async () => {});
+    expect(byId("tour-issue")).not.toBeNull();
+  }
+  const pipelineStep = () =>
+    [...container.querySelectorAll(".mz-tour-pipeline li")].findIndex(
+      (li) => li.getAttribute("data-state") === "current"
+    );
+
+  it("Pause holds a running invoice demo and the selected tab, Play resumes it", async () => {
+    await mountWithFakeTimers();
+    await advance(900); // invoice auto start
+    await advance(850); // stage 1
+    expect(pipelineStep()).toBe(1);
+    expect(byId("tour-pause").textContent).toBe("Pause tour");
+
+    click(byId("tour-pause"));
+    expect(byId("tour-pause").textContent).toBe("Play tour");
+    await advance(30_000);
+    expect(pipelineStep()).toBe(1);
+    expect(selected()).toBe(0);
+
+    click(byId("tour-pause"));
+    expect(byId("tour-pause").textContent).toBe("Pause tour");
+    await advance(900);
+    expect(pipelineStep()).toBe(2);
+  });
+
+  it("keeps Pause available for a manually started demo after the visitor interacted", async () => {
+    await mountWithFakeTimers();
+    act(() => {
+      shell().dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    // Interaction stopped auto-play and no demo is running: Play is offered.
+    expect(byId("tour-pause").textContent).toBe("Play tour");
+    click(byId("tour-issue"));
+    expect(byId("tour-pause").textContent).toBe("Pause tour");
+    await advance(850);
+    expect(pipelineStep()).toBe(1);
+
+    click(byId("tour-pause"));
+    expect(byId("tour-pause").textContent).toBe("Play tour");
+    await advance(30_000);
+    expect(pipelineStep()).toBe(1);
+    expect(selected()).toBe(0);
+  });
+
   it("never advances away from a focused control", async () => {
     await mount("en");
     vi.useFakeTimers();
@@ -189,10 +242,12 @@ describe("hero stage motion", () => {
     const { default: HeroStage } =
       await import("../../client/src/components/marketing/phase/home/HeroStage");
     await act(async () => {
-      root.render(createElement(HeroStage, { locale }));
+      // The hero band owns the data-motion switch, so the stage is rendered inside .mz-hero.
+      root.render(createElement("section", { className: "mz-hero" }, createElement(HeroStage, { locale })));
     });
   }
   const stage = () => byId("hero-stage");
+  const vatAmount = () => container.querySelector(".mz-stage-vat strong")?.textContent;
   // The frame timer is re-armed by an effect after each state change, so step the clock in
   // small slices and let React flush between them.
   const advance = async (ms: number) => {
@@ -234,6 +289,40 @@ describe("hero stage motion", () => {
     expect(button().textContent).toBe("Pause animation");
     await advance(5000);
     expect(stage().getAttribute("data-status")).not.toBe(frozen);
+  });
+
+  it("holds the VAT count-up mid-way on Pause and resumes it on Play", async () => {
+    vi.useFakeTimers({
+      toFake: [
+        "setTimeout",
+        "clearTimeout",
+        "Date",
+        "performance",
+        "requestAnimationFrame",
+        "cancelAnimationFrame",
+      ],
+    });
+    await mount("en");
+    await advance(9300);
+    expect(stage().getAttribute("data-step")).toBe("5");
+    await advance(200);
+    const band = () => container.querySelector(".mz-hero")!;
+    const { VAT_PAYABLE_AED, formatFils, toFils } =
+      await import("../../client/src/components/marketing/phase/home/hero/model");
+    const final = `AED ${formatFils(toFils(Math.round(VAT_PAYABLE_AED)))}`;
+    const mid = vatAmount();
+    expect(mid).not.toBe(`AED ${formatFils(toFils(0))}`);
+    expect(mid).not.toBe(final);
+
+    click(byId("hero-pause"));
+    expect(band().getAttribute("data-motion")).toBe("paused");
+    await advance(5000);
+    expect(vatAmount()).toBe(mid);
+
+    click(byId("hero-pause"));
+    expect(band().hasAttribute("data-motion")).toBe(false);
+    await advance(300);
+    expect(vatAmount()).not.toBe(mid);
   });
 
   it("labels the button in Arabic", async () => {

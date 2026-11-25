@@ -11,18 +11,41 @@ export interface Sequence {
 
 /**
  * A timed sequence of `total` stages, one every `stepMs`. With `reduced` set, `start` jumps straight
- * to the final stage so nothing animates.
+ * to the final stage so nothing animates. While `paused` the running sequence is held: the stage
+ * timer stops and, on resume, waits only for the time that was left (no restart, no skipped stage).
  */
-export function useSequence(total: number, stepMs: number, reduced: boolean): Sequence {
+export function useSequence(
+  total: number,
+  stepMs: number,
+  reduced: boolean,
+  paused = false,
+  onActivity?: (active: boolean) => void
+): Sequence {
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
   const running = playing && step < total;
+  const left = useRef({ step: -1, ms: stepMs });
+
+  // Tell the tour whether a demo is visibly moving (so Pause stays offered after a manual start).
+  useEffect(() => {
+    onActivity?.(running);
+    return () => onActivity?.(false);
+  }, [onActivity, running]);
 
   useEffect(() => {
-    if (!running) return;
-    const id = setTimeout(() => setStep((s) => s + 1), stepMs);
-    return () => clearTimeout(id);
-  }, [running, step, stepMs]);
+    if (!running) {
+      left.current = { step: -1, ms: stepMs };
+      return;
+    }
+    if (left.current.step !== step) left.current = { step, ms: stepMs };
+    if (paused) return;
+    const startedAt = Date.now();
+    const id = setTimeout(() => setStep((s) => s + 1), left.current.ms);
+    return () => {
+      clearTimeout(id);
+      left.current.ms = Math.max(0, left.current.ms - (Date.now() - startedAt));
+    };
+  }, [running, step, stepMs, paused]);
 
   const start = useCallback(() => {
     if (reduced) {

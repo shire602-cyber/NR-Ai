@@ -15,7 +15,7 @@ import {
   type CompareGroup,
   type CompareRow,
 } from "../../plans";
-import { ComparisonTable } from "../home/ComparisonTable";
+import { ComparisonTable, PRICING_COMPETITOR_ANCHOR } from "../home/ComparisonTable";
 import { Faq } from "../home/Faq";
 import { PlanCards } from "../home/PricingSection";
 import { SectionHead } from "../home/SectionHead";
@@ -86,10 +86,12 @@ export function FeatureMatrix({ locale }: Pick<LegacySectionProps, "locale">) {
   const text = useMarketingText(locale);
   return (
     <section
-      id="plan-matrix"
+      id="compare"
       data-testid="section-plan-matrix"
       className="mz-band mz-band--sand mz-price-matrix-band"
     >
+      {/* `/pricing#compare` was always this matrix; `#plan-matrix` is the newer alias for it. */}
+      <span id="plan-matrix" className="mz-price-anchor" aria-hidden="true" />
       <div className="phase-wrap">
         <SectionHead title={text("hxPriceMatrixTitle")} lead={text("hxPriceMatrixLead")} />
         <div
@@ -183,7 +185,14 @@ export function PricingPage({ base, locale, tr }: LegacySectionProps) {
               {formatMessage(t["marketing.prYearlyNote"], { months: YEARLY_FREE })}
             </p>
           </div>
-          <PlanCards base={base} locale={locale} tr={tr} immediate cycle={cycle} />
+          <PlanCards
+            base={base}
+            locale={locale}
+            tr={tr}
+            immediate
+            cycle={cycle}
+            compareHref={`#${PRICING_COMPETITOR_ANCHOR}`}
+          />
           <p className="mz-price-note mz-price-readonly" data-testid="price-readonly">
             {text("hxPriceReadOnly")}
           </p>
@@ -199,7 +208,12 @@ export function PricingPage({ base, locale, tr }: LegacySectionProps) {
         </div>
       </section>
       <FeatureMatrix locale={locale} />
-      <ComparisonTable base={base} locale={locale} headingLevel={2} />
+      <ComparisonTable
+        base={base}
+        locale={locale}
+        headingLevel={2}
+        anchorId={PRICING_COMPETITOR_ANCHOR}
+      />
       <Faq base={base} locale={locale} tr={tr} />
     </div>
   );

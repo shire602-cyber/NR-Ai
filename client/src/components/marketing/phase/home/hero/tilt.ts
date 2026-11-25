@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 
 /** Pointer position relative to a box, as -1..1 from its centre on each axis (clamped). */
 export function tiltFromPointer(
@@ -22,7 +22,16 @@ const FINE_POINTER = "(hover: hover) and (pointer: fine)";
  * parallax, the glare and the spotlight. One write per animation frame. Touch screens and reduced
  * motion get nothing (`enabled` false), and the values reset when the pointer leaves.
  */
-export function usePointerTilt(stage: RefObject<HTMLElement | null>, enabled: boolean): void {
+export function usePointerTilt(
+  stage: RefObject<HTMLElement | null>,
+  enabled: boolean,
+  frozen = false
+): void {
+  // While frozen (hero Pause) pointer events are ignored and the last values stay on the band.
+  const frozenRef = useRef(frozen);
+  useEffect(() => {
+    frozenRef.current = frozen;
+  }, [frozen]);
   useEffect(() => {
     const el = stage.current;
     const area = el?.closest<HTMLElement>(".mz-hero") ?? el;
@@ -31,6 +40,8 @@ export function usePointerTilt(stage: RefObject<HTMLElement | null>, enabled: bo
     let next = { x: 0, y: 0 };
     const write = () => {
       frame = 0;
+      // A write scheduled just before Pause must not land after the freeze.
+      if (frozenRef.current) return;
       area.style.setProperty("--mz-px", next.x.toFixed(3));
       area.style.setProperty("--mz-py", next.y.toFixed(3));
     };
@@ -38,11 +49,12 @@ export function usePointerTilt(stage: RefObject<HTMLElement | null>, enabled: bo
       if (!frame) frame = requestAnimationFrame(write);
     };
     const move = (event: PointerEvent) => {
-      if (event.pointerType === "touch") return;
+      if (event.pointerType === "touch" || frozenRef.current) return;
       next = tiltFromPointer(el.getBoundingClientRect(), event.clientX, event.clientY);
       schedule();
     };
     const leave = () => {
+      if (frozenRef.current) return;
       next = { x: 0, y: 0 };
       schedule();
     };

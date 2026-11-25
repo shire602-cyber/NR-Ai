@@ -7,8 +7,8 @@ import { Money, Sample, type TabProps } from "./shared";
 /** Stages: 1 scan sweep (two ticks), then merchant, date, amount, VAT, account. */
 const TOTAL = 6;
 
-export default function ReceiptTab({ locale, text, reduced, autoPlay }: TabProps) {
-  const scan = useSequence(TOTAL, 700, reduced);
+export default function ReceiptTab({ locale, text, reduced, autoPlay, paused, onActivity }: TabProps) {
+  const scan = useSequence(TOTAL, 700, reduced, paused, onActivity);
   useAutoStart(autoPlay, scan.start, 700);
   const scanning = scan.running && scan.step <= 1;
 

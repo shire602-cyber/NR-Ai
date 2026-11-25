@@ -27,6 +27,7 @@ import { metaText } from "../meta-text";
 import { useTourInvoice } from "./tour/invoiceState";
 import { nextTabIndex } from "./tour/model";
 import "./tour.css";
+import "./tour-pause.css";
 
 /** Loaded when the section is within ~400px of the viewport; keeps the first load light. */
 const TourApp = lazy(() => import("./tour/TourApp"));
@@ -59,10 +60,20 @@ export function ProductTour({ base, locale }: SectionProps) {
   // visitor presses Play. Hovering only holds it while the pointer is over the tour.
   const touch = useCallback(() => setInteracted(true), []);
 
+  const [sequenceActive, setSequenceActive] = useState(false);
+
   const playing = !interacted && !userPaused;
+  // Pause stays offered while a manually started demo is visibly moving, even after interaction.
+  const pauseOffered = !userPaused && (playing || sequenceActive);
   const advancing = near && visible && playing && !hovering && !reduced;
+  // Time left before the next tab: held across Pause/hover so resuming continues, not restarts.
+  const advanceLeft = useRef({ tab: -1, ms: TOUR_ADVANCE_MS });
   useEffect(() => {
+    if (advanceLeft.current.tab !== selected) {
+      advanceLeft.current = { tab: selected, ms: TOUR_ADVANCE_MS };
+    }
     if (!advancing) return;
+    const startedAt = Date.now();
     const id = setTimeout(() => {
       // Never swap the panel out from under a focused control.
       if (shellRef.current?.contains(document.activeElement)) {
@@ -70,12 +81,15 @@ export function ProductTour({ base, locale }: SectionProps) {
         return;
       }
       setSelected((s) => (s + 1) % TABS.length);
-    }, TOUR_ADVANCE_MS);
-    return () => clearTimeout(id);
+    }, advanceLeft.current.ms);
+    return () => {
+      clearTimeout(id);
+      advanceLeft.current.ms = Math.max(0, advanceLeft.current.ms - (Date.now() - startedAt));
+    };
   }, [advancing, selected]);
 
   const togglePlay = () => {
-    if (playing) {
+    if (pauseOffered) {
       setUserPaused(true);
     } else {
       setUserPaused(false);
@@ -106,11 +120,13 @@ export function ProductTour({ base, locale }: SectionProps) {
               type="button"
               className="mz-tour-pause"
               data-testid="tour-pause"
-              data-playing={playing}
+              data-playing={pauseOffered}
               onClick={togglePlay}
             >
-              {playing ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
-              <span>{metaText(locale, playing ? "hxMotionTourPause" : "hxMotionTourPlay")}</span>
+              {pauseOffered ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
+              <span>
+                {metaText(locale, pauseOffered ? "hxMotionTourPause" : "hxMotionTourPlay")}
+              </span>
             </button>
           </div>
         )}
@@ -123,6 +139,7 @@ export function ProductTour({ base, locale }: SectionProps) {
           onPointerEnter={() => setHovering(true)}
           onPointerLeave={() => setHovering(false)}
           data-interacted={interacted}
+          data-paused={userPaused}
         >
           <div
             className="mz-tour-tabs"
@@ -185,6 +202,8 @@ export function ProductTour({ base, locale }: SectionProps) {
                             locale={locale}
                             reduced={reduced}
                             autoPlay={playing && !reduced}
+                            paused={userPaused}
+                            onActivity={setSequenceActive}
                             invoice={invoice}
                           />
                         </Suspense>

@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
 const REDUCED = "(prefers-reduced-motion: reduce)";
 
@@ -61,24 +61,36 @@ export interface CountUpOptions {
   durationMs?: number;
   /** Start counting only when true (typically the result of `useInView`). */
   enabled?: boolean;
+  /** Hold the displayed value; resuming continues from the elapsed time (no jump to 0). */
+  paused?: boolean;
 }
 
 /**
  * Animates 0 -> `target`. Returns `target` straight away under reduced motion or when
- * requestAnimationFrame is unavailable; returns 0 while not `enabled`.
+ * requestAnimationFrame is unavailable; returns 0 while not `enabled`. While `paused` (and still
+ * enabled) the current value is held and the count resumes from where it stopped.
  */
 export function useCountUp(
   target: number,
-  { durationMs = 1400, enabled = true }: CountUpOptions = {}
+  { durationMs = 1400, enabled = true, paused = false }: CountUpOptions = {}
 ): number {
   const reduced = usePrefersReducedMotion();
   const canAnimate = !reduced && typeof requestAnimationFrame === "function";
   const [value, setValue] = useState(canAnimate ? 0 : target);
+  const elapsed = useRef(0);
+  const lastRun = useRef({ target, durationMs });
   useEffect(() => {
-    if (!canAnimate || !enabled) return;
+    // A changed target or duration counts afresh; only pause/resume keeps the elapsed time.
+    if (lastRun.current.target !== target || lastRun.current.durationMs !== durationMs) {
+      lastRun.current = { target, durationMs };
+      elapsed.current = 0;
+    }
+    if (!enabled) elapsed.current = 0;
+    if (!canAnimate || !enabled || paused) return;
     let frame = 0;
-    const startedAt = performance.now();
+    const startedAt = performance.now() - elapsed.current;
     const tick = (now: number) => {
+      elapsed.current = now - startedAt;
       const progress = Math.min(1, (now - startedAt) / Math.max(1, durationMs));
       const eased = 1 - Math.pow(1 - progress, 3);
       setValue(progress >= 1 ? target : target * eased);
@@ -86,7 +98,7 @@ export function useCountUp(
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [target, durationMs, enabled, canAnimate]);
+  }, [target, durationMs, enabled, canAnimate, paused]);
   if (!canAnimate) return target;
   return enabled ? value : 0;
 }

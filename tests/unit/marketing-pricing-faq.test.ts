@@ -299,6 +299,26 @@ describe.each(["en", "ar"] as const)("%s", (locale) => {
     expect(link?.getAttribute("href")).toBe(`/${locale}/pricing#plan-matrix`);
     expect(container.querySelector("#plan-matrix")).not.toBeNull();
   });
+
+  it("keeps legacy #compare on the feature matrix while the competitor link has its own target", async () => {
+    const { PricingPage } =
+      await import("../../client/src/components/marketing/phase/pages/PricingPage");
+    await render(locale, "/pricing", async () => createElement(PricingPage, sectionProps(locale)));
+    // Legacy `/pricing#compare` was the plan matrix; `#plan-matrix` is an alias inside it.
+    const legacy = container.querySelector("#compare")!;
+    expect(legacy.getAttribute("data-testid")).toBe("section-plan-matrix");
+    expect(legacy.querySelector('table[data-testid="plan-matrix"]')).not.toBeNull();
+    expect(legacy.querySelector("#plan-matrix")).not.toBeNull();
+    expect(container.querySelectorAll("#compare")).toHaveLength(1);
+    // The competitor comparison and the link that jumps to it use a separate fragment.
+    const target = container
+      .querySelector('[data-testid="link-price-compare"]')
+      ?.getAttribute("href");
+    expect(target).toBe("#competitors");
+    const competitors = container.querySelector(target!)!;
+    expect(competitors.getAttribute("data-testid")).toBe("section-compare");
+    expect(competitors).not.toBe(legacy);
+  });
 });
 
 describe("catalog", () => {

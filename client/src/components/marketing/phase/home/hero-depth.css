@@ -123,6 +123,13 @@
   perspective-origin: 50% 30%;
 }
 
+/* Explicit Pause (HeroStage sets data-motion="paused" on the band): hold, do not restart. */
+.phase-site .mz-hero[data-motion="paused"] *,
+.phase-site .mz-hero[data-motion="paused"] *::before,
+.phase-site .mz-hero[data-motion="paused"] *::after {
+  animation-play-state: paused !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .phase-site .mz-hero-aurora,
   .phase-site .mz-hero-aurora i,

@@ -156,9 +156,22 @@ describe("comparison render", () => {
     expect(zohoEinvoicing.textContent).toContain(
       "The first 100 transactions each year are included on Professional and higher plans. Additional packs are paid add-ons."
     );
+    const einvLink = zohoEinvoicing.querySelector(
+      'a[href="https://www.zoho.com/ae/books/e-invoicing/"]'
+    );
+    // The source label is neutral: no vendor name in the link text.
+    expect(einvLink?.textContent).toBe("UAE e-invoicing documentation");
+    expect(einvLink?.textContent).not.toMatch(/Zoho/i);
+    const zohoBilingual = container.querySelector(
+      'tr[data-row="bilingual"] td[data-column="zoho"]'
+    )!;
+    expect(zohoBilingual.textContent).toContain(
+      "English and Arabic PDF for invoices sent via Peppol."
+    );
     expect(
-      zohoEinvoicing.querySelector('a[href="https://www.zoho.com/ae/books/e-invoicing/"]')
-    ).not.toBeNull();
+      zohoBilingual.querySelector('a[href="https://www.zoho.com/ae/books/help/e-invoicing/"]')
+        ?.textContent
+    ).toBe("UAE e-invoicing documentation");
     expect(container.querySelector('a[href="/en/compare/wafeq"]')).not.toBeNull();
     expect(container.querySelector('a[href="/en/compare/zoho"]')).not.toBeNull();
   });
@@ -190,9 +203,13 @@ describe("comparison render", () => {
     expect(container.querySelector('[data-testid="compare-footnote"]')?.textContent).toContain(
       "جميع الأسعار المعروضة شاملة ضريبة القيمة المضافة في الإمارات بنسبة 5%."
     );
+    const arEinv = container.querySelector('tr[data-row="einvoicing"] td[data-column="zoho"]')!;
+    expect(arEinv.textContent).toContain("أول 100 معاملة سنويًا. تتوفّر حزم إضافية مدفوعة.");
+    expect(arEinv.querySelector("a")?.textContent).toBe("وثائق الفوترة الإلكترونية في الإمارات");
+    expect(arEinv.querySelector("a")?.textContent).not.toMatch(/Zoho/i);
     expect(
-      container.querySelector('tr[data-row="einvoicing"] td[data-column="zoho"]')?.textContent
-    ).toContain("أول 100 معاملة سنويًا. تتوفّر حزم إضافية مدفوعة.");
+      container.querySelector('tr[data-row="bilingual"] td[data-column="zoho"]')?.textContent
+    ).toContain("ملف PDF بالإنجليزية والعربية للفواتير المرسلة عبر");
     expect(container.querySelector('a[href="/ar/compare/wafeq"]')).not.toBeNull();
     expect(container.textContent).not.toMatch(/[٠-٩۰-۹]/);
     for (const cell of container.querySelectorAll("tbody td")) {

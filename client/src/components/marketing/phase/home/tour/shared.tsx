@@ -10,6 +10,14 @@ export interface TabProps {
   reduced: boolean;
   /** True until the visitor touches the tour: tabs may start their own demo. */
   autoPlay: boolean;
+  /**
+   * True only after the visitor pressed the tour's Pause button. It holds a demo that is already
+   * running (and resumes it where it stopped); it is separate from `autoPlay`, which interaction
+   * and hover turn off without stopping manual demos.
+   */
+  paused?: boolean;
+  /** Reports whether a sequence is actively running (false on stop and unmount). */
+  onActivity?: (active: boolean) => void;
 }
 
 /** Money with Western digits, always left-to-right, never translated. */

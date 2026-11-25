@@ -48,6 +48,13 @@
   }
 }
 
+/* `#plan-matrix` target: a zero-height block so the browser scrolls natively, clear of the sticky nav. */
+.phase-site .mz-price-anchor {
+  display: block;
+  block-size: 0;
+  scroll-margin-block-start: 86px;
+}
+
 .phase-site .mz-price-note {
   margin-block-start: clamp(22px, 3vw, 36px);
   text-align: center;

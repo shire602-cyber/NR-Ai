@@ -118,11 +118,13 @@ export default function InvoiceTab({
   text,
   reduced,
   autoPlay,
+  paused,
+  onActivity,
   invoice,
 }: TabProps & { invoice: TourInvoice }) {
   const { qty, price, setQty, setPrice, lines, totals } = invoice;
   const [layout, setLayout] = useState<Layout>(locale === "ar" ? "ar" : "en");
-  const issue = useSequence(3, 850, reduced);
+  const issue = useSequence(3, 850, reduced, paused, onActivity);
   useAutoStart(autoPlay, issue.start, 900);
 
   const edit = (set: typeof setQty, i: number, value: string) => {

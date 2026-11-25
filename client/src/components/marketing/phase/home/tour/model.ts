@@ -1,4 +1,5 @@
 /** Pure logic behind the homepage tour. Money is integer fils; no React, no I/O. */
+import { toAsciiDigits } from "@shared/arabic-text";
 import { formatFils, mulRate, tryToFils } from "@shared/money";
 import {
   BANK_ROWS,
@@ -17,13 +18,13 @@ export const clamp = (value: number, min: number, max: number) =>
 
 /** Quantity from raw input: whole number, clamped to 0..MAX_QTY, blank/garbage is 0. */
 export function parseQty(raw: string): number {
-  const n = Math.trunc(Number(raw.trim()));
+  const n = Math.trunc(Number(toAsciiDigits(raw).trim()));
   return Number.isFinite(n) ? clamp(n, 0, MAX_QTY) : 0;
 }
 
 /** Unit price (AED, up to 2 decimals, half-up beyond) to fils, clamped to 0..MAX_UNIT_FILS. */
 export function parseUnitFils(raw: string): number {
-  const cleaned = raw.trim().replace(/,/g, "");
+  const cleaned = toAsciiDigits(raw).trim().replace(/,/g, "");
   const fils = tryToFils(cleaned, { rounding: "halfUp" });
   return fils === null ? 0 : clamp(fils, 0, MAX_UNIT_FILS);
 }

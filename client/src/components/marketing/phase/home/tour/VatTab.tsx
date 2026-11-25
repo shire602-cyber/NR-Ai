@@ -20,11 +20,13 @@ export default function VatTab({
   text,
   reduced,
   autoPlay,
+  paused,
+  onActivity,
   invoice,
 }: TabProps & { invoice: TourInvoice }) {
   const subtotalFils = invoice.totals.subtotalFils;
   const boxes = useMemo(() => vat201Boxes(transactionsWithInvoice(subtotalFils)), [subtotalFils]);
-  const seq = useSequence(ROWS.length, 550, reduced);
+  const seq = useSequence(ROWS.length, 550, reduced, paused, onActivity);
   const [exported, setExported] = useState(false);
   useAutoStart(autoPlay, seq.start, 700);
 

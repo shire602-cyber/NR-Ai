@@ -57,7 +57,16 @@ export default function HeroStage({ locale }: { locale: SiteLocale }) {
   const animated = !reduced && typeof IntersectionObserver !== "undefined";
   const [paused, setPaused] = useState(false);
   const running = animated && inView && !hidden && !paused;
-  usePointerTilt(ref, animated);
+  usePointerTilt(ref, animated, paused);
+
+  // The hero band owns the motion switch: hero-depth.css and stage-depth.css hold every running
+  // CSS animation (aurora, chips, float, frame effects) while data-motion="paused".
+  useEffect(() => {
+    const band = ref.current?.closest<HTMLElement>(".mz-hero");
+    if (!band || !paused) return;
+    band.setAttribute("data-motion", "paused");
+    return () => band.removeAttribute("data-motion");
+  }, [paused]);
 
   const [position, setPosition] = useState(0);
   const [cycle, setCycle] = useState(0);
@@ -92,12 +101,16 @@ export default function HeroStage({ locale }: { locale: SiteLocale }) {
     total: metaText(invoiceLocale, "hxHeroInvTotal"),
   };
   const lineLabels = [inv.line1, inv.line2];
-  const count = useCountUp(VAT_PAYABLE_AED, { durationMs: 1500, enabled: frame.step >= 5 });
+  const count = useCountUp(VAT_PAYABLE_AED, {
+    durationMs: 1500,
+    enabled: frame.step >= 5,
+    paused: !running,
+  });
   const vatShown = animated ? count : VAT_PAYABLE_AED;
   const status = frame.status;
 
   return (
-    <div className="mz-stage-wrap" data-float={running ? "true" : "false"}>
+    <div className="mz-stage-wrap" data-float={animated && inView && !hidden ? "true" : "false"}>
       <div
         ref={ref}
         className="mz-stage"

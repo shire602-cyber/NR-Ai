@@ -17,12 +17,26 @@ export interface ComparisonTableProps extends SectionProps {
   /** Show only Muhasib and this competitor (for the /compare pages). */
   focus?: "wafeq" | "zoho";
   headingLevel?: 1 | 2 | 3;
+  /**
+   * Fragment id of the section. The homepage keeps "compare"; /pricing passes another id because
+   * its legacy `#compare` target is the plan feature matrix.
+   */
+  anchorId?: string;
 }
+
+/** Fragment of the competitor comparison on /pricing (`#compare` there is the plan matrix). */
+export const PRICING_COMPETITOR_ANCHOR = "competitors";
 
 /** Placeholder glyph for "not confirmed"; the accessible label comes from the catalog. */
 const DASH = "-";
 
-export function ComparisonTable({ base, locale, focus, headingLevel = 2 }: ComparisonTableProps) {
+export function ComparisonTable({
+  base,
+  locale,
+  focus,
+  headingLevel = 2,
+  anchorId = "compare",
+}: ComparisonTableProps) {
   const text = useMarketingText(locale);
   const rich = useMarketingRich(locale);
   const columns = visibleColumns(focus);
@@ -61,7 +75,7 @@ export function ComparisonTable({ base, locale, focus, headingLevel = 2 }: Compa
     );
 
   return (
-    <section id="compare" data-testid="section-compare" className="mz-band mz-band--light mz-cmp">
+    <section id={anchorId} data-testid="section-compare" className="mz-band mz-band--light mz-cmp">
       <div className="phase-wrap">
         {headingLevel === 2 ? (
           <SectionHead title={text("hxCmpTitle")} lead={text("hxCmpLead")} />
