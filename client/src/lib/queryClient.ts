@@ -171,7 +171,7 @@ export function apiRequest(
   data?: unknown | undefined,
   /** Extra request headers, e.g. `X-Period-Lock-Reason` for an audited soft-lock override. */
   extraHeaders?: Record<string, string>,
-  options?: { queueWhenOffline?: boolean; keepalive?: boolean }
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean; signal?: AbortSignal }
 ): Promise<any> {
   const authHeaders = PORTAL_API_PREFIX.test(url) ? portalRequestHeaders() : getAuthHeaders();
   return requestWithHeaders(method, url, data, authHeaders, extraHeaders, options);
@@ -183,7 +183,7 @@ async function requestWithHeaders(
   data: unknown,
   authHeaders: Record<string, string>,
   extraHeaders?: Record<string, string>,
-  options?: { queueWhenOffline?: boolean; keepalive?: boolean }
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean; signal?: AbortSignal }
 ): Promise<any> {
   const withExtra = (h: Record<string, string>) => (extraHeaders ? { ...h, ...extraHeaders } : h);
   const upperMethod = method.toUpperCase();
@@ -208,6 +208,7 @@ async function requestWithHeaders(
       body,
       credentials: "include",
       keepalive: options?.keepalive,
+      signal: options?.signal,
     });
 
   // If we're offline and this is a mutation, queue it for the service worker
@@ -309,6 +310,15 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
     await throwIfResNotOk(res);
     return await parseResponseBody(res);
   };
+
+/**
+ * After a write: cancel in-flight reads for the affected queries (a GET that started before the
+ * write must not land afterwards), then invalidate so they refetch. Not awaited: the caller closes
+ * its dialog and toasts straight away.
+ */
+export function refreshAfterWrite(queryKey: readonly unknown[]): void {
+  void queryClient.cancelQueries({ queryKey }).then(() => queryClient.invalidateQueries({ queryKey }));
+}
 
 // Don't retry client errors (4xx) — only retry network failures and 5xx
 function shouldRetry(failureCount: number, error: unknown): boolean {

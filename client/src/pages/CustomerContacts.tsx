@@ -72,7 +72,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, refreshAfterWrite } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
@@ -153,8 +153,10 @@ export default function CustomerContacts() {
     company,
     companyId,
     isLoading: companyLoading,
+    isPaused: companyPaused,
     error: companyError,
   } = useDefaultCompany();
+  const contactsKey = ["/api/companies", companyId, "customer-contacts"] as const;
 
   // R3 (CTO 17): command-palette customer results link to /contacts?q=<name>.
   const [searchTerm, setSearchTerm] = useState(() =>
@@ -241,13 +243,22 @@ export default function CustomerContacts() {
   const [clearAllConfirmation, setClearAllConfirmation] = useState("");
 
   const contactsQuery = useQuery<CustomerContact[]>({
-    queryKey: ["/api/companies", companyId, "customer-contacts"],
+    queryKey: contactsKey,
+    queryFn: ({ signal }) =>
+      apiRequest(
+        "GET",
+        `/api/companies/${companyId}/customer-contacts`,
+        undefined,
+        undefined,
+        { signal }
+      ),
     enabled: !!companyId,
   });
   const contacts = contactsQuery.data ?? [];
   const listView = queryView(contactsQuery, {
     companyId,
     isLoading: companyLoading,
+    isPaused: companyPaused,
     error: companyError,
   });
   useOpenInvoiceParam(
@@ -268,9 +279,7 @@ export default function CustomerContacts() {
     },
     onSuccess: (result: ImportResult) => {
       setImportResults(result);
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "customer-contacts"],
-      });
+      refreshAfterWrite(contactsKey);
       toast({
         title: translateNow("toasts.importCompleted"),
         description: result.message,
@@ -290,9 +299,7 @@ export default function CustomerContacts() {
       return apiRequest("POST", `/api/companies/${companyId}/customer-contacts`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "customer-contacts"],
-      });
+      refreshAfterWrite(contactsKey);
       setShowAddDialog(false);
       toast({ title: t["customerContacts.contactCreatedSuccessfully"] });
     },
@@ -310,9 +317,7 @@ export default function CustomerContacts() {
       return apiRequest("PUT", `/api/companies/${companyId}/customer-contacts/${id}`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "customer-contacts"],
-      });
+      refreshAfterWrite(contactsKey);
       setEditContact(null);
       toast({ title: t["customerContacts.contactUpdatedSuccessfully"] });
     },
@@ -330,9 +335,7 @@ export default function CustomerContacts() {
       return apiRequest("DELETE", `/api/companies/${companyId}/customer-contacts/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "customer-contacts"],
-      });
+      refreshAfterWrite(contactsKey);
       toast({ title: t["customerContacts.contactDeletedSuccessfully"] });
     },
     onError: (error: any) => {
@@ -356,9 +359,7 @@ export default function CustomerContacts() {
       });
     },
     onSuccess: (result: { deletedCount: number; message: string }) => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "customer-contacts"],
-      });
+      refreshAfterWrite(contactsKey);
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", companyId, "customer-contacts/clear-preview"],
       });
@@ -628,9 +629,10 @@ export default function CustomerContacts() {
         <TabsList>
           <TabsTrigger value="list" data-testid="tab-contacts-list">
             <Building2 className="w-4 h-4" />
-            {contactsQuery.data === undefined
-              ? t["pages.contactsTab"]
-              : formatMessage(t["pages.contactsTabCount"], { count: contacts.length })}
+            {/* The count is a fact only about a current, successful answer. */}
+            {listView.kind === "data" && !listView.stale
+              ? formatMessage(t["pages.contactsTabCount"], { count: contacts.length })
+              : t["pages.contactsTab"]}
           </TabsTrigger>
           <TabsTrigger
             value="import"

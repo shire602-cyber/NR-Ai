@@ -24,7 +24,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { formatDate } from "@/lib/format";
 import { filterVendors } from "@/lib/vendor-filter";
 import { LoadErrorState } from "@/components/ui/load-error-state";
@@ -147,7 +147,12 @@ export default function Vendors() {
   const { t, locale } = useTranslation();
   const c = COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
-  const { companyId, isLoading: companyLoading, error: companyError } = useDefaultCompany();
+  const {
+    companyId,
+    isLoading: companyLoading,
+    isPaused: companyPaused,
+    error: companyError,
+  } = useDefaultCompany();
   const { gate: permissionGate } = useCompanyPermission();
   const [open, setOpen] = useState(false);
   // The create form's chunk loads on first request; it then stays mounted and keeps typed values.
@@ -157,18 +162,28 @@ export default function Vendors() {
 
   const vendorsQuery = useQuery<Vendor[]>({
     queryKey: ["/api/companies", companyId, "vendors"],
-    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/vendors`),
+    queryFn: ({ signal }) =>
+      apiRequest("GET", `/api/companies/${companyId}/vendors`, undefined, undefined, { signal }),
     enabled: !!companyId,
   });
   const agingQuery = useQuery<VendorAging>({
     queryKey: ["/api/companies", companyId, "vendors", "aging"],
-    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/vendors/aging`),
+    queryFn: ({ signal }) =>
+      apiRequest("GET", `/api/companies/${companyId}/vendors/aging`, undefined, undefined, {
+        signal,
+      }),
     enabled: !!companyId,
   });
   const statementQuery = useQuery<{ lines: StatementLine[]; closingBalance: number }>({
     queryKey: ["/api/companies", companyId, "vendors", statementFor?.id, "statement"],
-    queryFn: () =>
-      apiRequest("GET", `/api/companies/${companyId}/vendors/${statementFor!.id}/statement`),
+    queryFn: ({ signal }) =>
+      apiRequest(
+        "GET",
+        `/api/companies/${companyId}/vendors/${statementFor!.id}/statement`,
+        undefined,
+        undefined,
+        { signal }
+      ),
     enabled: !!companyId && !!statementFor,
   });
 
@@ -179,7 +194,12 @@ export default function Vendors() {
     () => filterVendors(vendorsQuery.data ?? [], searchTerm),
     [vendorsQuery.data, searchTerm]
   );
-  const company = { companyId, isLoading: companyLoading, error: companyError };
+  const company = {
+    companyId,
+    isLoading: companyLoading,
+    isPaused: companyPaused,
+    error: companyError,
+  };
   const listView = queryView(vendorsQuery, company);
   const agingView = queryView(agingQuery, company);
   const statementView = queryView(statementQuery, company);
@@ -191,8 +211,8 @@ export default function Vendors() {
     return label && label !== key ? label : type.replace(/_/g, " ");
   };
 
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "vendors"] });
+  // Cancels in-flight reads first, so a GET started before the write cannot land after it.
+  const invalidate = () => refreshAfterWrite(["/api/companies", companyId, "vendors"]);
 
   const backfill = useMutation({
     mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/vendors/backfill`, {}),

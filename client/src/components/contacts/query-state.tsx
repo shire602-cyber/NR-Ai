@@ -1,7 +1,9 @@
 /**
- * Notices for a contact or supplier list whose latest request is paused or failed (the view is derived by queryView in @/lib/query-view).
+ * Notices for a contact or supplier list whose latest request is paused or failed (the view is
+ * derived by queryView in @/lib/query-view). Paused copy and icon are neutral: a request can wait
+ * for reasons other than being offline.
  */
-import { WifiOff } from "lucide-react";
+import { Clock } from "lucide-react";
 import type { ReactNode } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -12,14 +14,14 @@ import { useTranslation } from "@/lib/i18n";
 import { classifyLoadError } from "@/lib/loadError";
 import type { QueryView } from "@/lib/query-view";
 
-/** First load with no connection: no spinner, and no claim that the list is empty. */
+/** First load that is paused (for any reason): no spinner, no claim of being offline or empty. */
 export function QueryWaiting() {
   const { t } = useTranslation();
   return (
     <div role="status" data-testid="query-waiting">
       <EmptyState
         compact
-        icon={WifiOff}
+        icon={Clock}
         title={t["pages.listWaitingTitle"]}
         description={t["pages.listWaitingBody"]}
       />

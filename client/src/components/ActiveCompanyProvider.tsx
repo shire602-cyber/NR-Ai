@@ -28,6 +28,8 @@ interface ActiveCompanyContextValue {
   companies: WorkspaceCompany[];
   /** True while the underlying company list is loading. */
   isLoading: boolean;
+  /** True while the first company lookup is paused (no data yet, request waiting to run). */
+  isPaused: boolean;
   /** Error from the underlying company query, if any. */
   error: unknown;
   /** True when the user has no accessible companies and the load is complete. */
@@ -71,6 +73,7 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
   const {
     data: companies,
     isLoading,
+    isPaused: queryPaused,
     error,
   } = useQuery<WorkspaceCompany[]>({
     queryKey: ["/api/companies"],
@@ -110,13 +113,16 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
     const list = companies ?? [];
     const activeMatch = activeId ? list.find((c) => c.id === activeId) : undefined;
     const company = resolveActiveCompany(list, activeId);
+    // A paused first lookup has no answer yet: it is neither "loading" nor "no companies".
+    const isPaused = queryPaused && companies === undefined;
     return {
       company,
       companyId: company?.id,
       companies: list,
       isLoading,
+      isPaused,
       error,
-      hasNoCompanies: !isLoading && !error && list.length === 0,
+      hasNoCompanies: !isLoading && !isPaused && !error && list.length === 0,
       isFirmContext: !!activeMatch && activeMatch.companyType === "client",
       isSwitchingClient: switchingClient,
       setActiveClientCompany,
@@ -126,6 +132,7 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
     companies,
     activeId,
     isLoading,
+    queryPaused,
     error,
     switchingClient,
     setActiveClientCompany,

@@ -13,12 +13,13 @@ import { click, flushUntil, type } from "./helpers/form-harness";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const company = vi.hoisted(() => ({ id: "c-1" as string | undefined }));
+const company = vi.hoisted(() => ({ id: "c-1" as string | undefined, paused: false }));
 vi.mock("@/hooks/useDefaultCompany", () => ({
   useDefaultCompany: () => ({
     companyId: company.id,
     company: { id: company.id, name: "Co" },
     isLoading: false,
+    isPaused: company.paused,
     error: null,
   }),
 }));
@@ -119,6 +120,8 @@ type Reply = unknown | "fail" | "hang";
 let replies: { vendors: Reply; aging: Reply; statement: Reply; contacts: Reply };
 let container: HTMLDivElement;
 let root: Root;
+/** Every request the pages made, with the signal each one carried. */
+let calls: Array<{ url: string; method: string; signal: AbortSignal | null | undefined }>;
 
 beforeAll(async () => {
   (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= class {
@@ -144,10 +147,19 @@ beforeEach(() => {
     statement: { lines: [], closingBalance: 0 },
     contacts: [CONTACT],
   };
+  calls = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      calls.push({ url, method, signal: init?.signal });
+      if (method === "POST" && url.endsWith("/vendors")) {
+        return new Response(JSON.stringify({ id: "v-new" }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        });
+      }
       const reply: Reply = url.endsWith("/vendors")
         ? replies.vendors
         : url.endsWith("/vendors/aging")
@@ -159,7 +171,14 @@ beforeEach(() => {
               : url.endsWith("/portal-summary")
                 ? {}
                 : [];
-      if (reply === "hang") return new Promise<Response>(() => {});
+      if (reply === "hang") {
+        // A real fetch rejects with an AbortError when its signal aborts.
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("Aborted", "AbortError"))
+          );
+        });
+      }
       return new Response(JSON.stringify(reply === "fail" ? { message: "boom" } : reply), {
         status: reply === "fail" ? 500 : 200,
         headers: { "content-type": "application/json" },
@@ -180,6 +199,7 @@ afterEach(async () => {
   document.body.innerHTML = "";
   onlineManager.setOnline(true);
   company.id = "c-1";
+  company.paused = false;
   vi.unstubAllGlobals();
   await act(async () => useI18n.getState().setLocale("en"));
 });
@@ -252,8 +272,21 @@ describe.each(PAGES)("$name query states", ({ Page, key, row, empty, search, noM
   it("waits honestly when the first fetch is paused", async () => {
     await goOffline();
     await mount(Page);
-    expect($('[data-testid="query-waiting"]')?.textContent).toContain("Waiting for a connection");
+    const waiting = $('[data-testid="query-waiting"]')!;
+    expect(waiting.textContent).toContain("Waiting to load");
+    // Neutral: a paused request is not necessarily an offline one.
+    expect(waiting.textContent).not.toMatch(/offline|connection/i);
+    expect(waiting.querySelector("svg.lucide-wifi-off")).toBeNull();
     expect($('[data-testid="table-skeleton"]')).toBeNull();
+    expect(text()).not.toContain(empty);
+  });
+
+  it("waits, neither empty nor no-company, while the company lookup itself is paused", async () => {
+    company.id = undefined;
+    company.paused = true;
+    await mount(Page);
+    expect($('[data-testid="query-waiting"]')).toBeTruthy();
+    expect($('[data-testid="query-no-company"]')).toBeNull();
     expect(text()).not.toContain(empty);
   });
 
@@ -296,7 +329,9 @@ describe.each(PAGES)("$name query states", ({ Page, key, row, empty, search, noM
     await goOffline();
     await refresh();
     expect(text()).toContain(row);
-    expect($('[data-testid="query-stale-paused"]')?.textContent).toContain("Refresh paused");
+    const notice = $('[data-testid="query-stale-paused"]')!;
+    expect(notice.textContent).toContain("Refresh is paused");
+    expect(notice.textContent).not.toMatch(/offline|online|connection/i);
   });
 
   it.each(["fail", "paused"] as const)(
@@ -307,9 +342,12 @@ describe.each(PAGES)("$name query states", ({ Page, key, row, empty, search, noM
         else await goOffline();
         await refresh();
       };
+      const contactsTab = () => $('[data-testid="tab-contacts-list"]')!.textContent;
       replies[key] = [];
       await mount(Page);
+      if (key === "contacts") expect(contactsTab()).toContain("Contacts (0)");
       await stale();
+      if (key === "contacts") expect(contactsTab()).toBe("Contacts");
       expect(text()).toContain("Nothing in the last saved copy");
       expect(text()).not.toContain(empty);
 
@@ -326,7 +364,65 @@ describe.each(PAGES)("$name query states", ({ Page, key, row, empty, search, noM
   it("speaks Arabic in the waiting state", async () => {
     await goOffline();
     await mount(Page, "ar");
-    expect($('[data-testid="query-waiting"]')?.textContent).toContain("بانتظار الاتصال");
+    const waiting = $('[data-testid="query-waiting"]')!;
+    expect(waiting.textContent).toContain("بانتظار التحميل");
+    expect(waiting.textContent).not.toContain("الاتصال");
+  });
+
+  it("speaks Arabic, neutrally, in the paused-refresh notice", async () => {
+    await mount(Page, "ar");
+    await goOffline();
+    await refresh();
+    const notice = $('[data-testid="query-stale-paused"]')!;
+    expect(notice.textContent).toContain("التحديث متوقف مؤقتًا");
+    expect(notice.textContent).not.toContain("الاتصال");
+  });
+});
+
+describe("contacts tab count", () => {
+  const tab = () => $('[data-testid="tab-contacts-list"]')!.textContent;
+  it("shows the count only for a current, successful answer", async () => {
+    await mount(CustomerContacts);
+    expect(tab()).toContain("Contacts (1)");
+  });
+  it("hides the count while there is no data", async () => {
+    replies.contacts = "hang";
+    await mount(CustomerContacts);
+    expect(tab()).toBe("Contacts");
+  });
+  it("hides the count after a failed refresh, keeping the saved rows", async () => {
+    await mount(CustomerContacts);
+    replies.contacts = "fail";
+    await refresh();
+    expect(text()).toContain("Noor Traders");
+    expect(tab()).toBe("Contacts");
+  });
+  it("hides the count while the refresh is paused", async () => {
+    await mount(CustomerContacts);
+    await goOffline();
+    await refresh();
+    expect(text()).toContain("Noor Traders");
+    expect(tab()).toBe("Contacts");
+  });
+});
+
+describe("list reads carry the query's AbortSignal", () => {
+  it.each([
+    ["supplier list", Vendors, "/vendors"],
+    ["contact list", CustomerContacts, "/customer-contacts"],
+  ] as const)("%s", async (_n, Page, suffix) => {
+    await mount(Page);
+    const get = calls.find((c) => c.method === "GET" && c.url.endsWith(suffix));
+    expect(get?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("aging and the supplier statement", async () => {
+    await mount(Vendors);
+    await openStatement();
+    for (const suffix of ["/vendors/aging", "/statement"]) {
+      const get = calls.find((c) => c.method === "GET" && c.url.endsWith(suffix));
+      expect(get?.signal, suffix).toBeInstanceOf(AbortSignal);
+    }
   });
 });
 
@@ -453,6 +549,34 @@ describe("new supplier dialog (loaded on demand)", () => {
 
     await openForm();
     expect(name()!.value).toBe("");
+  });
+
+  it("saving while the first list GET is pending aborts it, then refetches and shows the row", async () => {
+    const button = (label: string) =>
+      [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === label)!;
+    const name = () => document.getElementById("vendor-name") as HTMLInputElement | null;
+    const listGets = () =>
+      calls.filter((c) => c.method === "GET" && c.url.endsWith("/api/companies/c-1/vendors"));
+    replies.vendors = "hang";
+    await mount(Vendors);
+    expect(listGets()).toHaveLength(1);
+    const first = listGets()[0].signal!;
+    expect(first.aborted).toBe(false);
+
+    await click(button("New supplier"));
+    await flushUntil(() => name() !== null);
+    await type(name(), "Atlas Office Supplies");
+    // The server now has the supplier: the refetch after the save must see it.
+    replies.vendors = [{ ...SUPPLIER, id: "v-new", name: "Atlas Office Supplies" }];
+    await click(button("Save"));
+    await settle();
+
+    expect(first.aborted).toBe(true);
+    expect(listGets().length).toBeGreaterThanOrEqual(2);
+    expect(listGets().at(-1)!.signal!.aborted).toBe(false);
+    expect(name()).toBeNull(); // the dialog closed without waiting for the refetch
+    expect(text()).toContain("Atlas Office Supplies");
+    expect($('[data-testid="query-stale-error"]')).toBeNull();
   });
 });
 
