@@ -15,6 +15,7 @@ export interface ComparisonCell {
   key?: MarketingKey;
   vars?: Record<string, number>;
   source?: string;
+  sourceLabelKey?: MarketingKey;
   checked?: string;
 }
 
@@ -27,6 +28,7 @@ export interface ComparisonRow {
 const CHECKED = COMPETITOR_PRICES.lastChecked;
 const WAFEQ_SRC = COMPETITOR_PRICES.wafeq.source;
 const ZOHO_SRC = COMPETITOR_PRICES.zoho.source;
+const ZOHO_EINVOICING_SRC = "https://www.zoho.com/ae/books/e-invoicing/";
 
 const wafeq = (cell: ComparisonCell = {}): ComparisonCell => ({
   source: WAFEQ_SRC,
@@ -41,9 +43,8 @@ const zoho = (cell: ComparisonCell = {}): ComparisonCell => ({
 const yes: ComparisonCell = { key: "hxCmpYes" };
 
 /*
- * Verified on the vendors' public pricing pages on 2026-11-24: the prices, Wafeq's 14-day no-card
- * trial and e-invoicing listing, Zoho's 14-day trial and e-invoicing add-on. Cells with no `key`
- * could not be confirmed there and render as a dash.
+ * Vendor pricing pages cover prices and trials. Zoho's e-invoicing page details its included
+ * allowance and additional packs. Cells with no `key` render as a dash.
  */
 export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   {
@@ -85,7 +86,11 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
     cells: {
       muhasib: { key: "hxCmpEinvMuhasib" },
       wafeq: wafeq({ key: "hxCmpEinvWafeq" }),
-      zoho: zoho({ key: "hxCmpEinvZoho" }),
+      zoho: zoho({
+        key: "hxCmpEinvZoho",
+        source: ZOHO_EINVOICING_SRC,
+        sourceLabelKey: "hxCmpSrcZohoEinv",
+      }),
     },
   },
   {

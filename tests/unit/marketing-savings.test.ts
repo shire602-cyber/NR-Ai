@@ -7,7 +7,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { PLAN_MONTHLY_PRICES } from "../../shared/plans";
+import { planPrice } from "../../shared/plans";
 import {
   ASSUMPTIONS,
   computeSavings,
@@ -43,9 +43,9 @@ describe("savings model", () => {
     expect(r.valueMonthFils).toBe(68_000);
     expect(r.valueYearFils).toBe(816_000);
     expect(r.software).toEqual({
-      theirsYearAed: 2400,
-      oursYearAed: PLAN_MONTHLY_PRICES.professional * 12,
-      diffAed: 2400 - 1428,
+      theirsYearAed: 2520,
+      oursYearAed: planPrice("professional", "yearly"),
+      diffAed: 1330,
     });
   });
 
@@ -68,10 +68,10 @@ describe("savings model", () => {
 
   it("keeps a negative software difference negative (Muhasib dearer)", () => {
     const zoho = computeSavings({ ...DEFAULTS, comparator: "zoho", plan: "enterprise" });
-    expect(zoho.software.theirsYearAed).toBe(90 * 12);
-    expect(zoho.software.diffAed).toBe(1080 - 2748);
+    expect(zoho.software.theirsYearAed).toBe(1134);
+    expect(zoho.software.diffAed).toBe(1134 - 2290);
     expect(zoho.software.diffAed).toBeLessThan(0);
-    expect(computeSavings({ ...DEFAULTS, comparator: "sheet" }).software.diffAed).toBe(-1428);
+    expect(computeSavings({ ...DEFAULTS, comparator: "sheet" }).software.diffAed).toBe(-1190);
   });
 
   it("has no price for Xero and Other", () => {
@@ -155,8 +155,12 @@ describe("savings render", () => {
     expect(byId("savings-month").textContent).toBe("AED 680");
     expect(byId("savings-year").textContent).toBe("AED 8,160");
     expect(byId("savings-headline").textContent).toContain("AED 8,160");
-    expect(byId("savings-theirs").textContent).toBe("AED 2,400");
-    expect(byId("savings-diff").textContent).toBe("Muhasib costs AED 972 less per year.");
+    expect(byId("savings-software").textContent).toContain(
+      "Annual subscription cost (VAT included)"
+    );
+    expect(byId("savings-theirs").textContent).toBe("AED 2,520");
+    expect(byId("savings-ours").textContent).toBe("AED 1,190");
+    expect(byId("savings-diff").textContent).toBe("Muhasib costs AED 1,330 less per year.");
     expect(container.querySelector("[aria-live=polite]")).not.toBeNull();
     expect(container.textContent).toContain("Estimate");
 
@@ -178,8 +182,8 @@ describe("savings render", () => {
     expect(byId("savings-diff").textContent).toBe("No AED list price to compare.");
     expect(byId("savings-software").textContent).toContain("US dollars");
     setValue(software, "zoho");
-    expect(byId("savings-theirs").textContent).toBe("AED 1,080");
-    expect(byId("savings-diff").textContent).toBe("Muhasib costs AED 348 more per year.");
+    expect(byId("savings-theirs").textContent).toBe("AED 1,134");
+    expect(byId("savings-diff").textContent).toBe("Muhasib costs AED 56 more per year.");
     expect(byId("savings-diff").getAttribute("data-tone")).toBe("more");
   });
 
@@ -192,7 +196,8 @@ describe("savings render", () => {
     expect(how.textContent).toContain("3 min");
     expect(how.textContent).toContain("60%");
     expect(how.textContent).toContain("not measured results");
-    expect(how.textContent).toContain("As listed on vendor sites, 24 Nov 2026, excl. VAT.");
+    expect(how.textContent).toContain("The estimate uses annual billing");
+    expect(how.textContent).toContain("The calculator adds 5% UAE VAT to competitor prices.");
     expect(how.querySelector('a[href="https://www.wafeq.com/en-ae/pricing"]')).not.toBeNull();
     expect(how.querySelector('a[href="https://www.zoho.com/ae/books/pricing/"]')).not.toBeNull();
     expect(byId("savings-penalty").textContent).toContain(
@@ -205,6 +210,8 @@ describe("savings render", () => {
 
   it("renders Arabic with Western digits and Arabic copy", async () => {
     await mount("ar");
+    expect(byId("savings-software").textContent).toContain("شاملة ضريبة القيمة المضافة");
+    expect(byId("savings-ours").textContent).toBe("1,190 درهم");
     expect(container.querySelector("h2")?.textContent).toBe("كم ستوفّر عند الانتقال؟");
     expect(byId("savings-month").textContent).toBe("680 درهم");
     expect(byId("savings-hours").textContent).toBe("5.7 ساعة");

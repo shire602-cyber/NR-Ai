@@ -1,4 +1,5 @@
-import { PLAN_MONTHLY_PRICES, type PaidPlanId } from "@shared/plans";
+import { planPrice, type PaidPlanId } from "@shared/plans";
+import { vatBreakdown } from "../vat-calculator";
 import { COMPARATORS, type CompetitorId } from "./competitor-prices";
 
 /**
@@ -48,7 +49,7 @@ export interface SavingsResult {
   valueMonthFils: number;
   valueYearFils: number;
   software: {
-    /** Annual list price of their software (AED), or null when there is no AED price. */
+    /** Annual subscription price including UAE VAT (AED), or null without an AED price. */
     theirsYearAed: number | null;
     oursYearAed: number;
     /** theirs - ours: positive = Muhasib cheaper, negative = Muhasib dearer; null without a price. */
@@ -75,9 +76,10 @@ export function computeSavings(input: SavingsInput): SavingsResult {
   const valueMonthFils = Math.round((savedMinutes * rate * 100) / 60);
 
   const comparator = COMPARATORS.find((c) => c.id === input.comparator);
+  const perMonth = comparator?.perMonth;
   const theirsYearAed =
-    comparator && comparator.perMonth !== null ? comparator.perMonth * 12 : null;
-  const oursYearAed = PLAN_MONTHLY_PRICES[input.plan] * 12;
+    perMonth == null ? null : vatBreakdown(perMonth * 12 * 100, "add", "standard").gross / 100;
+  const oursYearAed = planPrice(input.plan, "yearly");
   return {
     rawMinutes,
     capMinutes,

@@ -42,8 +42,12 @@ export const PENALTY_TEXT_VARS = {
 
 /** Official sources, shown as footnote links. The decision name itself lives in a locale string. */
 export const DEADLINE_SOURCES = {
-  fta: "https://tax.gov.ae",
+  fta: "https://tax.gov.ae/en/taxes/Vat/uae.einvoicing.aspx",
   mof: "https://mof.gov.ae/en/about-us/initiatives/einvoicing/",
+  scope: {
+    en: "https://mof.gov.ae/en/news/ministry-of-finance-amends-electronic-invoicing-regulations-to-ease-the-burden-on-businesses/",
+    ar: "https://mof.gov.ae/ar/news/ministry-of-finance-amends-electronic-invoicing-regulations-to-ease-the-burden-on-businesses/",
+  },
   penalty:
     "https://mof.gov.ae/en/news/mof-announces-updated-administrative-penalties-related-to-the-uae-einvoicing-system-to-enhance-clarity-and-support-business-compliance/",
 } as const;

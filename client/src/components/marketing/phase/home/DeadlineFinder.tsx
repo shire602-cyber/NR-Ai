@@ -10,9 +10,9 @@ import {
 import { Link } from "wouter";
 import {
   ArrowRight,
-  BadgeCheck,
   Check,
   FileCheck2,
+  Handshake,
   Settings,
   TriangleAlert,
   type LucideIcon,
@@ -62,7 +62,7 @@ const DAY_KEYS: Record<string, MarketingKey> = {
 };
 const STEPS: readonly { icon: LucideIcon; key: MarketingKey }[] = [
   { icon: Settings, key: "hxDlStep1" },
-  { icon: BadgeCheck, key: "hxDlStep2" },
+  { icon: Handshake, key: "hxDlStep2" },
   { icon: FileCheck2, key: "hxDlStep3" },
 ];
 
@@ -182,6 +182,7 @@ export function DeadlineFinder({
   compact = false,
 }: DeadlineFinderProps) {
   const text = useMarketingText(locale);
+  const brand = MARKETING_BRAND.name[locale];
   const now = useNow();
   const rtl = locale === "ar";
   const [segment, setSegment] = useState<DeadlineSegment>(DEFAULT_SEGMENT);
@@ -238,6 +239,7 @@ export function DeadlineFinder({
             aria-live="polite"
             aria-atomic="true"
           >
+            <p className="mz-dl-note">{text("hxDlIfInScope")}</p>
             {next ? (
               <span className="mz-dl-count" aria-hidden="true" data-testid="deadline-count">
                 {count}
@@ -325,7 +327,7 @@ export function DeadlineFinder({
                 <span className="mz-dl-step-icon">
                   <Icon aria-hidden="true" />
                 </span>
-                <span>{text(key)}</span>
+                <span>{text(key, { brand })}</span>
               </li>
             ))}
           </ol>
@@ -333,7 +335,7 @@ export function DeadlineFinder({
 
         <div className="mz-dl-included">
           <p>{text("hxDlIncluded")}</p>
-          <p>{text("hxDlBuiltIn", { brand: MARKETING_BRAND.name[locale] })}</p>
+          <p>{text("hxDlBuiltIn", { brand })}</p>
           {/* TODO(owner): confirm whether the accredited provider charges separate fees; do not claim zero fees */}
           {PROVIDER_FEES_CONFIRMED_ZERO && <p>{text("hxDlFeesZero")}</p>}
         </div>
@@ -354,6 +356,10 @@ export function DeadlineFinder({
           {" | "}
           <ExternalLink href={DEADLINE_SOURCES.mof} hint={text("hxDlNewTab")}>
             {text("hxDlSourceMof")}
+          </ExternalLink>
+          {" | "}
+          <ExternalLink href={DEADLINE_SOURCES.scope[locale]} hint={text("hxDlNewTab")}>
+            {text("hxDlSourceScope")}
           </ExternalLink>
           {" | "}
           <ExternalLink href={DEADLINE_SOURCES.penalty} hint={text("hxDlNewTab")}>

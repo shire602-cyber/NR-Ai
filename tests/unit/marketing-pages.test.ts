@@ -119,7 +119,17 @@ describe.each(["en", "ar"] as const)("UAE e-invoicing hub (%s)", (locale) => {
       container.querySelector(`a[href="/${locale}/tools/e-invoicing-readiness"]`)
     ).not.toBeNull();
     expect(container.querySelectorAll("#faq details")).toHaveLength(6);
-    expect(container.querySelector('a[href="https://tax.gov.ae"]')).not.toBeNull();
+    expect(
+      container.querySelector('a[href="https://tax.gov.ae/en/taxes/Vat/uae.einvoicing.aspx"]')
+    ).not.toBeNull();
+    const scope = container.querySelector("#who-is-in-scope")!;
+    expect(scope.querySelector(`a[href^="https://mof.gov.ae/${locale}/news/"]`)).not.toBeNull();
+    expect(scope.textContent).toContain(
+      locale === "ar" ? "المجموعة الضريبية نفسها" : "same tax group"
+    );
+    expect(container.querySelectorAll("#faq details p")[2].textContent).toContain(
+      locale === "ar" ? "عبر إمارات تاكس" : "through EmaraTax"
+    );
     expect(container.textContent).not.toMatch(PROVIDERS);
     expect(container.textContent).not.toMatch(/FTA[-\s]?compliant/i);
     if (locale === "ar") expect(container.textContent).not.toMatch(/[٠-٩]/);

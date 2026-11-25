@@ -108,6 +108,14 @@ export function EinvoicingHub({ base, locale, tr }: LegacySectionProps) {
             <Reveal className="mz-card mz-page-scope-card" delayMs={80}>
               <h3>{text("hxHubOutTitle")}</h3>
               <p>{text("hxHubOutDesc")}</p>
+              <a
+                className="phase-textlink"
+                href={DEADLINE_SOURCES.scope[locale]}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {text("hxDlSourceScope")}
+              </a>
             </Reveal>
           </div>
           <h3 className="mz-page-subhead">{text("hxHubDatesTitle")}</h3>

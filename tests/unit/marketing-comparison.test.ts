@@ -128,15 +128,17 @@ describe("comparison render", () => {
       }
     }
     const entry = table.querySelector('tr[data-row="entry"]')!;
-    expect(entry.querySelector('td[data-column="muhasib"]')?.textContent).toBe("AED 59");
+    expect(entry.querySelector('td[data-column="muhasib"]')?.textContent).toBe(
+      "AED 59 with monthly billing"
+    );
     expect(entry.querySelector('td[data-column="wafeq"]')?.textContent).toBe(
-      "AED 69 (AED 57 billed yearly)"
+      "AED 69 with monthly billing or AED 57 per month with annual billing"
     );
     expect(entry.querySelector('td[data-column="zoho"]')?.textContent).toBe(
-      "Free plan, or AED 60 billed annually"
+      "Free plan or AED 60 per month with annual billing"
     );
     expect(table.querySelector('tr[data-row="top"] td[data-column="muhasib"]')?.textContent).toBe(
-      "AED 229"
+      "AED 229 with monthly billing"
     );
     expect(container.textContent).not.toMatch(/A-Cube|Complyance|ZATCA/i);
   });
@@ -144,10 +146,21 @@ describe("comparison render", () => {
   it("renders the footnote, sources and compare links", async () => {
     await mount("en");
     const foot = container.querySelector('[data-testid="compare-footnote"]')!;
-    expect(foot.textContent).toContain("As listed on vendor sites, 24 Nov 2026, excl. VAT.");
+    expect(foot.textContent).toContain(
+      "Muhasib prices include VAT. Wafeq and Zoho Books prices exclude VAT."
+    );
     expect(foot.textContent).toContain("trademarks of their owners");
     expect(foot.querySelector('a[href="https://www.wafeq.com/en-ae/pricing"]')).not.toBeNull();
     expect(foot.querySelector('a[href="https://www.zoho.com/ae/books/pricing/"]')).not.toBeNull();
+    const zohoEinvoicing = container.querySelector(
+      'tr[data-row="einvoicing"] td[data-column="zoho"]'
+    )!;
+    expect(zohoEinvoicing.textContent).toContain(
+      "The first 100 transactions each year are included on Professional and higher plans. Additional packs are paid add-ons."
+    );
+    expect(
+      zohoEinvoicing.querySelector('a[href="https://www.zoho.com/ae/books/e-invoicing/"]')
+    ).not.toBeNull();
     expect(container.querySelector('a[href="/en/compare/wafeq"]')).not.toBeNull();
     expect(container.querySelector('a[href="/en/compare/zoho"]')).not.toBeNull();
   });
@@ -165,7 +178,12 @@ describe("comparison render", () => {
     await mount("ar");
     expect(container.querySelector("h2")?.textContent).toBe("كل ما تحتاجه. دون رسوم إضافية.");
     const entry = container.querySelector('tr[data-row="entry"]')!;
-    expect(entry.querySelector('td[data-column="muhasib"]')?.textContent).toBe("59 درهم");
+    expect(entry.querySelector('td[data-column="muhasib"]')?.textContent).toBe(
+      "59 درهم بالدفع الشهري"
+    );
+    expect(
+      container.querySelector('tr[data-row="einvoicing"] td[data-column="zoho"]')?.textContent
+    ).toContain("أول 100 معاملة سنويًا. تتوفّر حزم إضافية مدفوعة.");
     expect(container.querySelector('a[href="/ar/compare/wafeq"]')).not.toBeNull();
     expect(container.textContent).not.toMatch(/[٠-٩۰-۹]/);
     for (const cell of container.querySelectorAll("tbody td")) {

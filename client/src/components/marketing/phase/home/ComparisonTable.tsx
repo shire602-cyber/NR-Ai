@@ -31,7 +31,22 @@ export function ComparisonTable({ base, locale, focus, headingLevel = 2 }: Compa
 
   const renderCell = (cell: ComparisonCell) =>
     cell.key ? (
-      rich(cell.key, cell.vars)
+      <>
+        {rich(cell.key, cell.vars)}
+        {cell.source && cell.sourceLabelKey && (
+          <>
+            {" "}
+            <a
+              className="phase-textlink"
+              href={cell.source}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {text(cell.sourceLabelKey)}
+            </a>
+          </>
+        )}
+      </>
     ) : (
       <span role="img" aria-label={text("hxCmpDashLabel")}>
         {DASH}

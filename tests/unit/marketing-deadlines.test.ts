@@ -135,6 +135,9 @@ describe("DeadlineFinder render", () => {
     // Default: under AED 50m.
     expect(q('[data-testid="deadline-segment-small"]').getAttribute("aria-checked")).toBe("true");
     expect(q('[data-testid="deadline-count"]').textContent).toBe("127");
+    expect(q('[data-testid="deadline-result"]').textContent).toContain(
+      "If your business or government entity is in scope"
+    );
     expect(q('[data-testid="deadline-sentence"]').textContent).toContain("127 days");
     expect(q('[data-testid="deadline-milestone-appoint"]').textContent).toContain("31 March 2027");
     expect(q('[data-testid="deadline-milestone-live"]').textContent).toContain("1 July 2027");
@@ -155,7 +158,7 @@ describe("DeadlineFinder render", () => {
     expect(container.textContent).not.toContain("Deadline passed - act now");
   });
 
-  it("shows the penalty, both official source links, the CTA and no provider names", async () => {
+  it("shows the scope amendment, official sources, setup steps and CTA", async () => {
     await render("en");
     expect(q('[data-testid="deadline-penalty"]').textContent).toBe(
       "Late implementation: AED 5,000 for the initial violation, then AED 5,000 for each month or part thereof that non-compliance continues, capped at AED 50,000 in any 12 consecutive months (UAE Ministry of Finance)"
@@ -164,8 +167,9 @@ describe("DeadlineFinder render", () => {
       ...container.querySelectorAll<HTMLAnchorElement>('[data-testid="deadline-sources"] a'),
     ];
     expect(hrefs.map((a) => a.href)).toEqual([
-      "https://tax.gov.ae/",
+      "https://tax.gov.ae/en/taxes/Vat/uae.einvoicing.aspx",
       "https://mof.gov.ae/en/about-us/initiatives/einvoicing/",
+      "https://mof.gov.ae/en/news/ministry-of-finance-amends-electronic-invoicing-regulations-to-ease-the-burden-on-businesses/",
       "https://mof.gov.ae/en/news/mof-announces-updated-administrative-penalties-related-to-the-uae-einvoicing-system-to-enhance-clarity-and-support-business-compliance/",
     ]);
     for (const a of hrefs) {
@@ -175,6 +179,12 @@ describe("DeadlineFinder render", () => {
     expect(q('[data-testid="deadline-sources"]').textContent).toContain(
       "Ministerial Decision 244 of 2025, as amended"
     );
+    expect(q('[data-testid="deadline-sources"]').textContent).toContain(
+      "Transactions within the same tax group are excluded for 24 months from 1 January 2027."
+    );
+    const steps = container.querySelectorAll(".mz-dl-steps li");
+    expect(steps[1].textContent).toContain("through EmaraTax and complete onboarding");
+    expect(steps[2].textContent).toContain("Once onboarding is complete");
     expect(q('[data-testid="deadline-cta"]').getAttribute("href")).toBe(
       "/en/tools/e-invoicing-readiness"
     );
@@ -214,6 +224,8 @@ describe("DeadlineFinder render", () => {
     expect(section.getAttribute("dir")).toBe("rtl");
     expect(section.textContent).toContain("هل شركتك جاهزة لعام 2027؟");
     expect(q('[data-testid="deadline-count"]').textContent).toBe("127");
+    expect(q('[data-testid="deadline-result"]').textContent).toContain("خاضعة للنظام");
+    expect(q('[data-testid="deadline-sources"]').textContent).toContain("المجموعة الضريبية نفسها");
     expect(q('[data-testid="deadline-sentence"]').textContent).toContain("127 يومًا");
     expect(q('[data-testid="deadline-milestone-appoint"]').textContent).toMatch(/31 \S+ 2027/);
     expect(q('[data-testid="deadline-penalty"]').textContent).toContain("5,000");
