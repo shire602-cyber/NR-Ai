@@ -1,7 +1,8 @@
 import { T } from "@/components/layout/T";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
-import { useRef, useState } from "react";
+import { Suspense, useRef, useState } from "react";
+import { lazyWithReload } from "@/lib/lazyWithReload";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Mail,
@@ -10,7 +11,6 @@ import {
   RefreshCw,
   XCircle,
   Trash2,
-  Send,
   Building2,
   Copy,
 } from "lucide-react";
@@ -58,12 +58,15 @@ import { dateFnsOptions } from "@/lib/date-locale";
 import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import type { Invitation, Company } from "@shared/schema";
 
+const InviteClientDialog = lazyWithReload(() => import("@/components/team/InviteClientDialog"));
+
 export default function UserInvitations() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [inviteDialogLoaded, setInviteDialogLoaded] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
 
@@ -305,111 +308,34 @@ export default function UserInvitations() {
         testId="text-invitations-title"
         description={t["portal.inviteSubtitle"]}
         actions={
-          <Button onClick={() => setInviteDialogOpen(true)} data-testid="button-send-invite">
+          <Button
+            onClick={() => {
+              setInviteDialogLoaded(true);
+              setInviteDialogOpen(true);
+            }}
+            data-testid="button-send-invite"
+          >
             <Mail className="w-4 h-4 me-2" />
             <T k="pageLabels.sendInvitation" />
           </Button>
         }
       />
-      <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              <T k="pageLabels.sendClientInvitation" />
-            </DialogTitle>
-            <DialogDescription>
-              <T k="portal.inviteDescription" />
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSendInvitation} noValidate className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">{t["adminConsole.inviteEmail"]}</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="client@example.com"
-                required
-                aria-invalid={emailError ? true : undefined}
-                aria-describedby={emailError ? "invite-email-error" : undefined}
-                onChange={() => setEmailError(null)}
-                data-testid="input-invite-email"
-              />
-              {emailError && (
-                <p id="invite-email-error" role="alert" className="text-small text-danger">
-                  {emailError}
-                </p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="company">{t["adminConsole.inviteAssignClient"]}</Label>
-              <Select
-                value={selectedCompanyId || "none"}
-                onValueChange={(value) => setSelectedCompanyId(value === "none" ? "" : value)}
-              >
-                <SelectTrigger data-testid="select-invite-company">
-                  <SelectValue placeholder={t["portal.inviteSelectCompany"]} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">
-                    <T k="pageLabels.noCompanyAssigned" />
-                  </SelectItem>
-                  {clients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
-                      {client.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                <T k="pageLabels.ifAssignedTheUserWillHave" />
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="userType">{t["adminConsole.inviteUserType"]}</Label>
-              <Select name="userType" defaultValue="client">
-                <SelectTrigger data-testid="select-invite-usertype">
-                  <SelectValue placeholder={t["portal.inviteSelectUserType"]} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="client">{t["adminConsole.userTypeClient"]}</SelectItem>
-                  <SelectItem value="customer">{t["adminConsole.userTypeCustomer"]}</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">{t["firmOps.inviteUserTypeHint"]}</p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="role">
-                <T k="pageLabels.accessLevel" />
-              </Label>
-              <Select name="role" defaultValue="client">
-                <SelectTrigger data-testid="select-invite-role">
-                  <SelectValue placeholder={t["portal.inviteSelectAccess"]} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="client">{t["portal.invitations.roleStandard"]}</SelectItem>
-                  <SelectItem value="staff">{t["portal.invitations.roleStaff"]}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setInviteDialogOpen(false)}>
-                <T k="pages.cancel" />
-              </Button>
-              <Button
-                type="submit"
-                disabled={createInvitationMutation.isPending}
-                data-testid="button-submit-invite"
-              >
-                <Send className="w-4 h-4 me-2" />
-                {createInvitationMutation.isPending
-                  ? t["portal.inviteSending"]
-                  : t["pageLabels.sendInvitation"]}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Loaded on first open and kept mounted afterwards so the close animation still plays. */}
+      {inviteDialogLoaded && (
+        <Suspense fallback={null}>
+          <InviteClientDialog
+            open={inviteDialogOpen}
+            onOpenChange={setInviteDialogOpen}
+            onSubmit={handleSendInvitation}
+            emailError={emailError}
+            onEmailChange={() => setEmailError(null)}
+            clients={clients}
+            selectedCompanyId={selectedCompanyId}
+            onCompanyChange={setSelectedCompanyId}
+            isPending={createInvitationMutation.isPending}
+          />
+        </Suspense>
+      )}
 
       <Dialog open={manualLink !== null} onOpenChange={(open) => !open && setManualLink(null)}>
         <DialogContent

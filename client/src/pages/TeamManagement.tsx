@@ -1,7 +1,7 @@
 import { T } from "@/components/layout/T";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { PageHeader } from "@/components/ui/page-header";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,30 +36,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
-  COMPANY_ROLES,
   COMPANY_ROLE_DESCRIPTIONS,
   COMPANY_ROLE_LABELS,
   canPerform,
   companyAccessQueryKey,
-  roleHasPermission,
   type CompanyAccess,
   type CompanyRole,
-  type Permission,
 } from "@/lib/auth";
+import { lazyWithReload } from "@/lib/lazyWithReload";
 import {
   UserPlus,
   Users,
@@ -69,7 +59,6 @@ import {
   User,
   Mail,
   Trash2,
-  Check,
   X,
   Loader2,
   Eye,
@@ -132,24 +121,9 @@ const ROLE_COLORS: Record<CompanyRole, string> = {
   viewer: ROLE_PILL,
 };
 
-/** Shown in the permissions matrix; keys come from shared/permissions.ts. */
-const PERMISSION_LABELS: Record<Permission, Bilingual> = {
-  "reports.read": { en: "View records and reports", ar: "عرض السجلات والتقارير" },
-  "documents.write": { en: "Create and edit documents", ar: "إنشاء المستندات وتعديلها" },
-  "documents.approve": { en: "Approve documents", ar: "اعتماد المستندات" },
-  "ledger.post": { en: "Post to the ledger", ar: "الترحيل إلى دفتر الأستاذ" },
-  "payments.release": { en: "Release payments", ar: "إصدار المدفوعات" },
-  "payroll.manage": { en: "Manage payroll", ar: "إدارة الرواتب" },
-  "payroll.approve": { en: "Approve payroll", ar: "اعتماد الرواتب" },
-  "tax.submit": { en: "Submit tax returns", ar: "تقديم الإقرارات الضريبية" },
-  "settings.company": { en: "Company settings", ar: "إعدادات الشركة" },
-  "company.delete": { en: "Delete the company", ar: "حذف الشركة" },
-  "team.manage": { en: "Manage team members", ar: "إدارة أعضاء الفريق" },
-  "billing.manage": { en: "Manage billing", ar: "إدارة الفوترة" },
-  "backups.manage": { en: "Backups and restore", ar: "النسخ الاحتياطي والاستعادة" },
-  "period.lock": { en: "Lock periods", ar: "إقفال الفترات" },
-  "period.unlock": { en: "Unlock periods", ar: "فتح الفترات المقفلة" },
-};
+const PermissionsMatrixDialog = lazyWithReload(
+  () => import("@/components/team/PermissionsMatrixDialog")
+);
 
 export default function TeamManagement() {
   const { t, locale } = useTranslation();
@@ -158,6 +132,7 @@ export default function TeamManagement() {
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
+  const [permissionsDialogLoaded, setPermissionsDialogLoaded] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<CompanyRole>("accountant");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
@@ -332,7 +307,10 @@ export default function TeamManagement() {
             <>
               <Button
                 variant="outline"
-                onClick={() => setPermissionsDialogOpen(true)}
+                onClick={() => {
+                  setPermissionsDialogLoaded(true);
+                  setPermissionsDialogOpen(true);
+                }}
                 data-testid="button-view-permissions"
               >
                 <Shield className="w-4 h-4 me-2" />
@@ -761,53 +739,15 @@ export default function TeamManagement() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={permissionsDialogOpen} onOpenChange={setPermissionsDialogOpen}>
-          <DialogContent className="sm:max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>{t["pages.teamPermissionsMatrix"]}</DialogTitle>
-              <DialogDescription>
-                {t["pages.teamAvailablePermissionsForEachRole"]}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{locale === "ar" ? "الصلاحية" : "Permission"}</TableHead>
-                    {COMPANY_ROLES.map((role) => (
-                      <TableHead key={role} className="text-center">
-                        {roleLabel(role)}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(Object.keys(PERMISSION_LABELS) as Permission[]).map((permission) => (
-                    <TableRow key={permission}>
-                      <TableCell className="font-medium">
-                        {tr(PERMISSION_LABELS[permission])}
-                      </TableCell>
-                      {COMPANY_ROLES.map((role) => (
-                        <TableCell key={role} className="text-center">
-                          {roleHasPermission(role, permission) ? (
-                            <Check className="w-4 h-4 mx-auto text-success" />
-                          ) : (
-                            <X className="w-4 h-4 mx-auto text-muted-foreground" />
-                          )}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setPermissionsDialogOpen(false)}>
-                {locale === "ar" ? "إغلاق" : "Close"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Loaded on first open and kept mounted afterwards so the close animation still plays. */}
+        {permissionsDialogLoaded && (
+          <Suspense fallback={null}>
+            <PermissionsMatrixDialog
+              open={permissionsDialogOpen}
+              onOpenChange={setPermissionsDialogOpen}
+            />
+          </Suspense>
+        )}
 
         <AlertDialog
           open={!!memberToRemove}
