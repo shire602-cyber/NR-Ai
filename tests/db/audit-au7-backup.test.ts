@@ -207,6 +207,22 @@ async function startCheckout(
   }
 }
 
+async function startCheckoutWithClearingFallback(t: Tenant, invoiceId: string) {
+  const deposit = await t.as.post(`/api/companies/${t.company.id}/accounts`, {
+    code: "1028",
+    nameEn: "Temporary checkout deposits",
+    type: "asset",
+    subType: "bank",
+  });
+  expect(deposit.status, deposit.text).toBe(201);
+  await startCheckout(t, invoiceId, deposit.body.id, 12000);
+  const deleted = await t.as.delete(`/api/accounts/${deposit.body.id}`);
+  expect(deleted.status, deleted.text).toBe(200);
+  expect(
+    await h.sql("SELECT deposit_account_id FROM payment_links WHERE invoice_id = $1", [invoiceId])
+  ).toEqual([{ deposit_account_id: null }]);
+}
+
 async function seedPaymentLink(t: Tenant) {
   const [invoice] = await h.sql<{ id: string }>(
     `INSERT INTO invoices (company_id, number, customer_name, date, total)
@@ -642,6 +658,56 @@ describe("AU7 accounting backup integrity", () => {
     }
   );
 
+  it("rejects Merge of a bank payment reversal when checkout still counts the payment", async () => {
+    const t = await h.createTenant();
+    const invoiceId = await draftInvoice(t);
+    await issueInvoice(t, invoiceId);
+    const gl = await accountByCode(t, "1020");
+    const [bank] = await h.sql<{ id: string }>(
+      `INSERT INTO bank_accounts (company_id, name_en, bank_name, currency, gl_account_id)
+       VALUES ($1, 'Checkout deposits', 'Other', 'AED', $2) RETURNING id`,
+      [t.company.id, gl.id]
+    );
+    const [line] = await h.sql<{ id: string }>(
+      `INSERT INTO bank_transactions
+         (company_id, bank_statement_account_id, bank_account_id, transaction_date, description, amount)
+       VALUES ($1, $2, $3, now() AT TIME ZONE 'UTC', 'Partial invoice payment', 30) RETURNING id`,
+      [t.company.id, bank.id, gl.id]
+    );
+    const match = `/api/companies/${t.company.id}/bank-statements/${line.id}/match`;
+    const matched = await t.as.post(match, { matchedType: "invoice", matchedId: invoiceId });
+    expect(matched.status, matched.text).toBe(201);
+    const payments = () =>
+      h.sql<{ id: string; journal_entry_id: string }>(
+        "SELECT id, journal_entry_id FROM invoice_payments WHERE invoice_id = $1",
+        [invoiceId]
+      );
+    const originalPayment = await payments();
+    expect(originalPayment).toHaveLength(1);
+    const before = await snapshot(t);
+
+    const unmatched = await t.as.delete(match);
+    expect(unmatched.status, unmatched.text).toBe(200);
+    expect(await payments()).toEqual([]);
+    const reversals = () =>
+      h.sql(
+        "SELECT id FROM journal_entries WHERE source = 'payment_reversal' AND reversed_entry_id = $1",
+        [originalPayment[0].journal_entry_id]
+      );
+    expect(await reversals()).toHaveLength(1);
+    const after = await snapshot(t);
+
+    const restored = await replace(t, before);
+    expect(restored.status, restored.text).toBe(200);
+    expect(await payments()).toEqual(originalPayment);
+    expect(await reversals()).toEqual([]);
+    await startCheckout(t, invoiceId, gl.id, 9000);
+
+    await expectRestoreConflict(t, after, "payment_links", "merge");
+    expect(await payments()).toEqual(originalPayment);
+    expect(await reversals()).toEqual([]);
+  });
+
   it("rejects Merge of a bank account that changes the checkout deposit currency", async () => {
     const t = await h.createTenant();
     const invoiceId = await draftInvoice(t);
@@ -662,45 +728,56 @@ describe("AU7 accounting backup integrity", () => {
     expect(await h.sql("SELECT id FROM bank_accounts WHERE id = $1", [bank.id])).toEqual([]);
   });
 
-  it("keeps the spot rate that a checkout receipt needs for its deposit bank", async () => {
-    const t = await h.createTenant();
-    const invoiceId = await draftInvoice(t);
-    await issueInvoice(t, invoiceId);
-    const account = await accountByCode(t, "1020");
-    await h.sql(
-      `INSERT INTO bank_accounts (company_id, name_en, bank_name, currency, gl_account_id)
+  it.each(["configured account", "clearing fallback"])(
+    "keeps the spot rate that a checkout receipt needs for its %s",
+    async (deposit) => {
+      const t = await h.createTenant();
+      const invoiceId = await draftInvoice(t);
+      await issueInvoice(t, invoiceId);
+      const { ensureClearingAccount } = await import("../../server/services/payments");
+      const accountId =
+        deposit === "clearing fallback"
+          ? await ensureClearingAccount(t.company.id)
+          : (await accountByCode(t, "1020")).id;
+      await h.sql(
+        `INSERT INTO bank_accounts (company_id, name_en, bank_name, currency, gl_account_id)
        VALUES ($1, 'Checkout deposits', 'Other', 'EUR', $2)`,
-      [t.company.id, account.id]
-    );
-    const before = await snapshot(t);
-    const [rate] = await h.sql<{ id: string }>(
-      `INSERT INTO exchange_rates (company_id, base_currency, target_currency, rate_type, rate, date)
+        [t.company.id, accountId]
+      );
+      const before = await snapshot(t);
+      const [rate] = await h.sql<{ id: string }>(
+        `INSERT INTO exchange_rates (company_id, base_currency, target_currency, rate_type, rate, date)
        VALUES ($1, 'EUR', 'AED', 'spot', 4, now() AT TIME ZONE 'UTC') RETURNING id`,
-      [t.company.id]
-    );
-    await startCheckout(t, invoiceId, account.id, 12000);
-
-    await expectReplaceConflict(t, before, "payment_links");
-    const rateRows = () => h.sql("SELECT id FROM exchange_rates WHERE id = $1", [rate.id]);
-    expect(await rateRows()).toEqual([rate]);
-
-    // An inverse system spot rate is also sufficient, even when older than the usual FX window.
-    const [systemRate] = await h.sql<{ id: string }>(
-      `INSERT INTO exchange_rates (base_currency, target_currency, rate_type, rate, date)
-       VALUES ('AED', 'EUR', 'spot', 0.25, (now() AT TIME ZONE 'UTC') - interval '10 days') RETURNING id`
-    );
-    try {
-      for (const response of [
-        await t.as.post(`/api/backups/${before.id}/restore-preview`, { mode: "replace" }),
-        await replace(t, before),
-      ]) {
-        expect(response.status, response.text).toBe(200);
+        [t.company.id]
+      );
+      if (deposit === "clearing fallback") {
+        await startCheckoutWithClearingFallback(t, invoiceId);
+      } else {
+        await startCheckout(t, invoiceId, accountId, 12000);
       }
-      expect(await rateRows()).toEqual([]);
-    } finally {
-      await h.sql("DELETE FROM exchange_rates WHERE id = $1", [systemRate.id]);
+
+      await expectReplaceConflict(t, before, "payment_links");
+      const rateRows = () => h.sql("SELECT id FROM exchange_rates WHERE id = $1", [rate.id]);
+      expect(await rateRows()).toEqual([rate]);
+
+      // An inverse system spot rate is also sufficient, even when older than the usual FX window.
+      const [systemRate] = await h.sql<{ id: string }>(
+        `INSERT INTO exchange_rates (base_currency, target_currency, rate_type, rate, date)
+       VALUES ('AED', 'EUR', 'spot', 0.25, (now() AT TIME ZONE 'UTC') - interval '10 days') RETURNING id`
+      );
+      try {
+        for (const response of [
+          await t.as.post(`/api/backups/${before.id}/restore-preview`, { mode: "replace" }),
+          await replace(t, before),
+        ]) {
+          expect(response.status, response.text).toBe(200);
+        }
+        expect(await rateRows()).toEqual([]);
+      } finally {
+        await h.sql("DELETE FROM exchange_rates WHERE id = $1", [systemRate.id]);
+      }
     }
-  });
+  );
 
   it("keeps the configured deposit account eligible while checkout can still settle", async () => {
     const t = await h.createTenant();
@@ -727,32 +804,43 @@ describe("AU7 accounting backup integrity", () => {
     ).toEqual([{ is_active: true, is_archived: false }]);
   });
 
-  it.each(["replace", "merge"] as const)(
-    "rejects a %s restore that would make the checkout deposit account a header",
-    async (mode) => {
+  it.each([
+    { mode: "replace", deposit: "configured account" },
+    { mode: "merge", deposit: "configured account" },
+    { mode: "merge", deposit: "clearing fallback" },
+  ] as const)(
+    "rejects $mode restore that would make the checkout's $deposit a header",
+    async ({ mode, deposit }) => {
       const t = await h.createTenant();
       const invoiceId = await draftInvoice(t);
       await issueInvoice(t, invoiceId);
       const url = `/api/companies/${t.company.id}/accounts`;
-      const parent = await t.as.post(url, {
-        code: "1029",
-        nameEn: "Checkout deposits",
-        type: "asset",
-        subType: "bank",
-      });
-      expect(parent.status, parent.text).toBe(201);
+      let parentId: string;
+      if (deposit === "clearing fallback") {
+        const { ensureClearingAccount } = await import("../../server/services/payments");
+        parentId = await ensureClearingAccount(t.company.id);
+      } else {
+        const parent = await t.as.post(url, {
+          code: "1029",
+          nameEn: "Checkout deposits",
+          type: "asset",
+          subType: "bank",
+        });
+        expect(parent.status, parent.text).toBe(201);
+        parentId = parent.body.id;
+      }
       const before = await snapshot(t);
       const child = await t.as.post(url, {
         code: "1031",
         nameEn: "Deposit sub-account",
         type: "asset",
         subType: "bank",
-        parentId: parent.body.id,
+        parentId,
       });
       expect(child.status, child.text).toBe(201);
       const childRows = () =>
         h.sql("SELECT parent_id, is_archived FROM accounts WHERE id = $1", [child.body.id]);
-      expect(await childRows()).toEqual([{ parent_id: parent.body.id, is_archived: false }]);
+      expect(await childRows()).toEqual([{ parent_id: parentId, is_archived: false }]);
       const backup = await snapshot(t);
       if (mode === "merge") {
         const restored = await replace(t, before);
@@ -761,10 +849,13 @@ describe("AU7 accounting backup integrity", () => {
         const archived = await t.as.post(`/api/accounts/${child.body.id}/archive`, {});
         expect(archived.status, archived.text).toBe(200);
       }
-      const eligibleChildren =
-        mode === "merge" ? [] : [{ parent_id: parent.body.id, is_archived: true }];
+      const eligibleChildren = mode === "merge" ? [] : [{ parent_id: parentId, is_archived: true }];
       expect(await childRows()).toEqual(eligibleChildren);
-      await startCheckout(t, invoiceId, parent.body.id, 12000);
+      if (deposit === "clearing fallback") {
+        await startCheckoutWithClearingFallback(t, invoiceId);
+      } else {
+        await startCheckout(t, invoiceId, parentId, 12000);
+      }
 
       await expectRestoreConflict(t, backup, "payment_links", mode);
       expect(await childRows()).toEqual(eligibleChildren);

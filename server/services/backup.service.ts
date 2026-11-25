@@ -38,6 +38,8 @@ import { createLogger } from "../config/logger";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { recordAudit } from "./audit.service";
 import { isPeggedPair } from "./fx/rates";
+import { ACCOUNT_CODES } from "../constants";
+import { CLEARING_ACCOUNT_CODE } from "./payments";
 import type { Request } from "express";
 
 const log = createLogger("backup-service");
@@ -920,6 +922,30 @@ const SETTLING_LINKS = `settling_links AS (
          OR (status IN ('active', 'cancelled', 'expired') AND provider_session_id IS NOT NULL)
          OR status = 'processing')
 )`;
+
+// Resolve the existing account ensureClearingAccount would use, without creating one
+// during preview or restore. If the code is occupied, match defaultPaymentAccountId.
+const EFFECTIVE_SETTLING_LINKS = `${SETTLING_LINKS}, postable_accounts AS (
+  SELECT a.* FROM accounts a
+  WHERE a.company_id = $1 AND a.is_active AND NOT a.is_archived
+    AND NOT EXISTS (
+      SELECT 1 FROM accounts child
+      WHERE child.company_id = $1 AND child.parent_id = a.id AND NOT child.is_archived
+    )
+), clearing_account AS (
+  SELECT CASE WHEN a.type = 'asset' AND a.sub_type IN ('bank', 'cash') THEN a.id
+    ELSE COALESCE(
+      (SELECT b.gl_account_id FROM bank_accounts b JOIN postable_accounts p ON p.id = b.gl_account_id
+       WHERE b.company_id = $1 AND b.is_active ORDER BY b.created_at, b.id LIMIT 1),
+      (SELECT p.id FROM postable_accounts p WHERE p.type = 'asset' AND p.sub_type IN ('bank', 'cash')
+       ORDER BY (p.code = '${ACCOUNT_CODES.BANK}') DESC, (p.sub_type = 'bank') DESC, p.code LIMIT 1)
+    ) END AS id
+  FROM accounts a WHERE a.company_id = $1 AND a.code = '${CLEARING_ACCOUNT_CODE}'
+), effective_settling_links AS (
+  SELECT invoice_id, COALESCE(deposit_account_id, (SELECT id FROM clearing_account)) AS deposit_account_id,
+    expires_at, provider_session_id, status
+  FROM settling_links
+)`;
 const LINKED_CREDIT_NOTE =
   "t.invoice_type = 'credit_note' AND t.original_invoice_id IN (SELECT invoice_id FROM settling_links)";
 const LINKED_CHECKOUT_INVOICE = "t.invoice_id IN (SELECT invoice_id FROM settling_links)";
@@ -928,6 +954,10 @@ const MERGE_CHECKOUT_KEYS: Record<string, string[][]> = {
   invoices: [["company_id", "number"], ["legacy_credit_note_id"], ["share_token"]],
   credit_notes: [["company_id", "number"]],
   accounts: [["company_id", "code"]],
+  journal_entries: [
+    ["company_id", "entry_number"],
+    ["company_id", "idempotency_key"],
+  ],
   month_end_close: [["company_id", "period_end"]],
   fiscal_year_closes: [["company_id", "fiscal_year_end"]],
 };
@@ -947,6 +977,15 @@ function mergeInsertRows(
     if (keyColumns.every((column) => table.columns.includes(column))) {
       uniqueMatches.push(keyColumns.map((column) => `live.${column} = s.${column}`).join(" AND "));
     }
+  }
+  if (name === "journal_entries" && table.columns.includes("reversed_entry_id")) {
+    const kind = table.columns.includes("entry_kind") ? "s.entry_kind" : "'standard'";
+    const duplicate = table.columns.includes("is_duplicate_reversal")
+      ? "s.is_duplicate_reversal"
+      : "false";
+    uniqueMatches.push(`live.reversed_entry_id = s.reversed_entry_id
+      AND live.entry_kind = 'reversal' AND NOT live.is_duplicate_reversal
+      AND ${kind} = 'reversal' AND NOT ${duplicate}`);
   }
   const projected = Object.entries(columns).map(
     ([column, defaultSql]) =>
@@ -982,6 +1021,16 @@ const MERGE_CHECKOUT_SETTLEMENT: {
     columns: { invoice_id: "NULL::uuid", amount: "0", kind: "NULL::text" },
     // receivableSettlementPartsSql counts applications only.
     where: `${LINKED_CHECKOUT_INVOICE} AND t.kind = 'apply' AND t.amount <> 0`,
+  },
+  {
+    name: "journal_entries",
+    columns: { source: "'manual'", status: "'draft'", reversed_entry_id: "NULL::uuid" },
+    // Merge can add the reversal without removing the original settlement row.
+    where: `t.source = 'payment_reversal' AND t.status = 'posted' AND EXISTS (
+      SELECT 1 FROM invoice_payments p
+      WHERE p.company_id = $1 AND p.journal_entry_id = t.reversed_entry_id
+        AND p.invoice_id IN (SELECT invoice_id FROM settling_links)
+    )`,
   },
 ];
 
@@ -1087,7 +1136,7 @@ async function restoreBlocksCheckoutPosting(
       created_at: "now()::timestamp",
     });
     conflicts.push(`EXISTS (
-      SELECT 1 FROM settling_links link
+      SELECT 1 FROM effective_settling_links link
       JOIN companies c ON c.id = $1
       WHERE ${checkoutBankCurrency(`(${restoredBanks})`)}
         IS DISTINCT FROM ${checkoutBankCurrency(LIVE_BANKS)}
@@ -1101,7 +1150,7 @@ async function restoreBlocksCheckoutPosting(
         : mergeInsertRows(plan, values, "accounts", columns);
     values.push(`{${HEADER_SUB_TYPES.join(",")}}`);
     conflicts.push(`EXISTS (
-      SELECT 1 FROM settling_links link
+      SELECT 1 FROM effective_settling_links link
       JOIN accounts parent ON parent.id = link.deposit_account_id AND parent.company_id = $1
       JOIN (${children}) child ON child.parent_id = parent.id
       WHERE parent.sub_type = ANY($${values.length}::text[]) AND child.is_archived = false
@@ -1143,7 +1192,7 @@ async function restoreBlocksCheckoutPosting(
   }
   if (!conflicts.length) return false;
   const { rows } = await client.query(
-    `WITH ${SETTLING_LINKS} SELECT 1 WHERE ${conflicts.join(" OR ")}`,
+    `WITH ${EFFECTIVE_SETTLING_LINKS} SELECT 1 WHERE ${conflicts.join(" OR ")}`,
     values
   );
   return rows.length > 0;
@@ -1171,7 +1220,7 @@ async function replaceRemovesCheckoutBankRate(
         OR (r.target_currency, r.base_currency) = (btrim(p.bank_currency), p.base_currency)))`;
   const firstReceiptDate = `GREATEST(live.rate_date, (now() AT TIME ZONE 'UTC')::date)`;
   const { rows } = await client.query<{ bank_currency: string; base_currency: string }>(
-    `WITH ${SETTLING_LINKS},
+    `WITH ${EFFECTIVE_SETTLING_LINKS},
     system_rates AS (SELECT * FROM exchange_rates WHERE company_id IS NULL),
     live_rates AS (SELECT * FROM exchange_rates WHERE company_id = $1 UNION ALL SELECT * FROM system_rates),
     restored_rates AS (
@@ -1183,7 +1232,7 @@ async function replaceRemovesCheckoutBankRate(
         COALESCE(NULLIF(upper(btrim(i.currency)), ''), ${BASE_CURRENCY}) AS document_currency,
         CASE WHEN link.provider_session_id IS NULL AND link.status <> 'processing'
           THEN link.expires_at::date END AS last_receipt_date
-      FROM settling_links link
+      FROM effective_settling_links link
       JOIN invoices i ON i.id = link.invoice_id AND i.company_id = $1
       JOIN companies c ON c.id = $1
     )
@@ -1231,7 +1280,7 @@ async function validateReplaceExternalState(
       client,
       companyId,
       plan,
-      `${SETTLING_LINKS}, protected_credit_notes AS (
+      `${EFFECTIVE_SETTLING_LINKS}, protected_credit_notes AS (
         SELECT id FROM invoices t WHERE company_id = $1 AND ${LINKED_CREDIT_NOTE}
       ), protected_legacy_credit_notes AS (
         SELECT id, journal_entry_id FROM credit_notes t WHERE company_id = $1
@@ -1266,7 +1315,7 @@ async function validateReplaceExternalState(
         },
         {
           table: "accounts",
-          where: "t.id IN (SELECT deposit_account_id FROM settling_links)",
+          where: "t.id IN (SELECT deposit_account_id FROM effective_settling_links)",
           columns: ["type", "sub_type", "is_active", "is_archived"],
         },
         {
