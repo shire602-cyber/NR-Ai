@@ -30,6 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ErrorState } from "@/components/ui/error-state";
 import { LoadErrorState } from "@/components/ui/load-error-state";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
 import { useToast } from "@/hooks/use-toast";
@@ -76,40 +77,42 @@ export default function PartyStatements() {
   const [from, setFrom] = useState("");
   const [asOf, setAsOf] = useState("");
 
-  const {
-    data: customers = [],
-    isLoading: customersLoading,
-    error: customersError,
-    refetch: refetchCustomers,
-  } = useQuery<Party[]>({
+  const customersQuery = useQuery<Party[]>({
     queryKey: ["/api/companies", companyId, "customer-contacts"],
     enabled: !!companyId && kind === "customer",
   });
-  const {
-    data: vendors = [],
-    isLoading: vendorsLoading,
-    error: vendorsError,
-    refetch: refetchVendors,
-  } = useQuery<Party[]>({
+  const vendorsQuery = useQuery<Party[]>({
     queryKey: ["/api/companies", companyId, "vendors"],
     enabled: !!companyId && kind === "supplier",
   });
-  const parties = kind === "customer" ? customers : vendors;
-  const partiesLoading = kind === "customer" ? customersLoading : vendorsLoading;
-  const partiesError = kind === "customer" ? customersError : vendorsError;
-  const refetchParties = kind === "customer" ? refetchCustomers : refetchVendors;
+  const listQuery = kind === "customer" ? customersQuery : vendorsQuery;
+  // Only a successfully loaded list can be "empty". A refresh failure keeps the cached list and
+  // still reports the error.
+  const parties = listQuery.data;
+  const listError = listQuery.isError ? listQuery.error : null;
+  const listOffline = listQuery.isPending && listQuery.fetchStatus === "paused";
+  const listEmpty = listQuery.isSuccess && parties?.length === 0;
+  const emptyLabel = listOffline
+    ? t["common.errorHeading.offline"]
+    : listError
+      ? t["firm.loadFailedTitle"]
+      : listQuery.isLoading
+        ? t["reportCenter.partyListLoading"]
+        : listEmpty
+          ? kind === "customer"
+            ? t["reportCenter.partyNoCustomers"]
+            : t["reportCenter.partyNoSuppliers"]
+          : null;
   const range = useMemo(() => ({ from: from || undefined, asOf: asOf || undefined }), [from, asOf]);
   const url = companyId && partyId ? statementUrl(companyId, kind, partyId, range) : null;
-  const {
-    data: statement,
-    isLoading,
-    error: statementError,
-    refetch: refetchStatement,
-  } = useQuery<Statement>({
+  const statementQuery = useQuery<Statement>({
     queryKey: [url],
     queryFn: () => apiRequest("GET", url!),
     enabled: !!url,
   });
+  const statement = statementQuery.data;
+  const statementError = statementQuery.isError ? statementQuery.error : null;
+  const statementOffline = statementQuery.isPending && statementQuery.fetchStatus === "paused";
   const email = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/companies/${companyId}/customer-statements/${partyId}/email`, {
@@ -176,16 +179,12 @@ export default function PartyStatements() {
                 <SelectValue placeholder={t["reportCenter.partySelect"]} />
               </SelectTrigger>
               <SelectContent>
-                {parties.length === 0 ? (
+                {!parties?.length && emptyLabel ? (
                   <div className="px-2 py-1.5 text-sm text-muted-foreground" role="status">
-                    {partiesLoading
-                      ? t["reportCenter.partyListLoading"]
-                      : kind === "customer"
-                        ? t["reportCenter.partyNoCustomers"]
-                        : t["reportCenter.partyNoSuppliers"]}
+                    {emptyLabel}
                   </div>
                 ) : null}
-                {parties.map((p) => (
+                {(parties ?? []).map((p) => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.name}
                   </SelectItem>
@@ -208,35 +207,46 @@ export default function PartyStatements() {
         </CardContent>
       </Card>
 
-      {partiesError ? (
+      {/* The list and the statement fail independently: each notice sits above whatever is
+          still on screen and carries its own Retry, so a failed refresh never hides a loaded
+          statement and a failed list never blocks the statement of the selected party. */}
+      {listOffline ? (
+        <ErrorState
+          title={t["common.errorHeading.offline"]}
+          description={t["firm.loadOfflineBody"]}
+          testId="party-list-offline"
+        />
+      ) : null}
+      {listError ? (
         <LoadErrorState
-          error={partiesError}
-          onRetry={() => void refetchParties()}
+          error={listError}
+          onRetry={() => void listQuery.refetch()}
+          compact={parties !== undefined}
           testId="party-list-error"
         />
-      ) : !partyId ? (
-        <p className="text-sm text-muted-foreground">
-          {!partiesLoading && parties.length === 0 ? (
-            kind === "customer" ? (
-              <T k="reportCenter.partyNoCustomers" />
-            ) : (
-              <T k="reportCenter.partyNoSuppliers" />
-            )
-          ) : (
-            <T k="reportCenter.partyStatementPick" />
-          )}
-        </p>
-      ) : statementError ? (
+      ) : null}
+      {partyId && statementError ? (
         <LoadErrorState
           error={statementError}
-          onRetry={() => void refetchStatement()}
+          onRetry={() => void statementQuery.refetch()}
           title={t["reportCenter.partyStatementLoadFailed"]}
+          compact={statement !== undefined}
           testId="party-statement-error"
         />
-      ) : isLoading ? (
-        <div aria-busy="true" aria-label={t["reportCenter.partyStatementLoading"]}>
-          <TableSkeleton rows={4} columns={5} />
-        </div>
+      ) : null}
+      {partyId && statementOffline ? (
+        <ErrorState
+          title={t["common.errorHeading.offline"]}
+          description={t["firm.loadOfflineBody"]}
+          testId="party-statement-offline"
+        />
+      ) : null}
+      {!partyId ? (
+        listOffline || listError ? null : (
+          <p className="text-sm text-muted-foreground">
+            {listEmpty ? emptyLabel : <T k="reportCenter.partyStatementPick" />}
+          </p>
+        )
       ) : statement ? (
         <Card data-testid="card-party-statement">
           <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
@@ -352,6 +362,10 @@ export default function PartyStatements() {
             )}
           </CardContent>
         </Card>
+      ) : statementQuery.isLoading ? (
+        <div aria-busy="true" aria-label={t["reportCenter.partyStatementLoading"]}>
+          <TableSkeleton rows={4} columns={5} />
+        </div>
       ) : null}
     </div>
   );
