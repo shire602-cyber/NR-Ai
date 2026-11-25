@@ -222,5 +222,7 @@
   "banking.rules.memo": "Memo (optional)",
   "banking.import.statementRecognized": "Statement recognized",
   "banking.common.never": "Never",
-  "banking.import.csvDetails": "CSV file requirements"
+  "banking.import.csvDetails": "CSV file requirements",
+  "banking.query.paused": "Loading is paused. Check your internet connection.",
+  "banking.query.pausedCached": "Updates are paused. You are seeing the last loaded data, which may be out of date."
 }
