@@ -170,6 +170,7 @@
   "banking.rules.clearSearch": "Clear search",
   "banking.rules.loadErrorTitle": "Rules could not be loaded",
   "banking.rules.loadErrorBody": "Your reconciliation rules could not be loaded. Try again in a moment.",
+  "banking.rules.offlineBody": "Check your internet connection. Rules will load when you are back online.",
   "banking.rules.matchValuePlaceholder": "e.g. RENT or ^SALARY.*",
   "banking.recon.tabTransactions": "Transactions",
   "banking.recon.tabSuggestions": "Suggestions",

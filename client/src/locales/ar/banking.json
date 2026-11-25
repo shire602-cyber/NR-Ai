@@ -170,6 +170,7 @@
   "banking.rules.clearSearch": "مسح البحث",
   "banking.rules.loadErrorTitle": "تعذّر تحميل القواعد",
   "banking.rules.loadErrorBody": "تعذّر تحميل قواعد التسوية البنكية. حاول مرة أخرى بعد قليل.",
+  "banking.rules.offlineBody": "تحقق من اتصالك بالإنترنت. سيتم تحميل القواعد عند عودة الاتصال.",
   "banking.rules.matchValuePlaceholder": "مثال: RENT أو ^SALARY.*",
   "banking.recon.tabTransactions": "الحركات",
   "banking.recon.tabSuggestions": "الاقتراحات",

@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 import { act } from "react";
+import { onlineManager } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { matchesRuleSearch } from "../../client/src/lib/reconciliation-rule-search";
 import ar from "../../client/src/locales/ar/banking.json";
 import en from "../../client/src/locales/en/banking.json";
+import arCommon from "../../client/src/locales/ar/common.json";
+import arFirm from "../../client/src/locales/ar/firm.json";
+import arHr from "../../client/src/locales/ar/hr.json";
 import {
+  buttonByText,
+  byTestId,
   click,
   COMPANY_ID,
   flushUntil,
@@ -25,7 +31,12 @@ vi.mock("../../client/src/lib/i18n", async (importOriginal) => {
   const firm = (await import("../../client/src/locales/ar/firm.json")).default;
   const pageLabels = (await import("../../client/src/locales/ar/pageLabels.json")).default;
   const pages = (await import("../../client/src/locales/ar/pages.json")).default;
-  const dict = { ...pages, ...pageLabels, ...firm, ...banking } as Record<string, string>;
+  const common = (await import("../../client/src/locales/ar/common.json")).default;
+  const hr = (await import("../../client/src/locales/ar/hr.json")).default;
+  const dict = { ...common, ...hr, ...pages, ...pageLabels, ...firm, ...banking } as Record<
+    string,
+    string
+  >;
   return { ...actual, useTranslation: () => ({ t: dict, locale: "ar" }) };
 });
 vi.mock("../../client/src/hooks/useSubscription", () => ({
@@ -74,6 +85,7 @@ describe("reconciliation rules screen", () => {
   afterEach(async () => {
     failing.on = false;
     await unmountPage();
+    onlineManager.setOnline(true);
     vi.unstubAllGlobals();
   });
 
@@ -101,6 +113,96 @@ describe("reconciliation rules screen", () => {
     expect(document.querySelector("tbody")?.textContent).toContain("Office rent");
   });
 
+  const retryButton = () => buttonByText(new RegExp(`^${arFirm["firm.retry"]}$`));
+  const rows = () => document.querySelector("tbody")?.textContent ?? "";
+  const refetchRules = async () => {
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    await act(async () => {
+      void queryClient.refetchQueries({
+        queryKey: ["/api/companies", COMPANY_ID, "reconciliation-rules"],
+        exact: true,
+      });
+    });
+  };
+  const setOnline = async (online: boolean) => {
+    await act(async () => onlineManager.setOnline(online));
+  };
+
+  it("keeps cached rows with a retryable warning when a background refresh fails", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    setFixtures({ [rulesUrl]: [rule] });
+    await renderPage(ReconciliationRulesPanel);
+    await flushUntil(() => !!document.querySelector("tbody"));
+
+    failing.on = true;
+    await refetchRules();
+    await flushUntil(() => !!byTestId("rules-refresh-warning"));
+    expect(byTestId("rules-refresh-warning")?.textContent).toContain(arHr["hr.refreshFailed"]);
+    expect(rows()).toContain("Office rent");
+    expect(byTestId("rules-load-error")).toBeNull();
+
+    failing.on = false;
+    setFixtures({ [rulesUrl]: [{ ...rule, name: "Warehouse rent" }] });
+    await click(retryButton());
+    await flushUntil(() => !byTestId("rules-refresh-warning"));
+    expect(byTestId("rules-refresh-warning")).toBeNull();
+    expect(rows()).toContain("Warehouse rent");
+  });
+
+  it("drops Retry while a refresh retry is paused and recovers on reconnection", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    setFixtures({ [rulesUrl]: [rule] });
+    await renderPage(ReconciliationRulesPanel);
+    await flushUntil(() => !!document.querySelector("tbody"));
+    failing.on = true;
+    await refetchRules();
+    await flushUntil(() => !!byTestId("rules-refresh-warning"));
+
+    failing.on = false;
+    await setOnline(false);
+    await click(retryButton());
+    expect(retryButton()).toBeNull();
+    expect(byTestId("rules-refresh-warning")?.textContent).toContain(
+      ar["banking.rules.offlineBody"]
+    );
+    expect(rows()).toContain("Office rent");
+
+    await setOnline(true);
+    await flushUntil(() => !byTestId("rules-refresh-warning"));
+    expect(byTestId("rules-refresh-warning")).toBeNull();
+    expect(rows()).toContain("Office rent");
+  });
+
+  it("shows connection guidance, not an empty state, while the first load is paused", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    await setOnline(false);
+    setFixtures({ [rulesUrl]: [rule] });
+    await renderPage(ReconciliationRulesPanel);
+
+    expect(byTestId("rules-offline")?.textContent).toContain(
+      arCommon["common.errorHeading.offline"]
+    );
+    expect(byTestId("rules-offline")?.textContent).toContain(ar["banking.rules.offlineBody"]);
+    expect(document.body.textContent).not.toContain(ar["banking.rulesEmptyTitle"]);
+    expect(byTestId("button-add-rule")).toBeNull();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(retryButton()).toBeNull();
+
+    await setOnline(true);
+    await flushUntil(() => !!document.querySelector("tbody"));
+    expect(rows()).toContain("Office rent");
+    expect(byTestId("rules-offline")).toBeNull();
+    expect(byTestId("button-add-rule")).not.toBeNull();
+  });
+
+  it("shows the empty state only once an empty response has arrived", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    setFixtures({ [rulesUrl]: [] });
+    await renderPage(ReconciliationRulesPanel);
+    await flushUntil(() => document.body.textContent!.includes(ar["banking.rulesEmptyTitle"]));
+    expect(document.body.textContent).toContain(ar["banking.rulesEmptyTitle"]);
+  });
+
   it("shows a translated retryable error instead of the empty state when loading fails", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     failing.on = true;
@@ -109,6 +211,12 @@ describe("reconciliation rules screen", () => {
     await flushUntil(() => !!document.querySelector('[data-testid="rules-load-error"]'));
     expect(document.body.textContent).toContain(ar["banking.rules.loadErrorTitle"]);
     expect(document.body.textContent).not.toContain(ar["banking.rulesEmptyTitle"]);
+
+    failing.on = false;
+    await click(retryButton());
+    await flushUntil(() => !!document.querySelector("tbody"));
+    expect(rows()).toContain("Office rent");
+    expect(byTestId("rules-load-error")).toBeNull();
   });
 
   it("localizes the match value placeholder in both languages", () => {

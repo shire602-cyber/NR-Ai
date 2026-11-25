@@ -2,6 +2,7 @@ import { accountDisplayName } from "@/lib/account-name";
 import { withoutControlAccounts } from "@/lib/control-account-options";
 import { T } from "@/components/layout/T";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Alert } from "@/components/ui/alert";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useRef, useState } from "react";
@@ -51,7 +52,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, Trash2, Edit, Zap, Loader2, Search } from "lucide-react";
+import { Plus, Trash2, Edit, Zap, Loader2, Search, WifiOff } from "lucide-react";
 import { LoadErrorState } from "@/components/ui/load-error-state";
 import { matchesRuleSearch } from "@/lib/reconciliation-rule-search";
 
@@ -138,8 +139,10 @@ export function ReconciliationRulesPanel() {
 
   const {
     data: rules,
-    isLoading,
-    isError: rulesFailed,
+    isPaused,
+    isFetching,
+    isLoadingError,
+    isRefetchError,
     error: rulesError,
     refetch: refetchRules,
   } = useQuery<ReconciliationRule[]>({
@@ -379,7 +382,9 @@ export function ReconciliationRulesPanel() {
     })
   );
   const hasSearch = searchTerm.trim().length > 0;
-  const hasNoMatches = !isLoading && hasSearch && allRules.length > 0 && visibleRules.length === 0;
+  const hasNoMatches = hasSearch && allRules.length > 0 && visibleRules.length === 0;
+  // Offline before any response: nothing is known about the rules, so no empty state or Add.
+  const waitingForConnection = rules === undefined && isPaused;
 
   if (!canAccess("bankImport")) {
     return <UpgradePrompt feature="bankImport" requiredTier={getRequiredTier("bankImport")} />;
@@ -420,10 +425,12 @@ export function ReconciliationRulesPanel() {
             )}
             {t["banking.rulesRunAutoMatch"]}
           </Button>
-          <Button size="sm" onClick={openCreateDialog} data-testid="button-add-rule">
-            <Plus aria-hidden />
-            <T k="pageLabels.addRule" />
-          </Button>
+          {!waitingForConnection && (
+            <Button size="sm" onClick={openCreateDialog} data-testid="button-add-rule">
+              <Plus aria-hidden />
+              <T k="pageLabels.addRule" />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -473,15 +480,32 @@ export function ReconciliationRulesPanel() {
         </div>
       )}
 
+      {isRefetchError && (
+        <Alert
+          tone="warning"
+          title={t["hr.refreshFailed"]}
+          data-testid="rules-refresh-warning"
+          action={
+            // A paused retry is already queued and resumes on reconnect.
+            isPaused ? undefined : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refetchRules()}
+                disabled={isFetching}
+              >
+                {t["firm.retry"]}
+              </Button>
+            )
+          }
+        >
+          {isPaused ? t["banking.rules.offlineBody"] : null}
+        </Alert>
+      )}
+
       <Card className="overflow-hidden">
         <CardContent className="p-0">
-          {isLoading ? (
-            <div className="space-y-3 p-4" aria-busy="true">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          ) : rulesFailed ? (
+          {isLoadingError ? (
             <LoadErrorState
               error={rulesError}
               onRetry={() => refetchRules()}
@@ -489,6 +513,20 @@ export function ReconciliationRulesPanel() {
               description={t["banking.rules.loadErrorBody"]}
               testId="rules-load-error"
             />
+          ) : waitingForConnection ? (
+            <EmptyState
+              size="md"
+              icon={WifiOff}
+              title={t["common.errorHeading.offline"]}
+              description={t["banking.rules.offlineBody"]}
+              testId="rules-offline"
+            />
+          ) : rules === undefined ? (
+            <div className="space-y-3 p-4" aria-busy="true">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
           ) : hasNoMatches ? (
             <EmptyState
               size="md"
