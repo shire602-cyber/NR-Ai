@@ -30,6 +30,10 @@ interface ActiveCompanyContextValue {
   isLoading: boolean;
   /** Error from the underlying company query, if any. */
   error: unknown;
+  /** True when the first company load is paused (offline or tab hidden) with no data yet. */
+  isPaused: boolean;
+  /** Re-run the company list query (Retry after a failed first load). */
+  refetch: () => void;
   /** True when the user has no accessible companies and the load is complete. */
   hasNoCompanies: boolean;
   /** True when the user has explicitly switched into a firm-managed client. */
@@ -72,9 +76,14 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
     data: companies,
     isLoading,
     error,
+    fetchStatus,
+    isSuccess,
+    refetch: refetchCompanies,
   } = useQuery<WorkspaceCompany[]>({
     queryKey: ["/api/companies"],
   });
+  // Paused (offline or tab not focused) with nothing loaded yet: the list is unknown, not empty.
+  const isPaused = fetchStatus === "paused" && companies === undefined;
 
   const [switchingClient, setSwitchingClient] = useState(false);
   const setActiveClientCompany = useCallback(async (id: string) => {
@@ -116,7 +125,9 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
       companies: list,
       isLoading,
       error,
-      hasNoCompanies: !isLoading && !error && list.length === 0,
+      isPaused,
+      refetch: () => void refetchCompanies(),
+      hasNoCompanies: isSuccess && Array.isArray(companies) && companies.length === 0,
       isFirmContext: !!activeMatch && activeMatch.companyType === "client",
       isSwitchingClient: switchingClient,
       setActiveClientCompany,
@@ -127,6 +138,9 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
     activeId,
     isLoading,
     error,
+    isPaused,
+    isSuccess,
+    refetchCompanies,
     switchingClient,
     setActiveClientCompany,
     clearActiveClientCompany,

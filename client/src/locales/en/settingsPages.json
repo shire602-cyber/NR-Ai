@@ -131,5 +131,12 @@
   "settingsPages.numberingSaveFailed": "Could not save numbering. Try again in a moment.",
   "settingsPages.numberingWaiting": "Waiting to load numbering settings.",
   "settingsPages.numberingRefreshFailed": "Could not refresh your numbering settings.",
-  "settingsPages.numberingSaveWaiting": "Waiting for a connection. Keep this page open to save when you reconnect."
+  "settingsPages.numberingSaveWaiting": "Waiting for a connection. Keep this page open to save when you reconnect.",
+  "settingsPages.taxRates.refreshFailed": "Could not refresh the tax rates. Showing the last loaded rates.",
+  "settingsPages.taxRates.waiting": "Waiting to load the tax rates",
+  "settingsPages.taxRates.waitingHint": "Loading is paused until your connection is back or this tab is in focus. It will continue on its own.",
+  "settingsPages.taxRates.empty": "No tax rates to show",
+  "settingsPages.taxRates.emptyHint": "The VAT engine returned no treatments for this company. Try again later.",
+  "settingsPages.taxRates.noCompany": "Create or join a company to see its tax rates.",
+  "settingsPages.taxRates.otherTreatment": "Other treatment"
 }

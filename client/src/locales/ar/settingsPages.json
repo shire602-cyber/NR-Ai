@@ -131,5 +131,12 @@
   "settingsPages.numberingSaveFailed": "تعذّر حفظ الترقيم. حاول مرة أخرى بعد قليل.",
   "settingsPages.numberingWaiting": "في انتظار تحميل إعدادات الترقيم.",
   "settingsPages.numberingRefreshFailed": "تعذّر تحديث إعدادات الترقيم.",
-  "settingsPages.numberingSaveWaiting": "في انتظار الاتصال. أبقِ هذه الصفحة مفتوحة ليتم الحفظ عند عودة الاتصال."
+  "settingsPages.numberingSaveWaiting": "في انتظار الاتصال. أبقِ هذه الصفحة مفتوحة ليتم الحفظ عند عودة الاتصال.",
+  "settingsPages.taxRates.refreshFailed": "تعذّر تحديث نسب الضريبة. تُعرض آخر نسب تم تحميلها.",
+  "settingsPages.taxRates.waiting": "بانتظار تحميل نسب الضريبة",
+  "settingsPages.taxRates.waitingHint": "تم إيقاف التحميل مؤقتًا حتى يعود الاتصال أو تصبح علامة التبويب هذه نشطة. سيستمر تلقائيًا.",
+  "settingsPages.taxRates.empty": "لا توجد نسب ضريبة للعرض",
+  "settingsPages.taxRates.emptyHint": "لم يُرجع محرك ضريبة القيمة المضافة أي معاملات ضريبية لهذه الشركة. حاول مرة أخرى لاحقًا.",
+  "settingsPages.taxRates.noCompany": "أنشئ شركة أو انضم إلى شركة لعرض نسب الضريبة الخاصة بها.",
+  "settingsPages.taxRates.otherTreatment": "معاملة ضريبية أخرى"
 }
