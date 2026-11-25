@@ -50,7 +50,7 @@ import { assertInvoicePaymentTaxPointOpen } from "../ledger/vat-lock";
 import { lockPeriodPolicy } from "./period-lock.service";
 import type { undoReliefRecoveryOnPayment } from "../tax/vat-adjustments.service";
 import { fromFils, toFils } from "../../shared/money";
-import { emitDomainEvent } from "../platform/domain-events";
+import { emitDomainEvent, trackDomainEventWork } from "../platform/domain-events";
 import { has, provide, resolve } from "../platform/service-registry";
 import { createLogger } from "../config/logger";
 import {
@@ -296,8 +296,9 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
     // the relief check still runs after the commit.
     const settled = result;
     await withLedgerTx(async (_tx, hooks) => {
-      hooks.afterCommit(async () => {
-        await afterPaymentRecorded(input, settled, amountFils);
+      // Tracked work: drainDomainEvents waits for the VAT lookup and the emitted handlers.
+      hooks.afterCommit(() => {
+        trackDomainEventWork(() => afterPaymentRecorded(input, settled, amountFils));
       });
     }, input.tx);
     return result;
