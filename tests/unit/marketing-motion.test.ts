@@ -53,7 +53,13 @@ class FakeCSSTransition {
   play = vi.fn(() => {
     this.playState = "running";
   });
-  constructor(public playState: "running" | "paused" | "finished") {}
+  effect: { target: Element | null } | null;
+  constructor(
+    public playState: "running" | "paused" | "finished",
+    target: Element | null = null
+  ) {
+    this.effect = target ? { target } : null;
+  }
 }
 // Undoes stubAnimations: restores the Element.prototype.getAnimations descriptor that existed
 // before the stub, or, if there was none, deletes only our own stub.
@@ -260,6 +266,75 @@ describe("product tour motion", () => {
     expect(selected()).toBe(0);
   });
 
+  it("keeps Pause usable through Delivered on auto-play, also after the visitor touches the tour", async () => {
+    await mountWithFakeTimers();
+    await advance(900); // invoice auto start
+    for (let stage = 0; stage < 3; stage++) await advance(850);
+    expect(pipelineStep()).toBe(3);
+    // The Delivered badge is on screen and pulsing.
+    expect(container.querySelector(".mz-tour-pipeline .mz-live")).not.toBeNull();
+    const button = () => byId("tour-pause") as HTMLButtonElement;
+    expect(button().textContent).toBe("Pause tour");
+    expect(button().disabled).toBe(false);
+
+    // Touching the tour ends auto-play, but Delivered is still animating: Pause stays, not Play.
+    act(() => {
+      shell().dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    expect(button().textContent).toBe("Pause tour");
+    expect(button().getAttribute("data-playing")).toBe("true");
+
+    // Pressing it freezes the in-flight Delivered transition and holds the keyframe pulse (CSS).
+    const delivered = new FakeCSSTransition(
+      "running",
+      container.querySelector(".mz-tour-pipeline .mz-live")
+    );
+    stubAnimations([delivered]);
+    click(button());
+    expect(delivered.pause).toHaveBeenCalledTimes(1);
+    expect(shell().getAttribute("data-paused")).toBe("true");
+    expect(button().textContent).toBe("Play tour");
+    await advance(30_000);
+    expect(pipelineStep()).toBe(3);
+    expect(selected()).toBe(0);
+
+    // The control still works: Play resumes exactly that transition and offers Pause again.
+    click(button());
+    expect(delivered.play).toHaveBeenCalledTimes(1);
+    expect(shell().getAttribute("data-paused")).toBe("false");
+    expect(button().textContent).toBe("Pause tour");
+  });
+
+  it("keeps Pause offered while a demo's last stage is still settling", async () => {
+    await mountWithFakeTimers();
+    const { SETTLE_MS } =
+      await import("../../client/src/components/marketing/phase/home/tour/sequence");
+    act(() => {
+      shell().dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    click(tabs()[3]);
+    await act(async () => {});
+    click(byId("tour-vat-fill"));
+    expect(byId("tour-pause").textContent).toBe("Pause tour");
+    for (let row = 0; row < 6; row++) await advance(550);
+    // Every box is filled; the last row is still animating in, so Pause is still there.
+    expect(container.querySelectorAll('tr[data-filled="true"]').length).toBe(6);
+    expect(byId("tour-pause").textContent).toBe("Pause tour");
+
+    // Pausing now holds the settle: it does not run out behind the visitor's back.
+    click(byId("tour-pause"));
+    expect(shell().getAttribute("data-paused")).toBe("true");
+    await advance(30_000);
+    click(byId("tour-pause"));
+    act(() => {
+      shell().dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    expect(byId("tour-pause").textContent).toBe("Pause tour");
+    await advance(SETTLE_MS);
+    // Motion has ended and auto-play is off: only now is Play offered.
+    expect(byId("tour-pause").textContent).toBe("Play tour");
+  });
+
   it("Pause freezes running transitions in the shell and Play resumes the same ones", async () => {
     await mount("en");
     expectHeldThenResumed(holdScenario(), () => click(byId("tour-pause")), shell);
@@ -340,7 +415,9 @@ describe("hero stage motion", () => {
       await import("../../client/src/components/marketing/phase/home/HeroStage");
     await act(async () => {
       // The hero band owns the data-motion switch, so the stage is rendered inside .mz-hero.
-      root.render(createElement("section", { className: "mz-hero" }, createElement(HeroStage, { locale })));
+      root.render(
+        createElement("section", { className: "mz-hero" }, createElement(HeroStage, { locale }))
+      );
     });
   }
   const stage = () => byId("hero-stage");
@@ -420,6 +497,41 @@ describe("hero stage motion", () => {
     expect(band().hasAttribute("data-motion")).toBe(false);
     await advance(300);
     expect(vatAmount()).not.toBe(mid);
+  });
+
+  it("keeps Pause usable while Delivered animates and never freezes the button itself", async () => {
+    vi.useFakeTimers();
+    await mount("en");
+    await advance(6900);
+    // Delivered: the status pill has just been swapped in and is animating.
+    expect(stage().getAttribute("data-status")).toBe("3");
+    expect(container.querySelector(".mz-stage-statusrow .mz-live")).not.toBeNull();
+    const button = () => byId("hero-pause") as HTMLButtonElement;
+    expect(button().disabled).toBe(false);
+    expect(button().textContent).toBe("Pause animation");
+
+    const badge = new FakeCSSTransition("running", container.querySelector(".mz-stage-receipt"));
+    const ownHover = new FakeCSSTransition("running", button());
+    const ownLabel = new FakeCSSTransition("running", button().querySelector("span"));
+    stubAnimations([badge, ownHover, ownLabel]);
+
+    click(button());
+    expect(badge.pause).toHaveBeenCalledTimes(1);
+    // The control's own hover/press feedback keeps running, so it never looks or feels stuck.
+    expect(ownHover.pause).not.toHaveBeenCalled();
+    expect(ownLabel.pause).not.toHaveBeenCalled();
+    expect(container.querySelector(".mz-hero")!.getAttribute("data-motion")).toBe("paused");
+    expect(button().textContent).toBe("Play animation");
+    await advance(20_000);
+    expect(stage().getAttribute("data-status")).toBe("3");
+    expect(stage().getAttribute("data-step")).toBe("3");
+
+    click(button());
+    expect(badge.play).toHaveBeenCalledTimes(1);
+    expect(ownHover.play).not.toHaveBeenCalled();
+    expect(button().textContent).toBe("Pause animation");
+    await advance(1600);
+    expect(stage().getAttribute("data-step")).toBe("4");
   });
 
   it("Pause freezes running transitions in the band and Play resumes the same ones", async () => {
