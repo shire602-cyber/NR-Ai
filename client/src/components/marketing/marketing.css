@@ -976,8 +976,9 @@
 /* ── Auth split layout ─────────────────────────────────────────────────── */
 .mk-auth {
   display: grid;
-  min-block-size: 100vh;
-  min-block-size: 100dvh;
+  /* The screen less the shared header (74px and its hairline). */
+  min-block-size: calc(100vh - 75px);
+  min-block-size: calc(100dvh - 75px);
 }
 @media (min-width: 1024px) {
   .mk-auth {
@@ -999,13 +1000,6 @@
   .mk-auth__panel {
     display: flex;
   }
-}
-.mk-auth__panel .mk-brand {
-  color: var(--band-ink);
-}
-.mk-auth__panel .mk-brand__dot,
-.mk-auth__panel .mk-eyebrow {
-  color: var(--band-brand);
 }
 .mk-auth__headline {
   font-family: var(--font-head);
@@ -1069,24 +1063,14 @@
 .mk-auth__form {
   display: flex;
   flex-direction: column;
-  min-block-size: 100vh;
-  min-block-size: 100dvh;
   background: var(--canvas);
-}
-.mk-auth__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  block-size: 4rem;
-  padding-inline: var(--gutter);
 }
 .mk-auth__body {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem var(--gutter) 3rem;
+  padding: 3rem var(--gutter);
 }
 .mk-auth__inner {
   inline-size: 100%;
@@ -1101,20 +1085,6 @@
   font-size: var(--text-micro);
   color: var(--ink-3);
 }
-.mk-auth__back {
-  display: none;
-}
-@media (min-width: 640px) {
-  .mk-auth__back {
-    display: inline-flex;
-  }
-}
-@media (min-width: 1024px) {
-  .mk-auth__top .mk-auth__brand {
-    display: none;
-  }
-}
-
 /* Inner pages that still use the app's Card/Button primitives sit on the
    marketing canvas; give their cards the marketing elevation. */
 .mk-root .mk-surface-card {

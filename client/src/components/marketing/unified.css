@@ -165,9 +165,6 @@
     linear-gradient(180deg, #0a1713, #0d1f19);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
 }
-.mk-root .mk-auth__panel .phase-brand {
-  color: #fff;
-}
 .mk-root .mk-auth__headline {
   font-size: clamp(34px, 3.4vw, 50px);
   line-height: 1.1;
@@ -178,21 +175,9 @@
   line-height: 1.3;
   letter-spacing: 0;
 }
-.mk-root .mk-auth__top {
-  block-size: 74px;
-}
-.mk-root .mk-auth__lang {
-  display: flex;
-  align-items: center;
-}
 .mk-root .mk-auth__inner label {
   font-size: 0.875rem;
   font-weight: 600;
-}
-@media (max-width: 760px) {
-  .mk-root .mk-auth__top {
-    block-size: 64px;
-  }
 }
 
 /* ---------- Buttons: the homepage button on the shared Button primitive ---------- */
@@ -277,7 +262,7 @@
   border-color: rgb(255 255 255 / 0.6);
 }
 
-/* Plain-text language switch (auth top bar), as in the site header. */
+/* Plain-text language switch in the site header. */
 .mk-root .phase-lang {
   display: inline-flex;
   align-items: center;
@@ -378,12 +363,5 @@
   .mk-root [data-button]:is(:hover, :active),
   .mk-root :is(.mk-tile, .mk-surface-card):hover {
     transform: none;
-  }
-}
-
-/* The brand in the auth top bar is for narrow screens; the dark panel carries it on wide ones. */
-@media (min-width: 1024px) {
-  .mk-root .mk-auth__top .mk-auth__brand {
-    display: none;
   }
 }
