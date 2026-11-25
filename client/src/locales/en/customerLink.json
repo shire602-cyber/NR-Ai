@@ -11,6 +11,8 @@
   "customerLink.loadFailedBody": "Check your connection and try again.",
   "customerLink.retry": "Try again",
   "customerLink.loading": "Loading",
+  "customerLink.waitingTitle": "Waiting for your connection",
+  "customerLink.waitingBody": "You appear to be offline. This page will load as soon as your connection is back.",
   "customerLink.pageTitle": "{company} · Customer portal",
   "customerLink.pageTitleBare": "Customer portal",
   "customerLink.approveTitle": "Approve the e-invoicing partner · {company}",

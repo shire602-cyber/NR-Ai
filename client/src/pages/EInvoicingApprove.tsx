@@ -134,23 +134,31 @@ function EInvoicingApproveLink({ token }: { token: string }) {
   const result = closedLink ?? query.data;
   const data = closedLink ? null : (doneData ?? (result?.kind === "ok" ? result.data : null));
   useLinkLocale(!query.isLoading, null, data?.locale);
+  // Offline first load: the query is paused with nothing to show. Cached content on a paused
+  // refresh keeps rendering as is.
+  const waiting = query.fetchStatus === "paused" && !result && !data;
+  // A terminal (gone) result, local or cached, is never retried, even if a later read errors.
+  const showRetry =
+    !waiting && result?.kind !== "gone" && (result?.kind === "busy" || query.isError);
   const company = data ? bidiIsolate(data.companyName) : "";
   useDocumentTitle(
     data
       ? formatMessage(t["customerLink.approveTitle"], { company: data.companyName })
-      : result?.kind === "gone"
-        ? t[
-            result.state === "revoked"
-              ? "einvoicing.appoint.revokedTitle"
-              : "einvoicing.appoint.expiredTitle"
-          ]
-        : result?.kind === "busy"
-          ? t["customerLink.busyTitle"]
-          : query.isError
-            ? t["customerLink.loadFailedTitle"]
-            : result?.kind === "invalid"
-              ? t["einvoicing.appoint.invalidTitle"]
-              : t["einvoicing.appoint.pageEyebrow"]
+      : waiting
+        ? t["customerLink.waitingTitle"]
+        : result?.kind === "gone"
+          ? t[
+              result.state === "revoked"
+                ? "einvoicing.appoint.revokedTitle"
+                : "einvoicing.appoint.expiredTitle"
+            ]
+          : result?.kind === "busy"
+            ? t["customerLink.busyTitle"]
+            : query.isError
+              ? t["customerLink.loadFailedTitle"]
+              : result?.kind === "invalid"
+                ? t["einvoicing.appoint.invalidTitle"]
+                : t["einvoicing.appoint.pageEyebrow"]
   );
 
   return (
@@ -177,6 +185,17 @@ function EInvoicingApproveLink({ token }: { token: string }) {
               aria-label={t["customerLink.loading"]}
             />
           )}
+          {waiting && (
+            <div
+              className="space-y-2"
+              role="status"
+              aria-live="polite"
+              data-testid="approve-waiting"
+            >
+              <h1 className="text-h2 font-semibold">{t["customerLink.waitingTitle"]}</h1>
+              <p className="text-small text-muted-foreground">{t["customerLink.waitingBody"]}</p>
+            </div>
+          )}
           {result?.kind === "invalid" && (
             <div className="space-y-2" data-testid="approve-invalid">
               <h1 className="text-h2 font-semibold">{t["einvoicing.appoint.invalidTitle"]}</h1>
@@ -185,7 +204,7 @@ function EInvoicingApproveLink({ token }: { token: string }) {
               </p>
             </div>
           )}
-          {!closedLink && (result?.kind === "busy" || query.isError) && (
+          {showRetry && (
             <div className="space-y-3" data-testid="approve-retry">
               <h1 className="text-h2 font-semibold">
                 {

@@ -6,7 +6,7 @@
  */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, onlineManager } from "@tanstack/react-query";
 import { Route, Router, Switch } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -445,8 +445,8 @@ describe("EmaraTax approver page /portal/einvoicing-approve/:token", () => {
           await new Promise<void>((resolve) => (releaseReconnect = resolve));
           return new Response(JSON.stringify(APPROVER), { status: 200 });
         }
-        // Any later read (the remount) never answers, so only the cache can drive the screen.
-        return new Promise<Response>(() => {});
+        // Any later read (the remount refresh) fails, so only the cache can drive the screen.
+        throw new TypeError("network down");
       })
     );
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -477,9 +477,82 @@ describe("EmaraTax approver page /portal/einvoicing-approve/:token", () => {
     root = createRoot(container);
     await act(async () => root.render(tree));
     expect(byTestId("approve-done")).toBeNull();
-    await settle();
+    // The remount refresh really fails: wait for the query's own error, not a timer.
+    await vi.waitFor(() => expect(client.getQueryState(key)?.errorUpdateCount).toBeGreaterThan(0));
+    await settle(2);
+    expect(getCalls).toBeGreaterThanOrEqual(3);
+    expect(client.getQueryState(key)?.status).toBe("error");
+    expect(client.getQueryState(key)?.fetchStatus).toBe("idle");
+    // Terminal screen, no retry panel, and no active page.
     expect(byTestId("approve-revoked")).not.toBeNull();
+    expect(byTestId("approve-retry")).toBeNull();
     expect(byTestId("approve-done")).toBeNull();
     expect(client.getQueryData(key)).toEqual({ kind: "gone", state: "revoked" });
+  });
+
+  /** Runs `fn` with React Query's online manager offline, then restores it. */
+  async function whileOffline(fn: () => Promise<void>) {
+    const wasOnline = onlineManager.isOnline();
+    onlineManager.setOnline(false);
+    try {
+      expect(onlineManager.isOnline()).toBe(false);
+      await fn();
+    } finally {
+      await act(async () => onlineManager.setOnline(wasOnline));
+    }
+  }
+
+  it("an offline first load shows a localized waiting state (not the skeleton or Try again) and loads on reconnect", async () => {
+    handler = () => ({ status: 200, body: APPROVER });
+    stub();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const key = ["einvoicing-approve", "tokA"];
+    await whileOffline(async () => {
+      await mountApprover(client, "/portal/einvoicing-approve/tokA");
+      expect(client.getQueryState(key)?.fetchStatus).toBe("paused");
+      expect(client.getQueryData(key)).toBeUndefined();
+      expect(calls).toEqual([]);
+      const waiting = byTestId("approve-waiting")!;
+      expect(waiting.getAttribute("role")).toBe("status");
+      expect(waiting.getAttribute("aria-live")).toBe("polite");
+      expect(waiting.querySelector("h1")!.textContent).toBe("Waiting for your connection");
+      expect(document.title).toBe("Waiting for your connection");
+      expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+      expect(byTestId("approve-retry")).toBeNull();
+      expect(byTestId("approve-done")).toBeNull();
+
+      // Arabic copy comes from the Arabic catalog.
+      const { useI18n } = await import("../../client/src/lib/i18n");
+      await act(async () => useI18n.getState().setLocale("ar"));
+      expect(byTestId("approve-waiting")!.querySelector("h1")!.textContent).toBe(
+        "بانتظار الاتصال بالإنترنت"
+      );
+      await act(async () => useI18n.getState().setLocale("en"));
+    });
+    await settle();
+    expect(calls).toEqual(["GET /api/portal/einvoicing-approve/tokA"]);
+    expect(byTestId("approve-waiting")).toBeNull();
+    expect(byTestId("approve-done")).not.toBeNull();
+  });
+
+  it("a paused refresh keeps showing the cached approver page, with no waiting state", async () => {
+    handler = () => ({ status: 200, body: APPROVER });
+    stub();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const key = ["einvoicing-approve", "tokA"];
+    await mountApprover(client, "/portal/einvoicing-approve/tokA");
+    expect(byTestId("approve-done")).not.toBeNull();
+    await whileOffline(async () => {
+      await act(async () => {
+        void client.refetchQueries({ queryKey: key });
+      });
+      await settle(2);
+      expect(client.getQueryState(key)?.fetchStatus).toBe("paused");
+      expect(client.getQueryData(key)).toEqual({ kind: "ok", data: APPROVER });
+      expect(byTestId("approve-waiting")).toBeNull();
+      expect(byTestId("approve-retry")).toBeNull();
+      expect(byTestId("approve-done")).not.toBeNull();
+      expect(byTestId("approve-title")!.textContent).toContain("Al Noor Trading LLC");
+    });
   });
 });
