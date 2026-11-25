@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { subscribeToPush, unsubscribeFromPush, isPushSubscribed } from "@/lib/push";
 import { Bell, Mail, FileText, Calendar, CreditCard, BarChart3 } from "lucide-react";
@@ -68,7 +69,12 @@ export default function NotificationPreferences() {
     isPushSubscribed().then(setPushActive);
   }, []);
 
-  const { data: preferences, isLoading } = useQuery<NotificationPrefs>({
+  const {
+    data: preferences,
+    isLoading,
+    error: loadError,
+    refetch,
+  } = useQuery<NotificationPrefs>({
     queryKey: ["/api/notification-preferences"],
     queryFn: () => apiRequest("GET", "/api/notification-preferences"),
   });
@@ -161,7 +167,7 @@ export default function NotificationPreferences() {
     return (
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Settings"
+          eyebrow={t["pages.companyProfileEyebrow"]}
           title={t["pages.notificationPrefsTitle"]}
           description={t["pages.notificationPrefsDescription"]}
         />
@@ -170,11 +176,30 @@ export default function NotificationPreferences() {
     );
   }
 
+  if (loadError && !preferences) {
+    return (
+      <SettingsLayout>
+        <div className="space-y-6">
+          <PageHeader
+            eyebrow={t["pages.companyProfileEyebrow"]}
+            title={t["pages.notificationPrefsTitle"]}
+            description={t["pages.notificationPrefsDescription"]}
+          />
+          <LoadErrorState
+            error={loadError}
+            onRetry={() => refetch()}
+            testId="notification-prefs-load-error"
+          />
+        </div>
+      </SettingsLayout>
+    );
+  }
+
   return (
     <SettingsLayout>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Settings"
+          eyebrow={t["pages.companyProfileEyebrow"]}
           title={t["pages.notificationPrefsTitle"]}
           description={t["pages.notificationPrefsDescription"]}
         />
