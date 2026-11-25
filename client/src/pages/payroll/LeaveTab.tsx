@@ -74,6 +74,9 @@ export function LeaveTab({ companyId }: { companyId: string }) {
   });
   const {
     data: requests = [],
+    isPending: requestsPending,
+    isLoadingError: requestsLoadFailed,
+    isRefetchError: requestsRefreshFailed,
     error: requestsError,
     refetch: refetchRequests,
   } = useQuery<LeaveRequest[]>({ queryKey: reqKey });
@@ -233,7 +236,16 @@ export function LeaveTab({ companyId }: { companyId: string }) {
           <CardTitle>{tx("hr.leaveRequests")}</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          {requestsError ? (
+          {requestsRefreshFailed && (
+            <p role="alert" className="mb-3 text-sm text-muted-foreground">
+              {tx("hr.refreshFailed")}
+            </p>
+          )}
+          {requestsPending ? (
+            <p role="status" className="text-muted-foreground">
+              {tx("hr.loading")}
+            </p>
+          ) : requestsLoadFailed ? (
             <LoadErrorState
               error={requestsError}
               onRetry={() => void refetchRequests()}

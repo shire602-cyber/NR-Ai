@@ -94,7 +94,9 @@ export function RunsTab({ companyId }: { companyId: string }) {
   const runsKey = [`/api/companies/${companyId}/payroll-runs`];
   const {
     data: runs = [],
-    isLoading: runsLoading,
+    isPending: runsPending,
+    isLoadingError: runsLoadFailed,
+    isRefetchError: runsRefreshFailed,
     error: runsError,
     refetch: refetchRuns,
   } = useQuery<PayrollRun[]>({ queryKey: runsKey });
@@ -370,9 +372,16 @@ export function RunsTab({ companyId }: { companyId: string }) {
         </Button>
       </CardHeader>
       <CardContent>
-        {runsLoading ? (
-          <p className="text-muted-foreground">{tx("hr.loading")}</p>
-        ) : runsError ? (
+        {runsRefreshFailed && (
+          <p role="alert" className="mb-3 text-sm text-muted-foreground">
+            {tx("hr.refreshFailed")}
+          </p>
+        )}
+        {runsPending ? (
+          <p role="status" className="text-muted-foreground">
+            {tx("hr.loading")}
+          </p>
+        ) : runsLoadFailed ? (
           <LoadErrorState
             error={runsError}
             onRetry={() => void refetchRuns()}

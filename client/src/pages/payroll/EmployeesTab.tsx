@@ -198,7 +198,9 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
   const key = [`/api/companies/${companyId}/employees`];
   const {
     data: employees = [],
-    isLoading,
+    isPending,
+    isLoadingError,
+    isRefetchError,
     error: loadError,
     refetch,
   } = useQuery<Employee[]>({ queryKey: key });
@@ -371,9 +373,16 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-sm"
         />
-        {isLoading ? (
-          <p className="text-muted-foreground">{tx("hr.loading")}</p>
-        ) : loadError ? (
+        {isRefetchError && (
+          <p role="alert" className="mb-3 text-sm text-muted-foreground">
+            {tx("hr.refreshFailed")}
+          </p>
+        )}
+        {isPending ? (
+          <p role="status" className="text-muted-foreground">
+            {tx("hr.loading")}
+          </p>
+        ) : isLoadingError ? (
           <LoadErrorState
             error={loadError}
             onRetry={() => void refetch()}

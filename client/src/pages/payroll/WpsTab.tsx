@@ -250,6 +250,9 @@ export function WpsTab({ companyId }: { companyId: string }) {
   const { data: runs = [] } = useQuery<PayrollRun[]>({ queryKey: runsKey });
   const {
     data: expiries = [],
+    isPending: expiriesPending,
+    isLoadingError: expiriesLoadFailed,
+    isRefetchError: expiriesRefreshFailed,
     error: expiriesError,
     refetch: refetchExpiries,
   } = useQuery<ExpiryRow[]>({
@@ -384,7 +387,16 @@ export function WpsTab({ companyId }: { companyId: string }) {
           <CardDescription>{tx("hr.expiriesHint")}</CardDescription>
         </CardHeader>
         <CardContent>
-          {expiriesError ? (
+          {expiriesRefreshFailed && (
+            <p role="alert" className="mb-3 text-sm text-muted-foreground">
+              {tx("hr.refreshFailed")}
+            </p>
+          )}
+          {expiriesPending ? (
+            <p role="status" className="text-muted-foreground">
+              {tx("hr.loading")}
+            </p>
+          ) : expiriesLoadFailed ? (
             <LoadErrorState
               error={expiriesError}
               onRetry={() => void refetchExpiries()}

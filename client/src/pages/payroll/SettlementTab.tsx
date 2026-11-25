@@ -85,6 +85,9 @@ export function SettlementTab({ companyId }: { companyId: string }) {
   });
   const {
     data: settlements = [],
+    isPending: settlementsPending,
+    isLoadingError: settlementsLoadFailed,
+    isRefetchError: settlementsRefreshFailed,
     error: settlementsError,
     refetch: refetchSettlements,
   } = useQuery<SettlementRow[]>({ queryKey: listKey });
@@ -323,7 +326,16 @@ export function SettlementTab({ companyId }: { companyId: string }) {
           <CardTitle>{tx("hr.settlements")}</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          {settlementsError ? (
+          {settlementsRefreshFailed && (
+            <p role="alert" className="mb-3 text-sm text-muted-foreground">
+              {tx("hr.refreshFailed")}
+            </p>
+          )}
+          {settlementsPending ? (
+            <p role="status" className="text-muted-foreground">
+              {tx("hr.loading")}
+            </p>
+          ) : settlementsLoadFailed ? (
             <LoadErrorState
               error={settlementsError}
               onRetry={() => void refetchSettlements()}
