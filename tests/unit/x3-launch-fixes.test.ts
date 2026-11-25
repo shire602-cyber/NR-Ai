@@ -222,12 +222,14 @@ describe("X3 pricing makes only true claims", () => {
     const text = container.textContent ?? "";
     expect(text).not.toMatch(/AI OCR/i);
     // WP-B: qualifiers sit on a sub-line under the row label instead of inside it.
-    // E-invoicing is in every plan, via an accredited provider; provider names never appear publicly.
+    // E-invoicing is in every plan; no provider is named on the public pricing page.
     // The comparison no longer lists an "AI receipt reading" row at all.
     expect(text).not.toMatch(/AI receipt reading/i);
     expect(text).toContain("E-invoicing (PINT AE)");
-    expect(text).toContain("UAE e-invoicing is built in and included on every plan, delivered through an accredited service provider.");
-    expect(text).not.toMatch(/A-Cube|Complyance/i);
+    expect(text).toContain(
+      "UAE e-invoicing is built in and included on every plan, delivered through an accredited service provider."
+    );
+    expect(text).not.toMatch(/A-?Cube|Complyance/i);
     expect(text).not.toMatch(/coming\s+soon/i);
   });
 });
