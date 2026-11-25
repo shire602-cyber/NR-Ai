@@ -47,6 +47,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/badge";
+import { STATUS_NAMESPACES, statusBadgeText } from "@/components/ui/status-meta";
 import { DataTableCard } from "@/components/ui/data-table";
 import { MoneyCell, Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
@@ -133,6 +134,8 @@ function seededHeader(data: RecurringInvoiceFormData) {
 
 export default function RecurringInvoices() {
   const { t, locale } = useTranslation();
+  // Same namespaces StatusBadge loads, so the search label is the exact badge text.
+  const { t: badgeT } = useTranslation(STATUS_NAMESPACES);
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const { routed, editor, toNew, toEdit, toList } = useEditorRoute("/recurring-invoices");
@@ -451,8 +454,7 @@ export default function RecurringInvoices() {
     const key = `invoices.recurring.freq.${freq}`;
     return (FREQUENCIES as readonly string[]).includes(freq) ? t[key] : freq;
   };
-  const getStatusLabel = (active: boolean) =>
-    t[active ? "invoices.recurring.status.active" : "invoices.recurring.status.paused"];
+  const getStatusLabel = (active: boolean) => statusBadgeText(active ? "active" : "paused", badgeT);
   const allItems = recurringInvoices ?? [];
   const visibleItems = allItems.filter((item) =>
     matchesRecurringSearch(item, searchTerm, {
@@ -878,11 +880,8 @@ export default function RecurringInvoices() {
         status={isLoading ? "loading" : visibleItems.length === 0 ? "empty" : "ready"}
         toolbar={
           allItems.length > 0 || hasSearch ? (
-            <div className="relative w-full max-w-md">
-              <Search
-                className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden
-              />
+            <div className="flex w-full max-w-md items-center gap-2 rounded-md border border-input bg-background px-3 focus-within:ring-2 focus-within:ring-ring">
+              <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
               <Input
                 type="search"
                 dir="auto"
@@ -890,7 +889,7 @@ export default function RecurringInvoices() {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={t["invoices.recurring.searchPlaceholder"]}
                 aria-label={t["invoices.recurring.searchLabel"]}
-                className="ps-10"
+                className="min-w-0 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                 data-testid="input-search-recurring"
               />
             </div>
