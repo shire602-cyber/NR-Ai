@@ -5,6 +5,7 @@ import { visualizer } from "rollup-plugin-visualizer";
 import type { Plugin } from "vite";
 import { MARKETING_BRAND } from "./shared/marketing-brand";
 import { FIRM_FIRST_SCREEN_NAMESPACES } from "./shared/firm-boot";
+import { dialogChunkUrls } from "./scripts/vite/dialog-chunk-urls";
 
 const ANALYZE = process.env.ANALYZE === "1";
 
@@ -29,6 +30,7 @@ export default defineConfig({
         return html.replaceAll("{{MARKETING_BRAND}}", MARKETING_BRAND.name.en);
       },
     },
+    dialogChunkUrls(),
     FIRM_BUILD ? firmPreloads() : marketingPreloads(),
     ANALYZE &&
       visualizer({
