@@ -186,6 +186,47 @@ describe("payment chasing offline behaviour", () => {
     expect(JSON.stringify(cached)).toBe(snapshot);
   });
 
+  it("shows the load error with Retry above the cached list when an online refresh fails, and recovers on Retry", async () => {
+    const older = {
+      ...overdueBody.rows[0],
+      invoice: { ...overdueBody.rows[0].invoice, id: "inv-0", number: "INV-000" },
+      daysOverdue: 40,
+    };
+    const twoRows = { ...overdueBody, rows: [overdueBody.rows[0], older] };
+    queryClient.setQueryData(OVERDUE_KEY, twoRows);
+    await render();
+    await waitFor(() => byId("overdue-row-INV-001") !== null);
+
+    const respond = fetchMock.getMockImplementation()!;
+    let failOverdue = true;
+    fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) =>
+      failOverdue && String(url).includes("/api/chasing/overdue/")
+        ? json({ message: "boom" }, 400)
+        : respond(url, init)
+    );
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: OVERDUE_KEY });
+    });
+    await waitFor(() => container.querySelector('[role="alert"]') !== null);
+
+    const alert = container.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain(en["invoices.reminders.loadError"]);
+    expect(alert.contains(byId("button-retry-overdue"))).toBe(true);
+    // The cached rows stay, sorted by days overdue, below the error.
+    const first = byId("overdue-row-INV-000")!;
+    const second = byId("overdue-row-INV-001")!;
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(alert.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.textContent).not.toContain(en["invoices.reminders.emptyOverdueTitle"]);
+
+    failOverdue = false;
+    act(() => byId("button-retry-overdue")!.click());
+    await waitFor(() => container.querySelector('[role="alert"]') === null);
+    expect(byId("overdue-row-INV-001")).not.toBeNull();
+  });
+
   async function openPauseItem() {
     queryClient.setQueryData(OVERDUE_KEY, overdueBody);
     await render();

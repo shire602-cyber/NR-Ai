@@ -103,17 +103,17 @@ export function OverdueTab({
       </Card>
     );
   }
-  if (error) {
-    return (
-      <Card
-        className="flex flex-wrap items-center justify-between gap-3 p-5 text-small text-danger"
-        role="alert"
-      >
-        <span>{tt["invoices.reminders.loadError"]}</span>
-        {retryButton}
-      </Card>
-    );
-  }
+  const errorCard = (
+    <Card
+      className="flex flex-wrap items-center justify-between gap-3 p-5 text-small text-danger"
+      role="alert"
+    >
+      <span>{tt["invoices.reminders.loadError"]}</span>
+      {retryButton}
+    </Card>
+  );
+  // No rows to fall back on: the error stands alone. With cached rows it shows above them below.
+  if (error && rows.length === 0) return errorCard;
   if (rows.length === 0) {
     if (!successful) return null;
     return (
@@ -186,6 +186,7 @@ export function OverdueTab({
 
   return (
     <div className="space-y-3">
+      {error && errorCard}
       {stale && (
         <div
           role="status"
