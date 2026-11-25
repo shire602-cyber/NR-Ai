@@ -16,7 +16,12 @@ vi.mock("@/hooks/useDefaultCompany", () => ({
 let unmount: (() => void) | undefined;
 
 beforeAll(async () => {
-  await Promise.all([loadLocale("en"), loadLocale("ar")]);
+  // MonthEndClose lazy-loads YearEndCloseCard; preload so React.lazy resolves synchronously-ish.
+  await Promise.all([
+    loadLocale("en"),
+    loadLocale("ar"),
+    import("@/pages/month-end/YearEndCloseCard"),
+  ]);
 });
 
 afterEach(() => {
@@ -83,9 +88,12 @@ async function mountPage(
   await act(async () => {
     useI18n.getState().setLocale(locale);
     root.render(createElement(QueryClientProvider, { client }, createElement(MonthEndClose)));
+    await vi.dynamicImportSettled();
   });
   await vi.waitFor(async () => {
-    await act(async () => {});
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
     expect(client.isFetching()).toBe(0);
     expect(
       document.querySelector(

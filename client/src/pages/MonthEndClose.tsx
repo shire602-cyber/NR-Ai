@@ -1,8 +1,6 @@
 import { closeChecklistStatus } from "@/pages/month-end/closeStatus";
 import { errorHeading } from "@/lib/error-heading";
 import { T } from "@/components/layout/T";
-import { DatePicker } from "@/components/ui/date-picker";
-import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   formatDate as formatDisplayDate,
@@ -11,7 +9,7 @@ import {
   parseCalendarDate,
 } from "@/lib/format-date";
 import { localizeServerText, type CopyDescriptor } from "@shared/server-copy";
-import { useState, useMemo } from "react";
+import { lazy, Suspense, useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,8 +47,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { lastEndedFiscalYear } from "@/lib/fiscal-year";
-import { apiFieldErrors, type FieldMessages } from "@/lib/api-field-errors";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   CheckCircle2,
@@ -65,6 +61,8 @@ import {
   ArrowRight,
   BookOpen,
 } from "lucide-react";
+
+const YearEndCloseCard = lazy(() => import("@/pages/month-end/YearEndCloseCard"));
 
 // ---- Types ----
 
@@ -386,14 +384,6 @@ export default function MonthEndClose() {
   const [lockReason, setLockReason] = useState("");
   const [unlockTarget, setUnlockTarget] = useState<string | null>(null);
   const [unlockReason, setUnlockReason] = useState("");
-  // E2 (J3-r2): the default is the company's last ended fiscal year (31 Oct for Nov-Oct), not
-  // 31 Dec of last year; a date the user picks wins.
-  const [fiscalYearEndPicked, setFiscalYearEnd] = useState<string | null>(null);
-  const fiscalYearEnd = fiscalYearEndPicked ?? lastEndedFiscalYear(fyStartMonth, now).end;
-  const [hardClose, setHardClose] = useState(false);
-  const [yearEndOverride, setYearEndOverride] = useState(false);
-  const [yearEndReason, setYearEndReason] = useState("");
-  const [yearEndFieldErrors, setYearEndFieldErrors] = useState<FieldMessages>({});
 
   const invalidateClose = (targetCompanyId = companyId) => {
     for (const key of ["history", "settings"]) {
@@ -489,42 +479,6 @@ export default function MonthEndClose() {
       setUnlockReason("");
       invalidateClose();
     },
-    onError: (error: Error) => {
-      toast({ title: errorHeading(error), description: error?.message, variant: "destructive" });
-    },
-  });
-
-  const yearEndReasonTooShort = yearEndReason.trim().length > 0 && yearEndReason.trim().length < 3;
-  const yearEndReasonError =
-    yearEndFieldErrors.reason ?? (yearEndReasonTooShort ? t["monthEnd.reasonMin3"] : undefined);
-
-  const yearEndMutation = useMutation({
-    mutationFn: async () =>
-      apiRequest("POST", `/api/companies/${companyId}/month-end/year-end-close`, {
-        fiscalYearEnd,
-        hardClose,
-        ...(yearEndOverride ? { overrideChecklist: true } : {}),
-        ...(yearEndReason.trim() ? { reason: yearEndReason.trim() } : {}),
-      }),
-    onSuccess: () => {
-      toast({ title: t["monthEnd.yearClosed"] });
-      setYearEndReason("");
-      setYearEndFieldErrors({});
-      invalidateClose();
-    },
-    onError: (error: Error) => {
-      // X4 (J3): show the rejected field (e.g. reason too short) next to the input.
-      setYearEndFieldErrors(apiFieldErrors(error));
-      toast({ title: errorHeading(error), description: error?.message, variant: "destructive" });
-    },
-  });
-
-  const settingsMutation = useMutation({
-    mutationFn: async (postYearEndClosingEntry: boolean) =>
-      apiRequest("PUT", `/api/companies/${companyId}/month-end/settings`, {
-        postYearEndClosingEntry,
-      }),
-    onSuccess: () => invalidateClose(),
     onError: (error: Error) => {
       toast({ title: errorHeading(error), description: error?.message, variant: "destructive" });
     },
@@ -1347,98 +1301,13 @@ export default function MonthEndClose() {
 
       {/* Year-end close (R11-14) */}
       {closeSettings?.permissions.canLock && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">
-              <T k="monthEnd.yearEndTitle" />
-            </CardTitle>
-            <CardDescription>
-              <T k="monthEnd.yearEndBody" />
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-              <div className="space-y-1">
-                <Label htmlFor="fiscal-year-end">
-                  <T k="monthEnd.fiscalYearEnd" />
-                </Label>
-                <DatePicker
-                  id="fiscal-year-end"
-                  value={fiscalYearEnd}
-                  onChange={(value) => setFiscalYearEnd(value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="year-end-reason">
-                  <T k="monthEnd.reason" />
-                </Label>
-                <Input
-                  id="year-end-reason"
-                  value={yearEndReason}
-                  onChange={(e) => {
-                    setYearEndReason(e.target.value);
-                    setYearEndFieldErrors({});
-                  }}
-                  placeholder={t["monthEnd.reasonPlaceholder"]}
-                  aria-invalid={yearEndReasonError ? true : undefined}
-                  aria-describedby={yearEndReasonError ? "year-end-reason-error" : undefined}
-                />
-                {yearEndReasonError && (
-                  <p id="year-end-reason-error" className="text-xs text-danger" role="alert">
-                    {yearEndReasonError}
-                  </p>
-                )}
-              </div>
-              <Button
-                onClick={() => yearEndMutation.mutate()}
-                disabled={
-                  yearEndMutation.isPending ||
-                  (yearEndOverride && yearEndReason.trim().length < 3) ||
-                  (yearEndReason.trim().length > 0 && yearEndReason.trim().length < 3)
-                }
-              >
-                <Lock className="h-4 w-4 me-2" />
-                <T k="monthEnd.closeYear" />
-              </Button>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <AskNajmaButton
-                companyId={companyId}
-                topic="year_end_close"
-                period={`FY ending ${fiscalYearEnd}`}
-                testId="button-ask-najma-year-end"
-              />
-              <span className="text-caption text-muted-foreground">
-                <T k="launchProof.askYearEndHint" />
-              </span>
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={hardClose}
-                onChange={(e) => setHardClose(e.target.checked)}
-              />
-              <T k="monthEnd.hardClose" />
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={yearEndOverride}
-                onChange={(e) => setYearEndOverride(e.target.checked)}
-              />
-              <T k="monthEnd.overrideChecklist" />
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={closeSettings.postYearEndClosingEntry}
-                onChange={(e) => settingsMutation.mutate(e.target.checked)}
-                data-testid="checkbox-post-year-end-entry"
-              />
-              <T k="monthEnd.postClosingEntry" />
-            </label>
-          </CardContent>
-        </Card>
+        <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+          <YearEndCloseCard
+            companyId={companyId}
+            fyStartMonth={fyStartMonth}
+            postYearEndClosingEntry={closeSettings.postYearEndClosingEntry}
+          />
+        </Suspense>
       )}
 
       {/* Unlock with reason (R02-11) */}
