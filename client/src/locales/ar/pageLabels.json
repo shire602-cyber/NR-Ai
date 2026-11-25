@@ -1037,5 +1037,11 @@
   "pageLabels.backupColType": "النوع",
   "pageLabels.backupColSize": "الحجم",
   "pageLabels.investingActivitiesHint": "النقد من شراء الأصول طويلة الأجل أو بيعها",
-  "pageLabels.bankCsvStatementImport": "استيراد كشوف الحساب بصيغة CSV"
+  "pageLabels.bankCsvStatementImport": "استيراد كشوف الحساب بصيغة CSV",
+  "pageLabels.notificationActionFailed": "تعذّر تحديث الإشعار. يُرجى المحاولة مرة أخرى.",
+  "pageLabels.newsCategoryVat": "ضريبة القيمة المضافة",
+  "pageLabels.newsCategoryCorporateTax": "ضريبة الشركات",
+  "pageLabels.newsCategoryCustoms": "الجمارك",
+  "pageLabels.newsCategoryLabor": "العمل",
+  "pageLabels.newsCategoryGeneral": "عام"
 }

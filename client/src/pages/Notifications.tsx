@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { ar as arLocale } from "date-fns/locale";
@@ -38,22 +39,36 @@ export default function Notifications() {
   const { t, locale } = useTranslation();
   const [activeTab, setActiveTab] = useState("notifications");
 
-  const { data: notificationsData, isLoading: notificationsLoading } = useQuery<{
+  const {
+    data: notificationsData,
+    isLoading: notificationsLoading,
+    error: notificationsError,
+    refetch: refetchNotifications,
+  } = useQuery<{
     notifications: Notification[];
     unreadCount: number;
   }>({
     queryKey: ["/api/notifications"],
   });
 
-  const { data: regulatoryNews, isLoading: newsLoading } = useQuery<RegulatoryNews[]>({
+  const {
+    data: regulatoryNews,
+    isLoading: newsLoading,
+    error: newsError,
+    refetch: refetchNews,
+  } = useQuery<RegulatoryNews[]>({
     queryKey: ["/api/regulatory-news"],
   });
+
+  const actionFailed = () =>
+    toast({ title: t["pageLabels.notificationActionFailed"], variant: "destructive" });
 
   const markAsReadMutation = useMutation({
     mutationFn: (id: string) => apiRequest("PATCH", `/api/notifications/${id}/read`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
     },
+    onError: actionFailed,
   });
 
   const markAllAsReadMutation = useMutation({
@@ -62,6 +77,7 @@ export default function Notifications() {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       toast({ title: t["pages.notificationsAllRead"] });
     },
+    onError: actionFailed,
   });
 
   const dismissMutation = useMutation({
@@ -70,6 +86,7 @@ export default function Notifications() {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       toast({ title: t["pages.notificationDismissed"] });
     },
+    onError: actionFailed,
   });
 
   const getNotificationIcon = (type: string) => {
@@ -114,10 +131,16 @@ export default function Notifications() {
 
   const getNewsBadge = (category: string) => {
     // Categories are topics, not statuses: one neutral outline pill.
-    const label = category.replace("_", " ");
+    const known: Record<string, string> = {
+      vat: t["pageLabels.newsCategoryVat"],
+      corporate_tax: t["pageLabels.newsCategoryCorporateTax"],
+      customs: t["pageLabels.newsCategoryCustoms"],
+      labor: t["pageLabels.newsCategoryLabor"],
+      general: t["pageLabels.newsCategoryGeneral"],
+    };
     return (
       <Badge variant="outline" className="capitalize">
-        {category === "vat" ? "VAT" : label}
+        {known[category] ?? category.replace(/_/g, " ")}
       </Badge>
     );
   };
@@ -125,7 +148,7 @@ export default function Notifications() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Workspace"
+        eyebrow={t["components.launchWorkspace"]}
         title={t["pageLabels.notificationsPageTitle"]}
         description={t["pageLabels.notificationsPageDesc"]}
         actions={
@@ -167,6 +190,12 @@ export default function Notifications() {
                 <Skeleton key={i} className="h-24 w-full" />
               ))}
             </div>
+          ) : notificationsError && !notificationsData ? (
+            <LoadErrorState
+              error={notificationsError}
+              onRetry={() => void refetchNotifications()}
+              testId="notifications-load-error"
+            />
           ) : !notificationsData?.notifications?.length ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
@@ -294,6 +323,12 @@ export default function Notifications() {
                 <Skeleton key={i} className="h-32 w-full" />
               ))}
             </div>
+          ) : newsError && !regulatoryNews ? (
+            <LoadErrorState
+              error={newsError}
+              onRetry={() => void refetchNews()}
+              testId="news-load-error"
+            />
           ) : !regulatoryNews?.length ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
@@ -326,7 +361,9 @@ export default function Notifications() {
                             </Badge>
                           )}
                         </div>
-                        <CardTitle>{news.title}</CardTitle>
+                        <CardTitle dir="auto">
+                          {(locale === "ar" && news.titleAr) || news.title}
+                        </CardTitle>
                         {news.source && (
                           <CardDescription>
                             {formatMessage(t["settingsPages.newsSource"], { source: news.source })}
@@ -342,7 +379,9 @@ export default function Notifications() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-muted-foreground">{news.summary}</p>
+                    <p className="text-muted-foreground" dir="auto">
+                      {(locale === "ar" && news.summaryAr) || news.summary}
+                    </p>
                     {news.effectiveDate && (
                       <p className="text-sm mt-2">
                         {formatMessage(t["settingsPages.newsEffective"], {

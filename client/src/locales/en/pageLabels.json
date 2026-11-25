@@ -1037,5 +1037,11 @@
   "pageLabels.backupColType": "Type",
   "pageLabels.backupColSize": "Size",
   "pageLabels.investingActivitiesHint": "Cash from buying or selling long-term assets",
-  "pageLabels.bankCsvStatementImport": "CSV statement import"
+  "pageLabels.bankCsvStatementImport": "CSV statement import",
+  "pageLabels.notificationActionFailed": "Could not update the notification. Please try again.",
+  "pageLabels.newsCategoryVat": "VAT",
+  "pageLabels.newsCategoryCorporateTax": "Corporate tax",
+  "pageLabels.newsCategoryCustoms": "Customs",
+  "pageLabels.newsCategoryLabor": "Labour",
+  "pageLabels.newsCategoryGeneral": "General"
 }
