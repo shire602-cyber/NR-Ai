@@ -273,6 +273,61 @@ describe("bank statement import dialog", () => {
       }
     );
 
+    it("blocks the import and hides the recognized badge when only some rows have a bad date", async () => {
+      const { previews, imports } = recordStatementRequests();
+      await mountPage(locale);
+      await selectImportAccount();
+      await chooseStatement(
+        ["Date,Description,Amount", "2026-03-10,Deposit,100.00", ",Deposit,50.00"].join("\n")
+      );
+      await vi.waitFor(() => expect(previews).toHaveLength(1));
+      await act(async () =>
+        previews[0].respond(
+          json({
+            kind: "csv",
+            detectedFormat: "generic",
+            decimalSeparator: ".",
+            dateOrder: "YMD",
+            headerRow: 1,
+            headers: ["Date", "Description", "Amount"],
+            mapping: { date: 0, description: 1, amount: 2 },
+            totalRows: 2,
+            validRows: 1,
+            errorRows: 1,
+            firstInvalidDateRow: 3,
+            sampleRows: [
+              {
+                rowIndex: 2,
+                date: "2026-03-10",
+                description: "Deposit",
+                debit: 0,
+                credit: 100,
+                errors: [],
+              },
+              {
+                rowIndex: 3,
+                date: null,
+                description: "Deposit",
+                debit: 0,
+                credit: 50,
+                errors: ["Missing date"],
+              },
+            ],
+            warnings: [],
+            requiresChoice: false,
+          })
+        )
+      );
+
+      expect(action().disabled).toBe(true);
+      expect(
+        mapper()?.querySelector('[role="alert"][data-testid="text-statement-preview-date-error"]')
+          ?.textContent
+      ).toBe(copy.replace("2", "3"));
+      expect(mapper()?.querySelector('[data-testid="statement-recognized"]')).toBeNull();
+      expect(imports).toEqual([]);
+    });
+
     it("shows CSV row 12 when the first date error is beyond the preview sample", async () => {
       const { previews, imports } = recordStatementRequests();
       const sampleRows = Array.from({ length: 10 }, (_, index) => ({

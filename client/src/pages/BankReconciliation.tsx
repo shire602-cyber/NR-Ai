@@ -356,16 +356,18 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     reviewedStatement?.file === importFile && reviewedStatement.companyId === companyId
       ? reviewedStatement.preview
       : null;
-  const firstInvalidDateRow =
-    !previewLoading && statementPreview?.validRows === 0
-      ? statementPreview.firstInvalidDateRow
-      : null;
+  // The server rejects the whole file when any row has a missing/invalid date, so the preview
+  // must say so even when other rows are valid (otherwise it looks importable).
+  const firstInvalidDateRow = !previewLoading
+    ? (statementPreview?.firstInvalidDateRow ?? null)
+    : null;
   const canConfirmImport = Boolean(
     statementPreview &&
     bankAccounts?.some((account) => account.id === selectedBankAccount) &&
     !isImporting &&
     !previewLoading &&
     statementPreview.validRows > 0 &&
+    statementPreview.firstInvalidDateRow == null &&
     (!statementPreview.requiresChoice || acknowledgeAmbiguity)
   );
 
@@ -465,7 +467,11 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
       acknowledgeAmbiguity: boolean;
     }) => {
       if (!isActive()) throw new Error(t["banking.import.companyChanged"]);
-      return apiRequest("POST", `/api/companies/${reviewedCompanyId}/bank-statements/import`, payload);
+      return apiRequest(
+        "POST",
+        `/api/companies/${reviewedCompanyId}/bank-statements/import`,
+        payload
+      );
     },
     onSuccess: (data: any, { companyId: reviewedCompanyId }) => {
       queryClient.invalidateQueries({
@@ -1478,7 +1484,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium text-sm">{strings.reviewTitle}</p>
-                  {statementPreview.validRows > 0 && (
+                  {statementPreview.validRows > 0 && firstInvalidDateRow == null && (
                     <Badge variant="secondary" data-testid="statement-recognized">
                       {strings.recognized}
                     </Badge>
