@@ -33,6 +33,7 @@ import {
   calculatePeriodComparison,
   fetchPeriodMetric,
   fetchStaffWorkload,
+  findFirmAlertCompany,
   generateAlertsForClient,
   listFirmAlerts,
   markAlertRead,
@@ -117,6 +118,15 @@ function snapshotToHealthScore(snap: ClientSnapshot): ClientHealthScore {
     lastActivityAt: snap.lastActivityAt,
     onboardingCompleted: snap.onboardingCompleted,
   });
+}
+
+async function requireScopedAlertMfa(req: Request, res: Response, alertId: string) {
+  const alert = await findFirmAlertCompany(firmContextOf(res), alertId);
+  if (!alert) {
+    res.status(404).json({ message: "Alert not found" });
+    return false;
+  }
+  return requireFirmCompanyMfa(req.user!, res, alert.companyId ? [alert.companyId] : []);
 }
 
 // Resolve the requested companyIds against the caller's accessible set. On
@@ -278,6 +288,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = req.user!;
       const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
+      if (!(await requireFirmCompanyMfa(req.user!, res, companyIds))) return;
       const snapshots = await buildClientSnapshots(companyIds);
       const candidates = snapshots.flatMap((s) => generateAlertsForClient(s));
 
@@ -310,6 +321,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid alert id" });
       }
+      if (!(await requireScopedAlertMfa(req, res, parsed.data.id))) return;
       const updated = await markAlertRead(firmContextOf(res), parsed.data.id);
       if (!updated) return res.status(404).json({ message: "Alert not found" });
       await recordAudit({
@@ -335,6 +347,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid alert id" });
       }
+      if (!(await requireScopedAlertMfa(req, res, parsed.data.id))) return;
       const updated = await resolveAlert(firmContextOf(res), parsed.data.id);
       if (!updated) return res.status(404).json({ message: "Alert not found" });
       await recordAudit({
@@ -393,6 +406,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
         granularity: req.query.granularity ?? "month",
       });
       const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
+      if (!(await requireFirmCompanyMfa(req.user!, res, companyIds))) return;
       const currentRange = currentPeriodRange(granularity);
       const previousRange = previousPeriodRange(currentRange);
 
@@ -416,6 +430,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       const scope = await resolveBatchScope(req, res, companyIds);
       if (!scope) return;
       const { allowed: allowedCompanyIds, rejected: rejectedCompanyIds } = scope;
+      if (!(await requireFirmCompanyMfa(req.user!, res, allowedCompanyIds))) return;
 
       const now = new Date();
       const quarter = Math.floor(now.getMonth() / 3);
@@ -523,6 +538,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       const scope = await resolveBatchScope(req, res, companyIds);
       if (!scope) return;
       const { allowed: allowedCompanyIds, rejected: rejectedCompanyIds } = scope;
+      if (!(await requireFirmCompanyMfa(req.user!, res, allowedCompanyIds))) return;
 
       const now = new Date();
       const startOfToday = new Date(now);

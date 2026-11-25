@@ -849,6 +849,14 @@ export async function refreshFirmAlerts(
   });
 }
 
+export async function findFirmAlertCompany(ctx: FirmContext, alertId: string) {
+  const [alert] = await db
+    .select({ companyId: firmAlerts.companyId })
+    .from(firmAlerts)
+    .where(and(eq(firmAlerts.id, alertId), firmAlertScope(ctx)));
+  return alert ?? null;
+}
+
 export async function markAlertRead(ctx: FirmContext, alertId: string): Promise<FirmAlert | null> {
   const [updated] = await db
     .update(firmAlerts)
