@@ -4,11 +4,11 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
 import {
-  STATUS_MAP,
   STATUS_NAMESPACES,
   statusBadgeText,
+  statusBadgeVariant,
   statusDotClass,
-  type StatusKind,
+  statusLabelKey,
 } from "./status-meta";
 
 const badgeVariants = cva(
@@ -80,17 +80,17 @@ interface StatusBadgeProps extends Omit<BadgeProps, "variant" | "children"> {
  * case, semantic colour, a dot. Unknown statuses render neutral with the raw value.
  */
 function StatusBadge({ status, label, overdueDays, className, ...props }: StatusBadgeProps) {
-  const key = (status || "").toLowerCase() as StatusKind;
-  const meta = STATUS_MAP[key];
   // E3: some status labels live in `screens`, which a public route does not load by itself.
-  const { t } = useTranslation(meta?.label.startsWith("screens.") ? STATUS_NAMESPACES : undefined);
+  const { t } = useTranslation(
+    statusLabelKey(status)?.startsWith("screens.") ? STATUS_NAMESPACES : undefined
+  );
   const overdueLabel =
     overdueDays !== undefined && overdueDays > 0
       ? overdueDays === 1
         ? t["components.statusOverdueOneDay"]
         : (t["components.statusOverdueDays"] ?? "{days}").replace("{days}", String(overdueDays))
       : undefined;
-  const variant = overdueLabel ? "danger" : (meta?.variant ?? "neutral");
+  const variant = overdueLabel ? "danger" : statusBadgeVariant(status);
   return (
     <Badge variant={variant} dot className={cn("py-0.5", className)} {...props}>
       {label ?? overdueLabel ?? statusBadgeText(status, t)}
