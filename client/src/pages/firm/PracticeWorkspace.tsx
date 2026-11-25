@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -156,7 +157,9 @@ function useNotify(t: Dict) {
 
 function TasksTab({ t, canWrite, locale }: { t: Dict; canWrite: boolean; locale: string }) {
   const notify = useNotify(t);
-  const { data } = useQuery<{ tasks: FirmTaskRow[] }>({ queryKey: ["/api/firm/tasks"] });
+  const { data, isError, error, refetch } = useQuery<{ tasks: FirmTaskRow[] }>({
+    queryKey: ["/api/firm/tasks"],
+  });
   const generate = useMutation({
     mutationFn: () => apiRequest("POST", "/api/firm/tasks/generate", {}),
     onSuccess: (res: { created: number }) => {
@@ -183,7 +186,13 @@ function TasksTab({ t, canWrite, locale }: { t: Dict; canWrite: boolean; locale:
         )}
       </CardHeader>
       <CardContent>
-        {tasks.length === 0 ? (
+        {isError ? (
+          <LoadErrorState
+            error={error}
+            onRetry={() => void refetch()}
+            testId="firm-tasks-load-error"
+          />
+        ) : tasks.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t["firm.noTasks"]}</p>
         ) : (
           <Table>
@@ -238,7 +247,9 @@ function TimeTab({ t, clients, canWrite }: { t: Dict; clients: FirmClient[]; can
   const [minutes, setMinutes] = useState("60");
   const [rate, setRate] = useState("");
   const [description, setDescription] = useState("");
-  const { data } = useQuery<{ clients: WipRow[] }>({ queryKey: ["/api/firm/wip"] });
+  const { data, isError, error, refetch } = useQuery<{ clients: WipRow[] }>({
+    queryKey: ["/api/firm/wip"],
+  });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["/api/firm/wip"] });
   const log = useMutation({
     mutationFn: () =>
@@ -321,7 +332,13 @@ function TimeTab({ t, clients, canWrite }: { t: Dict; clients: FirmClient[]; can
           )}
         </CardHeader>
         <CardContent>
-          {rows.length === 0 ? (
+          {isError ? (
+            <LoadErrorState
+              error={error}
+              onRetry={() => void refetch()}
+              testId="firm-wip-load-error"
+            />
+          ) : rows.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t["firm.noWip"]}</p>
           ) : (
             <Table>
@@ -383,7 +400,7 @@ function LettersTab({
   const [fee, setFee] = useState("");
   const [cycle, setCycle] = useState("monthly");
   const key = `/api/firm/clients/${companyId}/engagement-letters`;
-  const { data } = useQuery<{ letters: LetterRow[] }>({
+  const { data, isError, error, refetch } = useQuery<{ letters: LetterRow[] }>({
     queryKey: [key],
     enabled: !!companyId,
   });
@@ -458,7 +475,14 @@ function LettersTab({
             </Button>
           </div>
         )}
-        {companyId && (data?.letters ?? []).length === 0 && (
+        {companyId && isError && (
+          <LoadErrorState
+            error={error}
+            onRetry={() => void refetch()}
+            testId="firm-letters-load-error"
+          />
+        )}
+        {companyId && !isError && (data?.letters ?? []).length === 0 && (
           <p className="text-sm text-muted-foreground">{t["firm.noLetters"]}</p>
         )}
         {(data?.letters ?? []).map((l) => (
@@ -640,7 +664,9 @@ function LinksTab({ t, canWrite }: { t: Dict; canWrite: boolean }) {
   // `canWrite` is the firm.clients.link permission here (the routes require it, not "any write").
   const notify = useNotify(t);
   const [email, setEmail] = useState("");
-  const { data } = useQuery<{ links: LinkRow[] }>({ queryKey: ["/api/firm/client-links"] });
+  const { data, isError, error, refetch } = useQuery<{ links: LinkRow[] }>({
+    queryKey: ["/api/firm/client-links"],
+  });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["/api/firm/client-links"] });
   const invite = useMutation({
     mutationFn: () => apiRequest("POST", "/api/firm/client-links", { inviteeEmail: email }),
@@ -679,7 +705,13 @@ function LinksTab({ t, canWrite }: { t: Dict; canWrite: boolean }) {
             </Button>
           </div>
         )}
-        {links.length === 0 ? (
+        {isError ? (
+          <LoadErrorState
+            error={error}
+            onRetry={() => void refetch()}
+            testId="firm-links-load-error"
+          />
+        ) : links.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t["firm.noLinks"]}</p>
         ) : (
           <Table>
