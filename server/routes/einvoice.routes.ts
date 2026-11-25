@@ -25,6 +25,7 @@ import {
   type Company,
   type Invoice,
 } from "../../shared/schema";
+import { toAsciiDigits } from "../../shared/arabic-text";
 import { getCapability } from "../../shared/capabilities";
 import { EINVOICE_SETTINGS_PAYMENT_MEANS_CODES } from "../../shared/einvoice-payment-means";
 import { zDate, zIbanAE, zText, zUuid } from "../../shared/validators/primitives";
@@ -191,14 +192,24 @@ async function loadInvoiceAndCompany(
 
 const LEGAL_ID_TYPE_CODES = Object.keys(LEGAL_ID_TYPES) as [string, ...string[]];
 
+const peppolSchemeInput = z
+  .string()
+  .transform(toAsciiDigits)
+  .pipe(z.string().regex(/^\d{4}$/, "Scheme must be a 4-digit ISO 6523 ICD"))
+  .nullable()
+  .optional();
+
+function normalizePeppolParticipantId(
+  id: string | null | undefined,
+  scheme: string | null | undefined
+) {
+  return id && (scheme ?? PEPPOL_SCHEME_UAE_TIN) === PEPPOL_SCHEME_UAE_TIN ? toAsciiDigits(id) : id;
+}
+
 const settingsBody = z
   .object({
     peppolParticipantId: zText(64).nullable().optional(),
-    peppolScheme: z
-      .string()
-      .regex(/^\d{4}$/, "Scheme must be a 4-digit ISO 6523 ICD")
-      .nullable()
-      .optional(),
+    peppolScheme: peppolSchemeInput,
     tradeLicenceNo: zText(64).nullable().optional(),
     tradeLicenceAuthority: zText(200).nullable().optional(),
     einvoicePayeeIban: zIbanAE.nullable().optional(),
@@ -208,6 +219,10 @@ const settingsBody = z
     einvoiceGoLiveDate: zDate.nullable().optional(),
   })
   .strict()
+  .transform((v) => ({
+    ...v,
+    peppolParticipantId: normalizePeppolParticipantId(v.peppolParticipantId, v.peppolScheme),
+  }))
   .superRefine((v, ctx) => {
     const scheme = v.peppolScheme ?? PEPPOL_SCHEME_UAE_TIN;
     if (
@@ -227,11 +242,7 @@ type SettingsBody = z.output<typeof settingsBody>;
 const buyerEndpointBody = z
   .object({
     participantId: zText(64).nullable().optional(),
-    scheme: z
-      .string()
-      .regex(/^\d{4}$/)
-      .nullable()
-      .optional(),
+    scheme: peppolSchemeInput,
     legalId: zText(64).nullable().optional(),
     legalIdType: z.enum(LEGAL_ID_TYPE_CODES).nullable().optional(),
     legalAuthority: zText(200).nullable().optional(),
@@ -1078,8 +1089,10 @@ export function registerEInvoiceRoutes(app: Express) {
       }
       const body = validated<BuyerEndpointBody>(req);
       const scheme = body.scheme ?? PEPPOL_SCHEME_UAE_TIN;
-      const endpointIssue = body.participantId
-        ? uaePeppolEndpointIssue(scheme, body.participantId, tinFromTrn(contact.trnNumber?.trim()))
+      const participantId = normalizePeppolParticipantId(body.participantId, scheme);
+      const storedTrn = contact.trnNumber ? toAsciiDigits(contact.trnNumber.trim()) : undefined;
+      const endpointIssue = participantId
+        ? uaePeppolEndpointIssue(scheme, participantId, tinFromTrn(storedTrn))
         : null;
       if (endpointIssue === "invalid") {
         throw new DomainError("VALIDATION_ERROR", 400, {
@@ -1090,7 +1103,7 @@ export function registerEInvoiceRoutes(app: Express) {
         throw new DomainError("EINVOICE_BUYER_ENDPOINT_MISMATCH", 422);
       }
       const row = await upsertBuyerEndpoint(companyId, contactId, {
-        participantId: body.participantId ?? null,
+        participantId: participantId ?? null,
         scheme: body.scheme ?? null,
         legalId: body.legalId ?? null,
         legalIdType: body.legalIdType ?? null,
