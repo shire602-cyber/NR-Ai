@@ -2,7 +2,7 @@ import { T } from "@/components/layout/T";
 import { DatePicker } from "@/components/ui/date-picker";
 import { format } from "date-fns";
 import { dateFnsOptions } from "@/lib/date-locale";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/queryClient";
@@ -163,6 +163,7 @@ export default function CashFlowForecast() {
     error: forecastError,
     refetch: refetchForecast,
     isFetching: isFetchingForecast,
+    fetchStatus: forecastFetchStatus,
   } = useQuery<ForecastData>({
     queryKey: ["cashflow-forecast", companyId, forecastDays, scenario, delay, adjustments],
     queryFn: () => {
@@ -183,10 +184,25 @@ export default function CashFlowForecast() {
     enabled: !!companyId,
   });
 
-  const { data: scheduledItems } = useQuery<ScheduledItem[]>({
+  const {
+    data: scheduledItems,
+    error: scheduledError,
+    refetch: refetchScheduled,
+    fetchStatus: scheduledFetchStatus,
+  } = useQuery<ScheduledItem[]>({
     queryKey: [`/api/companies/${companyId}/cashflow/items`],
     enabled: !!companyId,
   });
+
+  // Ids with a DELETE in flight. The ref is the synchronous guard (two clicks in one tick see
+  // the same render); the state drives the disabled buttons.
+  const removingRef = useRef<Set<string>>(new Set());
+  const [removingIds, setRemovingIds] = useState<ReadonlySet<string>>(new Set());
+  const setRemoving = (id: string, on: boolean) => {
+    if (on) removingRef.current.add(id);
+    else removingRef.current.delete(id);
+    setRemovingIds(new Set(removingRef.current));
+  };
 
   const invalidateForecast = () => {
     queryClient.invalidateQueries({ queryKey: ["cashflow-forecast", companyId] });
@@ -218,7 +234,16 @@ export default function CashFlowForecast() {
   const removeItem = useMutation({
     mutationFn: (id: string) =>
       apiRequest("DELETE", `/api/companies/${companyId}/cashflow/items/${id}`),
-    onSuccess: invalidateForecast,
+    onSuccess: (_data, id) => {
+      // Drop the row immutably so it cannot flash enabled before the refetch lands.
+      queryClient.setQueryData<ScheduledItem[]>(
+        [`/api/companies/${companyId}/cashflow/items`],
+        (old) => (old ? old.filter((it) => it.id !== id) : old)
+      );
+      invalidateForecast();
+    },
+    // Fires for every call (success, error, or after an offline pause resumes).
+    onSettled: (_data, _err, id) => setRemoving(id, false),
     onError: () =>
       toast({
         title: tr(locale, "Could not remove item", "تعذر حذف البند"),
@@ -232,6 +257,7 @@ export default function CashFlowForecast() {
     isLoading: isLoadingHistory,
     error: historyError,
     refetch: refetchHistory,
+    fetchStatus: historyFetchStatus,
   } = useQuery<MonthlyCashHistory[]>({
     queryKey: [`/api/companies/${companyId}/cashflow/history?months=6`],
     enabled: !!companyId,
@@ -310,6 +336,13 @@ export default function CashFlowForecast() {
     totalProjectedInflows === 0 &&
     totalProjectedOutflows === 0;
 
+  // Offline with nothing cached: the query is paused (not loading, not errored). Say so instead
+  // of falling through to an empty state. Cached data, when present, keeps rendering.
+  const forecastPaused = forecastFetchStatus === "paused" && !forecast && !forecastError;
+  const historyPaused = historyFetchStatus === "paused" && !history && !historyError;
+  const scheduledPaused = scheduledFetchStatus === "paused" && !scheduledItems && !scheduledError;
+  const showScheduledError = !!scheduledError || scheduledPaused;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -381,6 +414,8 @@ export default function CashFlowForecast() {
           onRetry={() => refetchForecast()}
           testId="forecast-load-error"
         />
+      ) : forecastPaused ? (
+        <LoadErrorState error={null} onRetry={() => refetchForecast()} testId="forecast-offline" />
       ) : forecastEmpty ? (
         <EmptyState
           icon={Wallet}
@@ -441,8 +476,8 @@ export default function CashFlowForecast() {
       )}
 
       {/* Projection Table */}
-      {!forecastEmpty && !(forecastError && !forecast) && (
-        <Card>
+      {!forecastEmpty && !forecastPaused && !(forecastError && !forecast) && (
+        <Card data-testid="forecast-projections">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Calendar className="h-5 w-5 text-primary" />
@@ -684,6 +719,14 @@ export default function CashFlowForecast() {
               <span>{tr(locale, "times", "مرة")}</span>
             </div>
           )}
+          {showScheduledError && (
+            <LoadErrorState
+              error={scheduledError}
+              onRetry={() => refetchScheduled()}
+              compact
+              testId="scheduled-items-load-error"
+            />
+          )}
           {(scheduledItems ?? []).map((it) => (
             <div
               key={it.id}
@@ -702,7 +745,18 @@ export default function CashFlowForecast() {
                 <span className="tabular-nums">
                   <Money amount={it.amount} currency={"AED"} />
                 </span>
-                <Button size="sm" variant="ghost" onClick={() => removeItem.mutate(it.id)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    // Mark synchronously: a paused (offline) mutation has not run mutationFn yet.
+                    if (removingRef.current.has(it.id)) return;
+                    setRemoving(it.id, true);
+                    removeItem.mutate(it.id);
+                  }}
+                  disabled={removingIds.has(it.id)}
+                  data-testid={`button-remove-forecast-item-${it.id}`}
+                >
                   {tr(locale, "Remove", "حذف")}
                 </Button>
               </span>
@@ -820,6 +874,13 @@ export default function CashFlowForecast() {
               onRetry={() => refetchHistory()}
               compact
               testId="history-load-error"
+            />
+          ) : historyPaused ? (
+            <LoadErrorState
+              error={null}
+              onRetry={() => refetchHistory()}
+              compact
+              testId="history-offline"
             />
           ) : history && history.length > 0 ? (
             <div className="overflow-x-auto">
