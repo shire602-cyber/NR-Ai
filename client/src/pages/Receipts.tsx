@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   type Dispatch,
   type SetStateAction,
 } from "react";
@@ -22,7 +23,7 @@ import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { matchesReceiptSearch } from "@/lib/receiptSearch";
+import { matchesReceiptSearch, receiptCategoryLabel } from "@/lib/receiptSearch";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -56,7 +57,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { clearCsrfToken, withCsrfHeader } from "@/lib/csrf";
-import { parseReceiptOcrText } from "@shared/receipt-ocr-parser";
+import { parseReceiptOcrText, UNKNOWN_RECEIPT_MERCHANT } from "@shared/receipt-ocr-parser";
 import {
   BAND_LABELS,
   bandRequiresReview,
@@ -131,6 +132,10 @@ import {
 } from "@/components/ui/form";
 import { accountDisplayName } from "@/lib/account-name";
 import { parseCalendarDate } from "@/lib/format-date";
+
+function knownReceiptMerchant(merchant?: string | null): string {
+  return merchant === UNKNOWN_RECEIPT_MERCHANT ? "" : (merchant ?? "");
+}
 
 /** Fill in band + the "as extracted" snapshot used to record the reviewer's decision. */
 function withReviewMeta(data: ExtractedData): ExtractedData {
@@ -322,14 +327,15 @@ function ReceiptThumbnail({ companyId, receipt, onPreview }: ReceiptThumbnailPro
     );
   }
 
+  const merchant = knownReceiptMerchant(receipt.merchant);
   return (
     <button
       type="button"
-      onClick={() => onPreview(url, receipt.merchant ?? undefined)}
+      onClick={() => onPreview(url, merchant || undefined)}
       className="group relative h-10 w-10 shrink-0 rounded-md overflow-hidden border hover:ring-2 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       aria-label={
-        receipt.merchant
-          ? formatMessage(translateNow("screens.receiptPreviewFor"), { merchant: receipt.merchant })
+        merchant
+          ? formatMessage(translateNow("screens.receiptPreviewFor"), { merchant })
           : translateNow("screens.receiptPreviewThis")
       }
       data-testid={`receipt-thumbnail-${receipt.id}`}
@@ -384,27 +390,6 @@ function receiptReviewNotes(data: ExtractedData, locale: string, t: Record<strin
   const codes = data.reviewReasonCodes ?? data.validationIssues?.map(({ code }) => code) ?? [];
   const keys = codes.map((code) => OCR_REVIEW_ISSUE_LABELS[code] ?? fallback);
   return keys.length ? Array.from(new Set(keys), (key) => t[key]) : [t[fallback]];
-}
-
-/** Display label for a stored (English) receipt category; unknown categories show as stored. */
-const RECEIPT_CATEGORY_KEYS: Record<string, string> = {
-  "Office Supplies": "pageLabels.officeSupplies",
-  Meals: "pages.receiptsCategoryMeals",
-  Travel: "pages.travel",
-  Utilities: "pages.utilities",
-  Marketing: "pageLabels.marketing",
-  Equipment: "pages.equipment",
-  Communication: "pageLabels.communication",
-  "Professional Services": "pages.professionalServices",
-  Insurance: "pages.insurance",
-  Maintenance: "pages.maintenance",
-  Rent: "pages.receiptsCategoryRent",
-  Other: "pages.other",
-};
-
-function receiptCategoryLabel(t: Record<string, string>, category: string): string {
-  const key = RECEIPT_CATEGORY_KEYS[category];
-  return (key && t[key]) || category;
 }
 
 export default function Receipts() {
@@ -483,6 +468,7 @@ function CompanyReceipts({
   const [manualDraft, setManualDraft] = useState<ManualReceiptDraft | null>(null);
   const manualSource = manualDraft?.source;
   const [receiptSearch, setReceiptSearch] = useState("");
+  const receiptSearchInput = useRef<HTMLInputElement>(null);
   const [imagePreview, setImagePreview] = useState<{ src: string; merchant?: string } | null>(null);
   // R05-19b (S2): split lines / revise a posted receipt / split one upload into receipts.
   const [linesDialog, setLinesDialog] = useState<{
@@ -1111,7 +1097,7 @@ function CompanyReceipts({
         if (response.ok) {
           const result = await response.json();
           parsed = {
-            merchant: result.merchant || translateNow("screens.unknownMerchant"),
+            merchant: result.merchant || UNKNOWN_RECEIPT_MERCHANT,
             date: result.date || new Date().toISOString().split("T")[0],
             invoiceNumber: result.invoiceNumber || null,
             subtotal: result.subtotal || result.amount || 0,
@@ -1234,7 +1220,7 @@ function CompanyReceipts({
 
         parsed = parseReceiptText(tesseractText);
         if (!parsed.merchant && !parsed.total) {
-          parsed.merchant = translateNow("screens.unknownMerchant");
+          parsed.merchant = UNKNOWN_RECEIPT_MERCHANT;
           parsed.total = 0;
         }
 
@@ -1303,7 +1289,7 @@ function CompanyReceipts({
         },
         body: JSON.stringify({
           companyId: origin,
-          description: `${data.merchant || translateNow("screens.unknownMerchant")} - ${data.total} ${data.currency}`,
+          description: `${data.merchant || UNKNOWN_RECEIPT_MERCHANT} - ${data.total} ${data.currency}`,
           amount: data.total,
           currency: data.currency || "AED",
         }),
@@ -1457,7 +1443,7 @@ function CompanyReceipts({
           const { net, vat } = amountsFrom(receipt.data);
           const receiptData = {
             captureId: receipt.id,
-            merchant: receipt.data!.merchant || translateNow("screens.unknownMerchant"),
+            merchant: receipt.data.merchant?.trim() || UNKNOWN_RECEIPT_MERCHANT,
             date: receipt.data!.date || new Date().toISOString().split("T")[0],
             amount: net / 100,
             vatAmount: vat / 100,
@@ -1482,11 +1468,15 @@ function CompanyReceipts({
 
           // Fuzzy duplicate warning from the server: saved, but worth a second look.
           if (Array.isArray(created?.duplicateWarnings) && created.duplicateWarnings.length > 0) {
+            const savedMerchant = created.duplicateWarnings[0].merchant;
+            const merchant = savedMerchant
+              ? knownReceiptMerchant(savedMerchant) || t["screens.unknownMerchant"]
+              : tr("the same merchant", "نفس التاجر");
             toast({
               title: tr("Possible duplicate", "احتمال وجود تكرار"),
               description: tr(
-                `A similar receipt from ${created.duplicateWarnings[0].merchant ?? "the same merchant"} already exists`,
-                `يوجد إيصال مشابه من ${created.duplicateWarnings[0].merchant ?? "نفس التاجر"} بالفعل`
+                `A similar receipt from ${merchant} already exists`,
+                `يوجد إيصال مشابه من ${merchant} بالفعل`
               ),
             });
           }
@@ -1576,7 +1566,7 @@ function CompanyReceipts({
   const filteredReceipts = useMemo(() => {
     if (!receipts || receipts.length === 0) return [];
     const searched = receiptSearch.trim()
-      ? receipts.filter((r: any) => matchesReceiptSearch(r, receiptSearch))
+      ? receipts.filter((r: any) => matchesReceiptSearch(r, receiptSearch, t))
       : receipts;
     if (!dateRange.from && !dateRange.to) return searched;
 
@@ -1602,7 +1592,11 @@ function CompanyReceipts({
       }
       return true;
     });
-  }, [receipts, receiptSearch, dateRange.from, dateRange.to]);
+  }, [receipts, receiptSearch, t, dateRange.from, dateRange.to]);
+
+  const hasReceiptSearch = receiptSearch.trim().length > 0;
+  const hasNoReceiptMatches =
+    hasReceiptSearch && !isLoading && !(receiptsError && !receipts) && !filteredReceipts.length;
 
   function canExportReceipts(origin: string) {
     try {
@@ -2046,7 +2040,7 @@ function CompanyReceipts({
                           onClick={() =>
                             setImagePreview({
                               src: receipt.preview,
-                              merchant: receipt.data?.merchant,
+                              merchant: knownReceiptMerchant(receipt.data?.merchant) || undefined,
                             })
                           }
                           className="group relative block w-24 h-24 rounded-lg overflow-hidden border hover:ring-2 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
@@ -2182,7 +2176,8 @@ function CompanyReceipts({
                               <Input
                                 id={`ocr-merchant-${index}`}
                                 dir="auto"
-                                value={receipt.data.merchant || ""}
+                                value={knownReceiptMerchant(receipt.data.merchant)}
+                                placeholder={t["screens.unknownMerchant"]}
                                 onChange={(e) =>
                                   updateReceiptData(receipt.id, { merchant: e.target.value })
                                 }
@@ -2509,6 +2504,7 @@ function CompanyReceipts({
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Input
+                  ref={receiptSearchInput}
                   type="search"
                   dir="auto"
                   value={receiptSearch}
@@ -2556,6 +2552,9 @@ function CompanyReceipts({
                 </DropdownMenu>
               </div>
             </div>
+            <p className="sr-only" role="status">
+              {hasNoReceiptMatches ? t["screens.receiptsNoMatchTitle"] : ""}
+            </p>
             <Card className="overflow-hidden">
               {isLoading ? (
                 <div className="p-4">
@@ -2583,7 +2582,7 @@ function CompanyReceipts({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline justify-between gap-3">
                           <p dir="auto" className="truncate text-sm font-medium text-foreground">
-                            {receipt.merchant || t["screens.unknownMerchant"]}
+                            {knownReceiptMerchant(receipt.merchant) || t["screens.unknownMerchant"]}
                           </p>
                           <Money
                             amount={Number(receipt.amount || 0)}
@@ -2707,16 +2706,16 @@ function CompanyReceipts({
                 />
               ) : (
                 <EmptyState
-                  icon={receiptSearch.trim() ? Search : Upload}
+                  icon={hasReceiptSearch ? Search : Upload}
                   title={
-                    receiptSearch.trim()
+                    hasReceiptSearch
                       ? t["screens.receiptsNoMatchTitle"]
                       : dateRange.from || dateRange.to
                         ? t["pages.receiptsEmptyRangeTitle"]
                         : t["pages.receiptsEmptyTitle"]
                   }
                   description={
-                    receiptSearch.trim()
+                    hasReceiptSearch
                       ? t["screens.noMatchingAssetsBody"]
                       : dateRange.from || dateRange.to
                         ? t["pages.receiptsEmptyRangeBody"]
@@ -2725,7 +2724,7 @@ function CompanyReceipts({
                           : t["pages.receiptsEmptyBody"]
                   }
                   action={
-                    !(dateRange.from || dateRange.to) && !receiptSearch.trim()
+                    !(dateRange.from || dateRange.to) && !hasReceiptSearch
                       ? {
                           label: t["pages.receiptsUploadReceipt"],
                           icon: Upload,
@@ -2735,10 +2734,13 @@ function CompanyReceipts({
                       : undefined
                   }
                   secondaryAction={
-                    receiptSearch.trim()
+                    hasReceiptSearch
                       ? {
                           label: t["screens.clearSearch"],
-                          onClick: () => setReceiptSearch(""),
+                          onClick: () => {
+                            setReceiptSearch("");
+                            receiptSearchInput.current?.focus();
+                          },
                         }
                       : dateRange.from || dateRange.to
                         ? {
@@ -2820,7 +2822,17 @@ function CompanyReceipts({
                         <T k="pages.merchant" />
                       </FormLabel>
                       <FormControl>
-                        <Input {...field} dir="auto" data-testid="input-edit-merchant" />
+                        <Input
+                          {...field}
+                          dir="auto"
+                          value={knownReceiptMerchant(field.value)}
+                          placeholder={
+                            field.value === UNKNOWN_RECEIPT_MERCHANT
+                              ? t["screens.unknownMerchant"]
+                              : undefined
+                          }
+                          data-testid="input-edit-merchant"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -2968,7 +2980,7 @@ function CompanyReceipts({
                   <div className="flex justify-between items-start">
                     <div>
                       <p dir="auto" className="font-medium">
-                        {transaction.merchant || t["screens.unknownMerchant"]}
+                        {knownReceiptMerchant(transaction.merchant) || t["screens.unknownMerchant"]}
                       </p>
                       <p className="text-sm text-muted-foreground">
                         {transaction.date ? formatDate(transaction.date, locale) : "—"}
@@ -3124,7 +3136,8 @@ function CompanyReceipts({
                 <div className="flex justify-between items-center">
                   <div>
                     <p dir="auto" className="font-medium">
-                      {postingReceipt.merchant || t["screens.unknownMerchant"]}
+                      {knownReceiptMerchant(postingReceipt.merchant) ||
+                        t["screens.unknownMerchant"]}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {postingReceipt.date ? formatDate(postingReceipt.date, locale) : "—"}
