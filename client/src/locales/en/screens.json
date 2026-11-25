@@ -241,5 +241,11 @@
   "screens.entryLines": "Entry lines",
   "screens.statusCredited": "Credited",
   "screens.claimsSubmittedCountPlural": "{count, plural, one {# claim} other {# claims}}",
-  "screens.claimsAcrossCompanyPlural": "{count, plural, one {# claim across the company} other {# claims across the company}}"
+  "screens.claimsAcrossCompanyPlural": "{count, plural, one {# claim across the company} other {# claims across the company}}",
+  "screens.salesEyebrow": "Sales",
+  "screens.searchQuotes": "Search by quote number or customer",
+  "screens.searchCreditNotes": "Search by number, customer or invoice",
+  "screens.searchDebitNotes": "Search by number, supplier or bill",
+  "screens.noMatchingDocuments": "No matching documents",
+  "screens.noMatchingDocumentsBody": "Try a different keyword or clear the search."
 }

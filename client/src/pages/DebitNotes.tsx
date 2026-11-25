@@ -8,6 +8,8 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { Plus, Trash2, Undo2 } from "lucide-react";
+import { DocumentSearchInput } from "@/components/documents/DocumentSearchInput";
+import { matchesDocumentSearch } from "@/lib/document-search";
 import { PageHeader } from "@/components/ui/page-header";
 import { EditorShell } from "@/components/ui/editor-shell";
 import { DataTableCard } from "@/components/ui/data-table";
@@ -124,6 +126,11 @@ function DebitNoteList() {
   });
   const billNumber = (id: string | null) =>
     id ? (bills.find((b) => b.id === id)?.bill_number ?? "—") : "—";
+  const [search, setSearch] = useState("");
+  const searching = search.trim() !== "";
+  const visibleNotes = notes.filter((n) =>
+    matchesDocumentSearch(search, n.debit_note_number, n.vendor_name, billNumber(n.bill_id))
+  );
 
   return (
     <div className="space-y-6">
@@ -144,8 +151,14 @@ function DebitNoteList() {
           </Button>
         }
       />
+      <DocumentSearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder={t["screens.searchDebitNotes"]}
+        testId="input-search-debit-notes"
+      />
       <DataTableCard
-        status={isLoading ? "loading" : notes.length === 0 ? "empty" : "ready"}
+        status={isLoading ? "loading" : visibleNotes.length === 0 ? "empty" : "ready"}
         columnLabels={[
           t["purchases.debitNote.number"],
           t["purchases.supplier.label"],
@@ -153,11 +166,19 @@ function DebitNoteList() {
           t["purchases.debitNote.total"],
         ]}
         testId="debit-notes-table"
-        empty={{
-          icon: Undo2,
-          title: t["purchases.debitNote.emptyTitle"],
-          description: t["purchases.debitNote.emptyBody"],
-        }}
+        empty={
+          searching
+            ? {
+                icon: Undo2,
+                title: t["screens.noMatchingDocuments"],
+                description: t["screens.noMatchingDocumentsBody"],
+              }
+            : {
+                icon: Undo2,
+                title: t["purchases.debitNote.emptyTitle"],
+                description: t["purchases.debitNote.emptyBody"],
+              }
+        }
       >
         <Table className="row-cards">
           <TableHeader>
@@ -175,7 +196,7 @@ function DebitNoteList() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {notes.map((n) => {
+            {visibleNotes.map((n) => {
               const remaining = debitNoteRemaining(n);
               return (
                 <TableRow key={n.id} data-testid={`debit-note-row-${n.id}`}>

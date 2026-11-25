@@ -241,5 +241,11 @@
   "screens.entryLines": "بنود القيد",
   "screens.statusCredited": "مسدّدة بإشعار دائن",
   "screens.claimsSubmittedCountPlural": "{count, plural, zero {لا مطالبات} one {مطالبة واحدة} two {مطالبتان} few {# مطالبات} many {# مطالبة} other {# مطالبة}}",
-  "screens.claimsAcrossCompanyPlural": "{count, plural, zero {لا مطالبات في الشركة} one {مطالبة واحدة في الشركة} two {مطالبتان في الشركة} few {# مطالبات في الشركة} many {# مطالبة في الشركة} other {# مطالبة في الشركة}}"
+  "screens.claimsAcrossCompanyPlural": "{count, plural, zero {لا مطالبات في الشركة} one {مطالبة واحدة في الشركة} two {مطالبتان في الشركة} few {# مطالبات في الشركة} many {# مطالبة في الشركة} other {# مطالبة في الشركة}}",
+  "screens.salesEyebrow": "المبيعات",
+  "screens.searchQuotes": "ابحث برقم العرض أو اسم العميل",
+  "screens.searchCreditNotes": "ابحث بالرقم أو العميل أو الفاتورة",
+  "screens.searchDebitNotes": "ابحث بالرقم أو المورد أو الفاتورة",
+  "screens.noMatchingDocuments": "لا توجد مستندات مطابقة",
+  "screens.noMatchingDocumentsBody": "جرّب كلمة أخرى أو امسح البحث."
 }

@@ -30,6 +30,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/badge";
+import { DocumentSearchInput } from "@/components/documents/DocumentSearchInput";
+import { matchesDocumentSearch } from "@/lib/document-search";
 import { DataTableCard } from "@/components/ui/data-table";
 import { MoneyCell, Money } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
@@ -130,6 +132,11 @@ export default function CreditNotes() {
     queryKey: ["/api/companies", selectedCompanyId, "credit-notes"],
     enabled: !!selectedCompanyId,
   });
+  const [search, setSearch] = useState("");
+  const searching = search.trim() !== "";
+  const visibleCreditNotes = (creditNotes ?? []).filter((c) =>
+    matchesDocumentSearch(search, c.number, c.customerName, c.invoiceNumber)
+  );
 
   const { data: invoices = [] } = useQuery<Invoice[]>({
     queryKey: ["/api/companies", selectedCompanyId, "invoices"],
@@ -745,7 +752,7 @@ export default function CreditNotes() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Sales"
+        eyebrow={t["screens.salesEyebrow"]}
         title={t.creditNotes}
         description={(t as any).creditNotesSubtitle ?? t["creditNotes.viewCreditNotesCreatedFrom"]}
         actions={
@@ -767,23 +774,39 @@ export default function CreditNotes() {
         }
       />
 
+      <DocumentSearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder={t["screens.searchCreditNotes"]}
+        testId="input-search-credit-notes"
+      />
+
       <DataTableCard
-        status={isLoading ? "loading" : creditNotes && creditNotes.length > 0 ? "ready" : "empty"}
+        status={isLoading ? "loading" : visibleCreditNotes.length > 0 ? "ready" : "empty"}
         columnLabels={[t.date, t.total, t.status]}
         testId="credit-notes-table"
-        empty={{
-          icon: FileText,
-          title: (t as any).noCreditNotesYet ?? "No credit notes yet",
-          description:
-            (t as any).creditNotesEmptyDesc ??
-            "Issue a credit note to correct or refund an invoice — it posts to your ledger and VAT return automatically.",
-          action: {
-            label: t["pages.createFromInvoice"],
-            href: "/invoices",
-            permission: "documents.write",
-          },
-          testId: "empty-credit-notes",
-        }}
+        empty={
+          searching
+            ? {
+                icon: FileText,
+                title: t["screens.noMatchingDocuments"],
+                description: t["screens.noMatchingDocumentsBody"],
+                testId: "empty-credit-notes-no-match",
+              }
+            : {
+                icon: FileText,
+                title: (t as any).noCreditNotesYet ?? "No credit notes yet",
+                description:
+                  (t as any).creditNotesEmptyDesc ??
+                  "Issue a credit note to correct or refund an invoice — it posts to your ledger and VAT return automatically.",
+                action: {
+                  label: t["pages.createFromInvoice"],
+                  href: "/invoices",
+                  permission: "documents.write",
+                },
+                testId: "empty-credit-notes",
+              }
+        }
       >
         <Table className="row-cards">
           <TableHeader>
@@ -808,7 +831,7 @@ export default function CreditNotes() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(creditNotes ?? []).map((creditNote) => (
+            {visibleCreditNotes.map((creditNote) => (
               <TableRow key={creditNote.id}>
                 <TableCell data-nowrap="" data-cell="meta" className="font-medium">
                   <MiddleTruncate text={String(creditNote.number ?? "")} />
