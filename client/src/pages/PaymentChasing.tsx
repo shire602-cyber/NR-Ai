@@ -128,6 +128,7 @@ export default function PaymentChasing() {
       queryClient.invalidateQueries({ queryKey: ["/api/chasing/overdue", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/chasing/queue", companyId] });
     },
+    onError: () => toast({ title: tt["invoices.reminders.pauseError"], variant: "destructive" }),
   });
 
   const rows = useMemo(() => overdueQuery.data?.rows ?? [], [overdueQuery.data?.rows]);
@@ -229,6 +230,7 @@ export default function PaymentChasing() {
             queue={queue}
             loading={overdueQuery.isLoading}
             error={overdueQuery.isError}
+            onRetry={() => overdueQuery.refetch()}
             sending={sendOne.isPending}
             onSend={(id) => sendOne.mutate(id)}
             onToggleDoNotChase={(invoiceId, value) => toggleDoNotChase.mutate({ invoiceId, value })}

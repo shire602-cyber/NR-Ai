@@ -553,5 +553,12 @@
   "invoices.deposits.error.paymentAccountId": "Choose the account it was received into.",
   "invoices.deposits.error.invoice": "Choose the invoice to apply it to.",
   "invoices.deposits.noCustomers": "No customers yet. Add one to record a deposit.",
-  "invoices.issued.locked": "This invoice is issued, so its customer, date and lines are locked. You can still change the notes, payment terms, due date and language below. To correct anything else, issue a credit note."
+  "invoices.issued.locked": "This invoice is issued, so its customer, date and lines are locked. You can still change the notes, payment terms, due date and language below. To correct anything else, issue a credit note.",
+  "invoices.reminders.searchPlaceholder": "Search customer or invoice number",
+  "invoices.reminders.searchLabel": "Search overdue invoices",
+  "invoices.reminders.noMatchTitle": "No invoices match your search",
+  "invoices.reminders.noMatchBody": "Try a different customer name or invoice number.",
+  "invoices.reminders.clearSearch": "Clear search",
+  "invoices.reminders.retry": "Try again",
+  "invoices.reminders.pauseError": "Could not update this invoice. Try again."
 }

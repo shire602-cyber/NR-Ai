@@ -553,5 +553,12 @@
   "invoices.deposits.error.paymentAccountId": "اختر الحساب المستلم فيه.",
   "invoices.deposits.error.invoice": "اختر الفاتورة المراد التطبيق عليها.",
   "invoices.deposits.noCustomers": "لا يوجد عملاء بعد. أضف عميلًا لتسجيل دفعة مقدمة.",
-  "invoices.issued.locked": "هذه الفاتورة صادرة، لذلك تم قفل العميل والتاريخ والبنود. ما زال بإمكانك تعديل الملاحظات وشروط الدفع وتاريخ الاستحقاق واللغة أدناه. لتصحيح أي شيء آخر، أصدر إشعارًا دائنًا."
+  "invoices.issued.locked": "هذه الفاتورة صادرة، لذلك تم قفل العميل والتاريخ والبنود. ما زال بإمكانك تعديل الملاحظات وشروط الدفع وتاريخ الاستحقاق واللغة أدناه. لتصحيح أي شيء آخر، أصدر إشعارًا دائنًا.",
+  "invoices.reminders.searchPlaceholder": "ابحث باسم العميل أو رقم الفاتورة",
+  "invoices.reminders.searchLabel": "البحث في الفواتير المتأخرة",
+  "invoices.reminders.noMatchTitle": "لا توجد فواتير مطابقة لبحثك",
+  "invoices.reminders.noMatchBody": "جرّب اسم عميل أو رقم فاتورة مختلفًا.",
+  "invoices.reminders.clearSearch": "مسح البحث",
+  "invoices.reminders.retry": "حاول مرة أخرى",
+  "invoices.reminders.pauseError": "تعذّر تحديث هذه الفاتورة. حاول مرة أخرى."
 }

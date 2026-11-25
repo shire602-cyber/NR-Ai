@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { CheckCircle2, Clock, PauseCircle, PlayCircle } from "lucide-react";
+import { CheckCircle2, Clock, PauseCircle, PlayCircle, SearchX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MoneyCell, Money } from "@/components/ui/money";
 import { RowActions } from "@/components/ui/row-actions";
@@ -20,11 +21,23 @@ import { useTranslation } from "@/lib/i18n";
 import { InvoiceTimelineDialog } from "./dialogs";
 import type { AgingRow } from "./types";
 
+/** Case-insensitive match on customer name or invoice number; blank query keeps every row. */
+export function filterOverdueRows(rows: AgingRow[], query: string): AgingRow[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return rows;
+  return rows.filter(
+    (r) =>
+      (r.invoice.customerName ?? "").toLowerCase().includes(q) ||
+      (r.invoice.number ?? "").toLowerCase().includes(q)
+  );
+}
+
 export function OverdueTab({
   rows,
   queue,
   loading,
   error,
+  onRetry,
   sending,
   onSend,
   onToggleDoNotChase,
@@ -33,6 +46,7 @@ export function OverdueTab({
   queue: AgingRow[];
   loading: boolean;
   error: boolean;
+  onRetry?: () => void;
   sending: boolean;
   onSend: (invoiceId: string) => void;
   onToggleDoNotChase: (invoiceId: string, value: boolean) => void;
@@ -40,7 +54,11 @@ export function OverdueTab({
   const { t } = useTranslation();
   const tt = t as Record<string, string>;
   const [timelineFor, setTimelineFor] = useState<AgingRow["invoice"] | null>(null);
-  const sorted = useMemo(() => [...rows].sort((a, b) => b.daysOverdue - a.daysOverdue), [rows]);
+  const [search, setSearch] = useState("");
+  const sorted = useMemo(
+    () => filterOverdueRows(rows, search).sort((a, b) => b.daysOverdue - a.daysOverdue),
+    [rows, search]
+  );
   // The former "Queue" tab is the Next reminder column: an invoice in the queue is due now.
   const nextById = useMemo(() => new Map(queue.map((q) => [q.invoice.id, q.nextLevel])), [queue]);
   const level = (n: number | undefined) =>
@@ -57,12 +75,20 @@ export function OverdueTab({
   }
   if (error) {
     return (
-      <Card className="p-5 text-small text-danger" role="alert">
-        {tt["invoices.reminders.loadError"]}
+      <Card
+        className="flex flex-wrap items-center justify-between gap-3 p-5 text-small text-danger"
+        role="alert"
+      >
+        <span>{tt["invoices.reminders.loadError"]}</span>
+        {onRetry && (
+          <Button size="sm" variant="outline" onClick={onRetry} data-testid="button-retry-overdue">
+            {tt["invoices.reminders.retry"]}
+          </Button>
+        )}
       </Card>
     );
   }
-  if (sorted.length === 0) {
+  if (rows.length === 0) {
     return (
       <Card>
         <EmptyState
@@ -129,8 +155,38 @@ export function OverdueTab({
     </RowActions>
   );
 
+  const searchBox = (
+    <Input
+      type="search"
+      value={search}
+      onChange={(e) => setSearch(e.target.value)}
+      placeholder={tt["invoices.reminders.searchPlaceholder"]}
+      aria-label={tt["invoices.reminders.searchLabel"]}
+      className="max-w-sm"
+      data-testid="input-search-overdue"
+    />
+  );
+
+  if (sorted.length === 0) {
+    return (
+      <div className="space-y-3">
+        {searchBox}
+        <Card>
+          <EmptyState
+            size="md"
+            icon={SearchX}
+            title={tt["invoices.reminders.noMatchTitle"]}
+            description={tt["invoices.reminders.noMatchBody"]}
+            action={{ label: tt["invoices.reminders.clearSearch"], onClick: () => setSearch("") }}
+          />
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <>
+    <div className="space-y-3">
+      {searchBox}
       {/* Phones: one card per invoice. */}
       <Card className="divide-hairline md:hidden">
         {sorted.map((row) => (
@@ -207,6 +263,6 @@ export function OverdueTab({
       </Card>
 
       <InvoiceTimelineDialog invoice={timelineFor} onClose={() => setTimelineFor(null)} />
-    </>
+    </div>
   );
 }
