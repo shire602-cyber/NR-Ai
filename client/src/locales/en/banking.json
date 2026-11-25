@@ -210,5 +210,11 @@
   "banking.rules.memo": "Memo (optional)",
   "banking.import.statementRecognized": "Statement recognized",
   "banking.common.never": "Never",
-  "banking.import.csvDetails": "CSV file requirements"
+  "banking.import.csvDetails": "CSV file requirements",
+  "banking.noSearchMatchTitle": "No lines match your search",
+  "banking.noSearchMatchDescription": "Try a different description, reference or amount, or clear the search to see every line.",
+  "banking.clearSearch": "Clear search",
+  "banking.suggest.loadError": "Could not load suggested matches. Check your connection and try again.",
+  "banking.report.descriptionAll": "Summary of matched and unmatched transactions across all accounts",
+  "banking.report.descriptionAccount": "Summary of matched and unmatched transactions for {account}"
 }

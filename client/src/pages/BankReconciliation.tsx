@@ -14,7 +14,7 @@ import { Link } from "wouter";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { MatchSuggestions } from "./AutoReconcile";
+import { MatchSuggestions, translateMatchReasons } from "./AutoReconcile";
 import { ReconciliationRulesPanel } from "./ReconciliationRules";
 import {
   Select,
@@ -379,7 +379,12 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     enabled: !!companyId,
   });
 
-  const { data: matchSuggestions, isLoading: isLoadingMatches } = useQuery<MatchSuggestion[]>({
+  const {
+    data: matchSuggestions,
+    isLoading: isLoadingMatches,
+    error: matchesError,
+    refetch: refetchMatches,
+  } = useQuery<MatchSuggestion[]>({
     queryKey: [
       "/api/companies",
       companyId,
@@ -465,7 +470,11 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
       acknowledgeAmbiguity: boolean;
     }) => {
       if (!isActive()) throw new Error(t["banking.import.companyChanged"]);
-      return apiRequest("POST", `/api/companies/${reviewedCompanyId}/bank-statements/import`, payload);
+      return apiRequest(
+        "POST",
+        `/api/companies/${reviewedCompanyId}/bank-statements/import`,
+        payload
+      );
     },
     onSuccess: (data: any, { companyId: reviewedCompanyId }) => {
       queryClient.invalidateQueries({
@@ -969,32 +978,44 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
               columnLabels={[t.date, t.description, t.amount, t.status]}
               empty={
                 // X5 (J1 L6): lines exist but every one is reconciled (and hidden) — say so.
-                allReconciledHidden
+                searchQuery.trim() && (transactions ?? []).length > 0
                   ? {
-                      icon: Check,
-                      title: t["banking.allReconciledTitle"],
-                      description: t["banking.allReconciledDescription"],
+                      icon: Search,
+                      title: t["banking.noSearchMatchTitle"],
+                      description: t["banking.noSearchMatchDescription"],
                       action: {
-                        label: t["pageLabels.showReconciled"],
-                        icon: Eye,
+                        label: t["banking.clearSearch"],
                         variant: "outline",
-                        onClick: () => setShowReconciled(true),
+                        onClick: () => setSearchQuery(""),
                       },
-                      testId: "empty-state-all-reconciled",
+                      testId: "empty-state-bank-search",
                     }
-                  : {
-                      icon: Building2,
-                      title: t["banking.emptyTransactionsTitle"],
-                      description: t["pageLabels.bankCsvWorkflow"],
-                      action: {
-                        label: t["banking.importStatementAction"],
-                        permission: "documents.write",
-                        icon: Upload,
-                        variant: "outline",
-                        onClick: () => setImportDialogOpen(true),
-                      },
-                      testId: "empty-state-bank-transactions",
-                    }
+                  : allReconciledHidden
+                    ? {
+                        icon: Check,
+                        title: t["banking.allReconciledTitle"],
+                        description: t["banking.allReconciledDescription"],
+                        action: {
+                          label: t["pageLabels.showReconciled"],
+                          icon: Eye,
+                          variant: "outline",
+                          onClick: () => setShowReconciled(true),
+                        },
+                        testId: "empty-state-all-reconciled",
+                      }
+                    : {
+                        icon: Building2,
+                        title: t["banking.emptyTransactionsTitle"],
+                        description: t["pageLabels.bankCsvWorkflow"],
+                        action: {
+                          label: t["banking.importStatementAction"],
+                          permission: "documents.write",
+                          icon: Upload,
+                          variant: "outline",
+                          onClick: () => setImportDialogOpen(true),
+                        },
+                        testId: "empty-state-bank-transactions",
+                      }
               }
             >
               {/* Phones: one two-line row per bank line, the next step as a single button. */}
@@ -1293,6 +1314,24 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                     <Skeleton key={i} className="h-20" />
                   ))}
                 </div>
+              ) : matchesError ? (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-destructive/40 p-4 text-center"
+                  data-testid="match-suggestions-error"
+                >
+                  <p className="text-sm font-medium">
+                    <T k="banking.suggest.loadError" />
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => void refetchMatches()}
+                  >
+                    <T k="pageLabels.tryAgain" />
+                  </Button>
+                </div>
               ) : matchSuggestions && matchSuggestions.length > 0 ? (
                 <div className="space-y-2 max-h-[360px] overflow-y-auto pe-1">
                   {matchSuggestions.map((s) => {
@@ -1318,7 +1357,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                             </div>
                             <div className="min-w-0">
                               <p className="text-xs font-medium text-muted-foreground">
-                                {typeCfg.label}
+                                {t[`banking.suggest.type.${s.matchedType}`]}
                               </p>
                               <p className="text-sm font-medium truncate">
                                 {s.matchedDescription || s.matchedId.slice(0, 8)}
@@ -1330,14 +1369,14 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                               {s.matchedAmount != null ? formatCurrency(s.matchedAmount) : "—"}
                             </p>
                             <span className={`text-xs font-medium ${confMeta.color}`}>
-                              {s.confidence}% {confMeta.label}
+                              {s.confidence}% {t[confMeta.labelKey]}
                             </span>
                           </div>
                         </div>
                         <div className="mt-2">
                           <Progress
                             value={s.confidence}
-                            aria-label={`${s.confidence}% ${confMeta.label}`}
+                            aria-label={`${s.confidence}% ${t[confMeta.labelKey]}`}
                             className="h-1"
                           />
                         </div>
@@ -1348,7 +1387,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                         )}
                         {s.matchReason && (
                           <p className="text-xs text-muted-foreground mt-1 italic">
-                            {s.matchReason}
+                            {translateMatchReasons(s.matchReason, t)}
                           </p>
                         )}
                         <div className="mt-2 flex justify-end">
@@ -1742,10 +1781,11 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
               <T k="pageLabels.reconciliationReport" />
             </DialogTitle>
             <DialogDescription>
-              Summary of matched and unmatched transactions
               {selectedBankAccount && bankAccounts?.find((a) => a.id === selectedBankAccount)
-                ? ` for ${bankAccounts.find((a) => a.id === selectedBankAccount)!.nameEn}`
-                : " across all accounts"}
+                ? formatMessage(t["banking.report.descriptionAccount"], {
+                    account: bankAccounts.find((a) => a.id === selectedBankAccount)!.nameEn,
+                  })
+                : t["banking.report.descriptionAll"]}
             </DialogDescription>
           </DialogHeader>
           {isLoadingReport ? (

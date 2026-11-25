@@ -59,6 +59,17 @@ const REASON_KEYS: Record<string, string> = {
   "Entry on this bank account": "banking.suggest.reason.sameAccount",
 };
 
+/** Translate the server's "; "-joined English match reasons into catalog text (unknown phrases are dropped). */
+export function translateMatchReasons(raw: string, tt: Record<string, string>): string {
+  return raw
+    .split(";")
+    .map((r) => r.trim())
+    .filter(Boolean)
+    .map((r) => (REASON_KEYS[r] ? tt[REASON_KEYS[r]] : null))
+    .filter(Boolean)
+    .join(" · ");
+}
+
 function confidenceTone(confidence: number): StatusTone {
   if (confidence >= CONFIDENT) return "success";
   if (confidence >= 60) return "warning";
@@ -137,14 +148,7 @@ export function MatchSuggestions({
     if (result) onSuggestedCount?.(new Set(open.map((m) => m.bankTransactionId)).size);
   }, [result, open, onSuggestedCount]);
   const confident = open.filter((m) => m.confidence >= CONFIDENT);
-  const reasons = (raw: string) =>
-    raw
-      .split(";")
-      .map((r) => r.trim())
-      .filter(Boolean)
-      .map((r) => (REASON_KEYS[r] ? tt[REASON_KEYS[r]] : null))
-      .filter(Boolean)
-      .join(" · ");
+  const reasons = (raw: string) => translateMatchReasons(raw, tt);
 
   if (scan.isPending && !result) {
     return (
