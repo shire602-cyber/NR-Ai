@@ -18,6 +18,28 @@ describe("expense claim search", () => {
     expect(filterClaims(claims, "meeting")[0].claim_number).toBe("EC-003");
     expect(filterClaims(claims, "submitted")[0].claim_number).toBe("EC-002");
   });
+  it("matches every badge label from the Arabic catalog, including approved", () => {
+    const ar: Record<string, string> = JSON.parse(
+      readFileSync("client/src/locales/ar/pages.json", "utf8")
+    );
+    const paidLabel = "مدفوعة"; // CLAIM_COPY.ar.paid in the page
+    const label = (s: string) =>
+      s === "paid" ? paidLabel : s === "unknown" ? undefined : ar[`pages.${s}`];
+    const rows = ["draft", "submitted", "approved", "rejected", "paid", "unknown"].map((s, i) => ({
+      claim_number: `EC-${i}`,
+      title: "x",
+      status: s,
+    }));
+    for (const s of ["draft", "submitted", "approved", "rejected", "paid"]) {
+      const text = label(s) as string;
+      expect(text, s).toBeTruthy();
+      expect(filterClaims(rows, text, label).map((r) => r.status)).toContain(s);
+      // The raw submitted value still matches when the resolver is passed.
+      expect(filterClaims(rows, s, label).map((r) => r.status)).toContain(s);
+    }
+    // Unknown status: no label, still matched by its raw value.
+    expect(filterClaims(rows, "unknown", label).map((r) => r.status)).toEqual(["unknown"]);
+  });
   it("matches Arabic text and returns [] when nothing matches", () => {
     expect(filterClaims(claims, "فندق")).toHaveLength(1);
     expect(filterClaims(claims, "zzz")).toEqual([]);
