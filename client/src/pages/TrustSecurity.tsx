@@ -3,6 +3,7 @@ import { T } from "@/components/layout/T";
 import { MarketingLayout } from "@/components/marketing/MarketingLayout";
 import { Checklist, SectionHeading, Tiles } from "@/components/marketing/Sections";
 import { Link } from "wouter";
+import { SHOW_DATA_RESIDENCY } from "@/components/marketing/phase/home/flags";
 import {
   ArrowRight,
   Clock,
@@ -131,13 +132,16 @@ export default function TrustSecurity() {
                   <Link href="/services">{t["marketing.trustOperatorLink"]}</Link>
                 </dd>
               </div>
-              <div data-testid="trust-data-residency">
-                <dt>{t["marketing.trustResidencyLabel"]}</dt>
-                <dd>
-                  {t["marketing.trustResidencyBody"]}{" "}
-                  <Link href="/privacy">{t["marketing.trustResidencyLink"]}</Link>
-                </dd>
-              </div>
+              {/* Hosting claim stays off until the owner confirms it (flags.ts). */}
+              {SHOW_DATA_RESIDENCY && (
+                <div data-testid="trust-data-residency">
+                  <dt>{t["marketing.trustResidencyLabel"]}</dt>
+                  <dd>
+                    {t["marketing.trustResidencyBody"]}{" "}
+                    <Link href="/privacy">{t["marketing.trustResidencyLink"]}</Link>
+                  </dd>
+                </div>
+              )}
               <div data-testid="trust-support-contact">
                 <dt>{t["marketing.trustSupportLabel"]}</dt>
                 <dd>
