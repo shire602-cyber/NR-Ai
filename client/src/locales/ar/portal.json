@@ -7,6 +7,8 @@
   "portal.loadNotFoundTitle": "تعذّر العثور على هذا",
   "portal.loadNotFoundBody": "قد يكون الرابط قديمًا أو تمت إزالته.",
   "portal.retry": "أعد المحاولة",
+  "portal.retryingTitle": "جارٍ إعادة المحاولة",
+  "portal.retryingBody": "نجلب أحدث البيانات الآن.",
   "portal.offlineTitle": "في انتظار الاتصال",
   "portal.offlineBody": "يبدو أنك غير متصل بالإنترنت. ستُحدَّث هذه الصفحة تلقائيًا عند عودة الاتصال.",
   "portal.pausedTitle": "التحميل متوقف مؤقتًا",

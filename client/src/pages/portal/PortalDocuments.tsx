@@ -67,7 +67,7 @@ export default function PortalDocuments() {
   const documentsQuery = portalQuery("/api/client-portal/documents", supplier);
   const query = useQuery<any[]>({ ...documentsQuery });
   const { data: documents, isPaused, isFetching } = query;
-  const { error, isLoading, retry } = usePortalRetry(documentsQuery.queryKey, query);
+  const { error, isLoading, retryPending, retry } = usePortalRetry(documentsQuery.queryKey, query);
 
   const uploadMutation = useMutation({
     mutationFn: (file: File) => uploadDocument(file, supplier),
@@ -138,6 +138,7 @@ export default function PortalDocuments() {
               error={error}
               paused={isPaused}
               retrying={isFetching}
+              retryPending={retryPending}
               onRetry={retry}
               compact={documents !== undefined}
               resource="documents"

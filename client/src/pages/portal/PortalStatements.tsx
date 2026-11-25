@@ -38,7 +38,7 @@ export default function PortalStatements() {
   const statementsQuery = portalQuery("/api/client-portal/statements", supplier);
   const query = useQuery<Statement>({ ...statementsQuery });
   const { data, isPaused, isFetching } = query;
-  const { error, isLoading, retry } = usePortalRetry(statementsQuery.queryKey, query);
+  const { error, isLoading, retryPending, retry } = usePortalRetry(statementsQuery.queryKey, query);
 
   if (isLoading) {
     return (
@@ -78,13 +78,14 @@ export default function PortalStatements() {
           ) : undefined
         }
       />
-      {error || isPaused ? (
+      {error || isPaused || (retryPending && data === undefined) ? (
         <Card>
           <CardContent className="p-0">
             <PortalLoadNotice
               error={error}
               paused={isPaused}
               retrying={isFetching}
+              retryPending={retryPending}
               onRetry={retry}
               compact={data !== undefined}
               resource="statements"

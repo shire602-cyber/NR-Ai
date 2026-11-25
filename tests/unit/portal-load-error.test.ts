@@ -346,6 +346,159 @@ describe("portal uncached manual retry", () => {
   );
 });
 
+describe("portal manual retry queued while offline", () => {
+  const pages = [
+    ["documents", PortalDocuments, [], "No documents yet"],
+    ["invoices", PortalInvoices, [], "No invoices yet"],
+    ["statements", PortalStatements, emptyStatement, "No transactions yet"],
+  ] as const;
+
+  const retryButton = (resource: string, state: string) => {
+    const notice = byId(`portal-${resource}-${state}`);
+    expect(notice).not.toBeNull();
+    return notice!.querySelector("button")!;
+  };
+  const expectQueued = (button: HTMLButtonElement) => {
+    expect(button.textContent).toBe("Try again");
+    expect(button.disabled).toBe(true);
+    expect(button.hasAttribute("aria-busy")).toBe(false);
+    expect(button.querySelector("svg")?.classList.contains("animate-spin")).toBe(false);
+  };
+  const expectFetching = (button: HTMLButtonElement) => {
+    expect(button.textContent).toBe("Try again");
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    expect(button.querySelector("svg")?.classList.contains("animate-spin")).toBe(true);
+  };
+
+  it.each(pages)(
+    "keeps Try again disabled through offline and focus pauses of a failed %s load",
+    async (resource, Page, data, emptyTitle) => {
+      useI18n.setState({ locale: "en" });
+      const path = `/api/client-portal/${resource}`;
+      const load = vi.fn().mockRejectedValueOnce(new mocks.ApiError("boom", 500));
+      mocks.apiRequest.mockImplementation((_method, requestPath) =>
+        requestPath === path ? load() : Promise.resolve({})
+      );
+      await mount(createElement(PortalAccountScope.Provider, { value: "a1" }, createElement(Page)));
+      await act(async () => onlineManager.setOnline(false));
+      const first = retryButton(resource, "load-error");
+      await act(async () => first.click());
+      await flush();
+
+      let button = retryButton(resource, "offline");
+      expectQueued(button);
+      expect(byId(`portal-${resource}-offline`)?.textContent).toContain("Waiting for a connection");
+      expect(document.body.textContent).not.toContain(emptyTitle);
+
+      // Online again but the window is not focused: still queued, with the focus copy.
+      await act(async () => focusManager.setFocused(false));
+      await act(async () => onlineManager.setOnline(true));
+      await flush();
+      button = retryButton(resource, "paused");
+      expectQueued(button);
+      expect(byId(`portal-${resource}-paused`)?.textContent).toContain("Loading is paused");
+      await act(async () => button.click());
+      expect(load).toHaveBeenCalledTimes(1);
+
+      let finish!: (value: unknown) => void;
+      load.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+      await act(async () => focusManager.setFocused(true));
+      await flush();
+      expect(load).toHaveBeenCalledTimes(2);
+      expectFetching(retryButton(resource, "load-error"));
+      expect(document.body.textContent).not.toContain(emptyTitle);
+
+      await act(async () => finish(data));
+      await flush();
+      expect(byId(`portal-${resource}-load-error`)).toBeNull();
+      expect(document.body.textContent).toContain(emptyTitle);
+    }
+  );
+
+  it.each(pages)(
+    "keeps Try again on screen when a %s retry queued before any result starts fetching",
+    async (resource, Page, data, emptyTitle) => {
+      useI18n.setState({ locale: "en" });
+      const path = `/api/client-portal/${resource}`;
+      let fail!: (reason: unknown) => void;
+      let finish!: (value: unknown) => void;
+      const load = vi.fn(
+        () =>
+          new Promise((resolve, reject) => {
+            finish = resolve;
+            fail = reject;
+          })
+      );
+      mocks.apiRequest.mockImplementation((_method, requestPath) =>
+        requestPath === path ? load() : Promise.resolve({})
+      );
+      onlineManager.setOnline(false);
+      await mount(createElement(PortalAccountScope.Provider, { value: "a1" }, createElement(Page)));
+      const queued = retryButton(resource, "offline");
+      expect(queued.disabled).toBe(false);
+      await act(async () => queued.click());
+      await flush();
+      expectQueued(retryButton(resource, "offline"));
+
+      await act(async () => onlineManager.setOnline(true));
+      await flush();
+      expect(load).toHaveBeenCalledTimes(1);
+      expectFetching(retryButton(resource, "retrying"));
+      expect(document.body.textContent).not.toContain(emptyTitle);
+
+      await act(async () => fail(new mocks.ApiError("boom", 500)));
+      await flush();
+      expect(byId(`portal-${resource}-retrying`)).toBeNull();
+      const again = retryButton(resource, "load-error");
+      expect(again.disabled).toBe(false);
+      expect(document.body.textContent).not.toContain(emptyTitle);
+
+      await act(async () => again.click());
+      await flush();
+      await act(async () => finish(data));
+      await flush();
+      expect(byId(`portal-${resource}-load-error`)).toBeNull();
+      expect(document.body.textContent).toContain(emptyTitle);
+    }
+  );
+
+  it("keeps cached rows and a disabled Try again while a failed refresh retry is queued", async () => {
+    useI18n.setState({ locale: "en" });
+    const path = "/api/client-portal/documents";
+    const rows = [{ id: "d1", name: "Trade license" }];
+    const load = vi.fn().mockResolvedValue(rows);
+    mocks.apiRequest.mockImplementation((_method, requestPath) =>
+      requestPath === path ? load() : Promise.resolve({})
+    );
+    const client = await mount(
+      createElement(
+        PortalAccountScope.Provider,
+        { value: "a1" },
+        createElement(PortalDocuments)
+      )
+    );
+    load.mockRejectedValueOnce(new mocks.ApiError("boom", 500));
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: mocks.portalQuery(path, "a1").queryKey });
+    });
+    await flush();
+
+    await act(async () => onlineManager.setOnline(false));
+    await act(async () => retryButton("documents", "load-error").click());
+    await flush();
+    expectQueued(retryButton("documents", "offline"));
+    expect(container.textContent).toContain("Trade license");
+
+    await act(async () => onlineManager.setOnline(true));
+    await flush();
+    expect(load).toHaveBeenCalledTimes(3);
+    expect(byId("portal-documents-offline")).toBeNull();
+    expect(byId("portal-documents-load-error")).toBeNull();
+    expect(container.textContent).toContain("Trade license");
+  });
+});
+
 describe("portal automatic retry paused while unfocused", () => {
   it.each([
     ["en", "documents", PortalDocuments, [], "No documents yet"],

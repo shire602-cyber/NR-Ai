@@ -10,6 +10,7 @@ export function LoadErrorState({
   error,
   onRetry,
   retrying,
+  disabled,
   scope = "firm",
   title,
   description,
@@ -20,6 +21,7 @@ export function LoadErrorState({
   error: unknown;
   onRetry?: () => void;
   retrying?: boolean;
+  disabled?: boolean;
   scope?: "firm" | "portal";
   /** Overrides the title for the "server" and "offline" causes. */
   title?: string;
@@ -44,6 +46,7 @@ export function LoadErrorState({
       onRetry={retriable ? onRetry : undefined}
       retryLabel={t[`${scope}.retry`]}
       retrying={retrying}
+      disabled={disabled}
       compact={compact}
       className={className}
       testId={testId ?? `load-error-${kind}`}

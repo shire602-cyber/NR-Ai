@@ -160,8 +160,11 @@ export function portalQuery<T = any>(
 ) {
   return {
     queryKey: [path.replace(PORTAL_API_PREFIX, "portal-"), selection] as const,
-    queryFn: (): Promise<T> =>
-      requestWithHeaders("GET", path, undefined, portalRequestHeaders(selection)),
+    // Reading `signal` lets React Query abort the request once its last observer leaves.
+    queryFn: ({ signal }: { signal?: AbortSignal } = {}): Promise<T> =>
+      requestWithHeaders("GET", path, undefined, portalRequestHeaders(selection), undefined, {
+        signal,
+      }),
   };
 }
 
@@ -183,7 +186,7 @@ async function requestWithHeaders(
   data: unknown,
   authHeaders: Record<string, string>,
   extraHeaders?: Record<string, string>,
-  options?: { queueWhenOffline?: boolean; keepalive?: boolean }
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean; signal?: AbortSignal }
 ): Promise<any> {
   const withExtra = (h: Record<string, string>) => (extraHeaders ? { ...h, ...extraHeaders } : h);
   const upperMethod = method.toUpperCase();
@@ -208,6 +211,7 @@ async function requestWithHeaders(
       body,
       credentials: "include",
       keepalive: options?.keepalive,
+      signal: options?.signal,
     });
 
   // If we're offline and this is a mutation, queue it for the service worker

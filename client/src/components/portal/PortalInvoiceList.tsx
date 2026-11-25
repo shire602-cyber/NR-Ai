@@ -83,6 +83,7 @@ export function PortalInvoiceList({
   error,
   paused,
   retrying,
+  retryPending,
   onRetry,
   onlinePayment,
 }: {
@@ -93,6 +94,8 @@ export function PortalInvoiceList({
   /** The request is waiting for the browser to come back online. */
   paused?: boolean;
   retrying?: boolean;
+  /** A manual retry has not settled, fetching or queued. */
+  retryPending?: boolean;
   onRetry?: () => void;
   onlinePayment: boolean;
 }) {
@@ -202,6 +205,7 @@ export function PortalInvoiceList({
               error={error}
               paused={paused}
               retrying={retrying}
+              retryPending={retryPending}
               onRetry={onRetry}
               compact={data !== undefined}
               resource="invoices"

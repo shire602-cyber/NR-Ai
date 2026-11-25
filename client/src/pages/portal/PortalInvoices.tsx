@@ -16,7 +16,7 @@ export default function PortalInvoices() {
   const invoicesQuery = portalQuery("/api/client-portal/invoices", supplier);
   const query = useQuery<PortalInvoice[]>({ ...invoicesQuery, staleTime: 60_000 });
   const { data: invoices, isPaused, isFetching } = query;
-  const { error, isLoading, retry } = usePortalRetry(invoicesQuery.queryKey, query);
+  const { error, isLoading, retryPending, retry } = usePortalRetry(invoicesQuery.queryKey, query);
   const { data: dashboard } = useQuery<{ onlinePayment?: { available: boolean } }>({
     ...portalQuery("/api/client-portal/dashboard", supplier),
     staleTime: 60_000,
@@ -45,6 +45,7 @@ export default function PortalInvoices() {
         error={error}
         paused={isPaused}
         retrying={isFetching}
+        retryPending={retryPending}
         onRetry={retry}
         onlinePayment={dashboard?.onlinePayment?.available === true}
       />

@@ -11,6 +11,8 @@ export interface ErrorStateProps {
   retryLabel?: string;
   /** A retry is in flight: the button spins and cannot be pressed again. */
   retrying?: boolean;
+  /** The button cannot be pressed, without spinning (a retry is queued). */
+  disabled?: boolean;
   compact?: boolean;
   className?: string;
   testId?: string;
@@ -27,6 +29,7 @@ export function ErrorState({
   onRetry,
   retryLabel,
   retrying = false,
+  disabled = false,
   compact = false,
   className,
   testId,
@@ -63,7 +66,7 @@ export function ErrorState({
           size="sm"
           className="mt-5"
           onClick={onRetry}
-          disabled={retrying}
+          disabled={retrying || disabled}
           aria-busy={retrying || undefined}
         >
           <RotateCw className={retrying ? "animate-spin" : undefined} aria-hidden />
