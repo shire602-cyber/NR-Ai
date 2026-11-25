@@ -88,6 +88,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
+import { matchesAssetSearch } from "@/lib/fixed-asset-search";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -236,7 +237,12 @@ export default function FixedAssets() {
 
   // ─── Queries ────────────────────────────────────────────
 
-  const { data: assets = [], isLoading: isLoadingAssets } = useQuery<FixedAsset[]>({
+  const {
+    data: assets = [],
+    isLoading: isLoadingAssets,
+    isError: assetsFailed,
+    refetch: refetchAssets,
+  } = useQuery<FixedAsset[]>({
     queryKey: [`/api/companies/${companyId}/fixed-assets`],
     enabled: !!companyId,
   });
@@ -609,17 +615,10 @@ export default function FixedAssets() {
     }
   };
 
-  const filteredAssets = assets.filter((asset) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      asset.asset_name.toLowerCase().includes(q) ||
-      asset.category.toLowerCase().includes(q) ||
-      (asset.asset_number && asset.asset_number.toLowerCase().includes(q)) ||
-      (asset.serial_number && asset.serial_number.toLowerCase().includes(q)) ||
-      (asset.asset_name_ar && asset.asset_name_ar.includes(q))
-    );
-  });
+  const filteredAssets = assets.filter((asset) =>
+    matchesAssetSearch(asset, searchQuery, t[`forms.asset.cat.${asset.category}`])
+  );
+  const hasSearch = searchQuery.trim().length > 0;
 
   // ─── Loading State ─────────────────────────────────────
 
@@ -716,7 +715,7 @@ export default function FixedAssets() {
 
       {/* Assets */}
       <section className="space-y-3">
-        {(assets.length > 0 || searchQuery) && (
+        {!assetsFailed && (assets.length > 0 || searchQuery) && (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="relative w-full sm:w-80">
               <Search
@@ -737,10 +736,24 @@ export default function FixedAssets() {
           </div>
         )}
         <DataTableCard
-          status={isLoadingAssets ? "loading" : filteredAssets.length === 0 ? "empty" : "ready"}
+          status={
+            isLoadingAssets
+              ? "loading"
+              : assetsFailed && assets.length === 0
+                ? "error"
+                : filteredAssets.length === 0
+                  ? "empty"
+                  : "ready"
+          }
+          error={{
+            title: t["common.loadFailedTitle"],
+            description: t["common.loadFailedBody"],
+            onRetry: () => void refetchAssets(),
+            testId: "error-state-fixed-assets",
+          }}
           columnLabels={[t["pageLabels.assetName"], t["screens.cost"], t["screens.nbv"], t.status]}
           empty={
-            searchQuery
+            hasSearch
               ? {
                   icon: Building2,
                   title: t["screens.noMatchingAssets"],
