@@ -4,8 +4,8 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
 import {
-  getStatusLabel,
   STATUS_NAMESPACES,
+  statusBadgeText,
   statusBadgeVariant,
   statusDotClass,
   statusLabelKey,
@@ -93,7 +93,7 @@ function StatusBadge({ status, label, overdueDays, className, ...props }: Status
   const variant = overdueLabel ? "danger" : statusBadgeVariant(status);
   return (
     <Badge variant={variant} dot className={cn("py-0.5", className)} {...props}>
-      {label ?? overdueLabel ?? getStatusLabel(status, t)}
+      {label ?? overdueLabel ?? statusBadgeText(status, t)}
     </Badge>
   );
 }
