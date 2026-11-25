@@ -36,7 +36,9 @@ export const useI18n = create<I18nStore>()(
         applyDocumentLocale(locale);
         // S5: namespace catalogs are code-split; fetch the new locale's chunks on switch
         // (D1b: only the namespaces the current route needs).
-        void loadLocaleForCurrentRoute(locale);
+        // A failed implicit load must not become an unhandled rejection; consumers that need to
+        // react (e.g. the year-end card) observe the explicit loadNamespaces/loadLocale APIs.
+        loadLocaleForCurrentRoute(locale).catch(() => undefined);
       },
     }),
     {
@@ -377,6 +379,8 @@ const baseT = {
     noData: "No data available",
     error: "Error",
     tryAgain: "Try again",
+    yearEndCloseUnavailable: "The year-end close form could not be loaded.",
+    yearEndCloseReload: "Reload page",
     invoiceDeleted: "Invoice deleted",
     invoiceDeletedDesc: "The invoice has been successfully deleted.",
     deleteFailed: "Delete failed",
@@ -820,6 +824,8 @@ const baseT = {
     noData: "لا توجد بيانات",
     error: "خطأ",
     tryAgain: "حاول مرة أخرى",
+    yearEndCloseUnavailable: "تعذّر تحميل نموذج الإقفال السنوي.",
+    yearEndCloseReload: "إعادة تحميل الصفحة",
     invoiceDeleted: "تم حذف الفاتورة",
     invoiceDeletedDesc: "تم حذف الفاتورة بنجاح.",
     deleteFailed: "فشل الحذف",
@@ -1360,9 +1366,10 @@ export function useTranslation(namespaces?: readonly string[]) {
   const routeReady = hasNamespaces(locale, needed);
   const declaredMissing =
     !!namespaces?.length && !loadedLocales.has(locale) && !hasNamespaces(locale, [...namespaces]);
-  if (declaredMissing) void loadNamespaces(locale, namespaces!);
+  // Implicit loads: swallow rejections here (callers that need them observe loadNamespaces).
+  if (declaredMissing) loadNamespaces(locale, namespaces!).catch(() => undefined);
   if (!routeReady || declaredMissing) {
-    if (!routeReady) void loadLocaleForCurrentRoute(locale);
+    if (!routeReady) loadLocaleForCurrentRoute(locale).catch(() => undefined);
     // While a locale's chunks load after a switch, show the other loaded catalog's copy and
     // never hand out an undefined string.
     return { t: fallbackViews[locale], locale };

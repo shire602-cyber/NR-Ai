@@ -1,4 +1,5 @@
 import { closeChecklistStatus } from "@/pages/month-end/closeStatus";
+import { YearEndFailure } from "@/pages/month-end/YearEndFailure";
 import { errorHeading } from "@/lib/error-heading";
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
@@ -62,7 +63,10 @@ import {
   BookOpen,
 } from "lucide-react";
 
-const YearEndCloseCard = lazy(() => import("@/pages/month-end/YearEndCloseCard"));
+// A rejected chunk import resolves to the failure slot, so the rest of the page stays usable.
+const YearEndCloseCard = lazy(() =>
+  import("@/pages/month-end/YearEndCloseCard").catch(() => ({ default: YearEndFailure }))
+);
 
 // ---- Types ----
 
@@ -1301,7 +1305,7 @@ export default function MonthEndClose() {
 
       {/* Year-end close (R11-14) */}
       {closeSettings?.permissions.canLock && (
-        <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+        <Suspense fallback={<Skeleton className="h-64 w-full" aria-busy="true" />}>
           <YearEndCloseCard
             companyId={companyId}
             fyStartMonth={fyStartMonth}

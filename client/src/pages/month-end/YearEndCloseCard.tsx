@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
 import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
@@ -12,8 +12,9 @@ import { useToast } from "@/hooks/use-toast";
 import { apiFieldErrors, type FieldMessages } from "@/lib/api-field-errors";
 import { errorHeading } from "@/lib/error-heading";
 import { lastEndedFiscalYear } from "@/lib/fiscal-year";
-import { useTranslation } from "@/lib/i18n";
+import { loadNamespaces, useTranslation, type Locale } from "@/lib/i18n";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { YearEndFailure } from "@/pages/month-end/YearEndFailure";
 
 const NAMESPACES = ["yearEndClose", "monthEnd", "launchProof"] as const;
 
@@ -27,8 +28,20 @@ export default function YearEndCloseCard({
   fyStartMonth: number | null | undefined;
   postYearEndClosingEntry: boolean;
 }) {
-  const { t } = useTranslation(NAMESPACES);
+  const { t, locale } = useTranslation(NAMESPACES);
   const { toast } = useToast();
+  // Observe the catalog load for the active locale; a failure for a locale the user has since
+  // left is stale and ignored (failedLocale must equal the current locale to count).
+  const [failedLocale, setFailedLocale] = useState<Locale | null>(null);
+  useEffect(() => {
+    let stale = false;
+    loadNamespaces(locale, NAMESPACES).catch(() => {
+      if (!stale) setFailedLocale(locale);
+    });
+    return () => {
+      stale = true;
+    };
+  }, [locale]);
   // E2 (J3-r2): the default is the company's last ended fiscal year (31 Oct for Nov-Oct), not
   // 31 Dec of last year; a date the user picks wins.
   const [fiscalYearEndPicked, setFiscalYearEnd] = useState<string | null>(null);
@@ -84,9 +97,12 @@ export default function YearEndCloseCard({
   // The yearEndClose/launchProof catalogs lazy-load; until the active locale's copy has landed
   // the fallback view can show the other language or raw keys, so show a skeleton instead.
   // (hasOwnProperty reaches the real catalog through the fallback proxy.)
-  const copyReady = ["yearEndClose.title", "launchProof.askYearEndHint"].every((key) =>
-    Object.prototype.hasOwnProperty.call(t, key)
+  const copyReady = ["yearEndClose.title", "launchProof.askYearEndHint", "monthEnd.reason"].every(
+    (key) => Object.prototype.hasOwnProperty.call(t, key)
   );
+  // A rejected catalog load never lands, so show a localized failure with a real reload
+  // (a failed module fetch can stay cached, so a remount alone would not retry it).
+  if (!copyReady && failedLocale === locale) return <YearEndFailure locale={locale} />;
   if (!copyReady) {
     return (
       <Card data-testid="year-end-close-skeleton" aria-busy="true">
