@@ -561,6 +561,39 @@ describe("EmaraTax approver page /portal/einvoicing-approve/:token", () => {
     expect(byTestId("approve-done")).toBeNull();
   });
 
+  it("a cached approver page stays on screen when the refresh on remount is answered 429", async () => {
+    let getCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        getCalls++;
+        return getCalls === 1
+          ? new Response(JSON.stringify(APPROVER), { status: 200 })
+          : new Response("{}", { status: 429 });
+      })
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const key = ["einvoicing-approve", "tokA"];
+    const { tree } = await mountApprover(client, "/portal/einvoicing-approve/tokA");
+    expect(byTestId("approve-done")).not.toBeNull();
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(tree));
+    // Wait for the automatic refresh to fail with the query's own error, not a timer.
+    await vi.waitFor(() => {
+      expect(client.getQueryState(key)?.fetchStatus).toBe("idle");
+      expect(client.getQueryState(key)?.status).toBe("error");
+    });
+    await settle(2);
+    expect(getCalls).toBe(2);
+    expect(client.getQueryData(key)).toEqual({ kind: "ok", data: APPROVER });
+    expect(byTestId("approve-title")!.textContent).toContain("Al Noor Trading LLC");
+    expect(byTestId("approve-done")).not.toBeNull();
+    expect(byTestId("approve-retry")).toBeNull();
+    expect(text()).not.toContain("Too many attempts");
+  });
+
   /** Runs `fn` with React Query's online manager offline, then restores it. */
   async function whileOffline(fn: () => Promise<void>) {
     const wasOnline = onlineManager.isOnline();
