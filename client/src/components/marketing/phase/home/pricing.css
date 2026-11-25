@@ -85,6 +85,9 @@
   padding-block: clamp(32px, 5vw, 64px);
 }
 .phase-site .mz-price-matrix-scroll {
+  /* Containing block for the table's absolutely positioned screen-reader text (caption,
+     .sr-only cell labels), so it scrolls and clips with the table instead of widening the page. */
+  position: relative;
   overflow-x: auto;
   border: 1px solid var(--mz-line);
   border-radius: var(--mz-radius);
