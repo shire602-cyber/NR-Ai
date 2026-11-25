@@ -106,6 +106,19 @@ const COPY = {
     history: "Import history",
     exportCoa: "Export chart of accounts (CSV)",
     readFailed: "Could not read the file",
+    chooseFile: "Choose a CSV file to enable Preview.",
+    previewing: "Previewing...",
+    validating: "Validating...",
+    committing: "Committing...",
+    noRows:
+      "No data rows were found in this file. Check that it is the right export, that it has a header row and at least one data row, then choose it again.",
+    fixErrors:
+      "Fix the errors in your CSV file, then choose it again and run Preview. The import cannot be committed while errors remain.",
+    readyToValidate: "Next: validate the file against your books.",
+    readyToCommit: "Validation passed. Review the rows above, then commit the import.",
+    historyLoading: "Loading import history...",
+    historyError: "Could not load the import history. Refresh the page to try again.",
+    historyEmpty: "No imports yet. Your previewed and committed files will appear here.",
     status: {
       previewed: "Previewed",
       validated: "Validated",
@@ -160,6 +173,19 @@ const COPY = {
     history: "سجل الاستيراد",
     exportCoa: "تصدير دليل الحسابات (CSV)",
     readFailed: "تعذرت قراءة الملف",
+    chooseFile: "اختر ملف CSV لتفعيل المعاينة.",
+    previewing: "جارٍ المعاينة...",
+    validating: "جارٍ التحقق...",
+    committing: "جارٍ التأكيد...",
+    noRows:
+      "لم نجد أي صفوف بيانات في هذا الملف. تأكد من أنه التصدير الصحيح وأن به صف عناوين وصفًا واحدًا على الأقل من البيانات، ثم اخترْه مرة أخرى.",
+    fixErrors:
+      "صحّح الأخطاء في ملف CSV ثم اخترْه مرة أخرى ونفّذ المعاينة. لا يمكن تأكيد الاستيراد ما دامت الأخطاء قائمة.",
+    readyToValidate: "الخطوة التالية: تحقّق من الملف مقابل دفاترك.",
+    readyToCommit: "اكتمل التحقق بنجاح. راجع الصفوف أعلاه ثم أكّد الاستيراد.",
+    historyLoading: "جارٍ تحميل سجل الاستيراد...",
+    historyError: "تعذر تحميل سجل الاستيراد. حدّث الصفحة وحاول مرة أخرى.",
+    historyEmpty: "لا توجد عمليات استيراد بعد. ستظهر هنا الملفات التي عاينتها أو أكدتها.",
     status: {
       previewed: "تمت المعاينة",
       validated: "تم التحقق",
@@ -273,7 +299,10 @@ export default function ImportWizard() {
   const columns = job?.rows[0] ? Object.keys(job.rows[0]) : [];
 
   const onFile = async (f: File | undefined) => {
-    if (!f) return setFile(null);
+    if (!f) {
+      setJob(null);
+      return setFile(null);
+    }
     try {
       setFile({ name: f.name, text: await f.text() });
       setJob(null);
@@ -362,6 +391,14 @@ export default function ImportWizard() {
                 onClear={() => onFile(undefined)}
               />
             </div>
+            {!file && (
+              <p
+                className="text-sm text-muted-foreground md:col-span-2"
+                data-testid="text-import-choose-file"
+              >
+                {c.chooseFile}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2 md:col-span-2">
               <Button
                 onClick={() => preview.mutate()}
@@ -369,7 +406,7 @@ export default function ImportWizard() {
                 data-testid="button-import-preview"
               >
                 <FileUp className="me-2 h-4 w-4" />
-                {c.preview}
+                {preview.isPending ? c.previewing : c.preview}
               </Button>
               <Button variant="outline" asChild>
                 <a href={apiUrl(`/api/companies/${companyId}/imports/templates/${kind}`)}>
@@ -398,7 +435,7 @@ export default function ImportWizard() {
                 {job.rowCount} {c.rows}
                 {job.summary.mapping
                   ? ` · ${c.mapped}: ${Object.entries(job.summary.mapping)
-                      .map(([k, v]) => `${v} → ${k}`)
+                      .map(([k, v]) => `⁨${v} → ${k}⁩`)
                       .join(", ")}`
                   : ""}
                 {job.summary.unmappedColumns?.length
@@ -433,10 +470,35 @@ export default function ImportWizard() {
               )}
               <IssueList title={c.errors} issues={errors} tone="error" />
               <IssueList title={c.warnings} issues={warnings} tone="warning" />
-              {!errors.length && !warnings.length && (
+              {job.rowCount === 0 && job.rows.length === 0 && (
+                <p
+                  className="flex items-start gap-2 text-sm text-destructive"
+                  data-testid="text-import-no-rows"
+                  role="alert"
+                >
+                  <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  {c.noRows}
+                </p>
+              )}
+              {job.rowCount > 0 && !errors.length && !warnings.length && (
                 <p className="flex items-center gap-2 text-sm text-muted-foreground">
                   <CheckCircle2 className="h-4 w-4 text-success" />
                   {c.noIssues}
+                </p>
+              )}
+              {job.status !== "committed" && (errors.length > 0 || job.rowCount === 0) && (
+                <p className="text-sm font-medium" data-testid="text-import-next-fix">
+                  {c.fixErrors}
+                </p>
+              )}
+              {job.status === "previewed" && job.rowCount > 0 && !errors.length && (
+                <p className="text-sm font-medium" data-testid="text-import-next-validate">
+                  {c.readyToValidate}
+                </p>
+              )}
+              {job.status === "validated" && !errors.length && (
+                <p className="text-sm font-medium" data-testid="text-import-next-commit">
+                  {c.readyToCommit}
                 </p>
               )}
               <div className="flex flex-wrap gap-2">
@@ -446,14 +508,14 @@ export default function ImportWizard() {
                   disabled={job.status === "committed" || validate.isPending}
                   data-testid="button-import-validate"
                 >
-                  {c.validate}
+                  {validate.isPending ? c.validating : c.validate}
                 </Button>
                 <Button
                   onClick={() => commit.mutate()}
                   disabled={job.status !== "validated" || commit.isPending}
                   data-testid="button-import-commit"
                 >
-                  {c.commit}
+                  {commit.isPending ? c.committing : c.commit}
                 </Button>
               </div>
               {job.result && (
@@ -470,6 +532,28 @@ export default function ImportWizard() {
             <CardTitle>{c.history}</CardTitle>
           </CardHeader>
           <CardContent>
+            {history.isLoading && (
+              <p
+                className="text-sm text-muted-foreground"
+                data-testid="text-import-history-loading"
+              >
+                {c.historyLoading}
+              </p>
+            )}
+            {history.isError && (
+              <p
+                className="text-sm text-destructive"
+                role="alert"
+                data-testid="text-import-history-error"
+              >
+                {c.historyError}
+              </p>
+            )}
+            {!history.isLoading && !history.isError && (history.data ?? []).length === 0 && (
+              <p className="text-sm text-muted-foreground" data-testid="text-import-history-empty">
+                {c.historyEmpty}
+              </p>
+            )}
             <Table>
               <TableBody>
                 {(history.data ?? []).map((j) => (
