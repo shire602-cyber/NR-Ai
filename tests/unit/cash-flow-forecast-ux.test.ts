@@ -8,6 +8,7 @@ import {
   apiCalls,
   byTestId,
   click,
+  COMPANY,
   COMPANY_ID,
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
@@ -17,11 +18,14 @@ import {
   rerenderPage,
   resetHarness,
   setFixtures,
+  setWorkspaceCompany,
   unmountPage,
 } from "./helpers/form-harness";
+import { clearActiveCompany, switchActiveCompany } from "../../client/src/lib/activeCompany";
 import CashFlowForecast from "../../client/src/pages/CashFlowForecast";
 
 const FORECAST_URL_PREFIX = `/api/companies/${COMPANY_ID}/cashflow/forecast`;
+const COMPANY_B_ID = "c0000000-0000-4000-8000-000000000002";
 const ITEMS_PATH = `/api/companies/${COMPANY_ID}/cashflow/items`;
 const HISTORY_PATH = `/api/companies/${COMPANY_ID}/cashflow/history?months=6`;
 let failForecast = true;
@@ -29,6 +33,9 @@ let failItems = false;
 let deleteHold: Promise<void> | null = null;
 let deleteFails = false;
 let itemsFetches = 0;
+// When set, the next scheduled-items GET for company A snapshots its data immediately but only
+// resolves once the gate opens (a read that started before a DELETE landed and is still in flight).
+let itemsGate: Promise<void> | null = null;
 // The server-side scheduled items. Fixtures read it through a getter (copies each time) so the
 // GET that follows a successful DELETE reflects the deletion, as the real API does.
 let serverItems: Array<ReturnType<typeof scheduled>> = [];
@@ -112,6 +119,13 @@ vi.mock("../../client/src/lib/queryClient", async () => {
       ...defaults,
       queryFn: async (ctx) => {
         if (String(ctx.queryKey[0]).endsWith("/cashflow/items")) itemsFetches += 1;
+        if (ctx.queryKey[0] === ITEMS_PATH && itemsGate) {
+          const gate = itemsGate;
+          itemsGate = null;
+          const snapshot = await defaultFn(ctx as { queryKey: readonly unknown[] });
+          await gate;
+          return snapshot;
+        }
         if (failItems && String(ctx.queryKey[0]).endsWith("/cashflow/items")) {
           const err = new Error("boom") as Error & { status: number };
           err.status = 500;
@@ -133,6 +147,8 @@ describe("cash flow forecast load failure", () => {
     deleteFails = false;
     serverItems = [];
     itemsFetches = 0;
+    itemsGate = null;
+    clearActiveCompany();
     await unmountPage();
     resetHarness();
     vi.unstubAllGlobals();
@@ -336,6 +352,54 @@ describe("cash flow forecast load failure", () => {
     expect(serverItems.map((it) => it.id)).toEqual(["b"]);
     expect(byTestId("button-remove-forecast-item-a")).toBeNull();
     expect(btn("b").disabled).toBe(false);
+  });
+
+  it("keeps a deleted item gone when company A -> B -> A refetched a pre-delete snapshot mid-DELETE", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    failForecast = false;
+    setFixtures(
+      Object.assign(itemsFixture([scheduled("a"), scheduled("b")]), {
+        [forecastUrl("base")]: forecastBody("base"),
+        [forecastUrl("base").replace(COMPANY_ID, COMPANY_B_ID)]: forecastBody("base"),
+      })
+    );
+    await renderPage(CashFlowForecast);
+    await flush(20);
+    const btn = (id: string) => byTestId(`button-remove-forecast-item-${id}`) as HTMLButtonElement;
+
+    let releaseDelete!: () => void;
+    deleteHold = new Promise<void>((r) => (releaseDelete = r));
+    await click(btn("a"));
+    expect(btn("a").disabled).toBe(true);
+
+    // A -> B: the cache is cleared while the DELETE is still pending.
+    setWorkspaceCompany({ ...COMPANY, id: COMPANY_B_ID });
+    await act(async () => switchActiveCompany(COMPANY_B_ID));
+    await rerenderPage(CashFlowForecast);
+    await flush(20);
+
+    // B -> A: no cached rows, so a fresh GET starts. It snapshots the pre-delete list ([a, b])
+    // and stays in flight through the DELETE success.
+    let releaseRead!: () => void;
+    itemsGate = new Promise<void>((r) => (releaseRead = r));
+    setWorkspaceCompany(COMPANY);
+    await act(async () => switchActiveCompany(COMPANY_ID));
+    await rerenderPage(CashFlowForecast);
+    await flush(20);
+    expect(itemsGate).toBeNull(); // the held read has started
+
+    const fetchesBeforeSuccess = itemsFetches;
+    await act(async () => releaseDelete());
+    await flush(20);
+    expect(serverItems.map((it) => it.id)).toEqual(["b"]);
+    // Now the stale snapshot resolves: it must not bring the deleted row back.
+    await act(async () => releaseRead());
+    await flush(20);
+    expect(byTestId("button-remove-forecast-item-a")).toBeNull();
+    expect(btn("b")).not.toBeNull();
+    expect(btn("b").disabled).toBe(false);
+    // The DELETE success replaced the stale read with a fresh one.
+    expect(itemsFetches).toBeGreaterThan(fetchesBeforeSuccess);
   });
 
   it("shows a scoped, retryable scheduled-items error and keeps the rest of the page", async () => {

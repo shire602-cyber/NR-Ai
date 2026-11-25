@@ -219,9 +219,9 @@ export default function CashFlowForecast() {
       .findAll({ mutationKey: removeKey, exact: true, status: "pending" })
       .some((m) => (m.state.variables as RemoveVars | undefined)?.id === id);
 
-  const invalidateForecast = () => {
-    queryClient.invalidateQueries({ queryKey: ["cashflow-forecast", companyId] });
-    queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/cashflow/items`] });
+  const invalidateForecast = (cid: string | undefined = companyId) => {
+    queryClient.invalidateQueries({ queryKey: ["cashflow-forecast", cid] });
+    queryClient.invalidateQueries({ queryKey: [`/api/companies/${cid}/cashflow/items`] });
   };
 
   const addItem = useMutation({
@@ -250,12 +250,20 @@ export default function CashFlowForecast() {
     mutationKey: removeKey,
     mutationFn: ({ companyId: cid, id }: RemoveVars) =>
       apiRequest("DELETE", `/api/companies/${cid}/cashflow/items/${id}`),
-    onSuccess: (_data, { companyId: cid, id }) => {
+    onSuccess: async (_data, { companyId: cid, id }) => {
+      // A read of this company that started before the DELETE landed (e.g. after an A -> B -> A
+      // switch while the DELETE was pending) may hold a pre-delete snapshot. Invalidation would
+      // reuse that in-flight fetch, so cancel those reads first (scoped to the deleted item's
+      // company only), then filter the cache immutably and invalidate to start a fresh read.
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: [`/api/companies/${cid}/cashflow/items`] }),
+        queryClient.cancelQueries({ queryKey: ["cashflow-forecast", cid] }),
+      ]);
       // Drop the row immutably so it cannot flash enabled before the refetch lands.
       queryClient.setQueryData<ScheduledItem[]>([`/api/companies/${cid}/cashflow/items`], (old) =>
         old ? old.filter((it) => it.id !== id) : old
       );
-      invalidateForecast();
+      invalidateForecast(cid);
     },
     onError: () =>
       toast({
