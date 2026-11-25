@@ -95,6 +95,49 @@ it("includes a VAT-only remaining credit in VAT 201", async () => {
   expect(after.body.reconciliation.hasUnexplainedDifference).toBe(false);
 });
 
+it("reconciles VAT 201 to posted VAT after two credits clear a foreign invoice", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const id = await issue(t, [standard(0.2), standard(0.2)], {
+    currency: "USD",
+    exchangeRate: 3.67,
+  });
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const reportUrl = `${base(t)}/reports/vat-return?from=2026-01-01&to=2026-03-31`;
+  const partial = await t.as.post(url, { date, lines: [standard(0.2)] });
+  expect(partial.status, partial.text).toBe(201);
+  expect(Number(partial.body.vatAmount)).toBe(-0.01);
+  const during = await t.as.get(reportUrl);
+  expect(during.status, during.text).toBe(200);
+  expect(during.body.boxes.box1bDubaiVat).toBe(0.03);
+
+  const remainder = await t.as.post(url, { date });
+  expect(remainder.status, remainder.text).toBe(201);
+  expect(remainder.body.currency).toBe("USD");
+  expect(Number(remainder.body.total)).toBe(-0.21);
+  expect(Number(remainder.body.vatAmount)).toBe(-0.01);
+  const vatLegs = await h.sql(
+    `SELECT jl.debit::float8 AS debit, jl.credit::float8 AS credit
+       FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+       JOIN accounts a ON a.id = jl.account_id
+      WHERE je.company_id = $1 AND je.source = 'invoice' AND a.code = '2020'
+      ORDER BY jl.debit, jl.credit`,
+    [t.company.id]
+  );
+  expect(vatLegs).toEqual([
+    { debit: 0, credit: 0.07 },
+    { debit: 0.03, credit: 0 },
+    { debit: 0.04, credit: 0 },
+  ]);
+  const after = await t.as.get(reportUrl);
+  expect(after.status, after.text).toBe(200);
+  expect(after.body.boxes).toMatchObject({ box1bDubaiVat: 0, box14PayableTax: 0 });
+  expect(after.body.reconciliation).toMatchObject({
+    ledgerOutputVatFils: 0,
+    outputDifferenceFils: 0,
+    hasUnexplainedDifference: false,
+  });
+});
+
 it.each(["inline", "standalone draft"] as const)(
   "rejects a %s credit whose rounded VAT exceeds the invoice VAT",
   async (entryPoint) => {
@@ -193,6 +236,27 @@ it("credits a margin-scheme sale only within its original tax treatment", async 
   expect(after.status, after.text).toBe(200);
   expect(after.body.boxes).toMatchObject({ box1bDubaiAmount: 0, box1bDubaiVat: 0 });
   expect(after.body.reconciliation.hasUnexplainedDifference).toBe(false);
+});
+
+it("rejects an ordinary partial credit that would use the VAT of a margin-scheme line", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const id = await issue(t, [
+    standard(0.09),
+    standard(0.09),
+    { ...standard(105), marginScheme: true, marginPurchaseCost: 84 },
+  ]);
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const rejected = await t.as.post(url, { date, lines: [standard(0.1)] });
+  expect(rejected.status, rejected.text).toBe(409);
+  expect(rejected.body.code).toBe("CREDIT_EXCEEDS_REMAINING");
+
+  const partial = await t.as.post(url, { date, lines: [standard(0.09)] });
+  expect(partial.status, partial.text).toBe(201);
+  expect(Number(partial.body.vatAmount)).toBe(0);
+  const remainder = await t.as.post(url, { date });
+  expect(remainder.status, remainder.text).toBe(201);
+  expect(Number(remainder.body.total)).toBe(-105.09);
+  expect(Number(remainder.body.vatAmount)).toBe(-1);
 });
 
 it("fully settles a foreign invoice after an earlier part payment was reversed at the same rate", async () => {

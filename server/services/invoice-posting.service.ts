@@ -1352,37 +1352,56 @@ async function creditTaxBalances(
     if (!previous) documents.set(document.id, { document, lines: line ? [line] : [] });
     else if (line) previous.lines.push(line);
   }
-  if (candidate) documents.set(candidate.document.id, candidate);
-
   const balances = new Map<
     string,
     {
       supply: SalesDocumentTotals["lines"][number]["classification"];
       net: number;
       margin: number | null;
+      vat: number;
     }
   >();
-  function add(document: Invoice, lines: InvoiceLine[], sign: number) {
+  function add(document: Invoice, lines: InvoiceLine[], sign: number, checkTreatmentVat = false) {
     totalsForStoredDocument(document, lines).lines.forEach((line, i) => {
       const key = `${line.classification.supplyType}:${line.marginFils !== null}`;
       const balance = balances.get(key) ?? {
         supply: line.classification,
         net: 0,
         margin: line.marginFils === null ? null : 0,
+        vat: 0,
       };
       const storedNet = lines[i].netAmount;
       balance.net +=
         sign *
         (storedNet == null ? line.netFils : Math.abs(toFils(storedNet, { rounding: "halfUp" })));
       if (balance.margin !== null) balance.margin += sign * (line.marginFils ?? 0);
+      balance.vat += sign * line.vatFils;
+      if (checkTreatmentVat && line.vatFils > 0 && balance.vat < 0) {
+        throw new DomainError(
+          "CREDIT_EXCEEDS_REMAINING",
+          409,
+          {
+            leg: "vat",
+            supplyType: balance.supply.supplyType,
+            marginScheme: balance.margin !== null,
+          },
+          "Credit VAT exceeds the amount remaining for this tax treatment on the invoice."
+        );
+      }
       balances.set(key, balance);
     });
   }
   add(original, originalLines, 1);
+  // With one taxable treatment the printed VAT already caps that treatment, including
+  // legacy rounding. On mixed sales, line VAT also caps each treatment independently.
+  const mixedTaxableTreatments =
+    [...balances.values()].filter(({ supply }) => supply.chargedVatRate > 0).length > 1;
   for (const { document, lines } of documents.values()) add(document, lines, -1);
+  if (candidate) add(candidate.document, candidate.lines, -1, mixedTaxableTreatments);
 
   const vatFils = sumFils([
     toFils(original.vatAmount, { rounding: "halfUp" }),
+    candidate ? toFils(candidate.document.vatAmount, { rounding: "halfUp" }) : 0,
     ...[...documents.values()].map(({ document }) =>
       toFils(document.vatAmount, { rounding: "halfUp" })
     ),
