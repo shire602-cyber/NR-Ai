@@ -508,8 +508,8 @@ const faqs: readonly [Bilingual, Bilingual][] = [
   [
     ["Who handles e-invoice transmission?", "من يتولى إرسال الفواتير الإلكترونية؟"],
     [
-      "Choose A-Cube or Complyance for your company, then complete setup before testing the exchange.",
-      "اختر A-Cube أو Complyance لشركتك واستكمل الإعداد قبل اختبار التبادل.",
+      "UAE e-invoicing is built in and included on every plan, delivered through an accredited service provider.",
+      "الفوترة الإلكترونية في الإمارات مدمجة ومشمولة في كل باقة، وتتم عبر مزوّد خدمة معتمد.",
     ],
   ],
 ];
@@ -583,17 +583,10 @@ function Home({ base, locale, tr }: { base: string; locale: string; tr: Translat
           <div className="phase-partners">
             <p>
               {tr([
-                "Choose one accredited provider per company",
-                "اختر مزوّد خدمة معتمدًا واحدًا لكل شركة",
+                "Works with UAE accredited e-invoicing providers",
+                "يعمل مع مزوّدي خدمة الفوترة الإلكترونية المعتمدين في الإمارات",
               ])}
             </p>
-            <div>
-              {["A-Cube", "Complyance"].map((provider) => (
-                <bdi key={provider} lang="en" translate="no">
-                  {provider}
-                </bdi>
-              ))}
-            </div>
           </div>
         </div>
       </section>
@@ -831,8 +824,8 @@ export default function PhaseSite() {
                   </p>
                   <p>
                     {tr([
-                      "E-invoicing is available on every plan. Choose A-Cube or Complyance in e-invoicing settings. No provider is preselected. Confirm setup and any separate fees with your chosen provider.",
-                      "تتوفر الفوترة الإلكترونية في جميع الباقات. اختر A-Cube أو Complyance من إعدادات الفوترة الإلكترونية. يبدأ الإعداد دون مزوّد محدّد. تحقّق من خطوات الإعداد وأي رسوم منفصلة مع المزوّد الذي تختاره.",
+                      "UAE e-invoicing is built in and included on every plan, delivered through an accredited service provider. Confirm setup details and any separate fees with the provider.",
+                      "الفوترة الإلكترونية في الإمارات مدمجة ومشمولة في كل باقة، وتتم عبر مزوّد خدمة معتمد. تحقّق من تفاصيل الإعداد وأي رسوم منفصلة مع المزوّد.",
                     ])}
                   </p>
                   <a
