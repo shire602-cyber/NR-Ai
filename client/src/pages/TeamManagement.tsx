@@ -2,7 +2,6 @@ import { T } from "@/components/layout/T";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
-import { Search } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -77,6 +76,7 @@ import {
   BookOpen,
   BadgeCheck,
   RefreshCw,
+  Search,
   Copy,
 } from "lucide-react";
 
@@ -151,49 +151,6 @@ const PERMISSION_LABELS: Record<Permission, Bilingual> = {
   "period.unlock": { en: "Unlock periods", ar: "فتح الفترات المقفلة" },
 };
 
-const COPY = {
-  invitationsTitle: { en: "Pending invitations", ar: "الدعوات المعلقة" },
-  invitationsEmpty: { en: "No pending invitations.", ar: "لا توجد دعوات معلقة." },
-  resend: { en: "Resend", ar: "إعادة الإرسال" },
-  revoke: { en: "Revoke", ar: "إلغاء الدعوة" },
-  expires: { en: "Expires", ar: "تنتهي في" },
-  linkTitle: { en: "Share the invitation link", ar: "شارك رابط الدعوة" },
-  linkBody: {
-    en: "Email delivery is not configured, so no email was sent. Send this link to the invitee yourself; it expires in 7 days.",
-    ar: "لم يتم إعداد البريد الإلكتروني، لذلك لم تُرسل أي رسالة. أرسل هذا الرابط إلى المدعو بنفسك؛ تنتهي صلاحيته خلال 7 أيام.",
-  },
-  copy: { en: "Copy link", ar: "نسخ الرابط" },
-  copied: { en: "Link copied", ar: "تم نسخ الرابط" },
-  sentTitle: { en: "Invitation sent", ar: "تم إرسال الدعوة" },
-  readOnly: {
-    en: "Your role can view the team but not change it.",
-    ar: "يمكن لدورك عرض الفريق دون تعديله.",
-  },
-  yourRole: { en: "Your role", ar: "دورك" },
-  removeTitle: { en: "Remove team member?", ar: "إزالة عضو الفريق؟" },
-  removeBody: {
-    en: "They will lose access to this company immediately.",
-    ar: "سيفقد الوصول إلى هذه الشركة فورًا.",
-  },
-  failed: { en: "Something went wrong", ar: "حدث خطأ ما" },
-  updated: { en: "Role updated", ar: "تم تحديث الدور" },
-  removed: { en: "Member removed", ar: "تمت إزالة العضو" },
-  revoked: { en: "Invitation revoked", ar: "تم إلغاء الدعوة" },
-  loadFailed: {
-    en: "The team could not be loaded. Check your connection and try again.",
-    ar: "تعذّر تحميل الفريق. تحقق من اتصالك وحاول مرة أخرى.",
-  },
-  invitesLoadFailed: {
-    en: "Invitations could not be loaded.",
-    ar: "تعذّر تحميل الدعوات.",
-  },
-  retry: { en: "Retry", ar: "إعادة المحاولة" },
-  search: { en: "Search by name or email", ar: "ابحث بالاسم أو البريد الإلكتروني" },
-  noMatches: { en: "No team members match your search.", ar: "لا يوجد أعضاء يطابقون بحثك." },
-  expiredLabel: { en: "Expired", ar: "منتهية" },
-  emailInvalid: { en: "Enter a valid email address.", ar: "أدخل عنوان بريد إلكتروني صالحًا." },
-} satisfies Record<string, Bilingual>;
-
 export default function TeamManagement() {
   const { t, locale } = useTranslation();
   const tr = (b: Bilingual) => (locale === "ar" ? b.ar : b.en);
@@ -247,14 +204,14 @@ export default function TeamManagement() {
   const invalidateTeam = () =>
     queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "team"] });
   const onError = (error: { message?: string }) =>
-    toast({ variant: "destructive", title: tr(COPY.failed), description: error?.message });
+    toast({ variant: "destructive", title: t["pages.teamFailed"], description: error?.message });
 
   const handleInviteResult = (result: InviteResponse) => {
     invalidateTeam();
     if (result.delivery === "link" && result.inviteUrl) {
       setInviteLink(result.inviteUrl);
     } else {
-      toast({ title: tr(COPY.sentTitle), description: result.invitation.email });
+      toast({ title: t["pages.teamSentTitle"], description: result.invitation.email });
     }
   };
 
@@ -289,7 +246,7 @@ export default function TeamManagement() {
       apiRequest("DELETE", `/api/companies/${companyId}/team/invitations/${invitationId}`),
     onSuccess: () => {
       invalidateTeam();
-      toast({ title: tr(COPY.revoked) });
+      toast({ title: t["pages.teamRevoked"] });
     },
     onError,
   });
@@ -299,7 +256,7 @@ export default function TeamManagement() {
       apiRequest("PUT", `/api/companies/${companyId}/team/${memberId}`, { role }),
     onSuccess: () => {
       invalidateTeam();
-      toast({ title: tr(COPY.updated) });
+      toast({ title: t["pages.teamUpdated"] });
     },
     onError,
   });
@@ -309,7 +266,7 @@ export default function TeamManagement() {
       apiRequest("DELETE", `/api/companies/${companyId}/team/${memberId}`),
     onSuccess: () => {
       invalidateTeam();
-      toast({ title: tr(COPY.removed) });
+      toast({ title: t["pages.teamRemoved"] });
     },
     onError,
   });
@@ -336,7 +293,7 @@ export default function TeamManagement() {
     if (!inviteLink) return;
     try {
       await navigator.clipboard.writeText(inviteLink);
-      toast({ title: tr(COPY.copied) });
+      toast({ title: t["pages.teamCopied"] });
     } catch {
       /* clipboard unavailable: the link stays visible to copy by hand */
     }
@@ -383,8 +340,8 @@ export default function TeamManagement() {
 
         {access && (
           <p className="text-sm text-muted-foreground" data-testid="text-your-role">
-            {tr(COPY.yourRole)}: {access.role ? roleLabel(access.role) : "NRA"}
-            {!canManage && <span className="ms-2">{tr(COPY.readOnly)}</span>}
+            {t["pages.teamYourRole"]}: {access.role ? roleLabel(access.role) : "NRA"}
+            {!canManage && <span className="ms-2">{t["pages.teamReadOnly"]}</span>}
           </p>
         )}
 
@@ -408,14 +365,14 @@ export default function TeamManagement() {
               </div>
             ) : teamError ? (
               <div className="py-12 text-center" role="alert" data-testid="team-load-error">
-                <p className="mb-4 text-muted-foreground">{tr(COPY.loadFailed)}</p>
+                <p className="mb-4 text-muted-foreground">{t["pages.teamLoadFailed"]}</p>
                 <Button
                   variant="outline"
                   onClick={() => refetchTeam()}
                   data-testid="button-retry-team"
                 >
                   <RefreshCw className="w-4 h-4 me-2" />
-                  {tr(COPY.retry)}
+                  {t["pages.teamRetry"]}
                 </Button>
               </div>
             ) : !teamMembers || teamMembers.length === 0 ? (
@@ -435,8 +392,8 @@ export default function TeamManagement() {
                     <Input
                       value={memberSearch}
                       onChange={(e) => setMemberSearch(e.target.value)}
-                      placeholder={tr(COPY.search)}
-                      aria-label={tr(COPY.search)}
+                      placeholder={t["pages.teamSearch"]}
+                      aria-label={t["pages.teamSearch"]}
                       className="ps-10"
                       data-testid="input-search-members"
                     />
@@ -447,7 +404,7 @@ export default function TeamManagement() {
                     className="py-6 text-center text-sm text-muted-foreground"
                     data-testid="members-no-match"
                   >
-                    {tr(COPY.noMatches)}
+                    {t["pages.teamNoMatches"]}
                   </p>
                 )}
                 <div className="-mx-5 -mb-5 divide-hairline border-t border-border/70">
@@ -531,7 +488,7 @@ export default function TeamManagement() {
         {canManage && (
           <Card>
             <CardHeader>
-              <CardTitle>{tr(COPY.invitationsTitle)}</CardTitle>
+              <CardTitle>{t["pages.teamInvitationsTitle"]}</CardTitle>
             </CardHeader>
             <CardContent>
               {invitationsError ? (
@@ -540,13 +497,15 @@ export default function TeamManagement() {
                   className="flex items-center gap-3"
                   data-testid="invitations-load-error"
                 >
-                  <p className="text-sm text-muted-foreground">{tr(COPY.invitesLoadFailed)}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {t["pages.teamInvitesLoadFailed"]}
+                  </p>
                   <Button size="sm" variant="outline" onClick={() => refetchInvitations()}>
-                    {tr(COPY.retry)}
+                    {t["pages.teamRetry"]}
                   </Button>
                 </div>
               ) : pendingInvitations.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{tr(COPY.invitationsEmpty)}</p>
+                <p className="text-sm text-muted-foreground">{t["pages.teamInvitationsEmpty"]}</p>
               ) : (
                 <div className="-mx-5 -mb-5 divide-hairline border-t border-border/70">
                   {pendingInvitations.map((inv) => (
@@ -564,10 +523,10 @@ export default function TeamManagement() {
                           <p className="text-caption text-muted-foreground">
                             {inv.status === "expired" && (
                               <Badge variant="secondary" className="me-2">
-                                {tr(COPY.expiredLabel)}
+                                {t["pages.teamExpiredLabel"]}
                               </Badge>
                             )}
-                            {tr(COPY.expires)}: {formatDate(inv.expiresAt, locale)}
+                            {t["pages.teamExpires"]}: {formatDate(inv.expiresAt, locale)}
                           </p>
                         </div>
                       </div>
@@ -581,7 +540,7 @@ export default function TeamManagement() {
                           data-testid={`button-resend-${inv.id}`}
                         >
                           <RefreshCw className="w-4 h-4 me-1" />
-                          {tr(COPY.resend)}
+                          {t["pages.teamResend"]}
                         </Button>
                         <Button
                           size="sm"
@@ -592,7 +551,7 @@ export default function TeamManagement() {
                           data-testid={`button-revoke-${inv.id}`}
                         >
                           <X className="w-4 h-4 me-1" />
-                          {tr(COPY.revoke)}
+                          {t["pages.teamRevoke"]}
                         </Button>
                       </div>
                     </div>
@@ -620,7 +579,7 @@ export default function TeamManagement() {
                 if (!email || inviteMutation.isPending) return;
                 // In-app message (app language) instead of the browser's own bubble.
                 if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-                  setInviteEmailError(tr(COPY.emailInvalid));
+                  setInviteEmailError(t["pages.teamEmailInvalid"]);
                   return;
                 }
                 setInviteEmailError(null);
@@ -692,14 +651,14 @@ export default function TeamManagement() {
         <Dialog open={!!inviteLink} onOpenChange={(open) => !open && setInviteLink(null)}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>{tr(COPY.linkTitle)}</DialogTitle>
-              <DialogDescription>{tr(COPY.linkBody)}</DialogDescription>
+              <DialogTitle>{t["pages.teamLinkTitle"]}</DialogTitle>
+              <DialogDescription>{t["pages.teamLinkBody"]}</DialogDescription>
             </DialogHeader>
             <Input readOnly value={inviteLink ?? ""} data-testid="input-invite-link" dir="ltr" />
             <DialogFooter>
               <Button onClick={copyInviteLink} data-testid="button-copy-invite-link">
                 <Copy className="w-4 h-4 me-2" />
-                {tr(COPY.copy)}
+                {t["pages.teamCopy"]}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -761,9 +720,9 @@ export default function TeamManagement() {
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{tr(COPY.removeTitle)}</AlertDialogTitle>
+              <AlertDialogTitle>{t["pages.teamRemoveTitle"]}</AlertDialogTitle>
               <AlertDialogDescription>
-                {memberToRemove?.user?.name} — {tr(COPY.removeBody)}
+                {memberToRemove?.user?.name} — {t["pages.teamRemoveBody"]}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
