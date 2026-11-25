@@ -916,36 +916,42 @@ const PROTECTED_CREDIT_ALLOCATION_CHECK = {
 };
 
 const SETTLING_LINKS = `settling_links AS (
-  SELECT invoice_id, deposit_account_id, expires_at, provider_session_id, status FROM payment_links
+  SELECT id, invoice_id, deposit_account_id, expires_at, provider_session_id, status FROM payment_links
   WHERE company_id = $1
     AND ((status = 'active' AND expires_at >= now() AT TIME ZONE 'UTC')
          OR (status IN ('active', 'cancelled', 'expired') AND provider_session_id IS NOT NULL)
          OR status = 'processing')
 )`;
 
-// Resolve the existing account ensureClearingAccount would use, without creating one
-// during preview or restore. If the code is occupied, match defaultPaymentAccountId.
-const EFFECTIVE_SETTLING_LINKS = `${SETTLING_LINKS}, postable_accounts AS (
-  SELECT a.* FROM accounts a
-  WHERE a.company_id = $1 AND a.is_active AND NOT a.is_archived
-    AND NOT EXISTS (
-      SELECT 1 FROM accounts child
-      WHERE child.company_id = $1 AND child.parent_id = a.id AND NOT child.is_archived
+// Match ensureClearingAccount and defaultPaymentAccountId. An unused 1025 would be
+// created on settlement as a postable account with no linked bank currency.
+function effectiveSettlingLinks(state: "live" | "restored"): string {
+  const accounts = `${state}_accounts`;
+  const banks = `${state}_banks`;
+  const postable = `${state}_postable_accounts`;
+  return `${postable} AS (
+    SELECT a.* FROM ${accounts} a
+    WHERE a.is_active AND NOT a.is_archived AND NOT EXISTS (
+      SELECT 1 FROM ${accounts} child WHERE child.parent_id = a.id AND NOT child.is_archived
     )
-), clearing_account AS (
-  SELECT CASE WHEN a.type = 'asset' AND a.sub_type IN ('bank', 'cash') THEN a.id
+  ), ${state}_clearing_account AS (
+    SELECT true AS code_in_use, CASE WHEN a.type = 'asset' AND a.sub_type IN ('bank', 'cash') THEN a.id
     ELSE COALESCE(
-      (SELECT b.gl_account_id FROM bank_accounts b JOIN postable_accounts p ON p.id = b.gl_account_id
-       WHERE b.company_id = $1 AND b.is_active ORDER BY b.created_at, b.id LIMIT 1),
-      (SELECT p.id FROM postable_accounts p WHERE p.type = 'asset' AND p.sub_type IN ('bank', 'cash')
+      (SELECT b.gl_account_id FROM ${banks} b JOIN ${postable} p ON p.id = b.gl_account_id
+       WHERE b.is_active ORDER BY b.created_at, b.id LIMIT 1),
+      (SELECT p.id FROM ${postable} p WHERE p.type = 'asset' AND p.sub_type IN ('bank', 'cash')
        ORDER BY (p.code = '${ACCOUNT_CODES.BANK}') DESC, (p.sub_type = 'bank') DESC, p.code LIMIT 1)
     ) END AS id
-  FROM accounts a WHERE a.company_id = $1 AND a.code = '${CLEARING_ACCOUNT_CODE}'
-), effective_settling_links AS (
-  SELECT invoice_id, COALESCE(deposit_account_id, (SELECT id FROM clearing_account)) AS deposit_account_id,
-    expires_at, provider_session_id, status
-  FROM settling_links
-)`;
+    FROM ${accounts} a WHERE a.code = '${CLEARING_ACCOUNT_CODE}'
+  ), ${state}_settling_links AS (
+    SELECT link.*, COALESCE(link.deposit_account_id, clearing.id) AS effective_deposit_id,
+      ((link.deposit_account_id IS NULL AND clearing.code_in_use IS NULL) OR EXISTS (
+        SELECT 1 FROM ${postable} p WHERE p.id = COALESCE(link.deposit_account_id, clearing.id)
+          AND p.type = 'asset' AND p.sub_type IN ('bank', 'cash')
+      )) AS can_post
+    FROM settling_links link LEFT JOIN ${state}_clearing_account clearing ON link.deposit_account_id IS NULL
+  )`;
+}
 const LINKED_CREDIT_NOTE =
   "t.invoice_type = 'credit_note' AND t.original_invoice_id IN (SELECT invoice_id FROM settling_links)";
 const LINKED_CHECKOUT_INVOICE = "t.invoice_id IN (SELECT invoice_id FROM settling_links)";
@@ -1102,13 +1108,44 @@ function postingLockRanges(months: string, years: string): string {
     WHERE status = 'closed' AND hard_closed = true`;
 }
 
-const LIVE_BANKS = "(SELECT * FROM bank_accounts WHERE company_id = $1)";
+const LIVE_CHECKOUT_ACCOUNTS = `live_accounts AS (SELECT * FROM accounts WHERE company_id = $1),
+  live_banks AS (SELECT * FROM bank_accounts WHERE company_id = $1), ${effectiveSettlingLinks("live")}`;
+
+function checkoutRestoreRows(plan: RestoreTable[], values: string[], mode: RestoreMode) {
+  return (name: string, columns: Record<string, string>) => {
+    if (mode === "replace") return replacementRows(plan, values, name, columns);
+    const live = `SELECT ${Object.keys(columns).join(", ")} FROM ${q(name)} WHERE company_id = $1`;
+    const inserted = mergeInsertRows(plan, values, name, columns);
+    return inserted ? `${live} UNION ALL ${inserted}` : live;
+  };
+}
+
+function restoredCheckoutAccounts(resultingRows: ReturnType<typeof checkoutRestoreRows>): string {
+  const accounts = resultingRows("accounts", {
+    id: "NULL::uuid",
+    code: "NULL::text",
+    type: "NULL::text",
+    sub_type: "NULL::text",
+    is_active: "true",
+    is_archived: "false",
+    parent_id: "NULL::uuid",
+  });
+  const banks = resultingRows("bank_accounts", {
+    id: "NULL::uuid",
+    gl_account_id: "NULL::uuid",
+    currency: "'AED'",
+    is_active: "true",
+    created_at: "now()::timestamp",
+  });
+  return `restored_accounts AS (${accounts}), restored_banks AS (${banks}), ${effectiveSettlingLinks("restored")}`;
+}
+
 const BASE_CURRENCY = "COALESCE(NULLIF(upper(btrim(c.base_currency)), ''), 'AED')";
 
 // Match bankCurrencyOf's account precedence and the payment service's base-currency fallback.
-function checkoutBankCurrency(banks: string): string {
+function checkoutBankCurrency(banks: string, link: string): string {
   return `COALESCE((SELECT NULLIF(upper(b.currency), '') FROM ${banks} b
-    WHERE b.gl_account_id = link.deposit_account_id
+    WHERE b.gl_account_id = ${link}.effective_deposit_id
     ORDER BY b.is_active DESC, b.created_at LIMIT 1), ${BASE_CURRENCY})`;
 }
 
@@ -1122,38 +1159,32 @@ async function restoreBlocksCheckoutPosting(
   const conflicts: string[] = [];
   const hasChanges = (name: string) =>
     plan.some(({ table, rowCount }) => table.name === name && (mode === "replace" || rowCount > 0));
-  const resultingRows = (name: string, columns: Record<string, string>) => {
-    if (mode === "replace") return replacementRows(plan, values, name, columns);
-    const live = `SELECT ${Object.keys(columns).join(", ")} FROM ${q(name)} WHERE company_id = $1`;
-    const inserted = mergeInsertRows(plan, values, name, columns);
-    return inserted ? `${live} UNION ALL ${inserted}` : live;
-  };
-  if (hasChanges("bank_accounts")) {
-    const restoredBanks = resultingRows("bank_accounts", {
-      gl_account_id: "NULL::uuid",
-      currency: "'AED'",
-      is_active: "true",
-      created_at: "now()::timestamp",
-    });
+  const resultingRows = checkoutRestoreRows(plan, values, mode);
+  const accountsChange = hasChanges("accounts");
+  const accountScopes =
+    accountsChange || hasChanges("bank_accounts")
+      ? `, ${LIVE_CHECKOUT_ACCOUNTS}, ${restoredCheckoutAccounts(resultingRows)}`
+      : "";
+  if (accountScopes) {
     conflicts.push(`EXISTS (
-      SELECT 1 FROM effective_settling_links link
+      SELECT 1 FROM restored_settling_links restored
+      JOIN live_settling_links live USING (id)
       JOIN companies c ON c.id = $1
-      WHERE ${checkoutBankCurrency(`(${restoredBanks})`)}
-        IS DISTINCT FROM ${checkoutBankCurrency(LIVE_BANKS)}
+      WHERE (NOT restored.can_post AND (
+        live.can_post OR restored.effective_deposit_id IS DISTINCT FROM live.effective_deposit_id
+      )) OR ${checkoutBankCurrency("restored_banks", "restored")}
+        IS DISTINCT FROM ${checkoutBankCurrency("live_banks", "live")}
     )`);
   }
-  if (hasChanges("accounts")) {
-    const columns = { parent_id: "NULL::uuid", is_archived: "false" };
-    const children =
-      mode === "replace"
-        ? replacementRows(plan, values, "accounts", columns)
-        : mergeInsertRows(plan, values, "accounts", columns);
+  if (accountsChange) {
+    // Preserve the child-row guard even if the deposit was already ineligible.
     values.push(`{${HEADER_SUB_TYPES.join(",")}}`);
     conflicts.push(`EXISTS (
-      SELECT 1 FROM effective_settling_links link
-      JOIN accounts parent ON parent.id = link.deposit_account_id AND parent.company_id = $1
-      JOIN (${children}) child ON child.parent_id = parent.id
+      SELECT 1 FROM restored_settling_links link
+      JOIN restored_accounts parent ON parent.id = link.effective_deposit_id
+      JOIN restored_accounts child ON child.parent_id = parent.id
       WHERE parent.sub_type = ANY($${values.length}::text[]) AND child.is_archived = false
+        ${mode === "merge" ? "AND NOT EXISTS (SELECT 1 FROM live_accounts a WHERE a.id = child.id)" : ""}
     )`);
   }
   if (hasChanges("month_end_close") || hasChanges("fiscal_year_closes")) {
@@ -1192,7 +1223,7 @@ async function restoreBlocksCheckoutPosting(
   }
   if (!conflicts.length) return false;
   const { rows } = await client.query(
-    `WITH ${EFFECTIVE_SETTLING_LINKS} SELECT 1 WHERE ${conflicts.join(" OR ")}`,
+    `WITH ${SETTLING_LINKS}${accountScopes} SELECT 1 WHERE ${conflicts.join(" OR ")}`,
     values
   );
   return rows.length > 0;
@@ -1205,6 +1236,7 @@ async function replaceRemovesCheckoutBankRate(
 ): Promise<boolean> {
   if (!plan.some(({ table }) => table.name === "exchange_rates")) return false;
   const values = [companyId];
+  const accountScopes = restoredCheckoutAccounts(checkoutRestoreRows(plan, values, "replace"));
   const restoredRates = replacementRows(plan, values, "exchange_rates", {
     base_currency: "'AED'",
     target_currency: "NULL::text",
@@ -1220,19 +1252,19 @@ async function replaceRemovesCheckoutBankRate(
         OR (r.target_currency, r.base_currency) = (btrim(p.bank_currency), p.base_currency)))`;
   const firstReceiptDate = `GREATEST(live.rate_date, (now() AT TIME ZONE 'UTC')::date)`;
   const { rows } = await client.query<{ bank_currency: string; base_currency: string }>(
-    `WITH ${EFFECTIVE_SETTLING_LINKS},
+    `WITH ${SETTLING_LINKS}, ${accountScopes},
     system_rates AS (SELECT * FROM exchange_rates WHERE company_id IS NULL),
     live_rates AS (SELECT * FROM exchange_rates WHERE company_id = $1 UNION ALL SELECT * FROM system_rates),
     restored_rates AS (
       ${restoredRates}
       UNION ALL SELECT base_currency, target_currency, date, legacy_unscoped, rate_type FROM system_rates
     ), checkout_pairs AS (
-      SELECT ${checkoutBankCurrency(LIVE_BANKS)} AS bank_currency,
+      SELECT ${checkoutBankCurrency("restored_banks", "link")} AS bank_currency,
         ${BASE_CURRENCY} AS base_currency,
         COALESCE(NULLIF(upper(btrim(i.currency)), ''), ${BASE_CURRENCY}) AS document_currency,
         CASE WHEN link.provider_session_id IS NULL AND link.status <> 'processing'
           THEN link.expires_at::date END AS last_receipt_date
-      FROM effective_settling_links link
+      FROM restored_settling_links link
       JOIN invoices i ON i.id = link.invoice_id AND i.company_id = $1
       JOIN companies c ON c.id = $1
     )
@@ -1280,7 +1312,7 @@ async function validateReplaceExternalState(
       client,
       companyId,
       plan,
-      `${EFFECTIVE_SETTLING_LINKS}, protected_credit_notes AS (
+      `${SETTLING_LINKS}, ${LIVE_CHECKOUT_ACCOUNTS}, protected_credit_notes AS (
         SELECT id FROM invoices t WHERE company_id = $1 AND ${LINKED_CREDIT_NOTE}
       ), protected_legacy_credit_notes AS (
         SELECT id, journal_entry_id FROM credit_notes t WHERE company_id = $1
@@ -1315,7 +1347,7 @@ async function validateReplaceExternalState(
         },
         {
           table: "accounts",
-          where: "t.id IN (SELECT deposit_account_id FROM effective_settling_links)",
+          where: "t.id IN (SELECT effective_deposit_id FROM live_settling_links)",
           columns: ["type", "sub_type", "is_active", "is_archived"],
         },
         {

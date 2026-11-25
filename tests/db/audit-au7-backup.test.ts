@@ -728,7 +728,7 @@ describe("AU7 accounting backup integrity", () => {
     expect(await h.sql("SELECT id FROM bank_accounts WHERE id = $1", [bank.id])).toEqual([]);
   });
 
-  it.each(["configured account", "clearing fallback"])(
+  it.each(["configured account", "clearing fallback", "changed clearing fallback"])(
     "keeps the spot rate that a checkout receipt needs for its %s",
     async (deposit) => {
       const t = await h.createTenant();
@@ -744,13 +744,33 @@ describe("AU7 accounting backup integrity", () => {
        VALUES ($1, 'Checkout deposits', 'Other', 'EUR', $2)`,
         [t.company.id, accountId]
       );
+      let preferredBankId: string | undefined;
+      if (deposit === "changed clearing fallback") {
+        await h.sql(
+          `INSERT INTO accounts (company_id, code, name_en, type, sub_type)
+           VALUES ($1, '1025', 'Occupied clearing code', 'expense', 'operating_expense')`,
+          [t.company.id]
+        );
+        const cash = await accountByCode(t, "1010");
+        const [preferredBank] = await h.sql<{ id: string }>(
+          `INSERT INTO bank_accounts (company_id, name_en, bank_name, currency, gl_account_id, created_at)
+           VALUES ($1, 'Preferred deposits', 'Other', 'EUR', $2, now() - interval '1 day') RETURNING id`,
+          [t.company.id, cash.id]
+        );
+        preferredBankId = preferredBank.id;
+        expect(await ensureClearingAccount(t.company.id)).toBe(cash.id);
+      }
       const before = await snapshot(t);
+      if (preferredBankId) {
+        await h.sql("DELETE FROM bank_accounts WHERE id = $1", [preferredBankId]);
+        expect(await ensureClearingAccount(t.company.id)).toBe(accountId);
+      }
       const [rate] = await h.sql<{ id: string }>(
         `INSERT INTO exchange_rates (company_id, base_currency, target_currency, rate_type, rate, date)
        VALUES ($1, 'EUR', 'AED', 'spot', 4, now() AT TIME ZONE 'UTC') RETURNING id`,
         [t.company.id]
       );
-      if (deposit === "clearing fallback") {
+      if (deposit !== "configured account") {
         await startCheckoutWithClearingFallback(t, invoiceId);
       } else {
         await startCheckout(t, invoiceId, accountId, 12000);
@@ -773,9 +793,78 @@ describe("AU7 accounting backup integrity", () => {
           expect(response.status, response.text).toBe(200);
         }
         expect(await rateRows()).toEqual([]);
+        if (preferredBankId) {
+          expect(await ensureClearingAccount(t.company.id)).toBe(
+            (await accountByCode(t, "1010")).id
+          );
+        }
       } finally {
         await h.sql("DELETE FROM exchange_rates WHERE id = $1", [systemRate.id]);
       }
+    }
+  );
+
+  it.each(["merge", "replace"] as const)(
+    "rejects %s when a restored clearing account would be a header for a null-deposit checkout",
+    async (mode) => {
+      const t = await h.createTenant();
+      const invoiceId = await draftInvoice(t);
+      await issueInvoice(t, invoiceId);
+      const before = await snapshot(t);
+      const { ensureClearingAccount } = await import("../../server/services/payments");
+      const parentId = await ensureClearingAccount(t.company.id);
+      await h.sql(
+        `INSERT INTO accounts (company_id, code, name_en, type, sub_type, parent_id)
+         VALUES ($1, '1031', 'Clearing sub-account', 'asset', 'bank', $2)`,
+        [t.company.id, parentId]
+      );
+      const withHeader = await snapshot(t);
+      const restored = await replace(t, before);
+      expect(restored.status, restored.text).toBe(200);
+      await startCheckoutWithClearingFallback(t, invoiceId);
+
+      // With 1025 still unused, the webhook can create a postable clearing account.
+      for (const response of [
+        await t.as.post(`/api/backups/${before.id}/restore-preview`, { mode }),
+        await restore(t, before, mode),
+      ]) {
+        expect(response.status, response.text).toBe(200);
+      }
+      await expectRestoreConflict(t, withHeader, "payment_links", mode);
+      expect(
+        await h.sql("SELECT id FROM accounts WHERE company_id = $1 AND code IN ('1025', '1031')", [
+          t.company.id,
+        ])
+      ).toEqual([]);
+    }
+  );
+
+  it.each(["merge", "replace"] as const)(
+    "rejects %s when a restored bank changes the fallback deposit currency",
+    async (mode) => {
+      const t = await h.createTenant();
+      const invoiceId = await draftInvoice(t);
+      await issueInvoice(t, invoiceId);
+      await h.sql(
+        `INSERT INTO accounts (company_id, code, name_en, type, sub_type)
+         VALUES ($1, '1025', 'Occupied clearing code', 'expense', 'operating_expense')`,
+        [t.company.id]
+      );
+      const { ensureClearingAccount } = await import("../../server/services/payments");
+      expect(await ensureClearingAccount(t.company.id)).toBe((await accountByCode(t, "1020")).id);
+      const cash = await accountByCode(t, "1010");
+      const [bank] = await h.sql<{ id: string }>(
+        `INSERT INTO bank_accounts (company_id, name_en, bank_name, currency, gl_account_id)
+         VALUES ($1, 'Checkout deposits', 'Other', 'EUR', $2) RETURNING id`,
+        [t.company.id, cash.id]
+      );
+      expect(await ensureClearingAccount(t.company.id)).toBe(cash.id);
+      const withBank = await snapshot(t);
+      await h.sql("DELETE FROM bank_accounts WHERE id = $1", [bank.id]);
+      await startCheckoutWithClearingFallback(t, invoiceId);
+
+      await expectRestoreConflict(t, withBank, "payment_links", mode);
+      expect(await h.sql("SELECT id FROM bank_accounts WHERE id = $1", [bank.id])).toEqual([]);
     }
   );
 
