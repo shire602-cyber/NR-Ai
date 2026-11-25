@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildDraftBody,
   isEmptyCalculation,
+  loadFailure,
   returnsListState,
 } from "../../client/src/pages/corporateTax/screenState";
 
@@ -13,7 +15,41 @@ describe("corporate tax screen state", () => {
     expect(returnsListState({ status: "error", fetchStatus: "idle", data: undefined })).toBe(
       "error"
     );
-    expect(returnsListState({ status: "error", fetchStatus: "idle", data: [] })).toBe("error");
+    // A failed refresh of a cached empty list is neither a load error nor a confirmed empty list.
+    expect(returnsListState({ status: "error", fetchStatus: "idle", data: [] })).toBe("idle");
+  });
+
+  it("separates a failed first load from a failed refresh of cached data", () => {
+    expect(loadFailure({ status: "error", data: undefined })).toBe("initial");
+    expect(loadFailure({ status: "error", data: [] })).toBe("refresh");
+    expect(loadFailure({ status: "error", data: [{}] })).toBe("refresh");
+    expect(loadFailure({ status: "success", data: [] })).toBeNull();
+    expect(loadFailure({ status: "pending", data: undefined })).toBeNull();
+  });
+
+  it("builds a draft only from a calculation or typed workpaper rows", () => {
+    const base = {
+      periodStart: "2026-01-01",
+      periodEnd: "2026-12-31",
+      calculation: null,
+      manual: null,
+      deductions: 0,
+      rows: [],
+      notes: "",
+    };
+    const totals = { totalRevenue: 100, totalExpenses: 40 };
+    expect(buildDraftBody(base)).toBeNull();
+    expect(buildDraftBody({ ...base, calculation: totals, periodEnd: "" })).toBeNull();
+    expect(buildDraftBody({ ...base, calculation: totals })).toMatchObject({
+      ...totals,
+      workpaper: { source: "journal_calculation", rows: [] },
+    });
+    expect(
+      buildDraftBody({ ...base, manual: totals, rows: [{ amount: 100 }, { amount: 0 }] })
+    ).toMatchObject({
+      ...totals,
+      workpaper: { source: "manual_workpaper", rows: [{ amount: 100 }] },
+    });
   });
 
   it("distinguishes an active initial fetch from a paused one", () => {

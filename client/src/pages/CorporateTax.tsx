@@ -1,5 +1,11 @@
 import { T } from "@/components/layout/T";
-import { isEmptyCalculation, returnsListState } from "@/pages/corporateTax/screenState";
+import {
+  buildDraftBody,
+  isEmptyCalculation,
+  loadFailure,
+  returnsListState,
+} from "@/pages/corporateTax/screenState";
+import { useCtCalculation } from "@/pages/corporateTax/useCtCalculation";
 import {
   Select,
   SelectContent,
@@ -341,7 +347,36 @@ export default function CorporateTax() {
     setFiledOn(todayIso);
   };
   const [deductions, setDeductions] = useState(0);
-  const [calculation, setCalculation] = useState<CalculationResult | null>(null);
+  const {
+    calculation,
+    calculate,
+    reset: resetCalculation,
+    isPending: isCalculating,
+  } = useCtCalculation<CalculationResult>({
+    companyId,
+    periodStart,
+    periodEnd,
+    request: (requested) =>
+      apiRequest(
+        "GET",
+        `/api/companies/${requested.companyId}/corporate-tax/calculate?periodStart=${requested.periodStart}&periodEnd=${requested.periodEnd}`
+      ),
+    onSuccess: (data) => {
+      toast({
+        title: translateNow("toasts.calculationComplete"),
+        description: formatMessage(translateNow("toasts.processedJournalEntries"), {
+          journalEntriesProcessed: data.journalEntriesProcessed,
+        }),
+      });
+    },
+    onError: (error) => {
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.calculationFailed"),
+        description: error?.message || translateNow("toasts.failedToCalculateCorporateTax"),
+      });
+    },
+  });
   const [notes, setNotes] = useState("");
   const [openNotes, setOpenNotes] = useState<Set<string>>(() => new Set());
   const [workpaperRows, setWorkpaperRows] = useState<CorporateTaxWorkpaperRow[]>(() =>
@@ -358,6 +393,7 @@ export default function CorporateTax() {
     enabled: !!companyId,
   });
   const returnsState = returnsListState(returnsQuery);
+  const returnsFailure = loadFailure(returnsQuery);
   const taxReturns = returnsQuery.data ?? [];
 
   const workpaperTotals = useMemo(() => {
@@ -406,55 +442,10 @@ export default function CorporateTax() {
     };
   })();
 
-  // Calculate mutation
-  const calculateMutation = useMutation({
-    mutationFn: () =>
-      apiRequest(
-        "GET",
-        `/api/companies/${companyId}/corporate-tax/calculate?periodStart=${periodStart}&periodEnd=${periodEnd}`
-      ),
-    onSuccess: (data: CalculationResult) => {
-      setCalculation(data);
-      toast({
-        title: translateNow("toasts.calculationComplete"),
-        description: formatMessage(translateNow("toasts.processedJournalEntries"), {
-          journalEntriesProcessed: data.journalEntriesProcessed,
-        }),
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: translateNow("toasts.calculationFailed"),
-        description: error?.message || translateNow("toasts.failedToCalculateCorporateTax"),
-      });
-    },
-  });
-
   // Save as draft mutation
   const saveDraftMutation = useMutation({
-    mutationFn: () => {
-      if (!adjustedCalculation) throw new Error("No corporate tax workpaper to save");
-      const workpaper: CorporateTaxWorkpaper = {
-        source: hasManualWorkpaper ? "manual_workpaper" : "journal_calculation",
-        rows: workpaperRows.filter((row) => row.amount > 0 || row.notes?.trim()),
-        totalRevenue: adjustedCalculation.totalRevenue,
-        totalExpenses: adjustedCalculation.totalExpenses,
-        profitOrLoss: adjustedCalculation.totalRevenue - adjustedCalculation.totalExpenses,
-        preparedAt: new Date().toISOString(),
-      };
-
-      // R08-09: the server computes taxable income, rate and liability.
-      return apiRequest("POST", `/api/companies/${companyId}/corporate-tax/returns`, {
-        taxPeriodStart: periodStart,
-        taxPeriodEnd: periodEnd,
-        totalRevenue: adjustedCalculation.totalRevenue,
-        totalExpenses: adjustedCalculation.totalExpenses,
-        totalDeductions: deductions,
-        workpaper: { source: workpaper.source, rows: workpaper.rows },
-        ...(notes ? { notes } : {}),
-      });
-    },
+    mutationFn: (body: NonNullable<ReturnType<typeof buildDraftBody>>) =>
+      apiRequest("POST", `/api/companies/${companyId}/corporate-tax/returns`, body),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
@@ -463,7 +454,7 @@ export default function CorporateTax() {
         title: translateNow("toasts.draftSaved"),
         description: translateNow("toasts.corporateTaxReturnSavedAsDraft"),
       });
-      setCalculation(null);
+      resetCalculation();
       setNotes("");
       setDeductions(0);
       setWorkpaperRows(defaultWorkpaperRows(locale));
@@ -476,6 +467,21 @@ export default function CorporateTax() {
       });
     },
   });
+
+  // Eligibility is re-checked here, not only by whether the button is on screen.
+  const saveDraft = () => {
+    if (saveDraftMutation.isPending) return;
+    const body = buildDraftBody({
+      periodStart,
+      periodEnd,
+      calculation,
+      manual: hasManualWorkpaper ? workpaperTotals : null,
+      deductions,
+      rows: workpaperRows,
+      notes,
+    });
+    if (body) saveDraftMutation.mutate(body);
+  };
 
   // Lifecycle transitions (R08-04): computed -> reviewed -> filed -> paid; void; amend.
   const invalidateReturns = () =>
@@ -989,11 +995,11 @@ export default function CorporateTax() {
               />
             </div>
             <Button
-              onClick={() => calculateMutation.mutate()}
-              disabled={calculateMutation.isPending || !periodStart || !periodEnd}
+              onClick={calculate}
+              disabled={isCalculating || !periodStart || !periodEnd}
               className="w-full md:w-auto md:justify-self-end"
             >
-              {calculateMutation.isPending ? (
+              {isCalculating ? (
                 <>
                   <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   <T k="pageLabels.calculating" />
@@ -1016,11 +1022,7 @@ export default function CorporateTax() {
                   data-testid="ct-empty-period"
                   className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
                 >
-                  {ctTr(
-                    locale,
-                    "No posted journal entries were found for this period, so the figures below are zero because there is nothing to calculate, not because the tax due is nil. Check the period dates or enter the workpaper lines manually.",
-                    "لم يتم العثور على قيود يومية مرحّلة لهذه الفترة، لذا فإن الأرقام أدناه صفر لعدم وجود ما يُحتسب، وليس لأن الضريبة المستحقة صفر. تحقق من تواريخ الفترة أو أدخل بنود ورقة العمل يدوياً."
-                  )}
+                  <T k="corporateTax.emptyPeriod" />
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1094,11 +1096,7 @@ export default function CorporateTax() {
                   </div>
                   <div className="flex justify-between">
                     <span>
-                      {ctTr(
-                        locale,
-                        "Taxable Amount (above threshold)",
-                        "المبلغ الخاضع للضريبة (فوق الحد)"
-                      )}
+                      <T k="corporateTax.taxableAmountAboveThreshold" />
                     </span>
                     <span className="font-medium">
                       <Money amount={adjustedCalculation.taxableAmount} currency={"AED"} />
@@ -1126,23 +1124,17 @@ export default function CorporateTax() {
 
               <div className="text-xs text-muted-foreground">
                 {calculation
-                  ? ctTr(
-                      locale,
-                      `Based on ${adjustedCalculation.journalEntriesProcessed} posted journal entries in the selected period.`,
-                      `بناءً على ${adjustedCalculation.journalEntriesProcessed} قيد يومية مرحّل في الفترة المحددة.`
-                    )
-                  : ctTr(
-                      locale,
-                      "Based on the manual corporate tax workpaper rows above.",
-                      "بناءً على بنود ورقة عمل ضريبة الشركات اليدوية أعلاه."
-                    )}
+                  ? formatMessage(t["corporateTax.basedOnEntries"], {
+                      count: adjustedCalculation.journalEntriesProcessed,
+                    })
+                  : t["corporateTax.basedOnManual"]}
               </div>
 
               {/* Notes and Save */}
               <div className="space-y-3 pt-2 border-t">
                 <div className="space-y-2">
                   <Label htmlFor="notes">
-                    {ctTr(locale, "Notes (optional)", "ملاحظات (اختياري)")}
+                    <T k="corporateTax.notesOptional" />
                   </Label>
                   <Textarea
                     id="notes"
@@ -1153,7 +1145,7 @@ export default function CorporateTax() {
                   />
                 </div>
                 <Button
-                  onClick={() => saveDraftMutation.mutate()}
+                  onClick={saveDraft}
                   disabled={saveDraftMutation.isPending}
                   {...gate("documents.write")}
                 >
@@ -1163,7 +1155,7 @@ export default function CorporateTax() {
                       <T k="pageLabels.saving" />
                     </>
                   ) : (
-                    ctTr(locale, "Save as Draft", "حفظ كمسودة")
+                    <T k="corporateTax.saveAsDraft" />
                   )}
                 </Button>
               </div>
@@ -1198,6 +1190,26 @@ export default function CorporateTax() {
               <T k="corporateTax.returnsPaused" />
             </p>
           )}
+          {returnsFailure === "refresh" && (
+            <div
+              role="status"
+              data-testid="ct-returns-refresh-error"
+              className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
+            >
+              <span>
+                <T k="corporateTax.returnsRefreshError" />
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void returnsQuery.refetch()}
+                disabled={returnsQuery.fetchStatus === "fetching"}
+              >
+                <T k="components.errorTryAgain" />
+              </Button>
+            </div>
+          )}
           {returnsState === "loading" ? (
             <div className="space-y-3">
               <Skeleton className="h-10 w-full" />
@@ -1212,14 +1224,14 @@ export default function CorporateTax() {
             >
               <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-warning" />
               <p>
-                {ctTr(
-                  locale,
-                  "Could not load your corporate tax returns.",
-                  "تعذّر تحميل إقرارات ضريبة الشركات."
-                )}
+                <T k="corporateTax.returnsLoadError" />
               </p>
-              <Button variant="outline" className="mt-3" onClick={() => returnsQuery.refetch()}>
-                {ctTr(locale, "Try again", "حاول مرة أخرى")}
+              <Button
+                variant="outline"
+                className="mt-3"
+                onClick={() => void returnsQuery.refetch()}
+              >
+                <T k="components.errorTryAgain" />
               </Button>
             </div>
           ) : returnsState === "empty" ? (
