@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, ApiRequestNotSentError, apiRequest, queryClient } from "@/lib/queryClient";
 import { formatMessage, translateNow, useTranslation } from "@/lib/i18n";
 import { OverdueTab } from "./payment-reminders/OverdueTab";
 import { ScheduleTab } from "./payment-reminders/ScheduleTab";
@@ -122,15 +122,37 @@ export default function PaymentChasing() {
   });
 
   const toggleDoNotChase = useMutation({
+    // Run now even when offline; never hold or queue this change for later.
+    networkMode: "always",
     mutationFn: ({ invoiceId, value }: { invoiceId: string; value: boolean }) =>
-      apiRequest("PATCH", `/api/chasing/invoice/${invoiceId}/do-not-chase`, { doNotChase: value }),
+      apiRequest(
+        "PATCH",
+        `/api/chasing/invoice/${invoiceId}/do-not-chase`,
+        { doNotChase: value },
+        undefined,
+        { queueWhenOffline: false }
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/chasing/overdue", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/chasing/queue", companyId] });
     },
-    onError: () => toast({ title: tt["invoices.reminders.pauseError"], variant: "destructive" }),
+    onError: (e: unknown) => {
+      if (e instanceof ApiRequestNotSentError) {
+        // Nothing left this device, so the invoice is unchanged.
+        toast({ title: tt["invoices.reminders.pauseOffline"], variant: "destructive" });
+      } else if (e instanceof ApiError && e.status >= 400 && e.status < 500) {
+        // The server answered and refused the change.
+        toast({ title: tt["invoices.reminders.pauseError"], variant: "destructive" });
+      } else {
+        // The request may or may not have reached the server: say so and re-read the truth.
+        toast({ title: tt["invoices.reminders.pauseUnconfirmed"], variant: "destructive" });
+        queryClient.invalidateQueries({ queryKey: ["/api/chasing/overdue", companyId] });
+        queryClient.invalidateQueries({ queryKey: ["/api/chasing/queue", companyId] });
+      }
+    },
   });
 
+  const overduePaused = overdueQuery.fetchStatus === "paused";
   const rows = useMemo(() => overdueQuery.data?.rows ?? [], [overdueQuery.data?.rows]);
   const queue = useMemo(() => queueQuery.data?.queue ?? [], [queueQuery.data?.queue]);
 
@@ -229,7 +251,13 @@ export default function PaymentChasing() {
             rows={rows}
             queue={queue}
             loading={overdueQuery.isLoading}
-            error={overdueQuery.isError}
+            // A paused fetch with no rows must not read as "nothing overdue"; with rows the
+            // list stays and a notice says it may be out of date.
+            offline={overduePaused && rows.length === 0}
+            error={overdueQuery.isError && !overduePaused}
+            stale={overduePaused && rows.length > 0}
+            // An idle query has no result yet, so it must not show the empty state.
+            successful={overdueQuery.isSuccess}
             onRetry={() => overdueQuery.refetch()}
             sending={sendOne.isPending}
             onSend={(id) => sendOne.mutate(id)}

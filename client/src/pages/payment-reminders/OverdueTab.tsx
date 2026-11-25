@@ -27,6 +27,9 @@ export function OverdueTab({
   queue,
   loading,
   error,
+  offline = false,
+  stale = false,
+  successful = false,
   onRetry,
   sending,
   onSend,
@@ -35,7 +38,17 @@ export function OverdueTab({
   rows: AgingRow[];
   queue: AgingRow[];
   loading: boolean;
+  /** The latest fetch failed and is not paused; shown even if a list is cached. */
   error: boolean;
+  /** The fetch is paused (offline) and there are no rows to show. */
+  offline?: boolean;
+  /** Cached rows are shown while their refresh is paused (offline). */
+  stale?: boolean;
+  /**
+   * The overdue query has succeeded. The empty state ("Nothing is overdue") needs this, so an
+   * idle or disabled query renders nothing rather than a false all-clear.
+   */
+  successful?: boolean;
   onRetry?: () => void;
   sending: boolean;
   onSend: (invoiceId: string) => void;
@@ -64,6 +77,32 @@ export function OverdueTab({
       </Card>
     );
   }
+  const retryButton = onRetry && (
+    <Button size="sm" variant="outline" onClick={onRetry} data-testid="button-retry-overdue">
+      {tt["invoices.reminders.retry"]}
+    </Button>
+  );
+  // No rows and no connection: the fetch is paused, so an empty list is not confirmed. It
+  // resumes by itself on reconnect; Retry re-asks now.
+  if (offline) {
+    return (
+      <Card
+        className="flex flex-wrap items-center justify-between gap-3 p-5 text-small"
+        role="status"
+        data-testid="overdue-offline"
+      >
+        <span className="min-w-0 space-y-1">
+          <span className="block font-medium text-foreground">
+            {tt["invoices.reminders.offlineTitle"]}
+          </span>
+          <span className="block text-muted-foreground">
+            {tt["invoices.reminders.offlineBody"]}
+          </span>
+        </span>
+        {retryButton}
+      </Card>
+    );
+  }
   if (error) {
     return (
       <Card
@@ -71,15 +110,12 @@ export function OverdueTab({
         role="alert"
       >
         <span>{tt["invoices.reminders.loadError"]}</span>
-        {onRetry && (
-          <Button size="sm" variant="outline" onClick={onRetry} data-testid="button-retry-overdue">
-            {tt["invoices.reminders.retry"]}
-          </Button>
-        )}
+        {retryButton}
       </Card>
     );
   }
   if (rows.length === 0) {
+    if (!successful) return null;
     return (
       <Card>
         <EmptyState
@@ -150,6 +186,15 @@ export function OverdueTab({
 
   return (
     <div className="space-y-3">
+      {stale && (
+        <div
+          role="status"
+          className="rounded-md border border-border px-3 py-2 text-small text-muted-foreground"
+          data-testid="overdue-stale"
+        >
+          {tt["invoices.reminders.staleNotice"]}
+        </div>
+      )}
       <Input
         ref={searchInput}
         type="search"

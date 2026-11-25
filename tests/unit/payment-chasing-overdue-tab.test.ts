@@ -45,7 +45,9 @@ describe("payment chasing overdue tab", () => {
     container.remove();
   });
 
-  function renderTab(props: Pick<ComponentProps<typeof OverdueTab>, "rows" | "error" | "onRetry">) {
+  function renderTab(
+    props: Pick<ComponentProps<typeof OverdueTab>, "rows" | "error" | "successful" | "onRetry">
+  ) {
     const noop = () => {};
     act(() => {
       root.render(
@@ -74,10 +76,25 @@ describe("payment chasing overdue tab", () => {
   });
 
   it("offers a retry button in the load-error state", () => {
-    renderTab({ rows: [], error: true, onRetry: () => {} });
-    expect(container.querySelector('[data-testid="button-retry-overdue"]')?.textContent).toBe(
-      en["invoices.reminders.retry"]
-    );
+    let retries = 0;
+    const onRetry = () => {
+      retries += 1;
+      renderTab({ rows, error: false, successful: true, onRetry });
+    };
+    renderTab({ rows: [], error: true, onRetry });
+    const retryButton = container.querySelector<HTMLButtonElement>(
+      '[data-testid="button-retry-overdue"]'
+    )!;
+    expect(retryButton.textContent).toBe(en["invoices.reminders.retry"]);
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+
+    act(() => retryButton.click());
+
+    expect(retries).toBe(1);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.querySelector('[data-testid="button-retry-overdue"]')).toBeNull();
+    expect(container.querySelector('[data-testid="overdue-row-INV-001"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="overdue-row-INV-002"]')).not.toBeNull();
   });
 
   it("sorts displayed rows without changing the cached order on mount or after clearing", () => {
