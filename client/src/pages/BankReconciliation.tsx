@@ -14,7 +14,8 @@ import { Link } from "wouter";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { MatchSuggestions, translateMatchReasons } from "./AutoReconcile";
+import { MatchSuggestions } from "./AutoReconcile";
+import { translateMatchReasons } from "./auto-reconcile-match-reasons";
 import { ReconciliationRulesPanel } from "./ReconciliationRules";
 import {
   Select,
