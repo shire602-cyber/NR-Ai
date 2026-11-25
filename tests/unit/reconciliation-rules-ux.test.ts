@@ -3,8 +3,8 @@ import { act } from "react";
 import { onlineManager } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { matchesRuleSearch } from "../../client/src/lib/reconciliation-rule-search";
-import ar from "../../client/src/locales/ar/banking.json";
-import en from "../../client/src/locales/en/banking.json";
+import ar from "../../client/src/locales/ar/reconciliationRules.json";
+import en from "../../client/src/locales/en/reconciliationRules.json";
 import arCommon from "../../client/src/locales/ar/common.json";
 import arFirm from "../../client/src/locales/ar/firm.json";
 import arHr from "../../client/src/locales/ar/hr.json";
@@ -33,10 +33,16 @@ vi.mock("../../client/src/lib/i18n", async (importOriginal) => {
   const pages = (await import("../../client/src/locales/ar/pages.json")).default;
   const common = (await import("../../client/src/locales/ar/common.json")).default;
   const hr = (await import("../../client/src/locales/ar/hr.json")).default;
-  const dict = { ...common, ...hr, ...pages, ...pageLabels, ...firm, ...banking } as Record<
-    string,
-    string
-  >;
+  const rules = (await import("../../client/src/locales/ar/reconciliationRules.json")).default;
+  const dict = {
+    ...common,
+    ...hr,
+    ...pages,
+    ...pageLabels,
+    ...firm,
+    ...banking,
+    ...rules,
+  } as Record<string, string>;
   return { ...actual, useTranslation: () => ({ t: dict, locale: "ar" }) };
 });
 vi.mock("../../client/src/hooks/useSubscription", () => ({
