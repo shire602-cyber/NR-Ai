@@ -85,6 +85,7 @@ beforeAll(async () => {
 beforeEach(() => {
   resetHarness();
   setFixtures({
+    [`${C}/accounts`]: [{ id: "cash-account", code: "1010", type: "asset", subType: "cash" }],
     [`${C}/numbering`]: NUMBERING,
     [`${C}/team/me`]: {
       role: "owner",
@@ -141,15 +142,27 @@ describe.each(["en", "ar"] as const)("CASH-SERIES (%s)", (locale) => {
     expect(box.querySelector('a[href="/settings/numbering"]')).not.toBeNull();
   });
 
-  it("explains why the record button is disabled instead of staying silently dead", async () => {
+  it("explains incomplete line items beside Record and clears the message when the line is valid", async () => {
     const { default: CashSale } = await import("../../client/src/pages/sales/CashSale");
     await renderPage(CashSale);
-    await flushUntil(() => !!byTestId("cash-sale-blocker"));
+    const message = t[locale]["invoices.cashSale.linesIncomplete"];
+    await flushUntil(() => byTestId("cash-sale-blocker")?.textContent === message);
+    const status = byTestId("cash-sale-blocker")!;
     const btn = byTestId("button-record-cash-sale") as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
-    const text = byTestId("cash-sale-blocker")!.textContent ?? "";
-    expect(text).not.toBe("");
-    expect(text).not.toContain("invoices.cashSale");
-    if (locale === "ar") expect(text).toMatch(/[؀-ۿ]/);
+    expect(status.getAttribute("role")).toBe("status");
+    expect(status.closest('[data-testid="editor-shell-footer"]')).toBe(
+      btn.closest('[data-testid="editor-shell-footer"]')
+    );
+    expect(status.textContent).toBe(message);
+    expect(status.textContent).not.toContain("invoices.cashSale");
+    if (locale === "ar") expect(status.textContent).toMatch(/[؀-ۿ]/);
+
+    await type(byTestId("input-cash-line-description-0"), "Counter sale");
+    await type(byTestId("input-cash-line-quantity-0"), "2");
+    await type(byTestId("input-cash-line-price-0"), "25");
+    expect(btn.disabled).toBe(false);
+    expect(byTestId("cash-sale-blocker")).toBe(status);
+    expect(status.textContent).toBe("");
   });
 });
