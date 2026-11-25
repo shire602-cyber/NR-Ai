@@ -104,6 +104,8 @@ describe("payment chasing overdue tab", () => {
       });
 
     expect(search.placeholder).toBe(en["invoices.reminders.searchPlaceholder"]);
+    expect(liveRegion?.getAttribute("aria-live")).toBe("polite");
+    expect(liveRegion?.getAttribute("aria-atomic")).toBe("true");
     expect(liveRegion?.textContent).toBe("");
     expect(displayedOrder()).toEqual(["overdue-row-INV-002", "overdue-row-INV-001"]);
     expect(cachedOrder()).toEqual(["INV-001", "INV-002"]);

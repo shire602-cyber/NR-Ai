@@ -160,7 +160,7 @@ export function OverdueTab({
         className="max-w-sm"
         data-testid="input-search-overdue"
       />
-      <div role="status" className="sr-only">
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {noMatches ? tt["invoices.reminders.noMatchTitle"] : ""}
       </div>
       {noMatches ? (
