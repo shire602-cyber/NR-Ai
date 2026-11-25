@@ -18,7 +18,7 @@ const exported = (price: number) => ({
   vatSupplyType: "zero_rated",
 });
 
-async function issue(
+async function createDraft(
   t: Tenant,
   lines: Record<string, unknown>[],
   other: Record<string, unknown> = {}
@@ -31,9 +31,18 @@ async function issue(
     ...other,
   });
   expect(draft.status, draft.text).toBe(200);
-  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
-  expect(issued.status, issued.text).toBe(200);
   return draft.body.id;
+}
+
+async function issue(
+  t: Tenant,
+  lines: Record<string, unknown>[],
+  other: Record<string, unknown> = {}
+): Promise<string> {
+  const id = await createDraft(t, lines, other);
+  const issued = await t.as.patch(`/api/invoices/${id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+  return id;
 }
 
 async function pay(t: Tenant, invoice: string, amount: number, allowCredit = false) {
@@ -336,6 +345,42 @@ it("issues a generated remainder draft with its original VAT allocation across t
   expect(report.status, report.text).toBe(200);
   expect(report.body.boxes).toMatchObject({ box1bDubaiAmount: 0, box1bDubaiVat: 0 });
   expect(report.body.reconciliation.hasUnexplainedDifference).toBe(false);
+});
+
+it("issues a standalone remainder draft for a mixed-treatment invoice with document-rounded VAT", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const id = await createDraft(t, [
+    standard(0.09),
+    standard(0.09),
+    standard(0.09),
+    { ...standard(105), marginScheme: true, marginPurchaseCost: 84 },
+  ]);
+  // The old rule rounded AED 0.27 of ordinary sales together, adding one VAT fil.
+  // Set the legacy draft totals before issuance so the journal uses the same amounts.
+  await h.sql(
+    `UPDATE invoices SET vat_amount = 1.01, total = 105.28, base_currency_amount = 105.28 WHERE id = $1`,
+    [id]
+  );
+  const invoice = await t.as.patch(`/api/invoices/${id}/status`, { status: "sent" });
+  expect(invoice.status, invoice.text).toBe(200);
+
+  const partial = await t.as.post(`${base(t)}/invoices/${id}/credit-note`, {
+    date,
+    lines: [standard(0.09)],
+  });
+  expect(partial.status, partial.text).toBe(201);
+  expect(Number(partial.body.vatAmount)).toBe(0);
+
+  const draft = await t.as.post(`${base(t)}/credit-notes`, { invoiceId: id, date });
+  expect(draft.status, draft.text).toBe(201);
+  expect(draft.body).toMatchObject({ total: 105.19, subtotal: 104.18, vatAmount: 1.01 });
+  expect(draft.body.lines).toHaveLength(2);
+  expect(draft.body.lines).toContainEqual(expect.objectContaining({ unitPrice: 0.18 }));
+  expect(draft.body.lines).toContainEqual(expect.objectContaining({ unitPrice: 105 }));
+
+  const issued = await t.as.post(`/api/credit-notes/${draft.body.id}/issue`, {});
+  expect(issued.status, issued.text).toBe(200);
+  expect(issued.body).toMatchObject({ status: "issued", total: 105.19, vatAmount: 1.01 });
 });
 
 it("fully settles a foreign invoice after an earlier part payment was reversed at the same rate", async () => {

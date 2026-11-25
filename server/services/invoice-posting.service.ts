@@ -1380,31 +1380,51 @@ async function creditTaxBalances(
     if (!previous) documents.set(document.id, { document, lines: line ? [line] : [] });
     else if (line) previous.lines.push(line);
   }
-  const balances = new Map<
-    string,
-    {
-      supply: SalesDocumentTotals["lines"][number]["classification"];
-      net: number;
-      margin: number | null;
-      vat: number;
-    }
-  >();
+  type TaxBalance = {
+    supply: SalesDocumentTotals["lines"][number]["classification"];
+    net: number;
+    margin: number | null;
+    vat: number;
+  };
+  const balances = new Map<string, TaxBalance>();
   function add(document: Invoice, lines: InvoiceLine[], sign: number, checkTreatmentVat = false) {
-    totalsForStoredDocument(document, lines).lines.forEach((line, i) => {
+    const totals = totalsForStoredDocument(document, lines);
+    const treatments = new Map<string, TaxBalance>();
+    totals.lines.forEach((line, i) => {
       const key = `${line.classification.supplyType}:${line.marginFils !== null}`;
-      const balance = balances.get(key) ?? {
+      const treatment = treatments.get(key) ?? {
         supply: line.classification,
         net: 0,
         margin: line.marginFils === null ? null : 0,
         vat: 0,
       };
       const storedNet = lines[i].netAmount;
-      balance.net +=
-        sign *
-        (storedNet == null ? line.netFils : Math.abs(toFils(storedNet, { rounding: "halfUp" })));
-      if (balance.margin !== null) balance.margin += sign * (line.marginFils ?? 0);
-      balance.vat += sign * line.vatFils;
-      if (checkTreatmentVat && line.vatFils > 0 && balance.vat < 0) {
+      treatment.net +=
+        storedNet == null ? line.netFils : Math.abs(toFils(storedNet, { rounding: "halfUp" }));
+      if (treatment.margin !== null) treatment.margin += line.marginFils ?? 0;
+      treatment.vat += line.vatFils;
+      treatments.set(key, treatment);
+    });
+
+    // Legacy documents rounded ordinary VAT at document level and margin VAT per line.
+    // Attribute the difference from the printed total to ordinary VAT on each document.
+    const ordinary = [...treatments.values()].find(
+      ({ supply, margin }) => supply.chargedVatRate > 0 && margin === null
+    );
+    if (ordinary)
+      ordinary.vat += totals.vatFils - sumFils(totals.lines.map((line) => line.vatFils));
+
+    for (const [key, treatment] of treatments) {
+      const balance = balances.get(key) ?? {
+        supply: treatment.supply,
+        net: 0,
+        margin: treatment.margin === null ? null : 0,
+        vat: 0,
+      };
+      balance.net += sign * treatment.net;
+      if (balance.margin !== null) balance.margin += sign * (treatment.margin ?? 0);
+      balance.vat += sign * treatment.vat;
+      if (checkTreatmentVat && treatment.vat > 0 && balance.vat < 0) {
         throw new DomainError(
           "CREDIT_EXCEEDS_REMAINING",
           409,
@@ -1417,11 +1437,10 @@ async function creditTaxBalances(
         );
       }
       balances.set(key, balance);
-    });
+    }
   }
   add(original, originalLines, 1);
-  // With one taxable treatment the printed VAT already caps that treatment, including
-  // legacy rounding. On mixed sales, line VAT also caps each treatment independently.
+  // The printed VAT caps a single taxable treatment. Mixed sales also need per-treatment caps.
   const mixedTaxableTreatments =
     [...balances.values()].filter(({ supply }) => supply.chargedVatRate > 0).length > 1;
   for (const { document, lines } of documents.values()) add(document, lines, -1);
