@@ -44,7 +44,12 @@ import {
   type FirmAlertSeverity,
   type FirmAlertType,
 } from "../../shared/schema";
-import { listAccessibleClientIds, resolveFirmContext, type FirmContext } from "./firm/scope";
+import {
+  accessibleClientsQuery,
+  listAccessibleClientIds,
+  resolveFirmContext,
+  type FirmContext,
+} from "./firm/scope";
 import { assignStaff, staffWorkloadInput } from "./firm/staff.service";
 
 import { isVatFilingRecorded } from "../../shared/vat-filing-status";
@@ -752,11 +757,19 @@ export async function fetchPeriodMetric(
 
 // ─── DB-backed: alerts ────────────────────────────────────────────────────────
 
+// Alert rows are keyed by user ID. Client-specific rows also require current firm access.
+function firmAlertScope(ctx: FirmContext) {
+  return and(
+    eq(firmAlerts.firmId, ctx.userId),
+    or(isNull(firmAlerts.companyId), inArray(firmAlerts.companyId, accessibleClientsQuery(ctx)))
+  );
+}
+
 export async function listFirmAlerts(
-  firmId: string,
+  ctx: FirmContext,
   filters: { severity?: FirmAlertSeverity; isRead?: boolean } = {}
 ): Promise<FirmAlert[]> {
-  const conds = [eq(firmAlerts.firmId, firmId)];
+  const conds = [firmAlertScope(ctx)];
   if (filters.severity) conds.push(eq(firmAlerts.severity, filters.severity));
   if (filters.isRead !== undefined) conds.push(eq(firmAlerts.isRead, filters.isRead));
 
@@ -836,20 +849,28 @@ export async function refreshFirmAlerts(
   });
 }
 
-export async function markAlertRead(firmId: string, alertId: string): Promise<FirmAlert | null> {
+export async function findFirmAlertCompany(ctx: FirmContext, alertId: string) {
+  const [alert] = await db
+    .select({ companyId: firmAlerts.companyId })
+    .from(firmAlerts)
+    .where(and(eq(firmAlerts.id, alertId), firmAlertScope(ctx)));
+  return alert ?? null;
+}
+
+export async function markAlertRead(ctx: FirmContext, alertId: string): Promise<FirmAlert | null> {
   const [updated] = await db
     .update(firmAlerts)
     .set({ isRead: true })
-    .where(and(eq(firmAlerts.id, alertId), eq(firmAlerts.firmId, firmId)))
+    .where(and(eq(firmAlerts.id, alertId), firmAlertScope(ctx)))
     .returning();
   return updated ?? null;
 }
 
-export async function resolveAlert(firmId: string, alertId: string): Promise<FirmAlert | null> {
+export async function resolveAlert(ctx: FirmContext, alertId: string): Promise<FirmAlert | null> {
   const [updated] = await db
     .update(firmAlerts)
     .set({ isRead: true, resolvedAt: new Date() })
-    .where(and(eq(firmAlerts.id, alertId), eq(firmAlerts.firmId, firmId)))
+    .where(and(eq(firmAlerts.id, alertId), firmAlertScope(ctx)))
     .returning();
   return updated ?? null;
 }

@@ -584,6 +584,25 @@ async function ownerScreens(browser, viewport, lang, data) {
     "invoice list: zeroed status tiles are hidden on error"
   );
   await failing.page.close();
+  if (viewport === "desktop") {
+    const editor = await cctx.newPage();
+    await editor.goto(`${BASE}/invoices/new`);
+    const description = editor.getByTestId("input-line-description-0");
+    await description.fill("Unsaved retainer for the first client");
+    const switcher = editor.getByTestId("button-company-switcher");
+    await switcher.click();
+    const next = data.mine[1];
+    const search = editor.getByTestId("company-switcher-search");
+    if (await search.isVisible()) await search.fill(next.name);
+    await editor.getByTestId(`company-switcher-item-${next.id}`).click();
+    await switcher.filter({ hasText: next.name }).waitFor();
+    await description.waitFor();
+    check(
+      new URL(editor.url()).pathname === "/invoices/new" && (await description.inputValue()) === "",
+      "switching clients in the invoice editor clears the previous client's unsaved draft"
+    );
+    await editor.close();
+  }
   await cctx.close();
 
   // Failing portfolio and command centre.
