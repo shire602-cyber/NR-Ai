@@ -27,8 +27,11 @@ export function usePrefersReducedMotion(): boolean {
  * objects are touched here. Animations that are already paused belong to someone else and are
  * neither paused nor resumed. A no-op where `getAnimations` or `CSSTransition` is missing (jsdom,
  * old browsers). `pause()` takes effect at the next frame, which keeps the held value continuous.
+ *
+ * Transitions on `control` (the Pause/Play button, when it sits inside `root`) and its children are
+ * never held: the control that owns the freeze must keep its own hover, press and focus feedback.
  */
-export function holdRunningTransitions(root: Element): () => void {
+export function holdRunningTransitions(root: Element, control?: Element | null): () => void {
   if (typeof root.getAnimations !== "function" || typeof CSSTransition === "undefined") {
     return () => {};
   }
@@ -36,6 +39,8 @@ export function holdRunningTransitions(root: Element): () => void {
   for (const animation of root.getAnimations({ subtree: true })) {
     // "running" also covers a transition whose play is still pending; paused/idle/finished are skipped.
     if (animation instanceof CSSTransition && animation.playState === "running") {
+      const target = (animation.effect as KeyframeEffect | null)?.target;
+      if (control && target && control.contains(target)) continue;
       animation.pause();
       held.push(animation);
     }
