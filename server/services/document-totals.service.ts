@@ -1,52 +1,16 @@
 // Shared money math for line-based documents (quotes, credit notes, purchase
 // orders, invoices). The server is the source of truth for totals — clients
-// send lines only, and every create/update recomputes from them with
-// decimal.js so NUMERIC(15,2) columns never accumulate binary-float drift.
+// send lines only, and every create/update recomputes from them.
+//
+// F01: the rounding rule lives in shared/document-totals.ts so the editor,
+// API, PDF, e-invoice payload and VAT autopilot all use the same LINE-level
+// half-up rounding. This module re-exports it for existing server callers.
 
-import Decimal from "decimal.js";
-
-export interface DocumentLineInput {
-  quantity: number | string;
-  unitPrice: number | string;
-  vatRate?: number | string | null;
-}
-
-const UAE_STANDARD_RATE = 0.05;
-
-/** Normalise a VAT rate to decimal form; accepts 5 (percent) or 0.05. */
-export function normaliseVatRate(raw: number | string | null | undefined): number {
-  if (raw === null || raw === undefined || raw === "") return UAE_STANDARD_RATE;
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return UAE_STANDARD_RATE;
-  return n === 5 ? UAE_STANDARD_RATE : n;
-}
-
-/**
- * A-B13 — VAT rounding convention (deliberate, documented):
- * VAT is computed per line in full precision (Decimal), accumulated, and
- * rounded ONCE at the document level (FTA Executive Regulation Art. 30 permits
- * rounding at the line OR the invoice level). We use invoice-level rounding so
- * the document total always equals subtotal + VAT to the fil, and the VAT
- * autopilot rounds the same way (per bucket once) so its reconciliation agrees.
- * Do not switch to per-line rounding without aligning the autopilot tolerance.
- */
-export function calculateDocumentTotals(lines: DocumentLineInput[] | undefined | null): {
-  subtotal: number;
-  vatAmount: number;
-  total: number;
-} {
-  let subtotalD = new Decimal(0);
-  let vatAmountD = new Decimal(0);
-
-  for (const line of lines ?? []) {
-    const lineTotal = new Decimal(Number(line.unitPrice) || 0).times(Number(line.quantity) || 0);
-    subtotalD = subtotalD.plus(lineTotal);
-    vatAmountD = vatAmountD.plus(lineTotal.times(normaliseVatRate(line.vatRate)));
-  }
-
-  return {
-    subtotal: subtotalD.toDecimalPlaces(2).toNumber(),
-    vatAmount: vatAmountD.toDecimalPlaces(2).toNumber(),
-    total: subtotalD.plus(vatAmountD).toDecimalPlaces(2).toNumber(),
-  };
-}
+export {
+  calculateDocumentTotals,
+  normaliseVatRate,
+  lineNetAmount,
+  lineVatAmount,
+  roundMoney,
+  type DocumentTotalsLine as DocumentLineInput,
+} from "../../shared/document-totals";

@@ -131,8 +131,12 @@ async function main() {
   // ── C3: period lock ────────────────────────────────────────
   // Locking is per calendar month (the month of periodEnd), so lock June 2020
   // and then attempt a write dated inside June 2020.
+  // F04: lock is gated by server-side readiness — load the checklist and
+  // acknowledge exactly the open items the server reports.
+  r = await api("GET", `/api/companies/${companyId}/month-end/checklist?period=2020-06`, { token });
+  const openIds = (r.json?.checklist ?? []).filter((i) => i.status !== "complete").map((i) => i.id);
   r = await api("POST", `/api/companies/${companyId}/month-end/lock-period`, {
-    token, body: { periodEnd: "2020-06-30" },
+    token, body: { periodEnd: "2020-06-30", acknowledgedOpenItemIds: openIds },
   });
   ok("C3 lock-period succeeds (no 500)", r.status === 200 || r.status === 201, { status: r.status, msg: r.json?.message });
 

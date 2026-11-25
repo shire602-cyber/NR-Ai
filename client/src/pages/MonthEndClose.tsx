@@ -32,6 +32,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useTranslation } from "@/lib/i18n";
+import { deriveChecklistProgress } from "@shared/month-end-readiness";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -145,13 +146,20 @@ export default function MonthEndClose() {
   const {
     data: checklistData,
     isLoading: isLoadingChecklist,
+    isError: isChecklistError,
+    isFetching: isFetchingChecklist,
     refetch: refetchChecklist,
   } = useQuery<ChecklistResponse>({
     queryKey: [`/api/companies/${companyId}/month-end/checklist?period=${period}`],
     enabled: !!companyId,
   });
 
-  const { data: historyData, isLoading: isLoadingHistory } = useQuery<CloseRecord[]>({
+  const {
+    data: historyData,
+    isLoading: isLoadingHistory,
+    isError: isHistoryError,
+    refetch: refetchHistory,
+  } = useQuery<CloseRecord[]>({
     queryKey: [`/api/companies/${companyId}/month-end/history`],
     enabled: !!companyId,
   });
@@ -196,6 +204,10 @@ export default function MonthEndClose() {
     mutationFn: async () => {
       return apiRequest("POST", `/api/companies/${companyId}/month-end/lock-period`, {
         periodEnd: periodDates.periodEnd,
+        // F04: tell the server exactly which open items the user saw and
+        // accepted; it recomputes and refuses if the checklist has moved.
+        acknowledgedOpenItemIds:
+          checklistProgress.state === "ready" ? checklistProgress.openItemIds : [],
       });
     },
     onSuccess: () => {
@@ -206,9 +218,16 @@ export default function MonthEndClose() {
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/month-end/history`],
       });
+      refetchChecklist();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: "Period not locked", description: error?.message, variant: "destructive" });
+      // The server may have refused because the checklist changed; revalidate
+      // so the badge, button and next attempt reflect current server state.
+      refetchChecklist();
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/month-end/history`],
+      });
     },
   });
 
@@ -261,9 +280,13 @@ export default function MonthEndClose() {
           .startsWith(`${selectedYear}-${selectedMonth.padStart(2, "0")}`)
     ) || false;
 
-  const completedCount =
-    checklistData?.checklist.filter((i) => i.status === "complete").length || 0;
-  const totalCount = checklistData?.checklist.length || 7;
+  // F04: counts come only from a successful checklist response — no
+  // fabricated seven-item fallback, and an empty checklist is never "All Clear".
+  const checklistProgress = deriveChecklistProgress({
+    isLoading: isLoadingChecklist,
+    isError: isChecklistError,
+    checklist: checklistData?.checklist,
+  });
 
   // ---- Loading state ----
 
@@ -363,15 +386,30 @@ export default function MonthEndClose() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-lg">Close Checklist</CardTitle>
-              <CardDescription>
-                {completedCount}/{totalCount} items complete for {formatPeriodLabel(period)}
+              <CardDescription data-testid="month-end-progress">
+                {checklistProgress.state === "ready"
+                  ? `${checklistProgress.completed}/${checklistProgress.total} items complete for ${formatPeriodLabel(period)}`
+                  : checklistProgress.state === "loading"
+                    ? `Loading checklist for ${formatPeriodLabel(period)}…`
+                    : checklistProgress.state === "empty"
+                      ? `No checklist items are configured for ${formatPeriodLabel(period)}`
+                      : `Checklist unavailable for ${formatPeriodLabel(period)}`}
               </CardDescription>
             </div>
-            <Badge variant={completedCount === totalCount ? "default" : "secondary"}>
-              {completedCount === totalCount
-                ? "All Clear"
-                : `${totalCount - completedCount} remaining`}
-            </Badge>
+            {checklistProgress.state === "ready" ? (
+              <Badge
+                variant={checklistProgress.allComplete ? "default" : "secondary"}
+                data-testid="month-end-badge"
+              >
+                {checklistProgress.allComplete
+                  ? "All Clear"
+                  : `${checklistProgress.remaining} remaining`}
+              </Badge>
+            ) : checklistProgress.state === "error" ? (
+              <Badge variant="destructive" data-testid="month-end-badge">
+                Not verified
+              </Badge>
+            ) : null}
           </div>
         </CardHeader>
         <CardContent>
@@ -381,6 +419,20 @@ export default function MonthEndClose() {
                 <Skeleton key={i} className="h-14" />
               ))}
             </div>
+          ) : checklistProgress.state === "error" ? (
+            <div role="alert" className="text-center py-6 space-y-3">
+              <p className="text-sm text-destructive">
+                The close checklist could not be loaded. Readiness has not been verified.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => refetchChecklist()}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+            </div>
+          ) : checklistProgress.state === "empty" ? (
+            <p className="text-muted-foreground text-sm text-center py-6">
+              The checklist returned no items, so this period cannot be verified for close.
+            </p>
           ) : checklistData ? (
             <div className="space-y-2">
               {checklistData.checklist.map((item) => (
@@ -523,7 +575,12 @@ export default function MonthEndClose() {
           <AlertDialogTrigger asChild>
             <Button
               variant="destructive"
-              disabled={lockPeriodMutation.isPending || isCurrentPeriodLocked}
+              disabled={
+                lockPeriodMutation.isPending ||
+                isCurrentPeriodLocked ||
+                isFetchingChecklist ||
+                checklistProgress.state !== "ready"
+              }
             >
               {lockPeriodMutation.isPending ? (
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
@@ -540,6 +597,12 @@ export default function MonthEndClose() {
                 Locking {formatPeriodLabel(period)} will prevent any modifications to transactions
                 in this period. This is typically done after all closing entries are posted and the
                 period has been fully reviewed. This action cannot be easily undone.
+                {checklistProgress.state === "ready" && !checklistProgress.allComplete && (
+                  <span className="block mt-2 font-medium text-destructive">
+                    {checklistProgress.remaining} checklist item(s) are still open. Locking now
+                    records that you reviewed and accepted them.
+                  </span>
+                )}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -631,6 +694,14 @@ export default function MonthEndClose() {
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-12" />
               ))}
+            </div>
+          ) : isHistoryError ? (
+            <div role="alert" className="text-center py-6 space-y-3">
+              <p className="text-sm text-destructive">Close history could not be loaded.</p>
+              <Button variant="outline" size="sm" onClick={() => refetchHistory()}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
             </div>
           ) : historyData && historyData.length > 0 ? (
             <Table>

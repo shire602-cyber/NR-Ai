@@ -168,12 +168,18 @@ export function registerJournalRoutes(app: Express) {
         });
       }
 
-      // Convert date string to Date object if it's a string
-      const entryDate = typeof date === "string" ? new Date(date) : date;
-
+      // F06: normalise to the accounting business date (date-only preserved,
+      // instants converted to Asia/Dubai) and STORE that, so the stored
+      // journal date and the lock lookup always select the same period.
       // Block posting into a locked period. Drafts are also blocked because
       // their existence implies they will eventually be posted on this date.
-      await assertPeriodNotLocked(companyId, entryDate);
+      const accountingDate = await assertPeriodNotLocked(companyId, date, {
+        storesBusinessDate: true,
+      });
+      if (!accountingDate) {
+        return res.status(400).json({ message: "A valid entry date is required" });
+      }
+      const entryDate = accountingDate.date;
       // A-4: reject future-dated entries.
       assertNotFutureDate(entryDate);
 
@@ -361,14 +367,19 @@ export function registerJournalRoutes(app: Express) {
         });
       }
 
-      // Convert date string to Date object if it's a string
-      const entryDate = typeof date === "string" ? new Date(date) : date;
-
       // Block updates that would land in a locked period (either the existing
       // entry date or the requested new date).
       await assertPeriodNotLocked(entry.companyId, entry.date);
-      if (entryDate) {
-        await assertPeriodNotLocked(entry.companyId, entryDate);
+      let entryDate: Date | undefined;
+      if (date) {
+        // F06: same business-date rule as create; store the normalised date.
+        const accountingDate = await assertPeriodNotLocked(entry.companyId, date, {
+          storesBusinessDate: true,
+        });
+        if (!accountingDate) {
+          return res.status(400).json({ message: "Invalid entry date" });
+        }
+        entryDate = accountingDate.date;
         // A-4: a re-dated entry must not move into the future.
         assertNotFutureDate(entryDate);
       }
@@ -519,8 +530,12 @@ export function registerJournalRoutes(app: Express) {
       // The reversal posts a new JE on `now`. Block if today is in a locked
       // period — reversing a posted entry into a closed period must go through
       // an unlock-and-amend flow instead.
-      const now = new Date();
-      await assertPeriodNotLocked(entry.companyId, now);
+      // F06: "now" is converted to today's Dubai business date and stored as
+      // such, so a reversal at 00:30 Dubai on 1 Dec lands in December.
+      const reversalAccountingDate = await assertPeriodNotLocked(entry.companyId, new Date(), {
+        storesBusinessDate: true,
+      });
+      const now = reversalAccountingDate!.date;
 
       // Get original lines
       const originalLines = await storage.getJournalLinesByEntryId(id);

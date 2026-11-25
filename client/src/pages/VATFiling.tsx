@@ -35,6 +35,10 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { useTranslation } from "@/lib/i18n";
+import {
+  effectiveNetVatDeclared,
+  selectEffectiveVatReturns,
+} from "@shared/vat-effective-returns";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -271,7 +275,8 @@ export default function VATFiling() {
   });
 
   const stats = useMemo(() => {
-    if (!vatReturns) return { total: 0, pending: 0, submitted: 0, filed: 0, totalPayable: 0 };
+    if (!vatReturns)
+      return { total: 0, pending: 0, submitted: 0, filed: 0, totalPayable: 0, effectiveCount: 0 };
 
     return {
       total: vatReturns.length,
@@ -279,7 +284,11 @@ export default function VATFiling() {
         .length,
       submitted: vatReturns.filter((r) => r.status === "submitted").length,
       filed: vatReturns.filter((r) => r.status === "filed").length,
-      totalPayable: vatReturns.reduce((sum, r) => sum + (r.box14PayableTax || 0), 0),
+      // F02: net VAT declared on EFFECTIVE versions only — one per company +
+      // period; superseded ("amended") rows and not-yet-effective amendment
+      // drafts are excluded. Not outstanding cash (no payment evidence here).
+      totalPayable: effectiveNetVatDeclared(vatReturns),
+      effectiveCount: selectEffectiveVatReturns(vatReturns).length,
     };
   }, [vatReturns]);
 
@@ -1059,11 +1068,11 @@ export default function VATFiling() {
                     label:
                       stats.totalPayable >= 0
                         ? locale === "ar"
-                          ? "إجمالي المستحق"
-                          : "Total payable"
+                          ? "صافي الضريبة المُقرّة (الإقرارات السارية)"
+                          : "Net VAT declared (effective returns)"
                         : locale === "ar"
-                          ? "إجمالي الاسترداد"
-                          : "Total refundable",
+                          ? "صافي الضريبة المستردة (الإقرارات السارية)"
+                          : "Net VAT refundable (effective returns)",
                     value: formatCurrency(Math.abs(stats.totalPayable)),
                     tone: stats.totalPayable >= 0 ? "text-destructive" : "text-success",
                   },

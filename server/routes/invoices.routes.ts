@@ -1,6 +1,5 @@
 import { Router, type Express, type Request, type Response } from "express";
 import crypto from "crypto";
-import Decimal from "decimal.js";
 import { storage } from "../storage";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
@@ -45,6 +44,7 @@ import {
 } from "../services/invoice-numbering.service";
 import { assertRetentionExpired } from "../services/retention.service";
 import { getLatestRate } from "./exchange-rates.routes";
+import { calculateDocumentTotals, roundMoney } from "../../shared/document-totals";
 
 const log = createLogger("invoices");
 
@@ -103,21 +103,10 @@ const invoiceLinesInputSchema = z
 
 type InvoiceLineInput = z.infer<typeof invoiceLineInputSchema>;
 
+// F01: one line-level half-up rounding rule shared with the editor, PDF,
+// e-invoice payload and VAT autopilot (shared/document-totals.ts).
 function calculateInvoiceTotals(lines: InvoiceLineInput[]) {
-  let subtotalD = new Decimal(0);
-  let vatAmountD = new Decimal(0);
-
-  for (const line of lines) {
-    const lineTotal = new Decimal(line.unitPrice).times(line.quantity);
-    subtotalD = subtotalD.plus(lineTotal);
-    vatAmountD = vatAmountD.plus(lineTotal.times(line.vatRate ?? UAE_VAT_RATE));
-  }
-
-  return {
-    subtotal: subtotalD.toDecimalPlaces(2).toNumber(),
-    vatAmount: vatAmountD.toDecimalPlaces(2).toNumber(),
-    total: subtotalD.plus(vatAmountD).toDecimalPlaces(2).toNumber(),
-  };
+  return calculateDocumentTotals(lines);
 }
 
 function normalizeOptionalInvoiceDateField(
@@ -1537,10 +1526,32 @@ export function registerInvoiceRoutes(app: Express) {
         if (originalAbs > 0 && cnDecision.creditable < originalAbs) {
           creditWasCapped = true;
           creditCapFactor = cnDecision.creditable / originalAbs;
-          creditTotal = Math.round(cnDecision.creditable * 100) / 100;
-          creditSubtotal = Math.round(Number(original.subtotal) * creditCapFactor * 100) / 100;
-          // Derive VAT from the difference so subtotal + VAT = total exactly.
-          creditVat = Math.round((creditTotal - creditSubtotal) * 100) / 100;
+          creditTotal = roundMoney(cnDecision.creditable);
+          // F01: the final credit must clear the REMAINING posted net and VAT
+          // exactly, not a pro-rata estimate — pro-rating left 1-fil residuals
+          // on Revenue / Output VAT after a partial + final credit. Use the
+          // persisted amounts of the original and every prior credit note.
+          const remainingSubtotal = roundMoney(
+            Math.abs(Number(original.subtotal)) -
+              existingCreditNotes.reduce((s, cn) => s + Math.abs(Number(cn.subtotal)), 0)
+          );
+          const remainingVat = roundMoney(
+            Math.abs(Number(original.vatAmount)) -
+              existingCreditNotes.reduce((s, cn) => s + Math.abs(Number(cn.vatAmount)), 0)
+          );
+          if (
+            remainingSubtotal >= 0 &&
+            remainingVat >= 0 &&
+            roundMoney(remainingSubtotal + remainingVat) === creditTotal
+          ) {
+            creditSubtotal = remainingSubtotal;
+            creditVat = remainingVat;
+          } else {
+            // Legacy documents whose persisted subtotal + VAT ≠ total: fall
+            // back to pro-rata net and derive VAT so subtotal + VAT = total.
+            creditSubtotal = roundMoney(Number(original.subtotal) * creditCapFactor);
+            creditVat = roundMoney(creditTotal - creditSubtotal);
+          }
         }
       }
 

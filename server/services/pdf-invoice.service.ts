@@ -1,5 +1,6 @@
 // @ts-ignore - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
+import { lineNetAmount, lineVatAmount } from "../../shared/document-totals";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { UAE_VAT_RATE } from "../constants";
 import { renderEInvoiceQrPng } from "./einvoice-qr.service";
@@ -640,8 +641,8 @@ function aggregateVatByRate(lines: InvoiceLine[]): VatBucket[] {
   const buckets = new Map<number, VatBucket>();
   for (const line of lines) {
     const rate = line.vatRate ?? UAE_VAT_RATE;
-    const taxable = line.quantity * line.unitPrice;
-    const vat = taxable * rate;
+    const taxable = lineNetAmount(line);
+    const vat = lineVatAmount(line, rate);
     const existing = buckets.get(rate);
     if (existing) {
       existing.taxable += taxable;

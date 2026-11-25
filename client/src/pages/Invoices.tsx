@@ -1,4 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import {
+  calculateDocumentTotals,
+  lineNetAmount,
+  lineVatAmount,
+} from "@shared/document-totals";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -569,12 +574,8 @@ export default function Invoices() {
 
   // Calculate totals for preview
   const watchLines = form.watch("lines");
-  const subtotal = watchLines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
-  const vatAmount = watchLines.reduce(
-    (sum, line) => sum + line.quantity * line.unitPrice * line.vatRate,
-    0
-  );
-  const total = subtotal + vatAmount;
+  // F01: same line-level rounding the API applies when it persists totals.
+  const { subtotal, vatAmount, total } = calculateDocumentTotals(watchLines);
 
   // Invoice Branding Form
   const brandingForm = useForm<InvoiceBrandingFormData>({
@@ -1028,9 +1029,12 @@ export default function Invoices() {
                           <div className="col-span-2">
                             <div className="h-10 flex items-center justify-end font-mono text-sm">
                               {formatCurrency(
-                                (watchLines[index]?.quantity || 0) *
-                                  (watchLines[index]?.unitPrice || 0) *
-                                  (1 + (watchLines[index]?.vatRate || 0)),
+                                lineNetAmount(watchLines[index] ?? { quantity: 0, unitPrice: 0 }) +
+                                  lineVatAmount({
+                                    quantity: watchLines[index]?.quantity ?? 0,
+                                    unitPrice: watchLines[index]?.unitPrice ?? 0,
+                                    vatRate: watchLines[index]?.vatRate ?? 0,
+                                  }),
                                 "AED",
                                 locale
                               )}

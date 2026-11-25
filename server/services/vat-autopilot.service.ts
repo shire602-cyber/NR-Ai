@@ -15,6 +15,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { lineNetAmount, lineVatAmount } from "../../shared/document-totals";
 import { pool } from "../db";
 import { UAE_VAT_RATE } from "../constants";
 import { resolveNrClientVatPeriodStartMonth } from "./firm-clients.service";
@@ -318,7 +319,8 @@ export function aggregateInvoiceLines(lines: InvoiceLineForVat[]): {
   let exemptAmount = 0;
   let outOfScopeAmount = 0;
   for (const line of lines) {
-    const lineAmount = (line.quantity || 0) * (line.unitPrice || 0);
+    // F01: same line-level rounding as the issued document totals.
+    const lineAmount = lineNetAmount(line);
     const rate = line.vatRate ?? UAE_VAT_RATE;
     const supply = line.vatSupplyType || "standard_rated";
     // Explicit supply type wins over rate-based inference. An exempt supply
@@ -332,7 +334,7 @@ export function aggregateInvoiceLines(lines: InvoiceLineForVat[]): {
       zeroRatedAmount += lineAmount;
     } else {
       standardRatedAmount += lineAmount;
-      standardRatedVat += lineAmount * rate;
+      standardRatedVat += lineVatAmount(line, rate);
     }
   }
   return {

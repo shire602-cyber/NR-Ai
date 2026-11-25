@@ -12,6 +12,7 @@ import {
   getCloseHistory,
 } from "../services/month-end.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { evaluateCloseReadiness } from "../../shared/month-end-readiness";
 
 /**
  * Derive periodStart and periodEnd from a YYYY-MM query parameter.
@@ -116,6 +117,32 @@ export function registerMonthEndRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // F04: the final close transition uses SERVER-side readiness. Recompute
+      // the checklist for the period being locked; refuse an empty checklist,
+      // unacknowledged open items, or an acknowledgement made against a stale
+      // checklist (the client must revalidate first).
+      const periodMatch = /^(\d{4})-(\d{2})/.exec(String(periodEnd));
+      if (!periodMatch) {
+        return res.status(400).json({ message: "periodEnd must be YYYY-MM-DD" });
+      }
+      const { periodStart, periodEnd: normalisedEnd } = parsePeriod(
+        `${periodMatch[1]}-${periodMatch[2]}`
+      );
+      const checklist = await getCloseChecklist(companyId, periodStart, normalisedEnd);
+      const rawAck = req.body?.acknowledgedOpenItemIds;
+      const readiness = evaluateCloseReadiness({
+        checklist,
+        acknowledgedOpenItemIds: Array.isArray(rawAck) ? rawAck : null,
+      });
+      if (!readiness.ok) {
+        return res.status(readiness.status).json({
+          message: readiness.message,
+          code: readiness.code,
+          openItemIds: readiness.openItemIds,
+          checklist,
+        });
+      }
+
       const record = await lockPeriod(companyId, periodEnd, userId);
 
       const { recordAudit } = await import("../services/audit.service");
@@ -126,7 +153,11 @@ export function registerMonthEndRoutes(app: Express) {
         entityType: "period",
         entityId: periodEnd,
         before: null,
-        after: { periodEnd, lockedBy: userId },
+        after: {
+          periodEnd,
+          lockedBy: userId,
+          acknowledgedOpenItemIds: readiness.openItemIds,
+        },
         req,
       });
 

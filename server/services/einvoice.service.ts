@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { lineNetAmount, lineVatAmount, roundMoney } from "../../shared/document-totals";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { UAE_VAT_RATE } from "../constants";
 
@@ -224,12 +225,10 @@ export function generateEInvoiceXML(
   // Build invoice lines XML
   const invoiceLinesXml = lines
     .map((line, index) => {
-      const lineExtension = line.quantity * line.unitPrice;
+      const lineExtension = lineNetAmount(line);
       const vatRate = line.vatRate ?? UAE_VAT_RATE;
-      const vatAmount = lineExtension * vatRate;
       const category = vatCategoryFor(line);
       const vatPercent = (category === "S" ? vatRate * 100 : 0).toFixed(2);
-      void vatAmount;
 
       return `
     <cac:InvoiceLine>
@@ -268,11 +267,13 @@ export function generateEInvoiceXML(
   for (const line of lines) {
     const category = vatCategoryFor(line);
     const vatRate = category === "S" ? (line.vatRate ?? UAE_VAT_RATE) : 0;
-    const lineExtension = line.quantity * line.unitPrice;
+    // F01: tax subtotals are the sum of line-rounded amounts so they add up
+    // to the persisted document VAT (line-level rounding).
+    const lineExtension = lineNetAmount(line);
     const key = `${category}:${vatRate}`;
     const existing = taxByGroup.get(key) || { category, rate: vatRate, taxable: 0, tax: 0 };
-    existing.taxable += lineExtension;
-    existing.tax += lineExtension * vatRate;
+    existing.taxable = roundMoney(existing.taxable + lineExtension);
+    existing.tax = roundMoney(existing.tax + lineVatAmount(line, vatRate));
     taxByGroup.set(key, existing);
   }
 
@@ -517,9 +518,10 @@ export function validateForEInvoicing(
         message: "Line unit price cannot be negative",
       });
     }
-    const ext = line.quantity * line.unitPrice;
+    const ext = lineNetAmount(line);
     lineSum += ext;
-    lineVat += vatCategoryFor(line) === "S" ? ext * (line.vatRate ?? UAE_VAT_RATE) : 0;
+    lineVat +=
+      vatCategoryFor(line) === "S" ? lineVatAmount(line, line.vatRate ?? UAE_VAT_RATE) : 0;
   });
 
   const round2 = (n: number) => Math.round(n * 100) / 100;

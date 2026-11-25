@@ -1,5 +1,6 @@
 import { isPeriodLocked } from "./month-end.service";
 import { AppError } from "../middleware/errorHandler";
+import { toAccountingDate, type AccountingDate } from "../../shared/accounting-date";
 
 /**
  * Period lock guard for financial write paths.
@@ -15,26 +16,40 @@ import { AppError } from "../middleware/errorHandler";
  */
 export async function assertPeriodNotLocked(
   companyId: string,
-  date: Date | string | null | undefined
-): Promise<void> {
-  if (!companyId) return;
-  if (!date) return;
+  date: Date | string | null | undefined,
+  opts?: { storesBusinessDate?: boolean }
+): Promise<AccountingDate | null> {
+  if (!companyId) return null;
+  if (!date) return null;
 
-  const d = date instanceof Date ? date : new Date(date);
-  if (isNaN(d.getTime())) return;
+  // F06: lock lookup uses the accounting business date — date-only input is
+  // preserved; instants are converted to Asia/Dubai first.
+  const accounting = toAccountingDate(date);
+  if (!accounting) return null;
 
-  const isoDate = d.toISOString().slice(0, 10);
+  const candidates = [accounting.businessDate];
+  // Callers that still persist the raw instant (rather than the normalised
+  // business date) would have the entry read back by UTC date. Until every
+  // caller stores the business date, also refuse if that UTC date is locked,
+  // so a locked period can never be mutated under either reading.
+  if (!opts?.storesBusinessDate) {
+    const raw = date instanceof Date ? date : new Date(date);
+    if (!isNaN(raw.getTime())) {
+      const utcDate = raw.toISOString().slice(0, 10);
+      if (utcDate !== accounting.businessDate) candidates.push(utcDate);
+    }
+  }
 
-  const locked = await isPeriodLocked(companyId, isoDate);
-  if (!locked) return;
-
-  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const year = d.getUTCFullYear();
-
-  throw new AppError(
-    `Cannot post to locked period (${month}/${year}). Unlock the period first.`,
-    403
-  );
+  for (const isoDate of candidates) {
+    if (await isPeriodLocked(companyId, isoDate)) {
+      const [year, month] = isoDate.split("-");
+      throw new AppError(
+        `Cannot post to locked period (${month}/${year}). Unlock the period first.`,
+        403
+      );
+    }
+  }
+  return accounting;
 }
 
 /**
@@ -42,7 +57,12 @@ export async function assertPeriodNotLocked(
  * Exposed for unit testing.
  */
 export function isFutureDate(date: Date, now: Date, graceDays = 0): boolean {
-  const limit = new Date(now);
+  // F06: "today" is the accounting (Asia/Dubai) business date, which is never
+  // earlier than the UTC date. Posting dates are stored as UTC midnight of the
+  // business date, so between 00:00 and 04:00 Dubai today's date must not be
+  // rejected as "future" just because UTC is still on the previous day.
+  const today = toAccountingDate(now);
+  const limit = today ? new Date(today.date) : new Date(now);
   limit.setUTCDate(limit.getUTCDate() + graceDays);
   limit.setUTCHours(23, 59, 59, 999);
   return date.getTime() > limit.getTime();
