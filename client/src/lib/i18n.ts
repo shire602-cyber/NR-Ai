@@ -1078,6 +1078,7 @@ const FIRM_APP_NAMESPACES = [
   "marketing",
   "invoices",
   "banking",
+  "reconciliationRules",
   "consolidation",
   "reportCenter",
   "einvoicing",
