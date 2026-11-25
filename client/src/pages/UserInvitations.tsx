@@ -67,7 +67,12 @@ export default function UserInvitations() {
   const [emailError, setEmailError] = useState<string | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
 
-  const { data: invitations = [], isLoading } = useQuery<Invitation[]>({
+  const {
+    data: invitations = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery<Invitation[]>({
     queryKey: ["/api/admin/invitations"],
   });
 
@@ -149,9 +154,16 @@ export default function UserInvitations() {
     },
   });
 
+  // "Expired" is derived from expiresAt (the API keeps status "pending"), so the filter must use
+  // the same derived status the badge shows: Pending excludes lapsed invites, Expired finds them.
+  const effectiveStatus = (inv: Invitation) =>
+    inv.status === "pending" && inv.expiresAt && isAfter(new Date(), new Date(inv.expiresAt))
+      ? "expired"
+      : inv.status;
+
   const filteredInvitations = invitations.filter((inv) => {
-    const matchesSearch = inv.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === "all" || inv.status === statusFilter;
+    const matchesSearch = inv.email.toLowerCase().includes(searchTerm.trim().toLowerCase());
+    const matchesStatus = statusFilter === "all" || effectiveStatus(inv) === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
@@ -208,16 +220,36 @@ export default function UserInvitations() {
     });
   };
 
-  const copyInviteLink = (token: string) => {
+  const copyInviteLink = async (token: string) => {
     const link = `${window.location.origin}/register?invite=${token}`;
-    navigator.clipboard.writeText(link);
-    toast({ title: t["portal.inviteLinkCopied"] });
+    try {
+      await navigator.clipboard.writeText(link);
+      toast({ title: t["portal.inviteLinkCopied"] });
+    } catch {
+      toast({ variant: "destructive", title: t["portal.inviteCopyFailed"] });
+    }
   };
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div
+        className="space-y-4 py-16 text-center"
+        role="alert"
+        data-testid="invitations-load-error"
+      >
+        <p className="text-muted-foreground">{t["portal.inviteLoadFailed"]}</p>
+        <Button variant="outline" onClick={() => refetch()} data-testid="button-retry-invitations">
+          <RefreshCw className="w-4 h-4 me-2" />
+          {t["pages.retry"]}
+        </Button>
       </div>
     );
   }
@@ -406,9 +438,13 @@ export default function UserInvitations() {
               <TableBody>
                 {filteredInvitations.map((invitation) => {
                   const client = clients.find((c) => c.id === invitation.companyId);
+                  // Only an unanswered invite can be resent; an accepted or revoked one whose
+                  // expiry date has passed must not offer Resend.
                   const isExpired =
-                    invitation.expiresAt && isAfter(new Date(), new Date(invitation.expiresAt));
-                  const canResend = invitation.status === "pending" || isExpired;
+                    invitation.status === "pending" &&
+                    invitation.expiresAt &&
+                    isAfter(new Date(), new Date(invitation.expiresAt));
+                  const canResend = invitation.status === "pending";
 
                   return (
                     <TableRow key={invitation.id} data-testid={`row-invite-${invitation.id}`}>
@@ -491,7 +527,7 @@ export default function UserInvitations() {
                             <DropdownMenuItem
                               className="text-destructive"
                               onClick={() => {
-                                if (confirm("Delete this invitation?")) {
+                                if (confirm(t["portal.inviteDeleteConfirm"])) {
                                   deleteInvitationMutation.mutate(invitation.id);
                                 }
                               }}

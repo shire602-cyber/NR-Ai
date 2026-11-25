@@ -427,5 +427,8 @@
   "portal.access.resendInTime": "إعادة الإرسال بعد {time}",
   "portal.states.chooseTitle": "اختر مورّدًا",
   "portal.states.chooseBody": "أُزيل وصولك إلى بوابة {supplier}. افتح بوابة أخرى للمتابعة.",
-  "portal.doc.dueShort": "الاستحقاق"
+  "portal.doc.dueShort": "الاستحقاق",
+  "portal.inviteDeleteConfirm": "حذف هذه الدعوة؟",
+  "portal.inviteLoadFailed": "تعذّر تحميل الدعوات. تحقق من اتصالك وحاول مرة أخرى.",
+  "portal.inviteCopyFailed": "تعذّر نسخ الرابط. انسخه يدويًا."
 }
