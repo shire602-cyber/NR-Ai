@@ -8,7 +8,7 @@
  * A reconciliation line ties the net aging total (documents less unapplied
  * credits) to the GL control account (1040 A/R, 2010 A/P) at the same date.
  */
-import { pool } from "../db";
+import { getPoolStats, pool } from "../db";
 import { DomainError } from "../errors";
 import { baseCurrencyOf } from "../ledger/currency";
 import {
@@ -381,6 +381,8 @@ export async function agedPayables(
   return (await agedPayablesWithVendors(args, q)).report;
 }
 
+const PAYABLE_AGING_STATEMENT = "reporting_payable_aging";
+
 /**
  * agedPayables plus the vendor id of each aged bill (document id -> vendor id, bills with a
  * vendor record only). The vendor id rides the aging query itself, so the by-vendor A/P view
@@ -392,8 +394,7 @@ export async function agedPayablesWithVendors(
 ): Promise<{ report: AgingReport; vendorOf: Map<string, string> }> {
   const { companyId, asOf } = args;
   // Share a pool checkout and statement snapshot across the bills, credits and ledger totals.
-  const { rows } = await q.query(
-    `SELECT co.base_currency,
+  const text = `SELECT co.base_currency,
             (SELECT row_to_json(control) FROM (${CONTROL_BALANCE_SQL}) control) AS control_balance,
             (${unappliedPayableCreditsFilsSql("$1", AS_OF)})::text AS unapplied_fils,
             COALESCE((
@@ -412,9 +413,14 @@ export async function agedPayablesWithVendors(
                  ORDER BY b.bill_date, b.bill_number
               ) doc
             ), '[]'::json) AS payable_documents
-       FROM companies co WHERE co.id = $1`,
-    [companyId, asOf, ...CONTROL_ACCOUNT.payable]
-  );
+       FROM companies co WHERE co.id = $1`;
+  const values = [companyId, asOf, ...CONTROL_ACCOUNT.payable];
+  // Planning dominates this statement, so the app's own pool prepares it once per connection.
+  // Caller-supplied Queryables (transactions, read caches) and the Neon driver stay unnamed.
+  const { rows } =
+    q === pool && getPoolStats().driver === "pg"
+      ? await pool.query({ name: PAYABLE_AGING_STATEMENT, text, values })
+      : await q.query(text, values);
   const result = rows[0] as PayableAgingRow | undefined;
   if (!result) throw new DomainError("COMPANY_NOT_FOUND", 404);
 
