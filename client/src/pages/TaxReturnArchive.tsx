@@ -5,7 +5,7 @@ import { LoadErrorState } from "@/components/ui/load-error-state";
 import { FileDrop } from "@/components/ui/file-drop";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,7 +40,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, getQueryFn } from "@/lib/queryClient";
+import { classifyLoadError } from "@/lib/loadError";
+import { dateFnsOptions } from "@/lib/date-locale";
 import { Money } from "@/components/ui/money";
 import {
   FileText,
@@ -83,7 +85,8 @@ const RETURN_TYPES = [
 export default function TaxReturnArchive() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId, isLoading: isLoadingCompany, error: companyError } = useDefaultCompany();
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [yearFilter, setYearFilter] = useState<string>("all");
@@ -104,12 +107,15 @@ export default function TaxReturnArchive() {
 
   const {
     data: taxReturns,
-    isLoading,
-    isError,
+    isPending,
+    isLoadingError,
+    isRefetchError,
+    fetchStatus,
     error,
     refetch,
   } = useQuery<TaxReturn[]>({
     queryKey: ["/api/companies", companyId, "tax-returns-archive"],
+    queryFn: getQueryFn<TaxReturn[]>({ on401: "throw" }),
     enabled: !!companyId,
   });
 
@@ -120,10 +126,12 @@ export default function TaxReturnArchive() {
         fileUrl: data.fileName ? `/uploads/${data.fileName}` : null,
       });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "tax-returns-archive"],
-      });
+    onSuccess: async () => {
+      const queryKey = ["/api/companies", companyId, "tax-returns-archive"];
+      // A GET started before the save must not land afterwards (or be reused by the invalidation).
+      await queryClient.cancelQueries({ queryKey, exact: true });
+      // Not awaited: offline, the refetch pauses and would hold the dialog open.
+      void queryClient.invalidateQueries({ queryKey, exact: true });
       toast({
         title: locale === "ar" ? "تمت الإضافة بنجاح" : "Added successfully",
         description: locale === "ar" ? "تم حفظ الإقرار الضريبي" : "Tax return has been saved",
@@ -204,7 +212,17 @@ export default function TaxReturnArchive() {
       return true;
     }) || [];
 
-  const hasNoMatches = filteredReturns.length === 0 && (taxReturns?.length ?? 0) > 0;
+  // Offline and server failures are transient: cached data stays usable. Access denied (and a
+  // missing company) replaces the cached data.
+  const errorKind = error ? classifyLoadError(error) : null;
+  const isBlocked = errorKind === "forbidden" || errorKind === "notFound";
+  const refreshFailed = isRefetchError && !isBlocked;
+  const blockingError = !companyId ? companyError : isLoadingError || isBlocked ? error : null;
+  const isWaiting = !!companyId && isPending && fetchStatus === "paused";
+  // A cached empty list whose refresh failed is not known to be empty any more.
+  const showCard = !!taxReturns && !blockingError && !(refreshFailed && taxReturns.length === 0);
+
+  const hasNoMatches = showCard && filteredReturns.length === 0 && taxReturns.length > 0;
 
   const stats = {
     totalReturns: taxReturns?.length || 0,
@@ -217,7 +235,7 @@ export default function TaxReturnArchive() {
         .reduce((sum, r) => sum + (r.taxAmount || 0), 0) || 0,
   };
 
-  if (isLoadingCompany || isLoading) {
+  if (isLoadingCompany || (isPending && fetchStatus !== "paused" && !blockingError)) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
@@ -246,7 +264,7 @@ export default function TaxReturnArchive() {
       />
 
       {/* Spec 3.12 / 2.6: no KPI row of zeros on an empty archive. */}
-      {stats.totalReturns > 0 ? (
+      {showCard && stats.totalReturns > 0 ? (
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
           <StatCard label={t["compliance.taxArchiveTotalReturns"]} value={stats.totalReturns} />
           <StatCard label={t["compliance.taxArchiveVatReturns"]} value={stats.vatReturns} />
@@ -262,9 +280,48 @@ export default function TaxReturnArchive() {
         {hasNoMatches ? t["compliance.taxArchiveNoMatchTitle"] : ""}
       </div>
 
-      {isError ? (
-        <LoadErrorState error={error} onRetry={() => refetch()} testId="tax-archive-load-error" />
-      ) : (
+      {isWaiting ? (
+        <div role="status" data-testid="tax-archive-waiting">
+          <EmptyState
+            icon={Clock}
+            title={t["compliance.taxArchiveWaitingTitle"]}
+            description={t["compliance.taxArchiveWaitingBody"]}
+          />
+        </div>
+      ) : null}
+
+      {refreshFailed ? (
+        <div
+          role="alert"
+          data-testid="tax-archive-refresh-error"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-danger-subtle px-4 py-3 text-start text-small text-danger-subtle-foreground"
+        >
+          <p>{t["compliance.taxArchiveRefreshFailed"]}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={fetchStatus !== "idle"}
+            data-testid="button-retry-refresh"
+          >
+            {t["firm.retry"]}
+          </Button>
+        </div>
+      ) : null}
+
+      {blockingError ? (
+        <LoadErrorState
+          error={blockingError}
+          onRetry={() =>
+            companyId
+              ? refetch()
+              : queryClient.refetchQueries({ queryKey: ["/api/companies"], exact: true })
+          }
+          testId="tax-archive-load-error"
+        />
+      ) : null}
+
+      {showCard ? (
         <Card>
           <CardHeader>
             <div className="flex flex-col md:flex-row gap-4 justify-between">
@@ -357,8 +414,17 @@ export default function TaxReturnArchive() {
                           <TableCell>
                             <div className="font-medium">{ret.periodLabel}</div>
                             <div className="text-xs text-muted-foreground">
-                              {format(parseCalendarDate(ret.periodStart), "dd MMM")} -{" "}
-                              {format(parseCalendarDate(ret.periodEnd), "dd MMM yyyy")}
+                              {format(
+                                parseCalendarDate(ret.periodStart),
+                                "dd MMM",
+                                dateFnsOptions(locale)
+                              )}{" "}
+                              -{" "}
+                              {format(
+                                parseCalendarDate(ret.periodEnd),
+                                "dd MMM yyyy",
+                                dateFnsOptions(locale)
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -373,7 +439,11 @@ export default function TaxReturnArchive() {
                           <TableCell>
                             <div className="flex items-center gap-1">
                               <Calendar className="w-3 h-3" />
-                              {format(parseCalendarDate(ret.filingDate), "dd MMM yyyy")}
+                              {format(
+                                parseCalendarDate(ret.filingDate),
+                                "dd MMM yyyy",
+                                dateFnsOptions(locale)
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>{ret.ftaReferenceNumber || "-"}</TableCell>
@@ -450,7 +520,7 @@ export default function TaxReturnArchive() {
             )}
           </CardContent>
         </Card>
-      )}
+      ) : null}
 
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="sm:max-w-lg">
