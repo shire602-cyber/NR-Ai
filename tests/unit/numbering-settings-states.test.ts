@@ -52,6 +52,8 @@ describe("Numbering page states", () => {
   let container: HTMLDivElement;
   let root: Root;
   let mode: "error" | "empty" | "rows";
+  /** What the server holds: a PUT writes it and later GETs return it. */
+  let serverRow: typeof ROW;
   let fetchMock: ReturnType<typeof vi.fn>;
   const jsonResponse = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {
@@ -66,11 +68,18 @@ describe("Numbering page states", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
+    serverRow = ROW;
     fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
       if (String(input).includes("/api/csrf-token")) return jsonResponse({ csrfToken: "tok" });
-      if (init?.method === "PUT") return jsonResponse({ ok: true });
+      if (init?.method === "PUT") {
+        serverRow = { ...serverRow, ...JSON.parse(String(init.body)) };
+        // The server derives the formatted number from the series (no yearly reset here).
+        const { prefix, nextNumber, padding } = serverRow;
+        serverRow.nextFormatted = `${prefix}-${String(nextNumber).padStart(padding, "0")}`;
+        return jsonResponse({ ok: true });
+      }
       if (mode === "error") return jsonResponse({ message: "boom" }, 500);
-      return jsonResponse({ numbering: mode === "rows" ? [ROW] : [] });
+      return jsonResponse({ numbering: mode === "rows" ? [serverRow] : [] });
     });
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal(
@@ -262,6 +271,11 @@ describe("Numbering page states", () => {
       expect(prefix.value).toBe("XYZ");
       expectWaiting();
 
+      const gets = () =>
+        fetchMock.mock.calls.filter(
+          ([url, init]) => String(url).endsWith("/numbering") && init?.method !== "PUT"
+        );
+      const getsBefore = gets().length;
       await act(async () => onlineManager.setOnline(true));
       await settle();
       expect(puts()).toHaveLength(1);
@@ -273,6 +287,39 @@ describe("Numbering page states", () => {
         nextNumber: 9,
       });
       expect(byTestId("numbering-save-waiting-invoice")).toBeNull();
+
+      // The refresh returned the saved row, and the later edits survived it.
+      expect(gets().length).toBeGreaterThan(getsBefore);
+      const { queryClient } = await import("../../client/src/lib/queryClient");
+      expect(queryClient.getQueryData(KEY)).toEqual({
+        numbering: [{ ...ROW, prefix: "ABC", nextNumber: 9, nextFormatted: "ABC-0009" }],
+      });
+      const value = (id: string) => (byTestId(id) as HTMLInputElement).value;
+      expect(value("numbering-prefix-invoice")).toBe("XYZ");
+      expect(value("numbering-next-invoice")).toBe("20");
+    });
+
+    it("follows the server again for saved and untouched fields", async () => {
+      mode = "rows";
+      // A frozen clock: the PUT and the refreshed GET land in the same millisecond.
+      vi.spyOn(Date, "now").mockReturnValue(Date.now());
+      await mount();
+      await type("numbering-prefix-invoice", "ABC");
+      await clickSave();
+      const value = (id: string) => (byTestId(id) as HTMLInputElement).value;
+      expect(value("numbering-prefix-invoice")).toBe("ABC");
+      const { queryClient } = await import("../../client/src/lib/queryClient");
+      expect(queryClient.getQueryData(KEY)).toEqual({
+        numbering: [{ ...ROW, prefix: "ABC", nextFormatted: "ABC-0005" }],
+      });
+
+      serverRow = { ...serverRow, prefix: "NEW", nextNumber: 12, nextFormatted: "NEW-0012" };
+      await act(async () => {
+        await queryClient.refetchQueries({ queryKey: KEY });
+      });
+      await settle();
+      expect(value("numbering-prefix-invoice")).toBe("NEW");
+      expect(value("numbering-next-invoice")).toBe("12");
     });
   });
 });

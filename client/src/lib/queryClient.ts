@@ -10,6 +10,8 @@ import {
   SERVER_ERROR_NAMESPACES,
 } from "./validation-messages";
 import { loadNamespaces, useI18n } from "./i18n";
+import offlineAr from "../locales/offline/ar.json";
+import offlineEn from "../locales/offline/en.json";
 import { announcePlanLimit } from "./plan-limit";
 import {
   clearRevokedPortalSelection,
@@ -122,7 +124,9 @@ async function isCsrfInvalidResponse(res: Response): Promise<boolean> {
 /** Writes are refused while offline: nothing stores or replays them. */
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-const OFFLINE_WRITE_MESSAGE = "You are offline. Your change was not sent. Reconnect and try again.";
+/** Imported eagerly: an offline client cannot fetch a lazy namespace chunk. */
+const offlineWriteMessage = () =>
+  (useI18n.getState().locale === "ar" ? offlineAr : offlineEn)["offline.writeNotSent"];
 
 async function buildRequestHeaders(
   method: string,
@@ -191,14 +195,14 @@ async function requestWithHeaders(
   const upperMethod = method.toUpperCase();
   const isMutation = MUTATING_METHODS.has(upperMethod);
   const immediateOnly = isMutation && options?.queueWhenOffline === false;
-  if (immediateOnly && !isOnline()) throw new ApiRequestNotSentError("You are offline.");
+  if (immediateOnly && !isOnline()) throw new ApiRequestNotSentError(offlineWriteMessage());
 
   let headers: Record<string, string>;
   try {
     headers = withExtra(await buildRequestHeaders(method, data, authHeaders));
   } catch (error) {
     if (immediateOnly) throw new ApiRequestNotSentError("Could not prepare the request.");
-    if (isMutation && !isOnline()) throw new ApiError(OFFLINE_WRITE_MESSAGE, 0);
+    if (isMutation && !isOnline()) throw new ApiError(offlineWriteMessage(), 0);
     throw error;
   }
 
@@ -218,8 +222,8 @@ async function requestWithHeaders(
   // The connection can drop while headers are prepared. A write is then refused, not sent; reads
   // go to the network and surface its error.
   if (isMutation && !isOnline()) {
-    if (immediateOnly) throw new ApiRequestNotSentError("You are offline.");
-    throw new ApiError(OFFLINE_WRITE_MESSAGE, 0);
+    if (immediateOnly) throw new ApiRequestNotSentError(offlineWriteMessage());
+    throw new ApiError(offlineWriteMessage(), 0);
   }
 
   let res = await send(headers);

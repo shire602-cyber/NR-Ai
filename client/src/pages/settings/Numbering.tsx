@@ -44,6 +44,22 @@ interface SaveNumberingVariables {
   companyId: string;
   docType: NumberingRow["docType"];
   payload: { prefix: string; padding: number; yearlyReset: boolean; nextNumber?: number };
+  draft: Draft;
+}
+
+/** Only the fields the user edited; every other field follows the server row. */
+interface Draft {
+  prefix?: string;
+  padding?: number;
+  yearlyReset?: boolean;
+  next?: string;
+}
+
+/** Drop the edits the server now holds; anything changed since the save was submitted stays. */
+function withoutSaved(draft: Draft, saved: Draft): Draft {
+  return Object.fromEntries(
+    Object.entries(draft).filter(([field, value]) => saved[field as keyof Draft] !== value)
+  );
 }
 
 /** Same rule as the server: the year is part of the number only with yearly reset. */
@@ -55,20 +71,35 @@ function preview(prefix: string, padding: number, yearlyReset: boolean, n: numbe
 
 function NumberingCard({
   row,
+  rowDataUpdateCount,
   companyId,
   disabled,
 }: {
   row: NumberingRow;
+  /** How many times the query data holding `row` has been received. */
+  rowDataUpdateCount: number;
   companyId: string;
   disabled: boolean;
 }) {
   const { locale, t } = useTranslation();
   const { toast } = useToast();
-  const [prefix, setPrefix] = useState(row.prefix);
-  const [padding, setPadding] = useState(row.padding);
-  const [yearlyReset, setYearlyReset] = useState(row.yearlyReset);
-  const [next, setNext] = useState(String(row.nextNumber));
+  const [draft, setDraft] = useState<Draft>({});
+  // A successful save whose refreshed row has not arrived yet. The draft is kept until it does,
+  // so a paused or failed refresh never shows the old values again.
+  // The cutoff is an update count, not a timestamp: two receipts can share a clock millisecond.
+  const [saved, setSaved] = useState<{ draft: Draft; dataUpdateCountAtSave: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  if (saved && rowDataUpdateCount > saved.dataUpdateCountAtSave) {
+    setDraft((current) => withoutSaved(current, saved.draft));
+    setSaved(null);
+  }
+
+  const prefix = draft.prefix ?? row.prefix;
+  const padding = draft.padding ?? row.padding;
+  const yearlyReset = draft.yearlyReset ?? row.yearlyReset;
+  const next = draft.next ?? String(row.nextNumber);
+  const edit = (change: Draft) => setDraft((current) => ({ ...current, ...change }));
 
   const nextNum = Number(next);
   const nextFormatted = preview(prefix.trim().toUpperCase(), padding, yearlyReset, nextNum || 1);
@@ -83,9 +114,12 @@ function NumberingCard({
     onSuccess: (_result, submitted) => {
       setError(null);
       toast({ title: translateNow("settingsPages.numberingSaved") });
-      void queryClient.invalidateQueries({
-        queryKey: ["/api/companies", submitted.companyId, "numbering"],
+      const queryKey = ["/api/companies", submitted.companyId, "numbering"];
+      setSaved({
+        draft: submitted.draft,
+        dataUpdateCountAtSave: queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0,
       });
+      void queryClient.invalidateQueries({ queryKey });
     },
     onError: (e: unknown) => {
       // Only a server-sent 4xx (validation / conflict) message is shown; raw network, CSRF,
@@ -130,6 +164,7 @@ function NumberingCard({
                 yearlyReset,
                 ...(nextNum !== row.nextNumber ? { nextNumber: nextNum } : {}),
               },
+              draft,
             });
           }}
         >
@@ -140,7 +175,7 @@ function NumberingCard({
               dir="ltr"
               maxLength={12}
               value={prefix}
-              onChange={(e) => setPrefix(e.target.value.replace(/[^A-Za-z0-9\-/]/g, ""))}
+              onChange={(e) => edit({ prefix: e.target.value.replace(/[^A-Za-z0-9\-/]/g, "") })}
               disabled={disabled}
               data-testid={`numbering-prefix-${row.docType}`}
             />
@@ -149,7 +184,7 @@ function NumberingCard({
             <Label htmlFor={id("padding")}>{t["settingsPages.numberingPadding"]}</Label>
             <Select
               value={String(padding)}
-              onValueChange={(v) => setPadding(Number(v))}
+              onValueChange={(v) => edit({ padding: Number(v) })}
               disabled={disabled}
             >
               <SelectTrigger id={id("padding")}>
@@ -172,7 +207,7 @@ function NumberingCard({
               dir="ltr"
               className="text-end tabular-nums"
               value={next}
-              onChange={(e) => setNext(e.target.value.replace(/[^0-9]/g, ""))}
+              onChange={(e) => edit({ next: e.target.value.replace(/[^0-9]/g, "") })}
               aria-invalid={nextTooLow}
               aria-describedby={id("next-help")}
               disabled={disabled}
@@ -189,7 +224,7 @@ function NumberingCard({
             <Switch
               id={id("reset")}
               checked={yearlyReset}
-              onCheckedChange={setYearlyReset}
+              onCheckedChange={(v) => edit({ yearlyReset: v })}
               disabled={disabled}
               data-testid={`numbering-reset-${row.docType}`}
             />
@@ -229,10 +264,13 @@ export default function NumberingSettings() {
   const { companyId } = useDefaultCompany();
   const { can } = useCompanyPermission();
   const canManage = can("settings.company");
+  const numberingQueryKey = ["/api/companies", companyId, "numbering"];
   const data = useQuery<{ numbering: NumberingRow[] }>({
-    queryKey: ["/api/companies", companyId, "numbering"],
+    queryKey: numberingQueryKey,
     enabled: !!companyId,
   });
+  const numberingDataUpdateCount =
+    queryClient.getQueryState(numberingQueryKey)?.dataUpdateCount ?? 0;
 
   return (
     <SettingsLayout>
@@ -288,8 +326,10 @@ export default function NumberingSettings() {
         {companyId
           ? (data.data?.numbering ?? []).map((row) => (
               <NumberingCard
-                key={`${row.docType}-${row.prefix}-${row.padding}-${row.yearlyReset}-${row.nextNumber}`}
+                // Stable per company and document, so a refresh never remounts away a draft.
+                key={`${companyId}-${row.docType}`}
                 row={row}
+                rowDataUpdateCount={numberingDataUpdateCount}
                 companyId={companyId}
                 disabled={!canManage}
               />
