@@ -51,6 +51,67 @@ describe("apiRequest CSRF recovery", () => {
     expect((retryMutation.headers as Record<string, string>)["x-csrf-token"]).toBe("fresh-token");
   });
 
+  it("PR129: aborting the caller's signal aborts the in-flight fetch", async () => {
+    const fetchMock = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError"))
+          );
+        })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+
+    const request = apiRequest("GET", "/api/slow", undefined, undefined, {
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    controller.abort();
+
+    await expect(request).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("PR129: the session-refresh retry carries the same signal", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn(() => "1"),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({}, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "token" }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+      .mockResolvedValueOnce(jsonResponse([]));
+    vi.stubGlobal("fetch", fetchMock);
+    const { signal } = new AbortController();
+
+    await expect(apiRequest("GET", "/api/slow", undefined, undefined, { signal })).resolves.toEqual(
+      []
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect((fetchMock.mock.calls[0][1] as RequestInit).signal).toBe(signal);
+    expect((fetchMock.mock.calls[3][1] as RequestInit).signal).toBe(signal);
+  });
+
+  it("PR129: the CSRF retry carries the same signal", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "stale-token" }))
+      .mockResolvedValueOnce(jsonResponse({ code: "CSRF_INVALID" }, { status: 403 }))
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "fresh-token" }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { signal } = new AbortController();
+
+    await apiRequest("POST", "/api/things", {}, undefined, { signal });
+
+    expect((fetchMock.mock.calls[1][1] as RequestInit).signal).toBe(signal);
+    expect((fetchMock.mock.calls[3][1] as RequestInit).signal).toBe(signal);
+  });
+
   it("returns null for successful empty responses", async () => {
     const fetchMock = vi
       .fn()
