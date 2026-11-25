@@ -155,10 +155,12 @@ export default function Notifications() {
   };
 
   const hasNews = !newsLoading && (regulatoryNews?.length ?? 0) > 0;
-  // A news load that failed (or is paused offline) with nothing cached keeps its tab so the retry
-  // panel is reachable. A successful empty response still hides the tab (WP-E, spec 3.15).
+  // A failed news load with no articles (no cache, or a cached []) keeps its tab so the retry panel
+  // is reachable; so does a first load paused offline with no cache. A successful empty response
+  // still hides the tab (WP-E, spec 3.15).
   const newsUnavailable =
-    !newsLoading && !regulatoryNews && (!!newsError || newsFetchStatus === "paused");
+    !newsLoading &&
+    (newsError ? !regulatoryNews?.length : !regulatoryNews && newsFetchStatus === "paused");
   // A retry with no data clears the error and reports loading again; while the user is on the news
   // tab keep the strip (and the loading panel) so focus and selection survive the retry.
   const newsRetrying = newsLoading && activeTab === "regulatory";
@@ -229,7 +231,7 @@ export default function Notifications() {
                 <Skeleton key={i} className="h-24 w-full" />
               ))}
             </div>
-          ) : notificationsError && !notificationsData ? (
+          ) : notificationsError && !notificationsData?.notifications?.length ? (
             <LoadErrorState
               error={notificationsError}
               onRetry={() => void refetchNotifications()}

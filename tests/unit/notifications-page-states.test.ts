@@ -119,6 +119,12 @@ const click = async (el: HTMLElement) => {
   });
   await flush();
 };
+const refetch = async (key: string) => {
+  await act(async () => {
+    await (h.client as QueryClient).refetchQueries({ queryKey: [key] });
+  });
+  await flush();
+};
 const setOnline = async (online: boolean) => {
   await act(async () => {
     onlineManager.setOnline(online);
@@ -213,6 +219,97 @@ describe("Notifications regulatory news states", () => {
     await mount();
     expect(newsTabListHidden()).toBe(true);
     expect(byId("news-load-error")).toBeNull();
+  });
+
+  it("shows the tab and retry panel when a refetch fails after a successful empty response, then recovers", async () => {
+    let newsFails = false;
+    handlers["/api/regulatory-news"] = async () => {
+      if (newsFails) throw new ApiError("boom", 500);
+      return [];
+    };
+    await mount();
+    expect(newsTabListHidden()).toBe(true);
+
+    newsFails = true;
+    await refetch("/api/regulatory-news");
+    expect(newsTabListHidden()).toBe(false);
+    await act(async () => {
+      byId("tab-regulatory")!.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, button: 0 })
+      );
+    });
+    await flush();
+    const panel = byId("news-load-error");
+    expect(panel).not.toBeNull();
+
+    newsFails = false;
+    await click(panel!.querySelector("button")!);
+    expect(byId("news-load-error")).toBeNull();
+    expect(newsTabListHidden()).toBe(true);
+  });
+
+  it("keeps cached articles instead of the retry panel when a refetch fails", async () => {
+    let newsFails = false;
+    handlers["/api/regulatory-news"] = async () => {
+      if (newsFails) throw new ApiError("boom", 500);
+      return [
+        {
+          id: "news1",
+          category: "vat",
+          importance: "normal",
+          title: "VAT update",
+          summary: "Summary",
+          publishedAt: new Date().toISOString(),
+        },
+      ];
+    };
+    await mount();
+    newsFails = true;
+    await refetch("/api/regulatory-news");
+    await act(async () => {
+      byId("tab-regulatory")!.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, button: 0 })
+      );
+    });
+    await flush();
+    expect(byId("card-news-news1")).not.toBeNull();
+    expect(byId("news-load-error")).toBeNull();
+  });
+});
+
+describe("Notifications refresh failure", () => {
+  it("shows the retry panel when a refresh fails with an empty cached list, then recovers", async () => {
+    let fails = false;
+    handlers["/api/notifications"] = async () => {
+      if (fails) throw new ApiError("boom", 500);
+      return listResponse([]);
+    };
+    await mount();
+    expect(container.textContent).toContain(t.en["pageLabels.noNotifications"]);
+
+    fails = true;
+    await refetch("/api/notifications");
+    expect(byId("notifications-load-error")).not.toBeNull();
+    expect(container.textContent).not.toContain(t.en["pageLabels.noNotifications"]);
+
+    fails = false;
+    handlers["/api/notifications"] = async () => listResponse();
+    await click(byId("notifications-load-error")!.querySelector("button")!);
+    expect(byId("notifications-load-error")).toBeNull();
+    expect(byId("card-notification-n1")).not.toBeNull();
+  });
+
+  it("keeps cached rows when a refresh fails", async () => {
+    let fails = false;
+    handlers["/api/notifications"] = async () => {
+      if (fails) throw new ApiError("boom", 500);
+      return listResponse();
+    };
+    await mount();
+    fails = true;
+    await refetch("/api/notifications");
+    expect(byId("notifications-load-error")).toBeNull();
+    expect(byId("card-notification-n1")).not.toBeNull();
   });
 });
 
