@@ -533,6 +533,45 @@ export function registerBankStatementRoutes(app: Express) {
   // ─────────────────────────────────────────────────────────────
 
   /**
+   * POST /api/companies/:companyId/bank-statements/import-preview
+   * Parse a CSV and return a lightweight preview without writing to the DB.
+   *
+   * Body: { csvContent: string }
+   * Response: { transactionCount, skippedRows, format, preview: first 5 rows }
+   */
+  app.post(
+    "/api/companies/:companyId/bank-statements/import-preview",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+
+      const parsed = z.object({ csvContent: z.string().min(1) }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+      }
+
+      const { transactions, format, errors, skippedRows } = parseBankCsv(parsed.data.csvContent);
+      res.json({
+        transactionCount: transactions.length,
+        skippedRows,
+        format,
+        parseErrors: errors.length > 0 ? errors.slice(0, 5) : undefined,
+        preview: transactions.slice(0, 5).map((t) => ({
+          date: t.date instanceof Date ? t.date.toISOString().slice(0, 10) : String(t.date),
+          description: t.description,
+          debit: t.debit,
+          credit: t.credit,
+        })),
+      });
+    })
+  );
+
+  /**
    * POST /api/companies/:companyId/bank-statements/import
    * Import bank statement rows from a CSV.
    *

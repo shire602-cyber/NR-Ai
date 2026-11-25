@@ -18,4 +18,12 @@ describe("Bank import launch UX", () => {
     expect(source).toContain("skippedDuplicates");
     expect(source).toContain("Matching suggestions are being prepared");
   });
+
+  it("exposes an import preview panel before the user confirms the import", () => {
+    expect(source).toContain('data-testid="import-preview-panel"');
+    expect(source).toContain("importPreview");
+    expect(source).toContain("transactionCount");
+    expect(source).toContain("skippedRows");
+    expect(source).toContain("import-preview");
+  });
 });

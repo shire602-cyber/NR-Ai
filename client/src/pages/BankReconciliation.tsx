@@ -228,6 +228,12 @@ export default function BankReconciliation() {
   const [isImporting, setIsImporting] = useState(false);
   const [pdfProgress, setPdfProgress] = useState(0);
   const [processingStatus, setProcessingStatus] = useState("");
+  const [importPreview, setImportPreview] = useState<{
+    transactionCount: number;
+    skippedRows: number;
+    format: string;
+    preview: { date: string; description: string; debit: number; credit: number }[];
+  } | null>(null);
 
   // ─── Queries ──────────────────────────────────────────────────────────────
 
@@ -320,6 +326,7 @@ export default function BankReconciliation() {
       });
       setImportDialogOpen(false);
       setImportFile(null);
+      setImportPreview(null);
       setPdfProgress(0);
       setProcessingStatus("");
     },
@@ -437,12 +444,25 @@ export default function BankReconciliation() {
 
   // ─── File import handlers ─────────────────────────────────────────────────
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setImportFile(file);
-      setPdfProgress(0);
-      setProcessingStatus("");
+    if (!file) return;
+    setImportFile(file);
+    setPdfProgress(0);
+    setProcessingStatus("");
+    setImportPreview(null);
+    if (file.type !== "application/pdf") {
+      try {
+        const csvContent = await file.text();
+        const data = await apiRequest(
+          "POST",
+          `/api/companies/${companyId}/bank-statements/import-preview`,
+          { csvContent }
+        );
+        setImportPreview(data);
+      } catch {
+        // preview is best-effort; don't block import on failure
+      }
     }
   };
 
@@ -529,6 +549,7 @@ export default function BankReconciliation() {
         toast({ title: "Import Successful", description: `Imported ${txns.length} transactions` });
         setImportDialogOpen(false);
         setImportFile(null);
+        setImportPreview(null);
       } else {
         // CSV — send raw content to the proper endpoint
         const csvContent = await importFile.text();
@@ -1164,6 +1185,61 @@ export default function BankReconciliation() {
                 </div>
               )}
             </div>
+            {importPreview && (
+              <div
+                className="border rounded-md p-3 space-y-2 text-sm"
+                data-testid="import-preview-panel"
+              >
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    <span className="font-medium text-foreground">
+                      {importPreview.transactionCount}
+                    </span>{" "}
+                    transaction{importPreview.transactionCount !== 1 ? "s" : ""} found
+                    {importPreview.format ? ` · ${importPreview.format}` : ""}
+                  </span>
+                  {importPreview.skippedRows > 0 && (
+                    <span className="text-[hsl(var(--chart-4))]">
+                      {importPreview.skippedRows} row
+                      {importPreview.skippedRows !== 1 ? "s" : ""} skipped
+                    </span>
+                  )}
+                </div>
+                {importPreview.preview.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="text-muted-foreground">
+                          <th className="text-left pb-1 pr-3">Date</th>
+                          <th className="text-left pb-1 pr-3">Description</th>
+                          <th className="text-right pb-1 pr-3">Debit</th>
+                          <th className="text-right pb-1">Credit</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importPreview.preview.map((row, i) => (
+                          <tr key={i} className="border-t border-border/50">
+                            <td className="py-0.5 pr-3 whitespace-nowrap">{row.date}</td>
+                            <td className="py-0.5 pr-3 max-w-[160px] truncate">{row.description}</td>
+                            <td className="py-0.5 pr-3 text-right tabular-nums">
+                              {row.debit > 0 ? row.debit.toFixed(2) : ""}
+                            </td>
+                            <td className="py-0.5 text-right tabular-nums">
+                              {row.credit > 0 ? row.credit.toFixed(2) : ""}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {importPreview.transactionCount > importPreview.preview.length && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        + {importPreview.transactionCount - importPreview.preview.length} more
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="bg-muted/50 p-3 rounded-md text-sm space-y-1.5">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1.5">
