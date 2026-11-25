@@ -1169,7 +1169,7 @@ const pendingLocales = new Map<Locale, Promise<void>>();
  * Loaded only by the component that declares them, never by the app-wide load: a failed chunk
  * stays inside that component instead of rejecting `loadLocale` for the whole app.
  */
-const ON_DEMAND_NAMESPACES = new Set(["yearEndClose"]);
+const ON_DEMAND_NAMESPACES = new Set(["yearEndClose", "bankStatement"]);
 
 function pathsFor(locale: Locale, namespaces: string[] | null): string[] {
   const loaders = namespaceLoaders[locale] ?? {};
