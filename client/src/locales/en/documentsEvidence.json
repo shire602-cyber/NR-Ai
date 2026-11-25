@@ -192,5 +192,16 @@
   "complianceCalendar.today": "Today",
   "complianceCalendar.viewCalendar": "Calendar",
   "complianceCalendar.viewList": "List",
-  "complianceCalendar.daysShort": "{count}d"
+  "complianceCalendar.daysShort": "{count}d",
+  "documentVault.openFailedTitle": "Could not open the file",
+  "documentVault.openFailedBody": "Please try again in a moment.",
+  "documentVault.deleteFailedTitle": "Could not delete the document",
+  "documentVault.deleteFailedBody": "Nothing was deleted. Please try again.",
+  "documentVault.operations": "Operations",
+  "documentVault.loadFailedTitle": "Could not load your documents",
+  "documentVault.loadFailedBody": "Your documents are safe. Check your connection and try again.",
+  "documentVault.retry": "Try again",
+  "documentVault.noMatchTitle": "No matching documents",
+  "documentVault.noMatchBody": "Try a different search or clear the filters.",
+  "documentVault.clearFilters": "Clear search and filters"
 }

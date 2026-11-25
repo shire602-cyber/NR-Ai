@@ -146,7 +146,12 @@ export default function DocumentVault() {
     reminderDays: 30,
   });
 
-  const { data: documents, isLoading } = useQuery<Document[]>({
+  const {
+    data: documents,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery<Document[]>({
     queryKey: ["/api/companies", companyId, "documents"],
     enabled: !!companyId,
   });
@@ -198,8 +203,26 @@ export default function DocumentVault() {
     },
   });
 
+  const ar = locale === "ar";
+  const openFile = (doc: { fileUrl: string; fileName: string }, download: boolean) => {
+    openVaultFile(doc, download).catch(() => {
+      toast({
+        variant: "destructive",
+        title: t["documentVault.openFailedTitle"],
+        description: t["documentVault.openFailedBody"],
+      });
+    });
+  };
+
   const deleteMutation = useMutation({
     mutationFn: (documentId: string) => apiRequest("DELETE", `/api/documents/${documentId}`),
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: t["documentVault.deleteFailedTitle"],
+        description: t["documentVault.deleteFailedBody"],
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "documents"] });
       toast({
@@ -263,20 +286,20 @@ export default function DocumentVault() {
     return { status: "valid", color: "default", days };
   };
 
-  const filteredDocuments =
-    documents?.filter((doc) => {
-      if (doc.isArchived) return false;
-      if (categoryFilter !== "all" && doc.category !== categoryFilter) return false;
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        return (
-          doc.name.toLowerCase().includes(query) ||
-          doc.fileName.toLowerCase().includes(query) ||
-          doc.description?.toLowerCase().includes(query)
-        );
-      }
-      return true;
-    }) || [];
+  const activeDocuments = documents?.filter((doc) => !doc.isArchived) ?? [];
+  const query = searchQuery.trim().toLowerCase();
+  const hasFilters = query.length > 0 || categoryFilter !== "all";
+  const filteredDocuments = activeDocuments.filter((doc) => {
+    if (categoryFilter !== "all" && doc.category !== categoryFilter) return false;
+    if (!query) return true;
+    return [doc.name, doc.nameAr, doc.fileName, doc.description].some((v) =>
+      v?.toLowerCase().includes(query)
+    );
+  });
+  const clearFilters = () => {
+    setSearchQuery("");
+    setCategoryFilter("all");
+  };
 
   const expiringDocs =
     documents?.filter((doc) => {
@@ -305,11 +328,36 @@ export default function DocumentVault() {
     );
   }
 
+  if (isError) {
+    return (
+      <SettingsLayout>
+        <div className="space-y-6">
+          <PageHeader
+            eyebrow={t["documentVault.operations"]}
+            title={ar ? "خزنة المستندات" : t["shell.moreDocumentVault"]}
+          />
+          <Alert
+            tone="danger"
+            title={t["documentVault.loadFailedTitle"]}
+            data-testid="vault-load-error"
+            action={
+              <Button size="sm" variant="outline" onClick={() => void refetch()}>
+                {t["documentVault.retry"]}
+              </Button>
+            }
+          >
+            {t["documentVault.loadFailedBody"]}
+          </Alert>
+        </div>
+      </SettingsLayout>
+    );
+  }
+
   return (
     <SettingsLayout>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Operations"
+          eyebrow={t["documentVault.operations"]}
           title={locale === "ar" ? "خزنة المستندات" : t["shell.moreDocumentVault"]}
           description={
             locale === "ar"
@@ -337,7 +385,7 @@ export default function DocumentVault() {
           />
         )}
 
-        {(documents?.length ?? 0) === 0 ? (
+        {activeDocuments.length === 0 ? (
           <EmptyState
             icon={FolderOpen}
             title={locale === "ar" ? "لا توجد مستندات" : t["documentVault.noDocumentsYet"]}
@@ -351,6 +399,9 @@ export default function DocumentVault() {
           />
         ) : (
           <Card>
+            <div role="status" aria-atomic="true" className="sr-only">
+              {hasFilters && filteredDocuments.length === 0 ? t["documentVault.noMatchTitle"] : ""}
+            </div>
             <CardHeader>
               <div className="flex flex-col md:flex-row gap-4 justify-between">
                 <div className="relative min-w-0 flex-1">
@@ -363,6 +414,8 @@ export default function DocumentVault() {
                     placeholder={t["documentVault.search"]}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
+                    type="search"
+                    dir="auto"
                     className="ps-10"
                     data-testid="input-search-documents"
                   />
@@ -395,13 +448,17 @@ export default function DocumentVault() {
             </CardHeader>
             <CardContent>
               {filteredDocuments.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>{locale === "ar" ? "لا توجد مستندات" : t["documentVault.noDocumentsFound"]}</p>
-                  <Button variant="ghost" onClick={() => setUploadDialogOpen(true)}>
-                    {locale === "ar" ? "رفع أول مستند" : t["documentVault.uploadYourFirstDocument"]}
-                  </Button>
-                </div>
+                <EmptyState
+                  icon={Search}
+                  title={t["documentVault.noMatchTitle"]}
+                  description={t["documentVault.noMatchBody"]}
+                  action={{
+                    label: t["documentVault.clearFilters"],
+                    onClick: clearFilters,
+                    variant: "outline",
+                    testId: "button-clear-document-filters",
+                  }}
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
@@ -449,7 +506,11 @@ export default function DocumentVault() {
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline">
-                                {locale === "ar" ? category?.labelAr : category?.labelEn}
+                                {category
+                                  ? ar
+                                    ? category.labelAr
+                                    : category.labelEn
+                                  : doc.category}
                               </Badge>
                             </TableCell>
                             <TableCell>
@@ -509,7 +570,7 @@ export default function DocumentVault() {
                                   size="icon"
                                   variant="ghost"
                                   aria-label={t["adminDocuments.view"]}
-                                  onClick={() => void openVaultFile(doc, false)}
+                                  onClick={() => openFile(doc, false)}
                                   data-testid={`button-view-${doc.id}`}
                                 >
                                   <Eye className="w-4 h-4" />
@@ -518,7 +579,7 @@ export default function DocumentVault() {
                                   size="icon"
                                   variant="ghost"
                                   aria-label={t["adminDocuments.download"]}
-                                  onClick={() => void openVaultFile(doc, true)}
+                                  onClick={() => openFile(doc, true)}
                                   data-testid={`button-download-${doc.id}`}
                                 >
                                   <Download className="w-4 h-4" />

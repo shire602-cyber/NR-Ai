@@ -192,5 +192,16 @@
   "complianceCalendar.today": "اليوم",
   "complianceCalendar.viewCalendar": "التقويم",
   "complianceCalendar.viewList": "القائمة",
-  "complianceCalendar.daysShort": "{count} يوم"
+  "complianceCalendar.daysShort": "{count} يوم",
+  "documentVault.openFailedTitle": "تعذر فتح الملف",
+  "documentVault.openFailedBody": "حاول مرة أخرى بعد قليل.",
+  "documentVault.deleteFailedTitle": "تعذر حذف المستند",
+  "documentVault.deleteFailedBody": "لم يتم الحذف. حاول مرة أخرى.",
+  "documentVault.operations": "العمليات",
+  "documentVault.loadFailedTitle": "تعذر تحميل المستندات",
+  "documentVault.loadFailedBody": "مستنداتك لم تُحذف. تحقق من اتصالك ثم أعد المحاولة.",
+  "documentVault.retry": "إعادة المحاولة",
+  "documentVault.noMatchTitle": "لا توجد مستندات مطابقة",
+  "documentVault.noMatchBody": "جرّب كلمة بحث أخرى أو أزل التصفية.",
+  "documentVault.clearFilters": "مسح البحث والتصفية"
 }
