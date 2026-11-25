@@ -203,5 +203,13 @@
   "documentVault.retry": "Try again",
   "documentVault.noMatchTitle": "No matching documents",
   "documentVault.noMatchBody": "Try a different search or clear the filters.",
-  "documentVault.clearFilters": "Clear search and filters"
+  "documentVault.clearFilters": "Clear search and filters",
+  "documentVault.waitingTitle": "Waiting to load your documents",
+  "documentVault.waitingBody": "Loading continues when this window is focused and you have a connection.",
+  "documentVault.refreshFailedTitle": "Could not refresh your documents",
+  "documentVault.refreshFailedBody": "You are seeing the last loaded list, which may be out of date.",
+  "documentVault.deleteUnconfirmedTitle": "Deletion not confirmed",
+  "documentVault.deleteUnconfirmedBody": "The document may or may not have been deleted. Check the list before trying again.",
+  "documentVault.unsupportedFileBody": "This stored file reference is not supported, so it cannot be opened or downloaded.",
+  "documentVault.popupBlockedBody": "Your browser blocked the preview tab. Allow pop-ups for this site and try again."
 }

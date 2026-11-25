@@ -203,5 +203,13 @@
   "documentVault.retry": "إعادة المحاولة",
   "documentVault.noMatchTitle": "لا توجد مستندات مطابقة",
   "documentVault.noMatchBody": "جرّب كلمة بحث أخرى أو أزل التصفية.",
-  "documentVault.clearFilters": "مسح البحث والتصفية"
+  "documentVault.clearFilters": "مسح البحث والتصفية",
+  "documentVault.waitingTitle": "في انتظار تحميل مستنداتك",
+  "documentVault.waitingBody": "يستمر التحميل عندما تكون هذه النافذة نشطة ويتوفر اتصال.",
+  "documentVault.refreshFailedTitle": "تعذّر تحديث مستنداتك",
+  "documentVault.refreshFailedBody": "تظهر لك آخر قائمة تم تحميلها، وقد لا تكون محدّثة.",
+  "documentVault.deleteUnconfirmedTitle": "لم يتم تأكيد الحذف",
+  "documentVault.deleteUnconfirmedBody": "ربما حُذف المستند وربما لم يُحذف. تحقق من القائمة قبل المحاولة مرة أخرى.",
+  "documentVault.unsupportedFileBody": "مرجع الملف المخزَّن هذا غير مدعوم، لذا لا يمكن فتحه أو تنزيله.",
+  "documentVault.popupBlockedBody": "حظر المتصفح علامة تبويب المعاينة. اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة."
 }

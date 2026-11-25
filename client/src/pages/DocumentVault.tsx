@@ -41,41 +41,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiRequestNotSentError, apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
-import { getAuthHeaders } from "@/lib/auth";
-import { withCsrfHeader } from "@/lib/csrf";
-
-/** W4-D (R16-09): headers for a raw fetch (Bearer, or the CSRF token for cookie sessions). */
-async function vaultHeaders(method: string): Promise<Record<string, string>> {
-  const headers: Record<string, string> = { ...getAuthHeaders() };
-  return headers.Authorization ? headers : withCsrfHeader(method, headers);
-}
-
-/** Open or download a vault file: stored files stream from the authenticated API. */
-async function openVaultFile(doc: { fileUrl: string; fileName: string }, download: boolean) {
-  if (/^https:\/\//i.test(doc.fileUrl)) {
-    window.open(doc.fileUrl, "_blank", "noopener,noreferrer");
-    return;
-  }
-  // Stored files are served by the authenticated download route (fileUrl is set by the server).
-  if (!/^\/api\/documents\/[0-9a-f-]{36}\/download$/i.test(doc.fileUrl)) return;
-  const res = await fetch(apiUrl(doc.fileUrl), {
-    headers: await vaultHeaders("GET"),
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const url = URL.createObjectURL(await res.blob());
-  if (download) {
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = doc.fileName;
-    link.click();
-  } else {
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-}
+import {
+  openVaultFile,
+  vaultHeaders,
+  VaultPopupBlockedError,
+  VaultUnsupportedReferenceError,
+} from "@/lib/vaultFile";
 import {
   FileText,
   Download,
@@ -131,7 +104,7 @@ export default function DocumentVault() {
   const { t } = useTranslation();
   const { t: _t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId, isLoading: isLoadingCompany, error: companyError } = useDefaultCompany();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -148,13 +121,26 @@ export default function DocumentVault() {
 
   const {
     data: documents,
+    fetchStatus,
     isLoading,
+    isLoadingError,
     isError,
     refetch,
   } = useQuery<Document[]>({
     queryKey: ["/api/companies", companyId, "documents"],
     enabled: !!companyId,
   });
+
+  /**
+   * Re-read the list after a write. In-flight reads are cancelled first so a response issued
+   * before the write cannot land as the current list. The cache is not edited here: the list
+   * (and the first-upload prompt) changes only when the server answers.
+   */
+  const refreshDocuments = async () => {
+    const queryKey = ["/api/companies", companyId, "documents"];
+    await queryClient.cancelQueries({ queryKey });
+    void queryClient.invalidateQueries({ queryKey });
+  };
 
   const uploadMutation = useMutation({
     mutationFn: async (data: {
@@ -185,8 +171,8 @@ export default function DocumentVault() {
       if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`);
       return body;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "documents"] });
+    onSuccess: async () => {
+      await refreshDocuments();
       toast({
         title: locale === "ar" ? "تم الرفع بنجاح" : "Upload successful",
         description: locale === "ar" ? "تم حفظ المستند" : "Document has been saved",
@@ -205,26 +191,45 @@ export default function DocumentVault() {
 
   const ar = locale === "ar";
   const openFile = (doc: { fileUrl: string; fileName: string }, download: boolean) => {
-    openVaultFile(doc, download).catch(() => {
+    openVaultFile(doc, download).catch((error: unknown) => {
       toast({
         variant: "destructive",
         title: t["documentVault.openFailedTitle"],
-        description: t["documentVault.openFailedBody"],
+        description:
+          error instanceof VaultUnsupportedReferenceError
+            ? t["documentVault.unsupportedFileBody"]
+            : error instanceof VaultPopupBlockedError
+              ? t["documentVault.popupBlockedBody"]
+              : t["documentVault.openFailedBody"],
       });
     });
   };
 
   const deleteMutation = useMutation({
-    mutationFn: (documentId: string) => apiRequest("DELETE", `/api/documents/${documentId}`),
-    onError: () => {
+    // A destructive request is never replayed later: not by the service worker queue
+    // (queueWhenOffline) and not by a paused mutation resuming on reconnect (networkMode).
+    networkMode: "always",
+    mutationFn: (documentId: string) =>
+      apiRequest("DELETE", `/api/documents/${documentId}`, undefined, undefined, {
+        queueWhenOffline: false,
+      }),
+    onError: async (error: unknown) => {
+      // Only "never sent" proves nothing was deleted. Once the request is dispatched, any
+      // failure leaves the outcome unknown, so say so and re-read the list.
+      const notSent = error instanceof ApiRequestNotSentError;
       toast({
         variant: "destructive",
-        title: t["documentVault.deleteFailedTitle"],
-        description: t["documentVault.deleteFailedBody"],
+        title: notSent
+          ? t["documentVault.deleteFailedTitle"]
+          : t["documentVault.deleteUnconfirmedTitle"],
+        description: notSent
+          ? t["documentVault.deleteFailedBody"]
+          : t["documentVault.deleteUnconfirmedBody"],
       });
+      if (!notSent) await refreshDocuments();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "documents"] });
+    onSuccess: async () => {
+      await refreshDocuments();
       toast({
         title: locale === "ar" ? "تم الحذف" : "Deleted",
         description: locale === "ar" ? "تم حذف المستند" : "Document has been deleted",
@@ -328,7 +333,17 @@ export default function DocumentVault() {
     );
   }
 
-  if (isError) {
+  const retry = () => {
+    // Without a company the documents query is disabled; the company list is what failed.
+    if (companyId) void refetch();
+    else void queryClient.refetchQueries({ queryKey: ["/api/companies"], exact: true });
+  };
+
+  // No list yet: a hard error, or still waiting (paused offline or unfocused). Never "empty".
+  if (documents === undefined) {
+    // A paused retry is waiting, even if an earlier first load failed.
+    const loadFailed =
+      fetchStatus !== "paused" && (isLoadingError || (!companyId && !!companyError));
     return (
       <SettingsLayout>
         <div className="space-y-6">
@@ -336,18 +351,24 @@ export default function DocumentVault() {
             eyebrow={t["documentVault.operations"]}
             title={ar ? "خزنة المستندات" : t["shell.moreDocumentVault"]}
           />
-          <Alert
-            tone="danger"
-            title={t["documentVault.loadFailedTitle"]}
-            data-testid="vault-load-error"
-            action={
-              <Button size="sm" variant="outline" onClick={() => void refetch()}>
-                {t["documentVault.retry"]}
-              </Button>
-            }
-          >
-            {t["documentVault.loadFailedBody"]}
-          </Alert>
+          {loadFailed ? (
+            <Alert
+              tone="danger"
+              title={t["documentVault.loadFailedTitle"]}
+              data-testid="vault-load-error"
+              action={
+                <Button size="sm" variant="outline" onClick={retry}>
+                  {t["documentVault.retry"]}
+                </Button>
+              }
+            >
+              {t["documentVault.loadFailedBody"]}
+            </Alert>
+          ) : (
+            <Alert tone="info" title={t["documentVault.waitingTitle"]} data-testid="vault-waiting">
+              {t["documentVault.waitingBody"]}
+            </Alert>
+          )}
         </div>
       </SettingsLayout>
     );
@@ -371,6 +392,22 @@ export default function DocumentVault() {
             </Button>
           }
         />
+
+        {/* A failed background refresh keeps the loaded list, search and upload usable. */}
+        {isError && (
+          <Alert
+            tone="warning"
+            title={t["documentVault.refreshFailedTitle"]}
+            data-testid="vault-refresh-error"
+            action={
+              <Button size="sm" variant="outline" onClick={retry}>
+                {t["documentVault.retry"]}
+              </Button>
+            }
+          >
+            {t["documentVault.refreshFailedBody"]}
+          </Alert>
+        )}
 
         {/* Fable B9: no tile row. Expiry is the only signal worth a line, and only when a
             document is expiring or has expired. */}
@@ -404,11 +441,10 @@ export default function DocumentVault() {
             </div>
             <CardHeader>
               <div className="flex flex-col md:flex-row gap-4 justify-between">
-                <div className="relative min-w-0 flex-1">
-                  <Search
-                    className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden
-                  />
+                {/* The icon sits outside the field: it follows the page direction, while the
+                    field's text follows what is typed (dir="auto"), so they cannot overlap. */}
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                   <Input
                     aria-label={t["documentVault.search"]}
                     placeholder={t["documentVault.search"]}
@@ -416,7 +452,7 @@ export default function DocumentVault() {
                     onChange={(e) => setSearchQuery(e.target.value)}
                     type="search"
                     dir="auto"
-                    className="ps-10"
+                    className="min-w-0 flex-1"
                     data-testid="input-search-documents"
                   />
                 </div>
