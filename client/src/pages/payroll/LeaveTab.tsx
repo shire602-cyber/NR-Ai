@@ -4,6 +4,7 @@ import { TrialReadOnlyContext } from "@/lib/trial-access";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Check, Plus, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -71,7 +72,11 @@ export function LeaveTab({ companyId }: { companyId: string }) {
   const { data: types = [] } = useQuery<LeaveType[]>({
     queryKey: [`/api/companies/${companyId}/payroll/leave-types`],
   });
-  const { data: requests = [] } = useQuery<LeaveRequest[]>({ queryKey: reqKey });
+  const {
+    data: requests = [],
+    error: requestsError,
+    refetch: refetchRequests,
+  } = useQuery<LeaveRequest[]>({ queryKey: reqKey });
   const [employeeId, setEmployeeId] = useState("");
   const [leaveTypeId, setLeaveTypeId] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -228,7 +233,13 @@ export function LeaveTab({ companyId }: { companyId: string }) {
           <CardTitle>{tx("hr.leaveRequests")}</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          {requests.length === 0 ? (
+          {requestsError ? (
+            <LoadErrorState
+              error={requestsError}
+              onRetry={() => void refetchRequests()}
+              testId="payroll-load-error"
+            />
+          ) : requests.length === 0 ? (
             <EmptyState size="sm" title={tx("hr.noLeaveRequests")} />
           ) : (
             <Table>

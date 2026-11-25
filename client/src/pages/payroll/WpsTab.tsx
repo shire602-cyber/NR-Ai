@@ -6,6 +6,7 @@ import { FileDrop } from "@/components/ui/file-drop";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatDate } from "@/lib/format-date";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { FileSearch, Save, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -247,7 +248,11 @@ export function WpsTab({ companyId }: { companyId: string }) {
   const { toast } = useToast();
   const runsKey = [`/api/companies/${companyId}/payroll-runs`];
   const { data: runs = [] } = useQuery<PayrollRun[]>({ queryKey: runsKey });
-  const { data: expiries = [] } = useQuery<ExpiryRow[]>({
+  const {
+    data: expiries = [],
+    error: expiriesError,
+    refetch: refetchExpiries,
+  } = useQuery<ExpiryRow[]>({
     queryKey: [`/api/companies/${companyId}/payroll/expiries`],
   });
   const [content, setContent] = useState("");
@@ -379,7 +384,13 @@ export function WpsTab({ companyId }: { companyId: string }) {
           <CardDescription>{tx("hr.expiriesHint")}</CardDescription>
         </CardHeader>
         <CardContent>
-          {expiries.length === 0 ? (
+          {expiriesError ? (
+            <LoadErrorState
+              error={expiriesError}
+              onRetry={() => void refetchExpiries()}
+              testId="payroll-load-error"
+            />
+          ) : expiries.length === 0 ? (
             <EmptyState size="sm" title={tx("hr.noExpiries")} />
           ) : (
             <ul className="space-y-1 text-sm">

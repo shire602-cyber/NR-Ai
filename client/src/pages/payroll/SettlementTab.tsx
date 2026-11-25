@@ -4,6 +4,7 @@ import { TrialReadOnlyContext } from "@/lib/trial-access";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Calculator, FileCheck, Wallet } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -82,7 +83,11 @@ export function SettlementTab({ companyId }: { companyId: string }) {
   const { data: employees = [] } = useQuery<Employee[]>({
     queryKey: [`/api/companies/${companyId}/employees`],
   });
-  const { data: settlements = [] } = useQuery<SettlementRow[]>({ queryKey: listKey });
+  const {
+    data: settlements = [],
+    error: settlementsError,
+    refetch: refetchSettlements,
+  } = useQuery<SettlementRow[]>({ queryKey: listKey });
   // X4 (J3): settlements can be paid now (pay-from account) or later (Record payment).
   const { data: accounts = [] } = useQuery<
     Array<{
@@ -318,7 +323,13 @@ export function SettlementTab({ companyId }: { companyId: string }) {
           <CardTitle>{tx("hr.settlements")}</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          {settlements.length === 0 ? (
+          {settlementsError ? (
+            <LoadErrorState
+              error={settlementsError}
+              onRetry={() => void refetchSettlements()}
+              testId="payroll-load-error"
+            />
+          ) : settlements.length === 0 ? (
             <EmptyState size="sm" title={tx("hr.noSettlements")} />
           ) : (
             <Table>
