@@ -203,7 +203,8 @@ describe("D1 public site", () => {
         "/product/dashboard-ar.webp"
       );
       expect(container.querySelector('a[hreflang="en"]')?.getAttribute("href")).toBe("/en");
-      expect(container.textContent).toContain("اختر مزوّد خدمة معتمدًا واحدًا لكل شركة");
+      expect(container.textContent).toContain("وتتم عبر مزوّد خدمة معتمد");
+      expect(container.textContent).not.toMatch(/A-Cube|Complyance|أكيوب|كومبلاينس/i);
       expect(container.textContent).toContain("ارفع كشف حسابك البنكي بصيغة CSV");
       expect(container.querySelector('a[href="/ar/migration-guides/zoho"] bdi')?.textContent).toBe(
         "Zoho Books"
@@ -314,15 +315,16 @@ describe("D1 public site", () => {
   });
 
   it.each([
-    ["en", "read-only", "A-Cube or Complyance"],
-    ["ar", "للقراءة فقط", "A-Cube أو Complyance"],
+    ["en", "read-only", "UAE e-invoicing is built in and included on every plan, delivered through an accredited service provider."],
+    ["ar", "للقراءة فقط", "الفوترة الإلكترونية في الإمارات مدمجة ومشمولة في كل باقة، وتتم عبر مزوّد خدمة معتمد."],
   ] as const)(
     "explains trial expiry and provider choice in %s pricing",
-    async (locale, lock, providers) => {
+    async (locale, lock, providerCopy) => {
       await setLocale(locale);
       await render("Pricing");
       expect(container.textContent).toContain(lock);
-      expect(container.textContent).toContain(providers);
+      expect(container.textContent).toContain(providerCopy);
+      expect(container.textContent).not.toMatch(/A-Cube|Complyance/i);
     }
   );
 });
