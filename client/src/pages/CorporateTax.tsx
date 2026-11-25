@@ -1022,7 +1022,7 @@ export default function CorporateTax() {
                   data-testid="ct-empty-period"
                   className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
                 >
-                  <T k="corporateTax.emptyPeriod" />
+                  <T k="corporateTaxScreen.emptyPeriod" />
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1096,7 +1096,7 @@ export default function CorporateTax() {
                   </div>
                   <div className="flex justify-between">
                     <span>
-                      <T k="corporateTax.taxableAmountAboveThreshold" />
+                      <T k="corporateTaxScreen.taxableAmountAboveThreshold" />
                     </span>
                     <span className="font-medium">
                       <Money amount={adjustedCalculation.taxableAmount} currency={"AED"} />
@@ -1124,17 +1124,17 @@ export default function CorporateTax() {
 
               <div className="text-xs text-muted-foreground">
                 {calculation
-                  ? formatMessage(t["corporateTax.basedOnEntries"], {
+                  ? formatMessage(t["corporateTaxScreen.basedOnEntries"], {
                       count: adjustedCalculation.journalEntriesProcessed,
                     })
-                  : t["corporateTax.basedOnManual"]}
+                  : t["corporateTaxScreen.basedOnManual"]}
               </div>
 
               {/* Notes and Save */}
               <div className="space-y-3 pt-2 border-t">
                 <div className="space-y-2">
                   <Label htmlFor="notes">
-                    <T k="corporateTax.notesOptional" />
+                    <T k="corporateTaxScreen.notesOptional" />
                   </Label>
                   <Textarea
                     id="notes"
@@ -1155,7 +1155,7 @@ export default function CorporateTax() {
                       <T k="pageLabels.saving" />
                     </>
                   ) : (
-                    <T k="corporateTax.saveAsDraft" />
+                    <T k="corporateTaxScreen.saveAsDraft" />
                   )}
                 </Button>
               </div>
@@ -1187,7 +1187,7 @@ export default function CorporateTax() {
           </div>
           {returnsQuery.fetchStatus === "paused" && (
             <p role="status" className="py-3 text-center text-muted-foreground">
-              <T k="corporateTax.returnsPaused" />
+              <T k="corporateTaxScreen.returnsPaused" />
             </p>
           )}
           {returnsFailure === "refresh" && (
@@ -1197,7 +1197,7 @@ export default function CorporateTax() {
               className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
             >
               <span>
-                <T k="corporateTax.returnsRefreshError" />
+                <T k="corporateTaxScreen.returnsRefreshError" />
               </span>
               <Button
                 type="button"
@@ -1224,7 +1224,7 @@ export default function CorporateTax() {
             >
               <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-warning" />
               <p>
-                <T k="corporateTax.returnsLoadError" />
+                <T k="corporateTaxScreen.returnsLoadError" />
               </p>
               <Button
                 variant="outline"

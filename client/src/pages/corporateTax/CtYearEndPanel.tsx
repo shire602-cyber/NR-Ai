@@ -110,7 +110,7 @@ export function CtYearEndPanel({ companyId }: { companyId: string }) {
       <CardContent className="space-y-8">
         {paused && (
           <p role="status" className="text-sm text-muted-foreground">
-            {t["corporateTax.yearEndPaused"]}
+            {t["corporateTaxScreen.yearEndPaused"]}
           </p>
         )}
         {failures.map(({ kind, failed }) => (
@@ -126,8 +126,8 @@ export function CtYearEndPanel({ companyId }: { companyId: string }) {
           >
             <span>
               {kind === "initial"
-                ? t["corporateTax.yearEndLoadError"]
-                : t["corporateTax.yearEndRefreshError"]}
+                ? t["corporateTaxScreen.yearEndLoadError"]
+                : t["corporateTaxScreen.yearEndRefreshError"]}
             </span>
             <Button
               type="button"
