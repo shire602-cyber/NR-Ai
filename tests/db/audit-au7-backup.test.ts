@@ -868,6 +868,64 @@ describe("AU7 accounting backup integrity", () => {
     }
   );
 
+  it.each([
+    { draftInBackup: false, status: 409 },
+    { draftInBackup: true, status: 200 },
+  ])(
+    "returns $status for Replace preview and restore with an omitted revenue account FK (draft in backup: $draftInBackup)",
+    async ({ draftInBackup, status }) => {
+      const t = await h.createTenant();
+      const invoiceId = await draftInvoice(t);
+      await issueInvoice(t, invoiceId);
+      const bank = await accountByCode(t, "1020");
+      await h.sql(
+        `INSERT INTO bank_accounts (company_id, name_en, bank_name, currency, gl_account_id)
+         VALUES ($1, 'Checkout deposits', 'Other', 'EUR', $2)`,
+        [t.company.id, bank.id]
+      );
+      await h.sql(
+        `INSERT INTO exchange_rates (company_id, base_currency, target_currency, rate_type, rate, date)
+         VALUES ($1, 'EUR', 'AED', 'spot', 4, now() AT TIME ZONE 'UTC')`,
+        [t.company.id]
+      );
+      const backedUpDraft = draftInBackup ? await draftInvoice(t) : undefined;
+      const before = await snapshot(t);
+      await makeLegacy(before.id, (tables) => {
+        for (const line of tables.invoice_lines as Record<string, unknown>[]) {
+          delete line.revenue_account_id;
+        }
+      });
+      const draft = backedUpDraft ?? (await draftInvoice(t));
+      const [income] = await h.sql<{ id: string }>(
+        `INSERT INTO accounts (company_id, code, name_en, type)
+         VALUES ($1, '1025', 'Draft revenue', 'income') RETURNING id`,
+        [t.company.id]
+      );
+      await h.sql("UPDATE invoice_lines SET revenue_account_id = $1 WHERE invoice_id = $2", [
+        income.id,
+        draft,
+      ]);
+      await startCheckoutWithClearingFallback(t, invoiceId);
+      const { ensureClearingAccount } = await import("../../server/services/payments");
+      expect(await ensureClearingAccount(t.company.id)).toBe(bank.id);
+
+      if (status === 409) {
+        await expectReplaceConflict(t, before, "payment_links");
+      } else {
+        const preview = await t.as.post(`/api/backups/${before.id}/restore-preview`, {
+          mode: "replace",
+        });
+        expect(preview.status, preview.text).toBe(status);
+        const restored = await replace(t, before);
+        expect(restored.status, restored.text).toBe(status);
+      }
+      expect(await h.sql("SELECT id FROM accounts WHERE id = $1", [income.id])).toEqual([income]);
+      expect(
+        await h.sql("SELECT revenue_account_id FROM invoice_lines WHERE invoice_id = $1", [draft])
+      ).toEqual([{ revenue_account_id: income.id }]);
+    }
+  );
+
   it("keeps the configured deposit account eligible while checkout can still settle", async () => {
     const t = await h.createTenant();
     const invoiceId = await draftInvoice(t);

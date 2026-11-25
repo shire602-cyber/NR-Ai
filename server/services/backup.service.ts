@@ -710,6 +710,7 @@ interface RestoreTable {
   table: ManifestTable;
   json: string;
   rowCount: number;
+  protectingFks: FkRow[];
 }
 
 function incompatible(table: string, reason: string): never {
@@ -727,7 +728,7 @@ function planRestore(
   included: ManifestTable[]
 ): RestoreTable[] {
   const represented = included.filter((t) => Object.hasOwn(snapshot.tables, t.name));
-  const plan = represented.map((t) => {
+  const plan = represented.map((t): RestoreTable => {
     const archived = snapshot.tables[t.name] as Record<string, unknown>[];
     if (
       !Array.isArray(archived) ||
@@ -768,46 +769,52 @@ function planRestore(
       table: { ...t, columns, deferred: t.deferred.filter((c) => columns.includes(c)) },
       json: JSON.stringify(rows.map((row) => Object.fromEntries(columns.map((c) => [c, row[c]])))),
       rowCount: rows.length,
+      protectingFks: [],
     };
   });
   const replaced = new Map(
     plan.filter(({ table }) => !table.appendOnly).map(({ table }) => [table.name, table])
   );
-  for (const { table } of plan) {
+  for (const entry of plan) {
+    const { table } = entry;
     // Live grants, group references and tables or FK columns added since the
     // backup can still depend on a row the snapshot would otherwise delete.
-    const protections = manifest.fks
-      .filter((f) => {
-        if (f.ref_table !== table.name) return false;
-        const child = replaced.get(f.table_name);
-        return (
-          !child || (child.columns.length > 0 && f.columns.some((c) => !child.columns.includes(c)))
-        );
-      })
-      .map(
-        (f) =>
-          `EXISTS (SELECT 1 FROM ${q(f.table_name)} d WHERE ${f.columns
-            .map((c, i) => `d.${q(c)} = t.${q(f.ref_columns[i])}`)
-            .join(" AND ")})`
+    entry.protectingFks = manifest.fks.filter((f) => {
+      if (f.ref_table !== table.name) return false;
+      const child = replaced.get(f.table_name);
+      return (
+        !child || (child.columns.length > 0 && f.columns.some((c) => !child.columns.includes(c)))
       );
-    const payslipParentColumn = PAYSLIP_ITEM_PARENT_COLUMNS[table.name];
-    if (payslipParentColumn) {
-      // A payslip-protected item still needs its run and employee. Deleting
-      // the run cascades through the item, while the employee FK restricts deletion.
-      protections.push(`EXISTS (
-        SELECT 1 FROM payroll_items i JOIN payslip_tokens p ON p.payroll_item_id = i.id
-        WHERE i.${q(payslipParentColumn)} = t.id
-      )`);
-    }
-    table.protectedFromDelete = protections.join(" OR ");
+    });
+    table.protectedFromDelete = deleteProtection(entry);
   }
   return plan;
 }
 
-function deletionScope(t: ManifestTable): string {
-  return t.protectedFromDelete
-    ? `(${t.predicate}) AND NOT (${t.protectedFromDelete})`
-    : t.predicate;
+function deleteProtection(
+  { table, protectingFks }: RestoreTable,
+  childSource: (name: string) => string = q
+): string {
+  const protections = protectingFks.map(
+    (f) =>
+      `EXISTS (SELECT 1 FROM ${childSource(f.table_name)} d WHERE ${f.columns
+        .map((c, i) => `d.${q(c)} = t.${q(f.ref_columns[i])}`)
+        .join(" AND ")})`
+  );
+  const payslipParentColumn = PAYSLIP_ITEM_PARENT_COLUMNS[table.name];
+  if (payslipParentColumn) {
+    // A payslip-protected item still needs its run and employee. Deleting
+    // the run cascades through the item, while the employee FK restricts deletion.
+    protections.push(`EXISTS (
+      SELECT 1 FROM payroll_items i JOIN payslip_tokens p ON p.payroll_item_id = i.id
+      WHERE i.${q(payslipParentColumn)} = t.id
+    )`);
+  }
+  return protections.join(" OR ");
+}
+
+function deletionScope(t: ManifestTable, protection = t.protectedFromDelete): string {
+  return protection ? `(${t.predicate}) AND NOT (${protection})` : t.predicate;
 }
 
 async function validateSnapshotRows(client: Queryable, plan: RestoreTable[]): Promise<void> {
@@ -1067,6 +1074,31 @@ async function mergeChangesCheckoutSettlement(
   return rows.length > 0;
 }
 
+function projectedDeleteProtection(
+  plan: RestoreTable[],
+  entry: RestoreTable,
+  values: string[]
+): string {
+  // Replace deletes in reverse plan order. Only the live child rows left
+  // after an earlier deletion can still protect this row through an omitted FK.
+  const earlierDeletes = plan.slice(plan.indexOf(entry) + 1);
+  return deleteProtection(entry, (name) => {
+    const child = earlierDeletes.find(({ table }) => table.name === name && !table.appendOnly);
+    if (!child) return q(name);
+    const { table, json, rowCount } = child;
+    const scope = deletionScope(table, projectedDeleteProtection(plan, child, values));
+    let inSnapshot = "";
+    if (table.pk.length && rowCount) {
+      values.push(json);
+      inSnapshot = `OR EXISTS (
+        SELECT 1 FROM json_populate_recordset(NULL::${q(name)}, $${values.length}::json) s
+        WHERE ${pkMatch(table, "t", "s")}
+      )`;
+    }
+    return `(SELECT t.* FROM ${q(name)} t WHERE (${scope}) IS NOT TRUE ${inSnapshot})`;
+  });
+}
+
 // Project only the columns the guards read. Older snapshots leave omitted
 // columns unchanged on updates and use the column defaults on inserts.
 function replacementRows(
@@ -1087,13 +1119,14 @@ function replacementRows(
       ? `s.${column}`
       : `CASE WHEN t.id IS NULL THEN ${defaultSql} ELSE t.${column} END AS ${column}`
   );
+  const protection = projectedDeleteProtection(plan, entry, values);
   return `SELECT ${projected.join(", ")}
     FROM ${snapshot} s LEFT JOIN ${q(name)} t ON ${key}
     WHERE s.company_id = $1
     UNION ALL
     SELECT ${Object.keys(columns).join(", ")} ${live}
       AND NOT EXISTS (SELECT 1 FROM ${snapshot} s WHERE ${key})
-      ${table.protectedFromDelete ? `AND (${table.protectedFromDelete})` : "AND false"}`;
+      AND (${protection || "false"})`;
 }
 
 function postingLockRanges(months: string, years: string): string {
