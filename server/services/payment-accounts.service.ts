@@ -8,7 +8,8 @@
  * Header accounts (accounts that have sub-accounts) never receive postings: the ledger kernel
  * refuses them (ACCOUNT_IS_HEADER).
  */
-import { pool } from "../db";
+import { sql } from "drizzle-orm";
+import { db, pool, rowsFromResult } from "../db";
 import { ACCOUNT_CODES } from "../constants";
 
 export interface PaymentAccountRow {
@@ -19,19 +20,22 @@ export interface PaymentAccountRow {
 }
 
 /** Active, non-archived cash/bank asset accounts that have no active sub-accounts. */
-export async function postableCashBankAccounts(companyId: string): Promise<PaymentAccountRow[]> {
-  const { rows } = await pool.query(
-    `SELECT a.id, a.code, a.name_en AS "nameEn", a.sub_type AS "subType"
+export async function postableCashBankAccounts(
+  companyId: string,
+  executor = db
+): Promise<PaymentAccountRow[]> {
+  return rowsFromResult<PaymentAccountRow & Record<string, unknown>>(
+    await executor.execute(
+      sql`SELECT a.id, a.code, a.name_en AS "nameEn", a.sub_type AS "subType"
        FROM accounts a
-      WHERE a.company_id = $1 AND a.type = 'asset' AND a.sub_type IN ('cash', 'bank')
+      WHERE a.company_id = ${companyId} AND a.type = 'asset' AND a.sub_type IN ('cash', 'bank')
         AND a.is_active = true AND a.is_archived = false
         AND NOT EXISTS (SELECT 1 FROM accounts c
                          WHERE c.parent_id = a.id AND c.company_id = a.company_id
                            AND c.is_archived = false)
-      ORDER BY a.code`,
-    [companyId]
+      ORDER BY a.code`
+    )
   );
-  return rows as PaymentAccountRow[];
 }
 
 /**
@@ -41,21 +45,23 @@ export async function postableCashBankAccounts(companyId: string): Promise<Payme
  */
 export async function primaryBankGlAccountId(
   companyId: string,
-  currency?: string | null
+  currency?: string | null,
+  executor = db
 ): Promise<string | null> {
-  const { rows } = await pool.query(
-    `SELECT ba.gl_account_id AS id, ba.currency
+  const [row] = rowsFromResult<{ id: string }>(
+    await executor.execute(
+      sql`SELECT ba.gl_account_id AS id, ba.currency
        FROM bank_accounts ba
        JOIN accounts a ON a.id = ba.gl_account_id AND a.company_id = ba.company_id
-      WHERE ba.company_id = $1 AND ba.is_active = true
+      WHERE ba.company_id = ${companyId} AND ba.is_active = true
         AND a.is_active = true AND a.is_archived = false
         AND NOT EXISTS (SELECT 1 FROM accounts c
                          WHERE c.parent_id = a.id AND c.company_id = a.company_id
                            AND c.is_archived = false)
-      ORDER BY (ba.currency = COALESCE($2, ba.currency)) DESC, ba.created_at ASC, ba.id ASC`,
-    [companyId, currency ?? null]
+      ORDER BY (ba.currency = COALESCE(${currency ?? null}, ba.currency)) DESC, ba.created_at ASC, ba.id ASC`
+    )
   );
-  return (rows[0]?.id as string | undefined) ?? null;
+  return row?.id ?? null;
 }
 
 /**
@@ -65,14 +71,15 @@ export async function primaryBankGlAccountId(
  */
 export async function defaultPaymentAccountId(
   companyId: string,
-  opts: { method?: string | null; currency?: string | null } = {}
+  opts: { method?: string | null; currency?: string | null } = {},
+  executor = db
 ): Promise<string | null> {
-  const postable = await postableCashBankAccounts(companyId);
+  const postable = await postableCashBankAccounts(companyId, executor);
   if (opts.method === "cash") {
     const cash = postable.find((a) => a.code === ACCOUNT_CODES.CASH);
     if (cash) return cash.id;
   }
-  const primary = await primaryBankGlAccountId(companyId, opts.currency);
+  const primary = await primaryBankGlAccountId(companyId, opts.currency, executor);
   if (primary) return primary;
   const bank =
     postable.find((a) => a.code === ACCOUNT_CODES.BANK) ??

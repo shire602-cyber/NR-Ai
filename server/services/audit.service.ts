@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { createLogger } from "../config/logger";
 import { auditLogs } from "../../shared/schema";
 import type { LedgerTx } from "../ledger/types";
+import type { Queryable } from "./connectors/pq";
 
 const log = createLogger("audit");
 
@@ -34,7 +35,9 @@ interface AuditParams {
  * change posted ledger state, money movement, access control, or user
  * permissions.
  */
-export async function recordAudit(params: AuditParams): Promise<void> {
+export async function recordAudit(
+  params: AuditParams & ({ client?: never } | { tx?: never; client: Queryable; required: true })
+): Promise<void> {
   try {
     const { userId, companyId, action, entityType, entityId, before, after, req, extra } = params;
     const details = JSON.stringify({
@@ -56,6 +59,24 @@ export async function recordAudit(params: AuditParams): Promise<void> {
       ipAddress,
       userAgent,
     };
+    if (params.client) {
+      await params.client.query(
+        `INSERT INTO audit_logs
+          (user_id, company_id, action, resource_type, resource_id, details, ip_address, user_agent)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          row.userId,
+          row.companyId,
+          row.action,
+          row.resourceType,
+          row.resourceId,
+          row.details,
+          row.ipAddress,
+          row.userAgent,
+        ]
+      );
+      return;
+    }
     if (params.tx) {
       await params.tx.transaction(async (sp: LedgerTx) => {
         await sp.insert(auditLogs).values(row);
