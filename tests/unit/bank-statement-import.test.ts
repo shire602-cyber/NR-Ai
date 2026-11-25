@@ -105,4 +105,43 @@ describe("bank statement CSV import", () => {
       balance: 99038.25,
     });
   });
+
+  it("strips a UTF-8 BOM from the first header field", () => {
+    const result = parseBankCsv(
+      ["﻿Date,Description,Debit,Credit,Balance", "2026-06-01,Salary,,5000.00,5000.00"].join(
+        "\n"
+      )
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+    expect(result.transactions[0]).toMatchObject({ credit: 5000, debit: 0 });
+  });
+
+  it("counts rows skipped for missing date or zero amount in skippedRows", () => {
+    // Row 2: invalid date string → skipped
+    // Row 3: valid transaction → imported
+    // Row 4: zero amount (balance row) → skipped
+    const result = parseBankCsv(
+      [
+        "Date,Description,Debit,Credit,Balance",
+        "not-a-date,Opening balance,0,0,10000",
+        "2026-06-01,Utility bill,820.50,,9179.50",
+        "2026-06-01,Balance carried forward,0,0,9179.50",
+      ].join("\n")
+    );
+    expect(result.transactions).toHaveLength(1);
+    expect(result.skippedRows).toBe(2);
+  });
+
+  it("returns skippedRows: 0 for a fully-valid file", () => {
+    const result = parseBankCsv(
+      [
+        "Date,Description,Debit,Credit,Balance",
+        "2026-06-01,Utility bill,820.50,,9179.50",
+        "2026-06-02,Client payment,,5000.00,14179.50",
+      ].join("\n")
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.skippedRows).toBe(0);
+  });
 });

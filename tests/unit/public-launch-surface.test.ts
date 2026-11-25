@@ -204,4 +204,26 @@ describe("Public SaaS launch surface", () => {
       expect(demoSource).toContain(expectedDemoSignal);
     }
   });
+
+  it("keeps pricing at AED 59 / 119 / 229 (monthly) and e-invoicing on every plan", () => {
+    const pricingSource = readRepoFile("client/src/pages/Pricing.tsx");
+    const subscriptionSource = readRepoFile("client/src/pages/Subscription.tsx");
+
+    // Monthly prices must match owner-approved schedule.
+    expect(pricingSource).toContain("monthlyPrice: 59");
+    expect(pricingSource).toContain("monthlyPrice: 119");
+    expect(pricingSource).toContain("monthlyPrice: 229");
+    expect(subscriptionSource).toContain("monthlyPrice: 59");
+    expect(subscriptionSource).toContain("monthlyPrice: 119");
+    expect(subscriptionSource).toContain("monthlyPrice: 229");
+
+    // E-invoicing must be enabled for every plan in the feature matrix.
+    expect(pricingSource).toContain(
+      "{ key: \"eInvoicing\", free: true, starter: true, professional: true, enterprise: true }"
+    );
+
+    // Trial is 14-day Enterprise, no card, read-only after.
+    expect(pricingSource).toContain("14-day Enterprise trial");
+    expect(pricingSource).toContain("read-only");
+  });
 });

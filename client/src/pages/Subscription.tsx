@@ -42,6 +42,7 @@ const PLANS = [
       "10 AI credits/month",
       "Basic dashboard",
       "VAT reports",
+      "E-invoicing (PINT AE)",
       "Email support",
     ],
     limits: {
@@ -54,7 +55,7 @@ const PLANS = [
   {
     id: "starter",
     name: "Starter",
-    monthlyPrice: 49,
+    monthlyPrice: 59,
     yearlyPrice: 39,
     icon: Zap,
     description: "For freelancers and small teams",
@@ -83,7 +84,7 @@ const PLANS = [
   {
     id: "professional",
     name: "Professional",
-    monthlyPrice: 129,
+    monthlyPrice: 119,
     yearlyPrice: 99,
     icon: Crown,
     description: "For growing businesses",
@@ -113,8 +114,8 @@ const PLANS = [
   {
     id: "enterprise",
     name: "Enterprise",
-    monthlyPrice: 299,
-    yearlyPrice: 249,
+    monthlyPrice: 229,
+    yearlyPrice: 189,
     icon: Gem,
     description: "For large organizations",
     color: "from-amber-500 to-orange-600",

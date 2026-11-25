@@ -349,6 +349,7 @@ export function parseBankCsv(csvContent: string): {
   transactions: ParsedTransaction[];
   format: BankFormat;
   errors: string[];
+  skippedRows: number;
 } {
   const lines = csvContent
     .replace(/\r\n/g, "\n")
@@ -357,7 +358,7 @@ export function parseBankCsv(csvContent: string): {
     .filter((l) => l.trim().length > 0);
 
   if (lines.length < 2) {
-    return { transactions: [], format: "generic", errors: ["CSV has no data rows"] };
+    return { transactions: [], format: "generic", errors: ["CSV has no data rows"], skippedRows: 0 };
   }
 
   const delimiters = [",", ";", "\t"];
@@ -382,6 +383,7 @@ export function parseBankCsv(csvContent: string): {
   const format = detectBankFormat(headers);
   const transactions: ParsedTransaction[] = [];
   const errors: string[] = [];
+  let skippedRows = 0;
 
   for (let i = headerIdx + 1; i < lines.length; i++) {
     const fields = parseCsvRow(lines[i], delimiter);
@@ -391,13 +393,15 @@ export function parseBankCsv(csvContent: string): {
       const txn = mapRow(fields, headers, format);
       if (txn) {
         transactions.push(txn);
+      } else {
+        skippedRows++;
       }
     } catch (err: any) {
       errors.push(`Row ${i + 1}: ${err.message}`);
     }
   }
 
-  return { transactions, format, errors };
+  return { transactions, format, errors, skippedRows };
 }
 
 // ─── AI Transaction Matching ────────────────────────────────────────────────
@@ -562,12 +566,13 @@ export function registerBankStatementRoutes(app: Express) {
       }
 
       // Parse CSV
-      const { transactions: parsed, format, errors: parseErrors } = parseBankCsv(csvContent);
+      const { transactions: parsed, format, errors: parseErrors, skippedRows: parseSkipped } = parseBankCsv(csvContent);
 
       if (parsed.length === 0) {
         return res.status(400).json({
           message: "No valid transactions found in CSV",
           parseErrors,
+          skippedRows: parseSkipped,
           detectedFormat: format,
         });
       }
@@ -639,6 +644,7 @@ export function registerBankStatementRoutes(app: Express) {
       res.status(201).json({
         imported: created.length,
         skippedDuplicates,
+        skippedRows: parseSkipped > 0 ? parseSkipped : undefined,
         detectedFormat: format,
         parseErrors: parseErrors.length > 0 ? parseErrors : undefined,
         message:

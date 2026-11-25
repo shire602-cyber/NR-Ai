@@ -61,8 +61,8 @@ S4 = ops/evidence.
 
 | ID | Disposition | Note |
 |---|---|---|
-| S01 | open | Retention model review not started |
-| S05 | open | Parser validation not started |
+| S01 | **fixed awaiting verification** | Model traced: invoices, bills, journals, receipts guarded by `assertRetentionExpired`; fixed assets blocked when posted JEs exist; accounts blocked when transactions exist; credit note delete disabled; expense claims only pre-submission drafts deletable; company delete is a soft delete (sets `deletedAt`). Gap: `retentionExpiresAt` column exists in vendor_bills / bill_payments DB tables but is never populated — all callers fall back to `createdAt + 5y`, which is conservative and compliant. No retention test existed before this campaign. Test: `tests/unit/retention-model-review.test.ts` (10 source-invariant assertions). **Still open:** no DB-backed assertion that the guard blocks a live DELETE request; `retentionExpiresAt` is not populated from document date at creation; admin company-delete has no retention pre-check (intentional — soft delete preserves records) |
+| S05 | **fixed awaiting verification** | Model traced: `parseBankCsv` in `bank-statements.routes.ts`. BOM stripping in `normalizeHeader` ✓; 10 MB body limit on the import route ✓; Zod `z.string().min(1)` on csvContent ✓; invalid date → row skipped (not error); zero/empty amount → row skipped (intentional for balance rows). Gap: skipped rows were invisible to the caller — added `skippedRows: number` to the return type and surfaced it in both the 400 (empty-import) and 201 (success) responses. Test: `tests/unit/bank-statement-import.test.ts` extended with BOM, skipped-row count, and fully-valid-file cases. **Still open:** no server-side CSV injection sanitization on description/reference fields in exports; file-type validation relies on body parser limit only (no MIME check); `parseAmount` returns 0 for non-numeric input (silent; no row-level error) |
 | S02+S03 | open | Atomic delete/audit/outbox not started |
 | S04 | blocked (partly) | Provider contract terms need the operator; code trace not started |
 | S06 | blocked | Needs deployed headers from staging |
@@ -73,7 +73,10 @@ S4 = ops/evidence.
 
 | ID | Disposition | Note |
 |---|---|---|
-| W01–W10 | open | Not started. W07 needs a dated vendor pricing source; W09 needs the designated test destination; W10 needs staging and production header captures |
+| W01–W06, W08 | **fixed awaiting verification** | Product-rule violations found and fixed: (1) Monthly prices were 49/149/299 — corrected to 59/119/229 in both `Pricing.tsx` and `Subscription.tsx`. (2) E-invoicing feature matrix row was `free: false, starter: false` — corrected to `true` for all plans per rule "e-invoicing is included on every plan"; Free plan in Subscription.tsx was also missing the feature bullet. (3) Trial FAQ said "14-day free trial on Starter and Professional" — corrected to "14-day Enterprise trial, no credit card, account read-only after trial." (4) Footer tagline "30-day money-back guarantee" removed from trial claim row; now reads "14-day Enterprise trial \| No credit card required \| Read-only after trial." Refund FAQ answer retained as a business-policy item for owner confirmation. Yearly prices (not specified in owner rules) left as-is. Test: `tests/unit/public-launch-surface.test.ts` extended with pricing assertions (prices 59/119/229, eInvoicing true for all, trial copy). |
+| W07 | **blocked** | Competitor pricing comparison needs a dated vendor pricing source not available in this environment |
+| W09 | **blocked** | Test email/notification destination needed |
+| W10 | **blocked** | Needs deployed staging and production HTTP header captures |
 
 ### Integration and release operations
 
@@ -90,8 +93,8 @@ S4 = ops/evidence.
 ## 3. Counts
 
 - Original items: 32. Verified dispositions: **0**.
-- Fixed awaiting verification: **7** (F01–F07; each has open sub-scope listed) plus new ENV-01.
-- Open: 18 · Blocked or partly blocked: 7 (+ F05 scheduled-items scope).
+- Fixed awaiting verification: **10** (F01–F07, S01, S05, W01–W06+W08) plus ENV-01.
+- Open: 10 · Blocked or partly blocked: 10 (W07, W09, W10 newly blocked; + F05 scheduled-items, S04, S06, S07, O01, O02, O06).
 - Handoff to Astra 6.2: **not eligible**.
 
 ## 4. Commands run (local, Node 18.16, Windows)
@@ -130,4 +133,14 @@ Follow-up commit (F07):
 npx vitest run tests/unit/credit-note-fx-reversal.test.ts tests/unit/invoice-lifecycle.test.ts   tests/unit/document-totals-rounding.test.ts                                                                            # 40 passed
 npx tsc --noEmit -p .                                                                                                    # exit 0
 npx vitest run                                                                                                           # 1034 passed, 1 skipped, 0 failed (92 files)
+```
+
+Follow-up commit (S01, S05, W01–W06+W08):
+
+```
+npx vitest run tests/unit/retention-model-review.test.ts                                                                # 10 passed
+npx vitest run tests/unit/public-launch-surface.test.ts                                                                 # 8 passed (1 new assertion added)
+npx vitest run tests/unit/bank-statement-import.test.ts                                                                 # 7 passed (3 new cases added)
+npx tsc --noEmit -p .                                                                                                   # exit 0
+npx vitest run                                                                                                          # 1045 passed, 1 skipped, 0 failed (93 files)
 ```

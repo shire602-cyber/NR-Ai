@@ -89,7 +89,7 @@ const tiers: PricingTier[] = [
   {
     id: "starter",
     icon: Rocket,
-    monthlyPrice: 49,
+    monthlyPrice: 59,
     yearlyPrice: 39,
     companies: "1",
     users: "3",
@@ -103,8 +103,8 @@ const tiers: PricingTier[] = [
   {
     id: "professional",
     icon: Crown,
-    monthlyPrice: 149,
-    yearlyPrice: 119,
+    monthlyPrice: 119,
+    yearlyPrice: 95,
     companies: "3",
     users: "10",
     badge: "mostPopular",
@@ -117,8 +117,8 @@ const tiers: PricingTier[] = [
   {
     id: "enterprise",
     icon: Building2,
-    monthlyPrice: 299,
-    yearlyPrice: 239,
+    monthlyPrice: 229,
+    yearlyPrice: 183,
     companies: "unlimited",
     users: "unlimited",
     ctaVariant: "outline",
@@ -232,7 +232,7 @@ const featureMatrix: FeatureCategory[] = [
         enterprise: true,
       },
       { key: "corporateTax", free: false, starter: false, professional: true, enterprise: true },
-      { key: "eInvoicing", free: false, starter: false, professional: true, enterprise: true },
+      { key: "eInvoicing", free: true, starter: true, professional: true, enterprise: true },
     ],
   },
   {
@@ -515,8 +515,8 @@ export default function Pricing() {
           q: locale === "en" ? "Is there a free trial?" : "هل توجد فترة تجريبية مجانية؟",
           a:
             locale === "en"
-              ? "Yes! We offer a 14-day free trial on both the Starter and Professional plans. No credit card required to start. You can also use the Free plan indefinitely."
-              : "نعم! نقدم فترة تجريبية مجانية لمدة 14 يوماً على خطتي المبتدئ والاحترافي. لا حاجة لبطاقة ائتمان للبدء. كما يمكنك استخدام الخطة المجانية بدون قيود زمنية.",
+              ? "Yes. We offer a 14-day Enterprise trial — no credit card required. After the trial, the account switches to read-only until you subscribe. You can also use the Free plan indefinitely."
+              : "نعم. نقدم فترة تجريبية مجانية لمدة 14 يوماً على خطة المؤسسات — لا حاجة لبطاقة ائتمان. بعد انتهاء الفترة التجريبية، يتحول الحساب إلى وضع القراءة فقط حتى تشترك. كما يمكنك استخدام الخطة المجانية بدون قيود زمنية.",
         },
         {
           q: locale === "en" ? "What payment methods do you accept?" : "ما طرق الدفع المقبولة؟",
@@ -551,8 +551,8 @@ export default function Pricing() {
       bookDemo: locale === "en" ? "Book a Demo" : "احجز عرض توضيحي",
       guarantee:
         locale === "en"
-          ? "14-day free trial  |  No credit card required  |  30-day money-back guarantee"
-          : "تجربة مجانية 14 يوم  |  لا حاجة لبطاقة ائتمان  |  ضمان استرداد 30 يوم",
+          ? "14-day Enterprise trial  |  No credit card required  |  Read-only after trial"
+          : "تجربة مجانية 14 يوم للمؤسسات  |  لا حاجة لبطاقة ائتمان  |  قراءة فقط بعد التجربة",
     },
     nav: {
       home: locale === "en" ? "Home" : "الرئيسية",
