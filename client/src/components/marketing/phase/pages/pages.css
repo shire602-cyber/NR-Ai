@@ -1,0 +1,257 @@
+/*
+ * Inner marketing pages (UAE e-invoicing hub, compare, free tools, solutions): "mz-page-" prefix.
+ * Bands, cards, buttons and type come from home/home.css; only page-specific layout lives here.
+ * Logical properties only (RTL); reduced motion is respected by Reveal and by the rules below.
+ */
+.phase-site .phase-subpage.mz-page-head {
+  min-height: 0;
+  padding-block-end: clamp(24px, 4vw, 48px);
+}
+
+/* ---------- Shared bits ---------- */
+.phase-site .mz-page-note {
+  margin-block-start: 20px;
+  max-inline-size: 70ch;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.phase-site[lang="ar"] .mz-page-note {
+  line-height: 1.8;
+}
+.phase-site .mz-page-sr {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.phase-site .mz-page-subhead {
+  margin-block: clamp(28px, 4vw, 44px) 14px;
+  font-size: clamp(20px, 2.2vw, 26px);
+}
+.phase-site .mz-page-pair {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+.phase-site .mz-page-pair h3,
+.phase-site .mz-page-step h3 {
+  font-size: clamp(18px, 1.8vw, 22px);
+  margin-block-end: 8px;
+}
+
+/* ---------- Hub: how it works ---------- */
+.phase-site .mz-page-steps {
+  display: grid;
+  gap: 16px;
+  padding: 0;
+  list-style: none;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
+.phase-site .mz-page-step {
+  position: relative;
+}
+.phase-site .mz-page-step-icon {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 44px;
+  block-size: 44px;
+  margin-block-end: 14px;
+  border-radius: 12px;
+  background: #e3f1e9;
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-page-step-icon svg {
+  inline-size: 22px;
+  block-size: 22px;
+}
+.phase-site .mz-page-step-no {
+  position: absolute;
+  inset-block-start: 16px;
+  inset-inline-end: 20px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--mz-muted-light);
+}
+
+/* ---------- Hub: dates table ---------- */
+.phase-site .mz-page-table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--mz-line);
+  border-radius: var(--mz-radius);
+  background: #fffdf8;
+}
+.phase-site .mz-page-table {
+  inline-size: 100%;
+  min-inline-size: 560px;
+  border-collapse: collapse;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-page-table :is(th, td) {
+  padding: 14px 18px;
+  text-align: start;
+  border-block-end: 1px solid var(--mz-line);
+  vertical-align: top;
+}
+.phase-site .mz-page-table thead th {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-page-table tbody tr:last-child :is(th, td) {
+  border-block-end: 0;
+}
+.phase-site .mz-page-table tbody th {
+  font-weight: 650;
+}
+
+/* ---------- Hub: included, readiness, FAQ ---------- */
+.phase-site .mz-page-split {
+  display: grid;
+  gap: clamp(24px, 4vw, 56px);
+  align-items: center;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+}
+.phase-site .mz-page-checks {
+  display: grid;
+  gap: 14px;
+  padding: 0;
+  list-style: none;
+}
+.phase-site .mz-page-checks li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-page-checks svg {
+  flex: none;
+  inline-size: 22px;
+  block-size: 22px;
+  margin-block-start: 2px;
+  color: var(--mz-emerald);
+}
+.phase-site .mz-page-embed {
+  max-inline-size: 720px;
+}
+.phase-site .mz-page-faq-list {
+  display: grid;
+  gap: 10px;
+  max-inline-size: 820px;
+}
+.phase-site .mz-page-faq-list details {
+  border: 1px solid var(--mz-line);
+  border-radius: 14px;
+  padding: 0 20px;
+  background: #fff;
+}
+.phase-site .mz-page-faq-list summary {
+  cursor: pointer;
+  padding-block: 16px;
+  font-weight: 650;
+  font-size: 17px;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-page-faq-list details[open] summary {
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-page-faq-list details p {
+  padding-block-end: 18px;
+  line-height: 1.65;
+  color: var(--mz-muted-light);
+}
+
+/* ---------- Compare ---------- */
+.phase-site .mz-page-vs-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35em 0.5em;
+  font-size: clamp(32px, 5vw, 60px);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+.phase-site[lang="ar"] .mz-page-vs-title {
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+.phase-site .mz-page-vs-word {
+  font-size: 0.5em;
+  font-weight: 600;
+  color: var(--mz-emerald-deep);
+  text-transform: uppercase;
+}
+.phase-site[lang="ar"] .mz-page-vs-word {
+  text-transform: none;
+}
+.phase-site .mz-page-migrate .phase-cta-row,
+.phase-site .mz-page-see .phase-cta-row,
+.phase-site .mz-page-included .phase-cta-row {
+  margin-block-start: 8px;
+}
+
+/* ---------- Free tools ---------- */
+.phase-site .mz-page-tool-grid {
+  display: grid;
+  gap: 18px;
+  padding: 0;
+  list-style: none;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+}
+.phase-site .mz-page-tool-grid > li {
+  display: flex;
+}
+.phase-site .mz-page-tool {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  inline-size: 100%;
+}
+.phase-site .mz-page-tool h2 {
+  font-size: clamp(20px, 2vw, 24px);
+}
+.phase-site .mz-page-tool p {
+  color: var(--mz-muted-light);
+  line-height: 1.55;
+}
+.phase-site .mz-page-tool .phase-button {
+  margin-block-start: auto;
+  align-self: flex-start;
+}
+.phase-site .mz-page-preview {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #f3f8f5;
+  border: 1px dashed var(--mz-line-light);
+}
+.phase-site .mz-page-preview > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 15px;
+}
+.phase-site .mz-page-preview dt {
+  color: var(--mz-muted-light);
+}
+.phase-site .mz-page-preview dd {
+  margin: 0;
+  font-weight: 650;
+  color: var(--mz-ink-soft);
+  text-align: end;
+}
+.phase-site .mz-page-preview-tag {
+  margin-block-start: -6px;
+  font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phase-site :is(.mz-page-tool, .mz-page-step) {
+    transition: none;
+  }
+}

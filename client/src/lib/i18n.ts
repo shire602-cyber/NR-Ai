@@ -1112,7 +1112,9 @@ export function isPublicPath(pathname: string): boolean {
 /** Namespaces a public path needs, or `null` for "every namespace" (app routes). */
 export function namespacesForPath(pathname: string): string[] | null {
   const path = normalisePath(pathname);
-  if (siteLocale(path)) return ["marketing"];
+  // The /en and /ar marketing site also reads the rebuilt-site copy (`marketingHome`); sign-in,
+  // in-app pricing and every other route keep loading only the small `marketing` catalog.
+  if (siteLocale(path)) return ["marketing", "marketingMeta", "marketingHome"];
   if (path === "/portal/join") return [...AUTH_FORM_NAMESPACES, "portal", "serverErrors"];
   if (APPROVER_LINK_PATH.test(path)) return ["components", "einvoicing", "customerLink"];
   if (PORTAL_LINK_PATH.test(path) || INVOICE_LINK_PATH.test(path))
