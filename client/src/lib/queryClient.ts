@@ -160,8 +160,11 @@ export function portalQuery<T = any>(
 ) {
   return {
     queryKey: [path.replace(PORTAL_API_PREFIX, "portal-"), selection] as const,
-    queryFn: (): Promise<T> =>
-      requestWithHeaders("GET", path, undefined, portalRequestHeaders(selection)),
+    // Reading `signal` lets React Query abort the request once its last observer leaves.
+    queryFn: ({ signal }: { signal?: AbortSignal } = {}): Promise<T> =>
+      requestWithHeaders("GET", path, undefined, portalRequestHeaders(selection), undefined, {
+        signal,
+      }),
   };
 }
 
