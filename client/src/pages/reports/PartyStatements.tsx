@@ -91,17 +91,18 @@ export default function PartyStatements() {
   const parties = listQuery.data;
   const listError = listQuery.isError ? listQuery.error : null;
   // Paused is a fetch state, independent of the query status: it covers a first load and also a
-  // refresh or Retry of an already loaded (or already failed) list while offline. The current
-  // paused state wins over a stale error from the previous attempt.
-  const listOffline = listQuery.fetchStatus === "paused";
-  const listShownError = listOffline ? null : listError;
+  // refresh or Retry of an already loaded (or already failed) list. React Query pauses when the
+  // network is offline or when the tab is unfocused during an automatic retry, so the copy stays
+  // neutral. The current paused state wins over a stale error from the previous attempt.
+  const listPaused = listQuery.fetchStatus === "paused";
+  const listShownError = listPaused ? null : listError;
   const listEmpty = listQuery.isSuccess && parties?.length === 0;
   const emptyLabel = listEmpty
     ? kind === "customer"
       ? t["reportCenter.partyNoCustomers"]
       : t["reportCenter.partyNoSuppliers"]
-    : listOffline
-      ? t["common.errorHeading.offline"]
+    : listPaused
+      ? t["reportCenter.partyLoadPausedTitle"]
       : listShownError
         ? t["firm.loadFailedTitle"]
         : listQuery.isLoading
@@ -117,8 +118,8 @@ export default function PartyStatements() {
   const statement = statementQuery.data;
   const statementError = statementQuery.isError ? statementQuery.error : null;
   // Same rule as the list: paused is independent of status, and wins over a stale error.
-  const statementOffline = statementQuery.fetchStatus === "paused";
-  const statementShownError = statementOffline ? null : statementError;
+  const statementPaused = statementQuery.fetchStatus === "paused";
+  const statementShownError = statementPaused ? null : statementError;
   const email = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/companies/${companyId}/customer-statements/${partyId}/email`, {
@@ -216,11 +217,11 @@ export default function PartyStatements() {
       {/* The list and the statement fail independently: each notice sits above whatever is
           still on screen and carries its own Retry, so a failed refresh never hides a loaded
           statement and a failed list never blocks the statement of the selected party. */}
-      {listOffline ? (
+      {listPaused ? (
         <ErrorState
-          title={t["common.errorHeading.offline"]}
-          description={t["reportCenter.partyLoadPausedOffline"]}
-          testId="party-list-offline"
+          title={t["reportCenter.partyLoadPausedTitle"]}
+          description={t["reportCenter.partyLoadPausedBody"]}
+          testId="party-list-paused"
         />
       ) : null}
       {listShownError ? (
@@ -240,15 +241,15 @@ export default function PartyStatements() {
           testId="party-statement-error"
         />
       ) : null}
-      {partyId && statementOffline ? (
+      {partyId && statementPaused ? (
         <ErrorState
-          title={t["common.errorHeading.offline"]}
-          description={t["reportCenter.partyLoadPausedOffline"]}
-          testId="party-statement-offline"
+          title={t["reportCenter.partyLoadPausedTitle"]}
+          description={t["reportCenter.partyLoadPausedBody"]}
+          testId="party-statement-paused"
         />
       ) : null}
       {!partyId ? (
-        parties === undefined && (listOffline || listError) ? null : (
+        parties === undefined && (listPaused || listError) ? null : (
           <p className="text-sm text-muted-foreground">
             {listEmpty ? emptyLabel : <T k="reportCenter.partyStatementPick" />}
           </p>

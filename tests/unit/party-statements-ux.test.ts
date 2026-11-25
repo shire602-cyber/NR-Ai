@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act } from "react";
-import { onlineManager, type QueryClient } from "@tanstack/react-query";
+import { focusManager, onlineManager, type QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   byTestId,
@@ -99,6 +99,9 @@ const CACHED_LINE = lineOf("INV-CACHED-001", "cached sale", 10500);
 const REFRESHED_LINE = lineOf("INV-REFRESHED-002", "refreshed sale", 20500);
 
 const setOnline = (online: boolean) => act(async () => onlineManager.setOnline(online));
+const setFocused = (focused: boolean) => act(async () => focusManager.setFocused(focused));
+const PAUSED_TITLE = arReportCenter["reportCenter.partyLoadPausedTitle"];
+const PAUSED_BODY = arReportCenter["reportCenter.partyLoadPausedBody"];
 async function refetch(match: (key: readonly unknown[]) => boolean) {
   const { queryClient } = (await import("../../client/src/lib/queryClient")) as unknown as {
     queryClient: QueryClient;
@@ -159,10 +162,15 @@ describe("party statements screen (Arabic)", () => {
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   });
+  let restoreQueryDefaults: (() => void) | null = null;
   afterEach(async () => {
     ctrl.statement = null;
     ctrl.lists.clear();
     await setOnline(true);
+    // Drop the focus override (back to the document's own visibility) and the retry defaults.
+    await act(async () => focusManager.setFocused(undefined));
+    restoreQueryDefaults?.();
+    restoreQueryDefaults = null;
     await unmountPage();
     vi.unstubAllGlobals();
   });
@@ -173,18 +181,18 @@ describe("party statements screen (Arabic)", () => {
     await flushUntil(() => pageText().includes(ar["reportCenter.partyNoCustomers"]));
     expect(pageText()).toContain(ar["reportCenter.partyNoCustomers"]);
     expect(byTestId("party-list-error")).toBeNull();
-    expect(byTestId("party-list-offline")).toBeNull();
+    expect(byTestId("party-list-paused")).toBeNull();
     const text = await openParty();
     expect(text).toContain(ar["reportCenter.partyNoCustomers"]);
     expect(text).not.toContain(ar["firm.loadFailedTitle"]);
-    expect(text).not.toContain(ar["common.errorHeading.offline"]);
+    expect(text).not.toContain(PAUSED_TITLE);
   });
 
   it.each([
     ["customer", "reportCenter.partyNoCustomers"],
     ["supplier", "reportCenter.partyNoSuppliers"],
   ])(
-    "says a paused %s list is offline, never empty, until the network returns",
+    "shows a paused state for the %s list while offline, then recovers on reconnect",
     async (kind, emptyKey) => {
       setFixtures({
         [`${base}/customer-contacts`]: [{ id: "c1", name: "Al Noor" }],
@@ -193,19 +201,18 @@ describe("party statements screen (Arabic)", () => {
       await setOnline(false);
       await renderPage(PartyStatements);
       if (kind === "supplier") await pickOption(byTestId("select-statement-kind"), SUPPLIER);
-      expect(byTestId("party-list-offline")?.textContent).toContain(
-        ar["common.errorHeading.offline"]
-      );
+      expect(byTestId("party-list-paused")?.textContent).toContain(PAUSED_TITLE);
+      expect(byTestId("party-list-paused")?.textContent).toContain(PAUSED_BODY);
       expect(byTestId("party-list-error")).toBeNull();
       expect(pageText()).not.toContain(ar[emptyKey]);
       const text = await openParty();
-      expect(text).toContain(ar["common.errorHeading.offline"]);
+      expect(text).toContain(PAUSED_TITLE);
       expect(text).not.toContain(ar[emptyKey]);
       await closeParty();
 
       await setOnline(true);
-      await flushUntil(() => !byTestId("party-list-offline"));
-      expect(byTestId("party-list-offline")).toBeNull();
+      await flushUntil(() => !byTestId("party-list-paused"));
+      expect(byTestId("party-list-paused")).toBeNull();
     }
   );
 
@@ -232,24 +239,22 @@ describe("party statements screen (Arabic)", () => {
     expect(pageText()).toContain("Al Noor");
   });
 
-  it("says a statement for a cached party is offline while paused, then loads when back online", async () => {
+  it("says a statement for a cached party is paused while offline, then loads when back online", async () => {
     setFixtures(customerFixtures());
     await renderPage(PartyStatements);
     await flushUntil(() => pageText().includes(ar["reportCenter.partyStatementPick"]));
     expect(pageText()).toContain(ar["reportCenter.partyStatementPick"]);
     await setOnline(false);
     await pickOption(byTestId("select-statement-party"), "Al Noor");
-    expect(byTestId("party-statement-offline")?.textContent).toContain(
-      ar["common.errorHeading.offline"]
-    );
+    expect(byTestId("party-statement-paused")?.textContent).toContain(PAUSED_TITLE);
     expect(hasCard()).toBe(false);
     expect(byTestId("party-statement-error")).toBeNull();
-    expect(byTestId("party-list-offline")).toBeNull();
+    expect(byTestId("party-list-paused")).toBeNull();
 
     await setOnline(true);
     await flushUntil(hasCard);
     expect(hasCard()).toBe(true);
-    expect(byTestId("party-statement-offline")).toBeNull();
+    expect(byTestId("party-statement-paused")).toBeNull();
   });
 
   it("shows a translated retryable statement error, not the raw message, then recovers on Retry", async () => {
@@ -292,9 +297,7 @@ describe("party statements screen (Arabic)", () => {
     await setOnline(false);
     setFixtures(customerFixtures([REFRESHED_LINE]));
     await startRefetch((k) => String(k[0]).includes("-statements/"));
-    expect(byTestId("party-statement-offline")?.textContent).toContain(
-      ar["common.errorHeading.offline"]
-    );
+    expect(byTestId("party-statement-paused")?.textContent).toContain(PAUSED_TITLE);
     expect(byTestId("party-statement-error")).toBeNull();
     expect(hasCard()).toBe(true);
     expect(pageText()).toContain(CACHED_LINE.reference);
@@ -304,7 +307,7 @@ describe("party statements screen (Arabic)", () => {
     await flushUntil(() => pageText().includes(REFRESHED_LINE.reference));
     expect(pageText()).toContain(REFRESHED_LINE.reference);
     expect(pageText()).not.toContain(CACHED_LINE.reference);
-    expect(byTestId("party-statement-offline")).toBeNull();
+    expect(byTestId("party-statement-paused")).toBeNull();
     expect(byTestId("party-statement-error")).toBeNull();
   });
 
@@ -312,9 +315,7 @@ describe("party statements screen (Arabic)", () => {
     await showCustomerStatement([CACHED_LINE]);
     await setOnline(false);
     await startRefetch((k) => k[k.length - 1] === "customer-contacts");
-    expect(byTestId("party-list-offline")?.textContent).toContain(
-      ar["common.errorHeading.offline"]
-    );
+    expect(byTestId("party-list-paused")?.textContent).toContain(PAUSED_TITLE);
     expect(byTestId("party-list-error")).toBeNull();
     expect(hasCard()).toBe(true);
     const text = await openParty();
@@ -323,8 +324,8 @@ describe("party statements screen (Arabic)", () => {
     await closeParty();
 
     await setOnline(true);
-    await flushUntil(() => !byTestId("party-list-offline"));
-    expect(byTestId("party-list-offline")).toBeNull();
+    await flushUntil(() => !byTestId("party-list-paused"));
+    expect(byTestId("party-list-paused")).toBeNull();
   });
 
   it("shows the paused state, not the stale error, when Retry is pressed offline after a failed refresh, and resumes on reconnect", async () => {
@@ -339,17 +340,11 @@ describe("party statements screen (Arabic)", () => {
     await setOnline(false);
     await click(retryButton("party-statement-error"));
     await click(retryButton("party-list-error"));
-    await flushUntil(
-      () => !!byTestId("party-statement-offline") && !!byTestId("party-list-offline")
-    );
+    await flushUntil(() => !!byTestId("party-statement-paused") && !!byTestId("party-list-paused"));
     expect(byTestId("party-statement-error")).toBeNull();
     expect(byTestId("party-list-error")).toBeNull();
-    expect(byTestId("party-statement-offline")?.textContent).toContain(
-      arReportCenter["reportCenter.partyLoadPausedOffline"]
-    );
-    expect(byTestId("party-list-offline")?.textContent).toContain(
-      arReportCenter["reportCenter.partyLoadPausedOffline"]
-    );
+    expect(byTestId("party-statement-paused")?.textContent).toContain(PAUSED_BODY);
+    expect(byTestId("party-list-paused")?.textContent).toContain(PAUSED_BODY);
     expect(hasCard()).toBe(true);
     expect(pageText()).toContain(CACHED_LINE.reference);
     expect(pageText()).not.toContain(ar["reportCenter.partyStatementEmpty"]);
@@ -366,10 +361,67 @@ describe("party statements screen (Arabic)", () => {
     await flushUntil(() => pageText().includes(REFRESHED_LINE.reference));
     expect(pageText()).toContain(REFRESHED_LINE.reference);
     expect(pageText()).not.toContain(CACHED_LINE.reference);
-    expect(byTestId("party-statement-offline")).toBeNull();
+    expect(byTestId("party-statement-paused")).toBeNull();
     expect(byTestId("party-statement-error")).toBeNull();
-    expect(byTestId("party-list-offline")).toBeNull();
+    expect(byTestId("party-list-paused")).toBeNull();
     expect(byTestId("party-list-error")).toBeNull();
+  });
+
+  it("pauses automatic retries with neutral copy while the tab is unfocused but online, keeps cached data, and resumes on refocus", async () => {
+    const { queryClient } = (await import("../../client/src/lib/queryClient")) as unknown as {
+      queryClient: QueryClient;
+    };
+    const savedDefaults = queryClient.getDefaultOptions();
+    restoreQueryDefaults = () => queryClient.setDefaultOptions(savedDefaults);
+    // One automatic retry with no delay, so the retry reaches the focus gate straight away.
+    queryClient.setDefaultOptions({
+      ...savedDefaults,
+      queries: { ...savedDefaults.queries, retry: 1, retryDelay: 0 },
+    });
+
+    await showCustomerStatement([CACHED_LINE]);
+    expect(onlineManager.isOnline()).toBe(true);
+
+    // Unfocused, still online: the first attempt fails, and its automatic retry must wait.
+    await setFocused(false);
+    expect(onlineManager.isOnline()).toBe(true);
+    ctrl.statement = "server";
+    ctrl.lists.add("customer-contacts");
+    await startRefetch(
+      (k) => k[k.length - 1] === "customer-contacts" || String(k[0]).includes("-statements/")
+    );
+    await flushUntil(() => !!byTestId("party-list-paused") && !!byTestId("party-statement-paused"));
+    for (const id of ["party-list-paused", "party-statement-paused"]) {
+      const banner = byTestId(id);
+      expect(banner?.textContent).toContain(PAUSED_TITLE);
+      expect(banner?.textContent).toContain(PAUSED_BODY);
+      expect(banner?.textContent).not.toContain(ar["common.errorHeading.offline"]);
+    }
+    expect(byTestId("party-list-error")).toBeNull();
+    expect(byTestId("party-statement-error")).toBeNull();
+    // Cached rows stay: reference plus description, and the cached party option.
+    expect(hasCard()).toBe(true);
+    const cachedRow = byTestId("card-party-statement")?.querySelector("tbody tr");
+    expect(cachedRow?.textContent).toContain(CACHED_LINE.reference);
+    expect(cachedRow?.textContent).toContain(CACHED_LINE.description);
+    expect(pageText()).not.toContain(ar["reportCenter.partyStatementEmpty"]);
+    const text = await openParty();
+    expect(text).toContain("Al Noor");
+    expect(text).not.toContain(ar["reportCenter.partyNoCustomers"]);
+    await closeParty();
+
+    // Refocus resumes the paused retries; the server is healthy again by then.
+    ctrl.statement = null;
+    ctrl.lists.clear();
+    setFixtures(customerFixtures([REFRESHED_LINE]));
+    await setFocused(true);
+    await flushUntil(() => pageText().includes(REFRESHED_LINE.reference));
+    expect(pageText()).toContain(REFRESHED_LINE.reference);
+    expect(pageText()).not.toContain(CACHED_LINE.reference);
+    expect(byTestId("party-list-paused")).toBeNull();
+    expect(byTestId("party-statement-paused")).toBeNull();
+    expect(byTestId("party-list-error")).toBeNull();
+    expect(byTestId("party-statement-error")).toBeNull();
   });
 
   it("keeps a loaded statement visible when list and statement refreshes both fail, each retried on its own", async () => {
