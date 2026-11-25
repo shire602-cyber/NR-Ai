@@ -4,6 +4,7 @@ import { displayObligationTitle, formatDate, parseCalendarDate } from "@/lib/for
 import { lazy, Suspense, useState, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -120,14 +121,23 @@ export default function ComplianceCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
-  const { data: tasks, isLoading: isLoadingTasks } = useQuery<ComplianceTask[]>({
+  const {
+    data: tasks,
+    isLoading: isLoadingTasks,
+    error: tasksError,
+    refetch: refetchTasks,
+  } = useQuery<ComplianceTask[]>({
     queryKey: ["/api/companies", companyId, "compliance-tasks"],
     enabled: !!companyId,
   });
 
   // Generated obligations: VAT by stagger, CT 9 months after year end, UBO,
   // licence, excise, e-invoicing and WPS. Status follows the return state.
-  const { data: obligations } = useQuery<ComplianceObligation[]>({
+  const {
+    data: obligations,
+    error: obligationsError,
+    refetch: refetchObligations,
+  } = useQuery<ComplianceObligation[]>({
     queryKey: ["/api/companies", companyId, "compliance-calendar"],
     enabled: !!companyId,
   });
@@ -199,6 +209,11 @@ export default function ComplianceCalendar() {
       .sort((a, b) => b.date.getTime() - a.date.getTime());
   }, [allEvents]);
 
+  const statusLabel = (status: string) => {
+    const key = `complianceCalendar.status.${status}`;
+    return t[key] && t[key] !== key ? t[key] : status.replace(/_/g, " ");
+  };
+
   if (isLoadingCompany || isLoadingTasks) {
     return (
       <div className="space-y-6">
@@ -214,7 +229,7 @@ export default function ComplianceCalendar() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Compliance"
+        eyebrow={t["complianceCalendar.eyebrow"]}
         title={locale === "ar" ? "تقويم الامتثال" : t["pages.complianceCalendar2"]}
         description={
           locale === "ar"
@@ -241,7 +256,24 @@ export default function ComplianceCalendar() {
         </TabsList>
       </Tabs>
 
-      {view === "list" ? (
+      {obligationsError && view !== "list" && (
+        <LoadErrorState
+          compact
+          error={obligationsError}
+          onRetry={() => void refetchObligations()}
+          title={t["complianceCalendar.obligationsErrorTitle"]}
+          testId="compliance-calendar-obligations-error"
+        />
+      )}
+
+      {tasksError && view !== "list" ? (
+        <LoadErrorState
+          error={tasksError}
+          onRetry={() => void refetchTasks()}
+          title={t["complianceCalendar.loadErrorTitle"]}
+          testId="compliance-calendar-error"
+        />
+      ) : view === "list" ? (
         <Suspense fallback={<Skeleton className="h-96 w-full" />}>
           <TaskListPanel />
         </Suspense>
@@ -341,7 +373,7 @@ export default function ComplianceCalendar() {
                             <span
                               key={event.id}
                               title={event.title}
-                              className={`block truncate rounded px-1 py-0.5 text-xs ${CATEGORY_COLORS[event.category]}`}
+                              className={`block truncate rounded px-1 py-0.5 text-xs ${CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS.other}`}
                             >
                               <Icon className="me-1 inline-block h-3 w-3" aria-hidden />
                               <bdi>{event.title}</bdi>
@@ -370,6 +402,13 @@ export default function ComplianceCalendar() {
           </Card>
 
           <div className="space-y-6">
+            {selectedDate && selectedDateEvents.length === 0 && (
+              <Card>
+                <CardContent className="py-4 text-sm text-muted-foreground" role="status">
+                  {formatDate(selectedDate, locale)}: {t["complianceCalendar.noEventsOnDay"]}
+                </CardContent>
+              </Card>
+            )}
             {selectedDate && selectedDateEvents.length > 0 && (
               <Card>
                 <CardHeader>
@@ -387,14 +426,14 @@ export default function ComplianceCalendar() {
                         return (
                           <div
                             key={event.id}
-                            className={`p-2 rounded-md ${CATEGORY_COLORS[event.category]}`}
+                            className={`p-2 rounded-md ${CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS.other}`}
                           >
                             <div className="flex items-center gap-2">
                               <Icon className="w-4 h-4" />
                               <span className="font-medium text-sm">{event.title}</span>
                             </div>
                             <Badge variant="outline" className="mt-1 text-xs">
-                              {event.status}
+                              {statusLabel(event.status)}
                             </Badge>
                           </div>
                         );
@@ -411,9 +450,7 @@ export default function ComplianceCalendar() {
                   <Clock className="w-4 h-4" />
                   {locale === "ar" ? "المواعيد القادمة" : t["complianceCalendar.upcomingDeadlines"]}
                 </CardTitle>
-                <CardDescription>
-                  {locale === "ar" ? "خلال 30 يوم" : "Next 30 days"}
-                </CardDescription>
+                <CardDescription>{t["complianceCalendar.next30Days"]}</CardDescription>
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-64">
@@ -421,9 +458,11 @@ export default function ComplianceCalendar() {
                     <div className="text-center py-4 text-muted-foreground">
                       <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
                       <p className="text-sm">
-                        {locale === "ar"
-                          ? "لا توجد مواعيد قادمة"
-                          : t["pageLabels.noUpcomingDeadlines"]}
+                        {allEvents.length === 0
+                          ? t["complianceCalendar.noDeadlinesYet"]
+                          : locale === "ar"
+                            ? "لا توجد مواعيد قادمة"
+                            : t["pageLabels.noUpcomingDeadlines"]}
                       </p>
                     </div>
                   ) : (
@@ -436,7 +475,9 @@ export default function ComplianceCalendar() {
                             key={event.id}
                             className="flex items-start gap-3 p-2 rounded-md border"
                           >
-                            <div className={`p-2 rounded-md ${CATEGORY_COLORS[event.category]}`}>
+                            <div
+                              className={`p-2 rounded-md ${CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS.other}`}
+                            >
                               <Icon className="w-4 h-4" />
                             </div>
                             <div className="flex-1 min-w-0">
@@ -469,7 +510,7 @@ export default function ComplianceCalendar() {
                 <CardHeader>
                   <CardTitle className="text-sm flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-danger" aria-hidden />
-                    {locale === "ar" ? "متأخرة" : "Overdue"}
+                    {t["complianceCalendar.overdue"]}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>

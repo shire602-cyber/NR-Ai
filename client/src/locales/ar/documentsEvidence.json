@@ -192,5 +192,18 @@
   "complianceCalendar.today": "اليوم",
   "complianceCalendar.viewCalendar": "التقويم",
   "complianceCalendar.viewList": "القائمة",
-  "complianceCalendar.daysShort": "{count} يوم"
+  "complianceCalendar.daysShort": "{count} يوم",
+  "complianceCalendar.eyebrow": "الامتثال",
+  "complianceCalendar.next30Days": "خلال 30 يومًا",
+  "complianceCalendar.overdue": "متأخرة",
+  "complianceCalendar.noEventsOnDay": "لا توجد مواعيد في هذا اليوم.",
+  "complianceCalendar.noDeadlinesYet": "لا توجد مواعيد بعد. أضف بيانات ضريبة القيمة المضافة وضريبة الشركات والرخصة في الإعدادات وستظهر مواعيد تقديمك هنا.",
+  "complianceCalendar.loadErrorTitle": "تعذّر تحميل تقويم الامتثال",
+  "complianceCalendar.obligationsErrorTitle": "تعذّر تحميل بعض مواعيد التقديم",
+  "complianceCalendar.status.upcoming": "قادم",
+  "complianceCalendar.status.completed": "مكتمل",
+  "complianceCalendar.status.overdue": "متأخر",
+  "complianceCalendar.status.dismissed": "مُستبعد",
+  "complianceCalendar.status.pending": "قيد الانتظار",
+  "complianceCalendar.status.in_progress": "قيد التنفيذ"
 }
