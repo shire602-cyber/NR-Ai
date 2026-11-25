@@ -66,7 +66,7 @@ export default function CashSale() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const { company, companyId } = useDefaultCompany();
-  const { can } = useCompanyPermission();
+  const { can, gate } = useCompanyPermission();
   const vatRegistered = isVatRegisteredCompany(company);
   const standardRate = UAE_STANDARD_VAT_RATE;
   const blank = (): CashLine => ({
@@ -180,6 +180,24 @@ export default function CashSale() {
     can("ledger.post") &&
     !record.isPending;
 
+  const accountBlocker = accountsLoading
+    ? t["invoices.cashSale.loadingAccounts"]
+    : accountsFailed
+      ? t["invoices.cashSale.accountsFailed"]
+      : paymentAccounts.length === 0
+        ? t["invoices.noCashBankAccounts"]
+        : t["invoices.receive.chooseAccount"];
+  const blocker = record.isPending
+    ? null
+    : (gate("ledger.post").title ??
+      (!accountId
+        ? accountBlocker
+        : needsPlace && !emirate
+          ? t["invoices.checks.placeOfSupply"]
+          : !linesValid
+            ? t["invoices.cashSale.linesIncomplete"]
+            : null));
+
   return (
     <EditorShell
       testId="cash-sale-page"
@@ -200,12 +218,21 @@ export default function CashSale() {
       }
       footer={
         <>
+          <p
+            id="cash-sale-blocker"
+            role="status"
+            className="max-w-xs text-small text-muted-foreground empty:absolute"
+            data-testid="cash-sale-blocker"
+          >
+            {blocker}
+          </p>
           <Button type="button" variant="ghost" onClick={() => navigate("/invoices")}>
             {t["invoices.receive.cancel"]}
           </Button>
           <Button
             type="button"
             disabled={!canSubmit}
+            aria-describedby="cash-sale-blocker"
             onClick={() => record.mutate()}
             data-testid="button-record-cash-sale"
           >
