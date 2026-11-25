@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { CircleCheck, FileCheck2, Languages, Pause, Play } from "lucide-react";
 import type { SiteLocale } from "../routes";
-import { useCountUp, useInView, usePrefersReducedMotion } from "./motion";
+import { holdRunningTransitions, useCountUp, useInView, usePrefersReducedMotion } from "./motion";
 import { useMarketingText, type MarketingKey } from "./text";
 import { metaText } from "../meta-text";
 import {
@@ -65,7 +65,13 @@ export default function HeroStage({ locale }: { locale: SiteLocale }) {
     const band = ref.current?.closest<HTMLElement>(".mz-hero");
     if (!band || !paused) return;
     band.setAttribute("data-motion", "paused");
-    return () => band.removeAttribute("data-motion");
+    // CSS keyframes are held by the attribute; in-flight transitions (cards, VAT panel) are
+    // paused in place through the Web Animations API so Pause never snaps the layout.
+    const resume = holdRunningTransitions(band);
+    return () => {
+      resume();
+      band.removeAttribute("data-motion");
+    };
   }, [paused]);
 
   const [position, setPosition] = useState(0);

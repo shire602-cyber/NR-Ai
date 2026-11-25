@@ -226,7 +226,7 @@
   "marketing.hxCmpYes": "Yes",
   "marketing.hxCmpDashLabel": "Not confirmed on the vendor's public site",
   "marketing.hxCmpRowEntry": "Entry price per month (AED)",
-  "marketing.hxCmpRowTop": "Top SMB plan per month (AED)",
+  "marketing.hxCmpRowTop": "Selected comparison plan per month (AED)",
   "marketing.hxCmpRowTrial": "Free trial, no card",
   "marketing.hxCmpRowEinv": "E-invoicing",
   "marketing.hxCmpRowBilingual": "Bilingual English and Arabic tax invoices",

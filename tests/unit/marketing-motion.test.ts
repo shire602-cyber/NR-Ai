@@ -44,6 +44,76 @@ const click = (el: Element) =>
     (el as HTMLElement).click();
   });
 
+// jsdom has no Web Animations API: a targeted stub of getAnimations/CSSTransition. Only transitions
+// (instances of the stubbed CSSTransition) may be paused, and only the ones that are running.
+class FakeCSSTransition {
+  pause = vi.fn(() => {
+    this.playState = "paused";
+  });
+  play = vi.fn(() => {
+    this.playState = "running";
+  });
+  constructor(public playState: "running" | "paused" | "finished") {}
+}
+// Undoes stubAnimations: restores the Element.prototype.getAnimations descriptor that existed
+// before the stub, or, if there was none, deletes only our own stub.
+let restoreGetAnimations: (() => void) | null = null;
+function stubAnimations(animations: unknown[]) {
+  const owners: Element[] = [];
+  const prior = Object.getOwnPropertyDescriptor(Element.prototype, "getAnimations");
+  vi.stubGlobal("CSSTransition", FakeCSSTransition);
+  const stub = function (this: Element, options?: { subtree?: boolean }) {
+    expect(options).toEqual({ subtree: true });
+    owners.push(this);
+    return animations;
+  };
+  Object.defineProperty(Element.prototype, "getAnimations", { configurable: true, value: stub });
+  restoreGetAnimations = () => {
+    if (prior) {
+      Object.defineProperty(Element.prototype, "getAnimations", prior);
+    } else if (Element.prototype.getAnimations === (stub as unknown)) {
+      delete (Element.prototype as { getAnimations?: unknown }).getAnimations;
+    }
+  };
+  return owners;
+}
+afterEach(() => {
+  restoreGetAnimations?.();
+  restoreGetAnimations = null;
+});
+
+function holdScenario() {
+  const running = new FakeCSSTransition("running");
+  const alsoRunning = new FakeCSSTransition("running");
+  const someoneElsesPaused = new FakeCSSTransition("paused");
+  const finished = new FakeCSSTransition("finished");
+  // A CSS keyframe animation is not a CSSTransition: CSS already holds it, so it is left alone.
+  const keyframes = { playState: "running", pause: vi.fn(), play: vi.fn() };
+  const owners = stubAnimations([running, someoneElsesPaused, finished, keyframes, alsoRunning]);
+  return { running, alsoRunning, someoneElsesPaused, finished, keyframes, owners };
+}
+function expectHeldThenResumed(
+  s: ReturnType<typeof holdScenario>,
+  toggle: () => void,
+  scope: () => Element | null
+) {
+  toggle();
+  for (const held of [s.running, s.alsoRunning]) expect(held.pause).toHaveBeenCalledTimes(1);
+  for (const untouched of [s.someoneElsesPaused, s.finished, s.keyframes]) {
+    expect(untouched.pause).not.toHaveBeenCalled();
+  }
+  toggle();
+  for (const resumed of [s.running, s.alsoRunning]) expect(resumed.play).toHaveBeenCalledTimes(1);
+  // Only what the control paused is resumed: a transition someone else paused stays paused.
+  for (const untouched of [s.someoneElsesPaused, s.finished, s.keyframes]) {
+    expect(untouched.play).not.toHaveBeenCalled();
+  }
+  expect(s.someoneElsesPaused.playState).toBe("paused");
+  // getAnimations was only ever asked of the control's own subtree root.
+  expect(s.owners.length).toBeGreaterThan(0);
+  expect(s.owners.every((el) => el === scope())).toBe(true);
+}
+
 describe("product tour motion", () => {
   async function mount(locale: "en" | "ar") {
     const { ProductTour } =
@@ -166,6 +236,11 @@ describe("product tour motion", () => {
     await advance(30_000);
     expect(pipelineStep()).toBe(1);
     expect(selected()).toBe(0);
+  });
+
+  it("Pause freezes running transitions in the shell and Play resumes the same ones", async () => {
+    await mount("en");
+    expectHeldThenResumed(holdScenario(), () => click(byId("tour-pause")), shell);
   });
 
   it("never advances away from a focused control", async () => {
@@ -323,6 +398,15 @@ describe("hero stage motion", () => {
     expect(band().hasAttribute("data-motion")).toBe(false);
     await advance(300);
     expect(vatAmount()).not.toBe(mid);
+  });
+
+  it("Pause freezes running transitions in the band and Play resumes the same ones", async () => {
+    await mount("en");
+    expectHeldThenResumed(
+      holdScenario(),
+      () => click(byId("hero-pause")),
+      () => container.querySelector(".mz-hero")
+    );
   });
 
   it("labels the button in Arabic", async () => {

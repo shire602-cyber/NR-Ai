@@ -18,6 +18,36 @@ export function usePrefersReducedMotion(): boolean {
   return reduced;
 }
 
+/**
+ * Freezes the CSS transitions that are running inside `root` right now (Web Animations API), so an
+ * explicit Pause holds each one mid-way instead of letting it finish or snapping it to its end.
+ * Returns a cleanup that plays exactly the ones it paused, from where they stopped.
+ *
+ * CSS keyframe animations are held by CSS (`animation-play-state`), so only `CSSTransition`
+ * objects are touched here. Animations that are already paused belong to someone else and are
+ * neither paused nor resumed. A no-op where `getAnimations` or `CSSTransition` is missing (jsdom,
+ * old browsers). `pause()` takes effect at the next frame, which keeps the held value continuous.
+ */
+export function holdRunningTransitions(root: Element): () => void {
+  if (typeof root.getAnimations !== "function" || typeof CSSTransition === "undefined") {
+    return () => {};
+  }
+  const held: Animation[] = [];
+  for (const animation of root.getAnimations({ subtree: true })) {
+    // "running" also covers a transition whose play is still pending; paused/idle/finished are skipped.
+    if (animation instanceof CSSTransition && animation.playState === "running") {
+      animation.pause();
+      held.push(animation);
+    }
+  }
+  return () => {
+    for (const animation of held) {
+      // Skip any we no longer own: cancelled, finished or already resumed elsewhere.
+      if (animation.playState === "paused") animation.play();
+    }
+  };
+}
+
 export interface InViewOptions {
   /** Stay true after the first intersection (default true). Set false to also report leaving. */
   once?: boolean;

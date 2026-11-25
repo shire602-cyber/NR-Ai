@@ -22,7 +22,7 @@ import { featurePath } from "../route-content";
 import type { SectionProps } from "./types";
 import { SectionHead } from "./SectionHead";
 import { useMarketingText } from "./text";
-import { useInView, usePrefersReducedMotion } from "./motion";
+import { holdRunningTransitions, useInView, usePrefersReducedMotion } from "./motion";
 import { metaText } from "../meta-text";
 import { useTourInvoice } from "./tour/invoiceState";
 import { nextTabIndex } from "./tour/model";
@@ -87,6 +87,14 @@ export function ProductTour({ base, locale }: SectionProps) {
       advanceLeft.current.ms = Math.max(0, advanceLeft.current.ms - (Date.now() - startedAt));
     };
   }, [advancing, selected]);
+
+  // Explicit Pause also freezes transitions already running in the shell (pipeline steps, panels)
+  // mid-way, and Play continues the same ones. CSS keyframes are held by tour-pause.css.
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!userPaused || !shell) return;
+    return holdRunningTransitions(shell);
+  }, [userPaused]);
 
   const togglePlay = () => {
     if (pauseOffered) {
