@@ -48,6 +48,12 @@ export interface OnboardingRedirectState {
 }
 
 /**
+ * The tax rates page has its own no-company state, so an empty company list does not redirect it.
+ * Matches what wouter's <Route path="/settings/tax-rates"> matches: any case, one optional slash.
+ */
+const TAX_RATES_ROUTE = /^\/settings\/tax-rates\/?$/i;
+
+/**
  * Where the signed-in shell sends the user for onboarding, or null to stay. A firm staffer who
  * opens a client's books must land on that client's dashboard even while their own home company
  * is not onboarded: the redirect never runs while a client switch is in flight or committed.
@@ -56,7 +62,7 @@ export function onboardingRedirectTarget(s: OnboardingRedirectState): string | n
   if (s.companyLoading || skipsOnboardingRedirect(s.pathname)) return null;
   if (s.isFirmContext || s.switchingClient) return null;
   if (s.companiesFetching) return null;
-  if (s.hasNoCompanies) return "/onboarding";
+  if (s.hasNoCompanies) return TAX_RATES_ROUTE.test(s.pathname) ? null : "/onboarding";
   if (
     s.company &&
     !s.company.onboardingCompleted &&
