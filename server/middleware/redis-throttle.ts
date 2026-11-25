@@ -93,14 +93,16 @@ export function parseRedisUrl(raw: string): ParsedRedisUrl {
   };
 }
 
+type ConnectPhase = "idle" | "connecting" | "ready" | "retired";
+
 export class RedisUrlThrottleClient implements ThrottleRedis {
   private socket: net.Socket | null = null;
   private buffer = Buffer.alloc(0);
-  /** Resolves only after AUTH and SELECT. Every caller awaits this same promise. */
-  private ready: Promise<void> | null = null;
-  private generation = 0;
-  /** Set when this client is replaced. It must not open another socket. */
-  private retired = false;
+  private phase: ConnectPhase = "idle";
+  /** In-flight handshake. Present only while `phase` is `connecting`. */
+  private connecting: Promise<void> | null = null;
+  private settleConnect: { resolve: () => void; reject: (error: Error) => void } | null = null;
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly pending: Array<{
     resolve: (value: unknown) => void;
     reject: (error: Error) => void;
@@ -108,29 +110,155 @@ export class RedisUrlThrottleClient implements ThrottleRedis {
 
   constructor(private readonly redisUrl: string) {}
 
-  /** Drop the socket and refuse every future command, including reconnects. */
+  /**
+   * Terminal. Drops the socket, including a TLS handshake that has not finished,
+   * rejects every waiter, and never opens another connection.
+   */
   close(): void {
-    if (this.retired) return;
-    this.retired = true;
-    this.fail(new Error("closed"));
+    if (this.phase === "retired") return;
+    this.phase = "retired";
+    this.stopSocket();
+    this.failWaiters(new Error("closed"));
   }
 
   async command(...command: Array<string | number>): Promise<unknown> {
-    if (this.retired) throw unavailable();
+    if (this.phase === "retired") throw unavailable();
     try {
-      await this.connect();
+      await this.ensureConnected();
+      if (this.phase !== "ready") throw new Error("closed");
       return await this.rawCommand(...command);
     } catch {
-      if (!this.retired && this.socket) this.fail(new Error("unavailable"));
+      if (this.phase === "ready") this.loseSocket(new Error("unavailable"));
       throw unavailable();
     }
   }
 
+  private ensureConnected(): Promise<void> {
+    if (this.phase === "retired") return Promise.reject(new Error("closed"));
+    if (this.phase === "ready") return Promise.resolve();
+    if (this.phase === "connecting" && this.connecting) return this.connecting;
+    return this.beginConnect();
+  }
+
+  private beginConnect(): Promise<void> {
+    const target = parseRedisUrl(this.redisUrl);
+    this.phase = "connecting";
+    let resolveConnect: () => void = () => {};
+    let rejectConnect: (error: Error) => void = () => {};
+    this.connecting = new Promise<void>((resolve, reject) => {
+      resolveConnect = resolve;
+      rejectConnect = reject;
+    });
+    this.settleConnect = { resolve: resolveConnect, reject: rejectConnect };
+    const socket = target.useTls
+      ? tls.connect({
+          host: target.host,
+          port: target.port,
+          servername: net.isIP(target.host) ? undefined : target.host,
+        })
+      : net.connect({ host: target.host, port: target.port });
+    this.socket = socket;
+    socket.setNoDelay(true);
+    const readyEvent = target.useTls ? "secureConnect" : "connect";
+    this.connectTimer = setTimeout(() => {
+      if (this.socket === socket && this.phase === "connecting") {
+        this.loseSocket(new Error("timeout"));
+      }
+    }, COMMAND_TIMEOUT_MS);
+    socket.on("data", (chunk: Buffer) => {
+      if (this.socket === socket) this.onData(chunk);
+    });
+    socket.on("error", (error: Error) => {
+      if (this.socket === socket && this.phase !== "idle" && this.phase !== "retired") {
+        this.loseSocket(error);
+      }
+    });
+    socket.on("close", () => {
+      if (this.socket === socket && this.phase !== "idle" && this.phase !== "retired") {
+        this.loseSocket(new Error("closed"));
+      }
+    });
+    socket.once(readyEvent, () => {
+      if (this.connectTimer) {
+        clearTimeout(this.connectTimer);
+        this.connectTimer = null;
+      }
+      if (this.phase !== "connecting" || this.socket !== socket) return;
+      void this.finishConnect(target);
+    });
+    return this.connecting;
+  }
+
+  private async finishConnect(target: ParsedRedisUrl): Promise<void> {
+    try {
+      await this.handshake(target);
+    } catch (error) {
+      if (this.phase === "connecting") {
+        this.loseSocket(error instanceof Error ? error : new Error("closed"));
+      }
+      return;
+    }
+    if (this.phase !== "connecting") return;
+    this.phase = "ready";
+    const settle = this.settleConnect;
+    this.settleConnect = null;
+    this.connecting = null;
+    settle?.resolve();
+  }
+
+  private async handshake(target: ParsedRedisUrl) {
+    if (this.phase !== "connecting") throw new Error("closed");
+    if (target.password) {
+      const reply = target.username
+        ? await this.rawCommand("AUTH", target.username, target.password)
+        : await this.rawCommand("AUTH", target.password);
+      if (reply !== "OK") throw new Error("AUTH failed");
+    }
+    if (this.phase !== "connecting") throw new Error("closed");
+    if (target.db != null && target.db !== 0) {
+      const reply = await this.rawCommand("SELECT", String(target.db));
+      if (reply !== "OK") throw new Error("SELECT failed");
+    }
+  }
+
+  /** Connection failed or dropped. A later command may try again unless `close` already ran. */
+  private loseSocket(error: Error): void {
+    if (this.phase === "idle" || this.phase === "retired") return;
+    this.phase = "idle";
+    this.stopSocket();
+    this.failWaiters(error);
+  }
+
+  private stopSocket(): void {
+    if (this.connectTimer) {
+      clearTimeout(this.connectTimer);
+      this.connectTimer = null;
+    }
+    const socket = this.socket;
+    this.socket = null;
+    this.buffer = Buffer.alloc(0);
+    if (!socket) return;
+    socket.removeAllListeners();
+    socket.on("error", () => {});
+    socket.destroy();
+  }
+
+  private failWaiters(error: Error): void {
+    const settle = this.settleConnect;
+    this.settleConnect = null;
+    this.connecting = null;
+    const waiting = this.pending.splice(0);
+    settle?.reject(error);
+    for (const item of waiting) item.reject(error);
+  }
+
   private rawCommand(...command: Array<string | number>): Promise<unknown> {
     const socket = this.socket;
-    if (!socket) return Promise.reject(new Error("closed"));
+    if (!socket || this.phase === "idle" || this.phase === "retired") {
+      return Promise.reject(new Error("closed"));
+    }
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => this.fail(new Error("timeout")), COMMAND_TIMEOUT_MS);
+      const timer = setTimeout(() => this.loseSocket(new Error("timeout")), COMMAND_TIMEOUT_MS);
       this.pending.push({
         resolve: (value) => {
           clearTimeout(timer);
@@ -143,21 +271,9 @@ export class RedisUrlThrottleClient implements ThrottleRedis {
         },
       });
       socket.write(encodeResp(command), (error) => {
-        if (error) this.fail(error);
+        if (error) this.loseSocket(error);
       });
     });
-  }
-
-  private fail(error: Error) {
-    const waiting = this.pending.splice(0);
-    const socket = this.socket;
-    this.socket = null;
-    this.ready = null;
-    this.generation += 1;
-    this.buffer = Buffer.alloc(0);
-    socket?.removeAllListeners();
-    socket?.destroy();
-    for (const item of waiting) item.reject(error);
   }
 
   private onData(chunk: Buffer) {
@@ -167,7 +283,7 @@ export class RedisUrlThrottleClient implements ThrottleRedis {
       try {
         decoded = decodeResp(this.buffer, 0);
       } catch (error) {
-        this.fail(error instanceof Error ? error : new Error("invalid RESP"));
+        this.loseSocket(error instanceof Error ? error : new Error("invalid RESP"));
         return;
       }
       if (!decoded) return;
@@ -175,83 +291,6 @@ export class RedisUrlThrottleClient implements ThrottleRedis {
       this.pending.shift()?.resolve(decoded.value);
     }
   }
-
-  private connect(): Promise<void> {
-    if (this.retired) return Promise.reject(new Error("closed"));
-    if (this.ready) return this.ready;
-    const generation = this.generation;
-    const attempt = this.establish(generation).catch((error: unknown) => {
-      if (this.generation === generation) {
-        this.fail(error instanceof Error ? error : new Error("unavailable"));
-      }
-      throw error;
-    });
-    this.ready = attempt;
-    return attempt;
-  }
-
-  private async establish(generation: number): Promise<void> {
-    const target = parseRedisUrl(this.redisUrl);
-    const socket = await openRedisSocket(target);
-    if (this.retired || this.generation !== generation) {
-      socket.removeAllListeners();
-      socket.destroy();
-      throw new Error("closed");
-    }
-    this.socket = socket;
-    socket.setNoDelay(true);
-    socket.on("data", (chunk: Buffer) => {
-      if (this.socket === socket) this.onData(chunk);
-    });
-    socket.on("error", (error: Error) => {
-      if (this.socket === socket) this.fail(error);
-    });
-    socket.on("close", () => {
-      if (this.socket === socket) this.fail(new Error("closed"));
-    });
-    await this.handshake(target);
-  }
-
-  private async handshake(target: ParsedRedisUrl) {
-    if (target.password) {
-      const reply = target.username
-        ? await this.rawCommand("AUTH", target.username, target.password)
-        : await this.rawCommand("AUTH", target.password);
-      if (reply !== "OK") throw new Error("AUTH failed");
-    }
-    if (target.db != null && target.db !== 0) {
-      const reply = await this.rawCommand("SELECT", String(target.db));
-      if (reply !== "OK") throw new Error("SELECT failed");
-    }
-  }
-}
-
-function openRedisSocket(target: ParsedRedisUrl): Promise<net.Socket> {
-  return new Promise((resolve, reject) => {
-    const socket = target.useTls
-      ? tls.connect({ host: target.host, port: target.port, servername: target.host })
-      : net.connect({ host: target.host, port: target.port });
-    let settled = false;
-    const readyEvent = target.useTls ? "secureConnect" : "connect";
-    const onError = (error: Error) => finish(error);
-    const onReady = () => finish();
-    const finish = (error?: Error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      socket.removeListener("error", onError);
-      socket.removeListener(readyEvent, onReady);
-      if (error) {
-        socket.destroy();
-        reject(error);
-      } else {
-        resolve(socket);
-      }
-    };
-    const timer = setTimeout(() => finish(new Error("timeout")), COMMAND_TIMEOUT_MS);
-    socket.once("error", onError);
-    socket.once(readyEvent, onReady);
-  });
 }
 
 /** Upstash-compatible Redis REST transport for single commands. */
@@ -296,31 +335,41 @@ function useActiveThrottle(key: string, create: () => ThrottleRedis): ThrottleRe
   return client;
 }
 
+function rejectThrottleConfig(error: Error): never {
+  retireActiveThrottle();
+  throw error;
+}
+
 export function configuredThrottleRedis(): ThrottleRedis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
   const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
   const redisUrl = process.env.REDIS_URL?.trim();
   const sharedRequired = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+  const missing = new Error(
+    "Shared throttling requires UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN, or REDIS_URL"
+  );
   if (url && token) {
     if (!URL.canParse(url) || (sharedRequired && new URL(url).protocol !== "https:")) {
-      throw new Error("UPSTASH_REDIS_REST_URL must be a valid URL (HTTPS in production)");
+      return rejectThrottleConfig(
+        new Error("UPSTASH_REDIS_REST_URL must be a valid URL (HTTPS in production)")
+      );
     }
     return useActiveThrottle(`upstash:${url}:${token}`, () => new RedisThrottleClient(url, token));
   }
-  if (url || token) {
-    throw new Error(
-      "Shared throttling requires UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN, or REDIS_URL"
-    );
-  }
+  if (url || token) return rejectThrottleConfig(missing);
   if (redisUrl) {
-    parseRedisUrl(redisUrl);
+    try {
+      parseRedisUrl(redisUrl);
+    } catch (error) {
+      return rejectThrottleConfig(
+        error instanceof Error
+          ? error
+          : new Error("REDIS_URL must be a valid redis:// or rediss:// URL")
+      );
+    }
     return useActiveThrottle(`redis:${redisUrl}`, () => new RedisUrlThrottleClient(redisUrl));
   }
-  if (sharedRequired) {
-    throw new Error(
-      "Shared throttling requires UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN, or REDIS_URL"
-    );
-  }
+  if (sharedRequired) return rejectThrottleConfig(missing);
   retireActiveThrottle();
   return null;
 }

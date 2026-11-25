@@ -358,6 +358,10 @@ async function startRedisUrlStub(db: number | null = null, holdHandshake = false
           reply(Number(buckets.get(String(args[0]))?.delete(String(args[1])) ?? false));
           continue;
         }
+        if (command === "PING") {
+          reply("PONG");
+          continue;
+        }
         if (command !== "EVAL") {
           reply(new Error("ERR unknown command"));
           continue;
@@ -640,5 +644,107 @@ it("closes the previous TCP socket when Redis configuration changes", async () =
   } finally {
     await firstRedis.close();
     await secondRedis.close();
+  }
+});
+
+it("cancels an in-flight rediss connect when configuration changes", async () => {
+  const sockets = new Set<net.Socket>();
+  let accept: (socket: net.Socket) => void = () => {};
+  const accepted = new Promise<net.Socket>((resolve) => {
+    accept = resolve;
+  });
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    accept(socket);
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address() as AddressInfo;
+  try {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL", undefined);
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", undefined);
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", undefined);
+    vi.stubEnv("REDIS_URL", "rediss://127.0.0.1:" + port);
+    const client = configuredThrottleRedis();
+    expect(client).toBeInstanceOf(RedisUrlThrottleClient);
+    const pending = client!.command("PING");
+    const socket = await accepted;
+    const closed = once(socket, "close");
+    const started = Date.now();
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", url);
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "mock-token");
+    expect(configuredThrottleRedis()).toBeInstanceOf(RedisThrottleClient);
+    await expect(pending).rejects.toMatchObject({
+      code: "THROTTLE_UNAVAILABLE",
+      statusCode: 503,
+    });
+    await closed;
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(sockets.size).toBe(0);
+    await expect(client!.command("PING")).rejects.toMatchObject({
+      code: "THROTTLE_UNAVAILABLE",
+      statusCode: 503,
+    });
+    expect(sockets.size).toBe(0);
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    if (server.listening) {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+});
+
+it("retires the previous client when production REDIS_URL is removed, then restores a new one", async () => {
+  const redis = await startRedisUrlStub();
+  try {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL", undefined);
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", undefined);
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", undefined);
+    vi.stubEnv("REDIS_URL", redis.url);
+    const client = configuredThrottleRedis();
+    expect(client).toBeInstanceOf(RedisUrlThrottleClient);
+    expect(await client!.command("PING")).toBe("PONG");
+    expect(redis.connections()).toBe(1);
+    expect(redis.openSockets()).toBe(1);
+
+    const closed = redis.nextClose();
+    vi.stubEnv("REDIS_URL", undefined);
+    expect(() => configuredThrottleRedis()).toThrow(/REDIS_URL/);
+    await closed;
+    expect(redis.openSockets()).toBe(0);
+    await expect(client!.command("PING")).rejects.toMatchObject({
+      code: "THROTTLE_UNAVAILABLE",
+      statusCode: 503,
+    });
+    expect(redis.connections()).toBe(1);
+
+    vi.stubEnv("REDIS_URL", redis.url);
+    const restored = configuredThrottleRedis();
+    expect(restored).not.toBe(client);
+    expect(restored).toBeInstanceOf(RedisUrlThrottleClient);
+    expect(await restored!.command("PING")).toBe("PONG");
+    expect(redis.connections()).toBe(2);
+
+    const invalidated = redis.nextClose();
+    vi.stubEnv("REDIS_URL", "redis://example.test/nope");
+    expect(() => configuredThrottleRedis()).toThrow(/REDIS_URL/);
+    await invalidated;
+    expect(redis.openSockets()).toBe(0);
+    await expect(restored!.command("PING")).rejects.toMatchObject({
+      code: "THROTTLE_UNAVAILABLE",
+      statusCode: 503,
+    });
+    expect(redis.connections()).toBe(2);
+
+    vi.stubEnv("REDIS_URL", redis.url);
+    const replaced = configuredThrottleRedis();
+    expect(replaced).not.toBe(restored);
+    expect(await replaced!.command("PING")).toBe("PONG");
+    expect(redis.connections()).toBe(3);
+  } finally {
+    await redis.close();
   }
 });
