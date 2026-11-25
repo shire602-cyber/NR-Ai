@@ -48,6 +48,7 @@
   "monthEnd.checklistEmpty": "لم يتم إرجاع أي بنود في قائمة المراجعة لهذه الفترة.",
   "monthEnd.historyLoadFailed": "تعذّر تحميل سجل الإقفال، لذا قد لا تظهر الفترات المقفلة.",
   "monthEnd.retryingHistory": "جارٍ إعادة محاولة تحميل سجل الإقفال…",
+  "monthEnd.historyWaitingForConnection": "بانتظار الاتصال لإعادة محاولة تحميل سجل الإقفال…",
   "monthEnd.retry": "حاول مرة أخرى",
   "monthEnd.statusOpen": "مفتوحة",
   "monthEnd.debitAed": "مدين (درهم)",

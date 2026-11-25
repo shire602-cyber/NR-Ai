@@ -49,6 +49,7 @@
   "monthEnd.historyLoadFailed": "Close history could not be loaded, so locked periods may not be shown.",
   "monthEnd.retry": "Try again",
   "monthEnd.retryingHistory": "Retrying close history…",
+  "monthEnd.historyWaitingForConnection": "Waiting for a connection to retry close history…",
   "monthEnd.statusOpen": "Open",
   "monthEnd.debitAed": "Debit (AED)",
   "monthEnd.creditAed": "Credit (AED)",

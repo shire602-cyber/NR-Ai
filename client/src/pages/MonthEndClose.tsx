@@ -164,6 +164,14 @@ interface CloseSettingsResponse {
   permissions: { canLock: boolean; canUnlock: boolean; canReopenHardClose: boolean };
 }
 
+interface LockPeriodSubmission {
+  companyId: string;
+  periodEnd: string;
+  lockType: "soft" | "hard";
+  overrideChecklist: boolean;
+  reason: string;
+}
+
 // ---- Fix routes for incomplete items ----
 const fixRoutes: Record<number, string> = {
   1: "/bank-reconciliation",
@@ -230,11 +238,14 @@ export default function MonthEndClose() {
     isError: isHistoryError,
     isFetched: isHistoryFetched,
     isFetching: isFetchingHistory,
+    isPaused: isHistoryPaused,
+    isPending: isHistoryPending,
     refetch: refetchHistory,
   } = useQuery<CloseRecord[]>({
     queryKey: [`/api/companies/${companyId}/month-end/history`],
     enabled: !!companyId,
   });
+  const historyRetryBusy = isFetchingHistory || isHistoryPaused;
 
   const { data: closeSettings } = useQuery<CloseSettingsResponse>({
     queryKey: [`/api/companies/${companyId}/month-end/settings`],
@@ -303,8 +314,12 @@ export default function MonthEndClose() {
 
   // Lock form state (R08-05 / R02-19): lock type, checklist override + reason.
   const [lockType, setLockType] = useState<"soft" | "hard">("soft");
-  const [overrideChecklist, setOverrideChecklist] = useState(false);
-  const lockChecklistOverride = checklistKnownIncomplete && overrideChecklist;
+  const lockScope = `${companyId}:${period}`;
+  const [lockOverrideScope, setLockOverrideScope] = useState<string | null>(null);
+  if (lockOverrideScope !== null && lockOverrideScope !== lockScope) {
+    setLockOverrideScope(null);
+  }
+  const lockChecklistOverride = checklistKnownIncomplete && lockOverrideScope === lockScope;
   const [lockReason, setLockReason] = useState("");
   const [unlockTarget, setUnlockTarget] = useState<string | null>(null);
   const [unlockReason, setUnlockReason] = useState("");
@@ -313,12 +328,15 @@ export default function MonthEndClose() {
   const [fiscalYearEndPicked, setFiscalYearEnd] = useState<string | null>(null);
   const fiscalYearEnd = fiscalYearEndPicked ?? lastEndedFiscalYear(fyStartMonth, now).end;
   const [hardClose, setHardClose] = useState(false);
+  const [yearEndOverride, setYearEndOverride] = useState(false);
   const [yearEndReason, setYearEndReason] = useState("");
   const [yearEndFieldErrors, setYearEndFieldErrors] = useState<FieldMessages>({});
 
-  const invalidateClose = () => {
+  const invalidateClose = (targetCompanyId = companyId) => {
     for (const key of ["history", "settings"]) {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/month-end/${key}`] });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${targetCompanyId}/month-end/${key}`],
+      });
     }
   };
 
@@ -371,25 +389,24 @@ export default function MonthEndClose() {
     },
   });
 
-  const lockPeriodMutation = useMutation<CloseRecord>({
-    mutationFn: async () => {
+  const lockPeriodMutation = useMutation<CloseRecord, Error, LockPeriodSubmission>({
+    mutationFn: async ({ companyId, periodEnd, lockType, overrideChecklist, reason }) => {
       return apiRequest("POST", `/api/companies/${companyId}/month-end/lock-period`, {
-        periodEnd: periodDates.periodEnd,
+        periodEnd,
         lockType,
-        ...(lockChecklistOverride ? { overrideChecklist: true } : {}),
-        ...(lockReason.trim() ? { reason: lockReason.trim() } : {}),
+        ...(overrideChecklist ? { overrideChecklist: true } : {}),
+        ...(reason ? { reason } : {}),
       });
     },
-    onSuccess: () => {
+    onSuccess: (_, { companyId, periodEnd }) => {
       toast({
         title: t["monthEnd.periodLocked"],
         description: formatMessage(t["monthEnd.periodLockedToast"], {
-          date: periodDates.periodEnd,
+          date: periodEnd,
         }),
       });
-      setOverrideChecklist(false);
       setLockReason("");
-      invalidateClose();
+      invalidateClose(companyId);
     },
     onError: (error: Error) => {
       toast({
@@ -423,7 +440,7 @@ export default function MonthEndClose() {
       apiRequest("POST", `/api/companies/${companyId}/month-end/year-end-close`, {
         fiscalYearEnd,
         hardClose,
-        ...(overrideChecklist ? { overrideChecklist: true } : {}),
+        ...(yearEndOverride ? { overrideChecklist: true } : {}),
         ...(yearEndReason.trim() ? { reason: yearEndReason.trim() } : {}),
       }),
     onSuccess: () => {
@@ -444,7 +461,7 @@ export default function MonthEndClose() {
       apiRequest("PUT", `/api/companies/${companyId}/month-end/settings`, {
         postYearEndClosingEntry,
       }),
-    onSuccess: invalidateClose,
+    onSuccess: () => invalidateClose(),
     onError: (error: Error) => {
       toast({ title: errorHeading(error), description: error?.message, variant: "destructive" });
     },
@@ -846,7 +863,7 @@ export default function MonthEndClose() {
         </AlertDialog>
 
         {/* Lock Period */}
-        <AlertDialog>
+        <AlertDialog onOpenChange={(open) => !open && setLockOverrideScope(null)}>
           <AlertDialogTrigger asChild>
             <Button
               variant="destructive"
@@ -900,8 +917,8 @@ export default function MonthEndClose() {
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
-                    checked={overrideChecklist}
-                    onChange={(e) => setOverrideChecklist(e.target.checked)}
+                    checked={lockChecklistOverride}
+                    onChange={(e) => setLockOverrideScope(e.target.checked ? lockScope : null)}
                     data-testid="checkbox-override-checklist"
                   />
                   <T k="monthEnd.overrideChecklist" />
@@ -929,7 +946,15 @@ export default function MonthEndClose() {
                 <T k="pages.cancel" />
               </AlertDialogCancel>
               <AlertDialogAction
-                onClick={() => lockPeriodMutation.mutate()}
+                onClick={() =>
+                  lockPeriodMutation.mutate({
+                    companyId,
+                    periodEnd: periodDates.periodEnd,
+                    lockType,
+                    overrideChecklist: lockChecklistOverride,
+                    reason: lockReason.trim(),
+                  })
+                }
                 disabled={!lockReasonValid}
                 className="bg-destructive hover:bg-destructive"
               >
@@ -1029,8 +1054,8 @@ export default function MonthEndClose() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Retrying without cached history returns the query to loading. */}
-          {isHistoryError || (isLoadingHistory && isHistoryFetched) ? (
+          {/* A retry without cached history stays pending while it fetches or waits offline. */}
+          {isHistoryError || (isHistoryPending && isHistoryFetched && historyRetryBusy) ? (
             <div className="space-y-3 py-6 text-center" data-testid="history-error">
               <p className="text-sm text-destructive" role="alert">
                 {t["monthEnd.historyLoadFailed"]}
@@ -1038,15 +1063,22 @@ export default function MonthEndClose() {
               <Button
                 variant="outline"
                 size="sm"
-                aria-disabled={isFetchingHistory}
+                aria-disabled={historyRetryBusy}
                 onClick={() => {
-                  if (!isFetchingHistory) refetchHistory();
+                  if (!historyRetryBusy) refetchHistory();
                 }}
               >
                 {t["monthEnd.retry"]}
               </Button>
-              <p className="sr-only" role="status">
-                {isFetchingHistory ? t["monthEnd.retryingHistory"] : ""}
+              <p
+                className={isHistoryPaused ? "text-sm text-muted-foreground" : "sr-only"}
+                role="status"
+              >
+                {isHistoryPaused
+                  ? t["monthEnd.historyWaitingForConnection"]
+                  : isFetchingHistory
+                    ? t["monthEnd.retryingHistory"]
+                    : ""}
               </p>
             </div>
           ) : isLoadingHistory ? (
@@ -1270,7 +1302,7 @@ export default function MonthEndClose() {
                 onClick={() => yearEndMutation.mutate()}
                 disabled={
                   yearEndMutation.isPending ||
-                  (overrideChecklist && yearEndReason.trim().length < 3) ||
+                  (yearEndOverride && yearEndReason.trim().length < 3) ||
                   (yearEndReason.trim().length > 0 && yearEndReason.trim().length < 3)
                 }
               >
@@ -1300,8 +1332,8 @@ export default function MonthEndClose() {
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                checked={overrideChecklist}
-                onChange={(e) => setOverrideChecklist(e.target.checked)}
+                checked={yearEndOverride}
+                onChange={(e) => setYearEndOverride(e.target.checked)}
               />
               <T k="monthEnd.overrideChecklist" />
             </label>
