@@ -19,11 +19,17 @@ const FREE_KEY = /(plan_?free|planfree|inheritsfree|subscriptionfree|norenewal)/
 const FREE_EN = /\bfree (plan|tier)\b|\b(in|for) free\b|\bfree (and|or) starter\b|\bfree users?\b/i;
 const FREE_AR = /(الخطة|الباقة|الخطتين) المجاني|المجانية والمبتدئة|خطة مجانية|باقة مجانية/;
 
+// The comparison table states a competitor's public price fact (Zoho Books has a free plan; the
+// rebuild brief requires it, see docs/site-rebuild/REBUILD-BRIEF.md). It says nothing about Muhasib.
+const COMPETITOR_FACT_KEYS = new Set(["marketing.hxCmpZohoEntry"]);
+
 describe("no free plan copy in the catalogs", () => {
   for (const loc of ["en", "ar"] as const) {
     it(`${loc}: no free-plan keys or sentences`, () => {
       const bad = entries(loc).filter(
-        ([k, v]) => FREE_KEY.test(k) || (loc === "en" ? FREE_EN.test(v) : FREE_AR.test(v)),
+        ([k, v]) =>
+          !COMPETITOR_FACT_KEYS.has(k) &&
+          (FREE_KEY.test(k) || (loc === "en" ? FREE_EN.test(v) : FREE_AR.test(v)))
       );
       expect(bad.map(([k]) => k)).toEqual([]);
     });

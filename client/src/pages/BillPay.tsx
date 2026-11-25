@@ -15,7 +15,7 @@ import {
 import { EditorShell } from "@/components/ui/editor-shell";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { useEditorRoute } from "@/hooks/useEditorRoute";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
@@ -431,6 +431,7 @@ export default function BillPay() {
     billStatusFilterFromSearch(search)
   );
   const [vendorSearch, setVendorSearch] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   // WQ2: the supplier invoice in the editor (uploaded as the attachment on save) and what the
   // capture read from it; nothing is stored until the bill is saved.
   const [pendingFile, setPendingFile] = useState<PendingBillFile | null>(null);
@@ -451,7 +452,9 @@ export default function BillPay() {
 
   const {
     data: bills = [],
-    isLoading: billsLoading,
+    isLoading: billsFetching,
+    isPending: billsPending,
+    fetchStatus: billsFetchStatus,
     isLoadingError: billsFailed,
     refetch: refetchBills,
   } = useQuery<VendorBill[]>({
@@ -534,10 +537,22 @@ export default function BillPay() {
   // Filtered bills
   // ===========================
 
+  // A paused first fetch (offline, nothing cached) has no rows to judge: keep the loading state
+  // rather than claiming there are no bills. Cached rows still show while a refetch is paused.
+  const billsLoading = billsFetching || (billsPending && billsFetchStatus === "paused");
+  // Rows of the selected status before the search, so a search no-match is only reported when the
+  // search itself emptied a non-empty status list.
+  const statusBills = useMemo(() => filterBills(bills, statusFilter, ""), [bills, statusFilter]);
   const filteredBills = useMemo(
-    () => filterBills(bills, statusFilter, vendorSearch),
-    [bills, statusFilter, vendorSearch]
+    () => filterBills(statusBills, "all", vendorSearch),
+    [statusBills, vendorSearch]
   );
+  const hasSearchNoMatch =
+    !billsLoading &&
+    !billsFailed &&
+    vendorSearch.trim().length > 0 &&
+    statusBills.length > 0 &&
+    filteredBills.length === 0;
 
   // ===========================
   // Bill Form
@@ -1826,6 +1841,8 @@ export default function BillPay() {
                 aria-hidden
               />
               <Input
+                ref={searchInputRef}
+                type="search"
                 placeholder={t["screens.searchVendorOrBill"]}
                 value={vendorSearch}
                 onChange={(e) => setVendorSearch(e.target.value)}
@@ -1835,6 +1852,9 @@ export default function BillPay() {
             </div>
           </div>
 
+          <div role="status" aria-atomic="true" className="sr-only">
+            {hasSearchNoMatch ? t["screens.billsSearchNoMatchTitle"] : ""}
+          </div>
           <DataTableCard
             status={
               billsLoading
@@ -1849,12 +1869,24 @@ export default function BillPay() {
             columnLabels={[t["pages.vendor"], t.date, t.amount, t.status]}
             testId="bills-table"
             empty={{
-              icon: FileText,
-              title: t["pages.noBillsFound"],
-              description:
-                bills.length === 0 ? t["screens.billsEmptyBody"] : t["screens.billsNoMatchBody"],
-              action:
-                bills.length === 0
+              icon: hasSearchNoMatch ? Search : FileText,
+              title: hasSearchNoMatch
+                ? t["screens.billsSearchNoMatchTitle"]
+                : t["pages.noBillsFound"],
+              description: hasSearchNoMatch
+                ? t["screens.billsSearchNoMatchBody"]
+                : bills.length === 0
+                  ? t["screens.billsEmptyBody"]
+                  : t["screens.billsNoMatchBody"],
+              action: hasSearchNoMatch
+                ? {
+                    label: t["screens.clearSearch"],
+                    onClick: () => {
+                      setVendorSearch("");
+                      searchInputRef.current?.focus();
+                    },
+                  }
+                : bills.length === 0
                   ? {
                       label: t["pages.newBill"],
                       href: "/bill-pay/new",

@@ -151,6 +151,13 @@
   "portal.inviteSelectAccess": "Select access level",
   "portal.inviteSearchPlaceholder": "Search by email...",
   "portal.inviteFilterStatus": "Filter by status",
+  "portal.inviteLoading": "Loading invitations…",
+  "portal.inviteOffline": "You are offline. Invitations will load when your connection returns.",
+  "portal.inviteLinkDialogTitle": "Copy the invitation link",
+  "portal.inviteLinkDialogBody": "Your browser blocked copying. Select the link below and copy it by hand.",
+  "portal.inviteLinkFieldLabel": "Invitation link",
+  "portal.teamRosterLoading": "Loading team members…",
+  "portal.teamRosterOffline": "You are offline. The team will load when your connection returns.",
   "portal.docReceivedByNra": "Received by NRA",
   "portal.messageSubjectOptional": "Subject (optional)",
   "portal.messageWritePlaceholder": "Write your message...",
@@ -437,5 +444,8 @@
   "portal.access.resendInTime": "Resend in {time}",
   "portal.states.chooseTitle": "Choose a supplier",
   "portal.states.chooseBody": "Your access to {supplier}'s portal was removed. Open another portal to continue.",
-  "portal.doc.dueShort": "Due"
+  "portal.doc.dueShort": "Due",
+  "portal.inviteDeleteConfirm": "Delete this invitation?",
+  "portal.inviteLoadFailed": "Invitations could not be loaded. Check your connection and try again.",
+  "portal.inviteCopyFailed": "The link could not be copied. Copy it by hand instead."
 }

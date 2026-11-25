@@ -151,6 +151,13 @@
   "portal.inviteSelectAccess": "اختر مستوى الوصول",
   "portal.inviteSearchPlaceholder": "ابحث بالبريد الإلكتروني...",
   "portal.inviteFilterStatus": "تصفية حسب الحالة",
+  "portal.inviteLoading": "جارٍ تحميل الدعوات…",
+  "portal.inviteOffline": "أنت غير متصل بالإنترنت. ستُحمَّل الدعوات عند عودة الاتصال.",
+  "portal.inviteLinkDialogTitle": "انسخ رابط الدعوة",
+  "portal.inviteLinkDialogBody": "منع المتصفح النسخ. حدّد الرابط أدناه وانسخه يدويًا.",
+  "portal.inviteLinkFieldLabel": "رابط الدعوة",
+  "portal.teamRosterLoading": "جارٍ تحميل أعضاء الفريق…",
+  "portal.teamRosterOffline": "أنت غير متصل بالإنترنت. سيُحمَّل الفريق عند عودة الاتصال.",
   "portal.docReceivedByNra": "تم الاستلام بواسطة NRA",
   "portal.messageSubjectOptional": "الموضوع (اختياري)",
   "portal.messageWritePlaceholder": "اكتب رسالتك...",
@@ -437,5 +444,8 @@
   "portal.access.resendInTime": "إعادة الإرسال بعد {time}",
   "portal.states.chooseTitle": "اختر مورّدًا",
   "portal.states.chooseBody": "أُزيل وصولك إلى بوابة {supplier}. افتح بوابة أخرى للمتابعة.",
-  "portal.doc.dueShort": "الاستحقاق"
+  "portal.doc.dueShort": "الاستحقاق",
+  "portal.inviteDeleteConfirm": "حذف هذه الدعوة؟",
+  "portal.inviteLoadFailed": "تعذّر تحميل الدعوات. تحقق من اتصالك وحاول مرة أخرى.",
+  "portal.inviteCopyFailed": "تعذّر نسخ الرابط. انسخه يدويًا."
 }

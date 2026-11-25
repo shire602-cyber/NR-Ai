@@ -24,10 +24,10 @@ import { DomainError } from "../errors";
 import { invoiceLines, invoices, type InvoiceLine } from "../../shared/schema";
 import { toFils } from "../../shared/money";
 import { classifySupply, type Vat201Family } from "../../shared/vat-classification";
-import { totalsForStoredDocument } from "../services/invoice-posting.service";
+import { SALES_CODES, totalsForStoredDocument } from "../services/invoice-posting.service";
 import { ledgerLines } from "../reporting";
 import { localDateSql } from "../reporting/settlement";
-import { loadBaseCurrency, type LedgerTx } from "../ledger";
+import { isForeignCurrency, loadBaseCurrency, type LedgerTx } from "../ledger";
 import { ledgerQueryable } from "../ledger/tx";
 import { loadVatGroupForRepresentative, type VatGroupInfo } from "../ledger/vat-group-scope";
 import { has, resolve } from "../platform/service-registry";
@@ -649,6 +649,32 @@ async function collectInvoices(
     byInvoice.set(l.invoiceId, list);
   }
 
+  const foreignCreditIds = docs
+    .filter(
+      ({ invoice }) =>
+        invoice.invoiceType === "credit_note" && isForeignCurrency(invoice.currency, baseCurrency)
+    )
+    .map(({ invoice }) => invoice.id);
+  const postedRemainderVat = new Map<string, number>();
+  if (foreignCreditIds.length) {
+    // A final credit reverses the remaining posted base VAT, which can differ from
+    // converting the printed VAT at the invoice rate because of earlier rounding.
+    const { rows } = await ledgerQueryable(tx).query(
+      `SELECT je.source_id, COALESCE(SUM(jl.debit - jl.credit)
+                FILTER (WHERE a.id IS NOT NULL), 0) AS vat
+         FROM journal_entries je
+         JOIN journal_lines jl ON jl.entry_id = je.id
+         LEFT JOIN accounts a ON a.id = jl.account_id AND a.company_id = je.company_id
+                             AND a.code = $3 AND a.is_vat_account
+        WHERE je.company_id = $1 AND je.source = 'invoice' AND je.source_id = ANY($2::uuid[])
+          AND je.memo_key = 'creditNoteReversal'
+          AND je.status = 'posted' AND je.entry_kind <> 'reversal' AND je.reversed_by_entry_id IS NULL
+        GROUP BY je.source_id`,
+      [companyId, foreignCreditIds, SALES_CODES.VAT_OUTPUT]
+    );
+    for (const row of rows) postedRemainderVat.set(row.source_id, fils(row.vat));
+  }
+
   for (const { invoice: inv, taxPoint } of docs) {
     const type: VatSourceType =
       inv.invoiceType === "credit_note"
@@ -698,9 +724,14 @@ async function collectInvoices(
       }).vat201Family;
       netByFamily.set(fam, (netByFamily.get(fam) ?? 0) + net);
     });
+    const postedVat = postedRemainderVat.get(inv.id);
+    const vatBase = postedVat ?? toBaseFils(totals.vatFils, rate);
+    // The last credit can clear base-currency VAT rounding with only zero-rated lines left.
+    if (postedVat && !netByFamily.has("standard")) netByFamily.set("standard", 0);
     const emirate = normaliseEmirate(inv.placeOfSupplyEmirate);
-    const needsEmirate = [...netByFamily.keys()].some(
-      (f) => familyNeedsEmirate(f) && (netByFamily.get(f) ?? 0) !== 0
+    const needsEmirate = [...netByFamily].some(
+      ([family, net]) =>
+        familyNeedsEmirate(family) && (net !== 0 || (family === "standard" && vatBase !== 0))
     );
     if (needsEmirate && !emirate) {
       issues.push({
@@ -712,7 +743,6 @@ async function collectInvoices(
       });
       continue;
     }
-    const vatBase = toBaseFils(totals.vatFils, rate);
     for (const [family, netDoc] of netByFamily) {
       const netBase = toBaseFils(netDoc, rate);
       if (family === "out_of_scope") {
