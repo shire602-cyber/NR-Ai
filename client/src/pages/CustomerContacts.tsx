@@ -1434,19 +1434,16 @@ export default function CustomerContacts() {
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm">
                 <p>
-                  This will permanently delete{" "}
-                  <strong>
-                    {clearPreview?.contactCount ?? contacts.length} contact
-                    {(clearPreview?.contactCount ?? contacts.length) === 1 ? "" : "s"}
-                  </strong>{" "}
-                  for this company. This action cannot be undone.
+                  {formatMessage(t["pages.contactsDeleteAllBody"], {
+                    count: clearPreview?.contactCount ?? contacts.length,
+                  })}
                 </p>
                 {clearPreview && clearPreview.linkedInvoiceCount > 0 && (
                   <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3">
                     <p className="font-medium text-destructive">
-                      {clearPreview.linkedInvoiceCount} invoice
-                      {clearPreview.linkedInvoiceCount === 1 ? " is" : "s are"} linked to these
-                      contacts.
+                      {formatMessage(t["pages.contactsDeleteAllLinked"], {
+                        count: clearPreview.linkedInvoiceCount,
+                      })}
                     </p>
                     <p className="text-muted-foreground mt-1">
                       {t["customerContacts.invoicesWillBeKeptBut"]}
@@ -1491,7 +1488,7 @@ export default function CustomerContacts() {
                   <T k="pageLabels.deleting" />
                 </>
               ) : (
-                "Delete all contacts"
+                t["pages.contactsDeleteAllButton"]
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -1510,8 +1507,9 @@ export default function CustomerContacts() {
               <T k="pageLabels.deleteContact" />
             </AlertDialogTitle>
             <AlertDialogDescription>
-              <T k="pageLabels.areYouSureYouWantToDelete" />
-              <strong>{contactToDelete?.name}</strong>? This action cannot be undone.
+              {formatMessage(t["pages.contactsDeleteOneBody"], {
+                name: contactToDelete?.name ?? "",
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

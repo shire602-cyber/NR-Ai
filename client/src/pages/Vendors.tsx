@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ErrorSummary,
   Field,
@@ -35,10 +35,11 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDate } from "@/lib/format";
+import { filterVendors } from "@/lib/vendor-filter";
 import { DataTableCard } from "@/components/ui/data-table";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
-import { FileText, Link2, Plus, Truck } from "lucide-react";
+import { FileText, Link2, Plus, Search, Truck } from "lucide-react";
 
 // Vendor master (W3-B, R04-16): TRN-validated, deduplicated suppliers with statements and aging.
 
@@ -178,6 +179,7 @@ export default function Vendors() {
   const { gate: permissionGate } = useCompanyPermission();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({ ...EMPTY });
+  const [searchTerm, setSearchTerm] = useState("");
   const [statementFor, setStatementFor] = useState<Vendor | null>(null);
 
   const { data: vendors = [] } = useQuery<Vendor[]>({
@@ -196,6 +198,10 @@ export default function Vendors() {
       apiRequest("GET", `/api/companies/${companyId}/vendors/${statementFor!.id}/statement`),
     enabled: !!companyId && !!statementFor,
   });
+
+  const filteredVendors = useMemo(() => filterVendors(vendors, searchTerm), [vendors, searchTerm]);
+  const statementTypeLabel = (type: string) =>
+    t[`pages.vendorsStatementType.${type}`] ?? type.replace(/_/g, " ");
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "vendors"] });
@@ -257,7 +263,7 @@ export default function Vendors() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Purchases"
+        eyebrow={t["pages.vendorsEyebrow"]}
         title={c.title}
         description={c.subtitle}
         primaryAction={
@@ -279,18 +285,47 @@ export default function Vendors() {
           <TabsTrigger value="aging">{c.aging}</TabsTrigger>
         </TabsList>
         <TabsContent value="list">
+          {vendors.length > 0 && (
+            <div className="relative max-w-sm">
+              <Search
+                aria-hidden
+                className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                type="search"
+                className="ps-9"
+                placeholder={t["pages.vendorsSearchPlaceholder"]}
+                aria-label={t["pages.vendorsSearchPlaceholder"]}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                data-testid="input-search-vendors"
+              />
+            </div>
+          )}
           <DataTableCard
-            status={vendors.length === 0 ? "empty" : "ready"}
-            empty={{
-              icon: Truck,
-              title: c.noVendors,
-              description: c.emptyBody,
-              action: {
-                label: c.newVendor,
-                onClick: () => setOpen(true),
-                permission: "documents.write",
-              },
-            }}
+            status={filteredVendors.length === 0 ? "empty" : "ready"}
+            empty={
+              searchTerm.trim() && vendors.length > 0
+                ? {
+                    icon: Search,
+                    title: t["pages.vendorsNoMatchTitle"],
+                    description: t["pages.vendorsNoMatchBody"],
+                    secondaryAction: {
+                      label: t["pages.vendorsClearSearch"],
+                      onClick: () => setSearchTerm(""),
+                    },
+                  }
+                : {
+                    icon: Truck,
+                    title: c.noVendors,
+                    description: c.emptyBody,
+                    action: {
+                      label: c.newVendor,
+                      onClick: () => setOpen(true),
+                      permission: "documents.write",
+                    },
+                  }
+            }
           >
             <Table className="row-cards">
               <TableHeader>
@@ -306,7 +341,7 @@ export default function Vendors() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {vendors.map((v) => (
+                {filteredVendors.map((v) => (
                   <TableRow key={v.id}>
                     <TableCell
                       data-truncate=""
@@ -495,7 +530,7 @@ export default function Vendors() {
                   <TableRow key={`${l.type}-${l.documentId}`}>
                     <TableCell data-nowrap="">{formatDate(l.date, locale)}</TableCell>
                     <TableCell data-nowrap="" className="text-muted-foreground">
-                      {l.type.replace(/_/g, " ")}
+                      {statementTypeLabel(l.type)}
                     </TableCell>
                     <TableCell data-nowrap="">
                       <span dir="ltr" className="[unicode-bidi:isolate]">
@@ -509,6 +544,11 @@ export default function Vendors() {
                 ))}
               </TableBody>
             </Table>
+            {statement && statement.lines.length === 0 && (
+              <p className="p-4 text-center text-sm text-muted-foreground">
+                {t["pages.vendorsStatementEmpty"]}
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setStatementFor(null)}>

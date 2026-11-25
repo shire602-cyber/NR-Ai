@@ -1029,5 +1029,19 @@
   "pages.subscriptionBilled_monthly": "billed monthly",
   "pages.subscriptionBilled_yearly": "billed yearly",
   "pages.subscriptionTrialOpen": "Every feature is open during the trial.",
-  "pages.subscriptionExpiredSafe": "Your data is saved."
+  "pages.subscriptionExpiredSafe": "Your data is saved.",
+  "pages.contactsDeleteAllBody": "This will permanently delete {count, plural, one {# contact} other {# contacts}} for this company. This action cannot be undone.",
+  "pages.contactsDeleteAllLinked": "{count, plural, one {# invoice is} other {# invoices are}} linked to these contacts.",
+  "pages.contactsDeleteAllButton": "Delete all contacts",
+  "pages.contactsDeleteOneBody": "Are you sure you want to delete {name}? This action cannot be undone.",
+  "pages.vendorsEyebrow": "Purchases",
+  "pages.vendorsSearchPlaceholder": "Search suppliers by name, TRN or email...",
+  "pages.vendorsNoMatchTitle": "No matching suppliers",
+  "pages.vendorsNoMatchBody": "Try a different name, TRN or email.",
+  "pages.vendorsClearSearch": "Clear search",
+  "pages.vendorsStatementEmpty": "No transactions for this supplier yet",
+  "pages.vendorsStatementType.bill": "Bill",
+  "pages.vendorsStatementType.payment": "Payment",
+  "pages.vendorsStatementType.debit_note": "Debit note",
+  "pages.vendorsStatementType.credit_applied": "Credit applied"
 }

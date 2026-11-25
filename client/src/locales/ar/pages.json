@@ -1029,5 +1029,19 @@
   "pages.subscriptionBilled_monthly": "تُدفع شهريًا",
   "pages.subscriptionBilled_yearly": "تُدفع سنويًا",
   "pages.subscriptionTrialOpen": "كل الميزات متاحة خلال الفترة التجريبية.",
-  "pages.subscriptionExpiredSafe": "بياناتك محفوظة."
+  "pages.subscriptionExpiredSafe": "بياناتك محفوظة.",
+  "pages.contactsDeleteAllBody": "سيتم حذف {count, plural, one {جهة اتصال واحدة} other {# من جهات الاتصال}} لهذه الشركة نهائيًا. لا يمكن التراجع عن هذا الإجراء.",
+  "pages.contactsDeleteAllLinked": "{count, plural, one {فاتورة واحدة مرتبطة} other {# فواتير مرتبطة}} بجهات الاتصال هذه.",
+  "pages.contactsDeleteAllButton": "حذف جميع جهات الاتصال",
+  "pages.contactsDeleteOneBody": "هل أنت متأكد من حذف {name}؟ لا يمكن التراجع عن هذا الإجراء.",
+  "pages.vendorsEyebrow": "المشتريات",
+  "pages.vendorsSearchPlaceholder": "ابحث في الموردين بالاسم أو الرقم الضريبي أو البريد...",
+  "pages.vendorsNoMatchTitle": "لا يوجد موردون مطابقون",
+  "pages.vendorsNoMatchBody": "جرّب اسمًا أو رقمًا ضريبيًا أو بريدًا آخر.",
+  "pages.vendorsClearSearch": "مسح البحث",
+  "pages.vendorsStatementEmpty": "لا توجد حركات لهذا المورد بعد",
+  "pages.vendorsStatementType.bill": "فاتورة مورد",
+  "pages.vendorsStatementType.payment": "دفعة",
+  "pages.vendorsStatementType.debit_note": "إشعار مدين",
+  "pages.vendorsStatementType.credit_applied": "رصيد مطبق"
 }
