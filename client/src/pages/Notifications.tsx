@@ -5,7 +5,7 @@ import { localizeNotification } from "@/lib/notification-display";
 import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useMutationState, useQueryClient } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { Notification, RegulatoryNews } from "@shared/schema";
 
+const ROW_ACTION_KEY = ["notifications", "row-action"] as const;
+
 export default function Notifications() {
   const { toast } = useToast();
   const { t, locale } = useTranslation();
@@ -41,7 +43,8 @@ export default function Notifications() {
 
   const {
     data: notificationsData,
-    isLoading: notificationsLoading,
+    isPending: notificationsPending,
+    fetchStatus: notificationsFetchStatus,
     error: notificationsError,
     refetch: refetchNotifications,
   } = useQuery<{
@@ -55,6 +58,7 @@ export default function Notifications() {
     data: regulatoryNews,
     isLoading: newsLoading,
     error: newsError,
+    fetchStatus: newsFetchStatus,
     refetch: refetchNews,
   } = useQuery<RegulatoryNews[]>({
     queryKey: ["/api/regulatory-news"],
@@ -63,7 +67,19 @@ export default function Notifications() {
   const actionFailed = () =>
     toast({ title: t["pageLabels.notificationActionFailed"], variant: "destructive" });
 
+  // Read and dismiss share one mutation key, so the mutation cache is the single source of truth
+  // for which rows have a request in flight or paused offline. It survives navigating away and
+  // back, and covers several rows at once.
+  const rowMutationClient = useQueryClient();
+  const rowMutations = useMutationState({
+    filters: { mutationKey: ROW_ACTION_KEY, status: "pending" },
+    select: (m) => ({ id: m.state.variables as string, paused: m.state.isPaused }),
+  });
+  const pendingRows = new Map<string, { paused: boolean }>();
+  for (const m of rowMutations) pendingRows.set(m.id, { paused: m.paused });
+
   const markAsReadMutation = useMutation({
+    mutationKey: ROW_ACTION_KEY,
     mutationFn: (id: string) => apiRequest("PATCH", `/api/notifications/${id}/read`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
@@ -81,6 +97,7 @@ export default function Notifications() {
   });
 
   const dismissMutation = useMutation({
+    mutationKey: ROW_ACTION_KEY,
     mutationFn: (id: string) => apiRequest("PATCH", `/api/notifications/${id}/dismiss`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
@@ -88,6 +105,16 @@ export default function Notifications() {
     },
     onError: actionFailed,
   });
+
+  const submitRowAction = (id: string, run: (id: string) => void) => {
+    // Read-only cache lookup: a double click before the next render still finds the first request.
+    const inFlight = rowMutationClient
+      .getMutationCache()
+      .findAll({ mutationKey: ROW_ACTION_KEY, status: "pending" })
+      .some((m) => m.state.variables === id);
+    if (inFlight) return;
+    run(id);
+  };
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
@@ -128,6 +155,17 @@ export default function Notifications() {
   };
 
   const hasNews = !newsLoading && (regulatoryNews?.length ?? 0) > 0;
+  // A news load that failed (or is paused offline) with nothing cached keeps its tab so the retry
+  // panel is reachable. A successful empty response still hides the tab (WP-E, spec 3.15).
+  const newsUnavailable =
+    !newsLoading && !regulatoryNews && (!!newsError || newsFetchStatus === "paused");
+  // A retry with no data clears the error and reports loading again; while the user is on the news
+  // tab keep the strip (and the loading panel) so focus and selection survive the retry.
+  const newsRetrying = newsLoading && activeTab === "regulatory";
+  const showNewsTab = hasNews || newsUnavailable || newsRetrying;
+  // Derived selection: when the news tab disappears (e.g. a retry returns []) fall back to
+  // Notifications for the header toolbar and the tab value alike.
+  const effectiveTab = showNewsTab ? activeTab : "notifications";
 
   const getNewsBadge = (category: string) => {
     // Categories are topics, not statuses: one neutral outline pill.
@@ -152,7 +190,7 @@ export default function Notifications() {
         title={t["pageLabels.notificationsPageTitle"]}
         description={t["pageLabels.notificationsPageDesc"]}
         actions={
-          activeTab === "notifications" && notificationsData?.unreadCount ? (
+          effectiveTab === "notifications" && notificationsData?.unreadCount ? (
             <Button
               onClick={() => markAllAsReadMutation.mutate()}
               disabled={markAllAsReadMutation.isPending}
@@ -165,9 +203,10 @@ export default function Notifications() {
         }
       />
 
-      <Tabs value={hasNews ? activeTab : "notifications"} onValueChange={setActiveTab}>
-        {/* WP-E (spec 3.15): the Regulatory news tab only exists when there is news. */}
-        <TabsList className={hasNews ? undefined : "hidden"}>
+      <Tabs value={effectiveTab} onValueChange={setActiveTab}>
+        {/* WP-E (spec 3.15): the Regulatory news tab only exists when there is news, or when the
+            news request failed and needs its retry panel. */}
+        <TabsList className={showNewsTab ? undefined : "hidden"}>
           <TabsTrigger value="notifications" data-testid="tab-notifications">
             <Bell aria-hidden />
             <T k="pageLabels.notificationsTab" />
@@ -184,7 +223,7 @@ export default function Notifications() {
         </TabsList>
 
         <TabsContent value="notifications" className="mt-6">
-          {notificationsLoading ? (
+          {notificationsPending && notificationsFetchStatus !== "paused" ? (
             <div className="space-y-4">
               {[1, 2, 3].map((i) => (
                 <Skeleton key={i} className="h-24 w-full" />
@@ -196,7 +235,14 @@ export default function Notifications() {
               onRetry={() => void refetchNotifications()}
               testId="notifications-load-error"
             />
-          ) : !notificationsData?.notifications?.length ? (
+          ) : !notificationsData ? (
+            // No data and no error: the first fetch is paused offline. Never "caught up".
+            <LoadErrorState
+              error={null}
+              onRetry={() => void refetchNotifications()}
+              testId="notifications-offline"
+            />
+          ) : !notificationsData.notifications?.length ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <Bell className="w-12 h-12 text-muted-foreground mb-4" />
@@ -219,6 +265,8 @@ export default function Notifications() {
                   );
                   const actionUrl = copy.actionUrl ?? notification.actionUrl;
                   const unread = !notification.isRead;
+                  const rowState = pendingRows.get(notification.id);
+                  const rowBusy = !!rowState;
                   return (
                     <li
                       key={notification.id}
@@ -269,6 +317,15 @@ export default function Notifications() {
                             {t["components.notificationEmailNotSetUpLink"]}
                           </Link>
                         ) : null}
+                        {rowState?.paused ? (
+                          <p
+                            role="status"
+                            className="mt-1 text-small text-warning"
+                            data-testid={`status-paused-${notification.id}`}
+                          >
+                            {t["pageLabels.notificationActionOffline"]}
+                          </p>
+                        ) : null}
                         <p className="mt-1.5 text-caption text-muted-foreground">
                           {formatDistanceToNow(new Date(notification.createdAt), {
                             addSuffix: true,
@@ -296,13 +353,21 @@ export default function Notifications() {
                           )}
                           {unread && (
                             <DropdownMenuItem
-                              onSelect={() => markAsReadMutation.mutate(notification.id)}
+                              disabled={rowBusy}
+                              data-testid={`action-read-${notification.id}`}
+                              onSelect={() =>
+                                submitRowAction(notification.id, markAsReadMutation.mutate)
+                              }
                             >
                               {t["pageLabels.notificationMarkRead"]}
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuItem
-                            onSelect={() => dismissMutation.mutate(notification.id)}
+                            disabled={rowBusy}
+                            data-testid={`action-dismiss-${notification.id}`}
+                            onSelect={() =>
+                              submitRowAction(notification.id, dismissMutation.mutate)
+                            }
                           >
                             {t["pageLabels.notificationDismiss"]}
                           </DropdownMenuItem>
@@ -323,7 +388,7 @@ export default function Notifications() {
                 <Skeleton key={i} className="h-32 w-full" />
               ))}
             </div>
-          ) : newsError && !regulatoryNews ? (
+          ) : newsUnavailable ? (
             <LoadErrorState
               error={newsError}
               onRetry={() => void refetchNews()}
