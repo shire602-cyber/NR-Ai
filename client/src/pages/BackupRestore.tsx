@@ -1,7 +1,7 @@
 import { T } from "@/components/layout/T";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { PageHeader } from "@/components/ui/page-header";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Database,
@@ -262,15 +262,26 @@ export default function BackupRestore() {
     },
   });
 
+  const restoreAttempt = useRef<{ id: string; mode: typeof restoreMode; key: string } | null>(null);
   const restoreMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest("POST", `/api/backups/${id}/restore`, {
-        mode: restoreMode,
-        confirmRestore: true,
-        ...(restoreMode === "replace" ? { confirmName } : {}),
-      });
+      if (restoreAttempt.current?.id !== id || restoreAttempt.current.mode !== restoreMode) {
+        restoreAttempt.current = { id, mode: restoreMode, key: crypto.randomUUID() };
+      }
+      return apiRequest(
+        "POST",
+        `/api/backups/${id}/restore`,
+        {
+          mode: restoreMode,
+          confirmRestore: true,
+          ...(restoreMode === "replace" ? { confirmName } : {}),
+        },
+        { "Idempotency-Key": restoreAttempt.current.key },
+        { queueWhenOffline: false }
+      );
     },
     onSuccess: (data: { message?: string }) => {
+      restoreAttempt.current = null;
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
       toast({ title: c.restoreDone, description: data.message });
       setRestorePreview(null);

@@ -1,7 +1,7 @@
 import { T } from "@/components/layout/T";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { PageHeader } from "@/components/ui/page-header";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,30 +36,22 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
+import { freshChunkUrl } from "@/lib/dialogChunk";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
-  COMPANY_ROLES,
   COMPANY_ROLE_DESCRIPTIONS,
   COMPANY_ROLE_LABELS,
   canPerform,
   companyAccessQueryKey,
-  roleHasPermission,
   type CompanyAccess,
   type CompanyRole,
-  type Permission,
 } from "@/lib/auth";
+import { OnDemandDialogStatus } from "@/components/team/onDemandDialog";
+import { useOnDemandDialog } from "@/components/team/useOnDemandDialog";
 import {
   UserPlus,
   Users,
@@ -69,13 +61,13 @@ import {
   User,
   Mail,
   Trash2,
-  Check,
   X,
   Loader2,
   Eye,
   BookOpen,
   BadgeCheck,
   RefreshCw,
+  Search,
   Copy,
 } from "lucide-react";
 
@@ -131,54 +123,18 @@ const ROLE_COLORS: Record<CompanyRole, string> = {
   viewer: ROLE_PILL,
 };
 
-/** Shown in the permissions matrix; keys come from shared/permissions.ts. */
-const PERMISSION_LABELS: Record<Permission, Bilingual> = {
-  "reports.read": { en: "View records and reports", ar: "عرض السجلات والتقارير" },
-  "documents.write": { en: "Create and edit documents", ar: "إنشاء المستندات وتعديلها" },
-  "documents.approve": { en: "Approve documents", ar: "اعتماد المستندات" },
-  "ledger.post": { en: "Post to the ledger", ar: "الترحيل إلى دفتر الأستاذ" },
-  "payments.release": { en: "Release payments", ar: "إصدار المدفوعات" },
-  "payroll.manage": { en: "Manage payroll", ar: "إدارة الرواتب" },
-  "payroll.approve": { en: "Approve payroll", ar: "اعتماد الرواتب" },
-  "tax.submit": { en: "Submit tax returns", ar: "تقديم الإقرارات الضريبية" },
-  "settings.company": { en: "Company settings", ar: "إعدادات الشركة" },
-  "company.delete": { en: "Delete the company", ar: "حذف الشركة" },
-  "team.manage": { en: "Manage team members", ar: "إدارة أعضاء الفريق" },
-  "billing.manage": { en: "Manage billing", ar: "إدارة الفوترة" },
-  "backups.manage": { en: "Backups and restore", ar: "النسخ الاحتياطي والاستعادة" },
-  "period.lock": { en: "Lock periods", ar: "إقفال الفترات" },
-  "period.unlock": { en: "Unlock periods", ar: "فتح الفترات المقفلة" },
-};
+type PermissionsMatrixModule = typeof import("@/components/team/PermissionsMatrixDialog");
 
-const COPY = {
-  invitationsTitle: { en: "Pending invitations", ar: "الدعوات المعلقة" },
-  invitationsEmpty: { en: "No pending invitations.", ar: "لا توجد دعوات معلقة." },
-  resend: { en: "Resend", ar: "إعادة الإرسال" },
-  revoke: { en: "Revoke", ar: "إلغاء الدعوة" },
-  expires: { en: "Expires", ar: "تنتهي في" },
-  linkTitle: { en: "Share the invitation link", ar: "شارك رابط الدعوة" },
-  linkBody: {
-    en: "Email delivery is not configured, so no email was sent. Send this link to the invitee yourself; it expires in 7 days.",
-    ar: "لم يتم إعداد البريد الإلكتروني، لذلك لم تُرسل أي رسالة. أرسل هذا الرابط إلى المدعو بنفسك؛ تنتهي صلاحيته خلال 7 أيام.",
-  },
-  copy: { en: "Copy link", ar: "نسخ الرابط" },
-  copied: { en: "Link copied", ar: "تم نسخ الرابط" },
-  sentTitle: { en: "Invitation sent", ar: "تم إرسال الدعوة" },
-  readOnly: {
-    en: "Your role can view the team but not change it.",
-    ar: "يمكن لدورك عرض الفريق دون تعديله.",
-  },
-  yourRole: { en: "Your role", ar: "دورك" },
-  removeTitle: { en: "Remove team member?", ar: "إزالة عضو الفريق؟" },
-  removeBody: {
-    en: "They will lose access to this company immediately.",
-    ar: "سيفقد الوصول إلى هذه الشركة فورًا.",
-  },
-  failed: { en: "Something went wrong", ar: "حدث خطأ ما" },
-  updated: { en: "Role updated", ar: "تم تحديث الدور" },
-  removed: { en: "Member removed", ar: "تمت إزالة العضو" },
-  revoked: { en: "Invitation revoked", ar: "تم إلغاء الدعوة" },
-} satisfies Record<string, Bilingual>;
+// First try: the literal import (split, hashed and preloaded by the bundler). Retry: the same chunk
+// under a fresh URL; the production path is a marker the dialog-chunk-urls Vite plugin rewrites to
+// the emitted chunk (see lib/dialogChunk.ts).
+const loadPermissionsMatrixDialog = (retry: string | null): Promise<PermissionsMatrixModule> => {
+  if (retry === null) return import("@/components/team/PermissionsMatrixDialog");
+  const path = import.meta.env.DEV
+    ? "../components/team/PermissionsMatrixDialog.tsx"
+    : "__MUHASIB_DIALOG_CHUNK__PermissionsMatrixDialog__";
+  return import(/* @vite-ignore */ freshChunkUrl(new URL(path, import.meta.url), retry));
+};
 
 export default function TeamManagement() {
   const { t, locale } = useTranslation();
@@ -187,12 +143,31 @@ export default function TeamManagement() {
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
+  const permissionsDialog = useOnDemandDialog(
+    loadPermissionsMatrixDialog,
+    "PermissionsMatrixDialog"
+  );
+  const permissionsTrigger = useRef<HTMLButtonElement>(null);
+  const openPermissions = () => {
+    setPermissionsDialogOpen(true);
+    permissionsDialog.request();
+  };
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<CompanyRole>("accountant");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [inviteEmailError, setInviteEmailError] = useState<string | null>(null);
   const [memberToRemove, setMemberToRemove] = useState<TeamMember | null>(null);
 
-  const { data: teamMembers, isLoading: isLoadingTeam } = useQuery<TeamMember[]>({
+  const {
+    data: teamMembers,
+    isLoading: isLoadingTeam,
+    isPending: teamPending,
+    fetchStatus: teamFetchStatus,
+    isLoadingError: teamLoadFailed,
+    isRefetchError: teamRefreshFailed,
+    refetch: refetchTeam,
+  } = useQuery<TeamMember[]>({
     queryKey: ["/api/companies", companyId, "team"],
     enabled: !!companyId,
   });
@@ -203,25 +178,47 @@ export default function TeamManagement() {
   const canManage = canPerform(access, "team.manage");
   const grantable = access?.grantableRoles ?? [];
 
-  const { data: invitations } = useQuery<TeamInvitation[]>({
+  // A first fetch with no cached data that is paused (offline) is neither loaded nor empty.
+  const teamOffline = teamPending && teamFetchStatus === "paused";
+  const {
+    data: invitations,
+    isLoading: isLoadingInvitations,
+    isPending: invitationsPending,
+    fetchStatus: invitationsFetchStatus,
+    isLoadingError: invitationsLoadFailed,
+    isRefetchError: invitationsRefreshFailed,
+    refetch: refetchInvitations,
+  } = useQuery<TeamInvitation[]>({
     queryKey: ["/api/companies", companyId, "team", "invitations"],
     enabled: !!companyId && canManage,
   });
+  const invitationsOffline = invitationsPending && invitationsFetchStatus === "paused";
   const pendingInvitations = (invitations ?? []).filter(
     (i) => i.status === "pending" || i.status === "expired"
+  );
+
+  // The search box only appears once the roster is long enough to need it. Filtering uses
+  // that same condition so a roster that shrinks below the threshold cannot keep a hidden filter.
+  const showMemberSearch = (teamMembers?.length ?? 0) > 5;
+  const needle = (showMemberSearch ? memberSearch : "").trim().toLowerCase();
+  const visibleMembers = (teamMembers ?? []).filter(
+    (m) =>
+      !needle ||
+      m.user.name.toLowerCase().includes(needle) ||
+      m.user.email.toLowerCase().includes(needle)
   );
 
   const invalidateTeam = () =>
     queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "team"] });
   const onError = (error: { message?: string }) =>
-    toast({ variant: "destructive", title: tr(COPY.failed), description: error?.message });
+    toast({ variant: "destructive", title: t["pages.teamFailed"], description: error?.message });
 
   const handleInviteResult = (result: InviteResponse) => {
     invalidateTeam();
     if (result.delivery === "link" && result.inviteUrl) {
       setInviteLink(result.inviteUrl);
     } else {
-      toast({ title: tr(COPY.sentTitle), description: result.invitation.email });
+      toast({ title: t["pages.teamSentTitle"], description: result.invitation.email });
     }
   };
 
@@ -256,7 +253,7 @@ export default function TeamManagement() {
       apiRequest("DELETE", `/api/companies/${companyId}/team/invitations/${invitationId}`),
     onSuccess: () => {
       invalidateTeam();
-      toast({ title: tr(COPY.revoked) });
+      toast({ title: t["pages.teamRevoked"] });
     },
     onError,
   });
@@ -266,7 +263,7 @@ export default function TeamManagement() {
       apiRequest("PUT", `/api/companies/${companyId}/team/${memberId}`, { role }),
     onSuccess: () => {
       invalidateTeam();
-      toast({ title: tr(COPY.updated) });
+      toast({ title: t["pages.teamUpdated"] });
     },
     onError,
   });
@@ -276,7 +273,7 @@ export default function TeamManagement() {
       apiRequest("DELETE", `/api/companies/${companyId}/team/${memberId}`),
     onSuccess: () => {
       invalidateTeam();
-      toast({ title: tr(COPY.removed) });
+      toast({ title: t["pages.teamRemoved"] });
     },
     onError,
   });
@@ -303,7 +300,7 @@ export default function TeamManagement() {
     if (!inviteLink) return;
     try {
       await navigator.clipboard.writeText(inviteLink);
-      toast({ title: tr(COPY.copied) });
+      toast({ title: t["pages.teamCopied"] });
     } catch {
       /* clipboard unavailable: the link stays visible to copy by hand */
     }
@@ -322,19 +319,29 @@ export default function TeamManagement() {
     <SettingsLayout>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Settings"
+          eyebrow={t["pages.companyProfileEyebrow"]}
           title={t["pages.teamTeamManagement"]}
           description={t["pages.teamManageTeamMembersAndTheirAccess"]}
           actions={
             <>
               <Button
+                ref={permissionsTrigger}
                 variant="outline"
-                onClick={() => setPermissionsDialogOpen(true)}
+                onClick={openPermissions}
                 data-testid="button-view-permissions"
               >
                 <Shield className="w-4 h-4 me-2" />
                 {t["settingsPages.permissions"]}
               </Button>
+              <OnDemandDialogStatus
+                status={permissionsDialog.status}
+                onRetry={() => {
+                  // The retry button goes away while loading; keep focus on the trigger.
+                  permissionsTrigger.current?.focus();
+                  openPermissions();
+                }}
+                testId="permissions-dialog"
+              />
               {canManage && (
                 <Button
                   onClick={() => setInviteDialogOpen(true)}
@@ -350,8 +357,8 @@ export default function TeamManagement() {
 
         {access && (
           <p className="text-sm text-muted-foreground" data-testid="text-your-role">
-            {tr(COPY.yourRole)}: {access.role ? roleLabel(access.role) : "NRA"}
-            {!canManage && <span className="ms-2">{tr(COPY.readOnly)}</span>}
+            {t["pages.teamYourRole"]}: {access.role ? roleLabel(access.role) : "NRA"}
+            {!canManage && <span className="ms-2">{t["pages.teamReadOnly"]}</span>}
           </p>
         )}
 
@@ -362,7 +369,12 @@ export default function TeamManagement() {
           </CardHeader>
           <CardContent>
             {isLoadingTeam ? (
-              <div className="space-y-4">
+              <div
+                className="space-y-4"
+                role="status"
+                aria-label={t["portal.teamRosterLoading"]}
+                data-testid="team-loading"
+              >
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="flex items-center gap-4">
                     <Skeleton className="h-10 w-10 rounded-full" />
@@ -373,89 +385,154 @@ export default function TeamManagement() {
                   </div>
                 ))}
               </div>
-            ) : !teamMembers || teamMembers.length === 0 ? (
-              <div className="text-center py-12">
-                <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">
-                  {locale === "ar"
-                    ? "لا يوجد أعضاء آخرين. قم بدعوة فريقك."
-                    : "No other team members. Invite your team to collaborate."}
-                </p>
+            ) : teamOffline ? (
+              <div
+                className="py-12 text-center text-muted-foreground"
+                role="status"
+                data-testid="team-offline"
+              >
+                {t["portal.teamRosterOffline"]}
+              </div>
+            ) : teamLoadFailed ? (
+              <div className="py-12 text-center" role="alert" data-testid="team-load-error">
+                <p className="mb-4 text-muted-foreground">{t["pages.teamLoadFailed"]}</p>
+                <Button
+                  variant="outline"
+                  onClick={() => refetchTeam()}
+                  data-testid="button-retry-team"
+                >
+                  <RefreshCw className="w-4 h-4 me-2" />
+                  {t["pages.teamRetry"]}
+                </Button>
               </div>
             ) : (
-              <div className="-mx-5 -mb-5 divide-hairline border-t border-border/70">
-                {teamMembers.map((member) => {
-                  const ownerLocked = member.role === "owner" && access?.role !== "owner";
-                  return (
-                    <div
-                      key={member.id}
-                      className="flex items-center justify-between gap-3 px-5 py-3"
-                      data-testid={`member-${member.id}`}
+              <>
+                {teamRefreshFailed && (
+                  <div
+                    className="mb-4 flex flex-wrap items-center gap-3"
+                    role="alert"
+                    data-testid="team-load-error"
+                  >
+                    <p className="text-sm text-muted-foreground">{t["pages.teamLoadFailed"]}</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => refetchTeam()}
+                      data-testid="button-retry-team"
                     >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <Avatar>
-                          <AvatarFallback>{getInitials(member.user.name)}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <p className="truncate font-medium" dir="auto">
-                            {member.user.name}
-                          </p>
-                          <p className="truncate text-small text-muted-foreground" dir="ltr">
-                            {member.user.email}
-                          </p>
-                        </div>
+                      <RefreshCw className="w-4 h-4 me-2" />
+                      {t["pages.teamRetry"]}
+                    </Button>
+                  </div>
+                )}
+                {!teamMembers ? null : teamMembers.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground">
+                      {locale === "ar"
+                        ? "لا يوجد أعضاء آخرين. قم بدعوة فريقك."
+                        : "No other team members. Invite your team to collaborate."}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {showMemberSearch && (
+                      <div className="relative mb-3 max-w-sm">
+                        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={memberSearch}
+                          onChange={(e) => setMemberSearch(e.target.value)}
+                          placeholder={t["pages.teamSearch"]}
+                          aria-label={t["pages.teamSearch"]}
+                          className="ps-10"
+                          data-testid="input-search-members"
+                        />
                       </div>
-                      <div className="flex shrink-0 items-center gap-3">
-                        {canManage && !ownerLocked ? (
-                          <Select
-                            value={member.role}
-                            onValueChange={(role) =>
-                              updateRoleMutation.mutate({
-                                memberId: member.id,
-                                role: role as CompanyRole,
-                              })
-                            }
-                            disabled={updateRoleMutation.isPending}
+                    )}
+                    {visibleMembers.length === 0 && (
+                      <p
+                        className="py-6 text-center text-sm text-muted-foreground"
+                        data-testid="members-no-match"
+                      >
+                        {t["pages.teamNoMatches"]}
+                      </p>
+                    )}
+                    <div className="-mx-5 -mb-5 divide-hairline border-t border-border/70">
+                      {visibleMembers.map((member) => {
+                        const ownerLocked = member.role === "owner" && access?.role !== "owner";
+                        return (
+                          <div
+                            key={member.id}
+                            className="flex items-center justify-between gap-3 px-5 py-3"
+                            data-testid={`member-${member.id}`}
                           >
-                            <SelectTrigger
-                              className="h-9 w-44"
-                              aria-label={`${t["pages.teamEditRole"]}: ${member.user.name}`}
-                              data-testid={`select-role-${member.id}`}
-                            >
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {/* A member's current role stays listed even when it cannot be granted. */}
-                              {(grantable.includes(member.role)
-                                ? grantable
-                                : [member.role, ...grantable]
-                              ).map((role) => (
-                                <SelectItem key={role} value={role}>
-                                  {roleLabel(role)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          getRoleBadge(member.role)
-                        )}
-                        {canManage && (
-                          <RowActions>
-                            <RowActionButton
-                              icon={Trash2}
-                              label={t["pages.teamRemoveMember"]}
-                              onClick={() => setMemberToRemove(member)}
-                              disabled={ownerLocked}
-                              className="hover:text-destructive"
-                              data-testid={`button-remove-${member.id}`}
-                            />
-                          </RowActions>
-                        )}
-                      </div>
+                            <div className="flex min-w-0 items-center gap-3">
+                              <Avatar>
+                                <AvatarFallback>{getInitials(member.user.name)}</AvatarFallback>
+                              </Avatar>
+                              <div className="min-w-0">
+                                <p className="truncate font-medium" dir="auto">
+                                  {member.user.name}
+                                </p>
+                                <p className="truncate text-small text-muted-foreground" dir="ltr">
+                                  {member.user.email}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-3">
+                              {canManage && !ownerLocked ? (
+                                <Select
+                                  value={member.role}
+                                  onValueChange={(role) =>
+                                    updateRoleMutation.mutate({
+                                      memberId: member.id,
+                                      role: role as CompanyRole,
+                                    })
+                                  }
+                                  disabled={updateRoleMutation.isPending}
+                                >
+                                  <SelectTrigger
+                                    className="h-9 w-44"
+                                    aria-label={`${t["pages.teamEditRole"]}: ${member.user.name}`}
+                                    data-testid={`select-role-${member.id}`}
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {/* A member's current role stays listed even when it cannot be granted. */}
+                                    {(grantable.includes(member.role)
+                                      ? grantable
+                                      : [member.role, ...grantable]
+                                    ).map((role) => (
+                                      <SelectItem key={role} value={role}>
+                                        {roleLabel(role)}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                getRoleBadge(member.role)
+                              )}
+                              {canManage && (
+                                <RowActions>
+                                  <RowActionButton
+                                    icon={Trash2}
+                                    label={t["pages.teamRemoveMember"]}
+                                    onClick={() => setMemberToRemove(member)}
+                                    disabled={ownerLocked}
+                                    className="hover:text-destructive"
+                                    data-testid={`button-remove-${member.id}`}
+                                  />
+                                </RowActions>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
+                  </>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -463,57 +540,124 @@ export default function TeamManagement() {
         {canManage && (
           <Card>
             <CardHeader>
-              <CardTitle>{tr(COPY.invitationsTitle)}</CardTitle>
+              <CardTitle>{t["pages.teamInvitationsTitle"]}</CardTitle>
             </CardHeader>
             <CardContent>
-              {pendingInvitations.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{tr(COPY.invitationsEmpty)}</p>
-              ) : (
-                <div className="-mx-5 -mb-5 divide-hairline border-t border-border/70">
-                  {pendingInvitations.map((inv) => (
-                    <div
-                      key={inv.id}
-                      className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
-                      data-testid={`invitation-${inv.id}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Mail className="w-4 h-4 text-muted-foreground" />
-                        <div>
-                          <p className="font-medium" dir="ltr">
-                            {inv.email}
-                          </p>
-                          <p className="text-caption text-muted-foreground">
-                            {tr(COPY.expires)}: {formatDate(inv.expiresAt, locale)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {getRoleBadge(inv.role)}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => resendMutation.mutate(inv.id)}
-                          disabled={resendMutation.isPending}
-                          data-testid={`button-resend-${inv.id}`}
-                        >
-                          <RefreshCw className="w-4 h-4 me-1" />
-                          {tr(COPY.resend)}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={() => revokeMutation.mutate(inv.id)}
-                          disabled={revokeMutation.isPending}
-                          data-testid={`button-revoke-${inv.id}`}
-                        >
-                          <X className="w-4 h-4 me-1" />
-                          {tr(COPY.revoke)}
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+              {isLoadingInvitations ? (
+                <p
+                  className="text-sm text-muted-foreground"
+                  role="status"
+                  data-testid="team-invitations-loading"
+                >
+                  {t["portal.inviteLoading"]}
+                </p>
+              ) : invitationsOffline ? (
+                <p
+                  className="text-sm text-muted-foreground"
+                  role="status"
+                  data-testid="team-invitations-offline"
+                >
+                  {t["portal.inviteOffline"]}
+                </p>
+              ) : invitationsLoadFailed ? (
+                <div
+                  role="alert"
+                  className="flex items-center gap-3"
+                  data-testid="invitations-load-error"
+                >
+                  <p className="text-sm text-muted-foreground">
+                    {t["pages.teamInvitesLoadFailed"]}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => refetchInvitations()}
+                    data-testid="button-retry-team-invites"
+                  >
+                    {t["pages.teamRetry"]}
+                  </Button>
                 </div>
+              ) : (
+                <>
+                  {invitationsRefreshFailed && (
+                    <div
+                      role="alert"
+                      className="mb-4 flex items-center gap-3"
+                      data-testid="invitations-load-error"
+                    >
+                      <p className="text-sm text-muted-foreground">
+                        {t["pages.teamInvitesLoadFailed"]}
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => refetchInvitations()}
+                        data-testid="button-retry-team-invites"
+                      >
+                        {t["pages.teamRetry"]}
+                      </Button>
+                    </div>
+                  )}
+                  {!invitations ? null : pendingInvitations.length === 0 ? (
+                    <p
+                      className="text-sm text-muted-foreground"
+                      data-testid="team-invitations-empty"
+                    >
+                      {t["pages.teamInvitationsEmpty"]}
+                    </p>
+                  ) : (
+                    <div className="-mx-5 -mb-5 divide-hairline border-t border-border/70">
+                      {pendingInvitations.map((inv) => (
+                        <div
+                          key={inv.id}
+                          className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
+                          data-testid={`invitation-${inv.id}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Mail className="w-4 h-4 text-muted-foreground" />
+                            <div>
+                              <p className="font-medium" dir="ltr">
+                                {inv.email}
+                              </p>
+                              <p className="text-caption text-muted-foreground">
+                                {inv.status === "expired" && (
+                                  <Badge variant="secondary" className="me-2">
+                                    {t["pages.teamExpiredLabel"]}
+                                  </Badge>
+                                )}
+                                {t["pages.teamExpires"]}: {formatDate(inv.expiresAt, locale)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {getRoleBadge(inv.role)}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => resendMutation.mutate(inv.id)}
+                              disabled={resendMutation.isPending}
+                              data-testid={`button-resend-${inv.id}`}
+                            >
+                              <RefreshCw className="w-4 h-4 me-1" />
+                              {t["pages.teamResend"]}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() => revokeMutation.mutate(inv.id)}
+                              disabled={revokeMutation.isPending}
+                              data-testid={`button-revoke-${inv.id}`}
+                            >
+                              <X className="w-4 h-4 me-1" />
+                              {t["pages.teamRevoke"]}
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
@@ -528,12 +672,19 @@ export default function TeamManagement() {
             {/* X6b: a real form so Enter in the email field sends the invitation. */}
             <form
               id="invite-member-form"
+              noValidate
               className="space-y-4"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (inviteEmail && !inviteMutation.isPending) {
-                  inviteMutation.mutate({ email: inviteEmail, role: inviteRole });
+                const email = inviteEmail.trim();
+                if (!email || inviteMutation.isPending) return;
+                // In-app message (app language) instead of the browser's own bubble.
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                  setInviteEmailError(t["pages.teamEmailInvalid"]);
+                  return;
                 }
+                setInviteEmailError(null);
+                inviteMutation.mutate({ email, role: inviteRole });
               }}
             >
               <div className="space-y-2">
@@ -541,10 +692,20 @@ export default function TeamManagement() {
                 <Input
                   type="email"
                   value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
+                  onChange={(e) => {
+                    setInviteEmail(e.target.value);
+                    setInviteEmailError(null);
+                  }}
                   placeholder="colleague@company.com"
+                  aria-invalid={inviteEmailError ? true : undefined}
+                  aria-describedby={inviteEmailError ? "team-invite-email-error" : undefined}
                   data-testid="input-invite-email"
                 />
+                {inviteEmailError && (
+                  <p id="team-invite-email-error" role="alert" className="text-small text-danger">
+                    {inviteEmailError}
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>{locale === "ar" ? "الدور" : "Role"}</Label>
@@ -591,66 +752,26 @@ export default function TeamManagement() {
         <Dialog open={!!inviteLink} onOpenChange={(open) => !open && setInviteLink(null)}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>{tr(COPY.linkTitle)}</DialogTitle>
-              <DialogDescription>{tr(COPY.linkBody)}</DialogDescription>
+              <DialogTitle>{t["pages.teamLinkTitle"]}</DialogTitle>
+              <DialogDescription>{t["pages.teamLinkBody"]}</DialogDescription>
             </DialogHeader>
             <Input readOnly value={inviteLink ?? ""} data-testid="input-invite-link" dir="ltr" />
             <DialogFooter>
               <Button onClick={copyInviteLink} data-testid="button-copy-invite-link">
                 <Copy className="w-4 h-4 me-2" />
-                {tr(COPY.copy)}
+                {t["pages.teamCopy"]}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        <Dialog open={permissionsDialogOpen} onOpenChange={setPermissionsDialogOpen}>
-          <DialogContent className="sm:max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>{t["pages.teamPermissionsMatrix"]}</DialogTitle>
-              <DialogDescription>
-                {t["pages.teamAvailablePermissionsForEachRole"]}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{locale === "ar" ? "الصلاحية" : "Permission"}</TableHead>
-                    {COMPANY_ROLES.map((role) => (
-                      <TableHead key={role} className="text-center">
-                        {roleLabel(role)}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(Object.keys(PERMISSION_LABELS) as Permission[]).map((permission) => (
-                    <TableRow key={permission}>
-                      <TableCell className="font-medium">
-                        {tr(PERMISSION_LABELS[permission])}
-                      </TableCell>
-                      {COMPANY_ROLES.map((role) => (
-                        <TableCell key={role} className="text-center">
-                          {roleHasPermission(role, permission) ? (
-                            <Check className="w-4 h-4 mx-auto text-success" />
-                          ) : (
-                            <X className="w-4 h-4 mx-auto text-muted-foreground" />
-                          )}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setPermissionsDialogOpen(false)}>
-                {locale === "ar" ? "إغلاق" : "Close"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Loaded on first open and kept mounted afterwards so the close animation still plays. */}
+        {permissionsDialog.Component && (
+          <permissionsDialog.Component
+            open={permissionsDialogOpen}
+            onOpenChange={setPermissionsDialogOpen}
+          />
+        )}
 
         <AlertDialog
           open={!!memberToRemove}
@@ -660,9 +781,9 @@ export default function TeamManagement() {
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{tr(COPY.removeTitle)}</AlertDialogTitle>
+              <AlertDialogTitle>{t["pages.teamRemoveTitle"]}</AlertDialogTitle>
               <AlertDialogDescription>
-                {memberToRemove?.user?.name} — {tr(COPY.removeBody)}
+                {memberToRemove?.user?.name} — {t["pages.teamRemoveBody"]}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

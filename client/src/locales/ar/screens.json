@@ -66,6 +66,8 @@
   "screens.searchVendorOrBill": "ابحث عن مورد أو رقم فاتورة",
   "screens.billsEmptyBody": "أضف أول فاتورة مورد لبدء تتبع المبالغ المستحقة عليك.",
   "screens.billsNoMatchBody": "لا توجد فواتير تطابق عوامل التصفية هذه.",
+  "screens.billsSearchNoMatchTitle": "لا توجد فواتير مطابقة",
+  "screens.billsSearchNoMatchBody": "لا يوجد مورد أو رقم فاتورة يطابق بحثك. جرّب كلمة مختلفة أو امسح البحث.",
   "screens.billNumber": "رقم الفاتورة",
   "screens.paid": "المدفوع",
   "screens.confirmDeleteBill": "هل تريد حذف هذه الفاتورة؟ لا يمكن التراجع عن ذلك.",
@@ -241,5 +243,9 @@
   "screens.entryLines": "بنود القيد",
   "screens.statusCredited": "مسدّدة بإشعار دائن",
   "screens.claimsSubmittedCountPlural": "{count, plural, zero {لا مطالبات} one {مطالبة واحدة} two {مطالبتان} few {# مطالبات} many {# مطالبة} other {# مطالبة}}",
-  "screens.claimsAcrossCompanyPlural": "{count, plural, zero {لا مطالبات في الشركة} one {مطالبة واحدة في الشركة} two {مطالبتان في الشركة} few {# مطالبات في الشركة} many {# مطالبة في الشركة} other {# مطالبة في الشركة}}"
+  "screens.claimsAcrossCompanyPlural": "{count, plural, zero {لا مطالبات في الشركة} one {مطالبة واحدة في الشركة} two {مطالبتان في الشركة} few {# مطالبات في الشركة} many {# مطالبة في الشركة} other {# مطالبة في الشركة}}",
+  "screens.searchClaims": "ابحث برقم المطالبة أو العنوان أو الحالة",
+  "screens.noMatchingClaims": "لا توجد مطالبات مطابقة",
+  "screens.noMatchingClaimsBody": "جرّب كلمة مختلفة أو امسح البحث.",
+  "screens.claimPaymentRefPlaceholder": "مثال: مرجع التحويل البنكي أو رقم الشيك"
 }

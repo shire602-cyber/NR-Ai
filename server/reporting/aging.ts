@@ -12,6 +12,7 @@ import { pool } from "../db";
 import { DomainError } from "../errors";
 import { baseCurrencyOf } from "../ledger/currency";
 import {
+  localDateOnOrBeforeSql,
   localDateSql,
   payableOpenBaseFilsSql,
   payableStatusSql,
@@ -21,7 +22,6 @@ import {
   unappliedReceivableCreditsFilsSql,
 } from "./settlement";
 import {
-  ENTRY_LOCAL_DATE_SQL,
   NOT_CLOSING_SQL,
   aed,
   reportCurrencyOf,
@@ -131,7 +131,11 @@ const CONTROL_ACCOUNT = {
 
 // Prefer the standard account code and fall back to the first matching non-tax account.
 // Closing entries are excluded from the control balance and FX totals. The manual
-// adjustments include all posted entries with an adjustment reason.
+// adjustments include all posted entries with an adjustment reason. The asOf cutoff is the
+// sargable form of the Gulf-local date test ((je.date + 4h)::date <= asOf), so journal_entries
+// date indexes stay usable; the selected entries are identical. An account with no journal
+// lines takes the zero branch of the CASE, so the ledger join is never executed. OFFSET 0 stops
+// the planner flattening the subquery and repeating the aggregate once per output column.
 const CONTROL_BALANCE_SQL = `WITH acct AS (
        SELECT a.id, a.code, a.name_en
          FROM accounts a
@@ -141,9 +145,11 @@ const CONTROL_BALANCE_SQL = `WITH acct AS (
         ORDER BY (a.code = $3) DESC, a.code, a.name_en
         LIMIT 1)
      SELECT acct.id, acct.code, acct.name_en,
-            s.d::text, s.c::text, s.fx::text, s.adj::text
+            s.v->>'d' AS d, s.v->>'c' AS c, s.v->>'fx' AS fx, s.v->>'adj' AS adj
        FROM acct
        CROSS JOIN LATERAL (
+        SELECT CASE WHEN EXISTS (SELECT 1 FROM journal_lines WHERE account_id = acct.id)
+        THEN (SELECT row_to_json(totals) FROM (
          SELECT COALESCE(SUM(ROUND(jl.debit * 100)) FILTER (WHERE ${NOT_CLOSING_SQL}), 0)::bigint AS d,
                 COALESCE(SUM(ROUND(jl.credit * 100)) FILTER (WHERE ${NOT_CLOSING_SQL}), 0)::bigint AS c,
                 COALESCE(SUM(ROUND(jl.debit * 100) - ROUND(jl.credit * 100))
@@ -153,7 +159,9 @@ const CONTROL_BALANCE_SQL = `WITH acct AS (
            FROM journal_lines jl
            JOIN journal_entries je ON je.id = jl.entry_id
           WHERE je.company_id = $1 AND je.status = 'posted' AND jl.account_id = acct.id
-            AND ${ENTRY_LOCAL_DATE_SQL} <= $2::date) s`;
+            AND ${localDateOnOrBeforeSql("je.date", "$2::date")}) totals)
+        ELSE '{"d":0,"c":0,"fx":0,"adj":0}'::json END AS v
+        OFFSET 0) s`;
 
 type ControlBalanceRow = {
   id: string;
