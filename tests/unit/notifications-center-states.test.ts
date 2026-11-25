@@ -79,7 +79,16 @@ async function mount(locale: "en" | "ar") {
     root.render(
       createElement(QueryClientProvider, { client: queryClient }, createElement(Notifications))
     );
-    await new Promise((r) => setTimeout(r, 50));
+  });
+}
+
+function waitForView(assert: () => void) {
+  return vi.waitFor(async () => {
+    // Give React Query's batched observer notifications time to reach React.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    assert();
   });
 }
 
@@ -87,9 +96,18 @@ describe("Notifications center states", () => {
   it("shows a retryable error instead of the empty state when the load fails", async () => {
     notificationsStatus = 500;
     await mount("en");
-    expect(container.querySelector('[data-testid="notifications-load-error"]')).not.toBeNull();
+    const loadError = () =>
+      container.querySelector('[role="alert"][data-testid="notifications-load-error"]');
+    await waitForView(() => expect(loadError()).not.toBeNull());
     expect(container.textContent).not.toContain("boom internal detail");
-    expect(container.textContent).not.toContain("all caught up");
+    expect(container.textContent).not.toMatch(/all caught up/i);
+
+    const retry = loadError()?.querySelector("button");
+    expect(retry?.textContent).toBe("Try again");
+    notificationsStatus = 200;
+    await act(async () => retry?.click());
+    await waitForView(() => expect(container.textContent).toMatch(/all caught up/i));
+    expect(loadError()).toBeNull();
   });
 
   it("localises the eyebrow, news category and Arabic news copy in Arabic mode", async () => {
@@ -100,6 +118,9 @@ describe("Notifications center states", () => {
       tab.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
       tab.click();
       tab.focus();
+    });
+    await waitForView(() => {
+      expect(container.querySelector('[data-testid="card-news-n1"]')).not.toBeNull();
     });
     const text = container.textContent ?? "";
     expect(text).not.toContain("Workspace");
