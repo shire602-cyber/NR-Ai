@@ -180,10 +180,19 @@ export default function PurchaseOrders() {
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: purchaseOrders, isLoading } = useQuery<PurchaseOrder[]>({
+  const {
+    data: purchaseOrders,
+    isLoading,
+    isError,
+    isPaused,
+    refetch,
+  } = useQuery<PurchaseOrder[]>({
     queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
     enabled: !!selectedCompanyId,
   });
+  // Only without cached data: a failed or paused background refresh keeps the list on screen.
+  const loadPaused = purchaseOrders === undefined && isPaused;
+  const loadFailed = purchaseOrders === undefined && isError;
   const { data: products = [] } = useQuery<
     Array<{
       id: string;
@@ -911,9 +920,22 @@ export default function PurchaseOrders() {
       </div>
 
       <DataTableCard
-        status={isLoading ? "loading" : visibleOrders.length > 0 ? "ready" : "empty"}
+        status={
+          loadPaused || loadFailed
+            ? "error"
+            : isLoading
+              ? "loading"
+              : visibleOrders.length > 0
+                ? "ready"
+                : "empty"
+        }
         columnLabels={[t["pages.vendor"], t.date, t.total, t.status]}
         testId="purchase-orders-table"
+        error={{
+          title: loadPaused ? t["components.offlineLabel"] : undefined,
+          onRetry: () => void refetch(),
+          testId: loadPaused ? "offline-purchase-orders" : "error-purchase-orders",
+        }}
         empty={
           hasSearchNoMatches
             ? {

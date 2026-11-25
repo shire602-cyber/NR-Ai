@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { readFileSync } from "node:fs";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { act } from "react";
+import { onlineManager } from "@tanstack/react-query";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadLocale, useI18n } from "../../client/src/lib/i18n";
 import { filterPurchaseOrders } from "../../client/src/lib/purchase-order-filters";
 import enStatuses from "../../client/src/locales/en/components.json";
@@ -11,6 +13,7 @@ import {
   buttonByText,
   byTestId,
   click,
+  flush,
   flushUntil,
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
@@ -20,6 +23,8 @@ import {
   type,
   unmountPage,
 } from "./helpers/form-harness";
+// After the harness import: the queryClient mock factory below calls into it.
+import { queryClient } from "../../client/src/lib/queryClient";
 import PurchaseOrders from "../../client/src/pages/PurchaseOrders";
 
 vi.mock("../../client/src/lib/queryClient", () => formHarnessQueryClientMock());
@@ -51,6 +56,17 @@ describe("purchase order list search", () => {
   });
   it("returns nothing for an unknown term", () => {
     expect(filterPurchaseOrders(orders, "zzz", enStatuses)).toEqual([]);
+  });
+
+  it("matches Arabic-Indic and Persian digits against ASCII digits, on both sides", () => {
+    for (const query of ["PO-٠٠٢", "۰۰۲"]) {
+      expect(filterPurchaseOrders(orders, query, enStatuses).map((o) => o.number)).toEqual([
+        "PO-002",
+      ]);
+    }
+    const stored = [{ number: "PO-٠٠٥", vendorName: "متجر ۲۴", status: "draft" }];
+    expect(filterPurchaseOrders(stored, "005", enStatuses)).toEqual(stored);
+    expect(filterPurchaseOrders(stored, "24", enStatuses)).toEqual(stored);
   });
 
   it("matches a vocalized Arabic status from an unvocalized query, and the reverse", () => {
@@ -168,6 +184,138 @@ describe("purchase order search UI", () => {
     expect(byTestId("empty-purchase-orders-search")).toBeNull();
     expect(byTestId("purchase-orders-table")?.textContent).toContain("PO-001");
   });
+});
+
+describe("purchase order list load states", () => {
+  const queryKey = ["/api/companies", COMPANY_ID, "purchase-orders"];
+  const row = {
+    id: "PO-001",
+    companyId: COMPANY_ID,
+    number: "PO-001",
+    vendorName: "Acme Trading",
+    status: "draft",
+    date: "2026-03-15",
+    expectedDeliveryDate: "2026-03-20",
+    currency: "AED",
+    total: 100,
+  };
+  const fetchOrders = vi.fn<() => Promise<unknown[]>>();
+
+  beforeAll(async () => {
+    await loadLocale("en");
+  });
+
+  beforeEach(() => {
+    resetHarness();
+    useI18n.setState({ locale: "en" });
+    fetchOrders.mockReset();
+    queryClient.setQueryDefaults(queryKey, { queryFn: () => fetchOrders() });
+  });
+
+  afterEach(async () => {
+    await unmountPage();
+    onlineManager.setOnline(true);
+    queryClient.setQueryDefaults(queryKey, {});
+  });
+
+  const table = () => byTestId("purchase-orders-table");
+
+  function expectNoEmptyState() {
+    expect(byTestId("empty-purchase-orders")).toBeNull();
+    expect(byTestId("empty-purchase-orders-search")).toBeNull();
+  }
+
+  async function refresh() {
+    await act(async () => {
+      void queryClient.refetchQueries({ queryKey });
+    });
+    await flush();
+  }
+
+  it("shows the failure instead of an empty list, and Retry recovers through loading", async () => {
+    fetchOrders.mockRejectedValueOnce(new Error("boom"));
+    await renderPage(PurchaseOrders);
+    await flushUntil(() => !!byTestId("error-purchase-orders"));
+
+    expect(byTestId("error-purchase-orders")?.getAttribute("role")).toBe("alert");
+    expectNoEmptyState();
+
+    let resolve!: (rows: unknown[]) => void;
+    fetchOrders.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    await click(buttonByText(/^Retry$/, byTestId("error-purchase-orders")!));
+
+    expect(fetchOrders).toHaveBeenCalledTimes(2);
+    expect(byTestId("error-purchase-orders")).toBeNull();
+    expectNoEmptyState();
+    expect(table()?.textContent).not.toContain("PO-001");
+
+    await act(async () => resolve([row]));
+    await flushUntil(() => !!table()?.textContent?.includes("PO-001"));
+    expect(table()?.textContent).toContain("PO-001");
+  });
+
+  it("returns to the failure when Retry fails again", async () => {
+    fetchOrders.mockRejectedValue(new Error("boom"));
+    await renderPage(PurchaseOrders);
+    await flushUntil(() => !!byTestId("error-purchase-orders"));
+
+    await click(buttonByText(/^Retry$/, byTestId("error-purchase-orders")!));
+    await flushUntil(() => !!byTestId("error-purchase-orders"));
+
+    expect(fetchOrders).toHaveBeenCalledTimes(2);
+    expect(byTestId("error-purchase-orders")).not.toBeNull();
+    expectNoEmptyState();
+  });
+
+  it("shows an offline state for a paused first load and recovers on reconnect", async () => {
+    onlineManager.setOnline(false);
+    fetchOrders.mockResolvedValue([row]);
+    await renderPage(PurchaseOrders);
+    await flushUntil(() => !!byTestId("offline-purchase-orders"));
+
+    expect(byTestId("offline-purchase-orders")?.textContent).toContain("Offline");
+    expect(fetchOrders).not.toHaveBeenCalled();
+    expectNoEmptyState();
+
+    await act(async () => onlineManager.setOnline(true));
+    await flushUntil(() => !!table()?.textContent?.includes("PO-001"));
+
+    expect(table()?.textContent).toContain("PO-001");
+    expect(byTestId("offline-purchase-orders")).toBeNull();
+  });
+
+  it("shows the empty state only after a successful empty load", async () => {
+    fetchOrders.mockResolvedValue([]);
+    await renderPage(PurchaseOrders);
+    await flushUntil(() => !!byTestId("empty-purchase-orders"));
+
+    expect(byTestId("empty-purchase-orders")).not.toBeNull();
+    expect(byTestId("error-purchase-orders")).toBeNull();
+    expect(byTestId("offline-purchase-orders")).toBeNull();
+  });
+
+  it.each(["failed", "paused"] as const)(
+    "keeps cached rows and search usable when a background refresh is %s",
+    async (mode) => {
+      fetchOrders.mockResolvedValueOnce([row]);
+      await renderPage(PurchaseOrders);
+      await flushUntil(() => !!byTestId("input-search-po"));
+
+      if (mode === "failed") fetchOrders.mockRejectedValueOnce(new Error("boom"));
+      else onlineManager.setOnline(false);
+      await refresh();
+
+      const state = queryClient.getQueryState(queryKey);
+      if (mode === "failed") expect(state?.status).toBe("error");
+      else expect(state?.fetchStatus).toBe("paused");
+      expect(table()?.textContent).toContain("PO-001");
+      expect(byTestId("error-purchase-orders")).toBeNull();
+      expect(byTestId("offline-purchase-orders")).toBeNull();
+
+      await type(byTestId("input-search-po"), "no-such-order");
+      expect(byTestId("empty-purchase-orders-search")).not.toBeNull();
+    }
+  );
 });
 
 describe("purchase order locale keys", () => {
