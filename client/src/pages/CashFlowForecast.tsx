@@ -3,7 +3,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { format } from "date-fns";
 import { dateFnsOptions } from "@/lib/date-locale";
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -39,6 +39,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { formatDate, formatDateRange, formatEmbeddedDates } from "@/lib/format-date";
 import { StatCard } from "@/components/ui/stat-card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import {
   TrendingUp,
   DollarSign,
@@ -114,6 +115,13 @@ const KIND_LABELS: Record<string, { en: string; ar: string }> = {
 
 const tr = (locale: string, en: string, ar: string) => (locale === "ar" ? ar : en);
 
+const removeKeyPrefix = ["cashflow-item-delete"] as const;
+
+interface RemoveVars {
+  companyId: string | undefined;
+  id: string;
+}
+
 interface MonthlyCashHistory {
   month: string;
   year: number;
@@ -159,8 +167,10 @@ export default function CashFlowForecast() {
   const {
     data: forecast,
     isLoading: isLoadingForecast,
+    error: forecastError,
     refetch: refetchForecast,
     isFetching: isFetchingForecast,
+    fetchStatus: forecastFetchStatus,
   } = useQuery<ForecastData>({
     queryKey: ["cashflow-forecast", companyId, forecastDays, scenario, delay, adjustments],
     queryFn: () => {
@@ -181,14 +191,37 @@ export default function CashFlowForecast() {
     enabled: !!companyId,
   });
 
-  const { data: scheduledItems } = useQuery<ScheduledItem[]>({
+  const {
+    data: scheduledItems,
+    error: scheduledError,
+    refetch: refetchScheduled,
+    fetchStatus: scheduledFetchStatus,
+  } = useQuery<ScheduledItem[]>({
     queryKey: [`/api/companies/${companyId}/cashflow/items`],
     enabled: !!companyId,
   });
 
-  const invalidateForecast = () => {
-    queryClient.invalidateQueries({ queryKey: ["cashflow-forecast", companyId] });
-    queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/cashflow/items`] });
+  // Pending (including offline-paused) DELETEs live in React Query's mutation cache, keyed by
+  // company; the item id is in the variables. The cache survives remounts and company switches.
+  const removeKey = [...removeKeyPrefix, companyId] as const;
+  // useMutationState only recomputes on MutationCache events, not when its filters change, so
+  // subscribe to every pending delete via the stable key prefix and filter by company at render.
+  const pendingRemovals = useMutationState({
+    filters: { mutationKey: removeKeyPrefix, status: "pending" },
+    select: (m) => m.state.variables as RemoveVars | undefined,
+  });
+  const removingIds = new Set(
+    pendingRemovals.flatMap((v) => (v && v.companyId === companyId ? [v.id] : []))
+  );
+  const isRemoving = (id: string) =>
+    queryClient
+      .getMutationCache()
+      .findAll({ mutationKey: removeKey, exact: true, status: "pending" })
+      .some((m) => (m.state.variables as RemoveVars | undefined)?.id === id);
+
+  const invalidateForecast = (cid: string | undefined = companyId) => {
+    queryClient.invalidateQueries({ queryKey: ["cashflow-forecast", cid] });
+    queryClient.invalidateQueries({ queryKey: [`/api/companies/${cid}/cashflow/items`] });
   };
 
   const addItem = useMutation({
@@ -214,12 +247,39 @@ export default function CashFlowForecast() {
   });
 
   const removeItem = useMutation({
-    mutationFn: (id: string) =>
-      apiRequest("DELETE", `/api/companies/${companyId}/cashflow/items/${id}`),
-    onSuccess: invalidateForecast,
+    mutationKey: removeKey,
+    mutationFn: ({ companyId: cid, id }: RemoveVars) =>
+      apiRequest("DELETE", `/api/companies/${cid}/cashflow/items/${id}`),
+    onSuccess: async (_data, { companyId: cid, id }) => {
+      // A read of this company that started before the DELETE landed (e.g. after an A -> B -> A
+      // switch while the DELETE was pending) may hold a pre-delete snapshot. Invalidation would
+      // reuse that in-flight fetch, so cancel those reads first (scoped to the deleted item's
+      // company only), then filter the cache immutably and invalidate to start a fresh read.
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: [`/api/companies/${cid}/cashflow/items`] }),
+        queryClient.cancelQueries({ queryKey: ["cashflow-forecast", cid] }),
+      ]);
+      // Drop the row immutably so it cannot flash enabled before the refetch lands.
+      queryClient.setQueryData<ScheduledItem[]>([`/api/companies/${cid}/cashflow/items`], (old) =>
+        old ? old.filter((it) => it.id !== id) : old
+      );
+      invalidateForecast(cid);
+    },
+    onError: () =>
+      toast({
+        title: t["cashFlowForecast.removeItemFailedTitle"],
+        description: t["toasts.pleaseTryAgain"],
+        variant: "destructive",
+      }),
   });
 
-  const { data: history, isLoading: isLoadingHistory } = useQuery<MonthlyCashHistory[]>({
+  const {
+    data: history,
+    isLoading: isLoadingHistory,
+    error: historyError,
+    refetch: refetchHistory,
+    fetchStatus: historyFetchStatus,
+  } = useQuery<MonthlyCashHistory[]>({
     queryKey: [`/api/companies/${companyId}/cashflow/history?months=6`],
     enabled: !!companyId,
   });
@@ -297,6 +357,13 @@ export default function CashFlowForecast() {
     totalProjectedInflows === 0 &&
     totalProjectedOutflows === 0;
 
+  // Offline with nothing cached: the query is paused (not loading, not errored). Say so instead
+  // of falling through to an empty state. Cached data, when present, keeps rendering.
+  const forecastPaused = forecastFetchStatus === "paused" && !forecast && !forecastError;
+  const historyPaused = historyFetchStatus === "paused" && !history && !historyError;
+  const scheduledPaused = scheduledFetchStatus === "paused" && !scheduledItems && !scheduledError;
+  const showScheduledError = !!scheduledError || scheduledPaused;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -362,6 +429,14 @@ export default function CashFlowForecast() {
           <Skeleton className="h-32" />
           <Skeleton className="h-32" />
         </div>
+      ) : forecastError && !forecast ? (
+        <LoadErrorState
+          error={forecastError}
+          onRetry={() => refetchForecast()}
+          testId="forecast-load-error"
+        />
+      ) : forecastPaused ? (
+        <LoadErrorState error={null} onRetry={() => refetchForecast()} testId="forecast-offline" />
       ) : forecastEmpty ? (
         <EmptyState
           icon={Wallet}
@@ -422,8 +497,8 @@ export default function CashFlowForecast() {
       )}
 
       {/* Projection Table */}
-      {!forecastEmpty && (
-        <Card>
+      {!forecastEmpty && !forecastPaused && !(forecastError && !forecast) && (
+        <Card data-testid="forecast-projections">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Calendar className="h-5 w-5 text-primary" />
@@ -493,11 +568,11 @@ export default function CashFlowForecast() {
                   </TableBody>
                 </Table>
               </div>
-            ) : (
+            ) : forecast && forecast.projections.length === 0 ? (
               <p className="text-muted-foreground text-center py-8">
                 {t["cashFlowForecast.noProjectionDataAvailableAdd"]}
               </p>
-            )}
+            ) : null}
           </CardContent>
         </Card>
       )}
@@ -665,21 +740,43 @@ export default function CashFlowForecast() {
               <span>{tr(locale, "times", "مرة")}</span>
             </div>
           )}
+          {showScheduledError && (
+            <LoadErrorState
+              error={scheduledError}
+              onRetry={() => refetchScheduled()}
+              compact
+              testId="scheduled-items-load-error"
+            />
+          )}
           {(scheduledItems ?? []).map((it) => (
             <div
               key={it.id}
               className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm"
             >
               <span>
-                {tr(locale, KIND_LABELS[it.kind].en, KIND_LABELS[it.kind].ar)} · {it.description} ·{" "}
-                {formatDate(it.dueDate, locale)}
+                {tr(
+                  locale,
+                  KIND_LABELS[it.kind]?.en ?? it.kind,
+                  KIND_LABELS[it.kind]?.ar ?? it.kind
+                )}{" "}
+                · {it.description} · {formatDate(it.dueDate, locale)}
                 {it.repeatMonths > 0 ? ` ×${it.occurrences}` : ""}
               </span>
               <span className="flex items-center gap-3">
                 <span className="tabular-nums">
                   <Money amount={it.amount} currency={"AED"} />
                 </span>
-                <Button size="sm" variant="ghost" onClick={() => removeItem.mutate(it.id)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    // The mutation cache is updated synchronously by mutate(), even when paused.
+                    if (isRemoving(it.id)) return;
+                    removeItem.mutate({ companyId, id: it.id });
+                  }}
+                  disabled={removingIds.has(it.id)}
+                  data-testid={`button-remove-forecast-item-${it.id}`}
+                >
                   {tr(locale, "Remove", "حذف")}
                 </Button>
               </span>
@@ -791,6 +888,20 @@ export default function CashFlowForecast() {
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
+          ) : historyError && !history ? (
+            <LoadErrorState
+              error={historyError}
+              onRetry={() => refetchHistory()}
+              compact
+              testId="history-load-error"
+            />
+          ) : historyPaused ? (
+            <LoadErrorState
+              error={null}
+              onRetry={() => refetchHistory()}
+              compact
+              testId="history-offline"
+            />
           ) : history && history.length > 0 ? (
             <div className="overflow-x-auto">
               <Table>
@@ -842,11 +953,11 @@ export default function CashFlowForecast() {
                 </TableBody>
               </Table>
             </div>
-          ) : (
+          ) : history && history.length === 0 ? (
             <p className="text-muted-foreground text-center py-8">
               {t["cashFlowForecast.noHistoricalDataAvailableYet"]}
             </p>
-          )}
+          ) : null}
         </CardContent>
       </Card>
     </div>
