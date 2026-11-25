@@ -29,7 +29,8 @@ export function namesProvider(text: string): RegExp | undefined {
 
 // The invoice renderer draws Arabic as shaped glyphs and stores the real text in
 // /ActualText <FEFF...> marked-content spans (UTF-16BE, visual order). Decode every span from
-// every Flate stream so Arabic names in a PDF are checked, in both reading directions.
+// every Flate stream so Arabic names in a PDF are checked, in both reading directions, per span and
+// joined across adjacent spans (a name split over two spans is still caught).
 export function pdfActualText(pdf: Buffer): string {
   const s = pdf.toString("latin1");
   const parts: string[] = [];
@@ -49,10 +50,12 @@ export function pdfActualText(pdf: Buffer): string {
       const hex = a[1].replace(/\s/g, "").replace(/^FEFF/i, "");
       let text = "";
       for (let i = 0; i + 4 <= hex.length; i += 4) text += String.fromCharCode(parseInt(hex.slice(i, i + 4), 16));
-      parts.push(text, [...text].reverse().join(""));
+      parts.push(text);
     }
   }
-  return parts.join(" ");
+  const rev = (x: string) => [...x].reverse().join("");
+  const joined = parts.join("");
+  return [...parts, ...parts.map(rev), joined, rev(joined), parts.map(rev).join("")].join(" ");
 }
 
 function utf16Hex(text: string): string {
@@ -66,6 +69,8 @@ function walk(dir: string): string[] {
   });
 }
 
+const SIGNED_IN_ONLY_CATALOGS = new Set(["einvoicing.json", "adminConsole.json"]);
+
 const PUBLIC_PAGES = [
   "Pricing", "Services", "DemoWorkspace", "HelpCenter", "TrustSecurity", "MigrationGuides",
   "PrivacyPolicy", "TermsOfService", "CookiePolicy", "Login", "Register", "ForgotPassword",
@@ -74,9 +79,12 @@ const PUBLIC_PAGES = [
 
 const all = [
   ...walk(join(ROOT, "client/src/components/marketing")),
+  // Deny by default: every EN/AR catalog is scanned (public pages render shared keys such as
+  // components.legalPoweredBy), except catalogs used only on logged-in e-invoicing setup and admin
+  // screens, which may name the provider the company chose.
   ...["en", "ar"].flatMap((l) =>
     readdirSync(join(ROOT, "client/src/locales", l))
-      .filter((f) => /^marketing.*\.json$/.test(f))
+      .filter((f) => f.endsWith(".json") && !SIGNED_IN_ONLY_CATALOGS.has(f))
       .map((f) => join(ROOT, "client/src/locales", l, f))
   ),
   ...PUBLIC_PAGES.map((p) => join(ROOT, "client/src/pages", `${p}.tsx`)).filter(existsSync),
@@ -104,6 +112,8 @@ describe("public site names no e-invoicing provider", () => {
       expect(r).toContain(f);
     }
     expect(r.some((f) => f.startsWith("client/src/locales/ar/marketing"))).toBe(true);
+    expect(r).toContain("client/src/locales/en/components.json");
+    expect(r).toContain("client/src/locales/ar/components.json");
     expect(files.length).toBeGreaterThan(20);
   });
 
@@ -146,7 +156,8 @@ describe("public site names no e-invoicing provider", () => {
     }
   });
 
-  it.each(pdfs.map((f) => [rel(f), f]))("pdf text %s", async (_n, f) => {    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  it.each(pdfs.map((f) => [rel(f), f]))("pdf text %s", async (_n, f) => {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const doc = await pdfjs.getDocument({ data: new Uint8Array(readFileSync(f)), useSystemFonts: true }).promise;
     let text = "";
     for (let i = 1; i <= doc.numPages; i++) {
@@ -159,5 +170,5 @@ describe("public site names no e-invoicing provider", () => {
     text += " " + arabic;
     const hit = namesProvider(text);
     expect(hit, `provider name matched ${hit}`).toBeUndefined();
-  });
+  }, 60_000);
 });
