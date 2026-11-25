@@ -284,10 +284,15 @@ export default function MonthEndClose() {
   const checklistStatus = closeChecklistStatus({
     isLoading: isLoadingChecklist && !showChecklistRetry,
     isError: isChecklistError,
+    isPaused: isChecklistPaused,
     items: checklistData?.checklist.map((i) => ({ done: stepDone(i) })),
   });
-  const checklistKnownIncomplete = checklistStatus.state === "incomplete";
-  const checklistUnknown = checklistStatus.state === "error" || checklistStatus.state === "empty";
+  // Cached items stay on screen after a failed refresh, but no longer count as verified.
+  const checklistStale = isChecklistError && checklistData !== undefined;
+  // Stale items can't justify an override: the lock dialog treats them as unknown.
+  const checklistKnownIncomplete = checklistStatus.state === "incomplete" && !checklistStale;
+  const checklistUnknown = ["error", "empty", "waiting"].includes(checklistStatus.state);
+  const checklistAllClear = checklistStatus.state === "complete" && !checklistStale;
 
   const {
     data: historyData,
@@ -641,7 +646,7 @@ export default function MonthEndClose() {
               variant="outline"
               size="sm"
               onClick={() => refetchChecklist()}
-              disabled={isLoadingChecklist}
+              disabled={isLoadingChecklist || checklistStatus.state === "waiting"}
             >
               <RefreshCw className={`h-4 w-4 me-2 ${isLoadingChecklist ? "animate-spin" : ""}`} />
               <T k="pages.refresh" />
@@ -669,10 +674,10 @@ export default function MonthEndClose() {
               </CardDescription>
             </div>
             {checklistStatus.state !== "loading" && (
-              <Badge variant={checklistStatus.state === "complete" ? "default" : "secondary"}>
-                {checklistStatus.state === "complete"
+              <Badge variant={checklistAllClear ? "default" : "secondary"}>
+                {checklistAllClear
                   ? t["pages.allClear"]
-                  : checklistUnknown
+                  : checklistUnknown || checklistStatus.state === "complete"
                     ? t["monthEnd.checklistUnavailable"]
                     : formatMessage(t["monthEnd.remainingCount"], {
                         count: checklistStatus.remaining,
@@ -701,6 +706,14 @@ export default function MonthEndClose() {
                 <Skeleton key={i} className="h-14" />
               ))}
             </div>
+          ) : checklistStatus.state === "waiting" ? (
+            <p
+              className="text-muted-foreground text-sm text-center py-6"
+              role="status"
+              data-testid="checklist-waiting"
+            >
+              {t["monthEnd.checklistWaitingToLoad"]}
+            </p>
           ) : checklistStatus.state === "error" ? (
             <div className="space-y-3 py-4 text-center" role="alert" data-testid="checklist-error">
               <p className="text-sm text-destructive">{t["monthEnd.checklistLoadFailed"]}</p>
@@ -708,15 +721,30 @@ export default function MonthEndClose() {
                 {t["monthEnd.retry"]}
               </Button>
             </div>
-          ) : checklistStatus.state === "empty" ? (
-            <p
-              className="text-muted-foreground text-sm text-center py-6"
-              data-testid="checklist-empty"
-            >
-              {t["monthEnd.checklistEmpty"]}
-            </p>
           ) : checklistData ? (
             <div className="space-y-2">
+              {checklistStale && (
+                <CloseRetryNotice
+                  testId="checklist-refresh-error"
+                  className="space-y-3 py-3 text-center"
+                  message={t["monthEnd.checklistRefreshFailed"]}
+                  retryLabel={t["monthEnd.retry"]}
+                  busy={checklistRetryBusy}
+                  paused={isChecklistPaused}
+                  fetching={isFetchingChecklist}
+                  pausedMessage={t["monthEnd.checklistWaitingForConnection"]}
+                  fetchingMessage={t["monthEnd.retryingChecklist"]}
+                  onRetry={() => refetchChecklist()}
+                />
+              )}
+              {checklistStatus.state === "empty" && (
+                <p
+                  className="text-muted-foreground text-sm text-center py-6"
+                  data-testid="checklist-empty"
+                >
+                  {t["monthEnd.checklistEmpty"]}
+                </p>
+              )}
               {checklistData.checklist.map((item) => (
                 <div
                   key={item.id}
@@ -939,7 +967,7 @@ export default function MonthEndClose() {
                   </SelectContent>
                 </Select>
               </div>
-              {(checklistKnownIncomplete || checklistUnknown) && (
+              {(checklistKnownIncomplete || checklistUnknown || checklistStale) && (
                 <p className="text-sm text-warning flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
                   {checklistKnownIncomplete

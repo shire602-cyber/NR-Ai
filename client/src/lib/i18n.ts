@@ -1165,10 +1165,17 @@ const pendingPaths = new Map<string, Promise<void>>();
 const loadedLocales = new Set<Locale>();
 const pendingLocales = new Map<Locale, Promise<void>>();
 
+/**
+ * Loaded only by the component that declares them, never by the app-wide load: a failed chunk
+ * stays inside that component instead of rejecting `loadLocale` for the whole app.
+ */
+const ON_DEMAND_NAMESPACES = new Set(["yearEndClose"]);
+
 function pathsFor(locale: Locale, namespaces: string[] | null): string[] {
   const loaders = namespaceLoaders[locale] ?? {};
   const all = Object.keys(loaders).sort();
-  if (namespaces === null) return all;
+  if (namespaces === null)
+    return all.filter((path) => !ON_DEMAND_NAMESPACES.has(namespaceOf(path)));
   // Route subsets come from the locale's own namespace folder (not ar-catalog/).
   return all.filter(
     (path) => !path.includes("/ar-catalog/") && namespaces.includes(namespaceOf(path))
@@ -1204,19 +1211,21 @@ function loadPaths(locale: Locale, paths: string[]): Promise<void> {
 }
 
 function hasNamespaces(locale: Locale, namespaces: string[] | null): boolean {
-  if (loadedLocales.has(locale)) return true;
-  if (namespaces === null) return false;
+  // `loadedLocales` means "the app-wide set is loaded", which leaves out the on-demand
+  // namespaces, so it can only answer the app-wide (`null`) question, never an explicit list.
+  if (namespaces === null) return loadedLocales.has(locale);
   return pathsFor(locale, namespaces).every((path) => loadedPaths[locale].has(path));
 }
 
-/** True once every namespace catalog of `locale` is merged into `t[locale]`. */
+/** True once every app-wide namespace catalog of `locale` is merged into `t[locale]`. */
 export function isLocaleLoaded(locale: Locale): boolean {
   return loadedLocales.has(locale);
 }
 
 /**
- * Load (once) every namespace catalog of `locale` and merge it into `t[locale]` in sorted
- * file order. Resolves when the catalogs are in place; concurrent calls share one load.
+ * Load (once) every app-wide namespace catalog of `locale` (all but ON_DEMAND_NAMESPACES) and
+ * merge it into `t[locale]` in sorted file order. Resolves when the catalogs are in place;
+ * concurrent calls share one load.
  */
 export function loadLocale(locale: Locale): Promise<void> {
   if (loadedLocales.has(locale)) return Promise.resolve();
@@ -1246,7 +1255,6 @@ export function loadNamespace(locale: Locale, namespace: string): Promise<void> 
  * never looked up in a namespace that an in-page language switch did not fetch.
  */
 export function loadNamespaces(locale: Locale, namespaces: readonly string[]): Promise<void> {
-  if (loadedLocales.has(locale)) return Promise.resolve();
   return loadPaths(locale, pathsFor(locale, [...namespaces]));
 }
 
@@ -1364,8 +1372,7 @@ export function useTranslation(namespaces?: readonly string[]) {
   useCatalogVersion((s) => s.version);
   const needed = neededNamespaces();
   const routeReady = hasNamespaces(locale, needed);
-  const declaredMissing =
-    !!namespaces?.length && !loadedLocales.has(locale) && !hasNamespaces(locale, [...namespaces]);
+  const declaredMissing = !!namespaces?.length && !hasNamespaces(locale, [...namespaces]);
   // Implicit loads: swallow rejections here (callers that need them observe loadNamespaces).
   if (declaredMissing) loadNamespaces(locale, namespaces!).catch(() => undefined);
   if (!routeReady || declaredMissing) {

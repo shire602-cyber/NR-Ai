@@ -8,6 +8,19 @@ describe("month-end close checklist status", () => {
     expect(s.state).toBe("error");
     expect(s.remaining).toBe(0);
   });
+  it("reports a paused first fetch as waiting, not failed", () => {
+    const input = { isLoading: false, isError: false, isPaused: true, items: undefined };
+    expect(closeChecklistStatus(input).state).toBe("waiting");
+    expect(closeChecklistStatus({ ...input, isError: true }).state).toBe("error");
+  });
+  it("keeps cached items after a failed refresh", () => {
+    expect(
+      closeChecklistStatus({ isLoading: false, isError: true, items: [{ done: false }] })
+    ).toMatchObject({ state: "incomplete", total: 1, remaining: 1 });
+    expect(closeChecklistStatus({ isLoading: false, isError: true, items: [] }).state).toBe(
+      "empty"
+    );
+  });
   it("does not report an empty checklist as all clear", () => {
     expect(closeChecklistStatus({ isLoading: false, isError: false, items: [] }).state).toBe(
       "empty"
@@ -40,6 +53,8 @@ describe("month-end close checklist status", () => {
         "historyWaitingForConnection",
         "retryingChecklist",
         "checklistWaitingForConnection",
+        "checklistRefreshFailed",
+        "checklistWaitingToLoad",
       ]) {
         expect(j[`monthEnd.${k}`], `${l}:${k}`).toBeTruthy();
       }

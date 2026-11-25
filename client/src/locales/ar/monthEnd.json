@@ -43,6 +43,8 @@
   "monthEnd.retryingChecklist": "جارٍ إعادة محاولة تحميل قائمة المراجعة…",
   "monthEnd.checklistWaitingForConnection": "بانتظار الاتصال لإعادة محاولة تحميل قائمة المراجعة…",
   "monthEnd.retry": "حاول مرة أخرى",
+  "monthEnd.checklistRefreshFailed": "تعذّر تحديث قائمة المراجعة. البنود التي تم تحميلها سابقًا ما زالت معروضة أدناه.",
+  "monthEnd.checklistWaitingToLoad": "بانتظار الاتصال لتحميل قائمة المراجعة…",
   "monthEnd.statusOpen": "مفتوحة",
   "monthEnd.debitAed": "مدين (درهم)",
   "monthEnd.creditAed": "دائن (درهم)",

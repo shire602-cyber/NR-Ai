@@ -337,6 +337,109 @@ it("shows a waiting state for an initial offline history load", async () => {
   expect(historyQuery).toHaveBeenCalledTimes(1);
 });
 
+const buttonNamed = (root: ParentNode, label: string) =>
+  Array.from(root.querySelectorAll("button")).find((item) => item.textContent?.trim() === label);
+
+it.each(["en", "ar"] as const)(
+  "shows a waiting state for an initial offline checklist load (%s)",
+  async (locale) => {
+    await act(async () => onlineManager.setOnline(false));
+    const checklistQuery = vi.fn(async () => ({
+      checklist: [
+        { id: 1, title: "Bank reconciliation", description: "Review", status: "complete" },
+      ],
+    }));
+    await mountPage(locale, "complete", async () => [], { checklistQuery });
+    const copy = t[locale];
+    const waiting = document.querySelector('[data-testid="checklist-waiting"]');
+    expect(waiting?.textContent).toBe(copy["monthEnd.checklistWaitingToLoad"]);
+    expect(waiting?.getAttribute("role")).toBe("status");
+    expect(document.querySelector('[data-testid="checklist-error"]')).toBeNull();
+    expect(document.body.textContent).not.toContain(copy["monthEnd.checklistLoadFailed"]);
+    expect(document.body.textContent).not.toContain(copy["pages.allClear"]);
+    expect(buttonNamed(document, copy["monthEnd.retry"])).toBeUndefined();
+    expect(buttonNamed(document, copy["pages.refresh"])?.disabled).toBe(true);
+    expect(checklistQuery).not.toHaveBeenCalled();
+
+    await act(async () => buttonNamed(document, copy["pages.lockPeriod"])!.click());
+    const dialog = document.querySelector('[role="alertdialog"]')!;
+    expect(dialog.textContent).toContain(copy["monthEnd.lockChecklistUnavailable"]);
+    expect(dialog.querySelector('[data-testid="checkbox-override-checklist"]')).toBeNull();
+
+    await act(async () => onlineManager.setOnline(true));
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Bank reconciliation"));
+    expect(document.querySelector('[data-testid="checklist-waiting"]')).toBeNull();
+    expect(checklistQuery).toHaveBeenCalledTimes(1);
+  }
+);
+
+it.each(["complete", "incomplete", "empty"] as const)(
+  "keeps a cached %s checklist when a refresh fails",
+  async (state) => {
+    const copy = t.en;
+    const data = {
+      checklist:
+        state === "empty"
+          ? []
+          : [{ id: 1, title: "Bank reconciliation", description: "Review", status: state }],
+    };
+    const { promise, resolve } = Promise.withResolvers<unknown>();
+    const checklistQuery = vi
+      .fn(async (): Promise<unknown> => promise)
+      .mockResolvedValueOnce(data)
+      .mockRejectedValueOnce(new Error("refresh failed"));
+    const client = await mountPage("en", state, async () => [], { checklistQuery });
+    const cached = () =>
+      state === "empty"
+        ? document.querySelector('[data-testid="checklist-empty"]') !== null
+        : document.body.textContent!.includes("Bank reconciliation");
+    await vi.waitFor(() => expect(cached()).toBe(true));
+
+    await act(async () => {
+      await client.invalidateQueries({
+        predicate: (query) => String(query.queryKey[0]).includes("/month-end/checklist?"),
+      });
+    });
+    const refreshError = () => document.querySelector('[data-testid="checklist-refresh-error"]');
+    await vi.waitFor(() =>
+      expect(refreshError()?.textContent).toContain(copy["monthEnd.checklistRefreshFailed"])
+    );
+    expect(cached()).toBe(true);
+    expect(document.querySelector('[data-testid="checklist-error"]')).toBeNull();
+    expect(document.body.textContent).not.toContain(copy["pages.allClear"]);
+
+    await act(async () => buttonNamed(document, copy["pages.lockPeriod"])!.click());
+    const dialog = document.querySelector('[role="alertdialog"]')!;
+    expect(dialog.textContent!.split(copy["monthEnd.lockChecklistUnavailable"])).toHaveLength(2);
+    expect(dialog.textContent).not.toContain(copy["monthEnd.checklistIncomplete"]);
+    expect(dialog.querySelector('[data-testid="checkbox-override-checklist"]')).toBeNull();
+    await act(async () => buttonNamed(dialog, copy["pages.cancel"])!.click());
+    // Radix returns focus to the lock trigger as it closes; let that settle before moving focus.
+    await vi.waitFor(async () => {
+      await act(async () => {});
+      expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+      expect(document.activeElement).toBe(buttonNamed(document, copy["pages.lockPeriod"]));
+    });
+
+    const retry = refreshError()!.querySelector("button")!;
+    retry.focus();
+    await act(async () => retry.click());
+    await vi.waitFor(() =>
+      expect(refreshError()?.querySelector('[role="status"]')?.textContent).toBe(
+        copy["monthEnd.retryingChecklist"]
+      )
+    );
+    expect(refreshError()?.querySelector("button")).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+    expect(retry.getAttribute("aria-disabled")).toBe("true");
+    expect(cached()).toBe(true);
+
+    await act(async () => resolve(data));
+    await vi.waitFor(() => expect(refreshError()).toBeNull());
+    expect(cached()).toBe(true);
+  }
+);
+
 it.each(["online", "offline"] as const)(
   "keeps the checklist retry focused when started %s",
   async (connection) => {

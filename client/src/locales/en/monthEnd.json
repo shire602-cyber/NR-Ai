@@ -43,6 +43,8 @@
   "monthEnd.historyWaitingForConnection": "Waiting for a connection to retry close history…",
   "monthEnd.retryingChecklist": "Retrying the checklist…",
   "monthEnd.checklistWaitingForConnection": "Waiting for a connection to retry the checklist…",
+  "monthEnd.checklistRefreshFailed": "The checklist could not be refreshed. The items already loaded are still shown below.",
+  "monthEnd.checklistWaitingToLoad": "Waiting for a connection to load the checklist…",
   "monthEnd.statusOpen": "Open",
   "monthEnd.debitAed": "Debit (AED)",
   "monthEnd.creditAed": "Credit (AED)",
