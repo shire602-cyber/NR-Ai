@@ -138,6 +138,49 @@ it("reconciles VAT 201 to posted VAT after two credits clear a foreign invoice",
   });
 });
 
+it("reports the last posted VAT fil when only a zero-rated foreign line remains", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const id = await issue(
+    t,
+    [standard(0.2), standard(0.2), standard(0.2), standard(0.2), exported(10)],
+    {
+      currency: "USD",
+      exchangeRate: 3.67,
+    }
+  );
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const reportUrl = `${base(t)}/reports/vat-return?from=2026-01-01&to=2026-03-31`;
+  for (let i = 0; i < 2; i++) {
+    const partial = await t.as.post(url, { date, lines: [standard(0.4)] });
+    expect(partial.status, partial.text).toBe(201);
+    expect(Number(partial.body.vatAmount)).toBe(-0.02);
+  }
+  const before = await t.as.get(reportUrl);
+  expect(before.status, before.text).toBe(200);
+  expect(before.body.boxes).toMatchObject({ box1bDubaiAmount: 0, box1bDubaiVat: 0.01 });
+
+  const remainder = await t.as.post(url, { date });
+  expect(remainder.status, remainder.text).toBe(201);
+  expect(Number(remainder.body.vatAmount)).toBe(0);
+  const note = await t.as.get(`/api/credit-notes/${remainder.body.id}`);
+  expect(note.status, note.text).toBe(200);
+  expect(note.body.lines).toEqual([expect.objectContaining({ vatSupplyType: "zero_rated" })]);
+
+  const after = await t.as.get(reportUrl);
+  expect(after.status, after.text).toBe(200);
+  expect(after.body.boxes).toMatchObject({
+    box1bDubaiAmount: 0,
+    box1bDubaiVat: 0,
+    box4ZeroRatedAmount: 0,
+    box14PayableTax: 0,
+  });
+  expect(after.body.reconciliation).toMatchObject({
+    ledgerOutputVatFils: 0,
+    outputDifferenceFils: 0,
+    hasUnexplainedDifference: false,
+  });
+});
+
 it.each(["inline", "standalone draft"] as const)(
   "rejects a %s credit whose rounded VAT exceeds the invoice VAT",
   async (entryPoint) => {
@@ -257,6 +300,42 @@ it("rejects an ordinary partial credit that would use the VAT of a margin-scheme
   expect(remainder.status, remainder.text).toBe(201);
   expect(Number(remainder.body.total)).toBe(-105.09);
   expect(Number(remainder.body.vatAmount)).toBe(-1);
+});
+
+it("issues a generated remainder draft with its original VAT allocation across treatments", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const id = await issue(t, [
+    standard(0.09),
+    standard(0.09),
+    standard(0.09),
+    { ...standard(105), marginScheme: true, marginPurchaseCost: 84 },
+  ]);
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const partial = await t.as.post(url, { date, lines: [standard(0.09)] });
+  expect(partial.status, partial.text).toBe(201);
+
+  const draft = await t.as.post(`${base(t)}/credit-notes`, { invoiceId: id, date });
+  expect(draft.status, draft.text).toBe(201);
+  expect(draft.body).toMatchObject({ total: 105.18, subtotal: 104.18, vatAmount: 1 });
+  expect(draft.body.lines).toHaveLength(2);
+  expect(draft.body.lines).toContainEqual(expect.objectContaining({ unitPrice: 0.18 }));
+
+  const issueUrl = `/api/credit-notes/${draft.body.id}/issue`;
+  const intervening = await t.as.post(url, { date, lines: [standard(0.09)] });
+  expect(intervening.status, intervening.text).toBe(201);
+  const rejected = await t.as.post(issueUrl, {});
+  expect(rejected.status, rejected.text).toBe(409);
+  expect(rejected.body.code).toBe("CREDIT_EXCEEDS_REMAINING");
+  const voided = await t.as.post(`/api/credit-notes/${intervening.body.id}/void`, {});
+  expect(voided.status, voided.text).toBe(200);
+
+  const issued = await t.as.post(issueUrl, {});
+  expect(issued.status, issued.text).toBe(200);
+  expect(issued.body).toMatchObject({ status: "issued", total: 105.18, vatAmount: 1 });
+  const report = await t.as.get(`${base(t)}/reports/vat-return?from=2026-01-01&to=2026-03-31`);
+  expect(report.status, report.text).toBe(200);
+  expect(report.body.boxes).toMatchObject({ box1bDubaiAmount: 0, box1bDubaiVat: 0 });
+  expect(report.body.reconciliation.hasUnexplainedDifference).toBe(false);
 });
 
 it("fully settles a foreign invoice after an earlier part payment was reversed at the same rate", async () => {

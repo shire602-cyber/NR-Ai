@@ -289,9 +289,14 @@ export function toBase(docFils: number, rate: string): number {
 const dateOnly = (d: Date | string) =>
   (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10);
 
+const REMAINING_CREDIT_SOURCE = "remaining_credit";
+
 /** Compute a stored document's totals from its stored lines. */
 export function totalsForStoredDocument(
-  invoice: Pick<Invoice, "discountType" | "discountValue" | "reverseCharge" | "vatAmount">,
+  invoice: Pick<
+    Invoice,
+    "discountType" | "discountValue" | "reverseCharge" | "vatAmount" | "source"
+  >,
   lines: InvoiceLine[]
 ): SalesDocumentTotals {
   const totals = computeSalesDocument(
@@ -311,6 +316,25 @@ export function totalsForStoredDocument(
   // Use the tax printed on the document, including on invoices issued under the earlier
   // rounding method and credits that clear the exact VAT remaining after partial credits.
   const vatFils = toFils(Math.abs(Number(invoice.vatAmount)), { rounding: "halfUp" });
+  if (invoice.source === REMAINING_CREDIT_SOURCE) {
+    // Generated credits have one line per treatment. The margin line's price includes its
+    // allocated VAT. The rest of the printed VAT belongs to the ordinary standard-rated line.
+    let marginVatFils = 0;
+    for (const [i, line] of totals.lines.entries()) {
+      line.netFils = Math.abs(toFils(lines[i].netAmount ?? 0, { rounding: "halfUp" }));
+      if (line.marginFils !== null) {
+        line.marginFils =
+          line.netFils - toFils(lines[i].marginPurchaseCost ?? 0, { rounding: "halfUp" });
+        line.vatFils = line.grossFils - line.netFils;
+        marginVatFils += line.vatFils;
+      }
+    }
+    const ordinary = totals.lines.find(
+      (line) => line.classification.chargedVatRate > 0 && line.marginFils === null
+    );
+    if (ordinary) ordinary.vatFils = vatFils - marginVatFils;
+    totals.subtotalFils = sumFils(totals.lines.map((line) => line.netFils));
+  }
   return { ...totals, vatFils, totalFils: totals.subtotalFils + vatFils };
 }
 
@@ -1267,8 +1291,11 @@ export async function insertCreditNoteDocument(
         );
       }
       docLines = remaining.lines;
+      header = { source: REMAINING_CREDIT_SOURCE };
+      const computed = computeSalesDocument(docLines.map(storedLineToTotalsInput));
       totals = {
-        ...computeSalesDocument(docLines.map(storedLineToTotalsInput)),
+        ...computed,
+        lines: computed.lines.map((line, i) => ({ ...line, netFils: remaining.lines[i].netFils })),
         subtotalFils: remaining.subtotalFils,
         vatFils: remaining.vatFils,
         totalFils: remainingTotal,
@@ -1300,6 +1327,7 @@ export async function insertCreditNoteDocument(
       status: "draft",
       invoiceType: "credit_note",
       originalInvoiceId: original.id,
+      source: header.source,
       reverseCharge: original.reverseCharge,
       placeOfSupplyEmirate: original.placeOfSupplyEmirate,
       notes: args.reason ?? null,
@@ -1431,15 +1459,19 @@ async function creditTaxBalances(
 async function remainingCreditLines(tx: LedgerTx, original: Invoice, originalLines: InvoiceLine[]) {
   const { balances, vatFils } = await creditTaxBalances(tx, original, originalLines);
   const subtotalFils = sumFils(balances.map(({ net }) => net));
+  const hasOrdinaryTreatment = balances.some(
+    ({ supply, margin }) => supply.chargedVatRate > 0 && margin === null
+  );
   const lines = balances
     // VAT 201 allocates the document's VAT to taxable lines, including a zero-net rounding credit.
     .filter(({ net, supply }) => net !== 0 || (vatFils > 0 && supply.chargedVatRate > 0))
-    .map(({ supply, net, margin }) => {
-      const marginVat = margin === null ? 0 : toBase(margin, String(supply.chargedVatRate));
+    .map(({ supply, net, margin, vat }) => {
+      const marginVat = hasOrdinaryTreatment ? Math.min(vatFils, Math.max(0, vat)) : vatFils;
       return {
         description: `Remaining balance of ${original.number}`,
         quantity: 1,
-        unitPrice: Number(fromFils(net + marginVat)),
+        netFils: net,
+        unitPrice: Number(fromFils(net + (margin === null ? 0 : marginVat))),
         vatRate: supply.chargedVatRate,
         vatSupplyType: supply.supplyType,
         marginScheme: margin !== null,
@@ -1581,17 +1613,6 @@ export async function createDraftCreditNote(args: {
   return withDocumentLock(args.invoiceId, LOCK_NS.INVOICE_POSTING, async (tx) => {
     const original = await lockInvoice(tx, args.invoiceId, args.companyId);
     assertCreditable(original);
-    if (!args.lines?.length) {
-      const s = await invoiceSettlement(tx, original.id);
-      if (s.creditedFils > 0) {
-        throw new DomainError(
-          "CREDIT_LINES_REQUIRED",
-          422,
-          undefined,
-          "This invoice is already partly credited: list the lines to credit."
-        );
-      }
-    }
     const { creditNote } = await insertCreditNoteDocument(tx, original, args);
     return creditNote;
   });

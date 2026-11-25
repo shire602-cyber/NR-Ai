@@ -724,7 +724,10 @@ async function collectInvoices(
       }).vat201Family;
       netByFamily.set(fam, (netByFamily.get(fam) ?? 0) + net);
     });
-    const vatBase = postedRemainderVat.get(inv.id) ?? toBaseFils(totals.vatFils, rate);
+    const postedVat = postedRemainderVat.get(inv.id);
+    const vatBase = postedVat ?? toBaseFils(totals.vatFils, rate);
+    // The last credit can clear base-currency VAT rounding with only zero-rated lines left.
+    if (postedVat && !netByFamily.has("standard")) netByFamily.set("standard", 0);
     const emirate = normaliseEmirate(inv.placeOfSupplyEmirate);
     const needsEmirate = [...netByFamily].some(
       ([family, net]) =>
