@@ -129,6 +129,14 @@ async function search(value: string) {
   await flush();
 }
 
+/** Open the first account's statement dialog and wait for its on-demand body. */
+async function openStatement() {
+  await click(document.querySelector('button[aria-label="Reconciliation statement"]'));
+  await flushUntil(() => document.getElementById("st-close") !== null);
+  expect(document.getElementById("st-close")).not.toBeNull();
+  return document.querySelector('[role="dialog"]')!;
+}
+
 async function appQueryClient() {
   const { queryClient } = (await import("../../client/src/lib/queryClient")) as any;
   return queryClient as import("@tanstack/react-query").QueryClient;
@@ -183,8 +191,7 @@ describe("bank accounts offline and refresh states", { timeout: 90_000 }, () => 
     setFixtures({ [`${C}/bank-accounts`]: ACCOUNTS, [RECONCILIATIONS_PATH]: [] });
     await mount();
     onlineManager.setOnline(false);
-    await click(document.querySelector('button[aria-label="Reconciliation statement"]'));
-    const dialog = document.querySelector('[role="dialog"]')!;
+    const dialog = await openStatement();
     await flushUntil(() => byTestId("bank-history-offline") !== null);
     expect(dialog.textContent).toContain("You are offline");
     expect(dialog.textContent).not.toContain("No saved reconciliations yet");
@@ -251,8 +258,7 @@ describe("bank accounts offline and refresh states", { timeout: 90_000 }, () => 
     const good = { [`${C}/bank-accounts`]: ACCOUNTS, [RECONCILIATIONS_PATH]: [row] };
     setFixtures(good);
     await mount();
-    await click(document.querySelector('button[aria-label="Reconciliation statement"]'));
-    const dialog = document.querySelector('[role="dialog"]')!;
+    const dialog = await openStatement();
     await flushUntil(() => dialog.textContent?.includes("2026-03-31") === true);
     await failRefresh(good);
     await flushUntil(() => byTestId("bank-history-refresh-error") !== null);
@@ -372,8 +378,7 @@ describe("bank accounts states", { timeout: 90_000 }, () => {
     const request = pendingRequest();
     setFixtures({ [`${C}/bank-accounts`]: ACCOUNTS, [RECONCILIATIONS_PATH]: request.response });
     await mount();
-    await click(document.querySelector('button[aria-label="Reconciliation statement"]'));
-    const dialog = document.querySelector('[role="dialog"]')!;
+    const dialog = await openStatement();
     expect(dialog.querySelector('[role="status"]')?.textContent).toBe("Loading…");
     expect(dialog.textContent).not.toContain("No saved reconciliations yet");
 
