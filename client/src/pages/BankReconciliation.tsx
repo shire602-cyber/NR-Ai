@@ -303,6 +303,9 @@ function downloadSampleBankCsv() {
 const subscribeConnectivity = (notify: () => void) => onlineManager.subscribe(notify);
 const isKnownOffline = () => !onlineManager.isOnline();
 
+// Match/unmatch writes outstanding per company; the last one to settle refreshes the list.
+const rowWritesInFlight = new Map<string, number>();
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function BankReconciliation() {
@@ -566,13 +569,24 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
   });
   const isRowBusy = (id: string) => pendingRowIds.includes(id);
   const refreshAfterLastRowWrite = () => {
-    // The settling mutation is still counted, so 1 means no other write is outstanding.
-    if (queryClient.isMutating({ mutationKey: rowWriteKey, exact: true }) !== 1) return;
+    // The tally is kept by us, not read from the mutation cache: two writes settling together
+    // would each still see the other as pending. Runs after any rollback in onError.
+    const key = companyId ?? "";
+    const remaining = (rowWritesInFlight.get(key) ?? 0) - 1;
+    if (remaining > 0) {
+      rowWritesInFlight.set(key, remaining);
+      return;
+    }
+    rowWritesInFlight.delete(key);
     queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
   };
 
   // Optimistic write to one row of the list; the returned context restores only that row.
   const patchTransactionRow = async (transactionId: string, patch: Partial<BankTransaction>) => {
+    // Count the write synchronously, before the first await, so overlapping writes always see
+    // each other; every call is paired with one onSettled (it runs even if this throws).
+    const key = companyId ?? "";
+    rowWritesInFlight.set(key, (rowWritesInFlight.get(key) ?? 0) + 1);
     // Stop in-flight reads (prefix), then write the list's own key.
     await queryClient.cancelQueries({
       queryKey: ["/api/companies", companyId, "bank-statements"],
@@ -2052,8 +2066,9 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                   <div className="flex items-center gap-2 rounded-lg bg-warning-subtle border border-warning/30 p-3">
                     <Sparkles className="w-4 h-4 text-warning shrink-0" />
                     <p className="text-sm text-foreground">
-                      <strong>{reportData.summary.suggestedCount}</strong> transaction(s) have
-                      suggested matches waiting for your review.
+                      {formatMessage(t["banking.report.suggestedNotice"], {
+                        count: reportData.summary.suggestedCount,
+                      })}
                     </p>
                   </div>
                 </>

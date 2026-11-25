@@ -201,5 +201,6 @@
   "banking.report.descriptionAll": "Summary of matched and unmatched transactions across all accounts",
   "banking.report.descriptionAccount": "Summary of matched and unmatched transactions for {account}",
   "banking.query.paused": "Loading is paused. It will continue automatically.",
-  "banking.query.pausedCached": "Updates are paused. You are seeing the last loaded data, which may be out of date."
+  "banking.query.pausedCached": "Updates are paused. You are seeing the last loaded data, which may be out of date.",
+  "banking.report.suggestedNotice": "Transactions with suggested matches awaiting your review: {count}"
 }

@@ -1,6 +1,6 @@
 /** Body of the reconciliation statement dialog; loaded on demand by the Bank accounts page. */
-import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { onlineManager, useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +42,11 @@ interface SavedReconciliation {
   signedOffAt: string | null;
 }
 
+// A paused query is not proof of being offline (an unfocused retry pauses too), so offline copy
+// follows React Query's connectivity state only.
+const subscribeConnectivity = (notify: () => void) => onlineManager.subscribe(notify);
+const isKnownOffline = () => !onlineManager.isOnline();
+
 export default function StatementDialogBody({
   companyId,
   accountId,
@@ -53,6 +58,7 @@ export default function StatementDialogBody({
   const { t, locale } = useTranslation();
   const tr = (k: string) => t[k] ?? k;
   const { toast } = useToast();
+  const knownOffline = useSyncExternalStore(subscribeConnectivity, isKnownOffline);
   // The opening locale's catalog arrives with this chunk; a language switch while open loads the
   // other one. A failure counts only for the locale that is still current.
   const [failedLocale, setFailedLocale] = useState<Locale | null>(null);
@@ -240,7 +246,9 @@ export default function StatementDialogBody({
             data-testid="bank-history-offline"
             className="text-small text-muted-foreground"
           >
-            {tr("banking.common.offline")}. {tr("banking.common.offlineBody")}{" "}
+            {knownOffline
+              ? `${tr("banking.common.offline")}. ${tr("banking.common.offlineBody")}`
+              : tr("banking.query.paused")}{" "}
             <Button variant="link" size="sm" onClick={() => void refetchHistory()}>
               {t["components.errorRetry"]}
             </Button>

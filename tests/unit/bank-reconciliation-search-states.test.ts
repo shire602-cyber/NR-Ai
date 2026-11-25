@@ -195,6 +195,25 @@ async function openMatchDialog() {
   await flush();
 }
 
+/** Opens the report from the page's overflow menu, in whichever locale is active. */
+async function openReport() {
+  const { translateNow } = await import("../../client/src/lib/i18n");
+  const trigger = document.querySelector<HTMLElement>(
+    `button[aria-label="${translateNow("banking.recon.moreActions")}"]`
+  )!;
+  await act(async () => {
+    trigger.focus();
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((o) =>
+    o.textContent?.includes(translateNow("banking.recon.report"))
+  )!;
+  await act(async () => item.click());
+  await flush();
+}
+
+const dialogText = () => document.querySelector('[role="dialog"]')!.textContent ?? "";
+
 describe("bank reconciliation search no-match state", () => {
   const copy = {
     en: { banking: enBanking, common: enCommon },
@@ -583,7 +602,64 @@ describe("bank reconciliation match and unmatch cache writes", () => {
       isReconciled: false,
       matchedInvoiceId: null,
     });
+    await act(async () => responders[1]!(json({})));
+    await flush();
   }, 60_000);
+
+  for (const outcome of ["both succeed", "one fails"] as const) {
+    it(`refreshes once after two writes settle together (${outcome})`, async () => {
+      transactions = [suggested, { ...suggested, id: "t-2", matchedJournalEntryId: "je-2" }];
+      const client = await mountPage("en");
+      const { translateNow } = await import("../../client/src/lib/i18n");
+      const responders: Array<(response: Response) => void> = [];
+      matchReply = () => new Promise<Response>((resolve) => responders.push(resolve));
+      for (let i = 0; i < 2; i++) {
+        await act(async () => mobileButton(translateNow("pages.accept")).click());
+        await flush();
+      }
+      expect(responders).toHaveLength(2);
+
+      // With both writes held, open the report and cache one row's suggestions.
+      let listReads = 0;
+      transactionsReply = () => {
+        listReads += 1;
+        return json(transactions);
+      };
+      let reportReads = 0;
+      let serverReport = report;
+      reportReply = () => {
+        reportReads += 1;
+        return json(serverReport);
+      };
+      await openReport();
+      const suggestionsKey = [...PREFIX, "t-1", "suggestions"];
+      client.setQueryData(suggestionsKey, [suggestion]);
+      serverReport = {
+        ...report,
+        amounts: {
+          ...report.amounts,
+          totalCredits: 5678,
+          netAmount: 5678,
+          unreconciledCredits: 5678,
+        },
+      };
+      expect(listReads).toBe(0);
+      expect(reportReads).toBe(1);
+      expect(dialogText()).toContain("1,234");
+      expect(client.getQueryState(suggestionsKey)!.isInvalidated).toBe(false);
+
+      await act(async () => {
+        responders[0]!(json({}));
+        responders[1]!(outcome === "one fails" ? json({ message: "nope" }, 409) : json({}));
+      });
+      await flush();
+      expect(listReads).toBe(1);
+      expect(reportReads).toBe(2);
+      expect(dialogText()).toContain("5,678");
+      expect(dialogText()).not.toContain("1,234");
+      expect(client.getQueryState(suggestionsKey)!.isInvalidated).toBe(true);
+    }, 60_000);
+  }
 
   it("does not create a transactions cache entry when there is none", async () => {
     suggestionsReply = () => json([suggestion]);
@@ -592,7 +668,8 @@ describe("bank reconciliation match and unmatch cache writes", () => {
     // The mounted list refetches on its next render; hold that so the cache stays empty.
     transactionsReply = () => new Promise<Response>(() => {});
     client.removeQueries({ queryKey: TRANSACTIONS_KEY, exact: true });
-    matchReply = () => new Promise<Response>(() => {});
+    let respond!: (response: Response) => void;
+    matchReply = () => new Promise<Response>((resolve) => (respond = resolve));
     const card = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"] p')).find((p) =>
       p.textContent?.includes("INV-1042")
     )!;
@@ -600,6 +677,9 @@ describe("bank reconciliation match and unmatch cache writes", () => {
     await flush();
     expect(client.getQueryData(TRANSACTIONS_KEY)).toBeUndefined();
     expect(client.getQueryData(PREFIX)).toBeUndefined();
+
+    await act(async () => respond(json({})));
+    await flush();
   }, 60_000);
 });
 
@@ -624,21 +704,6 @@ describe("read cancellation reaches fetch", () => {
 });
 
 describe("bank reconciliation report dialog states", () => {
-  async function openReport() {
-    const trigger = document.querySelector<HTMLElement>(
-      `button[aria-label="${(enBanking as Record<string, string>)["banking.recon.moreActions"]}"]`
-    )!;
-    await act(async () => {
-      trigger.focus();
-      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    });
-    const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((o) =>
-      o.textContent?.includes((enBanking as Record<string, string>)["banking.recon.report"]!)
-    )!;
-    await act(async () => item.click());
-    await flush();
-  }
-  const dialogText = () => document.querySelector('[role="dialog"]')!.textContent ?? "";
   const retry = async (id: string) => {
     await act(async () => byTestId(id)!.querySelector<HTMLButtonElement>("button")!.click());
     await flush();
@@ -649,6 +714,19 @@ describe("bank reconciliation report dialog states", () => {
     });
     await flush();
   };
+
+  for (const locale of ["en", "ar"] as const) {
+    it(`localizes the positive suggested-matches notice (${locale})`, async () => {
+      reportReply = () => json({ ...report, summary: { ...report.summary, suggestedCount: 5 } });
+      await mountPage(locale);
+      await openReport();
+      const { formatMessage } = await import("../../client/src/lib/i18n");
+      const bank = (locale === "en" ? enBanking : arBanking) as Record<string, string>;
+      expect(dialogText()).toContain(
+        formatMessage(bank["banking.report.suggestedNotice"]!, { count: 5 })
+      );
+    }, 60_000);
+  }
 
   it("shows loading, then aborts the held request when it is cancelled", async () => {
     let signal!: AbortSignal;
