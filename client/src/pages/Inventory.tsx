@@ -181,7 +181,12 @@ export default function Inventory() {
 
   // ─── Queries ──────────────────────────────────────────
 
-  const { data: productsList = [], isLoading: isLoadingProducts } = useQuery<Product[]>({
+  const {
+    data: productsList = [],
+    isLoading: isLoadingProducts,
+    isError: isProductsError,
+    refetch: refetchProducts,
+  } = useQuery<Product[]>({
     queryKey: [`/api/companies/${companyId}/products`],
     enabled: !!companyId,
   });
@@ -432,8 +437,8 @@ export default function Inventory() {
   };
 
   const filteredProducts = productsList.filter((product) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
     return (
       product.name.toLowerCase().includes(q) ||
       (product.sku && product.sku.toLowerCase().includes(q)) ||
@@ -535,14 +540,25 @@ export default function Inventory() {
           </div>
           <DataTableCard
             status={
-              isLoadingProducts ? "loading" : filteredProducts.length === 0 ? "empty" : "ready"
+              isLoadingProducts
+                ? "loading"
+                : isProductsError
+                  ? "error"
+                  : filteredProducts.length === 0
+                    ? "empty"
+                    : "ready"
             }
+            error={{
+              testId: "inventory-products-error",
+              title: t["pages.inventoryLoadError"],
+              onRetry: () => void refetchProducts(),
+            }}
             columnLabels={[t["screens.product"], t["reportCenter.stock"], t.status]}
             empty={{
               icon: Package,
-              title: searchQuery ? t["pages.inventoryNoMatch"] : t["pages.inventoryEmpty"],
+              title: searchQuery.trim() ? t["pages.inventoryNoMatch"] : t["pages.inventoryEmpty"],
               action:
-                searchQuery || !can("documents.write")
+                searchQuery.trim() || !can("documents.write")
                   ? undefined
                   : { label: t["pageLabels.addProduct"], onClick: handleOpenCreateDialog },
             }}
@@ -571,7 +587,9 @@ export default function Inventory() {
               </TableHeader>
               <TableBody>
                 {filteredProducts.map((product) => {
-                  const isLowStock = product.currentStock < (product.lowStockThreshold || 0);
+                  const isLowStock =
+                    (product as Product & { productType?: string }).productType !== "service" &&
+                    product.currentStock < (product.lowStockThreshold || 0);
                   return (
                     <TableRow key={product.id}>
                       <TableCell data-truncate="" data-cell="title">

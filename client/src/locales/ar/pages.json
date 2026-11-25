@@ -764,6 +764,7 @@
   "pages.companyProfileLogoFailed": "تعذّر رفع الشعار",
   "pages.inventoryProductCount": "{count} منتج في المخزون",
   "pages.inventoryNoMatch": "لا توجد منتجات مطابقة لبحثك.",
+  "pages.inventoryLoadError": "تعذّر تحميل المنتجات. حاول مرة أخرى بعد قليل.",
   "pages.inventoryEmpty": "لا توجد منتجات بعد. أضف منتجك الأول للبدء.",
   "pages.coaDebitTotal": "مدين: {amount}",
   "pages.coaCreditTotal": "دائن: {amount}",
