@@ -2,6 +2,7 @@
 import { act } from "react";
 import { onlineManager } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import arFinance from "../../client/src/locales/ar/financeViews.json";
 import arFirm from "../../client/src/locales/ar/firm.json";
 import {
   apiCalls,
@@ -13,6 +14,7 @@ import {
   flush,
   pickOption,
   renderPage,
+  rerenderPage,
   resetHarness,
   setFixtures,
   unmountPage,
@@ -149,7 +151,10 @@ describe("cash flow forecast load failure", () => {
     await click(err!.querySelector("button"));
     await flush(50);
     expect(document.querySelector('[data-testid="forecast-load-error"]')).toBeNull();
-    expect(document.querySelector('[data-testid="forecast-empty"]')).not.toBeNull();
+    const empty = document.querySelector('[data-testid="forecast-empty"]');
+    expect(empty).not.toBeNull();
+    expect(empty!.textContent).toContain(arFinance["cashFlowForecast.emptyTitle"]);
+    expect(empty!.textContent).toContain(arFinance["cashFlowForecast.emptyBody"]);
   });
 
   it("shows offline guidance (not the empty fallbacks) when paused with no data, and recovers on reconnect", async () => {
@@ -238,6 +243,20 @@ describe("cash flow forecast load failure", () => {
     expect(deletes("a")).toHaveLength(0);
     expect(btn("a").disabled).toBe(true);
     expect(btn("b").disabled).toBe(false);
+
+    // Leave the page and come back (the query/mutation cache survives): the queued delete still
+    // locks the row, and a second attempt while offline must not queue another request.
+    await rerenderPage(() => null);
+    expect(byTestId("button-remove-forecast-item-a")).toBeNull();
+    await rerenderPage(CashFlowForecast);
+    await flush(20);
+    expect(btn("a").disabled).toBe(true);
+    expect(btn("b").disabled).toBe(false);
+    await act(async () => {
+      btn("a").click();
+    });
+    await flush(5);
+    expect(deletes("a")).toHaveLength(0);
 
     await act(async () => onlineManager.setOnline(true));
     await flush(30);

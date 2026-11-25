@@ -2,8 +2,8 @@ import { T } from "@/components/layout/T";
 import { DatePicker } from "@/components/ui/date-picker";
 import { format } from "date-fns";
 import { dateFnsOptions } from "@/lib/date-locale";
-import { useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -115,6 +115,13 @@ const KIND_LABELS: Record<string, { en: string; ar: string }> = {
 
 const tr = (locale: string, en: string, ar: string) => (locale === "ar" ? ar : en);
 
+const removeKeyPrefix = ["cashflow-item-delete"] as const;
+
+interface RemoveVars {
+  companyId: string | undefined;
+  id: string;
+}
+
 interface MonthlyCashHistory {
   month: string;
   year: number;
@@ -194,15 +201,23 @@ export default function CashFlowForecast() {
     enabled: !!companyId,
   });
 
-  // Ids with a DELETE in flight. The ref is the synchronous guard (two clicks in one tick see
-  // the same render); the state drives the disabled buttons.
-  const removingRef = useRef<Set<string>>(new Set());
-  const [removingIds, setRemovingIds] = useState<ReadonlySet<string>>(new Set());
-  const setRemoving = (id: string, on: boolean) => {
-    if (on) removingRef.current.add(id);
-    else removingRef.current.delete(id);
-    setRemovingIds(new Set(removingRef.current));
-  };
+  // Pending (including offline-paused) DELETEs live in React Query's mutation cache, keyed by
+  // company; the item id is in the variables. The cache survives remounts and company switches.
+  const removeKey = [...removeKeyPrefix, companyId] as const;
+  // useMutationState only recomputes on MutationCache events, not when its filters change, so
+  // subscribe to every pending delete via the stable key prefix and filter by company at render.
+  const pendingRemovals = useMutationState({
+    filters: { mutationKey: removeKeyPrefix, status: "pending" },
+    select: (m) => m.state.variables as RemoveVars | undefined,
+  });
+  const removingIds = new Set(
+    pendingRemovals.flatMap((v) => (v && v.companyId === companyId ? [v.id] : []))
+  );
+  const isRemoving = (id: string) =>
+    queryClient
+      .getMutationCache()
+      .findAll({ mutationKey: removeKey, exact: true, status: "pending" })
+      .some((m) => (m.state.variables as RemoveVars | undefined)?.id === id);
 
   const invalidateForecast = () => {
     queryClient.invalidateQueries({ queryKey: ["cashflow-forecast", companyId] });
@@ -232,18 +247,16 @@ export default function CashFlowForecast() {
   });
 
   const removeItem = useMutation({
-    mutationFn: (id: string) =>
-      apiRequest("DELETE", `/api/companies/${companyId}/cashflow/items/${id}`),
-    onSuccess: (_data, id) => {
+    mutationKey: removeKey,
+    mutationFn: ({ companyId: cid, id }: RemoveVars) =>
+      apiRequest("DELETE", `/api/companies/${cid}/cashflow/items/${id}`),
+    onSuccess: (_data, { companyId: cid, id }) => {
       // Drop the row immutably so it cannot flash enabled before the refetch lands.
-      queryClient.setQueryData<ScheduledItem[]>(
-        [`/api/companies/${companyId}/cashflow/items`],
-        (old) => (old ? old.filter((it) => it.id !== id) : old)
+      queryClient.setQueryData<ScheduledItem[]>([`/api/companies/${cid}/cashflow/items`], (old) =>
+        old ? old.filter((it) => it.id !== id) : old
       );
       invalidateForecast();
     },
-    // Fires for every call (success, error, or after an offline pause resumes).
-    onSettled: (_data, _err, id) => setRemoving(id, false),
     onError: () =>
       toast({
         title: tr(locale, "Could not remove item", "تعذر حذف البند"),
@@ -749,10 +762,9 @@ export default function CashFlowForecast() {
                   size="sm"
                   variant="ghost"
                   onClick={() => {
-                    // Mark synchronously: a paused (offline) mutation has not run mutationFn yet.
-                    if (removingRef.current.has(it.id)) return;
-                    setRemoving(it.id, true);
-                    removeItem.mutate(it.id);
+                    // The mutation cache is updated synchronously by mutate(), even when paused.
+                    if (isRemoving(it.id)) return;
+                    removeItem.mutate({ companyId, id: it.id });
                   }}
                   disabled={removingIds.has(it.id)}
                   data-testid={`button-remove-forecast-item-${it.id}`}
