@@ -945,6 +945,14 @@ export default function BillPay() {
 
   const onPaymentSubmit = (data: PaymentFormData) => {
     if (!payingBill) return;
+    const remaining = Number(payingBill.total_amount) - Number(payingBill.amount_paid);
+    if (Math.round(data.amount * 100) > Math.round(remaining * 100)) {
+      paymentForm.setError("amount", {
+        type: "validate",
+        message: "forms.errors.paymentExceedsBalance",
+      });
+      return;
+    }
     recordPaymentMutation.mutate({ billId: payingBill.id, data });
   };
 
