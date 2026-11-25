@@ -223,6 +223,7 @@ export function applySecurityMiddleware(app: Express): void {
         "X-CSRF-Token",
         "X-XSRF-Token",
         "X-Period-Lock-Reason",
+        "Idempotency-Key",
       ],
       exposedHeaders: ["X-Total-Count", "X-Page", "X-Per-Page", "Retry-After", "RateLimit-Reset"],
       maxAge: 86400, // Cache preflight for 24 hours
