@@ -4,8 +4,12 @@
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
+import { onlineManager } from "@tanstack/react-query";
 import {
+  COMPANY,
   COMPANY_ID,
+  rerenderPage,
+  setWorkspaceCompany,
   buttonByText,
   byTestId,
   click,
@@ -55,9 +59,12 @@ const ACCOUNTS = [
   },
 ];
 
+let BankAccountsPage: typeof import("../../client/src/pages/BankAccounts").default;
+
 beforeAll(async () => {
   await loadLocale("en");
   await loadLocale("ar");
+  BankAccountsPage = (await import("../../client/src/pages/BankAccounts")).default;
   (globalThis as any).ResizeObserver ??= class {
     observe() {}
     unobserve() {}
@@ -79,6 +86,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await unmountPage();
+  onlineManager.setOnline(true);
   const { queryClient } = (await import("../../client/src/lib/queryClient")) as any;
   await queryClient.cancelQueries();
   queryClient.clear();
@@ -101,8 +109,7 @@ function pendingRequest() {
 }
 
 async function mount() {
-  const page = (await import("../../client/src/pages/BankAccounts")).default;
-  await renderPage(page);
+  await renderPage(BankAccountsPage);
   await flushUntil(
     () =>
       !!document.querySelector('[data-testid="input-search-bank-accounts"]') ||
@@ -110,16 +117,219 @@ async function mount() {
   );
 }
 
-function search(value: string) {
+async function search(value: string) {
   const input = document.querySelector(
     '[data-testid="input-search-bank-accounts"]'
   ) as HTMLInputElement;
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-  return act(async () => {
+  await act(async () => {
     setter.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
-  }).then(() => flush());
+  });
+  await flush();
 }
+
+async function appQueryClient() {
+  const { queryClient } = (await import("../../client/src/lib/queryClient")) as any;
+  return queryClient as import("@tanstack/react-query").QueryClient;
+}
+
+async function mountPage() {
+  await renderPage(BankAccountsPage);
+}
+
+/** Fail the next refetch of every bank query while the cached rows stay in place. */
+async function failRefresh(fixtures: Record<string, unknown>) {
+  setFixtures(
+    Object.fromEntries(Object.keys(fixtures).map((k) => [k, failing()])) as Record<string, unknown>
+  );
+  const qc = await appQueryClient();
+  await act(async () => {
+    await qc.invalidateQueries({ queryKey: ["/api/companies"] });
+  });
+  await flush();
+}
+
+describe("bank accounts offline and refresh states", { timeout: 90_000 }, () => {
+  it("shows offline feedback, never the empty states, then loads once back online", async () => {
+    onlineManager.setOnline(false);
+    setFixtures({ [`${C}/bank-accounts`]: ACCOUNTS, [IMPORTS_PATH]: [] });
+    await mountPage();
+    await flushUntil(() => byTestId("bank-accounts-offline") !== null);
+    expect(byTestId("bank-accounts-offline")!.textContent).toContain("You are offline");
+    expect(byTestId("bank-imports-offline")!.textContent).toContain("You are offline");
+    expect(document.body.textContent).not.toContain("No bank accounts yet");
+    expect(document.body.textContent).not.toContain("No imports yet");
+
+    await act(async () => onlineManager.setOnline(true));
+    await flushUntil(() => document.body.textContent?.includes("Operating") === true);
+    expect(byTestId("bank-accounts-offline")).toBeNull();
+    await flushUntil(() => document.body.textContent?.includes("No imports yet") === true);
+    expect(document.body.textContent).toContain("No imports yet");
+  });
+
+  it("localizes offline feedback in Arabic", async () => {
+    useI18n.setState({ locale: "ar" });
+    onlineManager.setOnline(false);
+    setFixtures({ [`${C}/bank-accounts`]: ACCOUNTS });
+    await mountPage();
+    await flushUntil(() => byTestId("bank-accounts-offline") !== null);
+    const text = byTestId("bank-accounts-offline")!.textContent ?? "";
+    expect(text).toMatch(/[؀-ۿ]/);
+    expect(text).not.toMatch(/[A-Za-z]/);
+  });
+
+  it("shows offline feedback for saved reconciliations instead of the empty state", async () => {
+    setFixtures({ [`${C}/bank-accounts`]: ACCOUNTS, [RECONCILIATIONS_PATH]: [] });
+    await mount();
+    onlineManager.setOnline(false);
+    await click(document.querySelector('button[aria-label="Reconciliation statement"]'));
+    const dialog = document.querySelector('[role="dialog"]')!;
+    await flushUntil(() => byTestId("bank-history-offline") !== null);
+    expect(dialog.textContent).toContain("You are offline");
+    expect(dialog.textContent).not.toContain("No saved reconciliations yet");
+    await act(async () => onlineManager.setOnline(true));
+    await flushUntil(() => dialog.textContent?.includes("No saved reconciliations yet") === true);
+    expect(byTestId("bank-history-offline")).toBeNull();
+  });
+
+  it("keeps cached accounts and imports with a retry when a background refresh fails", async () => {
+    const batch = {
+      id: "b1",
+      bankAccountId: "a1",
+      fileName: "march.csv",
+      rowCount: 3,
+      importedCount: 3,
+      status: "completed",
+      continuityWarning: null,
+      createdAt: "2026-03-01T00:00:00Z",
+      removedCount: null,
+    };
+    const good = { [`${C}/bank-accounts`]: ACCOUNTS, [IMPORTS_PATH]: [batch] };
+    setFixtures(good);
+    await mount();
+    await flushUntil(() => document.body.textContent?.includes("march.csv") === true);
+
+    await failRefresh(good);
+    await flushUntil(() => byTestId("bank-accounts-refresh-error") !== null);
+    expect(byTestId("bank-imports-refresh-error")).not.toBeNull();
+    expect(byTestId("bank-accounts-error")).toBeNull();
+    expect(document.body.textContent).toContain("Operating");
+    expect(document.body.textContent).toContain("march.csv");
+    expect(document.querySelector('button[aria-label="Undo import"]')).not.toBeNull();
+    expect(document.querySelector('button[aria-label="Reconciliation statement"]')).not.toBeNull();
+
+    setFixtures(good);
+    await click(buttonByText(/^Retry$/, byTestId("bank-accounts-refresh-error")!));
+    await click(buttonByText(/^Retry$/, byTestId("bank-imports-refresh-error")!));
+    await flushUntil(() => byTestId("bank-accounts-refresh-error") === null);
+    expect(byTestId("bank-imports-refresh-error")).toBeNull();
+    expect(document.body.textContent).toContain("Operating");
+  });
+
+  it("keeps cached empty data empty (with a retry) when the refresh fails", async () => {
+    const good = { [`${C}/bank-accounts`]: [], [IMPORTS_PATH]: [] };
+    setFixtures(good);
+    await mount();
+    await flushUntil(() => document.body.textContent?.includes("No imports yet") === true);
+    await failRefresh(good);
+    await flushUntil(() => byTestId("bank-imports-refresh-error") !== null);
+    expect(byTestId("bank-accounts-error")).toBeNull();
+    expect(document.body.textContent).toContain("No bank accounts yet");
+    expect(document.body.textContent).toContain("No imports yet");
+  });
+
+  it("keeps saved reconciliations visible with a retry when their refresh fails", async () => {
+    const row = {
+      id: "r1",
+      periodEnd: "2026-03-31",
+      statementClosingBalance: 100,
+      difference: 0,
+      status: "draft",
+      signedOffAt: null,
+    };
+    const good = { [`${C}/bank-accounts`]: ACCOUNTS, [RECONCILIATIONS_PATH]: [row] };
+    setFixtures(good);
+    await mount();
+    await click(document.querySelector('button[aria-label="Reconciliation statement"]'));
+    const dialog = document.querySelector('[role="dialog"]')!;
+    await flushUntil(() => dialog.textContent?.includes("2026-03-31") === true);
+    await failRefresh(good);
+    await flushUntil(() => byTestId("bank-history-refresh-error") !== null);
+    expect(dialog.textContent).toContain("2026-03-31");
+    expect(buttonByText(/Sign off/, dialog)).not.toBeNull();
+    expect(
+      dialog.querySelector(`a[href="${C}/bank-reconciliations/r1/export?format=pdf"]`)
+    ).not.toBeNull();
+    setFixtures(good);
+    await click(buttonByText(/^Retry$/, byTestId("bank-history-refresh-error")!));
+    await flushUntil(() => byTestId("bank-history-refresh-error") === null);
+    expect(dialog.textContent).toContain("2026-03-31");
+  });
+
+  it("scopes the search to its company when the company changes in place", async () => {
+    setFixtures({ [`${C}/bank-accounts`]: ACCOUNTS });
+    await mount();
+    await search("zzz");
+    expect(document.body.textContent).toContain("No bank accounts match your search");
+    // The no-match state keeps its search input reachable so the search can be cleared.
+    expect(document.querySelector('[data-testid="input-search-bank-accounts"]')).not.toBeNull();
+
+    const second = { ...COMPANY, id: "c0000000-0000-4000-8000-000000000002" };
+    const third = { ...COMPANY, id: "c0000000-0000-4000-8000-000000000003" };
+    const S = `/api/companies/${second.id}`;
+    const T = `/api/companies/${third.id}`;
+
+    // Switch straight to a company whose successful response is empty: the true empty view.
+    setFixtures({
+      [`${C}/bank-accounts`]: ACCOUNTS,
+      [`${S}/bank-accounts`]: [],
+      [`${T}/bank-accounts`]: [ACCOUNTS[1]],
+    });
+    setWorkspaceCompany(second);
+    await rerenderPage(BankAccountsPage);
+    await flushUntil(() => document.body.textContent?.includes("No bank accounts yet") === true);
+    expect(document.body.textContent).toContain("No bank accounts yet");
+    expect(document.body.textContent).not.toContain("No bank accounts match your search");
+
+    // Move to a company with accounts: the first company's term is not applied there.
+    setWorkspaceCompany(third);
+    await rerenderPage(BankAccountsPage);
+    await flushUntil(() => document.body.textContent?.includes("Savings") === true);
+    expect(document.body.textContent).toContain("Savings");
+    const input = document.querySelector(
+      '[data-testid="input-search-bank-accounts"]'
+    ) as HTMLInputElement;
+    expect(input.value).toBe("");
+    expect(document.body.textContent).not.toContain("No bank accounts match your search");
+  });
+
+  it("matches Arabic-Indic digits and Arabic spelling variants", async () => {
+    const arabic = {
+      ...ACCOUNTS[0],
+      id: "a3",
+      nameEn: "الحساب الجاري",
+      bankName: "مصرف الإمارات",
+      accountNumber: "7654",
+    };
+    setFixtures({ [`${C}/bank-accounts`]: [...ACCOUNTS, arabic] });
+    await mount();
+
+    await search("٧٦٥٤"); // Arabic-Indic digits for the account number 7654
+    expect(document.body.textContent).toContain("الحساب الجاري");
+    expect(document.body.textContent).not.toContain("Savings");
+
+    await search("امارات"); // alef without hamza matches "الإمارات"
+    expect(document.body.textContent).toContain("مصرف الإمارات");
+    expect(document.body.textContent).not.toContain("Savings");
+
+    await search("جاري");
+    expect(document.body.textContent).toContain("الحساب الجاري");
+
+    await search("زززز");
+    expect(document.body.textContent).toContain("No bank accounts match your search");
+  });
+});
 
 describe("bank accounts states", { timeout: 90_000 }, () => {
   it("recovers when retrying a failed accounts request", async () => {

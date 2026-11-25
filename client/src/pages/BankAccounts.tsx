@@ -44,6 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { matchesSearchText } from "@shared/arabic-text";
 import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -55,6 +56,7 @@ import {
   Link2,
   Plus,
   RotateCcw,
+  RotateCw,
   Scale,
   Search,
 } from "lucide-react";
@@ -118,6 +120,49 @@ interface SavedReconciliation {
   signedOffAt: string | null;
 }
 
+type SectionKind = "loading" | "offline" | "error" | "ready";
+
+/**
+ * What a list section may show. Empty UI is only allowed once a successful response supplied
+ * data (`ready`); a paused (offline) uncached load, a failed first load and a disabled query are
+ * never "empty". A failed background refresh keeps the cached data (`refreshFailed`).
+ */
+function sectionState(q: {
+  data: unknown;
+  isError: boolean;
+  fetchStatus: "fetching" | "paused" | "idle";
+}): { kind: SectionKind; refreshFailed: boolean } {
+  if (q.data !== undefined) return { kind: "ready", refreshFailed: q.isError };
+  if (q.fetchStatus === "paused") return { kind: "offline", refreshFailed: false };
+  if (q.isError) return { kind: "error", refreshFailed: false };
+  return { kind: "loading", refreshFailed: false };
+}
+
+function RefreshFailed({
+  message,
+  onRetry,
+  testId,
+}: {
+  message: string;
+  onRetry: () => void;
+  testId: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="alert"
+      data-testid={testId}
+      className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-surface-sunken/60 px-3 py-2 text-small text-muted-foreground"
+    >
+      <span>{message}</span>
+      <Button variant="outline" size="sm" onClick={onRetry}>
+        <RotateCw aria-hidden />
+        {t["components.errorRetry"]}
+      </Button>
+    </div>
+  );
+}
+
 const EMPTY_FORM = {
   nameEn: "",
   bankName: "",
@@ -143,17 +188,18 @@ export default function BankAccounts() {
   ]);
   const [relinkGl, setRelinkGl] = useState("");
   const [statementFor, setStatementFor] = useState<BankAccount | null>(null);
-  const [search, setSearch] = useState("");
+  // The search is scoped to the company it was typed under; an in-place company switch shows an
+  // empty search (the scoped term may reappear if the user returns to that company).
+  const [searchState, setSearchState] = useState({ companyId, value: "" });
+  const search = searchState.companyId === companyId ? searchState.value : "";
+  const setSearch = (value: string) => setSearchState({ companyId, value });
 
-  const {
-    data: accounts,
-    isLoading,
-    isError: accountsError,
-    refetch: refetchAccounts,
-  } = useQuery<BankAccount[]>({
+  const accountsQuery = useQuery<BankAccount[]>({
     queryKey: ["/api/companies", companyId, "bank-accounts"],
     enabled: !!companyId,
   });
+  const { data: accounts, refetch: refetchAccounts } = accountsQuery;
+  const accountsState = sectionState(accountsQuery);
   const { data: glAccounts } = useQuery<GlAccount[]>({
     queryKey: ["/api/companies", companyId, "accounts"],
     enabled: !!companyId,
@@ -162,23 +208,18 @@ export default function BankAccounts() {
     queryKey: ["/api/companies", companyId, "bank-accounts", "bank-name-suggestions"],
     enabled: !!companyId,
   });
-  const {
-    data: imports,
-    isLoading: importsLoading,
-    isError: importsError,
-    refetch: refetchImports,
-  } = useQuery<ImportBatch[]>({
+  const importsQuery = useQuery<ImportBatch[]>({
     queryKey: ["/api/companies", companyId, "bank-statements", "imports"],
     enabled: !!companyId,
   });
+  const { data: imports, refetch: refetchImports } = importsQuery;
+  const importsState = sectionState(importsQuery);
 
   const filteredAccounts = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return accounts ?? [];
+    if (!search.trim()) return accounts ?? [];
+    // Arabic-aware: Arabic-Indic digits, alef/yeh/teh-marbuta spellings and "ال" are folded.
     return (accounts ?? []).filter((a) =>
-      [a.nameEn, a.bankName, a.iban, a.accountNumber, a.currency].some((v) =>
-        (v ?? "").toLowerCase().includes(q)
-      )
+      matchesSearchText(search, a.nameEn, a.bankName, a.iban, a.accountNumber, a.currency)
     );
   }, [accounts, search]);
   const searching = search.trim() !== "";
@@ -279,24 +320,40 @@ export default function BankAccounts() {
         </div>
       )}
 
+      {accountsState.refreshFailed && (
+        <RefreshFailed
+          message={tr("banking.common.refreshFailed")}
+          onRetry={() => void refetchAccounts()}
+          testId="bank-accounts-refresh-error"
+        />
+      )}
       <DataTableCard
         status={
-          isLoading
-            ? "loading"
-            : accountsError
-              ? "error"
-              : filteredAccounts.length === 0
-                ? "empty"
-                : "ready"
+          accountsState.kind === "ready"
+            ? filteredAccounts.length === 0
+              ? "empty"
+              : "ready"
+            : accountsState.kind === "loading"
+              ? "loading"
+              : "error"
         }
-        error={{
-          title: tr("banking.accounts.loadError"),
-          description: tr("banking.accounts.loadErrorBody"),
-          onRetry: () => void refetchAccounts(),
-          testId: "bank-accounts-error",
-        }}
+        error={
+          accountsState.kind === "offline"
+            ? {
+                title: tr("banking.common.offline"),
+                description: tr("banking.common.offlineBody"),
+                onRetry: () => void refetchAccounts(),
+                testId: "bank-accounts-offline",
+              }
+            : {
+                title: tr("banking.accounts.loadError"),
+                description: tr("banking.accounts.loadErrorBody"),
+                onRetry: () => void refetchAccounts(),
+                testId: "bank-accounts-error",
+              }
+        }
         empty={
-          searching
+          searching && (accounts?.length ?? 0) > 0
             ? {
                 icon: Search,
                 title: tr("banking.accounts.noMatch"),
@@ -388,22 +445,38 @@ export default function BankAccounts() {
 
       <section className="space-y-3">
         <h2 className="text-h2 text-foreground">{tr("banking.imports.title")}</h2>
+        {importsState.refreshFailed && (
+          <RefreshFailed
+            message={tr("banking.common.refreshFailed")}
+            onRetry={() => void refetchImports()}
+            testId="bank-imports-refresh-error"
+          />
+        )}
         <DataTableCard
           status={
-            importsLoading
-              ? "loading"
-              : importsError
-                ? "error"
-                : !imports || imports.length === 0
-                  ? "empty"
-                  : "ready"
+            importsState.kind === "ready"
+              ? (imports ?? []).length === 0
+                ? "empty"
+                : "ready"
+              : importsState.kind === "loading"
+                ? "loading"
+                : "error"
           }
-          error={{
-            title: tr("banking.imports.loadError"),
-            description: tr("banking.accounts.loadErrorBody"),
-            onRetry: () => void refetchImports(),
-            testId: "bank-imports-error",
-          }}
+          error={
+            importsState.kind === "offline"
+              ? {
+                  title: tr("banking.common.offline"),
+                  description: tr("banking.common.offlineBody"),
+                  onRetry: () => void refetchImports(),
+                  testId: "bank-imports-offline",
+                }
+              : {
+                  title: tr("banking.imports.loadError"),
+                  description: tr("banking.accounts.loadErrorBody"),
+                  onRetry: () => void refetchImports(),
+                  testId: "bank-imports-error",
+                }
+          }
           empty={{ icon: FileSpreadsheet, title: tr("banking.imports.none") }}
         >
           <Table className="row-cards">
@@ -676,12 +749,9 @@ function StatementDialog({
   const [closing, setClosing] = useState("");
   const [statement, setStatement] = useState<Statement | null>(null);
   const historyKey = ["/api/companies", companyId, "bank-accounts", account.id, "reconciliations"];
-  const {
-    data: history,
-    isPending: historyPending,
-    isError: historyError,
-    refetch: refetchHistory,
-  } = useQuery<SavedReconciliation[]>({ queryKey: historyKey });
+  const historyQuery = useQuery<SavedReconciliation[]>({ queryKey: historyKey });
+  const { data: history, refetch: refetchHistory } = historyQuery;
+  const historyState = sectionState(historyQuery);
   const onError = (err: Error) =>
     toast({ variant: "destructive", title: tr("banking.common.error"), description: err?.message });
 
@@ -831,11 +901,29 @@ function StatementDialog({
         )}
         <div>
           <p className="text-sm font-semibold mb-2">{tr("banking.statement.history")}</p>
-          {historyPending ? (
+          {historyState.refreshFailed && (
+            <RefreshFailed
+              message={tr("banking.common.refreshFailed")}
+              onRetry={() => void refetchHistory()}
+              testId="bank-history-refresh-error"
+            />
+          )}
+          {historyState.kind === "loading" ? (
             <p role="status" className="text-small text-muted-foreground">
               {tr("banking.common.loading")}
             </p>
-          ) : historyError ? (
+          ) : historyState.kind === "offline" ? (
+            <p
+              role="alert"
+              data-testid="bank-history-offline"
+              className="text-small text-muted-foreground"
+            >
+              {tr("banking.common.offline")}. {tr("banking.common.offlineBody")}{" "}
+              <Button variant="link" size="sm" onClick={() => void refetchHistory()}>
+                {t["components.errorRetry"]}
+              </Button>
+            </p>
+          ) : historyState.kind === "error" ? (
             <p role="alert" className="text-small text-muted-foreground">
               {tr("banking.statement.historyError")}{" "}
               <Button variant="link" size="sm" onClick={() => void refetchHistory()}>
