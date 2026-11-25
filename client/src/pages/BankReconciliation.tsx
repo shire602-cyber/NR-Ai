@@ -2,8 +2,8 @@ import { MAX_UPLOAD_BYTES } from "@shared/upload-limits";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { accountDisplayName } from "@/lib/account-name";
 import { localizeServerWarning } from "@/lib/validation-messages";
-import { useMemo, useRef, useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useQuery, useMutation, useMutationState, onlineManager } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FileDrop } from "@/components/ui/file-drop";
@@ -298,6 +298,11 @@ function downloadSampleBankCsv() {
   URL.revokeObjectURL(url);
 }
 
+// A paused query is not proof of being offline (an unfocused retry pauses too), so offline copy
+// follows React Query's connectivity state only.
+const subscribeConnectivity = (notify: () => void) => onlineManager.subscribe(notify);
+const isKnownOffline = () => !onlineManager.isOnline();
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function BankReconciliation() {
@@ -309,6 +314,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
   const { t, locale } = useTranslation();
   const { gate } = useCompanyPermission();
   const { toast } = useToast();
+  const knownOffline = useSyncExternalStore(subscribeConnectivity, isKnownOffline);
   const { companyId, companies, isLoading: isLoadingCompany } = company;
   const isActive = () => !!companyId && effectiveCompanyId(companies, companyId) === companyId;
 
@@ -381,6 +387,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     (!statementPreview.requiresChoice || acknowledgeAmbiguity)
   );
 
+  const transactionsKey = ["/api/companies", companyId, "bank-statements", "transactions"];
   const {
     data: transactions,
     isLoading: isLoadingTransactions,
@@ -389,7 +396,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     fetchStatus: transactionsFetchStatus,
     refetch: refetchTransactions,
   } = useQuery<BankTransaction[]>({
-    queryKey: ["/api/companies", companyId, "bank-statements", "transactions"],
+    queryKey: transactionsKey,
     enabled: !!companyId,
   });
   const transactionsPaused = transactionsFetchStatus === "paused";
@@ -414,7 +421,12 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
   const matchesPaused = matchesFetchStatus === "paused";
   const hasMatches = !!matchSuggestions && matchSuggestions.length > 0;
 
-  const { data: reportData, isLoading: isLoadingReport } = useQuery<ReportData>({
+  const {
+    data: reportData,
+    error: reportError,
+    fetchStatus: reportFetchStatus,
+    refetch: refetchReport,
+  } = useQuery<ReportData>({
     queryKey: [
       "/api/companies",
       companyId,
@@ -423,17 +435,20 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
       selectedBankAccount || "all",
     ],
     enabled: !!companyId && reportDialogOpen,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams();
       if (selectedBankAccount) params.set("bankAccountId", selectedBankAccount);
-      return apiRequest("GET", `/api/companies/${companyId}/bank-statements/report?${params}`);
+      const url = `/api/companies/${companyId}/bank-statements/report?${params}`;
+      return apiRequest("GET", url, undefined, undefined, { signal });
     },
   });
+  const reportPaused = reportFetchStatus === "paused";
 
   // ─── Derived state ────────────────────────────────────────────────────────
 
-  // Paused with nothing cached: the request never ran, so it is offline, not an empty import.
-  const transactionsOffline = transactionsPaused && !transactions && !transactionsError;
+  // Paused with nothing cached while disconnected: say offline, never an empty import.
+  const transactionsOffline =
+    knownOffline && transactionsPaused && !transactions && !transactionsError;
 
   // One normalized query drives both the row filter and the search-empty state.
   const normalizedSearch = searchQuery.trim().toLowerCase();
@@ -539,7 +554,51 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     },
   });
 
+  // Match and unmatch share one key so the last outstanding write refreshes the list, and so a
+  // row with a write in flight rejects the opposite write (other rows may still overlap).
+  const rowWriteKey = ["bank-statements", "row-write", companyId];
+  const pendingRowIds = useMutationState({
+    filters: { mutationKey: rowWriteKey, status: "pending" },
+    select: (m) => {
+      const v = m.state.variables as string | { transactionId: string } | undefined;
+      return typeof v === "string" ? v : v?.transactionId;
+    },
+  });
+  const isRowBusy = (id: string) => pendingRowIds.includes(id);
+  const refreshAfterLastRowWrite = () => {
+    // The settling mutation is still counted, so 1 means no other write is outstanding.
+    if (queryClient.isMutating({ mutationKey: rowWriteKey, exact: true }) !== 1) return;
+    queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
+  };
+
+  // Optimistic write to one row of the list; the returned context restores only that row.
+  const patchTransactionRow = async (transactionId: string, patch: Partial<BankTransaction>) => {
+    // Stop in-flight reads (prefix), then write the list's own key.
+    await queryClient.cancelQueries({
+      queryKey: ["/api/companies", companyId, "bank-statements"],
+    });
+    const queryKey = transactionsKey;
+    const previousRow = queryClient
+      .getQueryData<BankTransaction[]>(queryKey)
+      ?.find((tx) => tx.id === transactionId);
+    // An absent list stays absent: returning undefined creates no cache entry.
+    queryClient.setQueryData<BankTransaction[]>(queryKey, (old) =>
+      old?.map((tx) => (tx.id === transactionId ? { ...tx, ...patch } : tx))
+    );
+    return { queryKey, previousRow };
+  };
+  const restoreTransactionRow = (
+    context: Awaited<ReturnType<typeof patchTransactionRow>> | undefined
+  ) => {
+    const previousRow = context?.previousRow;
+    if (!context || !previousRow) return;
+    queryClient.setQueryData<BankTransaction[]>(context.queryKey, (old) =>
+      old?.map((tx) => (tx.id === previousRow.id ? previousRow : tx))
+    );
+  };
+
   const matchMutation = useMutation({
+    mutationKey: rowWriteKey,
     mutationFn: ({
       transactionId,
       matchedId,
@@ -553,25 +612,18 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
         matchedType: matchedType === "journal_entry" ? "journal" : matchedType,
         matchedId,
       }),
-    onMutate: async ({ transactionId, matchedId, matchedType }) => {
-      const queryKey = ["/api/companies", companyId, "bank-statements"] as const;
-      await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<any[]>(queryKey);
-      queryClient.setQueryData<any[]>(
-        queryKey,
-        (old) =>
-          old?.map((tx: any) =>
-            tx.id === transactionId
-              ? {
-                  ...tx,
-                  matchedId,
-                  matchedType: matchedType === "journal_entry" ? "journal" : matchedType,
-                  status: "matched",
-                }
-              : tx
-          ) ?? []
-      );
-      return { previous, queryKey };
+    onMutate: ({ transactionId, matchedId, matchedType }) => {
+      const type = matchedType === "journal_entry" ? "journal" : matchedType;
+      // Only the reference the request names is known here; the refetch fills in the rest.
+      return patchTransactionRow(transactionId, {
+        matchStatus: "matched",
+        isReconciled: true,
+        matchedType: type,
+        matchedJournalEntryId: type === "journal" ? matchedId : null,
+        matchedReceiptId: type === "receipt" ? matchedId : null,
+        matchedInvoiceId: type === "invoice" ? matchedId : null,
+        matchConfidence: 1,
+      });
     },
     onSuccess: () => {
       toast({
@@ -581,58 +633,46 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
       setMatchDialogOpen(false);
       setSelectedTransaction(null);
     },
-    onError: (error: any, _vars, context: any) => {
-      if (context?.previous && context?.queryKey) {
-        queryClient.setQueryData(context.queryKey, context.previous);
-      }
+    onError: (error: any, _vars, context) => {
+      restoreTransactionRow(context);
       toast({
         variant: "destructive",
         title: translateNow("toasts.reconciliationFailed"),
         description: error?.message,
       });
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
-    },
+    onSettled: refreshAfterLastRowWrite,
   });
 
   const unmatchMutation = useMutation({
+    mutationKey: rowWriteKey,
     mutationFn: (transactionId: string) =>
       apiRequest("DELETE", `/api/companies/${companyId}/bank-statements/${transactionId}/match`),
-    onMutate: async (transactionId: string) => {
-      const queryKey = ["/api/companies", companyId, "bank-statements"] as const;
-      await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<any[]>(queryKey);
-      queryClient.setQueryData<any[]>(
-        queryKey,
-        (old) =>
-          old?.map((tx: any) =>
-            tx.id === transactionId
-              ? { ...tx, matchedId: null, matchedType: null, status: "unmatched" }
-              : tx
-          ) ?? []
-      );
-      return { previous, queryKey };
-    },
+    onMutate: (transactionId: string) =>
+      patchTransactionRow(transactionId, {
+        matchStatus: "unmatched",
+        isReconciled: false,
+        matchedType: null,
+        matchedJournalEntryId: null,
+        matchedReceiptId: null,
+        matchedInvoiceId: null,
+        matchConfidence: null,
+      }),
     onSuccess: () => {
       toast({
         title: translateNow("toasts.matchRemoved"),
         description: translateNow("toasts.transactionResetToUnmatched"),
       });
     },
-    onError: (error: any, _id, context: any) => {
-      if (context?.previous && context?.queryKey) {
-        queryClient.setQueryData(context.queryKey, context.previous);
-      }
+    onError: (error: any, _id, context) => {
+      restoreTransactionRow(context);
       toast({
         variant: "destructive",
         title: translateNow("toasts.error"),
         description: error?.message,
       });
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
-    },
+    onSettled: refreshAfterLastRowWrite,
   });
 
   const confirmDraftMutation = useMutation({
@@ -822,6 +862,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
       : tx.matchedInvoiceId
         ? "invoice"
         : "receipt";
+    if (isRowBusy(tx.id)) return;
     matchMutation.mutate({ transactionId: tx.id, matchedId, matchedType });
   };
 
@@ -1056,24 +1097,24 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
             >
               {transactionsPaused ? (
                 <>
-                <p
-                  role="status"
-                  className="px-4 py-3 text-center text-small text-muted-foreground"
-                  data-testid="status-transactions-paused"
-                >
-                  {filteredTransactions.length > 0
-                    ? t["banking.query.pausedCached"]
-                    : t["banking.query.paused"]}
-                </p>
-                {transactionsOffline && (
                   <p
                     role="status"
                     className="px-4 py-3 text-center text-small text-muted-foreground"
-                    data-testid="bank-transactions-offline"
+                    data-testid="status-transactions-paused"
                   >
-                    {t["common.errorHeading.offline"]}
+                    {filteredTransactions.length > 0
+                      ? t["banking.query.pausedCached"]
+                      : t["banking.query.paused"]}
                   </p>
-                )}
+                  {transactionsOffline && (
+                    <p
+                      role="status"
+                      className="px-4 py-3 text-center text-small text-muted-foreground"
+                      data-testid="bank-transactions-offline"
+                    >
+                      {t["common.errorHeading.offline"]}
+                    </p>
+                  )}
                 </>
               ) : transactionsError ? (
                 <ErrorState
@@ -1141,7 +1182,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                             size="sm"
                             variant="ghost"
                             onClick={() => unmatchMutation.mutate(tx.id)}
-                            disabled={unmatchMutation.isPending}
+                            disabled={isRowBusy(tx.id)}
                           >
                             <Unlink aria-hidden />
                             <T k="pageLabels.unmatch" />
@@ -1154,7 +1195,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                             <Button
                               size="sm"
                               onClick={() => handleAcceptSuggestion(tx)}
-                              disabled={matchMutation.isPending}
+                              disabled={isRowBusy(tx.id)}
                             >
                               <Check aria-hidden />
                               <T k="pages.accept" />
@@ -1250,7 +1291,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                                   label={t["pageLabels.unmatch"]}
                                   icon={Unlink}
                                   onClick={() => unmatchMutation.mutate(tx.id)}
-                                  disabled={unmatchMutation.isPending}
+                                  disabled={isRowBusy(tx.id)}
                                 />
                               ) : tx.matchStatus === "suggested" ? (
                                 <>
@@ -1263,7 +1304,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                                     size="sm"
                                     variant="outline"
                                     onClick={() => handleAcceptSuggestion(tx)}
-                                    disabled={matchMutation.isPending}
+                                    disabled={isRowBusy(tx.id)}
                                   >
                                     <Check aria-hidden />
                                     <T k="pages.accept" />
@@ -1383,24 +1424,30 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
               </p>
               {matchesPaused ? (
                 <>
-                <p
-                  role="status"
-                  className="text-center text-small text-muted-foreground"
-                  data-testid="status-matches-paused"
-                >
-                  {hasMatches ? t["banking.query.pausedCached"] : t["banking.query.paused"]}
-                </p>
-                <p
-                  role="status"
-                  className="text-center text-small text-muted-foreground"
-                  data-testid="match-suggestions-offline"
-                >
-                  {t["common.errorHeading.offline"]}
-                </p>
+                  <p
+                    role="status"
+                    className="text-center text-small text-muted-foreground"
+                    data-testid="status-matches-paused"
+                  >
+                    {hasMatches ? t["banking.query.pausedCached"] : t["banking.query.paused"]}
+                  </p>
+                  {knownOffline && (
+                    <p
+                      role="status"
+                      className="text-center text-small text-muted-foreground"
+                      data-testid="match-suggestions-offline"
+                    >
+                      {t["common.errorHeading.offline"]}
+                    </p>
+                  )}
                 </>
               ) : matchesError && !isLoadingMatches ? (
                 <div data-testid="match-suggestions-error">
-                  <ErrorState compact testId="error-matches" onRetry={() => void refetchMatches()} />
+                  <ErrorState
+                    compact
+                    testId="error-matches"
+                    onRetry={() => void refetchMatches()}
+                  />
                 </div>
               ) : null}
               {isLoadingMatches ? (
@@ -1420,6 +1467,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                         key={`${s.matchedType}-${s.matchedId}`}
                         className="rounded-lg border bg-card p-3 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
                         onClick={() =>
+                          !isRowBusy(selectedTransaction!.id) &&
                           matchMutation.mutate({
                             transactionId: selectedTransaction!.id,
                             matchedId: s.matchedId,
@@ -1483,15 +1531,15 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                   className="text-center py-8 text-muted-foreground"
                   data-testid="match-suggestions-empty"
                 >
-                <div data-testid="empty-state-match-suggestions">
-                  <ArrowRightLeft className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                  <p className="text-sm">
-                    <T k="pageLabels.noMatchesFound2" />
-                  </p>
-                  <p className="text-xs mt-1">
-                    <T k="pageLabels.tryReconcilingManuallyViaJournalEntries" />
-                  </p>
-                </div>
+                  <div data-testid="empty-state-match-suggestions">
+                    <ArrowRightLeft className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                    <p className="text-sm">
+                      <T k="pageLabels.noMatchesFound2" />
+                    </p>
+                    <p className="text-xs mt-1">
+                      <T k="pageLabels.tryReconcilingManuallyViaJournalEntries" />
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -1872,14 +1920,25 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                 : t["banking.report.descriptionAll"]}
             </DialogDescription>
           </DialogHeader>
-          {isLoadingReport ? (
-            <div className="space-y-3" aria-busy="true">
-              <Skeleton className="h-20 w-full" />
-              <Skeleton className="h-2 w-full" />
-              <Skeleton className="h-32 w-full" />
-            </div>
-          ) : reportData ? (
+          {reportData ? (
             <div className="space-y-4">
+              {/* A paused or failed refresh keeps the last loaded totals, with a notice. */}
+              {reportPaused ? (
+                <p
+                  role="status"
+                  className="text-center text-small text-muted-foreground"
+                  data-testid="report-refresh-paused"
+                >
+                  {t["banking.query.pausedCached"]}
+                </p>
+              ) : reportError ? (
+                <ErrorState
+                  compact
+                  testId="report-refresh-error"
+                  description={t["banking.common.refreshFailed"]}
+                  onRetry={() => void refetchReport()}
+                />
+              ) : null}
               {/* Status breakdown */}
               <div>
                 <p className="text-xs font-semibold text-muted-foreground mb-2">
@@ -2000,7 +2059,26 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                 </>
               )}
             </div>
-          ) : null}
+          ) : reportPaused ? (
+            <div className="space-y-2 text-center text-small text-muted-foreground">
+              <p role="status" data-testid="report-paused">
+                {t["banking.query.paused"]}
+              </p>
+              {knownOffline && (
+                <p role="status" data-testid="report-offline">
+                  {t["common.errorHeading.offline"]}
+                </p>
+              )}
+            </div>
+          ) : reportError ? (
+            <ErrorState compact testId="report-load-error" onRetry={() => void refetchReport()} />
+          ) : (
+            <div className="space-y-3" aria-busy="true" data-testid="report-loading">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-2 w-full" />
+              <Skeleton className="h-32 w-full" />
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setReportDialogOpen(false)}>
               <T k="banking.common.close" />

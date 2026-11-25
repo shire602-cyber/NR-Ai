@@ -165,13 +165,20 @@ export function portalQuery<T = any>(
   };
 }
 
+interface RequestOptions {
+  queueWhenOffline?: boolean;
+  keepalive?: boolean;
+  /** React Query's cancellation signal, for reads. */
+  signal?: AbortSignal;
+}
+
 export function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
   /** Extra request headers, e.g. `X-Period-Lock-Reason` for an audited soft-lock override. */
   extraHeaders?: Record<string, string>,
-  options?: { queueWhenOffline?: boolean; keepalive?: boolean }
+  options?: RequestOptions
 ): Promise<any> {
   const authHeaders = PORTAL_API_PREFIX.test(url) ? portalRequestHeaders() : getAuthHeaders();
   return requestWithHeaders(method, url, data, authHeaders, extraHeaders, options);
@@ -183,7 +190,7 @@ async function requestWithHeaders(
   data: unknown,
   authHeaders: Record<string, string>,
   extraHeaders?: Record<string, string>,
-  options?: { queueWhenOffline?: boolean; keepalive?: boolean }
+  options?: RequestOptions
 ): Promise<any> {
   const withExtra = (h: Record<string, string>) => (extraHeaders ? { ...h, ...extraHeaders } : h);
   const upperMethod = method.toUpperCase();
@@ -208,6 +215,7 @@ async function requestWithHeaders(
       body,
       credentials: "include",
       keepalive: options?.keepalive,
+      signal: options?.signal,
     });
 
   // If we're offline and this is a mutation, queue it for the service worker
@@ -275,7 +283,7 @@ const ANONYMOUS_SKIP_KEYS = new Set(["/api/companies", "/api/auth/me"]);
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
+  async ({ queryKey, signal }) => {
     const url = apiUrl(queryKey.join("/") as string);
     // R18-04: anonymous visitors have no session, so skip the bootstrap probes
     // that would only produce 401 console noise. This resolves exactly as the
@@ -290,6 +298,7 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
       (await fetch(url, {
         credentials: "include",
         headers: getAuthHeaders(),
+        signal,
       }));
 
     if (res.status === 401) {
@@ -298,6 +307,7 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
         res = await fetch(url, {
           credentials: "include",
           headers: getAuthHeaders(),
+          signal,
         });
       }
     }

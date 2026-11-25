@@ -4,10 +4,11 @@
  * showing the "No bank transactions / import a statement" empty state, in English and Arabic.
  * Also pins the empty-state precedence (selected account, hidden reconciled rows, normalized
  * query) and the match dialog's offline / empty / failed-refresh states (real React Query).
+ * PR163: paused copy while online, match/unmatch cache writes and cancellation, report states.
  */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { QueryClientProvider, onlineManager } from "@tanstack/react-query";
+import { QueryClientProvider, focusManager, onlineManager } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearAuthHint, setAuthHint } from "../../client/src/lib/authHint";
 import enBanking from "../../client/src/locales/en/banking.json";
@@ -55,11 +56,35 @@ const suggestion = {
   matchedAmount: 42,
 };
 
+const report = {
+  summary: {
+    totalTransactions: 7,
+    reconciledCount: 3,
+    unreconciledCount: 4,
+    suggestedCount: 0,
+    reconciledPct: 43,
+  },
+  amounts: {
+    totalCredits: 1234,
+    totalDebits: 0,
+    netAmount: 1234,
+    reconciledCredits: 0,
+    reconciledDebits: 0,
+    unreconciledCredits: 1234,
+    unreconciledDebits: 0,
+  },
+};
+
+const TRANSACTIONS_KEY = ["/api/companies", "c-1", "bank-statements", "transactions"];
+const REPORT_KEY = ["/api/companies", "c-1", "bank-statements", "report", "all"];
+
 // Per-test fixtures read by the fetch stub.
 let transactions: Array<Record<string, unknown>>;
 let bankAccounts: Array<Record<string, unknown>>;
 let suggestionsReply: () => Response;
-let transactionsReply: () => Response | Promise<Response>;
+let transactionsReply: (init?: RequestInit) => Response | Promise<Response>;
+let reportReply: (init?: RequestInit) => Response | Promise<Response>;
+let matchReply: () => Response | Promise<Response>;
 
 beforeAll(async () => {
   (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= class {
@@ -79,13 +104,17 @@ beforeEach(() => {
   bankAccounts = [];
   suggestionsReply = () => json([]);
   transactionsReply = () => json(transactions);
+  reportReply = () => json(report);
+  matchReply = () => json({});
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/csrf-token")) return json({ csrfToken: "x" });
       if (/\/api\/companies$/.test(url)) return json([{ id: "c-1", name: "Oasis" }]);
-      if (url.endsWith("/bank-statements/transactions")) return transactionsReply();
+      if (url.endsWith("/bank-statements/transactions")) return transactionsReply(init);
+      if (url.includes("/bank-statements/report?")) return reportReply(init);
+      if (url.endsWith("/match")) return matchReply();
       if (url.endsWith("/bank-accounts")) return json(bankAccounts);
       if (url.endsWith("/suggestions")) return suggestionsReply();
       return json([]);
@@ -98,6 +127,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   onlineManager.setOnline(true);
+  focusManager.setFocused(undefined);
   clearAuthHint();
   act(() => root.unmount());
   container.remove();
@@ -358,5 +388,325 @@ describe("bank reconciliation match dialog states", () => {
     await openMatchDialog();
     expect(byTestId("match-suggestions-error")).not.toBeNull();
     expect(byTestId("match-suggestions-empty")).toBeNull();
+  }, 60_000);
+});
+
+/** Past the app client's first retry delay (1 s), where an unfocused retry pauses. */
+const waitForRetry = async () => {
+  await act(async () => new Promise((r) => setTimeout(r, 1_200)));
+  await flush(4);
+};
+
+describe("bank reconciliation paused copy while online (unfocused retry)", () => {
+  const copy = {
+    en: { banking: enBanking, common: enCommon },
+    ar: { banking: arBanking, common: arCommon },
+  } as const;
+  const failing = () => json({ message: "boom" }, 500);
+
+  for (const locale of ["en", "ar"] as const) {
+    const paused = (copy[locale].banking as Record<string, string>)["banking.query.paused"]!;
+    const offline = (copy[locale].common as Record<string, string>)["common.errorHeading.offline"]!;
+
+    it(`does not claim the transaction list is offline (${locale})`, async () => {
+      focusManager.setFocused(false);
+      transactionsReply = failing;
+      await mountPage(locale);
+      await waitForRetry();
+      expect(onlineManager.isOnline()).toBe(true);
+      expect(byTestId("status-transactions-paused")!.textContent).toBe(paused);
+      expect(byTestId("bank-transactions-offline")).toBeNull();
+      expect(document.body.textContent).not.toContain(offline);
+      expect(byTestId("empty-state-bank-transactions")).toBeNull();
+
+      transactionsReply = () => json([]);
+      await act(async () => focusManager.setFocused(true));
+      await flush();
+      expect(byTestId("status-transactions-paused")).toBeNull();
+      expect(byTestId("empty-state-bank-transactions")).not.toBeNull();
+    }, 60_000);
+
+    it(`does not claim the match search is offline (${locale})`, async () => {
+      await mountPage(locale);
+      focusManager.setFocused(false);
+      suggestionsReply = failing;
+      await openMatchDialog();
+      await waitForRetry();
+      expect(byTestId("status-matches-paused")!.textContent).toBe(paused);
+      expect(byTestId("match-suggestions-offline")).toBeNull();
+      expect(document.body.textContent).not.toContain(offline);
+      expect(byTestId("match-suggestions-empty")).toBeNull();
+    }, 60_000);
+  }
+});
+
+describe("bank reconciliation match and unmatch cache writes", () => {
+  const PREFIX = ["/api/companies", "c-1", "bank-statements"];
+  const suggested = {
+    ...baseTx,
+    id: "t-1",
+    matchStatus: "suggested",
+    matchedJournalEntryId: "je-1",
+  };
+  // Prefer the enabled button: a row with a write in flight disables its own action, so with
+  // two rows showing the same label (e.g. Unmatch) the enabled one is the row still to act on.
+  const mobileButton = (label: string) => {
+    const matches = Array.from(
+      byTestId("mobile-bank-transaction-list")!.querySelectorAll("button")
+    ).filter((b) => b.textContent?.trim() === label);
+    return (matches.find((b) => !b.disabled) ?? matches[0])!;
+  };
+
+  /** Hold a transactions refresh and the write, so the optimistic state can be observed. */
+  async function startWrite(
+    client: Awaited<ReturnType<typeof mountPage>>,
+    click: () => void
+  ): Promise<{ signal: AbortSignal; fail: () => Promise<void> }> {
+    let signal!: AbortSignal;
+    transactionsReply = (init) => {
+      signal = init!.signal!;
+      return new Promise<Response>(() => {});
+    };
+    await act(async () => {
+      void client.refetchQueries({ queryKey: TRANSACTIONS_KEY, exact: true });
+    });
+    await flush(4);
+    expect(signal.aborted).toBe(false);
+    let respond!: (response: Response) => void;
+    matchReply = () => new Promise<Response>((resolve) => (respond = resolve));
+    await act(async () => click());
+    await flush();
+    const held = signal;
+    return {
+      signal: held,
+      fail: async () => {
+        transactionsReply = () => new Promise<Response>(() => {});
+        await act(async () => respond(json({ message: "nope" }, 409)));
+        await flush();
+      },
+    };
+  }
+
+  type Rows = Array<Record<string, unknown>>;
+  const reconciled = {
+    ...baseTx,
+    id: "t-1",
+    isReconciled: true,
+    matchStatus: "matched",
+    matchedType: "invoice",
+    matchedInvoiceId: "inv-1",
+    matchedReceiptId: "rc-1",
+    matchedJournalEntryId: "je-1",
+    matchConfidence: 1,
+  };
+  const showReconciledRows = async () =>
+    act(async () => document.getElementById("show-reconciled")!.click());
+
+  for (const [name, row, label, expected] of [
+    [
+      "match",
+      suggested,
+      "pages.accept",
+      {
+        matchStatus: "matched",
+        isReconciled: true,
+        matchedType: "journal",
+        matchedJournalEntryId: "je-1",
+        matchedReceiptId: null,
+        matchedInvoiceId: null,
+        matchConfidence: 1,
+      },
+    ],
+    [
+      "unmatch",
+      reconciled,
+      "pageLabels.unmatch",
+      {
+        matchStatus: "unmatched",
+        isReconciled: false,
+        matchedType: null,
+        matchedJournalEntryId: null,
+        matchedReceiptId: null,
+        matchedInvoiceId: null,
+        matchConfidence: null,
+      },
+    ],
+  ] as const) {
+    it(`${name} aborts the in-flight list read, writes the list key and rolls back`, async () => {
+      transactions = [row];
+      const client = await mountPage("en");
+      if (row.isReconciled) await showReconciledRows();
+      const { translateNow } = await import("../../client/src/lib/i18n");
+      const before = client.getQueryData<Rows>(TRANSACTIONS_KEY)!;
+      const original = structuredClone(before);
+      const write = await startWrite(client, () => mobileButton(translateNow(label)).click());
+
+      expect(write.signal.aborted).toBe(true);
+      const optimistic = client.getQueryData<Rows>(TRANSACTIONS_KEY)!;
+      expect(optimistic[0]).toEqual({ ...row, ...expected });
+      expect(optimistic).not.toBe(before);
+      expect(before).toEqual(original);
+      expect(client.getQueryState(PREFIX)).toBeUndefined();
+      if (name === "match") {
+        // Reconciled rows are hidden by default, so the accepted row leaves the view.
+        expect(byTestId("empty-state-all-reconciled")).not.toBeNull();
+      } else {
+        expect(byTestId("mobile-button-match-t-1")).not.toBeNull();
+      }
+
+      await write.fail();
+      expect(client.getQueryData(TRANSACTIONS_KEY)).toEqual(original);
+      expect(mobileButton(translateNow(label))).toBeDefined();
+    }, 60_000);
+  }
+
+  it("rolls back only the failed row when a match and an unmatch overlap", async () => {
+    transactions = [suggested, { ...reconciled, id: "t-2" }];
+    const client = await mountPage("en");
+    await showReconciledRows();
+    const { translateNow } = await import("../../client/src/lib/i18n");
+    transactionsReply = () => new Promise<Response>(() => {});
+    const responders: Array<(response: Response) => void> = [];
+    matchReply = () => new Promise<Response>((resolve) => responders.push(resolve));
+    for (const label of ["pages.accept", "pageLabels.unmatch"]) {
+      await act(async () => mobileButton(translateNow(label)).click());
+      await flush();
+    }
+    expect(responders).toHaveLength(2);
+
+    await act(async () => responders[0]!(json({ message: "nope" }, 409)));
+    await flush();
+    const rows = client.getQueryData<Rows>(TRANSACTIONS_KEY)!;
+    expect(rows[0]).toEqual(suggested);
+    expect(rows[1]).toMatchObject({
+      matchStatus: "unmatched",
+      isReconciled: false,
+      matchedInvoiceId: null,
+    });
+  }, 60_000);
+
+  it("does not create a transactions cache entry when there is none", async () => {
+    suggestionsReply = () => json([suggestion]);
+    const client = await mountPage("en");
+    await openMatchDialog();
+    // The mounted list refetches on its next render; hold that so the cache stays empty.
+    transactionsReply = () => new Promise<Response>(() => {});
+    client.removeQueries({ queryKey: TRANSACTIONS_KEY, exact: true });
+    matchReply = () => new Promise<Response>(() => {});
+    const card = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"] p')).find((p) =>
+      p.textContent?.includes("INV-1042")
+    )!;
+    await act(async () => card.click());
+    await flush();
+    expect(client.getQueryData(TRANSACTIONS_KEY)).toBeUndefined();
+    expect(client.getQueryData(PREFIX)).toBeUndefined();
+  }, 60_000);
+});
+
+describe("read cancellation reaches fetch", () => {
+  it("passes the signal to the shared loader's request and its retry after a session refresh", async () => {
+    const { getQueryFn } = await import("../../client/src/lib/queryClient");
+    const signals: Array<AbortSignal | null | undefined> = [];
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/api/csrf-token")) return json({ csrfToken: "x" });
+      if (url.endsWith("/api/auth/refresh")) return json({});
+      signals.push(init?.signal);
+      return signals.length === 1 ? json({ message: "expired" }, 401) : json([]);
+    });
+    const { signal } = new AbortController();
+    await getQueryFn({ on401: "throw" })({
+      queryKey: ["/api/things"],
+      signal,
+    } as never);
+    expect(signals).toEqual([signal, signal]);
+  });
+});
+
+describe("bank reconciliation report dialog states", () => {
+  async function openReport() {
+    const trigger = document.querySelector<HTMLElement>(
+      `button[aria-label="${(enBanking as Record<string, string>)["banking.recon.moreActions"]}"]`
+    )!;
+    await act(async () => {
+      trigger.focus();
+      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((o) =>
+      o.textContent?.includes((enBanking as Record<string, string>)["banking.recon.report"]!)
+    )!;
+    await act(async () => item.click());
+    await flush();
+  }
+  const dialogText = () => document.querySelector('[role="dialog"]')!.textContent ?? "";
+  const retry = async (id: string) => {
+    await act(async () => byTestId(id)!.querySelector<HTMLButtonElement>("button")!.click());
+    await flush();
+  };
+  const refresh = async (client: Awaited<ReturnType<typeof mountPage>>) => {
+    await act(async () => {
+      void client.refetchQueries({ queryKey: REPORT_KEY, exact: true });
+    });
+    await flush();
+  };
+
+  it("shows loading, then aborts the held request when it is cancelled", async () => {
+    let signal!: AbortSignal;
+    reportReply = (init) => {
+      signal = init!.signal!;
+      return new Promise<Response>(() => {});
+    };
+    const client = await mountPage("en");
+    await openReport();
+    expect(byTestId("report-loading")).not.toBeNull();
+    expect(signal.aborted).toBe(false);
+    await act(async () => client.cancelQueries({ queryKey: REPORT_KEY, exact: true }));
+    expect(signal.aborted).toBe(true);
+  }, 60_000);
+
+  it("offers retry after a failed first load, then keeps totals through a failed refresh", async () => {
+    reportReply = () => json({ message: "boom" }, 404);
+    const client = await mountPage("en");
+    await openReport();
+    expect(byTestId("report-load-error")).not.toBeNull();
+    expect(byTestId("report-loading")).toBeNull();
+    expect(dialogText()).not.toContain("1,234");
+
+    reportReply = () => json(report);
+    await retry("report-load-error");
+    expect(byTestId("report-load-error")).toBeNull();
+    expect(dialogText()).toContain("1,234");
+
+    reportReply = () => json({ message: "boom" }, 404);
+    await refresh(client);
+    expect(byTestId("report-refresh-error")!.textContent).toContain(
+      (enBanking as Record<string, string>)["banking.common.refreshFailed"]
+    );
+    expect(dialogText()).toContain("1,234");
+
+    reportReply = () => json(report);
+    await retry("report-refresh-error");
+    expect(byTestId("report-refresh-error")).toBeNull();
+
+    await act(async () => onlineManager.setOnline(false));
+    await refresh(client);
+    expect(byTestId("report-refresh-paused")).not.toBeNull();
+    expect(dialogText()).toContain("1,234");
+  }, 60_000);
+
+  it("shows a paused first load, with offline wording only when known offline", async () => {
+    await mountPage("en");
+    await act(async () => onlineManager.setOnline(false));
+    await openReport();
+    expect(byTestId("report-paused")).not.toBeNull();
+    expect(byTestId("report-offline")).not.toBeNull();
+    expect(byTestId("report-loading")).toBeNull();
+
+    focusManager.setFocused(false);
+    reportReply = () => json({ message: "boom" }, 500);
+    await act(async () => onlineManager.setOnline(true));
+    await waitForRetry();
+    expect(byTestId("report-paused")).not.toBeNull();
+    expect(byTestId("report-offline")).toBeNull();
   }, 60_000);
 });

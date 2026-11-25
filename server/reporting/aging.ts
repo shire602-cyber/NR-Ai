@@ -413,7 +413,7 @@ export async function agedPayablesWithVendors(
 ): Promise<{ report: AgingReport; vendorOf: Map<string, string> }> {
   const { companyId, asOf } = args;
   // Share a pool checkout and statement snapshot across the bills, credits and ledger totals.
-const values = [companyId, asOf, ...CONTROL_ACCOUNT.payable];
+  const values = [companyId, asOf, ...CONTROL_ACCOUNT.payable];
   // Let PostgreSQL reuse parsing and, when it selects a generic plan, planning on pooled sessions.
   const { rows } =
     q === pool && getPoolStats().driver === "pg"
