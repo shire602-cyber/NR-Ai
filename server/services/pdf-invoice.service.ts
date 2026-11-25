@@ -25,6 +25,7 @@ import {
   lineVatRate,
   ltr,
   MM,
+  sellerIdentity,
   money,
   trnLine,
   type Bi,
@@ -864,18 +865,23 @@ export async function generateDeliveryNotePDF(
   company: Company,
   options: { locale?: PdfLocale } = {}
 ): Promise<Buffer> {
+  const locale = options.locale ?? pdfLocale(company);
   const ledger = new Ledger({
-    locale: options.locale ?? pdfLocale(company),
+    locale,
     info: { Title: `Delivery Note ${invoice.number}`, Author: company.name },
   });
+  const seller = sellerIdentity(company, locale);
   ledger.header({
-    companyName: company.legalName || company.name,
-    details: companyDetails(ledger, {
-      trn: company.trnVatNumber,
-      address: company.businessAddress,
-      phone: company.contactPhone,
-      email: company.contactEmail,
-    }),
+    companyName: seller.name,
+    details: [
+      ...seller.otherNames,
+      ...companyDetails(ledger, {
+        trn: company.trnVatNumber,
+        address: seller.addresses,
+        phone: company.contactPhone,
+        email: company.contactEmail,
+      }),
+    ],
     title: bi("Delivery note", "إشعار تسليم"),
   });
   ledger.meta([
