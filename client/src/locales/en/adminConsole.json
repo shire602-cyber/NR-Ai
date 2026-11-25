@@ -437,7 +437,7 @@
   "adminConsole.planHelp": "Set the plan a customer chose while online payment is not available. The change is recorded in the audit log.",
   "adminConsole.planLabel": "Plan",
   "adminConsole.planCycle": "Billing",
-  "adminConsole.planNone": "No plan (trial, then locked)",
+  "adminConsole.planNone": "No plan (trial, then read-only)",
   "adminConsole.planApply": "Apply plan",
   "adminConsole.planExtendTrial": "Extend trial by {days} days",
   "adminConsole.planSaved": "Plan updated",
