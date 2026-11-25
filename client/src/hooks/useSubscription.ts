@@ -105,7 +105,13 @@ export function useCompanySubscription(watchTrial = false, enabled = true) {
 
 export function useSubscription() {
   const { companyId } = useDefaultCompany();
-  const { data: subData, isLoading: subLoading, isError: subError } = useCompanySubscription();
+  const {
+    data: subData,
+    isLoading: subLoading,
+    isError: subError,
+    error: subLoadError,
+    refetch: refetchSubscription,
+  } = useCompanySubscription();
 
   const { data: usageData, isLoading: usageLoading } = useQuery<UsageData>({
     queryKey: ["/api/companies", companyId, "billing", "usage"],
@@ -164,6 +170,11 @@ export function useSubscription() {
     canWrite,
     getRequiredTier,
     isLoading: subLoading || usageLoading,
+    /** The plan could not be loaded (not a missing billing module, which resolves to null). */
+    loadError: subError && !subData ? (subLoadError ?? new Error("load failed")) : null,
+    retryLoad: () => {
+      void refetchSubscription();
+    },
   };
 }
 

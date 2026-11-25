@@ -21,6 +21,7 @@ import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Button } from "@/components/ui/button";
 import { formatMoneyText, formatAmountDigits } from "@/lib/format-money";
 import { formatDate as formatDisplayDate } from "@/lib/format-date";
@@ -304,6 +305,8 @@ export default function Subscription() {
     trial,
     trialLocked,
     isLoading,
+    loadError,
+    retryLoad,
     checkoutAvailable,
     chosenPlan,
     activationRequestedAt,
@@ -401,6 +404,21 @@ export default function Subscription() {
       <div className="flex min-h-[60vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <SettingsLayout>
+        <div className="space-y-6">
+          <PageHeader
+            eyebrow={t["pages.companyProfileEyebrow"]}
+            title={t["pages.subscriptionPageTitle"]}
+            description={t["pages.subscriptionPlanPageDescription"]}
+          />
+          <LoadErrorState error={loadError} onRetry={retryLoad} testId="subscription-load-error" />
+        </div>
+      </SettingsLayout>
     );
   }
 

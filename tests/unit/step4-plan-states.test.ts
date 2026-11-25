@@ -425,6 +425,29 @@ describe.each(["en", "ar"] as const)("Settings > Billing states (%s)", (locale) 
     await render(createElement(Subscription));
   }
 
+  it("a failed plan load shows a translated error with Retry, not an empty plan page", async () => {
+    const retry = vi.fn();
+    sub.state = {
+      ...stateFor("running-none"),
+      planState: null,
+      entitlement: null,
+      trial: null,
+      subscription: undefined,
+      loadError: Object.assign(new Error("boom"), { status: 500 }),
+      retryLoad: retry,
+    };
+    const { default: Subscription } = await import("../../client/src/pages/Subscription");
+    await render(createElement(Subscription));
+    const err = q("subscription-load-error");
+    expect(err).not.toBeNull();
+    expect(text(err!)).toContain(L("Try again", "أعد المحاولة"));
+    expect(text()).not.toContain("boom");
+    expect(q("plan-choose-professional")).toBeNull();
+    const btn = err!.querySelector("button")!;
+    await act(async () => btn.click());
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
   it("running + chosen: honest 'choosing alone does not keep you working', sentence-form billing, trial caps", async () => {
     await page("running-chosen");
     const body = text();
