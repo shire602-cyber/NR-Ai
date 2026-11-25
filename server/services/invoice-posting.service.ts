@@ -22,6 +22,7 @@
 // (invoice-state-machine.ts) with conditional transitionRow updates.
 
 import { type JournalLineKey, journalLine, journalMemo } from "@shared/journal-memo";
+import Decimal from "decimal.js";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
@@ -51,7 +52,7 @@ import {
   type LedgerTx,
   type PostJournalLineInput,
 } from "../ledger";
-import { allocate, fromFils, mulRate, sumFils, toFils } from "../../shared/money";
+import { allocate, fromFils, mulRate, RATE_DECIMALS, sumFils, toFils } from "../../shared/money";
 import {
   REVENUE_ACCOUNT_CODES,
   type RevenueAccountRole,
@@ -289,12 +290,17 @@ export function toBase(docFils: number, rate: string): number {
 const dateOnly = (d: Date | string) =>
   (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10);
 
+const REMAINING_CREDIT_SOURCE = "remaining_credit";
+
 /** Compute a stored document's totals from its stored lines. */
 export function totalsForStoredDocument(
-  invoice: Pick<Invoice, "discountType" | "discountValue" | "reverseCharge">,
+  invoice: Pick<
+    Invoice,
+    "discountType" | "discountValue" | "reverseCharge" | "vatAmount" | "source"
+  >,
   lines: InvoiceLine[]
 ): SalesDocumentTotals {
-  return computeSalesDocument(
+  const totals = computeSalesDocument(
     lines.map((l) =>
       storedLineToTotalsInput({
         ...l,
@@ -308,6 +314,29 @@ export function totalsForStoredDocument(
       reverseCharge: invoice.reverseCharge,
     }
   );
+  // Use the tax printed on the document, including on invoices issued under the earlier
+  // rounding method and credits that clear the exact VAT remaining after partial credits.
+  const vatFils = toFils(Math.abs(Number(invoice.vatAmount)), { rounding: "halfUp" });
+  if (invoice.source === REMAINING_CREDIT_SOURCE) {
+    // Generated credits have one line per treatment. The margin line's price includes its
+    // allocated VAT. The rest of the printed VAT belongs to the ordinary standard-rated line.
+    let marginVatFils = 0;
+    for (const [i, line] of totals.lines.entries()) {
+      line.netFils = Math.abs(toFils(lines[i].netAmount ?? 0, { rounding: "halfUp" }));
+      if (line.marginFils !== null) {
+        line.marginFils =
+          line.netFils - toFils(lines[i].marginPurchaseCost ?? 0, { rounding: "halfUp" });
+        line.vatFils = line.grossFils - line.netFils;
+        marginVatFils += line.vatFils;
+      }
+    }
+    const ordinary = totals.lines.find(
+      (line) => line.classification.chargedVatRate > 0 && line.marginFils === null
+    );
+    if (ordinary) ordinary.vatFils = vatFils - marginVatFils;
+    totals.subtotalFils = sumFils(totals.lines.map((line) => line.netFils));
+  }
+  return { ...totals, vatFils, totalFils: totals.subtotalFils + vatFils };
 }
 
 /** Evaluate under the invoice lock to order new VAT claims and receipts across transactions.
@@ -858,6 +887,75 @@ interface OriginalLeg {
   remainingForeign: number;
 }
 
+/**
+ * Convert the credited document amount once per revenue role, then place that base
+ * on the named centres. A centre may absorb more than one rounding fil when the
+ * others are already at their remaining base, so the role total stays intact.
+ * Fils that still cannot be placed are piled onto a centre that has base left, and
+ * the caller's balance check rejects the credit. A centre with no base left keeps
+ * zero so its document-currency residual can still be cleared.
+ */
+function creditBucketBaseAmounts(buckets: RevenueBucket[], legs: OriginalLeg[], rate: string) {
+  const rounded = new Map<RevenueBucket, number>();
+  const FxDecimal = Decimal.clone({ precision: 40 });
+  const fxRate = new FxDecimal(rate).toDecimalPlaces(RATE_DECIMALS, Decimal.ROUND_HALF_UP);
+  for (const role of new Set(buckets.map((b) => b.role))) {
+    const group = buckets.filter((b) => b.role === role);
+    const roleBase = toBase(sumFils(group.map((b) => b.netFils)), rate);
+    const parts = group.map((bucket) => {
+      const exact = fxRate.times(bucket.netFils);
+      const floor = exact.floor();
+      const available =
+        bucket.costCenterId === null
+          ? Number.POSITIVE_INFINITY
+          : sumFils(
+              legs
+                .filter((l) => l.role === role && l.costCenterId === bucket.costCenterId)
+                .map((l) => Math.max(0, l.remainingBase))
+            );
+      return {
+        bucket,
+        base: Math.min(floor.toNumber(), available),
+        fraction: exact.minus(floor),
+        available,
+        added: 0,
+      };
+    });
+    let remainder = roleBase - sumFils(parts.map((p) => p.base));
+    while (remainder > 0) {
+      let best = -1;
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (part.base >= part.available) continue;
+        if (best < 0) {
+          best = i;
+          continue;
+        }
+        const chosen = parts[best];
+        const cmp = part.fraction.comparedTo(chosen.fraction);
+        if (
+          cmp > 0 ||
+          (cmp === 0 && (part.added < chosen.added || (part.added === chosen.added && i < best)))
+        ) {
+          best = i;
+        }
+      }
+      if (best < 0) break;
+      parts[best].base++;
+      parts[best].added++;
+      remainder--;
+    }
+    // Base that still cannot be placed must fail the centre check. A centre with no
+    // base left keeps a zero allocation so its document-currency residual can post.
+    if (remainder > 0) {
+      const sink = parts.find((part) => part.available > 0);
+      if (sink) sink.base += remainder;
+    }
+    for (const { bucket, base } of parts) rounded.set(bucket, base);
+  }
+  return rounded;
+}
+
 async function originalLegs(
   tx: LedgerTx,
   original: Invoice,
@@ -976,59 +1074,70 @@ async function postCreditNoteInTx(args: {
 
   type Debit = { leg: OriginalLeg; base: number; foreign: number };
   const debits: Debit[] = [];
+  // Reserve named centres first and validate them even when mirroring the final balance.
+  const buckets = revenueBuckets(totals, args.lines).sort(
+    (a, b) => Number(b.costCenterId !== null) - Number(a.costCenterId !== null)
+  );
+  const baseAmounts = mode === "lines" ? creditBucketBaseAmounts(buckets, revenueLegs, rate) : null;
+  for (const bucket of buckets) {
+    const { role, netFils: docFils, costCenterId } = bucket;
+    if (mode === "remaining" && costCenterId === null) continue;
+    const base = baseAmounts?.get(bucket) ?? docFils;
+    // A final reversal mirrors the posted base amounts, including FX rounding residuals.
+    // A centre whose base is already consumed can still owe document currency.
+    const useForeignBalance = foreign && (mode === "remaining" || base === 0);
+    const roleLegs = revenueLegs.filter(
+      (leg) =>
+        leg.role === role &&
+        (leg.remainingBase > 0 || (foreign && leg.remainingForeign > 0)) &&
+        (costCenterId === null || leg.costCenterId === costCenterId)
+    );
+    if (!roleLegs.length) {
+      throw new DomainError(
+        "CREDIT_LINE_NOT_ON_INVOICE",
+        422,
+        { role, costCenterId },
+        `The invoice has no ${role.replace(/_/g, " ")} revenue left to credit at the requested cost centre.`
+      );
+    }
+    const requested = useForeignBalance ? docFils : base;
+    const remaining = sumFils(
+      roleLegs.map((leg) => (useForeignBalance ? leg.remainingForeign : leg.remainingBase))
+    );
+    if (requested > remaining) {
+      throw new DomainError(
+        "CREDIT_EXCEEDS_REMAINING",
+        409,
+        { role, requested: fromFils(requested), remaining: fromFils(remaining) },
+        "Credit amount exceeds the remaining creditable revenue on the invoice."
+      );
+    }
+    if (mode === "remaining") continue;
+
+    const weights = roleLegs.map((l) =>
+      Math.max(0, base === 0 ? l.remainingForeign : l.remainingBase)
+    );
+    const baseParts = allocate(base, weights);
+    const docParts = allocate(docFils, weights);
+    roleLegs.forEach((leg, i) => {
+      if (baseParts[i] > 0 || (foreign && docParts[i] > 0)) {
+        debits.push({ leg, base: baseParts[i], foreign: docParts[i] });
+        leg.remainingBase -= baseParts[i];
+        if (foreign) leg.remainingForeign -= docParts[i];
+      }
+    });
+  }
   if (mode === "remaining") {
     for (const leg of [...revenueLegs, ...(vatLeg ? [vatLeg] : [])]) {
-      if (leg.remainingBase > 0)
+      if (leg.remainingBase > 0 || (foreign && leg.remainingBase === 0 && leg.remainingForeign > 0))
         debits.push({ leg, base: leg.remainingBase, foreign: leg.remainingForeign });
     }
-  } else {
-    // Net per revenue role (document currency) → split over that role's legs
-    // (e.g. two cost centres) by their remaining amounts, at the original rate.
-    const perRole = new Map<RevenueAccountRole, number>();
-    for (const l of totals.lines) {
-      const role = l.classification.revenueAccountRole;
-      perRole.set(role, (perRole.get(role) ?? 0) + l.netFils);
+  } else if (totals.vatFils > 0) {
+    const base = toBase(totals.vatFils, rate);
+    if (!vatLeg || base <= 0 || base > vatLeg.remainingBase) {
+      throw new DomainError("CREDIT_EXCEEDS_REMAINING", 409, { leg: "vat" });
     }
-    for (const [role, docFils] of perRole) {
-      if (docFils <= 0) continue;
-      const roleLegs = revenueLegs.filter((l) => l.role === role && l.remainingBase > 0);
-      if (!roleLegs.length) {
-        throw new DomainError(
-          "CREDIT_LINE_NOT_ON_INVOICE",
-          422,
-          { role },
-          `The invoice has no ${role.replace(/_/g, " ")} revenue left to credit.`
-        );
-      }
-      const base = toBase(docFils, rate);
-      const remaining = sumFils(roleLegs.map((l) => l.remainingBase));
-      if (base > remaining) {
-        throw new DomainError(
-          "CREDIT_EXCEEDS_REMAINING",
-          409,
-          { role, requested: fromFils(base), remaining: fromFils(remaining) },
-          "Credit amount exceeds the remaining creditable revenue on the invoice."
-        );
-      }
-      const baseParts = allocate(
-        base,
-        roleLegs.map((l) => l.remainingBase)
-      );
-      const docParts = allocate(
-        docFils,
-        roleLegs.map((l) => l.remainingBase)
-      );
-      roleLegs.forEach((leg, i) => {
-        if (baseParts[i] > 0) debits.push({ leg, base: baseParts[i], foreign: docParts[i] });
-      });
-    }
-    if (totals.vatFils > 0) {
-      if (!vatLeg || vatLeg.remainingBase <= 0) {
-        throw new DomainError("CREDIT_EXCEEDS_REMAINING", 409, { leg: "vat" });
-      }
-      const base = Math.min(toBase(totals.vatFils, rate), vatLeg.remainingBase);
-      debits.push({ leg: vatLeg, base, foreign: totals.vatFils });
-    }
+    debits.push({ leg: vatLeg, base, foreign: totals.vatFils });
   }
   if (!debits.length) throw new DomainError("FULLY_CREDITED", 409);
 
@@ -1068,7 +1177,7 @@ async function postCreditNoteInTx(args: {
     }),
     ...(foreign && d.foreign > 0 ? fx(d.foreign, "debit") : {}),
   }));
-  if (arBase > 0) {
+  if (arBase > 0 || (foreign && arDocFils > 0)) {
     jl.push({
       accountId: arId,
       creditFils: arBase,
@@ -1079,7 +1188,7 @@ async function postCreditNoteInTx(args: {
   }
   let customerCreditId: string | null = null;
   let liabilityId: string | null = null;
-  if (excessBase > 0) {
+  if (excessBase > 0 || (foreign && excessDocFils > 0)) {
     liabilityId = await getCustomerCreditAccount(tx, companyId);
     jl.push({
       accountId: liabilityId,
@@ -1102,6 +1211,7 @@ async function postCreditNoteInTx(args: {
       sourceId: creditNote.id,
       idempotencyKey: `credit_note:${creditNote.id}:post`,
       allowFutureDate: true,
+      allowForeignOnlyLines: foreign,
       lines: jl,
     },
     { actorId: userId, tx }
@@ -1248,29 +1358,25 @@ export async function insertCreditNoteDocument(
       header = { discountType: original.discountType, discountValue: original.discountValue };
       totals = totalsForStoredDocument(original, originalLines);
     } else {
-      // Remaining balance after earlier partial credits: one line per role.
-      const orig = totalsForStoredDocument(original, originalLines);
-      const remainingSub =
-        toFils(original.subtotal, { rounding: "halfUp" }) -
-        (await loadPriorCreditedSubtotal(tx, original));
       const remainingTotal = totalFils - s.creditedFils;
-      const remainingVat = remainingTotal - remainingSub;
-      docLines = [
-        {
-          description: `Remaining balance of ${original.number}`,
-          quantity: 1,
-          unitPrice: Number(fromFils(Math.max(0, remainingSub))),
-          vatRate: remainingVat > 0 ? 0.05 : 0,
-          vatSupplyType: remainingVat > 0 ? "standard_rated" : "zero_rated",
-        },
-      ];
+      const remaining = await remainingCreditLines(tx, original, originalLines);
+      if (remaining.subtotalFils + remaining.vatFils !== remainingTotal) {
+        throw new DomainError(
+          "CREDIT_TOTAL_MISMATCH",
+          409,
+          undefined,
+          "The remaining invoice balance does not match its net and VAT amounts."
+        );
+      }
+      docLines = remaining.lines;
+      header = { source: REMAINING_CREDIT_SOURCE };
+      const computed = computeSalesDocument(docLines.map(storedLineToTotalsInput));
       totals = {
-        ...orig,
-        lines: [],
-        subtotalFils: Math.max(0, remainingSub),
-        vatFils: Math.max(0, remainingVat),
+        ...computed,
+        lines: computed.lines.map((line, i) => ({ ...line, netFils: remaining.lines[i].netFils })),
+        subtotalFils: remaining.subtotalFils,
+        vatFils: remaining.vatFils,
         totalFils: remainingTotal,
-        discountFils: 0,
       };
     }
   }
@@ -1299,6 +1405,7 @@ export async function insertCreditNoteDocument(
       status: "draft",
       invoiceType: "credit_note",
       originalInvoiceId: original.id,
+      source: header.source,
       reverseCharge: original.reverseCharge,
       placeOfSupplyEmirate: original.placeOfSupplyEmirate,
       notes: args.reason ?? null,
@@ -1327,17 +1434,148 @@ export async function insertCreditNoteDocument(
   return { creditNote, mode };
 }
 
-async function loadPriorCreditedSubtotal(
+async function creditTaxBalances(
   tx: LedgerTx,
-  invoice: Pick<Invoice, "id" | "companyId">
-): Promise<number> {
-  const res = await tx.execute(sql`
-    SELECT COALESCE(SUM(-subtotal), 0)::text AS sub FROM invoices
-     WHERE original_invoice_id = ${invoice.id} AND company_id = ${invoice.companyId}
-       AND invoice_type = 'credit_note'
-       AND status NOT IN ('void', 'cancelled', 'draft')`);
-  const row = (((res as { rows?: unknown[] }).rows ?? res) as Array<Record<string, string>>)[0];
-  return toFils(row?.sub ?? "0", { rounding: "halfUp" });
+  original: Invoice,
+  originalLines: InvoiceLine[],
+  candidate?: { document: Invoice; lines: InvoiceLine[] }
+) {
+  const prior = await tx
+    .select({ document: invoices, line: invoiceLines })
+    .from(invoices)
+    .leftJoin(invoiceLines, eq(invoiceLines.invoiceId, invoices.id))
+    .where(
+      and(
+        eq(invoices.companyId, original.companyId),
+        eq(invoices.originalInvoiceId, original.id),
+        eq(invoices.invoiceType, "credit_note"),
+        sql`${invoices.status} NOT IN ('void', 'cancelled', 'draft')`
+      )
+    );
+  const documents = new Map<string, { document: Invoice; lines: InvoiceLine[] }>();
+  for (const { document, line } of prior) {
+    const previous = documents.get(document.id);
+    if (!previous) documents.set(document.id, { document, lines: line ? [line] : [] });
+    else if (line) previous.lines.push(line);
+  }
+  type TaxBalance = {
+    supply: SalesDocumentTotals["lines"][number]["classification"];
+    net: number;
+    margin: number | null;
+    vat: number;
+  };
+  const balances = new Map<string, TaxBalance>();
+  function add(document: Invoice, lines: InvoiceLine[], sign: number, checkTreatmentVat = false) {
+    const totals = totalsForStoredDocument(document, lines);
+    const treatments = new Map<string, TaxBalance>();
+    totals.lines.forEach((line, i) => {
+      const key = `${line.classification.supplyType}:${line.marginFils !== null}`;
+      const treatment = treatments.get(key) ?? {
+        supply: line.classification,
+        net: 0,
+        margin: line.marginFils === null ? null : 0,
+        vat: 0,
+      };
+      const storedNet = lines[i].netAmount;
+      treatment.net +=
+        storedNet == null ? line.netFils : Math.abs(toFils(storedNet, { rounding: "halfUp" }));
+      if (treatment.margin !== null) treatment.margin += line.marginFils ?? 0;
+      treatment.vat += line.vatFils;
+      treatments.set(key, treatment);
+    });
+
+    // Legacy documents rounded ordinary VAT at document level and margin VAT per line.
+    // Attribute the difference from the printed total to ordinary VAT on each document.
+    const ordinary = [...treatments.values()].find(
+      ({ supply, margin }) => supply.chargedVatRate > 0 && margin === null
+    );
+    if (ordinary)
+      ordinary.vat += totals.vatFils - sumFils(totals.lines.map((line) => line.vatFils));
+
+    for (const [key, treatment] of treatments) {
+      const balance = balances.get(key) ?? {
+        supply: treatment.supply,
+        net: 0,
+        margin: treatment.margin === null ? null : 0,
+        vat: 0,
+      };
+      balance.net += sign * treatment.net;
+      if (balance.margin !== null) balance.margin += sign * (treatment.margin ?? 0);
+      balance.vat += sign * treatment.vat;
+      if (checkTreatmentVat && treatment.vat > 0 && balance.vat < 0) {
+        throw new DomainError(
+          "CREDIT_EXCEEDS_REMAINING",
+          409,
+          {
+            leg: "vat",
+            supplyType: balance.supply.supplyType,
+            marginScheme: balance.margin !== null,
+          },
+          "Credit VAT exceeds the amount remaining for this tax treatment on the invoice."
+        );
+      }
+      balances.set(key, balance);
+    }
+  }
+  add(original, originalLines, 1);
+  // The printed VAT caps a single taxable treatment. Mixed sales also need per-treatment caps.
+  const mixedTaxableTreatments =
+    [...balances.values()].filter(({ supply }) => supply.chargedVatRate > 0).length > 1;
+  for (const { document, lines } of documents.values()) add(document, lines, -1);
+  if (candidate) add(candidate.document, candidate.lines, -1, mixedTaxableTreatments);
+
+  const vatFils = sumFils([
+    toFils(original.vatAmount, { rounding: "halfUp" }),
+    candidate ? toFils(candidate.document.vatAmount, { rounding: "halfUp" }) : 0,
+    ...[...documents.values()].map(({ document }) =>
+      toFils(document.vatAmount, { rounding: "halfUp" })
+    ),
+  ]);
+  if (vatFils < 0) {
+    throw new DomainError(
+      "CREDIT_EXCEEDS_REMAINING",
+      409,
+      { leg: "vat" },
+      "Credit VAT exceeds the remaining VAT on the invoice."
+    );
+  }
+  for (const { supply, net, margin } of balances.values()) {
+    // The gross proceeds less VAT comprise the taxable margin and the purchase cost.
+    if (net < 0 || (margin !== null && (margin < 0 || margin > net))) {
+      throw new DomainError(
+        "CREDIT_EXCEEDS_REMAINING",
+        409,
+        { supplyType: supply.supplyType, marginScheme: margin !== null },
+        "Credit exceeds the amount remaining for this tax treatment on the invoice."
+      );
+    }
+  }
+  return { balances: [...balances.values()], vatFils };
+}
+
+async function remainingCreditLines(tx: LedgerTx, original: Invoice, originalLines: InvoiceLine[]) {
+  const { balances, vatFils } = await creditTaxBalances(tx, original, originalLines);
+  const subtotalFils = sumFils(balances.map(({ net }) => net));
+  const hasOrdinaryTreatment = balances.some(
+    ({ supply, margin }) => supply.chargedVatRate > 0 && margin === null
+  );
+  const lines = balances
+    // VAT 201 allocates the document's VAT to taxable lines, including a zero-net rounding credit.
+    .filter(({ net, supply }) => net !== 0 || (vatFils > 0 && supply.chargedVatRate > 0))
+    .map(({ supply, net, margin, vat }) => {
+      const marginVat = hasOrdinaryTreatment ? Math.min(vatFils, Math.max(0, vat)) : vatFils;
+      return {
+        description: `Remaining balance of ${original.number}`,
+        quantity: 1,
+        netFils: net,
+        unitPrice: Number(fromFils(net + (margin === null ? 0 : marginVat))),
+        vatRate: supply.chargedVatRate,
+        vatSupplyType: supply.supplyType,
+        marginScheme: margin !== null,
+        marginPurchaseCost: margin === null ? null : Number(fromFils(net - margin)),
+      };
+    });
+  return { lines, subtotalFils, vatFils };
 }
 
 /** Issue a draft credit note: post its mirrored entry and move it to sent. */
@@ -1381,6 +1619,13 @@ async function issueCreditNoteLocked(
       { requested: fromFils(cnTotalFils), remaining: fromFils(remaining) },
       `Credit amount ${fromFils(cnTotalFils)} exceeds the remaining creditable balance ${fromFils(remaining)}.`
     );
+  }
+  if (mode === "lines") {
+    const originalLines = await tx
+      .select()
+      .from(invoiceLines)
+      .where(eq(invoiceLines.invoiceId, original.id));
+    await creditTaxBalances(tx, original, originalLines, { document: creditNote, lines: cnLines });
   }
   const effectiveMode = cnTotalFils === remaining ? "remaining" : mode;
 
@@ -1465,17 +1710,6 @@ export async function createDraftCreditNote(args: {
   return withDocumentLock(args.invoiceId, LOCK_NS.INVOICE_POSTING, async (tx) => {
     const original = await lockInvoice(tx, args.invoiceId, args.companyId);
     assertCreditable(original);
-    if (!args.lines?.length) {
-      const s = await invoiceSettlement(tx, original.id);
-      if (s.creditedFils > 0) {
-        throw new DomainError(
-          "CREDIT_LINES_REQUIRED",
-          422,
-          undefined,
-          "This invoice is already partly credited: list the lines to credit."
-        );
-      }
-    }
     const { creditNote } = await insertCreditNoteDocument(tx, original, args);
     return creditNote;
   });

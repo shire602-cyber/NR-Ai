@@ -52,6 +52,8 @@ import type {
 
 /** Options only the kernel's own flows (reversal, legacy adapter) may set. */
 export interface InternalPostOptions {
+  /** Fiscal close and reopen write their own sweep journal behind the period lock. */
+  fiscalYearClose?: boolean;
   /** Skip the active/archived check (reversals must be able to undo old postings). */
   allowInactiveAccounts?: boolean;
   reversedEntryId?: string | null;
@@ -270,7 +272,7 @@ export async function insertNormalizedEntry(
     const replay = await findByIdempotencyKey(tx, n.companyId, n.idempotencyKey);
     if (replay) return replay;
   }
-  await assertPeriodNotLocked(n.companyId, n.dateAt, tx);
+  if (!internal.fiscalYearClose) await assertPeriodNotLocked(n.companyId, n.dateAt, tx);
   assertLinesBalanced(n.lines, { allowSameAccount: true });
   await assertAccountsUsable(tx, n.companyId, n.lines, !!internal.allowInactiveAccounts);
   // B1 (NC1): control accounts take lines only from their sub-ledger, or as a reasoned
@@ -399,6 +401,20 @@ export async function postJournal(
   return postNormalized(n, ctx);
 }
 
+/** Post the fiscal service's sweep or mirrored sweep inside its close/reopen transaction. */
+export function postFiscalYearCloseJournal(
+  input: Omit<PostJournalInput, "kind" | "source" | "status">,
+  ctx: LedgerContext & { tx: LedgerTx }
+): Promise<PostJournalResult> {
+  const n = normalizeEntry({
+    ...input,
+    source: "year_end_close",
+    kind: "year_end_close",
+    status: "posted",
+  });
+  return postNormalized(n, ctx, { fiscalYearClose: true });
+}
+
 export async function postNormalized(
   n: NormalizedEntry,
   ctx: LedgerContext,
@@ -485,7 +501,7 @@ function compactAttributes(a: JournalLineAttributes): JournalLineAttributes {
 }
 
 function entryIso(entry: Pick<JournalEntry, "date">): string {
-  return new Date(entry.date).toISOString().slice(0, 10);
+  return todayIso(new Date(entry.date));
 }
 
 function notFound(entryId: string): DomainError {
@@ -676,7 +692,9 @@ async function reverseInTx(
   assertReversible(original);
   const date = await resolveReversalDate(tx, original, opts, mode);
   const lines = await loadLinesFils(tx, entryId);
-  if (!lines.some((l) => l.debitFils !== 0 || l.creditFils !== 0)) {
+  if (
+    !lines.some((l) => l.debitFils || l.creditFils || l.foreignDebitFils || l.foreignCreditFils)
+  ) {
     throw new DomainError(
       "ENTRY_HAS_NO_LINES",
       422,
@@ -728,7 +746,7 @@ async function reverseInTx(
   const reason = opts.reason ? String(opts.reason).slice(0, 1000) : null;
   const n: NormalizedEntry = {
     companyId: original.companyId,
-    dateIso: date.toISOString().slice(0, 10),
+    dateIso: todayIso(date),
     dateAt: date,
     ...(opts.memo
       ? {
