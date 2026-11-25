@@ -353,20 +353,12 @@ export default function CorporateTax() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
 
   // Fetch existing returns
-  const {
-    data: taxReturns,
-    isLoading: isLoadingReturns,
-    isError: isReturnsError,
-    refetch: refetchReturns,
-  } = useQuery<CorporateTaxReturn[]>({
+  const returnsQuery = useQuery<CorporateTaxReturn[]>({
     queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
     enabled: !!companyId,
   });
-  const returnsState = returnsListState({
-    isLoading: isLoadingReturns,
-    isError: isReturnsError,
-    data: taxReturns,
-  });
+  const returnsState = returnsListState(returnsQuery);
+  const taxReturns = returnsQuery.data ?? [];
 
   const workpaperTotals = useMemo(() => {
     const totalRevenue = workpaperRows
@@ -1201,6 +1193,11 @@ export default function CorporateTax() {
               {t["corporateTax.postProvisionOnFiling"]}
             </label>
           </div>
+          {returnsQuery.fetchStatus === "paused" && (
+            <p role="status" className="py-3 text-center text-muted-foreground">
+              <T k="corporateTax.returnsPaused" />
+            </p>
+          )}
           {returnsState === "loading" ? (
             <div className="space-y-3">
               <Skeleton className="h-10 w-full" />
@@ -1221,7 +1218,7 @@ export default function CorporateTax() {
                   "تعذّر تحميل إقرارات ضريبة الشركات."
                 )}
               </p>
-              <Button variant="outline" className="mt-3" onClick={() => refetchReturns()}>
+              <Button variant="outline" className="mt-3" onClick={() => returnsQuery.refetch()}>
                 {ctTr(locale, "Try again", "حاول مرة أخرى")}
               </Button>
             </div>
@@ -1235,7 +1232,7 @@ export default function CorporateTax() {
                 <T k="pageLabels.useTheCalculatorAboveToGenerateYourFirstReturn" />
               </p>
             </div>
-          ) : (
+          ) : returnsState === "ready" ? (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -1471,7 +1468,7 @@ export default function CorporateTax() {
                 </TableBody>
               </Table>
             </div>
-          )}
+          ) : null}
         </CardContent>
       </Card>
 

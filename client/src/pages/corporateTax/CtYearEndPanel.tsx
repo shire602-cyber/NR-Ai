@@ -127,7 +127,7 @@ export function CtYearEndPanel({ companyId }: { companyId: string }) {
                 if (dtError) void refetchDt();
               }}
             >
-              {locale === "ar" ? "حاول مرة أخرى" : "Try again"}
+              {t["components.errorTryAgain"]}
             </Button>
           </div>
         )}

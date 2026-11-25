@@ -22,6 +22,7 @@
   "corporateTax.figureFiled": "مبلغ مقدَّم",
   "corporateTax.figureFilingReady": "تمت المراجعة، جاهز للتقديم",
   "corporateTax.lifecycleHelp": "مسودة ← محسوب ← مراجعة من شخص ثانٍ ← تسجيل كمقدَّم. لا يقدّم [[brand]] الإقرارات: ارفع الملف المصدَّر إلى إمارات تاكس بنفسك. لا يمكن تعديل الإقرارات المقدَّمة؛ أنشئ تعديلًا بدلًا من ذلك.",
+  "corporateTax.returnsPaused": "تحميل إقرارات ضريبة الشركات متوقف مؤقتًا.",
   "corporateTax.markComputed": "تحديد كمحسوب",
   "corporateTax.markFiled": "تسجيل كمقدَّم في إمارات تاكس",
   "corporateTax.markPaid": "تحديد كمدفوع",

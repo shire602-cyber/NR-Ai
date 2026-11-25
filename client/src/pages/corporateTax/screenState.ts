@@ -1,17 +1,19 @@
 /** Pure state helpers for the Corporate Tax screen (empty / error handling). */
 
-export type ReturnsListState = "loading" | "error" | "empty" | "ready";
+import type { FetchStatus, QueryStatus } from "@tanstack/react-query";
 
-/** A failed fetch must never look like "no returns yet". */
+export type ReturnsListState = "loading" | "paused" | "error" | "empty" | "ready" | "idle";
+
 export function returnsListState(q: {
-  isLoading: boolean;
-  isError: boolean;
+  status: QueryStatus;
+  fetchStatus: FetchStatus;
   data: readonly unknown[] | undefined;
 }): ReturnsListState {
-  if (q.isLoading) return "loading";
-  if (q.isError) return "error";
-  if (!q.data || q.data.length === 0) return "empty";
-  return "ready";
+  if (q.data?.length) return "ready";
+  if (q.fetchStatus === "paused") return "paused";
+  if (q.status === "error") return "error";
+  if (q.status === "success" && q.data?.length === 0) return "empty";
+  return q.fetchStatus === "fetching" ? "loading" : "idle";
 }
 
 /**

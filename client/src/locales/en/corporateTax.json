@@ -22,6 +22,7 @@
   "corporateTax.figureFiled": "Filed figure",
   "corporateTax.figureFilingReady": "Reviewed, ready to file",
   "corporateTax.lifecycleHelp": "Draft → computed → reviewed by a second person → recorded as filed. Muhasib does not submit returns: upload the export to EmaraTax yourself. Filed returns cannot be edited; amend them instead.",
+  "corporateTax.returnsPaused": "Loading corporate tax returns is paused.",
   "corporateTax.markComputed": "Mark as computed",
   "corporateTax.markFiled": "Record as filed in EmaraTax",
   "corporateTax.markPaid": "Mark as paid",
