@@ -1,6 +1,6 @@
 import { localizeJournalLine } from "@/lib/journal-memo";
 import { T } from "@/components/layout/T";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation, Link } from "wouter";
 import { format } from "date-fns";
@@ -102,7 +102,9 @@ export default function AccountLedger() {
   const { companyId: selectedCompanyId } = useDefaultCompany();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const searchInput = useRef<HTMLInputElement>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
+  const [dateFilterResetCount, setDateFilterResetCount] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [reversalDialogOpen, setReversalDialogOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<LedgerEntry | null>(null);
@@ -163,11 +165,13 @@ export default function AccountLedger() {
     },
   });
 
-  const hasFilters = searchQuery.trim() !== "" || !!dateRange.from || !!dateRange.to;
+  const hasFilters = !!searchQuery || !!dateRange.from || !!dateRange.to;
   const clearFilters = () => {
     setSearchQuery("");
     setDateRange({ from: undefined, to: undefined });
+    setDateFilterResetCount((count) => count + 1);
     setCurrentPage(1);
+    searchInput.current?.focus();
   };
 
   const totalPages = Math.ceil((ledger?.totalCount || 0) / entriesPerPage);
@@ -475,37 +479,41 @@ export default function AccountLedger() {
         }
       />
 
-      <div className="mobile-keep-cols grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard
-          label={locale === "ar" ? "الرصيد الافتتاحي" : t["accountLedger.openingBalance"]}
-          loading={isLoading}
-          value={<Money amount={ledger?.openingBalance ?? 0} />}
-          testId="text-opening-balance"
-        />
-        <StatCard
-          label={locale === "ar" ? "إجمالي المدين" : t["accountLedger.totalDebit"]}
-          loading={isLoading}
-          value={<Money amount={ledger?.totalDebit ?? 0} />}
-          testId="text-total-debit"
-        />
-        <StatCard
-          label={locale === "ar" ? "إجمالي الدائن" : t["accountLedger.totalCredit"]}
-          loading={isLoading}
-          value={<Money amount={ledger?.totalCredit ?? 0} />}
-          testId="text-total-credit"
-        />
-        <StatCard
-          label={locale === "ar" ? "الرصيد الختامي" : t["accountLedger.closingBalance"]}
-          loading={isLoading}
-          value={
-            <Money
-              amount={Math.abs(ledger?.closingBalance ?? 0)}
-              className={(ledger?.closingBalance ?? 0) < 0 ? "text-negative" : undefined}
-            />
-          }
-          testId="text-closing-balance"
-        />
-      </div>
+      {(isLoading || ledger) && (
+        <div className="mobile-keep-cols grid grid-cols-2 gap-4 md:grid-cols-4">
+          <StatCard
+            label={locale === "ar" ? "الرصيد الافتتاحي" : t["accountLedger.openingBalance"]}
+            loading={isLoading}
+            value={ledger && <Money amount={ledger.openingBalance} />}
+            testId="text-opening-balance"
+          />
+          <StatCard
+            label={locale === "ar" ? "إجمالي المدين" : t["accountLedger.totalDebit"]}
+            loading={isLoading}
+            value={ledger && <Money amount={ledger.totalDebit} />}
+            testId="text-total-debit"
+          />
+          <StatCard
+            label={locale === "ar" ? "إجمالي الدائن" : t["accountLedger.totalCredit"]}
+            loading={isLoading}
+            value={ledger && <Money amount={ledger.totalCredit} />}
+            testId="text-total-credit"
+          />
+          <StatCard
+            label={locale === "ar" ? "الرصيد الختامي" : t["accountLedger.closingBalance"]}
+            loading={isLoading}
+            value={
+              ledger && (
+                <Money
+                  amount={Math.abs(ledger.closingBalance)}
+                  className={ledger.closingBalance < 0 ? "text-negative" : undefined}
+                />
+              )
+            }
+            testId="text-closing-balance"
+          />
+        </div>
+      )}
 
       {/* Filters: one row, not in a card */}
       <div className="flex flex-wrap items-center gap-2">
@@ -515,6 +523,7 @@ export default function AccountLedger() {
             aria-hidden
           />
           <Input
+            ref={searchInput}
             placeholder={locale === "ar" ? "بحث..." : "Search entries..."}
             aria-label={locale === "ar" ? "بحث..." : "Search entries..."}
             value={searchQuery}
@@ -527,6 +536,7 @@ export default function AccountLedger() {
           />
         </div>
         <DateRangeFilter
+          key={dateFilterResetCount}
           dateRange={dateRange}
           onDateRangeChange={(range) => {
             setDateRange(range);
@@ -562,6 +572,7 @@ export default function AccountLedger() {
                 icon: Search,
                 title: t["accountLedger.noMatchTitle"],
                 description: t["accountLedger.noMatchBody"],
+                testId: "empty-ledger-no-match",
                 action: {
                   label: t["accountLedger.clearFilters"],
                   onClick: clearFilters,

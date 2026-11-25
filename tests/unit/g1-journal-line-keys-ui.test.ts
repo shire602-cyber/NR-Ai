@@ -9,13 +9,17 @@ import { createElement } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   COMPANY_ID,
+  buttonByText,
   byTestId,
+  click,
   flushUntil,
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
+  pickOption,
   renderPage,
   resetHarness,
   setFixtures,
+  type,
   unmountPage,
 } from "./helpers/form-harness";
 import { loadLocale, useI18n } from "../../client/src/lib/i18n";
@@ -98,6 +102,7 @@ const LEDGER = {
 beforeAll(async () => {
   await loadLocale("en");
   await loadLocale("ar");
+  Element.prototype.scrollIntoView ??= () => undefined;
   (globalThis as any).ResizeObserver ??= class {
     observe() {}
     unobserve() {}
@@ -246,44 +251,93 @@ describe("G5 issued invoice chips", () => {
 });
 
 describe("account ledger states", () => {
-  const load = async (fetchImpl: (url: string) => Response) => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => fetchImpl(String(url)))
+  const load = async (fetchImpl: (params: URLSearchParams) => Response) => {
+    const fetchLedger = vi.fn(async (url: string) =>
+      fetchImpl(new URL(url, window.location.origin).searchParams)
     );
+    vi.stubGlobal("fetch", fetchLedger);
     window.history.replaceState({}, "", `/accounts/${ACCOUNT_ID}/ledger`);
     const { default: AccountLedger } = await import("../../client/src/pages/AccountLedger");
     await renderPage(AccountLedger);
+    return fetchLedger;
   };
 
-  it("shows an Arabic error state with retry when the ledger fails to load", async () => {
-    await load(() => new Response("{}", { status: 500 }));
+  it("hides the summary on an uncached error and restores the ledger when Retry succeeds", async () => {
+    let available = false;
+    const fetchLedger = await load(() =>
+      available ? Response.json(LEDGER) : new Response("{}", { status: 500 })
+    );
     await flushUntil(() => !!byTestId("error-ledger"));
     const err = byTestId("error-ledger")!;
     expect(err.textContent).toContain("تعذّر تحميل دفتر الأستاذ");
     expect(err.textContent).not.toMatch(/[A-Za-z]{3,}/);
-    expect(document.body.textContent).not.toContain("No entries found");
+    const summaryIds = [
+      "text-opening-balance",
+      "text-total-debit",
+      "text-total-credit",
+      "text-closing-balance",
+    ];
+    for (const id of summaryIds) expect(byTestId(id)).toBeNull();
+    expect(byTestId("empty-state")).toBeNull();
+
+    available = true;
+    await click(buttonByText(/^إعادة المحاولة$/, err));
+    await flushUntil(() => !!byTestId("row-entry-l1"));
+    expect(fetchLedger).toHaveBeenCalledTimes(2);
+    expect(byTestId("error-ledger")).toBeNull();
+    expect(byTestId("row-entry-l4")).toBeTruthy();
+    for (const id of summaryIds) expect(byTestId(id)).toBeTruthy();
   });
 
-  it("shows a no-match state with clear filters when a search returns nothing", async () => {
-    await load(
-      (url) =>
-        new Response(
-          JSON.stringify(
-            url.includes("search=") ? { ...LEDGER, entries: [], totalCount: 0 } : LEDGER
-          ),
-          { status: 200 }
-        )
+  it("clears the search, date preset and pagination from the no-match panel", async () => {
+    await load((params) => {
+      if (params.get("offset") === "25") {
+        return Response.json({ ...LEDGER, entries: [], totalCount: 0 });
+      }
+      const filtered = params.has("search") && params.has("dateStart") && params.has("dateEnd");
+      return Response.json({ ...LEDGER, totalCount: filtered ? 26 : LEDGER.totalCount });
+    });
+    await flushUntil(() => !!byTestId("row-entry-l1"));
+    const preset = byTestId("select-date-preset")!;
+    const startLabel = byTestId("button-date-from")!.textContent;
+    const endLabel = byTestId("button-date-to")!.textContent;
+    await pickOption(preset, /^(This Month|هذا الشهر)$/i);
+    expect(preset.hasAttribute("data-placeholder")).toBe(false);
+    expect(byTestId("button-clear-dates")).toBeTruthy();
+    const input = byTestId("input-search-ledger") as HTMLInputElement;
+    await type(input, "INV");
+    await flushUntil(() => !!byTestId("button-next-page"));
+    await click(byTestId("button-next-page"));
+    await flushUntil(() => !!byTestId("empty-ledger-no-match"));
+    const panel = byTestId("empty-ledger-no-match")!;
+    expect(panel.querySelector("h3")?.textContent).toBe("لا توجد قيود مطابقة");
+    await click(panel.querySelector('[data-testid="button-clear-ledger-filters-empty"]'));
+
+    await flushUntil(() => !!byTestId("row-entry-l1"));
+    expect(byTestId("row-entry-l4")).toBeTruthy();
+    expect(byTestId("empty-ledger-no-match")).toBeNull();
+    expect(byTestId("button-clear-ledger-filters")).toBeNull();
+    expect(byTestId("button-clear-dates")).toBeNull();
+    expect(byTestId("select-date-preset")?.hasAttribute("data-placeholder")).toBe(true);
+    expect(byTestId("button-date-from")?.textContent).toBe(startLabel);
+    expect(byTestId("button-date-to")?.textContent).toBe(endLabel);
+    expect(input.value).toBe("");
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("shows the no-match panel when the literal search consists only of whitespace", async () => {
+    const search = "   ";
+    await load((params) =>
+      Response.json(
+        params.get("search") === search ? { ...LEDGER, entries: [], totalCount: 0 } : LEDGER
+      )
     );
     await flushUntil(() => !!byTestId("row-entry-l1"));
-    const input = byTestId("input-search-ledger") as HTMLInputElement;
-    const { act } = await import("react");
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-      setter.call(input, "zzz");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await flushUntil(() => document.body.textContent!.includes("لا توجد قيود مطابقة"));
-    expect(byTestId("button-clear-ledger-filters")).toBeTruthy();
+    await type(byTestId("input-search-ledger"), search);
+    await flushUntil(() => !!byTestId("empty-ledger-no-match"));
+    expect(byTestId("empty-ledger-no-match")?.querySelector("h3")?.textContent).toBe(
+      "لا توجد قيود مطابقة"
+    );
+    expect(byTestId("button-clear-ledger-filters-empty")).toBeTruthy();
   });
 });
