@@ -43,7 +43,6 @@ vi.mock("../../client/src/hooks/useCompanyPermission", () => ({
 import { loadLocale, useI18n } from "../../client/src/lib/i18n";
 import { PortalInvoiceList } from "../../client/src/components/portal/PortalInvoiceList";
 import { PortalAccountScope } from "../../client/src/lib/portal-scope";
-import { setSelectedPortalAccount } from "../../client/src/lib/portal-state";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
