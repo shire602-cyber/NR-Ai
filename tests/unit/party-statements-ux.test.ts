@@ -188,6 +188,92 @@ describe("party statements screen (Arabic)", () => {
     expect(text).not.toContain(PAUSED_TITLE);
   });
 
+  it("keeps a successful empty list's copy until a refresh pauses or fails, then shows only the status", async () => {
+    setFixtures({ [`${base}/customer-contacts`]: [] });
+    await renderPage(PartyStatements);
+    await flushUntil(() => pageText().includes(ar["reportCenter.partyNoCustomers"]));
+    expect(pageText()).toContain(ar["reportCenter.partyNoCustomers"]);
+    expect(await openParty()).toContain(ar["reportCenter.partyNoCustomers"]);
+    await closeParty();
+
+    // Paused refresh of the cached empty list (query status is still success).
+    await setOnline(false);
+    await startRefetch((k) => k[k.length - 1] === "customer-contacts");
+    expect(byTestId("party-list-paused")?.textContent).toContain(PAUSED_TITLE);
+    expect(pageText()).not.toContain(ar["reportCenter.partyNoCustomers"]);
+    const paused = await openParty();
+    expect(paused).toContain(PAUSED_TITLE);
+    expect(paused).not.toContain(ar["reportCenter.partyNoCustomers"]);
+    await closeParty();
+    await setOnline(true);
+    await flushUntil(() => !byTestId("party-list-paused"));
+    expect(pageText()).toContain(ar["reportCenter.partyNoCustomers"]);
+
+    // Failed refresh of the cached empty list.
+    ctrl.lists.add("customer-contacts");
+    await refetchList("customer-contacts");
+    await flushUntil(() => !!byTestId("party-list-error"));
+    expect(pageText()).not.toContain(ar["reportCenter.partyNoCustomers"]);
+    const failed = await openParty();
+    expect(failed).toContain(ar["firm.loadFailedTitle"]);
+    expect(failed).not.toContain(ar["reportCenter.partyNoCustomers"]);
+    await closeParty();
+
+    ctrl.lists.clear();
+    await click(retryButton("party-list-error"));
+    await flushUntil(() => !byTestId("party-list-error"));
+    expect(pageText()).toContain(ar["reportCenter.partyNoCustomers"]);
+  });
+
+  it("shows the empty-period copy for a successful empty statement but not during a paused or failed refresh, keeping balances", async () => {
+    await showCustomerStatement();
+    const EMPTY = ar["reportCenter.partyStatementEmpty"];
+    expect(pageText()).toContain(EMPTY);
+    expect(pageText()).toContain(ar["reportCenter.partyStatementClosing"]);
+
+    // Paused refresh (offline).
+    await setOnline(false);
+    await startRefetch((k) => String(k[0]).includes("-statements/"));
+    expect(byTestId("party-statement-paused")?.textContent).toContain(PAUSED_TITLE);
+    expect(hasCard()).toBe(true);
+    expect(pageText()).toContain(ar["reportCenter.partyStatementClosing"]);
+    expect(pageText()).not.toContain(EMPTY);
+    await setOnline(true);
+    await flushUntil(() => !byTestId("party-statement-paused"));
+    expect(pageText()).toContain(EMPTY);
+
+    // Failed refresh.
+    ctrl.statement = "server";
+    await refetchStatements();
+    await flushUntil(() => !!byTestId("party-statement-error"));
+    expect(hasCard()).toBe(true);
+    expect(pageText()).toContain(ar["reportCenter.partyStatementClosing"]);
+    expect(pageText()).not.toContain(EMPTY);
+
+    ctrl.statement = null;
+    await click(retryButton("party-statement-error"));
+    await flushUntil(() => !byTestId("party-statement-error"));
+    expect(pageText()).toContain(EMPTY);
+  });
+
+  it("shows the empty-period copy for a statement with no sections only after a successful response", async () => {
+    setFixtures({
+      ...customerFixtures(),
+      [`${base}/customer-statements/c1`]: { ...statementOf("c1", "Al Noor"), sections: [] },
+    });
+    await renderPage(PartyStatements);
+    await pickOption(byTestId("select-statement-party"), "Al Noor");
+    await flushUntil(hasCard);
+    const EMPTY = ar["reportCenter.partyStatementEmpty"];
+    expect(pageText()).toContain(EMPTY);
+
+    ctrl.statement = "server";
+    await refetchStatements();
+    await flushUntil(() => !!byTestId("party-statement-error"));
+    expect(hasCard()).toBe(true);
+    expect(pageText()).not.toContain(EMPTY);
+  });
+
   it.each([
     ["customer", "reportCenter.partyNoCustomers"],
     ["supplier", "reportCenter.partyNoSuppliers"],

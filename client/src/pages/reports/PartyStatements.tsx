@@ -96,7 +96,10 @@ export default function PartyStatements() {
   // neutral. The current paused state wins over a stale error from the previous attempt.
   const listPaused = listQuery.fetchStatus === "paused";
   const listShownError = listPaused ? null : listError;
-  const listEmpty = listQuery.isSuccess && parties?.length === 0;
+  // "Empty" copy only follows a settled successful empty response: a paused or failed refresh of an
+  // empty cached list says so instead (isSuccess is false after a failed refresh, paused can be true
+  // while the status is still success).
+  const listEmpty = listQuery.isSuccess && !listPaused && parties?.length === 0;
   const emptyLabel = listEmpty
     ? kind === "customer"
       ? t["reportCenter.partyNoCustomers"]
@@ -120,6 +123,9 @@ export default function PartyStatements() {
   // Same rule as the list: paused is independent of status, and wins over a stale error.
   const statementPaused = statementQuery.fetchStatus === "paused";
   const statementShownError = statementPaused ? null : statementError;
+  // The "no documents" copy describes a successful response only. While a refresh is paused or has
+  // failed, the cached balances and rows stay but the banner above is the only status message.
+  const statementSettled = statementQuery.isSuccess && !statementPaused;
   const email = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/companies/${companyId}/customer-statements/${partyId}/email`, {
@@ -249,7 +255,7 @@ export default function PartyStatements() {
         />
       ) : null}
       {!partyId ? (
-        parties === undefined && (listPaused || listError) ? null : (
+        !parties?.length && (listPaused || listError) ? null : (
           <p className="text-sm text-muted-foreground">
             {listEmpty ? emptyLabel : <T k="reportCenter.partyStatementPick" />}
           </p>
@@ -288,7 +294,9 @@ export default function PartyStatements() {
           </CardHeader>
           <CardContent className="space-y-6">
             {statement.sections.length === 0 ? (
-              <EmptyState size="sm" title={t["reportCenter.partyStatementEmpty"]} />
+              statementSettled ? (
+                <EmptyState size="sm" title={t["reportCenter.partyStatementEmpty"]} />
+              ) : null
             ) : (
               statement.sections.map((section) => (
                 <div key={section.currency} className="space-y-2">
@@ -303,7 +311,7 @@ export default function PartyStatements() {
                     </span>
                     <Money amount={section.closingBalance} currency={section.currency} />
                   </p>
-                  {section.lines.length === 0 ? (
+                  {section.lines.length === 0 && statementSettled ? (
                     <p className="text-sm text-muted-foreground">
                       <T k="reportCenter.partyStatementEmpty" />
                     </p>
