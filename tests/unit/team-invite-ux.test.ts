@@ -5,7 +5,7 @@
  */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, onlineManager } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -24,6 +24,9 @@ vi.mock("../../client/src/hooks/useDefaultCompany", () => ({
 let container: HTMLDivElement;
 let root: Root;
 let routes: Array<[string, () => { status?: number; body: unknown }]> = [];
+/** Requests whose URL matches a pattern wait for the promise before they answer. */
+let holds: Array<[string, Promise<void>]> = [];
+const seenUrls: string[] = [];
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -45,13 +48,17 @@ beforeAll(async () => {
 
 beforeEach(() => {
   routes = [];
+  holds = [];
+  seenUrls.length = 0;
   localStorage.setItem("muhasib_auth_hint", "1");
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : String(input);
       const method = (init?.method ?? "GET").toUpperCase();
+      seenUrls.push(`${method} ${url}`);
       if (url.includes("/api/csrf-token")) return json({ csrfToken: "x" });
+      for (const [pattern, gate] of holds) if (new RegExp(pattern).test(url)) await gate;
       for (const [key, fn] of routes) {
         const [m, pattern] = key.split(" ");
         if (m === method && new RegExp(pattern).test(url)) {
@@ -68,6 +75,8 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  onlineManager.setOnline(true);
+  Reflect.deleteProperty(navigator, "clipboard");
   act(() => root.unmount());
   container.remove();
   document.body.innerHTML = "";
@@ -92,6 +101,37 @@ async function mount(el: ReturnType<typeof createElement>) {
   });
   await flush();
 }
+
+/** Mount without clearing the shared client, so a test can seed cached data first. */
+async function mountKeepingCache(el: ReturnType<typeof createElement>) {
+  const { queryClient } = await import("../../client/src/lib/queryClient");
+  await act(async () => {
+    root.render(createElement(QueryClientProvider, { client: queryClient }, el));
+  });
+  await flush();
+}
+
+async function typeInto(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  await act(async () => {
+    setter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function goOnline() {
+  await act(async () => onlineManager.setOnline(true));
+  await flush();
+}
+
+function hold(pattern: string) {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  holds.push([pattern, gate]);
+  return release;
+}
+
+const hits = (pattern: string) => seenUrls.filter((u) => new RegExp(pattern).test(u)).length;
 
 async function setLocale(locale: "en" | "ar") {
   const i18n = await import("../../client/src/lib/i18n");
@@ -228,6 +268,138 @@ describe("UserInvitations", { timeout: 30_000 }, () => {
     const items = [...document.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent);
     expect(items.length).toBeGreaterThan(0);
     expect(items.some((t) => /Resend/i.test(t ?? ""))).toBe(false);
+  });
+
+  const invitationsRoute = (body: unknown[]) =>
+    routes.push(["GET /api/admin/invitations", () => ({ body })]);
+
+  it("a paused first fetch shows the offline state, not 'no invitations', then loads on reconnect", async () => {
+    invitationsRoute([invite("a", "live@example.com", "pending", 3)]);
+    onlineManager.setOnline(false);
+    const { default: UserInvitations } = await import("../../client/src/pages/UserInvitations");
+    await mount(createElement(UserInvitations));
+
+    expect(container.querySelector('[data-testid="invitations-offline"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="invitations-empty"]')).toBeNull();
+    expect(container.querySelector('[data-testid="invitations-load-error"]')).toBeNull();
+    expect(hits("/api/admin/invitations")).toBe(0);
+
+    await goOnline();
+    expect(container.querySelector('[data-testid="invitations-offline"]')).toBeNull();
+    expect(rows().map((r) => r.textContent)).toEqual([expect.stringContaining("live@")]);
+  });
+
+  it("shows loading, not the empty copy, while the first online fetch is in flight", async () => {
+    invitationsRoute([]);
+    const release = hold("/api/admin/invitations");
+    const { default: UserInvitations } = await import("../../client/src/pages/UserInvitations");
+    await mount(createElement(UserInvitations));
+    expect(container.querySelector('[data-testid="invitations-loading"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="invitations-empty"]')).toBeNull();
+
+    release();
+    await flush();
+    expect(container.querySelector('[data-testid="invitations-loading"]')).toBeNull();
+    expect(container.querySelector('[data-testid="invitations-empty"]')?.textContent).toBe(
+      "No invitations sent yet"
+    );
+  });
+
+  it("keeps cached rows when a refresh is paused offline", async () => {
+    invitationsRoute([invite("a", "live@example.com", "pending", 3)]);
+    const { default: UserInvitations } = await import("../../client/src/pages/UserInvitations");
+    await mount(createElement(UserInvitations));
+    expect(rows()).toHaveLength(1);
+
+    onlineManager.setOnline(false);
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    await act(async () => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
+    });
+    await flush();
+    expect(rows()).toHaveLength(1);
+    expect(container.querySelector('[data-testid="invitations-offline"]')).toBeNull();
+    expect(container.querySelector('[data-testid="invitations-empty"]')).toBeNull();
+  });
+
+  it("treats whitespace-only search as no filter, for matching and the empty state", async () => {
+    invitationsRoute([
+      invite("a", "live@example.com", "pending", 3),
+      invite("b", "other@example.com", "pending", 3),
+    ]);
+    const { default: UserInvitations } = await import("../../client/src/pages/UserInvitations");
+    await mount(createElement(UserInvitations));
+    const search = container.querySelector(
+      '[data-testid="input-search-invites"]'
+    ) as HTMLInputElement;
+    await typeInto(search, "   ");
+    expect(rows()).toHaveLength(2);
+    await typeInto(search, " zzz ");
+    expect(rows()).toHaveLength(0);
+    expect(container.querySelector('[data-testid="invitations-empty"]')?.textContent).toBe(
+      "No invitations match your filters"
+    );
+  });
+
+  it("whitespace-only search on an empty list says 'none yet', not 'no matches'", async () => {
+    invitationsRoute([]);
+    const { default: UserInvitations } = await import("../../client/src/pages/UserInvitations");
+    await mount(createElement(UserInvitations));
+    await typeInto(
+      container.querySelector('[data-testid="input-search-invites"]') as HTMLInputElement,
+      "   "
+    );
+    expect(container.querySelector('[data-testid="invitations-empty"]')?.textContent).toBe(
+      "No invitations sent yet"
+    );
+  });
+
+  const clickCopyLink = async () => {
+    await openMenu(
+      container.querySelector('[data-testid="button-actions-invite-a"]') as HTMLElement
+    );
+    const copy = document.querySelector('[role="menuitem"]') as HTMLElement;
+    await act(async () => copy.click());
+    await flush();
+  };
+
+  it("shows the same invite URL in a selected read-only field when the clipboard rejects", async () => {
+    invitationsRoute([invite("a", "live@example.com", "pending", 3)]);
+    const writeText = vi.fn().mockRejectedValue(new Error("denied"));
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    const { default: UserInvitations } = await import("../../client/src/pages/UserInvitations");
+    await mount(createElement(UserInvitations));
+    await clickCopyLink();
+
+    const expected = `${window.location.origin}/register?invite=tok-a`;
+    expect(writeText).toHaveBeenCalledWith(expected);
+    const field = document.querySelector(
+      '[data-testid="input-invite-link-manual"]'
+    ) as HTMLInputElement;
+    expect(field).not.toBeNull();
+    expect(field.readOnly).toBe(true);
+    expect(field.value).toBe(expected);
+    expect(document.querySelector(`label[for="${field.id}"]`)?.textContent).toBe("Invitation link");
+    expect(document.activeElement).toBe(field);
+    expect(field.selectionStart).toBe(0);
+    expect(field.selectionEnd).toBe(expected.length);
+  });
+
+  it("does not open the manual-copy field when the clipboard write succeeds", async () => {
+    invitationsRoute([invite("a", "live@example.com", "pending", 3)]);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    const { default: UserInvitations } = await import("../../client/src/pages/UserInvitations");
+    await mount(createElement(UserInvitations));
+    await clickCopyLink();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[data-testid="input-invite-link-manual"]')).toBeNull();
   });
 });
 
@@ -406,5 +578,137 @@ describe("TeamManagement", { timeout: 30_000 }, () => {
       (c) => (c[1] as RequestInit | undefined)?.method === "POST" && !String(c[0]).includes("csrf")
     );
     expect(posted).toBe(false);
+  });
+
+  const TEAM_KEY = ["/api/companies", "c-1", "team"];
+  const INVITES_KEY = [...TEAM_KEY, "invitations"];
+  const pendingInvite = {
+    id: "inv1",
+    email: "pending@example.com",
+    role: "viewer",
+    status: "pending",
+    expiresAt: new Date(Date.now() + 3 * DAY).toISOString(),
+    sendCount: 1,
+  };
+  const has = (testId: string) => container.querySelector(`[data-testid="${testId}"]`) !== null;
+
+  /** Fresh client with access (and optionally the roster) already cached, then mount offline/online. */
+  async function seed(opts: { team?: unknown }) {
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    const { companyAccessQueryKey } = await import("../../client/src/lib/auth");
+    queryClient.clear();
+    queryClient.setQueryData(companyAccessQueryKey("c-1"), ACCESS);
+    if (opts.team !== undefined) queryClient.setQueryData(TEAM_KEY, opts.team);
+    return queryClient;
+  }
+
+  it("a paused first roster fetch shows offline, not 'no team members', then loads on reconnect", async () => {
+    routes.push(["GET .*/team$", () => ({ body: [1, 2].map(member) })]);
+    routes.push(["GET .*/team/me", () => ({ body: ACCESS })]);
+    onlineManager.setOnline(false);
+    const { default: TeamManagement } = await import("../../client/src/pages/TeamManagement");
+    await mount(createElement(TeamManagement));
+
+    expect(has("team-offline")).toBe(true);
+    expect(container.textContent).not.toContain("No other team members");
+    expect(has("team-load-error")).toBe(false);
+    expect(hits("/team$")).toBe(0);
+
+    await goOnline();
+    expect(has("team-offline")).toBe(false);
+    expect(container.querySelectorAll('[data-testid^="member-m"]')).toHaveLength(2);
+  });
+
+  it("shows the roster empty copy only after a successful empty response", async () => {
+    routes.push(["GET .*/team$", () => ({ body: [] })]);
+    routes.push(["GET .*/team/me", () => ({ body: ACCESS })]);
+    const release = hold("/team$");
+    const { default: TeamManagement } = await import("../../client/src/pages/TeamManagement");
+    await mount(createElement(TeamManagement));
+    expect(container.textContent).not.toContain("No other team members");
+    release();
+    await flush();
+    expect(container.textContent).toContain("No other team members");
+  });
+
+  it("keeps cached roster rows when a refresh is paused offline", async () => {
+    const queryClient = await seed({ team: [1, 2, 3].map(member) });
+    queryClient.setQueryData(INVITES_KEY, []);
+    const { default: TeamManagement } = await import("../../client/src/pages/TeamManagement");
+    await mountKeepingCache(createElement(TeamManagement));
+    expect(container.querySelectorAll('[data-testid^="member-m"]')).toHaveLength(3);
+
+    onlineManager.setOnline(false);
+    await act(async () => {
+      void queryClient.invalidateQueries({ queryKey: TEAM_KEY, exact: true });
+    });
+    await flush();
+    expect(container.querySelectorAll('[data-testid^="member-m"]')).toHaveLength(3);
+    expect(has("team-offline")).toBe(false);
+    expect(container.textContent).not.toContain("No other team members");
+  });
+
+  it("a paused first invitations fetch shows offline, not the empty copy, then loads on reconnect", async () => {
+    routes.push(["GET .*/team/invitations", () => ({ body: [pendingInvite] })]);
+    const queryClient = await seed({ team: [member(1)] });
+    expect(queryClient.getQueryData(TEAM_KEY)).toBeDefined();
+    onlineManager.setOnline(false);
+    const { default: TeamManagement } = await import("../../client/src/pages/TeamManagement");
+    await mountKeepingCache(createElement(TeamManagement));
+
+    expect(has("team-invitations-offline")).toBe(true);
+    expect(has("team-invitations-empty")).toBe(false);
+    expect(has("invitations-load-error")).toBe(false);
+    expect(hits("/team/invitations")).toBe(0);
+
+    await goOnline();
+    expect(has("team-invitations-offline")).toBe(false);
+    expect(has("invitation-inv1")).toBe(true);
+  });
+
+  it("shows loading, not the empty copy, while the first online invitations fetch is in flight", async () => {
+    routes.push(["GET .*/team/invitations", () => ({ body: [] })]);
+    const release = hold("/team/invitations");
+    await seed({ team: [member(1)] });
+    const { default: TeamManagement } = await import("../../client/src/pages/TeamManagement");
+    await mountKeepingCache(createElement(TeamManagement));
+
+    expect(has("team-invitations-loading")).toBe(true);
+    expect(has("team-invitations-empty")).toBe(false);
+
+    release();
+    await flush();
+    expect(has("team-invitations-loading")).toBe(false);
+    expect(has("team-invitations-empty")).toBe(true);
+  });
+
+  it("keeps cached invitations when a refresh is paused offline", async () => {
+    const queryClient = await seed({ team: [member(1)] });
+    queryClient.setQueryData(INVITES_KEY, [pendingInvite]);
+    const { default: TeamManagement } = await import("../../client/src/pages/TeamManagement");
+    await mountKeepingCache(createElement(TeamManagement));
+    expect(has("invitation-inv1")).toBe(true);
+
+    onlineManager.setOnline(false);
+    await act(async () => {
+      void queryClient.invalidateQueries({ queryKey: INVITES_KEY, exact: true });
+    });
+    await flush();
+    expect(has("invitation-inv1")).toBe(true);
+    expect(has("team-invitations-offline")).toBe(false);
+    expect(has("team-invitations-empty")).toBe(false);
+  });
+
+  it("treats whitespace-only member search as no filter", async () => {
+    routes.push(["GET .*/team$", () => ({ body: [1, 2, 3, 4, 5, 6].map(member) })]);
+    routes.push(["GET .*/team/me", () => ({ body: ACCESS })]);
+    const { default: TeamManagement } = await import("../../client/src/pages/TeamManagement");
+    await mount(createElement(TeamManagement));
+    await typeInto(
+      container.querySelector('[data-testid="input-search-members"]') as HTMLInputElement,
+      "   "
+    );
+    expect(container.querySelectorAll('[data-testid^="member-m"]')).toHaveLength(6);
+    expect(has("members-no-match")).toBe(false);
   });
 });

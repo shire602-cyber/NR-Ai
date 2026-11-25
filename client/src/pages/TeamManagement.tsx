@@ -168,6 +168,8 @@ export default function TeamManagement() {
   const {
     data: teamMembers,
     isLoading: isLoadingTeam,
+    isPending: teamPending,
+    fetchStatus: teamFetchStatus,
     isLoadingError: teamLoadFailed,
     isRefetchError: teamRefreshFailed,
     refetch: refetchTeam,
@@ -182,8 +184,13 @@ export default function TeamManagement() {
   const canManage = canPerform(access, "team.manage");
   const grantable = access?.grantableRoles ?? [];
 
+  // A first fetch with no cached data that is paused (offline) is neither loaded nor empty.
+  const teamOffline = teamPending && teamFetchStatus === "paused";
   const {
     data: invitations,
+    isLoading: isLoadingInvitations,
+    isPending: invitationsPending,
+    fetchStatus: invitationsFetchStatus,
     isLoadingError: invitationsLoadFailed,
     isRefetchError: invitationsRefreshFailed,
     refetch: refetchInvitations,
@@ -191,6 +198,7 @@ export default function TeamManagement() {
     queryKey: ["/api/companies", companyId, "team", "invitations"],
     enabled: !!companyId && canManage,
   });
+  const invitationsOffline = invitationsPending && invitationsFetchStatus === "paused";
   const pendingInvitations = (invitations ?? []).filter(
     (i) => i.status === "pending" || i.status === "expired"
   );
@@ -357,7 +365,12 @@ export default function TeamManagement() {
           </CardHeader>
           <CardContent>
             {isLoadingTeam ? (
-              <div className="space-y-4">
+              <div
+                className="space-y-4"
+                role="status"
+                aria-label={t["portal.teamRosterLoading"]}
+                data-testid="team-loading"
+              >
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="flex items-center gap-4">
                     <Skeleton className="h-10 w-10 rounded-full" />
@@ -367,6 +380,14 @@ export default function TeamManagement() {
                     </div>
                   </div>
                 ))}
+              </div>
+            ) : teamOffline ? (
+              <div
+                className="py-12 text-center text-muted-foreground"
+                role="status"
+                data-testid="team-offline"
+              >
+                {t["portal.teamRosterOffline"]}
               </div>
             ) : teamLoadFailed ? (
               <div className="py-12 text-center" role="alert" data-testid="team-load-error">
@@ -400,7 +421,7 @@ export default function TeamManagement() {
                     </Button>
                   </div>
                 )}
-                {!teamMembers || teamMembers.length === 0 ? (
+                {!teamMembers ? null : teamMembers.length === 0 ? (
                   <div className="text-center py-12">
                     <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                     <p className="text-muted-foreground">
@@ -518,7 +539,23 @@ export default function TeamManagement() {
               <CardTitle>{t["pages.teamInvitationsTitle"]}</CardTitle>
             </CardHeader>
             <CardContent>
-              {invitationsLoadFailed ? (
+              {isLoadingInvitations ? (
+                <p
+                  className="text-sm text-muted-foreground"
+                  role="status"
+                  data-testid="team-invitations-loading"
+                >
+                  {t["portal.inviteLoading"]}
+                </p>
+              ) : invitationsOffline ? (
+                <p
+                  className="text-sm text-muted-foreground"
+                  role="status"
+                  data-testid="team-invitations-offline"
+                >
+                  {t["portal.inviteOffline"]}
+                </p>
+              ) : invitationsLoadFailed ? (
                 <div
                   role="alert"
                   className="flex items-center gap-3"
@@ -557,8 +594,11 @@ export default function TeamManagement() {
                       </Button>
                     </div>
                   )}
-                  {pendingInvitations.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
+                  {!invitations ? null : pendingInvitations.length === 0 ? (
+                    <p
+                      className="text-sm text-muted-foreground"
+                      data-testid="team-invitations-empty"
+                    >
                       {t["pages.teamInvitationsEmpty"]}
                     </p>
                   ) : (

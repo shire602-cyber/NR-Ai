@@ -1,7 +1,7 @@
 import { T } from "@/components/layout/T";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Mail,
@@ -68,14 +68,21 @@ export default function UserInvitations() {
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
 
   const {
-    data: invitations = [],
+    data: invitationsData,
     isLoading,
+    isPending: invitationsPending,
+    fetchStatus: invitationsFetchStatus,
     isLoadingError,
     isRefetchError,
     refetch,
   } = useQuery<Invitation[]>({
     queryKey: ["/api/admin/invitations"],
   });
+  // Empty copy is only for a successful response; a paused (offline) first fetch has no data yet.
+  const invitations = invitationsData ?? [];
+  const invitationsOffline = invitationsPending && invitationsFetchStatus === "paused";
+  const manualLinkInputRef = useRef<HTMLInputElement>(null);
+  const [manualLink, setManualLink] = useState<string | null>(null);
 
   const { data: clients = [] } = useQuery<Company[]>({
     queryKey: ["/api/admin/clients"],
@@ -162,8 +169,10 @@ export default function UserInvitations() {
       ? "expired"
       : inv.status;
 
+  // Normalised once: whitespace alone is not a filter, for matching and for the empty state.
+  const searchNeedle = searchTerm.trim().toLowerCase();
   const filteredInvitations = invitations.filter((inv) => {
-    const matchesSearch = inv.email.toLowerCase().includes(searchTerm.trim().toLowerCase());
+    const matchesSearch = inv.email.toLowerCase().includes(searchNeedle);
     const matchesStatus = statusFilter === "all" || effectiveStatus(inv) === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -228,13 +237,28 @@ export default function UserInvitations() {
       toast({ title: t["portal.inviteLinkCopied"] });
     } catch {
       toast({ variant: "destructive", title: t["portal.inviteCopyFailed"] });
+      // Clipboard refused: show the same link so it can be copied by hand.
+      setManualLink(link);
     }
   };
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div
+        className="flex items-center justify-center h-64"
+        role="status"
+        aria-label={t["portal.inviteLoading"]}
+        data-testid="invitations-loading"
+      >
         <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  if (invitationsOffline) {
+    return (
+      <div className="space-y-4 py-16 text-center" role="status" data-testid="invitations-offline">
+        <p className="text-muted-foreground">{t["portal.inviteOffline"]}</p>
       </div>
     );
   }
@@ -384,6 +408,38 @@ export default function UserInvitations() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={manualLink !== null} onOpenChange={(open) => !open && setManualLink(null)}>
+        <DialogContent
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            manualLinkInputRef.current?.focus();
+            manualLinkInputRef.current?.select();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{t["portal.inviteLinkDialogTitle"]}</DialogTitle>
+            <DialogDescription>{t["portal.inviteLinkDialogBody"]}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="invite-link-manual">{t["portal.inviteLinkFieldLabel"]}</Label>
+            <Input
+              id="invite-link-manual"
+              ref={manualLinkInputRef}
+              readOnly
+              dir="ltr"
+              value={manualLink ?? ""}
+              onFocus={(e) => e.currentTarget.select()}
+              data-testid="input-invite-link-manual"
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setManualLink(null)}>
+              <T k="pages.close" />
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -560,10 +616,14 @@ export default function UserInvitations() {
                     </TableRow>
                   );
                 })}
-                {filteredInvitations.length === 0 && (
+                {invitationsData !== undefined && filteredInvitations.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      {searchTerm || statusFilter !== "all"
+                    <TableCell
+                      colSpan={7}
+                      className="text-center py-8 text-muted-foreground"
+                      data-testid="invitations-empty"
+                    >
+                      {searchNeedle || statusFilter !== "all"
                         ? t["portal.inviteNoMatches"]
                         : t["portal.inviteNoneYet"]}
                     </TableCell>
