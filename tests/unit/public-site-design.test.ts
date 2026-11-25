@@ -316,6 +316,22 @@ describe("D1 public site", () => {
     }
   });
 
+  it.each(["en", "ar"] as const)(
+    "[help] the review request mailto subject follows the %s locale",
+    async (locale) => {
+      await setLocale(locale);
+      await render("HelpCenter");
+      const { t } = await import("../../client/src/lib/i18n");
+      const link = [...container.querySelectorAll<HTMLAnchorElement>('a[href^="mailto:"]')].find(
+        (a) => a.getAttribute("href")!.includes("subject=")
+      );
+      expect(link).toBeDefined();
+      const subject = new URL(link!.getAttribute("href")!).searchParams.get("subject");
+      expect(subject).toBe(t[locale]["marketing.helpReviewMailSubject"]);
+      if (locale === "ar") expect(subject).not.toBe("Migration review");
+    }
+  );
+
   it("[D1b] the product preview shows the post-D2 dashboard strip with shared money and status components", async () => {
     await render("MuhasibLanding");
     const preview = container.querySelector("figure.mk-app");
