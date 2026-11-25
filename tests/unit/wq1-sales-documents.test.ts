@@ -602,16 +602,34 @@ describe("WQ1 receive payment (7.6)", () => {
     await renderPage(ReceivePayment);
   };
   const invoiceStates = () =>
-    ["receive-loading", "receive-paused", "receive-load-error", "receive-no-open"].filter(
-      (id) => !!byTestId(id)
-    );
+    [
+      "receive-loading",
+      "receive-paused",
+      "receive-load-error",
+      "receive-refresh-error",
+      "receive-no-open",
+    ].filter((id) => !!byTestId(id));
   const submitDisabled = () => (byTestId("button-record-receipt") as HTMLButtonElement).disabled;
+  const summary = () => byTestId("receive-summary");
+  const refetchAll = async () => {
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    await act(async () => {
+      void queryClient.refetchQueries();
+    });
+    await flush();
+  };
 
   it("says there are no open invoices only after a successful empty response", async () => {
     setFixtures(fixtures({ [OPEN_URL]: [] }));
     await openReceivePage();
+    // No customer yet: nothing to total.
+    expect(summary()).toBeNull();
     await pickOption(byTestId("select-receive-customer"), CONTACT.name);
     expect(invoiceStates()).toEqual(["receive-no-open"]);
+    // An empty success still totals: the whole amount would be customer credit.
+    await type(byTestId("input-receive-amount"), "50");
+    expect(summary()).not.toBeNull();
+    expect(byTestId("receive-credit")).not.toBeNull();
   });
 
   it("shows loading, not empty, while open invoices are in flight", async () => {
@@ -619,6 +637,24 @@ describe("WQ1 receive payment (7.6)", () => {
     await openReceivePage();
     await pickOption(byTestId("select-receive-customer"), CONTACT.name);
     expect(invoiceStates()).toEqual(["receive-loading"]);
+    await type(byTestId("input-receive-amount"), "50");
+    expect(summary()).toBeNull();
+    expect(byTestId("receive-credit")).toBeNull();
+  });
+
+  it("PR129: leaving the page aborts the open-invoice request", async () => {
+    setFixtures(fixtures({ [OPEN_URL]: never() }));
+    await openReceivePage();
+    await pickOption(byTestId("select-receive-customer"), CONTACT.name);
+    const { apiRequest } = await import("../../client/src/lib/queryClient");
+    const call = vi
+      .mocked(apiRequest)
+      .mock.calls.filter(([, url]) => url === OPEN_URL)
+      .at(-1)!;
+    const signal = call[4]!.signal!;
+    expect(signal.aborted).toBe(false);
+    await unmountPage();
+    expect(signal.aborted).toBe(true);
   });
 
   it("shows a failed load as an error, not as no open invoices", async () => {
@@ -628,6 +664,8 @@ describe("WQ1 receive payment (7.6)", () => {
     await openReceivePage();
     await pickOption(byTestId("select-receive-customer"), CONTACT.name);
     expect(invoiceStates()).toEqual(["receive-load-error"]);
+    await type(byTestId("input-receive-amount"), "50");
+    expect(summary()).toBeNull();
   });
 
   it("shows a paused load as waiting for a connection", async () => {
@@ -637,6 +675,7 @@ describe("WQ1 receive payment (7.6)", () => {
       await act(async () => onlineManager.setOnline(false));
       await pickOption(byTestId("select-receive-customer"), CONTACT.name);
       expect(invoiceStates()).toEqual(["receive-paused"]);
+      expect(summary()).toBeNull();
     } finally {
       await act(async () => onlineManager.setOnline(true));
     }
@@ -666,7 +705,44 @@ describe("WQ1 receive payment (7.6)", () => {
       data: [invoiceRow()],
     });
     expect(byTestId("receive-row-inv-a")).not.toBeNull();
+    expect(invoiceStates()).toEqual(["receive-refresh-error"]);
+    expect(summary()).toBeNull();
+  });
+
+  it("PR129: a failed refresh of an empty result is not reported as no open invoices", async () => {
+    const f = fixtures({ [OPEN_URL]: [] });
+    setFixtures(f);
+    await openReceivePage();
+    await pickOption(byTestId("select-receive-customer"), CONTACT.name);
+    expect(invoiceStates()).toEqual(["receive-no-open"]);
+    failing(f, OPEN_URL);
+    await refetchAll();
+    expect(invoiceStates()).toEqual(["receive-refresh-error"]);
+    expect(summary()).toBeNull();
+  });
+
+  it("PR129: cached rows stay listed, without totals, while a refresh loads or pauses", async () => {
+    const f: Record<string, unknown> = fixtures({ [OPEN_URL]: [invoiceRow()] });
+    setFixtures(f);
+    await openReceivePage();
+    await pickOption(byTestId("select-receive-customer"), CONTACT.name);
+    await flushUntil(() => !!byTestId("receive-row-inv-a"));
+    expect(summary()).not.toBeNull();
+    try {
+      await act(async () => onlineManager.setOnline(false));
+      await refetchAll();
+      expect(invoiceStates()).toEqual(["receive-paused"]);
+      expect(byTestId("receive-row-inv-a")).not.toBeNull();
+      expect(summary()).toBeNull();
+    } finally {
+      await act(async () => onlineManager.setOnline(true));
+    }
+    await flush();
+    f[OPEN_URL] = never();
+    await refetchAll();
+    expect(byTestId("receive-row-inv-a")).not.toBeNull();
     expect(invoiceStates()).toEqual([]);
+    expect(summary()).toBeNull();
   });
 
   const hints = () =>

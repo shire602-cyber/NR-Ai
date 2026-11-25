@@ -554,6 +554,7 @@
   "invoices.receive.feeTooHigh": "The bank fee must be less than the amount received.",
   "invoices.receive.paused": "Loading open invoices is paused.",
   "invoices.receive.loadError": "Could not load open invoices. Refresh the page to try again.",
+  "invoices.receive.refreshError": "Could not refresh open invoices. What was loaded before may be out of date. Refresh the page to try again.",
   "invoices.receive.noAccounts": "No cash or bank account is available to deposit into. Add one in the chart of accounts.",
   "invoices.deposits.error.contactId": "Choose the customer.",
   "invoices.deposits.error.date": "Enter the date received.",

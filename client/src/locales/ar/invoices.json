@@ -554,6 +554,7 @@
   "invoices.receive.feeTooHigh": "يجب أن تكون رسوم البنك أقل من المبلغ المستلم.",
   "invoices.receive.paused": "تحميل الفواتير المفتوحة متوقف مؤقتًا.",
   "invoices.receive.loadError": "تعذر تحميل الفواتير المفتوحة. حدّث الصفحة للمحاولة مرة أخرى.",
+  "invoices.receive.refreshError": "تعذر تحديث الفواتير المفتوحة. قد تكون البيانات المحمّلة سابقًا قديمة. حدّث الصفحة للمحاولة مرة أخرى.",
   "invoices.receive.noAccounts": "لا يوجد حساب نقدي أو بنكي للإيداع فيه. أضف حسابًا في دليل الحسابات.",
   "invoices.deposits.error.contactId": "اختر العميل.",
   "invoices.deposits.error.date": "أدخل تاريخ الاستلام.",
