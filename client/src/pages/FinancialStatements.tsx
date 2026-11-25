@@ -272,14 +272,21 @@ function BreakdownTable({ items, locale }: { items: AccountBreakdown[]; locale?:
 /**
  * A retry of a query that has no data clears `error` and returns to pending. Hold the last
  * failure until data arrives so the Try again control stays mounted and keeps keyboard focus.
+ * The held failure is scoped to the full query key: a different request (other dates or
+ * company) never inherits it and shows its own loading skeleton.
  */
-function useStickyQueryError(error: unknown, hasData: boolean): unknown {
-  const [sticky, setSticky] = useState<unknown>(null);
-  if (error && sticky !== error) setSticky(error);
+function useStickyQueryError(
+  error: unknown,
+  hasData: boolean,
+  queryKey: readonly unknown[]
+): unknown {
+  const key = JSON.stringify(queryKey);
+  const [sticky, setSticky] = useState<{ key: string; error: unknown } | null>(null);
+  if (error && (sticky?.key !== key || sticky.error !== error)) setSticky({ key, error });
   else if (!error && hasData && sticky) setSticky(null);
   if (error) return error;
   if (hasData) return null;
-  return sticky;
+  return sticky?.key === key ? sticky.error : null;
 }
 
 // ================================
@@ -300,13 +307,14 @@ function ProfitLossTab({
   const [endDate, setEndDate] = useState(defaults.endDate);
   const [queryDates, setQueryDates] = useState(defaults);
 
-  const { data, isLoading, isFetching, error, refetch } = useQuery<ProfitLossData>({
-    queryKey: [
-      `/api/companies/${companyId}/financial-statements/profit-loss?startDate=${queryDates.startDate}&endDate=${queryDates.endDate}&compareTo=prior_year`,
-    ],
+  const queryKey = [
+    `/api/companies/${companyId}/financial-statements/profit-loss?startDate=${queryDates.startDate}&endDate=${queryDates.endDate}&compareTo=prior_year`,
+  ];
+  const { data, isLoading, isFetching, fetchStatus, error, refetch } = useQuery<ProfitLossData>({
+    queryKey,
     enabled: !!companyId,
   });
-  const loadError = useStickyQueryError(error, data != null);
+  const loadError = useStickyQueryError(error, data != null, queryKey);
 
   // Sweep: "Generate" with unchanged dates did nothing (cached query); it now re-reads.
   const handleGenerate = () => {
@@ -363,6 +371,7 @@ function ProfitLossTab({
           messageKey="statements.loadFailed"
           onRetry={() => void refetch()}
           retrying={isFetching}
+          paused={fetchStatus === "paused"}
         />
       ) : null}
 
@@ -516,13 +525,14 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
   const [asOfDate, setAsOfDate] = useState(today);
   const [queryDate, setQueryDate] = useState(today);
 
-  const { data, isLoading, isFetching, error, refetch } = useQuery<BalanceSheetData>({
-    queryKey: [
-      `/api/companies/${companyId}/financial-statements/balance-sheet?asOfDate=${queryDate}&compareTo=prior_year`,
-    ],
+  const queryKey = [
+    `/api/companies/${companyId}/financial-statements/balance-sheet?asOfDate=${queryDate}&compareTo=prior_year`,
+  ];
+  const { data, isLoading, isFetching, fetchStatus, error, refetch } = useQuery<BalanceSheetData>({
+    queryKey,
     enabled: !!companyId,
   });
-  const loadError = useStickyQueryError(error, data != null);
+  const loadError = useStickyQueryError(error, data != null, queryKey);
 
   const handleGenerate = () => {
     if (asOfDate === queryDate) void refetch();
@@ -569,6 +579,7 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
           messageKey="statements.loadFailed"
           onRetry={() => void refetch()}
           retrying={isFetching}
+          paused={fetchStatus === "paused"}
         />
       ) : null}
 
@@ -813,13 +824,14 @@ function CashFlowTab({
   const [endDate, setEndDate] = useState(defaults.endDate);
   const [queryDates, setQueryDates] = useState(defaults);
 
-  const { data, isLoading, isFetching, error, refetch } = useQuery<CashFlowData>({
-    queryKey: [
-      `/api/companies/${companyId}/financial-statements/cash-flow?startDate=${queryDates.startDate}&endDate=${queryDates.endDate}`,
-    ],
+  const queryKey = [
+    `/api/companies/${companyId}/financial-statements/cash-flow?startDate=${queryDates.startDate}&endDate=${queryDates.endDate}`,
+  ];
+  const { data, isLoading, isFetching, fetchStatus, error, refetch } = useQuery<CashFlowData>({
+    queryKey,
     enabled: !!companyId,
   });
-  const loadError = useStickyQueryError(error, data != null);
+  const loadError = useStickyQueryError(error, data != null, queryKey);
 
   // Sweep: "Generate" with unchanged dates did nothing (cached query); it now re-reads.
   const handleGenerate = () => {
@@ -899,6 +911,7 @@ function CashFlowTab({
           messageKey="pageLabels.failedToLoadCashFlowStatement"
           onRetry={() => void refetch()}
           retrying={isFetching}
+          paused={fetchStatus === "paused"}
         />
       ) : null}
 

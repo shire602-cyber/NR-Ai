@@ -32,6 +32,7 @@
   "statements.operatingExpenses": "مصروفات التشغيل",
   "statements.tabShortPl": "الأرباح",
   "statements.retry": "حاول مرة أخرى",
+  "statements.retryWaitingForConnection": "في انتظار عودة الاتصال. ستُعاد القائمة تلقائيًا عند عودته.",
   "statements.tabShortBs": "الميزانية",
   "statements.tabShortCf": "التدفق"
 }

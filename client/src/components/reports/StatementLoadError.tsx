@@ -7,11 +7,15 @@ export function StatementLoadError({
   messageKey,
   onRetry,
   retrying,
+  paused,
 }: {
   messageKey: string;
   onRetry: () => void;
   retrying?: boolean;
+  /** The retry is queued by React Query until the connection returns. */
+  paused?: boolean;
 }) {
+  const pending = !!retrying || !!paused;
   return (
     <Card>
       <CardContent className="pt-6">
@@ -19,17 +23,17 @@ export function StatementLoadError({
           role="alert"
           className="flex flex-wrap items-center justify-between gap-3 text-destructive"
         >
-          <p>
-            <T k={messageKey} />
+          <p className="text-start">
+            <T k={paused ? "statements.retryWaitingForConnection" : messageKey} />
           </p>
           <Button
             variant="outline"
             size="sm"
-            aria-busy={retrying || undefined}
+            aria-busy={pending || undefined}
             onClick={() => {
               // Stay mounted and focused. A disabled button would drop keyboard focus,
-              // and a second click while the retry is in flight is ignored.
-              if (retrying) return;
+              // and a second click while the retry is in flight or paused is ignored.
+              if (pending) return;
               onRetry();
             }}
           >
