@@ -242,30 +242,32 @@ export default function StatementDialogBody({
                         : tr("banking.statement.draft")}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-end space-x-1 rtl:space-x-reverse">
-                    {r.status !== "signed_off" && (
-                      <Button
-                        size="sm"
-                        onClick={() => signMutation.mutate(r.id)}
-                        disabled={signMutation.isPending}
-                      >
-                        {tr("banking.statement.signOff")}
-                      </Button>
-                    )}
-                    {(["pdf", "xlsx"] as const).map((f) => (
-                      <Button key={f} size="sm" variant="outline" asChild>
-                        <a
-                          href={`/api/companies/${companyId}/bank-reconciliations/${r.id}/export?format=${f}`}
-                          target="_blank"
-                          rel="noreferrer"
+                  <TableCell className="text-end">
+                    <div className="inline-flex flex-wrap justify-end gap-1">
+                      {r.status !== "signed_off" && (
+                        <Button
+                          size="sm"
+                          onClick={() => signMutation.mutate(r.id)}
+                          disabled={signMutation.isPending}
                         >
-                          <FileDown className="w-3 h-3" />
-                          {f === "pdf"
-                            ? tr("banking.statement.exportPdf")
-                            : tr("banking.statement.exportXlsx")}
-                        </a>
-                      </Button>
-                    ))}
+                          {tr("banking.statement.signOff")}
+                        </Button>
+                      )}
+                      {(["pdf", "xlsx"] as const).map((f) => (
+                        <Button key={f} size="sm" variant="outline" asChild>
+                          <a
+                            href={`/api/companies/${companyId}/bank-reconciliations/${r.id}/export?format=${f}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <FileDown className="w-3 h-3" />
+                            {f === "pdf"
+                              ? tr("banking.statement.exportPdf")
+                              : tr("banking.statement.exportXlsx")}
+                          </a>
+                        </Button>
+                      ))}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
