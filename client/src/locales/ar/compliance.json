@@ -231,5 +231,14 @@
   "compliance.autopilotStageFiled": "تم التقديم",
   "compliance.autopilotStagePaid": "مدفوع",
   "compliance.vatNotRegisteredTitle": "هذه الشركة غير مسجلة في ضريبة القيمة المضافة",
-  "compliance.vatNotRegisteredBody": "لا تفرض الشركة ضريبة القيمة المضافة ولا تقدّم إقرارًا ضريبيًا. ولا يمكن استرداد الضريبة التي يفرضها الموردون، لذلك تُسجَّل ضمن تكلفة كل عملية شراء. عند تسجيل الشركة لدى الهيئة الاتحادية للضرائب، غيّر نوع التسجيل وأضف رقم التسجيل الضريبي في ملف الشركة."
+  "compliance.vatNotRegisteredBody": "لا تفرض الشركة ضريبة القيمة المضافة ولا تقدّم إقرارًا ضريبيًا. ولا يمكن استرداد الضريبة التي يفرضها الموردون، لذلك تُسجَّل ضمن تكلفة كل عملية شراء. عند تسجيل الشركة لدى الهيئة الاتحادية للضرائب، غيّر نوع التسجيل وأضف رقم التسجيل الضريبي في ملف الشركة.",
+  "compliance.vatQueryWaiting": "في انتظار التحميل. سيستمر ذلك عند عودة الاتصال أو عند العودة إلى هذه الصفحة.",
+  "compliance.vatQueryWaitingRefresh": "في انتظار التحديث. تُعرض آخر بيانات تم تحميلها.",
+  "compliance.vatProfileLoadFailedTitle": "تعذّر تحميل ملف الشركة",
+  "compliance.vatProfileRefreshFailedTitle": "تعذّر تحديث ملف الشركة",
+  "compliance.vatProfileRefreshFailedBody": "تُعرض آخر تفاصيل تم تحميلها. قد يكون رقم التسجيل الضريبي وإعدادات الضريبة غير محدّثة.",
+  "compliance.vatReturnsLoadFailedTitle": "تعذّر تحميل إقرارات ضريبة القيمة المضافة",
+  "compliance.vatReturnsRefreshFailedTitle": "تعذّر تحديث إقرارات ضريبة القيمة المضافة",
+  "compliance.vatReturnsRefreshFailedBody": "تُعرض آخر إقرارات تم تحميلها. أعد المحاولة للحصول على أحدث البيانات.",
+  "compliance.vatReturnsUnavailable": "ستظهر إقرارات ضريبة القيمة المضافة هنا بعد تحميلها."
 }

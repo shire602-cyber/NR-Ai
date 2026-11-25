@@ -231,5 +231,14 @@
   "compliance.autopilotStageFiled": "Filed",
   "compliance.autopilotStagePaid": "Paid",
   "compliance.vatNotRegisteredTitle": "This company is not registered for VAT",
-  "compliance.vatNotRegisteredBody": "It charges no VAT and files no VAT return. VAT that suppliers charge cannot be recovered, so it is booked as part of the cost of each purchase. When the company registers with the FTA, change the registration type and add the TRN in the company profile."
+  "compliance.vatNotRegisteredBody": "It charges no VAT and files no VAT return. VAT that suppliers charge cannot be recovered, so it is booked as part of the cost of each purchase. When the company registers with the FTA, change the registration type and add the TRN in the company profile.",
+  "compliance.vatQueryWaiting": "Waiting to load. This continues when your connection returns or this tab is active again.",
+  "compliance.vatQueryWaitingRefresh": "Waiting to refresh. Showing the last loaded data.",
+  "compliance.vatProfileLoadFailedTitle": "We couldn't load the company profile",
+  "compliance.vatProfileRefreshFailedTitle": "We couldn't refresh the company profile",
+  "compliance.vatProfileRefreshFailedBody": "Showing the last loaded details. The TRN and VAT settings may be out of date.",
+  "compliance.vatReturnsLoadFailedTitle": "We couldn't load your VAT returns",
+  "compliance.vatReturnsRefreshFailedTitle": "We couldn't refresh your VAT returns",
+  "compliance.vatReturnsRefreshFailedBody": "Showing the last loaded returns. Try again to get the latest.",
+  "compliance.vatReturnsUnavailable": "Your VAT returns will appear here once they load."
 }

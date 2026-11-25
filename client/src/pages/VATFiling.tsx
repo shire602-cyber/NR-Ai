@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -45,6 +44,7 @@ import VAT201Form from "@/components/VAT201Form";
 
 import { formatDate as formatDisplayDate, parseCalendarDate } from "@/lib/format-date";
 import { companyAddressLine, vatStaggerLabel } from "@/lib/company-address";
+import { VatLoadFailed, VatRefreshNotice, VatWaiting } from "@/components/vat/VatQueryNotice";
 import VatReturnControls from "@/components/vat/VatReturnControls";
 import VatFilingActions from "@/components/vat/VatFilingActions";
 import { summariseVatReturns, vatChecklist, vatFilingStage } from "@/lib/vat-filing-stage";
@@ -243,7 +243,9 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
 
   const {
     data: company,
-    isLoading: companyProfileLoading,
+    fetchStatus: companyFetchStatus,
+    isLoadingError: companyIsLoadingError,
+    isRefetchError: companyIsRefetchError,
     error: companyError,
     refetch: refetchCompany,
   } = useQuery<Company>({
@@ -253,13 +255,65 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
 
   const {
     data: vatReturns,
-    isLoading: isLoadingReturns,
+    fetchStatus: returnsFetchStatus,
+    isLoadingError: returnsIsLoadingError,
+    isRefetchError: returnsIsRefetchError,
+    isSuccess: returnsIsSuccess,
     error: returnsError,
     refetch: refetchReturns,
   } = useQuery<VATReturn[]>({
     queryKey: ["/api/companies", companyId, "vat-returns"],
     enabled: !!companyId,
   });
+
+  // Figures and the "add your TRN" prompts render only from a response (fresh or cached). A paused,
+  // loading or failed query without one is a waiting, loading or error state, never an empty or
+  // unregistered company. A refresh that is paused or failed keeps the cached data on screen.
+  const companyPaused = companyFetchStatus === "paused";
+  const returnsPaused = returnsFetchStatus === "paused";
+  const profileState = {
+    view: company
+      ? ("data" as const)
+      : companyIsLoadingError
+        ? ("error" as const)
+        : companyPaused
+          ? ("waiting" as const)
+          : companyFetchStatus === "fetching"
+            ? ("loading" as const)
+            : ("idle" as const),
+    // A paused refresh outranks the refresh failure that preceded it; a loaded profile stays.
+    notice: company
+      ? companyPaused
+        ? ("paused" as const)
+        : companyIsRefetchError
+          ? ("failed" as const)
+          : null
+      : null,
+  };
+  // Returns: "no returns yet" is only known after a successful response. An empty cache whose
+  // refresh failed is not known to be empty: retry error, or waiting while the retry is paused.
+  const returnsEmptyUnknown = !!vatReturns && !vatReturns.length && !returnsIsSuccess;
+  const returnsView = returnsEmptyUnknown
+    ? returnsPaused
+      ? ("waiting" as const)
+      : ("error" as const)
+    : vatReturns
+      ? ("data" as const)
+      : returnsIsLoadingError
+        ? ("error" as const)
+        : returnsPaused
+          ? ("waiting" as const)
+          : returnsFetchStatus === "fetching"
+            ? ("loading" as const)
+            : ("idle" as const);
+  const returnsNotice =
+    returnsView === "data"
+      ? returnsPaused
+        ? ("paused" as const)
+        : returnsIsRefetchError
+          ? ("failed" as const)
+          : null
+      : null;
 
   const generateMutation = useMutation({
     mutationFn: ({ periodStart, periodEnd }: { periodStart: string; periodEnd: string }) =>
@@ -878,7 +932,7 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
     }
   };
 
-  if (isLoadingCompany || companyProfileLoading) {
+  if (isLoadingCompany || profileState.view === "loading" || profileState.view === "idle") {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
@@ -990,7 +1044,9 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
     );
   }
 
-  if ((companyError && !company) || (returnsError && !vatReturns)) {
+  // No company profile yet: wait for the connection or show why it failed. Nothing about the TRN
+  // or the VAT registration is known, so none of it is shown.
+  if (profileState.view === "waiting" || profileState.view === "error") {
     return (
       <div className="space-y-6">
         <PageHeader
@@ -998,12 +1054,16 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
           title={locale === "ar" ? "إقرار ضريبة القيمة المضافة 201" : "UAE VAT 201 return"}
           description={t["pageLabels.vat201Workflow"]}
         />
-        <ErrorState
-          onRetry={() => {
-            if (companyError) void refetchCompany();
-            if (returnsError) void refetchReturns();
-          }}
-        />
+        {profileState.view === "waiting" ? (
+          <VatWaiting messageKey="compliance.vatQueryWaiting" testId="vat-profile-waiting" />
+        ) : (
+          <VatLoadFailed
+            error={companyError}
+            titleKey="compliance.vatProfileLoadFailedTitle"
+            onRetry={() => void refetchCompany()}
+            testId="vat-profile-load-error"
+          />
+        )}
       </div>
     );
   }
@@ -1071,7 +1131,36 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
         }
       />
 
-      {!company?.trnVatNumber && (
+      {profileState.notice === "paused" && (
+        <VatWaiting
+          messageKey="compliance.vatQueryWaitingRefresh"
+          testId="vat-profile-refresh-paused"
+        />
+      )}
+      {profileState.notice === "failed" && (
+        <VatRefreshNotice
+          titleKey="compliance.vatProfileRefreshFailedTitle"
+          bodyKey="compliance.vatProfileRefreshFailedBody"
+          onRetry={() => void refetchCompany()}
+          testId="vat-profile-refresh-error"
+        />
+      )}
+      {returnsNotice === "paused" && (
+        <VatWaiting
+          messageKey="compliance.vatQueryWaitingRefresh"
+          testId="vat-returns-refresh-paused"
+        />
+      )}
+      {returnsNotice === "failed" && (
+        <VatRefreshNotice
+          titleKey="compliance.vatReturnsRefreshFailedTitle"
+          bodyKey="compliance.vatReturnsRefreshFailedBody"
+          onRetry={() => void refetchReturns()}
+          testId="vat-returns-refresh-error"
+        />
+      )}
+
+      {company && !company.trnVatNumber && (
         <Card className="border-warning/30 bg-warning-subtle ">
           <CardContent className="pt-4">
             <div className="flex items-start gap-3">
@@ -1097,217 +1186,230 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
       )}
 
       {/* ── Current filing hero — lead with the answer, not the spreadsheet ── */}
-      <Card className="overflow-hidden">
-        <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr]">
-          {/* Left: period + net VAT position */}
-          <div className="p-6 lg:p-7">
-            <div className="flex items-center gap-2 text-caption font-semibold text-accent">
-              <span aria-hidden className="inline-block h-px w-5 bg-accent/60" />
-              {t["compliance.vatFilingCurrentFilingPeriod"]}
-            </div>
-            <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h2 className="font-display text-2xl leading-none tracking-tight text-foreground">
-                {format(currentFiling.periodStart, "d MMM", dfOpts)} –{" "}
-                {format(currentFiling.periodEnd, "d MMM yyyy", dfOpts)}
-              </h2>
-              {currentFiling.hasReturn &&
-                currentFiling.return &&
-                getStatusBadge(currentFiling.return)}
-            </div>
+      {returnsView === "loading" || returnsView === "idle" ? (
+        <Skeleton className="h-64" data-testid="vat-returns-loading" />
+      ) : returnsView === "waiting" ? (
+        <VatWaiting messageKey="compliance.vatQueryWaiting" testId="vat-returns-waiting" />
+      ) : returnsView === "error" ? (
+        <VatLoadFailed
+          error={returnsError}
+          titleKey="compliance.vatReturnsLoadFailedTitle"
+          onRetry={() => void refetchReturns()}
+          testId="vat-returns-load-error"
+        />
+      ) : (
+        <Card className="overflow-hidden">
+          <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr]">
+            {/* Left: period + net VAT position */}
+            <div className="p-6 lg:p-7">
+              <div className="flex items-center gap-2 text-caption font-semibold text-accent">
+                <span aria-hidden className="inline-block h-px w-5 bg-accent/60" />
+                {t["compliance.vatFilingCurrentFilingPeriod"]}
+              </div>
+              <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h2 className="font-display text-2xl leading-none tracking-tight text-foreground">
+                  {format(currentFiling.periodStart, "d MMM", dfOpts)} –{" "}
+                  {format(currentFiling.periodEnd, "d MMM yyyy", dfOpts)}
+                </h2>
+                {currentFiling.hasReturn &&
+                  currentFiling.return &&
+                  getStatusBadge(currentFiling.return)}
+              </div>
 
-            <div className="mt-5">
-              <p className="text-caption font-semibold text-muted-foreground">
-                {currentFiling.isRefund
-                  ? locale === "ar"
-                    ? "استرداد ضريبي مستحق"
-                    : "VAT refund due"
-                  : t["compliance.vatFilingNetVatPayable"]}
-              </p>
-              <p
-                className={`mt-1 text-display font-semibold leading-none tracking-tight tabular-nums ${
-                  !currentFiling.hasReturn
-                    ? "text-muted-foreground"
-                    : currentFiling.isRefund
-                      ? "text-success"
-                      : "text-foreground"
-                }`}
-                data-testid="text-vat-net-hero"
-              >
-                {currentFiling.hasReturn ? (
-                  <Money amount={Math.abs(currentFiling.net)} />
-                ) : (
-                  t["compliance.vatFilingNotYetCalculated"]
-                )}
-              </p>
-              {!currentFiling.hasReturn &&
-                !vatPeriodEnded(
-                  format(currentFiling.periodEnd, "yyyy-MM-dd"),
-                  format(new Date(), "yyyy-MM-dd")
-                ) && (
-                  <div className="mt-3">
-                    <VatPeriodPreview
-                      companyId={companyId}
-                      periodStart={format(currentFiling.periodStart, "yyyy-MM-dd")}
-                      periodEnd={format(currentFiling.periodEnd, "yyyy-MM-dd")}
-                    />
+              <div className="mt-5">
+                <p className="text-caption font-semibold text-muted-foreground">
+                  {currentFiling.isRefund
+                    ? locale === "ar"
+                      ? "استرداد ضريبي مستحق"
+                      : "VAT refund due"
+                    : t["compliance.vatFilingNetVatPayable"]}
+                </p>
+                <p
+                  className={`mt-1 text-display font-semibold leading-none tracking-tight tabular-nums ${
+                    !currentFiling.hasReturn
+                      ? "text-muted-foreground"
+                      : currentFiling.isRefund
+                        ? "text-success"
+                        : "text-foreground"
+                  }`}
+                  data-testid="text-vat-net-hero"
+                >
+                  {currentFiling.hasReturn ? (
+                    <Money amount={Math.abs(currentFiling.net)} />
+                  ) : (
+                    t["compliance.vatFilingNotYetCalculated"]
+                  )}
+                </p>
+                {!currentFiling.hasReturn &&
+                  !vatPeriodEnded(
+                    format(currentFiling.periodEnd, "yyyy-MM-dd"),
+                    format(new Date(), "yyyy-MM-dd")
+                  ) && (
+                    <div className="mt-3">
+                      <VatPeriodPreview
+                        companyId={companyId}
+                        periodStart={format(currentFiling.periodStart, "yyyy-MM-dd")}
+                        periodEnd={format(currentFiling.periodEnd, "yyyy-MM-dd")}
+                      />
+                    </div>
+                  )}
+                {currentFiling.hasReturn && (
+                  <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-small text-muted-foreground tabular-nums">
+                    <span>
+                      {t["compliance.vatFilingOutputVat"]}:{" "}
+                      <span className="font-medium text-foreground">
+                        <Money amount={currentFiling.output} />
+                      </span>
+                    </span>
+                    <span>
+                      {t["compliance.vatFilingInputVat"]}:{" "}
+                      <span className="font-medium text-foreground">
+                        <Money amount={currentFiling.input} />
+                      </span>
+                    </span>
                   </div>
                 )}
-              {currentFiling.hasReturn && (
-                <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-small text-muted-foreground tabular-nums">
-                  <span>
-                    {t["compliance.vatFilingOutputVat"]}:{" "}
-                    <span className="font-medium text-foreground">
-                      <Money amount={currentFiling.output} />
-                    </span>
-                  </span>
-                  <span>
-                    {t["compliance.vatFilingInputVat"]}:{" "}
-                    <span className="font-medium text-foreground">
-                      <Money amount={currentFiling.input} />
-                    </span>
-                  </span>
-                </div>
-              )}
-            </div>
+              </div>
 
-            <div className="mt-6 flex flex-wrap items-center gap-2">
-              {currentFiling.hasReturn ? (
-                <>
-                  <Button
-                    onClick={() => handleViewReturn(currentFiling.return)}
-                    data-testid="button-hero-view-return"
-                  >
-                    <Eye className="me-2 h-4 w-4" />
-                    {t["compliance.vatFilingReviewReturn"]}
-                  </Button>
-                  {(currentFiling.status === "draft" ||
-                    currentFiling.status === "pending_review") && (
+              <div className="mt-6 flex flex-wrap items-center gap-2">
+                {currentFiling.hasReturn ? (
+                  <>
                     <Button
-                      variant="outline"
-                      onClick={() => handleEditReturn(currentFiling.return)}
-                      data-testid="button-hero-edit-return"
+                      onClick={() => handleViewReturn(currentFiling.return)}
+                      data-testid="button-hero-view-return"
                     >
-                      <Edit3 className="me-2 h-4 w-4" />
-                      {locale === "ar" ? "تعديل" : "Edit"}
+                      <Eye className="me-2 h-4 w-4" />
+                      {t["compliance.vatFilingReviewReturn"]}
                     </Button>
-                  )}
-                  {companyId && currentFiling.return && (
-                    <VatFilingActions companyId={companyId} vatReturn={currentFiling.return} />
-                  )}
-                </>
-              ) : canGenerateVatReturn ? (
-                <Button onClick={handleCreateReturn} data-testid="button-hero-generate">
-                  <Calculator className="me-2 h-4 w-4" />
-                  {t["compliance.vatFilingGenerateReturn"]}
-                </Button>
-              ) : (
-                <Button asChild>
-                  <Link href="/company-profile">
-                    <AlertTriangle className="me-2 h-4 w-4" />
-                    {t["compliance.vatFilingAddTrn"]}
+                    {(currentFiling.status === "draft" ||
+                      currentFiling.status === "pending_review") && (
+                      <Button
+                        variant="outline"
+                        onClick={() => handleEditReturn(currentFiling.return)}
+                        data-testid="button-hero-edit-return"
+                      >
+                        <Edit3 className="me-2 h-4 w-4" />
+                        {locale === "ar" ? "تعديل" : "Edit"}
+                      </Button>
+                    )}
+                    {companyId && currentFiling.return && (
+                      <VatFilingActions companyId={companyId} vatReturn={currentFiling.return} />
+                    )}
+                  </>
+                ) : canGenerateVatReturn ? (
+                  <Button onClick={handleCreateReturn} data-testid="button-hero-generate">
+                    <Calculator className="me-2 h-4 w-4" />
+                    {t["compliance.vatFilingGenerateReturn"]}
+                  </Button>
+                ) : (
+                  <Button asChild>
+                    <Link href="/company-profile">
+                      <AlertTriangle className="me-2 h-4 w-4" />
+                      {t["compliance.vatFilingAddTrn"]}
+                    </Link>
+                  </Button>
+                )}
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="sm"
+                  className="min-h-11 md:min-h-8"
+                  data-testid="button-vat-proof-trail"
+                >
+                  <Link href={evidenceSectionHref("proof-drilldown")}>
+                    {t["compliance.vatFilingViewProof"]}
                   </Link>
                 </Button>
-              )}
-              <Button
-                asChild
-                variant="ghost"
-                size="sm"
-                className="min-h-11 md:min-h-8"
-                data-testid="button-vat-proof-trail"
-              >
-                <Link href={evidenceSectionHref("proof-drilldown")}>
-                  {t["compliance.vatFilingViewProof"]}
-                </Link>
-              </Button>
+              </div>
+            </div>
+
+            {/* Right: due-date countdown */}
+            <div className="flex flex-col justify-center gap-1 border-t border-card-border bg-muted/30 p-6 lg:border-s lg:border-t-0 lg:p-7">
+              <p className="text-caption font-semibold text-muted-foreground">
+                {t["compliance.vatFilingFilingDeadline"]}
+              </p>
+              <p className="mt-1 font-display text-xl leading-tight tracking-tight text-foreground">
+                {format(currentFiling.dueDate, "d MMMM yyyy", dfOpts)}
+              </p>
+              {(() => {
+                const d = currentFiling.daysUntilDue;
+                const filed = vatChecklist(currentFiling.return).filed;
+                const tone = filed ? "success" : d < 0 ? "danger" : d <= 7 ? "warning" : "neutral";
+                const label = filed
+                  ? locale === "ar"
+                    ? "تم التقديم"
+                    : "Filed"
+                  : d < 0
+                    ? locale === "ar"
+                      ? `متأخر بـ ${Math.abs(d)} يوم`
+                      : `Overdue by ${Math.abs(d)} day${Math.abs(d) === 1 ? "" : "s"}`
+                    : d === 0
+                      ? t["compliance.vatFilingDueToday"]
+                      : locale === "ar"
+                        ? `باقٍ ${d} يوم`
+                        : `Due in ${d} day${d === 1 ? "" : "s"}`;
+                return (
+                  <div className="mt-3">
+                    <StatusBadge tone={tone as any}>{label}</StatusBadge>
+                  </div>
+                );
+              })()}
+              {/* Filing checklist: true states only. Muhasib prepares the return; the user files it on EmaraTax. */}
+              {(() => {
+                // E2 (J3-r2): one reading of the stage; "ready" counts as reviewed, and the
+                // payment / refund recorded through the settlement is the last step.
+                const check = vatChecklist(currentFiling.hasReturn ? currentFiling.return : null);
+                const steps = [
+                  { done: check.calculated, label: t["compliance.vatFlow.calculated"] },
+                  { done: check.ready, label: t["compliance.vatFlow.reviewed"] },
+                  { done: check.filed, label: t["compliance.vatFlow.filedStep"] },
+                  {
+                    done: check.settled,
+                    label: check.nothingToSettle
+                      ? t["compliance.vatFlow.stepNothing"]
+                      : currentFiling.isRefund
+                        ? t["compliance.vatFlow.stepRefund"]
+                        : t["compliance.vatFlow.stepPaid"],
+                  },
+                ];
+                return (
+                  <ol className="mt-4 space-y-2" data-testid="vat-filing-checklist">
+                    {steps.map((step) => (
+                      <li key={step.label} className="flex items-center gap-2 text-small">
+                        {step.done ? (
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden />
+                        ) : (
+                          <span
+                            className="h-4 w-4 shrink-0 rounded-full border border-border-strong"
+                            aria-hidden
+                          />
+                        )}
+                        <span className={step.done ? "text-foreground" : "text-muted-foreground"}>
+                          {step.label}
+                        </span>
+                        <span className="sr-only">
+                          {step.done
+                            ? locale === "ar"
+                              ? "(مكتمل)"
+                              : "(done)"
+                            : locale === "ar"
+                              ? "(لم يكتمل)"
+                              : "(not done)"}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                );
+              })()}
+              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                {locale === "ar"
+                  ? "يجب تقديم الإقرار وسداد الضريبة خلال 28 يومًا من نهاية الفترة الضريبية. لا يُرسل النظام أي بيانات إلى الهيئة الاتحادية للضرائب."
+                  : "Returns and payment are due within 28 days of the tax period end (FTA). Muhasib does not transmit anything to the FTA."}
+              </p>
             </div>
           </div>
-
-          {/* Right: due-date countdown */}
-          <div className="flex flex-col justify-center gap-1 border-t border-card-border bg-muted/30 p-6 lg:border-s lg:border-t-0 lg:p-7">
-            <p className="text-caption font-semibold text-muted-foreground">
-              {t["compliance.vatFilingFilingDeadline"]}
-            </p>
-            <p className="mt-1 font-display text-xl leading-tight tracking-tight text-foreground">
-              {format(currentFiling.dueDate, "d MMMM yyyy", dfOpts)}
-            </p>
-            {(() => {
-              const d = currentFiling.daysUntilDue;
-              const filed = vatChecklist(currentFiling.return).filed;
-              const tone = filed ? "success" : d < 0 ? "danger" : d <= 7 ? "warning" : "neutral";
-              const label = filed
-                ? locale === "ar"
-                  ? "تم التقديم"
-                  : "Filed"
-                : d < 0
-                  ? locale === "ar"
-                    ? `متأخر بـ ${Math.abs(d)} يوم`
-                    : `Overdue by ${Math.abs(d)} day${Math.abs(d) === 1 ? "" : "s"}`
-                  : d === 0
-                    ? t["compliance.vatFilingDueToday"]
-                    : locale === "ar"
-                      ? `باقٍ ${d} يوم`
-                      : `Due in ${d} day${d === 1 ? "" : "s"}`;
-              return (
-                <div className="mt-3">
-                  <StatusBadge tone={tone as any}>{label}</StatusBadge>
-                </div>
-              );
-            })()}
-            {/* Filing checklist: true states only. Muhasib prepares the return; the user files it on EmaraTax. */}
-            {(() => {
-              // E2 (J3-r2): one reading of the stage; "ready" counts as reviewed, and the
-              // payment / refund recorded through the settlement is the last step.
-              const check = vatChecklist(currentFiling.hasReturn ? currentFiling.return : null);
-              const steps = [
-                { done: check.calculated, label: t["compliance.vatFlow.calculated"] },
-                { done: check.ready, label: t["compliance.vatFlow.reviewed"] },
-                { done: check.filed, label: t["compliance.vatFlow.filedStep"] },
-                {
-                  done: check.settled,
-                  label: check.nothingToSettle
-                    ? t["compliance.vatFlow.stepNothing"]
-                    : currentFiling.isRefund
-                      ? t["compliance.vatFlow.stepRefund"]
-                      : t["compliance.vatFlow.stepPaid"],
-                },
-              ];
-              return (
-                <ol className="mt-4 space-y-2" data-testid="vat-filing-checklist">
-                  {steps.map((step) => (
-                    <li key={step.label} className="flex items-center gap-2 text-small">
-                      {step.done ? (
-                        <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden />
-                      ) : (
-                        <span
-                          className="h-4 w-4 shrink-0 rounded-full border border-border-strong"
-                          aria-hidden
-                        />
-                      )}
-                      <span className={step.done ? "text-foreground" : "text-muted-foreground"}>
-                        {step.label}
-                      </span>
-                      <span className="sr-only">
-                        {step.done
-                          ? locale === "ar"
-                            ? "(مكتمل)"
-                            : "(done)"
-                          : locale === "ar"
-                            ? "(لم يكتمل)"
-                            : "(not done)"}
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-              );
-            })()}
-            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-              {locale === "ar"
-                ? "يجب تقديم الإقرار وسداد الضريبة خلال 28 يومًا من نهاية الفترة الضريبية. لا يُرسل النظام أي بيانات إلى الهيئة الاتحادية للضرائب."
-                : "Returns and payment are due within 28 days of the tax period end (FTA). Muhasib does not transmit anything to the FTA."}
-            </p>
-          </div>
-        </div>
-      </Card>
+        </Card>
+      )}
 
       <Tabs value={vatTab} onValueChange={setVatTab} className="space-y-6">
         <TabsList>
@@ -1366,13 +1468,20 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {isLoadingReturns ? (
+              {returnsView === "loading" || returnsView === "idle" ? (
                 <div className="space-y-2">
                   {[1, 2, 3].map((i) => (
                     <Skeleton key={i} className="h-16" />
                   ))}
                 </div>
-              ) : !vatReturns || vatReturns.length === 0 ? (
+              ) : returnsView !== "data" || !vatReturns ? (
+                <p
+                  className="py-12 text-center text-muted-foreground"
+                  data-testid="vat-returns-unavailable"
+                >
+                  {t["compliance.vatReturnsUnavailable"]}
+                </p>
+              ) : vatReturns.length === 0 ? (
                 <div className="text-center py-12">
                   <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                   <p className="text-muted-foreground">
