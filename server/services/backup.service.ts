@@ -37,6 +37,7 @@ import { HEADER_SUB_TYPES } from "../ledger/kernel";
 import { createLogger } from "../config/logger";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { recordAudit } from "./audit.service";
+import { isPeggedPair } from "./fx/rates";
 import type { Request } from "express";
 
 const log = createLogger("backup-service");
@@ -913,7 +914,7 @@ const PROTECTED_CREDIT_ALLOCATION_CHECK = {
 };
 
 const SETTLING_LINKS = `settling_links AS (
-  SELECT invoice_id, deposit_account_id, expires_at, provider_session_id FROM payment_links
+  SELECT invoice_id, deposit_account_id, expires_at, provider_session_id, status FROM payment_links
   WHERE company_id = $1
     AND ((status = 'active' AND expires_at >= now() AT TIME ZONE 'UTC')
          OR (status IN ('active', 'cancelled', 'expired') AND provider_session_id IS NOT NULL)
@@ -921,51 +922,94 @@ const SETTLING_LINKS = `settling_links AS (
 )`;
 const LINKED_CREDIT_NOTE =
   "t.invoice_type = 'credit_note' AND t.original_invoice_id IN (SELECT invoice_id FROM settling_links)";
-const LINKED_LEGACY_CREDIT_NOTE = "t.invoice_id IN (SELECT invoice_id FROM settling_links)";
+const LINKED_CHECKOUT_INVOICE = "t.invoice_id IN (SELECT invoice_id FROM settling_links)";
 
-async function validateMergeCheckoutCreditNotes(
+const MERGE_CHECKOUT_KEYS: Record<string, string[][]> = {
+  invoices: [["company_id", "number"], ["legacy_credit_note_id"], ["share_token"]],
+  credit_notes: [["company_id", "number"]],
+  accounts: [["company_id", "code"]],
+  month_end_close: [["company_id", "period_end"]],
+  fiscal_year_closes: [["company_id", "fiscal_year_end"]],
+};
+
+function mergeInsertRows(
+  plan: RestoreTable[],
+  values: string[],
+  name: string,
+  columns: Record<string, string>
+): string | undefined {
+  const entry = plan.find(({ table, rowCount }) => table.name === name && rowCount > 0);
+  if (!entry) return;
+  const { table, json } = entry;
+  // Merge's ON CONFLICT DO NOTHING skips both primary and secondary unique keys.
+  const uniqueMatches = [pkMatch(table, "live", "s")];
+  for (const keyColumns of MERGE_CHECKOUT_KEYS[name] ?? []) {
+    if (keyColumns.every((column) => table.columns.includes(column))) {
+      uniqueMatches.push(keyColumns.map((column) => `live.${column} = s.${column}`).join(" AND "));
+    }
+  }
+  const projected = Object.entries(columns).map(
+    ([column, defaultSql]) =>
+      `${table.columns.includes(column) ? `s.${column}` : defaultSql} AS ${column}`
+  );
+  values.push(json);
+  return `SELECT ${projected.join(", ")}
+    FROM json_populate_recordset(NULL::${q(name)}, $${values.length}::json) s
+    WHERE s.company_id = $1
+      AND NOT EXISTS (SELECT 1 FROM ${q(name)} live WHERE ${uniqueMatches
+        .map((match) => `(${match})`)
+        .join(" OR ")})`;
+}
+
+const MERGE_CHECKOUT_SETTLEMENT: {
+  name: string;
+  columns: Record<string, string>;
+  where: string;
+}[] = [
+  {
+    name: "invoices",
+    columns: { original_invoice_id: "NULL::uuid", invoice_type: "'invoice'::text" },
+    where: LINKED_CREDIT_NOTE,
+  },
+  { name: "credit_notes", columns: { invoice_id: "NULL::uuid" }, where: LINKED_CHECKOUT_INVOICE },
+  {
+    name: "invoice_payments",
+    columns: { invoice_id: "NULL::uuid", amount: "0" },
+    where: `${LINKED_CHECKOUT_INVOICE} AND t.amount <> 0`,
+  },
+  {
+    name: "customer_credit_allocations",
+    columns: { invoice_id: "NULL::uuid", amount: "0", kind: "NULL::text" },
+    // receivableSettlementPartsSql counts applications only.
+    where: `${LINKED_CHECKOUT_INVOICE} AND t.kind = 'apply' AND t.amount <> 0`,
+  },
+];
+
+const MERGE_CHECKOUT_TABLES = new Set([
+  ...MERGE_CHECKOUT_SETTLEMENT.map(({ name }) => name),
+  "accounts",
+  "bank_accounts",
+  "month_end_close",
+  "fiscal_year_closes",
+]);
+
+async function mergeChangesCheckoutSettlement(
   client: Queryable,
   companyId: string,
   plan: RestoreTable[]
-): Promise<void> {
+): Promise<boolean> {
   const values = [companyId];
   const conflicts: string[] = [];
-  for (const { table, json, rowCount } of plan) {
-    if (!rowCount || !["invoices", "credit_notes"].includes(table.name)) continue;
-    const linkedNote = table.name === "invoices" ? LINKED_CREDIT_NOTE : LINKED_LEGACY_CREDIT_NOTE;
-    const linkColumn = table.name === "invoices" ? "original_invoice_id" : "invoice_id";
-    if (!table.columns.includes(linkColumn)) continue;
-    // Merge's ON CONFLICT DO NOTHING also skips secondary unique-key collisions.
-    const uniqueMatches = [
-      pkMatch(table, "live", "t"),
-      "(live.company_id, live.number) = (t.company_id, t.number)",
-    ];
-    if (table.name === "invoices") {
-      uniqueMatches.push(
-        "live.legacy_credit_note_id = t.legacy_credit_note_id",
-        "live.share_token = t.share_token"
-      );
-    }
-    values.push(json);
-    conflicts.push(`EXISTS (
-      SELECT 1 FROM json_populate_recordset(NULL::${q(table.name)}, $${values.length}::json) t
-      WHERE t.company_id = $1 AND ${linkedNote}
-        AND NOT EXISTS (SELECT 1 FROM ${q(table.name)} live WHERE ${uniqueMatches.join(" OR ")})
-    )`);
+  for (const { name, columns, where } of MERGE_CHECKOUT_SETTLEMENT) {
+    const inserted = mergeInsertRows(plan, values, name, columns);
+    if (inserted) conflicts.push(`EXISTS (SELECT 1 FROM (${inserted}) t WHERE ${where})`);
   }
-  if (!conflicts.length) return;
+  if (!conflicts.length) return false;
   const { rows } = await client.query(
     `WITH ${SETTLING_LINKS} SELECT 1 WHERE ${conflicts.join(" OR ")}`,
     values
   );
-  if (rows.length) {
-    throw new DomainError(
-      "BACKUP_RESTORE_CONFLICT",
-      409,
-      { table: "payment_links" },
-      "Merge restore would add a credit note to an invoice while a payment link or checkout session can still settle."
-    );
-  }
+  return rows.length > 0;
 }
 
 // Project only the columns the guards read. Older snapshots leave omitted
@@ -1009,56 +1053,68 @@ function postingLockRanges(months: string, years: string): string {
     WHERE status = 'closed' AND hard_closed = true`;
 }
 
-async function replaceBlocksCheckoutPosting(
+const LIVE_BANKS = "(SELECT * FROM bank_accounts WHERE company_id = $1)";
+const BASE_CURRENCY = "COALESCE(NULLIF(upper(btrim(c.base_currency)), ''), 'AED')";
+
+// Match bankCurrencyOf's account precedence and the payment service's base-currency fallback.
+function checkoutBankCurrency(banks: string): string {
+  return `COALESCE((SELECT NULLIF(upper(b.currency), '') FROM ${banks} b
+    WHERE b.gl_account_id = link.deposit_account_id
+    ORDER BY b.is_active DESC, b.created_at LIMIT 1), ${BASE_CURRENCY})`;
+}
+
+async function restoreBlocksCheckoutPosting(
   client: Queryable,
   companyId: string,
-  plan: RestoreTable[]
+  plan: RestoreTable[],
+  mode: RestoreMode
 ): Promise<boolean> {
   const values = [companyId];
   const conflicts: string[] = [];
-  if (plan.some(({ table }) => table.name === "bank_accounts")) {
-    const restoredBanks = replacementRows(plan, values, "bank_accounts", {
-      gl_account_id: "NULL",
+  const hasChanges = (name: string) =>
+    plan.some(({ table, rowCount }) => table.name === name && (mode === "replace" || rowCount > 0));
+  const resultingRows = (name: string, columns: Record<string, string>) => {
+    if (mode === "replace") return replacementRows(plan, values, name, columns);
+    const live = `SELECT ${Object.keys(columns).join(", ")} FROM ${q(name)} WHERE company_id = $1`;
+    const inserted = mergeInsertRows(plan, values, name, columns);
+    return inserted ? `${live} UNION ALL ${inserted}` : live;
+  };
+  if (hasChanges("bank_accounts")) {
+    const restoredBanks = resultingRows("bank_accounts", {
+      gl_account_id: "NULL::uuid",
       currency: "'AED'",
       is_active: "true",
-      created_at: "now()",
+      created_at: "now()::timestamp",
     });
-    // Use the same account precedence as bankCurrencyOf and the same base-currency fallback
-    // as receipt posting. A relink, deletion or activation can change the effective currency.
-    const currencyFor = (banks: string) => `(SELECT NULLIF(upper(b.currency), '') FROM ${banks} b
-      WHERE b.gl_account_id = link.deposit_account_id
-      ORDER BY b.is_active DESC, b.created_at LIMIT 1)`;
-    const restoredCurrency = currencyFor(`(${restoredBanks})`);
-    const liveCurrency = currencyFor("(SELECT * FROM bank_accounts WHERE company_id = $1)");
-    const baseCurrency = "COALESCE(NULLIF(upper(btrim(c.base_currency)), ''), 'AED')";
     conflicts.push(`EXISTS (
       SELECT 1 FROM settling_links link
       JOIN companies c ON c.id = $1
-      WHERE COALESCE(${restoredCurrency}, ${baseCurrency})
-        IS DISTINCT FROM COALESCE(${liveCurrency}, ${baseCurrency})
+      WHERE ${checkoutBankCurrency(`(${restoredBanks})`)}
+        IS DISTINCT FROM ${checkoutBankCurrency(LIVE_BANKS)}
     )`);
   }
-  if (plan.some(({ table }) => table.name === "accounts")) {
-    const resultingAccounts = replacementRows(plan, values, "accounts", {
-      parent_id: "NULL",
-      is_archived: "false",
-    });
+  if (hasChanges("accounts")) {
+    const columns = { parent_id: "NULL::uuid", is_archived: "false" };
+    const children =
+      mode === "replace"
+        ? replacementRows(plan, values, "accounts", columns)
+        : mergeInsertRows(plan, values, "accounts", columns);
     values.push(`{${HEADER_SUB_TYPES.join(",")}}`);
     conflicts.push(`EXISTS (
       SELECT 1 FROM settling_links link
       JOIN accounts parent ON parent.id = link.deposit_account_id AND parent.company_id = $1
-      JOIN (${resultingAccounts}) child ON child.parent_id = parent.id
+      JOIN (${children}) child ON child.parent_id = parent.id
       WHERE parent.sub_type = ANY($${values.length}::text[]) AND child.is_archived = false
     )`);
   }
-  if (plan.some(({ table }) => ["month_end_close", "fiscal_year_closes"].includes(table.name))) {
-    const months = replacementRows(plan, values, "month_end_close", {
-      period_end: "NULL",
+  if (hasChanges("month_end_close") || hasChanges("fiscal_year_closes")) {
+    const months = resultingRows("month_end_close", {
+      period_end: "NULL::date",
       status: "'open'",
       lock_scope: "'month'",
     });
-    const years = replacementRows(plan, values, "fiscal_year_closes", {
-      fiscal_year_end: "NULL",
+    const years = resultingRows("fiscal_year_closes", {
+      fiscal_year_end: "NULL::date",
       status: "'closed'",
       hard_closed: "false",
     });
@@ -1091,6 +1147,57 @@ async function replaceBlocksCheckoutPosting(
     values
   );
   return rows.length > 0;
+}
+
+async function replaceRemovesCheckoutBankRate(
+  client: Queryable,
+  companyId: string,
+  plan: RestoreTable[]
+): Promise<boolean> {
+  if (!plan.some(({ table }) => table.name === "exchange_rates")) return false;
+  const values = [companyId];
+  const restoredRates = replacementRows(plan, values, "exchange_rates", {
+    base_currency: "'AED'",
+    target_currency: "NULL::text",
+    date: "now()::timestamp",
+    legacy_unscoped: "false",
+    rate_type: "'spot'",
+  });
+  // Receipt posting accepts stale spot rates in either orientation. Availability starts
+  // on the first eligible rate date and continues through later receipt dates.
+  const earliestRate = (rates: string) => `(SELECT min(r.date)::date FROM ${rates} r
+    WHERE r.rate_type = 'spot' AND NOT r.legacy_unscoped
+      AND ((r.base_currency, r.target_currency) = (btrim(p.bank_currency), p.base_currency)
+        OR (r.target_currency, r.base_currency) = (btrim(p.bank_currency), p.base_currency)))`;
+  const firstReceiptDate = `GREATEST(live.rate_date, (now() AT TIME ZONE 'UTC')::date)`;
+  const { rows } = await client.query<{ bank_currency: string; base_currency: string }>(
+    `WITH ${SETTLING_LINKS},
+    system_rates AS (SELECT * FROM exchange_rates WHERE company_id IS NULL),
+    live_rates AS (SELECT * FROM exchange_rates WHERE company_id = $1 UNION ALL SELECT * FROM system_rates),
+    restored_rates AS (
+      ${restoredRates}
+      UNION ALL SELECT base_currency, target_currency, date, legacy_unscoped, rate_type FROM system_rates
+    ), checkout_pairs AS (
+      SELECT ${checkoutBankCurrency(LIVE_BANKS)} AS bank_currency,
+        ${BASE_CURRENCY} AS base_currency,
+        COALESCE(NULLIF(upper(btrim(i.currency)), ''), ${BASE_CURRENCY}) AS document_currency,
+        CASE WHEN link.provider_session_id IS NULL AND link.status <> 'processing'
+          THEN link.expires_at::date END AS last_receipt_date
+      FROM settling_links link
+      JOIN invoices i ON i.id = link.invoice_id AND i.company_id = $1
+      JOIN companies c ON c.id = $1
+    )
+    SELECT DISTINCT p.bank_currency, p.base_currency FROM checkout_pairs p
+    CROSS JOIN LATERAL (SELECT ${earliestRate("live_rates")} AS rate_date) live
+    WHERE p.bank_currency NOT IN (p.base_currency, p.document_currency)
+      AND live.rate_date IS NOT NULL
+      AND (p.last_receipt_date IS NULL OR p.last_receipt_date >= ${firstReceiptDate})
+      AND (${earliestRate("restored_rates")} <= ${firstReceiptDate}) IS NOT TRUE`,
+    values
+  );
+  return rows.some(
+    ({ bank_currency, base_currency }) => !isPeggedPair(bank_currency.trim(), base_currency)
+  );
 }
 
 async function validateReplaceExternalState(
@@ -1128,7 +1235,7 @@ async function validateReplaceExternalState(
         SELECT id FROM invoices t WHERE company_id = $1 AND ${LINKED_CREDIT_NOTE}
       ), protected_legacy_credit_notes AS (
         SELECT id, journal_entry_id FROM credit_notes t WHERE company_id = $1
-          AND ${LINKED_LEGACY_CREDIT_NOTE}
+          AND ${LINKED_CHECKOUT_INVOICE}
       ), protected_invoices AS (
         SELECT invoice_id AS id FROM settling_links
         UNION SELECT id FROM protected_credit_notes
@@ -1155,7 +1262,7 @@ async function validateReplaceExternalState(
         {
           table: "credit_notes",
           where: "t.id IN (SELECT id FROM protected_legacy_credit_notes)",
-          snapshotWhere: LINKED_LEGACY_CREDIT_NOTE,
+          snapshotWhere: LINKED_CHECKOUT_INVOICE,
         },
         {
           table: "accounts",
@@ -1180,7 +1287,8 @@ async function validateReplaceExternalState(
         { ...PROTECTED_JOURNAL_CHECKS[1], snapshotWhere: PROTECTED_JOURNAL_CHECKS[1].where },
       ]
     )) ||
-    (await replaceBlocksCheckoutPosting(client, companyId, plan))
+    (await restoreBlocksCheckoutPosting(client, companyId, plan, "replace")) ||
+    (await replaceRemovesCheckoutBankRate(client, companyId, plan))
   ) {
     throw new DomainError(
       "BACKUP_RESTORE_CONFLICT",
@@ -1550,9 +1658,7 @@ export async function restoreCompanyBackup(
               ]
             : [
                 ...externalCompanyTables(["payment_links"]),
-                ...manifest.tables.filter(
-                  ({ name }) => name === "invoices" || name === "credit_notes"
-                ),
+                ...manifest.tables.filter(({ name }) => MERGE_CHECKOUT_TABLES.has(name)),
               ],
       });
     }
@@ -1560,8 +1666,16 @@ export async function restoreCompanyBackup(
     await validateSnapshotRows(client, plan);
     if (args.mode === "replace") {
       await validateReplaceExternalState(client, args.companyId, plan);
-    } else {
-      await validateMergeCheckoutCreditNotes(client, args.companyId, plan);
+    } else if (
+      (await mergeChangesCheckoutSettlement(client, args.companyId, plan)) ||
+      (await restoreBlocksCheckoutPosting(client, args.companyId, plan, "merge"))
+    ) {
+      throw new DomainError(
+        "BACKUP_RESTORE_CONFLICT",
+        409,
+        { table: "payment_links" },
+        "Merge restore would change an invoice balance, deposit account eligibility or currency, or posting availability while a payment link or checkout session can still settle."
+      );
     }
     const diffs: TableDiff[] = [];
     for (const { table, json } of plan) {

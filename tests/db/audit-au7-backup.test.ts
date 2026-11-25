@@ -112,9 +112,7 @@ async function issueInvoice(t: Tenant, invoiceId: string) {
   expect(response.status, response.text).toBe(200);
 }
 
-async function partiallyPaidInvoice(t: Tenant, bankId: string) {
-  const invoiceId = await draftInvoice(t);
-  await issueInvoice(t, invoiceId);
+async function recordPartialPayment(t: Tenant, invoiceId: string, bankId: string) {
   const payment = await t.as.post(`/api/companies/${t.company.id}/invoices/${invoiceId}/payments`, {
     date: new Date().toISOString().slice(0, 10),
     method: "bank",
@@ -122,6 +120,12 @@ async function partiallyPaidInvoice(t: Tenant, bankId: string) {
     paymentAccountId: bankId,
   });
   expect(payment.status, payment.text).toBe(201);
+}
+
+async function partiallyPaidInvoice(t: Tenant, bankId: string, contactId?: string) {
+  const invoiceId = await draftInvoice(t, contactId);
+  await issueInvoice(t, invoiceId);
+  await recordPartialPayment(t, invoiceId, bankId);
   return invoiceId;
 }
 
@@ -580,6 +584,124 @@ describe("AU7 accounting backup integrity", () => {
     ]);
   });
 
+  it.each(["invoice_payments", "customer_credit_allocations"] as const)(
+    "rejects Merge of checkout settlement rows in %s",
+    async (table) => {
+      const t = await h.createTenant();
+      const base = `/api/companies/${t.company.id}`;
+      const contact = await t.as.post(`${base}/customer-contacts`, { name: "Fixture customer" });
+      expect(contact.status, contact.text).toBe(200);
+      const bank = await accountByCode(t, "1020");
+      const invoiceId = await partiallyPaidInvoice(t, bank.id, contact.body.id);
+      const deposit = await t.as.post(`${base}/customer-deposits`, {
+        contactId: contact.body.id,
+        date: new Date().toISOString().slice(0, 10),
+        amount: "50",
+        vatTreatment: "out_of_scope",
+        paymentAccountId: bank.id,
+      });
+      expect(deposit.status, deposit.text).toBe(201);
+      const before = await snapshot(t);
+      const settlement = () =>
+        h.sql<{ journal_entry_id: string }>(
+          `SELECT journal_entry_id FROM ${table} WHERE invoice_id = $1 ORDER BY id`,
+          [invoiceId]
+        );
+      const originalRows = await settlement();
+      if (table === "invoice_payments") {
+        await recordPartialPayment(t, invoiceId, bank.id);
+      } else {
+        const applied = await t.as.post(`${base}/customer-credits/${deposit.body.creditId}/apply`, {
+          invoiceId,
+          amount: "10",
+        });
+        expect(applied.status, applied.text).toBe(201);
+      }
+      const added = (await settlement()).find(
+        (row) =>
+          !originalRows.some((original) => original.journal_entry_id === row.journal_entry_id)
+      );
+      expect(added?.journal_entry_id).toBeTruthy();
+      const journal = () =>
+        h.sql("SELECT id FROM journal_entries WHERE id = $1", [added?.journal_entry_id]);
+      expect(await journal()).toHaveLength(1);
+      const after = await snapshot(t);
+
+      const restored = await replace(t, before);
+      expect(restored.status, restored.text).toBe(200);
+      await startCheckout(t, invoiceId, bank.id, 9000);
+      for (const response of [
+        await t.as.post(`/api/backups/${before.id}/restore-preview`, { mode: "merge" }),
+        await restore(t, before, "merge"),
+      ]) {
+        expect(response.status, response.text).toBe(200);
+      }
+      await expectRestoreConflict(t, after, "payment_links", "merge");
+      expect(await settlement()).toEqual(originalRows);
+      expect(await journal()).toEqual([]);
+    }
+  );
+
+  it("rejects Merge of a bank account that changes the checkout deposit currency", async () => {
+    const t = await h.createTenant();
+    const invoiceId = await draftInvoice(t);
+    await issueInvoice(t, invoiceId);
+    const account = await accountByCode(t, "1020");
+    const before = await snapshot(t);
+    const [bank] = await h.sql<{ id: string }>(
+      `INSERT INTO bank_accounts (company_id, name_en, bank_name, currency, gl_account_id)
+       VALUES ($1, 'Checkout deposits', 'Other', 'EUR', $2) RETURNING id`,
+      [t.company.id, account.id]
+    );
+    const after = await snapshot(t);
+
+    const restored = await replace(t, before);
+    expect(restored.status, restored.text).toBe(200);
+    await startCheckout(t, invoiceId, account.id, 12000);
+    await expectRestoreConflict(t, after, "payment_links", "merge");
+    expect(await h.sql("SELECT id FROM bank_accounts WHERE id = $1", [bank.id])).toEqual([]);
+  });
+
+  it("keeps the spot rate that a checkout receipt needs for its deposit bank", async () => {
+    const t = await h.createTenant();
+    const invoiceId = await draftInvoice(t);
+    await issueInvoice(t, invoiceId);
+    const account = await accountByCode(t, "1020");
+    await h.sql(
+      `INSERT INTO bank_accounts (company_id, name_en, bank_name, currency, gl_account_id)
+       VALUES ($1, 'Checkout deposits', 'Other', 'EUR', $2)`,
+      [t.company.id, account.id]
+    );
+    const before = await snapshot(t);
+    const [rate] = await h.sql<{ id: string }>(
+      `INSERT INTO exchange_rates (company_id, base_currency, target_currency, rate_type, rate, date)
+       VALUES ($1, 'EUR', 'AED', 'spot', 4, now() AT TIME ZONE 'UTC') RETURNING id`,
+      [t.company.id]
+    );
+    await startCheckout(t, invoiceId, account.id, 12000);
+
+    await expectReplaceConflict(t, before, "payment_links");
+    const rateRows = () => h.sql("SELECT id FROM exchange_rates WHERE id = $1", [rate.id]);
+    expect(await rateRows()).toEqual([rate]);
+
+    // An inverse system spot rate is also sufficient, even when older than the usual FX window.
+    const [systemRate] = await h.sql<{ id: string }>(
+      `INSERT INTO exchange_rates (base_currency, target_currency, rate_type, rate, date)
+       VALUES ('AED', 'EUR', 'spot', 0.25, (now() AT TIME ZONE 'UTC') - interval '10 days') RETURNING id`
+    );
+    try {
+      for (const response of [
+        await t.as.post(`/api/backups/${before.id}/restore-preview`, { mode: "replace" }),
+        await replace(t, before),
+      ]) {
+        expect(response.status, response.text).toBe(200);
+      }
+      expect(await rateRows()).toEqual([]);
+    } finally {
+      await h.sql("DELETE FROM exchange_rates WHERE id = $1", [systemRate.id]);
+    }
+  });
+
   it("keeps the configured deposit account eligible while checkout can still settle", async () => {
     const t = await h.createTenant();
     const invoiceId = await draftInvoice(t);
@@ -605,37 +727,49 @@ describe("AU7 accounting backup integrity", () => {
     ).toEqual([{ is_active: true, is_archived: false }]);
   });
 
-  it("rejects a restored child that would make the checkout deposit account a header", async () => {
-    const t = await h.createTenant();
-    const invoiceId = await draftInvoice(t);
-    await issueInvoice(t, invoiceId);
-    const url = `/api/companies/${t.company.id}/accounts`;
-    const parent = await t.as.post(url, {
-      code: "1029",
-      nameEn: "Checkout deposits",
-      type: "asset",
-      subType: "bank",
-    });
-    expect(parent.status, parent.text).toBe(201);
-    const child = await t.as.post(url, {
-      code: "1031",
-      nameEn: "Deposit sub-account",
-      type: "asset",
-      subType: "bank",
-      parentId: parent.body.id,
-    });
-    expect(child.status, child.text).toBe(201);
-    const childRows = () =>
-      h.sql("SELECT parent_id, is_archived FROM accounts WHERE id = $1", [child.body.id]);
-    expect(await childRows()).toEqual([{ parent_id: parent.body.id, is_archived: false }]);
-    const backup = await snapshot(t);
-    const archived = await t.as.post(`/api/accounts/${child.body.id}/archive`, {});
-    expect(archived.status, archived.text).toBe(200);
-    await startCheckout(t, invoiceId, parent.body.id, 12000);
+  it.each(["replace", "merge"] as const)(
+    "rejects a %s restore that would make the checkout deposit account a header",
+    async (mode) => {
+      const t = await h.createTenant();
+      const invoiceId = await draftInvoice(t);
+      await issueInvoice(t, invoiceId);
+      const url = `/api/companies/${t.company.id}/accounts`;
+      const parent = await t.as.post(url, {
+        code: "1029",
+        nameEn: "Checkout deposits",
+        type: "asset",
+        subType: "bank",
+      });
+      expect(parent.status, parent.text).toBe(201);
+      const before = await snapshot(t);
+      const child = await t.as.post(url, {
+        code: "1031",
+        nameEn: "Deposit sub-account",
+        type: "asset",
+        subType: "bank",
+        parentId: parent.body.id,
+      });
+      expect(child.status, child.text).toBe(201);
+      const childRows = () =>
+        h.sql("SELECT parent_id, is_archived FROM accounts WHERE id = $1", [child.body.id]);
+      expect(await childRows()).toEqual([{ parent_id: parent.body.id, is_archived: false }]);
+      const backup = await snapshot(t);
+      if (mode === "merge") {
+        const restored = await replace(t, before);
+        expect(restored.status, restored.text).toBe(200);
+      } else {
+        const archived = await t.as.post(`/api/accounts/${child.body.id}/archive`, {});
+        expect(archived.status, archived.text).toBe(200);
+      }
+      const eligibleChildren =
+        mode === "merge" ? [] : [{ parent_id: parent.body.id, is_archived: true }];
+      expect(await childRows()).toEqual(eligibleChildren);
+      await startCheckout(t, invoiceId, parent.body.id, 12000);
 
-    await expectReplaceConflict(t, backup, "payment_links");
-    expect(await childRows()).toEqual([{ parent_id: parent.body.id, is_archived: true }]);
-  });
+      await expectRestoreConflict(t, backup, "payment_links", mode);
+      expect(await childRows()).toEqual(eligibleChildren);
+    }
+  );
 
   it("rejects a restored posting lock that covers the checkout receipt date", async () => {
     const t = await h.createTenant();
