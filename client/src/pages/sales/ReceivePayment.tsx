@@ -38,7 +38,6 @@ import {
   type BankAccountLike,
 } from "@/lib/payment-accounts";
 import { autoApplyOldestFirst } from "@shared/sales-documents";
-import { mulRate } from "@shared/money";
 
 interface OpenInvoice {
   id: string;
@@ -124,18 +123,10 @@ export default function ReceivePayment() {
   // render, so another currency never sees (or submits) this one's rate.
   const rate = typedRate.currency === currency ? typedRate.value : "";
   const enteredRate = foreign && Number(rate) > 0 ? Number(rate) : undefined;
-  // The fee (base currency) must be less than the amount received in base. Preview at the typed
-  // rate, else that invoice's rate; the API checks the cash it actually books.
-  const receivedBaseFils = () => {
-    if (!rateInvoice || rateInvoice.currency === baseCurrency) return amountFils;
-    try {
-      return mulRate(amountFils, enteredRate ?? (rateInvoice.exchangeRate || 1));
-    } catch {
-      // An unusable rate or amount is left for the server to refuse.
-      return Infinity;
-    }
-  };
-  const feeTooHigh = feeFils > 0 && amountFils > 0 && feeFils >= receivedBaseFils();
+  // The fee (base currency) must be less than the amount received. Only a base-currency receipt
+  // can be checked here; for a foreign one the API checks the cash its journals actually book
+  // (payment-date or typed rate, converted per allocation).
+  const feeTooHigh = !foreign && feeFils > 0 && amountFils > 0 && feeFils >= amountFils;
   const overInvoice = open.some(
     (i) => toFils(applied[i.id] ?? 0) > Math.round(i.openBalance * 100)
   );

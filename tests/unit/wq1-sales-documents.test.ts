@@ -553,6 +553,13 @@ describe("WQ1 receive payment (7.6)", () => {
     await type(byTestId("input-apply-inv-a"), "50");
     expect(byTestId("receive-fee-error")).toBeTruthy();
     expect((byTestId("button-record-receipt") as HTMLButtonElement).disabled).toBe(true);
+    // A fee equal to the payment is refused too; one fils less is accepted.
+    await type(byTestId("input-receive-fee"), "50");
+    expect(byTestId("receive-fee-error")).not.toBeNull();
+    expect((byTestId("button-record-receipt") as HTMLButtonElement).disabled).toBe(true);
+    await type(byTestId("input-receive-fee"), "49.99");
+    expect(byTestId("receive-fee-error")).toBeNull();
+    expect((byTestId("button-record-receipt") as HTMLButtonElement).disabled).toBe(false);
   });
 
   const CASH = {
@@ -701,34 +708,46 @@ describe("WQ1 receive payment (7.6)", () => {
     }
   });
 
-  it("compares the bank fee with the payment converted to base currency", async () => {
-    setFixtures(fixtures({ [OPEN_URL]: [invoiceRow({ currency: "USD", exchangeRate: 3.67 })] }));
+  // The form cannot know a foreign receipt's base value: the journals use the payment-date or
+  // typed rate, not an invoice's, and round each allocation. The API applies the fee rule.
+  it.each([
+    // Valid at the payment-date rate, although the first invoice's 3.0 would give only AED 150.
+    { path: "automatic rate", typed: "", fee: "183.61" },
+    // USD 25 at 3.6726 is AED 91.82 each, 183.64 booked; USD 50 in one go would be 183.63.
+    { path: "typed rate", typed: "3.6726", fee: "183.63" },
+  ])("leaves a foreign receipt's bank fee to the API ($path)", async ({ typed, fee }) => {
+    const usd = { currency: "USD" };
+    setFixtures(
+      fixtures({
+        [OPEN_URL]: [
+          invoiceRow({ ...usd, exchangeRate: 3 }),
+          invoiceRow({ ...usd, id: "inv-b", number: "INV-10", exchangeRate: 3.67 }),
+        ],
+      })
+    );
     await openReceivePage();
     await pickOption(byTestId("select-receive-customer"), CONTACT.name);
-    await flushUntil(() => !!byTestId("receive-row-inv-a"));
+    await flushUntil(() => !!byTestId("receive-row-inv-b"));
     await type(byTestId("input-receive-amount"), "50");
-    await type(byTestId("input-apply-inv-a"), "50");
-    // USD 50 at 3.67 is AED 183.50.
-    await type(byTestId("input-receive-fee"), "60");
+    await type(byTestId("input-apply-inv-a"), "25");
+    await type(byTestId("input-apply-inv-b"), "25");
+    if (typed) await type(document.getElementById("receive-rate"), typed);
+    await type(byTestId("input-receive-fee"), fee);
     expect(byTestId("receive-fee-error")).toBeNull();
     expect(submitDisabled()).toBe(false);
-    await type(byTestId("input-receive-fee"), "183.49");
-    expect(byTestId("receive-fee-error")).toBeNull();
-    await type(byTestId("input-receive-fee"), "183.50");
-    expect(byTestId("receive-fee-error")).not.toBeNull();
-    expect(submitDisabled()).toBe(true);
-    // A typed rate replaces the invoice's rate: USD 50 at 4 is AED 200.
-    await type(document.getElementById("receive-rate"), "4");
-    expect(byTestId("receive-fee-error")).toBeNull();
-    expect(submitDisabled()).toBe(false);
-    // Half-up twice: the rate to 3.670100 (6dp), then 18350.5 fils to AED 183.51.
-    await type(document.getElementById("receive-rate"), "3.6700995");
-    await type(byTestId("input-receive-fee"), "183.50");
-    expect(byTestId("receive-fee-error")).toBeNull();
-    expect(submitDisabled()).toBe(false);
-    await type(byTestId("input-receive-fee"), "183.51");
-    expect(byTestId("receive-fee-error")).not.toBeNull();
-    expect(submitDisabled()).toBe(true);
+    await submit(byTestId("button-record-receipt"));
+    expect(bodyOf("POST", `${C}/receive-payments`)).toEqual({
+      contactId: CONTACT.id,
+      paymentAccountId: CASH.id,
+      date: "2026-03-15",
+      amount: "50.00",
+      bankFee: fee,
+      ...(typed ? { exchangeRate: Number(typed) } : {}),
+      allocations: [
+        { invoiceId: "inv-a", amount: "25.00" },
+        { invoiceId: "inv-b", amount: "25.00" },
+      ],
+    });
   });
 
   it("PR129: a rate typed for one currency is not shown or sent for another", async () => {
@@ -750,42 +769,34 @@ describe("WQ1 receive payment (7.6)", () => {
     await type(byTestId("input-apply-inv-usd"), "");
     await type(byTestId("input-apply-inv-eur"), "50");
     expect(rateValue()).toBe("");
-    // EUR 50 at its invoice rate 4 is AED 200, not AED 500 at the USD rate.
-    await type(byTestId("input-receive-fee"), "200");
-    expect(byTestId("receive-fee-error")).not.toBeNull();
-    expect(submitDisabled()).toBe(true);
-    await type(byTestId("input-receive-fee"), "199.99");
-    expect(byTestId("receive-fee-error")).toBeNull();
     await submit(byTestId("button-record-receipt"));
     const sent = bodyOf("POST", `${C}/receive-payments`) as Record<string, unknown>;
     expect(sent.allocations).toEqual([{ invoiceId: "inv-eur", amount: "50.00" }]);
     expect(sent).not.toHaveProperty("exchangeRate");
   });
 
-  it("checks the bank fee at the first applied invoice's rate", async () => {
-    const usd = { currency: "USD" };
+  it("checks the bank fee locally only while the receipt is in base currency", async () => {
     setFixtures(
       fixtures({
         [OPEN_URL]: [
           invoiceRow({ id: "inv-aed", number: "INV-AED" }),
-          invoiceRow({ ...usd, exchangeRate: 3 }),
-          invoiceRow({ ...usd, id: "inv-b", number: "INV-10", exchangeRate: 4 }),
+          invoiceRow({ currency: "USD", exchangeRate: 3 }),
         ],
       })
     );
     await openReceivePage();
     await pickOption(byTestId("select-receive-customer"), CONTACT.name);
-    await flushUntil(() => !!byTestId("receive-row-inv-b"));
+    await flushUntil(() => !!byTestId("receive-row-inv-a"));
     await type(byTestId("input-receive-amount"), "50");
-    // Nothing applied yet: previewed at the first open invoice, AED 50.
+    // Nothing applied yet: the first open invoice makes it an AED receipt.
     await type(byTestId("input-receive-fee"), "175");
     expect(byTestId("receive-fee-error")).not.toBeNull();
-    // Only the second applied: AED 200.
-    await type(byTestId("input-apply-inv-b"), "25");
+    // The USD invoice applied: a USD receipt, left to the API.
+    await type(byTestId("input-apply-inv-a"), "25");
     expect(byTestId("receive-fee-error")).toBeNull();
     expect(submitDisabled()).toBe(false);
-    // Both applied: the first allocation sent is inv-a, AED 150.
-    await type(byTestId("input-apply-inv-a"), "25");
+    // The AED invoice is now the first applied one: AED again.
+    await type(byTestId("input-apply-inv-aed"), "25");
     expect(byTestId("receive-fee-error")).not.toBeNull();
     expect(submitDisabled()).toBe(true);
   });
