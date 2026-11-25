@@ -1,0 +1,242 @@
+/* Savings calculator (sand band). Logical properties only; RTL follows the page direction. */
+.phase-site .mz-sav .mz-sav-grid {
+  display: grid;
+  gap: clamp(20px, 3vw, 36px);
+  margin-block-start: clamp(24px, 3vw, 40px);
+}
+@media (min-width: 960px) {
+  .phase-site .mz-sav .mz-sav-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+    align-items: start;
+  }
+}
+
+.phase-site .mz-sav .mz-sav-inputs {
+  display: grid;
+  gap: 22px;
+  margin: 0;
+  min-inline-size: 0;
+}
+.phase-site .mz-sav .mz-sav-legend {
+  padding-inline: 0;
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-sav .mz-sav-field {
+  display: grid;
+  gap: 8px;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-sav .mz-sav-field label {
+  font-size: 15px;
+  font-weight: 650;
+}
+.phase-site .mz-sav .mz-sav-field-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 16px;
+}
+.phase-site .mz-sav .mz-sav-value {
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-sav .mz-sav-range {
+  inline-size: 100%;
+  min-block-size: 32px;
+  accent-color: var(--mz-emerald);
+  cursor: pointer;
+}
+.phase-site .mz-sav .mz-sav-range:focus-visible,
+.phase-site .mz-sav .mz-sav-select:focus-visible {
+  outline: 3px solid var(--mz-focus);
+  outline-offset: 3px;
+}
+.phase-site .mz-sav .mz-sav-selects {
+  display: grid;
+  gap: 18px;
+}
+@media (min-width: 560px) {
+  .phase-site .mz-sav .mz-sav-selects {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.phase-site .mz-sav .mz-sav-select {
+  min-block-size: 44px;
+  padding-inline: 12px;
+  border: 1px solid #8fa398;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--mz-ink-soft);
+  font: inherit;
+}
+
+/* ---------- Results ---------- */
+.phase-site .mz-sav .mz-sav-results {
+  display: grid;
+  gap: 20px;
+}
+.phase-site .mz-sav .mz-sav-results-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.phase-site .mz-sav .mz-sav-h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.phase-site .mz-sav .mz-sav-h4 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-sav .mz-sav-big {
+  padding: clamp(16px, 2.4vw, 24px);
+  border-radius: calc(var(--mz-radius) - 4px);
+  background: var(--mz-emerald-deep);
+}
+.phase-site .mz-sav .mz-sav-big .mz-sav-big-label {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #cfe9dc;
+}
+.phase-site .mz-sav .mz-sav-big .mz-sav-big-num {
+  margin: 4px 0 0;
+  font-size: clamp(34px, 5vw, 52px);
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+.phase-site .mz-sav .mz-sav-sr {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.phase-site .mz-sav .mz-sav-stats {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+.phase-site .mz-sav .mz-sav-stats > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 16px;
+  padding-block-end: 10px;
+  border-block-end: 1px solid var(--mz-line-light);
+}
+.phase-site .mz-sav .mz-sav-stats dt {
+  font-size: 15px;
+  color: var(--mz-muted-light);
+}
+.phase-site .mz-sav .mz-sav-stats dd {
+  margin: 0;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-sav .mz-sav-software {
+  margin-block-start: 20px;
+}
+.phase-site .mz-sav .mz-sav-diff {
+  margin: 12px 0 0;
+  font-weight: 700;
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-sav .mz-sav-diff[data-tone="more"] {
+  color: #7a4a00;
+}
+.phase-site .mz-sav .mz-sav-note {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--mz-muted-light);
+}
+
+/* Context box: visually separate, not part of the estimate. */
+.phase-site .mz-sav .mz-sav-context {
+  padding: 14px 16px;
+  border: 1px dashed #8fa398;
+  border-radius: 12px;
+}
+.phase-site .mz-sav .mz-sav-context-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mz-muted-light);
+}
+.phase-site .mz-sav .mz-sav-context-line {
+  margin: 4px 0 0;
+  font-weight: 650;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-sav .mz-sav-cta {
+  justify-self: start;
+}
+
+/* ---------- Disclosure ---------- */
+.phase-site .mz-sav .mz-sav-how {
+  margin-block-start: clamp(20px, 3vw, 32px);
+  padding: 16px 20px;
+  border: 1px solid var(--mz-sand-deep);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.6);
+}
+.phase-site .mz-sav .mz-sav-how summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-sav .mz-sav-how summary:focus-visible {
+  outline: 3px solid var(--mz-focus);
+  outline-offset: 3px;
+}
+.phase-site .mz-sav .mz-sav-table {
+  inline-size: 100%;
+  max-inline-size: 640px;
+  margin-block: 12px;
+  border-collapse: collapse;
+}
+.phase-site .mz-sav .mz-sav-table th,
+.phase-site .mz-sav .mz-sav-table td {
+  padding: 8px 12px;
+  border-block-end: 1px solid var(--mz-sand-deep);
+  text-align: start;
+  font-size: 15px;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-sav .mz-sav-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.phase-site .mz-sav .mz-sav-how a {
+  color: var(--mz-emerald-deep);
+  text-decoration: underline;
+}
+.phase-site .mz-sav .mz-sav-fine {
+  font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phase-site .mz-sav * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

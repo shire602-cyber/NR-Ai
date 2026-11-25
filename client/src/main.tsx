@@ -1,4 +1,4 @@
-import { siteLocale } from "@/components/marketing/phase/routes";
+import { bareMarketingRedirect, siteLocale } from "@/components/marketing/phase/routes";
 import type { ComponentType } from "react";
 import { createRoot } from "react-dom/client";
 // Self-hosted fonts (Fontsource) — no external Google Fonts dependency, so the
@@ -39,6 +39,16 @@ import {
 // PublicApp root (no signed-in shell in the startup bundle); everyone else, and a
 // returning user landing on "/" (who is redirected to the app), gets <App />.
 // PublicApp hands over to <App /> as soon as the visitor leaves the public pages.
+// Bare marketing URLs (/pricing, /e-invoicing ...) show their /en page. The server already
+// redirects them; this covers a client-side landing (static host, service worker, history).
+const bareTarget = bareMarketingRedirect(window.location.pathname);
+if (bareTarget) {
+  window.history.replaceState(
+    window.history.state,
+    "",
+    bareTarget + window.location.search + window.location.hash
+  );
+}
 const pathname = window.location.pathname;
 const explicitLocale = siteLocale(pathname);
 const locale = explicitLocale ?? useI18n.getState().locale;
@@ -53,7 +63,6 @@ const portalShell = !publicShell && isPortalAppPath(pathname) && hasAuthHint();
 // The page chunk of the public route the visitor landed on, fetched in parallel with
 // the root and its catalogs so the first paint does not wait for another round trip.
 const PUBLIC_ROUTE_CHUNKS: Record<string, () => Promise<unknown>> = {
-  "/pricing": () => import("@/pages/Pricing"),
   "/login": () => import("@/pages/Login"),
   "/forgot-password": () => import("@/pages/ForgotPassword"),
   "/reset-password": () => import("@/pages/ResetPassword"),
@@ -130,7 +139,9 @@ const FIRM_ROUTE_CHUNKS: Record<string, () => Promise<unknown>> = {
 // Direction and language are settled before the first render, not in an effect
 // after it: an Arabic visitor sees right-to-left Arabic on first paint, with no layout shift.
 applyDocumentLocale(locale);
-const catalogsReady = loadLocaleForPath(locale, scopedBoot ? pathname : "/__app").catch(() => undefined);
+const catalogsReady = loadLocaleForPath(locale, scopedBoot ? pathname : "/__app").catch(
+  () => undefined
+);
 void Promise.all([
   zodReady.then(loadRoot),
   phaseBoot ? undefined : catalogsReady,

@@ -1,6 +1,6 @@
-import { siteLocale } from "@/components/marketing/phase/routes";
+import { bareMarketingRedirect, siteLocale } from "@/components/marketing/phase/routes";
 import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
-import { Route, Switch, useLocation } from "wouter";
+import { Redirect, Route, Switch, useLocation } from "wouter";
 import { lazyWithReload } from "@/lib/lazyWithReload";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DeferredInstallPrompt } from "@/components/DeferredInstallPrompt";
@@ -33,7 +33,6 @@ const afterZod =
     import("@/lib/zod-config").then(load);
 
 const PhaseSite = lazyWithReload(() => import("@/components/marketing/phase/PhaseSite"));
-const Pricing = lazyWithReload(() => import("@/pages/Pricing"));
 const Services = lazyWithReload(afterZod(() => import("@/pages/Services")));
 const DemoWorkspace = lazyWithReload(afterZod(() => import("@/pages/DemoWorkspace")));
 const HelpCenter = lazyWithReload(afterZod(() => import("@/pages/HelpCenter")));
@@ -68,9 +67,11 @@ function isPublicShellPath(pathname: string): boolean {
 
 function PublicRoutes({ path }: { path: string }) {
   if (path === "/" || siteLocale(path)) return <PhaseSite />;
+  // Bare /pricing shows the new pricing page under /en.
+  const bareTarget = bareMarketingRedirect(path);
+  if (bareTarget) return <Redirect to={bareTarget} replace />;
   return (
     <Switch>
-      <Route path="/pricing" component={Pricing} />
       <Route path="/services" component={Services} />
       <Route path="/demo" component={DemoWorkspace} />
       <Route path="/help" component={HelpCenter} />

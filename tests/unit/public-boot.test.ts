@@ -155,7 +155,9 @@ describe("D1b PublicApp", () => {
     await import("../../client/src/components/marketing/phase/PhaseSite");
     await act(async () => root.render(createElement(PublicApp)));
     await settle();
-    expect(container.querySelector("h1")?.textContent).toBe("Accounting and VAT for UAE businesses");
+    expect(container.querySelector("h1")?.textContent).toBe(
+      "Your books. Your VAT. Your e-invoices. Done."
+    );
     expect(appLoads).not.toHaveBeenCalled();
     expect(container.querySelector('[data-testid="full-app"]')).toBeNull();
 
