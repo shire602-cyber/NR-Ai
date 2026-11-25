@@ -205,6 +205,23 @@ describe("bank accounts states", { timeout: 90_000 }, () => {
   it("filters by search and shows a no-match state that is not the empty state", async () => {
     setFixtures({ [`${C}/bank-accounts`]: ACCOUNTS });
     await mount();
+    const input = document.querySelector(
+      '[data-testid="input-search-bank-accounts"]'
+    ) as HTMLInputElement;
+    const wrap = input.parentElement!;
+    expect(input.getAttribute("dir")).toBe("auto");
+    for (const variant of [
+      "[&:dir(ltr)>input:dir(ltr)]:ps-9",
+      "[&:dir(ltr)>input:dir(rtl)]:pe-9",
+      "[&:dir(rtl)>input:dir(ltr)]:pe-9",
+      "[&:dir(rtl)>input:dir(rtl)]:ps-9",
+    ]) {
+      expect(wrap.className).toContain(variant);
+    }
+    expect(wrap.className).not.toMatch(/(^|\s)(pl|pr|left|right)-/);
+    expect(wrap.querySelector("svg")?.getAttribute("class")).toContain("start-3");
+    expect(input.className).not.toMatch(/(^|\s)(ps|pe|pl|pr)-9(\s|$)/);
+
     expect(document.body.textContent).toContain("Operating");
     expect(document.body.textContent).toContain("Savings");
 

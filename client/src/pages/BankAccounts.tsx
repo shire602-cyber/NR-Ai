@@ -260,14 +260,16 @@ export default function BankAccounts() {
       />
 
       {(accounts?.length ?? 0) > 0 && (
-        <div className="relative w-full sm:w-80">
+        // Icon and padding share the wrapper direction; dir="auto" follows the typed text.
+        <div className="relative w-full sm:w-80 [&:dir(ltr)>input:dir(ltr)]:ps-9 [&:dir(ltr)>input:dir(rtl)]:pe-9 [&:dir(rtl)>input:dir(ltr)]:pe-9 [&:dir(rtl)>input:dir(rtl)]:ps-9">
           <Search
             className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden
           />
           <Input
             type="search"
-            className="h-9 ps-9 text-start"
+            dir="auto"
+            className="h-9 text-start"
             placeholder={tr("banking.accounts.searchPlaceholder")}
             aria-label={tr("banking.accounts.search")}
             data-testid="input-search-bank-accounts"
