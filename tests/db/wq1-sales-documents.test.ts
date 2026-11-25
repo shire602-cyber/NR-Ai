@@ -228,6 +228,48 @@ describe("WQ1 receive payment over several invoices (7.6)", () => {
     expect(await linesBySource(other, ["payment"])).toEqual([]);
   });
 
+  it("PR129: the bank fee limit uses the first allocation's invoice rate", async () => {
+    const t = await h.createTenant();
+    const bank = await bankAccount(t);
+    const c = await contact(t, "Export Partner FZE");
+    const usd = (exchangeRate: number) =>
+      issued(t, {
+        contactId: c.id,
+        currency: "USD",
+        exchangeRate,
+        lines: [
+          {
+            description: "Export consulting",
+            quantity: 1,
+            unitPrice: 100,
+            vatRate: 0,
+            vatSupplyType: "zero_rated",
+          },
+        ],
+      });
+    const low = await usd(3);
+    const high = await usd(4);
+    // USD 50 with a fee of AED 175: too large at 3 (AED 150), allowed at 4 (AED 200).
+    const receive = (...invoices: Array<{ id: string }>) =>
+      t.as.post(`${base(t)}/receive-payments`, {
+        contactId: c.id,
+        paymentAccountId: bank.glAccountId,
+        date: "2026-11-12",
+        amount: 50,
+        bankFee: 175,
+        allocations: invoices.map((i) => ({ invoiceId: i.id, amount: 25 })),
+      });
+
+    const refused = await receive(low, high);
+    expect(refused.status, refused.text).toBe(422);
+    expect(refused.body.code).toBe("BANK_FEE_TOO_LARGE");
+    expect(await linesBySource(t, ["payment", "customer_receipt_fee"])).toEqual([]);
+
+    const accepted = await receive(high, low);
+    expect(accepted.status, accepted.text).toBe(201);
+    expect(accepted.body.bankFee).toBe("175.00");
+  });
+
   it("a USD invoice received at a later rate books realised FX", async () => {
     const t = await h.createTenant();
     const bank = await bankAccount(t);
@@ -499,10 +541,7 @@ describe("WQ1 attachments, document language, sent / viewed log (7.2g, 7.21, 7.2
       async () => {
         const log = await t.as.get(`/api/invoices/${inv.id}/activity`);
         expect(log.status, log.text).toBe(200);
-        expect(log.body.map((e: { kind: string }) => e.kind).sort()).toEqual([
-          "emailed",
-          "viewed",
-        ]);
+        expect(log.body.map((e: { kind: string }) => e.kind).sort()).toEqual(["emailed", "viewed"]);
         const emailed = log.body.find((e: { kind: string }) => e.kind === "emailed");
         expect(emailed).toMatchObject({
           recipient: "ap@gulfretail.example",
@@ -520,9 +559,8 @@ describe("WQ1 attachments, document language, sent / viewed log (7.2g, 7.21, 7.2
     if (!h.concurrencySupported) return ctx.skip();
     const t = await h.createTenant();
     const { id } = await issued(t, { customerName: "Gulf Retail LLC" });
-    const { recordInvoiceView, VIEW_THROTTLE_MS } = await import(
-      "../../server/services/invoice-activity.service"
-    );
+    const { recordInvoiceView, VIEW_THROTTLE_MS } =
+      await import("../../server/services/invoice-activity.service");
     const invoice = { id, companyId: t.company.id };
     const now = new Date();
 

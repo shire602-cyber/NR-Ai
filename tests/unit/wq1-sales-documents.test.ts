@@ -24,6 +24,7 @@ import {
   unmountPage,
 } from "./helpers/form-harness";
 import { act } from "react";
+import { onlineManager } from "@tanstack/react-query";
 import { loadLocale } from "../../client/src/lib/i18n";
 import {
   autoApplyOldestFirst,
@@ -552,5 +553,209 @@ describe("WQ1 receive payment (7.6)", () => {
     await type(byTestId("input-apply-inv-a"), "50");
     expect(byTestId("receive-fee-error")).toBeTruthy();
     expect((byTestId("button-record-receipt") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  const CASH = {
+    id: "a0000000-0000-4000-8000-000000001021",
+    code: "1021",
+    nameEn: "Emirates NBD",
+    type: "asset",
+    subType: "bank",
+    isActive: true,
+  };
+  const OPEN_URL = `${C}/receive-payments/open-invoices?contactId=${CONTACT.id}`;
+  const invoiceRow = (over: object = {}) => ({
+    id: "inv-a",
+    number: "INV-9",
+    date: "2026-01-05",
+    dueDate: "2026-02-04",
+    currency: "AED",
+    exchangeRate: 1,
+    total: 100,
+    openBalance: 100,
+    ...over,
+  });
+  const fixtures = (extra: Record<string, unknown> = {}) => ({
+    [`${C}/customer-contacts`]: [CONTACT],
+    [`${C}/accounts`]: [CASH],
+    ...extra,
+  });
+  /** A fixture whose read throws, so the query for it fails. */
+  const failing = (target: Record<string, unknown>, url: string) =>
+    Object.defineProperty(target, url, {
+      enumerable: true,
+      configurable: true,
+      get() {
+        throw new Error("offline test failure");
+      },
+    });
+  const never = () => new Promise(() => {});
+  const openReceivePage = async () => {
+    const { default: ReceivePayment } = await import("../../client/src/pages/sales/ReceivePayment");
+    await renderPage(ReceivePayment);
+  };
+  const invoiceStates = () =>
+    ["receive-loading", "receive-paused", "receive-load-error", "receive-no-open"].filter(
+      (id) => !!byTestId(id)
+    );
+  const submitDisabled = () => (byTestId("button-record-receipt") as HTMLButtonElement).disabled;
+
+  it("says there are no open invoices only after a successful empty response", async () => {
+    setFixtures(fixtures({ [OPEN_URL]: [] }));
+    await openReceivePage();
+    await pickOption(byTestId("select-receive-customer"), CONTACT.name);
+    expect(invoiceStates()).toEqual(["receive-no-open"]);
+  });
+
+  it("shows loading, not empty, while open invoices are in flight", async () => {
+    setFixtures(fixtures({ [OPEN_URL]: never() }));
+    await openReceivePage();
+    await pickOption(byTestId("select-receive-customer"), CONTACT.name);
+    expect(invoiceStates()).toEqual(["receive-loading"]);
+  });
+
+  it("shows a failed load as an error, not as no open invoices", async () => {
+    const f = fixtures();
+    failing(f, OPEN_URL);
+    setFixtures(f);
+    await openReceivePage();
+    await pickOption(byTestId("select-receive-customer"), CONTACT.name);
+    expect(invoiceStates()).toEqual(["receive-load-error"]);
+  });
+
+  it("shows a paused load as waiting for a connection", async () => {
+    setFixtures(fixtures({ [OPEN_URL]: [] }));
+    await openReceivePage();
+    try {
+      await act(async () => onlineManager.setOnline(false));
+      await pickOption(byTestId("select-receive-customer"), CONTACT.name);
+      expect(invoiceStates()).toEqual(["receive-paused"]);
+    } finally {
+      await act(async () => onlineManager.setOnline(true));
+    }
+  });
+
+  it("keeps cached invoice rows when a refresh fails", async () => {
+    const f = fixtures({ [OPEN_URL]: [invoiceRow()] });
+    setFixtures(f);
+    await openReceivePage();
+    await pickOption(byTestId("select-receive-customer"), CONTACT.name);
+    await flushUntil(() => !!byTestId("receive-row-inv-a"));
+    failing(f, OPEN_URL);
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await flush();
+    const queryKey = [
+      "/api/companies",
+      C.split("/").pop(),
+      "receive-payments",
+      "open-invoices",
+      CONTACT.id,
+    ];
+    expect(queryClient.getQueryState(queryKey)).toMatchObject({
+      status: "error",
+      data: [invoiceRow()],
+    });
+    expect(byTestId("receive-row-inv-a")).not.toBeNull();
+    expect(invoiceStates()).toEqual([]);
+  });
+
+  const hints = () =>
+    ["receive-no-customers", "receive-no-accounts"].filter((id) => !!byTestId(id));
+
+  it("shows the no-customer and no-account hints after successful responses", async () => {
+    // An account that cannot take a payment counts as none.
+    setFixtures({
+      [`${C}/customer-contacts`]: [],
+      [`${C}/accounts`]: [{ ...CASH, isActive: false }],
+    });
+    await openReceivePage();
+    expect(hints()).toEqual(["receive-no-customers", "receive-no-accounts"]);
+  });
+
+  it("hides both hints while loading", async () => {
+    setFixtures({ [`${C}/customer-contacts`]: never(), [`${C}/accounts`]: never() });
+    await openReceivePage();
+    expect(hints()).toEqual([]);
+  });
+
+  it("hides both hints when the requests fail", async () => {
+    const f: Record<string, unknown> = {};
+    failing(f, `${C}/customer-contacts`);
+    failing(f, `${C}/accounts`);
+    setFixtures(f);
+    await openReceivePage();
+    expect(hints()).toEqual([]);
+  });
+
+  it("hides both hints while the requests are paused", async () => {
+    setFixtures({});
+    try {
+      onlineManager.setOnline(false);
+      await openReceivePage();
+      expect(hints()).toEqual([]);
+    } finally {
+      await act(async () => onlineManager.setOnline(true));
+    }
+  });
+
+  it("compares the bank fee with the payment converted to base currency", async () => {
+    setFixtures(fixtures({ [OPEN_URL]: [invoiceRow({ currency: "USD", exchangeRate: 3.67 })] }));
+    await openReceivePage();
+    await pickOption(byTestId("select-receive-customer"), CONTACT.name);
+    await flushUntil(() => !!byTestId("receive-row-inv-a"));
+    await type(byTestId("input-receive-amount"), "50");
+    await type(byTestId("input-apply-inv-a"), "50");
+    // USD 50 at 3.67 is AED 183.50.
+    await type(byTestId("input-receive-fee"), "60");
+    expect(byTestId("receive-fee-error")).toBeNull();
+    expect(submitDisabled()).toBe(false);
+    await type(byTestId("input-receive-fee"), "183.49");
+    expect(byTestId("receive-fee-error")).toBeNull();
+    await type(byTestId("input-receive-fee"), "183.50");
+    expect(byTestId("receive-fee-error")).not.toBeNull();
+    expect(submitDisabled()).toBe(true);
+    // A typed rate replaces the invoice's rate: USD 50 at 4 is AED 200.
+    await type(document.getElementById("receive-rate"), "4");
+    expect(byTestId("receive-fee-error")).toBeNull();
+    expect(submitDisabled()).toBe(false);
+    // Half-up twice: the rate to 3.670100 (6dp), then 18350.5 fils to AED 183.51.
+    await type(document.getElementById("receive-rate"), "3.6700995");
+    await type(byTestId("input-receive-fee"), "183.50");
+    expect(byTestId("receive-fee-error")).toBeNull();
+    expect(submitDisabled()).toBe(false);
+    await type(byTestId("input-receive-fee"), "183.51");
+    expect(byTestId("receive-fee-error")).not.toBeNull();
+    expect(submitDisabled()).toBe(true);
+  });
+
+  it("checks the bank fee at the first applied invoice's rate", async () => {
+    const usd = { currency: "USD" };
+    setFixtures(
+      fixtures({
+        [OPEN_URL]: [
+          invoiceRow({ id: "inv-aed", number: "INV-AED" }),
+          invoiceRow({ ...usd, exchangeRate: 3 }),
+          invoiceRow({ ...usd, id: "inv-b", number: "INV-10", exchangeRate: 4 }),
+        ],
+      })
+    );
+    await openReceivePage();
+    await pickOption(byTestId("select-receive-customer"), CONTACT.name);
+    await flushUntil(() => !!byTestId("receive-row-inv-b"));
+    await type(byTestId("input-receive-amount"), "50");
+    // Nothing applied yet: previewed at the first open invoice, AED 50.
+    await type(byTestId("input-receive-fee"), "175");
+    expect(byTestId("receive-fee-error")).not.toBeNull();
+    // Only the second applied: AED 200.
+    await type(byTestId("input-apply-inv-b"), "25");
+    expect(byTestId("receive-fee-error")).toBeNull();
+    expect(submitDisabled()).toBe(false);
+    // Both applied: the first allocation sent is inv-a, AED 150.
+    await type(byTestId("input-apply-inv-a"), "25");
+    expect(byTestId("receive-fee-error")).not.toBeNull();
+    expect(submitDisabled()).toBe(true);
   });
 });

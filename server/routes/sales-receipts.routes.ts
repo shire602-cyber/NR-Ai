@@ -220,7 +220,8 @@ export function registerSalesReceiptRoutes(app: Express) {
             `A bank fee can be recorded on a ${baseCurrency} bank account`
           );
         }
-        const rate = body.exchangeRate || Number(rows[0].exchangeRate) || 1;
+        // The first allocation's invoice, not rows[0]: the query returns them in no set order.
+        const rate = body.exchangeRate || Number(byId.get(ids[0])!.exchangeRate) || 1;
         const receivedBase =
           [...currencies][0] === baseCurrency ? body.amount : mulRate(body.amount, rate);
         if (feeFils >= receivedBase) {

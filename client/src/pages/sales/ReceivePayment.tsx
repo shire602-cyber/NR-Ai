@@ -38,6 +38,7 @@ import {
   type BankAccountLike,
 } from "@/lib/payment-accounts";
 import { autoApplyOldestFirst } from "@shared/sales-documents";
+import { mulRate } from "@shared/money";
 
 interface OpenInvoice {
   id: string;
@@ -55,6 +56,7 @@ const toFils = (v: string | number) => {
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
 };
 const fromFils = (f: number) => (f / 100).toFixed(2);
+const NO_OPEN_INVOICES: readonly OpenInvoice[] = [];
 
 /**
  * WQ1 (7.6): one payment from a customer applied to several open invoices. "Auto apply" pays
@@ -69,14 +71,16 @@ export default function ReceivePayment() {
   const { can } = useCompanyPermission();
   const baseCurrency = (company as { baseCurrency?: string } | undefined)?.baseCurrency || "AED";
 
-  const { data: contacts = [] } = useQuery<Array<{ id: string; name: string }>>({
+  const contactsQuery = useQuery<Array<{ id: string; name: string }>>({
     queryKey: ["/api/companies", companyId, "customer-contacts"],
     enabled: !!companyId,
   });
-  const { data: accounts = [] } = useQuery<any[]>({
+  const contacts = contactsQuery.data ?? [];
+  const accountsQuery = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "accounts"],
     enabled: !!companyId,
   });
+  const accounts = accountsQuery.data ?? [];
   const { data: bankAccounts = [] } = useQuery<BankAccountLike[]>({
     queryKey: ["/api/companies", companyId, "bank-accounts"],
     enabled: !!companyId,
@@ -94,7 +98,7 @@ export default function ReceivePayment() {
   const [reference, setReference] = useState("");
   const [applied, setApplied] = useState<Record<string, string>>({});
 
-  const { data: open = [], isFetching } = useQuery<OpenInvoice[]>({
+  const openQuery = useQuery<OpenInvoice[]>({
     queryKey: ["/api/companies", companyId, "receive-payments", "open-invoices", contactId],
     queryFn: () =>
       apiRequest(
@@ -103,16 +107,32 @@ export default function ReceivePayment() {
       ),
     enabled: !!companyId && !!contactId,
   });
+  const open = openQuery.data ?? NO_OPEN_INVOICES;
 
-  const currency = open[0]?.currency ?? baseCurrency;
+  // The invoice whose currency and rate the API uses: the first applied one (the API validates
+  // only allocated invoices), the first open one as a preview before any is applied.
+  const rateInvoice = open.find((i) => toFils(applied[i.id] ?? 0) > 0) ?? open[0];
+  const currency = rateInvoice?.currency ?? baseCurrency;
   const foreign = currency !== baseCurrency;
   const amountFils = toFils(amount);
   const appliedFils = open.reduce((s, i) => s + toFils(applied[i.id] ?? 0), 0);
   const feeFils = toFils(fee);
   const creditFils = Math.max(0, amountFils - appliedFils);
   const overApplied = appliedFils > amountFils;
-  // A bank fee larger than the payment would show a negative net and post nonsense.
-  const feeTooHigh = feeFils > 0 && amountFils > 0 && feeFils > amountFils;
+  // The rate sent with the receipt; the field only exists for a foreign currency.
+  const enteredRate = foreign && Number(rate) > 0 ? Number(rate) : undefined;
+  // The API's rule: the fee (base currency) must be less than the amount received in base, at
+  // the typed rate, else the first allocation's invoice rate (the first open one until applied).
+  const receivedBaseFils = () => {
+    if (!rateInvoice || rateInvoice.currency === baseCurrency) return amountFils;
+    try {
+      return mulRate(amountFils, enteredRate ?? (rateInvoice.exchangeRate || 1));
+    } catch {
+      // An unusable rate or amount is left for the server to refuse.
+      return Infinity;
+    }
+  };
+  const feeTooHigh = feeFils > 0 && amountFils > 0 && feeFils >= receivedBaseFils();
   const overInvoice = open.some(
     (i) => toFils(applied[i.id] ?? 0) > Math.round(i.openBalance * 100)
   );
@@ -149,7 +169,7 @@ export default function ReceivePayment() {
         date,
         amount: fromFils(amountFils),
         ...(feeFils > 0 ? { bankFee: fromFils(feeFils) } : {}),
-        ...(foreign && Number(rate) > 0 ? { exchangeRate: Number(rate) } : {}),
+        ...(foreign && enteredRate ? { exchangeRate: enteredRate } : {}),
         ...(reference.trim() ? { reference: reference.trim() } : {}),
         allocations,
       }),
@@ -250,14 +270,20 @@ export default function ReceivePayment() {
               </SelectContent>
             </Select>
             {/* Sweep: with no customers the picker opened empty and the page was a dead end. */}
-            {contacts.length === 0 && (
-              <p className="text-small text-muted-foreground" data-testid="receive-no-customers">
-                {t["invoices.receive.noCustomers"]}{" "}
-                <Link href="/contacts" className="text-primary underline-offset-4 hover:underline">
-                  {t["invoices.receive.addCustomer"]}
-                </Link>
-              </p>
-            )}
+            {contactsQuery.isSuccess &&
+              !contactsQuery.isFetching &&
+              !contactsQuery.isPaused &&
+              contacts.length === 0 && (
+                <p className="text-small text-muted-foreground" data-testid="receive-no-customers">
+                  {t["invoices.receive.noCustomers"]}{" "}
+                  <Link
+                    href="/contacts"
+                    className="text-primary underline-offset-4 hover:underline"
+                  >
+                    {t["invoices.receive.addCustomer"]}
+                  </Link>
+                </p>
+              )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="receive-account">{t["invoices.receive.depositTo"]}</Label>
@@ -273,11 +299,14 @@ export default function ReceivePayment() {
                 ))}
               </SelectContent>
             </Select>
-            {paymentAccounts.length === 0 && (
-              <p className="text-small text-muted-foreground" data-testid="receive-no-accounts">
-                {t["invoices.receive.noAccounts"]}
-              </p>
-            )}
+            {accountsQuery.isSuccess &&
+              !accountsQuery.isFetching &&
+              !accountsQuery.isPaused &&
+              paymentAccounts.length === 0 && (
+                <p className="text-small text-muted-foreground" data-testid="receive-no-accounts">
+                  {t["invoices.receive.noAccounts"]}
+                </p>
+              )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="receive-date">{t["invoices.receive.date"]}</Label>
@@ -357,7 +386,19 @@ export default function ReceivePayment() {
       >
         {!contactId ? (
           <p className="text-small text-muted-foreground">{t["invoices.receive.pickFirst"]}</p>
-        ) : isFetching && open.length === 0 ? (
+        ) : open.length === 0 && openQuery.isPaused ? (
+          <p
+            className="text-small text-muted-foreground"
+            role="status"
+            data-testid="receive-paused"
+          >
+            {t["invoices.receive.paused"]}
+          </p>
+        ) : open.length === 0 && openQuery.isError && !openQuery.isFetching ? (
+          <p className="text-small text-danger" role="alert" data-testid="receive-load-error">
+            {t["invoices.receive.loadError"]}
+          </p>
+        ) : open.length === 0 && (openQuery.isFetching || !openQuery.isSuccess) ? (
           <p
             className="text-small text-muted-foreground"
             role="status"
