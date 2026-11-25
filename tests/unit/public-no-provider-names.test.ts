@@ -4,11 +4,14 @@
 // and may keep the provider choice. When a new delivery provider is integrated, add its Latin and
 // Arabic spellings to PROVIDER_PATTERNS.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
+import { collectPdf } from "./pdf-test-helpers";
 
 const ROOT = join(__dirname, "..", "..");
+const PDFDocument = createRequire(import.meta.url)("pdfkit");
 
 // Dashes, spaces, dots and zero-width / soft-hyphen characters between word parts.
 const SEP = "[\\s\\-\\u2010-\\u2015\\u00ad\\u200b-\\u200d\\u2060._]*";
@@ -104,6 +107,31 @@ function pdfWithContent(streams: string[]): Buffer {
     }),
     Buffer.from("%%EOF", "latin1"),
   ]);
+}
+
+async function pdfJsTextLines(pdf: Buffer): Promise<string[]> {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(pdf), useSystemFonts: true });
+  try {
+    const doc = await loadingTask.promise;
+    const lines: string[] = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const content = await (await doc.getPage(i)).getTextContent();
+      const parts: string[] = [];
+      for (const item of content.items) {
+        if (!("str" in item)) continue;
+        if (item.str) parts.push(item.str);
+        if (item.hasEOL) {
+          if (parts.length) lines.push(parts.join(" "));
+          parts.length = 0;
+        }
+      }
+      if (parts.length) lines.push(parts.join(" "));
+    }
+    return lines;
+  } finally {
+    await loadingTask.destroy();
+  }
 }
 
 function walk(dir: string): string[] {
@@ -231,18 +259,31 @@ describe("public site names no e-invoicing provider", () => {
     }
   });
 
+  it.each([
+    ["on the same line", false, 55, 40, true],
+    ["on different lines", false, 40, 80, false],
+    ["on different pages", true, 40, 40, false],
+  ] as const)("checks PDF.js fragments %s", async (_description, newPage, x, y, matches) => {
+    const doc = new PDFDocument();
+    const pdf = collectPdf(doc);
+    // The font change makes PDF.js return separate text items even on the same line.
+    doc.text("A", 40, 40, { lineBreak: false });
+    if (newPage) doc.addPage();
+    doc.font("Helvetica-Bold").text("Cube", x, y, { lineBreak: false });
+    doc.end();
+
+    const lines = await pdfJsTextLines(await pdf);
+    if (!matches) expect(lines).toEqual(["A", "Cube"]);
+    expect(lines.some(namesProvider)).toBe(matches);
+  }, 60_000);
+
   it.each(pdfs.map((f) => [rel(f), f]))("pdf text %s", async (_n, f) => {
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const doc = await pdfjs.getDocument({ data: new Uint8Array(readFileSync(f)), useSystemFonts: true }).promise;
-    let text = "";
-    for (let i = 1; i <= doc.numPages; i++) {
-      const content = await (await doc.getPage(i)).getTextContent();
-      text += content.items.map((item) => ("str" in item ? item.str : "")).join(" ");
-    }
-    expect(text.length).toBeGreaterThan(100);
-    const arabic = pdfActualText(readFileSync(f));
+    const pdf = readFileSync(f);
+    const lines = await pdfJsTextLines(pdf);
+    expect(lines.reduce((length, line) => length + line.length, 0)).toBeGreaterThan(100);
+    const arabic = pdfActualText(pdf);
     expect(arabic.some((candidate) => /[\u0600-\u06ff]/.test(candidate))).toBe(true);
-    const hit = [text, ...arabic].map(namesProvider).find(Boolean);
+    const hit = [...lines, ...arabic].map(namesProvider).find(Boolean);
     expect(hit, `provider name matched ${hit}`).toBeUndefined();
   }, 60_000);
 });
