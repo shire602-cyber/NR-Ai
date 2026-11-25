@@ -231,5 +231,14 @@
   "compliance.autopilotStageFiled": "Filed",
   "compliance.autopilotStagePaid": "Paid",
   "compliance.vatNotRegisteredTitle": "This company is not registered for VAT",
-  "compliance.vatNotRegisteredBody": "It charges no VAT and files no VAT return. VAT that suppliers charge cannot be recovered, so it is booked as part of the cost of each purchase. When the company registers with the FTA, change the registration type and add the TRN in the company profile."
+  "compliance.vatNotRegisteredBody": "It charges no VAT and files no VAT return. VAT that suppliers charge cannot be recovered, so it is booked as part of the cost of each purchase. When the company registers with the FTA, change the registration type and add the TRN in the company profile.",
+  "compliance.taxArchiveEyebrow": "Compliance",
+  "compliance.taxArchiveSearchPlaceholder": "Search by period or reference...",
+  "compliance.taxArchiveSearchLabel": "Search filed returns",
+  "compliance.taxArchiveNoMatchTitle": "No returns match your filters",
+  "compliance.taxArchiveNoMatchBody": "No filed return matches your search or filters. Try a different term or clear them.",
+  "compliance.taxArchiveClearFilters": "Clear search and filters",
+  "compliance.taxArchiveVatReturns": "VAT returns",
+  "compliance.taxArchiveViewFile": "View return file",
+  "compliance.taxArchiveDownloadFile": "Download return file"
 }

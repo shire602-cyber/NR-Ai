@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { FileDrop } from "@/components/ui/file-drop";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useState } from "react";
@@ -101,7 +102,13 @@ export default function TaxReturnArchive() {
     notes: "",
   });
 
-  const { data: taxReturns, isLoading } = useQuery<TaxReturn[]>({
+  const {
+    data: taxReturns,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery<TaxReturn[]>({
     queryKey: ["/api/companies", companyId, "tax-returns-archive"],
     enabled: !!companyId,
   });
@@ -197,11 +204,17 @@ export default function TaxReturnArchive() {
       return true;
     }) || [];
 
+  const hasNoMatches = filteredReturns.length === 0 && (taxReturns?.length ?? 0) > 0;
+
   const stats = {
     totalReturns: taxReturns?.length || 0,
     vatReturns: taxReturns?.filter((r) => r.returnType === "vat").length || 0,
     corporateTax: taxReturns?.filter((r) => r.returnType === "corporate_tax").length || 0,
-    totalTaxPaid: taxReturns?.reduce((sum, r) => sum + (r.taxAmount || 0), 0) || 0,
+    // "Total tax paid" counts only returns recorded as paid, not unpaid or partial ones.
+    totalTaxPaid:
+      taxReturns
+        ?.filter((r) => r.paymentStatus === "paid")
+        .reduce((sum, r) => sum + (r.taxAmount || 0), 0) || 0,
   };
 
   if (isLoadingCompany || isLoading) {
@@ -221,7 +234,7 @@ export default function TaxReturnArchive() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Compliance"
+        eyebrow={t["compliance.taxArchiveEyebrow"]}
         title={t["compliance.filedReturnsTitle"]}
         description={t["compliance.taxArchiveViewAllTaxReturnsFiledWith"]}
         primaryAction={
@@ -236,10 +249,7 @@ export default function TaxReturnArchive() {
       {stats.totalReturns > 0 ? (
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
           <StatCard label={t["compliance.taxArchiveTotalReturns"]} value={stats.totalReturns} />
-          <StatCard
-            label={locale === "ar" ? "إقرارات ضريبة القيمة المضافة" : "VAT returns"}
-            value={stats.vatReturns}
-          />
+          <StatCard label={t["compliance.taxArchiveVatReturns"]} value={stats.vatReturns} />
           <StatCard label={t["compliance.taxArchiveCorporateTax"]} value={stats.corporateTax} />
           <StatCard
             label={t["compliance.taxArchiveTotalTaxPaid"]}
@@ -248,174 +258,199 @@ export default function TaxReturnArchive() {
         </div>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col md:flex-row gap-4 justify-between">
-            <div className="relative flex-1">
-              <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-              <Input
-                placeholder={
-                  locale === "ar"
-                    ? "بحث بالفترة أو رقم المرجع..."
-                    : "Search by period or reference..."
-                }
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="ps-10"
-                data-testid="input-search-returns"
-              />
-            </div>
-            <div className="flex gap-2">
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-[180px]" data-testid="select-type-filter">
-                  <SelectValue placeholder={t["compliance.taxArchiveReturnType"]} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t["compliance.taxArchiveAllTypes"]}</SelectItem>
-                  {RETURN_TYPES.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {locale === "ar" ? type.labelAr : type.labelEn}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={yearFilter} onValueChange={setYearFilter}>
-                <SelectTrigger className="w-[140px]" data-testid="select-year-filter">
-                  <SelectValue placeholder={locale === "ar" ? "السنة" : "Year"} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t["compliance.taxArchiveAllYears"]}</SelectItem>
-                  {years.map((year) => (
-                    <SelectItem key={year} value={year.toString()}>
-                      {year}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {filteredReturns.length === 0 ? (
-            <EmptyState
-              icon={FileText}
-              title={t["compliance.taxArchiveNoTaxReturnsFound"]}
-              description={t["compliance.filedReturnsEmptyHint"]}
-              action={{
-                label: t["compliance.taxArchiveAddYourFirstReturn"],
-                onClick: () => setAddDialogOpen(true),
-              }}
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{locale === "ar" ? "الفترة" : "Period"}</TableHead>
-                    <TableHead>{locale === "ar" ? "النوع" : "Type"}</TableHead>
-                    <TableHead>{t["compliance.taxArchiveFilingDate"]}</TableHead>
-                    <TableHead>{locale === "ar" ? "رقم المرجع" : "Reference No."}</TableHead>
-                    <TableHead data-numeric>{locale === "ar" ? "المبلغ" : "Amount"}</TableHead>
-                    <TableHead>{locale === "ar" ? "حالة الدفع" : "Payment"}</TableHead>
-                    <TableHead data-numeric>{locale === "ar" ? "إجراءات" : "Actions"}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredReturns.map((ret) => {
-                    const returnType = RETURN_TYPES.find((t) => t.value === ret.returnType);
+      <div role="status" aria-atomic="true" className="sr-only">
+        {hasNoMatches ? t["compliance.taxArchiveNoMatchTitle"] : ""}
+      </div>
 
-                    return (
-                      <TableRow key={ret.id} data-testid={`row-return-${ret.id}`}>
-                        <TableCell>
-                          <div className="font-medium">{ret.periodLabel}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {format(parseCalendarDate(ret.periodStart), "dd MMM")} -{" "}
-                            {format(parseCalendarDate(ret.periodEnd), "dd MMM yyyy")}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={ret.returnType === "vat" ? "default" : "secondary"}>
-                            {locale === "ar" ? returnType?.labelAr : returnType?.labelEn}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-3 h-3" />
-                            {format(parseCalendarDate(ret.filingDate), "dd MMM yyyy")}
-                          </div>
-                        </TableCell>
-                        <TableCell>{ret.ftaReferenceNumber || "-"}</TableCell>
-                        <TableCell data-numeric className=" font-medium">
-                          <Money amount={ret.taxAmount} />
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              ret.paymentStatus === "paid"
-                                ? "default"
-                                : ret.paymentStatus === "partial"
-                                  ? "secondary"
-                                  : "destructive"
-                            }
-                          >
-                            {ret.paymentStatus === "paid" && (
-                              <>
-                                <CheckCircle2 className="w-3 h-3 me-1" />
-                                {locale === "ar" ? "مدفوع" : "Paid"}
-                              </>
-                            )}
-                            {ret.paymentStatus === "partial" && (
-                              <>
-                                <Clock className="w-3 h-3 me-1" />
-                                {locale === "ar" ? "جزئي" : "Partial"}
-                              </>
-                            )}
-                            {ret.paymentStatus === "unpaid" && (
-                              <>
-                                <AlertCircle className="w-3 h-3 me-1" />
-                                {locale === "ar" ? "غير مدفوع" : "Unpaid"}
-                              </>
-                            )}
-                          </Badge>
-                        </TableCell>
-                        <TableCell data-numeric>
-                          <div className="flex justify-end gap-2">
-                            {ret.fileUrl && (
-                              <>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => window.open(ret.fileUrl!, "_blank")}
-                                  data-testid={`button-view-${ret.id}`}
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    const link = document.createElement("a");
-                                    link.href = ret.fileUrl!;
-                                    link.download = ret.fileName || "tax-return.pdf";
-                                    link.click();
-                                  }}
-                                  data-testid={`button-download-${ret.id}`}
-                                >
-                                  <Download className="w-4 h-4" />
-                                </Button>
-                              </>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+      {isError ? (
+        <LoadErrorState error={error} onRetry={() => refetch()} testId="tax-archive-load-error" />
+      ) : (
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col md:flex-row gap-4 justify-between">
+              <div className="relative flex-1">
+                <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                <Input
+                  placeholder={t["compliance.taxArchiveSearchPlaceholder"]}
+                  aria-label={t["compliance.taxArchiveSearchLabel"]}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="ps-10"
+                  data-testid="input-search-returns"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="w-[180px]" data-testid="select-type-filter">
+                    <SelectValue placeholder={t["compliance.taxArchiveReturnType"]} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t["compliance.taxArchiveAllTypes"]}</SelectItem>
+                    {RETURN_TYPES.map((type) => (
+                      <SelectItem key={type.value} value={type.value}>
+                        {locale === "ar" ? type.labelAr : type.labelEn}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={yearFilter} onValueChange={setYearFilter}>
+                  <SelectTrigger className="w-[140px]" data-testid="select-year-filter">
+                    <SelectValue placeholder={locale === "ar" ? "السنة" : "Year"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t["compliance.taxArchiveAllYears"]}</SelectItem>
+                    {years.map((year) => (
+                      <SelectItem key={year} value={year.toString()}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent>
+            {hasNoMatches ? (
+              <EmptyState
+                icon={Search}
+                title={t["compliance.taxArchiveNoMatchTitle"]}
+                description={t["compliance.taxArchiveNoMatchBody"]}
+                action={{
+                  label: t["compliance.taxArchiveClearFilters"],
+                  onClick: () => {
+                    setSearchQuery("");
+                    setTypeFilter("all");
+                    setYearFilter("all");
+                  },
+                }}
+              />
+            ) : filteredReturns.length === 0 ? (
+              <EmptyState
+                icon={FileText}
+                title={t["compliance.taxArchiveNoTaxReturnsFound"]}
+                description={t["compliance.filedReturnsEmptyHint"]}
+                action={{
+                  label: t["compliance.taxArchiveAddYourFirstReturn"],
+                  onClick: () => setAddDialogOpen(true),
+                }}
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{locale === "ar" ? "الفترة" : "Period"}</TableHead>
+                      <TableHead>{locale === "ar" ? "النوع" : "Type"}</TableHead>
+                      <TableHead>{t["compliance.taxArchiveFilingDate"]}</TableHead>
+                      <TableHead>{locale === "ar" ? "رقم المرجع" : "Reference No."}</TableHead>
+                      <TableHead data-numeric>{locale === "ar" ? "المبلغ" : "Amount"}</TableHead>
+                      <TableHead>{locale === "ar" ? "حالة الدفع" : "Payment"}</TableHead>
+                      <TableHead data-numeric>{locale === "ar" ? "إجراءات" : "Actions"}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredReturns.map((ret) => {
+                      const returnType = RETURN_TYPES.find((t) => t.value === ret.returnType);
+
+                      return (
+                        <TableRow key={ret.id} data-testid={`row-return-${ret.id}`}>
+                          <TableCell>
+                            <div className="font-medium">{ret.periodLabel}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {format(parseCalendarDate(ret.periodStart), "dd MMM")} -{" "}
+                              {format(parseCalendarDate(ret.periodEnd), "dd MMM yyyy")}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={ret.returnType === "vat" ? "default" : "secondary"}>
+                              {returnType
+                                ? locale === "ar"
+                                  ? returnType.labelAr
+                                  : returnType.labelEn
+                                : ret.returnType}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              {format(parseCalendarDate(ret.filingDate), "dd MMM yyyy")}
+                            </div>
+                          </TableCell>
+                          <TableCell>{ret.ftaReferenceNumber || "-"}</TableCell>
+                          <TableCell data-numeric className=" font-medium">
+                            <Money amount={ret.taxAmount} />
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                ret.paymentStatus === "paid"
+                                  ? "default"
+                                  : ret.paymentStatus === "partial"
+                                    ? "secondary"
+                                    : "destructive"
+                              }
+                            >
+                              {ret.paymentStatus === "paid" && (
+                                <>
+                                  <CheckCircle2 className="w-3 h-3 me-1" />
+                                  {locale === "ar" ? "مدفوع" : "Paid"}
+                                </>
+                              )}
+                              {ret.paymentStatus === "partial" && (
+                                <>
+                                  <Clock className="w-3 h-3 me-1" />
+                                  {locale === "ar" ? "جزئي" : "Partial"}
+                                </>
+                              )}
+                              {ret.paymentStatus === "unpaid" && (
+                                <>
+                                  <AlertCircle className="w-3 h-3 me-1" />
+                                  {locale === "ar" ? "غير مدفوع" : "Unpaid"}
+                                </>
+                              )}
+                            </Badge>
+                          </TableCell>
+                          <TableCell data-numeric>
+                            <div className="flex justify-end gap-2">
+                              {ret.fileUrl && (
+                                <>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => window.open(ret.fileUrl!, "_blank")}
+                                    aria-label={t["compliance.taxArchiveViewFile"]}
+                                    data-testid={`button-view-${ret.id}`}
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      const link = document.createElement("a");
+                                      link.href = ret.fileUrl!;
+                                      link.download = ret.fileName || "tax-return.pdf";
+                                      link.click();
+                                    }}
+                                    aria-label={t["compliance.taxArchiveDownloadFile"]}
+                                    data-testid={`button-download-${ret.id}`}
+                                  >
+                                    <Download className="w-4 h-4" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="sm:max-w-lg">

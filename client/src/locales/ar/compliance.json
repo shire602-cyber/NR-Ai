@@ -231,5 +231,14 @@
   "compliance.autopilotStageFiled": "تم التقديم",
   "compliance.autopilotStagePaid": "مدفوع",
   "compliance.vatNotRegisteredTitle": "هذه الشركة غير مسجلة في ضريبة القيمة المضافة",
-  "compliance.vatNotRegisteredBody": "لا تفرض الشركة ضريبة القيمة المضافة ولا تقدّم إقرارًا ضريبيًا. ولا يمكن استرداد الضريبة التي يفرضها الموردون، لذلك تُسجَّل ضمن تكلفة كل عملية شراء. عند تسجيل الشركة لدى الهيئة الاتحادية للضرائب، غيّر نوع التسجيل وأضف رقم التسجيل الضريبي في ملف الشركة."
+  "compliance.vatNotRegisteredBody": "لا تفرض الشركة ضريبة القيمة المضافة ولا تقدّم إقرارًا ضريبيًا. ولا يمكن استرداد الضريبة التي يفرضها الموردون، لذلك تُسجَّل ضمن تكلفة كل عملية شراء. عند تسجيل الشركة لدى الهيئة الاتحادية للضرائب، غيّر نوع التسجيل وأضف رقم التسجيل الضريبي في ملف الشركة.",
+  "compliance.taxArchiveEyebrow": "الامتثال",
+  "compliance.taxArchiveSearchPlaceholder": "بحث بالفترة أو رقم المرجع...",
+  "compliance.taxArchiveSearchLabel": "بحث في الإقرارات المقدمة",
+  "compliance.taxArchiveNoMatchTitle": "لا توجد إقرارات مطابقة",
+  "compliance.taxArchiveNoMatchBody": "لا يطابق أي إقرار مقدم البحث أو عوامل التصفية. جرّب عبارة أخرى أو امسحها.",
+  "compliance.taxArchiveClearFilters": "مسح البحث وعوامل التصفية",
+  "compliance.taxArchiveVatReturns": "إقرارات ضريبة القيمة المضافة",
+  "compliance.taxArchiveViewFile": "عرض ملف الإقرار",
+  "compliance.taxArchiveDownloadFile": "تنزيل ملف الإقرار"
 }
