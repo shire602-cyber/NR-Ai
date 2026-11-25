@@ -1,30 +1,41 @@
-/**
- * JSON body-size routing shared by the app (server/index.ts) and the DB test harness, so the two
- * can never disagree. Most endpoints accept 1 MB of JSON; image/file uploads that arrive as
- * base64 data URLs get 10 MB. S1 (R14-13): the company logo upload is the only company route
- * with the larger cap (a 1 MB image is ~1.37 MB of base64); the logo bytes are still capped at
- * LOGO_MAX_BYTES by the route.
- */
+import { MAX_UPLOAD_BYTES } from "../../shared/upload-limits";
+
+/** JSON uploads allow room for base64, data URLs, and request metadata. */
 export const LARGE_JSON_ROUTES: readonly RegExp[] = [
-  /^\/api\/ocr\//,
-  /^\/api\/export\//,
-  /^\/api\/firm\/bulk\/ocr/,
+  /^\/api\/ocr\/process$/,
+  /^\/api\/ai\/autopilot\/process$/,
+  /^\/api\/companies\/[^/]+\/documents$/,
+  /^\/api\/documents\/[^/]+\/versions$/,
+  /^\/api\/client-portal\/documents$/,
+  /^\/api\/portal\/[^/]+\/documents$/,
+  /^\/api\/firm\/bulk\/ocr$/,
   /^\/api\/companies\/[^/]+\/receipts$/,
   /^\/api\/companies\/[^/]+\/bank-statements\/(import|preview)$/,
+  /^\/api\/companies\/[^/]+\/bank-connections\/[^/]+\/import$/,
   /^\/api\/journal\/[^/]+\/attachments$/,
   /^\/api\/invoices\/[^/]+\/attachments$/,
   /^\/api\/companies\/[^/]+\/logo$/,
+  /^\/api\/companies\/[^/]+\/customer-contacts\/import-preview$/,
+  /^\/api\/corporate-tax\/returns\/[^/]+\/import-file$/,
+  /^\/api\/firm\/vat-workpapers\/[^/]+\/(scan|import-file)$/,
+  /^\/api\/firm\/clients\/import$/,
+  /^\/api\/admin\/import\/preview$/,
   // WQ2: purchase documents (bill attachment, bill capture, expense-claim receipt).
   /^\/api\/bills\/[^/]+\/attachment$/,
   /^\/api\/companies\/[^/]+\/bills\/capture$/,
   /^\/api\/companies\/[^/]+\/expense-claims\/receipts$/,
 ];
 
-export const LARGE_JSON_LIMIT = "10mb";
+export const LARGE_JSON_LIMIT = 3 * 1024 * 1024;
 export const SMALL_JSON_LIMIT = "1mb";
+export const EXPORT_JSON_LIMIT = MAX_UPLOAD_BYTES;
+export const EXPORT_JSON_PATH = /^\/api\/(?:export\/excel|ocr\/export-excel)\/?$/i;
+export const EMAIL_INTAKE_LIMIT = MAX_UPLOAD_BYTES;
+export const EMAIL_INTAKE_PATH = /^\/api\/webhooks\/email-intake\/?$/i;
 
 export function usesLargeJson(path: string): boolean {
-  return LARGE_JSON_ROUTES.some((rx) => rx.test(path));
+  const normalized = path.toLowerCase().replace(/\/$/, "");
+  return LARGE_JSON_ROUTES.some((rx) => rx.test(normalized));
 }
 
 /**

@@ -93,7 +93,7 @@ export const createReceiptBody = z
     supplierTrn: z.string().max(40).optional().nullable(),
     lines,
     // Upload + classifier metadata handled by the route (never stored as-is).
-    imageData: z.string().max(25_000_000).optional().nullable(),
+    imageData: z.string().optional().nullable(),
     // Classifier metadata is advisory: sanitised and truncated rather than rejected.
     suggestedCategory: clippedText(100).optional().nullable(),
     classifierMethod: clippedText(40).optional().nullable(),

@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_BYTES } from "../../shared/upload-limits";
 // WQ1: files kept with an invoice (7.2g) and its sent / viewed log (7.25).
 //
 //   GET    /api/invoices/:id/attachments
@@ -28,8 +29,7 @@ import { recordAudit } from "../services/audit.service";
 import { listInvoiceActivity } from "../services/invoice-activity.service";
 import { findInvoiceForUser } from "./invoices.routes";
 
-/** The route is in LARGE_JSON_ROUTES (10 MB JSON): a ~7 MB file as base64. */
-export const MAX_INVOICE_ATTACHMENT_BYTES = 7 * 1024 * 1024;
+export const MAX_INVOICE_ATTACHMENT_BYTES = MAX_UPLOAD_BYTES;
 const UUID = /^[0-9a-f-]{36}$/i;
 
 const userOf = (req: Request): string => (req as Request & { user: { id: string } }).user.id;

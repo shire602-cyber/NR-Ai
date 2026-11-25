@@ -1,3 +1,4 @@
+import { assertUploadSize } from "../http/upload-errors";
 import type { Express, Request, Response } from "express";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -16,6 +17,7 @@ import {
   sanitizeConnection,
 } from "../services/bank-feeds";
 import {
+  assertStatementDatesValid,
   importConnectionStatement,
   linkConnectionStatement,
   parseStatementCsv,
@@ -49,14 +51,14 @@ async function ownedConnection(req: Request, id: string, companyId?: string) {
 
 const connectionImportBody = z
   .object({
-    csvContent: z.string().min(1).max(5_000_000),
+    csvContent: z.string().min(1),
     acknowledgeAmbiguity: z.boolean().optional(),
   })
   .strict();
 const connectionLinkBody = z.object({ bankAccountId: zUuid }).strict();
 
-export async function registerBankRoutes(app: Express) {
-  await retireAutomaticBanking();
+export async function registerBankRoutes(app: Express, retireOnStartup = true) {
+  if (retireOnStartup) await retireAutomaticBanking();
 
   // ─── Bank-account balances in account and base currency (W5-C, R14-16) ──
 
@@ -171,7 +173,9 @@ export async function registerBankRoutes(app: Express) {
         parsedBody<z.output<typeof connectionImportBody>>(req);
       let parsed;
       try {
-        parsed = parseStatementCsv(Buffer.from(csvContent, "utf8"));
+        const bytes = Buffer.from(csvContent, "utf8");
+        assertUploadSize(bytes.length);
+        parsed = parseStatementCsv(bytes);
         if (parsed.rows.length === 0 && parsed.ignored.length === 0) {
           throw new Error("CSV file must contain a header row and at least one data row");
         }
@@ -184,6 +188,7 @@ export async function registerBankRoutes(app: Express) {
           "Could not read the statement"
         );
       }
+      assertStatementDatesValid(parsed);
       if (!parsed.rows.some((row) => row.date && row.errors.length === 0))
         throw new DomainError(
           "NO_VALID_TRANSACTIONS",

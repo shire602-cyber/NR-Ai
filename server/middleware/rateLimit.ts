@@ -1,10 +1,18 @@
 import { portalInviteLogPath } from "../http/portal-invite-privacy";
+import { randomUUID } from "node:crypto";
 import rateLimit, { type Options } from "express-rate-limit";
 import type { Request } from "express";
 import jwt from "jsonwebtoken";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { getAccessTokenFromRequest } from "../services/auth-cookies.service";
+import {
+  CHECK_LOCKOUT,
+  INCREMENT_WINDOW,
+  RedisThrottleBucket,
+  configuredThrottleRedis,
+  type RedisThrottleClient,
+} from "./redis-throttle";
 
 const log = createLogger("rate-limit");
 
@@ -91,6 +99,40 @@ export class SlidingWindowStore {
   }
 }
 
+export class RedisSlidingWindowStore {
+  private readonly bucket: RedisThrottleBucket;
+
+  constructor(
+    namespace: string,
+    windowMs: number,
+    private readonly max: number,
+    redis: RedisThrottleClient
+  ) {
+    this.bucket = new RedisThrottleBucket(redis, `http:${namespace}`, windowMs);
+  }
+
+  async increment(key: string) {
+    return this.incrementHit(key);
+  }
+
+  async incrementHit(key: string, id: string = randomUUID()) {
+    const [totalHits, resetAt] = await this.bucket.eval(key, INCREMENT_WINDOW, 2, this.max, id);
+    return { totalHits, resetTime: new Date(resetAt) };
+  }
+
+  async decrement(key: string): Promise<void> {
+    await this.bucket.decrement(key);
+  }
+
+  async refundHit(key: string, id: string): Promise<void> {
+    await this.bucket.refund(key, id);
+  }
+
+  resetKey(key: string): Promise<void> {
+    return this.bucket.reset(key);
+  }
+}
+
 // ─── Request identity (R01-10) ──────────────────────────────────────────────
 
 export type RateLimitIdentity =
@@ -164,20 +206,49 @@ interface RouteLimit {
 }
 
 /**
- * Build a route-scoped sliding-window limiter. Stores state in memory; each
- * call returns its own store so independent counters don't bleed across
- * route groups (auth, ai, api, etc.).
+ * Build a sliding-window limiter with a stable namespace for each route group.
  */
-export function buildLimiter(cfg: RouteLimit) {
-  const store = new SlidingWindowStore(cfg.max);
-  store.startGc();
+export function buildLimiter(namespace: string, cfg: RouteLimit) {
+  const redis = configuredThrottleRedis();
+  const store = redis
+    ? new RedisSlidingWindowStore(namespace, cfg.windowMs, cfg.max, redis)
+    : new SlidingWindowStore(cfg.max);
+  if (store instanceof SlidingWindowStore) store.startGc();
+  const keyGenerator = cfg.keyGenerator ?? compositeKey;
+  // Give refundable hits a request ID so an overlapping request cannot
+  // refund another hit. Await the refund before ending a serverless response.
+  const refundable = cfg.skipSuccessfulRequests && store instanceof RedisSlidingWindowStore;
+  const decodeKey = (key: string) => JSON.parse(key) as [identity: string, requestId: string];
+  const limiterStore = refundable
+    ? {
+        increment: (key: string) => store.incrementHit(...decodeKey(key)),
+        decrement: (key: string) => store.refundHit(...decodeKey(key)),
+        resetKey: (key: string) => store.resetKey(decodeKey(key)[0]),
+      }
+    : store;
   const limiter = rateLimit({
     windowMs: cfg.windowMs,
     max: cfg.max,
     standardHeaders: "draft-7", // RFC RateLimit-* + X-RateLimit-* headers
     legacyHeaders: false,
-    keyGenerator: cfg.keyGenerator ?? compositeKey,
-    skipSuccessfulRequests: cfg.skipSuccessfulRequests ?? false,
+    keyGenerator: refundable
+      ? (req, res) => {
+          const key = keyGenerator(req);
+          const id = randomUUID();
+          const end = res.end;
+          res.end = (...args: unknown[]) => {
+            res.end = end;
+            if (res.statusCode >= 400) return Reflect.apply(end, res, args);
+            void store
+              .refundHit(key, id)
+              .catch((err: unknown) => log.warn({ err }, "Failed to refund a rate-limit hit"))
+              .then(() => Reflect.apply(end, res, args));
+            return res;
+          };
+          return JSON.stringify([key, id]);
+        }
+      : keyGenerator,
+    skipSuccessfulRequests: !refundable && Boolean(cfg.skipSuccessfulRequests),
     // We validate trust proxy ourselves (configureTrustProxy) and key on
     // more than the IP; silence express-rate-limit's IP heuristics.
     validate: false,
@@ -210,7 +281,7 @@ export function buildLimiter(cfg: RouteLimit) {
         details: { retryAfterSeconds: retryAfter },
       });
     },
-    store,
+    store: limiterStore,
   });
   return Object.assign(limiter, { store });
 }
@@ -279,6 +350,18 @@ export interface LockoutStatus {
   failures: number;
 }
 
+function lockoutStatus(rules: LockoutRule[], failures: number[], now: number): LockoutStatus {
+  let retryAfterMs = 0;
+  for (const rule of rules) {
+    const inWindow = failures.filter((at) => at > now - rule.windowMs);
+    if (inWindow.length >= rule.max) {
+      const unlockAt = inWindow[inWindow.length - rule.max] + rule.windowMs;
+      retryAfterMs = Math.max(retryAfterMs, unlockAt - now);
+    }
+  }
+  return { locked: retryAfterMs > 0, retryAfterMs, failures: failures.length };
+}
+
 /**
  * Counts failures per key and locks the key while any rule is exceeded:
  * by default 5 failures in 15 minutes, then 10 failures in 1 hour. Attempts
@@ -301,22 +384,13 @@ export class LockoutTracker {
   }
 
   status(key: string, now = Date.now()): LockoutStatus {
-    const arr = this.fresh(key, now);
-    let retryAfterMs = 0;
-    for (const rule of this.rules) {
-      const inWindow = arr.filter((t) => t > now - rule.windowMs);
-      if (inWindow.length >= rule.max) {
-        // Unlocks when enough failures leave the window to drop below max.
-        const unlockAt = inWindow[inWindow.length - rule.max] + rule.windowMs;
-        retryAfterMs = Math.max(retryAfterMs, unlockAt - now);
-      }
-    }
-    return { locked: retryAfterMs > 0, retryAfterMs, failures: arr.length };
+    return lockoutStatus(this.rules, this.fresh(key, now), now);
   }
 
   /** Record a failure; returns the status after recording. */
   recordFailure(key: string, now = Date.now()): LockoutStatus & { lockedNow: boolean } {
     const before = this.status(key, now);
+    if (before.locked) return { ...before, lockedNow: false };
     const arr = this.fresh(key, now);
     arr.push(now);
     this.failures.set(key, arr);
@@ -331,6 +405,46 @@ export class LockoutTracker {
   resetAll(): void {
     this.failures.clear();
   }
+}
+
+export class RedisLockoutTracker {
+  private readonly bucket: RedisThrottleBucket;
+  private readonly ruleArgs: number[];
+
+  constructor(namespace: string, rules: LockoutRule[], redis: RedisThrottleClient) {
+    const horizonMs = Math.max(...rules.map((rule) => rule.windowMs));
+    this.bucket = new RedisThrottleBucket(redis, `credential:${namespace}`, horizonMs);
+    this.ruleArgs = rules.flatMap(({ max, windowMs }) => [max, windowMs]);
+  }
+
+  private async check(key: string, failureId: string) {
+    const [retryAfterMs, failures, lockedNow] = await this.bucket.eval(
+      key,
+      CHECK_LOCKOUT,
+      3,
+      failureId,
+      ...this.ruleArgs
+    );
+    return { locked: retryAfterMs > 0, retryAfterMs, failures, lockedNow: lockedNow === 1 };
+  }
+
+  status(key: string): Promise<LockoutStatus> {
+    return this.check(key, "");
+  }
+
+  recordFailure(key: string) {
+    return this.check(key, randomUUID());
+  }
+
+  reset(key: string): Promise<void> {
+    return this.bucket.reset(key);
+  }
+}
+
+export function buildLockoutTracker(namespace: string) {
+  const rules = loginLockoutRules();
+  const redis = configuredThrottleRedis();
+  return redis ? new RedisLockoutTracker(namespace, rules, redis) : new LockoutTracker(rules);
 }
 
 export function loginLockoutRules(): LockoutRule[] {

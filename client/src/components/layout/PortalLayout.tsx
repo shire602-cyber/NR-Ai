@@ -28,6 +28,7 @@ import { ApiError, portalQuery } from "@/lib/queryClient";
 import {
   clearRevokedPortalSelection,
   getPortalAccountSelection,
+  getRemovedPortalSupplier,
   PORTAL_SELECTION_REQUIRED,
   setSelectedPortalAccount,
   subscribeToPortalAccountSelection,
@@ -139,10 +140,16 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
       (companyError.body?.code === "PORTAL_ACCESS_REVOKED" ||
         companyError.body?.code === "PORTAL_CONTACT_NOT_LINKED"));
   const company = selection && !removed ? boundCompany : undefined;
+  // R5-7: the removed page names the supplier that took the access away (never another one).
+  const removedSupplier =
+    (companyError instanceof ApiError && typeof companyError.body?.supplierName === "string"
+      ? companyError.body.supplierName
+      : null) || getRemovedPortalSupplier();
 
   const title =
     t[NAV_ITEMS.find((n) => location.startsWith(n.href))?.labelKey ?? "shell.portalFallbackTitle"];
-  const companyName = company?.name ?? t["shell.myCompany"];
+  const companyName =
+    company?.name ?? (removed ? t["portal.doc.clientPortal"] : t["shell.myCompany"]);
   // The browser tab, history and screen readers name the page ("Invoices · Al Noor Trading").
   const pageTitle = company?.name
     ? `${title} · ${locale === "ar" ? bidiIsolate(company.name) : company.name}`
@@ -186,40 +193,46 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
               >
                 {companyName}
               </p>
-              <p className="text-caption text-muted-foreground">{t["portal.doc.clientPortal"]}</p>
+              {!removed && (
+                <p className="text-caption text-muted-foreground">{t["portal.doc.clientPortal"]}</p>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 space-y-0.5 px-3 py-4" aria-label={t["portal.doc.clientPortal"]}>
-          {NAV_ITEMS.map(({ labelKey, href, icon: Icon }) => {
-            const label = t[labelKey];
-            const active = location === href || location.startsWith(href + "/");
-            return (
-              <Link
-                key={href}
-                href={href}
-                aria-current={active ? "page" : undefined}
-                className={[
-                  "flex h-9 items-center gap-3 rounded-md px-3 text-small font-medium transition-colors duration-fast",
-                  active
-                    ? "bg-sidebar-accent text-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                ].join(" ")}
-              >
-                <Icon
+        {/* Navigation: nothing to open while access is removed, so none is offered. */}
+        {removed ? (
+          <div className="flex-1" />
+        ) : (
+          <nav className="flex-1 space-y-0.5 px-3 py-4" aria-label={t["portal.doc.clientPortal"]}>
+            {NAV_ITEMS.map(({ labelKey, href, icon: Icon }) => {
+              const label = t[labelKey];
+              const active = location === href || location.startsWith(href + "/");
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  aria-current={active ? "page" : undefined}
                   className={[
-                    "h-4 w-4 shrink-0",
-                    active ? "text-accent" : "text-muted-foreground",
+                    "flex h-9 items-center gap-3 rounded-md px-3 text-small font-medium transition-colors duration-fast",
+                    active
+                      ? "bg-sidebar-accent text-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
                   ].join(" ")}
-                  aria-hidden
-                />
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
+                >
+                  <Icon
+                    className={[
+                      "h-4 w-4 shrink-0",
+                      active ? "text-accent" : "text-muted-foreground",
+                    ].join(" ")}
+                    aria-hidden
+                  />
+                  {label}
+                </Link>
+              );
+            })}
+          </nav>
+        )}
 
         {/* Footer */}
         <div className="border-t border-border px-3 py-4">
@@ -244,27 +257,31 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             <div className="md:hidden">{companyMark}</div>
             {/* Not a heading: each page's PageHeader owns the single h1. */}
             <p className="truncate text-body font-semibold text-foreground">
+              {/* On phones the supplier name shows once: here, or in the switcher when there are several. */}
               <span
-                className="block truncate md:hidden"
+                className={`truncate ${accounts.length > 1 ? "hidden" : "block md:hidden"}`}
                 dir="auto"
                 translate={company?.name ? "no" : undefined}
                 title={company?.name}
               >
                 {companyName}
               </span>
-              <span className="hidden md:inline">{title}</span>
+              {!removed && <span className="hidden md:inline">{title}</span>}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            <span className="hidden max-w-[280px] truncate text-caption text-muted-foreground sm:inline">
-              {company?.firmName ? (
-                <>
-                  <bdi translate="no">{company.firmName}</bdi> · {t["portal.doc.clientPortal"]}
-                </>
-              ) : (
-                t["portal.doc.clientPortal"]
-              )}
-            </span>
+            {/* While access is removed the brand already reads "Client portal": show it once. */}
+            {!removed && (
+              <span className="hidden max-w-[280px] truncate text-caption text-muted-foreground sm:inline">
+                {company?.firmName ? (
+                  <>
+                    <bdi translate="no">{company.firmName}</bdi> · {t["portal.doc.clientPortal"]}
+                  </>
+                ) : (
+                  t["portal.doc.clientPortal"]
+                )}
+              </span>
+            )}
             {company && accounts.length > 1 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -272,7 +289,8 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                     variant="outline"
                     size="sm"
                     className="max-w-[clamp(6rem,32vw,10rem)] gap-1.5"
-                    aria-label={t["portal.switcher.label"]}
+                    // WCAG 2.5.3: the accessible name contains the visible supplier name.
+                    aria-label={`${company.name}, ${t["portal.switcher.label"]}`}
                     data-testid="portal-supplier-switcher"
                   >
                     <span
@@ -351,30 +369,32 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Section switcher (mobile): one scrollable row of pills, 44px touch targets. */}
-        <nav
-          ref={mobileNav}
-          className="flex min-w-0 shrink-0 snap-x snap-proximity gap-1 overflow-x-auto border-b border-border bg-card px-3 py-1.5 [scrollbar-width:none] md:hidden"
-          aria-label={t["portal.doc.clientPortal"]}
-          style={mobileNavFade}
-        >
-          {NAV_ITEMS.map(({ labelKey, href, icon: Icon }) => {
-            const active = location === href || location.startsWith(href + "/");
-            return (
-              <Link
-                key={href}
-                href={href}
-                aria-current={active ? "page" : undefined}
-                className={[
-                  "flex h-11 shrink-0 snap-start items-center gap-2 whitespace-nowrap rounded-md px-3 text-small font-medium",
-                  active ? "bg-muted text-foreground" : "text-muted-foreground",
-                ].join(" ")}
-              >
-                <Icon className="h-4 w-4" aria-hidden />
-                {t[labelKey]}
-              </Link>
-            );
-          })}
-        </nav>
+        {!removed && (
+          <nav
+            ref={mobileNav}
+            className={`flex min-w-0 shrink-0 snap-x snap-proximity gap-1 overflow-x-auto border-b border-border bg-card px-3 py-1.5 [scrollbar-width:none] md:hidden`}
+            aria-label={t["portal.doc.clientPortal"]}
+            style={mobileNavFade}
+          >
+            {NAV_ITEMS.map(({ labelKey, href, icon: Icon }) => {
+              const active = location === href || location.startsWith(href + "/");
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  aria-current={active ? "page" : undefined}
+                  className={[
+                    "flex h-11 shrink-0 snap-start items-center gap-2 whitespace-nowrap rounded-md px-3 text-small font-medium",
+                    active ? "bg-muted text-foreground" : "text-muted-foreground",
+                  ].join(" ")}
+                >
+                  <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                  {t[labelKey]}
+                </Link>
+              );
+            })}
+          </nav>
+        )}
 
         <main className="flex-1 overflow-auto">
           <div className="page-container">
@@ -383,10 +403,21 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                 <PortalStatePage
                   icon={ShieldOff}
                   tone="danger"
-                  title={t["portal.states.removedTitle"]}
-                  body={formatMessage(t["portal.states.removedBody"], {
-                    supplier: t["portal.join.theSupplier"],
-                  })}
+                  title={
+                    accounts.length > 0
+                      ? t["portal.states.chooseTitle"]
+                      : t["portal.states.removedTitle"]
+                  }
+                  body={formatMessage(
+                    t[
+                      accounts.length > 0 ? "portal.states.chooseBody" : "portal.states.removedBody"
+                    ],
+                    {
+                      supplier: removedSupplier
+                        ? bidiIsolate(removedSupplier)
+                        : t["portal.join.theSupplier"],
+                    }
+                  )}
                   actions={
                     <>
                       {accounts.length > 0 && (

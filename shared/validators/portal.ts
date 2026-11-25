@@ -40,6 +40,10 @@ export const portalQuoteResponseBody = z.object({
 });
 export type PortalQuoteResponseBody = z.output<typeof portalQuoteResponseBody>;
 
+/** The customer edits only their own display name (never email, type or role). */
+export const portalProfileBody = z.object({ name: zText(100, { min: 1 }) });
+export type PortalProfileBody = z.output<typeof portalProfileBody>;
+
 export const portalMessageBody = z.object({
   subject: zText(255).optional().nullable(),
   content: zText(10_000, { min: 1 }),

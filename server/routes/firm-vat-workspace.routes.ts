@@ -1,16 +1,23 @@
+import { assertUploadSize } from "../http/upload-errors";
+import { DomainError } from "../errors";
 import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
 import { Router } from "express";
 import { z } from "zod";
 
-import { ValidationError } from "../errors";
+import { AppError, ValidationError } from "../errors";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { firmContextOf, requireFirmAdmin } from "../middleware/rbac";
 import { canPrepareFirmWorkpaper, canReviewFirmWorkpaper } from "../../shared/access";
 import { asyncHandler } from "../middleware/errorHandler";
+import {
+  deleteObject,
+  getObject,
+  hasDurableObjectStore,
+  putObject,
+  VAT_EVIDENCE_PREFIX,
+} from "../services/fileStorage";
 import { createLogger } from "../config/logger";
 import { recordAudit } from "../services/audit.service";
 import { resolveAccessibleClientIds } from "../services/firm-command-center.service";
@@ -90,8 +97,7 @@ const scanSchema = z.object({
   attachment: z.object({
     fileName: z.string().trim().min(1).max(255),
     mimeType: z.string().trim().min(1).max(120),
-    filePath: z.string().trim().max(1000).optional().nullable(),
-    fileDataBase64: z.string().max(15_000_000).optional().nullable(),
+    fileDataBase64: z.string().optional().nullable(),
     extractedText: z.string().max(100000).optional().nullable(),
     extractionJson: z.record(z.string(), z.unknown()).optional(),
   }),
@@ -104,18 +110,14 @@ const scanSchema = z.object({
   }),
 });
 
-const VAT_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 const VAT_IMPORT_MAX_ROWS = 2000;
 
 const importFileSchema = z.object({
   fileName: z.string().trim().min(1).max(255),
-  fileDataBase64: z.string().min(1).max(15_000_000),
+  fileDataBase64: z.string().min(1),
   defaultEmirate: z.string().trim().max(40).optional(),
 });
 
-const VAT_EVIDENCE_MAX_BYTES = Number(
-  process.env.VAT_EVIDENCE_UPLOAD_MAX_BYTES ?? 10 * 1024 * 1024
-);
 const VAT_EVIDENCE_MIME_TYPES = new Set([
   "application/pdf",
   "image/jpeg",
@@ -127,20 +129,20 @@ const VAT_EVIDENCE_MIME_TYPES = new Set([
   "application/octet-stream",
 ]);
 
-function sanitizeFileName(fileName: string) {
-  const normalized = fileName
-    .replace(/[/\\?%*:|"<>]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim();
-  return (normalized || "vat-evidence").slice(0, 140);
+function requireVatEvidenceStorage(): void {
+  if (!hasDurableObjectStore()) {
+    throw new DomainError(
+      "VAT_EVIDENCE_STORAGE_UNAVAILABLE",
+      503,
+      undefined,
+      "VAT evidence requires private object storage. Configure Vercel Blob or S3-compatible storage."
+    );
+  }
 }
 
 async function persistEvidenceUpload(attachment: z.infer<typeof scanSchema>["attachment"]) {
-  const fileDataBase64 = attachment.fileDataBase64;
-  if (!fileDataBase64) {
-    const { fileDataBase64: _unused, ...withoutData } = attachment;
-    return withoutData;
-  }
+  const { fileDataBase64, ...withoutData } = attachment;
+  if (!fileDataBase64) return { ...withoutData, filePath: null };
 
   if (!VAT_EVIDENCE_MIME_TYPES.has(attachment.mimeType)) {
     throw new ValidationError("Unsupported VAT evidence file type");
@@ -149,43 +151,24 @@ async function persistEvidenceUpload(attachment: z.infer<typeof scanSchema>["att
   const rawBase64 = fileDataBase64.replace(/^data:[^;]+;base64,/, "");
   const buffer = Buffer.from(rawBase64, "base64");
   if (buffer.length === 0) throw new ValidationError("VAT evidence upload is empty");
-  if (buffer.length > VAT_EVIDENCE_MAX_BYTES)
-    throw new ValidationError("VAT evidence upload is too large");
+  assertUploadSize(buffer.length);
+  requireVatEvidenceStorage();
 
-  const uploadsRoot = path.resolve(process.cwd(), "uploads");
-  const datedFolder = new Date().toISOString().slice(0, 10);
-  const relativeFolder = path.join("vat-workpapers", datedFolder);
-  const absoluteFolder = path.resolve(uploadsRoot, relativeFolder);
-  if (!absoluteFolder.startsWith(uploadsRoot + path.sep)) {
-    throw new ValidationError("Invalid VAT evidence upload path");
-  }
-
-  await fs.mkdir(absoluteFolder, { recursive: true });
-  const storedFileName = `${crypto.randomUUID()}-${sanitizeFileName(attachment.fileName)}`;
-  const absolutePath = path.resolve(absoluteFolder, storedFileName);
-  if (!absolutePath.startsWith(uploadsRoot + path.sep)) {
-    throw new ValidationError("Invalid VAT evidence upload path");
-  }
-  await fs.writeFile(absolutePath, buffer, { flag: "wx" });
-
-  const { fileDataBase64: _unused, ...withoutData } = attachment;
+  const filePath = await putObject(
+    VAT_EVIDENCE_PREFIX,
+    crypto.randomUUID(),
+    buffer,
+    attachment.mimeType
+  );
   return {
     ...withoutData,
-    filePath: path.posix.join("vat-workpapers", datedFolder, storedFileName),
+    filePath,
     extractionJson: {
       ...(withoutData.extractionJson ?? {}),
       uploadedBytes: buffer.length,
       storedAt: new Date().toISOString(),
     },
   };
-}
-
-async function resolveEvidencePath(filePath: string | null | undefined) {
-  if (!filePath) return null;
-  const uploadsRoot = path.resolve(process.cwd(), "uploads");
-  const absolutePath = path.resolve(uploadsRoot, filePath);
-  if (absolutePath !== uploadsRoot && !absolutePath.startsWith(uploadsRoot + path.sep)) return null;
-  return absolutePath;
 }
 
 async function accessibleClientIdsFor(req: Request): Promise<string[]> {
@@ -473,6 +456,7 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
 
   router.post(
     "/:id/scan",
+    strictBody(scanSchema, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = uuidParamSchema.safeParse(req.params);
       if (!parsedParams.success)
@@ -480,14 +464,21 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       const detail = await requireWorkpaperAccess(req, res, parsedParams.data.id);
       if (!detail) return;
 
-      const parsed = scanSchema.parse(req.body);
+      const parsed = parsedBody<z.infer<typeof scanSchema>>(req);
       const attachment = await persistEvidenceUpload(parsed.attachment);
       const result = await scanVatWorkpaperEvidence(
         parsedParams.data.id,
         req.user!.id,
         attachment,
         parsed.draftRow
-      );
+      ).catch(async (err: unknown) => {
+        // A connection error can leave the commit outcome unknown. Keep the
+        // object in that case so a committed attachment can still be read.
+        if (attachment.filePath && err instanceof AppError && err.statusCode < 500) {
+          await deleteObject(attachment.filePath, [VAT_EVIDENCE_PREFIX]);
+        }
+        throw err;
+      });
       await recordAudit({
         userId: req.user?.id,
         companyId: detail.workpaper.companyId,
@@ -515,17 +506,19 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       );
       if (!attachment) return res.status(404).json({ message: "VAT evidence file not found" });
 
-      const absolutePath = await resolveEvidencePath(attachment.filePath);
-      if (!absolutePath)
-        return res.status(404).json({ message: "VAT evidence file is not stored" });
+      const ref = attachment.filePath;
+      if (!ref) return res.status(404).json({ message: "VAT evidence file is not stored" });
 
-      try {
-        await fs.access(absolutePath);
-      } catch {
+      requireVatEvidenceStorage();
+      const file = await getObject(ref, [VAT_EVIDENCE_PREFIX]).catch(() => null);
+      if (!file)
         return res.status(404).json({ message: "VAT evidence file is missing from storage" });
-      }
 
-      res.download(absolutePath, attachment.fileName);
+      res.setHeader("Cache-Control", "private, no-store");
+      res.attachment(attachment.fileName);
+      res.type(file.contentType);
+      res.write(file.buffer);
+      res.end();
     })
   );
 
@@ -578,9 +571,10 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       } catch {
         return res.status(400).json({ message: "Workbook payload is not valid base64" });
       }
-      if (buffer.length === 0 || buffer.length > VAT_IMPORT_MAX_BYTES) {
-        return res.status(400).json({ message: "Workbook must be between 1 byte and 10 MB" });
+      if (buffer.length === 0) {
+        return res.status(400).json({ message: "Workbook is empty" });
       }
+      assertUploadSize(buffer.length);
 
       let rows;
       try {

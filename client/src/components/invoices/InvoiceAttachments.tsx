@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_BYTES } from "@shared/upload-limits";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Download, Paperclip, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,8 +17,7 @@ export interface InvoiceAttachmentRow {
   createdAt: string;
 }
 
-/** Same cap as the server (7 MB decoded). */
-const MAX_ATTACHMENT_BYTES = 7 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = MAX_UPLOAD_BYTES;
 const ATTACHMENT_ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,image/*,application/pdf";
 
 /**

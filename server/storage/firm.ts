@@ -303,18 +303,24 @@ export class FirmStorage extends ComplianceStorage {
 
   async getSubscriptionByStripeIds(
     subscriptionId: string,
-    customerId: string
+    customerId: string,
+    includeUnlinked = false
   ): Promise<Subscription | undefined> {
-    const [subscription] = await db
+    const links = await db
       .select()
       .from(subscriptions)
       .where(
         and(
-          eq(subscriptions.stripeSubscriptionId, subscriptionId),
+          includeUnlinked
+            ? or(
+                eq(subscriptions.stripeSubscriptionId, subscriptionId),
+                isNull(subscriptions.stripeSubscriptionId)
+              )
+            : eq(subscriptions.stripeSubscriptionId, subscriptionId),
           eq(subscriptions.stripeCustomerId, customerId)
         )
       );
-    return subscription;
+    return links.find((link) => link.stripeSubscriptionId === subscriptionId) ?? links[0];
   }
 
   async createSubscription(insertSubscription: InsertSubscription): Promise<Subscription> {
@@ -331,22 +337,34 @@ export class FirmStorage extends ComplianceStorage {
     return subscription;
   }
 
-  async applyStripeCheckout(
+  async reconcileStripeSubscription<T>(
     subscription: Subscription,
-    data: Partial<InsertSubscription>
-  ): Promise<boolean> {
-    const [updated] = await db
-      .update(subscriptions)
-      .set({ ...data, updatedAt: new Date() })
-      .where(
-        and(
-          eq(subscriptions.id, subscription.id),
-          isNull(subscriptions.stripeSubscriptionId),
-          eq(subscriptions.stripeCheckoutCompleted, subscription.stripeCheckoutCompleted)
-        )
-      )
-      .returning({ id: subscriptions.id });
-    return Boolean(updated);
+    readChanges: (locked: Subscription) => Promise<{
+      result: T;
+      data?: Partial<InsertSubscription>;
+    }>
+  ): Promise<T | undefined> {
+    const { id, stripeCustomerId } = subscription;
+    if (!stripeCustomerId) return;
+
+    return db.transaction(async (tx) => {
+      // The subscription ID can change while we wait for checkout to link this row.
+      const [locked] = await tx
+        .select()
+        .from(subscriptions)
+        .where(and(eq(subscriptions.id, id), eq(subscriptions.stripeCustomerId, stripeCustomerId)))
+        .for("update");
+      if (!locked) return;
+
+      const { data, result } = await readChanges(locked);
+      if (data) {
+        await tx
+          .update(subscriptions)
+          .set({ ...data, updatedAt: new Date() })
+          .where(eq(subscriptions.id, id));
+      }
+      return result;
+    });
   }
 
   // Backups

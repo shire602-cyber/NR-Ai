@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_BYTES } from "../../shared/upload-limits";
 import type { Express, Request, Response } from "express";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
@@ -75,11 +76,7 @@ const log = createLogger("journal");
 const APPROVER_ROLES = new Set(["owner", "admin", "accountant", "cfo"]);
 /** Roles that may change the maker-checker threshold. */
 const SETTINGS_ROLES = new Set(["owner", "admin", "cfo"]);
-/**
- * POST /api/journal/:id/attachments is in server/index.ts largeJsonRoutes (10 MB JSON),
- * so a base64 body of up to 10 MB carries a ~7 MB file (validator caps data at 10M chars).
- */
-const MAX_ATTACHMENT_BYTES = 7 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = MAX_UPLOAD_BYTES;
 
 function userIdOf(req: Request): string {
   return (req as Request & { user: { id: string } }).user.id;

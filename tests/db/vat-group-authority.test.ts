@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { useHarness, type ApiResponse, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -147,6 +147,46 @@ describe("VAT group management authority and filing exclusivity", () => {
       expect(posted.status, posted.text).toBe(200);
     }
   );
+
+  it("holds the member's exclusive VAT lock before waiting on period policy", async (ctx) => {
+    ctx.skip(!h.concurrencySupported);
+    const { representative, member } = await groupTenants("admin");
+    const group = await upsertGroup(representative, member);
+    expect(group.status, group.text).toBe(200);
+    const { withLedgerTx } = await import("../../server/ledger");
+    const { ledgerQueryable } = await import("../../server/ledger/tx");
+    let generation: Promise<string> | undefined;
+    try {
+      await withLedgerTx(async (tx) => {
+        const q = ledgerQueryable(tx);
+        const {
+          rows: [blocker],
+        } = await q.query("SELECT pg_backend_pid() AS pid");
+        // Isolate the period lock so it does not also take a VAT lock.
+        await q.query("SELECT pg_advisory_xact_lock(hashtextextended('ledger-period:' || $1, 0))", [
+          representative.company.id,
+        ]);
+        generation = generate(representative);
+        await vi.waitFor(
+          async () => {
+            const waiting = await h.sql(
+              "SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND $1::int = ANY(pg_blocking_pids(pid))",
+              [blocker.pid]
+            );
+            expect(waiting).toHaveLength(1);
+          },
+          { timeout: 8000, interval: 25 }
+        );
+        const memberLock = await h.sql(
+          "SELECT pg_try_advisory_xact_lock_shared(hashtextextended('vat-returns:' || $1::uuid::text, 0)) AS acquired",
+          [member.company.id]
+        );
+        expect(memberLock).toEqual([{ acquired: false }]);
+      });
+    } finally {
+      await generation;
+    }
+  });
 
   it.for(["member", "representative", "concurrent"] as const)(
     "accepts only one overlapping return when filing starts with %s",

@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_BYTES } from "../../shared/upload-limits";
 import express, { type Express, type Request, type Response } from "express";
 import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
@@ -1105,7 +1106,7 @@ export function registerEInvoiceRoutes(app: Express) {
     "/api/webhooks/einvoice/:companyId/inbound",
     express.raw({
       type: ["application/xml", "text/xml", "application/octet-stream"],
-      limit: "5mb",
+      limit: MAX_UPLOAD_BYTES,
     }),
     asyncHandler(async (req: Request, res: Response) => {
       const secret = inboundWebhookSecret();

@@ -1,3 +1,4 @@
+import { FixedWindowThrottle } from "../middleware/fixed-window-throttle";
 /**
  * Customer portal identity, tokens and throttling (W4-D: R16-04/05/06/07/16).
  *
@@ -158,11 +159,6 @@ export async function resolvePortalToken(raw: string): Promise<PortalTokenResolu
 
 // ─── Throttling ──────────────────────────────────────────────────────────────
 
-interface Window {
-  count: number;
-  resetAt: number;
-}
-
 export const PORTAL_LIMITS = {
   /** Any public portal/share request per IP per minute. */
   ipPerMinute: 120,
@@ -174,58 +170,77 @@ export const PORTAL_LIMITS = {
   codeRequestsPerHour: 5,
 };
 
-const windows = new Map<string, Window>();
-
-function hit(key: string, windowMs: number): number {
-  const now = Date.now();
-  const w = windows.get(key);
-  if (!w || w.resetAt <= now) {
-    windows.set(key, { count: 1, resetAt: now + windowMs });
-    return 1;
-  }
-  w.count += 1;
-  return w.count;
-}
-
-function peek(key: string): number {
-  const w = windows.get(key);
-  return w && w.resetAt > Date.now() ? w.count : 0;
-}
-
-let sweepAt = 0;
-function sweep(): void {
-  const now = Date.now();
-  if (now < sweepAt) return;
-  sweepAt = now + 60_000;
-  for (const [k, w] of windows) if (w.resetAt <= now) windows.delete(k);
-}
+const portalThrottle = new FixedWindowThrottle("portal");
+const MINUTE_MS = 60_000;
+const FAILURE_WINDOW_MS = 10 * MINUTE_MS;
 
 /** Tests only. */
 export function resetPortalThrottle(): void {
-  windows.clear();
+  portalThrottle.resetMemory();
 }
 
 export function clientIp(req: Request): string {
   return (req.ip || req.socket?.remoteAddress || "unknown").replace(/^::ffff:/, "");
 }
 
-/** Throttle check for a public request. Returns the reason when it must get a 429. */
-export function checkPortalThrottle(ip: string, tokenKey?: string | null): string | null {
-  sweep();
-  if (peek(`fail:${ip}`) >= PORTAL_LIMITS.ipFailuresPer10Min) return "too_many_failures";
-  if (hit(`ip:${ip}`, 60_000) > PORTAL_LIMITS.ipPerMinute) return "ip_rate";
-  if (tokenKey && hit(`tok:${tokenKey}`, 60_000) > PORTAL_LIMITS.tokenPerMinute) {
-    return "token_rate";
+/**
+ * Throttle check for a public request. Returns the reason when it must get a 429.
+ *
+ * `isKnownCredential` (R5-8): the failure lockout exists to stop guessing, so a request that
+ * presents a credential we already know (an invitation link that is expired, used or cancelled
+ * still resolves to a row) is never refused for the IP's earlier failures. Only unknown tokens
+ * are. The per-minute IP and per-token limits still apply to everyone.
+ */
+export async function checkPortalThrottle(
+  ip: string,
+  tokenKey?: string | null,
+  isKnownCredential?: () => Promise<boolean>
+) {
+  const failures = await portalThrottle.check(`fail:${ip}`, FAILURE_WINDOW_MS, "peek");
+  if (
+    failures.count >= PORTAL_LIMITS.ipFailuresPer10Min &&
+    !(isKnownCredential && (await isKnownCredential()))
+  ) {
+    return "too_many_failures";
+  }
+
+  const requests = await portalThrottle.check(
+    `ip:${ip}`,
+    MINUTE_MS,
+    "hit",
+    PORTAL_LIMITS.ipPerMinute
+  );
+  if (requests.count > PORTAL_LIMITS.ipPerMinute) return "ip_rate";
+
+  if (tokenKey) {
+    const tokenHits = await portalThrottle.check(
+      `tok:${tokenKey}`,
+      MINUTE_MS,
+      "hit",
+      PORTAL_LIMITS.tokenPerMinute
+    );
+    if (tokenHits.count > PORTAL_LIMITS.tokenPerMinute) return "token_rate";
   }
   return null;
 }
 
-export function recordPortalFailure(ip: string): void {
-  hit(`fail:${ip}`, 10 * 60_000);
+export async function recordPortalFailure(ip: string): Promise<void> {
+  await portalThrottle.check(
+    `fail:${ip}`,
+    FAILURE_WINDOW_MS,
+    "hit",
+    PORTAL_LIMITS.ipFailuresPer10Min
+  );
 }
 
-export function allowCodeRequest(email: string): boolean {
-  return hit(`code:${email.toLowerCase()}`, 3_600_000) <= PORTAL_LIMITS.codeRequestsPerHour;
+export async function allowCodeRequest(email: string): Promise<boolean> {
+  const { count } = await portalThrottle.check(
+    `code:${email.toLowerCase()}`,
+    60 * MINUTE_MS,
+    "hit",
+    PORTAL_LIMITS.codeRequestsPerHour
+  );
+  return count <= PORTAL_LIMITS.codeRequestsPerHour;
 }
 
 export async function logPortalAccess(entry: {
@@ -367,20 +382,21 @@ export async function portalAccountsForUser(userId: string): Promise<PortalBindi
 }
 
 /**
- * Resolve the exact binding when one was requested. An unscoped first visit can use the newest
- * binding until access has been removed, at which point the customer must choose a supplier.
+ * Resolve the binding a portal request acts on. With `preferredAccountId` (the `X-Portal-Account`
+ * header) only that exact binding of the user qualifies: when it was removed or its contact
+ * deactivated the result is null and the customer must choose a supplier again (never silently
+ * switch to another supplier's books). Without one, the newest ACTIVE binding is used: a removal
+ * of an older binding never hides a current one (R5-1).
  */
 export async function portalAccountForUser(
   userId: string,
   preferredAccountId?: string | null
 ): Promise<PortalBinding | null> {
-  const bindings = await db
+  const [binding] = await db
     .select({
       id: customerPortalAccounts.id,
       companyId: customerPortalAccounts.companyId,
       contactId: customerPortalAccounts.contactId,
-      revokedAt: customerPortalAccounts.revokedAt,
-      active: customerContacts.isActive,
     })
     .from(customerPortalAccounts)
     .innerJoin(
@@ -393,12 +409,14 @@ export async function portalAccountForUser(
     .where(
       and(
         eq(customerPortalAccounts.userId, userId),
+        isNull(customerPortalAccounts.revokedAt),
+        eq(customerContacts.isActive, true),
         preferredAccountId ? eq(customerPortalAccounts.id, preferredAccountId) : undefined
       )
     )
-    .orderBy(desc(customerPortalAccounts.createdAt));
-  if (bindings.some((binding) => binding.revokedAt || !binding.active)) return null;
-  return bindings[0] ?? null;
+    .orderBy(desc(customerPortalAccounts.createdAt))
+    .limit(1);
+  return binding ?? null;
 }
 
 /** Remember the last portal request (at most once every 5 minutes per binding). */

@@ -34,7 +34,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
     };
 
     const msg = `${req.method} ${res.statusCode} in ${duration}ms`;
-    if (res.statusCode >= 500) {
+    if (res.statusCode >= 500 && !res.locals.expectedRefusal) {
       log.error(logData, msg);
     } else if (res.statusCode >= 400) {
       log.warn(logData, msg);

@@ -178,9 +178,13 @@ BASE_URL=http://localhost:<port> CORS_ORIGIN=http://localhost:<port> node dist/i
 - Document chasing is also an NR firm-management-only feature. Keep its UI under
   `/firm/document-chasing` and verify with
   `npx vitest run tests/unit/document-chasing-boundary.test.ts` after related route/nav/API changes.
-- Customer portal invitations: `tests/db/portal-invitations.test.ts` (DB), `tests/unit/portal-join-page.test.ts`,
+- Customer portal invitations: `tests/db/portal-invitations.test.ts` (DB), `tests/unit/portal-join-page.test.ts`, `portal-product-step5` (unit) and `tests/db/portal-product-step5.test.ts`,
   `portal-invite-email`, `portal-invite-validators`, `csrf-exemptions` after portal, auth-cookie or CSRF changes;
-  e2e `FLOWS=portal-invite,portal-invite-phone,portal-invite-existing`.
+  e2e `FLOWS=portal-invite,portal-invite-phone,portal-invite-existing`. An invitation that was not
+  sent keeps no link in `email_outbox` (R5-9), so DB tests install the capturing transport in
+  `tests/db/invite-mailbox.ts` and read the delivered mail; the e2e helper
+  `tests/e2e/lib/portal-invite-mail.mjs` mints a token for the invitation on a disposable database.
+  `tests/unit/portal-r5-ui.test.ts` covers the re-audit UI states (not-sent, removed-access page).
 - `npm run test:coverage` is a baseline ratchet, not proof of broad route coverage; raise the
   thresholds as integration and route-level tests land.
 

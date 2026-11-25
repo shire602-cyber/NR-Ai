@@ -1,3 +1,4 @@
+import { sizeErrorBody } from "../http/upload-errors";
 import type { Request, Response, NextFunction } from "express";
 import { ZodError } from "zod";
 import { RetentionViolationError } from "../services/retention.service";
@@ -6,6 +7,11 @@ import { captureException } from "../services/monitoring";
 import { MoneyError } from "../../shared/money";
 import { flattenIssues, zodFieldErrors } from "../http/strict-body";
 import { portalInviteLogPath } from "../http/portal-invite-privacy";
+
+/** 5xx answers that are the documented "not configured" state, not faults: never reported. */
+export const EXPECTED_UNAVAILABLE_CODES: ReadonlySet<string> = new Set([
+  "PAYMENTS_REQUIRES_EXTERNAL",
+]);
 
 // Re-export AppError so existing imports of AppError from this module keep working.
 export { AppError };
@@ -148,7 +154,8 @@ export function requestTransportErrorHandler(
 ): void {
   const mapped = mapRequestTransportError(err);
   if (!mapped) return next(err);
-  res.status(mapped.status).json(withRequestId(mapped.body, req));
+  const body = mapped.status === 413 ? sizeErrorBody(req, "PAYLOAD_TOO_LARGE") : mapped.body;
+  res.status(mapped.status).json(withRequestId(body, req));
 }
 
 /**
@@ -203,7 +210,7 @@ export function globalErrorHandler(
   // Malformed JSON, oversize bodies, rejected CORS origins (incl. preflight).
   const transport = mapRequestTransportError(err);
   if (transport) {
-    res.status(transport.status).json(withRequestId(transport.body, req));
+    requestTransportErrorHandler(err, req, res, next);
     return;
   }
 
@@ -252,7 +259,10 @@ export function globalErrorHandler(
 
   // Any AppError (or subclass, including DomainError).
   if (err instanceof AppError) {
-    if (!err.isOperational || err.statusCode >= 500) {
+    // S5-SEC-6: a refusal the product expects (no payment gateway configured) is not an incident.
+    const expected = err.isOperational && EXPECTED_UNAVAILABLE_CODES.has(err.code);
+    if (expected) res.locals.expectedRefusal = true;
+    if (!expected && (!err.isOperational || err.statusCode >= 500)) {
       captureException(err, {
         requestId: req.id,
         method: req.method,
@@ -261,7 +271,11 @@ export function globalErrorHandler(
         operational: err.isOperational,
       });
     }
-    res.status(err.statusCode).json(withRequestId(err.toJSON(), req));
+    const body = err.toJSON();
+    if (err.statusCode === 413 && err.code === "FILE_TOO_LARGE") {
+      Object.assign(body, sizeErrorBody(req, err.code));
+    }
+    res.status(err.statusCode).json(withRequestId(body, req));
     return;
   }
 

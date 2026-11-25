@@ -13,6 +13,8 @@ export const PORTAL_INVITE_RESEND_COOLDOWN_S = 60;
 export const PORTAL_INVITE_MAX_SENDS_PER_DAY = 5;
 export const PORTAL_INVITE_MAX_PER_HOUR = 60;
 export const PORTAL_INVITE_MAX_PER_DAY = 300;
+/** A company still on its free trial may send far fewer invitations a day. */
+export const PORTAL_INVITE_MAX_PER_DAY_TRIAL = 20;
 export const PORTAL_INVITE_MESSAGE_MAX = 500;
 export const PORTAL_BULK_MAX = 100;
 

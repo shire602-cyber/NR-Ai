@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_BYTES } from "@shared/upload-limits";
 /**
  * WQ2: files on purchase documents (bill attachments, expense-claim receipts). Files travel as
  * data URLs (the server's upload guard checks the bytes); stored files are read back with the
@@ -8,8 +9,7 @@ import { getAuthHeaders } from "@/lib/auth";
 
 /** Accepted by the upload guard: PDF and the common image types. */
 export const PURCHASE_FILE_ACCEPT = "application/pdf,image/jpeg,image/png,image/webp,image/gif";
-/** The upload is a 10 MB JSON body of base64 (4/3 of the bytes): refuse larger files up front. */
-export const PURCHASE_FILE_MAX_BYTES = 7 * 1024 * 1024;
+export const PURCHASE_FILE_MAX_BYTES = MAX_UPLOAD_BYTES;
 
 export function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

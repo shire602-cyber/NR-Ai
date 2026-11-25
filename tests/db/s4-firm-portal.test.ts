@@ -5,7 +5,8 @@
  * the /api/firms/me contract FirmRoute/AppSidebar rely on.
  */
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { MAX_UPLOAD_BYTES } from "../../shared/upload-limits";
 import { useHarness, type Tenant } from "./harness";
 
 // X6b: firm sign-up is closed by default (NR-internal); these tests onboard a second firm on purpose.
@@ -52,6 +53,94 @@ async function firmB() {
 }
 
 describe("S4 VAT workpaper maker-checker uses canPrepare/canReviewFirmWorkpaper", () => {
+  it("PR #96 stores VAT evidence privately and checks workpaper access before reading", async () => {
+    const objectStorage = await import("../../server/services/fileStorage");
+    const { __setObjectStoreForTests } = objectStorage;
+    const owner = await nrOwner();
+    const unassigned = await nrStaff("firm_admin", "EvidenceUnassigned");
+    const client = await createClient(owner, "VAT Evidence Client LLC");
+    const created = await owner.as.post("/api/firm/vat-workpapers", {
+      companyId: client.id,
+      periodStart: "2026-07-01",
+      periodEnd: "2026-09-30",
+    });
+    expect(created.status, created.text).toBe(201);
+    const base = `/api/firm/vat-workpapers/${created.body.id}`;
+    const objects = new Map<string, { buffer: Buffer; contentType: string }>();
+    const reads: string[] = [];
+    __setObjectStoreForTests({
+      put: async (key, buffer, contentType) => {
+        objects.set(key, { buffer, contentType });
+        return key;
+      },
+      get: async (key) => {
+        reads.push(key);
+        return objects.get(key) ?? null;
+      },
+      del: async (key) => {
+        objects.delete(key);
+      },
+    });
+
+    try {
+      const evidence = "VAT evidence";
+      const scan = {
+        attachment: {
+          fileName: "receipt.txt",
+          mimeType: "text/plain",
+          fileDataBase64: Buffer.from(evidence).toString("base64"),
+        },
+        draftRow: { rowCategory: "standard_expense", taxableAmount: 100, vatAmount: 5 },
+      };
+      const oversized = await owner.as.post(`${base}/scan`, {
+        ...scan,
+        attachment: {
+          ...scan.attachment,
+          fileDataBase64: Buffer.alloc(MAX_UPLOAD_BYTES + 1).toString("base64"),
+        },
+      });
+      expect(oversized.status, oversized.text).toBe(413);
+      expect(oversized.body.code).toBe("FILE_TOO_LARGE");
+
+      const storageAvailability = vi
+        .spyOn(objectStorage, "hasDurableObjectStore")
+        .mockReturnValueOnce(false);
+      try {
+        const unavailable = await owner.as.post(`${base}/scan`, scan);
+        expect(unavailable.status, unavailable.text).toBe(503);
+        expect(unavailable.body.code).toBe("VAT_EVIDENCE_STORAGE_UNAVAILABLE");
+      } finally {
+        storageAvailability.mockRestore();
+      }
+      expect(objects.size).toBe(0);
+
+      const rejected = await owner.as.post(`${base}/scan`, {
+        ...scan,
+        draftRow: { ...scan.draftRow, documentDate: "2026-10-01" },
+      });
+      expect(rejected.status, rejected.text).toBe(422);
+      expect(objects.size).toBe(0);
+
+      const uploaded = await owner.as.post(`${base}/scan`, scan);
+      expect(uploaded.status, uploaded.text).toBe(201);
+      const { id, filePath } = uploaded.body.attachment;
+      expect(filePath).toMatch(/^vat-workpapers\//);
+      expect(objects.get(filePath)?.buffer.toString()).toBe(evidence);
+
+      const url = `${base}/attachments/${id}/download`;
+      expect((await unassigned.as.get(url)).status).toBe(403);
+      expect(reads).toEqual([]);
+      const downloaded = await owner.as.get(url);
+      expect(downloaded.status, downloaded.text).toBe(200);
+      expect(downloaded.headers.get("content-disposition")).toContain("receipt.txt");
+      expect(downloaded.headers.get("cache-control")).toBe("private, no-store");
+      expect(downloaded.text).toBe(evidence);
+      expect(reads).toEqual([filePath]);
+    } finally {
+      __setObjectStoreForTests(null);
+    }
+  });
+
   it("[S4-vat-maker-checker] a reviewer cannot prepare, a preparer cannot review; each side does its own step", async () => {
     const owner = await nrOwner();
     const preparer = await nrStaff("preparer", "S4Preparer");

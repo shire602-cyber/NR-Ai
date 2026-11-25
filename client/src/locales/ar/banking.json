@@ -178,6 +178,7 @@
   "banking.import.rows": "صفوف",
   "banking.import.valid": "صالحة",
   "banking.import.withErrors": "بها أخطاء",
+  "banking.import.invalidDateRow": "صحّح تاريخ الحركة المفقود أو غير الصالح في الصف {rowIndex} من ملف CSV ثم عاين الملف مجددًا.",
   "banking.import.dateOrder": "ترتيب التاريخ",
   "banking.import.decimalSeparator": "الفاصل العشري",
   "banking.import.decimalPoint": "نقطة (1,234.50)",

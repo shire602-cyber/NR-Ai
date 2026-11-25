@@ -452,6 +452,7 @@ export const badDebtReliefClaims = pgTable(
     reversalReason: text("reversal_reason"),
     notes: text("notes"),
     createdBy: uuid("created_by"),
+    // The claim writer assigns this under the invoice lock, after pre-claim receipts.
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

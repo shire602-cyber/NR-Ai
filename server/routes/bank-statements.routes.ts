@@ -1,3 +1,4 @@
+import { assertUploadSize } from "../http/upload-errors";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
@@ -25,6 +26,7 @@ import {
   type ParseOptions,
 } from "../services/bank-statement-parser.service";
 import {
+  assertStatementDatesValid,
   importStatementRows,
   parseStatementCsv,
   statementImportChoice,
@@ -164,9 +166,11 @@ type StatementRequestBody = {
 };
 
 function statementBytes(body: StatementRequestBody): Buffer {
-  return body.fileBase64?.trim()
+  const bytes = body.fileBase64?.trim()
     ? Buffer.from(body.fileBase64, "base64")
     : Buffer.from(body.csvContent ?? "", "utf8");
+  assertUploadSize(bytes.length);
+  return bytes;
 }
 
 function statementOptions(body: StatementRequestBody): ParseOptions {
@@ -424,6 +428,7 @@ export function registerBankStatementRoutes(app: Express) {
         validRows,
         errorRows: errorRows.length,
         ignoredRows: parsed.ignored.length,
+        firstInvalidDateRow: parsed.rows.find((row) => row.date === null)?.rowIndex ?? null,
         sampleRows: parsed.rows.slice(0, 10).map((r) => ({
           rowIndex: r.rowIndex,
           date: r.date ? r.date.toISOString().slice(0, 10) : null,
@@ -471,6 +476,7 @@ export function registerBankStatementRoutes(app: Express) {
           .status(400)
           .json({ message: "Could not read the statement file", code: "STATEMENT_UNREADABLE" });
       }
+      assertStatementDatesValid(parsedFile);
       const format = parsedFile.format;
       const parseErrors = summarizeRowErrors(parsedFile);
       const validRows = parsedFile.rows.filter((r) => r.errors.length === 0 && r.date);

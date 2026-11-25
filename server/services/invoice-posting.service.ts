@@ -310,6 +310,17 @@ export function totalsForStoredDocument(
   );
 }
 
+/** Evaluate under the invoice lock to order new VAT claims and receipts across transactions.
+ * Historical claims can have a transaction-start timestamp from before their settlement read.
+ */
+export function invoiceVatEventTime(companyId: string, invoiceId: string) {
+  return sql`GREATEST(clock_timestamp() AT TIME ZONE 'UTC',
+    (SELECT MAX(created_at) + interval '1 microsecond'
+       FROM invoice_payments WHERE company_id = ${companyId} AND invoice_id = ${invoiceId}),
+    (SELECT MAX(created_at) + interval '1 microsecond'
+       FROM bad_debt_relief_claims WHERE company_id = ${companyId} AND invoice_id = ${invoiceId}))`;
+}
+
 /** Lock the invoice row (FOR UPDATE) inside `tx` and return it. */
 export async function lockInvoice(tx: LedgerTx, invoiceId: string, companyId: string) {
   const res = await tx.execute(

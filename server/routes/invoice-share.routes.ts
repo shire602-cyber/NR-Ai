@@ -12,6 +12,7 @@ import {
   type SendEmailResult,
 } from "../services/email.service";
 import { resolveEmailLanguage } from "../services/email-layout";
+import { isDraftStatus, isVoidedStatus } from "../services/pdf-fonts";
 import { findInvoiceForUser, invoicePdfOptions } from "./invoices.routes";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
@@ -143,7 +144,7 @@ export function registerInvoiceShareRoutes(app: Express) {
         ? await storage.getInvoiceByShareToken(token)
         : undefined;
       if (!invoice || invoice.status === "draft" || invoice.status === "cancelled") {
-        notePortalFailure(req);
+        await notePortalFailure(req);
         return res
           .status(404)
           .json({ message: "Invoice not found or link is invalid", code: "INVOICE_NOT_FOUND" });
@@ -151,7 +152,7 @@ export function registerInvoiceShareRoutes(app: Express) {
 
       // Check expiry
       if (invoice.shareTokenExpiresAt && new Date(invoice.shareTokenExpiresAt) < new Date()) {
-        notePortalFailure(req);
+        await notePortalFailure(req);
         return res
           .status(410)
           .json({ message: "This invoice link has expired", code: "LINK_EXPIRED" });
@@ -248,14 +249,14 @@ export function registerInvoiceShareRoutes(app: Express) {
         ? await storage.getInvoiceByShareToken(token)
         : undefined;
       if (!invoice || invoice.status === "draft" || invoice.status === "cancelled") {
-        notePortalFailure(req);
+        await notePortalFailure(req);
         return res
           .status(404)
           .json({ message: "Invoice not found or link is invalid", code: "INVOICE_NOT_FOUND" });
       }
 
       if (invoice.shareTokenExpiresAt && new Date(invoice.shareTokenExpiresAt) < new Date()) {
-        notePortalFailure(req);
+        await notePortalFailure(req);
         return res
           .status(410)
           .json({ message: "This invoice link has expired", code: "LINK_EXPIRED" });
@@ -305,25 +306,35 @@ export function registerInvoiceShareRoutes(app: Express) {
         return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       }
 
+      // A draft is not a tax invoice and a cancelled/void one is no longer live: never e-mail
+      // either to a customer as if it were final.
+      if (isDraftStatus(invoice.status) || isVoidedStatus(invoice.status)) {
+        throw new DomainError(
+          "INVOICE_NOT_ISSUED",
+          409,
+          { status: invoice.status },
+          isDraftStatus(invoice.status)
+            ? "Issue the invoice before sending it"
+            : "A cancelled or void invoice cannot be sent"
+        );
+      }
+
       const company = await storage.getCompany(companyId);
       if (!company) {
         return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       }
 
       const lines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
-      const shareUrl =
-        invoice.status === "draft" || invoice.status === "cancelled"
-          ? null
-          : await ensureShareUrl(invoice);
+      const shareUrl = await ensureShareUrl(invoice);
       const pdfBuffer = await generateInvoicePDF(
-        shareUrl ? ((await storage.getInvoice(invoice.id, invoice.companyId)) ?? invoice) : invoice,
+        (await storage.getInvoice(invoice.id, invoice.companyId)) ?? invoice,
         lines,
         company,
         await invoicePdfOptions(invoice)
       );
 
       const openFils =
-        !shareUrl || invoice.invoiceType === "credit_note" ? 0 : await invoiceOpenFils(db, invoice);
+        invoice.invoiceType === "credit_note" ? 0 : await invoiceOpenFils(db, invoice);
       const customer = invoice.contactId
         ? await storage.getCustomerContact(invoice.contactId)
         : null;

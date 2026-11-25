@@ -155,11 +155,11 @@ export type UpdateJournalTemplateBody = z.infer<typeof updateJournalTemplateBody
 /** POST /api/journal-templates/:id/run */
 export const runJournalTemplateBody = z.object({ date: z.string().max(40).optional() }).strict();
 
-/** POST /api/journal/:id/attachments — base64 file content (max ~7.5 MB decoded). */
+/** POST /api/journal/:id/attachments — base64 file content (max 2 MB decoded). */
 export const journalAttachmentBody = z
   .object({
     fileName: z.string().trim().min(1).max(255),
-    data: z.string().min(1).max(10_000_000),
+    data: z.string().min(1),
   })
   .strict();
 export type JournalAttachmentBody = z.infer<typeof journalAttachmentBody>;

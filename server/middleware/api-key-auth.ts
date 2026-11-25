@@ -1,3 +1,4 @@
+import { FixedWindowThrottle } from "./fixed-window-throttle";
 /**
  * Public API key authentication (W5-B, R19-01, R19-15).
  *
@@ -128,26 +129,18 @@ interface KeyRow {
   rate_limit_per_minute: number;
 }
 
-// ─── Per-key rate limit (fixed one-minute window, in-process) ───────────────
-
-const windows = new Map<string, { start: number; count: number }>();
+const apiKeyThrottle = new FixedWindowThrottle("api-key");
 
 /** Returns seconds until the window resets when over the limit, else 0. */
-export function takeRateToken(keyId: string, limitPerMinute: number, now = Date.now()): number {
+export async function takeRateToken(keyId: string, limitPerMinute: number, now = Date.now()) {
   const limit = Math.max(1, limitPerMinute || 1);
-  const w = windows.get(keyId);
-  if (!w || now - w.start >= 60_000) {
-    windows.set(keyId, { start: now, count: 1 });
-    return 0;
-  }
-  if (w.count >= limit) return Math.max(1, Math.ceil((w.start + 60_000 - now) / 1000));
-  w.count += 1;
-  return 0;
+  const { count, remainingMs } = await apiKeyThrottle.check(keyId, 60_000, "hit", limit, now);
+  return count > limit ? Math.max(1, Math.ceil(remainingMs / 1000)) : 0;
 }
 
 /** Tests only. */
 export function __resetApiKeyRateLimits(): void {
-  windows.clear();
+  apiKeyThrottle.resetMemory();
 }
 
 function fail(res: Response, status: number, code: string, message: string): void {
@@ -188,7 +181,7 @@ export const apiKeyAuth: RequestHandler = (req: Request, res: Response, next: Ne
       return fail(res, 401, "API_KEY_EXPIRED", "This API key has expired");
     }
 
-    const retryAfter = takeRateToken(key.id, key.rate_limit_per_minute);
+    const retryAfter = await takeRateToken(key.id, key.rate_limit_per_minute);
     if (retryAfter > 0) {
       res.setHeader("Retry-After", String(retryAfter));
       return fail(res, 429, "API_KEY_RATE_LIMITED", "Rate limit for this API key exceeded");

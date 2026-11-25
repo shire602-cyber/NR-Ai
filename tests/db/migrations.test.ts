@@ -393,17 +393,27 @@ describe("migrations", () => {
   });
 
   it("[S5] rerunning 0138 preserves invitations created after the upgrade", async () => {
-    const supplier = await h.createTenant();
+    const supplier = await h.createTenant({ emailVerified: true });
     const contacts = `/api/companies/${supplier.company.id}/customer-contacts`;
     const contact = await supplier.as.post(contacts, {
       name: "Portal customer",
       email: "migration-portal@example.test",
     });
     expect(contact.status).toBe(200);
+    // A provider outage leaves the message retrying, which is the state that keeps its body (an
+    // unsent invitation with no provider keeps none, R5-9).
+    const { setEmailTransportOverride } = await import("../../server/outbox");
+    setEmailTransportOverride({
+      name: "test",
+      send: async () => {
+        throw new Error("temporary outage");
+      },
+    });
     const invitation = await supplier.as.post(
       `${contacts}/${contact.body.id}/portal-invitations`,
       {}
     );
+    setEmailTransportOverride(null);
     expect(invitation.status).toBe(201);
     const id = invitation.body.invitation.id;
 

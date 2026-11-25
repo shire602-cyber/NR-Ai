@@ -505,7 +505,9 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
 - A1 VAT rules (`tests/db/a1-vat-accuracy.test.ts`):
   - Filed-period lock (`server/ledger/vat-lock.ts`, called by the kernel). A submitted or filed
     return refuses, with 409 `VAT_PERIOD_FILED`, any posting, reversal or void that affects VAT
-    (a line on 1050/2020, or a tax-document source) and is dated in its period. The details give
+    (a line on 1050/2020, or a tax-document source) and belongs to its period. For sales invoices,
+    return inclusion, the filing lock, and VAT-control reconciliation use the earliest recorded
+    supply, invoice or full-payment date. Partial advances are accounted for as deposits. The details give
     the paths: date the document in the next open period (up to AED 10,000 net, Exec. Reg.
     Art. 70), or amend the filed return first (voluntary disclosure). Amending re-opens the
     period, and regenerating refreshes the amendment diff.
@@ -521,8 +523,10 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   - Partial exemption (`companies.partial_exemption_enabled`, `server/tax/partial-exemption.ts`):
     - Bills carry `input_vat_attribution` (taxable / exempt / residual). Taxable VAT is
       recovered in full and exempt VAT is not.
-    - Residual VAT is apportioned by the period's standard-method ratio (Box 1 + 4 against
-      Box 5).
+    - For the 2026 standard method, divide wholly recoverable input VAT by all directly
+      attributable input VAT. Round to the nearest whole percentage point before applying the
+      ratio to residual VAT. When there is no directly attributable input VAT, the configured
+      provisional ratio is used.
     - On ready / submit, the irrecoverable part is posted as Dr 5160 / Cr 1050 (source
       `vat_partial_exemption`).
     - Follow-up: the Art. 55(6) annual adjustment and special methods.

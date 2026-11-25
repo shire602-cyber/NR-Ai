@@ -33,6 +33,7 @@ import {
 } from "../../shared/schema";
 import {
   PORTAL_INVITE_MAX_PER_DAY,
+  PORTAL_INVITE_MAX_PER_DAY_TRIAL,
   PORTAL_INVITE_MAX_PER_HOUR,
   PORTAL_INVITE_MAX_SENDS_PER_DAY,
   PORTAL_INVITE_RESEND_COOLDOWN_S,
@@ -47,13 +48,19 @@ import {
   listPortalLinks,
   logPortalAccess,
 } from "./portal-access.service";
-import { deliverOutboxMessage, enqueueEmail, type OutboxResult } from "../outbox";
+import {
+  cancelUnsentPortalInvites,
+  deliverOutboxMessage,
+  enqueueEmail,
+  type OutboxResult,
+} from "../outbox";
 import { renderPortalInviteEmail, normaliseInviteLanguage } from "./portal-invite-email";
 import { resolveEmailLanguage } from "./email-layout";
 import { paymentsAvailability, publicBaseUrl } from "./payments";
 import { recordAudit } from "./audit.service";
 import { isPlaceholderPasswordHash, passwordPolicySchema } from "../auth";
 import { notificationCopy } from "../../shared/server-copy";
+import { companyEntitlement } from "../middleware/featureGate";
 
 const log = createLogger("portal-invitations");
 
@@ -80,7 +87,15 @@ export interface PublicInvitation {
   createdAt: string;
   /** Seconds until Resend is allowed again (0 = now). */
   resendIn: number;
+  /**
+   * True once the latest email was handed to the provider. False while it is queued, retrying,
+   * blocked (no email provider) or failed: the card must never claim an email went out (R5-2).
+   */
+  emailSent: boolean;
 }
+
+/** Outbox statuses that mean the provider accepted the message. */
+export const OUTBOX_SENT_STATUSES = ["sent", "delivered"] as const;
 
 const normEmail = (e: string) => e.trim().toLowerCase();
 const contactEmail = (contact: CustomerContact) => normEmail(contact.email ?? "") || null;
@@ -101,7 +116,10 @@ function checkInvitedContact(invitation: CustomerPortalInvitation, contact?: Cus
 }
 const iso = (d: Date | null | undefined) => (d ? new Date(d).toISOString() : null);
 
-export function publicInvitation(inv: CustomerPortalInvitation): PublicInvitation {
+export function publicInvitation(
+  inv: CustomerPortalInvitation,
+  emailSent = false
+): PublicInvitation {
   const expired = inv.status === "pending" && inv.expiresAt.getTime() <= Date.now();
   const sinceSend = inv.lastSentAt ? (Date.now() - inv.lastSentAt.getTime()) / 1000 : Infinity;
   return {
@@ -118,6 +136,7 @@ export function publicInvitation(inv: CustomerPortalInvitation): PublicInvitatio
     acceptedAt: iso(inv.acceptedAt),
     createdAt: inv.createdAt.toISOString(),
     resendIn: Math.max(0, Math.ceil(PORTAL_INVITE_RESEND_COOLDOWN_S - sinceSend)),
+    emailSent,
   };
 }
 
@@ -159,6 +178,24 @@ async function loadCompany(companyId: string): Promise<Company> {
 
 // ─── Delivery ───────────────────────────────────────────────────────────────
 
+/**
+ * S5-SEC-4: the From display name is the company's registered name only, stripped of anything that
+ * could pose as someone else (addresses, links, brackets, control characters) and length-capped.
+ */
+export function inviteSenderName(company: Pick<Company, "name" | "legalName">): string {
+  const raw = (company.legalName || company.name || "").normalize("NFKC");
+  const clean = raw
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f<>"\\;:,@]/g, " ")
+    .replace(/\b(?:https?|ftp)\s*\/\/\S*/gi, " ")
+    .replace(/\bwww\.\S+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60)
+    .trim();
+  return clean || "Muhasib.ai";
+}
+
 function deliveryFailed(): DomainError {
   return new DomainError(
     "PORTAL_INVITE_DELIVERY_FAILED",
@@ -189,7 +226,7 @@ async function enqueueInvitation(
         subject: mail.subject,
         text: mail.text,
         html: mail.html,
-        fromName: company.name,
+        fromName: inviteSenderName(company),
         companyId: inv.companyId,
         category: "portal_invite",
         sensitive: true,
@@ -205,6 +242,8 @@ async function enqueueInvitation(
       .set({ lastOutboxId: outbox.id })
       .where(eq(customerPortalInvitations.id, inv.id))
       .returning();
+    // R5-9: an earlier message that never went out is superseded and keeps no live link.
+    await cancelUnsentPortalInvites(inv.id, outbox.id, tx);
     return { invitation, outbox };
   } catch {
     // Roll back the email reservation with the outbox write. Driver errors can contain mail bodies.
@@ -224,6 +263,10 @@ async function deliverInvitation(outbox: OutboxResult): Promise<InviteDelivery> 
 // ─── Staff operations ───────────────────────────────────────────────────────
 
 async function enforceInviteRate(companyId: string): Promise<void> {
+  // S5-SEC-4: a company still on its free trial may send far fewer invitations a day.
+  const ent = await companyEntitlement(companyId).catch(() => null);
+  const dayCap =
+    ent?.state === "trial" ? PORTAL_INVITE_MAX_PER_DAY_TRIAL : PORTAL_INVITE_MAX_PER_DAY;
   const [row] = await db
     .select({
       hour: sql<number>`count(*) FILTER (WHERE ${customerPortalInvitations.createdAt} > now() - interval '1 hour')::int`,
@@ -231,15 +274,25 @@ async function enforceInviteRate(companyId: string): Promise<void> {
     })
     .from(customerPortalInvitations)
     .where(eq(customerPortalInvitations.companyId, companyId));
-  if (
-    (row?.hour ?? 0) >= PORTAL_INVITE_MAX_PER_HOUR ||
-    (row?.day ?? 0) >= PORTAL_INVITE_MAX_PER_DAY
-  ) {
+  if ((row?.hour ?? 0) >= PORTAL_INVITE_MAX_PER_HOUR || (row?.day ?? 0) >= dayCap) {
     throw new DomainError(
       "PORTAL_INVITE_RATE_LIMITED",
       429,
       { retryAfter: (row?.hour ?? 0) >= PORTAL_INVITE_MAX_PER_HOUR ? 3600 : 86_400 },
       "Too many invitations sent. Try again later."
+    );
+  }
+}
+
+/** S5-SEC-4: only an inviter with a verified email may invite (no grace period for this). */
+async function requireVerifiedInviter(userId: string): Promise<void> {
+  const inviter = await storage.getUser(userId);
+  if (!inviter?.emailVerified) {
+    throw new DomainError(
+      "EMAIL_VERIFICATION_REQUIRED",
+      403,
+      { resendUrl: "/api/auth/verify-email/resend" },
+      "Verify your email address before inviting customers to the portal."
     );
   }
 }
@@ -252,6 +305,7 @@ export async function createInvitation(args: {
   req?: Request;
 }): Promise<InviteResult> {
   const { companyId, body } = args;
+  await requireVerifiedInviter(args.invitedBy);
   const contact = await loadContact(companyId, args.contactId);
   if (!contact.isActive) {
     throw new DomainError("CONTACT_NOT_FOUND", 404, undefined, "Contact not found");
@@ -385,7 +439,7 @@ export async function createInvitation(args: {
     req: args.req,
   });
   return {
-    invitation: publicInvitation(invitation),
+    invitation: publicInvitation(invitation, delivery === "email"),
     delivery,
   };
 }
@@ -396,6 +450,7 @@ export async function resendInvitation(args: {
   actorId: string;
   req?: Request;
 }): Promise<InviteResult> {
+  await requireVerifiedInviter(args.actorId);
   const inv = await loadInvitation(args.companyId, args.invitationId);
   if (inv.status !== "pending" && inv.status !== "expired") {
     throw new DomainError("INVITATION_NOT_RESENDABLE", 409, undefined, "This invitation is closed");
@@ -474,7 +529,7 @@ export async function resendInvitation(args: {
     req: args.req,
   });
   return {
-    invitation: publicInvitation(invitation),
+    invitation: publicInvitation(invitation, delivery === "email"),
     delivery,
   };
 }
@@ -528,6 +583,7 @@ export async function revokeInvitation(args: {
     after: { status: "revoked" },
     req: args.req,
   });
+  await cancelUnsentPortalInvites(inv.id);
   return publicInvitation(row);
 }
 
@@ -580,8 +636,12 @@ export async function portalAccessForContact(companyId: string, contactId: strin
     )
     .orderBy(desc(customerPortalAccounts.createdAt));
   const invitations = await db
-    .select()
+    .select({
+      invitation: customerPortalInvitations,
+      outboxStatus: emailOutbox.status,
+    })
     .from(customerPortalInvitations)
+    .leftJoin(emailOutbox, eq(emailOutbox.id, customerPortalInvitations.lastOutboxId))
     .where(
       and(
         eq(customerPortalInvitations.companyId, companyId),
@@ -622,7 +682,12 @@ export async function portalAccessForContact(companyId: string, contactId: strin
       since: a.createdAt.toISOString(),
       lastSeenAt: iso(a.lastSeenAt),
     })),
-    invitations: invitations.map(publicInvitation),
+    invitations: invitations.map((row) =>
+      publicInvitation(
+        row.invitation,
+        !!row.outboxStatus && (OUTBOX_SENT_STATUSES as readonly string[]).includes(row.outboxStatus)
+      )
+    ),
     links: await listPortalLinks(companyId, contact.id),
     timeline: timeline.map((t) => ({ outcome: t.outcome, at: t.createdAt.toISOString() })),
   };
@@ -649,8 +714,10 @@ export async function portalSummary(companyId: string) {
         contactId: customerPortalInvitations.contactId,
         status: customerPortalInvitations.status,
         expiresAt: sql<Date>`max(${customerPortalInvitations.expiresAt})`,
+        sent: sql<number>`count(*) FILTER (WHERE ${emailOutbox.status} IN ('sent', 'delivered'))::int`,
       })
       .from(customerPortalInvitations)
+      .leftJoin(emailOutbox, eq(emailOutbox.id, customerPortalInvitations.lastOutboxId))
       .where(
         and(
           eq(customerPortalInvitations.companyId, companyId),
@@ -665,6 +732,8 @@ export async function portalSummary(companyId: string) {
       active: number;
       state: "active" | "invited" | "expired" | "revoked";
       expiresAt: string | null;
+      /** An invitation is pending but its email never went out (R5-2). */
+      notSent?: boolean;
     }
   > = {};
   for (const r of inviteRows) {
@@ -679,7 +748,12 @@ export async function portalSummary(companyId: string) {
     // Pending beats expired beats revoked.
     const rank = { invited: 3, expired: 2, revoked: 1, active: 4 } as const;
     if (!prev || rank[state] > rank[prev.state]) {
-      out[r.contactId] = { active: 0, state, expiresAt: exp.toISOString() };
+      out[r.contactId] = {
+        active: 0,
+        state,
+        expiresAt: exp.toISOString(),
+        ...(state === "invited" && r.sent === 0 ? { notSent: true } : {}),
+      };
     }
   }
   for (const r of accountRows) {
@@ -705,6 +779,17 @@ export type InviteResolution =
       invitation: CustomerPortalInvitation;
       company: Company | null;
     };
+
+/** True when the token matches an invitation row in any state (used by the failure lockout). */
+export async function isKnownInviteToken(rawToken: string): Promise<boolean> {
+  if (typeof rawToken !== "string" || !PORTAL_INVITE_TOKEN_RE.test(rawToken)) return false;
+  const [row] = await db
+    .select({ id: customerPortalInvitations.id })
+    .from(customerPortalInvitations)
+    .where(eq(customerPortalInvitations.tokenHash, inviteTokenHash(rawToken)))
+    .limit(1);
+  return !!row;
+}
 
 export async function resolveInvitation(rawToken: string): Promise<InviteResolution> {
   if (typeof rawToken !== "string" || !PORTAL_INVITE_TOKEN_RE.test(rawToken)) {

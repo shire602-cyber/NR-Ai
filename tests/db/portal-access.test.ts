@@ -4,6 +4,7 @@
  */
 import crypto from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
+import { installInviteMailbox, inviteToken as inviteTokenOf } from "./invite-mailbox";
 import { useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -46,7 +47,7 @@ async function portalLink(t: Tenant, contactId: string) {
 
 describe("W4-D portal identity and visibility", () => {
   it("[R16-04] drafts are not listed in the portal and their PDF is 404; issued invoices are", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Portal Customer");
     const draft = await invoice(t, cid, false);
     const issued = await invoice(t, cid, true);
@@ -65,7 +66,7 @@ describe("W4-D portal identity and visibility", () => {
   });
 
   it("[R16-06] identity is the contact id: renaming keeps access and same-name contacts are isolated", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const a = await contact(t, "Twin Trading");
     const b = await contact(t, "Twin Trading");
     const invA = await invoice(t, a);
@@ -85,7 +86,7 @@ describe("W4-D portal identity and visibility", () => {
   });
 
   it("[R16-07] tokens are hashed, shown once, 90-day, revocable; 60 bad tokens get 429; access is logged", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Token Customer");
     await invoice(t, cid);
     const link = await portalLink(t, cid);
@@ -138,14 +139,14 @@ describe("W4-D portal identity and visibility", () => {
     expect(access.body.links.length).toBe(2);
     expect(JSON.stringify(access.body)).not.toContain(hash);
     // Another tenant cannot mint or read access for this contact.
-    const other = await h.createSecondTenant();
+    const other = await h.createSecondTenant({ emailVerified: true });
     expect((await other.as.post("/api/portal/generate-access", { contactId: cid })).status).toBe(
       404
     );
   });
 
   it("[R16-05] a client-portal user sees only their contact's invoices and customer thread, never staff threads", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const mine = await contact(t, "Bound Customer");
     const theirs = await contact(t, "Other Customer");
     const myInv = await invoice(t, mine);
@@ -157,6 +158,7 @@ describe("W4-D portal identity and visibility", () => {
     const unlinked = await pu.as.get("/api/client-portal/invoices");
     expect(unlinked.status).toBe(403);
     expect(unlinked.body.code).toBe("PORTAL_CONTACT_NOT_LINKED");
+    await installInviteMailbox();
     const inv = await t.as.post(
       `/api/companies/${t.company.id}/customer-contacts/${mine}/portal-invitations`,
       { email: pu.email, language: "en" }
@@ -165,10 +167,10 @@ describe("W4-D portal identity and visibility", () => {
     const csrf = await fetch(`${h.baseUrl}/api/csrf-token`);
     const cookie = (csrf.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
     const csrfToken = ((await csrf.json()) as { csrfToken: string }).csrfToken;
-    const [mail] = await h.sql("SELECT html FROM email_outbox WHERE related_entity_id = $1", [
-      inv.body.invitation.id,
-    ]);
-    const inviteToken = /#t=([0-9a-f]{64})/.exec(mail.html)![1];
+    // The link only exists in the delivered email (an unsent invitation keeps none at rest).
+    const inviteToken = await inviteTokenOf((q, p) => h.sql(q, p), inv.body.invitation.id);
+    const { setEmailTransportOverride } = await import("../../server/outbox");
+    setEmailTransportOverride(null);
     const bind = await fetch(`${h.baseUrl}/api/portal-invitations/accept`, {
       method: "POST",
       headers: {
@@ -225,8 +227,14 @@ describe("W4-D portal identity and visibility", () => {
       }
     );
     expect(reply.status, reply.text).toBe(201);
-    expect(reply.body.contactId).toBe(mine);
-    expect(reply.body.visibility).toBe("customer");
+    // S5-SEC-6: a DTO without internal ids; the row itself is bound to the contact.
+    expect(reply.body.contactId).toBeUndefined();
+    expect(reply.body.senderId).toBeUndefined();
+    expect(reply.body.fromMe).toBe(true);
+    const stored = await h.sql(`SELECT contact_id, visibility FROM messages WHERE id = $1`, [
+      reply.body.id,
+    ]);
+    expect(stored[0]).toMatchObject({ contact_id: mine, visibility: "customer" });
     // Statements are the customer's statement of account, not the company P&L.
     const st = await pu.as.get("/api/client-portal/statements");
     expect(st.status).toBe(200);
@@ -238,7 +246,7 @@ describe("W4-D portal identity and visibility", () => {
 
 describe("W4-D statements of account", () => {
   it("[R16-15] the customer statement ties to the customer's AR balance and the aging report", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Statement Customer");
     const a = await invoice(t, cid);
     const b = await invoice(t, cid, true, 2000);
@@ -309,14 +317,14 @@ describe("W4-D statements of account", () => {
     );
     expect(att[0].content_type).toBe("application/pdf");
     // Other tenants cannot read it.
-    const other = await h.createSecondTenant();
+    const other = await h.createSecondTenant({ emailVerified: true });
     expect(
       (await other.as.get(`/api/companies/${t.company.id}/customer-statements/${cid}`)).status
     ).toBe(403);
   });
 
   it("[R11-15] supplier statement: bills less payments, closing balance and aging", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const v = await h.sql(
       `INSERT INTO vendors (company_id, name) VALUES ($1, 'Paper Supplies FZE') RETURNING id`,
       [t.company.id]
@@ -348,7 +356,7 @@ describe("W4-D statements of account", () => {
 
 describe("W4-D customer self-service", () => {
   it("[R16-16] one-time-code login, quote acceptance and customer upload into the vault", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Self Service Co", "buyer@selfservice.example");
     const req = await h.anon.post("/api/portal/login/request", {
       companyId: t.company.id,
@@ -441,7 +449,7 @@ describe("W4-D customer self-service", () => {
   });
 
   it("[R16-19] public and token portal outcomes require evidence and XML stays downloadable", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "E-Invoice Co");
     const inv = await invoice(t, cid);
     await h.sql(
@@ -523,9 +531,9 @@ describe("W4-D customer self-service", () => {
 
 describe("J4 portal link management follows the company role", () => {
   it("J4: a viewer can list link metadata but cannot mint or revoke links; the owner can", async () => {
-    const t = await h.createTenant({ name: "PortalRole" });
+    const t = await h.createTenant({ emailVerified: true, name: "PortalRole" });
     const cid = await contact(t, "Role Customer");
-    const v = await h.createTenant({ name: "PortalViewer" });
+    const v = await h.createTenant({ emailVerified: true, name: "PortalViewer" });
     await h.sql(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')`, [
       t.company.id,
       v.user.id,
@@ -548,7 +556,7 @@ describe("J4 portal link management follows the company role", () => {
 
 describe("PR-62 client-portal users are confined to the portal API", () => {
   it("PR-62: a bound client_portal member cannot read the company's books, dashboard or team", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const pu = await h.createSecondTenant({ userType: "client_portal" });
     await h.sql(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')`, [
       t.company.id,

@@ -252,9 +252,19 @@ export function PortalInvoiceList({
                       >
                         {inv.date ? <DateText value={inv.date} locale={locale} /> : "—"}
                       </TableCell>
-                      <TableCell data-nowrap="" className="text-muted-foreground">
+                      {/* Phones: the due date is the date a customer acts on, so it joins line 2. A cell
+                          with no data-cell stays out of the phone card (credit notes have no due date). */}
+                      <TableCell
+                        data-nowrap=""
+                        data-cell={inv.dueDate && !isCredit ? "meta" : undefined}
+                        data-keep={inv.dueDate && !isCredit ? "" : undefined}
+                        className="text-muted-foreground"
+                      >
                         {inv.dueDate && !isCredit ? (
-                          <DateText value={inv.dueDate} locale={locale} />
+                          <>
+                            <span className="md:hidden">{t["portal.doc.dueShort"]} </span>
+                            <DateText value={inv.dueDate} locale={locale} />
+                          </>
                         ) : (
                           "—"
                         )}

@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { assertUploadSize } from "../http/upload-errors";
+import { ocrTimeoutBody, withOcrDeadline } from "../http/ocr-deadline";
 import { Router } from "express";
 import { parsedBody } from "../http/parsed-body";
 import type { Express, Request, Response } from "express";
@@ -92,20 +95,16 @@ function extractJson(raw: string): BulkOcrJson {
 
 const ALLOWED_OCR_MIME_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
-async function runOCR(
-  imageData: string,
-  anthropic: Anthropic | null,
-  openai: OpenAI | null
-): Promise<{
-  merchant: string;
-  date: string;
-  amount: number;
-  vatAmount: number;
-  currency: string;
-  category: string;
-}> {
-  // Validate MIME type from the data URL prefix; reject unknown/unsafe types up front.
-  // Bare base64 (no data URL prefix) is rejected — clients must declare a MIME type.
+function bulkOcrCaptureId(image: Buffer): string {
+  // UUIDv8 derived from the bytes so retried uploads share the company/capture constraint.
+  const hash = createHash("sha256").update("firm-bulk-ocr\0").update(image).digest();
+  hash[6] = (hash[6] & 0x0f) | 0x80;
+  hash[8] = (hash[8] & 0x3f) | 0x80;
+  const hex = hash.toString("hex", 0, 16);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function validateBulkOcrMime(imageData: string): void {
   const dataUrlMatch = imageData.match(/^data:([^;]+);base64,/);
   if (!dataUrlMatch) {
     throw Object.assign(
@@ -117,8 +116,21 @@ async function runOCR(
   if (!ALLOWED_OCR_MIME_TYPES.includes(declaredMime)) {
     throw Object.assign(new Error(`Unsupported image MIME type: ${declaredMime}`), { status: 400 });
   }
-  const dataUrl = imageData;
+}
 
+async function runOCR(
+  dataUrl: string,
+  anthropic: Anthropic | null,
+  openai: OpenAI | null,
+  signal: AbortSignal
+): Promise<{
+  merchant: string;
+  date: string;
+  amount: number;
+  vatAmount: number;
+  currency: string;
+  category: string;
+}> {
   let rawText = "";
   const failures: Array<{ provider: "Anthropic" | "OpenAI"; error: unknown }> = [];
   if (anthropic) {
@@ -127,26 +139,30 @@ async function runOCR(
       if (!match) throw new Error("Invalid image data URL");
       const mediaType = match[1] as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
       const base64Data = match[2];
-      const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1000,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: { type: "base64", media_type: mediaType, data: base64Data },
-              },
-              { type: "text", text: BULK_OCR_PROMPT },
-            ],
-          },
-        ],
-      });
+      const response = await anthropic.messages.create(
+        {
+          model: "claude-sonnet-4-6",
+          max_tokens: 1000,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "image",
+                  source: { type: "base64", media_type: mediaType, data: base64Data },
+                },
+                { type: "text", text: BULK_OCR_PROMPT },
+              ],
+            },
+          ],
+        },
+        { signal }
+      );
       const block = response.content[0];
       if (block.type !== "text") throw new Error("Unexpected Anthropic response type");
       rawText = block.text;
     } catch (err) {
+      signal.throwIfAborted();
       failures.push({ provider: "Anthropic", error: err });
       if (openai) {
         log.warn(
@@ -158,25 +174,30 @@ async function runOCR(
   }
 
   if (!rawText && openai) {
+    signal.throwIfAborted();
     try {
-      const aiResponse = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
-              { type: "text", text: BULK_OCR_PROMPT },
-            ],
-          },
-        ],
-        response_format: { type: "json_object" },
-        max_tokens: 1000,
-      });
+      const aiResponse = await openai.chat.completions.create(
+        {
+          model: "gpt-4o",
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
+                { type: "text", text: BULK_OCR_PROMPT },
+              ],
+            },
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: 1000,
+        },
+        { signal }
+      );
       const raw = aiResponse.choices[0]?.message?.content;
       if (!raw) throw new Error("Empty OpenAI response");
       rawText = raw;
     } catch (err) {
+      signal.throwIfAborted();
       failures.push({ provider: "OpenAI", error: err });
     }
   }
@@ -233,15 +254,22 @@ router.post(
   "/bulk/ocr",
   requireFirmPermission("firm.clients.write"),
   strictBody(bulkOcrSchema),
-  asyncHandler(async (req: Request, res: Response) => {
+  withOcrDeadline(async (req, res, signal, waitForStep) => {
     const { id: userId } = req.user!;
     const { items } = parsedBody<z.output<typeof bulkOcrSchema>>(req);
-    await resolveBulkTargets(
-      firmContextOf(res),
-      items.map((item) => item.companyId),
-      { required: true }
+    await waitForStep(
+      resolveBulkTargets(
+        firmContextOf(res),
+        items.map((item) => item.companyId),
+        { required: true }
+      )
     );
 
+    const uploads = items.map((item) => {
+      const bytes = Buffer.from(item.imageData.replace(/^data:[^;]+;base64,/, ""), "base64");
+      assertUploadSize(bytes.length);
+      return { ...item, captureId: bulkOcrCaptureId(bytes) };
+    });
     const { anthropic, openai } = createOcrClients();
     if (!anthropic && !openai) {
       return res
@@ -257,22 +285,37 @@ router.post(
       error?: string;
     }> = [];
 
-    for (const item of items) {
+    for (const item of uploads) {
       try {
-        const extracted = await runOCR(item.imageData, anthropic, openai);
-        const receipt = await storage.createReceipt({
-          companyId: item.companyId,
-          merchant: extracted.merchant,
-          date: extracted.date ? new Date(extracted.date) : null,
-          amount: extracted.amount,
-          vatAmount: extracted.vatAmount,
-          currency: extracted.currency,
-          exchangeRate: 1,
-          baseCurrencyAmount: extracted.amount,
-          category: extracted.category,
-          posted: false,
-          uploadedBy: userId,
-        });
+        signal.throwIfAborted();
+        validateBulkOcrMime(item.imageData);
+        let receipt = await waitForStep(storage.getCapturedReceipt(item.companyId, item.captureId));
+        if (!receipt) {
+          const extracted = await waitForStep(runOCR(item.imageData, anthropic, openai, signal));
+          // The unique capture ID makes this safe to retry even if COMMIT outlives the deadline.
+          const saved = await waitForStep(
+            storage.createCapturedReceipt(
+              {
+                companyId: item.companyId,
+                captureId: item.captureId,
+                merchant: extracted.merchant,
+                date: extracted.date ? new Date(extracted.date) : null,
+                amount: extracted.amount,
+                vatAmount: extracted.vatAmount,
+                currency: extracted.currency,
+                exchangeRate: 1,
+                baseCurrencyAmount: extracted.amount,
+                category: extracted.category,
+                posted: false,
+                uploadedBy: userId,
+              },
+              true,
+              signal
+            )
+          );
+          if (!saved.receipt) throw new Error("Unable to save bulk OCR receipt");
+          receipt = saved.receipt;
+        }
         results.push({
           companyId: item.companyId,
           filename: item.filename,
@@ -280,6 +323,9 @@ router.post(
           receiptId: receipt.id,
         });
       } catch (err: unknown) {
+        if (signal.aborted) {
+          return res.status(504).json({ ...ocrTimeoutBody, results });
+        }
         results.push({
           companyId: item.companyId,
           filename: item.filename,

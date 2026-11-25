@@ -36,7 +36,7 @@ async function portalFor(t: Tenant, name: string) {
 
 describe("portal overview", () => {
   it("honors the selected supplier on statement downloads and rejects a revoked selection", async () => {
-    const first = await h.createTenant();
+    const first = await h.createTenant({ emailVerified: true });
     const second = await h.createSecondTenant();
     const customer = await h.createSecondTenant();
     const a = await portalFor(first, "First Customer");
@@ -82,7 +82,11 @@ describe("portal overview", () => {
       { headers }
     );
     expect(sent.status, sent.text).toBe(201);
-    expect(sent.body).toMatchObject({ companyId: first.company.id, contactId: a.contactId });
+    expect(sent.body).toMatchObject({ content: "For the displayed supplier", fromMe: true });
+    const [stored] = await h.sql("SELECT company_id, contact_id FROM messages WHERE id = $1", [
+      sent.body.id,
+    ]);
+    expect(stored).toMatchObject({ company_id: first.company.id, contact_id: a.contactId });
 
     const upload = (accountId: string) => {
       const form = new FormData();

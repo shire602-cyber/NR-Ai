@@ -3,10 +3,7 @@ import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
 import { z } from "zod";
 import { storage, normalizeEmail } from "../storage";
-import {
-  assertPortalInviteEmailAvailable,
-  lockPortalInviteEmail,
-} from "../storage/portal-invite-email";
+import { lockPortalInviteEmail } from "../storage/portal-invite-email";
 import { authMiddleware, optionalAuthUser } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import {
@@ -117,7 +114,9 @@ async function deliverInvitation(
   const result = await sendEmail(
     inv.email,
     `You're invited to ${companyName} on Muhasib`,
-    `You have been invited to join ${companyName} as ${inv.role}.\n\nAccept the invitation: ${inviteUrl}\n\nThis link expires on ${inv.expiresAt.toUTCString()}.`
+    `You have been invited to join ${companyName} as ${inv.role}.\n\nAccept the invitation: ${inviteUrl}\n\nThis link expires on ${inv.expiresAt.toUTCString()}.`,
+    // The link is a live credential: the outbox keeps no body once the message is sent.
+    { sensitive: true }
   ).catch((err: Error) => ({ sent: false, error: err.message }));
   if (result.sent) return { delivery: "email" };
   log.warn({ invitationId: inv.id }, "Invitation email failed; returning link to inviter");
@@ -773,7 +772,6 @@ export function registerTeamRoutes(app: Express) {
         if (!signedIn && (!passwordHash || !body.name)) {
           z.object({ name: zText(100, { min: 1 }), password: passwordPolicySchema }).parse(body);
         }
-        if (!signedIn) await assertPortalInviteEmailAvailable(tx, email);
         const claimPlaceholder = !signedIn && !!user;
         const grantor = accounts.find((account) => account.id === inv.invitedBy);
         await assertTeamInviteAuthority(inv.companyId, grantor, user, inv.role, tx, "share");

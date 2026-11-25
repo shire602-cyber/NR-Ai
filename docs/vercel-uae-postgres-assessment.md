@@ -81,24 +81,18 @@ plus workers on a UAE container service. [Fargate regions](https://docs.aws.amaz
   all-tenant GL scans, large report rendering and delivery, and follow-up writes attached to
   `res.on("finish")` into durable work. Preserve recurring-invoice row locks and ledger posting
   invariants. For long requests, return a job ID and status endpoint and publish completed
-  artefacts to object storage. Short, measured requests can stay synchronous. Fluid compute
-  defaults to 300 seconds and generally allows up to 800 seconds on Pro and Enterprise, with an
-  extended-duration beta. These limits also cap cron invocations, and a request timeout or
-  deployment must leave work recoverable. [Bulk OCR](../server/routes/firm-bulk.routes.ts#L233-L262) ·
+  artefacts to object storage. Keep synchronous requests within the project's Function duration
+  limit. A request timeout or deployment must leave work recoverable. [Bulk OCR](../server/routes/firm-bulk.routes.ts#L233-L262) ·
   [Compliance refresh](../server/routes/compliance-obligation-refresh.ts#L53-L110) ·
   [Recurring invoices](../server/services/scheduler.service.ts#L647-L709) ·
   [Function limits](https://vercel.com/docs/functions/limitations)
-- A Vercel Cron alternative is a production-only UTC GET protected by `CRON_SECRET` that
-  records or enqueues work quickly. The minute cadence needs Pro or Enterprise. Cron invocations
-  can overlap or arrive twice, and Vercel does not retry a failed invocation. Use a database
-  uniqueness key or lease, catch-up scans, and alerts on missed runs. Vercel Queues, if used, is
+- Run the minute-cadence scheduler in the UAE worker. Use a database uniqueness key or lease,
+  catch-up scans, and alerts on missed runs. Vercel Queues, if used, is
   at-least-once. Verify the region for messages, retained state, and consumers, and keep payloads
   to opaque job IDs. Use provider idempotency keys where supported. For ambiguous email, payment,
   or e-invoice delivery, reconcile provider state before replay. Vercel Daemons is in public beta,
   runs only in production deployments, and has no persistent local disk. Verify Dubai,
   private-network reachability, restarts, and deployment handoff before depending on it.
-  [Cron management](https://vercel.com/docs/schedules/cron-jobs/manage-cron-jobs) ·
-  [Cron plans](https://vercel.com/docs/schedules/cron-jobs/usage-and-pricing) ·
   [Queues](https://vercel.com/docs/queues) · [Daemons limits](https://vercel.com/docs/daemons/limits) ·
   [Email send and status update](../server/outbox/outbox.ts#L220-L251)
 
@@ -176,7 +170,7 @@ nonproduction environment. [Vercel Secure Compute](https://vercel.com/docs/netwo
 
 **Use the existing Drizzle and `pg` driver path.** The default app pool allows 10 connections per
 instance and the current session store has its own connection source. Give Functions a small
-reused pool, control connection lifetimes during Fluid suspension, and reserve database
+reused pool, control idle connection lifetimes, and reserve database
 capacity for the worker, maintenance, migrations and failover. Measure connections at spike
 concurrency and after idle or redeploy. Use a direct private connection and a separate
 migration role for the release runner. Rehearse advisory locks, session state, transactions,

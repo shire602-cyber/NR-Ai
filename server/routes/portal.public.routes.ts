@@ -18,7 +18,7 @@
  * Identity is the contact id carried by the token. Only issued documents (sent, posted,
  * partial, paid) are ever listed or downloadable; drafts, void and cancelled are 404.
  */
-import type { Express, NextFunction, Request, RequestHandler, Response } from "express";
+import type { Express, Request, RequestHandler, Response } from "express";
 import { and, eq, inArray } from "drizzle-orm";
 import { storage } from "../storage";
 import { db, pool } from "../db";
@@ -57,6 +57,7 @@ import {
   revokePortalLinks,
   verifyLoginCode,
 } from "../services/portal-access.service";
+import { isKnownInviteToken } from "../services/portal-invitations.service";
 import { buildCustomerStatement, renderStatementPdf } from "../services/customer-statement.service";
 import {
   contentDisposition,
@@ -67,7 +68,7 @@ import {
 import { checkoutForInvoice, paymentsAvailability, publicBaseUrl } from "../services/payments";
 import { buildPortalCodeEmail, sendEmail } from "../services/email.service";
 import { resolveEmailLanguage } from "../services/email-layout";
-import { receivableSettledSql } from "../reporting/settlement";
+import { localDateSql, receivableSettledSql } from "../reporting/settlement";
 import { actorFromRequest, assertCompanyPermission } from "../services/approval-rules.service";
 import type { Permission } from "../../shared/permissions";
 import {
@@ -84,10 +85,19 @@ export const ISSUED_STATUSES = ["sent", "posted", "partial", "paid"] as const;
  * Retry-After when the caller is over the limit.
  */
 export function portalGuard(scope: string): RequestHandler {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return asyncHandler(async (req, res, next) => {
     const ip = clientIp(req);
-    const raw = req.params.token ?? req.params.shareToken ?? null;
-    const reason = checkPortalThrottle(ip, raw ? `${scope}:${hashPortalToken(raw)}` : null);
+    const bodyToken = (req.body as { token?: unknown } | undefined)?.token;
+    const raw =
+      req.params.token ??
+      req.params.shareToken ??
+      (scope === "invite" && typeof bodyToken === "string" ? bodyToken : null) ??
+      null;
+    const reason = await checkPortalThrottle(
+      ip,
+      raw ? `${scope}:${hashPortalToken(raw)}` : null,
+      scope === "invite" && typeof raw === "string" ? () => isKnownInviteToken(raw) : undefined
+    );
     if (reason) {
       void logPortalAccess({ req, outcome: "throttled" });
       res.setHeader("Retry-After", "600");
@@ -98,12 +108,12 @@ export function portalGuard(scope: string): RequestHandler {
       return;
     }
     next();
-  };
+  });
 }
 
 /** Count a bad credential against the caller's IP (used by share-link routes too). */
-export function notePortalFailure(req: Request, outcome = "invalid"): void {
-  recordPortalFailure(clientIp(req));
+export async function notePortalFailure(req: Request, outcome = "invalid"): Promise<void> {
+  await recordPortalFailure(clientIp(req));
   if (req.path.startsWith("/api/public/")) void logPortalAccess({ req, outcome });
 }
 
@@ -117,7 +127,7 @@ interface PortalCtx {
 async function portalContact(req: Request, res: Response): Promise<PortalCtx | null> {
   const r = await resolvePortalToken(req.params.token);
   if (r.status !== "ok") {
-    notePortalFailure(req);
+    await notePortalFailure(req);
     await logPortalAccess({
       req,
       outcome: r.status,
@@ -209,7 +219,9 @@ export async function contactInvoices(
               'providerStatus', d.provider_status, 'deliveryStatus', d.delivery_status,
               'reportingStatus', d.reporting_status, 'validation', d.validation
             ) END AS einvoice_evidence,
-            ${receivableSettledSql("i")}::text AS settled
+            ${receivableSettledSql("i")}::text AS settled,
+            (i.due_date IS NOT NULL
+              AND ${localDateSql("i.due_date")} < ${localDateSql("now()")}) AS past_due
        FROM invoices i
        LEFT JOIN einvoice_documents d ON d.company_id = i.company_id AND d.invoice_id = i.id
       WHERE i.company_id = $1 AND i.contact_id = $2
@@ -217,7 +229,6 @@ export async function contactInvoices(
       ORDER BY i.date DESC, i.number DESC`,
     params
   );
-  const now = Date.now();
   return rows.map((r: Record<string, unknown>) => {
     const total = Number(r.total);
     const isCredit = r.invoice_type === "credit_note";
@@ -249,10 +260,12 @@ export async function contactInvoices(
         ? "credit"
         : r.status === "paid" || due === 0
           ? "paid"
-          : settled > 0
-            ? "partially_paid"
-            : dueDate && dueDate.getTime() < now
-              ? "overdue"
+          : // Overdue is a calendar-date rule (Asia/Dubai): due before today, with anything still
+            // open, whether or not part of it was paid. Due today is not overdue.
+            r.past_due === true
+            ? "overdue"
+            : settled > 0
+              ? "partially_paid"
               : "unpaid",
       einvoice: eInvoiceOutcome
         ? {
@@ -327,7 +340,7 @@ export function registerPortalPublicRoutes(app: Express) {
         message:
           "If this email belongs to a customer of this company, a sign-in code is on its way.",
       };
-      if (!allowCodeRequest(email)) return res.json(generic);
+      if (!(await allowCodeRequest(email))) return res.json(generic);
       const created = await createLoginCode(companyId, email);
       await logPortalAccess({
         req,
@@ -366,7 +379,7 @@ export function registerPortalPublicRoutes(app: Express) {
       }>(req);
       const session = await verifyLoginCode(companyId, email, code);
       if (!session) {
-        notePortalFailure(req);
+        await notePortalFailure(req);
         await logPortalAccess({ req, outcome: "code_invalid" });
         throw new DomainError(
           "PORTAL_CODE_INVALID",

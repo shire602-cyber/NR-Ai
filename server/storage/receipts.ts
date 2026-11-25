@@ -47,8 +47,13 @@ export class ReceiptStorage extends SalesStorage {
     return receipt;
   }
 
-  async createCapturedReceipt(data: InsertReceipt, confirmDuplicate: boolean) {
+  async createCapturedReceipt(
+    data: InsertReceipt,
+    confirmDuplicate: boolean,
+    signal?: AbortSignal
+  ) {
     return withLedgerTx(async (tx) => {
+      signal?.throwIfAborted();
       if (data.contentSha256) {
         await tx.execute(
           sql`SELECT pg_advisory_xact_lock(hashtext(${data.companyId}), hashtext(${data.contentSha256}))`
@@ -81,11 +86,13 @@ export class ReceiptStorage extends SalesStorage {
           .limit(1);
         if (duplicate) return { duplicate };
       }
+      signal?.throwIfAborted();
       const [created] = await tx
         .insert(receipts)
         .values(data)
         .onConflictDoNothing({ target: [receipts.companyId, receipts.captureId] })
         .returning();
+      signal?.throwIfAborted();
       if (created) return { receipt: created, replay: false };
       const [existing] = await tx
         .select()

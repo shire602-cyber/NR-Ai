@@ -10,7 +10,7 @@
  * invoice is a 404. A login with no (or a removed) binding gets 403.
  */
 import type { Express, Request, Response, NextFunction, RequestHandler } from "express";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { storage } from "../storage";
 import { db } from "../db";
 import { authMiddleware } from "../middleware/auth";
@@ -20,9 +20,8 @@ import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
 import {
+  companies,
   customerPortalAccounts,
-  firmClientLinks,
-  firms,
   invoices,
   messages,
   type Company,
@@ -41,8 +40,10 @@ import {
 } from "../services/document-vault.service";
 import {
   portalMessageBody,
+  portalProfileBody,
   statementQuery,
   type PortalMessageBody,
+  type PortalProfileBody,
 } from "../../shared/validators/portal";
 import { contactInvoices, ISSUED_STATUSES } from "./portal.public.routes";
 import { getCustomerEInvoiceOutcome } from "../services/einvoice/customer-outcome";
@@ -77,16 +78,23 @@ async function requirePortalUser(req: Request, res: Response, next: NextFunction
   const binding =
     header === undefined || preferred ? await portalAccountForUser(user.id, preferred) : null;
   if (!binding) {
-    const [removed] = await db
-      .select({ id: customerPortalAccounts.id })
+    // The supplier whose access went away: the selected binding for a stale header, otherwise
+    // the newest one. Only the user's OWN bindings are named, so nothing leaks across tenants.
+    const own = await db
+      .select({ id: customerPortalAccounts.id, supplierName: companies.name })
       .from(customerPortalAccounts)
+      .leftJoin(companies, eq(companies.id, customerPortalAccounts.companyId))
       .where(eq(customerPortalAccounts.userId, user.id))
-      .limit(1);
+      .orderBy(desc(customerPortalAccounts.createdAt));
+    // A stale or forged header names nothing it does not own: only an exact own binding is named.
+    const named = preferred ? own.find((row) => row.id === preferred) : own[0];
+    const removed = own.length > 0 ? { supplierName: named?.supplierName ?? null } : null;
     res.status(403).json(
       removed
         ? {
             code: "PORTAL_ACCESS_REVOKED",
             message: "Your access to this customer portal was removed.",
+            supplierName: removed.supplierName ?? null,
           }
         : {
             code: "PORTAL_CONTACT_NOT_LINKED",
@@ -104,6 +112,7 @@ async function requirePortalUser(req: Request, res: Response, next: NextFunction
     res.status(403).json({
       code: "PORTAL_ACCESS_REVOKED",
       message: "Your access to this customer portal was removed.",
+      supplierName: company?.name ?? null,
     });
     return;
   }
@@ -160,6 +169,30 @@ export function totalsByCurrency(
     .sort((a, b) => a.currency.localeCompare(b.currency));
 }
 
+/** S5-SEC-6: what a customer sees of a message: no sender, recipient, company or contact ids. */
+export function portalMessageDto(
+  m: {
+    id: string;
+    threadId: string | null;
+    subject: string | null;
+    content: string;
+    senderId: string;
+    isRead: boolean | null;
+    createdAt: Date;
+  },
+  viewerId: string
+) {
+  return {
+    id: m.id,
+    threadId: m.threadId,
+    subject: m.subject,
+    content: m.content,
+    isRead: !!m.isRead,
+    fromMe: m.senderId === viewerId,
+    createdAt: m.createdAt,
+  };
+}
+
 export function registerClientPortalRoutes(app: Express): void {
   const chain: RequestHandler[] = [
     authMiddleware as RequestHandler,
@@ -184,16 +217,10 @@ export function registerClientPortalRoutes(app: Express): void {
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
       const { accountId, company, contact } = scopeOf(req);
-      // The accounting firm serving this client (active engagement), for the portal header.
-      const [firm] = await db
-        .select({ name: firms.name })
-        .from(firmClientLinks)
-        .innerJoin(firms, eq(firms.id, firmClientLinks.firmId))
-        .where(and(eq(firmClientLinks.companyId, company.id), eq(firmClientLinks.status, "active")))
-        .limit(1);
+      // S5-SEC-6: the customer sees the supplier only; the supplier's accounting firm is NR firm
+      // context and is never returned here.
       res.json({
         portalAccountId: accountId,
-        firmName: firm?.name ?? null,
         id: company.id,
         name: company.name,
         logoUrl: company.logoUrl ?? null,
@@ -228,6 +255,20 @@ export function registerClientPortalRoutes(app: Express): void {
     })
   );
 
+  // The customer edits their own display name. Only `name` is accepted; email, user type and the
+  // supplier binding can never be changed here, and the row updated is the signed-in user's own.
+  app.patch(
+    "/api/client-portal/profile",
+    ...chain,
+    strictBody(portalProfileBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { userId } = scopeOf(req);
+      const { name } = parsedBody<PortalProfileBody>(req);
+      const user = await storage.updateUser(userId, { name });
+      res.json({ id: user.id, name: user.name, email: user.email });
+    })
+  );
+
   app.get(
     "/api/client-portal/dashboard",
     ...chain,
@@ -238,9 +279,11 @@ export function registerClientPortalRoutes(app: Express): void {
       const outstanding = rows.filter((r) => r.amountDue > 0);
       const overdue = rows.filter((r) => r.paymentStatus === "overdue");
       const paid = rows.filter((r) => r.paymentStatus === "paid");
+      // "Next payment due" is the earliest open invoice that is not yet overdue (due today or later);
+      // an overdue invoice is reported by the overdue totals, never as an upcoming due date.
       const nextDue =
         outstanding
-          .filter((r) => r.dueDate)
+          .filter((r) => r.dueDate && r.paymentStatus !== "overdue")
           .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))[0] ?? null;
       const docs = await listVaultDocuments(companyId, { contactId: contact.id });
       res.json({
@@ -410,7 +453,7 @@ export function registerClientPortalRoutes(app: Express): void {
     "/api/client-portal/messages",
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, contact } = scopeOf(req);
+      const { companyId, contact, userId } = scopeOf(req);
       const rows = await db
         .select()
         .from(messages)
@@ -422,7 +465,7 @@ export function registerClientPortalRoutes(app: Express): void {
           )
         )
         .orderBy(asc(messages.createdAt));
-      res.json(rows);
+      res.json(rows.map((m) => portalMessageDto(m, userId)));
     })
   );
 
@@ -470,7 +513,7 @@ export function registerClientPortalRoutes(app: Express): void {
           visibility: "customer",
         })
         .returning();
-      res.status(201).json(message);
+      res.status(201).json(portalMessageDto(message, userId));
     })
   );
 }
