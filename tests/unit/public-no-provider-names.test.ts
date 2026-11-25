@@ -109,6 +109,22 @@ function pdfWithContent(streams: string[]): Buffer {
   ]);
 }
 
+// PDF.js already emits real spaces inside `str` (often as their own item), so same-line items are
+// joined verbatim; a line ends at hasEOL or at the end of the page's items.
+function pdfJsPageLines(items: { str: string; hasEOL?: boolean }[]): string[] {
+  const lines: string[] = [];
+  const parts: string[] = [];
+  for (const item of items) {
+    if (item.str) parts.push(item.str);
+    if (item.hasEOL) {
+      if (parts.length) lines.push(parts.join(""));
+      parts.length = 0;
+    }
+  }
+  if (parts.length) lines.push(parts.join(""));
+  return lines;
+}
+
 async function pdfJsTextLines(pdf: Buffer): Promise<string[]> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const loadingTask = pdfjs.getDocument({ data: new Uint8Array(pdf), useSystemFonts: true });
@@ -116,17 +132,9 @@ async function pdfJsTextLines(pdf: Buffer): Promise<string[]> {
     const doc = await loadingTask.promise;
     const lines: string[] = [];
     for (let i = 1; i <= doc.numPages; i++) {
-      const content = await (await doc.getPage(i)).getTextContent();
-      const parts: string[] = [];
-      for (const item of content.items) {
-        if (!("str" in item)) continue;
-        if (item.str) parts.push(item.str);
-        if (item.hasEOL) {
-          if (parts.length) lines.push(parts.join(" "));
-          parts.length = 0;
-        }
-      }
-      if (parts.length) lines.push(parts.join(" "));
+      const page = await doc.getPage(i);
+      const items = (await page.getTextContent()).items.filter((item) => "str" in item);
+      lines.push(...pdfJsPageLines(items));
     }
     return lines;
   } finally {
@@ -276,6 +284,29 @@ describe("public site names no e-invoicing provider", () => {
     if (!matches) expect(lines).toEqual(["A", "Cube"]);
     expect(lines.some(namesProvider)).toBe(matches);
   }, 60_000);
+
+  it("joins a provider name split across same-line PDF.js items without inserting a space", async () => {
+    const doc = new PDFDocument();
+    const pdf = collectPdf(doc);
+    doc.text("Comply", 40, 40, { lineBreak: false });
+    const x = 40 + doc.widthOfString("Comply");
+    doc.font("Helvetica-Bold").text("ance", x, 40, { lineBreak: false });
+    doc.end();
+
+    const lines = await pdfJsTextLines(await pdf);
+    expect(lines).toEqual(["Complyance"]);
+    expect(lines.some(namesProvider)).toBe(true);
+  }, 60_000);
+
+  it("joins an Arabic provider spelling split across PDF.js-shaped items, keeping real spaces", () => {
+    // Pure helper with PDF.js-shaped items: shaped Arabic font/BiDi output is impractical to fix in a PDF.
+    const split = [{ str: "كومب" }, { str: "لاينس", hasEOL: true }]; // komb + layns
+    expect(pdfJsPageLines(split).some(namesProvider)).toBe(true);
+    // A real space item stays a space, and hasEOL still ends the line.
+    expect(
+      pdfJsPageLines([{ str: "A" }, { str: " " }, { str: "Cube", hasEOL: true }, { str: "Cube" }]),
+    ).toEqual(["A Cube", "Cube"]);
+  });
 
   it.each(pdfs.map((f) => [rel(f), f]))("pdf text %s", async (_n, f) => {
     const pdf = readFileSync(f);
