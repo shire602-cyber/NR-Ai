@@ -240,7 +240,10 @@ function encodeReply(value: unknown): Buffer {
   return Buffer.concat([Buffer.from("$" + raw.length + "\r\n"), raw, Buffer.from("\r\n")]);
 }
 
-function decodeCommand(buf: Buffer, offset = 0): { value: Array<string | number>; rest: number } | null {
+function decodeCommand(
+  buf: Buffer,
+  offset = 0
+): { value: Array<string | number>; rest: number } | null {
   if (offset >= buf.length || buf[offset] !== 42) return null;
   const nl = buf.indexOf("\r\n", offset);
   if (nl === -1) return null;
@@ -261,13 +264,23 @@ function decodeCommand(buf: Buffer, offset = 0): { value: Array<string | number>
   return { value: items, rest: cursor };
 }
 
-async function startRedisUrlStub(password = "secret") {
+const REDIS_FIXTURE_AUTH = "example-only-value";
+
+async function startRedisUrlStub(db: number | null = null) {
   const buckets = new Map<string, Map<string, number>>();
+  const fixed = new Map<string, { count: number; expiresAt: number }>();
   let now = Date.now();
+  let connections = 0;
+  let rejectedBeforeReady = 0;
+  const commands: string[][] = [];
   const sockets = new Set<net.Socket>();
+  let armPause = false;
+  let pauseAck: (() => void) | null = null;
   const server = net.createServer((socket) => {
+    connections += 1;
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
+    let stage: "auth" | "select" | "ready" = "auth";
     let buf = Buffer.alloc(0);
     socket.on("data", (chunk) => {
       buf = Buffer.concat([buf, chunk]);
@@ -277,10 +290,36 @@ async function startRedisUrlStub(password = "secret") {
         buf = buf.subarray(decoded.rest);
         const [command, ...args] = decoded.value.map(String);
         const reply = (value: unknown) => socket.write(encodeReply(value));
-        if (command === "AUTH") {
-          reply(args.at(-1) === password ? "OK" : new Error("ERR invalid password"));
+        if (stage === "auth") {
+          if (command !== "AUTH" || args[0] !== "default" || args[1] !== REDIS_FIXTURE_AUTH) {
+            rejectedBeforeReady += 1;
+            reply(new Error("NOAUTH"));
+            continue;
+          }
+          commands.push(["AUTH", ...args]);
+          reply("OK");
+          stage = db != null && db !== 0 ? "select" : "ready";
           continue;
         }
+        if (stage === "select") {
+          if (command !== "SELECT" || args[0] !== String(db)) {
+            rejectedBeforeReady += 1;
+            reply(new Error("NOAUTH"));
+            continue;
+          }
+          commands.push(["SELECT", ...args]);
+          reply("OK");
+          stage = "ready";
+          continue;
+        }
+        if (armPause) {
+          armPause = false;
+          const ack = pauseAck;
+          pauseAck = null;
+          ack?.();
+          continue;
+        }
+        commands.push([command, ...args]);
         if (command === "DEL") {
           reply(Number(buckets.delete(String(args[0]))));
           continue;
@@ -295,6 +334,20 @@ async function startRedisUrlStub(password = "secret") {
         }
         const [script, , bucketKey, horizon, ...argv] = args;
         const key = String(bucketKey);
+        if (script === FIXED_WINDOW) {
+          const [action, max] = argv;
+          const existing = fixed.get(key);
+          const current = existing && existing.expiresAt > now ? existing : undefined;
+          if (action === "peek") {
+            reply([current?.count ?? 0, 0]);
+            continue;
+          }
+          const count = (current?.count ?? 0) + 1;
+          const expiresAt = current?.expiresAt ?? now + Number(horizon);
+          if (!max || count <= Number(max)) fixed.set(key, { count, expiresAt });
+          reply([count, expiresAt - now]);
+          continue;
+        }
         const hits = buckets.get(key) ?? new Map<string, number>();
         for (const [id, at] of hits) {
           if (at <= now - Number(horizon)) hits.delete(id);
@@ -330,34 +383,64 @@ async function startRedisUrlStub(password = "secret") {
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
+  const dbPath = db == null ? "" : "/" + String(db);
   return {
-    url: "redis://default:" + encodeURIComponent(password) + "@127.0.0.1:" + port,
+    url:
+      "redis://default:" + encodeURIComponent(REDIS_FIXTURE_AUTH) + "@127.0.0.1:" + port + dbPath,
+    connections: () => connections,
+    commands: () => commands,
+    rejectedBeforeReady: () => rejectedBeforeReady,
     advance: (ms: number) => {
       now += ms;
+    },
+    pauseNext: () =>
+      new Promise<void>((resolve) => {
+        armPause = true;
+        pauseAck = resolve;
+      }),
+    dropSockets: () => {
+      const open = [...sockets];
+      return Promise.all(
+        open.map(
+          (socket) =>
+            new Promise<void>((resolve) => {
+              if (socket.destroyed) {
+                resolve();
+                return;
+              }
+              socket.once("close", () => resolve());
+              socket.destroy();
+            })
+        )
+      );
     },
     close: () =>
       new Promise<void>((resolve, reject) => {
         for (const socket of sockets) socket.destroy();
+        if (!server.listening) {
+          resolve();
+          return;
+        }
         server.close((error) => (error ? reject(error) : resolve()));
       }),
   };
 }
 
 it("parses redis and rediss URLs", () => {
-  expect(parseRedisUrl("redis://default:p%40ss@example.test:6379/2")).toEqual({
-    host: "example.test",
-    port: 6379,
-    username: "default",
-    password: "p@ss",
-    db: 2,
-    useTls: false,
-  });
-  expect(parseRedisUrl("rediss://example.test")).toMatchObject({
-    port: 6380,
-    useTls: true,
-    password: null,
-  });
+  const parsed = parseRedisUrl("redis://default:example%2Fonly@example.test:6379/2");
+  expect(parsed.host).toBe("example.test");
+  expect(parsed.port).toBe(6379);
+  expect(parsed.username).toBe("default");
+  expect(parsed.password).toBe("example/only");
+  expect(parsed.db).toBe(2);
+  expect(parsed.useTls).toBe(false);
+  const tls = parseRedisUrl("rediss://example.test");
+  expect(tls.port).toBe(6380);
+  expect(tls.useTls).toBe(true);
+  expect(tls.password).toBeNull();
+  expect(tls.db).toBeNull();
   expect(() => parseRedisUrl("https://example.test")).toThrow(/REDIS_URL/);
+  expect(() => parseRedisUrl("redis://example.test/nope")).toThrow(/REDIS_URL/);
 });
 
 it("uses REDIS_URL in production without Upstash", async () => {
@@ -378,6 +461,58 @@ it("uses REDIS_URL in production without Upstash", async () => {
     expect(await second.recordFailure(identity)).toMatchObject({ lockedNow: true, failures: 2 });
     redis.advance(1000);
     expect(await first.status(identity)).toMatchObject({ locked: false, failures: 2 });
+    expect(redis.connections()).toBe(1);
+    expect(redis.rejectedBeforeReady()).toBe(0);
+    expect(redis.commands()[0]).toEqual(["AUTH", "default", REDIS_FIXTURE_AUTH]);
+  } finally {
+    await redis.close();
+  }
+});
+
+it("shares one authenticated TCP client and fails closed when that connection drops", async () => {
+  const redis = await startRedisUrlStub(2);
+  try {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL", undefined);
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", undefined);
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", undefined);
+    vi.stubEnv("REDIS_URL", redis.url);
+    vi.stubEnv("RL_LOGIN_LOCK_MAX", "5");
+    vi.stubEnv("RL_LOGIN_LOCK_WINDOW_MS", "1000");
+    const client = configuredThrottleRedis();
+    expect(client).toBeInstanceOf(RedisUrlThrottleClient);
+    expect(configuredThrottleRedis()).toBe(client);
+    const first = buildLockoutTracker("login");
+    const second = buildLockoutTracker("login");
+    const windows = new FixedWindowThrottle("api-key");
+    const [left, right, ...counts] = await Promise.all([
+      first.recordFailure(identity),
+      second.recordFailure(identity),
+      windows.check(identity, 1000, "hit", 5),
+      windows.check("other@example.test|192.0.2.2", 1000, "hit", 5),
+    ]);
+    expect(redis.connections()).toBe(1);
+    expect(redis.rejectedBeforeReady()).toBe(0);
+    expect(redis.commands()[0]).toEqual(["AUTH", "default", REDIS_FIXTURE_AUTH]);
+    expect(redis.commands()[1]).toEqual(["SELECT", "2"]);
+    expect(
+      redis
+        .commands()
+        .slice(2)
+        .every(([command]) => command === "EVAL")
+    ).toBe(true);
+    expect([left.failures, right.failures].sort()).toEqual([1, 2]);
+    expect(counts.map((hit) => hit.count).sort()).toEqual([1, 1]);
+
+    const paused = redis.pauseNext();
+    const dropped = first.status(identity);
+    await paused;
+    await redis.dropSockets();
+    await expect(dropped).rejects.toMatchObject({
+      code: "THROTTLE_UNAVAILABLE",
+      statusCode: 503,
+    });
+    expect(redis.connections()).toBe(1);
   } finally {
     await redis.close();
   }

@@ -54,14 +54,21 @@ function decodeResp(buf: Buffer, offset = 0): { value: unknown; rest: number } |
   throw new Error("unsupported RESP type");
 }
 
-export function parseRedisUrl(raw: string): {
+export interface ParsedRedisUrl {
   host: string;
   port: number;
   username: string | null;
   password: string | null;
   db: number | null;
   useTls: boolean;
-} {
+}
+
+/** Shared command surface for the Upstash REST client and the TCP REDIS_URL client. */
+export interface ThrottleRedis {
+  command(...command: Array<string | number>): Promise<unknown>;
+}
+
+export function parseRedisUrl(raw: string): ParsedRedisUrl {
   let parsed: URL;
   try {
     parsed = new URL(raw);
@@ -73,7 +80,7 @@ export function parseRedisUrl(raw: string): {
   }
   const dbRaw = parsed.pathname.replace(/^\//, "");
   const db = dbRaw === "" ? null : Number(dbRaw);
-  if (dbRaw !== "" && (!Number.isInteger(db) || db < 0)) {
+  if (db !== null && (!Number.isInteger(db) || db < 0)) {
     throw new Error("REDIS_URL must be a valid redis:// or rediss:// URL");
   }
   return {
@@ -86,10 +93,12 @@ export function parseRedisUrl(raw: string): {
   };
 }
 
-export class RedisUrlThrottleClient {
+export class RedisUrlThrottleClient implements ThrottleRedis {
   private socket: net.Socket | null = null;
   private buffer = Buffer.alloc(0);
-  private connecting: Promise<void> | null = null;
+  /** Resolves only after AUTH and SELECT. Every caller awaits this same promise. */
+  private ready: Promise<void> | null = null;
+  private generation = 0;
   private readonly pending: Array<{
     resolve: (value: unknown) => void;
     reject: (error: Error) => void;
@@ -102,12 +111,14 @@ export class RedisUrlThrottleClient {
       await this.connect();
       return await this.rawCommand(...command);
     } catch {
-      this.fail(new Error("unavailable"));
+      if (this.socket) this.fail(new Error("unavailable"));
       throw unavailable();
     }
   }
 
   private rawCommand(...command: Array<string | number>): Promise<unknown> {
+    const socket = this.socket;
+    if (!socket) return Promise.reject(new Error("closed"));
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => this.fail(new Error("timeout")), COMMAND_TIMEOUT_MS);
       this.pending.push({
@@ -121,7 +132,7 @@ export class RedisUrlThrottleClient {
           reject(error);
         },
       });
-      this.socket!.write(encodeResp(command), (error) => {
+      socket.write(encodeResp(command), (error) => {
         if (error) this.fail(error);
       });
     });
@@ -129,17 +140,14 @@ export class RedisUrlThrottleClient {
 
   private fail(error: Error) {
     const waiting = this.pending.splice(0);
-    this.destroy();
-    for (const item of waiting) item.reject(error);
-  }
-
-  private destroy() {
-    this.connecting = null;
     const socket = this.socket;
     this.socket = null;
+    this.ready = null;
+    this.generation += 1;
     this.buffer = Buffer.alloc(0);
     socket?.removeAllListeners();
     socket?.destroy();
+    for (const item of waiting) item.reject(error);
   }
 
   private onData(chunk: Buffer) {
@@ -159,41 +167,41 @@ export class RedisUrlThrottleClient {
   }
 
   private connect(): Promise<void> {
-    if (this.socket && !this.socket.destroyed) return Promise.resolve();
-    if (this.connecting) return this.connecting;
-    const target = parseRedisUrl(this.redisUrl);
-    this.connecting = new Promise<void>((resolve, reject) => {
-      const socket = target.useTls
-        ? tls.connect({ host: target.host, port: target.port, servername: target.host })
-        : net.connect({ host: target.host, port: target.port });
-      this.socket = socket;
-      socket.setNoDelay(true);
-      const timer = setTimeout(() => {
-        reject(new Error("timeout"));
-        this.destroy();
-      }, COMMAND_TIMEOUT_MS);
-      const finish = (error?: Error) => {
-        clearTimeout(timer);
-        if (error) {
-          this.destroy();
-          reject(error);
-        } else {
-          resolve();
-        }
-      };
-      socket.once("error", (error) => finish(error));
-      socket.once(target.useTls ? "secureConnect" : "connect", () => {
-        socket.on("data", (chunk) => this.onData(chunk));
-        socket.on("close", () => this.fail(new Error("closed")));
-        void this.handshake(target).then(() => finish()).catch((error: Error) => finish(error));
-      });
-    }).finally(() => {
-      this.connecting = null;
+    if (this.ready) return this.ready;
+    const generation = this.generation;
+    const attempt = this.establish(generation).catch((error: unknown) => {
+      if (this.generation === generation) {
+        this.fail(error instanceof Error ? error : new Error("unavailable"));
+      }
+      throw error;
     });
-    return this.connecting;
+    this.ready = attempt;
+    return attempt;
   }
 
-  private async handshake(target: ReturnType<typeof parseRedisUrl>) {
+  private async establish(generation: number): Promise<void> {
+    const target = parseRedisUrl(this.redisUrl);
+    const socket = await openRedisSocket(target);
+    if (this.generation !== generation) {
+      socket.removeAllListeners();
+      socket.destroy();
+      throw new Error("closed");
+    }
+    this.socket = socket;
+    socket.setNoDelay(true);
+    socket.on("data", (chunk: Buffer) => {
+      if (this.socket === socket) this.onData(chunk);
+    });
+    socket.on("error", (error: Error) => {
+      if (this.socket === socket) this.fail(error);
+    });
+    socket.on("close", () => {
+      if (this.socket === socket) this.fail(new Error("closed"));
+    });
+    await this.handshake(target);
+  }
+
+  private async handshake(target: ParsedRedisUrl) {
     if (target.password) {
       const reply = target.username
         ? await this.rawCommand("AUTH", target.username, target.password)
@@ -207,8 +215,36 @@ export class RedisUrlThrottleClient {
   }
 }
 
+function openRedisSocket(target: ParsedRedisUrl): Promise<net.Socket> {
+  return new Promise((resolve, reject) => {
+    const socket = target.useTls
+      ? tls.connect({ host: target.host, port: target.port, servername: target.host })
+      : net.connect({ host: target.host, port: target.port });
+    let settled = false;
+    const readyEvent = target.useTls ? "secureConnect" : "connect";
+    const onError = (error: Error) => finish(error);
+    const onReady = () => finish();
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.removeListener("error", onError);
+      socket.removeListener(readyEvent, onReady);
+      if (error) {
+        socket.destroy();
+        reject(error);
+      } else {
+        resolve(socket);
+      }
+    };
+    const timer = setTimeout(() => finish(new Error("timeout")), COMMAND_TIMEOUT_MS);
+    socket.once("error", onError);
+    socket.once(readyEvent, onReady);
+  });
+}
+
 /** Upstash-compatible Redis REST transport for single commands. */
-export class RedisThrottleClient {
+export class RedisThrottleClient implements ThrottleRedis {
   constructor(
     private readonly url: string,
     private readonly token: string
@@ -233,7 +269,17 @@ export class RedisThrottleClient {
   }
 }
 
-export function configuredThrottleRedis(): RedisThrottleClient | RedisUrlThrottleClient | null {
+const sharedThrottleClients = new Map<string, ThrottleRedis>();
+
+function shareThrottleClient(key: string, create: () => ThrottleRedis): ThrottleRedis {
+  const existing = sharedThrottleClients.get(key);
+  if (existing) return existing;
+  const client = create();
+  sharedThrottleClients.set(key, client);
+  return client;
+}
+
+export function configuredThrottleRedis(): ThrottleRedis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
   const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
   const redisUrl = process.env.REDIS_URL?.trim();
@@ -242,7 +288,10 @@ export function configuredThrottleRedis(): RedisThrottleClient | RedisUrlThrottl
     if (!URL.canParse(url) || (sharedRequired && new URL(url).protocol !== "https:")) {
       throw new Error("UPSTASH_REDIS_REST_URL must be a valid URL (HTTPS in production)");
     }
-    return new RedisThrottleClient(url, token);
+    return shareThrottleClient(
+      `upstash:${url}:${token}`,
+      () => new RedisThrottleClient(url, token)
+    );
   }
   if (url || token) {
     throw new Error(
@@ -251,7 +300,7 @@ export function configuredThrottleRedis(): RedisThrottleClient | RedisUrlThrottl
   }
   if (redisUrl) {
     parseRedisUrl(redisUrl);
-    return new RedisUrlThrottleClient(redisUrl);
+    return shareThrottleClient(`redis:${redisUrl}`, () => new RedisUrlThrottleClient(redisUrl));
   }
   if (sharedRequired) {
     throw new Error(
@@ -330,7 +379,7 @@ return { count, math.max(0, redis.call("PTTL", key)) }
 
 export class RedisThrottleBucket {
   constructor(
-    private readonly redis: RedisThrottleClient,
+    private readonly redis: ThrottleRedis,
     private readonly namespace: string,
     private readonly horizonMs: number
   ) {}
