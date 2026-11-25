@@ -265,99 +265,14 @@
   text-decoration: underline;
 }
 
-/* ── Header ─────────────────────────────────────────────────────────────── */
-.mk-header {
-  position: sticky;
-  inset-block-start: 0;
-  z-index: 40;
-  background: color-mix(in srgb, var(--canvas) 86%, transparent);
-  backdrop-filter: saturate(1.4) blur(14px);
-  -webkit-backdrop-filter: saturate(1.4) blur(14px);
-  border-block-end: 1px solid transparent;
-  transition: border-color var(--dur) var(--ease);
-}
-.mk-header[data-scrolled="true"] {
-  border-block-end-color: var(--hairline);
-}
-.mk-header__bar {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  block-size: 4rem;
-}
-.mk-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6rem;
-  font-weight: 600;
-  font-size: 1rem;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-  flex: none;
-}
-/* 44px hit area for the logo and inline text links on touch screens. */
-@media (pointer: coarse) {
-  .mk-brand,
-  .mk-link {
-    min-block-size: 2.75rem;
-  }
-}
+/* The public header and footer are the homepage ones (phase/SiteHeader, phase/home/SiteFooter). */
 .mk-brand__dot {
   color: var(--brand);
 }
-.mk-nav {
-  display: none;
-  align-items: center;
-  gap: 0.25rem;
-}
-.mk-nav a {
-  padding: 0.5rem 0.75rem;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-small);
-  font-weight: 500;
-  color: var(--ink-2);
-  transition: color var(--dur) var(--ease);
-}
-.mk-nav a:hover,
-.mk-nav a[aria-current="page"] {
-  color: var(--ink);
-}
-.mk-header__actions {
-  margin-inline-start: auto;
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-.mk-header__desktop-only {
-  display: none;
-}
-.mk-mobile-menu {
-  border-block-start: 1px solid var(--hairline);
-  background: var(--canvas);
-  padding-block: 0.75rem 1.25rem;
-}
-.mk-mobile-menu a.mk-mobile-menu__link {
-  display: block;
-  padding-block: 0.8rem;
-  font-size: 1.0625rem;
-  font-weight: 500;
-  color: var(--ink);
-  border-block-end: 1px solid var(--hairline);
-}
-.mk-mobile-menu__ctas {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-  margin-block-start: 1.25rem;
-}
-@media (min-width: 960px) {
-  .mk-nav,
-  .mk-header__desktop-only {
-    display: flex;
-  }
-  .mk-header__mobile-only,
-  .mk-mobile-menu {
-    display: none;
+/* 44px hit area for inline text links on touch screens. */
+@media (pointer: coarse) {
+  .mk-link {
+    min-block-size: 2.75rem;
   }
 }
 
@@ -1187,83 +1102,6 @@
 .mk-cta .mk-lead {
   max-inline-size: 36rem;
   margin: 1.25rem auto 0;
-}
-
-/* ── Footer ─────────────────────────────────────────────────────────────── */
-.mk-footer {
-  border-block-start: 1px solid var(--hairline);
-  background: var(--canvas-sunken);
-  padding-block: clamp(3rem, 2rem + 3vw, 4.5rem) 2rem;
-  font-size: var(--text-small);
-}
-.mk-footer__grid {
-  display: grid;
-  gap: 2.5rem;
-  grid-template-columns: 1fr 1fr;
-}
-.mk-footer__brand {
-  grid-column: 1 / -1;
-}
-@media (min-width: 960px) {
-  .mk-footer__grid {
-    grid-template-columns: 1.6fr repeat(4, 1fr);
-  }
-  .mk-footer__brand {
-    grid-column: auto;
-  }
-}
-.mk-footer__brand p {
-  margin-block-start: 1rem;
-  max-inline-size: 22rem;
-  color: var(--ink-2);
-}
-.mk-footer h2 {
-  font-size: var(--text-micro);
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  margin-block-end: 1rem;
-}
-[dir="rtl"] .mk-footer h2 {
-  letter-spacing: 0;
-  font-size: var(--text-small);
-}
-.mk-footer ul {
-  display: grid;
-  gap: 0.65rem;
-}
-.mk-footer ul a {
-  display: inline-flex;
-  align-items: center;
-  color: var(--ink-2);
-  transition: color var(--dur) var(--ease);
-}
-/* X3: 44px hit area for footer links on touch screens. */
-@media (pointer: coarse) {
-  .mk-footer ul a,
-  .mk-nav a {
-    min-block-size: 2.75rem;
-  }
-}
-.mk-footer ul a:hover {
-  color: var(--ink);
-}
-.mk-footer__base {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  margin-block-start: 3rem;
-  padding-block-start: 1.5rem;
-  border-block-start: 1px solid var(--hairline);
-  color: var(--ink-3);
-}
-.mk-footer__controls {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
 }
 
 /* ── Page hero for inner public pages ──────────────────────────────────── */
