@@ -216,6 +216,29 @@ describe("tax-ready prompt", () => {
     expect(put?.body).toEqual({ einvoiceTin: "1001234567" });
   });
 
+  it("keeps the TIN when typed with Arabic digits and saves it in ASCII", async () => {
+    await setLocale("ar");
+    routes["GET /einvoicing/tax-ready"] = () => ({
+      body: { show: true, missing: ["tin"], identity: { ...IDENTITY, tinSuggestion: null } },
+    });
+    routes["PUT /einvoicing/identity"] = () => ({ body: { ...IDENTITY, missing: [] } });
+    await renderPrompt();
+    const input = document.querySelector<HTMLInputElement>('[data-testid="tax-id-tin"]')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(input, "١٠٠١٢٣٤٥٦٧");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(input.value).toBe("1001234567");
+
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[data-testid="tax-ready-save"]')!.click();
+    });
+    await flush();
+    const put = calls.find((c) => c.method === "PUT" && c.url.includes("/einvoicing/identity"));
+    expect(put?.body).toEqual({ einvoiceTin: "1001234567" });
+  });
+
   it("does not open when nothing is missing, and reads in Arabic", async () => {
     routes["GET /einvoicing/tax-ready"] = () => ({
       body: { show: false, missing: [], promptedAt: null, identity: IDENTITY },
