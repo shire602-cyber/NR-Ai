@@ -78,7 +78,7 @@ export default function PortalStatements() {
           ) : undefined
         }
       />
-      {error || isPaused || (retryPending && data === undefined) ? (
+      {error || isPaused || (retryPending && isFetching) ? (
         <Card>
           <CardContent className="p-0">
             <PortalLoadNotice

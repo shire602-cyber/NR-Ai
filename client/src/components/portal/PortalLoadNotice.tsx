@@ -10,7 +10,8 @@ const isOnline = () => onlineManager.isOnline();
 /**
  * Why a portal list is not current: React Query paused the request (offline, or online and waiting
  * for the window to regain focus before retrying), the load or refresh failed, or a retry the
- * customer queued before any data arrived is now fetching. Renders nothing otherwise.
+ * customer queued while a load or refresh was paused is now fetching (with no earlier error to
+ * keep on screen). Renders nothing otherwise.
  */
 export function PortalLoadNotice({
   error,
@@ -48,8 +49,8 @@ export function PortalLoadNotice({
       />
     );
   }
-  // Queued from a paused first load, so there is no earlier error to keep on screen.
-  if (!error && retryPending && retrying && !compact) {
+  // Queued from a paused load or refresh, so there is no earlier error to keep on screen.
+  if (!error && retryPending && retrying) {
     return (
       <ErrorState
         title={t["portal.retryingTitle"]}
@@ -57,6 +58,7 @@ export function PortalLoadNotice({
         onRetry={onRetry}
         retryLabel={t["portal.retry"]}
         retrying
+        compact={compact}
         testId={`portal-${resource}-retrying`}
       />
     );

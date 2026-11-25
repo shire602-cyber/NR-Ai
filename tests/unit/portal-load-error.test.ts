@@ -463,6 +463,80 @@ describe("portal manual retry queued while offline", () => {
     }
   );
 
+  const date = "2026-01-01";
+  const statement = {
+    asOf: date,
+    party: { name: "Customer" },
+    company: { name: "Supplier" },
+    sections: [
+      {
+        currency: "AED",
+        openingBalance: 0,
+        closingBalance: 100,
+        lines: [{ date, type: "invoice", reference: "ST-123", debit: 100, credit: 0, balance: 100 }],
+        aging: { current: 100, days30: 0, days60: 0, days90: 0, over90: 0 },
+      },
+    ],
+  };
+  const invoiceRow = {
+    id: "i1",
+    number: "INV-123",
+    invoiceType: "invoice",
+    date,
+    dueDate: null,
+    currency: "AED",
+    total: 100,
+    amountDue: 0,
+    paymentStatus: "paid",
+    einvoice: null,
+  };
+
+  it.each([
+    ["documents", PortalDocuments, [{ id: "d1", name: "Trade license" }], "Trade license"],
+    ["invoices", PortalInvoices, [invoiceRow], "INV-123"],
+    ["statements", PortalStatements, statement, "ST-123"],
+  ] as const)(
+    "keeps cached %s and a busy Try again while a retry queued during a paused refresh fetches",
+    async (resource, Page, data, record) => {
+      useI18n.setState({ locale: "en" });
+      const path = `/api/client-portal/${resource}`;
+      const load = vi.fn().mockResolvedValue(data);
+      mocks.apiRequest.mockImplementation((_method, requestPath) =>
+        requestPath === path ? load() : Promise.resolve({})
+      );
+      const client = await mount(
+        createElement(PortalAccountScope.Provider, { value: "a1" }, createElement(Page))
+      );
+      expect(container.textContent).toContain(record);
+
+      await act(async () => onlineManager.setOnline(false));
+      await act(async () => {
+        void client.invalidateQueries({ queryKey: mocks.portalQuery(path, "a1").queryKey });
+      });
+      await flush();
+      expect(load).toHaveBeenCalledTimes(1);
+      await act(async () => retryButton(resource, "offline").click());
+      await flush();
+      expectQueued(retryButton(resource, "offline"));
+      expect(container.textContent).toContain(record);
+
+      let finish!: (value: unknown) => void;
+      load.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+      await act(async () => onlineManager.setOnline(true));
+      await flush();
+      expect(load).toHaveBeenCalledTimes(2);
+      expect(byId(`portal-${resource}-offline`)).toBeNull();
+      expectFetching(retryButton(resource, "retrying"));
+      expect(container.textContent).toContain(record);
+
+      await act(async () => finish(data));
+      await flush();
+      expect(byId(`portal-${resource}-retrying`)).toBeNull();
+      expect(byId(`portal-${resource}-load-error`)).toBeNull();
+      expect(container.textContent).toContain(record);
+    }
+  );
+
   it("keeps cached rows and a disabled Try again while a failed refresh retry is queued", async () => {
     useI18n.setState({ locale: "en" });
     const path = "/api/client-portal/documents";
