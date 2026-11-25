@@ -111,6 +111,8 @@ export default function ReceivePayment() {
   const feeFils = toFils(fee);
   const creditFils = Math.max(0, amountFils - appliedFils);
   const overApplied = appliedFils > amountFils;
+  // A bank fee larger than the payment would show a negative net and post nonsense.
+  const feeTooHigh = feeFils > 0 && amountFils > 0 && feeFils > amountFils;
   const overInvoice = open.some(
     (i) => toFils(applied[i.id] ?? 0) > Math.round(i.openBalance * 100)
   );
@@ -183,6 +185,7 @@ export default function ReceivePayment() {
     allocations.length > 0 &&
     !overApplied &&
     !overInvoice &&
+    !feeTooHigh &&
     can("ledger.post") &&
     !record.isPending;
 
@@ -270,6 +273,11 @@ export default function ReceivePayment() {
                 ))}
               </SelectContent>
             </Select>
+            {paymentAccounts.length === 0 && (
+              <p className="text-small text-muted-foreground" data-testid="receive-no-accounts">
+                {t["invoices.receive.noAccounts"]}
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="receive-date">{t["invoices.receive.date"]}</Label>
@@ -349,7 +357,15 @@ export default function ReceivePayment() {
       >
         {!contactId ? (
           <p className="text-small text-muted-foreground">{t["invoices.receive.pickFirst"]}</p>
-        ) : !isFetching && open.length === 0 ? (
+        ) : isFetching && open.length === 0 ? (
+          <p
+            className="text-small text-muted-foreground"
+            role="status"
+            data-testid="receive-loading"
+          >
+            {t["invoices.receive.loading"]}
+          </p>
+        ) : open.length === 0 ? (
           <p className="text-small text-muted-foreground" data-testid="receive-no-open">
             {t["invoices.receive.noOpen"]}
           </p>
@@ -406,7 +422,12 @@ export default function ReceivePayment() {
             {overApplied ? t["invoices.receive.overApplied"] : t["invoices.receive.overInvoice"]}
           </p>
         )}
-        {feeFils > 0 && amountFils > 0 && !foreign && (
+        {feeTooHigh && (
+          <p className="mt-3 text-small text-danger" role="alert" data-testid="receive-fee-error">
+            {t["invoices.receive.feeTooHigh"]}
+          </p>
+        )}
+        {feeFils > 0 && amountFils > 0 && !foreign && !feeTooHigh && (
           <p className="mt-3 text-small text-muted-foreground" data-testid="receive-bank-net">
             {formatMessage(t["invoices.receive.bankNet"], {
               amount: fromFils(amountFils - feeFils),

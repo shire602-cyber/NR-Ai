@@ -518,4 +518,39 @@ describe("WQ1 receive payment (7.6)", () => {
       ],
     });
   });
+  it("blocks a bank fee larger than the payment and shows why", async () => {
+    const BANK = {
+      id: "a0000000-0000-4000-8000-000000001021",
+      code: "1021",
+      nameEn: "Emirates NBD",
+      type: "asset",
+      subType: "bank",
+      isActive: true,
+    };
+    setFixtures({
+      [`${C}/customer-contacts`]: [CONTACT],
+      [`${C}/accounts`]: [BANK],
+      [`${C}/receive-payments/open-invoices?contactId=${CONTACT.id}`]: [
+        {
+          id: "inv-a",
+          number: "INV-9",
+          date: "2026-01-05",
+          dueDate: "2026-02-04",
+          currency: "AED",
+          exchangeRate: 1,
+          total: 100,
+          openBalance: 100,
+        },
+      ],
+    });
+    const { default: ReceivePayment } = await import("../../client/src/pages/sales/ReceivePayment");
+    await renderPage(ReceivePayment);
+    await pickOption(byTestId("select-receive-customer"), CONTACT.name);
+    await flushUntil(() => !!byTestId("receive-row-inv-a"));
+    await type(byTestId("input-receive-amount"), "50");
+    await type(byTestId("input-receive-fee"), "60");
+    await type(byTestId("input-apply-inv-a"), "50");
+    expect(byTestId("receive-fee-error")).toBeTruthy();
+    expect((byTestId("button-record-receipt") as HTMLButtonElement).disabled).toBe(true);
+  });
 });
