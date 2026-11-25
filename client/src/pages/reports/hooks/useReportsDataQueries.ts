@@ -149,6 +149,7 @@ export function useReportsDataQueries({
   const {
     data: profitLoss,
     isLoading: plLoading,
+    fetchStatus: plFetchStatus,
     error: plError,
     refetch: plRefetch,
   } = useQuery<ProfitLossReport>({
@@ -170,6 +171,7 @@ export function useReportsDataQueries({
   const {
     data: balanceSheet,
     isLoading: bsLoading,
+    fetchStatus: bsFetchStatus,
     error: bsError,
     refetch: bsRefetch,
   } = useQuery<BalanceSheetReport>({
@@ -180,6 +182,7 @@ export function useReportsDataQueries({
   const {
     data: vatSummary,
     isLoading: vatLoading,
+    fetchStatus: vatFetchStatus,
     error: vatError,
     refetch: vatRefetch,
   } = useQuery<VATSummaryReport>({
@@ -818,6 +821,9 @@ export function useReportsDataQueries({
     shouldLoadReportDeliveryData,
     profitLoss,
     plLoading,
+    plFetchStatus,
+    bsFetchStatus,
+    vatFetchStatus,
     /** A failed statement fetch is shown as an error, never as an all-zero statement. */
     reportLoadErrors: {
       pl: plError ? { error: plError, retry: () => void plRefetch() } : null,
