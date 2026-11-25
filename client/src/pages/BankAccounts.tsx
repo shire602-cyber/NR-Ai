@@ -10,12 +10,13 @@ import {
 } from "@/components/ui/form-layout";
 import { useFormGate } from "@/hooks/use-form-gate";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
-import { Label } from "@/components/ui/label";
 import { Badge, StatusBadge } from "@/components/ui/badge";
+import { StatementDialog } from "./bank-accounts/StatementDialog";
+import { sectionState } from "./bank-accounts/query-states";
+import { RefreshFailed } from "./bank-accounts/RefreshFailed";
 import { DataTableCard } from "@/components/ui/data-table";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -32,7 +33,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -44,11 +44,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { matchesSearchText } from "@shared/arabic-text";
 import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Building2, FileDown, FileSpreadsheet, Link2, Plus, RotateCcw, Scale } from "lucide-react";
+import { Building2, FileSpreadsheet, Link2, Plus, RotateCcw, Scale, Search } from "lucide-react";
 
 interface BankAccount {
   id: string;
@@ -84,31 +85,6 @@ interface ImportBatch {
   removedCount: number | null;
 }
 
-interface StatementItem {
-  id: string;
-  date: string;
-  description: string;
-  amount: string;
-}
-
-interface Statement {
-  totals: Record<string, string>;
-  differenceFils: number;
-  depositsInTransit: StatementItem[];
-  outstandingPayments: StatementItem[];
-  unrecordedReceipts: StatementItem[];
-  unrecordedPayments: StatementItem[];
-}
-
-interface SavedReconciliation {
-  id: string;
-  periodEnd: string;
-  statementClosingBalance: number;
-  difference: number;
-  status: string;
-  signedOffAt: string | null;
-}
-
 const EMPTY_FORM = {
   nameEn: "",
   bankName: "",
@@ -134,11 +110,18 @@ export default function BankAccounts() {
   ]);
   const [relinkGl, setRelinkGl] = useState("");
   const [statementFor, setStatementFor] = useState<BankAccount | null>(null);
+  // The search is scoped to the company it was typed under; an in-place company switch shows an
+  // empty search (the scoped term may reappear if the user returns to that company).
+  const [searchState, setSearchState] = useState({ companyId, value: "" });
+  const search = searchState.companyId === companyId ? searchState.value : "";
+  const setSearch = (value: string) => setSearchState({ companyId, value });
 
-  const { data: accounts, isLoading } = useQuery<BankAccount[]>({
+  const accountsQuery = useQuery<BankAccount[]>({
     queryKey: ["/api/companies", companyId, "bank-accounts"],
     enabled: !!companyId,
   });
+  const { data: accounts, refetch: refetchAccounts } = accountsQuery;
+  const accountsState = sectionState(accountsQuery);
   const { data: glAccounts } = useQuery<GlAccount[]>({
     queryKey: ["/api/companies", companyId, "accounts"],
     enabled: !!companyId,
@@ -147,10 +130,21 @@ export default function BankAccounts() {
     queryKey: ["/api/companies", companyId, "bank-accounts", "bank-name-suggestions"],
     enabled: !!companyId,
   });
-  const { data: imports } = useQuery<ImportBatch[]>({
+  const importsQuery = useQuery<ImportBatch[]>({
     queryKey: ["/api/companies", companyId, "bank-statements", "imports"],
     enabled: !!companyId,
   });
+  const { data: imports, refetch: refetchImports } = importsQuery;
+  const importsState = sectionState(importsQuery);
+
+  const filteredAccounts = useMemo(() => {
+    if (!search.trim()) return accounts ?? [];
+    // Arabic-aware: Arabic-Indic digits, alef/yeh/teh-marbuta spellings and "ال" are folded.
+    return (accounts ?? []).filter((a) =>
+      matchesSearchText(search, a.nameEn, a.bankName, a.iban, a.accountNumber, a.currency)
+    );
+  }, [accounts, search]);
+  const searching = search.trim() !== "";
 
   const bankGlAccounts = useMemo(
     () =>
@@ -228,14 +222,71 @@ export default function BankAccounts() {
         }
       />
 
+      {(accounts?.length ?? 0) > 0 && (
+        // Icon and padding share the wrapper direction; dir="auto" follows the typed text.
+        <div className="relative w-full sm:w-80 [&:dir(ltr)>input:dir(ltr)]:ps-9 [&:dir(ltr)>input:dir(rtl)]:pe-9 [&:dir(rtl)>input:dir(ltr)]:pe-9 [&:dir(rtl)>input:dir(rtl)]:ps-9">
+          <Search
+            className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            type="search"
+            dir="auto"
+            className="h-9 text-start"
+            placeholder={tr("banking.accounts.searchPlaceholder")}
+            aria-label={tr("banking.accounts.search")}
+            data-testid="input-search-bank-accounts"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      )}
 
+      {accountsState.refreshFailed && (
+        <RefreshFailed
+          message={tr("banking.common.refreshFailed")}
+          onRetry={() => void refetchAccounts()}
+          testId="bank-accounts-refresh-error"
+        />
+      )}
       <DataTableCard
-        status={isLoading ? "loading" : !accounts || accounts.length === 0 ? "empty" : "ready"}
-        empty={{
-          icon: Building2,
-          title: tr("banking.accounts.none"),
-          action: { label: tr("banking.accounts.add"), onClick: () => setCreateOpen(true) },
-        }}
+        status={
+          accountsState.kind === "ready"
+            ? filteredAccounts.length === 0
+              ? "empty"
+              : "ready"
+            : accountsState.kind === "loading"
+              ? "loading"
+              : "error"
+        }
+        error={
+          accountsState.kind === "offline"
+            ? {
+                title: tr("banking.common.offline"),
+                description: tr("banking.common.offlineBody"),
+                onRetry: () => void refetchAccounts(),
+                testId: "bank-accounts-offline",
+              }
+            : {
+                title: tr("banking.accounts.loadError"),
+                description: tr("banking.accounts.loadErrorBody"),
+                onRetry: () => void refetchAccounts(),
+                testId: "bank-accounts-error",
+              }
+        }
+        empty={
+          searching && (accounts?.length ?? 0) > 0
+            ? {
+                icon: Search,
+                title: tr("banking.accounts.noMatch"),
+                description: tr("banking.accounts.noMatchBody"),
+              }
+            : {
+                icon: Building2,
+                title: tr("banking.accounts.none"),
+                action: { label: tr("banking.accounts.add"), onClick: () => setCreateOpen(true) },
+              }
+        }
       >
         <Table className="row-cards">
           <TableHeader>
@@ -251,7 +302,7 @@ export default function BankAccounts() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(accounts ?? []).map((a) => {
+            {filteredAccounts.map((a) => {
               const gl = a.glAccountId ? glById.get(a.glAccountId) : undefined;
               return (
                 <TableRow key={a.id}>
@@ -316,8 +367,38 @@ export default function BankAccounts() {
 
       <section className="space-y-3">
         <h2 className="text-h2 text-foreground">{tr("banking.imports.title")}</h2>
+        {importsState.refreshFailed && (
+          <RefreshFailed
+            message={tr("banking.common.refreshFailed")}
+            onRetry={() => void refetchImports()}
+            testId="bank-imports-refresh-error"
+          />
+        )}
         <DataTableCard
-          status={!imports || imports.length === 0 ? "empty" : "ready"}
+          status={
+            importsState.kind === "ready"
+              ? (imports ?? []).length === 0
+                ? "empty"
+                : "ready"
+              : importsState.kind === "loading"
+                ? "loading"
+                : "error"
+          }
+          error={
+            importsState.kind === "offline"
+              ? {
+                  title: tr("banking.common.offline"),
+                  description: tr("banking.common.offlineBody"),
+                  onRetry: () => void refetchImports(),
+                  testId: "bank-imports-offline",
+                }
+              : {
+                  title: tr("banking.imports.loadError"),
+                  description: tr("banking.accounts.loadErrorBody"),
+                  onRetry: () => void refetchImports(),
+                  testId: "bank-imports-error",
+                }
+          }
           empty={{ icon: FileSpreadsheet, title: tr("banking.imports.none") }}
         >
           <Table className="row-cards">
@@ -570,226 +651,5 @@ export default function BankAccounts() {
         />
       )}
     </div>
-  );
-}
-
-function StatementDialog({
-  companyId,
-  account,
-  onClose,
-}: {
-  companyId: string;
-  account: BankAccount;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation();
-  const tr = (k: string) => t[k] ?? k;
-  const { toast } = useToast();
-  const [periodStart, setPeriodStart] = useState("");
-  const [periodEnd, setPeriodEnd] = useState(new Date().toISOString().slice(0, 10));
-  const [closing, setClosing] = useState("");
-  const [statement, setStatement] = useState<Statement | null>(null);
-  const historyKey = ["/api/companies", companyId, "bank-accounts", account.id, "reconciliations"];
-  const { data: history } = useQuery<SavedReconciliation[]>({ queryKey: historyKey });
-  const onError = (err: Error) =>
-    toast({ variant: "destructive", title: tr("banking.common.error"), description: err?.message });
-
-  const previewMutation = useMutation({
-    mutationFn: async () => {
-      const q = new URLSearchParams({ periodEnd, statementClosingBalance: closing });
-      if (periodStart) q.set("periodStart", periodStart);
-      return (await apiRequest(
-        "GET",
-        `/api/companies/${companyId}/bank-accounts/${account.id}/reconciliation-statement?${q}`
-      )) as Statement;
-    },
-    onSuccess: setStatement,
-    onError,
-  });
-  const saveMutation = useMutation({
-    mutationFn: () =>
-      apiRequest(
-        "POST",
-        `/api/companies/${companyId}/bank-accounts/${account.id}/reconciliations`,
-        {
-          periodEnd,
-          statementClosingBalance: closing,
-          ...(periodStart ? { periodStart } : {}),
-        }
-      ),
-    onSuccess: (row: { statement: Statement }) => {
-      setStatement(row.statement);
-      queryClient.invalidateQueries({ queryKey: historyKey });
-    },
-    onError,
-  });
-  const signMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiRequest("POST", `/api/companies/${companyId}/bank-reconciliations/${id}/sign-off`, {}),
-    onSuccess: () => {
-      toast({ title: tr("banking.statement.signedOff") });
-      queryClient.invalidateQueries({ queryKey: historyKey });
-    },
-    onError,
-  });
-
-  const rows: Array<[string, string, StatementItem[] | null]> = statement
-    ? [
-        ["banking.statement.bankBalance", statement.totals.statementClosingBalance, null],
-        [
-          "banking.statement.depositsInTransit",
-          statement.totals.depositsInTransit,
-          statement.depositsInTransit,
-        ],
-        [
-          "banking.statement.outstandingPayments",
-          statement.totals.outstandingPayments,
-          statement.outstandingPayments,
-        ],
-        ["banking.statement.adjustedBank", statement.totals.adjustedBankBalance, null],
-        ["banking.statement.glBalance", statement.totals.glBalance, null],
-        [
-          "banking.statement.unrecordedReceipts",
-          statement.totals.unrecordedReceipts,
-          statement.unrecordedReceipts,
-        ],
-        [
-          "banking.statement.unrecordedPayments",
-          statement.totals.unrecordedPayments,
-          statement.unrecordedPayments,
-        ],
-        ["banking.statement.adjustedBook", statement.totals.adjustedBookBalance, null],
-        ["banking.statement.difference", statement.totals.difference, null],
-      ]
-    : [];
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent size="lg">
-        <DialogHeader>
-          <DialogTitle>
-            {tr("banking.statement.title")} — {account.nameEn}
-          </DialogTitle>
-          <DialogDescription>{tr("banking.statement.description")}</DialogDescription>
-        </DialogHeader>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>
-            <Label htmlFor="st-start">{tr("banking.statement.periodStart")}</Label>
-            <DatePicker id="st-start" value={periodStart} onChange={setPeriodStart} />
-          </div>
-          <div>
-            <Label htmlFor="st-end">{tr("banking.statement.periodEnd")}</Label>
-            <DatePicker id="st-end" value={periodEnd} onChange={setPeriodEnd} />
-          </div>
-          <div>
-            <Label htmlFor="st-close">{tr("banking.statement.closingBalance")}</Label>
-            <Input
-              id="st-close"
-              inputMode="decimal"
-              value={closing}
-              onChange={(e) => setClosing(e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => previewMutation.mutate()}
-            disabled={!closing || !periodEnd || previewMutation.isPending}
-          >
-            {tr("banking.statement.preview")}
-          </Button>
-          <Button
-            onClick={() => saveMutation.mutate()}
-            disabled={!closing || !periodEnd || saveMutation.isPending}
-          >
-            {tr("banking.statement.saveDraft")}
-          </Button>
-        </div>
-        {statement && (
-          <Card>
-            <CardHeader>
-              <CardDescription>
-                {statement.differenceFils === 0
-                  ? tr("banking.statement.reconciled")
-                  : tr("banking.statement.notReconciled")}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-1 text-sm">
-              {rows.map(([key, value, items]) => (
-                <div key={key}>
-                  <div className="flex justify-between font-medium">
-                    <span>{tr(key)}</span>
-                    <span>{value}</span>
-                  </div>
-                  {items?.map((it) => (
-                    <div
-                      key={it.id}
-                      className="flex justify-between text-xs text-muted-foreground ps-4"
-                    >
-                      <span className="truncate">
-                        {it.date} {it.description}
-                      </span>
-                      <span>{it.amount}</span>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        )}
-        <div>
-          <p className="text-sm font-semibold mb-2">{tr("banking.statement.history")}</p>
-          <Table>
-            <TableBody>
-              {(history ?? []).map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell>{r.periodEnd}</TableCell>
-                  <TableCell>{r.statementClosingBalance}</TableCell>
-                  <TableCell>{r.difference}</TableCell>
-                  <TableCell>
-                    <Badge variant={r.status === "signed_off" ? "default" : "outline"}>
-                      {r.status === "signed_off"
-                        ? tr("banking.statement.signedOff")
-                        : tr("banking.statement.draft")}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-end space-x-1 rtl:space-x-reverse">
-                    {r.status !== "signed_off" && (
-                      <Button
-                        size="sm"
-                        onClick={() => signMutation.mutate(r.id)}
-                        disabled={signMutation.isPending}
-                      >
-                        {tr("banking.statement.signOff")}
-                      </Button>
-                    )}
-                    {(["pdf", "xlsx"] as const).map((f) => (
-                      <Button key={f} size="sm" variant="outline" asChild>
-                        <a
-                          href={`/api/companies/${companyId}/bank-reconciliations/${r.id}/export?format=${f}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <FileDown className="w-3 h-3" />
-                          {f === "pdf"
-                            ? tr("banking.statement.exportPdf")
-                            : tr("banking.statement.exportXlsx")}
-                        </a>
-                      </Button>
-                    ))}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            {tr("banking.common.close")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

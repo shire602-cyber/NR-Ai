@@ -34,7 +34,15 @@ function Column({ title, links }: { title: string; links: readonly FooterLink[] 
   );
 }
 
-export function SiteFooter({ base, locale, tr }: LegacySectionProps) {
+export function SiteFooter({
+  base,
+  locale,
+  tr,
+  onSwitchLocale,
+}: LegacySectionProps & {
+  /** Pages with one URL for both languages switch the stored locale instead of navigating. */
+  onSwitchLocale?: (locale: "en" | "ar") => void;
+}) {
   const text = useMarketingText(locale);
   const [path] = useLocation();
   const brand = MARKETING_BRAND.name[locale];
@@ -98,14 +106,26 @@ export function SiteFooter({ base, locale, tr }: LegacySectionProps) {
           </p>
           <p className="mz-foot-lang">
             <span>{text("hxFootLanguage")}</span>
-            <Link
-              href={`/${other}${samePage}`}
-              lang={other}
-              hrefLang={other}
-              data-testid="link-foot-language"
-            >
-              {LANGUAGE_NAME[other]}
-            </Link>
+            {onSwitchLocale ? (
+              <button
+                type="button"
+                className="mz-foot-langbtn"
+                lang={other}
+                data-testid="link-foot-language"
+                onClick={() => onSwitchLocale(other)}
+              >
+                {LANGUAGE_NAME[other]}
+              </button>
+            ) : (
+              <Link
+                href={`/${other}${samePage}`}
+                lang={other}
+                hrefLang={other}
+                data-testid="link-foot-language"
+              >
+                {LANGUAGE_NAME[other]}
+              </Link>
+            )}
           </p>
         </div>
         <nav className="mz-foot-nav" aria-label={text("hxFootLabel")}>
