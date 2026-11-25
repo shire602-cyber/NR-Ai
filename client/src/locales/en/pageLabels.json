@@ -1,4 +1,5 @@
 {
+  "pageLabels.notificationActionOffline": "You're offline. This change will be applied when you reconnect.",
   "pageLabels.receiptAmountsInvalid": "Enter a receipt total greater than VAT and check the subtotal and VAT amounts.",
   "pageLabels.receiptDraftCompanyChanged": "This draft belongs to another company. Switch back to that company to save it.",
   "pageLabels.receiptVatCurrency": "VAT amount ({currency})",
@@ -1037,5 +1038,11 @@
   "pageLabels.backupColType": "Type",
   "pageLabels.backupColSize": "Size",
   "pageLabels.investingActivitiesHint": "Cash from buying or selling long-term assets",
-  "pageLabels.bankCsvStatementImport": "CSV statement import"
+  "pageLabels.bankCsvStatementImport": "CSV statement import",
+  "pageLabels.notificationActionFailed": "Could not update the notification. Please try again.",
+  "pageLabels.newsCategoryVat": "VAT",
+  "pageLabels.newsCategoryCorporateTax": "Corporate tax",
+  "pageLabels.newsCategoryCustoms": "Customs",
+  "pageLabels.newsCategoryLabor": "Labour",
+  "pageLabels.newsCategoryGeneral": "General"
 }

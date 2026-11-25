@@ -61,7 +61,7 @@ export function withPeriodLockRequest<T>(req: Request, fn: () => Promise<T>): Pr
 function toIsoDate(date: Date | string): string | null {
   const d = date instanceof Date ? date : new Date(date);
   if (isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
+  return todayIso(d);
 }
 
 /** The strongest lock covering `isoDate` (hard beats soft), or null. */
@@ -83,9 +83,9 @@ export async function getEffectiveLock(
                  AND ${isoDate}::date <= period_end::date)
            )
         UNION ALL
-        SELECT fiscal_year_end, 'hard', 'through'
+        SELECT fiscal_year_end, CASE WHEN hard_closed THEN 'hard' ELSE 'soft' END, 'through'
           FROM fiscal_year_closes
-         WHERE company_id = ${companyId} AND status = 'closed' AND hard_closed = true
+         WHERE company_id = ${companyId} AND status = 'closed'
            AND ${isoDate}::date <= fiscal_year_end
       ) AS locks
      ORDER BY CASE WHEN lock_type = 'hard' THEN 0 ELSE 1 END, locks.period_end DESC,
@@ -145,7 +145,7 @@ export async function getLockThroughDate(companyId: string): Promise<string | nu
         WHERE company_id = $1 AND status = 'locked' AND lock_scope = 'through'
        UNION ALL
        SELECT fiscal_year_end FROM fiscal_year_closes
-        WHERE company_id = $1 AND status = 'closed' AND hard_closed = true
+        WHERE company_id = $1 AND status = 'closed'
      ) AS locks`,
     [companyId]
   );
