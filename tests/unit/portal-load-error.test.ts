@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  focusManager,
+  onlineManager,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
@@ -115,7 +120,15 @@ afterEach(async () => {
   container?.remove();
   document.body.innerHTML = "";
   onlineManager.setOnline(true);
+  focusManager.setFocused(undefined);
 });
+
+const emptyStatement = {
+  asOf: "2026-01-01",
+  party: { name: "Customer" },
+  company: { name: "Supplier" },
+  sections: [],
+};
 
 describe("portal invoice list load failure", () => {
   for (const [locale, title, body, retryLabel, emptyTitle] of [
@@ -279,14 +292,121 @@ describe("portal refresh failure", () => {
   );
 });
 
-describe("portal offline first load", () => {
-  const emptyStatement = {
-    asOf: "2026-01-01",
-    party: { name: "Customer" },
-    company: { name: "Supplier" },
-    sections: [],
-  };
+describe("portal uncached manual retry", () => {
+  it.each([
+    ["documents", PortalDocuments, [], "No documents yet"],
+    ["invoices", PortalInvoices, [], "No invoices yet"],
+    ["statements", PortalStatements, emptyStatement, "No transactions yet"],
+  ] as const)(
+    "keeps Try again busy on screen until a %s retry settles",
+    async (resource, Page, data, emptyTitle) => {
+      useI18n.setState({ locale: "en" });
+      const path = `/api/client-portal/${resource}`;
+      const load = vi.fn().mockRejectedValueOnce(new mocks.ApiError("boom", 500));
+      mocks.apiRequest.mockImplementation((_method, requestPath) =>
+        requestPath === path ? load() : Promise.resolve({})
+      );
+      await mount(createElement(PortalAccountScope.Provider, { value: "a1" }, createElement(Page)));
+      const retry = byId(`portal-${resource}-load-error`)!.querySelector("button")!;
 
+      let fail!: (reason: unknown) => void;
+      load.mockImplementationOnce(() => new Promise((_resolve, reject) => (fail = reject)));
+      await act(async () => retry.click());
+      await flush();
+      expect(retry.isConnected).toBe(true);
+      expect(retry.textContent).toBe("Try again");
+      expect(retry.disabled).toBe(true);
+      expect(retry.getAttribute("aria-busy")).toBe("true");
+      expect(retry.querySelector("svg")?.classList.contains("animate-spin")).toBe(true);
+      expect(document.body.textContent).not.toContain(emptyTitle);
+      await act(async () => retry.click());
+      await flush();
+      expect(load).toHaveBeenCalledTimes(2);
+
+      // A failed retry hands the button back.
+      await act(async () => fail(new mocks.ApiError("boom", 500)));
+      await flush();
+      expect(retry.isConnected).toBe(true);
+      expect(retry.disabled).toBe(false);
+      expect(retry.hasAttribute("aria-busy")).toBe(false);
+
+      let finish!: (value: unknown) => void;
+      load.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+      await act(async () => retry.click());
+      await flush();
+      expect(load).toHaveBeenCalledTimes(3);
+      expect(retry.isConnected).toBe(true);
+      expect(retry.disabled).toBe(true);
+
+      await act(async () => finish(data));
+      await flush();
+      expect(byId(`portal-${resource}-load-error`)).toBeNull();
+      expect(document.body.textContent).toContain(emptyTitle);
+    }
+  );
+});
+
+describe("portal automatic retry paused while unfocused", () => {
+  it.each([
+    ["en", "documents", PortalDocuments, [], "No documents yet"],
+    ["en", "invoices", PortalInvoices, [], "No invoices yet"],
+    ["en", "statements", PortalStatements, emptyStatement, "No transactions yet"],
+    ["ar", "documents", PortalDocuments, [], "لا توجد مستندات بعد"],
+    ["ar", "invoices", PortalInvoices, [], "لا توجد فواتير بعد"],
+    ["ar", "statements", PortalStatements, emptyStatement, "لا توجد معاملات بعد"],
+  ] as const)(
+    "(%s) says %s is paused, not offline, and resumes on focus",
+    async (locale, resource, Page, data, emptyTitle) => {
+      useI18n.setState({ locale });
+      const pausedTitle = locale === "en" ? "Loading is paused" : "التحميل متوقف مؤقتًا";
+      const offlineTitle = locale === "en" ? "Waiting for a connection" : "في انتظار الاتصال";
+      const path = `/api/client-portal/${resource}`;
+      const load = vi
+        .fn()
+        .mockRejectedValueOnce(new mocks.ApiError("boom", 500))
+        .mockResolvedValue(data);
+      mocks.apiRequest.mockImplementation((_method, requestPath) =>
+        requestPath === path ? load() : Promise.resolve({})
+      );
+      focusManager.setFocused(false);
+      await mount(
+        createElement(PortalAccountScope.Provider, { value: "a1" }, createElement(Page)),
+        new QueryClient({ defaultOptions: { queries: { retry: 1, retryDelay: 0 } } })
+      );
+      const expectPaused = () => {
+        const notice = byId(`portal-${resource}-paused`);
+        expect(notice?.querySelector("h3")?.textContent).toBe(pausedTitle);
+        const button = notice!.querySelector("button")!;
+        expect(button.disabled).toBe(false);
+        expect(button.querySelector("svg")?.classList.contains("animate-spin")).toBe(false);
+        expect(byId(`portal-${resource}-offline`)).toBeNull();
+        expect(document.body.textContent).not.toContain(offlineTitle);
+        expect(document.body.textContent).not.toContain(emptyTitle);
+        expect(load).toHaveBeenCalledTimes(1);
+      };
+      expectPaused();
+
+      await act(async () => onlineManager.setOnline(false));
+      await flush();
+      expect(byId(`portal-${resource}-offline`)?.querySelector("h3")?.textContent).toBe(
+        offlineTitle
+      );
+      expect(byId(`portal-${resource}-paused`)).toBeNull();
+
+      await act(async () => onlineManager.setOnline(true));
+      await flush();
+      expectPaused();
+
+      await act(async () => focusManager.setFocused(true));
+      await flush();
+      expect(load).toHaveBeenCalledTimes(2);
+      expect(byId(`portal-${resource}-paused`)).toBeNull();
+      expect(document.body.textContent).toContain(emptyTitle);
+    }
+  );
+});
+
+describe("portal offline first load", () => {
   it.each([
     ["en", "documents", PortalDocuments, [], "No documents yet"],
     ["en", "invoices", PortalInvoices, [], "No invoices yet"],

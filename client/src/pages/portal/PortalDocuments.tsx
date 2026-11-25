@@ -30,6 +30,7 @@ async function uploadDocument(file: File, supplier: string) {
   return res.json();
 }
 import { useToast } from "@/hooks/use-toast";
+import { usePortalRetry } from "@/hooks/usePortalRetry";
 
 const CATEGORIES = new Set([
   "trade_license",
@@ -63,16 +64,10 @@ export default function PortalDocuments() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
-  const {
-    data: documents,
-    isLoading,
-    error,
-    isPaused,
-    isFetching,
-    refetch,
-  } = useQuery<any[]>({
-    ...portalQuery("/api/client-portal/documents", supplier),
-  });
+  const documentsQuery = portalQuery("/api/client-portal/documents", supplier);
+  const query = useQuery<any[]>({ ...documentsQuery });
+  const { data: documents, isPaused, isFetching } = query;
+  const { error, isLoading, retry } = usePortalRetry(documentsQuery.queryKey, query);
 
   const uploadMutation = useMutation({
     mutationFn: (file: File) => uploadDocument(file, supplier),
@@ -143,7 +138,7 @@ export default function PortalDocuments() {
               error={error}
               paused={isPaused}
               retrying={isFetching}
-              onRetry={() => void refetch({ cancelRefetch: false })}
+              onRetry={retry}
               compact={documents !== undefined}
               resource="documents"
             />

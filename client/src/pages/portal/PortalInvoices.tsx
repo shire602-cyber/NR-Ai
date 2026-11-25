@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ui/page-header";
 import { PortalInvoiceList, type PortalInvoice } from "@/components/portal/PortalInvoiceList";
 import { useToast } from "@/hooks/use-toast";
+import { usePortalRetry } from "@/hooks/usePortalRetry";
 import { portalQuery } from "@/lib/queryClient";
 import { useTranslation } from "@/lib/i18n";
 
@@ -12,17 +13,10 @@ export default function PortalInvoices() {
   const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const {
-    data: invoices,
-    isLoading,
-    error,
-    isPaused,
-    isFetching,
-    refetch,
-  } = useQuery<PortalInvoice[]>({
-    ...portalQuery("/api/client-portal/invoices", supplier),
-    staleTime: 60_000,
-  });
+  const invoicesQuery = portalQuery("/api/client-portal/invoices", supplier);
+  const query = useQuery<PortalInvoice[]>({ ...invoicesQuery, staleTime: 60_000 });
+  const { data: invoices, isPaused, isFetching } = query;
+  const { error, isLoading, retry } = usePortalRetry(invoicesQuery.queryKey, query);
   const { data: dashboard } = useQuery<{ onlinePayment?: { available: boolean } }>({
     ...portalQuery("/api/client-portal/dashboard", supplier),
     staleTime: 60_000,
@@ -51,7 +45,7 @@ export default function PortalInvoices() {
         error={error}
         paused={isPaused}
         retrying={isFetching}
-        onRetry={() => void refetch({ cancelRefetch: false })}
+        onRetry={retry}
         onlinePayment={dashboard?.onlinePayment?.available === true}
       />
     </div>

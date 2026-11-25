@@ -14,6 +14,7 @@ import {
 import { portalQuery } from "@/lib/queryClient";
 import { downloadPortalFile } from "@/lib/portal-files";
 import { useToast } from "@/hooks/use-toast";
+import { usePortalRetry } from "@/hooks/usePortalRetry";
 import { formatDate } from "@/lib/format-date";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 
@@ -34,9 +35,10 @@ export default function PortalStatements() {
   const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { data, isLoading, error, isPaused, isFetching, refetch } = useQuery<Statement>({
-    ...portalQuery("/api/client-portal/statements", supplier),
-  });
+  const statementsQuery = portalQuery("/api/client-portal/statements", supplier);
+  const query = useQuery<Statement>({ ...statementsQuery });
+  const { data, isPaused, isFetching } = query;
+  const { error, isLoading, retry } = usePortalRetry(statementsQuery.queryKey, query);
 
   if (isLoading) {
     return (
@@ -83,7 +85,7 @@ export default function PortalStatements() {
               error={error}
               paused={isPaused}
               retrying={isFetching}
-              onRetry={() => void refetch({ cancelRefetch: false })}
+              onRetry={retry}
               compact={data !== undefined}
               resource="statements"
             />
