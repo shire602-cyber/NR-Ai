@@ -11,7 +11,7 @@ import {
 import { EditorShell } from "@/components/ui/editor-shell";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { useEditorRoute } from "@/hooks/useEditorRoute";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
@@ -145,6 +145,7 @@ export default function RecurringInvoices() {
   /** WQ1: the invoice number this new schedule was made from (shown in the header). */
   const [seededFrom, setSeededFrom] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const { data: recurringInvoices, isLoading } = useQuery<RecurringInvoice[]>({
     queryKey: ["/api/companies", selectedCompanyId, "recurring-invoices"],
@@ -463,6 +464,7 @@ export default function RecurringInvoices() {
     })
   );
   const hasSearch = searchTerm.trim().length > 0;
+  const hasNoMatches = !isLoading && hasSearch && allItems.length > 0 && visibleItems.length === 0;
 
   if (!selectedCompanyId) {
     return (
@@ -876,6 +878,10 @@ export default function RecurringInvoices() {
         }
       />
 
+      <div role="status" aria-atomic="true" className="sr-only">
+        {hasNoMatches ? t["invoices.recurring.noMatchTitle"] : ""}
+      </div>
+
       <DataTableCard
         status={isLoading ? "loading" : visibleItems.length === 0 ? "empty" : "ready"}
         toolbar={
@@ -883,6 +889,7 @@ export default function RecurringInvoices() {
             <div className="flex w-full max-w-md items-center gap-2 rounded-md border border-input bg-background px-3 focus-within:ring-2 focus-within:ring-ring">
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
               <Input
+                ref={searchInputRef}
                 type="search"
                 dir="auto"
                 value={searchTerm}
@@ -898,14 +905,17 @@ export default function RecurringInvoices() {
         columnLabels={[t.customerName, t.status]}
         testId="recurring-invoices-table"
         empty={
-          hasSearch && allItems.length > 0
+          hasNoMatches
             ? {
                 icon: Search,
                 title: t["invoices.recurring.noMatchTitle"],
                 description: t["invoices.recurring.noMatchBody"],
                 action: {
                   label: t["invoices.recurring.clearSearch"],
-                  onClick: () => setSearchTerm(""),
+                  onClick: () => {
+                    setSearchTerm("");
+                    searchInputRef.current?.focus();
+                  },
                 },
               }
             : {

@@ -1,8 +1,9 @@
-import { createElement } from "react";
+// @vitest-environment jsdom
+import { act, createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { StatusBadge } from "../../client/src/components/ui/badge";
 import { statusBadgeText } from "../../client/src/components/ui/status-meta";
 import { matchesRecurringSearch } from "../../client/src/lib/recurring-search";
@@ -10,16 +11,87 @@ import en from "../../client/src/locales/en/invoices.json";
 import ar from "../../client/src/locales/ar/invoices.json";
 import arScreens from "../../client/src/locales/ar/screens.json";
 import arComponents from "../../client/src/locales/ar/components.json";
+import {
+  click,
+  COMPANY_ID,
+  formHarnessCompanyMock,
+  formHarnessQueryClientMock,
+  renderPage,
+  setFixtures,
+  type,
+  unmountPage,
+} from "./helpers/form-harness";
+import RecurringInvoices from "../../client/src/pages/RecurringInvoices";
 
-// Real Arabic catalogs served synchronously, so the real StatusBadge renders without the async loader.
-vi.mock("../../client/src/lib/i18n", async () => {
+// Serve Arabic labels synchronously for the page and StatusBadge.
+vi.mock("../../client/src/lib/i18n", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../client/src/lib/i18n")>();
   const screens = (await import("../../client/src/locales/ar/screens.json")).default;
   const components = (await import("../../client/src/locales/ar/components.json")).default;
-  const dict = { ...components, ...screens } as Record<string, string>;
-  return { useTranslation: () => ({ t: dict, locale: "ar" }) };
+  const invoices = (await import("../../client/src/locales/ar/invoices.json")).default;
+  const dict = { ...components, ...screens, ...invoices } as Record<string, string>;
+  return { ...actual, useTranslation: () => ({ t: dict, locale: "ar" }) };
 });
+vi.mock("../../client/src/lib/queryClient", () => formHarnessQueryClientMock());
+vi.mock("../../client/src/hooks/useDefaultCompany", () => formHarnessCompanyMock());
 
 const labels = { frequency: "Monthly", status: "Active" };
+
+describe("recurring invoice page search", () => {
+  afterEach(async () => {
+    await unmountPage();
+    vi.unstubAllGlobals();
+  });
+
+  it("announces no matches and restores the rows and search focus when cleared", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const customerName = "Al Noor Trading";
+    setFixtures({
+      [`/api/companies/${COMPANY_ID}/recurring-invoices`]: [
+        {
+          id: "schedule-1",
+          customerName,
+          currency: "AED",
+          frequency: "monthly",
+          nextRunDate: "2026-12-01",
+          linesJson: "[]",
+          totalGenerated: 0,
+          isActive: true,
+        },
+      ],
+    });
+    await renderPage(RecurringInvoices);
+
+    const search = document.querySelector<HTMLInputElement>('input[type="search"]')!;
+    const status = document.querySelector('[role="status"]');
+    expect(status?.textContent).toBe("");
+    expect(document.querySelector("tbody")?.textContent).toContain(customerName);
+
+    await act(async () => search.focus());
+    await type(search, "unmatched query");
+
+    expect(document.activeElement).toBe(search);
+    expect(document.querySelector('[role="status"]')).toBe(status);
+    expect(status?.textContent).toBe(ar["invoices.recurring.noMatchTitle"]);
+    expect(document.querySelector('[data-testid="empty-state"]')?.textContent).toContain(
+      ar["invoices.recurring.noMatchTitle"]
+    );
+    expect(document.querySelector("tbody")).toBeNull();
+
+    const clear = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === ar["invoices.recurring.clearSearch"]
+    )!;
+    await act(async () => clear.focus());
+    expect(document.activeElement).toBe(clear);
+    await click(clear);
+
+    expect(search.value).toBe("");
+    expect(document.activeElement).toBe(search);
+    expect(document.querySelector('[role="status"]')).toBe(status);
+    expect(status?.textContent).toBe("");
+    expect(document.querySelector("tbody")?.textContent).toContain(customerName);
+  });
+});
 
 describe("recurring invoice search", () => {
   it("matches customer, frequency and status case-insensitively", () => {
