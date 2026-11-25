@@ -327,7 +327,7 @@ describe("purchase order list load states", () => {
     }
   });
 
-  it("does not show the normal empty message when a refresh fails over a cached empty list", async () => {
+  it("shows the error and Retry when a refresh fails over a cached empty list", async () => {
     fetchOrders.mockResolvedValueOnce([]);
     await renderPage(PurchaseOrders);
     await flushUntil(() => !!byTestId("empty-purchase-orders"));
@@ -337,9 +337,11 @@ describe("purchase order list load states", () => {
 
     expect(queryClient.getQueryState(queryKey)?.status).toBe("error");
     expect(table()).not.toBeNull();
+    expect(table()?.querySelector("table")).toBeNull();
     expect(byTestId("table-skeleton")).toBeNull();
     expectNoEmptyState();
-    expect(byTestId("error-purchase-orders")).toBeNull();
+    expect(byTestId("error-purchase-orders")?.getAttribute("role")).toBe("alert");
+    expect(buttonByText(/^Retry$/, byTestId("error-purchase-orders")!)).toBeTruthy();
     expect(byTestId("offline-purchase-orders")).toBeNull();
   });
 

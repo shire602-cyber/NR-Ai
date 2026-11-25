@@ -191,9 +191,10 @@ export default function PurchaseOrders() {
     queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
     enabled: !!selectedCompanyId,
   });
-  // Only without cached data: a failed or paused background refresh keeps the list on screen.
+  // Cached rows stay on screen through a failed or paused background refresh. A failure with no
+  // rows to keep (nothing loaded, or a cached empty list) shows the error and Retry instead.
   const loadPaused = purchaseOrders === undefined && isPaused;
-  const loadFailed = purchaseOrders === undefined && isError;
+  const loadFailed = (purchaseOrders?.length ?? 0) === 0 && isError;
   const { data: products = [] } = useQuery<
     Array<{
       id: string;
