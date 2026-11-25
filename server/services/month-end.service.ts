@@ -3,7 +3,8 @@ import { sql } from "drizzle-orm";
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import { pool } from "../db";
 import { DomainError } from "../errors";
-import { postJournal, type LedgerTx } from "../ledger";
+import type { LedgerTx } from "../ledger";
+import { postFiscalYearCloseJournal } from "../ledger/kernel";
 import { ledgerQueryable, rowsOf, withLedgerTx } from "../ledger/tx";
 import { describeMonthEndText, type CopyDescriptor } from "@shared/server-copy";
 import { detectAnomalies } from "./anomaly-detection.service";
@@ -21,7 +22,6 @@ import { pendingOpeningDocuments } from "./migration-import";
 import { frequencyOf, periodContaining } from "../tax/vat-periods";
 import { isVatRegistered } from "@shared/vat-registration";
 import {
-  YEAR_END_CLOSE_SOURCE,
   accountTotals,
   aed,
   fiscalYearEnd as fiscalYearEndOf,
@@ -922,7 +922,7 @@ export async function listFiscalYearCloses(companyId: string): Promise<FiscalYea
 
 /**
  * The seam the close posts through. Default: the server/ledger posting kernel
- * (postJournal) with entry kind `year_end_close`; tests may swap it with
+ * with entry kind `year_end_close`; tests may swap it with
  * setClosePostingPort().
  */
 export interface ClosePostingPort {
@@ -933,7 +933,6 @@ export interface ClosePostingPort {
       memo: string;
       memoKey?: string | null;
       memoParams?: Record<string, string> | null;
-      source: string;
       userId: string;
       /** The entry this one undoes (reopen), recorded as source_id. */
       sourceId?: string | null;
@@ -953,18 +952,15 @@ export interface ClosePostingPort {
 
 export const ledgerClosePostingPort: ClosePostingPort = {
   async post(input, tx) {
-    const { entry } = await postJournal(
+    const { entry } = await postFiscalYearCloseJournal(
       {
         companyId: input.companyId,
         date: input.date,
         memo: input.memo,
         memoKey: input.memoKey ?? null,
         memoParams: input.memoParams ?? null,
-        source: input.source,
         sourceId: input.sourceId ?? null,
         idempotencyKey: input.idempotencyKey ?? null,
-        status: "posted",
-        kind: "year_end_close",
         allowFutureDate: true,
         lines: input.lines
           .filter((l) => l.debit !== 0 || l.credit !== 0)
@@ -1075,7 +1071,6 @@ export async function closeFiscalYear(
           companyId,
           date: fye,
           ...journalMemo("yearEndCloseRange", { from: fys, to: fye }),
-          source: YEAR_END_CLOSE_SOURCE,
           userId,
           lines: summary.lines.map((l) => ({
             accountId: l.accountId,
@@ -1203,7 +1198,6 @@ export async function reopenFiscalYear(
             companyId,
             date: fye,
             ...journalMemo("yearEndCloseReversalRange", { from: row.fys, to: fye }),
-            source: YEAR_END_CLOSE_SOURCE,
             sourceId: row.closing_entry_id,
             idempotencyKey: `year_end_close:${row.closing_entry_id}:reopen`,
             userId,

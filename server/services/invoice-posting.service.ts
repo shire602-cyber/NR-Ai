@@ -1031,10 +1031,10 @@ async function postCreditNoteInTx(args: {
       });
     }
     if (totals.vatFils > 0) {
-      if (!vatLeg || vatLeg.remainingBase <= 0) {
+      const base = toBase(totals.vatFils, rate);
+      if (!vatLeg || base <= 0 || base > vatLeg.remainingBase) {
         throw new DomainError("CREDIT_EXCEEDS_REMAINING", 409, { leg: "vat" });
       }
-      const base = Math.min(toBase(totals.vatFils, rate), vatLeg.remainingBase);
       debits.push({ leg: vatLeg, base, foreign: totals.vatFils });
     }
   }
@@ -1257,13 +1257,20 @@ export async function insertCreditNoteDocument(
       totals = totalsForStoredDocument(original, originalLines);
     } else {
       const remainingTotal = totalFils - s.creditedFils;
-      const remaining = await remainingCreditLines(tx, original, originalLines, remainingTotal);
+      const remaining = await remainingCreditLines(tx, original, originalLines);
+      if (remaining.subtotalFils + remaining.vatFils !== remainingTotal) {
+        throw new DomainError(
+          "CREDIT_TOTAL_MISMATCH",
+          409,
+          undefined,
+          "The remaining invoice balance does not match its net and VAT amounts."
+        );
+      }
       docLines = remaining.lines;
-      const remainingVat = remainingTotal - remaining.subtotalFils;
       totals = {
         ...computeSalesDocument(docLines.map(storedLineToTotalsInput)),
         subtotalFils: remaining.subtotalFils,
-        vatFils: remainingVat,
+        vatFils: remaining.vatFils,
         totalFils: remainingTotal,
       };
     }
@@ -1321,16 +1328,16 @@ export async function insertCreditNoteDocument(
   return { creditNote, mode };
 }
 
-async function remainingCreditLines(
+async function creditTaxBalances(
   tx: LedgerTx,
   original: Invoice,
   originalLines: InvoiceLine[],
-  remainingTotalFils: number
+  candidate?: { document: Invoice; lines: InvoiceLine[] }
 ) {
   const prior = await tx
     .select({ document: invoices, line: invoiceLines })
     .from(invoices)
-    .innerJoin(invoiceLines, eq(invoiceLines.invoiceId, invoices.id))
+    .leftJoin(invoiceLines, eq(invoiceLines.invoiceId, invoices.id))
     .where(
       and(
         eq(invoices.companyId, original.companyId),
@@ -1342,9 +1349,10 @@ async function remainingCreditLines(
   const documents = new Map<string, { document: Invoice; lines: InvoiceLine[] }>();
   for (const { document, line } of prior) {
     const previous = documents.get(document.id);
-    if (previous) previous.lines.push(line);
-    else documents.set(document.id, { document, lines: [line] });
+    if (!previous) documents.set(document.id, { document, lines: line ? [line] : [] });
+    else if (line) previous.lines.push(line);
   }
+  if (candidate) documents.set(candidate.document.id, candidate);
 
   const balances = new Map<
     string,
@@ -1373,11 +1381,40 @@ async function remainingCreditLines(
   add(original, originalLines, 1);
   for (const { document, lines } of documents.values()) add(document, lines, -1);
 
-  const subtotalFils = sumFils([...balances.values()].map(({ net }) => net));
-  const hasRemainingVat = remainingTotalFils !== subtotalFils;
-  const lines = [...balances.values()]
+  const vatFils = sumFils([
+    toFils(original.vatAmount, { rounding: "halfUp" }),
+    ...[...documents.values()].map(({ document }) =>
+      toFils(document.vatAmount, { rounding: "halfUp" })
+    ),
+  ]);
+  if (vatFils < 0) {
+    throw new DomainError(
+      "CREDIT_EXCEEDS_REMAINING",
+      409,
+      { leg: "vat" },
+      "Credit VAT exceeds the remaining VAT on the invoice."
+    );
+  }
+  for (const { supply, net, margin } of balances.values()) {
+    // The gross proceeds less VAT comprise the taxable margin and the purchase cost.
+    if (net < 0 || (margin !== null && (margin < 0 || margin > net))) {
+      throw new DomainError(
+        "CREDIT_EXCEEDS_REMAINING",
+        409,
+        { supplyType: supply.supplyType, marginScheme: margin !== null },
+        "Credit exceeds the amount remaining for this tax treatment on the invoice."
+      );
+    }
+  }
+  return { balances: [...balances.values()], vatFils };
+}
+
+async function remainingCreditLines(tx: LedgerTx, original: Invoice, originalLines: InvoiceLine[]) {
+  const { balances, vatFils } = await creditTaxBalances(tx, original, originalLines);
+  const subtotalFils = sumFils(balances.map(({ net }) => net));
+  const lines = balances
     // VAT 201 allocates the document's VAT to taxable lines, including a zero-net rounding credit.
-    .filter(({ net, supply }) => net !== 0 || (hasRemainingVat && supply.chargedVatRate > 0))
+    .filter(({ net, supply }) => net !== 0 || (vatFils > 0 && supply.chargedVatRate > 0))
     .map(({ supply, net, margin }) => {
       const marginVat = margin === null ? 0 : toBase(margin, String(supply.chargedVatRate));
       return {
@@ -1390,7 +1427,7 @@ async function remainingCreditLines(
         marginPurchaseCost: margin === null ? null : Number(fromFils(net - margin)),
       };
     });
-  return { lines, subtotalFils };
+  return { lines, subtotalFils, vatFils };
 }
 
 /** Issue a draft credit note: post its mirrored entry and move it to sent. */
@@ -1434,6 +1471,13 @@ async function issueCreditNoteLocked(
       { requested: fromFils(cnTotalFils), remaining: fromFils(remaining) },
       `Credit amount ${fromFils(cnTotalFils)} exceeds the remaining creditable balance ${fromFils(remaining)}.`
     );
+  }
+  if (mode === "lines") {
+    const originalLines = await tx
+      .select()
+      .from(invoiceLines)
+      .where(eq(invoiceLines.invoiceId, original.id));
+    await creditTaxBalances(tx, original, originalLines, { document: creditNote, lines: cnLines });
   }
   const effectiveMode = cnTotalFils === remaining ? "remaining" : mode;
 

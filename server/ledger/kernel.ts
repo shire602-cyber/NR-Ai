@@ -52,6 +52,8 @@ import type {
 
 /** Options only the kernel's own flows (reversal, legacy adapter) may set. */
 export interface InternalPostOptions {
+  /** Fiscal close and reopen write their own sweep journal behind the period lock. */
+  fiscalYearClose?: boolean;
   /** Skip the active/archived check (reversals must be able to undo old postings). */
   allowInactiveAccounts?: boolean;
   reversedEntryId?: string | null;
@@ -270,7 +272,7 @@ export async function insertNormalizedEntry(
     const replay = await findByIdempotencyKey(tx, n.companyId, n.idempotencyKey);
     if (replay) return replay;
   }
-  await assertPeriodNotLocked(n.companyId, n.dateAt, tx);
+  if (!internal.fiscalYearClose) await assertPeriodNotLocked(n.companyId, n.dateAt, tx);
   assertLinesBalanced(n.lines, { allowSameAccount: true });
   await assertAccountsUsable(tx, n.companyId, n.lines, !!internal.allowInactiveAccounts);
   // B1 (NC1): control accounts take lines only from their sub-ledger, or as a reasoned
@@ -397,6 +399,20 @@ export async function postJournal(
 ): Promise<PostJournalResult> {
   const n = normalizeEntry(input);
   return postNormalized(n, ctx);
+}
+
+/** Post the fiscal service's sweep or mirrored sweep inside its close/reopen transaction. */
+export function postFiscalYearCloseJournal(
+  input: Omit<PostJournalInput, "kind" | "source" | "status">,
+  ctx: LedgerContext & { tx: LedgerTx }
+): Promise<PostJournalResult> {
+  const n = normalizeEntry({
+    ...input,
+    source: "year_end_close",
+    kind: "year_end_close",
+    status: "posted",
+  });
+  return postNormalized(n, ctx, { fiscalYearClose: true });
 }
 
 export async function postNormalized(

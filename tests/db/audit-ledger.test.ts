@@ -221,12 +221,42 @@ it.each([
   "CLOSE: fiscal close (hard=$hardClose) and reopen preserve an independent hard $lockScope lock",
   async ({ lockScope, hardClose }) => {
     const t = await h.createTenant();
-    const { lockPeriod, closeFiscalYear, reopenFiscalYear, listLockedPeriods } =
-      await import("../../server/services/month-end.service");
+    const {
+      lockPeriod,
+      closeFiscalYear,
+      reopenFiscalYear,
+      listLockedPeriods,
+      updateCloseSettings,
+    } = await import("../../server/services/month-end.service");
     const { getEffectiveLock } = await import("../../server/services/period-lock.service");
+    const { postJournal } = await import("../../server/ledger");
     const yearEnd = "2025-12-31";
     const december = "2025-12-15";
     const june = "2025-06-15";
+    await postJournalEntry(t, {
+      date: june,
+      description: "Cash revenue",
+      lines: [
+        { code: "1020", debit: 100 },
+        { code: "4020", credit: 100 },
+      ],
+    });
+    await updateCloseSettings(t.company.id, { postYearEndClosingEntry: true }, t.user.id);
+    const cash = await accountByCode(t, "1020");
+    const capital = await accountByCode(t, "3010");
+    const postOrdinaryJournal = () =>
+      postJournal(
+        {
+          companyId: t.company.id,
+          date: yearEnd,
+          status: "posted",
+          lines: [
+            { accountId: cash.id, debit: 100 },
+            { accountId: capital.id, credit: 100 },
+          ],
+        },
+        { actorId: t.user.id }
+      );
     await lockPeriod(
       t.company.id,
       yearEnd,
@@ -235,7 +265,10 @@ it.each([
     );
     const independent = await listLockedPeriods(t.company.id);
     expect(independent).toHaveLength(1);
-    await closeFiscalYear(t.company.id, yearEnd, t.user.id, { hardClose });
+    const closed = await closeFiscalYear(t.company.id, yearEnd, t.user.id, { hardClose });
+    expect(closed.posted).toBe(true);
+    expect(closed.closingEntryId).toBeTruthy();
+    await expect(postOrdinaryJournal()).rejects.toMatchObject({ code: "PERIOD_LOCKED" });
     expect(await getEffectiveLock(t.company.id, june)).toMatchObject({
       lockType: "hard",
       lockScope: "through",
@@ -244,6 +277,23 @@ it.each([
     await reopenFiscalYear(t.company.id, yearEnd, t.user.id, "Restatement approved", {
       canReopenHardClose: true,
     });
+    await expect(postOrdinaryJournal()).rejects.toMatchObject({ code: "PERIOD_LOCKED" });
+    const journals = await h.sql(
+      `SELECT je.id, je.source_id, SUM(jl.credit - jl.debit)::float8 AS retained
+         FROM journal_entries je JOIN journal_lines jl ON jl.entry_id = je.id
+         JOIN accounts a ON a.id = jl.account_id
+        WHERE je.company_id = $1 AND je.source = 'year_end_close'
+          AND je.entry_kind = 'year_end_close' AND je.status = 'posted' AND a.code = '3020'
+        GROUP BY je.id`,
+      [t.company.id]
+    );
+    expect(journals).toHaveLength(2);
+    expect(journals).toEqual(
+      expect.arrayContaining([
+        { id: closed.closingEntryId, source_id: null, retained: 100 },
+        { id: expect.any(String), source_id: closed.closingEntryId, retained: -100 },
+      ])
+    );
     expect(await listLockedPeriods(t.company.id)).toEqual(independent);
     expect(await getEffectiveLock(t.company.id, december)).toMatchObject({
       lockType: "hard",
