@@ -28,8 +28,8 @@ export function namesProvider(text: string): RegExp | undefined {
 }
 
 // The invoice renderer draws Arabic as shaped glyphs and stores the real text in
-// /ActualText <FEFF...> marked-content spans (UTF-16BE, visual order). Decode every span from
-// every Flate stream in both reading directions, joining spans only within a stream.
+// /ActualText <FEFF...> marked-content spans (UTF-16BE, visual order). Scan every span in both
+// directions, and join fragments only within an uninterrupted PDF text sequence.
 export function pdfActualText(pdf: Buffer): string[] {
   const s = pdf.toString("latin1");
   const candidates: string[] = [];
@@ -48,18 +48,33 @@ export function pdfActualText(pdf: Buffer): string[] {
       body = s.slice(start, end);
     }
     const parts: string[] = [];
-    for (const a of body.matchAll(/\/ActualText\s*<([0-9A-Fa-f\s]+)>/g)) {
-      const hex = a[1].replace(/\s/g, "").replace(/^FEFF/i, "");
+    const flush = () => {
+      if (parts.length > 1) {
+        const joined = parts.join("");
+        const reversed = parts.map(rev);
+        candidates.push(joined, rev(joined), reversed.join(""), parts.join(" "), reversed.join(" "));
+      }
+      parts.length = 0;
+    };
+    let inText = false;
+    // BT/ET delimit text objects. Positioning and next-line operators start a new sequence.
+    const tokens =
+      /\/ActualText\s*<([0-9A-Fa-f\s]+)>|%[^\r\n]*|\((?:\\[\s\S]|[^\\()])*\)|(?<![^\s<>\[\]()])(BT|ET|Tm|Td|TD|T\*|'|")(?=$|[\s<>\[\]()])/g;
+    for (const [, actualText, operator] of body.matchAll(tokens)) {
+      if (operator) {
+        flush();
+        if (operator === "BT" || operator === "ET") inText = operator === "BT";
+      }
+      if (!actualText) continue;
+      const hex = actualText.replace(/\s/g, "").replace(/^FEFF/i, "");
       let text = "";
-      for (let i = 0; i + 4 <= hex.length; i += 4) text += String.fromCharCode(parseInt(hex.slice(i, i + 4), 16));
-      parts.push(text);
+      for (let i = 0; i + 4 <= hex.length; i += 4) {
+        text += String.fromCharCode(parseInt(hex.slice(i, i + 4), 16));
+      }
+      candidates.push(text, rev(text));
+      if (inText) parts.push(text);
     }
-    const reversed = parts.map(rev);
-    candidates.push(...parts, ...reversed);
-    if (parts.length > 1) {
-      const joined = parts.join("");
-      candidates.push(joined, rev(joined), reversed.join(""), parts.join(" "), reversed.join(" "));
-    }
+    flush();
   }
   return candidates;
 }
@@ -68,11 +83,18 @@ function utf16Hex(text: string): string {
   return "FEFF" + [...text].map((c) => c.charCodeAt(0).toString(16).padStart(4, "0")).join("").toUpperCase();
 }
 
-function pdfWithActualText(streams: string[][]): Buffer {
+function pdfMarkedText(span: string): string {
+  return `/Span <</ActualText <${utf16Hex(span)}>>> BDC\n<00> Tj\nEMC`;
+}
+
+function pdfTextObject(y: number, ...operations: string[]): string {
+  return ["BT", `1 0 0 1 0 ${y} Tm`, "/F1 12 Tf", ...operations, "ET"].join("\n");
+}
+
+function pdfWithContent(streams: string[]): Buffer {
   return Buffer.concat([
     Buffer.from("%PDF-1.4\n", "latin1"),
-    ...streams.flatMap((spans, index) => {
-      const content = spans.map((span) => `/Span <</ActualText <${utf16Hex(span)}>>> BDC\nBT ET\nEMC`).join("\n");
+    ...streams.flatMap((content, index) => {
       const compressed = deflateSync(Buffer.from(content, "latin1"));
       return [
         Buffer.from(`${index + 1} 0 obj <</Filter /FlateDecode /Length ${compressed.length}>>\nstream\n`, "latin1"),
@@ -176,8 +198,10 @@ describe("public site names no e-invoicing provider", () => {
   it("reads Arabic provider names hidden in PDF ActualText spans (both directions)", () => {
     const name = "\u0643\u0648\u0645\u0628\u0644\u0627\u064a\u0646\u0633";
     for (const shown of [name, [...name].reverse().join("")]) {
-      const singleSpan = pdfWithActualText([[shown]]);
-      const splitSpans = pdfWithActualText([[shown.slice(0, 3), shown.slice(3)]]);
+      const singleSpan = pdfWithContent([pdfTextObject(700, pdfMarkedText(shown))]);
+      const splitSpans = pdfWithContent([
+        pdfTextObject(700, pdfMarkedText(shown.slice(0, 3)), pdfMarkedText(shown.slice(3))),
+      ]);
       expect(pdfActualText(singleSpan).some(namesProvider)).toBe(true);
       expect(pdfActualText(splitSpans).some(namesProvider)).toBe(true);
     }
@@ -187,9 +211,24 @@ describe("public site names no e-invoicing provider", () => {
     ["\u0643\u064a", "\u0648\u0628"],
     ["A", "Cube"],
   ])("keeps PDF ActualText fragments %s and %s in separate streams", (first, second) => {
-    const texts = pdfActualText(pdfWithActualText([[first], [second]]));
+    const texts = pdfActualText(
+      pdfWithContent([pdfTextObject(700, pdfMarkedText(first)), pdfTextObject(700, pdfMarkedText(second))]),
+    );
     expect(texts).toEqual(expect.arrayContaining([first, second]));
     expect(texts.some(namesProvider)).toBe(false);
+  });
+
+  it("keeps PDF ActualText on different lines separate within the same stream", () => {
+    const first = pdfMarkedText("A");
+    const second = pdfMarkedText("Cube");
+    for (const content of [
+      [pdfTextObject(700, first), pdfTextObject(680, second)].join("\n"),
+      pdfTextObject(700, first, "0 -20 Td", second),
+    ]) {
+      const texts = pdfActualText(pdfWithContent([content]));
+      expect(texts).toEqual(expect.arrayContaining(["A", "Cube"]));
+      expect(texts.some(namesProvider)).toBe(false);
+    }
   });
 
   it.each(pdfs.map((f) => [rel(f), f]))("pdf text %s", async (_n, f) => {
