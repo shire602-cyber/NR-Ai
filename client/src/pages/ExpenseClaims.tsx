@@ -1335,7 +1335,7 @@ export default function ExpenseClaims() {
       {/* ─── Tabs ──────────────────────────────────────── */}
       {!claimsFailed && (allClaims.length > 0 || searchQuery) && (
         // Input padding follows the wrapper's direction; dir="auto" follows the typed text.
-        <div className="relative w-full sm:w-80 [&:dir(ltr)>input]:pl-9 [&:dir(rtl)>input]:pr-9">
+        <div className="relative w-full sm:w-80 [&:dir(ltr)>input:dir(ltr)]:ps-9 [&:dir(ltr)>input:dir(rtl)]:pe-9 [&:dir(rtl)>input:dir(ltr)]:pe-9 [&:dir(rtl)>input:dir(rtl)]:ps-9">
           <Search
             className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden
