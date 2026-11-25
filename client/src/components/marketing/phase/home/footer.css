@@ -39,6 +39,17 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.phase-site .mz-foot .mz-foot-langbtn {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
+  color: var(--mz-emerald-deep);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.phase-site .mz-foot .mz-foot-langbtn:hover {
+  color: var(--mz-ink);
+}
 .phase-site .mz-foot a:hover {
   color: var(--mz-ink);
 }
