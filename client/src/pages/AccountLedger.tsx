@@ -113,6 +113,7 @@ export default function AccountLedger() {
   const {
     data: ledger,
     isLoading,
+    isError,
     refetch,
   } = useQuery<LedgerResponse>({
     queryKey: ["/api/accounts", accountId, "ledger", { dateRange, searchQuery, currentPage }],
@@ -161,6 +162,13 @@ export default function AccountLedger() {
       });
     },
   });
+
+  const hasFilters = searchQuery.trim() !== "" || !!dateRange.from || !!dateRange.to;
+  const clearFilters = () => {
+    setSearchQuery("");
+    setDateRange({ from: undefined, to: undefined });
+    setCurrentPage(1);
+  };
 
   const totalPages = Math.ceil((ledger?.totalCount || 0) / entriesPerPage);
 
@@ -510,25 +518,66 @@ export default function AccountLedger() {
             placeholder={locale === "ar" ? "بحث..." : "Search entries..."}
             aria-label={locale === "ar" ? "بحث..." : "Search entries..."}
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             className="h-9 ps-9"
             data-testid="input-search-ledger"
           />
         </div>
-        <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
+        <DateRangeFilter
+          dateRange={dateRange}
+          onDateRangeChange={(range) => {
+            setDateRange(range);
+            setCurrentPage(1);
+          }}
+        />
+        {hasFilters ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            data-testid="button-clear-ledger-filters"
+          >
+            {t["accountLedger.clearFilters"]}
+          </Button>
+        ) : null}
       </div>
 
       <DataTableCard
-        status={isLoading ? "loading" : !ledger?.entries?.length ? "empty" : "ready"}
+        status={
+          isLoading ? "loading" : isError ? "error" : !ledger?.entries?.length ? "empty" : "ready"
+        }
         columnLabels={[t.date, t.description, t["screens.balance"]]}
-        empty={{
-          icon: BookOpen,
-          title: locale === "ar" ? "لا توجد قيود" : "No entries found",
-          description:
-            locale === "ar"
-              ? "لا توجد حركات لهذا الحساب بناءً على الفلاتر المحددة"
-              : "No transactions found for this account with the selected filters",
+        error={{
+          title: t["accountLedger.loadFailedTitle"],
+          description: t["accountLedger.loadFailedBody"],
+          onRetry: () => void refetch(),
+          testId: "error-ledger",
         }}
+        empty={
+          hasFilters
+            ? {
+                icon: Search,
+                title: t["accountLedger.noMatchTitle"],
+                description: t["accountLedger.noMatchBody"],
+                action: {
+                  label: t["accountLedger.clearFilters"],
+                  onClick: clearFilters,
+                  variant: "outline",
+                  testId: "button-clear-ledger-filters-empty",
+                },
+              }
+            : {
+                icon: BookOpen,
+                title: locale === "ar" ? "لا توجد قيود" : "No entries found",
+                description:
+                  locale === "ar"
+                    ? "لا توجد حركات مسجلة لهذا الحساب بعد"
+                    : "No transactions have been posted to this account yet",
+              }
+        }
         footer={
           totalPages > 1 && ledger ? (
             <>

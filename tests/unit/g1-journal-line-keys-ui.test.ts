@@ -244,3 +244,46 @@ describe("G5 issued invoice chips", () => {
     expect(draft).toContain("Live preview");
   });
 });
+
+describe("account ledger states", () => {
+  const load = async (fetchImpl: (url: string) => Response) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => fetchImpl(String(url)))
+    );
+    window.history.replaceState({}, "", `/accounts/${ACCOUNT_ID}/ledger`);
+    const { default: AccountLedger } = await import("../../client/src/pages/AccountLedger");
+    await renderPage(AccountLedger);
+  };
+
+  it("shows an Arabic error state with retry when the ledger fails to load", async () => {
+    await load(() => new Response("{}", { status: 500 }));
+    await flushUntil(() => !!byTestId("error-ledger"));
+    const err = byTestId("error-ledger")!;
+    expect(err.textContent).toContain("تعذّر تحميل دفتر الأستاذ");
+    expect(err.textContent).not.toMatch(/[A-Za-z]{3,}/);
+    expect(document.body.textContent).not.toContain("No entries found");
+  });
+
+  it("shows a no-match state with clear filters when a search returns nothing", async () => {
+    await load(
+      (url) =>
+        new Response(
+          JSON.stringify(
+            url.includes("search=") ? { ...LEDGER, entries: [], totalCount: 0 } : LEDGER
+          ),
+          { status: 200 }
+        )
+    );
+    await flushUntil(() => !!byTestId("row-entry-l1"));
+    const input = byTestId("input-search-ledger") as HTMLInputElement;
+    const { act } = await import("react");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(input, "zzz");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await flushUntil(() => document.body.textContent!.includes("لا توجد قيود مطابقة"));
+    expect(byTestId("button-clear-ledger-filters")).toBeTruthy();
+  });
+});
