@@ -236,7 +236,12 @@ export default function FixedAssets() {
 
   // ─── Queries ────────────────────────────────────────────
 
-  const { data: assets = [], isLoading: isLoadingAssets } = useQuery<FixedAsset[]>({
+  const {
+    data: assets = [],
+    isLoading: isLoadingAssets,
+    error: listError,
+    refetch: refetchList,
+  } = useQuery<FixedAsset[]>({
     queryKey: [`/api/companies/${companyId}/fixed-assets`],
     enabled: !!companyId,
   });
@@ -738,6 +743,7 @@ export default function FixedAssets() {
         )}
         <DataTableCard
           status={isLoadingAssets ? "loading" : filteredAssets.length === 0 ? "empty" : "ready"}
+          loadError={listError ? { error: listError, onRetry: () => void refetchList() } : null}
           columnLabels={[t["pageLabels.assetName"], t["screens.cost"], t["screens.nbv"], t.status]}
           empty={
             searchQuery

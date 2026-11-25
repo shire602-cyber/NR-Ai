@@ -153,7 +153,12 @@ export default function RecurringInvoices() {
   /** WQ1: the invoice number this new schedule was made from (shown in the header). */
   const [seededFrom, setSeededFrom] = useState<string | null>(null);
 
-  const { data: recurringInvoices, isLoading } = useQuery<RecurringInvoice[]>({
+  const {
+    data: recurringInvoices,
+    isLoading,
+    error: listError,
+    refetch: refetchList,
+  } = useQuery<RecurringInvoice[]>({
     queryKey: ["/api/companies", selectedCompanyId, "recurring-invoices"],
     enabled: !!selectedCompanyId,
   });
@@ -882,6 +887,7 @@ export default function RecurringInvoices() {
               ? "empty"
               : "ready"
         }
+        loadError={listError ? { error: listError, onRetry: () => void refetchList() } : null}
         columnLabels={[t.customerName, t.status]}
         testId="recurring-invoices-table"
         empty={{

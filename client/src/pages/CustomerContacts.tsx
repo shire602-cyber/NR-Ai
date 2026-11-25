@@ -234,7 +234,12 @@ export default function CustomerContacts() {
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
   const [clearAllConfirmation, setClearAllConfirmation] = useState("");
 
-  const { data: contacts = [], isLoading } = useQuery<CustomerContact[]>({
+  const {
+    data: contacts = [],
+    isLoading,
+    error: listError,
+    refetch: refetchList,
+  } = useQuery<CustomerContact[]>({
     queryKey: ["/api/companies", companyId, "customer-contacts"],
     enabled: !!companyId,
   });
@@ -678,6 +683,7 @@ export default function CustomerContacts() {
 
           <DataTableCard
             status={isLoading ? "loading" : filteredContacts.length === 0 ? "empty" : "ready"}
+            loadError={listError ? { error: listError, onRetry: () => void refetchList() } : null}
             columnLabels={[
               t["pages.contactsColName"],
               t["pages.contactsColEmail"],

@@ -180,7 +180,11 @@ export default function Vendors() {
   const [form, setForm] = useState<Record<string, string>>({ ...EMPTY });
   const [statementFor, setStatementFor] = useState<Vendor | null>(null);
 
-  const { data: vendors = [] } = useQuery<Vendor[]>({
+  const {
+    data: vendors = [],
+    error: listError,
+    refetch: refetchList,
+  } = useQuery<Vendor[]>({
     queryKey: ["/api/companies", companyId, "vendors"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/vendors`),
     enabled: !!companyId,
@@ -281,6 +285,7 @@ export default function Vendors() {
         <TabsContent value="list">
           <DataTableCard
             status={vendors.length === 0 ? "empty" : "ready"}
+            loadError={listError ? { error: listError, onRetry: () => void refetchList() } : null}
             empty={{
               icon: Truck,
               title: c.noVendors,

@@ -175,7 +175,12 @@ export default function PurchaseOrders() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
 
-  const { data: purchaseOrders, isLoading } = useQuery<PurchaseOrder[]>({
+  const {
+    data: purchaseOrders,
+    isLoading,
+    error: listError,
+    refetch: refetchList,
+  } = useQuery<PurchaseOrder[]>({
     queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
     enabled: !!selectedCompanyId,
   });
@@ -880,6 +885,7 @@ export default function PurchaseOrders() {
         status={
           isLoading ? "loading" : purchaseOrders && purchaseOrders.length > 0 ? "ready" : "empty"
         }
+        loadError={listError ? { error: listError, onRetry: () => void refetchList() } : null}
         columnLabels={[t["pages.vendor"], t.date, t.total, t.status]}
         testId="purchase-orders-table"
         empty={{

@@ -141,7 +141,12 @@ export default function Quotes() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
 
-  const { data: quotes, isLoading } = useQuery<Quote[]>({
+  const {
+    data: quotes,
+    isLoading,
+    error: listError,
+    refetch: refetchList,
+  } = useQuery<Quote[]>({
     queryKey: ["/api/companies", selectedCompanyId, "quotes"],
     enabled: !!selectedCompanyId,
   });
@@ -801,6 +806,7 @@ export default function Quotes() {
 
       <DataTableCard
         status={isLoading ? "loading" : quotes && quotes.length > 0 ? "ready" : "empty"}
+        loadError={listError ? { error: listError, onRetry: () => void refetchList() } : null}
         columnLabels={[t.date, t.total, t.status]}
         testId="quotes-table"
         empty={{

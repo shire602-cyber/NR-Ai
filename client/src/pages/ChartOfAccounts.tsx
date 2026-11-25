@@ -145,7 +145,12 @@ export default function ChartOfAccounts() {
   const [drawerKey, setDrawerKey] = useState(0);
   const [level, setLevel] = useState<Level>("all");
 
-  const { data: accountsWithBalances, isLoading } = useQuery<AccountWithBalance[]>({
+  const {
+    data: accountsWithBalances,
+    isLoading,
+    error: listError,
+    refetch: refetchList,
+  } = useQuery<AccountWithBalance[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts-with-balances"],
     enabled: !!selectedCompanyId,
   });
@@ -351,6 +356,7 @@ export default function ChartOfAccounts() {
         status={
           isLoading ? "loading" : Object.keys(groupedAccounts).length === 0 ? "empty" : "ready"
         }
+        loadError={listError ? { error: listError, onRetry: () => void refetchList() } : null}
         columnLabels={[t["screens.code"], t["screens.account"], t["screens.balance"]]}
         empty={{
           icon: BookOpen,

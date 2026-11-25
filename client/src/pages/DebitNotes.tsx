@@ -112,7 +112,12 @@ function DebitNoteList() {
   const { gate } = useCompanyPermission();
   const [, navigate] = useLocation();
   const [applying, setApplying] = useState<DebitNoteRow | null>(null);
-  const { data: notes = [], isLoading } = useQuery<DebitNoteRow[]>({
+  const {
+    data: notes = [],
+    isLoading,
+    error: listError,
+    refetch: refetchList,
+  } = useQuery<DebitNoteRow[]>({
     queryKey: ["/api/companies", companyId, "debit-notes"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/debit-notes`),
     enabled: !!companyId,
@@ -146,6 +151,7 @@ function DebitNoteList() {
       />
       <DataTableCard
         status={isLoading ? "loading" : notes.length === 0 ? "empty" : "ready"}
+        loadError={listError ? { error: listError, onRetry: () => void refetchList() } : null}
         columnLabels={[
           t["purchases.debitNote.number"],
           t["purchases.supplier.label"],

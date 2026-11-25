@@ -126,7 +126,12 @@ export default function CreditNotes() {
   const { routed, editor, toNew, toList } = useEditorRoute("/credit-notes");
   const [editorOpen, setEditorOpen] = useState(false);
 
-  const { data: creditNotes, isLoading } = useQuery<CreditNote[]>({
+  const {
+    data: creditNotes,
+    isLoading,
+    error: listError,
+    refetch: refetchList,
+  } = useQuery<CreditNote[]>({
     queryKey: ["/api/companies", selectedCompanyId, "credit-notes"],
     enabled: !!selectedCompanyId,
   });
@@ -769,6 +774,7 @@ export default function CreditNotes() {
 
       <DataTableCard
         status={isLoading ? "loading" : creditNotes && creditNotes.length > 0 ? "ready" : "empty"}
+        loadError={listError ? { error: listError, onRetry: () => void refetchList() } : null}
         columnLabels={[t.date, t.total, t.status]}
         testId="credit-notes-table"
         empty={{

@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { EmptyState, type EmptyStateProps } from "@/components/ui/empty-state";
 import { ErrorState, type ErrorStateProps } from "@/components/ui/error-state";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
 
 export type DataTableStatus = "ready" | "loading" | "empty" | "error";
@@ -16,6 +17,11 @@ export interface DataTableCardProps {
   loadingRows?: number;
   empty?: EmptyStateProps;
   error?: ErrorStateProps;
+  /**
+   * A failed list query. Shown instead of the empty state or the table (a failed load must not
+   * read as "nothing here yet"), with cause-specific copy and Retry. Ignored while loading.
+   */
+  loadError?: { error: unknown; onRetry?: () => void } | null;
   /** Footer row: pagination, totals note. */
   footer?: ReactNode;
   className?: string;
@@ -37,6 +43,7 @@ export function DataTableCard({
   loadingRows = 6,
   empty,
   error,
+  loadError,
   footer,
   className,
   testId,
@@ -56,9 +63,16 @@ export function DataTableCard({
           columns={columnLabels?.length ?? 5}
         />
       )}
-      {status === "empty" && empty && <EmptyState compact {...empty} />}
-      {status === "error" && <ErrorState compact {...error} />}
-      {status === "ready" && children}
+      {status !== "loading" && loadError && (
+        <LoadErrorState compact error={loadError.error} onRetry={loadError.onRetry} />
+      )}
+      {!(status !== "loading" && loadError) && (
+        <>
+          {status === "empty" && empty && <EmptyState compact {...empty} />}
+          {status === "error" && <ErrorState compact {...error} />}
+          {status === "ready" && children}
+        </>
+      )}
       {footer && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface-sunken/60 px-4 py-3 text-small text-muted-foreground">
           {footer}
