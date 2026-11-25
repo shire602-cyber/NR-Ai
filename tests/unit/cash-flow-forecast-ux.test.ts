@@ -28,6 +28,18 @@ let failForecast = true;
 let failItems = false;
 let deleteHold: Promise<void> | null = null;
 let deleteFails = false;
+let itemsFetches = 0;
+// The server-side scheduled items. Fixtures read it through a getter (copies each time) so the
+// GET that follows a successful DELETE reflects the deletion, as the real API does.
+let serverItems: Array<ReturnType<typeof scheduled>> = [];
+const itemsFixture = (items: Array<ReturnType<typeof scheduled>>) => {
+  serverItems = items;
+  return {
+    get [ITEMS_PATH]() {
+      return serverItems.map((it) => ({ ...it }));
+    },
+  };
+};
 
 const forecastBody = (scenario: string) => ({
   currentBalance: 5000,
@@ -64,7 +76,8 @@ vi.mock("../../client/src/lib/i18n", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../client/src/lib/i18n")>();
   const firm = (await import("../../client/src/locales/ar/firm.json")).default;
   const finance = (await import("../../client/src/locales/ar/financeViews.json")).default;
-  const dict = { ...finance, ...firm } as Record<string, string>;
+  const toasts = (await import("../../client/src/locales/ar/toasts.json")).default;
+  const dict = { ...finance, ...firm, ...toasts } as Record<string, string>;
   return { ...actual, useTranslation: () => ({ t: dict, locale: "ar" }) };
 });
 vi.mock("../../client/src/lib/queryClient", async () => {
@@ -84,6 +97,9 @@ vi.mock("../../client/src/lib/queryClient", async () => {
         err.status = 500;
         throw err;
       }
+      // A successful DELETE removes the row server-side, so the refetch that follows returns it gone.
+      const deletedId = url.split("/").pop();
+      serverItems = serverItems.filter((it) => it.id !== deletedId);
       return {};
     }
     return inner(method, url, body);
@@ -95,6 +111,7 @@ vi.mock("../../client/src/lib/queryClient", async () => {
     queries: {
       ...defaults,
       queryFn: async (ctx) => {
+        if (String(ctx.queryKey[0]).endsWith("/cashflow/items")) itemsFetches += 1;
         if (failItems && String(ctx.queryKey[0]).endsWith("/cashflow/items")) {
           const err = new Error("boom") as Error & { status: number };
           err.status = 500;
@@ -114,6 +131,8 @@ describe("cash flow forecast load failure", () => {
     failItems = false;
     deleteHold = null;
     deleteFails = false;
+    serverItems = [];
+    itemsFetches = 0;
     await unmountPage();
     resetHarness();
     vi.unstubAllGlobals();
@@ -223,10 +242,11 @@ describe("cash flow forecast load failure", () => {
   it("keeps a delete button disabled while the DELETE is queued offline, and sends it once on reconnect", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     failForecast = false;
-    setFixtures({
-      [forecastUrl("base")]: forecastBody("base"),
-      [ITEMS_PATH]: [scheduled("a"), scheduled("b")],
-    });
+    setFixtures(
+      Object.assign(itemsFixture([scheduled("a"), scheduled("b")]), {
+        [forecastUrl("base")]: forecastBody("base"),
+      })
+    );
     await renderPage(CashFlowForecast);
     await flush(20);
     const btn = (id: string) => byTestId(`button-remove-forecast-item-${id}`) as HTMLButtonElement;
@@ -267,10 +287,11 @@ describe("cash flow forecast load failure", () => {
   it("blocks duplicate deletes per scheduled item, allows other rows, and is retryable", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     failForecast = false;
-    setFixtures({
-      [forecastUrl("base")]: forecastBody("base"),
-      [ITEMS_PATH]: [scheduled("a"), scheduled("b")],
-    });
+    setFixtures(
+      Object.assign(itemsFixture([scheduled("a"), scheduled("b")]), {
+        [forecastUrl("base")]: forecastBody("base"),
+      })
+    );
     await renderPage(CashFlowForecast);
     await flush(20);
 
@@ -304,10 +325,17 @@ describe("cash flow forecast load failure", () => {
 
     deleteHold = null;
     deleteFails = false;
+    const fetchesBeforeRetry = itemsFetches;
     await click(btn("a"));
     await flush(20);
     expect(deletes("a")).toHaveLength(2);
-    expect(btn("a").disabled).toBe(false);
+    // The success invalidates the list: it must refetch, and the refetched (server) list no longer
+    // has the row. A stale fixture would bring "a" back here, so this fails if the server list
+    // still contained it.
+    expect(itemsFetches).toBeGreaterThan(fetchesBeforeRetry);
+    expect(serverItems.map((it) => it.id)).toEqual(["b"]);
+    expect(byTestId("button-remove-forecast-item-a")).toBeNull();
+    expect(btn("b").disabled).toBe(false);
   });
 
   it("shows a scoped, retryable scheduled-items error and keeps the rest of the page", async () => {

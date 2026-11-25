@@ -259,8 +259,8 @@ export default function CashFlowForecast() {
     },
     onError: () =>
       toast({
-        title: tr(locale, "Could not remove item", "تعذر حذف البند"),
-        description: tr(locale, "Please try again.", "يرجى المحاولة مرة أخرى."),
+        title: t["cashFlowForecast.removeItemFailedTitle"],
+        description: t["toasts.pleaseTryAgain"],
         variant: "destructive",
       }),
   });
