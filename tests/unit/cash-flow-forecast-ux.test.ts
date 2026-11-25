@@ -23,6 +23,7 @@ import {
 } from "./helpers/form-harness";
 import { clearActiveCompany, switchActiveCompany } from "../../client/src/lib/activeCompany";
 import CashFlowForecast from "../../client/src/pages/CashFlowForecast";
+import { queryClient } from "../../client/src/lib/queryClient";
 
 const FORECAST_URL_PREFIX = `/api/companies/${COMPANY_ID}/cashflow/forecast`;
 const COMPANY_B_ID = "c0000000-0000-4000-8000-000000000002";
@@ -36,6 +37,9 @@ let itemsFetches = 0;
 // When set, the next scheduled-items GET for company A snapshots its data immediately but only
 // resolves once the gate opens (a read that started before a DELETE landed and is still in flight).
 let itemsGate: Promise<void> | null = null;
+// While set, forecast / history reads stay in flight, so a test can cancel the initial fetch.
+let forecastGate: Promise<void> | null = null;
+let historyGate: Promise<void> | null = null;
 // The server-side scheduled items. Fixtures read it through a getter (copies each time) so the
 // GET that follows a successful DELETE reflects the deletion, as the real API does.
 let serverItems: Array<ReturnType<typeof scheduled>> = [];
@@ -109,6 +113,7 @@ vi.mock("../../client/src/lib/queryClient", async () => {
       serverItems = serverItems.filter((it) => it.id !== deletedId);
       return {};
     }
+    if (forecastGate && url.startsWith(FORECAST_URL_PREFIX)) await forecastGate;
     return inner(method, url, body);
   });
   const defaults = base.queryClient.getDefaultOptions().queries!;
@@ -119,6 +124,7 @@ vi.mock("../../client/src/lib/queryClient", async () => {
       ...defaults,
       queryFn: async (ctx) => {
         if (String(ctx.queryKey[0]).endsWith("/cashflow/items")) itemsFetches += 1;
+        if (ctx.queryKey[0] === HISTORY_PATH && historyGate) await historyGate;
         if (ctx.queryKey[0] === ITEMS_PATH && itemsGate) {
           const gate = itemsGate;
           itemsGate = null;
@@ -148,6 +154,8 @@ describe("cash flow forecast load failure", () => {
     serverItems = [];
     itemsFetches = 0;
     itemsGate = null;
+    forecastGate = null;
+    historyGate = null;
     clearActiveCompany();
     await unmountPage();
     resetHarness();
@@ -216,6 +224,57 @@ describe("cash flow forecast load failure", () => {
     expect(byTestId("forecast-offline")).toBeNull();
     expect(byTestId("history-offline")).toBeNull();
     expect(byTestId("forecast-projections")).not.toBeNull();
+  });
+
+  // Cancels a held initial read, leaving the query idle with no data, then refetches a real
+  // zero-row response: only the latter may show the empty message.
+  async function expectEmptyMessageOnlyWithData(
+    queryKey: readonly unknown[],
+    message: string,
+    release: () => void
+  ) {
+    await renderPage(CashFlowForecast);
+    await flush(20);
+    await act(async () => {
+      await queryClient.cancelQueries({ queryKey });
+    });
+    await flush(20);
+
+    const query = queryClient.getQueryCache().find({ queryKey, exact: false });
+    expect(query?.state.fetchStatus).toBe("idle");
+    expect(query?.state.data).toBeUndefined();
+    expect(document.body.textContent).not.toContain(message);
+
+    release();
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey });
+    });
+    await flush(20);
+    expect(document.body.textContent).toContain(message);
+  }
+
+  it("shows no projection empty message after a cancelled initial fetch leaves no data", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    failForecast = false;
+    setFixtures({ [forecastUrl("base")]: { ...forecastBody("base"), projections: [] } });
+    forecastGate = new Promise<void>(() => {});
+    await expectEmptyMessageOnlyWithData(
+      ["cashflow-forecast", COMPANY_ID],
+      arFinance["cashFlowForecast.noProjectionDataAvailableAdd"],
+      () => (forecastGate = null)
+    );
+  });
+
+  it("shows no history empty message after a cancelled initial fetch leaves no data", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    failForecast = false;
+    setFixtures({ [forecastUrl("base")]: forecastBody("base"), [HISTORY_PATH]: [] });
+    historyGate = new Promise<void>(() => {});
+    await expectEmptyMessageOnlyWithData(
+      [HISTORY_PATH],
+      arFinance["cashFlowForecast.noHistoricalDataAvailableYet"],
+      () => (historyGate = null)
+    );
   });
 
   it("keeps cached results and shows offline guidance only for an uncached scenario", async () => {

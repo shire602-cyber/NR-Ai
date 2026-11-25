@@ -568,11 +568,11 @@ export default function CashFlowForecast() {
                   </TableBody>
                 </Table>
               </div>
-            ) : (
+            ) : forecast && forecast.projections.length === 0 ? (
               <p className="text-muted-foreground text-center py-8">
                 {t["cashFlowForecast.noProjectionDataAvailableAdd"]}
               </p>
-            )}
+            ) : null}
           </CardContent>
         </Card>
       )}
@@ -953,11 +953,11 @@ export default function CashFlowForecast() {
                 </TableBody>
               </Table>
             </div>
-          ) : (
+          ) : history && history.length === 0 ? (
             <p className="text-muted-foreground text-center py-8">
               {t["cashFlowForecast.noHistoricalDataAvailableYet"]}
             </p>
-          )}
+          ) : null}
         </CardContent>
       </Card>
     </div>
