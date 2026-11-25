@@ -46,6 +46,7 @@ import { formatMessage, useI18n, useTranslation, translateNow } from "@/lib/i18n
 import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
+import { ErrorState } from "@/components/ui/error-state";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActionButton } from "@/components/ui/row-actions";
 import { useToast } from "@/hooks/use-toast";
@@ -361,6 +362,14 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
   const firstInvalidDateRow = !previewLoading
     ? (statementPreview?.firstInvalidDateRow ?? null)
     : null;
+  // During a re-preview the previous rows stay on screen but are stale: only the latest finished
+  // response (a failed one clears it) may be called recognized.
+  const statementRecognized = Boolean(
+    statementPreview &&
+    !previewLoading &&
+    statementPreview.validRows > 0 &&
+    statementPreview.firstInvalidDateRow == null
+  );
   const canConfirmImport = Boolean(
     statementPreview &&
     bankAccounts?.some((account) => account.id === selectedBankAccount) &&
@@ -375,13 +384,23 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     data: transactions,
     isLoading: isLoadingTransactions,
     error: transactionsError,
+    isSuccess: transactionsSuccess,
+    fetchStatus: transactionsFetchStatus,
     refetch: refetchTransactions,
   } = useQuery<BankTransaction[]>({
     queryKey: ["/api/companies", companyId, "bank-statements", "transactions"],
     enabled: !!companyId,
   });
+  const transactionsPaused = transactionsFetchStatus === "paused";
 
-  const { data: matchSuggestions, isLoading: isLoadingMatches } = useQuery<MatchSuggestion[]>({
+  const {
+    data: matchSuggestions,
+    isLoading: isLoadingMatches,
+    error: matchesError,
+    isSuccess: matchesSuccess,
+    fetchStatus: matchesFetchStatus,
+    refetch: refetchMatches,
+  } = useQuery<MatchSuggestion[]>({
     queryKey: [
       "/api/companies",
       companyId,
@@ -391,6 +410,8 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     ],
     enabled: !!selectedTransaction?.id && matchDialogOpen,
   });
+  const matchesPaused = matchesFetchStatus === "paused";
+  const hasMatches = !!matchSuggestions && matchSuggestions.length > 0;
 
   const { data: reportData, isLoading: isLoadingReport } = useQuery<ReportData>({
     queryKey: [
@@ -963,14 +984,19 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                   if (transactionsError) void refetchTransactions();
                 },
               }}
+              // A paused or failed load is never "empty"; cached rows stay with a notice.
               status={
-                (accountsError && !bankAccounts) || (transactionsError && !transactions)
+                accountsError && !bankAccounts
                   ? "error"
                   : isLoadingTransactions
                     ? "loading"
-                    : filteredTransactions.length === 0
-                      ? "empty"
-                      : "ready"
+                    : filteredTransactions.length > 0 || transactionsPaused
+                      ? "ready"
+                      : transactionsError
+                        ? "error"
+                        : transactionsSuccess
+                          ? "empty"
+                          : "loading"
               }
               columnLabels={[t.date, t.description, t.amount, t.status]}
               empty={
@@ -1003,8 +1029,31 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                     }
               }
             >
+              {transactionsPaused ? (
+                <p
+                  role="status"
+                  className="px-4 py-3 text-center text-small text-muted-foreground"
+                  data-testid="status-transactions-paused"
+                >
+                  {filteredTransactions.length > 0
+                    ? t["banking.query.pausedCached"]
+                    : t["banking.query.paused"]}
+                </p>
+              ) : transactionsError ? (
+                <ErrorState
+                  compact
+                  testId="error-transactions-refresh"
+                  onRetry={() => void refetchTransactions()}
+                />
+              ) : null}
               {/* Phones: one two-line row per bank line, the next step as a single button. */}
-              <div className="divide-hairline md:hidden" data-testid="mobile-bank-transaction-list">
+              <div
+                className={cn(
+                  "divide-hairline md:hidden",
+                  filteredTransactions.length === 0 && "hidden"
+                )}
+                data-testid="mobile-bank-transaction-list"
+              >
                 {filteredTransactions.map((tx) => {
                   const conf =
                     tx.matchConfidence != null ? Math.round(tx.matchConfidence * 100) : null;
@@ -1091,7 +1140,10 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                   );
                 })}
               </div>
-              <div className="hidden md:block" data-testid="bank-transaction-table">
+              <div
+                className={cn("hidden", filteredTransactions.length > 0 && "md:block")}
+                data-testid="bank-transaction-table"
+              >
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -1293,13 +1345,24 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
               <p className="text-xs font-semibold text-muted-foreground">
                 <T k="pageLabels.suggestedMatches" />
               </p>
+              {matchesPaused ? (
+                <p
+                  role="status"
+                  className="text-center text-small text-muted-foreground"
+                  data-testid="status-matches-paused"
+                >
+                  {hasMatches ? t["banking.query.pausedCached"] : t["banking.query.paused"]}
+                </p>
+              ) : matchesError && !isLoadingMatches ? (
+                <ErrorState compact testId="error-matches" onRetry={() => void refetchMatches()} />
+              ) : null}
               {isLoadingMatches ? (
                 <div className="space-y-2">
                   {[1, 2, 3].map((i) => (
                     <Skeleton key={i} className="h-20" />
                   ))}
                 </div>
-              ) : matchSuggestions && matchSuggestions.length > 0 ? (
+              ) : hasMatches ? (
                 <div className="space-y-2 max-h-[360px] overflow-y-auto pe-1">
                   {matchSuggestions.map((s) => {
                     const typeCfg = matchTypeConfig[s.matchedType];
@@ -1366,8 +1429,13 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                     );
                   })}
                 </div>
+              ) : matchesPaused || matchesError ? null : !matchesSuccess ? (
+                <Skeleton className="h-20" />
               ) : (
-                <div className="text-center py-8 text-muted-foreground">
+                <div
+                  className="text-center py-8 text-muted-foreground"
+                  data-testid="empty-state-match-suggestions"
+                >
                   <ArrowRightLeft className="w-10 h-10 mx-auto mb-3 opacity-40" />
                   <p className="text-sm">
                     <T k="pageLabels.noMatchesFound2" />
@@ -1484,7 +1552,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium text-sm">{strings.reviewTitle}</p>
-                  {statementPreview.validRows > 0 && firstInvalidDateRow == null && (
+                  {statementRecognized && (
                     <Badge variant="secondary" data-testid="statement-recognized">
                       {strings.recognized}
                     </Badge>
