@@ -124,7 +124,11 @@ describe("import wizard states", () => {
   it("shows a history error instead of an empty list", async () => {
     history = () => json({ message: "boom" }, 500);
     await mount("en");
-    expect(q("text-import-history-error")).not.toBeNull();
+    await vi.waitFor(() => {
+      const alert = q("text-import-history-error");
+      expect(alert?.getAttribute("role")).toBe("alert");
+      expect(alert?.textContent).toContain("Could not load the import history.");
+    });
     expect(q("text-import-history-empty")).toBeNull();
   });
 

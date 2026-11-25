@@ -256,6 +256,7 @@ export default function ImportWizard() {
   const history = useQuery<Job[]>({
     queryKey: ["/api/companies", companyId, "imports"],
     enabled: !!companyId,
+    retry: false,
   });
 
   const fail = (e: unknown) =>
