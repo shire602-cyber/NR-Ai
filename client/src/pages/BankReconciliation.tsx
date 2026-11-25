@@ -373,6 +373,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
   const {
     data: transactions,
     isLoading: isLoadingTransactions,
+    isPaused: transactionsPaused,
     error: transactionsError,
     refetch: refetchTransactions,
   } = useQuery<BankTransaction[]>({
@@ -415,6 +416,9 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
   });
 
   // ─── Derived state ────────────────────────────────────────────────────────
+
+  // Paused with nothing cached: the request never ran, so it is offline, not an empty import.
+  const transactionsOffline = transactionsPaused && !transactions && !transactionsError;
 
   // One normalized query drives both the row filter and the search-empty state.
   const normalizedSearch = searchQuery.trim().toLowerCase();
@@ -972,14 +976,22 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
             </div>
 
             <DataTableCard
-              error={{
-                onRetry: () => {
-                  if (accountsError) void refetchAccounts();
-                  if (transactionsError) void refetchTransactions();
-                },
-              }}
+              error={
+                // A paused first fetch never ran: say offline, not "no transactions". No Retry:
+                // the paused query resumes by itself on reconnect.
+                transactionsOffline
+                  ? { title: t["common.errorHeading.offline"], testId: "bank-transactions-offline" }
+                  : {
+                      onRetry: () => {
+                        if (accountsError) void refetchAccounts();
+                        if (transactionsError) void refetchTransactions();
+                      },
+                    }
+              }
               status={
-                (accountsError && !bankAccounts) || (transactionsError && !transactions)
+                (accountsError && !bankAccounts) ||
+                (transactionsError && !transactions) ||
+                transactionsOffline
                   ? "error"
                   : isLoadingTransactions
                     ? "loading"
@@ -1328,7 +1340,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                 </div>
               ) : (
                 <>
-                  {matchesError && (
+                  {matchesError && !matchesPaused && (
                     <div
                       role="alert"
                       className="rounded-lg border border-destructive/40 p-4 text-center"
@@ -1347,7 +1359,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                       </Button>
                     </div>
                   )}
-                  {matchesPaused && !matchesError && (
+                  {matchesPaused && (
                     <div
                       role="status"
                       className="rounded-lg border border-border bg-muted/30 p-4 text-center text-sm text-muted-foreground"
@@ -1426,6 +1438,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                   )}
                   {matchesLoaded &&
                     !matchesError &&
+                    !matchesPaused &&
                     (!matchSuggestions || matchSuggestions.length === 0) && (
                       <div
                         className="text-center py-8 text-muted-foreground"

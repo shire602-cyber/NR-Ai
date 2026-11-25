@@ -59,6 +59,7 @@ const suggestion = {
 let transactions: Array<Record<string, unknown>>;
 let bankAccounts: Array<Record<string, unknown>>;
 let suggestionsReply: () => Response;
+let transactionsReply: () => Response | Promise<Response>;
 
 beforeAll(async () => {
   (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= class {
@@ -77,13 +78,14 @@ beforeEach(() => {
   transactions = [{ ...baseTx, id: "t-1" }];
   bankAccounts = [];
   suggestionsReply = () => json([]);
+  transactionsReply = () => json(transactions);
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/api/csrf-token")) return json({ csrfToken: "x" });
       if (/\/api\/companies$/.test(url)) return json([{ id: "c-1", name: "Oasis" }]);
-      if (url.endsWith("/bank-statements/transactions")) return json(transactions);
+      if (url.endsWith("/bank-statements/transactions")) return transactionsReply();
       if (url.endsWith("/bank-accounts")) return json(bankAccounts);
       if (url.endsWith("/suggestions")) return suggestionsReply();
       return json([]);
@@ -109,11 +111,15 @@ const flush = async (ticks = 12) => {
   for (let i = 0; i < ticks; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
 };
 
-async function mountPage(locale: "en" | "ar") {
+async function mountPage(
+  locale: "en" | "ar",
+  prime?: (client: (typeof import("../../client/src/lib/queryClient"))["queryClient"]) => void
+) {
   const i18n = await import("../../client/src/lib/i18n");
   await act(async () => i18n.useI18n.getState().setLocale(locale));
   const { queryClient } = await import("../../client/src/lib/queryClient");
   queryClient.clear();
+  prime?.(queryClient);
   const { ActiveCompanyProvider } =
     await import("../../client/src/components/ActiveCompanyProvider");
   const { default: BankReconciliation } = await import("../../client/src/pages/BankReconciliation");
@@ -216,6 +222,45 @@ describe("bank reconciliation search no-match state", () => {
   }, 60_000);
 });
 
+describe("bank reconciliation transactions offline state", () => {
+  it("shows offline, not the import prompt, while the first transactions fetch is paused, then the real empty state after a successful empty reply", async () => {
+    // Company and accounts are already cached and the browser is offline before the page mounts,
+    // so the transactions request is paused before it ever runs: no data and no error.
+    let reply!: (response: Response) => void;
+    const held = new Promise<Response>((resolve) => (reply = resolve));
+    let calls = 0;
+    transactionsReply = () => {
+      calls += 1;
+      return held;
+    };
+    await mountPage("en", (client) => {
+      client.setQueryData(["/api/companies"], [{ id: "c-1", name: "Oasis" }]);
+      client.setQueryData(["/api/companies", "c-1", "bank-accounts"], []);
+      onlineManager.setOnline(false);
+    });
+    const offline = byTestId("bank-transactions-offline");
+    expect(offline).not.toBeNull();
+    expect(offline!.textContent).toContain(
+      (enCommon as Record<string, string>)["common.errorHeading.offline"]
+    );
+    // Nothing to retry by hand: the paused query resumes on reconnect.
+    expect(offline!.querySelector("button")).toBeNull();
+    expect(byTestId("empty-state-bank-transactions")).toBeNull();
+    expect(calls).toBe(0);
+
+    // Back online but not yet answered: still no import prompt.
+    await act(async () => onlineManager.setOnline(true));
+    await flush();
+    expect(calls).toBe(1);
+    expect(byTestId("bank-transactions-offline")).toBeNull();
+    expect(byTestId("empty-state-bank-transactions")).toBeNull();
+
+    await act(async () => reply(json([])));
+    await flush();
+    expect(byTestId("empty-state-bank-transactions")).not.toBeNull();
+  }, 60_000);
+});
+
 describe("bank reconciliation match dialog states", () => {
   it("shows the offline status, not 'no matches', when the first fetch never ran, then a real empty result after reconnect", async () => {
     await mountPage("en");
@@ -272,6 +317,37 @@ describe("bank reconciliation match dialog states", () => {
     const retry = byTestId("match-suggestions-error")!.querySelector<HTMLButtonElement>("button")!;
     await act(async () => retry.click());
     await flush(4);
+    expect(byTestId("match-suggestions-error")).toBeNull();
+    expect(document.body.textContent).toContain("BETA");
+  }, 60_000);
+
+  it("shows the paused status, not the stale failure, and keeps cached rows when a retry pauses after a failed refresh", async () => {
+    suggestionsReply = () => json([suggestion]);
+    const queryClient = await mountPage("en");
+    await openMatchDialog();
+    suggestionsReply = () => json({ message: "boom" }, 404);
+    await act(async () => {
+      await queryClient.refetchQueries({
+        queryKey: ["/api/companies", "c-1", "bank-statements", "t-1", "suggestions"],
+      });
+    });
+    await flush(4);
+    expect(byTestId("match-suggestions-error")).not.toBeNull();
+
+    onlineManager.setOnline(false);
+    const retry = byTestId("match-suggestions-error")!.querySelector<HTMLButtonElement>("button")!;
+    await act(async () => retry.click());
+    await flush(4);
+    expect(byTestId("match-suggestions-offline")).not.toBeNull();
+    expect(byTestId("match-suggestions-error")).toBeNull();
+    expect(byTestId("match-suggestions-empty")).toBeNull();
+    expect(document.body.textContent).toContain("INV-1042 ALPHA TRADING");
+
+    suggestionsReply = () =>
+      json([{ ...suggestion, matchedId: "inv-2", matchedDescription: "BETA" }]);
+    await act(async () => onlineManager.setOnline(true));
+    await flush();
+    expect(byTestId("match-suggestions-offline")).toBeNull();
     expect(byTestId("match-suggestions-error")).toBeNull();
     expect(document.body.textContent).toContain("BETA");
   }, 60_000);
