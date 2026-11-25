@@ -241,5 +241,10 @@
   "screens.entryLines": "Entry lines",
   "screens.statusCredited": "Credited",
   "screens.claimsSubmittedCountPlural": "{count, plural, one {# claim} other {# claims}}",
-  "screens.claimsAcrossCompanyPlural": "{count, plural, one {# claim across the company} other {# claims across the company}}"
+  "screens.claimsAcrossCompanyPlural": "{count, plural, one {# claim across the company} other {# claims across the company}}",
+  "screens.receiptPreviewFor": "Preview receipt image for {merchant}",
+  "screens.receiptPreviewThis": "Preview receipt image",
+  "screens.receiptScannedFor": "Original scanned image for {merchant}",
+  "screens.receiptsSearchPlaceholder": "Search merchant or category",
+  "screens.receiptsNoMatchTitle": "No matching receipts"
 }

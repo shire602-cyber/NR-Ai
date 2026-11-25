@@ -22,6 +22,7 @@ import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { matchesReceiptSearch } from "@/lib/receiptSearch";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -93,6 +94,7 @@ import {
   Brain,
   Bot,
   Plus,
+  Search,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -325,7 +327,11 @@ function ReceiptThumbnail({ companyId, receipt, onPreview }: ReceiptThumbnailPro
       type="button"
       onClick={() => onPreview(url, receipt.merchant ?? undefined)}
       className="group relative h-10 w-10 shrink-0 rounded-md overflow-hidden border hover:ring-2 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      aria-label={`Preview receipt image for ${receipt.merchant ?? "this receipt"}`}
+      aria-label={
+        receipt.merchant
+          ? formatMessage(translateNow("screens.receiptPreviewFor"), { merchant: receipt.merchant })
+          : translateNow("screens.receiptPreviewThis")
+      }
       data-testid={`receipt-thumbnail-${receipt.id}`}
     >
       <img src={url} alt="" className="w-full h-full object-cover" />
@@ -476,6 +482,7 @@ function CompanyReceipts({
   const [isOcrExporting, setIsOcrExporting] = useState(false);
   const [manualDraft, setManualDraft] = useState<ManualReceiptDraft | null>(null);
   const manualSource = manualDraft?.source;
+  const [receiptSearch, setReceiptSearch] = useState("");
   const [imagePreview, setImagePreview] = useState<{ src: string; merchant?: string } | null>(null);
   // R05-19b (S2): split lines / revise a posted receipt / split one upload into receipts.
   const [linesDialog, setLinesDialog] = useState<{
@@ -1104,7 +1111,7 @@ function CompanyReceipts({
         if (response.ok) {
           const result = await response.json();
           parsed = {
-            merchant: result.merchant || "Unknown Merchant",
+            merchant: result.merchant || translateNow("screens.unknownMerchant"),
             date: result.date || new Date().toISOString().split("T")[0],
             invoiceNumber: result.invoiceNumber || null,
             subtotal: result.subtotal || result.amount || 0,
@@ -1227,7 +1234,7 @@ function CompanyReceipts({
 
         parsed = parseReceiptText(tesseractText);
         if (!parsed.merchant && !parsed.total) {
-          parsed.merchant = "Unknown Merchant";
+          parsed.merchant = translateNow("screens.unknownMerchant");
           parsed.total = 0;
         }
 
@@ -1296,7 +1303,7 @@ function CompanyReceipts({
         },
         body: JSON.stringify({
           companyId: origin,
-          description: `${data.merchant || "Unknown"} - ${data.total} ${data.currency}`,
+          description: `${data.merchant || translateNow("screens.unknownMerchant")} - ${data.total} ${data.currency}`,
           amount: data.total,
           currency: data.currency || "AED",
         }),
@@ -1450,7 +1457,7 @@ function CompanyReceipts({
           const { net, vat } = amountsFrom(receipt.data);
           const receiptData = {
             captureId: receipt.id,
-            merchant: receipt.data!.merchant || "Unknown",
+            merchant: receipt.data!.merchant || translateNow("screens.unknownMerchant"),
             date: receipt.data!.date || new Date().toISOString().split("T")[0],
             amount: net / 100,
             vatAmount: vat / 100,
@@ -1568,12 +1575,15 @@ function CompanyReceipts({
 
   const filteredReceipts = useMemo(() => {
     if (!receipts || receipts.length === 0) return [];
-    if (!dateRange.from && !dateRange.to) return receipts;
+    const searched = receiptSearch.trim()
+      ? receipts.filter((r: any) => matchesReceiptSearch(r, receiptSearch))
+      : receipts;
+    if (!dateRange.from && !dateRange.to) return searched;
 
     const fromDate = dateRange.from ? startOfDay(dateRange.from) : null;
     const toDate = dateRange.to ? endOfDay(dateRange.to) : null;
 
-    return receipts.filter((receipt: any) => {
+    return searched.filter((receipt: any) => {
       if (!receipt.date) return false;
 
       const receiptDate =
@@ -1592,7 +1602,7 @@ function CompanyReceipts({
       }
       return true;
     });
-  }, [receipts, dateRange.from, dateRange.to]);
+  }, [receipts, receiptSearch, dateRange.from, dateRange.to]);
 
   function canExportReceipts(origin: string) {
     try {
@@ -2498,6 +2508,16 @@ function CompanyReceipts({
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  type="search"
+                  dir="auto"
+                  value={receiptSearch}
+                  onChange={(e) => setReceiptSearch(e.target.value)}
+                  placeholder={t["screens.receiptsSearchPlaceholder"]}
+                  aria-label={t["screens.receiptsSearchPlaceholder"]}
+                  className="w-56"
+                  data-testid="input-search-receipts"
+                />
                 <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -2687,21 +2707,25 @@ function CompanyReceipts({
                 />
               ) : (
                 <EmptyState
-                  icon={Upload}
+                  icon={receiptSearch.trim() ? Search : Upload}
                   title={
-                    dateRange.from || dateRange.to
-                      ? t["pages.receiptsEmptyRangeTitle"]
-                      : t["pages.receiptsEmptyTitle"]
+                    receiptSearch.trim()
+                      ? t["screens.receiptsNoMatchTitle"]
+                      : dateRange.from || dateRange.to
+                        ? t["pages.receiptsEmptyRangeTitle"]
+                        : t["pages.receiptsEmptyTitle"]
                   }
                   description={
-                    dateRange.from || dateRange.to
-                      ? t["pages.receiptsEmptyRangeBody"]
-                      : autoReadUnavailable
-                        ? t["pages.receiptsEmptyBodyManual"]
-                        : t["pages.receiptsEmptyBody"]
+                    receiptSearch.trim()
+                      ? t["screens.noMatchingAssetsBody"]
+                      : dateRange.from || dateRange.to
+                        ? t["pages.receiptsEmptyRangeBody"]
+                        : autoReadUnavailable
+                          ? t["pages.receiptsEmptyBodyManual"]
+                          : t["pages.receiptsEmptyBody"]
                   }
                   action={
-                    !(dateRange.from || dateRange.to)
+                    !(dateRange.from || dateRange.to) && !receiptSearch.trim()
                       ? {
                           label: t["pages.receiptsUploadReceipt"],
                           icon: Upload,
@@ -2711,12 +2735,17 @@ function CompanyReceipts({
                       : undefined
                   }
                   secondaryAction={
-                    dateRange.from || dateRange.to
+                    receiptSearch.trim()
                       ? {
-                          label: t["screens.clearFilter"],
-                          onClick: () => setDateRange({ from: undefined, to: undefined }),
+                          label: t["screens.clearSearch"],
+                          onClick: () => setReceiptSearch(""),
                         }
-                      : undefined
+                      : dateRange.from || dateRange.to
+                        ? {
+                            label: t["screens.clearFilter"],
+                            onClick: () => setDateRange({ from: undefined, to: undefined }),
+                          }
+                        : undefined
                   }
                   testId="empty-state-receipts"
                 />
@@ -2750,7 +2779,7 @@ function CompanyReceipts({
             </DialogTitle>
             <DialogDescription>
               {imagePreview?.merchant
-                ? `Original scanned image for ${imagePreview.merchant}`
+                ? formatMessage(t["screens.receiptScannedFor"], { merchant: imagePreview.merchant })
                 : t["pages.receiptsOriginalImage"]}
             </DialogDescription>
           </DialogHeader>
