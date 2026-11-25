@@ -661,38 +661,48 @@ function preservesPortalValue(table: ManifestTable, column: string): boolean {
 
 async function diffTable(
   client: Queryable,
-  t: ManifestTable,
+  entry: RestoreTable,
   companyId: string,
-  rowsJson: string
+  replacePlan?: RestoreTable[]
 ): Promise<TableDiff> {
+  const { table: t, json } = entry;
+  const values = [companyId, json];
   const snap = `json_populate_recordset(NULL::${q(t.name)}, $2::json)`;
-  const changed = t.columns
-    .map((c) => {
-      const differs = `to_jsonb(cur.${q(c)}) IS DISTINCT FROM to_jsonb(s.${q(c)})`;
-      return preservesPortalValue(t, c) ? `(cur.backup_can_delete AND ${differs})` : differs;
-    })
-    .join(" OR ");
-  const canDelete = t.protectedFromDelete ? `NOT (${t.protectedFromDelete})` : "true";
+  const protection = replacePlan
+    ? projectedDeleteProtection(replacePlan, entry, values)
+    : t.protectedFromDelete;
   if (!t.pk.length) {
     const { rows } = await pq<{ s: string; c: string }>(
       `SELECT (SELECT count(*) FROM ${snap}) AS s,
-              (SELECT count(*) FROM ${q(t.name)} t WHERE ${deletionScope(t)}) AS c`,
-      [companyId, rowsJson],
+              (SELECT count(*) FROM ${q(t.name)} t WHERE ${deletionScope(t, protection)}) AS c`,
+      values,
       client
     );
     const s = Number(rows[0].s);
     const c = Number(rows[0].c);
     return { table: t.name, snapshotRows: s, currentRows: c, insert: s, update: 0, delete: c };
   }
+  const canDelete = protection ? `NOT (${protection})` : "true";
+  // Keep the existing portal field comparison based on live grants.
+  const portalProtection = t.name === "customer_contacts" && t.protectedFromDelete;
+  const portalColumn = portalProtection ? `, (${portalProtection}) AS backup_portal_protected` : "";
+  const changed = t.columns
+    .map((c) => {
+      const differs = `to_jsonb(cur.${q(c)}) IS DISTINCT FROM to_jsonb(s.${q(c)})`;
+      return portalProtection && preservesPortalValue(t, c)
+        ? `(NOT cur.backup_portal_protected AND ${differs})`
+        : differs;
+    })
+    .join(" OR ");
   const { rows } = await pq<Record<string, string>>(
     `WITH s AS (SELECT * FROM ${snap}),
-          cur AS (SELECT t.*, ${canDelete} AS backup_can_delete FROM ${q(t.name)} t WHERE ${t.predicate})
+          cur AS (SELECT t.*, ${canDelete} AS backup_can_delete${portalColumn} FROM ${q(t.name)} t WHERE ${t.predicate})
      SELECT (SELECT count(*) FROM s) AS snapshot_rows,
             (SELECT count(*) FROM cur) AS current_rows,
             (SELECT count(*) FROM s WHERE NOT EXISTS (SELECT 1 FROM ${q(t.name)} x WHERE ${pkMatch(t, "x", "s")})) AS ins,
             (SELECT count(*) FROM s JOIN cur ON ${pkMatch(t, "cur", "s")} WHERE ${changed || "false"}) AS upd,
             (SELECT count(*) FROM cur WHERE backup_can_delete AND NOT EXISTS (SELECT 1 FROM s WHERE ${pkMatch(t, "cur", "s")})) AS del`,
-    [companyId, rowsJson],
+    values,
     client
   );
   const r = rows[0];
@@ -1203,9 +1213,10 @@ async function restoreBlocksCheckoutPosting(
       SELECT 1 FROM restored_settling_links restored
       JOIN live_settling_links live USING (id)
       JOIN companies c ON c.id = $1
-      WHERE (NOT restored.can_post AND (
-        live.can_post OR restored.effective_deposit_id IS DISTINCT FROM live.effective_deposit_id
-      )) OR ${checkoutBankCurrency("restored_banks", "restored")}
+      WHERE (NOT restored.can_post AND live.can_post)
+        OR (${mode === "merge" ? "NOT restored.can_post AND " : ""}
+          restored.effective_deposit_id IS DISTINCT FROM live.effective_deposit_id)
+        OR ${checkoutBankCurrency("restored_banks", "restored")}
         IS DISTINCT FROM ${checkoutBankCurrency("live_banks", "live")}
     )`);
   }
@@ -1408,7 +1419,7 @@ async function validateReplaceExternalState(
       "BACKUP_RESTORE_CONFLICT",
       409,
       { table: "payment_links" },
-      "Replace restore would change a payable invoice, its accounting records, deposit account currency or eligibility, or posting availability while a payment link or checkout session can still settle."
+      "Replace restore would change a payable invoice, its accounting records, the deposit account, its currency or eligibility, or posting availability while a payment link or checkout session can still settle."
     );
   }
 
@@ -1792,9 +1803,9 @@ export async function restoreCompanyBackup(
       );
     }
     const diffs: TableDiff[] = [];
-    for (const { table, json } of plan) {
-      const d = await diffTable(client, table, args.companyId, json);
-      const replace = args.mode === "replace" && !table.appendOnly;
+    for (const entry of plan) {
+      const replace = args.mode === "replace" && !entry.table.appendOnly;
+      const d = await diffTable(client, entry, args.companyId, replace ? plan : undefined);
       if (d.insert || (replace && (d.update || d.delete))) {
         diffs.push(replace ? d : { ...d, update: 0, delete: 0 });
       }

@@ -729,7 +729,7 @@ describe("AU7 accounting backup integrity", () => {
   });
 
   it.each(["configured account", "clearing fallback", "changed clearing fallback"])(
-    "keeps the spot rate that a checkout receipt needs for its %s",
+    "guards Replace when a checkout uses its %s and needs a spot rate",
     async (deposit) => {
       const t = await h.createTenant();
       const invoiceId = await draftInvoice(t);
@@ -786,6 +786,12 @@ describe("AU7 accounting backup integrity", () => {
        VALUES ('AED', 'EUR', 'spot', 0.25, (now() AT TIME ZONE 'UTC') - interval '10 days') RETURNING id`
       );
       try {
+        if (preferredBankId) {
+          await expectReplaceConflict(t, before, "payment_links");
+          expect(await rateRows()).toEqual([rate]);
+          expect(await ensureClearingAccount(t.company.id)).toBe(accountId);
+          return;
+        }
         for (const response of [
           await t.as.post(`/api/backups/${before.id}/restore-preview`, { mode: "replace" }),
           await replace(t, before),
@@ -793,11 +799,6 @@ describe("AU7 accounting backup integrity", () => {
           expect(response.status, response.text).toBe(200);
         }
         expect(await rateRows()).toEqual([]);
-        if (preferredBankId) {
-          expect(await ensureClearingAccount(t.company.id)).toBe(
-            (await accountByCode(t, "1010")).id
-          );
-        }
       } finally {
         await h.sql("DELETE FROM exchange_rates WHERE id = $1", [systemRate.id]);
       }
@@ -869,24 +870,20 @@ describe("AU7 accounting backup integrity", () => {
   );
 
   it.each([
-    { draftInBackup: false, status: 409 },
-    { draftInBackup: true, status: 200 },
+    { draftInBackup: false, settlingCheckout: true, status: 409 },
+    { draftInBackup: true, settlingCheckout: true, status: 200 },
+    { draftInBackup: false, settlingCheckout: false, status: 200 },
   ])(
-    "returns $status for Replace preview and restore with an omitted revenue account FK (draft in backup: $draftInBackup)",
-    async ({ draftInBackup, status }) => {
+    "returns $status for Replace preview and restore with an omitted revenue account FK (draft in backup: $draftInBackup, settling checkout: $settlingCheckout)",
+    async ({ draftInBackup, settlingCheckout, status }) => {
       const t = await h.createTenant();
       const invoiceId = await draftInvoice(t);
       await issueInvoice(t, invoiceId);
       const bank = await accountByCode(t, "1020");
       await h.sql(
         `INSERT INTO bank_accounts (company_id, name_en, bank_name, currency, gl_account_id)
-         VALUES ($1, 'Checkout deposits', 'Other', 'EUR', $2)`,
+         VALUES ($1, 'Checkout deposits', 'Other', 'AED', $2)`,
         [t.company.id, bank.id]
-      );
-      await h.sql(
-        `INSERT INTO exchange_rates (company_id, base_currency, target_currency, rate_type, rate, date)
-         VALUES ($1, 'EUR', 'AED', 'spot', 4, now() AT TIME ZONE 'UTC')`,
-        [t.company.id]
       );
       const backedUpDraft = draftInBackup ? await draftInvoice(t) : undefined;
       const before = await snapshot(t);
@@ -905,9 +902,21 @@ describe("AU7 accounting backup integrity", () => {
         income.id,
         draft,
       ]);
-      await startCheckoutWithClearingFallback(t, invoiceId);
-      const { ensureClearingAccount } = await import("../../server/services/payments");
-      expect(await ensureClearingAccount(t.company.id)).toBe(bank.id);
+      if (settlingCheckout) {
+        await startCheckoutWithClearingFallback(t, invoiceId);
+        const { ensureClearingAccount } = await import("../../server/services/payments");
+        expect(await ensureClearingAccount(t.company.id)).toBe(bank.id);
+      }
+
+      const draftRows = () =>
+        h.sql<{ table: string }>(
+          `SELECT 'accounts' AS "table" FROM accounts WHERE id = $1
+           UNION ALL SELECT 'invoices' FROM invoices WHERE id = $2
+           UNION ALL SELECT 'invoice_lines' FROM invoice_lines WHERE invoice_id = $2
+           ORDER BY 1`,
+          [income.id, draft]
+        );
+      const rowsBefore = await draftRows();
 
       if (status === 409) {
         await expectReplaceConflict(t, before, "payment_links");
@@ -918,6 +927,32 @@ describe("AU7 accounting backup integrity", () => {
         expect(preview.status, preview.text).toBe(status);
         const restored = await replace(t, before);
         expect(restored.status, restored.text).toBe(status);
+        if (!settlingCheckout) {
+          expect(rowsBefore).toEqual([
+            { table: "accounts" },
+            { table: "invoice_lines" },
+            { table: "invoices" },
+          ]);
+          const rowsAfter = await draftRows();
+          expect(rowsAfter).toEqual([]);
+          const deleted = rowsBefore.length - rowsAfter.length;
+          for (const { body } of [preview, restored]) {
+            expect(body.tables).toEqual(
+              expect.arrayContaining(
+                rowsBefore.map(({ table }) => expect.objectContaining({ table, delete: 1 }))
+              )
+            );
+            expect(body.totals.delete).toBe(deleted);
+          }
+          expect(
+            await h.sql(
+              `SELECT (details::jsonb #>> '{after,totals,delete}')::int AS deleted
+               FROM audit_logs WHERE action = 'backup.restore' AND resource_id = $1`,
+              [before.id]
+            )
+          ).toEqual([{ deleted }]);
+          return;
+        }
       }
       expect(await h.sql("SELECT id FROM accounts WHERE id = $1", [income.id])).toEqual([income]);
       expect(
