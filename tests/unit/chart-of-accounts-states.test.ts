@@ -1,11 +1,7 @@
 // @vitest-environment jsdom
-/**
- * Chart of accounts screen states: a failed load must say so (not "No accounts yet"), and the
- * Arabic screen must not carry hardcoded English (page eyebrow).
- */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../client/src/hooks/useDefaultCompany", () => ({
@@ -19,6 +15,22 @@ vi.mock("../../client/src/hooks/useCompanyPermission", () => ({
 
 let container: HTMLDivElement;
 let root: Root;
+
+const cashAccount = {
+  account: {
+    id: "cash",
+    code: "1000",
+    name: "Cash on hand",
+    nameEn: "Cash on hand",
+    nameAr: "النقدية",
+    type: "asset",
+    parentId: null,
+    isActive: true,
+  },
+  balance: 0,
+  debitTotal: 0,
+  creditTotal: 0,
+};
 
 beforeAll(async () => {
   vi.stubGlobal(
@@ -38,6 +50,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  onlineManager.setOnline(true);
 });
 
 async function renderPage(locale: "en" | "ar", queryFn: () => Promise<unknown>) {
@@ -62,10 +75,39 @@ async function renderPage(locale: "en" | "ar", queryFn: () => Promise<unknown>) 
 }
 
 describe("chart of accounts states", { timeout: 30000 }, () => {
-  it("shows a load error with retry, not the empty state, when the request fails", async () => {
-    await renderPage("en", () => Promise.reject(new Error("boom")));
-    expect(container.querySelector('[data-testid="coa-load-error"]')).not.toBeNull();
+  it("pauses an offline retry without showing the empty state and recovers on reconnect", async () => {
+    const queryFn = vi
+      .fn<() => Promise<unknown>>()
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce([cashAccount]);
+    await renderPage("en", queryFn);
+
+    const retry = container.querySelector<HTMLButtonElement>(
+      '[data-testid="coa-load-error"] button'
+    );
+    expect(retry?.textContent).toContain("Retry");
     expect(container.textContent).not.toContain("No accounts yet");
+
+    await act(async () => {
+      onlineManager.setOnline(false);
+      retry!.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(queryFn).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain("No accounts yet");
+    expect(container.querySelector('[data-testid="table-skeleton"]')).not.toBeNull();
+
+    await act(async () => {
+      onlineManager.setOnline(true);
+      await vi.waitFor(() => expect(queryFn).toHaveBeenCalledTimes(2));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(container.querySelector('[data-testid="coa-load-error"]')).toBeNull();
+    expect(container.querySelector('[data-testid="row-account-cash"]')?.textContent).toContain(
+      cashAccount.account.nameEn
+    );
   });
 
   it("shows the empty state when the company has no accounts", async () => {
@@ -78,5 +120,17 @@ describe("chart of accounts states", { timeout: 30000 }, () => {
     await renderPage("ar", () => Promise.resolve([]));
     expect(container.textContent).toContain("المحاسبة");
     expect(container.textContent).not.toContain("Accounting");
+  });
+
+  it("uses the Arabic name of a bilingual account in the set-parent dialog", async () => {
+    await renderPage("ar", () => Promise.resolve([cashAccount]));
+
+    const setParent = container.querySelector<HTMLButtonElement>(
+      '[data-testid="button-set-parent-cash"]'
+    );
+    act(() => setParent!.click());
+
+    const dialog = document.body.querySelector('[data-testid="dialog-set-parent"]');
+    expect(dialog?.textContent).toContain(`1000 · ${cashAccount.account.nameAr}`);
   });
 });

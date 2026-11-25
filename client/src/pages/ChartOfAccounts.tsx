@@ -147,8 +147,9 @@ export default function ChartOfAccounts() {
 
   const {
     data: accountsWithBalances,
-    isLoading,
+    isPending,
     isError,
+    isSuccess,
     refetch,
   } = useQuery<AccountWithBalance[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts-with-balances"],
@@ -354,11 +355,11 @@ export default function ChartOfAccounts() {
 
       <DataTableCard
         status={
-          isLoading
+          isPending
             ? "loading"
             : isError && !accountsWithBalances
               ? "error"
-              : Object.keys(groupedAccounts).length === 0
+              : isSuccess && Object.keys(groupedAccounts).length === 0
                 ? "empty"
                 : "ready"
         }
