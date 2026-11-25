@@ -9,7 +9,8 @@ import {
   LineItemList,
   lineLabelClass,
 } from "@/components/ui/form-layout";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
+import { filterClaims } from "@/lib/expense-claim-search";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
@@ -29,6 +30,7 @@ import {
   Eye,
   CreditCard,
   Wallet,
+  Search,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -310,14 +312,38 @@ export default function ExpenseClaims() {
 
   // ─── Derived data ─────────────────────────────────────
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  // Single resolver for the localized status text: the badge renders it and search matches it.
+  const statusLabel = useCallback(
+    (status: string): string | undefined => {
+      switch (status) {
+        case "draft":
+        case "submitted":
+        case "approved":
+        case "rejected":
+          return t[`pages.${status}`];
+        case "paid":
+          return cc.paid;
+        default:
+          return undefined;
+      }
+    },
+    [t, cc]
+  );
+  const visibleClaims = useMemo(
+    () => filterClaims(allClaims, searchQuery, statusLabel),
+    [allClaims, searchQuery, statusLabel]
+  );
+
   const myClaims = useMemo(
-    () => allClaims.filter((c) => c.submitted_by === currentUser?.id),
-    [allClaims, currentUser?.id]
+    () => visibleClaims.filter((c) => c.submitted_by === currentUser?.id),
+    [visibleClaims, currentUser?.id]
   );
 
   const submittedClaims = useMemo(
-    () => allClaims.filter((c) => c.status === "submitted"),
-    [allClaims]
+    () => visibleClaims.filter((c) => c.status === "submitted"),
+    [visibleClaims]
   );
 
   const pendingTotal = summary?.thisMonth?.submitted?.total || 0;
@@ -700,35 +726,19 @@ export default function ExpenseClaims() {
   // ─── Helpers ──────────────────────────────────────────
 
   const getStatusBadge = (status: string) => {
+    const label = statusLabel(status);
     switch (status) {
       case "draft":
-        return (
-          <StatusBadge tone="neutral">
-            <T k="pages.draft" />
-          </StatusBadge>
-        );
+        return <StatusBadge tone="neutral">{label}</StatusBadge>;
       case "submitted":
-        return (
-          <StatusBadge tone="info">
-            <T k="pages.submitted" />
-          </StatusBadge>
-        );
+        return <StatusBadge tone="info">{label}</StatusBadge>;
       case "approved":
-        return (
-          <StatusBadge tone="success">
-            <T k="pages.approved" />
-          </StatusBadge>
-        );
-      case "rejected":
-        return (
-          <StatusBadge tone="danger">
-            <T k="pages.rejected" />
-          </StatusBadge>
-        );
       case "paid":
-        return <StatusBadge tone="success">{cc.paid}</StatusBadge>;
+        return <StatusBadge tone="success">{label}</StatusBadge>;
+      case "rejected":
+        return <StatusBadge tone="danger">{label}</StatusBadge>;
       default:
-        return <Badge variant="neutral">{status}</Badge>;
+        return <Badge variant="neutral">{label ?? status}</Badge>;
     }
   };
 
@@ -794,16 +804,33 @@ export default function ExpenseClaims() {
     <DataTableCard
       status={loading ? "loading" : claims.length === 0 ? "empty" : "ready"}
       columnLabels={[t["pages.title"], t.date, t.amount, t.status]}
-      empty={{
-        icon: Receipt,
-        title: emptyTitle ?? (t as any).noExpenseClaimsYet ?? "No expense claims yet",
-        description:
-          emptyDescription ??
-          (t as any).expenseClaimsEmptyDesc ??
-          "Submit your first reimbursement to get started.",
-        action: emptyAction ? { ...emptyAction, icon: Plus } : undefined,
-        testId: "empty-state-expense-claims",
-      }}
+      empty={
+        searchQuery.trim()
+          ? {
+              icon: Search,
+              title: t["screens.noMatchingClaims"],
+              description: t["screens.noMatchingClaimsBody"],
+              action: {
+                label: t["screens.clearSearch"],
+                onClick: () => {
+                  setSearchQuery("");
+                  searchInputRef.current?.focus();
+                },
+                variant: "outline",
+              },
+              testId: "empty-state-expense-claims-search",
+            }
+          : {
+              icon: Receipt,
+              title: emptyTitle ?? (t as any).noExpenseClaimsYet ?? "No expense claims yet",
+              description:
+                emptyDescription ??
+                (t as any).expenseClaimsEmptyDesc ??
+                "Submit your first reimbursement to get started.",
+              action: emptyAction ? { ...emptyAction, icon: Plus } : undefined,
+              testId: "empty-state-expense-claims",
+            }
+      }
     >
       <Table className="row-cards">
         <TableHeader>
@@ -961,7 +988,7 @@ export default function ExpenseClaims() {
     return (
       <EditorShell
         testId="dialog-claim-form"
-        eyebrow="Purchases"
+        eyebrow={t["purchases.eyebrow"]}
         title={editingClaim ? t["forms.claim.editTitle"] : t["forms.claim.newTitle"]}
         description={editingClaim ? t["forms.claim.editDesc"] : t["forms.claim.newDesc"]}
         footerSummary={
@@ -1259,7 +1286,7 @@ export default function ExpenseClaims() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Purchases"
+        eyebrow={t["purchases.eyebrow"]}
         title={t["pages.expenseClaims"]}
         description={t["pages.submitTrackAndManageEmployeeExpenseReimbursement"]}
         actions={
@@ -1306,6 +1333,26 @@ export default function ExpenseClaims() {
 
       {claimsFailed && <ErrorState onRetry={() => void refetchClaims()} />}
       {/* ─── Tabs ──────────────────────────────────────── */}
+      {!claimsFailed && (allClaims.length > 0 || searchQuery) && (
+        // Input padding follows the wrapper's direction; dir="auto" follows the typed text.
+        <div className="relative w-full sm:w-80 [&:dir(ltr)>input:dir(ltr)]:ps-9 [&:dir(ltr)>input:dir(rtl)]:pe-9 [&:dir(rtl)>input:dir(ltr)]:pe-9 [&:dir(rtl)>input:dir(rtl)]:ps-9">
+          <Search
+            className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            ref={searchInputRef}
+            type="search"
+            dir="auto"
+            placeholder={t["screens.searchClaims"]}
+            aria-label={t["screens.searchClaims"]}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-9"
+            data-testid="input-search-claims"
+          />
+        </div>
+      )}
       <Tabs defaultValue="my-claims" className="space-y-4" hidden={claimsFailed}>
         <TabsList>
           <TabsTrigger value="my-claims">
@@ -1331,7 +1378,7 @@ export default function ExpenseClaims() {
         </TabsList>
 
         <TabsContent value="my-claims" className="space-y-3">
-          <p className="text-small text-muted-foreground">
+          <p className="text-small text-muted-foreground" role="status" aria-live="polite">
             {formatMessage(t["screens.claimsSubmittedCountPlural"], { count: myClaims.length })}
           </p>
           <ClaimsTable
@@ -1348,7 +1395,7 @@ export default function ExpenseClaims() {
         </TabsContent>
 
         <TabsContent value="review" className="space-y-3">
-          <p className="text-small text-muted-foreground">
+          <p className="text-small text-muted-foreground" role="status" aria-live="polite">
             {formatMessage(t["screens.claimsPendingApproval"], { count: submittedClaims.length })}
           </p>
           <ClaimsTable
@@ -1361,11 +1408,11 @@ export default function ExpenseClaims() {
         </TabsContent>
 
         <TabsContent value="all-claims" className="space-y-3">
-          <p className="text-small text-muted-foreground">
-            {formatMessage(t["screens.claimsAcrossCompanyPlural"], { count: allClaims.length })}
+          <p className="text-small text-muted-foreground" role="status" aria-live="polite">
+            {formatMessage(t["screens.claimsAcrossCompanyPlural"], { count: visibleClaims.length })}
           </p>
           <ClaimsTable
-            claims={allClaims}
+            claims={visibleClaims}
             loading={isLoadingClaims}
             emptyTitle={t["screens.noExpenseClaims"]}
             emptyDescription={t["screens.noExpenseClaimsBody"]}
@@ -1494,7 +1541,9 @@ export default function ExpenseClaims() {
                               {item.expense_date ? formatDate(item.expense_date, locale) : "-"}
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline">{item.category}</Badge>
+                              <Badge variant="outline">
+                                {t[`forms.claim.cat.${item.category}`] || item.category}
+                              </Badge>
                             </TableCell>
                             <TableCell>{item.description}</TableCell>
                             <TableCell className="text-muted-foreground">
@@ -1609,7 +1658,7 @@ export default function ExpenseClaims() {
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="e.g., Bank transfer ref, cheque number"
+                        placeholder={t["screens.claimPaymentRefPlaceholder"]}
                         {...field}
                         value={field.value || ""}
                       />

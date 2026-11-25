@@ -11,6 +11,7 @@
  * Pure functions and zod schemas only (no drizzle), so client pages may import this module.
  */
 import { z } from "zod";
+import { toAsciiDigits } from "../arabic-text";
 import { EMIRATES, SUPPLY_TYPES, zText, zUuid } from "./primitives";
 
 export const SELLER_ID_TYPES = ["TL", "EID", "PAS", "CD"] as const;
@@ -43,7 +44,7 @@ export function isValidTin(value: string | null | undefined): boolean {
 /** First 10 digits of a 15-digit TRN (CT or VAT), or null. Separators are ignored. */
 export function tinFromTaxNumber(value: string | null | undefined): string | null {
   if (!value) return null;
-  const digits = String(value).replace(/[\s-]/g, "");
+  const digits = toAsciiDigits(value).replace(/[\s-]/g, "");
   if (!/^\d{15}$/.test(digits)) return null;
   const tin = digits.slice(0, 10);
   return isValidTin(tin) ? tin : null;
@@ -177,7 +178,8 @@ export const companyTaxIdentityBody = z
         z
           .string()
           .trim()
-          .regex(/^\d{10}$/, "TIN must be 10 digits"),
+          .transform(toAsciiDigits)
+          .pipe(z.string().regex(/^\d{10}$/, "TIN must be 10 digits")),
         z.null(),
       ])
       .transform((v) => (v === "" ? null : v))
@@ -202,6 +204,7 @@ export const taxRegistrationSchema = z
     number: zText(40, { min: 1 }),
   })
   .strict()
+  .transform((v) => (v.type === "vat_exception" ? v : { ...v, number: toAsciiDigits(v.number) }))
   .superRefine((v, ctx) => {
     if ((v.type === "vat" || v.type === "ct" || v.type === "excise") && !/^\d{15}$/.test(v.number))
       ctx.addIssue({

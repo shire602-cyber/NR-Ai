@@ -9,6 +9,7 @@ import {
   Receipt,
   Users,
 } from "lucide-react";
+import "./product-preview.css";
 import { useTranslation } from "@/lib/i18n";
 import { BrandMark } from "@/components/BrandMark";
 import { buttonVariants } from "@/components/ui/button";
