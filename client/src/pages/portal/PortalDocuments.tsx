@@ -7,7 +7,7 @@ import { Upload, FileText, FileImage, File, FolderOpen, Loader2, CheckCircle2 } 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { LoadErrorState } from "@/components/ui/load-error-state";
+import { PortalLoadNotice } from "@/components/portal/PortalLoadNotice";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DateText } from "@/components/documents/DateText";
@@ -67,6 +67,8 @@ export default function PortalDocuments() {
     data: documents,
     isLoading,
     error,
+    isPaused,
+    isFetching,
     refetch,
   } = useQuery<any[]>({
     ...portalQuery("/api/client-portal/documents", supplier),
@@ -136,20 +138,21 @@ export default function PortalDocuments() {
 
       <Card>
         <CardContent className="p-0">
-          {!isLoading && error && (
-            <LoadErrorState
+          {!isLoading && (
+            <PortalLoadNotice
               error={error}
-              onRetry={() => void refetch()}
-              scope="portal"
+              paused={isPaused}
+              retrying={isFetching}
+              onRetry={() => void refetch({ cancelRefetch: false })}
               compact={documents !== undefined}
-              testId="portal-documents-load-error"
+              resource="documents"
             />
           )}
           {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
             </div>
-          ) : error && documents === undefined ? null : !documents?.length ? (
+          ) : documents === undefined ? null : documents.length === 0 ? (
             <EmptyState
               headingLevel="h2"
               icon={FolderOpen}

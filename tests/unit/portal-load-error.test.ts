@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
@@ -114,6 +114,7 @@ afterEach(async () => {
   await act(async () => root?.unmount());
   container?.remove();
   document.body.innerHTML = "";
+  onlineManager.setOnline(true);
 });
 
 describe("portal invoice list load failure", () => {
@@ -224,6 +225,104 @@ describe("portal refresh failure", () => {
       expect(refresh).toHaveBeenCalledTimes(3);
       expect(byId(`portal-${resource}-load-error`)).toBeNull();
       expect(container.textContent).toContain(record);
+    }
+  );
+
+  it.each([
+    ["documents", PortalDocuments, [{ id: "d1", name: "Trade license" }], "Trade license"],
+    ["invoices", PortalInvoices, [invoice], invoice.number],
+  ] as const)(
+    "keeps cached %s through a paused refresh and blocks a repeated retry",
+    async (resource, Page, data, record) => {
+      useI18n.setState({ locale: "en" });
+      const path = `/api/client-portal/${resource}`;
+      const refresh = vi.fn().mockResolvedValue(data);
+      mocks.apiRequest.mockImplementation((_method, requestPath) =>
+        requestPath === path ? refresh() : Promise.resolve({})
+      );
+      const client = await mount(
+        createElement(PortalAccountScope.Provider, { value: "a1" }, createElement(Page))
+      );
+      const queryKey = mocks.portalQuery(path, "a1").queryKey;
+
+      await act(async () => onlineManager.setOnline(false));
+      await act(async () => {
+        void client.invalidateQueries({ queryKey });
+      });
+      await flush();
+      expect(byId(`portal-${resource}-offline`)).not.toBeNull();
+      expect(container.textContent).toContain(record);
+      expect(refresh).toHaveBeenCalledTimes(1);
+
+      refresh.mockRejectedValueOnce(new mocks.ApiError("boom", 500));
+      await act(async () => onlineManager.setOnline(true));
+      await flush();
+      expect(refresh).toHaveBeenCalledTimes(2);
+      expect(container.textContent).toContain(record);
+
+      let finish!: (value: unknown) => void;
+      refresh.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+      const retry = byId(`portal-${resource}-load-error`)!.querySelector("button")!;
+      await act(async () => retry.click());
+      await flush();
+      expect(retry.disabled).toBe(true);
+      await act(async () => retry.click());
+      await flush();
+      expect(refresh).toHaveBeenCalledTimes(3);
+      expect(container.textContent).toContain(record);
+
+      await act(async () => finish(data));
+      await flush();
+      expect(byId(`portal-${resource}-load-error`)).toBeNull();
+      expect(container.textContent).toContain(record);
+    }
+  );
+});
+
+describe("portal offline first load", () => {
+  const emptyStatement = {
+    asOf: "2026-01-01",
+    party: { name: "Customer" },
+    company: { name: "Supplier" },
+    sections: [],
+  };
+
+  it.each([
+    ["en", "documents", PortalDocuments, [], "No documents yet"],
+    ["en", "invoices", PortalInvoices, [], "No invoices yet"],
+    ["en", "statements", PortalStatements, emptyStatement, "No transactions yet"],
+    ["ar", "documents", PortalDocuments, [], "لا توجد مستندات بعد"],
+    ["ar", "invoices", PortalInvoices, [], "لا توجد فواتير بعد"],
+    ["ar", "statements", PortalStatements, emptyStatement, "لا توجد معاملات بعد"],
+  ] as const)(
+    "(%s) waits for a connection before showing %s as empty",
+    async (locale, resource, Page, data, emptyTitle) => {
+      useI18n.setState({ locale });
+      const path = `/api/client-portal/${resource}`;
+      const load = vi.fn().mockResolvedValue(data);
+      mocks.apiRequest.mockImplementation((_method, requestPath) =>
+        requestPath === path ? load() : Promise.resolve({})
+      );
+      onlineManager.setOnline(false);
+      await mount(createElement(PortalAccountScope.Provider, { value: "a1" }, createElement(Page)));
+      const notice = byId(`portal-${resource}-offline`);
+      expect(notice?.querySelector("h3")?.textContent).toBe(
+        locale === "en" ? "Waiting for a connection" : "في انتظار الاتصال"
+      );
+      expect(document.body.textContent).not.toContain(emptyTitle);
+
+      // Retrying while still offline sends nothing and keeps the notice.
+      await act(async () => notice!.querySelector("button")!.click());
+      await flush();
+      expect(load).not.toHaveBeenCalled();
+      expect(byId(`portal-${resource}-offline`)).not.toBeNull();
+      expect(document.body.textContent).not.toContain(emptyTitle);
+
+      await act(async () => onlineManager.setOnline(true));
+      await flush();
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(byId(`portal-${resource}-offline`)).toBeNull();
+      expect(document.body.textContent).toContain(emptyTitle);
     }
   );
 });

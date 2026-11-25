@@ -9,6 +9,7 @@ import { useTranslation } from "@/lib/i18n";
 export function LoadErrorState({
   error,
   onRetry,
+  retrying,
   scope = "firm",
   title,
   description,
@@ -18,6 +19,7 @@ export function LoadErrorState({
 }: {
   error: unknown;
   onRetry?: () => void;
+  retrying?: boolean;
   scope?: "firm" | "portal";
   /** Overrides the title for the "server" and "offline" causes. */
   title?: string;
@@ -41,6 +43,7 @@ export function LoadErrorState({
       description={retriable && description ? description : copy.body}
       onRetry={retriable ? onRetry : undefined}
       retryLabel={t[`${scope}.retry`]}
+      retrying={retrying}
       compact={compact}
       className={className}
       testId={testId ?? `load-error-${kind}`}

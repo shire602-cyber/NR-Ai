@@ -7,6 +7,8 @@
   "portal.loadNotFoundTitle": "We couldn't find this",
   "portal.loadNotFoundBody": "The link may be outdated, or it was removed.",
   "portal.retry": "Try again",
+  "portal.offlineTitle": "Waiting for a connection",
+  "portal.offlineBody": "You appear to be offline. This page updates automatically when you reconnect.",
   "portal.doc.draftAccountChanged": "This draft belongs to another supplier. Open that supplier’s portal to send it.",
   "portal.accept": "Accept",
   "portal.aging30": "1–30 days",

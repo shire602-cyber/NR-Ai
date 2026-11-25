@@ -9,6 +9,8 @@ export interface ErrorStateProps {
   description?: ReactNode;
   onRetry?: () => void;
   retryLabel?: string;
+  /** A retry is in flight: the button spins and cannot be pressed again. */
+  retrying?: boolean;
   compact?: boolean;
   className?: string;
   testId?: string;
@@ -24,6 +26,7 @@ export function ErrorState({
   description,
   onRetry,
   retryLabel,
+  retrying = false,
   compact = false,
   className,
   testId,
@@ -55,8 +58,15 @@ export function ErrorState({
         {description ?? t["components.errorStateDescription"]}
       </p>
       {onRetry && (
-        <Button variant="outline" size="sm" className="mt-5" onClick={onRetry}>
-          <RotateCw aria-hidden />
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-5"
+          onClick={onRetry}
+          disabled={retrying}
+          aria-busy={retrying || undefined}
+        >
+          <RotateCw className={retrying ? "animate-spin" : undefined} aria-hidden />
           {retryLabel ?? t["components.errorRetry"]}
         </Button>
       )}

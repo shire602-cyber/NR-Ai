@@ -7,6 +7,8 @@
   "portal.loadNotFoundTitle": "تعذّر العثور على هذا",
   "portal.loadNotFoundBody": "قد يكون الرابط قديمًا أو تمت إزالته.",
   "portal.retry": "أعد المحاولة",
+  "portal.offlineTitle": "في انتظار الاتصال",
+  "portal.offlineBody": "يبدو أنك غير متصل بالإنترنت. ستُحدَّث هذه الصفحة تلقائيًا عند عودة الاتصال.",
   "portal.doc.draftAccountChanged": "هذه المسودة تخص موردًا آخر. افتح بوابة ذلك المورد لإرسالها.",
   "portal.accept": "قبول",
   "portal.aging30": "1–30 يومًا",

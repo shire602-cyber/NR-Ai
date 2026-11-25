@@ -4,7 +4,7 @@ import { FileDown, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { LoadErrorState } from "@/components/ui/load-error-state";
+import { PortalLoadNotice } from "@/components/portal/PortalLoadNotice";
 import { PageHeader } from "@/components/ui/page-header";
 import { T } from "@/components/layout/T";
 import {
@@ -34,7 +34,7 @@ export default function PortalStatements() {
   const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { data, isLoading, error, refetch } = useQuery<Statement>({
+  const { data, isLoading, error, isPaused, isFetching, refetch } = useQuery<Statement>({
     ...portalQuery("/api/client-portal/statements", supplier),
   });
 
@@ -76,20 +76,21 @@ export default function PortalStatements() {
           ) : undefined
         }
       />
-      {error ? (
+      {error || isPaused ? (
         <Card>
           <CardContent className="p-0">
-            <LoadErrorState
+            <PortalLoadNotice
               error={error}
-              onRetry={() => void refetch()}
-              scope="portal"
+              paused={isPaused}
+              retrying={isFetching}
+              onRetry={() => void refetch({ cancelRefetch: false })}
               compact={data !== undefined}
-              testId="portal-statements-load-error"
+              resource="statements"
             />
           </CardContent>
         </Card>
       ) : null}
-      {error && data === undefined ? null : sections.length === 0 ? (
+      {data === undefined ? null : sections.length === 0 ? (
         <Card>
           <CardContent className="p-0">
             <EmptyState

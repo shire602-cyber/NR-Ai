@@ -16,6 +16,8 @@ export default function PortalInvoices() {
     data: invoices,
     isLoading,
     error,
+    isPaused,
+    isFetching,
     refetch,
   } = useQuery<PortalInvoice[]>({
     ...portalQuery("/api/client-portal/invoices", supplier),
@@ -47,7 +49,9 @@ export default function PortalInvoices() {
         invoices={invoices}
         loading={isLoading}
         error={error}
-        onRetry={() => void refetch()}
+        paused={isPaused}
+        retrying={isFetching}
+        onRetry={() => void refetch({ cancelRefetch: false })}
         onlinePayment={dashboard?.onlinePayment?.available === true}
       />
     </div>
