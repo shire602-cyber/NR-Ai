@@ -173,7 +173,7 @@ export function apiRequest(
   data?: unknown | undefined,
   /** Extra request headers, e.g. `X-Period-Lock-Reason` for an audited soft-lock override. */
   extraHeaders?: Record<string, string>,
-  options?: { queueWhenOffline?: boolean; keepalive?: boolean }
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean; signal?: AbortSignal }
 ): Promise<any> {
   const authHeaders = PORTAL_API_PREFIX.test(url) ? portalRequestHeaders() : getAuthHeaders();
   return requestWithHeaders(method, url, data, authHeaders, extraHeaders, options);
@@ -185,7 +185,7 @@ async function requestWithHeaders(
   data: unknown,
   authHeaders: Record<string, string>,
   extraHeaders?: Record<string, string>,
-  options?: { queueWhenOffline?: boolean; keepalive?: boolean }
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean; signal?: AbortSignal }
 ): Promise<any> {
   const withExtra = (h: Record<string, string>) => (extraHeaders ? { ...h, ...extraHeaders } : h);
   const upperMethod = method.toUpperCase();
@@ -212,6 +212,7 @@ async function requestWithHeaders(
       body,
       credentials: "include",
       keepalive: options?.keepalive,
+      signal: options?.signal,
     });
 
   // The connection can drop while headers are prepared. A write is then refused, not sent; reads
@@ -277,7 +278,8 @@ const ANONYMOUS_SKIP_KEYS = new Set(["/api/companies", "/api/auth/me"]);
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey, signal }) => {
+  async (context) => {
+    const { queryKey } = context;
     const url = apiUrl(queryKey.join("/") as string);
     // R18-04: anonymous visitors have no session, so skip the bootstrap probes
     // that would only produce 401 console noise. This resolves exactly as the
@@ -287,23 +289,24 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
       if (unauthorizedBehavior === "returnNull") return null as never;
       throw new ApiError("Not signed in", 401);
     }
-    let res =
-      (await takeBootFetch(url)) ??
-      (await fetch(url, {
+    // `context.signal` is read only where it is needed: reading it tells react-query to abort the
+    // query when its last observer leaves, which would waste an adopted boot response.
+    const send = () =>
+      fetch(url, {
         credentials: "include",
         headers: getAuthHeaders(),
-        signal,
-      }));
+        signal: context.signal,
+      });
+    let res = (await takeBootFetch(url)) ?? (await send());
 
     if (res.status === 401) {
-      // The refresh is shared across callers, so it is deliberately not tied to this query's signal.
+      // The refresh is shared by every caller, so cancelling this query must not cancel it.
       const refreshed = await refreshSession();
       if (refreshed) {
-        res = await fetch(url, {
-          credentials: "include",
-          headers: getAuthHeaders(),
-          signal,
-        });
+        if (context.signal?.aborted) {
+          throw new DOMException("The request was cancelled.", "AbortError");
+        }
+        res = await send();
       }
     }
 
