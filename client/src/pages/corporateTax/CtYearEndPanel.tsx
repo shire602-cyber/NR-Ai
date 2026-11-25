@@ -43,12 +43,20 @@ interface DeferredTaxRow {
  * The year-end current-tax accrual is posted per return (Accrue action in the returns table).
  */
 export function CtYearEndPanel({ companyId }: { companyId: string }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const extKey = [`/api/companies/${companyId}/corporate-tax/external-returns`];
   const dtKey = [`/api/companies/${companyId}/corporate-tax/deferred-tax`];
-  const { data: external = [] } = useQuery<ExternalReturn[]>({ queryKey: extKey });
-  const { data: deferred = [] } = useQuery<DeferredTaxRow[]>({ queryKey: dtKey });
+  const {
+    data: external = [],
+    isError: extError,
+    refetch: refetchExt,
+  } = useQuery<ExternalReturn[]>({ queryKey: extKey });
+  const {
+    data: deferred = [],
+    isError: dtError,
+    refetch: refetchDt,
+  } = useQuery<DeferredTaxRow[]>({ queryKey: dtKey });
   const [ext, setExt] = useState({ start: "", end: "", revenue: "", loss: "", reference: "" });
   const [dt, setDt] = useState({ asOf: "", asset: "", liability: "", note: "" });
   const onError = (e: Error) =>
@@ -99,6 +107,30 @@ export function CtYearEndPanel({ companyId }: { companyId: string }) {
         <CardDescription>{t["corporateTax.yearEndHint"]}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-8">
+        {(extError || dtError) && (
+          <div
+            role="alert"
+            data-testid="ct-yearend-error"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm"
+          >
+            <span>
+              {locale === "ar"
+                ? "تعذّر تحميل بعض بيانات نهاية السنة. القوائم أدناه قد تكون غير مكتملة."
+                : "Some year-end data could not be loaded. The lists below may be incomplete."}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (extError) void refetchExt();
+                if (dtError) void refetchDt();
+              }}
+            >
+              {locale === "ar" ? "حاول مرة أخرى" : "Try again"}
+            </Button>
+          </div>
+        )}
         <section className="space-y-3">
           <h3 className="text-sm font-semibold">{t["corporateTax.externalTitle"]}</h3>
           <p className="text-xs text-muted-foreground">{t["corporateTax.externalHint"]}</p>

@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { isEmptyCalculation, returnsListState } from "@/pages/corporateTax/screenState";
 import {
   Select,
   SelectContent,
@@ -352,9 +353,19 @@ export default function CorporateTax() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
 
   // Fetch existing returns
-  const { data: taxReturns, isLoading: isLoadingReturns } = useQuery<CorporateTaxReturn[]>({
+  const {
+    data: taxReturns,
+    isLoading: isLoadingReturns,
+    isError: isReturnsError,
+    refetch: refetchReturns,
+  } = useQuery<CorporateTaxReturn[]>({
     queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
     enabled: !!companyId,
+  });
+  const returnsState = returnsListState({
+    isLoading: isLoadingReturns,
+    isError: isReturnsError,
+    data: taxReturns,
   });
 
   const workpaperTotals = useMemo(() => {
@@ -1007,6 +1018,19 @@ export default function CorporateTax() {
           {/* Calculation Results */}
           {adjustedCalculation && (
             <div className="space-y-4">
+              {isEmptyCalculation(calculation, hasManualWorkpaper) && (
+                <div
+                  role="status"
+                  data-testid="ct-empty-period"
+                  className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
+                >
+                  {ctTr(
+                    locale,
+                    "No posted journal entries were found for this period, so the figures below are zero because there is nothing to calculate, not because the tax due is nil. Check the period dates or enter the workpaper lines manually.",
+                    "لم يتم العثور على قيود يومية مرحّلة لهذه الفترة، لذا فإن الأرقام أدناه صفر لعدم وجود ما يُحتسب، وليس لأن الضريبة المستحقة صفر. تحقق من تواريخ الفترة أو أدخل بنود ورقة العمل يدوياً."
+                  )}
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="rounded-lg border p-4 space-y-3">
                   <h3 className="font-semibold text-sm text-muted-foreground">
@@ -1077,7 +1101,13 @@ export default function CorporateTax() {
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Taxable Amount (above threshold)</span>
+                    <span>
+                      {ctTr(
+                        locale,
+                        "Taxable Amount (above threshold)",
+                        "المبلغ الخاضع للضريبة (فوق الحد)"
+                      )}
+                    </span>
                     <span className="font-medium">
                       <Money amount={adjustedCalculation.taxableAmount} currency={"AED"} />
                     </span>
@@ -1104,14 +1134,24 @@ export default function CorporateTax() {
 
               <div className="text-xs text-muted-foreground">
                 {calculation
-                  ? `Based on ${adjustedCalculation.journalEntriesProcessed} posted journal entries in the selected period.`
-                  : "Based on the manual corporate tax workpaper rows above."}
+                  ? ctTr(
+                      locale,
+                      `Based on ${adjustedCalculation.journalEntriesProcessed} posted journal entries in the selected period.`,
+                      `بناءً على ${adjustedCalculation.journalEntriesProcessed} قيد يومية مرحّل في الفترة المحددة.`
+                    )
+                  : ctTr(
+                      locale,
+                      "Based on the manual corporate tax workpaper rows above.",
+                      "بناءً على بنود ورقة عمل ضريبة الشركات اليدوية أعلاه."
+                    )}
               </div>
 
               {/* Notes and Save */}
               <div className="space-y-3 pt-2 border-t">
                 <div className="space-y-2">
-                  <Label htmlFor="notes">Notes (optional)</Label>
+                  <Label htmlFor="notes">
+                    {ctTr(locale, "Notes (optional)", "ملاحظات (اختياري)")}
+                  </Label>
                   <Textarea
                     id="notes"
                     placeholder={t["corporateTax.addAnyNotesForThis"]}
@@ -1131,7 +1171,7 @@ export default function CorporateTax() {
                       <T k="pageLabels.saving" />
                     </>
                   ) : (
-                    "Save as Draft"
+                    ctTr(locale, "Save as Draft", "حفظ كمسودة")
                   )}
                 </Button>
               </div>
@@ -1161,13 +1201,31 @@ export default function CorporateTax() {
               {t["corporateTax.postProvisionOnFiling"]}
             </label>
           </div>
-          {isLoadingReturns ? (
+          {returnsState === "loading" ? (
             <div className="space-y-3">
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
-          ) : !taxReturns || taxReturns.length === 0 ? (
+          ) : returnsState === "error" ? (
+            <div
+              role="alert"
+              className="text-center py-12 text-muted-foreground"
+              data-testid="ct-returns-error"
+            >
+              <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-warning" />
+              <p>
+                {ctTr(
+                  locale,
+                  "Could not load your corporate tax returns.",
+                  "تعذّر تحميل إقرارات ضريبة الشركات."
+                )}
+              </p>
+              <Button variant="outline" className="mt-3" onClick={() => refetchReturns()}>
+                {ctTr(locale, "Try again", "حاول مرة أخرى")}
+              </Button>
+            </div>
+          ) : returnsState === "empty" ? (
             <div className="text-center py-12 text-muted-foreground">
               <FileCheck className="w-12 h-12 mx-auto mb-4 opacity-50" />
               <p>
