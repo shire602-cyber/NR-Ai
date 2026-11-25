@@ -5,6 +5,7 @@
 // Arabic spellings to PROVIDER_PATTERNS.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { deflateSync, inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
 const ROOT = join(__dirname, "..", "..");
@@ -26,6 +27,38 @@ export function namesProvider(text: string): RegExp | undefined {
   return PROVIDER_PATTERNS.find((re) => re.test(normalized));
 }
 
+// The invoice renderer draws Arabic as shaped glyphs and stores the real text in
+// /ActualText <FEFF...> marked-content spans (UTF-16BE, visual order). Decode every span from
+// every Flate stream so Arabic names in a PDF are checked, in both reading directions.
+export function pdfActualText(pdf: Buffer): string {
+  const s = pdf.toString("latin1");
+  const parts: string[] = [];
+  const re = /stream\r?\n/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s))) {
+    const start = m.index + m[0].length;
+    const end = s.indexOf("endstream", start);
+    if (end < 0) break;
+    let body: string;
+    try {
+      body = inflateSync(pdf.subarray(start, end)).toString("latin1");
+    } catch {
+      body = s.slice(start, end);
+    }
+    for (const a of body.matchAll(/\/ActualText\s*<([0-9A-Fa-f\s]+)>/g)) {
+      const hex = a[1].replace(/\s/g, "").replace(/^FEFF/i, "");
+      let text = "";
+      for (let i = 0; i + 4 <= hex.length; i += 4) text += String.fromCharCode(parseInt(hex.slice(i, i + 4), 16));
+      parts.push(text, [...text].reverse().join(""));
+    }
+  }
+  return parts.join(" ");
+}
+
+function utf16Hex(text: string): string {
+  return "FEFF" + [...text].map((c) => c.charCodeAt(0).toString(16).padStart(4, "0")).join("").toUpperCase();
+}
+
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const p = join(dir, name);
@@ -36,7 +69,7 @@ function walk(dir: string): string[] {
 const PUBLIC_PAGES = [
   "Pricing", "Services", "DemoWorkspace", "HelpCenter", "TrustSecurity", "MigrationGuides",
   "PrivacyPolicy", "TermsOfService", "CookiePolicy", "Login", "Register", "ForgotPassword",
-  "ResetPassword",
+  "ResetPassword", "PublicNotFound",
 ];
 
 const all = [
@@ -64,6 +97,7 @@ describe("public site names no e-invoicing provider", () => {
       "client/src/pages/HelpCenter.tsx",
       "client/src/pages/TrustSecurity.tsx",
       "client/src/pages/legal/legalAr.tsx",
+      "client/src/pages/PublicNotFound.tsx",
       "client/public/samples/muhasib-sample-invoice.pdf",
       "client/index.html",
     ]) {
@@ -99,8 +133,20 @@ describe("public site names no e-invoicing provider", () => {
     expect(hit, `provider name matched ${hit}`).toBeUndefined();
   });
 
-  it.each(pdfs.map((f) => [rel(f), f]))("pdf text %s", async (_n, f) => {
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  it("reads Arabic provider names hidden in PDF ActualText spans (both directions)", () => {
+    const name = "\u0643\u0648\u0645\u0628\u0644\u0627\u064a\u0646\u0633";
+    for (const shown of [name, [...name].reverse().join("")]) {
+      const content = Buffer.from(`/Span <</ActualText <${utf16Hex(shown)}>>> BDC\nBT ET\nEMC`, "latin1");
+      const pdf = Buffer.concat([
+        Buffer.from("%PDF-1.4\n1 0 obj <</Filter /FlateDecode>>\nstream\n", "latin1"),
+        deflateSync(content),
+        Buffer.from("\nendstream\nendobj\n%%EOF", "latin1"),
+      ]);
+      expect(namesProvider(pdfActualText(pdf))).toBeDefined();
+    }
+  });
+
+  it.each(pdfs.map((f) => [rel(f), f]))("pdf text %s", async (_n, f) => {    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const doc = await pdfjs.getDocument({ data: new Uint8Array(readFileSync(f)), useSystemFonts: true }).promise;
     let text = "";
     for (let i = 1; i <= doc.numPages; i++) {
@@ -108,6 +154,9 @@ describe("public site names no e-invoicing provider", () => {
       text += content.items.map((item) => ("str" in item ? item.str : "")).join(" ");
     }
     expect(text.length).toBeGreaterThan(100);
+    const arabic = pdfActualText(readFileSync(f));
+    expect(arabic).toMatch(/[\u0600-\u06ff]/);
+    text += " " + arabic;
     const hit = namesProvider(text);
     expect(hit, `provider name matched ${hit}`).toBeUndefined();
   });
