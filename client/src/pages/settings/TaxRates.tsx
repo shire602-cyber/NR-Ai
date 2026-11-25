@@ -9,6 +9,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { Badge } from "@/components/ui/badge";
 import { CardListSkeleton } from "@/components/ui/loading-skeletons";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import {
   Table,
   TableBody,
@@ -90,6 +92,16 @@ export function TaxRatesView({ data }: { data: VatBoxMapResponse }) {
   const emirateLabel = data.emirate
     ? (tr[`pageLabels.companySettings.emirate.${data.emirate}`] ?? data.emirate)
     : null;
+  if (!data.rows.length) {
+    return (
+      <EmptyState
+        size="md"
+        title={t["settingsPages.taxRates.empty"]}
+        description={t["settingsPages.taxRates.emptyHint"]}
+        testId="tax-rates-empty"
+      />
+    );
+  }
   return (
     <div className="space-y-6">
       {(["sales", "purchases"] as const).map((side) => (
@@ -131,7 +143,8 @@ export function TaxRatesView({ data }: { data: VatBoxMapResponse }) {
                     data-testid={`tax-rate-${side}-${r.treatment}`}
                   >
                     <TableCell className="font-medium">
-                      {tr[TREATMENT_KEY[r.treatment] ?? ""] ?? r.treatment}
+                      {tr[TREATMENT_KEY[r.treatment] ?? ""] ??
+                        t["settingsPages.taxRates.otherTreatment"]}
                       <span
                         className="mt-1.5 block font-normal md:hidden"
                         data-testid="boxes-stacked"
@@ -164,8 +177,8 @@ export function TaxRatesView({ data }: { data: VatBoxMapResponse }) {
 
 export default function TaxRates() {
   const { t } = useTranslation();
-  const { companyId } = useDefaultCompany();
-  const { data, isLoading, isError } = useQuery<VatBoxMapResponse>({
+  const { companyId, isLoading: companyLoading, hasNoCompanies } = useDefaultCompany();
+  const { data, isLoading, isError, error, refetch } = useQuery<VatBoxMapResponse>({
     queryKey: ["/api/companies", companyId, "tax-rates"],
     enabled: !!companyId,
   });
@@ -177,12 +190,21 @@ export default function TaxRates() {
           description={t["settingsPages.taxRates.description"]}
         />
         <p className="text-small text-muted-foreground">{t["settingsPages.taxRates.readOnly"]}</p>
-        {isLoading ? (
+        {companyLoading || isLoading ? (
           <CardListSkeleton count={2} />
+        ) : !companyId && hasNoCompanies ? (
+          <EmptyState
+            size="md"
+            title={t["settingsPages.taxRates.noCompany"]}
+            testId="tax-rates-no-company"
+          />
         ) : isError || !data ? (
-          <p className="text-small text-danger" role="alert">
-            {t["settingsPages.taxRates.loadFailed"]}
-          </p>
+          <LoadErrorState
+            error={error}
+            onRetry={() => void refetch()}
+            title={t["settingsPages.taxRates.loadFailed"]}
+            testId="tax-rates-load-error"
+          />
         ) : (
           <TaxRatesView data={data} />
         )}

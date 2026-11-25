@@ -124,5 +124,9 @@
   "settingsPages.taxRates.selfAccounted": "يحتسبها المشتري",
   "settingsPages.taxRates.emirateNote": "تُدرج المبيعات الخاضعة للنسبة الأساسية في صف الخانة 1 الخاص بإمارتك، {emirate}.",
   "settingsPages.taxRates.emirateMissing": "حدّد إمارتك في إعدادات الشركة: تُدرج المبيعات الخاضعة للنسبة الأساسية حسب الإمارة. تظهر دبي حتى ذلك الحين.",
-  "settingsPages.taxRates.loadFailed": "تعذّر تحميل نسب الضريبة."
+  "settingsPages.taxRates.loadFailed": "تعذّر تحميل نسب الضريبة.",
+  "settingsPages.taxRates.empty": "لا توجد نسب ضريبة للعرض",
+  "settingsPages.taxRates.emptyHint": "لم يُرجع محرك ضريبة القيمة المضافة أي معاملات ضريبية لهذه الشركة. حاول مرة أخرى لاحقًا.",
+  "settingsPages.taxRates.noCompany": "أنشئ شركة أو انضم إلى شركة لعرض نسب الضريبة الخاصة بها.",
+  "settingsPages.taxRates.otherTreatment": "معاملة ضريبية أخرى"
 }
