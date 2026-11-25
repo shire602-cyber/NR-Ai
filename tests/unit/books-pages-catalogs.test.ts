@@ -54,7 +54,7 @@ describe("journal source labels", () => {
 describe("bank rule dialog copy", () => {
   it("has the category and memo labels in both languages", () => {
     for (const lang of ["en", "ar"]) {
-      const c = read(`client/src/locales/${lang}/banking.json`);
+      const c = read(`client/src/locales/${lang}/reconciliationRules.json`);
       for (const k of ["category", "categoryPlaceholder", "memo"])
         expect(c[`banking.rules.${k}`], `${lang} ${k}`).toBeTruthy();
     }
