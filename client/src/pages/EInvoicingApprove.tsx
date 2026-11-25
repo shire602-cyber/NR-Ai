@@ -63,9 +63,10 @@ function goneState(body: unknown): "expired" | "revoked" {
     : "expired";
 }
 
-async function load(token: string): Promise<LoadResult> {
+async function load(token: string, signal: AbortSignal): Promise<LoadResult> {
   const res = await fetch(apiUrl(`/api/portal/einvoicing-approve/${encodeURIComponent(token)}`), {
     credentials: "omit",
+    signal,
   });
   if (res.status === 410) {
     const body = await res.json().catch(() => ({}));
@@ -102,7 +103,7 @@ function EInvoicingApproveLink({ token }: { token: string }) {
   const [closedLink, setClosedLink] = useState<Extract<LoadResult, { kind: "gone" }> | null>(null);
   const query = useQuery<LoadResult>({
     queryKey: ["einvoicing-approve", token],
-    queryFn: () => load(token),
+    queryFn: ({ signal }) => load(token, signal),
     retry: false,
   });
   const done = useMutation({

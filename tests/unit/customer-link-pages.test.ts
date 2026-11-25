@@ -439,6 +439,7 @@ describe("EmaraTax approver page /portal/einvoicing-approve/:token", () => {
   it("a reconnect GET carrying the active state that resolves after Done returns 410 cannot reopen the link", async () => {
     let releaseReconnect: () => void = () => {};
     let getCalls = 0;
+    let reconnectSignal: AbortSignal | null | undefined;
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init?: RequestInit) => {
@@ -450,6 +451,7 @@ describe("EmaraTax approver page /portal/einvoicing-approve/:token", () => {
         getCalls++;
         if (getCalls === 1) return new Response(JSON.stringify(APPROVER), { status: 200 });
         if (getCalls === 2) {
+          reconnectSignal = init?.signal;
           // The reconnect refetch: held open, then answers with the stale active state.
           await new Promise<void>((resolve) => (releaseReconnect = resolve));
           return new Response(JSON.stringify(APPROVER), { status: 200 });
@@ -469,9 +471,22 @@ describe("EmaraTax approver page /portal/einvoicing-approve/:token", () => {
     });
     await settle(2);
     expect(getCalls).toBe(2);
+    expect(reconnectSignal).toBeInstanceOf(AbortSignal);
+    expect(reconnectSignal!.aborted).toBe(false);
+
+    // Sample the signal at the moment the cache first holds the terminal result: the reconnect
+    // GET must already be cancelled by then, not some time afterwards.
+    let abortedAtTerminalWrite: boolean | undefined;
+    const unsubscribe = client.getQueryCache().subscribe(() => {
+      if (abortedAtTerminalWrite !== undefined) return;
+      if (client.getQueryData<{ kind: string }>(key)?.kind !== "gone") return;
+      abortedAtTerminalWrite = reconnectSignal!.aborted;
+    });
 
     await act(async () => byTestId("approve-done")!.click());
     await settle();
+    unsubscribe();
+    expect(abortedAtTerminalWrite).toBe(true);
     expect(byTestId("approve-revoked")).not.toBeNull();
     expect(byTestId("approve-done")).toBeNull();
 
