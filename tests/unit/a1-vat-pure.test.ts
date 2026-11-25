@@ -77,28 +77,27 @@ describe("A1 C6 computePartialExemption", () => {
     { boxes: { box9ExpensesVat: 2_000 }, attribution: "exempt" as const },
     { boxes: { box9ExpensesVat: 10_000 } },
   ];
-  it("standard method: taxable kept, exempt dropped, residual apportioned 80%", () => {
+  it("standard method: taxable kept, exempt dropped, residual apportioned 71%", () => {
     const r = computePartialExemption(boxes(), contributions, {
       enabled: true,
       fallbackExemptRatio: 0,
     });
     expect(r).toMatchObject({
       method: "standard",
-      recoverableRatio: 0.8,
-      apportionedFils: 4_000,
-      delta: { box9ExpensesVat: -4_000 },
+      recoverableRatio: 0.71,
+      apportionedFils: 4_900,
+      delta: { box9ExpensesVat: -4_900 },
       advisory: null,
     });
   });
-  it("no supplies in the period: provisional ratio", () => {
+  it("no directly attributable input VAT: provisional ratio", () => {
     const b = boxes();
-    b.box1bDubaiAmount = 0;
-    b.box5ExemptAmount = 0;
-    const r = computePartialExemption(b, contributions, {
+    b.box9ExpensesVat = 10_000;
+    const r = computePartialExemption(b, [contributions[2]], {
       enabled: true,
       fallbackExemptRatio: 0.5,
     });
-    expect(r).toMatchObject({ method: "provisional", apportionedFils: 2_000 + 5_000 });
+    expect(r).toMatchObject({ method: "provisional", apportionedFils: 5_000 });
   });
   it("disabled: no change, advisory when exempt supplies exist", () => {
     const r = computePartialExemption(boxes(), contributions, {

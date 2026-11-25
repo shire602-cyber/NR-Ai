@@ -6,6 +6,8 @@ export interface PortalSummaryEntry {
   active: number;
   state: "active" | "invited" | "expired" | "revoked";
   expiresAt: string | null;
+  /** A pending invitation whose email never went out (no provider, or failed). */
+  notSent?: boolean;
 }
 
 const TONE: Record<PortalSummaryEntry["state"], StatusTone> = {
@@ -25,13 +27,15 @@ export function PortalStatusChip({
 }) {
   const { t, locale } = useTranslation();
   if (!entry) return null;
-  const label =
-    entry.state === "invited" && entry.expiresAt
+  const notSent = entry.state === "invited" && !!entry.notSent;
+  const label = notSent
+    ? t["portal.chip.notSent"]
+    : entry.state === "invited" && entry.expiresAt
       ? formatMessage(t["portal.chip.invitedUntil"], { date: formatDate(entry.expiresAt, locale) })
       : t[`portal.chip.${entry.state}`];
   return (
     <StatusBadge
-      tone={TONE[entry.state]}
+      tone={notSent ? "warning" : TONE[entry.state]}
       className="shrink-0 whitespace-nowrap"
       data-testid={`portal-chip-${contactId}`}
       data-state={entry.state}

@@ -30,7 +30,7 @@ import { firmMfaRequirement } from "../services/security/firm-company-mfa";
 import type { NewUserInput } from "./types";
 import { normalizeEmail } from "./helpers";
 import { DomainError } from "../errors";
-import { assertPortalInviteEmailAvailable, lockPortalInviteEmail } from "./portal-invite-email";
+import { lockPortalInviteEmail } from "./portal-invite-email";
 
 function validResetToken(tokenHash: string) {
   return and(
@@ -100,7 +100,6 @@ export class UserStorage {
     const email = normalizeEmail(insertUser.email);
     return db.transaction(async (tx) => {
       await lockPortalInviteEmail(tx, email);
-      await assertPortalInviteEmailAvailable(tx, email);
       const [user] = await tx
         .insert(users)
         .values({
@@ -121,7 +120,6 @@ export class UserStorage {
     const email = normalizeEmail(user.email);
     return db.transaction(async (tx) => {
       await lockPortalInviteEmail(tx, email);
-      await assertPortalInviteEmailAvailable(tx, email);
       const [claimed] = await tx
         .update(users)
         .set({ name, passwordHash, passwordChangedAt: new Date() })
@@ -280,7 +278,6 @@ export class UserStorage {
           .where(eq(users.id, id))
           .for("update");
         if (account && normalizeEmail(account.email) !== patch.email) {
-          await assertPortalInviteEmailAvailable(tx, patch.email);
           const [binding] = await tx
             .select({ id: customerPortalAccounts.id })
             .from(customerPortalAccounts)

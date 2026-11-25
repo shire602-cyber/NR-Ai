@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2, Loader2, Mail, RotateCw, Send, UserRoundX, XCircle } from "lucide-react";
 import {
@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert } from "@/components/ui/alert";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import {
   Sheet,
@@ -63,7 +64,15 @@ interface AccessData {
     lastSentAt: string | null;
     resendIn: number;
     language: PortalInviteLanguage;
+    /** The latest email was handed to the provider (false: queued, blocked or failed). */
+    emailSent: boolean;
   }>;
+}
+
+/** "m:ss" with Latin digits, so a 61 second wait reads 1:01 and not "61s". */
+function formatCountdown(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
 interface InviteResponse {
@@ -265,7 +274,7 @@ function InviteForm({
         {preview.map((line) => (
           <p
             key={line.lang}
-            className="mt-1 text-small font-medium"
+            className="mt-1 text-start text-small font-medium"
             lang={line.lang}
             dir={line.lang === "ar" ? "rtl" : "ltr"}
             data-testid={`pa-preview-${line.lang}`}
@@ -340,6 +349,23 @@ export function PortalAccessSheet({
     return () => window.clearInterval(id);
   }, [cooling]);
 
+  // Honest delivery state: with no email provider an invitation is saved but never emailed.
+  const { data: emailStatus } = useQuery<{ configured: boolean }>({
+    queryKey: ["/api/companies", companyId, "email-outbox", "status"],
+    enabled: open && !!companyId,
+  });
+  const emailOff = !!emailStatus && !emailStatus.configured;
+
+  // After Send the new invitation must be visible: on a phone the form is far below the list.
+  const invitesRef = useRef<HTMLElement>(null);
+  const revealInvite = useRef(false);
+  useEffect(() => {
+    if (!revealInvite.current || !data) return;
+    revealInvite.current = false;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    invitesRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  }, [data, dataUpdatedAt]);
+
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: portalAccessKey(companyId, contactId) });
     void queryClient.invalidateQueries({ queryKey: portalSummaryKey(companyId) });
@@ -360,8 +386,10 @@ export function PortalAccessSheet({
         }),
       });
     } else {
-      toast({ title: t["portal.invite.queued"] });
+      // Nothing went out (no email provider, or the provider is retrying): never say "sent".
+      toast({ title: t["portal.invite.notSent"] });
     }
+    revealInvite.current = true;
     refresh();
   };
 
@@ -469,10 +497,20 @@ export function PortalAccessSheet({
             </section>
 
             {/* Invitations */}
-            <section aria-labelledby="pa-invites">
+            <section aria-labelledby="pa-invites" ref={invitesRef} className="scroll-mt-4">
               <h3 id="pa-invites" className="text-small font-semibold">
                 {t["portal.access.invitations"]}
               </h3>
+              {emailOff && (
+                <Alert
+                  tone="warning"
+                  title={t["portal.access.emailOffTitle"]}
+                  className="my-2"
+                  data-testid="pa-email-off"
+                >
+                  {t["portal.access.emailOffBody"]}
+                </Alert>
+              )}
               {!isLoading && (data?.invitations.length ?? 0) === 0 ? (
                 <p className="mt-1 text-small text-muted-foreground" data-testid="pa-invites-empty">
                   {t["portal.access.noInvitations"]}
@@ -498,9 +536,15 @@ export function PortalAccessSheet({
                           >
                             {inv.email}
                           </bdi>
-                          <StatusBadge tone={STATUS_TONE[inv.status] ?? "neutral"}>
-                            {t[`portal.access.status.${inv.status}`]}
-                          </StatusBadge>
+                          {inv.status === "pending" && !inv.emailSent ? (
+                            <StatusBadge tone="warning" data-testid={`pa-notsent-${inv.id}`}>
+                              {t["portal.access.status.notSent"]}
+                            </StatusBadge>
+                          ) : (
+                            <StatusBadge tone={STATUS_TONE[inv.status] ?? "neutral"}>
+                              {t[`portal.access.status.${inv.status}`]}
+                            </StatusBadge>
+                          )}
                         </div>
                         <p className="mt-0.5 text-caption text-muted-foreground">
                           {inv.status === "pending"
@@ -529,7 +573,9 @@ export function PortalAccessSheet({
                                 <RotateCw className="me-1.5 h-4 w-4" aria-hidden />
                               )}
                               {wait > 0
-                                ? formatMessage(t["portal.access.resendIn"], { seconds: wait })
+                                ? formatMessage(t["portal.access.resendInTime"], {
+                                    time: isolateLtrText(formatCountdown(wait)),
+                                  })
                                 : t["portal.access.resend"]}
                             </Button>
                             {inv.status === "pending" && (

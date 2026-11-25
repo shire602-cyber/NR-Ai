@@ -4,9 +4,9 @@
  * 1. Direct attribution: input VAT wholly attributable to taxable supplies (incl. zero-rated) is
  *    recovered in full; input VAT wholly attributable to exempt supplies is not recovered.
  * 2. Residual input VAT (overheads used for both) is apportioned by the standard method:
- *    recoverable share = taxable supplies / (taxable + exempt supplies) of the tax period
- *    (Box 1 + Box 4 against Box 5; out-of-scope supplies are in neither). When the period has
- *    no supplies, the company's provisional ratio (companies.exempt_supply_ratio) is used.
+ *    recoverable share = directly recoverable input VAT / total directly attributable input VAT,
+ *    rounded to the nearest whole percentage point. With no directly attributable input VAT,
+ *    use the company's provisional ratio (companies.exempt_supply_ratio).
  * 3. The irrecoverable part is posted to the GL as a cost (Dr 5160 / Cr 1050) when the return
  *    is made ready or submitted (vat-partial-exemption.service), so Box 9 / Box 10 tie to 1050.
  *
@@ -23,7 +23,7 @@ export type Attribution = "taxable" | "exempt" | "residual";
 
 export interface PartialExemptionConfig {
   enabled: boolean;
-  /** Provisional exempt share (0..1) used only when the period has no supplies. */
+  /** Provisional exempt share (0..1) used when there is no directly attributable input VAT. */
   fallbackExemptRatio: number;
 }
 
@@ -110,10 +110,12 @@ export function computePartialExemption(
   }
   let num: number;
   let den: number;
-  if (taxable + exempt > 0) {
+  const recoverable = Math.max(0, base.directTaxableFils);
+  const nonrecoverable = Math.max(0, base.directExemptFils);
+  if (recoverable + nonrecoverable > 0) {
     base.method = "standard";
-    num = taxable;
-    den = taxable + exempt;
+    den = 100;
+    num = share(den, recoverable, recoverable + nonrecoverable);
   } else {
     base.method = "provisional";
     const r = Math.min(1, Math.max(0, config.fallbackExemptRatio));

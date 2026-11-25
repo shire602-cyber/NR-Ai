@@ -3,7 +3,7 @@ import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { CircleAlert, FileText, FolderOpen, PartyPopper, X } from "lucide-react";
+import { FileText, FolderOpen, PartyPopper, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { BalanceSummary } from "@/components/portal/BalanceSummary";
@@ -113,10 +113,7 @@ export default function PortalDashboard() {
           title={t["portal.dash.overdueTitle"]}
           data-testid="portal-overdue-banner"
         >
-          <span className="inline-flex items-center gap-2">
-            <CircleAlert className="h-4 w-4" aria-hidden />
-            {formatMessage(t["portal.dash.overdueBody"], { count: inv.overdue ?? 0 })}
-          </span>
+          {formatMessage(t["portal.dash.overdueBody"], { count: inv.overdue ?? 0 })}
         </Alert>
       )}
 

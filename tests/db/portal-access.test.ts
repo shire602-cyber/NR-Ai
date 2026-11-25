@@ -4,6 +4,7 @@
  */
 import crypto from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
+import { installInviteMailbox, inviteToken as inviteTokenOf } from "./invite-mailbox";
 import { useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -157,6 +158,7 @@ describe("W4-D portal identity and visibility", () => {
     const unlinked = await pu.as.get("/api/client-portal/invoices");
     expect(unlinked.status).toBe(403);
     expect(unlinked.body.code).toBe("PORTAL_CONTACT_NOT_LINKED");
+    await installInviteMailbox();
     const inv = await t.as.post(
       `/api/companies/${t.company.id}/customer-contacts/${mine}/portal-invitations`,
       { email: pu.email, language: "en" }
@@ -165,10 +167,10 @@ describe("W4-D portal identity and visibility", () => {
     const csrf = await fetch(`${h.baseUrl}/api/csrf-token`);
     const cookie = (csrf.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
     const csrfToken = ((await csrf.json()) as { csrfToken: string }).csrfToken;
-    const [mail] = await h.sql("SELECT html FROM email_outbox WHERE related_entity_id = $1", [
-      inv.body.invitation.id,
-    ]);
-    const inviteToken = /#t=([0-9a-f]{64})/.exec(mail.html)![1];
+    // The link only exists in the delivered email (an unsent invitation keeps none at rest).
+    const inviteToken = await inviteTokenOf((q, p) => h.sql(q, p), inv.body.invitation.id);
+    const { setEmailTransportOverride } = await import("../../server/outbox");
+    setEmailTransportOverride(null);
     const bind = await fetch(`${h.baseUrl}/api/portal-invitations/accept`, {
       method: "POST",
       headers: {

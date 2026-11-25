@@ -116,7 +116,10 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
               {t["portal.bulk.queuedBody"]}
             </Alert>
           )}
-          <ul className="max-h-72 space-y-1 overflow-y-auto text-small" data-testid="bulk-results">
+          <ul
+            className="max-h-[calc(100dvh-20rem)] space-y-1 overflow-y-auto text-small sm:max-h-72"
+            data-testid="bulk-results"
+          >
             {results.map((r) => (
               <li key={r.contactId} className="flex items-center justify-between gap-3 py-1">
                 <bdi className="min-w-0 truncate" translate="no" title={nameOf(r.contactId)}>
@@ -159,7 +162,7 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
               {picked.size > 0 ? t["portal.bulk.clearAll"] : t["portal.bulk.selectAll"]}
             </Button>
           </div>
-          <ul className="max-h-72 divide-y divide-border overflow-y-auto rounded-lg border border-border">
+          <ul className="max-h-[calc(100dvh-20rem)] divide-y divide-border overflow-y-auto rounded-lg border border-border sm:max-h-72">
             {eligible.map((c) => (
               <li key={c.id}>
                 {/* The whole row is the label: a 44px-tall tap target, not just the 20px box. */}

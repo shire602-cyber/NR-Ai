@@ -55,8 +55,18 @@ describe("STEP5 portal invitation email", () => {
     expect(m.html).not.toContain("Set up your account");
     expect(m.html).toContain(`href="${URL}"`);
     expect(m.text).toContain("أنشئ حسابك");
-    expect(m.text).toContain("عزيزنا النور للتجارة،");
-    expect(m.text).not.toContain("Layla");
+    // R5-5: the person is greeted (in any script), never the company, and the body names the customer.
+    expect(m.text).toContain("مرحبًا Layla،");
+    expect(m.text).not.toContain("عزيزنا");
+    expect(m.text).toContain("الصادرة إلى النور للتجارة");
+  });
+
+  it("R5-5: Arabic with no contact person is a neutral greeting, not the company", () => {
+    const m = render({ language: "ar", name: null });
+    expect(m.text).toContain("مرحبًا،");
+    expect(m.text).not.toContain("عزيزنا");
+    expect(m.text).not.toMatch(/مرحبًا النور/);
+    expect(m.text).toContain("الصادرة إلى النور للتجارة");
   });
 
   it("bilingual carries both languages and a joined subject", () => {

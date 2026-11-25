@@ -49,6 +49,7 @@ export const invoicePayments = pgTable(
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id),
+    // The receipt writer assigns this under the invoice lock for VAT recovery ordering.
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({

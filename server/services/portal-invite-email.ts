@@ -7,7 +7,6 @@
 import type { Company, CustomerContact, CustomerPortalInvitation } from "../../shared/schema";
 import { marketingBrand as PRODUCT_NAME } from "../../shared/marketing-brand";
 import {
-  arabicGreeting,
   buildCustomerEmail,
   companyFooter,
   supplierEmailSubject,
@@ -84,12 +83,10 @@ export function renderPortalInviteEmail(input: PortalInviteEmailInput): BuiltEma
           "If you didn't expect this email, you can safely ignore it.",
         ],
         ar: [
-          arabicGreeting({
-            nameAr: invitation.name,
-            name: contact.nameAr,
-            companyNameAr: contact.name,
-          }),
-          `تستخدم ${supplier} منصة ${product} لمشاركة فواتيرك. أنشئ حسابك للاطلاع على الفواتير والإشعارات الدائنة وتنزيل ملفات PDF وعرض كشف حسابك.`,
+          // R5-5: greet the person in any script (never the company), else a neutral hello, and
+          // name the customer in the body exactly like the English text does.
+          greetName ? `مرحبًا ${isolateInline(greetName)}،` : "مرحبًا،",
+          `تستخدم ${supplier} منصة ${product} لمشاركة فواتيرك. أنشئ حسابك للاطلاع على الفواتير والإشعارات الدائنة الصادرة إلى ${isolateInline(contact.nameAr || contact.name)} وتنزيل ملفات PDF وعرض كشف حسابك.`,
           ...(onlinePayment ? ["يمكنك أيضًا السداد عبر الإنترنت عند توفر خيار الدفع."] : []),
           ...(quotedNote ? [`<strong>رسالة من ${supplier}</strong><br>${quotedNote}`] : []),
           `تنتهي صلاحية هذه الدعوة في ${formatInviteDate(invitation.expiresAt, "ar")}.`,
