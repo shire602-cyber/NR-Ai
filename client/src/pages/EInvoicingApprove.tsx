@@ -39,8 +39,18 @@ interface ApproverPageData {
 type LoadResult =
   | { kind: "ok"; data: ApproverPageData }
   | { kind: "gone"; state: "expired" | "revoked" }
-  | { kind: "busy" }
   | { kind: "invalid" };
+
+/**
+ * A 429 is a failed read, not a result: it is thrown so the query keeps its cached data (the
+ * approval page or a terminal 410) instead of replacing it.
+ */
+class BusyError extends Error {
+  constructor() {
+    super("429");
+    this.name = "BusyError";
+  }
+}
 
 type DoneOutcome =
   | { kind: "completed"; data: ApproverPageData }
@@ -64,7 +74,7 @@ async function load(token: string): Promise<LoadResult> {
   // Read the body even when it is not used: an unread response keeps the request open.
   if (res.status === 429) {
     await res.text().catch(() => "");
-    return { kind: "busy" };
+    throw new BusyError();
   }
   if (res.status === 404 || res.status === 400) {
     await res.text().catch(() => "");
@@ -138,8 +148,11 @@ function EInvoicingApproveLink({ token }: { token: string }) {
   // refresh keeps rendering as is.
   const waiting = query.fetchStatus === "paused" && !result && !data;
   // A terminal (gone) result, local or cached, is never retried, even if a later read errors.
-  const showRetry =
-    !waiting && result?.kind !== "gone" && (result?.kind === "busy" || query.isError);
+  const busy = query.error instanceof BusyError;
+  // A rate-limited refresh (429) with cached or completed content renders that content as is;
+  // the busy panel is only for a load that has nothing to show.
+  const keepsContent = busy && (!!result || !!data);
+  const showRetry = !waiting && result?.kind !== "gone" && query.isError && !keepsContent;
   const company = data ? bidiIsolate(data.companyName) : "";
   useDocumentTitle(
     data
@@ -152,13 +165,11 @@ function EInvoicingApproveLink({ token }: { token: string }) {
                 ? "einvoicing.appoint.revokedTitle"
                 : "einvoicing.appoint.expiredTitle"
             ]
-          : result?.kind === "busy"
-            ? t["customerLink.busyTitle"]
-            : query.isError
-              ? t["customerLink.loadFailedTitle"]
-              : result?.kind === "invalid"
-                ? t["einvoicing.appoint.invalidTitle"]
-                : t["einvoicing.appoint.pageEyebrow"]
+          : query.isError && !keepsContent
+            ? t[busy ? "customerLink.busyTitle" : "customerLink.loadFailedTitle"]
+            : result?.kind === "invalid"
+              ? t["einvoicing.appoint.invalidTitle"]
+              : t["einvoicing.appoint.pageEyebrow"]
   );
 
   return (
@@ -207,22 +218,10 @@ function EInvoicingApproveLink({ token }: { token: string }) {
           {showRetry && (
             <div className="space-y-3" data-testid="approve-retry">
               <h1 className="text-h2 font-semibold">
-                {
-                  t[
-                    result?.kind === "busy"
-                      ? "customerLink.busyTitle"
-                      : "customerLink.loadFailedTitle"
-                  ]
-                }
+                {t[busy ? "customerLink.busyTitle" : "customerLink.loadFailedTitle"]}
               </h1>
               <p className="text-small text-muted-foreground">
-                {
-                  t[
-                    result?.kind === "busy"
-                      ? "customerLink.busyBody"
-                      : "customerLink.loadFailedBody"
-                  ]
-                }
+                {t[busy ? "customerLink.busyBody" : "customerLink.loadFailedBody"]}
               </p>
               <Button variant="outline" onClick={() => void query.refetch()}>
                 {t["customerLink.retry"]}

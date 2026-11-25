@@ -346,8 +346,17 @@ describe("EmaraTax approver page /portal/einvoicing-approve/:token", () => {
     root = createRoot(container);
     handler = () => ({ status: 429, body: {} });
     await mountAt("/portal/einvoicing-approve/tok123", "approve");
-    expect(byTestId("approve-retry")!.textContent).toContain("Too many attempts");
-    expect(byTestId("approve-retry")!.querySelector("button")).not.toBeNull();
+    const retry = byTestId("approve-retry")!;
+    expect(retry.textContent).toContain("Too many attempts");
+    expect(retry.querySelector("h1")!.textContent).toBe("Too many attempts");
+    expect(container.querySelectorAll("h1")).toHaveLength(1);
+    expect(document.title).toBe("Too many attempts");
+    // Try again loads the page.
+    handler = () => ({ status: 200, body: APPROVER });
+    await act(async () => retry.querySelector("button")!.click());
+    await settle();
+    expect(byTestId("approve-retry")).toBeNull();
+    expect(byTestId("approve-done")).not.toBeNull();
   });
 
   it("Done is one click, shows the completed state and disables double submission", async () => {
@@ -488,6 +497,68 @@ describe("EmaraTax approver page /portal/einvoicing-approve/:token", () => {
     expect(byTestId("approve-retry")).toBeNull();
     expect(byTestId("approve-done")).toBeNull();
     expect(client.getQueryData(key)).toEqual({ kind: "gone", state: "revoked" });
+  });
+
+  it("a 429 on refresh keeps the cached approver page on screen", async () => {
+    let getCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        getCalls++;
+        return getCalls === 1
+          ? new Response(JSON.stringify(APPROVER), { status: 200 })
+          : new Response("{}", { status: 429 });
+      })
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const key = ["einvoicing-approve", "tokA"];
+    await mountApprover(client, "/portal/einvoicing-approve/tokA");
+    expect(byTestId("approve-done")).not.toBeNull();
+    await act(async () => {
+      void client.refetchQueries({ queryKey: key });
+    });
+    await vi.waitFor(() => expect(client.getQueryState(key)?.errorUpdateCount).toBeGreaterThan(0));
+    await settle(2);
+    expect(client.getQueryState(key)?.fetchStatus).toBe("idle");
+    expect(client.getQueryData(key)).toEqual({ kind: "ok", data: APPROVER });
+    expect(byTestId("approve-title")!.textContent).toContain("Al Noor Trading LLC");
+    expect(byTestId("approve-done")).not.toBeNull();
+    // Cached content renders as is: no busy panel, no second heading, title kept.
+    expect(byTestId("approve-retry")).toBeNull();
+    expect(container.querySelectorAll("h1")).toHaveLength(1);
+    expect(document.title).toContain("Al Noor Trading LLC");
+    expect(text()).not.toContain("Too many attempts");
+  });
+
+  it("a cached 410 stays terminal when the refresh on remount is answered 429", async () => {
+    let getCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        getCalls++;
+        return getCalls === 1
+          ? new Response(JSON.stringify({ state: "revoked" }), { status: 410 })
+          : new Response("{}", { status: 429 });
+      })
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const key = ["einvoicing-approve", "tokA"];
+    const { tree } = await mountApprover(client, "/portal/einvoicing-approve/tokA");
+    expect(byTestId("approve-revoked")).not.toBeNull();
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(tree));
+    // Wait for the refresh to fail with the query's own error, not a timer.
+    await vi.waitFor(() => expect(client.getQueryState(key)?.errorUpdateCount).toBeGreaterThan(0));
+    await settle(2);
+    expect(getCalls).toBe(2);
+    expect(client.getQueryState(key)?.status).toBe("error");
+    expect(client.getQueryState(key)?.fetchStatus).toBe("idle");
+    expect(client.getQueryData(key)).toEqual({ kind: "gone", state: "revoked" });
+    expect(byTestId("approve-revoked")).not.toBeNull();
+    expect(byTestId("approve-retry")).toBeNull();
+    expect(byTestId("approve-done")).toBeNull();
   });
 
   /** Runs `fn` with React Query's online manager offline, then restores it. */
