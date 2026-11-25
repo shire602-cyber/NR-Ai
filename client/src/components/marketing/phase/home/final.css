@@ -1,0 +1,27 @@
+/* Final call to action ("mz-final-"). Layout base lives in home.css (.mz-final). */
+.phase-site .mz-final {
+  padding-block: clamp(72px, 10vw, 150px);
+}
+.phase-site .mz-final-title {
+  max-inline-size: 18ch;
+  font-size: clamp(36px, 6vw, 76px);
+  line-height: 1.04;
+}
+.phase-site[lang="ar"] .mz-final-title {
+  max-inline-size: 22ch;
+  font-size: clamp(30px, 4.8vw, 60px);
+  line-height: 1.25;
+}
+.phase-site .mz-final-actions {
+  gap: 14px 18px;
+}
+.phase-site .mz-final-primary {
+  min-block-size: 56px;
+  padding-inline: 34px;
+  font-size: 18px;
+}
+.phase-site .mz-final-micro {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--mz-fg-muted);
+}
