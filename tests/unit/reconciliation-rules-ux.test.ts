@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, createElement } from "react";
 import { onlineManager } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { matchesRuleSearch } from "../../client/src/lib/reconciliation-rule-search";
@@ -17,6 +17,7 @@ import {
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
   renderPage,
+  rerenderPage,
   setFixtures,
   type,
   unmountPage,
@@ -171,12 +172,52 @@ describe("reconciliation rules screen", () => {
     expect(byTestId("rules-refresh-warning")?.textContent).toContain(
       ar["banking.rules.offlineBody"]
     );
+    expect(byTestId("rules-refresh-warning")?.textContent).toContain(
+      arCommon["common.errorHeading.offline"]
+    );
+    expect(byTestId("rules-refresh-warning")?.textContent).not.toContain(arHr["hr.refreshFailed"]);
     expect(rows()).toContain("Office rent");
 
     await setOnline(true);
     await flushUntil(() => !byTestId("rules-refresh-warning"));
     expect(byTestId("rules-refresh-warning")).toBeNull();
     expect(rows()).toContain("Office rent");
+  });
+
+  it("shows connection guidance over stale cached rows when reopened offline", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const Tab = ({ open = true }: { open?: boolean }) =>
+      open ? createElement(ReconciliationRulesPanel) : null;
+    setFixtures({ [rulesUrl]: [rule] });
+    await renderPage(Tab);
+    await flushUntil(() => !!document.querySelector("tbody"));
+
+    // Leave the tab, let the cache go stale, lose the connection, then come back.
+    await rerenderPage(Tab, { open: false });
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["/api/companies", COMPANY_ID, "reconciliation-rules"],
+        exact: true,
+      });
+    });
+    await setOnline(false);
+    setFixtures({ [rulesUrl]: [{ ...rule, name: "Warehouse rent" }] });
+    await rerenderPage(Tab, { open: true });
+
+    const warning = byTestId("rules-refresh-warning");
+    expect(warning?.textContent).toContain(arCommon["common.errorHeading.offline"]);
+    expect(warning?.textContent).toContain(ar["banking.rules.offlineBody"]);
+    expect(warning?.textContent).not.toContain(arHr["hr.refreshFailed"]);
+    expect(rows()).toContain("Office rent");
+    expect(retryButton()).toBeNull();
+    expect(byTestId("rules-offline")).toBeNull();
+    expect(byTestId("rules-load-error")).toBeNull();
+
+    await setOnline(true);
+    await flushUntil(() => rows().includes("Warehouse rent"));
+    expect(rows()).toContain("Warehouse rent");
+    expect(byTestId("rules-refresh-warning")).toBeNull();
   });
 
   it("shows connection guidance, not an empty state, while the first load is paused", async () => {

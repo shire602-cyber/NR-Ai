@@ -480,10 +480,11 @@ export function ReconciliationRulesPanel() {
         </div>
       )}
 
-      {isRefetchError && (
+      {/* A stale cache reopened offline pauses before any error, so pause alone warns too. */}
+      {rules !== undefined && (isPaused || isRefetchError) && (
         <Alert
           tone="warning"
-          title={t["hr.refreshFailed"]}
+          title={isPaused ? t["common.errorHeading.offline"] : t["hr.refreshFailed"]}
           data-testid="rules-refresh-warning"
           action={
             // A paused retry is already queued and resumes on reconnect.
