@@ -11,7 +11,7 @@ import {
   INCREMENT_WINDOW,
   RedisThrottleBucket,
   configuredThrottleRedis,
-  type RedisThrottleClient,
+  type ThrottleRedis,
 } from "./redis-throttle";
 
 const log = createLogger("rate-limit");
@@ -106,7 +106,7 @@ export class RedisSlidingWindowStore {
     namespace: string,
     windowMs: number,
     private readonly max: number,
-    redis: RedisThrottleClient
+    redis: ThrottleRedis
   ) {
     this.bucket = new RedisThrottleBucket(redis, `http:${namespace}`, windowMs);
   }
@@ -411,7 +411,7 @@ export class RedisLockoutTracker {
   private readonly bucket: RedisThrottleBucket;
   private readonly ruleArgs: number[];
 
-  constructor(namespace: string, rules: LockoutRule[], redis: RedisThrottleClient) {
+  constructor(namespace: string, rules: LockoutRule[], redis: ThrottleRedis) {
     const horizonMs = Math.max(...rules.map((rule) => rule.windowMs));
     this.bucket = new RedisThrottleBucket(redis, `credential:${namespace}`, horizonMs);
     this.ruleArgs = rules.flatMap(({ max, windowMs }) => [max, windowMs]);
