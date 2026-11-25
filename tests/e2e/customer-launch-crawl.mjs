@@ -92,6 +92,10 @@ const PUBLIC_ROUTES = [
   "/ar/product/bank-reconciliation",
 ];
 
+// Bare marketing URLs that 301 to their language-prefixed page (client/src/components/marketing/
+// phase/routes.ts, pinned by tests/unit/marketing-bare-routes.test.ts). Any other final URL fails.
+const PUBLIC_REDIRECTS = { "/pricing": "/en/pricing" };
+
 const CUSTOMER_ROUTES = [
   "/dashboard",
   "/invoices",
@@ -364,7 +368,10 @@ async function main() {
     const expectedDirection = expectedLocale === "ar" ? "rtl" : "ltr";
     const wrongLocale =
       locale && (locale.lang !== expectedLocale || locale.dir !== expectedDirection);
-    const redirected = options.expectPrefix ? !finalUrl.startsWith(route) : finalUrl !== route;
+    const expectedUrl = options.finalUrl ?? route;
+    const redirected = options.expectPrefix
+      ? !finalUrl.startsWith(expectedUrl)
+      : finalUrl !== expectedUrl;
     if (
       !response?.ok() ||
       routeErrors.length ||
@@ -410,7 +417,7 @@ async function main() {
 
   // Public launch surface: these are the routes ads and prospects will hit first.
   for (const route of PUBLIC_ROUTES) {
-    const bodyText = await crawlRoute(route);
+    const bodyText = await crawlRoute(route, { finalUrl: PUBLIC_REDIRECTS[route] });
     const homepage = LOCALIZED_HOMEPAGES[route];
     if (homepage) {
       const actual = await page.locator("html").evaluate((html) => ({

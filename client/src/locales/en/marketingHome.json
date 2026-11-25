@@ -373,7 +373,7 @@
   "marketing.hxFaqDeadlineQ": "When is the UAE e-invoicing deadline?",
   "marketing.hxFaqDeadlineA": "If your business is in scope, the deadlines depend on annual revenue. Below AED 50 million, appoint an accredited service provider by {smallAppoint} and go live on {smallLive}. At AED 50 million or more, appoint by {largeAppoint} and go live on {largeLive}. Statutory exclusions apply. The Ministry of Finance penalty is AED {penalty} for the initial violation, then AED {penalty} for each month or part thereof that non-compliance continues, capped at AED {cap} in any 12 consecutive months. Check the Ministry of Finance and FTA announcements for your case.",
   "marketing.hxFaqEinvQ": "How does e-invoicing work?",
-  "marketing.hxFaqEinvA": "E-invoicing is included in every {brand} plan. Before sending live e-invoices, appoint an accredited service provider through EmaraTax and complete onboarding with the provider. Once setup is complete, {brand} prepares eligible invoices in PINT AE format and exchanges them on the Peppol network through its built-in connection.",
+  "marketing.hxFaqEinvA": "E-invoicing is included in every Muhasib plan. Before sending live e-invoices, appoint an accredited service provider through EmaraTax and complete onboarding with the provider. Once setup is complete, {brand} prepares eligible invoices in PINT AE format and exchanges them on the Peppol network through its built-in connection.",
   "marketing.hxFaqVatQ": "How does VAT 201 work?",
   "marketing.hxFaqVatA": "Prepare and review VAT 201 in {brand}, then submit it in EmaraTax.",
   "marketing.hxFaqAcctQ": "Can my accountant work in my books?",
