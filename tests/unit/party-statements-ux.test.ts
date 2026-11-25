@@ -188,41 +188,96 @@ describe("party statements screen (Arabic)", () => {
     expect(text).not.toContain(PAUSED_TITLE);
   });
 
-  it("keeps a successful empty list's copy until a refresh pauses or fails, then shows only the status", async () => {
-    setFixtures({ [`${base}/customer-contacts`]: [] });
+  it.each([
+    ["customer", "customer-contacts", "reportCenter.partyNoCustomers"],
+    ["supplier", "vendors", "reportCenter.partyNoSuppliers"],
+  ] as const)(
+    "keeps a successful empty %s list's copy until a refresh pauses or fails, then shows only the status",
+    async (kind, listName, emptyKey) => {
+      const EMPTY = ar[emptyKey];
+      setFixtures({ [`${base}/customer-contacts`]: [], [`${base}/vendors`]: [] });
+      await renderPage(PartyStatements);
+      if (kind === "supplier") await pickOption(byTestId("select-statement-kind"), SUPPLIER);
+      await flushUntil(() => pageText().includes(EMPTY));
+      expect(pageText()).toContain(EMPTY);
+      expect(await openParty()).toContain(EMPTY);
+      await closeParty();
+
+      // Paused refresh of the cached empty list (query status is still success).
+      await setOnline(false);
+      await startRefetch((k) => k[k.length - 1] === listName);
+      expect(byTestId("party-list-paused")?.textContent).toContain(PAUSED_TITLE);
+      expect(byTestId("party-list-paused")?.textContent).toContain(PAUSED_BODY);
+      expect(byTestId("party-list-error")).toBeNull();
+      expect(pageText()).not.toContain(EMPTY);
+      const paused = await openParty();
+      expect(paused).toContain(PAUSED_TITLE);
+      expect(paused).not.toContain(EMPTY);
+      expect(pageText()).not.toContain(EMPTY);
+      await closeParty();
+      await setOnline(true);
+      await flushUntil(() => !byTestId("party-list-paused"));
+      expect(pageText()).toContain(EMPTY);
+
+      // Failed refresh of the cached empty list.
+      ctrl.lists.add(listName);
+      await refetchList(listName);
+      await flushUntil(() => !!byTestId("party-list-error"));
+      expect(pageText()).not.toContain(EMPTY);
+      const failed = await openParty();
+      expect(failed).toContain(ar["firm.loadFailedTitle"]);
+      expect(failed).not.toContain(EMPTY);
+      await closeParty();
+
+      ctrl.lists.clear();
+      await click(retryButton("party-list-error"));
+      await flushUntil(() => !byTestId("party-list-error"));
+      expect(pageText()).toContain(EMPTY);
+    }
+  );
+
+  it("keeps distinct opening and closing balances with the cached row after a failed statement refresh", async () => {
+    const line = { ...lineOf("INV-BAL-003", "balance sale", 10500), balance: 13700.25 };
+    setFixtures({
+      ...customerFixtures(),
+      [`${base}/customer-statements/c1`]: {
+        ...statementOf("c1", "Al Noor"),
+        sections: [
+          { currency: "AED", openingBalance: 3200.25, closingBalance: 13700.25, lines: [line] },
+        ],
+      },
+    });
     await renderPage(PartyStatements);
-    await flushUntil(() => pageText().includes(ar["reportCenter.partyNoCustomers"]));
-    expect(pageText()).toContain(ar["reportCenter.partyNoCustomers"]);
-    expect(await openParty()).toContain(ar["reportCenter.partyNoCustomers"]);
-    await closeParty();
+    await pickOption(byTestId("select-statement-party"), "Al Noor");
+    await flushUntil(hasCard);
 
-    // Paused refresh of the cached empty list (query status is still success).
-    await setOnline(false);
-    await startRefetch((k) => k[k.length - 1] === "customer-contacts");
-    expect(byTestId("party-list-paused")?.textContent).toContain(PAUSED_TITLE);
-    expect(pageText()).not.toContain(ar["reportCenter.partyNoCustomers"]);
-    const paused = await openParty();
-    expect(paused).toContain(PAUSED_TITLE);
-    expect(paused).not.toContain(ar["reportCenter.partyNoCustomers"]);
-    await closeParty();
-    await setOnline(true);
-    await flushUntil(() => !byTestId("party-list-paused"));
-    expect(pageText()).toContain(ar["reportCenter.partyNoCustomers"]);
+    // The opening → closing summary line only, so a row amount cannot satisfy these.
+    const balances = () => {
+      const summary = Array.from(byTestId("card-party-statement")!.querySelectorAll("p")).find(
+        (p) => p.textContent?.includes(ar["reportCenter.partyStatementOpening"])
+      )!;
+      return Array.from(summary.querySelectorAll(".money-figure"), (el) => el.textContent);
+    };
+    const expectStatement = () => {
+      expect(balances()).toEqual(["3,200.25د.إ", "13,700.25د.إ"]);
+      const rows = byTestId("card-party-statement")!.querySelectorAll("tbody tr");
+      expect(rows).toHaveLength(1);
+      expect(rows[0].textContent).toContain(line.reference);
+      expect(rows[0].textContent).toContain(line.description);
+      expect(rows[0].textContent).toContain("10,500.00");
+      expect(rows[0].textContent).toContain("13,700.25");
+      expect(pageText()).not.toContain(ar["reportCenter.partyStatementEmpty"]);
+    };
+    expectStatement();
 
-    // Failed refresh of the cached empty list.
-    ctrl.lists.add("customer-contacts");
-    await refetchList("customer-contacts");
-    await flushUntil(() => !!byTestId("party-list-error"));
-    expect(pageText()).not.toContain(ar["reportCenter.partyNoCustomers"]);
-    const failed = await openParty();
-    expect(failed).toContain(ar["firm.loadFailedTitle"]);
-    expect(failed).not.toContain(ar["reportCenter.partyNoCustomers"]);
-    await closeParty();
-
-    ctrl.lists.clear();
-    await click(retryButton("party-list-error"));
-    await flushUntil(() => !byTestId("party-list-error"));
-    expect(pageText()).toContain(ar["reportCenter.partyNoCustomers"]);
+    ctrl.statement = "server";
+    await refetchStatements();
+    await flushUntil(() => !!byTestId("party-statement-error"));
+    expect(byTestId("party-statement-error")?.textContent).toContain(
+      ar["reportCenter.partyStatementLoadFailed"]
+    );
+    expect(byTestId("party-statement-paused")).toBeNull();
+    expectStatement();
   });
 
   it("shows the empty-period copy for a successful empty statement but not during a paused or failed refresh, keeping balances", async () => {
