@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMarketingText } from "../text";
 import { invoiceTotals, moneyPlain, parseQty, parseUnitFils, money } from "./model";
 import type { DocLine, TourInvoice } from "./invoiceState";
@@ -124,8 +124,16 @@ export default function InvoiceTab({
 }: TabProps & { invoice: TourInvoice }) {
   const { qty, price, setQty, setPrice, lines, totals } = invoice;
   const [layout, setLayout] = useState<Layout>(locale === "ar" ? "ar" : "en");
-  const issue = useSequence(3, 850, reduced, paused, onActivity);
+  const issue = useSequence(3, 850, reduced, paused);
   useAutoStart(autoPlay, issue.start, 900);
+
+  // The invoice is visibly moving while it runs and while Delivered pulses (unless reduced), so
+  // Pause stays offered through the last stage's transition and the pulse.
+  const moving = issue.running || (!reduced && issue.done);
+  useEffect(() => {
+    onActivity?.(moving);
+    return () => onActivity?.(false);
+  }, [onActivity, moving]);
 
   const edit = (set: typeof setQty, i: number, value: string) => {
     set((all) => all.map((v, at) => (at === i ? value : v)));

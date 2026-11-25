@@ -238,6 +238,28 @@ describe("product tour motion", () => {
     expect(selected()).toBe(0);
   });
 
+  it("keeps Pause available at Delivered for a manual demo and holds it there", async () => {
+    await mountWithFakeTimers();
+    act(() => {
+      shell().dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    click(byId("tour-issue"));
+    for (let stage = 0; stage < 3; stage++) await advance(850);
+    expect(pipelineStep()).toBe(3);
+    // Delivered pulses: the demo is still moving, so Pause (not Play) is offered.
+    expect(byId("tour-pause").textContent).toBe("Pause tour");
+
+    const transition = new FakeCSSTransition("running");
+    stubAnimations([transition]);
+    click(byId("tour-pause"));
+    expect(transition.pause).toHaveBeenCalledTimes(1);
+    expect(byId("tour-pause").textContent).toBe("Play tour");
+    expect(shell().getAttribute("data-paused")).toBe("true");
+    await advance(30_000);
+    expect(pipelineStep()).toBe(3);
+    expect(selected()).toBe(0);
+  });
+
   it("Pause freezes running transitions in the shell and Play resumes the same ones", async () => {
     await mount("en");
     expectHeldThenResumed(holdScenario(), () => click(byId("tour-pause")), shell);
