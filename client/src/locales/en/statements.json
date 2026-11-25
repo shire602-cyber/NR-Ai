@@ -31,6 +31,7 @@
   "statements.colCode": "Code",
   "statements.operatingExpenses": "Operating expenses",
   "statements.tabShortPl": "P&L",
+  "statements.retry": "Try again",
   "statements.tabShortBs": "Balance",
   "statements.tabShortCf": "Cash flow"
 }

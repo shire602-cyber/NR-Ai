@@ -1,6 +1,7 @@
 import { operatingExpenseLinesOf } from "./financialStatementsLayout";
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
+import { StatementLoadError } from "@/components/reports/StatementLoadError";
 import { BooksStatusStrip } from "@/components/reports/BooksStatusStrip";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -344,13 +345,11 @@ function ProfitLossTab({
       )}
 
       {error && (
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-destructive">
-              <T k="statements.loadFailed" />
-            </p>
-          </CardContent>
-        </Card>
+        <StatementLoadError
+          messageKey="statements.loadFailed"
+          onRetry={() => void refetch()}
+          retrying={isFetching}
+        />
       )}
 
       {data && (
@@ -551,13 +550,11 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
       )}
 
       {error && (
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-destructive">
-              <T k="statements.loadFailed" />
-            </p>
-          </CardContent>
-        </Card>
+        <StatementLoadError
+          messageKey="statements.loadFailed"
+          onRetry={() => void refetch()}
+          retrying={isFetching}
+        />
       )}
 
       {data && (
@@ -882,13 +879,11 @@ function CashFlowTab({
       )}
 
       {error && (
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-destructive">
-              <T k="pageLabels.failedToLoadCashFlowStatement" />
-            </p>
-          </CardContent>
-        </Card>
+        <StatementLoadError
+          messageKey="pageLabels.failedToLoadCashFlowStatement"
+          onRetry={() => void refetch()}
+          retrying={isFetching}
+        />
       )}
 
       {data && (
@@ -1164,7 +1159,7 @@ export default function FinancialStatements() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={t["shell.nav.accounting"]}
         title={t["statements.pageTitle"]}
         description={t["statements.pageDesc"]}
         backHref="/reports"
