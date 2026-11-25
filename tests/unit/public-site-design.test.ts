@@ -236,7 +236,7 @@ describe("D1 public site", () => {
       expect(container.querySelector(".mz-hero img")).toBeNull();
       expect(container.querySelector('a[hreflang="en"]')?.getAttribute("href")).toBe("/en");
       expect(container.textContent).toContain("عبر مزوّد خدمة معتمد مدمج في");
-      expect(container.textContent).not.toMatch(/A-?Cube|Complyance/i);
+      expect(container.textContent).not.toMatch(/A-?Cube|Complyance|أكيوب|كومبلاينس/i);
       expect(container.textContent).toContain("ارفع كشف حسابك البنكي بصيغة CSV");
       expect(container.querySelector('a[href="/ar/migration-guides/zoho"] bdi')?.textContent).toBe(
         "Zoho Books"
@@ -355,7 +355,7 @@ describe("D1 public site", () => {
     [
       "ar",
       "للقراءة فقط",
-      "الفوترة الإلكترونية في الإمارات مدمجة ومشمولة في كل باقة، وتُنفَّذ عبر مزوّد خدمة معتمد.",
+      "الفوترة الإلكترونية في الإمارات مدمجة ومشمولة في كل باقة، وتتم عبر مزوّد خدمة معتمد.",
     ],
   ] as const)(
     "explains trial expiry and included e-invoicing in %s pricing",

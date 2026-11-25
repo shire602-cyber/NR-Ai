@@ -46,13 +46,15 @@ const LOCALIZED_HOMEPAGES = {
     lang: "en",
     dir: "ltr",
     title: "Your books. Your VAT. Your e-invoices. Done.",
-    providerChoice: "Included on every plan. No separate e-invoicing subscription from us.",
+    includedEinvoicing: "Included on every plan. No separate e-invoicing subscription from us.",
+    accreditedProvider: "E-invoices are exchanged through an accredited service provider",
   },
   "/ar": {
     lang: "ar",
     dir: "rtl",
     title: "دفاترك. ضريبتك. فواتيرك الإلكترونية. كلها منجزة.",
-    providerChoice: "مشمولة في كل باقة، ولا نفرض اشتراكًا منفصلًا للفوترة الإلكترونية.",
+    includedEinvoicing: "مشمولة في كل باقة، ولا نفرض اشتراكًا منفصلًا للفوترة الإلكترونية.",
+    accreditedProvider: "تُتبادل الفواتير الإلكترونية عبر مزوّد خدمة معتمد",
   },
 };
 
@@ -433,7 +435,11 @@ async function main() {
         await fail(`localized homepage ${route}`, { expected: homepage, actual });
       }
       try {
-        await page.getByText(homepage.providerChoice, { exact: true }).waitFor();
+        await page.getByText(homepage.includedEinvoicing, { exact: true }).waitFor();
+        await page
+          .locator("#e-invoicing-deadlines")
+          .getByText(homepage.accreditedProvider)
+          .waitFor();
       } catch (error) {
         await fail(`localized e-invoicing copy ${route}`, { detail: String(error) });
       }
