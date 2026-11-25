@@ -30,6 +30,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { TableSkeleton } from "@/components/ui/loading-skeletons";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest } from "@/lib/queryClient";
@@ -74,18 +76,36 @@ export default function PartyStatements() {
   const [from, setFrom] = useState("");
   const [asOf, setAsOf] = useState("");
 
-  const { data: customers = [] } = useQuery<Party[]>({
+  const {
+    data: customers = [],
+    isLoading: customersLoading,
+    error: customersError,
+    refetch: refetchCustomers,
+  } = useQuery<Party[]>({
     queryKey: ["/api/companies", companyId, "customer-contacts"],
     enabled: !!companyId && kind === "customer",
   });
-  const { data: vendors = [] } = useQuery<Party[]>({
+  const {
+    data: vendors = [],
+    isLoading: vendorsLoading,
+    error: vendorsError,
+    refetch: refetchVendors,
+  } = useQuery<Party[]>({
     queryKey: ["/api/companies", companyId, "vendors"],
     enabled: !!companyId && kind === "supplier",
   });
   const parties = kind === "customer" ? customers : vendors;
+  const partiesLoading = kind === "customer" ? customersLoading : vendorsLoading;
+  const partiesError = kind === "customer" ? customersError : vendorsError;
+  const refetchParties = kind === "customer" ? refetchCustomers : refetchVendors;
   const range = useMemo(() => ({ from: from || undefined, asOf: asOf || undefined }), [from, asOf]);
   const url = companyId && partyId ? statementUrl(companyId, kind, partyId, range) : null;
-  const { data: statement, isLoading } = useQuery<Statement>({
+  const {
+    data: statement,
+    isLoading,
+    error: statementError,
+    refetch: refetchStatement,
+  } = useQuery<Statement>({
     queryKey: [url],
     queryFn: () => apiRequest("GET", url!),
     enabled: !!url,
@@ -156,6 +176,15 @@ export default function PartyStatements() {
                 <SelectValue placeholder={t["reportCenter.partySelect"]} />
               </SelectTrigger>
               <SelectContent>
+                {parties.length === 0 ? (
+                  <div className="px-2 py-1.5 text-sm text-muted-foreground" role="status">
+                    {partiesLoading
+                      ? t["reportCenter.partyListLoading"]
+                      : kind === "customer"
+                        ? t["reportCenter.partyNoCustomers"]
+                        : t["reportCenter.partyNoSuppliers"]}
+                  </div>
+                ) : null}
                 {parties.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.name}
@@ -179,15 +208,40 @@ export default function PartyStatements() {
         </CardContent>
       </Card>
 
-      {!partyId ? (
+      {partiesError ? (
+        <LoadErrorState
+          error={partiesError}
+          onRetry={() => void refetchParties()}
+          testId="party-list-error"
+        />
+      ) : !partyId ? (
         <p className="text-sm text-muted-foreground">
-          <T k="reportCenter.partyStatementPick" />
+          {!partiesLoading && parties.length === 0 ? (
+            kind === "customer" ? (
+              <T k="reportCenter.partyNoCustomers" />
+            ) : (
+              <T k="reportCenter.partyNoSuppliers" />
+            )
+          ) : (
+            <T k="reportCenter.partyStatementPick" />
+          )}
         </p>
-      ) : isLoading ? null : statement ? (
+      ) : statementError ? (
+        <LoadErrorState
+          error={statementError}
+          onRetry={() => void refetchStatement()}
+          title={t["reportCenter.partyStatementLoadFailed"]}
+          testId="party-statement-error"
+        />
+      ) : isLoading ? (
+        <div aria-busy="true" aria-label={t["reportCenter.partyStatementLoading"]}>
+          <TableSkeleton rows={4} columns={5} />
+        </div>
+      ) : statement ? (
         <Card data-testid="card-party-statement">
           <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-base">
-              {statement.party.name} · {statement.asOf}
+              {statement.party.name} · {formatDate(statement.asOf, locale)}
             </CardTitle>
             <div className="flex flex-wrap gap-2">
               <Button asChild size="sm" variant="outline">
@@ -222,62 +276,77 @@ export default function PartyStatements() {
               statement.sections.map((section) => (
                 <div key={section.currency} className="space-y-2">
                   <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                    <span className="text-muted-foreground">
+                      <T k="reportCenter.partyStatementOpening" />
+                    </span>
                     <Money amount={section.openingBalance} currency={section.currency} />
                     <ArrowRight className="h-3.5 w-3.5 rtl:-scale-x-100" aria-hidden />
+                    <span className="text-muted-foreground">
+                      <T k="reportCenter.partyStatementClosing" />
+                    </span>
                     <Money amount={section.closingBalance} currency={section.currency} />
                   </p>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>
-                          <T k="reportCenter.partyStatementDate" />
-                        </TableHead>
-                        <TableHead>
-                          <T k="reportCenter.partyStatementReference" />
-                        </TableHead>
-                        <TableHead data-numeric>
-                          <T k="reportCenter.partyStatementDebit" />
-                        </TableHead>
-                        <TableHead data-numeric>
-                          <T k="reportCenter.partyStatementCredit" />
-                        </TableHead>
-                        <TableHead data-numeric>
-                          <T k="reportCenter.partyStatementBalance" />
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {section.lines.map((line, i) => (
-                        <TableRow key={`${line.reference}-${i}`}>
-                          <TableCell className="whitespace-nowrap text-xs">
-                            {formatDate(line.date, locale)}
-                          </TableCell>
-                          <TableCell className="break-words text-xs">
-                            <bdi dir="ltr" translate="no">
-                              {line.reference}
-                            </bdi>
-                            {line.description && (
-                              <>
-                                {" "}
-                                · <bdi>{line.description}</bdi>
-                              </>
-                            )}
-                          </TableCell>
-                          <TableCell data-numeric>
-                            {line.debit ? <Money amount={line.debit} showCurrency={false} /> : null}
-                          </TableCell>
-                          <TableCell data-numeric>
-                            {line.credit ? (
-                              <Money amount={line.credit} showCurrency={false} />
-                            ) : null}
-                          </TableCell>
-                          <TableCell data-numeric>
-                            <Money amount={line.balance} showCurrency={false} />
-                          </TableCell>
+                  {section.lines.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      <T k="reportCenter.partyStatementEmpty" />
+                    </p>
+                  ) : null}
+                  {section.lines.length > 0 ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>
+                            <T k="reportCenter.partyStatementDate" />
+                          </TableHead>
+                          <TableHead>
+                            <T k="reportCenter.partyStatementReference" />
+                          </TableHead>
+                          <TableHead data-numeric>
+                            <T k="reportCenter.partyStatementDebit" />
+                          </TableHead>
+                          <TableHead data-numeric>
+                            <T k="reportCenter.partyStatementCredit" />
+                          </TableHead>
+                          <TableHead data-numeric>
+                            <T k="reportCenter.partyStatementBalance" />
+                          </TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {section.lines.map((line, i) => (
+                          <TableRow key={`${line.reference}-${i}`}>
+                            <TableCell className="whitespace-nowrap text-xs">
+                              {formatDate(line.date, locale)}
+                            </TableCell>
+                            <TableCell className="break-words text-xs">
+                              <bdi dir="ltr" translate="no">
+                                {line.reference}
+                              </bdi>
+                              {line.description && (
+                                <>
+                                  {" "}
+                                  · <bdi>{line.description}</bdi>
+                                </>
+                              )}
+                            </TableCell>
+                            <TableCell data-numeric>
+                              {line.debit ? (
+                                <Money amount={line.debit} showCurrency={false} />
+                              ) : null}
+                            </TableCell>
+                            <TableCell data-numeric>
+                              {line.credit ? (
+                                <Money amount={line.credit} showCurrency={false} />
+                              ) : null}
+                            </TableCell>
+                            <TableCell data-numeric>
+                              <Money amount={line.balance} showCurrency={false} />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : null}
                 </div>
               ))
             )}
