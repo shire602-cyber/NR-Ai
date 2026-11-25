@@ -84,17 +84,17 @@ S4 = ops/evidence.
 |---|---|---|
 | O05 | open (partial) | Local identifiers recorded above; staging receipt blocked |
 | O03 | open | bills-aging p95 (108 ms vs 101 ms budget) not reproduced; needs Postgres and the defined dataset |
-| O04 | open | Import preview default not started |
+| O04 | **fixed awaiting verification** | Import preview default: `POST /api/companies/:companyId/bank-statements/import-preview` registers a parse-only endpoint (no DB write). `BankReconciliation.tsx` auto-calls it when a CSV is selected and shows a `data-testid="import-preview-panel"` with row count, skipped-row warning and a 5-row mini-table before the user clicks Import. importPreview resets on dialog close and successful import in both PDF and CSV paths. Test: `tests/unit/bank-import-ux.test.ts` extended with preview-panel assertion. |
 | O01 | blocked (partly) | Provider sandbox credentials/references needed; F01 changes the tax-subtotal derivation, so revalidate |
 | O02 | blocked (partly) | OCR provider sandbox needed |
 | O06 | blocked (partly) | Test billing account needed |
-| O07 | open | Migration + WPS fixture not started |
+| O07 | **fixed awaiting verification** | WPS SIF fixture: `tests/unit/wps-sif-fixture.test.ts` (15 assertions) validates the fixed-width SCR (165 chars) and EDR (229 chars) layout, field offsets, amount encoding, IBAN vs bankAccountNumber fallback, missing-employee skip, and CRLF line separators. No schema migration change was required — the existing `generateSIFFile` export in `wps-sif.service.ts` is correct. Still open: a DB-backed integration test generating a SIF from a live payroll run; payroll journal reconciliation to bank submission status. |
 
 ## 3. Counts
 
 - Original items: 32. Verified dispositions: **0**.
-- Fixed awaiting verification: **11** (F01–F07, S01, S02+S03, S05, W01–W06+W08) plus ENV-01.
-- Open: 9 · Blocked or partly blocked: 10 (W07, W09, W10 newly blocked; + F05 scheduled-items, S04, S06, S07, O01, O02, O06).
+- Fixed awaiting verification: **13** (F01–F07, S01, S02+S03, S05, W01–W06+W08, O04, O07) plus ENV-01.
+- Open: 7 · Blocked or partly blocked: 10 (W07, W09, W10 newly blocked; + F05 scheduled-items, S04, S06, S07, O01, O02, O06).
 - Handoff to Astra 6.2: **not eligible**.
 
 ## 4. Commands run (local, Node 18.16, Windows)
