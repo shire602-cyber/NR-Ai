@@ -221,5 +221,7 @@
   "banking.clearSearch": "Clear search",
   "banking.suggest.loadError": "Could not load suggested matches. Check your connection and try again.",
   "banking.report.descriptionAll": "Summary of matched and unmatched transactions across all accounts",
-  "banking.report.descriptionAccount": "Summary of matched and unmatched transactions for {account}"
+  "banking.report.descriptionAccount": "Summary of matched and unmatched transactions for {account}",
+  "banking.query.paused": "Loading is paused. Check your internet connection.",
+  "banking.query.pausedCached": "Updates are paused. You are seeing the last loaded data, which may be out of date."
 }

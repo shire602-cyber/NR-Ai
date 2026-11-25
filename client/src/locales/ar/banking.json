@@ -221,5 +221,7 @@
   "banking.clearSearch": "مسح البحث",
   "banking.suggest.loadError": "تعذّر تحميل المطابقات المقترحة. تحقق من اتصالك وحاول مرة أخرى.",
   "banking.report.descriptionAll": "ملخص المعاملات المطابقة وغير المطابقة في جميع الحسابات",
-  "banking.report.descriptionAccount": "ملخص المعاملات المطابقة وغير المطابقة للحساب {account}"
+  "banking.report.descriptionAccount": "ملخص المعاملات المطابقة وغير المطابقة للحساب {account}",
+  "banking.query.paused": "التحميل متوقف مؤقتًا. تحقق من اتصالك بالإنترنت.",
+  "banking.query.pausedCached": "التحديثات متوقفة مؤقتًا. تظهر لك آخر بيانات محمّلة، وقد لا تكون حديثة."
 }

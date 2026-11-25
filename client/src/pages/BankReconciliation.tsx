@@ -47,6 +47,7 @@ import { formatMessage, useI18n, useTranslation, translateNow } from "@/lib/i18n
 import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
+import { ErrorState } from "@/components/ui/error-state";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActionButton } from "@/components/ui/row-actions";
 import { useToast } from "@/hooks/use-toast";
@@ -357,36 +358,48 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     reviewedStatement?.file === importFile && reviewedStatement.companyId === companyId
       ? reviewedStatement.preview
       : null;
-  const firstInvalidDateRow =
-    !previewLoading && statementPreview?.validRows === 0
-      ? statementPreview.firstInvalidDateRow
-      : null;
+  // The server rejects the whole file when any row has a missing/invalid date, so the preview
+  // must say so even when other rows are valid (otherwise it looks importable).
+  const firstInvalidDateRow = !previewLoading
+    ? (statementPreview?.firstInvalidDateRow ?? null)
+    : null;
+  // During a re-preview the previous rows stay on screen but are stale: only the latest finished
+  // response (a failed one clears it) may be called recognized.
+  const statementRecognized = Boolean(
+    statementPreview &&
+    !previewLoading &&
+    statementPreview.validRows > 0 &&
+    statementPreview.firstInvalidDateRow == null
+  );
   const canConfirmImport = Boolean(
     statementPreview &&
     bankAccounts?.some((account) => account.id === selectedBankAccount) &&
     !isImporting &&
     !previewLoading &&
     statementPreview.validRows > 0 &&
+    statementPreview.firstInvalidDateRow == null &&
     (!statementPreview.requiresChoice || acknowledgeAmbiguity)
   );
 
   const {
     data: transactions,
     isLoading: isLoadingTransactions,
-    isPaused: transactionsPaused,
     error: transactionsError,
+    isSuccess: transactionsSuccess,
+    fetchStatus: transactionsFetchStatus,
     refetch: refetchTransactions,
   } = useQuery<BankTransaction[]>({
     queryKey: ["/api/companies", companyId, "bank-statements", "transactions"],
     enabled: !!companyId,
   });
+  const transactionsPaused = transactionsFetchStatus === "paused";
 
   const {
     data: matchSuggestions,
     isLoading: isLoadingMatches,
-    isPaused: matchesPaused,
-    isSuccess: matchesLoaded,
     error: matchesError,
+    isSuccess: matchesSuccess,
+    fetchStatus: matchesFetchStatus,
     refetch: refetchMatches,
   } = useQuery<MatchSuggestion[]>({
     queryKey: [
@@ -398,6 +411,8 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     ],
     enabled: !!selectedTransaction?.id && matchDialogOpen,
   });
+  const matchesPaused = matchesFetchStatus === "paused";
+  const hasMatches = !!matchSuggestions && matchSuggestions.length > 0;
 
   const { data: reportData, isLoading: isLoadingReport } = useQuery<ReportData>({
     queryKey: [
@@ -976,28 +991,25 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
             </div>
 
             <DataTableCard
-              error={
-                // A paused first fetch never ran: say offline, not "no transactions". No Retry:
-                // the paused query resumes by itself on reconnect.
-                transactionsOffline
-                  ? { title: t["common.errorHeading.offline"], testId: "bank-transactions-offline" }
-                  : {
-                      onRetry: () => {
-                        if (accountsError) void refetchAccounts();
-                        if (transactionsError) void refetchTransactions();
-                      },
-                    }
-              }
+              error={{
+                onRetry: () => {
+                  if (accountsError) void refetchAccounts();
+                  if (transactionsError) void refetchTransactions();
+                },
+              }}
+              // A paused or failed load is never "empty"; cached rows stay with a notice.
               status={
-                (accountsError && !bankAccounts) ||
-                (transactionsError && !transactions) ||
-                transactionsOffline
+                accountsError && !bankAccounts
                   ? "error"
                   : isLoadingTransactions
                     ? "loading"
-                    : filteredTransactions.length === 0
-                      ? "empty"
-                      : "ready"
+                    : filteredTransactions.length > 0 || transactionsPaused
+                      ? "ready"
+                      : transactionsError
+                        ? "error"
+                        : transactionsSuccess
+                          ? "empty"
+                          : "loading"
               }
               columnLabels={[t.date, t.description, t.amount, t.status]}
               empty={
@@ -1042,8 +1054,42 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                       }
               }
             >
+              {transactionsPaused ? (
+                <>
+                <p
+                  role="status"
+                  className="px-4 py-3 text-center text-small text-muted-foreground"
+                  data-testid="status-transactions-paused"
+                >
+                  {filteredTransactions.length > 0
+                    ? t["banking.query.pausedCached"]
+                    : t["banking.query.paused"]}
+                </p>
+                {transactionsOffline && (
+                  <p
+                    role="status"
+                    className="px-4 py-3 text-center text-small text-muted-foreground"
+                    data-testid="bank-transactions-offline"
+                  >
+                    {t["common.errorHeading.offline"]}
+                  </p>
+                )}
+                </>
+              ) : transactionsError ? (
+                <ErrorState
+                  compact
+                  testId="error-transactions-refresh"
+                  onRetry={() => void refetchTransactions()}
+                />
+              ) : null}
               {/* Phones: one two-line row per bank line, the next step as a single button. */}
-              <div className="divide-hairline md:hidden" data-testid="mobile-bank-transaction-list">
+              <div
+                className={cn(
+                  "divide-hairline md:hidden",
+                  filteredTransactions.length === 0 && "hidden"
+                )}
+                data-testid="mobile-bank-transaction-list"
+              >
                 {filteredTransactions.map((tx) => {
                   const conf =
                     tx.matchConfidence != null ? Math.round(tx.matchConfidence * 100) : null;
@@ -1130,7 +1176,10 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                   );
                 })}
               </div>
-              <div className="hidden md:block" data-testid="bank-transaction-table">
+              <div
+                className={cn("hidden", filteredTransactions.length > 0 && "md:block")}
+                data-testid="bank-transaction-table"
+              >
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -1332,128 +1381,118 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
               <p className="text-xs font-semibold text-muted-foreground">
                 <T k="pageLabels.suggestedMatches" />
               </p>
+              {matchesPaused ? (
+                <>
+                <p
+                  role="status"
+                  className="text-center text-small text-muted-foreground"
+                  data-testid="status-matches-paused"
+                >
+                  {hasMatches ? t["banking.query.pausedCached"] : t["banking.query.paused"]}
+                </p>
+                <p
+                  role="status"
+                  className="text-center text-small text-muted-foreground"
+                  data-testid="match-suggestions-offline"
+                >
+                  {t["common.errorHeading.offline"]}
+                </p>
+                </>
+              ) : matchesError && !isLoadingMatches ? (
+                <div data-testid="match-suggestions-error">
+                  <ErrorState compact testId="error-matches" onRetry={() => void refetchMatches()} />
+                </div>
+              ) : null}
               {isLoadingMatches ? (
                 <div className="space-y-2">
                   {[1, 2, 3].map((i) => (
                     <Skeleton key={i} className="h-20" />
                   ))}
                 </div>
-              ) : (
-                <>
-                  {matchesError && !matchesPaused && (
-                    <div
-                      role="alert"
-                      className="rounded-lg border border-destructive/40 p-4 text-center"
-                      data-testid="match-suggestions-error"
-                    >
-                      <p className="text-sm font-medium">
-                        <T k="banking.suggest.loadError" />
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-2"
-                        onClick={() => void refetchMatches()}
+              ) : hasMatches ? (
+                <div className="space-y-2 max-h-[360px] overflow-y-auto pe-1">
+                  {matchSuggestions.map((s) => {
+                    const typeCfg = matchTypeConfig[s.matchedType];
+                    const TypeIcon = typeCfg.icon;
+                    const confMeta = confidenceLabel(s.confidence);
+                    return (
+                      <div
+                        key={`${s.matchedType}-${s.matchedId}`}
+                        className="rounded-lg border bg-card p-3 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
+                        onClick={() =>
+                          matchMutation.mutate({
+                            transactionId: selectedTransaction!.id,
+                            matchedId: s.matchedId,
+                            matchedType: s.matchedType,
+                          })
+                        }
                       >
-                        <T k="pageLabels.tryAgain" />
-                      </Button>
-                    </div>
-                  )}
-                  {matchesPaused && (
-                    <div
-                      role="status"
-                      className="rounded-lg border border-border bg-muted/30 p-4 text-center text-sm text-muted-foreground"
-                      data-testid="match-suggestions-offline"
-                    >
-                      <T k="common.errorHeading.offline" />
-                    </div>
-                  )}
-                  {matchSuggestions && matchSuggestions.length > 0 && (
-                    <div className="space-y-2 max-h-[360px] overflow-y-auto pe-1">
-                      {matchSuggestions.map((s) => {
-                        const typeCfg = matchTypeConfig[s.matchedType];
-                        const TypeIcon = typeCfg.icon;
-                        const confMeta = confidenceLabel(s.confidence);
-                        return (
-                          <div
-                            key={`${s.matchedType}-${s.matchedId}`}
-                            className="rounded-lg border bg-card p-3 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
-                            onClick={() =>
-                              matchMutation.mutate({
-                                transactionId: selectedTransaction!.id,
-                                matchedId: s.matchedId,
-                                matchedType: s.matchedType,
-                              })
-                            }
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className={`p-1.5 rounded shrink-0 ${typeCfg.bg}`}>
-                                  <TypeIcon className={`w-3.5 h-3.5 ${typeCfg.color}`} />
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-xs font-medium text-muted-foreground">
-                                    {t[`banking.suggest.type.${s.matchedType}`]}
-                                  </p>
-                                  <p className="text-sm font-medium truncate">
-                                    {s.matchedDescription || s.matchedId.slice(0, 8)}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="text-end shrink-0">
-                                <p className="font-semibold text-sm">
-                                  {s.matchedAmount != null ? formatCurrency(s.matchedAmount) : "—"}
-                                </p>
-                                <span className={`text-xs font-medium ${confMeta.color}`}>
-                                  {s.confidence}% {t[confMeta.labelKey]}
-                                </span>
-                              </div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className={`p-1.5 rounded shrink-0 ${typeCfg.bg}`}>
+                              <TypeIcon className={`w-3.5 h-3.5 ${typeCfg.color}`} />
                             </div>
-                            <div className="mt-2">
-                              <Progress
-                                value={s.confidence}
-                                aria-label={`${s.confidence}% ${t[confMeta.labelKey]}`}
-                                className="h-1"
-                              />
-                            </div>
-                            {s.matchedDate && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {formatDate(s.matchedDate)}
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium text-muted-foreground">
+                                {typeCfg.label}
                               </p>
-                            )}
-                            {s.matchReason && (
-                              <p className="text-xs text-muted-foreground mt-1 italic">
-                                {translateMatchReasons(s.matchReason, t)}
+                              <p className="text-sm font-medium truncate">
+                                {s.matchedDescription || s.matchedId.slice(0, 8)}
                               </p>
-                            )}
-                            <div className="mt-2 flex justify-end">
-                              <Badge variant="outline" className="text-xs">
-                                <T k="pageLabels.clickToMatch" />
-                              </Badge>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {matchesLoaded &&
-                    !matchesError &&
-                    !matchesPaused &&
-                    (!matchSuggestions || matchSuggestions.length === 0) && (
-                      <div
-                        className="text-center py-8 text-muted-foreground"
-                        data-testid="match-suggestions-empty"
-                      >
-                        <ArrowRightLeft className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                        <p className="text-sm">
-                          <T k="pageLabels.noMatchesFound2" />
-                        </p>
-                        <p className="text-xs mt-1">
-                          <T k="pageLabels.tryReconcilingManuallyViaJournalEntries" />
-                        </p>
+                          <div className="text-end shrink-0">
+                            <p className="font-semibold text-sm">
+                              {s.matchedAmount != null ? formatCurrency(s.matchedAmount) : "—"}
+                            </p>
+                            <span className={`text-xs font-medium ${confMeta.color}`}>
+                              {s.confidence}% {confMeta.label}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-2">
+                          <Progress
+                            value={s.confidence}
+                            aria-label={`${s.confidence}% ${confMeta.label}`}
+                            className="h-1"
+                          />
+                        </div>
+                        {s.matchedDate && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {formatDate(s.matchedDate)}
+                          </p>
+                        )}
+                        {translateMatchReasons(s.matchReason, t) && (
+                          <p className="text-xs text-muted-foreground mt-1 italic">
+                            {translateMatchReasons(s.matchReason, t)}
+                          </p>
+                        )}
+                        <div className="mt-2 flex justify-end">
+                          <Badge variant="outline" className="text-xs">
+                            <T k="pageLabels.clickToMatch" />
+                          </Badge>
+                        </div>
                       </div>
-                    )}
-                </>
+                    );
+                  })}
+                </div>
+              ) : matchesPaused || matchesError ? null : !matchesSuccess ? (
+                <Skeleton className="h-20" />
+              ) : (
+                <div
+                  className="text-center py-8 text-muted-foreground"
+                  data-testid="match-suggestions-empty"
+                >
+                <div data-testid="empty-state-match-suggestions">
+                  <ArrowRightLeft className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                  <p className="text-sm">
+                    <T k="pageLabels.noMatchesFound2" />
+                  </p>
+                  <p className="text-xs mt-1">
+                    <T k="pageLabels.tryReconcilingManuallyViaJournalEntries" />
+                  </p>
+                </div>
+                </div>
               )}
             </div>
           </div>
@@ -1562,7 +1601,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium text-sm">{strings.reviewTitle}</p>
-                  {statementPreview.validRows > 0 && (
+                  {statementRecognized && (
                     <Badge variant="secondary" data-testid="statement-recognized">
                       {strings.recognized}
                     </Badge>
