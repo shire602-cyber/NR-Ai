@@ -11,6 +11,8 @@
   "customerLink.loadFailedBody": "يرجى التحقق من الاتصال بالإنترنت ثم إعادة المحاولة.",
   "customerLink.retry": "إعادة المحاولة",
   "customerLink.loading": "جارٍ التحميل",
+  "customerLink.waitingTitle": "بانتظار الاتصال بالإنترنت",
+  "customerLink.waitingBody": "يبدو أنكم غير متصلين بالإنترنت. ستُحمَّل هذه الصفحة تلقائيًا فور عودة الاتصال.",
   "customerLink.pageTitle": "{company} · بوابة العملاء",
   "customerLink.pageTitleBare": "بوابة العملاء",
   "customerLink.approveTitle": "الموافقة على شريك الفوترة الإلكترونية · {company}",
