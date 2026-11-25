@@ -452,7 +452,9 @@ export default function BillPay() {
 
   const {
     data: bills = [],
-    isLoading: billsLoading,
+    isLoading: billsFetching,
+    isPending: billsPending,
+    fetchStatus: billsFetchStatus,
     isLoadingError: billsFailed,
     refetch: refetchBills,
   } = useQuery<VendorBill[]>({
@@ -535,15 +537,21 @@ export default function BillPay() {
   // Filtered bills
   // ===========================
 
+  // A paused first fetch (offline, nothing cached) has no rows to judge: keep the loading state
+  // rather than claiming there are no bills. Cached rows still show while a refetch is paused.
+  const billsLoading = billsFetching || (billsPending && billsFetchStatus === "paused");
+  // Rows of the selected status before the search, so a search no-match is only reported when the
+  // search itself emptied a non-empty status list.
+  const statusBills = useMemo(() => filterBills(bills, statusFilter, ""), [bills, statusFilter]);
   const filteredBills = useMemo(
-    () => filterBills(bills, statusFilter, vendorSearch),
-    [bills, statusFilter, vendorSearch]
+    () => filterBills(statusBills, "all", vendorSearch),
+    [statusBills, vendorSearch]
   );
   const hasSearchNoMatch =
     !billsLoading &&
     !billsFailed &&
     vendorSearch.trim().length > 0 &&
-    bills.length > 0 &&
+    statusBills.length > 0 &&
     filteredBills.length === 0;
 
   // ===========================
@@ -1835,7 +1843,6 @@ export default function BillPay() {
               <Input
                 ref={searchInputRef}
                 type="search"
-                dir="auto"
                 placeholder={t["screens.searchVendorOrBill"]}
                 value={vendorSearch}
                 onChange={(e) => setVendorSearch(e.target.value)}
