@@ -1,31 +1,26 @@
 // @vitest-environment jsdom
 /**
- * PR 125: what the VAT filing screen shows for its two queries (company profile, VAT returns)
- * while they are paused, loading, failed, cached or empty. The page runs against the real
- * React Query client and the real query function; only fetch, the connection state and the
- * active-company hook are faked.
+ * PR 125: what the VAT filing screen shows for its queries (company list, company profile, VAT
+ * returns) while they are paused, loading, failed, cached or empty. The page runs against the
+ * real ActiveCompanyProvider, React Query client and query function; only fetch and the
+ * connection state are faked.
  */
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  ActiveCompanyProvider,
+  useActiveCompany,
+} from "../../client/src/components/ActiveCompanyProvider";
+import { setAuthHint } from "../../client/src/lib/authHint";
 import { loadLocale, useI18n } from "../../client/src/lib/i18n";
 import { queryClient } from "../../client/src/lib/queryClient";
 import { COMPANY, COMPANY_ID } from "./helpers/form-harness";
 
-vi.mock("../../client/src/hooks/useDefaultCompany", () => ({
-  useDefaultCompany: () => ({
-    company: undefined,
-    companyId: "c0000000-0000-4000-8000-000000000001",
-    companies: [],
-    hasNoCompanies: false,
-    isLoading: false,
-    error: null,
-  }),
-}));
-
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+const LIST_PATH = "/api/companies";
 const PROFILE_PATH = `/api/companies/${COMPANY_ID}`;
 const RETURNS_PATH = `${PROFILE_PATH}/vat-returns`;
 const PROFILE_KEY = ["/api/companies", COMPANY_ID];
@@ -92,7 +87,12 @@ beforeEach(() => {
   queryClient.clear();
   onlineManager.setOnline(true);
   useI18n.getState().setLocale("en");
+  // The company list is not requested for a visitor without a session hint, and is already
+  // cached for a signed-in user who opens this screen (the company-list tests remove it).
+  setAuthHint();
+  queryClient.setQueryData([LIST_PATH], [{ ...COMPANY }]);
   answers = {
+    [LIST_PATH]: { status: 200, body: [{ ...COMPANY }] },
     [PROFILE_PATH]: { status: 200, body: { ...COMPANY } },
     [RETURNS_PATH]: { status: 200, body: [vatReturn] },
   };
@@ -128,15 +128,34 @@ const settle = async () => {
 const byId = (id: string) => container.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
 const text = () => container.textContent ?? "";
 
-async function mount() {
+/** What the provider tells the shell's onboarding redirect. */
+function ProviderProbe() {
+  const { hasNoCompanies } = useActiveCompany();
+  return createElement("i", {
+    "data-testid": "has-no-companies",
+    "data-value": String(hasNoCompanies),
+  });
+}
+const hasNoCompanies = () => byId("has-no-companies")?.getAttribute("data-value");
+
+async function mount(painted = () => !!text()) {
   const { default: VATFiling } = await import("../../client/src/pages/VATFiling");
   await act(async () => {
     root.render(
-      createElement(QueryClientProvider, { client: queryClient }, createElement(VATFiling))
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(
+          ActiveCompanyProvider,
+          null,
+          createElement(VATFiling),
+          createElement(ProviderProbe)
+        )
+      )
     );
   });
   // The page paints once its catalogs and first queries have answered.
-  for (let i = 0; i < 100 && !text(); i++) {
+  for (let i = 0; i < 100 && !painted(); i++) {
     await act(async () => new Promise((r) => setTimeout(r, 50)));
   }
   await settle();
@@ -319,5 +338,146 @@ describe("VAT filing: failed refreshes", () => {
     await clickRetry("vat-profile-refresh-error");
     expect(byId("vat-profile-refresh-error")).toBeNull();
     expect(byId("link-add-trn-warning")).toBeNull();
+  });
+});
+
+describe("VAT filing: no active company", () => {
+  beforeEach(() => queryClient.removeQueries({ queryKey: [LIST_PATH] }));
+
+  const requested = () =>
+    vi
+      .mocked(fetch)
+      .mock.calls.map(([input]) => new URL(String(input), "http://localhost").pathname);
+
+  it("shows a company-list error whose retry fetches only the company list, then recovers", async () => {
+    answers[LIST_PATH] = { status: 500, body: { message: "database exploded" } };
+    await mount();
+    expect(byId("vat-companies-load-error")?.textContent).toContain(
+      "We couldn't load your companies"
+    );
+    expect(text()).not.toContain("database exploded");
+    expect(byId("vat-no-company")).toBeNull();
+    expectNoTrnPrompts();
+    expectNoEmptyReturns();
+
+    answers[LIST_PATH] = { status: 200, body: [{ ...COMPANY }] };
+    vi.mocked(fetch).mockClear();
+    const refetchQueries = vi.spyOn(queryClient, "refetchQueries");
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+    await clickRetry("vat-companies-load-error");
+    expect(byId("vat-companies-load-error")).toBeNull();
+    expect(text()).toContain(NET);
+    // One list request; the profile and returns load because the company is now known.
+    expect(requested().filter((path) => path === LIST_PATH)).toHaveLength(1);
+    expect(requested()[0]).toBe(LIST_PATH);
+    expect(refetchQueries).not.toHaveBeenCalled();
+    expect(invalidateQueries).not.toHaveBeenCalled();
+    refetchQueries.mockRestore();
+    invalidateQueries.mockRestore();
+  });
+
+  it("says there is no company only after a successful empty list", async () => {
+    answers[LIST_PATH] = { status: 200, body: [] };
+    await mount();
+    expect(byId("vat-no-company")?.textContent).toContain("No company yet");
+    expect(byId("vat-companies-load-error")).toBeNull();
+    expect(byId("vat-companies-waiting")).toBeNull();
+    expect(byId("vat-page-loading")).toBeNull();
+    expect(hasNoCompanies()).toBe("true");
+    expectNoTrnPrompts();
+    expectNoEmptyReturns();
+    expect(requested()).toEqual([LIST_PATH]);
+  });
+
+  it("shows the Arabic no-company copy in Arabic mode", async () => {
+    useI18n.getState().setLocale("ar");
+    answers[LIST_PATH] = { status: 200, body: [] };
+    await mount();
+    expect(byId("vat-no-company")?.textContent).toContain("لا توجد شركة بعد");
+  });
+
+  it("waits, without claiming there is no company, while the first list load is paused", async () => {
+    onlineManager.setOnline(false);
+    await mount();
+    expect(byId("vat-companies-waiting")?.textContent).toContain("Waiting to load");
+    expect(byId("vat-no-company")).toBeNull();
+    expect(byId("vat-companies-load-error")).toBeNull();
+    // The shell's onboarding redirect needs a confirmed empty list.
+    expect(hasNoCompanies()).toBe("false");
+    expectNoTrnPrompts();
+    expectNoEmptyReturns();
+
+    await setOnline(true);
+    expect(byId("vat-companies-waiting")).toBeNull();
+    expect(text()).toContain(NET);
+  });
+
+  it("keeps the loading skeleton while the first list load is in flight", async () => {
+    const answered = vi.mocked(fetch).getMockImplementation()!;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    vi.mocked(fetch).mockImplementation(async (...args) => {
+      await held;
+      return answered(...args);
+    });
+    try {
+      await mount(() => !!byId("vat-page-loading"));
+      expect(byId("vat-page-loading")).toBeTruthy();
+      expect(hasNoCompanies()).toBe("false");
+      expect(byId("vat-no-company")).toBeNull();
+      expect(byId("vat-companies-waiting")).toBeNull();
+      expect(byId("vat-companies-load-error")).toBeNull();
+    } finally {
+      await act(async () => release());
+      await settle();
+    }
+    expect(text()).toContain(NET);
+  });
+
+  it("does not treat a cached empty list whose refresh failed as confirmed", async () => {
+    answers[LIST_PATH] = { status: 200, body: [] };
+    await mount();
+    expect(byId("vat-no-company")).toBeTruthy();
+
+    answers[LIST_PATH] = { status: 500, body: { message: "database exploded" } };
+    await refresh();
+    expect(byId("vat-companies-load-error")).toBeTruthy();
+    expect(byId("vat-no-company")).toBeNull();
+  });
+});
+
+describe("VAT filing: cached profile of a company that is not VAT registered", () => {
+  const unregistered = { ...COMPANY, taxRegistrationType: "Non-registered", trnVatNumber: null };
+  beforeEach(() => {
+    answers[PROFILE_PATH] = { status: 200, body: unregistered };
+  });
+
+  it("keeps the card with a notice while a refresh is paused", async () => {
+    await mount();
+    expect(byId("card-vat-not-registered")).toBeTruthy();
+    expect(byId("vat-profile-refresh-paused")).toBeNull();
+
+    await setOnline(false);
+    await refresh();
+    expect(byId("vat-profile-refresh-paused")?.textContent).toContain("Waiting to refresh");
+    expect(byId("card-vat-not-registered")).toBeTruthy();
+
+    await setOnline(true);
+    expect(byId("vat-profile-refresh-paused")).toBeNull();
+    expect(byId("card-vat-not-registered")).toBeTruthy();
+  });
+
+  it("keeps the card with a retry notice when a refresh fails", async () => {
+    await mount();
+    answers[PROFILE_PATH] = { status: 500, body: { message: "database exploded" } };
+    await refresh();
+    expect(byId("vat-profile-refresh-error")).toBeTruthy();
+    expect(byId("card-vat-not-registered")).toBeTruthy();
+    expect(text()).not.toContain("database exploded");
+
+    answers[PROFILE_PATH] = { status: 200, body: unregistered };
+    await clickRetry("vat-profile-refresh-error");
+    expect(byId("vat-profile-refresh-error")).toBeNull();
+    expect(byId("card-vat-not-registered")).toBeTruthy();
   });
 });

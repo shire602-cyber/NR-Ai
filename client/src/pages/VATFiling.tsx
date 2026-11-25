@@ -230,7 +230,14 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
   const { t, locale } = useTranslation();
   const dfOpts = dateFnsOptions(locale);
   const { toast } = useToast();
-  const { companyId, companies, isLoading: isLoadingCompany } = workspace;
+  const {
+    companyId,
+    companies,
+    isLoading: isLoadingCompany,
+    error: companyListError,
+    companyListState,
+    retryCompanyList,
+  } = workspace;
   const { gate } = useCompanyPermission();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -932,9 +939,40 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
     }
   };
 
-  if (isLoadingCompany || profileState.view === "loading" || profileState.view === "idle") {
+  // No active company: the profile and returns queries are disabled, so the company list says
+  // what to show. While it loads, the skeletons below stay.
+  if (!companyId && companyListState !== "loading" && companyListState !== "ready") {
     return (
       <div className="space-y-6">
+        <PageHeader
+          eyebrow={t["pages.eyebrowCompliance"]}
+          title={locale === "ar" ? "إقرار ضريبة القيمة المضافة 201" : "UAE VAT 201 return"}
+          description={t["pageLabels.vat201Workflow"]}
+        />
+        {companyListState === "waiting" ? (
+          <VatWaiting messageKey="compliance.vatQueryWaiting" testId="vat-companies-waiting" />
+        ) : companyListState === "error" ? (
+          <VatLoadFailed
+            error={companyListError}
+            titleKey="compliance.vatCompaniesLoadFailedTitle"
+            onRetry={retryCompanyList}
+            testId="vat-companies-load-error"
+          />
+        ) : (
+          <Card data-testid="vat-no-company">
+            <CardContent className="space-y-2 pt-6 text-start">
+              <p className="font-medium">{t["compliance.vatNoCompanyTitle"]}</p>
+              <p className="text-sm text-muted-foreground">{t["compliance.vatNoCompanyBody"]}</p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    );
+  }
+
+  if (isLoadingCompany || profileState.view === "loading" || profileState.view === "idle") {
+    return (
+      <div className="space-y-6" data-testid="vat-page-loading">
         <Skeleton className="h-8 w-64" />
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => (
@@ -1068,6 +1106,22 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
     );
   }
 
+  // The cached profile stays on screen, registered or not; this says its refresh did not happen.
+  const profileNotice =
+    profileState.notice === "paused" ? (
+      <VatWaiting
+        messageKey="compliance.vatQueryWaitingRefresh"
+        testId="vat-profile-refresh-paused"
+      />
+    ) : profileState.notice === "failed" ? (
+      <VatRefreshNotice
+        titleKey="compliance.vatProfileRefreshFailedTitle"
+        bodyKey="compliance.vatProfileRefreshFailedBody"
+        onRetry={() => void refetchCompany()}
+        testId="vat-profile-refresh-error"
+      />
+    ) : null;
+
   // E3 (J2-r3): a company that is not VAT registered files no VAT return and recovers no input
   // VAT, so the page says so instead of showing return figures.
   if (company && !isVatRegistered(company)) {
@@ -1079,6 +1133,7 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
           backHref="/reports"
           backLabel={t["compliance.vatFilingBackToReports"]}
         />
+        {profileNotice}
         <Card data-testid="card-vat-not-registered">
           <CardContent className="pt-6 space-y-3">
             <p className="font-medium">{t["compliance.vatNotRegisteredTitle"]}</p>
@@ -1131,20 +1186,7 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
         }
       />
 
-      {profileState.notice === "paused" && (
-        <VatWaiting
-          messageKey="compliance.vatQueryWaitingRefresh"
-          testId="vat-profile-refresh-paused"
-        />
-      )}
-      {profileState.notice === "failed" && (
-        <VatRefreshNotice
-          titleKey="compliance.vatProfileRefreshFailedTitle"
-          bodyKey="compliance.vatProfileRefreshFailedBody"
-          onRetry={() => void refetchCompany()}
-          testId="vat-profile-refresh-error"
-        />
-      )}
+      {profileNotice}
       {returnsNotice === "paused" && (
         <VatWaiting
           messageKey="compliance.vatQueryWaitingRefresh"
