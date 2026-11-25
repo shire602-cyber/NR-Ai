@@ -53,13 +53,25 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { freshChunkUrl } from "@/lib/dialogChunk";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDistanceToNow, isAfter } from "date-fns";
 import { dateFnsOptions } from "@/lib/date-locale";
 import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import type { Invitation, Company } from "@shared/schema";
 
-const loadInviteClientDialog = () => import("@/components/team/InviteClientDialog");
+type InviteClientModule = typeof import("@/components/team/InviteClientDialog");
+
+// First try: the literal import (split, hashed and preloaded by the bundler). Retry: the same chunk
+// under a fresh URL; the production path is a marker the dialog-chunk-urls Vite plugin rewrites to
+// the emitted chunk (see lib/dialogChunk.ts).
+const loadInviteClientDialog = (retry: string | null): Promise<InviteClientModule> => {
+  if (retry === null) return import("@/components/team/InviteClientDialog");
+  const path = import.meta.env.DEV
+    ? "../components/team/InviteClientDialog.tsx"
+    : "__MUHASIB_DIALOG_CHUNK__InviteClientDialog__";
+  return import(/* @vite-ignore */ freshChunkUrl(new URL(path, import.meta.url), retry));
+};
 
 export default function UserInvitations() {
   const { t, locale } = useTranslation();
@@ -67,7 +79,7 @@ export default function UserInvitations() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
-  const inviteDialog = useOnDemandDialog(loadInviteClientDialog);
+  const inviteDialog = useOnDemandDialog(loadInviteClientDialog, "InviteClientDialog");
   const inviteTrigger = useRef<HTMLButtonElement>(null);
   const openInviteDialog = () => {
     setInviteDialogOpen(true);

@@ -39,6 +39,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
+import { freshChunkUrl } from "@/lib/dialogChunk";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
@@ -122,7 +123,18 @@ const ROLE_COLORS: Record<CompanyRole, string> = {
   viewer: ROLE_PILL,
 };
 
-const loadPermissionsMatrixDialog = () => import("@/components/team/PermissionsMatrixDialog");
+type PermissionsMatrixModule = typeof import("@/components/team/PermissionsMatrixDialog");
+
+// First try: the literal import (split, hashed and preloaded by the bundler). Retry: the same chunk
+// under a fresh URL; the production path is a marker the dialog-chunk-urls Vite plugin rewrites to
+// the emitted chunk (see lib/dialogChunk.ts).
+const loadPermissionsMatrixDialog = (retry: string | null): Promise<PermissionsMatrixModule> => {
+  if (retry === null) return import("@/components/team/PermissionsMatrixDialog");
+  const path = import.meta.env.DEV
+    ? "../components/team/PermissionsMatrixDialog.tsx"
+    : "__MUHASIB_DIALOG_CHUNK__PermissionsMatrixDialog__";
+  return import(/* @vite-ignore */ freshChunkUrl(new URL(path, import.meta.url), retry));
+};
 
 export default function TeamManagement() {
   const { t, locale } = useTranslation();
@@ -131,7 +143,10 @@ export default function TeamManagement() {
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
-  const permissionsDialog = useOnDemandDialog(loadPermissionsMatrixDialog);
+  const permissionsDialog = useOnDemandDialog(
+    loadPermissionsMatrixDialog,
+    "PermissionsMatrixDialog"
+  );
   const permissionsTrigger = useRef<HTMLButtonElement>(null);
   const openPermissions = () => {
     setPermissionsDialogOpen(true);
