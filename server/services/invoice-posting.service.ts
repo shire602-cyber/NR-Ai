@@ -887,7 +887,14 @@ interface OriginalLeg {
   remainingForeign: number;
 }
 
-/** Convert once per role and distribute its rounding fils within the available centre balances. */
+/**
+ * Convert the credited document amount once per revenue role, then place that base
+ * on the named centres. A centre may absorb more than one rounding fil when the
+ * others are already at their remaining base, so the role total stays intact.
+ * Fils that still cannot be placed are piled onto a centre that has base left, and
+ * the caller's balance check rejects the credit. A centre with no base left keeps
+ * zero so its document-currency residual can still be cleared.
+ */
 function creditBucketBaseAmounts(buckets: RevenueBucket[], legs: OriginalLeg[], rate: string) {
   const rounded = new Map<RevenueBucket, number>();
   const FxDecimal = Decimal.clone({ precision: 40 });
@@ -897,24 +904,53 @@ function creditBucketBaseAmounts(buckets: RevenueBucket[], legs: OriginalLeg[], 
     const roleBase = toBase(sumFils(group.map((b) => b.netFils)), rate);
     const parts = group.map((bucket) => {
       const exact = fxRate.times(bucket.netFils);
-      const base = exact.floor().toNumber();
-      const canRoundUp =
-        bucket.costCenterId === null ||
-        sumFils(
-          legs
-            .filter((l) => l.role === role && l.costCenterId === bucket.costCenterId)
-            .map((l) => Math.max(0, l.remainingBase))
-        ) > base;
-      return { bucket, base, fraction: exact.minus(base), canRoundUp };
+      const floor = exact.floor();
+      const available =
+        bucket.costCenterId === null
+          ? Number.POSITIVE_INFINITY
+          : sumFils(
+              legs
+                .filter((l) => l.role === role && l.costCenterId === bucket.costCenterId)
+                .map((l) => Math.max(0, l.remainingBase))
+            );
+      return {
+        bucket,
+        base: Math.min(floor.toNumber(), available),
+        fraction: exact.minus(floor),
+        available,
+        added: 0,
+      };
     });
-    const remainder = roleBase - sumFils(parts.map((p) => p.base));
-    const byRemainder = parts
-      .filter((p) => p.fraction.gt(0))
-      .sort(
-        (a, b) => Number(b.canRoundUp) - Number(a.canRoundUp) || b.fraction.comparedTo(a.fraction)
-      );
-    // If the role total cannot fit, the bucket balance check below rejects the credit.
-    for (const part of byRemainder.slice(0, remainder)) part.base++;
+    let remainder = roleBase - sumFils(parts.map((p) => p.base));
+    while (remainder > 0) {
+      let best = -1;
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (part.base >= part.available) continue;
+        if (best < 0) {
+          best = i;
+          continue;
+        }
+        const chosen = parts[best];
+        const cmp = part.fraction.comparedTo(chosen.fraction);
+        if (
+          cmp > 0 ||
+          (cmp === 0 && (part.added < chosen.added || (part.added === chosen.added && i < best)))
+        ) {
+          best = i;
+        }
+      }
+      if (best < 0) break;
+      parts[best].base++;
+      parts[best].added++;
+      remainder--;
+    }
+    // Base that still cannot be placed must fail the centre check. A centre with no
+    // base left keeps a zero allocation so its document-currency residual can post.
+    if (remainder > 0) {
+      const sink = parts.find((part) => part.available > 0);
+      if (sink) sink.base += remainder;
+    }
     for (const { bucket, base } of parts) rounded.set(bucket, base);
   }
   return rounded;
@@ -1048,11 +1084,12 @@ async function postCreditNoteInTx(args: {
     if (mode === "remaining" && costCenterId === null) continue;
     const base = baseAmounts?.get(bucket) ?? docFils;
     // A final reversal mirrors the posted base amounts, including FX rounding residuals.
+    // A centre whose base is already consumed can still owe document currency.
     const useForeignBalance = foreign && (mode === "remaining" || base === 0);
     const roleLegs = revenueLegs.filter(
       (leg) =>
         leg.role === role &&
-        (leg.remainingBase > 0 || (useForeignBalance && leg.remainingForeign > 0)) &&
+        (leg.remainingBase > 0 || (foreign && leg.remainingForeign > 0)) &&
         (costCenterId === null || leg.costCenterId === costCenterId)
     );
     if (!roleLegs.length) {

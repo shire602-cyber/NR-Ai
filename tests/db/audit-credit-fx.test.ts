@@ -528,6 +528,62 @@ it("[PR #104] rounds a partial foreign credit once per revenue role across named
   ]);
 });
 
+it("[PR #104] keeps the role-level FX total when only one centre can absorb the rounding fils", async () => {
+  const t = await h.createTenant({ planId: "enterprise" });
+  const a = await center(t, "Job-A");
+  const b = await center(t, "Job-B");
+  const c = await center(t, "Job-C");
+  const line = (costCenterId: string, price: number) => ({ ...exported(price), costCenterId });
+  const id = await issue(t, [line(a, 0.02), line(b, 0.02), line(c, 0.03)], {
+    currency: "USD",
+    exchangeRate: 3.67,
+  });
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  // Each 0.02 line posts 0.07. A 0.01 credit reverses 0.04 and leaves exactly 0.03.
+  for (const costCenterId of [a, b]) {
+    const partial = await t.as.post(url, { date, lines: [line(costCenterId, 0.01)] });
+    expect(partial.status, partial.text).toBe(201);
+  }
+  const credit = await t.as.post(url, {
+    date,
+    lines: [line(a, 0.01), line(b, 0.01), line(c, 0.01)],
+  });
+  expect(credit.status, credit.text).toBe(201);
+  const journal = await creditJournal(credit.body.journalEntryId);
+  expect(journal[0]).toEqual({ code: "1040", centre: null, base: -0.11, foreign: -0.03 });
+  expect(journal.slice(1)).toEqual([
+    { code: "4060", centre: "Job-A", base: 0.03, foreign: 0.01 },
+    { code: "4060", centre: "Job-B", base: 0.03, foreign: 0.01 },
+    { code: "4060", centre: "Job-C", base: 0.05, foreign: 0.01 },
+  ]);
+});
+
+it("[PR #104] credits a centre's document-currency residual while another centre remains", async () => {
+  const t = await h.createTenant({ planId: "enterprise" });
+  const a = await center(t, "Job-A");
+  const b = await center(t, "Job-B");
+  const jobA = (price: number) => ({ ...exported(price), costCenterId: a });
+  const jobB = { ...exported(0.05), costCenterId: b };
+  const id = await issue(t, [jobA(0.02), jobB], { currency: "USD", exchangeRate: 0.6 });
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const partial = await t.as.post(url, { date, lines: [jobA(0.01)] });
+  expect(partial.status, partial.text).toBe(201);
+
+  const residual = await t.as.post(url, { date, lines: [jobA(0.01)] });
+  expect(residual.status, residual.text).toBe(201);
+  expect(await creditJournal(residual.body.journalEntryId)).toEqual([
+    { code: "1040", centre: null, base: 0, foreign: -0.01 },
+    { code: "4060", centre: "Job-A", base: 0, foreign: 0.01 },
+  ]);
+
+  const rest = await t.as.post(url, { date, lines: [jobB] });
+  expect(rest.status, rest.text).toBe(201);
+  expect(await creditJournal(rest.body.journalEntryId)).toEqual([
+    { code: "1040", centre: null, base: -0.03, foreign: -0.05 },
+    { code: "4060", centre: "Job-B", base: 0.03, foreign: 0.05 },
+  ]);
+});
+
 it("[PR #104] can post and void a final credit with only document currency remaining", async () => {
   const t = await h.createTenant({ planId: "enterprise" });
   const a = await center(t, "Job-A");
