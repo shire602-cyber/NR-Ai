@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 /**
- * Bank accounts screen states: search and no-match, load failure with retry (instead of the
- * misleading "no bank accounts yet"), and Arabic with no English leftovers.
+ * Bank accounts screen states: search, localized feedback, and account and history query recovery.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import {
   COMPANY_ID,
+  buttonByText,
+  byTestId,
+  click,
   flush,
   flushUntil,
   formHarnessCompanyMock,
@@ -24,6 +26,8 @@ vi.mock("../../client/src/hooks/useDefaultCompany", () => formHarnessCompanyMock
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const C = `/api/companies/${COMPANY_ID}`;
+const IMPORTS_PATH = `${C}/bank-statements/imports`;
+const RECONCILIATIONS_PATH = `${C}/bank-accounts/a1/reconciliations`;
 const ACCOUNTS = [
   {
     id: "a1",
@@ -88,6 +92,14 @@ function failing() {
   return rejected;
 }
 
+function pendingRequest() {
+  let rejectRequest!: (error: Error) => void;
+  const response = new Promise<never>((_, reject) => {
+    rejectRequest = reject;
+  });
+  return { response, fail: () => rejectRequest(new Error("network down")) };
+}
+
 async function mount() {
   const page = (await import("../../client/src/pages/BankAccounts")).default;
   await renderPage(page);
@@ -110,14 +122,62 @@ function search(value: string) {
 }
 
 describe("bank accounts states", { timeout: 90_000 }, () => {
-  it("shows an error with retry when accounts fail to load, not the empty state", async () => {
+  it("recovers when retrying a failed accounts request", async () => {
     setFixtures({ [`${C}/bank-accounts`]: failing() });
     await mount();
-    const err = document.querySelector('[data-testid="bank-accounts-error"]');
+    const err = byTestId("bank-accounts-error");
     expect(err).not.toBeNull();
     expect(err!.textContent).toContain("Bank accounts could not be loaded");
     expect(document.body.textContent).not.toContain("No bank accounts yet");
-    expect(err!.querySelector("button")).not.toBeNull();
+
+    setFixtures({ [`${C}/bank-accounts`]: ACCOUNTS });
+    await click(buttonByText(/^Retry$/, err!));
+    await flushUntil(() => document.body.textContent?.includes("Operating") === true);
+    expect(document.body.textContent).toContain("Operating");
+    expect(byTestId("bank-accounts-error")).toBeNull();
+  });
+
+  it("shows import history loading, failure and an empty state after a successful retry", async () => {
+    const request = pendingRequest();
+    setFixtures({ [`${C}/bank-accounts`]: ACCOUNTS, [IMPORTS_PATH]: request.response });
+    await mount();
+    const imports = document.querySelector("section")!;
+    expect(imports.querySelector('[data-testid="table-skeleton"]')).not.toBeNull();
+    expect(imports.textContent).not.toContain("No imports yet");
+
+    request.fail();
+    await flushUntil(() => byTestId("bank-imports-error") !== null);
+    const err = byTestId("bank-imports-error")!;
+    expect(err.textContent).toContain("Import history could not be loaded");
+    expect(imports.textContent).not.toContain("No imports yet");
+
+    setFixtures({ [`${C}/bank-accounts`]: ACCOUNTS, [IMPORTS_PATH]: [] });
+    await click(buttonByText(/^Retry$/, err));
+    await flushUntil(() => imports.textContent?.includes("No imports yet") === true);
+    expect(imports.textContent).toContain("No imports yet");
+    expect(byTestId("bank-imports-error")).toBeNull();
+  });
+
+  it("shows saved reconciliations loading, failure and an empty state after a successful retry", async () => {
+    const request = pendingRequest();
+    setFixtures({ [`${C}/bank-accounts`]: ACCOUNTS, [RECONCILIATIONS_PATH]: request.response });
+    await mount();
+    await click(document.querySelector('button[aria-label="Reconciliation statement"]'));
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.querySelector('[role="status"]')?.textContent).toBe("Loading…");
+    expect(dialog.textContent).not.toContain("No saved reconciliations yet");
+
+    request.fail();
+    await flushUntil(() => dialog.querySelector('[role="alert"]') !== null);
+    const err = dialog.querySelector('[role="alert"]')!;
+    expect(err.textContent).toContain("Saved reconciliations could not be loaded");
+    expect(dialog.textContent).not.toContain("No saved reconciliations yet");
+
+    setFixtures({ [`${C}/bank-accounts`]: ACCOUNTS, [RECONCILIATIONS_PATH]: [] });
+    await click(buttonByText(/^Retry$/, err));
+    await flushUntil(() => dialog.textContent?.includes("No saved reconciliations yet") === true);
+    expect(dialog.textContent).toContain("No saved reconciliations yet");
+    expect(dialog.querySelector('[role="alert"]')).toBeNull();
   });
 
   it("renders the search, no-match and error states in Arabic without English text", async () => {

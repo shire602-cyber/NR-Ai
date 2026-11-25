@@ -267,8 +267,7 @@ export default function BankAccounts() {
           />
           <Input
             type="search"
-            dir="auto"
-            className="h-9 ps-9"
+            className="h-9 ps-9 text-start"
             placeholder={tr("banking.accounts.searchPlaceholder")}
             aria-label={tr("banking.accounts.search")}
             data-testid="input-search-bank-accounts"
@@ -677,6 +676,7 @@ function StatementDialog({
   const historyKey = ["/api/companies", companyId, "bank-accounts", account.id, "reconciliations"];
   const {
     data: history,
+    isPending: historyPending,
     isError: historyError,
     refetch: refetchHistory,
   } = useQuery<SavedReconciliation[]>({ queryKey: historyKey });
@@ -829,14 +829,18 @@ function StatementDialog({
         )}
         <div>
           <p className="text-sm font-semibold mb-2">{tr("banking.statement.history")}</p>
-          {historyError ? (
+          {historyPending ? (
+            <p role="status" className="text-small text-muted-foreground">
+              {tr("banking.common.loading")}
+            </p>
+          ) : historyError ? (
             <p role="alert" className="text-small text-muted-foreground">
               {tr("banking.statement.historyError")}{" "}
               <Button variant="link" size="sm" onClick={() => void refetchHistory()}>
                 {t["components.errorRetry"]}
               </Button>
             </p>
-          ) : (history ?? []).length === 0 ? (
+          ) : history?.length === 0 ? (
             <p className="text-small text-muted-foreground">
               {tr("banking.statement.historyNone")}
             </p>
