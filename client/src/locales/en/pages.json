@@ -1072,6 +1072,7 @@
   "pages.vendorsStatementType.payment_reversal": "Payment reversal",
   "pages.vendorsStatementType.prepayment_applied": "Prepayment applied",
   "pages.vendorsStatementStaleEmpty": "No transactions in the last saved copy",
+  "pages.vendorsAgingExpired": "Last updated {time}. Refresh to show supplier credits and the GL 2010 reconciliation.",
   "pages.contactsTab": "Contacts",
   "pages.listWaitingTitle": "Waiting to load",
   "pages.listWaitingBody": "This will load as soon as the request can run.",

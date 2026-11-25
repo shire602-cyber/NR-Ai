@@ -21,7 +21,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui/page-header";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/format-date";
+import { Alert } from "@/components/ui/alert";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
@@ -206,6 +208,8 @@ export default function Vendors() {
   // Credits and the GL reconciliation are facts only about a current, successful answer: a
   // paused/failed refresh (status can still be "success" with cached data) or stale data hides them.
   const agingVerified = agingView.kind === "data" && !agingView.stale && !agingQuery.isStale;
+  // Merely expired (no paused or failed refresh): say how old the rows are and offer a refresh.
+  const agingExpired = agingView.kind === "data" && !agingView.stale && agingQuery.isStale;
   const noMatch = !!searchTerm.trim() && vendors.length > 0;
   const statementTypeLabel = (type: string) => {
     const key = `pages.vendorsStatementType.${type}`;
@@ -378,13 +382,33 @@ export default function Vendors() {
         </TabsContent>
         <TabsContent value="aging" className="space-y-3">
           <QueryStaleNotice view={agingView} onRetry={() => void agingQuery.refetch()} />
+          {agingExpired && (
+            <Alert
+              tone="info"
+              data-testid="aging-expired"
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={agingQuery.isFetching}
+                  onClick={() => void agingQuery.refetch()}
+                >
+                  {t["pages.refresh"]}
+                </Button>
+              }
+            >
+              {formatMessage(t["pages.vendorsAgingExpired"], {
+                time: formatDateTime(agingQuery.dataUpdatedAt, locale),
+              })}
+            </Alert>
+          )}
           <QueryTableCard
             view={agingView}
             rowCount={aging?.vendors.length ?? 0}
             onRetry={() => void agingQuery.refetch()}
             columnLabels={[c.name, c.total]}
             empty={
-              agingView.kind === "data" && agingView.stale
+              agingView.kind === "data" && !agingVerified
                 ? {
                     icon: Truck,
                     title: t["pages.listStaleEmptyTitle"],

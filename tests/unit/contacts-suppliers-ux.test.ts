@@ -123,6 +123,7 @@ let replies: {
   statement: Reply;
   contacts: Reply;
   clearPreview: Reply;
+  remove: Reply;
 };
 // Both counts differ from the one cached contact, so a `contacts.length` fallback cannot pass.
 const PREVIEW = { contactCount: 7, linkedInvoiceCount: 3 };
@@ -155,6 +156,7 @@ beforeEach(() => {
     statement: { lines: [], closingBalance: 0 },
     contacts: [CONTACT],
     clearPreview: PREVIEW,
+    remove: {},
   };
   calls = [];
   vi.stubGlobal(
@@ -169,7 +171,7 @@ beforeEach(() => {
           headers: { "content-type": "application/json" },
         });
       }
-      const reply: Reply = url.endsWith("/vendors")
+      let reply: Reply = url.endsWith("/vendors")
         ? replies.vendors
         : url.endsWith("/vendors/aging")
           ? replies.aging
@@ -181,7 +183,11 @@ beforeEach(() => {
                 ? replies.clearPreview
                 : url.endsWith("/portal-summary")
                   ? {}
-                  : [];
+                  : method === "DELETE"
+                    ? replies.remove
+                    : [];
+      // A deferred reply answers when the test resolves it, even if the request was aborted.
+      if (reply instanceof Promise) reply = await reply;
       if (reply === "hang") {
         // A real fetch rejects with an AbortError when its signal aborts.
         return new Promise<Response>((_resolve, reject) => {
@@ -497,6 +503,87 @@ describe("supplier aging footer", () => {
   );
 });
 
+describe("supplier aging after it expires", () => {
+  const notice = () => $('[data-testid="aging-expired"]');
+  const noticeButton = () => notice()!.querySelector("button")!;
+  const agingGets = () => calls.filter((c) => c.url.endsWith("/vendors/aging"));
+  const expire = async () => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(61_000);
+    });
+    await settle();
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(2026, 10, 26, 10, 0, 0));
+    replies.aging = {
+      ...AGING,
+      vendors: [{ vendorId: "v-9", name: "Aging Cached Co", total: 50000 }],
+    };
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const expectExpired = () => {
+    // Idle expiry alone: rows stay, the current-only facts go, and the age is shown.
+    expect(text()).toContain("Aging Cached Co");
+    expect(text()).not.toContain("Unapplied supplier credits");
+    expect(text()).not.toContain("Reconciled to GL 2010");
+    expect(notice()!.textContent).toContain("Last updated 26 Nov 2026, 10:00");
+    expect(agingGets()).toHaveLength(1);
+  };
+
+  /** Expires while the aging tab is already open. */
+  const mountExpired = async () => {
+    await mount(Vendors);
+    await openAging();
+    expect(notice()).toBeNull();
+    expect(text()).toContain("Unapplied supplier credits");
+    await expire();
+    expectExpired();
+  };
+
+  it("restores the footer after a refresh, opening the tab only after expiry", async () => {
+    await mount(Vendors);
+    await expire();
+    await openAging();
+    expectExpired();
+    await click(noticeButton());
+    await settle();
+    expect(agingGets()).toHaveLength(2);
+    expect(notice()).toBeNull();
+    expect(text()).toContain("Unapplied supplier credits");
+    expect(text()).toContain("Reconciled to GL 2010");
+  });
+
+  it("calls an expired empty result a saved copy", async () => {
+    replies.aging = AGING;
+    await mount(Vendors);
+    await expire();
+    await openAging();
+    expect(notice()).toBeTruthy();
+    expect(text()).toContain("Nothing in the last saved copy");
+    expect(text()).not.toContain("Nothing owed to suppliers");
+  });
+
+  it.each([
+    ["fail", "query-stale-error"],
+    ["paused", "query-stale-paused"],
+  ] as const)("keeps the rows when that refresh is %s", async (how, noticeId) => {
+    await mountExpired();
+    if (how === "fail") replies.aging = "fail";
+    else await goOffline();
+    await click(noticeButton());
+    await settle();
+    expect(text()).toContain("Aging Cached Co");
+    expect($(`[data-testid="${noticeId}"]`)).toBeTruthy();
+    expect(notice()).toBeNull();
+    expect(text()).not.toContain("Unapplied supplier credits");
+  });
+});
+
 describe("delete-all-contacts dialog counts", () => {
   const UNVERIFIED =
     "This will permanently delete all contacts for this company. This action cannot be undone.";
@@ -549,6 +636,84 @@ describe("delete-all-contacts dialog counts", () => {
       else await goOffline();
       await refresh();
       expectCountFree();
+    }
+  );
+
+  const closeClearAll = async () => {
+    await click($('[data-testid="button-cancel-clear-all"]'));
+    await settle();
+  };
+  const NEXT = { contactCount: 9, linkedInvoiceCount: 4 };
+  const deferred = () => {
+    let resolve!: (value: unknown) => void;
+    const promise = new Promise<unknown>((r) => (resolve = r));
+    return { promise, resolve };
+  };
+  const deleteRow = async () => {
+    await act(async () => {
+      $('[data-testid="mobile-contact-list"] button[aria-haspopup="menu"]')!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })
+      );
+    });
+    await settle();
+    await click(
+      [...document.querySelectorAll('[role="menuitem"]')].find((i) => i.textContent === "Delete")!
+    );
+    await settle();
+    await click([...alert().querySelectorAll("button")].find((b) => b.textContent === "Delete")!);
+    await settle();
+  };
+
+  it("asks again on every opening, count-free until that opening succeeds", async () => {
+    await mount(CustomerContacts);
+    await openClearAll();
+    expect(alert().textContent).toContain("permanently delete 7 contacts");
+    await closeClearAll();
+
+    const second = deferred();
+    replies.clearPreview = second.promise;
+    await openClearAll();
+    expect(previewGets()).toHaveLength(2);
+    expectCountFree();
+    await act(async () => second.resolve(NEXT));
+    await settle();
+    expect(alert().textContent).toContain("permanently delete 9 contacts");
+  });
+
+  it("aborts on close and ignores a late answer to an earlier opening", async () => {
+    const first = deferred();
+    replies.clearPreview = first.promise;
+    await mount(CustomerContacts);
+    await openClearAll();
+    await closeClearAll();
+    expect(previewGets()[0].signal!.aborted).toBe(true);
+
+    replies.clearPreview = "hang";
+    await openClearAll();
+    await act(async () => first.resolve(PREVIEW));
+    await settle();
+    expect(previewGets()).toHaveLength(2);
+    expect(previewGets()[1].signal!.aborted).toBe(false);
+    expectCountFree();
+  });
+
+  it.each(["hang", "answered"] as const)(
+    "re-reads the preview when a delete lands while its first read is %s",
+    async (how) => {
+      const removal = deferred();
+      replies.remove = removal.promise;
+      if (how === "hang") replies.clearPreview = "hang";
+      await mount(CustomerContacts);
+      await deleteRow();
+      await openClearAll();
+      expect(previewGets()).toHaveLength(1);
+
+      replies.clearPreview = NEXT;
+      await act(async () => removal.resolve({}));
+      await settle();
+      expect(previewGets()).toHaveLength(2);
+      if (how === "hang") expect(previewGets()[0].signal!.aborted).toBe(true);
+      expect(alert().textContent).toContain("permanently delete 9 contacts");
     }
   );
 

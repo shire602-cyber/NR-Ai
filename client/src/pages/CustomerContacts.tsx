@@ -85,6 +85,9 @@ import { portalSummaryKey } from "@/lib/portal-invite";
 import { PortalStatusChip, type PortalSummaryEntry } from "@/components/portal/PortalStatusChip";
 import { BulkPortalInviteDialog } from "@/components/portal/BulkPortalInviteDialog";
 
+// Numbers each opening of the delete-all dialog (module level, so a remount cannot reuse one).
+let clearPreviewOpenings = 0;
+
 interface ImportResult {
   message: string;
   created: number;
@@ -157,6 +160,13 @@ export default function CustomerContacts() {
     error: companyError,
   } = useDefaultCompany();
   const contactsKey = ["/api/companies", companyId, "customer-contacts"] as const;
+  // Keyed apart from the list: invalidating contactsKey does not reach the delete-all preview.
+  const clearPreviewKey = ["/api/companies", companyId, "customer-contacts/clear-preview"] as const;
+  // After a write that changes the list or the preview counts: cancel older reads, then refetch.
+  const refreshContacts = () => {
+    refreshAfterWrite(contactsKey);
+    refreshAfterWrite(clearPreviewKey);
+  };
 
   // R3 (CTO 17): command-palette customer results link to /contacts?q=<name>.
   const [searchTerm, setSearchTerm] = useState(() =>
@@ -241,6 +251,18 @@ export default function CustomerContacts() {
   const [contactToDelete, setContactToDelete] = useState<CustomerContact | null>(null);
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
   const [clearAllConfirmation, setClearAllConfirmation] = useState("");
+  const [clearOpening, setClearOpening] = useState(0);
+  const openClearAll = () => {
+    setClearOpening(++clearPreviewOpenings);
+    setClearAllConfirmation("");
+    setShowClearAllDialog(true);
+  };
+  const closeClearAll = () => {
+    // Abort this opening's read; the next opening asks again under its own key.
+    void queryClient.cancelQueries({ queryKey: clearPreviewKey });
+    setShowClearAllDialog(false);
+    setClearAllConfirmation("");
+  };
 
   const contactsQuery = useQuery<CustomerContact[]>({
     queryKey: contactsKey,
@@ -275,7 +297,7 @@ export default function CustomerContacts() {
     },
     onSuccess: (result: ImportResult) => {
       setImportResults(result);
-      refreshAfterWrite(contactsKey);
+      refreshContacts();
       toast({
         title: translateNow("toasts.importCompleted"),
         description: result.message,
@@ -295,7 +317,7 @@ export default function CustomerContacts() {
       return apiRequest("POST", `/api/companies/${companyId}/customer-contacts`, data);
     },
     onSuccess: () => {
-      refreshAfterWrite(contactsKey);
+      refreshContacts();
       setShowAddDialog(false);
       toast({ title: t["customerContacts.contactCreatedSuccessfully"] });
     },
@@ -313,7 +335,7 @@ export default function CustomerContacts() {
       return apiRequest("PUT", `/api/companies/${companyId}/customer-contacts/${id}`, data);
     },
     onSuccess: () => {
-      refreshAfterWrite(contactsKey);
+      refreshContacts();
       setEditContact(null);
       toast({ title: t["customerContacts.contactUpdatedSuccessfully"] });
     },
@@ -331,7 +353,7 @@ export default function CustomerContacts() {
       return apiRequest("DELETE", `/api/companies/${companyId}/customer-contacts/${id}`);
     },
     onSuccess: () => {
-      refreshAfterWrite(contactsKey);
+      refreshContacts();
       toast({ title: t["customerContacts.contactDeletedSuccessfully"] });
     },
     onError: (error: any) => {
@@ -343,9 +365,19 @@ export default function CustomerContacts() {
     },
   });
 
+  // One query per opening: counts cached from an earlier opening, or a late answer to it, never show.
   const clearPreviewQuery = useQuery<{ contactCount: number; linkedInvoiceCount: number }>({
-    queryKey: ["/api/companies", companyId, "customer-contacts/clear-preview"],
+    queryKey: [...clearPreviewKey, clearOpening],
+    queryFn: ({ signal }) =>
+      apiRequest(
+        "GET",
+        `/api/companies/${companyId}/customer-contacts/clear-preview`,
+        undefined,
+        undefined,
+        { signal }
+      ),
     enabled: !!companyId && showClearAllDialog,
+    gcTime: 0,
   });
   const clearPreviewView = queryView(clearPreviewQuery, {
     companyId,
@@ -367,12 +399,8 @@ export default function CustomerContacts() {
       });
     },
     onSuccess: (result: { deletedCount: number; message: string }) => {
-      refreshAfterWrite(contactsKey);
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "customer-contacts/clear-preview"],
-      });
-      setShowClearAllDialog(false);
-      setClearAllConfirmation("");
+      refreshContacts();
+      closeClearAll();
       toast({
         title: translateNow("toasts.allContactsCleared"),
         description: result.message,
@@ -595,10 +623,7 @@ export default function CustomerContacts() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
-                  onSelect={() => {
-                    setClearAllConfirmation("");
-                    setShowClearAllDialog(true);
-                  }}
+                  onSelect={openClearAll}
                   disabled={contacts.length === 0 || !canDo("settings.company")}
                   data-testid="button-clear-all-contacts"
                 >
@@ -1463,10 +1488,7 @@ export default function CustomerContacts() {
       <AlertDialog
         open={showClearAllDialog}
         onOpenChange={(open) => {
-          if (!open) {
-            setShowClearAllDialog(false);
-            setClearAllConfirmation("");
-          }
+          if (!open) closeClearAll();
         }}
       >
         <AlertDialogContent>

@@ -1072,6 +1072,7 @@
   "pages.vendorsStatementType.payment_reversal": "عكس دفعة",
   "pages.vendorsStatementType.prepayment_applied": "دفعة مقدمة مطبقة",
   "pages.vendorsStatementStaleEmpty": "لا توجد حركات في آخر نسخة محفوظة",
+  "pages.vendorsAgingExpired": "آخر تحديث: {time}. حدّث لعرض أرصدة الموردين الدائنة والمطابقة مع حساب 2010.",
   "pages.contactsTab": "جهات الاتصال",
   "pages.listWaitingTitle": "بانتظار التحميل",
   "pages.listWaitingBody": "سيتم التحميل بمجرد أن يصبح الطلب جاهزًا للتنفيذ.",
