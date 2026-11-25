@@ -270,15 +270,18 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            <span className="hidden max-w-[280px] truncate text-caption text-muted-foreground sm:inline">
-              {company?.firmName ? (
-                <>
-                  <bdi translate="no">{company.firmName}</bdi> · {t["portal.doc.clientPortal"]}
-                </>
-              ) : (
-                t["portal.doc.clientPortal"]
-              )}
-            </span>
+            {/* While access is removed the brand already reads "Client portal": show it once. */}
+            {!removed && (
+              <span className="hidden max-w-[280px] truncate text-caption text-muted-foreground sm:inline">
+                {company?.firmName ? (
+                  <>
+                    <bdi translate="no">{company.firmName}</bdi> · {t["portal.doc.clientPortal"]}
+                  </>
+                ) : (
+                  t["portal.doc.clientPortal"]
+                )}
+              </span>
+            )}
             {company && accounts.length > 1 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
