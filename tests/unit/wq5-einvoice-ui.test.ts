@@ -393,6 +393,35 @@ describe("no-login approver page", () => {
     expect(container.querySelector('[data-testid="approve-completed"]')).not.toBeNull();
   });
 
+  it("Done on a link that expired meanwhile shows the expired state, not a retry error", async () => {
+    let expired = false;
+    routes["GET /api/portal/einvoicing-approve/"] = () =>
+      expired
+        ? { status: 410, body: { state: "expired" } }
+        : {
+            body: {
+              state: "active",
+              companyName: "Pearl Trading",
+              approverName: null,
+              expiresAt: "2026-12-02T00:00:00Z",
+              completedAt: null,
+              partner: null,
+            },
+          };
+    routes["POST /done"] = () => {
+      expired = true;
+      return { status: 410, body: { state: "expired" } };
+    };
+    const { default: Page } = await import("../../client/src/pages/EInvoicingApprove");
+    await mount(createElement(Page));
+    await act(async () =>
+      (container.querySelector('[data-testid="approve-done"]') as HTMLButtonElement).click()
+    );
+    await flush();
+    expect(container.querySelector('[data-testid="approve-expired"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="approve-done"]')).toBeNull();
+  });
+
   it("an expired link says so (Arabic)", async () => {
     await setLocale("ar");
     routes["GET /api/portal/einvoicing-approve/"] = () => ({

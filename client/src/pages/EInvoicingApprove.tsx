@@ -87,6 +87,11 @@ export default function EInvoicingApprove() {
       return (await res.json()) as ApproverPageData;
     },
     onSuccess: setDoneData,
+    // The link expired or was revoked while the page was open: show that state instead of a
+    // generic "try again" that can never succeed.
+    onError: (err) => {
+      if (err instanceof Error && err.message === "410") void query.refetch();
+    },
   });
 
   const result = query.data;
