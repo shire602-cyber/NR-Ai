@@ -246,5 +246,9 @@
   "screens.receiptPreviewThis": "Preview receipt image",
   "screens.receiptScannedFor": "Original scanned image for {merchant}",
   "screens.receiptsSearchPlaceholder": "Search merchant or category",
-  "screens.receiptsNoMatchTitle": "No matching receipts"
+  "screens.receiptsNoMatchTitle": "No matching receipts",
+  "screens.searchClaims": "Search by claim number, title or status",
+  "screens.noMatchingClaims": "No matching claims",
+  "screens.noMatchingClaimsBody": "Try a different keyword or clear the search.",
+  "screens.claimPaymentRefPlaceholder": "e.g., bank transfer reference or cheque number"
 }
