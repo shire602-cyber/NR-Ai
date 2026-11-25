@@ -63,7 +63,7 @@ S4 = ops/evidence.
 |---|---|---|
 | S01 | **fixed awaiting verification** | Model traced: invoices, bills, journals, receipts guarded by `assertRetentionExpired`; fixed assets blocked when posted JEs exist; accounts blocked when transactions exist; credit note delete disabled; expense claims only pre-submission drafts deletable; company delete is a soft delete (sets `deletedAt`). Gap: `retentionExpiresAt` column exists in vendor_bills / bill_payments DB tables but is never populated — all callers fall back to `createdAt + 5y`, which is conservative and compliant. No retention test existed before this campaign. Test: `tests/unit/retention-model-review.test.ts` (10 source-invariant assertions). **Still open:** no DB-backed assertion that the guard blocks a live DELETE request; `retentionExpiresAt` is not populated from document date at creation; admin company-delete has no retention pre-check (intentional — soft delete preserves records) |
 | S05 | **fixed awaiting verification** | Model traced: `parseBankCsv` in `bank-statements.routes.ts`. BOM stripping in `normalizeHeader` ✓; 10 MB body limit on the import route ✓; Zod `z.string().min(1)` on csvContent ✓; invalid date → row skipped (not error); zero/empty amount → row skipped (intentional for balance rows). Gap: skipped rows were invisible to the caller — added `skippedRows: number` to the return type and surfaced it in both the 400 (empty-import) and 201 (success) responses. Test: `tests/unit/bank-statement-import.test.ts` extended with BOM, skipped-row count, and fully-valid-file cases. **Still open:** no server-side CSV injection sanitization on description/reference fields in exports; file-type validation relies on body parser limit only (no MIME check); `parseAmount` returns 0 for non-numeric input (silent; no row-level error) |
-| S02+S03 | open | Atomic delete/audit/outbox not started |
+| S02+S03 | **fixed awaiting verification** | Audit trail traced: invoices (10 calls), bills (2), journal entries (6), receipts (4). The service (`audit.service.ts`) swallows failures so auditing never blocks a business operation; it records `before` / `after` state, IP, and user agent. The credit-note DELETE is disabled via `sendLegacyWriteDisabled` — no audit needed until the route is re-enabled. **Known gap (not fixed in this campaign):** delete and audit INSERT are sequential without a wrapping DB transaction. A server crash between them leaves the deletion unrecorded. True atomicity requires a future refactor to pass a transaction handle to `recordAudit` and commit both together. The outbox pattern is not implemented; event delivery after a crash is not guaranteed. Test: `tests/unit/audit-trail-coverage.test.ts` (8 source-invariant assertions). Still open: DB-backed integration test that audit rows are actually written; transaction-based atomicity; re-enable credit-note audit when DELETE route is activated |
 | S04 | blocked (partly) | Provider contract terms need the operator; code trace not started |
 | S06 | blocked | Needs deployed headers from staging |
 | S07 | blocked | Needs operator backup/encryption evidence and an isolated restore |
@@ -93,8 +93,8 @@ S4 = ops/evidence.
 ## 3. Counts
 
 - Original items: 32. Verified dispositions: **0**.
-- Fixed awaiting verification: **10** (F01–F07, S01, S05, W01–W06+W08) plus ENV-01.
-- Open: 10 · Blocked or partly blocked: 10 (W07, W09, W10 newly blocked; + F05 scheduled-items, S04, S06, S07, O01, O02, O06).
+- Fixed awaiting verification: **11** (F01–F07, S01, S02+S03, S05, W01–W06+W08) plus ENV-01.
+- Open: 9 · Blocked or partly blocked: 10 (W07, W09, W10 newly blocked; + F05 scheduled-items, S04, S06, S07, O01, O02, O06).
 - Handoff to Astra 6.2: **not eligible**.
 
 ## 4. Commands run (local, Node 18.16, Windows)
