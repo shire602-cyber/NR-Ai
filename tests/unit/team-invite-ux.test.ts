@@ -188,6 +188,33 @@ describe("UserInvitations", { timeout: 30_000 }, () => {
     expect(String((confirmSpy.mock.calls[0] as unknown[])[0])).toMatch(/[؀-ۿ]/);
   });
 
+  it("keeps cached invitation rows and the retry control visible when a refresh fails", async () => {
+    let calls = 0;
+    routes.push([
+      "GET /api/admin/invitations",
+      () => {
+        calls += 1;
+        if (calls === 1) return { body: [invite("a", "live@example.com", "pending", 3)] };
+        return { status: 404, body: { message: "boom" } };
+      },
+    ]);
+    const { default: UserInvitations } = await import("../../client/src/pages/UserInvitations");
+    await mount(createElement(UserInvitations));
+    expect(rows()).toHaveLength(1);
+    expect(container.querySelector('[data-testid="button-retry-invitations"]')).toBeNull();
+
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
+    });
+    await flush();
+
+    expect(calls).toBe(2);
+    expect(rows().map((r) => r.textContent)).toEqual([expect.stringContaining("live@")]);
+    expect(container.querySelector('[data-testid="button-retry-invitations"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="text-invitations-title"]')).not.toBeNull();
+  });
+
   it("an accepted invite past its expiry date offers no Resend", async () => {
     routes.push([
       "GET /api/admin/invitations",
@@ -221,6 +248,116 @@ describe("TeamManagement", { timeout: 30_000 }, () => {
     await mount(createElement(TeamManagement));
     expect(container.querySelector('[data-testid="team-load-error"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="button-retry-team"]')).not.toBeNull();
+  });
+
+  it("keeps cached members and the retry control visible when a refresh fails", async () => {
+    let teamCalls = 0;
+    routes.push([
+      "GET .*/team$",
+      () => {
+        teamCalls += 1;
+        if (teamCalls === 1) return { body: [1, 2, 3].map(member) };
+        return { status: 404, body: { message: "boom" } };
+      },
+    ]);
+    routes.push(["GET .*/team/me", () => ({ body: ACCESS })]);
+    const { default: TeamManagement } = await import("../../client/src/pages/TeamManagement");
+    await mount(createElement(TeamManagement));
+    expect(container.querySelectorAll('[data-testid^="member-m"]')).toHaveLength(3);
+    expect(container.querySelector('[data-testid="button-retry-team"]')).toBeNull();
+
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["/api/companies", "c-1", "team"],
+        exact: true,
+      });
+    });
+    await flush();
+
+    expect(teamCalls).toBe(2);
+    expect(container.querySelectorAll('[data-testid^="member-m"]')).toHaveLength(3);
+    expect(container.querySelector('[data-testid="button-retry-team"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="team-load-error"]')).not.toBeNull();
+  });
+
+  it("keeps cached invitations and the retry control visible when a refresh fails", async () => {
+    let inviteCalls = 0;
+    routes.push(["GET .*/team$", () => ({ body: [member(1)] })]);
+    routes.push(["GET .*/team/me", () => ({ body: ACCESS })]);
+    routes.push([
+      "GET .*/team/invitations",
+      () => {
+        inviteCalls += 1;
+        if (inviteCalls === 1) {
+          return {
+            body: [
+              {
+                id: "inv1",
+                email: "pending@example.com",
+                role: "viewer",
+                status: "pending",
+                expiresAt: new Date(Date.now() + 3 * DAY).toISOString(),
+                sendCount: 1,
+              },
+            ],
+          };
+        }
+        return { status: 404, body: { message: "boom" } };
+      },
+    ]);
+    const { default: TeamManagement } = await import("../../client/src/pages/TeamManagement");
+    await mount(createElement(TeamManagement));
+    expect(container.querySelector('[data-testid="invitation-inv1"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="button-retry-team-invites"]')).toBeNull();
+
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["/api/companies", "c-1", "team", "invitations"],
+        exact: true,
+      });
+    });
+    await flush();
+
+    expect(inviteCalls).toBe(2);
+    expect(container.querySelector('[data-testid="invitation-inv1"]')?.textContent).toContain(
+      "pending@example.com"
+    );
+    expect(container.querySelector('[data-testid="button-retry-team-invites"]')).not.toBeNull();
+  });
+
+  it("drops the member filter when the roster shrinks and the search box disappears", async () => {
+    let team = [1, 2, 3, 4, 5, 6].map(member);
+    routes.push(["GET .*/team$", () => ({ body: team })]);
+    routes.push(["GET .*/team/me", () => ({ body: ACCESS })]);
+    const { default: TeamManagement } = await import("../../client/src/pages/TeamManagement");
+    await mount(createElement(TeamManagement));
+    const input = container.querySelector(
+      '[data-testid="input-search-members"]'
+    ) as HTMLInputElement;
+    expect(input).not.toBeNull();
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setter.call(input, "zzz");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.querySelector('[data-testid="members-no-match"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-testid^="member-m"]')).toHaveLength(0);
+
+    team = [1, 2, 3, 4, 5].map(member);
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["/api/companies", "c-1", "team"],
+        exact: true,
+      });
+    });
+    await flush();
+
+    expect(container.querySelector('[data-testid="input-search-members"]')).toBeNull();
+    expect(container.querySelector('[data-testid="members-no-match"]')).toBeNull();
+    expect(container.querySelectorAll('[data-testid^="member-m"]')).toHaveLength(5);
   });
 
   it("searches a long member list by name or email", async () => {

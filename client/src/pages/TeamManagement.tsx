@@ -168,7 +168,8 @@ export default function TeamManagement() {
   const {
     data: teamMembers,
     isLoading: isLoadingTeam,
-    isError: teamError,
+    isLoadingError: teamLoadFailed,
+    isRefetchError: teamRefreshFailed,
     refetch: refetchTeam,
   } = useQuery<TeamMember[]>({
     queryKey: ["/api/companies", companyId, "team"],
@@ -183,7 +184,8 @@ export default function TeamManagement() {
 
   const {
     data: invitations,
-    isError: invitationsError,
+    isLoadingError: invitationsLoadFailed,
+    isRefetchError: invitationsRefreshFailed,
     refetch: refetchInvitations,
   } = useQuery<TeamInvitation[]>({
     queryKey: ["/api/companies", companyId, "team", "invitations"],
@@ -193,7 +195,10 @@ export default function TeamManagement() {
     (i) => i.status === "pending" || i.status === "expired"
   );
 
-  const needle = memberSearch.trim().toLowerCase();
+  // The search box only appears once the roster is long enough to need it. Filtering uses
+  // that same condition so a roster that shrinks below the threshold cannot keep a hidden filter.
+  const showMemberSearch = (teamMembers?.length ?? 0) > 5;
+  const needle = (showMemberSearch ? memberSearch : "").trim().toLowerCase();
   const visibleMembers = (teamMembers ?? []).filter(
     (m) =>
       !needle ||
@@ -363,7 +368,7 @@ export default function TeamManagement() {
                   </div>
                 ))}
               </div>
-            ) : teamError ? (
+            ) : teamLoadFailed ? (
               <div className="py-12 text-center" role="alert" data-testid="team-load-error">
                 <p className="mb-4 text-muted-foreground">{t["pages.teamLoadFailed"]}</p>
                 <Button
@@ -375,111 +380,133 @@ export default function TeamManagement() {
                   {t["pages.teamRetry"]}
                 </Button>
               </div>
-            ) : !teamMembers || teamMembers.length === 0 ? (
-              <div className="text-center py-12">
-                <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">
-                  {locale === "ar"
-                    ? "لا يوجد أعضاء آخرين. قم بدعوة فريقك."
-                    : "No other team members. Invite your team to collaborate."}
-                </p>
-              </div>
             ) : (
               <>
-                {teamMembers.length > 5 && (
-                  <div className="relative mb-3 max-w-sm">
-                    <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={memberSearch}
-                      onChange={(e) => setMemberSearch(e.target.value)}
-                      placeholder={t["pages.teamSearch"]}
-                      aria-label={t["pages.teamSearch"]}
-                      className="ps-10"
-                      data-testid="input-search-members"
-                    />
+                {teamRefreshFailed && (
+                  <div
+                    className="mb-4 flex flex-wrap items-center gap-3"
+                    role="alert"
+                    data-testid="team-load-error"
+                  >
+                    <p className="text-sm text-muted-foreground">{t["pages.teamLoadFailed"]}</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => refetchTeam()}
+                      data-testid="button-retry-team"
+                    >
+                      <RefreshCw className="w-4 h-4 me-2" />
+                      {t["pages.teamRetry"]}
+                    </Button>
                   </div>
                 )}
-                {visibleMembers.length === 0 && (
-                  <p
-                    className="py-6 text-center text-sm text-muted-foreground"
-                    data-testid="members-no-match"
-                  >
-                    {t["pages.teamNoMatches"]}
-                  </p>
-                )}
-                <div className="-mx-5 -mb-5 divide-hairline border-t border-border/70">
-                  {visibleMembers.map((member) => {
-                    const ownerLocked = member.role === "owner" && access?.role !== "owner";
-                    return (
-                      <div
-                        key={member.id}
-                        className="flex items-center justify-between gap-3 px-5 py-3"
-                        data-testid={`member-${member.id}`}
-                      >
-                        <div className="flex min-w-0 items-center gap-3">
-                          <Avatar>
-                            <AvatarFallback>{getInitials(member.user.name)}</AvatarFallback>
-                          </Avatar>
-                          <div className="min-w-0">
-                            <p className="truncate font-medium" dir="auto">
-                              {member.user.name}
-                            </p>
-                            <p className="truncate text-small text-muted-foreground" dir="ltr">
-                              {member.user.email}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-3">
-                          {canManage && !ownerLocked ? (
-                            <Select
-                              value={member.role}
-                              onValueChange={(role) =>
-                                updateRoleMutation.mutate({
-                                  memberId: member.id,
-                                  role: role as CompanyRole,
-                                })
-                              }
-                              disabled={updateRoleMutation.isPending}
-                            >
-                              <SelectTrigger
-                                className="h-9 w-44"
-                                aria-label={`${t["pages.teamEditRole"]}: ${member.user.name}`}
-                                data-testid={`select-role-${member.id}`}
-                              >
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {/* A member's current role stays listed even when it cannot be granted. */}
-                                {(grantable.includes(member.role)
-                                  ? grantable
-                                  : [member.role, ...grantable]
-                                ).map((role) => (
-                                  <SelectItem key={role} value={role}>
-                                    {roleLabel(role)}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            getRoleBadge(member.role)
-                          )}
-                          {canManage && (
-                            <RowActions>
-                              <RowActionButton
-                                icon={Trash2}
-                                label={t["pages.teamRemoveMember"]}
-                                onClick={() => setMemberToRemove(member)}
-                                disabled={ownerLocked}
-                                className="hover:text-destructive"
-                                data-testid={`button-remove-${member.id}`}
-                              />
-                            </RowActions>
-                          )}
-                        </div>
+                {!teamMembers || teamMembers.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground">
+                      {locale === "ar"
+                        ? "لا يوجد أعضاء آخرين. قم بدعوة فريقك."
+                        : "No other team members. Invite your team to collaborate."}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {showMemberSearch && (
+                      <div className="relative mb-3 max-w-sm">
+                        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={memberSearch}
+                          onChange={(e) => setMemberSearch(e.target.value)}
+                          placeholder={t["pages.teamSearch"]}
+                          aria-label={t["pages.teamSearch"]}
+                          className="ps-10"
+                          data-testid="input-search-members"
+                        />
                       </div>
-                    );
-                  })}
-                </div>
+                    )}
+                    {visibleMembers.length === 0 && (
+                      <p
+                        className="py-6 text-center text-sm text-muted-foreground"
+                        data-testid="members-no-match"
+                      >
+                        {t["pages.teamNoMatches"]}
+                      </p>
+                    )}
+                    <div className="-mx-5 -mb-5 divide-hairline border-t border-border/70">
+                      {visibleMembers.map((member) => {
+                        const ownerLocked = member.role === "owner" && access?.role !== "owner";
+                        return (
+                          <div
+                            key={member.id}
+                            className="flex items-center justify-between gap-3 px-5 py-3"
+                            data-testid={`member-${member.id}`}
+                          >
+                            <div className="flex min-w-0 items-center gap-3">
+                              <Avatar>
+                                <AvatarFallback>{getInitials(member.user.name)}</AvatarFallback>
+                              </Avatar>
+                              <div className="min-w-0">
+                                <p className="truncate font-medium" dir="auto">
+                                  {member.user.name}
+                                </p>
+                                <p className="truncate text-small text-muted-foreground" dir="ltr">
+                                  {member.user.email}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-3">
+                              {canManage && !ownerLocked ? (
+                                <Select
+                                  value={member.role}
+                                  onValueChange={(role) =>
+                                    updateRoleMutation.mutate({
+                                      memberId: member.id,
+                                      role: role as CompanyRole,
+                                    })
+                                  }
+                                  disabled={updateRoleMutation.isPending}
+                                >
+                                  <SelectTrigger
+                                    className="h-9 w-44"
+                                    aria-label={`${t["pages.teamEditRole"]}: ${member.user.name}`}
+                                    data-testid={`select-role-${member.id}`}
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {/* A member's current role stays listed even when it cannot be granted. */}
+                                    {(grantable.includes(member.role)
+                                      ? grantable
+                                      : [member.role, ...grantable]
+                                    ).map((role) => (
+                                      <SelectItem key={role} value={role}>
+                                        {roleLabel(role)}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                getRoleBadge(member.role)
+                              )}
+                              {canManage && (
+                                <RowActions>
+                                  <RowActionButton
+                                    icon={Trash2}
+                                    label={t["pages.teamRemoveMember"]}
+                                    onClick={() => setMemberToRemove(member)}
+                                    disabled={ownerLocked}
+                                    className="hover:text-destructive"
+                                    data-testid={`button-remove-${member.id}`}
+                                  />
+                                </RowActions>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </>
             )}
           </CardContent>
@@ -491,7 +518,7 @@ export default function TeamManagement() {
               <CardTitle>{t["pages.teamInvitationsTitle"]}</CardTitle>
             </CardHeader>
             <CardContent>
-              {invitationsError ? (
+              {invitationsLoadFailed ? (
                 <div
                   role="alert"
                   className="flex items-center gap-3"
@@ -500,63 +527,93 @@ export default function TeamManagement() {
                   <p className="text-sm text-muted-foreground">
                     {t["pages.teamInvitesLoadFailed"]}
                   </p>
-                  <Button size="sm" variant="outline" onClick={() => refetchInvitations()}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => refetchInvitations()}
+                    data-testid="button-retry-team-invites"
+                  >
                     {t["pages.teamRetry"]}
                   </Button>
                 </div>
-              ) : pendingInvitations.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{t["pages.teamInvitationsEmpty"]}</p>
               ) : (
-                <div className="-mx-5 -mb-5 divide-hairline border-t border-border/70">
-                  {pendingInvitations.map((inv) => (
+                <>
+                  {invitationsRefreshFailed && (
                     <div
-                      key={inv.id}
-                      className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
-                      data-testid={`invitation-${inv.id}`}
+                      role="alert"
+                      className="mb-4 flex items-center gap-3"
+                      data-testid="invitations-load-error"
                     >
-                      <div className="flex items-center gap-3">
-                        <Mail className="w-4 h-4 text-muted-foreground" />
-                        <div>
-                          <p className="font-medium" dir="ltr">
-                            {inv.email}
-                          </p>
-                          <p className="text-caption text-muted-foreground">
-                            {inv.status === "expired" && (
-                              <Badge variant="secondary" className="me-2">
-                                {t["pages.teamExpiredLabel"]}
-                              </Badge>
-                            )}
-                            {t["pages.teamExpires"]}: {formatDate(inv.expiresAt, locale)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {getRoleBadge(inv.role)}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => resendMutation.mutate(inv.id)}
-                          disabled={resendMutation.isPending}
-                          data-testid={`button-resend-${inv.id}`}
-                        >
-                          <RefreshCw className="w-4 h-4 me-1" />
-                          {t["pages.teamResend"]}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={() => revokeMutation.mutate(inv.id)}
-                          disabled={revokeMutation.isPending}
-                          data-testid={`button-revoke-${inv.id}`}
-                        >
-                          <X className="w-4 h-4 me-1" />
-                          {t["pages.teamRevoke"]}
-                        </Button>
-                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {t["pages.teamInvitesLoadFailed"]}
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => refetchInvitations()}
+                        data-testid="button-retry-team-invites"
+                      >
+                        {t["pages.teamRetry"]}
+                      </Button>
                     </div>
-                  ))}
-                </div>
+                  )}
+                  {pendingInvitations.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      {t["pages.teamInvitationsEmpty"]}
+                    </p>
+                  ) : (
+                    <div className="-mx-5 -mb-5 divide-hairline border-t border-border/70">
+                      {pendingInvitations.map((inv) => (
+                        <div
+                          key={inv.id}
+                          className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
+                          data-testid={`invitation-${inv.id}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Mail className="w-4 h-4 text-muted-foreground" />
+                            <div>
+                              <p className="font-medium" dir="ltr">
+                                {inv.email}
+                              </p>
+                              <p className="text-caption text-muted-foreground">
+                                {inv.status === "expired" && (
+                                  <Badge variant="secondary" className="me-2">
+                                    {t["pages.teamExpiredLabel"]}
+                                  </Badge>
+                                )}
+                                {t["pages.teamExpires"]}: {formatDate(inv.expiresAt, locale)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {getRoleBadge(inv.role)}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => resendMutation.mutate(inv.id)}
+                              disabled={resendMutation.isPending}
+                              data-testid={`button-resend-${inv.id}`}
+                            >
+                              <RefreshCw className="w-4 h-4 me-1" />
+                              {t["pages.teamResend"]}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() => revokeMutation.mutate(inv.id)}
+                              disabled={revokeMutation.isPending}
+                              data-testid={`button-revoke-${inv.id}`}
+                            >
+                              <X className="w-4 h-4 me-1" />
+                              {t["pages.teamRevoke"]}
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

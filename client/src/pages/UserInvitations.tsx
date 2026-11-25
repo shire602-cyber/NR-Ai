@@ -70,7 +70,8 @@ export default function UserInvitations() {
   const {
     data: invitations = [],
     isLoading,
-    isError,
+    isLoadingError,
+    isRefetchError,
     refetch,
   } = useQuery<Invitation[]>({
     queryKey: ["/api/admin/invitations"],
@@ -238,7 +239,7 @@ export default function UserInvitations() {
     );
   }
 
-  if (isError) {
+  if (isLoadingError) {
     return (
       <div
         className="space-y-4 py-16 text-center"
@@ -256,6 +257,24 @@ export default function UserInvitations() {
 
   return (
     <div className="space-y-6">
+      {isRefetchError && (
+        <div
+          className="flex flex-wrap items-center gap-3"
+          role="alert"
+          data-testid="invitations-load-error"
+        >
+          <p className="text-sm text-muted-foreground">{t["portal.inviteLoadFailed"]}</p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => refetch()}
+            data-testid="button-retry-invitations"
+          >
+            <RefreshCw className="w-4 h-4 me-2" />
+            {t["pages.retry"]}
+          </Button>
+        </div>
+      )}
       <PageHeader
         eyebrow={t["pages.eyebrowAdmin"]}
         title={t["portal.inviteTitle"]}
