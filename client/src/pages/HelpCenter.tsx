@@ -98,7 +98,9 @@ export default function HelpCenter() {
               </p>
               <div className="mk-hero__ctas">
                 <Button asChild size="lg">
-                  <a href={`mailto:${SUPPORT_EMAIL}?subject=Migration%20review`}>
+                  <a
+                    href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(t["marketing.helpReviewMailSubject"])}`}
+                  >
                     <Mail aria-hidden />
                     <T k="pageLabels.requestReview" />
                   </a>
