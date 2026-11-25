@@ -53,13 +53,13 @@ describe("comparison config", () => {
     expect([entry.cells.muhasib.vars?.price, top.cells.muhasib.vars?.price]).toEqual([59, 229]);
   });
 
-  it("carries competitor list prices and a source on every competitor cell", () => {
+  it("adds VAT to competitor list prices and carries a source on every competitor cell", () => {
     const entry = COMPARISON_ROWS.find((r) => r.id === "entry")!;
-    expect(entry.cells.wafeq.vars).toEqual({ monthly: 69, yearly: 57 });
-    expect(entry.cells.zoho.vars).toEqual({ price: 60 });
+    expect(entry.cells.wafeq.vars).toEqual({ monthly: 72.45, yearly: 59.85 });
+    expect(entry.cells.zoho.vars).toEqual({ price: 63 });
     const top = COMPARISON_ROWS.find((r) => r.id === "top")!;
-    expect(top.cells.wafeq.vars).toEqual({ monthly: 249, yearly: 200 });
-    expect(top.cells.zoho.vars).toEqual({ price: 280 });
+    expect(top.cells.wafeq.vars).toEqual({ monthly: 261.45, yearly: 210 });
+    expect(top.cells.zoho.vars).toEqual({ price: 294 });
     for (const row of COMPARISON_ROWS) {
       for (const column of ["wafeq", "zoho"] as const) {
         expect(row.cells[column].source).toMatch(/^https:\/\//);
@@ -108,7 +108,7 @@ describe("comparison render", () => {
     const section = container.querySelector("section#compare");
     expect(section?.getAttribute("data-testid")).toBe("section-compare");
     expect(container.querySelector("h2")?.textContent).toBe(
-      "Everything you need. Nothing you pay extra for."
+      "E-invoicing is included in every Muhasib plan."
     );
     const table = container.querySelector("table")!;
     expect(table.querySelector("caption")?.textContent).toBeTruthy();
@@ -132,10 +132,10 @@ describe("comparison render", () => {
       "AED 59 with monthly billing"
     );
     expect(entry.querySelector('td[data-column="wafeq"]')?.textContent).toBe(
-      "AED 69 with monthly billing or AED 57 per month with annual billing"
+      "AED 72.45 with monthly billing or AED 59.85 per month with annual billing"
     );
     expect(entry.querySelector('td[data-column="zoho"]')?.textContent).toBe(
-      "Free plan or AED 60 per month with annual billing"
+      "Free plan or AED 63 per month with annual billing"
     );
     expect(table.querySelector('tr[data-row="top"] td[data-column="muhasib"]')?.textContent).toBe(
       "AED 229 with monthly billing"
@@ -146,9 +146,7 @@ describe("comparison render", () => {
   it("renders the footnote, sources and compare links", async () => {
     await mount("en");
     const foot = container.querySelector('[data-testid="compare-footnote"]')!;
-    expect(foot.textContent).toContain(
-      "Muhasib prices include VAT. Wafeq and Zoho Books prices exclude VAT."
-    );
+    expect(foot.textContent).toContain("All prices shown include 5% UAE VAT.");
     expect(foot.textContent).toContain("trademarks of their owners");
     expect(foot.querySelector('a[href="https://www.wafeq.com/en-ae/pricing"]')).not.toBeNull();
     expect(foot.querySelector('a[href="https://www.zoho.com/ae/books/pricing/"]')).not.toBeNull();
@@ -176,10 +174,21 @@ describe("comparison render", () => {
 
   it("renders Arabic copy with Western digits", async () => {
     await mount("ar");
-    expect(container.querySelector("h2")?.textContent).toBe("كل ما تحتاجه. دون رسوم إضافية.");
+    expect(container.querySelector("h2")?.textContent).toBe(
+      "الفوترة الإلكترونية مشمولة في كل باقات محاسب."
+    );
     const entry = container.querySelector('tr[data-row="entry"]')!;
     expect(entry.querySelector('td[data-column="muhasib"]')?.textContent).toBe(
       "59 درهم بالدفع الشهري"
+    );
+    expect(entry.querySelector('td[data-column="wafeq"]')?.textContent).toBe(
+      "72.45 درهم بالدفع الشهري أو 59.85 درهم شهريًا بالدفع السنوي"
+    );
+    expect(entry.querySelector('td[data-column="zoho"]')?.textContent).toBe(
+      "باقة مجانية أو 63 درهم شهريًا بالدفع السنوي"
+    );
+    expect(container.querySelector('[data-testid="compare-footnote"]')?.textContent).toContain(
+      "جميع الأسعار المعروضة شاملة ضريبة القيمة المضافة في الإمارات بنسبة 5%."
     );
     expect(
       container.querySelector('tr[data-row="einvoicing"] td[data-column="zoho"]')?.textContent

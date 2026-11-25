@@ -1,4 +1,5 @@
 import { PLAN_MONTHLY_PRICES } from "@shared/plans";
+import { vatBreakdown } from "../vat-calculator";
 import {
   COMPETITOR_PRICES,
   WAFEQ_ENTRY,
@@ -42,6 +43,10 @@ const zoho = (cell: ComparisonCell = {}): ComparisonCell => ({
 });
 const yes: ComparisonCell = { key: "hxCmpYes" };
 
+function includingVat(aed: number): number {
+  return vatBreakdown(aed * 100, "add", "standard").gross / 100;
+}
+
 /*
  * Vendor pricing pages cover prices and trials. Zoho's e-invoicing page details its included
  * allowance and additional packs. Cells with no `key` render as a dash.
@@ -54,9 +59,9 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
       muhasib: { key: "hxCmpPrice", vars: { price: PLAN_MONTHLY_PRICES.starter } },
       wafeq: wafeq({
         key: "hxCmpPriceYearly",
-        vars: { monthly: WAFEQ_ENTRY.monthly, yearly: WAFEQ_ENTRY.yearly },
+        vars: { monthly: includingVat(WAFEQ_ENTRY.monthly), yearly: includingVat(WAFEQ_ENTRY.yearly) },
       }),
-      zoho: zoho({ key: "hxCmpZohoEntry", vars: { price: ZOHO_ENTRY_PAID.annual } }),
+      zoho: zoho({ key: "hxCmpZohoEntry", vars: { price: includingVat(ZOHO_ENTRY_PAID.annual) } }),
     },
   },
   {
@@ -66,9 +71,9 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
       muhasib: { key: "hxCmpPrice", vars: { price: PLAN_MONTHLY_PRICES.enterprise } },
       wafeq: wafeq({
         key: "hxCmpPriceYearly",
-        vars: { monthly: WAFEQ_TOP.monthly, yearly: WAFEQ_TOP.yearly },
+        vars: { monthly: includingVat(WAFEQ_TOP.monthly), yearly: includingVat(WAFEQ_TOP.yearly) },
       }),
-      zoho: zoho({ key: "hxCmpZohoTop", vars: { price: ZOHO_TOP.annual } }),
+      zoho: zoho({ key: "hxCmpZohoTop", vars: { price: includingVat(ZOHO_TOP.annual) } }),
     },
   },
   {

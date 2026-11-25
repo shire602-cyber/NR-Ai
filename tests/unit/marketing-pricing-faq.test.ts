@@ -158,10 +158,17 @@ describe.each(["en", "ar"] as const)("%s", (locale) => {
     expect(text).toContain("5,000");
     expect(text).not.toMatch(/[٠-٩]/);
     expect(text).not.toMatch(/24\/7|FTA[-\s]?(compliant|approved)/i);
-    // The e-invoicing answer says it is built in, without claiming the product is accredited itself.
-    const einv = items.find((item) => item.dataset.faq === "einvoicing")!;
-    expect(einv.textContent).toContain(
-      locale === "ar" ? "مزوّد خدمة معتمد مدمج في" : "accredited service provider, built into"
+    const einv = items.find((item) => item.dataset.faq === "einvoicing")?.querySelector("p");
+    expect(einv?.textContent).toContain(
+      locale === "ar" ? "مشمولة في كل باقات" : "included in every Muhasib plan"
+    );
+    expect(einv?.textContent).toContain(
+      locale === "ar"
+        ? "عيّن مزوّد خدمة معتمدًا عبر إمارات تاكس وأكمل إجراءات الانضمام معه"
+        : "appoint an accredited service provider through EmaraTax and complete onboarding with the provider"
+    );
+    expect(einv?.textContent).toContain(
+      locale === "ar" ? "بعد اكتمال الإعداد" : "Once setup is complete"
     );
     if (locale === "ar") expect(englishLines(container)).toEqual([]);
   });
