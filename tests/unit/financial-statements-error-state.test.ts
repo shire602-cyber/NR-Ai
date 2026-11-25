@@ -48,7 +48,7 @@ describe("financial statements load error", () => {
   });
 
   it.each(["profit-loss", "balance-sheet", "cash-flow"])(
-    "keeps focus in the %s tab when a retry also fails",
+    "keeps the focused Try again button mounted in the %s tab while a retry fails",
     async (tab) => {
       const retry = Promise.withResolvers<never>();
       const fetchStatement = vi
@@ -90,22 +90,35 @@ describe("financial statements load error", () => {
         });
         await flushUntil(() => retryButton() !== null, 1000);
 
-        const panel = node.querySelector('[role="tabpanel"]:not([hidden])');
         const button = retryButton();
         expect(button).not.toBeNull();
         button?.focus();
         expect(document.activeElement).toBe(button);
 
         await act(async () => button?.click());
-        await flushUntil(() => retryButton() === null, 1000);
+        await flushUntil(
+          () =>
+            fetchStatement.mock.calls.length >= 2 &&
+            retryButton() === button &&
+            document.activeElement === button,
+          1000
+        );
         expect(fetchStatement).toHaveBeenCalledTimes(2);
-        expect(retryButton()).toBeNull();
-        expect(document.activeElement).toBe(panel);
+        expect(retryButton()).toBe(button);
+        expect(button?.disabled).toBe(false);
+        expect(document.activeElement).toBe(button);
 
         await act(async () => retry.reject(new Error("Statement retry failed")));
-        await flushUntil(() => retryButton() !== null, 1000);
-        expect(retryButton()?.disabled).toBe(false);
-        expect(document.activeElement).toBe(panel);
+        await flushUntil(
+          () =>
+            retryButton() === button &&
+            document.activeElement === button &&
+            button?.getAttribute("aria-busy") !== "true",
+          1000
+        );
+        expect(retryButton()).toBe(button);
+        expect(button?.disabled).toBe(false);
+        expect(document.activeElement).toBe(button);
       } finally {
         await act(async () => root.unmount());
         client.clear();

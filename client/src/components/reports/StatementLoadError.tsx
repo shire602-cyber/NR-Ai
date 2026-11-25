@@ -25,15 +25,13 @@ export function StatementLoadError({
           <Button
             variant="outline"
             size="sm"
-            onClick={(event) => {
-              const button = event.currentTarget;
-              if (button.ownerDocument.activeElement === button) {
-                // The error card can unmount as soon as the retry starts.
-                button.closest<HTMLElement>('[role="tabpanel"]')?.focus({ preventScroll: true });
-              }
+            aria-busy={retrying || undefined}
+            onClick={() => {
+              // Stay mounted and focused. A disabled button would drop keyboard focus,
+              // and a second click while the retry is in flight is ignored.
+              if (retrying) return;
               onRetry();
             }}
-            disabled={retrying}
           >
             <T k="statements.retry" />
           </Button>

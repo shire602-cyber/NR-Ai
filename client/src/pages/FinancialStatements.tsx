@@ -269,6 +269,19 @@ function BreakdownTable({ items, locale }: { items: AccountBreakdown[]; locale?:
   );
 }
 
+/**
+ * A retry of a query that has no data clears `error` and returns to pending. Hold the last
+ * failure until data arrives so the Try again control stays mounted and keeps keyboard focus.
+ */
+function useStickyQueryError(error: unknown, hasData: boolean): unknown {
+  const [sticky, setSticky] = useState<unknown>(null);
+  if (error && sticky !== error) setSticky(error);
+  else if (!error && hasData && sticky) setSticky(null);
+  if (error) return error;
+  if (hasData) return null;
+  return sticky;
+}
+
 // ================================
 // Profit & Loss Tab
 // ================================
@@ -293,6 +306,7 @@ function ProfitLossTab({
     ],
     enabled: !!companyId,
   });
+  const loadError = useStickyQueryError(error, data != null);
 
   // Sweep: "Generate" with unchanged dates did nothing (cached query); it now re-reads.
   const handleGenerate = () => {
@@ -337,20 +351,20 @@ function ProfitLossTab({
         </CardContent>
       </Card>
 
-      {isLoading && (
+      {isLoading && !loadError && (
         <div className="space-y-4">
           <Skeleton className="h-32 w-full" />
           <Skeleton className="h-48 w-full" />
         </div>
       )}
 
-      {error && (
+      {loadError ? (
         <StatementLoadError
           messageKey="statements.loadFailed"
           onRetry={() => void refetch()}
           retrying={isFetching}
         />
-      )}
+      ) : null}
 
       {data && (
         <>
@@ -508,6 +522,7 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
     ],
     enabled: !!companyId,
   });
+  const loadError = useStickyQueryError(error, data != null);
 
   const handleGenerate = () => {
     if (asOfDate === queryDate) void refetch();
@@ -542,20 +557,20 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
         </CardContent>
       </Card>
 
-      {isLoading && (
+      {isLoading && !loadError && (
         <div className="space-y-4">
           <Skeleton className="h-32 w-full" />
           <Skeleton className="h-48 w-full" />
         </div>
       )}
 
-      {error && (
+      {loadError ? (
         <StatementLoadError
           messageKey="statements.loadFailed"
           onRetry={() => void refetch()}
           retrying={isFetching}
         />
-      )}
+      ) : null}
 
       {data && (
         <>
@@ -804,6 +819,7 @@ function CashFlowTab({
     ],
     enabled: !!companyId,
   });
+  const loadError = useStickyQueryError(error, data != null);
 
   // Sweep: "Generate" with unchanged dates did nothing (cached query); it now re-reads.
   const handleGenerate = () => {
@@ -871,20 +887,20 @@ function CashFlowTab({
         </CardContent>
       </Card>
 
-      {isLoading && (
+      {isLoading && !loadError && (
         <div className="space-y-4">
           <Skeleton className="h-32 w-full" />
           <Skeleton className="h-48 w-full" />
         </div>
       )}
 
-      {error && (
+      {loadError ? (
         <StatementLoadError
           messageKey="pageLabels.failedToLoadCashFlowStatement"
           onRetry={() => void refetch()}
           retrying={isFetching}
         />
-      )}
+      ) : null}
 
       {data && (
         <>
