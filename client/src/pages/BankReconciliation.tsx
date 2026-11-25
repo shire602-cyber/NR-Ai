@@ -383,6 +383,8 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
   const {
     data: matchSuggestions,
     isLoading: isLoadingMatches,
+    isPaused: matchesPaused,
+    isSuccess: matchesLoaded,
     error: matchesError,
     refetch: refetchMatches,
   } = useQuery<MatchSuggestion[]>({
@@ -414,27 +416,36 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
 
   // ─── Derived state ────────────────────────────────────────────────────────
 
-  const filteredTransactions = useMemo(() => {
+  // One normalized query drives both the row filter and the search-empty state.
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+
+  // Rows visible for the selected account and reconciled toggle, before the search.
+  const viewTransactions = useMemo(() => {
     if (!transactions) return [];
     return transactions.filter((tx) => {
       if (!showReconciled && tx.isReconciled) return false;
       if (selectedBankAccount && tx.bankStatementAccountId !== selectedBankAccount) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        return (
-          tx.description.toLowerCase().includes(q) ||
-          tx.reference?.toLowerCase().includes(q) ||
-          String(Math.abs(tx.amount)).includes(q)
-        );
-      }
       return true;
     });
-  }, [transactions, showReconciled, selectedBankAccount, searchQuery]);
+  }, [transactions, showReconciled, selectedBankAccount]);
+
+  const filteredTransactions = useMemo(() => {
+    if (!normalizedSearch) return viewTransactions;
+    return viewTransactions.filter(
+      (tx) =>
+        tx.description.toLowerCase().includes(normalizedSearch) ||
+        tx.reference?.toLowerCase().includes(normalizedSearch) ||
+        String(Math.abs(tx.amount)).includes(normalizedSearch)
+    );
+  }, [viewTransactions, normalizedSearch]);
+
+  // The search (not the data) emptied a view that otherwise had visible rows.
+  const searchEmptiedView =
+    normalizedSearch !== "" && viewTransactions.length > 0 && filteredTransactions.length === 0;
 
   const allReconciledHidden =
     !showReconciled &&
-    !searchQuery &&
-    filteredTransactions.length === 0 &&
+    viewTransactions.length === 0 &&
     (transactions ?? []).some(
       (tx) =>
         tx.isReconciled &&
@@ -979,7 +990,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
               columnLabels={[t.date, t.description, t.amount, t.status]}
               empty={
                 // X5 (J1 L6): lines exist but every one is reconciled (and hidden) — say so.
-                searchQuery.trim() && (transactions ?? []).length > 0
+                searchEmptiedView
                   ? {
                       icon: Search,
                       title: t["banking.noSearchMatchTitle"],
@@ -1315,101 +1326,121 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                     <Skeleton key={i} className="h-20" />
                   ))}
                 </div>
-              ) : matchesError ? (
-                <div
-                  role="alert"
-                  className="rounded-lg border border-destructive/40 p-4 text-center"
-                  data-testid="match-suggestions-error"
-                >
-                  <p className="text-sm font-medium">
-                    <T k="banking.suggest.loadError" />
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-2"
-                    onClick={() => void refetchMatches()}
-                  >
-                    <T k="pageLabels.tryAgain" />
-                  </Button>
-                </div>
-              ) : matchSuggestions && matchSuggestions.length > 0 ? (
-                <div className="space-y-2 max-h-[360px] overflow-y-auto pe-1">
-                  {matchSuggestions.map((s) => {
-                    const typeCfg = matchTypeConfig[s.matchedType];
-                    const TypeIcon = typeCfg.icon;
-                    const confMeta = confidenceLabel(s.confidence);
-                    return (
-                      <div
-                        key={`${s.matchedType}-${s.matchedId}`}
-                        className="rounded-lg border bg-card p-3 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
-                        onClick={() =>
-                          matchMutation.mutate({
-                            transactionId: selectedTransaction!.id,
-                            matchedId: s.matchedId,
-                            matchedType: s.matchedType,
-                          })
-                        }
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className={`p-1.5 rounded shrink-0 ${typeCfg.bg}`}>
-                              <TypeIcon className={`w-3.5 h-3.5 ${typeCfg.color}`} />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-xs font-medium text-muted-foreground">
-                                {t[`banking.suggest.type.${s.matchedType}`]}
-                              </p>
-                              <p className="text-sm font-medium truncate">
-                                {s.matchedDescription || s.matchedId.slice(0, 8)}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="text-end shrink-0">
-                            <p className="font-semibold text-sm">
-                              {s.matchedAmount != null ? formatCurrency(s.matchedAmount) : "—"}
-                            </p>
-                            <span className={`text-xs font-medium ${confMeta.color}`}>
-                              {s.confidence}% {t[confMeta.labelKey]}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="mt-2">
-                          <Progress
-                            value={s.confidence}
-                            aria-label={`${s.confidence}% ${t[confMeta.labelKey]}`}
-                            className="h-1"
-                          />
-                        </div>
-                        {s.matchedDate && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {formatDate(s.matchedDate)}
-                          </p>
-                        )}
-                        {s.matchReason && (
-                          <p className="text-xs text-muted-foreground mt-1 italic">
-                            {translateMatchReasons(s.matchReason, t)}
-                          </p>
-                        )}
-                        <div className="mt-2 flex justify-end">
-                          <Badge variant="outline" className="text-xs">
-                            <T k="pageLabels.clickToMatch" />
-                          </Badge>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
               ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <ArrowRightLeft className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                  <p className="text-sm">
-                    <T k="pageLabels.noMatchesFound2" />
-                  </p>
-                  <p className="text-xs mt-1">
-                    <T k="pageLabels.tryReconcilingManuallyViaJournalEntries" />
-                  </p>
-                </div>
+                <>
+                  {matchesError && (
+                    <div
+                      role="alert"
+                      className="rounded-lg border border-destructive/40 p-4 text-center"
+                      data-testid="match-suggestions-error"
+                    >
+                      <p className="text-sm font-medium">
+                        <T k="banking.suggest.loadError" />
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                        onClick={() => void refetchMatches()}
+                      >
+                        <T k="pageLabels.tryAgain" />
+                      </Button>
+                    </div>
+                  )}
+                  {matchesPaused && !matchesError && (
+                    <div
+                      role="status"
+                      className="rounded-lg border border-border bg-muted/30 p-4 text-center text-sm text-muted-foreground"
+                      data-testid="match-suggestions-offline"
+                    >
+                      <T k="common.errorHeading.offline" />
+                    </div>
+                  )}
+                  {matchSuggestions && matchSuggestions.length > 0 && (
+                    <div className="space-y-2 max-h-[360px] overflow-y-auto pe-1">
+                      {matchSuggestions.map((s) => {
+                        const typeCfg = matchTypeConfig[s.matchedType];
+                        const TypeIcon = typeCfg.icon;
+                        const confMeta = confidenceLabel(s.confidence);
+                        return (
+                          <div
+                            key={`${s.matchedType}-${s.matchedId}`}
+                            className="rounded-lg border bg-card p-3 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
+                            onClick={() =>
+                              matchMutation.mutate({
+                                transactionId: selectedTransaction!.id,
+                                matchedId: s.matchedId,
+                                matchedType: s.matchedType,
+                              })
+                            }
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className={`p-1.5 rounded shrink-0 ${typeCfg.bg}`}>
+                                  <TypeIcon className={`w-3.5 h-3.5 ${typeCfg.color}`} />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-medium text-muted-foreground">
+                                    {t[`banking.suggest.type.${s.matchedType}`]}
+                                  </p>
+                                  <p className="text-sm font-medium truncate">
+                                    {s.matchedDescription || s.matchedId.slice(0, 8)}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="text-end shrink-0">
+                                <p className="font-semibold text-sm">
+                                  {s.matchedAmount != null ? formatCurrency(s.matchedAmount) : "—"}
+                                </p>
+                                <span className={`text-xs font-medium ${confMeta.color}`}>
+                                  {s.confidence}% {t[confMeta.labelKey]}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="mt-2">
+                              <Progress
+                                value={s.confidence}
+                                aria-label={`${s.confidence}% ${t[confMeta.labelKey]}`}
+                                className="h-1"
+                              />
+                            </div>
+                            {s.matchedDate && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {formatDate(s.matchedDate)}
+                              </p>
+                            )}
+                            {s.matchReason && (
+                              <p className="text-xs text-muted-foreground mt-1 italic">
+                                {translateMatchReasons(s.matchReason, t)}
+                              </p>
+                            )}
+                            <div className="mt-2 flex justify-end">
+                              <Badge variant="outline" className="text-xs">
+                                <T k="pageLabels.clickToMatch" />
+                              </Badge>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {matchesLoaded &&
+                    !matchesError &&
+                    (!matchSuggestions || matchSuggestions.length === 0) && (
+                      <div
+                        className="text-center py-8 text-muted-foreground"
+                        data-testid="match-suggestions-empty"
+                      >
+                        <ArrowRightLeft className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                        <p className="text-sm">
+                          <T k="pageLabels.noMatchesFound2" />
+                        </p>
+                        <p className="text-xs mt-1">
+                          <T k="pageLabels.tryReconcilingManuallyViaJournalEntries" />
+                        </p>
+                      </div>
+                    )}
+                </>
               )}
             </div>
           </div>
