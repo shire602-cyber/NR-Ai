@@ -1,3 +1,4 @@
+import { closeChecklistStatus } from "@/pages/month-end/closeStatus";
 import { errorHeading } from "@/lib/error-heading";
 import { T } from "@/components/layout/T";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -208,13 +209,19 @@ export default function MonthEndClose() {
   const {
     data: checklistData,
     isLoading: isLoadingChecklist,
+    isError: isChecklistError,
     refetch: refetchChecklist,
   } = useQuery<ChecklistResponse>({
     queryKey: [`/api/companies/${companyId}/month-end/checklist?period=${period}`],
     enabled: !!companyId,
   });
 
-  const { data: historyData, isLoading: isLoadingHistory } = useQuery<CloseRecord[]>({
+  const {
+    data: historyData,
+    isLoading: isLoadingHistory,
+    isError: isHistoryError,
+    refetch: refetchHistory,
+  } = useQuery<CloseRecord[]>({
     queryKey: [`/api/companies/${companyId}/month-end/history`],
     enabled: !!companyId,
   });
@@ -498,8 +505,15 @@ export default function MonthEndClose() {
     ) ||
     false;
 
-  const completedCount = checklistData?.checklist.filter((i) => stepDone(i)).length || 0;
-  const totalCount = checklistData?.checklist.length || 7;
+  const checklistStatus = closeChecklistStatus({
+    isLoading: isLoadingChecklist,
+    isError: isChecklistError,
+    items: checklistData?.checklist.map((i) => ({ done: stepDone(i) })),
+  });
+  const completedCount = checklistStatus.done;
+  const totalCount = checklistStatus.total;
+  const checklistKnownIncomplete = checklistStatus.state === "incomplete";
+  const checklistUnknown = checklistStatus.state === "error" || checklistStatus.state === "empty";
 
   // ---- Loading state ----
 
@@ -603,20 +617,26 @@ export default function MonthEndClose() {
                 <T k="pageLabels.closeChecklist" />
               </CardTitle>
               <CardDescription>
-                {formatMessage(t["monthEnd.itemsCompleteFor"], {
-                  done: completedCount,
-                  total: totalCount,
-                  period: formatPeriodLabel(period),
-                })}
+                {checklistStatus.state === "loading" || checklistUnknown
+                  ? formatPeriodLabel(period)
+                  : formatMessage(t["monthEnd.itemsCompleteFor"], {
+                      done: completedCount,
+                      total: totalCount,
+                      period: formatPeriodLabel(period),
+                    })}
               </CardDescription>
             </div>
-            <Badge variant={completedCount === totalCount ? "default" : "secondary"}>
-              {completedCount === totalCount
-                ? t["pages.allClear"]
-                : formatMessage(t["monthEnd.remainingCount"], {
-                    count: totalCount - completedCount,
-                  })}
-            </Badge>
+            {checklistStatus.state !== "loading" && (
+              <Badge variant={checklistStatus.state === "complete" ? "default" : "secondary"}>
+                {checklistStatus.state === "complete"
+                  ? t["pages.allClear"]
+                  : checklistUnknown
+                    ? t["monthEnd.checklistUnavailable"]
+                    : formatMessage(t["monthEnd.remainingCount"], {
+                        count: checklistStatus.remaining,
+                      })}
+              </Badge>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -626,6 +646,20 @@ export default function MonthEndClose() {
                 <Skeleton key={i} className="h-14" />
               ))}
             </div>
+          ) : checklistStatus.state === "error" ? (
+            <div className="space-y-3 py-4 text-center" role="alert" data-testid="checklist-error">
+              <p className="text-sm text-destructive">{t["monthEnd.checklistLoadFailed"]}</p>
+              <Button variant="outline" size="sm" onClick={() => refetchChecklist()}>
+                {t["monthEnd.retry"]}
+              </Button>
+            </div>
+          ) : checklistStatus.state === "empty" ? (
+            <p
+              className="text-muted-foreground text-sm text-center py-6"
+              data-testid="checklist-empty"
+            >
+              {t["monthEnd.checklistEmpty"]}
+            </p>
           ) : checklistData ? (
             <div className="space-y-2">
               {checklistData.checklist.map((item) => (
@@ -850,7 +884,7 @@ export default function MonthEndClose() {
                   </SelectContent>
                 </Select>
               </div>
-              {completedCount < totalCount && (
+              {(checklistKnownIncomplete || checklistUnknown) && (
                 <p className="text-sm text-warning flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4" />
                   <T k="monthEnd.checklistIncomplete" />
@@ -992,6 +1026,13 @@ export default function MonthEndClose() {
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-12" />
               ))}
+            </div>
+          ) : isHistoryError ? (
+            <div className="space-y-3 py-6 text-center" role="alert" data-testid="history-error">
+              <p className="text-sm text-destructive">{t["monthEnd.historyLoadFailed"]}</p>
+              <Button variant="outline" size="sm" onClick={() => refetchHistory()}>
+                {t["monthEnd.retry"]}
+              </Button>
             </div>
           ) : historyData && historyData.length > 0 ? (
             <Table>
