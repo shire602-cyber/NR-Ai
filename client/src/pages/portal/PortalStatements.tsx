@@ -4,6 +4,7 @@ import { FileDown, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { PortalLoadNotice } from "@/components/portal/PortalLoadNotice";
 import { PageHeader } from "@/components/ui/page-header";
 import { T } from "@/components/layout/T";
 import {
@@ -13,6 +14,7 @@ import {
 import { portalQuery } from "@/lib/queryClient";
 import { downloadPortalFile } from "@/lib/portal-files";
 import { useToast } from "@/hooks/use-toast";
+import { usePortalRetry } from "@/hooks/usePortalRetry";
 import { formatDate } from "@/lib/format-date";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 
@@ -33,9 +35,10 @@ export default function PortalStatements() {
   const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { data, isLoading } = useQuery<Statement>({
-    ...portalQuery("/api/client-portal/statements", supplier),
-  });
+  const statementsQuery = portalQuery("/api/client-portal/statements", supplier);
+  const query = useQuery<Statement>({ ...statementsQuery });
+  const { data, isPaused, isFetching } = query;
+  const { error, isLoading, retryPending, retry } = usePortalRetry(statementsQuery.queryKey, query);
 
   if (isLoading) {
     return (
@@ -75,7 +78,22 @@ export default function PortalStatements() {
           ) : undefined
         }
       />
-      {sections.length === 0 ? (
+      {error || isPaused || (retryPending && isFetching) ? (
+        <Card>
+          <CardContent className="p-0">
+            <PortalLoadNotice
+              error={error}
+              paused={isPaused}
+              retrying={isFetching}
+              retryPending={retryPending}
+              onRetry={retry}
+              compact={data !== undefined}
+              resource="statements"
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+      {data === undefined ? null : sections.length === 0 ? (
         <Card>
           <CardContent className="p-0">
             <EmptyState

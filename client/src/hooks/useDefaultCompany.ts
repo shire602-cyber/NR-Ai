@@ -19,8 +19,12 @@ export function useDefaultCompany() {
     hasNoCompanies,
     companyListState,
     retryCompanyList,
+    isPaused,
+    refetch,
   } = useActiveCompany();
   return {
+    isPaused,
+    refetch,
     company,
     companyId,
     companies,
