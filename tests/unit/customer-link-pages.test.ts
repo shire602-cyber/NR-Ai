@@ -373,4 +373,113 @@ describe("EmaraTax approver page /portal/einvoicing-approve/:token", () => {
     expect(byTestId("approve-completed")).not.toBeNull();
     expect(doneCalls).toBeLessThanOrEqual(2);
   });
+
+  /** Mounts the approver route with a real QueryClient that the test keeps hold of. */
+  async function mountApprover(client: QueryClient, path: string) {
+    const { default: Approve } = await import("../../client/src/pages/EInvoicingApprove");
+    const { hook, navigate } = memoryLocation({ path });
+    const tree = createElement(
+      QueryClientProvider,
+      { client },
+      createElement(
+        Router,
+        { hook },
+        createElement(
+          Switch,
+          null,
+          createElement(Route, { path: "/portal/einvoicing-approve/:token", component: Approve })
+        )
+      )
+    );
+    await act(async () => root.render(tree));
+    await settle();
+    return { navigate, tree };
+  }
+
+  it("in-app navigation from a link closed by Done (410) to a valid link shows that link's own page", async () => {
+    handler = (u) => {
+      if (u.endsWith("/tokA/done")) return { status: 410, body: { state: "expired" } };
+      return { status: 200, body: APPROVER };
+    };
+    stub();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { navigate } = await mountApprover(client, "/portal/einvoicing-approve/tokA");
+    await act(async () => byTestId("approve-done")!.click());
+    await settle();
+    expect(byTestId("approve-expired")).not.toBeNull();
+    expect(byTestId("approve-done")).toBeNull();
+
+    // The route stays mounted; only the :token parameter changes.
+    await act(async () => navigate("/portal/einvoicing-approve/tokB"));
+    await settle();
+    expect(calls).toContain("GET /api/portal/einvoicing-approve/tokB");
+    expect(byTestId("approve-expired")).toBeNull();
+    expect(byTestId("approve-title")!.textContent).toContain("Al Noor Trading LLC");
+    expect(byTestId("approve-done")).not.toBeNull();
+    // Link A's terminal result is still A's alone.
+    expect(client.getQueryData(["einvoicing-approve", "tokA"])).toEqual({
+      kind: "gone",
+      state: "expired",
+    });
+    expect(client.getQueryData(["einvoicing-approve", "tokB"])).toEqual({
+      kind: "ok",
+      data: APPROVER,
+    });
+  });
+
+  it("a reconnect GET carrying the active state that resolves after Done returns 410 cannot reopen the link", async () => {
+    let releaseReconnect: () => void = () => {};
+    let getCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const u = String(url);
+        calls.push(`${init?.method ?? "GET"} ${u}`);
+        if (u.endsWith("/done")) {
+          return new Response(JSON.stringify({ state: "revoked" }), { status: 410 });
+        }
+        getCalls++;
+        if (getCalls === 1) return new Response(JSON.stringify(APPROVER), { status: 200 });
+        if (getCalls === 2) {
+          // The reconnect refetch: held open, then answers with the stale active state.
+          await new Promise<void>((resolve) => (releaseReconnect = resolve));
+          return new Response(JSON.stringify(APPROVER), { status: 200 });
+        }
+        // Any later read (the remount) never answers, so only the cache can drive the screen.
+        return new Promise<Response>(() => {});
+      })
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const key = ["einvoicing-approve", "tokA"];
+    const { tree } = await mountApprover(client, "/portal/einvoicing-approve/tokA");
+    expect(byTestId("approve-done")).not.toBeNull();
+
+    // Reconnect: a second GET goes in flight and stays pending.
+    await act(async () => {
+      void client.refetchQueries({ queryKey: key });
+    });
+    await settle(2);
+    expect(getCalls).toBe(2);
+
+    await act(async () => byTestId("approve-done")!.click());
+    await settle();
+    expect(byTestId("approve-revoked")).not.toBeNull();
+    expect(byTestId("approve-done")).toBeNull();
+
+    // The deferred reconnect answer lands after the 410.
+    await act(async () => releaseReconnect());
+    await settle();
+    expect(client.getQueryData(key)).toEqual({ kind: "gone", state: "revoked" });
+    expect(byTestId("approve-done")).toBeNull();
+
+    // Remount: the cached terminal result is what renders, never the active page.
+    act(() => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(tree));
+    expect(byTestId("approve-done")).toBeNull();
+    await settle();
+    expect(byTestId("approve-revoked")).not.toBeNull();
+    expect(byTestId("approve-done")).toBeNull();
+    expect(client.getQueryData(key)).toEqual({ kind: "gone", state: "revoked" });
+  });
 });

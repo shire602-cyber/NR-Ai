@@ -74,8 +74,16 @@ async function load(token: string): Promise<LoadResult> {
   return { kind: "ok", data: (await res.json()) as ApproverPageData };
 }
 
+/**
+ * The page keeps local state (Done response, closed link, mutation). Keying it by token gives
+ * in-app navigation from link A to link B fresh state, so B shows its own GET outcome.
+ */
 export default function EInvoicingApprove() {
   const { token = "" } = useParams<{ token: string }>();
+  return <EInvoicingApproveLink key={token} token={token} />;
+}
+
+function EInvoicingApproveLink({ token }: { token: string }) {
   const { t, locale } = useTranslation(APPROVE_NAMESPACES);
   const queryClient = useQueryClient();
   const [doneData, setDoneData] = useState<ApproverPageData | null>(null);
@@ -109,10 +117,14 @@ export default function EInvoicingApprove() {
       }
       return { kind: "completed", data: (await res.json()) as ApproverPageData };
     },
-    onSuccess: (outcome) => {
+    onSuccess: async (outcome) => {
       if (outcome.kind === "gone") {
         setClosedLink(outcome);
-        queryClient.setQueryData<LoadResult>(["einvoicing-approve", token], outcome);
+        // A reconnect GET already in flight may carry the active state and resolve after this
+        // 410. Cancel it (and wait) so it cannot overwrite the terminal result in the cache.
+        const queryKey = ["einvoicing-approve", token];
+        await queryClient.cancelQueries({ queryKey, exact: true });
+        queryClient.setQueryData<LoadResult>(queryKey, outcome);
         return;
       }
       setDoneData(outcome.data);
