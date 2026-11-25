@@ -14,6 +14,7 @@
 
 import { storage } from "../storage";
 import { ACCOUNT_CODES } from "../constants";
+import { lineNetAmount } from "../../shared/document-totals";
 import { createLogger } from "../config/logger";
 import { withDocumentLock, LOCK_NS } from "./document-lock";
 
@@ -110,7 +111,8 @@ async function postInvoiceRevenueJournalLocked(
     const lines = await storage.getInvoiceLinesByInvoiceIds([invoice.id]);
     zeroRatedNet = lines
       .filter((l) => Number(l.vatRate) === 0)
-      .reduce((sum, l) => sum + Number(l.quantity) * Number(l.unitPrice), 0);
+      // F01/F07: same line-level rounding as the persisted document totals.
+      .reduce((sum, l) => sum + lineNetAmount(l), 0);
     zeroRatedNet = round2(zeroRatedNet * rate);
     zeroRatedNet = Math.min(zeroRatedNet, subtotal);
   }

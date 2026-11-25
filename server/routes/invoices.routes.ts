@@ -44,7 +44,13 @@ import {
 } from "../services/invoice-numbering.service";
 import { assertRetentionExpired } from "../services/retention.service";
 import { getLatestRate } from "./exchange-rates.routes";
-import { calculateDocumentTotals, roundMoney } from "../../shared/document-totals";
+import { calculateDocumentTotals, lineNetAmount, roundMoney } from "../../shared/document-totals";
+import {
+  addLegs,
+  planCreditNoteReversal,
+  sumLegs,
+  ZERO_LEGS,
+} from "../services/credit-note-posting";
 
 const log = createLogger("invoices");
 
@@ -848,7 +854,30 @@ export function registerInvoiceRoutes(app: Express) {
             if (!built.ok) {
               return res.status(built.status).json({ message: built.message, code: built.code });
             }
-            const reversalLines = built.lines;
+            // F07: the ledger is AED. Mirror the ORIGINAL posted lines (same
+            // accounts, same AED amounts, same tax-treatment split, FX
+            // metadata swapped) instead of re-deriving from document-currency
+            // totals, which posted USD figures into the AED ledger and never
+            // reversed Zero-Rated Sales.
+            const postedLines = await storage.getJournalLinesByEntryId(originalEntry.id);
+            const reversalLines: any[] = postedLines.length
+              ? postedLines.map((l: any) => ({
+                  accountId: l.accountId,
+                  debit: Number(l.credit) || 0,
+                  credit: Number(l.debit) || 0,
+                  description: `Reverse - Void Invoice ${invoice.number}: ${l.description || ""}`,
+                  // Keep any departmental allocation so cost-centre ledgers net to zero.
+                  ...(l.costCenterId ? { costCenterId: l.costCenterId } : {}),
+                  ...(l.foreignCurrency
+                    ? {
+                        foreignCurrency: l.foreignCurrency,
+                        exchangeRate: l.exchangeRate,
+                        foreignDebit: Number(l.foreignCredit) || 0,
+                        foreignCredit: Number(l.foreignDebit) || 0,
+                      }
+                    : {}),
+                }))
+              : built.lines;
 
             const entryNumber = await storage.generateEntryNumber(invoice.companyId, reversalDate);
 
@@ -1555,9 +1584,8 @@ export function registerInvoiceRoutes(app: Express) {
         }
       }
 
-      // Block credit note creation if today is in a locked period — the credit
-      // note posts a reversing JE on `now`.
-      await assertPeriodNotLocked(companyId, new Date());
+      // Period lock: checked below against today's Dubai business date
+      // (F06), which is also the date stored on the credit note and its JE.
 
       // A-B2: validate that the accounts needed for the reversal JE exist
       // BEFORE inserting the credit-note document, so a missing-account error
@@ -1592,6 +1620,66 @@ export function registerInvoiceRoutes(app: Express) {
 
       const originalLines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
 
+      // F07: plan the AED reversal legs at the ORIGINAL invoice rate, split by
+      // tax treatment exactly as the invoice posted them, and — on the final
+      // credit — reverse precisely what remains posted on each leg.
+      const cnZeroRated = cnAccounts.find(
+        (a) => a.type === "income" && a.code === ACCOUNT_CODES.ZERO_RATED_SALES
+      );
+      const legAccounts = {
+        ar: cnReceivable?.id,
+        revenue: cnRevenue?.id,
+        zeroRated: cnZeroRated?.id,
+        vat: cnVatPayable?.id,
+      };
+      const cnRate = Number(original.exchangeRate) > 0 ? Number(original.exchangeRate) : 1;
+      const isZeroRatedLine = (l: { vatRate?: unknown; vatSupplyType?: unknown }) =>
+        Number(l.vatRate) === 0;
+      const originalZeroRatedDoc = originalLines
+        .filter(isZeroRatedLine)
+        .reduce((s, l) => s + lineNetAmount(l), 0);
+      const cnZeroRatedDoc = creditLines
+        ? creditLines.filter(isZeroRatedLine).reduce((s, l) => s + lineNetAmount(l), 0)
+        : roundMoney(originalZeroRatedDoc * creditCapFactor);
+      const isFinalCredit =
+        roundMoney(alreadyCreditedTotal + creditTotal) >= roundMoney(Math.abs(Number(original.total)));
+      const originalEntries = await storage.getJournalEntriesBySource(companyId, "invoice", invoiceId);
+      const postedOriginal = originalEntries.filter((e) => e.status === "posted");
+      const originalPosted = postedOriginal.length
+        ? sumLegs(
+            await storage.getJournalLinesByEntryIds(postedOriginal.map((e) => e.id)),
+            legAccounts,
+            "credit"
+          )
+        : null;
+      let priorReversed = ZERO_LEGS;
+      for (const cn of existingCreditNotes) {
+        const cnEntries = (await storage.getJournalEntriesBySource(companyId, "invoice", cn.id)).filter(
+          (e) => e.status === "posted"
+        );
+        if (!cnEntries.length) continue;
+        priorReversed = addLegs(
+          priorReversed,
+          sumLegs(
+            await storage.getJournalLinesByEntryIds(cnEntries.map((e) => e.id)),
+            legAccounts,
+            "debit"
+          )
+        );
+      }
+      const reversal = planCreditNoteReversal({
+        rate: cnRate,
+        doc: { subtotal: creditSubtotal, vatAmount: creditVat, total: creditTotal },
+        zeroRatedNetDoc: cnZeroRatedDoc,
+        isFinal: isFinalCredit,
+        originalPosted,
+        priorReversed,
+      });
+      // F06: post on today's Dubai business date and store that date.
+      const cnAccountingDate = (await assertPeriodNotLocked(companyId, new Date(), {
+        storesBusinessDate: true,
+      }))!;
+
       // Allocate credit-note number AND insert the credit note + its lines in
       // a single transaction so a failed insert rolls back the sequence
       // increment (otherwise FTA-required gap-free numbering breaks).
@@ -1605,11 +1693,15 @@ export function registerInvoiceRoutes(app: Express) {
             number,
             customerName: original.customerName,
             customerTrn: original.customerTrn || undefined,
-            date: new Date(),
+            date: cnAccountingDate.date,
             currency: original.currency,
             subtotal: -creditSubtotal,
             vatAmount: -creditVat,
             total: -creditTotal,
+            // F07: the credit note carries the original invoice rate and the
+            // AED amount actually reversed in the ledger.
+            exchangeRate: cnRate,
+            baseCurrencyAmount: -reversal.ar,
             status: "sent",
             invoiceType: "credit_note",
             originalInvoiceId: invoiceId,
@@ -1652,37 +1744,60 @@ export function registerInvoiceRoutes(app: Express) {
         return { cnNumber: number, creditNote: insertedCreditNote };
       });
 
-      // Reverse journal entry: Debit Sales Revenue + VAT, Credit Accounts
-      // Receivable. Accounts were already fetched and validated (cnPreflight)
-      // before the credit note was inserted; reuse them and attach the real
-      // credit-note number to the leg descriptions.
-      const cnBuilt = buildReversalLines({
-        amounts: { subtotal: creditSubtotal, vatAmount: creditVat, total: creditTotal },
-        accounts: {
-          accountsReceivableId: cnReceivable?.id,
-          salesRevenueId: cnRevenue?.id,
-          vatPayableId: cnVatPayable?.id,
-        },
-        labels: {
-          revenue: `Reverse revenue - ${cnNumber}`,
-          vat: `Reverse VAT - ${cnNumber}`,
-          ar: `Reduce A/R - ${cnNumber}`,
-        },
-      });
-      if (!cnBuilt.ok) {
-        return res.status(cnBuilt.status).json({ message: cnBuilt.message, code: cnBuilt.code });
-      }
+      // Reverse journal entry in AED (F07): Dr revenue / zero-rated sales /
+      // Output VAT, Cr A/R, at the original invoice rate. Accounts were
+      // already validated (cnPreflight) before the credit note was inserted.
       {
-        const now = new Date();
+        const now = cnAccountingDate.date;
         const entryNumber = await storage.generateEntryNumber(companyId, now);
-
-        // Find the original invoice's journal entry to reverse
-        const allEntries = await storage.getJournalEntriesByCompanyId(companyId);
-        const originalEntry = allEntries.find(
-          (e) => e.sourceId === invoiceId && e.source === "invoice"
-        );
-
-        const cnLines = cnBuilt.lines;
+        const originalEntry = postedOriginal[0];
+        const cnCurrency = (original.currency || "AED").toUpperCase();
+        const isForeignCn = cnCurrency !== "AED" && cnRate !== 1;
+        const fx = (docAmount: number, side: "debit" | "credit") =>
+          isForeignCn
+            ? {
+                foreignCurrency: cnCurrency,
+                exchangeRate: cnRate,
+                ...(side === "debit" ? { foreignDebit: docAmount } : { foreignCredit: docAmount }),
+              }
+            : {};
+        // If the company has no Zero-Rated Sales account the invoice posted the
+        // zero-rated net to revenue, so reverse it there too.
+        const revenueDebit = cnZeroRated
+          ? reversal.standardRevenue
+          : roundMoney(reversal.standardRevenue + reversal.zeroRated);
+        const cnLines: any[] = [];
+        if (revenueDebit > 0) {
+          cnLines.push({
+            accountId: cnRevenue!.id,
+            debit: revenueDebit,
+            credit: 0,
+            description: `Reverse revenue - ${cnNumber}`,
+          });
+        }
+        if (cnZeroRated && reversal.zeroRated > 0) {
+          cnLines.push({
+            accountId: cnZeroRated.id,
+            debit: reversal.zeroRated,
+            credit: 0,
+            description: `Reverse zero-rated sales - ${cnNumber}`,
+          });
+        }
+        if (reversal.vat > 0 && cnVatPayable) {
+          cnLines.push({
+            accountId: cnVatPayable.id,
+            debit: reversal.vat,
+            credit: 0,
+            description: `Reverse VAT - ${cnNumber}`,
+          });
+        }
+        cnLines.push({
+          accountId: cnReceivable!.id,
+          debit: 0,
+          credit: reversal.ar,
+          description: `Reduce A/R - ${cnNumber}${isForeignCn ? ` (${cnCurrency} ${creditTotal} @ ${cnRate})` : ""}`,
+          ...fx(creditTotal, "credit"),
+        });
 
         await storage.createJournalEntry(
           {
