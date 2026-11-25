@@ -180,6 +180,21 @@ export default function CashSale() {
     can("ledger.post") &&
     !record.isPending;
 
+  // Why the button is disabled, in plain words (a silently dead button is the bug).
+  const blocker = record.isPending
+    ? null
+    : !can("ledger.post")
+      ? t["common.noPermission"]
+      : !accountId && !accountsLoading && !accountsFailed
+        ? paymentAccounts.length === 0
+          ? t["invoices.noCashBankAccounts"]
+          : t["invoices.receive.chooseAccount"]
+        : needsPlace && !emirate
+          ? t["invoices.checks.placeOfSupply"]
+          : !linesValid
+            ? t["invoices.cashSale.linesIncomplete"]
+            : null;
+
   return (
     <EditorShell
       testId="cash-sale-page"
@@ -444,6 +459,16 @@ export default function CashSale() {
           </div>
         </div>
       </FormSection>
+
+      {blocker && (
+        <p
+          role="status"
+          className="text-small text-muted-foreground"
+          data-testid="cash-sale-blocker"
+        >
+          {blocker}
+        </p>
+      )}
 
       <FormSection title={t["invoices.notes.label"]}>
         <Textarea

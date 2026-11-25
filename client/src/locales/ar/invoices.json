@@ -442,6 +442,7 @@
   "invoices.cashSale.submit": "تسجيل البيع النقدي",
   "invoices.cashSale.recorded": "تم تسجيل البيع النقدي",
   "invoices.cashSale.recordedBody": "الفاتورة {number} صادرة ومدفوعة.",
+  "invoices.cashSale.linesIncomplete": "أضف وصفًا وكمية وسعرًا أكبر من صفر لكل بند.",
   "invoices.cashSale.failed": "لم يُسجَّل البيع النقدي",
   "invoices.checks.tab": "الفحوصات ({count})",
   "invoices.checks.allGood": "كل ما يلزم لإصدار الفاتورة مكتمل.",

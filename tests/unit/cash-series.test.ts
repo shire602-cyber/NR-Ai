@@ -140,4 +140,16 @@ describe.each(["en", "ar"] as const)("CASH-SERIES (%s)", (locale) => {
     }
     expect(box.querySelector('a[href="/settings/numbering"]')).not.toBeNull();
   });
+
+  it("explains why the record button is disabled instead of staying silently dead", async () => {
+    const { default: CashSale } = await import("../../client/src/pages/sales/CashSale");
+    await renderPage(CashSale);
+    await flushUntil(() => !!byTestId("cash-sale-blocker"));
+    const btn = byTestId("button-record-cash-sale") as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    const text = byTestId("cash-sale-blocker")!.textContent ?? "";
+    expect(text).not.toBe("");
+    expect(text).not.toContain("invoices.cashSale");
+    if (locale === "ar") expect(text).toMatch(/[؀-ۿ]/);
+  });
 });

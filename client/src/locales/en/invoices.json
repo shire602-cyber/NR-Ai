@@ -442,6 +442,7 @@
   "invoices.cashSale.submit": "Record cash sale",
   "invoices.cashSale.recorded": "Cash sale recorded",
   "invoices.cashSale.recordedBody": "Invoice {number} is issued and paid.",
+  "invoices.cashSale.linesIncomplete": "Add a description, a quantity and a price above zero to every item.",
   "invoices.cashSale.failed": "The cash sale was not recorded",
   "invoices.checks.tab": "Checks ({count})",
   "invoices.checks.allGood": "Everything needed to finalise is in place.",
