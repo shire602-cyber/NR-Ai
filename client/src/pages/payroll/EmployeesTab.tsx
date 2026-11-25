@@ -5,6 +5,7 @@ import { TrialReadOnlyContext } from "@/lib/trial-access";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Archive, Edit, Plus, Trash2, UserX } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -195,7 +196,14 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
   const { tx } = useHr();
   const { toast } = useToast();
   const key = [`/api/companies/${companyId}/employees`];
-  const { data: employees = [], isLoading } = useQuery<Employee[]>({ queryKey: key });
+  const {
+    data: employees = [],
+    isPending,
+    isLoadingError,
+    isRefetchError,
+    error: loadError,
+    refetch,
+  } = useQuery<Employee[]>({ queryKey: key });
   const [editing, setEditing] = useState<Employee | null>(null);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(toForm(null));
@@ -365,8 +373,21 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-sm"
         />
-        {isLoading ? (
-          <p className="text-muted-foreground">{tx("hr.loading")}</p>
+        {isRefetchError && (
+          <p role="alert" className="mb-3 text-sm text-muted-foreground">
+            {tx("hr.refreshFailed")}
+          </p>
+        )}
+        {isPending ? (
+          <p role="status" className="text-muted-foreground">
+            {tx("hr.loading")}
+          </p>
+        ) : isLoadingError ? (
+          <LoadErrorState
+            error={loadError}
+            onRetry={() => void refetch()}
+            testId="payroll-load-error"
+          />
         ) : filtered.length === 0 ? (
           <EmptyState size="sm" title={tx("hr.noEmployees")} />
         ) : (

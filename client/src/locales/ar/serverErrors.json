@@ -160,6 +160,7 @@
   "serverErrors.COUNTERPART_AMOUNT_MISMATCH": "يجب أن يكون لسطر التحويل الآخر المبلغ نفسه في الاتجاه المعاكس.",
   "serverErrors.COUNTER_ACCOUNT_REQUIRED": "اختر الحساب الذي سُدّد منه الشراء (مثل الحساب البنكي).",
   "serverErrors.CREDIT_INSUFFICIENT": "الرصيد المتاح لا يكفي لهذا المبلغ.",
+  "serverErrors.CREDIT_TOTAL_MISMATCH": "مجموع صافي مبلغ الإشعار الدائن وضريبة القيمة المضافة لا يطابق الرصيد المتبقي للفاتورة.",
   "serverErrors.CSV_EMPTY": "ملف CSV فارغ.",
   "serverErrors.CSV_HEADER_INVALID": "صف عناوين ملف CSV غير صالح. استخدم أعمدة القالب.",
   "serverErrors.CSV_TOO_LARGE": "ملف CSV كبير جدًا.",

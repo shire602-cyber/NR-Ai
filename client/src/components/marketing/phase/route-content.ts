@@ -1,32 +1,24 @@
 import { MARKETING_BRAND } from "../../../../../shared/marketing-brand";
 import { features, starterPrice, tools, type Bilingual } from "./content";
 import { editorialPages, launchPages } from "./editorial/pages";
+import { metaPair } from "./meta-text";
 import { siteLocale } from "./routes";
 
 export const trialSignupPath = "/register?step=account";
 
-export const homeTitle: Bilingual = [
-  "Accounting and VAT for UAE businesses",
-  "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات",
-];
-export const homeLead: Bilingual = [
-  "Send bilingual invoices, scan receipts with AI, prepare your VAT return and give your accountant access to your books.",
-  "أرسل فواتير ثنائية اللغة، وامسح الإيصالات بالذكاء الاصطناعي، وأعدّ إقرار ضريبة القيمة المضافة، وامنح محاسبك وصولاً إلى دفاترك.",
-];
+// The server imports this file to render the h1, title and meta description. The copy is read from
+// the marketingMeta catalog (locales/{en,ar}/marketingMeta.json), the same file the client store
+// loads, so the server-rendered text cannot drift from the page.
+export const homeTitle: Bilingual = metaPair("hxHeroTitle");
+export const homeLead: Bilingual = metaPair("hxHeroSub", { price: starterPrice });
 
-export const demoTitle: Bilingual = ["Request a demo", "اطلب عرضًا توضيحيًا"];
-export const demoLead: Bilingual = [
-  "Request a callback to arrange a walkthrough for your UAE business or accounting firm.",
-  "اطلب اتصالًا لترتيب عرض توضيحي لشركتك أو مكتب المحاسبة في الإمارات.",
-];
-export const pricingTitle: Bilingual = [
-  "UAE accounting plans from AED " + starterPrice + " a month",
-  "خطط محاسبية تبدأ من " + starterPrice + " درهمًا شهريًا",
-];
-export const pricingLead: Bilingual = [
-  "Compare Starter, Professional and Enterprise. Try Enterprise free for 14 days with no card.",
-  "قارن باقات المبتدئ والاحترافية والمؤسسات. جرّب باقة المؤسسات مجانًا لمدة ١٤ يومًا دون بطاقة دفع.",
-];
+export const demoTitle: Bilingual = metaPair("hxMetaDemoTitle");
+export const demoLead: Bilingual = metaPair("hxMetaDemoLead");
+export const pricingTitle: Bilingual = metaPair("hxMetaPricingTitle", { price: starterPrice });
+export const pricingLead: Bilingual = metaPair("hxMetaPricingLead");
+
+export const hubTitle: Bilingual = metaPair("hxHubH1");
+export const hubLead: Bilingual = metaPair("hxHubLead");
 
 const pages = new Map<string, { title: Bilingual; lead?: Bilingual }>([
   ["", { title: homeTitle, lead: homeLead }],
@@ -35,31 +27,36 @@ const pages = new Map<string, { title: Bilingual; lead?: Bilingual }>([
   [
     "/solutions/small-business",
     {
-      title: ["Small and medium businesses", "الشركات الصغيرة والمتوسطة"],
-      lead: [
-        "Send invoices, capture expenses and collaborate with your accountant.",
-        "أرسل الفواتير وسجّل المصروفات وتعاون مع محاسبك.",
-      ],
+      title: metaPair("hxMetaSmbTitle"),
+      lead: metaPair("hxMetaSmbLead"),
     },
   ],
   [
     "/solutions/accounting-firms",
     {
-      title: ["Accounting firms", "مكاتب المحاسبة"],
-      lead: [
-        "Work across client companies and share invoices and statements through the client portal.",
-        "اعمل عبر شركات عملائك وشارك الفواتير وكشوف الحساب عبر بوابة العملاء.",
-      ],
+      title: metaPair("hxMetaFirmsTitle"),
+      lead: metaPair("hxMetaFirmsLead"),
     },
   ],
   ...Object.entries(editorialPages),
   ...Object.entries(launchPages),
 ]);
 for (const feature of features) pages.set(featurePath(feature.slug), feature);
+pages.set(featurePath("e-invoicing"), { title: hubTitle, lead: hubLead });
 for (const tool of tools) pages.set(`/tools/${tool.slug}`, tool);
 
+/**
+ * Alternative URLs that serve the same page as their target. `marketingMetadata` resolves them to
+ * the target, so they get 200, the target's title/description and a canonical pointing at the
+ * target. They are not in `pages`, so `marketingPaths` (and the sitemap) never list them.
+ */
 const aliases = new Map([
   ["/book-a-demo", "/book-demo"],
+  ["/e-invoicing", "/uae-e-invoicing"],
+  ["/compare/zoho-books", "/compare/zoho"],
+  ["/free-tools", "/tools"],
+  ["/accounting-firms", "/solutions/accounting-firms"],
+  ["/small-business", "/solutions/small-business"],
   ["/product/e-invoicing", "/uae-e-invoicing"],
   ["/product/reporting", "/product/accounting-reports"],
   ["/product/receipt-scanning", "/product/ai-document-scanning"],

@@ -989,5 +989,14 @@
   "reportCenter.code.credit_note_cogs": "تكلفة البضاعة المباعة للإشعار الدائن",
   "reportCenter.code.expense_claim_payment": "دفعة مطالبة مصروفات",
   "reportCenter.code.inventory_adjustment": "تسوية المخزون",
-  "reportCenter.code.manual_workpaper": "ورقة عمل يدوية"
+  "reportCenter.code.manual_workpaper": "ورقة عمل يدوية",
+  "reportCenter.partyListLoading": "جارٍ التحميل…",
+  "reportCenter.partyNoCustomers": "لا يوجد عملاء بعد. أضف عميلًا لعرض كشف حسابه.",
+  "reportCenter.partyNoSuppliers": "لا يوجد موردون بعد. أضف موردًا لعرض كشف حسابه.",
+  "reportCenter.partyStatementLoadFailed": "تعذّر تحميل كشف الحساب",
+  "reportCenter.partyLoadPausedTitle": "تم إيقاف التحميل مؤقتًا",
+  "reportCenter.partyLoadPausedBody": "سيُستأنف الطلب تلقائيًا.",
+  "reportCenter.partyStatementLoading": "جارٍ تحميل كشف الحساب",
+  "reportCenter.partyStatementOpening": "الرصيد الافتتاحي",
+  "reportCenter.partyStatementClosing": "الرصيد الختامي"
 }

@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { toAsciiDigits } from "@shared/arabic-text";
 import { EMIRATES } from "@shared/validators/primitives";
 import {
   SELLER_ID_TYPES,
@@ -106,7 +107,9 @@ export function TaxIdentityFields({
             inputMode="numeric"
             maxLength={10}
             value={form.einvoiceTin}
-            onChange={(e) => onChange({ einvoiceTin: e.target.value.replace(/\D/g, "") })}
+            onChange={(e) =>
+              onChange({ einvoiceTin: toAsciiDigits(e.target.value).replace(/\D/g, "") })
+            }
             placeholder="1XXXXXXXXX"
             data-testid="tax-id-tin"
           />

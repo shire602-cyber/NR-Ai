@@ -237,6 +237,73 @@ describe("W4-D online invoice payment", () => {
     expect(notified.length).toBe(1);
   });
 
+  it("rejects replace from before a gateway payment and retains its settlement and webhook receipt", async () => {
+    enableStripe();
+    await mockStripe(320);
+    const t = await h.createTenant();
+    const invoice = await issuedInvoice(t);
+    const link = await t.as.post(
+      `/api/companies/${t.company.id}/invoices/${invoice.id}/payment-links`,
+      {}
+    );
+    expect(link.status, link.text).toBe(201);
+    const backup = await t.as.post(`/api/companies/${t.company.id}/backups`, {
+      name: "Before gateway settlement",
+    });
+    expect(backup.status, backup.text).toBe(201);
+
+    const event = await signedEvent(link.body.id, "cs_au7_settlement", "evt_au7_settlement");
+    const webhook = () =>
+      h.anon.post("/api/webhooks/invoice-payments/stripe", undefined, {
+        raw: event.payload,
+        headers: { "Content-Type": "application/json", "Stripe-Signature": event.signature },
+      });
+    const paid = await webhook();
+    expect(paid.status, paid.text).toBe(200);
+    expect(paid.body.status).toBe("processed");
+
+    for (const result of [
+      await t.as.post(`/api/backups/${backup.body.id}/restore-preview`, { mode: "replace" }),
+      await t.as.post(`/api/backups/${backup.body.id}/restore`, {
+        mode: "replace",
+        confirmRestore: true,
+        confirmName: backup.body.name,
+      }),
+    ]) {
+      expect(result.status, result.text).toBe(409);
+      expect(result.body).toMatchObject({
+        code: "BACKUP_RESTORE_CONFLICT",
+        details: { table: "payment_links" },
+      });
+    }
+    const redelivery = await webhook();
+    expect(redelivery.body.status).toBe("duplicate");
+    expect(
+      await h.sql(
+        `SELECT i.status AS invoice_status, l.status AS link_status, p.id AS payment_id,
+                (SELECT count(*)::int FROM journal_lines WHERE entry_id = p.journal_entry_id) AS payment_lines,
+                (SELECT count(*)::int FROM journal_lines WHERE entry_id = l.fee_journal_entry_id) AS fee_lines
+           FROM payment_links l JOIN invoices i ON i.id = l.invoice_id
+           JOIN invoice_payments p ON p.id = l.invoice_payment_id
+          WHERE l.id = $1`,
+        [link.body.id]
+      )
+    ).toEqual([
+      {
+        invoice_status: "paid",
+        link_status: "paid",
+        payment_id: paid.body.paymentId,
+        payment_lines: 2,
+        fee_lines: 2,
+      },
+    ]);
+    expect(
+      await h.sql("SELECT id FROM backups WHERE company_id = $1 AND backup_type = 'pre_restore'", [
+        t.company.id,
+      ])
+    ).toEqual([]);
+  });
+
   it("[R16-14] a bad signature is 400 and posts nothing; Telr and N-Genius report requires_external", async () => {
     enableStripe();
     await mockStripe();

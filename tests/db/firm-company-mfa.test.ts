@@ -1,4 +1,6 @@
-import type { Request, Response } from "express";
+import { once } from "node:events";
+import type { AddressInfo } from "node:net";
+import express, { type Request, type Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 
@@ -271,6 +273,7 @@ describe("Company MFA on firm client actions", () => {
 
     await setCompanyMfaPolicy(protectedId, "all", owner.user.id);
     const protectedPaths = [
+      "/api/firm/command-center/metrics/comparison",
       bank,
       `${health}/health`,
       `${health}/${protectedId}/health`,
@@ -320,6 +323,57 @@ describe("Company MFA on firm client actions", () => {
     const health = await actor.as.get("/api/firm/command-center/clients/health");
     expect(health.status, health.text).toBe(200);
     expect(health.body).toMatchObject([{ companyId: openId }]);
+  });
+
+  it("requires MFA only for the client alerts included in the list", async () => {
+    const { owner, protectedId, openId, setCompanyMfaPolicy } = await createMfaClients("Alert MFA");
+    await h.sql(
+      `INSERT INTO firm_alerts (firm_id, company_id, alert_type, severity, message)
+       VALUES ($1, $2, 'overdue_balance', 'critical', 'Protected client alert'),
+              ($1, $3, 'overdue_balance', 'warning', 'Open client alert')`,
+      [owner.user.id, protectedId, openId]
+    );
+    await setCompanyMfaPolicy(protectedId, "all", owner.user.id);
+
+    const path = "/api/firm/command-center/alerts";
+    const blocked = await owner.as.get(path);
+    expect(blocked.status, blocked.text).toBe(403);
+    expect(blocked.body).toMatchObject({
+      code: "MFA_ENROLLMENT_REQUIRED",
+      details: { companyId: protectedId },
+    });
+    expect((await owner.as.request("HEAD", path)).status).toBe(403);
+    const warningOnly = await owner.as.get(`${path}?severity=warning`);
+    expect(warningOnly.status, warningOnly.text).toBe(200);
+    expect(warningOnly.body).toMatchObject([{ companyId: openId }]);
+  });
+
+  it("prevents alert updates after its client leaves the firm's scope", async () => {
+    const { owner, protectedId, openId } = await createMfaClients("Alert archive");
+    const [archivedAlert, openAlert] = await h.sql<{ id: string }>(
+      `INSERT INTO firm_alerts (firm_id, company_id, alert_type, severity, message)
+       VALUES ($1, $2, 'overdue_balance', 'critical', 'Archived client alert'),
+              ($1, $3, 'overdue_balance', 'warning', 'Open client alert')
+       RETURNING id`,
+      [owner.user.id, protectedId, openId]
+    );
+    const removed = await owner.as.request("DELETE", `/api/firm/clients/${protectedId}`);
+    expect(removed.status, removed.text).toBe(200);
+
+    const path = "/api/firm/command-center/alerts";
+    const remaining = await owner.as.get(path);
+    expect(remaining.status, remaining.text).toBe(200);
+    expect(remaining.body).toMatchObject([{ id: openAlert.id }]);
+    for (const action of ["read", "resolve"]) {
+      const denied = await owner.as.patch(`${path}/${archivedAlert.id}/${action}`, {});
+      expect(denied.status, denied.text).toBe(404);
+    }
+    expect(
+      await h.sql("SELECT is_read, resolved_at FROM firm_alerts WHERE id = $1", [archivedAlert.id])
+    ).toEqual([{ is_read: false, resolved_at: null }]);
+    const resolved = await owner.as.patch(`${path}/${openAlert.id}/resolve`, {});
+    expect(resolved.status, resolved.text).toBe(200);
+    expect(resolved.body).toMatchObject({ id: openAlert.id, isRead: true });
   });
 
   it("checks the assigned companies in value operations summaries", async () => {
@@ -392,7 +446,7 @@ describe("Company MFA on firm client actions", () => {
     ).toEqual([{ company_id: openId, reference: "MFA-open" }]);
   });
 
-  it("resolves an approved non-NR firm's own summary scope and enforces MFA on granted company reads", async () => {
+  it("enforces client MFA in non-NR firm handlers and granted company reads", async () => {
     const actor = await h.createTenant({ name: "MFA Other Firm Owner" });
     const protectedClient = await h.createTenant({ name: "MFA Other Firm Protected Client" });
     const openClient = await h.createTenant({ name: "MFA Other Firm Open Client" });
@@ -513,6 +567,106 @@ describe("Company MFA on firm client actions", () => {
         details: expect.objectContaining({ companyId: protectedClient.company.id }),
       })
     );
+    const [protectedAlert, openAlert, foreignAlert] = await h.sql<{ id: string }>(
+      `INSERT INTO firm_alerts (firm_id, company_id, alert_type, severity, message)
+       VALUES ($1, $2, 'overdue_balance', 'critical', 'Protected client alert'),
+              ($1, $3, 'overdue_balance', 'warning', 'Open client alert'),
+              ($1, $4, 'overdue_balance', 'critical', 'Unrelated client alert')
+       RETURNING id`,
+      [actor.user.id, protectedClient.company.id, openClient.company.id, foreign.company.id]
+    );
+    await h.sql("UPDATE invoices SET status = 'sent', due_date = '2020-01-01' WHERE id = $1", [
+      invoice.body.id,
+    ]);
+
+    // Exercise the registered handlers independently of the production NR-only gate.
+    const { registerFirmCommandCenterRoutes } =
+      await import("../../server/routes/firm-command-center.routes");
+    const rbac = await import("../../server/middleware/rbac");
+    const app = express();
+    app.use(express.json());
+    const gate = vi.spyOn(rbac, "requireFirmAdmin").mockReturnValueOnce((_req, res, next) => {
+      res.locals.firmContext = context;
+      next();
+    });
+    try {
+      registerFirmCommandCenterRoutes(app);
+    } finally {
+      gate.mockRestore();
+    }
+
+    const server = app.listen(0, "127.0.0.1");
+    try {
+      await once(server, "listening");
+      const { port } = server.address() as AddressInfo;
+      const request = async (method: string, path: string, body?: unknown) => {
+        const result = await fetch(`http://127.0.0.1:${port}/api/firm/command-center${path}`, {
+          method,
+          headers: { Authorization: `Bearer ${actor.token}`, "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        return { status: result.status, body: await result.json() };
+      };
+
+      const actions = [
+        ["GET", "/alerts"],
+        ["PATCH", `/alerts/${protectedAlert.id}/read`, {}],
+        ["PATCH", `/alerts/${protectedAlert.id}/resolve`, {}],
+        ["POST", "/alerts/refresh", {}],
+        ["GET", "/metrics/comparison"],
+        [
+          "POST",
+          "/batch/vat-calculate",
+          { companyIds: [openClient.company.id, protectedClient.company.id] },
+        ],
+        [
+          "POST",
+          "/batch/chase-payments",
+          { companyIds: [openClient.company.id, protectedClient.company.id] },
+        ],
+      ] as const;
+      for (const [method, path, body] of actions) {
+        expect(await request(method, path, body), path).toMatchObject({
+          status: 403,
+          body: {
+            code: "MFA_ENROLLMENT_REQUIRED",
+            details: { companyId: protectedClient.company.id },
+          },
+        });
+      }
+      expect(
+        await h.sql("SELECT is_read, resolved_at FROM firm_alerts WHERE firm_id = $1", [
+          actor.user.id,
+        ])
+      ).toEqual(Array.from({ length: 3 }, () => ({ is_read: false, resolved_at: null })));
+      expect(
+        await h.sql("SELECT reminder_count, last_reminder_sent_at FROM invoices WHERE id = $1", [
+          invoice.body.id,
+        ])
+      ).toEqual([{ reminder_count: 0, last_reminder_sent_at: null }]);
+
+      for (const action of ["read", "resolve"]) {
+        expect((await request("PATCH", `/alerts/${foreignAlert.id}/${action}`, {})).status).toBe(
+          404
+        );
+        expect(await request("PATCH", `/alerts/${openAlert.id}/${action}`, {})).toMatchObject({
+          status: 200,
+          body: { id: openAlert.id, isRead: true },
+        });
+      }
+      for (const action of ["vat-calculate", "chase-payments"]) {
+        expect(
+          await request("POST", `/batch/${action}`, {
+            companyIds: [openClient.company.id, foreign.company.id],
+          })
+        ).toMatchObject({
+          status: 200,
+          body: { rejectedCompanyIds: [foreign.company.id] },
+        });
+      }
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it("gates communications log and counts against the authorized client filter", async () => {
