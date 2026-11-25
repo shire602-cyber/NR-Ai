@@ -20,7 +20,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { formatMessage, translateNow, useTranslation } from "@/lib/i18n";
 import { isolateLtrText } from "@/lib/format-bidi";
-import { ApiError, ApiRequestQueuedError, apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 
 /*
  * Settings › Numbering (WQ7, 12.8): prefix, zero padding, yearly reset and the next number for
@@ -37,6 +37,13 @@ interface NumberingRow {
   nextNumber: number;
   nextFormatted: string;
   lastIssued: number;
+}
+
+/** Captured at click time: a save paused offline is sent as it was submitted. */
+interface SaveNumberingVariables {
+  companyId: string;
+  docType: NumberingRow["docType"];
+  payload: { prefix: string; padding: number; yearlyReset: boolean; nextNumber?: number };
 }
 
 /** Same rule as the server: the year is part of the number only with yearly reset. */
@@ -62,40 +69,27 @@ function NumberingCard({
   const [yearlyReset, setYearlyReset] = useState(row.yearlyReset);
   const [next, setNext] = useState(String(row.nextNumber));
   const [error, setError] = useState<string | null>(null);
-  // Queued (handed to the offline queue) and a save error are mutually exclusive.
-  const [queued, setQueued] = useState(false);
 
   const nextNum = Number(next);
   const nextFormatted = preview(prefix.trim().toUpperCase(), padding, yearlyReset, nextNum || 1);
   const nextTooLow = Number.isFinite(nextNum) && nextNum <= row.lastIssued;
 
   const save = useMutation({
-    mutationFn: () =>
-      apiRequest("PUT", `/api/companies/${companyId}/numbering/${row.docType}`, {
-        prefix: prefix.trim(),
-        padding,
-        yearlyReset,
-        ...(nextNum !== row.nextNumber ? { nextNumber: nextNum } : {}),
-      }),
+    mutationFn: ({ companyId, docType, payload }: SaveNumberingVariables) =>
+      apiRequest("PUT", `/api/companies/${companyId}/numbering/${docType}`, payload),
     onMutate: () => {
       setError(null);
-      setQueued(false);
     },
-    onSuccess: () => {
+    onSuccess: (_result, submitted) => {
       setError(null);
-      setQueued(false);
       toast({ title: translateNow("settingsPages.numberingSaved") });
-      void queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "numbering"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/companies", submitted.companyId, "numbering"],
+      });
     },
     onError: (e: unknown) => {
-      if (e instanceof ApiRequestQueuedError) {
-        setError(null);
-        setQueued(true);
-        return;
-      }
-      setQueued(false);
       // Only a server-sent 4xx (validation / conflict) message is shown; raw network, CSRF,
-      // queue and 5xx failures get the generic localized text.
+      // offline and 5xx failures get the generic localized text.
       setError(
         e instanceof ApiError && e.status >= 400 && e.status < 500 && e.message
           ? e.message
@@ -120,14 +114,23 @@ function NumberingCard({
           className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
           onSubmit={(e) => {
             e.preventDefault();
+            if (save.isPending) return;
             if (nextTooLow) {
-              setQueued(false);
               setError(
                 formatMessage(t["settingsPages.numberingBelowIssued"], { last: row.lastIssued })
               );
               return;
             }
-            save.mutate();
+            save.mutate({
+              companyId,
+              docType: row.docType,
+              payload: {
+                prefix: prefix.trim(),
+                padding,
+                yearlyReset,
+                ...(nextNum !== row.nextNumber ? { nextNumber: nextNum } : {}),
+              },
+            });
           }}
         >
           <div className="space-y-1.5">
@@ -196,13 +199,13 @@ function NumberingCard({
               {error}
             </p>
           ) : null}
-          {queued || save.isPaused ? (
+          {save.isPaused ? (
             <p
               role="status"
               className="text-small text-muted-foreground sm:col-span-2 lg:col-span-4"
-              data-testid={`numbering-queued-${row.docType}`}
+              data-testid={`numbering-save-waiting-${row.docType}`}
             >
-              {t["settingsPages.numberingQueued"]}
+              {t["settingsPages.numberingSaveWaiting"]}
             </p>
           ) : null}
           <div className="sm:col-span-2 lg:col-span-4">

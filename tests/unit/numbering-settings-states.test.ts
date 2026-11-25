@@ -26,7 +26,7 @@ const keys = [
   "numberingSaveFailed",
   "numberingWaiting",
   "numberingRefreshFailed",
-  "numberingQueued",
+  "numberingSaveWaiting",
 ] as const;
 
 const KEY = ["/api/companies", "c1", "numbering"];
@@ -203,10 +203,24 @@ describe("Numbering page states", () => {
   });
 
   describe("offline save", () => {
-    it("shows queued status only after a real service worker handoff", async () => {
+    const puts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT");
+
+    /** React tracks the input value, so set it through the native setter before the event. */
+    async function type(testId: string, value: string) {
+      const input = byTestId(testId) as HTMLInputElement;
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      await act(async () => {
+        setValue.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await settle();
+    }
+
+    it("never claims a queued save when offline is discovered after the save starts", async () => {
       mode = "rows";
       await mount();
       const postMessage = vi.fn();
+      // TanStack still says online, so the mutation runs; only the browser knows it is offline.
       vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
       Object.defineProperty(navigator, "serviceWorker", {
         configurable: true,
@@ -214,57 +228,51 @@ describe("Numbering page states", () => {
       });
       await clickSave();
 
-      const queued = byTestId("numbering-queued-invoice");
-      expect(queued?.getAttribute("role")).toBe("status");
-      expect(queued?.textContent).toBe(en["settingsPages.numberingQueued"]);
-      expect(container.querySelector('[role="alert"]')).toBeNull();
-      const queueMessages = postMessage.mock.calls
-        .map(([message]) => message)
-        .filter((message) => message?.type === "QUEUE_REQUEST");
-      expect(queueMessages).toHaveLength(1);
-    });
-
-    it("shows the generic save error, not queued, when no controller can take it, and clears queued on a new save", async () => {
-      mode = "rows";
-      await mount();
-      const postMessage = vi.fn();
-      vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
-      Object.defineProperty(navigator, "serviceWorker", {
-        configurable: true,
-        value: { controller: { postMessage } },
-      });
-      await clickSave();
-      expect(byTestId("numbering-queued-invoice")).not.toBeNull();
-
-      Object.defineProperty(navigator, "serviceWorker", {
-        configurable: true,
-        value: { controller: null },
-      });
-      await clickSave();
       expect(container.querySelector('[role="alert"]')?.textContent).toBe(
         en["settingsPages.numberingSaveFailed"]
       );
-      expect(byTestId("numbering-queued-invoice")).toBeNull();
+      expect(byTestId("numbering-save-waiting-invoice")).toBeNull();
+      expect(postMessage).not.toHaveBeenCalled();
+      expect(puts()).toHaveLength(0);
     });
 
-    it("pauses the save while the query client is offline and sends it on reconnect", async () => {
+    it("pauses the save while offline and sends exactly what was submitted on reconnect", async () => {
       const { onlineManager } = await import("@tanstack/react-query");
       mode = "rows";
       await mount();
-      onlineManager.setOnline(false);
+      await type("numbering-prefix-invoice", "ABC");
+      await type("numbering-next-invoice", "9");
+      await act(async () => onlineManager.setOnline(false));
       await clickSave();
 
-      const queued = byTestId("numbering-queued-invoice");
-      expect(queued?.textContent).toBe(en["settingsPages.numberingQueued"]);
-      expect((byTestId("numbering-save-invoice") as HTMLButtonElement).disabled).toBe(true);
-      const puts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT");
-      expect(puts()).toHaveLength(0);
+      const expectWaiting = () => {
+        const waiting = byTestId("numbering-save-waiting-invoice");
+        expect(waiting?.getAttribute("role")).toBe("status");
+        expect(waiting?.textContent).toBe(en["settingsPages.numberingSaveWaiting"]);
+        expect((byTestId("numbering-save-invoice") as HTMLButtonElement).disabled).toBe(true);
+        expect(puts()).toHaveLength(0);
+      };
+      expectWaiting();
 
-      onlineManager.setOnline(true);
+      // The form stays editable; the edit renders before reconnect and must not change the save.
+      const prefix = byTestId("numbering-prefix-invoice") as HTMLInputElement;
+      expect(prefix.disabled).toBe(false);
+      await type("numbering-prefix-invoice", "XYZ");
+      await type("numbering-next-invoice", "20");
+      expect(prefix.value).toBe("XYZ");
+      expectWaiting();
+
+      await act(async () => onlineManager.setOnline(true));
       await settle();
       expect(puts()).toHaveLength(1);
-      expect(String(puts()[0][0])).toContain("/api/companies/c1/numbering/invoice");
-      expect(byTestId("numbering-queued-invoice")).toBeNull();
+      expect(String(puts()[0][0])).toMatch(/\/api\/companies\/c1\/numbering\/invoice$/);
+      expect(JSON.parse(String((puts()[0][1] as RequestInit).body))).toEqual({
+        prefix: "ABC",
+        padding: 4,
+        yearlyReset: false,
+        nextNumber: 9,
+      });
+      expect(byTestId("numbering-save-waiting-invoice")).toBeNull();
     });
   });
 });

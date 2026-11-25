@@ -195,36 +195,6 @@ export function onInstallPromptAvailable(callback: InstallPromptCallback): () =>
   };
 }
 
-// ─── Background Sync ────────────────────────────────────────────────────────
-
-/**
- * Queues a failed request for background sync retry. Resolves true only when the request was
- * handed to an active service worker; false when there is no controller (nothing was queued).
- */
-export async function queueForSync(request: {
-  url: string;
-  method: string;
-  headers: Record<string, string>;
-  body?: string;
-}): Promise<boolean> {
-  if (typeof navigator === "undefined" || !navigator.serviceWorker?.controller) {
-    return false;
-  }
-
-  navigator.serviceWorker.controller.postMessage({
-    type: "QUEUE_REQUEST",
-    request: {
-      url: request.url,
-      method: request.method,
-      contentType:
-        request.headers["Content-Type"] || request.headers["content-type"] || "application/json",
-      body: request.body,
-      sessionMarker: getSessionMarker(),
-    },
-  });
-  return true;
-}
-
 // ─── Cache Management ───────────────────────────────────────────────────────
 
 /**
@@ -263,12 +233,6 @@ function syncSessionMarkerToServiceWorker(): void {
     type: "SET_SESSION_MARKER",
     sessionMarker: marker,
   });
-}
-
-function getSessionMarker(): string {
-  const existing = sessionStorage.getItem(SESSION_MARKER_KEY);
-  if (existing) return existing;
-  return rotatePwaSessionMarker();
 }
 
 // ─── Connectivity ───────────────────────────────────────────────────────────

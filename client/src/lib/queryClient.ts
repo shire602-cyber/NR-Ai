@@ -3,7 +3,7 @@ import { getAuthHeaders, hasAuthHint, refreshSession } from "./auth";
 import { apiUrl } from "./api";
 import { takeBootFetch } from "./bootFetch";
 import { withCsrfHeader, clearCsrfToken } from "./csrf";
-import { isOnline, queueForSync } from "./pwa";
+import { isOnline } from "./pwa";
 import {
   localizeApiError,
   localizeApiErrorByStatus,
@@ -38,19 +38,11 @@ export class ApiError extends Error {
   }
 }
 
-/** Preparation failed before the mutation was submitted or queued. */
+/** Preparation failed before the mutation was submitted. */
 export class ApiRequestNotSentError extends ApiError {
   constructor(message: string) {
     super(message, 0);
     this.name = "ApiRequestNotSentError";
-  }
-}
-
-/** The offline mutation was handed to the service worker for queueing. */
-export class ApiRequestQueuedError extends ApiError {
-  constructor(message: string) {
-    super(message, 0);
-    this.name = "ApiRequestQueuedError";
   }
 }
 
@@ -127,8 +119,10 @@ async function isCsrfInvalidResponse(res: Response): Promise<boolean> {
   }
 }
 
-/** Mutating methods are eligible for offline queueing. */
+/** Writes are refused while offline: nothing stores or replays them. */
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+const OFFLINE_WRITE_MESSAGE = "You are offline. Your change was not sent. Reconnect and try again.";
 
 async function buildRequestHeaders(
   method: string,
@@ -204,6 +198,7 @@ async function requestWithHeaders(
     headers = withExtra(await buildRequestHeaders(method, data, authHeaders));
   } catch (error) {
     if (immediateOnly) throw new ApiRequestNotSentError("Could not prepare the request.");
+    if (isMutation && !isOnline()) throw new ApiError(OFFLINE_WRITE_MESSAGE, 0);
     throw error;
   }
 
@@ -219,19 +214,11 @@ async function requestWithHeaders(
       keepalive: options?.keepalive,
     });
 
-  // If we're offline and this is a mutation, hand it to the service worker queue. Reads are not
-  // queued; they surface a clear error so the UI can render its offline state.
+  // The connection can drop while headers are prepared. A write is then refused, not sent; reads
+  // go to the network and surface its error.
   if (isMutation && !isOnline()) {
     if (immediateOnly) throw new ApiRequestNotSentError("You are offline.");
-    const queued = await queueForSync({
-      url: fullUrl,
-      method: upperMethod,
-      headers,
-      body,
-    });
-    const offlineMessage = "You are offline. This change will sync when you reconnect.";
-    // Only a real handoff to the service worker is "queued"; otherwise nothing was handed off.
-    throw queued ? new ApiRequestQueuedError(offlineMessage) : new ApiError(offlineMessage, 0);
+    throw new ApiError(OFFLINE_WRITE_MESSAGE, 0);
   }
 
   let res = await send(headers);
