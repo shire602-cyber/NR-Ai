@@ -1,0 +1,37 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "fluid": false,
+  "buildCommand": "npm run build:vercel",
+  "outputDirectory": "dist/public",
+  "regions": ["dxb1"],
+  "git": {
+    "deploymentEnabled": {
+      "codex/vercel-uae-prod-config": false
+    }
+  },
+  "functions": {
+    "api/http.js": {
+      "maxDuration": 60,
+      "includeFiles": "{dist/public/{index.html,firm.html,marketing-preloads.json,firm-preloads.json},server/assets/**}"
+    }
+  },
+  "routes": [
+    {
+      "src": "^/(api(?:/.*)?|health(?:/.*)?|readyz/?|firm(?:/.*)?|robots\\.txt|sitemap\\.xml|index\\.html|firm\\.html)?$",
+      "dest": "/api/http"
+    },
+    {
+      "src": "^/(assets|firm-assets)/.+$",
+      "headers": { "Cache-Control": "public, max-age=31536000, immutable" },
+      "continue": true
+    },
+    { "handle": "filesystem" },
+    {
+      "src": "^/(assets|firm-assets)/.*$",
+      "status": 404,
+      "headers": { "Cache-Control": "no-store" }
+    },
+    { "src": "^/.*$", "dest": "/api/http" }
+  ]
+}

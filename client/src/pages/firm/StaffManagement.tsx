@@ -1,22 +1,11 @@
+import { T } from "@/components/layout/T";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import {
-  Users,
-  ChevronDown,
-  ChevronRight,
-  Building2,
-  UserPlus,
-  UserMinus,
-  CheckSquare,
-  Square,
-  Shield,
-  Search,
-  Mail,
-  ExternalLink,
-} from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Users, ChevronDown, ChevronRight, Shield, Search, Mail, ExternalLink } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -29,8 +18,8 @@ interface StaffMember {
   id: string;
   name: string;
   email: string;
-  isAdmin: boolean;
-  userType: string;
+  /** R15-03: staff are users with a firm role (never isAdmin-based). */
+  firmRole: string;
   lastLoginAt: string | null;
   createdAt: string;
   assignedClients: {
@@ -42,12 +31,21 @@ interface StaffMember {
   assignedClientCount: number;
 }
 
+const FIRM_ROLE_KEYS: Record<string, string> = {
+  firm_owner: "firm.roleFirmOwner",
+  firm_admin: "firm.roleFirmAdmin",
+  preparer: "firm.rolePreparer",
+  reviewer: "firm.roleReviewer",
+  viewer: "firm.roleViewer",
+};
+
 interface ClientWithStats extends Company {
   invoiceCount: number;
   assignedStaff: { id: string; name: string }[];
 }
 
 export default function StaffManagement() {
+  const { t } = useTranslation();
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [expandedStaff, setExpandedStaff] = useState<Set<string>>(new Set());
@@ -135,11 +133,11 @@ export default function StaffManagement() {
     queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
 
     if (failed === 0) {
-      toast({ title: `${success} assignment${success !== 1 ? "s" : ""} saved` });
+      toast({ title: formatMessage(translateNow("toasts.assignmentsSaved"), { success }) });
     } else {
       toast({
         variant: "destructive",
-        title: `${success} saved, ${failed} failed`,
+        title: formatMessage(translateNow("toasts.savedFailed"), { success, failed }),
       });
     }
   };
@@ -147,7 +145,7 @@ export default function StaffManagement() {
   if (loadingStaff) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
-        Loading staff...
+        <T k="pages.loadingStaff" />
       </div>
     );
   }
@@ -155,9 +153,9 @@ export default function StaffManagement() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Firm"
-        title="Staff Management"
-        description="Manage NRA staff assignments across client companies"
+        eyebrow={t["firm.eyebrowFirm"]}
+        title={t["firm.staffManagementTitle"]}
+        description={t["firm.staffManagementDescription"]}
         actions={
           pendingChanges.size > 0 && (
             <div className="flex items-center gap-3">
@@ -165,10 +163,10 @@ export default function StaffManagement() {
                 {pendingChanges.size} pending change{pendingChanges.size !== 1 ? "s" : ""}
               </span>
               <Button variant="outline" size="sm" onClick={() => setPendingChanges(new Map())}>
-                Discard
+                <T k="pages.discard" />
               </Button>
               <Button size="sm" onClick={saveChanges} disabled={saving}>
-                {saving ? "Saving..." : "Save Changes"}
+                {saving ? t["pages.notificationPrefsSaving"] : t["pages.saveChanges"]}
               </Button>
             </div>
           )
@@ -177,12 +175,12 @@ export default function StaffManagement() {
 
       {/* Search */}
       <div className="relative w-full sm:max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
-          placeholder="Search staff by name or email..."
+          placeholder={t["firm.staffSearchPlaceholder"]}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
+          className="ps-9"
         />
       </div>
 
@@ -190,19 +188,25 @@ export default function StaffManagement() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Total Staff</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pages.totalStaff" />
+            </p>
             <p className="text-2xl font-bold mt-0.5">{staff.length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Client Companies</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pages.clientCompanies" />
+            </p>
             <p className="text-2xl font-bold mt-0.5">{clients.length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Unassigned Clients</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pages.unassignedClients" />
+            </p>
             <p className="text-2xl font-bold mt-0.5">
               {clients.filter((c) => c.assignedStaff?.length === 0).length}
             </p>
@@ -214,7 +218,9 @@ export default function StaffManagement() {
       {filteredStaff.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Users className="w-12 h-12 text-muted-foreground mb-4" />
-          <h3 className="font-semibold">No staff members found</h3>
+          <h3 className="font-semibold">
+            <T k="pages.noStaffMembersFound" />
+          </h3>
           <p className="text-muted-foreground text-sm mt-1">
             {search ? "Try adjusting your search." : "No admin users exist yet."}
           </p>
@@ -242,6 +248,9 @@ export default function StaffManagement() {
                       <div className="flex items-center gap-2">
                         <p className="font-medium">{member.name}</p>
                         <Shield className="w-3.5 h-3.5 text-primary" />
+                        <Badge variant="secondary" data-testid={`firm-role-${member.id}`}>
+                          <T k={FIRM_ROLE_KEYS[member.firmRole] ?? "firm.firmRole"} />
+                        </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground flex items-center gap-1">
                         <Mail className="w-3 h-3" />
@@ -255,15 +264,20 @@ export default function StaffManagement() {
                         variant="outline"
                         className="text-warning border-warning/30 bg-warning-subtle"
                       >
-                        {pendingForMember.length} pending
+                        {formatMessage(t["firm.staff.pendingCount"], {
+                          count: pendingForMember.length,
+                        })}
                       </Badge>
                     )}
-                    <div className="text-right">
+                    <div className="text-end">
                       <p className="text-sm font-medium">
-                        {member.assignedClientCount} client
-                        {member.assignedClientCount !== 1 ? "s" : ""}
+                        {formatMessage(t["firm.staff.clientCount"], {
+                          count: member.assignedClientCount,
+                        })}
                       </p>
-                      <p className="text-xs text-muted-foreground">assigned</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t["firm.staff.assignedLabel"]}
+                      </p>
                     </div>
                     {expanded ? (
                       <ChevronDown className="w-4 h-4 text-muted-foreground" />
@@ -277,11 +291,13 @@ export default function StaffManagement() {
                 {expanded && (
                   <div className="border-t bg-muted/20">
                     <div className="p-4">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                        Client Assignments
+                      <p className="text-xs font-medium text-muted-foreground mb-3">
+                        <T k="pages.clientAssignments" />
                       </p>
                       {clients.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No client companies yet.</p>
+                        <p className="text-sm text-muted-foreground">
+                          <T k="pages.noClientCompaniesYet" />
+                        </p>
                       ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                           {clients.map((client) => {
@@ -305,7 +321,7 @@ export default function StaffManagement() {
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-medium truncate">{client.name}</p>
                                   <p className="text-xs text-muted-foreground truncate">
-                                    {client.trnVatNumber || "No TRN"}
+                                    {client.trnVatNumber || t["firm.staff.noTrn"]}
                                   </p>
                                 </div>
                                 {assigned && (

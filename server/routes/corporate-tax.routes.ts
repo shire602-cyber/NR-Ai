@@ -1,9 +1,13 @@
+import { assertUploadSize } from "../http/upload-errors";
 import type { Express, Request, Response } from "express";
+import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
-import { UAE_CT_EXEMPTION_THRESHOLD } from "../constants";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { pool } from "../db";
+import { DomainError } from "../errors";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
 import {
   buildCtReturnWorkbook,
   buildCtTemplateWorkbook,
@@ -11,26 +15,180 @@ import {
   parseCtWorkbookRows,
 } from "../services/ct-workpaper-export.service";
 import {
-  computeCtComputation,
-  computeCtLiability,
+  CT_ADJUSTMENT_CATEGORIES,
+  CT_INTEREST_EBITDA_SHARE,
+  CT_INTEREST_SAFE_HARBOUR,
+  CT_LOSS_OFFSET_LIMIT,
+  CT_QFZP_DE_MINIMIS_CAP,
+  CT_QFZP_DE_MINIMIS_SHARE,
+  CT_SMALL_BUSINESS_RELIEF_LAST_PERIOD_END,
+  CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP,
+  CT_STANDARD_RATE,
+  CT_TP_DISCLOSURE_THRESHOLD,
+  CT_TP_LOCAL_FILE_REVENUE_THRESHOLD,
+  CT_TP_MNE_GROUP_REVENUE_THRESHOLD,
+  CT_ZERO_RATE_BAND,
   computeCtTotals,
-  type CtBridgeAdjustment,
+  type CtWorkpaperRow,
 } from "../../shared/ct-workpaper";
-import { insertCorporateTaxReturnSchema } from "../../shared/schema";
-import { pickAllowed } from "../utils/pick-allowed";
+import {
+  accrueCtReturnSchema,
+  amendCtReturnSchema,
+  ctExternalReturnSchema,
+  deferredTaxReverseSchema,
+  deferredTaxSchema,
+  type CtExternalReturnBody,
+  type DeferredTaxBody,
+  computeCtReturnSchema,
+  createCtReturnSchema,
+  ctAccountTagSchema,
+  ctAdviserConfirmationSchema,
+  ctProfileSchema,
+  ctRelatedPartySchema,
+  patchCtReturnSchema,
+  transitionCtReturnSchema,
+  unfileCtReturnSchema,
+  type ComputeCtReturnBody,
+  type CreateCtReturnBody,
+  type PatchCtReturnBody,
+} from "../../shared/validators/corporate-tax";
+import { zUuid } from "../../shared/validators/primitives";
+import { isNraFirmRole } from "../../shared/access";
+import { normalizeCompanyRole, roleHasPermission, type Permission } from "../../shared/permissions";
+import { ENTRY_LOCAL_DATE_SQL, NOT_CLOSING_SQL, readRange } from "../reporting";
+import type { CorporateTaxReturn } from "../../shared/schema";
+import {
+  accrueCtReturn,
+  deleteExternalReturn,
+  listDeferredTax,
+  listExternalReturns,
+  postDeferredTax,
+  previewDeferredTax,
+  reverseDeferredTax,
+  upsertExternalReturn,
+  amendCtReturn,
+  assertEditable,
+  auditCtReturn,
+  booksOverrides,
+  confirmCtAdviserReview,
+  ctLedgerPreview,
+  createRelatedParty,
+  ctFilingDeadline,
+  deleteRelatedParty,
+  ensureCtTagAccounts,
+  findOverlappingReturn,
+  getCtProfile,
+  listRelatedParties,
+  listTaggedAccounts,
+  parseAdjustments,
+  recomputeAndSave,
+  setAccountTaxTag,
+  transitionCtReturn,
+  unfileCtReturn,
+  uaeIsoDate,
+  upsertCtProfile,
+} from "../services/corporate-tax";
 
-const CT_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
+/** Posted, non-closing journal entries in [from, to] (UAE dates). */
+async function countPeriodEntries(companyId: string, from: string, to: string): Promise<number> {
+  const r = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM journal_entries je
+      WHERE je.company_id = $1 AND je.status = 'posted' AND ${NOT_CLOSING_SQL}
+        AND ${ENTRY_LOCAL_DATE_SQL} BETWEEN $2::date AND $3::date`,
+    [companyId, from, to]
+  );
+  return Number(r.rows[0]?.n) || 0;
+}
+
+interface AuditRow {
+  id: string;
+  user_id: string | null;
+  action: string;
+  details: string | null;
+  created_at: string;
+}
+
 const CT_IMPORT_MAX_ROWS = 2000;
 
-// Client payloads carry ISO strings; Drizzle timestamp columns want Dates.
-function normalizeCtDates<
-  T extends { taxPeriodStart?: unknown; taxPeriodEnd?: unknown; filedAt?: unknown },
->(data: T): T {
-  const out: any = { ...data };
-  if (out.taxPeriodStart) out.taxPeriodStart = new Date(out.taxPeriodStart);
-  if (out.taxPeriodEnd) out.taxPeriodEnd = new Date(out.taxPeriodEnd);
-  if (out.filedAt) out.filedAt = new Date(out.filedAt);
-  return out;
+const importFileSchema = z
+  .object({ fileName: z.string().max(255), fileDataBase64: z.string() })
+  .strict();
+const emptyBodySchema = z.object({}).strict();
+
+async function requireAccess(req: Request, companyId: string): Promise<void> {
+  const ok = await storage.hasCompanyAccess(req.user!.id, companyId);
+  if (!ok) throw new DomainError("ACCESS_DENIED", 403, undefined, "Access denied");
+}
+
+/** Load a return and check the caller's access to its company (404 for strangers). */
+async function loadReturn(req: Request, id: string): Promise<CorporateTaxReturn> {
+  if (!zUuid.safeParse(id).success) throw new DomainError("CT_RETURN_NOT_FOUND", 404);
+  const ctReturn = await storage.getCorporateTaxReturn(id);
+  if (!ctReturn)
+    throw new DomainError("CT_RETURN_NOT_FOUND", 404, undefined, "Corporate tax return not found");
+  const ok = await storage.hasCompanyAccess(req.user!.id, ctReturn.companyId);
+  // Another tenant's row answers like a missing row (no existence oracle).
+  if (!ok)
+    throw new DomainError("CT_RETURN_NOT_FOUND", 404, undefined, "Corporate tax return not found");
+  return ctReturn;
+}
+
+/** Belt-and-braces role check for routes without :companyId in the URL. */
+async function assertPermission(
+  req: Request,
+  companyId: string,
+  permission: Permission
+): Promise<void> {
+  const user = req.user!;
+  if (user.isAdmin || isNraFirmRole(user.firmRole)) return;
+  const membership = await storage.getUserRole(companyId, user.id);
+  const role = membership ? normalizeCompanyRole(membership.role) : null;
+  if (!role || !roleHasPermission(role, permission)) {
+    throw new DomainError(
+      "PERMISSION_DENIED",
+      403,
+      { permission, role },
+      "Your role in this company does not allow this action"
+    );
+  }
+}
+
+/**
+ * S1 (R12-12, CT half): what a corporate-tax figure is. Anything before review is an estimate;
+ * a reviewed return is filing-ready; filed/paid is the filed figure; amended/void is superseded.
+ * The ledger preview (/calculate) is always an estimate. Nothing is transmitted to EmaraTax.
+ */
+export type CtFigureStatus = "estimate" | "filing_ready" | "filed" | "superseded";
+
+export function ctFigureStatus(status: string | null | undefined): CtFigureStatus {
+  if (status === "reviewed") return "filing_ready";
+  if (status === "filed" || status === "paid") return "filed";
+  if (status === "amended" || status === "void") return "superseded";
+  return "estimate";
+}
+
+const CT_FIGURE_LABELS: Record<CtFigureStatus, string> = {
+  estimate: "Estimate: not reviewed or filed",
+  filing_ready: "Reviewed: ready to file in EmaraTax (manual upload)",
+  filed: "Filed return",
+  superseded: "Superseded",
+};
+
+export function ctFigure(status: string | null | undefined) {
+  const figureStatus = ctFigureStatus(status);
+  return {
+    figureStatus,
+    isEstimate: figureStatus === "estimate",
+    figureLabel: CT_FIGURE_LABELS[figureStatus],
+  };
+}
+
+function withDeadline(r: CorporateTaxReturn) {
+  return {
+    ...r,
+    filingDeadline: ctFilingDeadline(uaeIsoDate(r.taxPeriodEnd)),
+    ...ctFigure(r.status),
+  };
 }
 
 export function registerCorporateTaxRoutes(app: Express) {
@@ -38,26 +196,18 @@ export function registerCorporateTaxRoutes(app: Express) {
   // CORPORATE TAX RETURNS (UAE 9% CT)
   // =====================================
 
-  // List all corporate tax returns for a company
   app.get(
     "/api/companies/:companyId/corporate-tax/returns",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
       const { companyId } = req.params;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
+      await requireAccess(req, companyId);
       const returns = await storage.getCorporateTaxReturnsByCompanyId(companyId);
-      res.json(returns);
+      res.json(returns.map(withDeadline));
     })
   );
 
-  // Get a single corporate tax return
   // Blank workpaper template whose headers round-trip the shared parser.
   app.get(
     "/api/corporate-tax/returns/template",
@@ -82,188 +232,285 @@ export function registerCorporateTaxRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
-      const { id } = req.params;
-
-      const taxReturn = await storage.getCorporateTaxReturn(id);
-      if (!taxReturn) {
-        return res.status(404).json({ message: "Corporate tax return not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, taxReturn.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      res.json(taxReturn);
+      const ctReturn = await loadReturn(req, req.params.id);
+      res.json(withDeadline(ctReturn));
     })
   );
 
-  // Create a corporate tax return
+  // Audit trail of one return (every lifecycle transition writes a row).
+  app.get(
+    "/api/corporate-tax/returns/:id/audit",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const ctReturn = await loadReturn(req, req.params.id);
+      const r = await pool.query(
+        `SELECT id, user_id, action, details, created_at FROM audit_logs
+          WHERE resource_type = 'corporate_tax_return' AND resource_id = $1
+          ORDER BY created_at, id`,
+        [ctReturn.id]
+      );
+      res.json(
+        r.rows.map((row: AuditRow) => ({
+          id: row.id,
+          userId: row.user_id,
+          action: row.action,
+          createdAt: row.created_at,
+          details: (() => {
+            try {
+              return JSON.parse(row.details ?? "null");
+            } catch {
+              return null;
+            }
+          })(),
+        }))
+      );
+    })
+  );
+
+  // Create a return (R08-09): strict body, sane period, rate fixed by law,
+  // liability computed on creation (from the supplied figures or the books).
   app.post(
     "/api/companies/:companyId/corporate-tax/returns",
     authMiddleware,
     requireCustomer,
+    strictBody(createCtReturnSchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
       const { companyId } = req.params;
+      const userId = req.user!.id;
+      await requireAccess(req, companyId);
+      const body: CreateCtReturnBody = createCtReturnSchema.parse(req.body);
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // CT returns settle tax against periodEnd — block creation when the
-      // period is already locked, since the tax provision JE could not post.
-      const periodEnd = req.body?.taxPeriodEnd ?? req.body?.periodEnd;
-      if (periodEnd) {
-        await assertPeriodNotLocked(companyId, periodEnd);
-      }
-
-      // S-M1: allowlist body fields (strips id/createdAt/unknown) before the
-      // spread into the Drizzle write, then force the tenant scope.
-      const taxReturn = await storage.createCorporateTaxReturn(
-        normalizeCtDates({
-          ...(pickAllowed(req.body, insertCorporateTaxReturnSchema, ["companyId"]) as any),
-          companyId,
-        }) as any
+      // X4 (J3): a draft return is a workpaper, not a ledger posting, so a closed (locked)
+      // year must not block it. Only the CT provision posting (at filing) checks the lock.
+      const overlap = await findOverlappingReturn(
+        companyId,
+        body.taxPeriodStart,
+        body.taxPeriodEnd
       );
+      if (overlap) {
+        throw new DomainError(
+          "CT_RETURN_PERIOD_OVERLAP",
+          409,
+          { existingReturnId: overlap },
+          "A corporate tax return already covers part of this period. Amend or void it first."
+        );
+      }
+      const adjustments = parseAdjustments(body.adjustments);
 
-      res.status(201).json(taxReturn);
+      const inserted = await pool.query(
+        `INSERT INTO corporate_tax_returns
+           (company_id, tax_period_start, tax_period_end, status, prepared_by, notes,
+            related_party_notes, tax_rate, exemption_threshold)
+         VALUES ($1, $2::date, $3::date, 'draft', $4, $5, $6, $7, $8) RETURNING id`,
+        [
+          companyId,
+          body.taxPeriodStart,
+          body.taxPeriodEnd,
+          userId,
+          body.notes ?? null,
+          body.relatedPartyNotes ?? null,
+          CT_STANDARD_RATE,
+          CT_ZERO_RATE_BAND,
+        ]
+      );
+      const created = (await storage.getCorporateTaxReturn(inserted.rows[0].id))!;
+      await auditCtReturn("created", userId, null, created, req);
+
+      const rows = body.workpaper?.rows as CtWorkpaperRow[] | undefined;
+      let figures: Parameters<typeof recomputeAndSave>[2];
+      if (rows && rows.length > 0) {
+        const t = computeCtTotals(rows);
+        figures = {
+          rows,
+          totals: { totalRevenue: t.totalRevenue, totalExpenses: t.totalExpenses },
+          source: "manual_workpaper",
+        };
+      } else if (body.totalRevenue !== undefined || body.totalExpenses !== undefined) {
+        figures = {
+          totals: {
+            totalRevenue: body.totalRevenue ?? 0,
+            totalExpenses: body.totalExpenses ?? 0,
+          },
+        };
+      } else {
+        figures = await booksOverrides(companyId, body.taxPeriodStart, body.taxPeriodEnd);
+      }
+      const result = await recomputeAndSave(
+        created,
+        userId,
+        {
+          ...figures,
+          adjustments,
+          totalDeductions: body.totalDeductions ?? 0,
+          smallBusinessReliefElected: body.smallBusinessReliefElected ?? false,
+        },
+        req,
+        "initial_compute"
+      );
+      res.status(201).json({ ...withDeadline(result.return), computation: result.computation });
     })
   );
 
-  // Compute the full taxable-profit bridge: disallowable add-backs,
-  // deductions, small business relief, and loss carryforward pulled from the
-  // company's prior return. Persists the schedule on the return so the UI
-  // and Excel export show the exact same numbers.
+  // Recompute the full taxable-profit bridge and mark the return computed.
   app.post(
     "/api/corporate-tax/returns/:id/compute",
     authMiddleware,
     requireCustomer,
+    strictBody(computeCtReturnSchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
-      const ctReturn = await storage.getCorporateTaxReturn(req.params.id);
-      if (!ctReturn) {
-        return res.status(404).json({ message: "Corporate tax return not found" });
-      }
-      const hasAccess = await storage.hasCompanyAccess(userId, ctReturn.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-      if (ctReturn.status !== "draft") {
-        return res.status(400).json({ message: "Only draft returns can be recomputed" });
-      }
-
-      const adjustments: CtBridgeAdjustment[] = Array.isArray(req.body?.adjustments)
-        ? req.body.adjustments
-        : ((ctReturn.workpaper as any)?.adjustments ?? []);
-      const smallBusinessReliefElected =
-        typeof req.body?.smallBusinessReliefElected === "boolean"
-          ? req.body.smallBusinessReliefElected
-          : ctReturn.smallBusinessRelief === true;
-      const relatedPartyNotes =
-        typeof req.body?.relatedPartyNotes === "string"
-          ? req.body.relatedPartyNotes
-          : ctReturn.relatedPartyNotes;
-
-      // Loss pool: closing carryforward of the latest earlier return.
-      const lossBroughtForward = await storage.getCtLossBroughtForward(
-        ctReturn.companyId,
-        ctReturn.taxPeriodStart,
-        ctReturn.id
-      );
-
-      // A-B16: Small Business Relief is denied if any prior period breached the
-      // AED 3M revenue cap, not just the current one.
-      const priorPeriodsExceededRevenueCap = await storage.getCtPriorPeriodRevenueExceededCap(
-        ctReturn.companyId,
-        ctReturn.taxPeriodStart,
-        ctReturn.id
-      );
-
-      const computation = computeCtComputation({
-        totalRevenue: Number(ctReturn.totalRevenue) || 0,
-        totalExpenses: Number(ctReturn.totalExpenses) || 0,
-        totalDeductions: Number(ctReturn.totalDeductions) || 0,
-        adjustments,
-        lossBroughtForward,
-        smallBusinessReliefElected,
-        priorPeriodsExceededRevenueCap,
-        exemptionThreshold: Number(ctReturn.exemptionThreshold) || UAE_CT_EXEMPTION_THRESHOLD,
-        taxRate: Number(ctReturn.taxRate) || 0.09,
-      });
-
-      const updated = await storage.updateCorporateTaxReturn(ctReturn.id, {
-        taxableIncome: computation.taxableIncome,
-        taxPayable: computation.taxPayable,
-        lossBroughtForward: computation.lossBroughtForward,
-        lossCarriedForward: computation.lossCarriedForward,
-        smallBusinessRelief: computation.smallBusinessRelief.applied,
-        relatedPartyNotes: relatedPartyNotes ?? null,
-        workpaper: {
-          ...((ctReturn.workpaper as Record<string, unknown>) ?? {}),
-          adjustments,
-          computation,
-          computedAt: new Date().toISOString(),
+      const ctReturn = await loadReturn(req, req.params.id);
+      const body: ComputeCtReturnBody = computeCtReturnSchema.parse(req.body);
+      const result = await recomputeAndSave(
+        ctReturn,
+        req.user!.id,
+        {
+          adjustments: body.adjustments ? parseAdjustments(body.adjustments) : undefined,
+          smallBusinessReliefElected: body.smallBusinessReliefElected,
+          interest: body.interest,
+          qfzp: body.qfzp,
+          markComputed: true,
+          extra:
+            body.relatedPartyNotes !== undefined
+              ? { relatedPartyNotes: body.relatedPartyNotes }
+              : undefined,
         },
-      } as any);
-
-      res.json({ return: updated, computation });
+        req,
+        "computed"
+      );
+      res.json({ return: withDeadline(result.return), computation: result.computation });
     })
   );
 
-  // Update a corporate tax return
+  // PATCH (R08-04, R08-09): editable fields only, draft/computed only.
+  // Status changes go through /transition; filed returns answer 409.
   app.patch(
     "/api/corporate-tax/returns/:id",
     authMiddleware,
     requireCustomer,
+    strictBody(patchCtReturnSchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
-      const { id } = req.params;
-
-      const existing = await storage.getCorporateTaxReturn(id);
-      if (!existing) {
-        return res.status(404).json({ message: "Corporate tax return not found" });
+      const ctReturn = await loadReturn(req, req.params.id);
+      assertEditable(ctReturn);
+      const body: PatchCtReturnBody = patchCtReturnSchema.parse(req.body);
+      const start = body.taxPeriodStart ?? uaeIsoDate(ctReturn.taxPeriodStart);
+      const end = body.taxPeriodEnd ?? uaeIsoDate(ctReturn.taxPeriodEnd);
+      if (body.taxPeriodStart || body.taxPeriodEnd) {
+        const check = createCtReturnSchema.safeParse({ taxPeriodStart: start, taxPeriodEnd: end });
+        if (!check.success) {
+          throw new DomainError("CT_PERIOD_INVALID", 400, { issues: check.error.issues });
+        }
+        const overlap = await findOverlappingReturn(ctReturn.companyId, start, end, ctReturn.id);
+        if (overlap)
+          throw new DomainError("CT_RETURN_PERIOD_OVERLAP", 409, { existingReturnId: overlap });
       }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const periodEnd = req.body?.taxPeriodEnd ?? req.body?.periodEnd;
-      if (periodEnd) {
-        await assertPeriodNotLocked(existing.companyId, periodEnd);
-      }
-
-      // S-M1: allowlist body fields and never let the tenant scope be changed.
-      const taxReturn = await storage.updateCorporateTaxReturn(
-        id,
-        normalizeCtDates(
-          pickAllowed(req.body, insertCorporateTaxReturnSchema, ["companyId"]) as any
-        ) as any
+      const totalsChanged = body.totalRevenue !== undefined || body.totalExpenses !== undefined;
+      const result = await recomputeAndSave(
+        ctReturn,
+        req.user!.id,
+        {
+          adjustments: body.adjustments ? parseAdjustments(body.adjustments) : undefined,
+          smallBusinessReliefElected: body.smallBusinessReliefElected,
+          totalDeductions: body.totalDeductions,
+          totals: totalsChanged
+            ? {
+                totalRevenue: body.totalRevenue ?? (Number(ctReturn.totalRevenue) || 0),
+                totalExpenses: body.totalExpenses ?? (Number(ctReturn.totalExpenses) || 0),
+              }
+            : undefined,
+          periodStart: start,
+          periodEnd: end,
+          extra: {
+            ...(body.taxPeriodStart ? { taxPeriodStart: new Date(`${start}T00:00:00.000Z`) } : {}),
+            ...(body.taxPeriodEnd ? { taxPeriodEnd: new Date(`${end}T00:00:00.000Z`) } : {}),
+            ...(body.notes !== undefined ? { notes: body.notes } : {}),
+            ...(body.relatedPartyNotes !== undefined
+              ? { relatedPartyNotes: body.relatedPartyNotes }
+              : {}),
+          },
+        },
+        req,
+        "updated"
       );
-      res.json(taxReturn);
+      res.json({ ...withDeadline(result.return), computation: result.computation });
     })
   );
 
-  // Downloadable Excel copy: workpaper schedule + copy-ready computation.
+  // Lifecycle transitions (R08-04): computed | reviewed | filed | paid | void.
+  app.post(
+    "/api/corporate-tax/returns/:id/transition",
+    authMiddleware,
+    requireCustomer,
+    strictBody(transitionCtReturnSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const ctReturn = await loadReturn(req, req.params.id);
+      const body = transitionCtReturnSchema.parse(req.body);
+      if (body.to === "reviewed" || body.to === "filed" || body.to === "paid") {
+        await assertPermission(req, ctReturn.companyId, "tax.submit");
+      }
+      if (body.postProvision) await assertPermission(req, ctReturn.companyId, "ledger.post");
+      const updated = await transitionCtReturn(ctReturn, body, req.user!.id, req);
+      res.json(withDeadline(updated));
+    })
+  );
+
+  // A4 (M2, IAS 12.12): accrue the computed current tax at period end before filing.
+  app.post(
+    "/api/corporate-tax/returns/:id/accrue",
+    authMiddleware,
+    requireCustomer,
+    strictBody(accrueCtReturnSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const ctReturn = await loadReturn(req, req.params.id);
+      await assertPermission(req, ctReturn.companyId, "ledger.post");
+      const result = await accrueCtReturn(ctReturn, req.user!.id, req);
+      res.json({
+        ...withDeadline(result.return),
+        accrual: { changed: result.changed, entryId: result.entryId },
+      });
+    })
+  );
+
+  // X4 (J3): undo "record as filed" (filed, unpaid) with an audited reason.
+  app.post(
+    "/api/corporate-tax/returns/:id/unfile",
+    authMiddleware,
+    requireCustomer,
+    strictBody(unfileCtReturnSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const ctReturn = await loadReturn(req, req.params.id);
+      await assertPermission(req, ctReturn.companyId, "tax.submit");
+      const body = unfileCtReturnSchema.parse(req.body);
+      const updated = await unfileCtReturn(ctReturn, req.user!.id, body.reason, req);
+      res.json(withDeadline(updated));
+    })
+  );
+
+  // Amend by copy (R08-04): the filed original stays immutable.
+  app.post(
+    "/api/corporate-tax/returns/:id/amend",
+    authMiddleware,
+    requireCustomer,
+    strictBody(amendCtReturnSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const ctReturn = await loadReturn(req, req.params.id);
+      await assertPermission(req, ctReturn.companyId, "tax.submit");
+      const result = await amendCtReturn(ctReturn, req.user!.id, req.body.reason, req);
+      res.status(201).json({
+        original: withDeadline(result.original),
+        amendment: withDeadline(result.amendment),
+      });
+    })
+  );
+
+  // Downloadable Excel copy: workpaper, computation, EmaraTax-ordered return
+  // sheet (en + ar, upload manually) and the deferred-tax note.
   app.get(
     "/api/corporate-tax/returns/:id/export",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
-      const ctReturn = await storage.getCorporateTaxReturn(req.params.id);
-      if (!ctReturn) {
-        return res.status(404).json({ message: "Corporate tax return not found" });
-      }
-      const hasAccess = await storage.hasCompanyAccess(userId, ctReturn.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
+      const ctReturn = await loadReturn(req, req.params.id);
       const company = await storage.getCompany(ctReturn.companyId);
       const buffer = await buildCtReturnWorkbook(ctReturn, company ?? null);
       res.setHeader(
@@ -274,291 +521,481 @@ export function registerCorporateTaxRoutes(app: Express) {
         "Content-Disposition",
         `attachment; filename="${ctReturnExportFilename(ctReturn, company ?? null)}"`
       );
+      res.setHeader("X-Filing-Mode", "manual-upload-no-fta-api");
       res.send(buffer);
     })
   );
 
-  // Import a filled .xlsx workpaper (the template or any sheet with
-  // recognisable headers); replaces the workpaper rows and recomputes the
-  // return's totals and liability.
+  // Import a filled .xlsx workpaper; replaces the rows, keeps adjustments,
+  // losses and elections, and recomputes the full liability (R08-08).
   app.post(
     "/api/corporate-tax/returns/:id/import-file",
     authMiddleware,
     requireCustomer,
+    strictBody(importFileSchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
-      const ctReturn = await storage.getCorporateTaxReturn(req.params.id);
-      if (!ctReturn) {
-        return res.status(404).json({ message: "Corporate tax return not found" });
+      const ctReturn = await loadReturn(req, req.params.id);
+      assertEditable(ctReturn);
+      const { fileName, fileDataBase64 } = req.body as z.output<typeof importFileSchema>;
+      if (!/\.xlsx$/i.test(fileName)) {
+        return res
+          .status(400)
+          .json({ message: "Only .xlsx workbooks are supported", code: "CT_IMPORT_TYPE" });
       }
-      const hasAccess = await storage.hasCompanyAccess(userId, ctReturn.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+      if (fileDataBase64.length === 0) {
+        return res
+          .status(400)
+          .json({ message: "Workbook payload is required", code: "CT_IMPORT_EMPTY" });
       }
-      if (ctReturn.status !== "draft") {
-        return res.status(400).json({ message: "Only draft returns can be re-imported" });
+      const buffer = Buffer.from(fileDataBase64, "base64");
+      assertUploadSize(buffer.length);
+      if (buffer.length === 0) {
+        return res
+          .status(400)
+          .json({ message: "Workbook must be between 1 byte and 2 MB", code: "CT_IMPORT_SIZE" });
       }
-
-      const { fileName, fileDataBase64 } = req.body ?? {};
-      if (typeof fileName !== "string" || !/\.xlsx$/i.test(fileName)) {
-        return res.status(400).json({ message: "Only .xlsx workbooks are supported" });
-      }
-      if (typeof fileDataBase64 !== "string" || fileDataBase64.length === 0) {
-        return res.status(400).json({ message: "Workbook payload is required" });
-      }
-      let buffer: Buffer;
-      try {
-        buffer = Buffer.from(fileDataBase64, "base64");
-      } catch {
-        return res.status(400).json({ message: "Workbook payload is not valid base64" });
-      }
-      if (buffer.length === 0 || buffer.length > CT_IMPORT_MAX_BYTES) {
-        return res.status(400).json({ message: "Workbook must be between 1 byte and 10 MB" });
-      }
-
-      let rows;
+      let rows: CtWorkpaperRow[];
       try {
         rows = await parseCtWorkbookRows(buffer);
       } catch {
-        return res
-          .status(400)
-          .json({ message: "Could not read the workbook — is it a valid .xlsx file?" });
+        return res.status(400).json({
+          message: "Could not read the workbook — is it a valid .xlsx file?",
+          code: "CT_IMPORT_UNREADABLE",
+        });
       }
       if (rows.length === 0) {
-        return res.status(400).json({ message: "No workpaper rows recognised in the workbook" });
+        return res.status(400).json({
+          message: "No workpaper rows recognised in the workbook",
+          code: "CT_IMPORT_NO_ROWS",
+        });
       }
       if (rows.length > CT_IMPORT_MAX_ROWS) {
-        return res
-          .status(400)
-          .json({ message: `Workbook has too many rows (max ${CT_IMPORT_MAX_ROWS})` });
+        return res.status(400).json({
+          message: `Workbook has too many rows (max ${CT_IMPORT_MAX_ROWS})`,
+          code: "CT_IMPORT_TOO_MANY_ROWS",
+        });
       }
-
       const totals = computeCtTotals(rows);
-      const liability = computeCtLiability({
-        ...totals,
-        totalDeductions: Number(ctReturn.totalDeductions ?? 0),
-        exemptionThreshold: Number(ctReturn.exemptionThreshold ?? UAE_CT_EXEMPTION_THRESHOLD),
-        taxRate: Number(ctReturn.taxRate ?? 0.09),
-      });
-
-      const updated = await storage.updateCorporateTaxReturn(ctReturn.id, {
-        workpaper: {
-          source: "manual_workpaper",
+      const result = await recomputeAndSave(
+        ctReturn,
+        req.user!.id,
+        {
           rows,
-          ...totals,
-          preparedAt: new Date().toISOString(),
+          totals: { totalRevenue: totals.totalRevenue, totalExpenses: totals.totalExpenses },
+          source: "manual_workpaper",
         },
-        totalRevenue: totals.totalRevenue,
-        totalExpenses: totals.totalExpenses,
-        taxableIncome: liability.taxableIncome,
-        taxPayable: liability.taxPayable,
+        req,
+        "imported"
+      );
+      res.json({
+        ...withDeadline(result.return),
+        computation: result.computation,
+        imported: rows.length,
       });
-
-      res.json({ ...updated, imported: rows.length });
     })
   );
 
-  // Populate the workpaper from the books: one row per income/expense account
-  // with its posted net for the tax period. Replaces the previous workpaper.
+  // Populate the workpaper from the books (posted, non-closing activity via the
+  // reporting kernel) and recompute; adjustments/losses/elections preserved.
   app.post(
     "/api/corporate-tax/returns/:id/pull-from-books",
     authMiddleware,
     requireCustomer,
+    strictBody(emptyBodySchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
-      const ctReturn = await storage.getCorporateTaxReturn(req.params.id);
-      if (!ctReturn) {
-        return res.status(404).json({ message: "Corporate tax return not found" });
-      }
-      const hasAccess = await storage.hasCompanyAccess(userId, ctReturn.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-      if (ctReturn.status !== "draft") {
-        return res
-          .status(400)
-          .json({ message: "Only draft returns can be repopulated from the books" });
-      }
-
-      const startDate = new Date(ctReturn.taxPeriodStart);
-      const endDate = new Date(ctReturn.taxPeriodEnd);
-
-      const allAccounts = await storage.getAccountsByCompanyId(ctReturn.companyId);
-      const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
-
-      const journalEntries = await storage.getJournalEntriesByCompanyId(ctReturn.companyId);
-      const periodEntries = journalEntries.filter((entry) => {
-        const entryDate = new Date(entry.date);
-        return entryDate >= startDate && entryDate <= endDate && entry.status === "posted";
+      const ctReturn = await loadReturn(req, req.params.id);
+      assertEditable(ctReturn);
+      const startIso = uaeIsoDate(ctReturn.taxPeriodStart);
+      const endIso = uaeIsoDate(ctReturn.taxPeriodEnd);
+      const figures = await booksOverrides(ctReturn.companyId, startIso, endIso);
+      const result = await recomputeAndSave(
+        ctReturn,
+        req.user!.id,
+        figures,
+        req,
+        "pulled_from_books"
+      );
+      res.json({
+        ...withDeadline(result.return),
+        computation: result.computation,
+        rows: figures.rows?.length ?? 0,
+        entriesProcessed: await countPeriodEntries(ctReturn.companyId, startIso, endIso),
       });
-
-      const netByAccount = new Map<string, number>();
-      const periodLines = await storage.getJournalLinesByEntryIds(periodEntries.map((e) => e.id));
-      for (const line of periodLines) {
-        const account = accountMap.get(line.accountId);
-        if (!account || (account.type !== "income" && account.type !== "expense")) continue;
-        const net =
-          account.type === "income"
-            ? (line.credit || 0) - (line.debit || 0)
-            : (line.debit || 0) - (line.credit || 0);
-        netByAccount.set(line.accountId, (netByAccount.get(line.accountId) ?? 0) + net);
-      }
-
-      const rows = [...netByAccount.entries()]
-        .map(([accountId, amount]) => {
-          const account = accountMap.get(accountId)!;
-          return {
-            id: `books-${accountId}`,
-            type: (account.type === "income" ? "revenue" : "expense") as "revenue" | "expense",
-            label: account.nameEn,
-            amount: Math.round(amount * 100) / 100,
-            notes: `Posted net for ${account.code ?? ""}`.trim(),
-          };
-        })
-        .filter((row) => row.amount !== 0)
-        .sort((a, b) => (a.type === b.type ? b.amount - a.amount : a.type === "revenue" ? -1 : 1));
-
-      const totals = computeCtTotals(rows);
-      const liability = computeCtLiability({
-        ...totals,
-        totalDeductions: Number(ctReturn.totalDeductions ?? 0),
-        exemptionThreshold: Number(ctReturn.exemptionThreshold ?? UAE_CT_EXEMPTION_THRESHOLD),
-        taxRate: Number(ctReturn.taxRate ?? 0.09),
-      });
-
-      const updated = await storage.updateCorporateTaxReturn(ctReturn.id, {
-        workpaper: {
-          source: "journal_calculation",
-          rows,
-          ...totals,
-          preparedAt: new Date().toISOString(),
-        },
-        totalRevenue: totals.totalRevenue,
-        totalExpenses: totals.totalExpenses,
-        taxableIncome: liability.taxableIncome,
-        taxPayable: liability.taxPayable,
-      });
-
-      res.json({ ...updated, rows: rows.length, entriesProcessed: periodEntries.length });
     })
   );
 
-  // Auto-calculate corporate tax for a period from journal entries
+  // Preview corporate tax for a period from the ledger (nothing stored).
   app.get(
     "/api/companies/:companyId/corporate-tax/calculate",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
       const { companyId } = req.params;
-      const { periodStart, periodEnd } = req.query;
-
-      if (!periodStart || !periodEnd) {
-        return res
-          .status(400)
-          .json({ message: "periodStart and periodEnd query parameters are required" });
+      // R12-05: accept periodStart/periodEnd, from/to or startDate/endDate.
+      const range = readRange(req.query as Record<string, unknown>, { requireFrom: true });
+      if (!(req.query.periodEnd ?? req.query.to ?? req.query.endDate)) {
+        return res.status(400).json({
+          message: "periodStart and periodEnd query parameters are required",
+          code: "REPORT_RANGE_REQUIRED",
+        });
       }
+      await requireAccess(req, companyId);
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const startDate = new Date(periodStart as string);
-      const endDate = new Date(periodEnd as string);
-
-      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-        return res
-          .status(400)
-          .json({ message: "Invalid date format for periodStart or periodEnd" });
-      }
-
-      // Get all accounts for this company to identify revenue vs expense accounts
-      const allAccounts = await storage.getAccountsByCompanyId(companyId);
-      const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
-
-      // Get all journal entries in the period
-      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
-      const periodEntries = journalEntries.filter((entry) => {
-        const entryDate = new Date(entry.date);
-        return entryDate >= startDate && entryDate <= endDate && entry.status === "posted";
-      });
-
-      let totalRevenue = 0;
-      let totalExpenses = 0;
-
-      // Single batched fetch for all period lines.
-      const periodLines = await storage.getJournalLinesByEntryIds(periodEntries.map((e) => e.id));
-      for (const line of periodLines) {
-        const account = accountMap.get(line.accountId);
-        if (!account) continue;
-
-        if (account.type === "income") {
-          // Revenue accounts: credit side increases revenue
-          totalRevenue += (line.credit || 0) - (line.debit || 0);
-        } else if (account.type === "expense") {
-          // Expense accounts: debit side increases expenses
-          totalExpenses += (line.debit || 0) - (line.credit || 0);
-        }
-      }
-
-      // Ensure non-negative values
-      totalRevenue = Math.max(0, totalRevenue);
-      totalExpenses = Math.max(0, totalExpenses);
-
-      // A-B7: use the shared calculator instead of an inline formula so the
-      // preview matches the import/export/filing paths exactly.
-      const totalDeductions = 0; // User can adjust this on the frontend
-      const liability = computeCtLiability({
-        totalRevenue,
-        totalExpenses,
-        totalDeductions,
-        exemptionThreshold: UAE_CT_EXEMPTION_THRESHOLD,
-        taxRate: 0.09,
-      });
-
-      // Small Business Relief (Ministerial Decision 73 of 2023). A resident
-      // taxable person with revenue at or below AED 3,000,000 in the tax period
-      // — and in every prior period since 1 June 2023 — may ELECT to be treated
-      // as having no taxable income, i.e. 0% corporate tax.
-      //
-      // It is an election, not an automatic exemption: the business chooses it
-      // on the return, and electing forfeits the use of tax losses and certain
-      // reliefs. So we surface eligibility and BOTH outcomes, and let the user
-      // decide. `sbrElected=true` on the query applies it.
-      //
-      // This matters commercially: the overwhelming majority of UAE SMEs sit
-      // under the threshold, and none of the mainstream competitors model it.
-      const SBR_REVENUE_CAP = 3_000_000;
-      const sbrEligible = totalRevenue <= SBR_REVENUE_CAP;
+      // R08-02 / C2 / R08-14: the ledger preview is shared with the Assistant (AS1).
+      const [preview, entries] = await Promise.all([
+        ctLedgerPreview(companyId, range.from!, range.to),
+        countPeriodEntries(companyId, range.from!, range.to),
+      ]);
+      const { totalRevenue, totalExpenses, ledgerAdjustments, liability, withinSunset } = preview;
+      const totalDeductions = liability.totalDeductions;
+      const sbrEligible = preview.sbrEligible;
       const sbrElected = String(req.query.sbrElected ?? "").toLowerCase() === "true";
       const sbrApplied = sbrEligible && sbrElected;
 
       res.json({
-        periodStart: startDate.toISOString(),
-        periodEnd: endDate.toISOString(),
+        // A ledger preview is never a return: always an estimate (R12-12).
+        ...ctFigure("preview"),
+        periodStart: `${range.from}T00:00:00.000Z`,
+        periodEnd: `${range.to}T00:00:00.000Z`,
         totalRevenue: Math.round(totalRevenue * 100) / 100,
-        totalExpenses: Math.round(totalExpenses * 100) / 100,
+        totalExpenses,
+        // L3: revenue less all expenses is the accounting (net) profit before tax, not gross
+        // profit. `grossProfit` stays as a deprecated alias for existing API clients.
+        accountingProfit: Math.round((totalRevenue - totalExpenses) * 100) / 100,
         grossProfit: Math.round((totalRevenue - totalExpenses) * 100) / 100,
         totalDeductions,
+        totalAddBacks: liability.totalAddBacks,
+        ledgerAdjustments,
         taxableIncome: liability.taxableIncome,
         exemptionThreshold: liability.exemptionThreshold,
         taxableAmount: sbrApplied ? 0 : liability.taxableAmount,
         taxRate: sbrApplied ? 0 : liability.taxRate,
         taxPayable: sbrApplied ? 0 : liability.taxPayable,
+        filingDeadline: ctFilingDeadline(range.to),
         smallBusinessRelief: {
           eligible: sbrEligible,
           elected: sbrElected,
           applied: sbrApplied,
-          revenueCap: SBR_REVENUE_CAP,
+          revenueCap: CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP,
+          lastPeriodEnd: CT_SMALL_BUSINESS_RELIEF_LAST_PERIOD_END,
           taxPayableWithRelief: 0,
           taxPayableWithoutRelief: liability.taxPayable,
-          note: sbrEligible
-            ? "Revenue is at or below AED 3,000,000, so Small Business Relief may be elected (Ministerial Decision 73 of 2023). Electing treats taxable income as nil, but forfeits the use of tax losses for the period. Eligibility also requires revenue to have stayed below the cap in every prior period since 1 June 2023 — confirm your history before electing."
-            : "Revenue exceeds AED 3,000,000, so Small Business Relief is not available for this period.",
+          note: !withinSunset
+            ? "Small Business Relief is only available for tax periods ending on or before 31 December 2026 (Ministerial Decision 73 of 2023)."
+            : sbrEligible
+              ? "Revenue is at or below AED 3,000,000, so Small Business Relief may be elected (Ministerial Decision 73 of 2023). Electing treats taxable income as nil, but forfeits the use of tax losses for the period. Eligibility also requires revenue to have stayed below the cap in every prior period — confirm your history before electing."
+              : "Revenue exceeds AED 3,000,000, so Small Business Relief is not available for this period.",
         },
-        journalEntriesProcessed: periodEntries.length,
+        journalEntriesProcessed: entries,
       });
+    })
+  );
+
+  // ─── Deferred tax (A4: M2, IAS 12) ──────────────────────────────────────
+  app.get(
+    "/api/companies/:companyId/corporate-tax/deferred-tax",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      res.json(await listDeferredTax(companyId));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/corporate-tax/deferred-tax/preview",
+    authMiddleware,
+    requireCustomer,
+    strictBody(deferredTaxSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      const {
+        fils: _f,
+        accounts: _a,
+        ...preview
+      } = await previewDeferredTax(companyId, parsedBody<DeferredTaxBody>(req));
+      res.json(preview);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/corporate-tax/deferred-tax",
+    authMiddleware,
+    requireCustomer,
+    strictBody(deferredTaxSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      await assertPermission(req, companyId, "ledger.post");
+      const body = parsedBody<DeferredTaxBody>(req);
+      res.status(201).json(await postDeferredTax(companyId, req.user!.id, body, req));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/corporate-tax/deferred-tax/:adjustmentId/reverse",
+    authMiddleware,
+    requireCustomer,
+    strictBody(deferredTaxReverseSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, adjustmentId } = req.params;
+      await requireAccess(req, companyId);
+      await assertPermission(req, companyId, "ledger.post");
+      if (!zUuid.safeParse(adjustmentId).success)
+        throw new DomainError("DEFERRED_TAX_NOT_FOUND", 404);
+      res.json(
+        await reverseDeferredTax(
+          companyId,
+          adjustmentId,
+          req.user!.id,
+          parsedBody<{ reason: string }>(req).reason,
+          req
+        )
+      );
+    })
+  );
+
+  // ─── Returns filed outside Muhasib: losses brought forward (A4: M13) ─────
+  app.get(
+    "/api/companies/:companyId/corporate-tax/external-returns",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      res.json(await listExternalReturns(companyId));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/corporate-tax/external-returns",
+    authMiddleware,
+    requireCustomer,
+    strictBody(ctExternalReturnSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      await assertPermission(req, companyId, "tax.submit");
+      const body = parsedBody<CtExternalReturnBody>(req);
+      res
+        .status(201)
+        .json(await upsertExternalReturn(companyId, req.user!.id, body, undefined, req));
+    })
+  );
+
+  app.put(
+    "/api/companies/:companyId/corporate-tax/external-returns/:externalId",
+    authMiddleware,
+    requireCustomer,
+    strictBody(ctExternalReturnSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, externalId } = req.params;
+      await requireAccess(req, companyId);
+      await assertPermission(req, companyId, "tax.submit");
+      if (!zUuid.safeParse(externalId).success) {
+        throw new DomainError("CT_EXTERNAL_RETURN_NOT_FOUND", 404);
+      }
+      const body = parsedBody<CtExternalReturnBody>(req);
+      res.json(await upsertExternalReturn(companyId, req.user!.id, body, externalId, req));
+    })
+  );
+
+  app.delete(
+    "/api/companies/:companyId/corporate-tax/external-returns/:externalId",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, externalId } = req.params;
+      await requireAccess(req, companyId);
+      await assertPermission(req, companyId, "tax.submit");
+      if (!zUuid.safeParse(externalId).success) {
+        throw new DomainError("CT_EXTERNAL_RETURN_NOT_FOUND", 404);
+      }
+      await deleteExternalReturn(companyId, req.user!.id, externalId, req);
+      res.status(204).end();
+    })
+  );
+
+  // ─── CT rules reference (thresholds + legal sources for the UI) ─────────
+  app.get(
+    "/api/companies/:companyId/corporate-tax/rules",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      const profile = await getCtProfile(companyId);
+      res.json({
+        adviserReviewPending: profile.adviserReviewPending,
+        standardRate: CT_STANDARD_RATE,
+        zeroRateBand: CT_ZERO_RATE_BAND,
+        lossOffsetLimit: CT_LOSS_OFFSET_LIMIT,
+        smallBusinessRelief: {
+          revenueCap: CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP,
+          lastPeriodEnd: CT_SMALL_BUSINESS_RELIEF_LAST_PERIOD_END,
+        },
+        interestLimitation: {
+          ebitdaShare: CT_INTEREST_EBITDA_SHARE,
+          safeHarbour: CT_INTEREST_SAFE_HARBOUR,
+        },
+        qfzpDeMinimis: { share: CT_QFZP_DE_MINIMIS_SHARE, cap: CT_QFZP_DE_MINIMIS_CAP },
+        transferPricing: {
+          disclosureThreshold: CT_TP_DISCLOSURE_THRESHOLD,
+          localFileRevenueThreshold: CT_TP_LOCAL_FILE_REVENUE_THRESHOLD,
+          mneGroupRevenueThreshold: CT_TP_MNE_GROUP_REVENUE_THRESHOLD,
+        },
+        adjustmentCategories: Object.entries(CT_ADJUSTMENT_CATEGORIES).map(([key, def]) => ({
+          key,
+          ...def,
+        })),
+        documentation: "docs/corporate-tax-rules.md",
+      });
+    })
+  );
+
+  // ─── CT / compliance profile (QFZP, adviser confirmation, settings) ─────
+  app.get(
+    "/api/companies/:companyId/corporate-tax/profile",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      res.json(await getCtProfile(companyId));
+    })
+  );
+
+  app.put(
+    "/api/companies/:companyId/corporate-tax/profile",
+    authMiddleware,
+    requireCustomer,
+    strictBody(ctProfileSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      await assertPermission(req, companyId, "tax.submit");
+      const before = await getCtProfile(companyId);
+      const profile = await upsertCtProfile(companyId, req.body, req.user!.id);
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "corporate_tax_profile.update",
+        entityType: "ct_company_profile",
+        entityId: companyId,
+        before,
+        after: profile,
+        req,
+      });
+      res.json(profile);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/corporate-tax/profile/adviser-confirmation",
+    authMiddleware,
+    requireCustomer,
+    strictBody(ctAdviserConfirmationSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      await assertPermission(req, companyId, "tax.submit");
+      const profile = await confirmCtAdviserReview(
+        companyId,
+        req.user!.id,
+        req.body.adviserName,
+        req.body.note ?? null
+      );
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "corporate_tax_profile.adviser_confirmed",
+        entityType: "ct_company_profile",
+        entityId: companyId,
+        after: { adviserName: req.body.adviserName, note: req.body.note ?? null },
+        req,
+      });
+      res.json(profile);
+    })
+  );
+
+  // ─── Related-party / connected-person register (R08-17) ─────────────────
+  app.get(
+    "/api/companies/:companyId/corporate-tax/related-parties",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      res.json(await listRelatedParties(companyId));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/corporate-tax/related-parties",
+    authMiddleware,
+    requireCustomer,
+    strictBody(ctRelatedPartySchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      res.status(201).json(await createRelatedParty(companyId, req.body, req.user!.id));
+    })
+  );
+
+  app.delete(
+    "/api/companies/:companyId/corporate-tax/related-parties/:partyId",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, partyId } = req.params;
+      await requireAccess(req, companyId);
+      if (!zUuid.safeParse(partyId).success) throw new DomainError("NOT_FOUND", 404);
+      const ok = await deleteRelatedParty(companyId, partyId);
+      if (!ok) throw new DomainError("NOT_FOUND", 404);
+      res.status(204).end();
+    })
+  );
+
+  // ─── Account tax tags (R08-18) ───────────────────────────────────────────
+  app.get(
+    "/api/companies/:companyId/corporate-tax/account-tags",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      res.json(await listTaggedAccounts(companyId));
+    })
+  );
+
+  app.put(
+    "/api/companies/:companyId/corporate-tax/account-tags",
+    authMiddleware,
+    requireCustomer,
+    strictBody(ctAccountTagSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      await assertPermission(req, companyId, "ledger.post");
+      res.json(await setAccountTaxTag(companyId, req.body.accountId, req.body.taxTag));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/corporate-tax/account-tags/ensure",
+    authMiddleware,
+    requireCustomer,
+    strictBody(emptyBodySchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      await assertPermission(req, companyId, "ledger.post");
+      const map = await ensureCtTagAccounts(companyId);
+      res.json([...map.values()]);
     })
   );
 }

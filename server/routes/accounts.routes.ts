@@ -1,9 +1,203 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
+import { pool } from "../db";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { insertAccountSchema, type Account } from "../../shared/schema";
+import type { Account } from "../../shared/schema";
 import { recordAudit } from "../services/audit.service";
+import { vatBoxMap } from "../tax/vat-box-map";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { DomainError, errorMessage } from "../errors";
+import {
+  archiveAccountBody,
+  createAccountBody,
+  isSubTypeForType,
+  updateAccountBody,
+  type CreateAccountBody,
+  type UpdateAccountBody,
+} from "../../shared/validators/accounts";
+import {
+  CONTROL_ACCOUNT_CODES,
+  assertChosenAccountsNotControl,
+  controlAccountsAmong,
+} from "../ledger/control-accounts";
+
+/** The fields that give an account its posting role (code, type, sub-type, VAT flags, parent). */
+const ROLE_FIELDS = ["code", "type", "subType", "isVatAccount", "vatType", "parentId"] as const;
+type RoleField = (typeof ROLE_FIELDS)[number];
+
+const ROLE_FIELD_TEXT: Record<RoleField, string> = {
+  code: "code",
+  type: "type",
+  subType: "sub-type",
+  isVatAccount: "VAT flag",
+  vatType: "VAT type",
+  parentId: "parent account",
+};
+
+function roleValue(v: unknown): unknown {
+  return v === undefined || v === "" ? null : v;
+}
+
+/**
+ * D2 (N8): system accounts, control accounts (1040, 1050, 1070, 2010, 2015, 2020, 2030-2036, every
+ * input / output VAT account, every product inventory account and their sub-accounts) and VAT
+ * accounts keep their code, type, sub-type and VAT flags: the posting rules, the control-account
+ * guard and the sub-ledger ties find them by these, so a change would let a manual journal reach a
+ * control account (H8) or break every invoice (2020 without its VAT flag). A sub-account that is a
+ * control account through its parent also keeps its parent. A non-control account cannot be
+ * re-coded into a control code or flagged as an input / output VAT account; create the account
+ * instead. 422 CONTROL_ACCOUNT_LOCKED / CONTROL_ACCOUNT_ROLE_RESERVED.
+ */
+async function assertAccountRoleUnchanged(
+  account: Account,
+  body: UpdateAccountBody
+): Promise<void> {
+  const changed = ROLE_FIELDS.filter(
+    (f) =>
+      body[f] !== undefined &&
+      roleValue(body[f]) !== roleValue((account as Record<RoleField, unknown>)[f])
+  );
+  if (!changed.length) return;
+  const [hit] = await controlAccountsAmong(account.companyId, [account.id]);
+  const ownControl =
+    !!CONTROL_ACCOUNT_CODES[account.code] ||
+    (account.isVatAccount === true && ["input", "output"].includes(account.vatType ?? ""));
+  const locked = changed.filter((f) =>
+    // A control account by its own code or VAT flag stays one under any parent (grouping it under
+    // a header is fine); a sub-account (or product stock account) may be one through its parent.
+    f === "parentId"
+      ? !!hit && !ownControl
+      : account.isSystemAccount || account.isVatAccount === true || !!hit
+  );
+  if (locked.length) {
+    const what = locked.map((f) => ROLE_FIELD_TEXT[f]).join(", ");
+    throw new DomainError(
+      "CONTROL_ACCOUNT_LOCKED",
+      422,
+      {
+        lockedFields: locked,
+        ledger: hit?.ledger ?? null,
+        fields: Object.fromEntries(locked.map((f) => [f, ["Locked on this account"]])),
+      },
+      `${account.code} ${account.nameEn} is a ${account.isSystemAccount ? "system" : "control"} ` +
+        `account: its ${what} cannot change. Create a new account instead.`
+    );
+  }
+  const nextCode = body.code ?? account.code;
+  const nextVat =
+    (body.isVatAccount ?? account.isVatAccount) === true &&
+    ["input", "output"].includes(String(roleValue(body.vatType) ?? account.vatType ?? ""));
+  if ((nextCode !== account.code && CONTROL_ACCOUNT_CODES[nextCode]) || nextVat) {
+    throw new DomainError(
+      "CONTROL_ACCOUNT_ROLE_RESERVED",
+      422,
+      {
+        fields: nextVat
+          ? { isVatAccount: ["Reserved for VAT control accounts"] }
+          : { code: [`${nextCode} is reserved for a control account`] },
+      },
+      nextVat
+        ? "An existing account cannot become an input or output VAT account. Create a new VAT account instead."
+        : `Code ${nextCode} is reserved for the ${CONTROL_ACCOUNT_CODES[nextCode]} control account.`
+    );
+  }
+}
+
+/** WQ3 (9.3): an account code is unique per company; 409 names the field for the drawer. */
+async function assertCodeFree(companyId: string, code: string, selfId?: string): Promise<void> {
+  const { rows } = await pool.query(
+    `SELECT id, name_en FROM accounts WHERE company_id = $1 AND lower(code) = lower($2) LIMIT 1`,
+    [companyId, code]
+  );
+  const hit = rows[0] as { id: string; name_en: string } | undefined;
+  if (hit && hit.id !== selfId) {
+    throw new DomainError(
+      "ACCOUNT_CODE_TAKEN",
+      409,
+      { fields: { code: [`Code ${code} is already used by ${hit.name_en}`] }, accountId: hit.id },
+      `Code ${code} is already used by ${hit.name_en}`
+    );
+  }
+}
+
+/**
+ * WQ3 (9.3) / C1: the parent is an account the user chooses, so it may not be a control account
+ * (or a sub-account of one). A sub-account of A/R, A/P, VAT, inventory, GRNI or payroll would
+ * itself become a control account that only its sub-ledger may post to.
+ * 422 CONTROL_ACCOUNT_NOT_ALLOWED on the parentId field.
+ */
+async function assertParentNotControl(companyId: string, parentId: string): Promise<void> {
+  await assertChosenAccountsNotControl(companyId, [{ field: "parentId", accountId: parentId }]);
+}
+
+async function isManagedBankGlAccount(companyId: string, accountId: string): Promise<boolean> {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM bank_accounts WHERE company_id = $1 AND gl_account_id = $2 LIMIT 1`,
+    [companyId, accountId]
+  );
+  return rows.length > 0;
+}
+
+/**
+ * A parent must be in the same company, of the same account type, and must not be the account
+ * itself or one of its descendants (cycle check walks up from the candidate parent).
+ */
+async function assertValidParent(
+  companyId: string,
+  type: string,
+  parentId: string,
+  selfId?: string
+): Promise<void> {
+  if (selfId && parentId === selfId) {
+    throw new DomainError(
+      "ACCOUNT_PARENT_CYCLE",
+      400,
+      undefined,
+      "An account cannot be its own parent"
+    );
+  }
+  const all = await storage.getAccountsByCompanyId(companyId);
+  const byId = new Map(all.map((a) => [a.id, a]));
+  const parent = byId.get(parentId);
+  if (!parent)
+    throw new DomainError("ACCOUNT_PARENT_NOT_FOUND", 404, undefined, "Parent account not found");
+  if (parent.type !== type) {
+    throw new DomainError(
+      "ACCOUNT_PARENT_TYPE_MISMATCH",
+      400,
+      undefined,
+      "A parent account must have the same account type"
+    );
+  }
+  // X6a: a cash/bank account with sub-accounts becomes a header the ledger never posts to. The
+  // GL account behind a managed bank account must stay postable (statement matching, payments
+  // and transfers post to it), so it cannot become a parent.
+  if (await isManagedBankGlAccount(companyId, parent.id)) {
+    throw new DomainError(
+      "ACCOUNT_PARENT_POSTING",
+      400,
+      { parentId: parent.id, code: parent.code },
+      "This account is linked to a bank account and receives its postings, so it cannot have sub-accounts. Choose its parent bank account instead."
+    );
+  }
+  const seen = new Set<string>();
+  let cursor: Account | undefined = parent;
+  while (cursor) {
+    if (selfId && cursor.id === selfId) {
+      throw new DomainError(
+        "ACCOUNT_PARENT_CYCLE",
+        400,
+        undefined,
+        "Account hierarchy cannot contain a cycle"
+      );
+    }
+    if (seen.has(cursor.id)) break;
+    seen.add(cursor.id);
+    cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined;
+  }
+}
 
 // Walk the user's companies and return the first match. Storage queries are
 // already tenant-scoped, so this also enforces the access check — if no
@@ -18,6 +212,24 @@ async function findAccountForUser(userId: string, accountId: string): Promise<Ac
 }
 
 export function registerAccountRoutes(app: Express) {
+  // WQ3 (9.13): Settings > Tax rates (read-only): each VAT treatment, its rate and the VAT 201
+  // boxes it feeds, read from the VAT engine's own box functions (server/tax/vat-box-map.ts).
+  app.get(
+    "/api/companies/:companyId/tax-rates",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      if (!(await storage.hasCompanyAccess(req.user!.id, companyId))) {
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
+      }
+      const company = await storage.getCompany(companyId);
+      if (!company)
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
+      res.json(vatBoxMap(company));
+    })
+  );
+
   // =====================================
   // Account Routes
   // =====================================
@@ -29,12 +241,12 @@ export function registerAccountRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       // Verify company access
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const accounts = await storage.getAccountsByCompanyId(companyId);
@@ -47,19 +259,39 @@ export function registerAccountRoutes(app: Express) {
     "/api/companies/:companyId/accounts",
     authMiddleware,
     requireCustomer,
+    strictBody(createAccountBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       // Verify company access
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
-      const validated = insertAccountSchema.parse({ ...req.body, companyId });
+      const body = parsedBody<CreateAccountBody>(req);
+      await assertCodeFree(companyId, body.code);
+      if (CONTROL_ACCOUNT_CODES[body.code]) {
+        throw new DomainError(
+          "CONTROL_ACCOUNT_ROLE_RESERVED",
+          422,
+          { fields: { code: [`${body.code} is reserved for a control account`] } },
+          `Code ${body.code} is reserved for the ${CONTROL_ACCOUNT_CODES[body.code]} control account.`
+        );
+      }
+      if (body.parentId) {
+        await assertValidParent(companyId, body.type, body.parentId);
+        await assertParentNotControl(companyId, body.parentId);
+      }
 
-      const account = await storage.createAccount(validated);
+      const account = await storage.createAccount({
+        ...body,
+        subType: body.subType ?? null,
+        parentId: body.parentId ?? null,
+        companyId,
+        isSystemAccount: false,
+      });
 
       await recordAudit({
         userId,
@@ -72,7 +304,7 @@ export function registerAccountRoutes(app: Express) {
         req,
       });
 
-      res.json(account);
+      res.status(201).json(account);
     })
   );
 
@@ -81,34 +313,63 @@ export function registerAccountRoutes(app: Express) {
     "/api/accounts/:id",
     authMiddleware,
     requireCustomer,
+    strictBody(updateAccountBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
+      const body = parsedBody<UpdateAccountBody>(req);
 
       // Find which of the user's companies owns this account.
       const account = await findAccountForUser(userId, id);
       if (!account) {
-        return res.status(404).json({ message: "Account not found" });
+        return res.status(404).json({ message: "Account not found", code: "ACCOUNT_NOT_FOUND" });
       }
+
+      // System and control accounts are wired into posting logic and the sub-ledger ties: their
+      // identity cannot change (D2, N8; A2 H8).
+      await assertAccountRoleUnchanged(account, body);
 
       // Block account type changes once the account has any journal lines.
       // Switching e.g. an asset to an income account would silently invert all
       // historical balances on every report.
-      if (req.body?.type !== undefined && req.body.type !== account.type) {
+      if (body.type !== undefined && body.type !== account.type) {
         const hasTransactions = await storage.accountHasTransactions(id);
         if (hasTransactions) {
           return res.status(422).json({
             message: "Cannot change account type — account has existing transactions.",
+            code: "ACCOUNT_TYPE_LOCKED",
           });
         }
       }
 
-      const updatedAccount = await storage.updateAccount(id, account.companyId, req.body);
+      const nextType = body.type ?? account.type;
+      const nextSubType = body.subType === undefined ? account.subType : body.subType;
+      if (nextSubType && !isSubTypeForType(nextType, nextSubType)) {
+        throw new DomainError(
+          "ACCOUNT_SUB_TYPE_MISMATCH",
+          400,
+          { subType: nextSubType, type: nextType },
+          `Sub type "${nextSubType}" is not valid for a ${nextType} account`
+        );
+      }
+      if (body.code !== undefined && body.code !== account.code) {
+        await assertCodeFree(account.companyId, body.code, id);
+      }
+      if (body.parentId) await assertValidParent(account.companyId, nextType, body.parentId, id);
+      // WQ3 / C1: moving an account under a control account is refused (unchanged parent is fine).
+      if (body.parentId && body.parentId !== account.parentId) {
+        await assertParentNotControl(account.companyId, body.parentId);
+      }
+
+      const updatedAccount = await storage.updateAccount(id, account.companyId, {
+        ...body,
+        updatedAt: new Date(),
+      });
 
       // Account-type changes are especially sensitive — they re-classify how
       // every existing balance rolls into the trial balance / financial
       // statements — so log them with extra emphasis.
-      const typeChanged = req.body.type && req.body.type !== account.type;
+      const typeChanged = body.type && body.type !== account.type;
       await recordAudit({
         userId,
         companyId: account.companyId,
@@ -133,13 +394,14 @@ export function registerAccountRoutes(app: Express) {
     "/api/accounts/:id/archive",
     authMiddleware,
     requireCustomer,
+    strictBody(archiveAccountBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const account = await findAccountForUser(userId, id);
       if (!account) {
-        return res.status(404).json({ message: "Account not found" });
+        return res.status(404).json({ message: "Account not found", code: "ACCOUNT_NOT_FOUND" });
       }
 
       // System accounts cannot be archived (pre-check for better error message)
@@ -147,18 +409,31 @@ export function registerAccountRoutes(app: Express) {
         return res.status(409).json({
           message:
             "System accounts cannot be archived. These are essential for proper bookkeeping.",
+          code: "SYSTEM_ACCOUNT_LOCKED",
         });
       }
 
       try {
-        const archivedAccount = await storage.archiveAccount(id);
+        const archivedAccount = await storage.archiveAccountForCompany(id, account.companyId);
+        await recordAudit({
+          userId,
+          companyId: account.companyId,
+          action: "account.archive",
+          entityType: "account",
+          entityId: id,
+          before: { code: account.code, isArchived: false, isActive: account.isActive },
+          after: { code: account.code, isArchived: true, isActive: false },
+          req,
+          extra: { reason: (req.body as { reason?: string | null }).reason ?? null },
+        });
         res.json(archivedAccount);
-      } catch (archiveError: any) {
+      } catch (archiveError: unknown) {
         // Handle race condition where account was marked as system between read and update
-        if (archiveError.message.includes("system account")) {
+        if ((errorMessage(archiveError) ?? "").includes("system account")) {
           return res.status(409).json({
             message:
               "System accounts cannot be archived. These are essential for proper bookkeeping.",
+            code: "SYSTEM_ACCOUNT_LOCKED",
           });
         }
         throw archiveError;
@@ -171,18 +446,30 @@ export function registerAccountRoutes(app: Express) {
     "/api/accounts/:id/unarchive",
     authMiddleware,
     requireCustomer,
+    strictBody(archiveAccountBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const account = await findAccountForUser(userId, id);
       if (!account) {
-        return res.status(404).json({ message: "Account not found" });
+        return res.status(404).json({ message: "Account not found", code: "ACCOUNT_NOT_FOUND" });
       }
 
       const unarchivedAccount = await storage.updateAccount(id, account.companyId, {
         isArchived: false,
         isActive: true,
+        updatedAt: new Date(),
+      });
+      await recordAudit({
+        userId,
+        companyId: account.companyId,
+        action: "account.unarchive",
+        entityType: "account",
+        entityId: id,
+        before: { code: account.code, isArchived: account.isArchived },
+        after: { code: account.code, isArchived: false, isActive: true },
+        req,
       });
       res.json(unarchivedAccount);
     })
@@ -195,17 +482,18 @@ export function registerAccountRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const account = await findAccountForUser(userId, id);
       if (!account) {
-        return res.status(404).json({ message: "Account not found" });
+        return res.status(404).json({ message: "Account not found", code: "ACCOUNT_NOT_FOUND" });
       }
 
       // System accounts cannot be deleted
       if (account.isSystemAccount) {
         return res.status(400).json({
           message: "System accounts cannot be deleted. You can archive them instead if needed.",
+          code: "SYSTEM_ACCOUNT_LOCKED",
         });
       }
 
@@ -215,10 +503,31 @@ export function registerAccountRoutes(app: Express) {
         return res.status(400).json({
           message:
             "Cannot delete account with existing transactions. Please archive the account instead, or remove all journal entries first.",
+          code: "ACCOUNT_HAS_TRANSACTIONS",
         });
       }
 
+      const siblings = await storage.getAccountsByCompanyId(account.companyId);
+      if (siblings.some((a) => a.parentId === id)) {
+        throw new DomainError(
+          "ACCOUNT_HAS_CHILDREN",
+          409,
+          undefined,
+          "Cannot delete an account that has child accounts. Move or delete them first."
+        );
+      }
+
       await storage.deleteAccount(id, account.companyId);
+      await recordAudit({
+        userId,
+        companyId: account.companyId,
+        action: "account.delete",
+        entityType: "account",
+        entityId: id,
+        before: { code: account.code, type: account.type, nameEn: account.nameEn },
+        after: null,
+        req,
+      });
       res.json({ message: "Account deleted successfully" });
     })
   );
@@ -231,11 +540,11 @@ export function registerAccountRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const { dateStart, dateEnd } = req.query;
@@ -261,11 +570,11 @@ export function registerAccountRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const account = await findAccountForUser(userId, id);
       if (!account) {
-        return res.status(404).json({ message: "Account not found" });
+        return res.status(404).json({ message: "Account not found", code: "ACCOUNT_NOT_FOUND" });
       }
 
       const { dateStart, dateEnd, search, limit, offset } = req.query;

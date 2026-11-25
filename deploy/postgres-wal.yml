@@ -1,0 +1,19 @@
+# Optional compose override: continuous WAL archiving (point-in-time recovery, RPO of minutes instead of 24 h).
+# Use: docker compose -f docker-compose.prod.yml -f deploy/postgres-wal.yml --env-file .env.prod up -d
+# Archived segments land in ${DATA_DIR}/wal-archive (owned by the postgres user, uid 999); ship that directory to
+# the UAE off-site target every few minutes (docs/release/SELF-HOSTING.md section 8). The archive holds customer
+# data: encrypt it in transit and at rest and keep it in the UAE.
+services:
+  db:
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_timeout=300
+      - -c
+      - archive_command=test ! -f /wal-archive/%f && cp %p /wal-archive/%f
+    volumes:
+      - ${DATA_DIR:-/srv/muhasib}/wal-archive:/wal-archive

@@ -1,6 +1,9 @@
 import { and, count, desc, eq, gte, inArray, lt, lte, max, ne, sql, sum } from "drizzle-orm";
 
+import { isVatFilingRecorded } from "../../shared/vat-filing-status";
+import { activeVatReturnFilter, vatFilingOutstandingFilter } from "../tax/vat-filing-filter";
 import { db } from "../db";
+import { aed, ledgerBalanceCheckByCompany } from "../reporting";
 import {
   anomalyAlerts,
   bankTransactions,
@@ -12,13 +15,12 @@ import {
   documents,
   engagements,
   invoices,
-  journalEntries,
-  journalLines,
   receipts,
   serviceInvoices,
   taxReturnArchive,
   vatReturns,
 } from "../../shared/schema";
+import { describeAnomalyText, type CopyDescriptor } from "../../shared/server-copy";
 
 type Priority = "critical" | "high" | "medium" | "low";
 type ValueLane =
@@ -67,6 +69,7 @@ export interface ValueOpsClient {
   };
   status: {
     latestVatStatus: string | null;
+    vatFilingRecorded: boolean;
     vatDueDate: Date | null;
     daysToVatDue: number | null;
     lastBankActivity: Date | null;
@@ -212,6 +215,9 @@ export interface FirmReviewItem {
   title: string;
   explanation: string;
   suggestedAction: string;
+  /** Anomaly items: the check that raised it and its sentence as key + params (client catalogs). */
+  rule?: string | null;
+  message?: CopyDescriptor | null;
   confidence: number;
   amountAed: number;
   dueDate: Date | null;
@@ -305,8 +311,7 @@ function briefPriority(client: ValueOpsClient): Priority {
   if (
     client.status.daysToVatDue !== null &&
     client.status.daysToVatDue < 0 &&
-    client.status.latestVatStatus !== "filed" &&
-    client.status.latestVatStatus !== "submitted"
+    !client.status.vatFilingRecorded
   ) {
     return "critical";
   }
@@ -365,7 +370,7 @@ function clientWhyNow(client: ValueOpsClient): string {
     signals.push(`${client.workload.reviewerQueueItems} review items`);
   if (client.workload.missingDocuments > 0)
     signals.push(`${client.workload.missingDocuments} missing documents`);
-  if (!client.status.hasBankFeedData) signals.push("no bank feed evidence");
+  if (!client.status.hasBankFeedData) signals.push("no bank statement evidence");
   return signals.slice(0, 4).join(" · ") || "ready for proactive advisory touchpoint";
 }
 
@@ -525,7 +530,8 @@ export async function buildFirmValueOps(
     .select({
       companyId: documentRequirements.companyId,
       missing: sql<string>`count(*) filter (where ${documentRequirements.status} in ('pending', 'requested', 'overdue'))`,
-      overdue: sql<string>`count(*) filter (where ${documentRequirements.status} = 'overdue' or ${documentRequirements.dueDate} < ${now})`,
+      // Received/waived requirements are closed even when their due date passed.
+      overdue: sql<string>`count(*) filter (where ${documentRequirements.status} = 'overdue' or (${documentRequirements.dueDate} < ${now} and ${documentRequirements.status} in ('pending', 'requested')))`,
     })
     .from(documentRequirements)
     .where(inArray(documentRequirements.companyId, companyIds))
@@ -563,7 +569,7 @@ export async function buildFirmValueOps(
     .select({
       companyId: complianceTasks.companyId,
       openTasks: sql<string>`count(*) filter (where ${complianceTasks.status} in ('pending', 'in_progress', 'overdue'))`,
-      overdueTasks: sql<string>`count(*) filter (where ${complianceTasks.status} = 'overdue' or ${complianceTasks.dueDate} < ${now})`,
+      overdueTasks: sql<string>`count(*) filter (where ${complianceTasks.status} = 'overdue' or (${complianceTasks.dueDate} < ${now} and coalesce(${complianceTasks.status}, 'pending') in ('pending', 'in_progress')))`,
     })
     .from(complianceTasks)
     .where(inArray(complianceTasks.companyId, companyIds))
@@ -579,7 +585,8 @@ export async function buildFirmValueOps(
     .select({
       companyId: complianceCalendar.companyId,
       upcoming: sql<string>`count(*) filter (where ${complianceCalendar.status} = 'upcoming' and ${complianceCalendar.eventDate} <= ${new Date(now.getTime() + 30 * 86_400_000)})`,
-      overdue: sql<string>`count(*) filter (where ${complianceCalendar.status} = 'overdue' or ${complianceCalendar.eventDate} < ${now})`,
+      // W4-A carry-over: completed / dismissed obligations are never overdue.
+      overdue: sql<string>`count(*) filter (where ${complianceCalendar.status} = 'overdue' or (${complianceCalendar.eventDate} < ${now} and ${complianceCalendar.status} = 'upcoming'))`,
     })
     .from(complianceCalendar)
     .where(inArray(complianceCalendar.companyId, companyIds))
@@ -592,7 +599,7 @@ export async function buildFirmValueOps(
       maxPeriodEnd: max(vatReturns.periodEnd).as("max_period_end"),
     })
     .from(vatReturns)
-    .where(inArray(vatReturns.companyId, companyIds))
+    .where(and(inArray(vatReturns.companyId, companyIds), activeVatReturnFilter))
     .groupBy(vatReturns.companyId)
     .as("latest_value_ops_vat");
 
@@ -600,6 +607,7 @@ export async function buildFirmValueOps(
     companyId: string;
     id: string;
     status: string;
+    ftaReferenceNumber: string | null;
     dueDate: Date;
     periodStart: Date;
     periodEnd: Date;
@@ -610,6 +618,7 @@ export async function buildFirmValueOps(
       companyId: vatReturns.companyId,
       id: vatReturns.id,
       status: vatReturns.status,
+      ftaReferenceNumber: vatReturns.ftaReferenceNumber,
       dueDate: vatReturns.dueDate,
       periodStart: vatReturns.periodStart,
       periodEnd: vatReturns.periodEnd,
@@ -620,7 +629,8 @@ export async function buildFirmValueOps(
       latestVatSub,
       and(
         eq(vatReturns.companyId, latestVatSub.companyId),
-        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd)
+        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd),
+        activeVatReturnFilter
       )
     )) as VatRow[];
   const vatMap = new Map(vatRows.map((r) => [r.companyId, r]));
@@ -651,24 +661,7 @@ export async function buildFirmValueOps(
     .groupBy(anomalyAlerts.companyId)) as AnomalyAggRow[];
   const anomalyMap = new Map(anomalyRows.map((r) => [r.companyId, r]));
 
-  type TrialBalanceRow = {
-    companyId: string;
-    debit: string | null;
-    credit: string | null;
-    lastJournalAt: Date | null;
-  };
-  const trialRows = (await db
-    .select({
-      companyId: journalEntries.companyId,
-      debit: sum(journalLines.debit),
-      credit: sum(journalLines.credit),
-      lastJournalAt: sql<Date | null>`max(coalesce(${journalEntries.updatedAt}, ${journalEntries.postedAt}, ${journalEntries.createdAt}))`,
-    })
-    .from(journalEntries)
-    .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
-    .where(and(inArray(journalEntries.companyId, companyIds), eq(journalEntries.status, "posted")))
-    .groupBy(journalEntries.companyId)) as TrialBalanceRow[];
-  const trialMap = new Map(trialRows.map((r) => [r.companyId, r]));
+  const trialMap = await ledgerBalanceCheckByCompany(companyIds);
 
   type EngagementRow = { companyId: string; monthlyFee: number | null };
   const engagementRows = (await db
@@ -734,12 +727,11 @@ export async function buildFirmValueOps(
     const anomalyCount = asNumber(anomaly?.open);
     const criticalAnomalies = asNumber(anomaly?.critical);
     const overdueTasks = asNumber(comp?.overdueTasks) + asNumber(cal?.overdue);
-    const upcomingCompliance = asNumber(cal?.upcoming);
     const daysToVatDue = daysUntil(vat?.dueDate, now);
-    const vatOpen = vat ? vat.status !== "filed" && vat.status !== "submitted" : true;
+    const vatOpen = !isVatFilingRecorded(vat?.status ?? "", vat?.ftaReferenceNumber);
     const vatOverdue = vatOpen && daysToVatDue !== null && daysToVatDue < 0;
     const vatDueSoon = vatOpen && daysToVatDue !== null && daysToVatDue <= 14;
-    const trialDiscrepancy = Math.abs(asNumber(trial?.debit) - asNumber(trial?.credit));
+    const trialDiscrepancy = aed(trial?.differenceFils ?? 0);
     const lastClientActivity = latestDate(
       invoice?.lastInvoiceAt,
       receipt?.lastReceiptAt,
@@ -842,6 +834,7 @@ export async function buildFirmValueOps(
       },
       status: {
         latestVatStatus: vat?.status ?? null,
+        vatFilingRecorded: !vatOpen,
         vatDueDate: vat?.dueDate ?? null,
         daysToVatDue,
         lastBankActivity: bank?.lastBankAt ?? null,
@@ -991,7 +984,7 @@ export async function buildFirmValueOps(
     },
     {
       lane: "bank_close",
-      title: "Bank-feed close autopilot",
+      title: "Month-end bank reconciliation",
       valueMetric: `${clients.filter((c) => c.scores.closeReadiness >= 80).length} close-ready`,
       count: clients.filter((c) => c.scores.closeReadiness < 80).length,
       impactAed: 0,
@@ -1460,6 +1453,7 @@ export async function buildClientCfoPack(
         payableTax: vatReturns.box14PayableTax,
         dueDate: vatReturns.dueDate,
         status: vatReturns.status,
+        ftaReferenceNumber: vatReturns.ftaReferenceNumber,
       })
       .from(vatReturns)
       .where(eq(vatReturns.companyId, companyId))
@@ -1487,7 +1481,7 @@ export async function buildClientCfoPack(
     ...(overdueAr > 0
       ? [`Prioritize collections on AED ${overdueAr.toLocaleString("en-AE")} overdue AR.`]
       : []),
-    ...(vatRow[0] && vatRow[0].status !== "filed" && vatRow[0].status !== "submitted"
+    ...(vatRow[0] && !isVatFilingRecorded(vatRow[0].status, vatRow[0].ftaReferenceNumber)
       ? [`Review VAT return due ${vatRow[0].dueDate.toISOString().slice(0, 10)}.`]
       : []),
     ...(revenue === 0 && expenses === 0
@@ -1591,6 +1585,7 @@ export async function buildFirmReviewQueue(
     severity: string;
     title: string;
     description: string;
+    rule: string | null;
     relatedEntityType: string | null;
     relatedEntityId: string | null;
     aiConfidence: number | null;
@@ -1603,6 +1598,7 @@ export async function buildFirmReviewQueue(
       severity: anomalyAlerts.severity,
       title: anomalyAlerts.title,
       description: anomalyAlerts.description,
+      rule: anomalyAlerts.rule,
       relatedEntityType: anomalyAlerts.relatedEntityType,
       relatedEntityId: anomalyAlerts.relatedEntityId,
       aiConfidence: anomalyAlerts.aiConfidence,
@@ -1636,8 +1632,7 @@ export async function buildFirmReviewQueue(
     .where(
       and(
         inArray(vatReturns.companyId, companyIds),
-        ne(vatReturns.status, "filed"),
-        ne(vatReturns.status, "submitted"),
+        vatFilingOutstandingFilter,
         lte(vatReturns.dueDate, dueSoon)
       )
     )
@@ -1672,23 +1667,7 @@ export async function buildFirmReviewQueue(
     .orderBy(documentRequirements.dueDate)
     .limit(80)) as DocumentReviewRow[];
 
-  type TrialReviewRow = {
-    companyId: string;
-    debit: string | null;
-    credit: string | null;
-    lastJournalAt: Date | null;
-  };
-  const trialRows = (await db
-    .select({
-      companyId: journalEntries.companyId,
-      debit: sum(journalLines.debit),
-      credit: sum(journalLines.credit),
-      lastJournalAt: sql<Date | null>`max(coalesce(${journalEntries.updatedAt}, ${journalEntries.postedAt}, ${journalEntries.createdAt}))`,
-    })
-    .from(journalEntries)
-    .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
-    .where(and(inArray(journalEntries.companyId, companyIds), eq(journalEntries.status, "posted")))
-    .groupBy(journalEntries.companyId)) as TrialReviewRow[];
+  const trialRows = [...(await ledgerBalanceCheckByCompany(companyIds)).values()];
 
   const items: FirmReviewItem[] = [];
 
@@ -1754,6 +1733,8 @@ export async function buildFirmReviewQueue(
       entityType: row.relatedEntityType ?? "anomaly",
       title: row.title,
       explanation: row.description,
+      rule: row.rule ?? null,
+      message: describeAnomalyText(row.description),
       suggestedAction: "Review the source transaction and resolve or document the exception.",
       confidence: row.aiConfidence ?? 0.55,
       amountAed: 0,
@@ -1808,8 +1789,7 @@ export async function buildFirmReviewQueue(
   }
 
   for (const row of trialRows) {
-    const discrepancy =
-      Math.round(Math.abs(asNumber(row.debit) - asNumber(row.credit)) * 100) / 100;
+    const discrepancy = aed(row.differenceFils);
     if (discrepancy <= 0.01) continue;
     items.push({
       id: `trial:${row.companyId}`,

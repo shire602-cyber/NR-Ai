@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 export interface ShortcutBinding {
   /** A combo string: lowercase keys joined with '+'. Modifiers: mod (Ctrl/Cmd), shift, alt. */
@@ -40,7 +40,9 @@ function eventCombo(e: KeyboardEvent): string {
 export function useKeyboardShortcuts(bindings: ShortcutBinding[]) {
   // Store the latest bindings in a ref so we don't re-bind on every render.
   const bindingsRef = useRef(bindings);
-  bindingsRef.current = bindings;
+  useLayoutEffect(() => {
+    bindingsRef.current = bindings;
+  });
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

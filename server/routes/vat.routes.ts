@@ -3,9 +3,15 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { UAE_VAT_RATE } from "../constants";
-import { pool } from "../db";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { getCompanyRole, requirePermission } from "../middleware/companyRolePolicy";
+import { roleHasAnyPermission, type Permission } from "../../shared/permissions";
+import { isNraFirmRole } from "../../shared/access";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { DomainError } from "../errors";
+import { assertReportAccess, deprecate } from "../reporting/http";
+import { readRange } from "../reporting";
+import { recordAudit } from "../services/audit.service";
 import {
   addVatWorkpaperRow,
   addVatWorkpaperRowsBulk,
@@ -19,69 +25,104 @@ import {
   pullVatWorkpaperRowsFromBooks,
   recalculateVatWorkpaper,
   updateVatWorkpaperRow,
-  VAT_WORKPAPER_CATEGORIES,
+  updateVatWorkpaperStatus,
 } from "../services/firm-vat-workspace.service";
 import {
   buildVatWorkpaperWorkbook,
   vatWorkpaperExportFilename,
 } from "../services/vat-workpaper-export.service";
+import {
+  amendVatReturnBody,
+  badDebtReliefClaimBody,
+  badDebtReliefReverseBody,
+  createCompanyVatWorkpaperBody,
+  generateVatReturnBody,
+  markVatReturnReadyBody,
+  patchVatReturnBody,
+  reverseVatReturnSettlementBody,
+  settleVatReturnBody,
+  submitVatReturnBody,
+  vatGroupBody,
+  vatRecoveryRuleBody,
+  vatReturnAdjustmentBody,
+  vatWorkpaperBulkRowsBody,
+  vatWorkpaperBulkStatusBody,
+  vatWorkpaperRowBody,
+  vatWorkpaperRowPatchBody,
+  vatWorkpaperStatusBody,
+} from "../../shared/validators/vat";
+import { computeVat201 } from "../tax/vat-engine";
+import { vatBox1Total } from "../tax/vat-boxes";
+import {
+  getVatReturnSettlement,
+  reverseVatReturnSettlement,
+  settleVatReturn,
+} from "../tax/vat-settlement.service";
+import {
+  amendVatReturn,
+  generateVatReturn,
+  markVatReturnReady,
+  submitVatReturn,
+} from "../tax/vat-returns.service";
+import {
+  addReturnAdjustment,
+  createBadDebtReliefClaim,
+  deleteReturnAdjustment,
+  installBadDebtPaymentHook,
+  listBadDebtReliefClaims,
+  listReturnAdjustments,
+  reverseBadDebtReliefClaim,
+  upsertVatGroup,
+} from "../tax/vat-adjustments.service";
+import {
+  DEFAULT_RECOVERY_RULES,
+  deleteRecoveryRule,
+  loadRecoveryRules,
+  upsertRecoveryRule,
+} from "../tax/vat-recovery";
+import { parseIsoDate } from "../tax/vat-periods";
+import { sendTabular } from "../reporting/http";
+import {
+  prepareVat201ForExport,
+  prepareVat201PortalSheet,
+  vat201ExportFilename,
+  vat201PortalCsv,
+  type Vat201ExportReturn,
+} from "../../client/src/lib/vat201-export";
+
+type Body<T extends z.ZodTypeAny> = z.output<T>;
 
 const companyScopedWorkpaperParams = z.object({
-  companyId: z.string().uuid(),
-  workpaperId: z.string().uuid(),
+  companyId: z.string().guid(),
+  workpaperId: z.string().guid(),
 });
 
 const companyScopedWorkpaperRowParams = companyScopedWorkpaperParams.extend({
-  rowId: z.string().uuid(),
+  rowId: z.string().guid(),
 });
 
-const vatWorkpaperRowSchema = z.object({
-  rowCategory: z.enum(VAT_WORKPAPER_CATEGORIES),
-  vat201Box: z.string().trim().optional().nullable(),
-  invoiceNumber: z.string().trim().max(120).optional().nullable(),
-  documentDate: z.string().optional().nullable(),
-  counterpartyName: z.string().trim().max(255).optional().nullable(),
-  counterpartyTrn: z.string().trim().max(32).optional().nullable(),
-  emirate: z.string().trim().max(80).optional().nullable(),
-  taxableAmount: z.coerce.number().optional().nullable(),
-  vatAmount: z.coerce.number().optional().nullable(),
-  adjustmentAmount: z.coerce.number().optional().nullable(),
-  grossAmount: z.coerce.number().optional().nullable(),
-  status: z.enum(["draft", "approved", "excluded"]).optional(),
-  sourceMethod: z.enum(["manual", "ocr", "import", "generated"]).optional(),
-  sourceDocumentType: z.string().trim().max(80).optional().nullable(),
-  sourceDocumentId: z.string().uuid().optional().nullable(),
-  notes: z.string().trim().max(4000).optional().nullable(),
-  auditReason: z.string().trim().max(2000).optional().nullable(),
-});
+const uuid = z.string().guid();
 
-const partialVatWorkpaperRowSchema = vatWorkpaperRowSchema.partial().extend({
-  rowCategory: z.enum(VAT_WORKPAPER_CATEGORIES).optional(),
-});
-
-const createCompanyWorkpaperSchema = z.object({
-  periodStart: z.string(),
-  periodEnd: z.string(),
-  dueDate: z.string().optional().nullable(),
-  notes: z.string().trim().max(4000).optional().nullable(),
-});
-
-const bulkVatWorkpaperRowsSchema = z.object({
-  rows: z.array(vatWorkpaperRowSchema).min(1).max(2000),
-});
+function userIdOf(req: Request): string | undefined {
+  return (req as Request & { user?: { id: string } }).user?.id;
+}
 
 async function requireCompanyAccess(req: Request, res: Response, companyId: string) {
-  const userId = (req as any).user?.id;
+  const userId = userIdOf(req);
   if (!userId) {
-    res.status(401).json({ message: "Unauthenticated" });
+    res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
+    return null;
+  }
+  if (!uuid.safeParse(companyId).success) {
+    res.status(400).json({ message: "Invalid company id", code: "INVALID_ID" });
     return null;
   }
   const hasAccess = await storage.hasCompanyAccess(userId, companyId);
   if (!hasAccess) {
-    res.status(403).json({ message: "Access denied" });
+    res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
     return null;
   }
-  return userId as string;
+  return userId;
 }
 
 async function requireCompanyWorkpaperAccess(
@@ -94,15 +135,68 @@ async function requireCompanyWorkpaperAccess(
   if (!userId) return null;
   const detail = await getVatWorkpaperDetail(workpaperId);
   if (detail.workpaper.companyId !== companyId) {
-    res.status(404).json({ message: "VAT workpaper not found" });
+    res.status(404).json({ message: "VAT workpaper not found", code: "VAT_WORKPAPER_NOT_FOUND" });
     return null;
   }
   return { userId, detail };
 }
 
+/** Load a VAT return by id and authorise the caller (404 for another tenant's row). */
+async function requireReturnAccess(req: Request, res: Response) {
+  const userId = userIdOf(req);
+  if (!userId) {
+    res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
+    return null;
+  }
+  if (!uuid.safeParse(req.params.id).success) {
+    res.status(400).json({ message: "Invalid VAT return id", code: "INVALID_ID" });
+    return null;
+  }
+  const existing = await storage.getVatReturn(req.params.id);
+  if (!existing || !(await storage.hasCompanyAccess(userId, existing.companyId))) {
+    res.status(404).json({ message: "VAT return not found", code: "VAT_RETURN_NOT_FOUND" });
+    return null;
+  }
+  return { userId, existing };
+}
+
+/** Belt-and-braces permission check for row-id routes (no :companyId in the URL). */
+async function assertCompanyPermission(req: Request, companyId: string, permission: Permission) {
+  const user = (
+    req as Request & { user?: { id: string; isAdmin?: boolean; firmRole?: string | null } }
+  ).user;
+  if (!user) throw new DomainError("AUTH_REQUIRED", 401);
+  if (user.isAdmin === true || isNraFirmRole(user.firmRole ?? null)) return;
+  const role = await getCompanyRole(user.id, companyId);
+  if (!role || !roleHasAnyPermission(role, [permission])) {
+    throw new DomainError("PERMISSION_DENIED", 403, { permission });
+  }
+}
+
+function readPeriod(q: Record<string, unknown>): { from: string; to: string } {
+  const from = q.from ?? q.startDate ?? q.periodStart;
+  const to = q.to ?? q.endDate ?? q.periodEnd;
+  return { from: parseIsoDate(from, "from"), to: parseIsoDate(to, "to") };
+}
+
+function iso(d: Date | string): string {
+  return new Date(d).toISOString().slice(0, 10);
+}
+
+function exportShape(r: Record<string, unknown>): Vat201ExportReturn {
+  return {
+    ...(r as unknown as Vat201ExportReturn),
+    periodStart: iso(r.periodStart as string),
+    periodEnd: iso(r.periodEnd as string),
+    dueDate: iso(r.dueDate as string),
+  };
+}
+
 export function registerVATRoutes(app: Express) {
+  installBadDebtPaymentHook();
+
   // =====================================
-  // VAT WORKPAPERS
+  // VAT WORKPAPERS (company-scoped)
   // =====================================
 
   app.get(
@@ -121,12 +215,13 @@ export function registerVATRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/vat-workpapers",
     authMiddleware,
+    strictBody(createCompanyVatWorkpaperBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = await requireCompanyAccess(req, res, companyId);
       if (!userId) return;
 
-      const parsed = createCompanyWorkpaperSchema.parse(req.body);
+      const parsed = parsedBody<Body<typeof createCompanyVatWorkpaperBody>>(req);
       const workpaper = await createVatWorkpaper({
         companyId,
         periodStart: parsed.periodStart,
@@ -144,7 +239,8 @@ export function registerVATRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const parsed = companyScopedWorkpaperParams.safeParse(req.params);
-      if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
+      if (!parsed.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -160,10 +256,11 @@ export function registerVATRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/vat-workpapers/:workpaperId/rows",
     authMiddleware,
+    strictBody(vatWorkpaperRowBody, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = companyScopedWorkpaperParams.safeParse(req.params);
       if (!parsedParams.success)
-        return res.status(400).json({ message: "Invalid VAT workpaper id" });
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -173,7 +270,7 @@ export function registerVATRoutes(app: Express) {
       );
       if (!result) return;
 
-      const row = vatWorkpaperRowSchema.parse(req.body);
+      const row = parsedBody<Body<typeof vatWorkpaperRowBody>>(req);
       const created = await addVatWorkpaperRow(parsedParams.data.workpaperId, result.userId, row);
       res.status(201).json(created);
     })
@@ -182,10 +279,11 @@ export function registerVATRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/vat-workpapers/:workpaperId/rows/bulk",
     authMiddleware,
+    strictBody(vatWorkpaperBulkRowsBody),
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = companyScopedWorkpaperParams.safeParse(req.params);
       if (!parsedParams.success)
-        return res.status(400).json({ message: "Invalid VAT workpaper id" });
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -195,7 +293,7 @@ export function registerVATRoutes(app: Express) {
       );
       if (!result) return;
 
-      const parsed = bulkVatWorkpaperRowsSchema.parse(req.body);
+      const parsed = parsedBody<Body<typeof vatWorkpaperBulkRowsBody>>(req);
       const created = await addVatWorkpaperRowsBulk(
         parsedParams.data.workpaperId,
         result.userId,
@@ -208,10 +306,13 @@ export function registerVATRoutes(app: Express) {
   app.patch(
     "/api/companies/:companyId/vat-workpapers/:workpaperId/rows/:rowId",
     authMiddleware,
+    strictBody(vatWorkpaperRowPatchBody, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = companyScopedWorkpaperRowParams.safeParse(req.params);
       if (!parsedParams.success)
-        return res.status(400).json({ message: "Invalid VAT workpaper row id" });
+        return res
+          .status(400)
+          .json({ message: "Invalid VAT workpaper row id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -221,7 +322,7 @@ export function registerVATRoutes(app: Express) {
       );
       if (!result) return;
 
-      const row = partialVatWorkpaperRowSchema.parse(req.body);
+      const row = parsedBody<Body<typeof vatWorkpaperRowPatchBody>>(req);
       const updated = await updateVatWorkpaperRow(
         parsedParams.data.workpaperId,
         parsedParams.data.rowId,
@@ -238,7 +339,9 @@ export function registerVATRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = companyScopedWorkpaperRowParams.safeParse(req.params);
       if (!parsedParams.success)
-        return res.status(400).json({ message: "Invalid VAT workpaper row id" });
+        return res
+          .status(400)
+          .json({ message: "Invalid VAT workpaper row id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -262,7 +365,9 @@ export function registerVATRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = companyScopedWorkpaperRowParams.safeParse(req.params);
       if (!parsedParams.success)
-        return res.status(400).json({ message: "Invalid VAT workpaper row id" });
+        return res
+          .status(400)
+          .json({ message: "Invalid VAT workpaper row id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -284,10 +389,11 @@ export function registerVATRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/vat-workpapers/:workpaperId/rows/bulk-status",
     authMiddleware,
+    strictBody(vatWorkpaperBulkStatusBody),
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = companyScopedWorkpaperParams.safeParse(req.params);
       if (!parsedParams.success)
-        return res.status(400).json({ message: "Invalid VAT workpaper id" });
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -297,12 +403,7 @@ export function registerVATRoutes(app: Express) {
       );
       if (!result) return;
 
-      const body = z
-        .object({
-          to: z.enum(["approved", "excluded"]),
-          rowIds: z.array(z.string().uuid()).max(2000).optional(),
-        })
-        .parse(req.body);
+      const body = parsedBody<Body<typeof vatWorkpaperBulkStatusBody>>(req);
       const updated = await bulkUpdateVatWorkpaperRowStatus(
         parsedParams.data.workpaperId,
         result.userId,
@@ -312,12 +413,41 @@ export function registerVATRoutes(app: Express) {
     })
   );
 
+  // R15-02: maker-checker status machine (draft -> prepared -> reviewed -> filed -> locked).
+  app.patch(
+    "/api/companies/:companyId/vat-workpapers/:workpaperId/status",
+    authMiddleware,
+    strictBody(vatWorkpaperStatusBody, { allowServerOwned: ["status"] }),
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsedParams = companyScopedWorkpaperParams.safeParse(req.params);
+      if (!parsedParams.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
+      const result = await requireCompanyWorkpaperAccess(
+        req,
+        res,
+        parsedParams.data.companyId,
+        parsedParams.data.workpaperId
+      );
+      if (!result) return;
+      const body = parsedBody<Body<typeof vatWorkpaperStatusBody>>(req);
+      const workpaper = await updateVatWorkpaperStatus(
+        parsedParams.data.workpaperId,
+        body.status,
+        result.userId,
+        { notes: body.notes, reason: body.reason },
+        req
+      );
+      res.json(workpaper);
+    })
+  );
+
   app.post(
     "/api/companies/:companyId/vat-workpapers/:workpaperId/pull-from-books",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const parsed = companyScopedWorkpaperParams.safeParse(req.params);
-      if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
+      if (!parsed.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -337,7 +467,8 @@ export function registerVATRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const parsed = companyScopedWorkpaperParams.safeParse(req.params);
-      if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
+      if (!parsed.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -357,7 +488,8 @@ export function registerVATRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const parsed = companyScopedWorkpaperParams.safeParse(req.params);
-      if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
+      if (!parsed.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -383,7 +515,8 @@ export function registerVATRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const parsed = companyScopedWorkpaperParams.safeParse(req.params);
-      if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
+      if (!parsed.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -414,501 +547,225 @@ export function registerVATRoutes(app: Express) {
   );
 
   // =====================================
+  // VAT ENGINE (R07-03): preview, reconciliation
+  // =====================================
+
+  // Preview of the VAT 201 for any range (reports-grade: blocking issues are returned, not
+  // thrown). Generation is stricter (aligned period, TRN, emirate per supply).
+  const vatPreview = asyncHandler(async (req: Request, res: Response) => {
+    const { companyId } = req.params;
+    if (!(await requireCompanyAccess(req, res, companyId))) return;
+    const { from, to } = readPeriod(req.query as Record<string, unknown>);
+    const c = await computeVat201({ companyId, from, to, allowIncomplete: true });
+    res.json({
+      engineVersion: c.engineVersion,
+      period: c.period,
+      boxes: c.boxes,
+      issues: c.issues,
+      complete: c.complete,
+      excluded: c.excluded,
+      counts: c.counts,
+      partialExemption: c.partialExemption,
+      reconciliation: c.reconciliation,
+      group: c.group,
+      contributions: req.query.detail === "true" ? c.contributions : undefined,
+    });
+  });
+  app.get("/api/companies/:companyId/vat/compute", authMiddleware, vatPreview);
+  app.get(
+    "/api/companies/:companyId/reports/vat-return",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      deprecate(res, `/api/companies/${companyId}/vat/compute`);
+      const q = req.query as Record<string, string | undefined>;
+      const fromQ = q.from ?? q.startDate ?? q.periodStart;
+      const toQ = q.to ?? q.endDate ?? q.periodEnd;
+      if (!fromQ || !toQ) {
+        return res.status(400).json({
+          message: "from and to date params are required (YYYY-MM-DD)",
+          code: "REPORT_RANGE_REQUIRED",
+        });
+      }
+      const range = readRange({ from: fromQ, to: toQ });
+      await assertReportAccess(req, companyId);
+      const c = await computeVat201({
+        companyId,
+        from: range.from!,
+        to: range.to,
+        allowIncomplete: true,
+      });
+      const b = c.boxes;
+      const standard = vatBox1Total(c.boxesFils, "Amount");
+      res.json({
+        period: { from: range.from, to: range.to },
+        engineVersion: c.engineVersion,
+        box1_standardRatedSupplies: standard,
+        box2_zeroRatedSupplies: b.box4ZeroRatedAmount,
+        box3_exemptSupplies: b.box5ExemptAmount,
+        box4_totalSupplies:
+          Math.round((standard + b.box4ZeroRatedAmount + b.box5ExemptAmount) * 100) / 100,
+        box5_outputVat: b.box12TotalDueTax,
+        box6_standardRatedExpenses: b.box9ExpensesAmount,
+        box7_inputVatRecoverable: b.box13RecoverableTax,
+        box8_netVatDue: b.box14PayableTax,
+        boxes: b,
+        issues: c.issues,
+        complete: c.complete,
+        excluded: { outOfScopeAmount: c.excluded.outOfScopeFils / 100 },
+        reconciliation: c.reconciliation,
+      });
+    })
+  );
+
+  // R12-08b: VAT return vs GL VAT control accounts, by source.
+  app.get(
+    "/api/companies/:companyId/vat/reconciliation",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      if (!(await requireCompanyAccess(req, res, companyId))) return;
+      const { from, to } = readPeriod(req.query as Record<string, unknown>);
+      const c = await computeVat201({ companyId, from, to, allowIncomplete: true });
+      res.json({ period: c.period, issues: c.issues, ...c.reconciliation });
+    })
+  );
+
+  // =====================================
   // VAT RETURNS
   // =====================================
 
-  // Get VAT returns by company
   app.get(
     "/api/companies/:companyId/vat-returns",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
       const { companyId } = req.params;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
+      if (!(await requireCompanyAccess(req, res, companyId))) return;
       const vatReturns = await storage.getVatReturnsByCompanyId(companyId);
       res.json(vatReturns);
     })
   );
 
-  // Generate VAT return (FTA VAT 201 format with emirate breakdown)
+  // Generate VAT return (FTA VAT 201) from the engine for one aligned tax period (R07-07).
   app.post(
     "/api/companies/:companyId/vat-returns/generate",
     authMiddleware,
+    strictBody(generateVatReturnBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
       const { companyId } = req.params;
-      const { periodStart, periodEnd } = req.body;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Validate the period before doing anything else. A UAE VAT period is a
-      // month or a quarter; absurd spans (e.g. 1900-01-01 → 2999-12-31) must be
-      // rejected rather than generating a nonsense return with a due date
-      // centuries away.
-      const startMs = Date.parse(periodStart);
-      const endMs = Date.parse(periodEnd);
-      if (!periodStart || !periodEnd || Number.isNaN(startMs) || Number.isNaN(endMs)) {
-        return res.status(422).json({
-          message: "periodStart and periodEnd are required and must be valid dates (YYYY-MM-DD).",
-          code: "INVALID_PERIOD",
-        });
-      }
-      if (startMs > endMs) {
-        return res.status(422).json({
-          message: "periodStart must be on or before periodEnd.",
-          code: "INVALID_PERIOD",
-        });
-      }
-      // A quarter is ~92 days; allow up to 366 to cover an annual filing, and
-      // reject anything longer as not a real FTA period.
-      const spanDays = (endMs - startMs) / 86_400_000;
-      if (spanDays > 366) {
-        return res.status(422).json({
-          message: `A VAT return period cannot exceed one year (got ${Math.round(spanDays)} days). Use a monthly or quarterly period.`,
-          code: "PERIOD_TOO_LONG",
-        });
-      }
-      // The period cannot end in the future — you cannot file a period that has
-      // not finished. Allow the current day for same-day quarter-end filing.
-      const endOfToday = new Date();
-      endOfToday.setUTCHours(23, 59, 59, 999);
-      if (endMs > endOfToday.getTime()) {
-        return res.status(422).json({
-          message: "A VAT return period cannot end in the future.",
-          code: "PERIOD_IN_FUTURE",
-        });
-      }
-
-      // Generating a VAT return for a period that is already closed would
-      // produce numbers that disagree with the locked-period books. Block it.
-      if (periodEnd) {
-        await assertPeriodNotLocked(companyId, periodEnd);
-      }
-
-      // Get company information for emirate and VAT registration
-      const company = await storage.getCompany(companyId);
-      if (!company) {
-        return res.status(404).json({ message: "Company not found" });
-      }
-
-      // Validate VAT registration
-      if (!company.trnVatNumber) {
-        return res.status(400).json({
-          message:
-            "Company must have a TRN/VAT number to generate VAT returns. Please update your company profile.",
-          code: "NO_TRN",
-        });
-      }
-
-      // H1 — never guess the emirate. Box 1a–1g attributes supplies to a
-      // specific emirate; defaulting to Dubai silently files a Sharjah (or Abu
-      // Dhabi, or RAK) company's entire turnover under the wrong box. If the
-      // company has not stated its emirate, refuse rather than guess.
-      if (!company.emirate) {
-        return res.status(422).json({
-          message:
-            "Set your company's emirate before generating a VAT return. Box 1 of the VAT 201 " +
-            "attributes supplies by emirate and must not be guessed.",
-          code: "EMIRATE_NOT_SET",
-        });
-      }
-      const companyEmirate = company.emirate;
-
-      // Calculate VAT from invoices and receipts
-      const invoices = await storage.getInvoicesByCompanyId(companyId);
-      const receipts = await storage.getReceiptsByCompanyId(companyId);
-
-      const startDate = new Date(periodStart);
-      // periodEnd is a calendar date — include the entire final day so
-      // invoices timestamped during it aren't dropped from the return.
-      const endDate = new Date(periodEnd);
-      if (typeof periodEnd === "string" && !periodEnd.includes("T")) {
-        endDate.setUTCHours(23, 59, 59, 999);
-      }
-
-      // Filter invoices for the period — drafts must be excluded too because
-      // they have not been issued and therefore create no VAT obligation.
-      const periodInvoices = invoices.filter((inv) => {
-        const invDate = new Date(inv.date);
-        return (
-          invDate >= startDate &&
-          invDate <= endDate &&
-          inv.status !== "void" &&
-          inv.status !== "draft" &&
-          inv.status !== "cancelled"
-        );
-      });
-
-      // Fetch all invoice lines for categorization by VAT supply type — single
-      // batched fetch instead of one per invoice.
-      let standardRatedAmount = 0;
-      let standardRatedVat = 0;
-      let zeroRatedAmount = 0;
-      let exemptAmount = 0;
-
-      const periodLines = await storage.getInvoiceLinesByInvoiceIds(
-        periodInvoices.map((i) => i.id)
-      );
-      // FTA reporting is AED — convert foreign-currency invoice lines at the
-      // invoice's stored transaction-date rate.
-      const rateByInvoiceId = new Map(
-        periodInvoices.map((i) => [
-          i.id,
-          Number((i as any).exchangeRate) > 0 ? Number((i as any).exchangeRate) : 1,
-        ])
-      );
-      for (const line of periodLines) {
-        const fxRate = rateByInvoiceId.get(line.invoiceId) ?? 1;
-        const lineAmount = line.quantity * line.unitPrice * fxRate;
-        const lineVat = lineAmount * (line.vatRate ?? UAE_VAT_RATE);
-        const supplyType = (line as any).vatSupplyType || "standard_rated";
-
-        // Explicit supply type wins; the 0%-rate fallback only catches lines
-        // that weren't tagged. An exempt line also carries a 0% rate, so the
-        // exempt check must come first (Box 5, not Box 4).
-        if (supplyType === "exempt") {
-          // Exempt supplies (financial services, residential rent, etc.)
-          exemptAmount += lineAmount;
-        } else if (supplyType === "zero_rated" || line.vatRate === 0) {
-          // Zero-rated supplies (exports, international services)
-          zeroRatedAmount += lineAmount;
-        } else {
-          // Standard rated (5% VAT)
-          standardRatedAmount += lineAmount;
-          standardRatedVat += lineVat;
-        }
-      }
-
-      // Credit notes are canonical invoice rows (`invoice_type = 'credit_note'`)
-      // with negative invoice lines after A-B11, so the invoice loop above
-      // captures them exactly once and applies the invoice exchange rate.
-
-      // Calculate input tax from receipts — only posted receipts can be
-      // claimed for input VAT recovery on a VAT return.
-      const periodReceipts = receipts.filter((rec) => {
-        if (!rec.posted) return false;
-        const recDate = new Date(rec.date || rec.createdAt);
-        return recDate >= startDate && recDate <= endDate;
-      });
-
-      // Split receipts: reverse-charge are reported in Boxes 3 (output) and 10
-      // (input side, subject to partial-exemption recovery), ordinary receipts
-      // feed Box 9.
-      const ordinaryReceipts = periodReceipts.filter((r) => !r.reverseCharge);
-      const reverseChargeReceipts = periodReceipts.filter((r) => r.reverseCharge);
-
-      // FTA reporting is in AED. A receipt stores its DOCUMENT-currency amount
-      // plus the transaction-date rate, so both the expense base and the input
-      // VAT must be converted before they reach Boxes 9/10/11 — exactly as the
-      // invoice lines above and the vendor bills below already do.
-      //
-      // Without this, a USD 1,000 receipt (VAT USD 50) at 3.6725 reported AED
-      // 1,000 of expenses and AED 50 of recoverable input VAT instead of AED
-      // 3,672.50 and AED 183.63 — the business under-claims and OVERPAYS the
-      // FTA. For AED receipts the rate is 1, so this is a no-op.
-      const recRate = (rec: { exchangeRate?: number | string | null }): number => {
-        const r = Number(rec.exchangeRate);
-        return Number.isFinite(r) && r > 0 ? r : 1;
-      };
-
-      let totalExpenses = ordinaryReceipts.reduce(
-        (sum, rec) => sum + (rec.amount || 0) * recRate(rec),
-        0
-      );
-      let inputTaxGross = ordinaryReceipts.reduce(
-        (sum, rec) => sum + (rec.vatAmount || 0) * recRate(rec),
-        0
-      );
-
-      let reverseChargeAmount = reverseChargeReceipts.reduce(
-        (sum, rec) => sum + (rec.amount || 0) * recRate(rec),
-        0
-      );
-      let reverseChargeVatGross = reverseChargeReceipts.reduce(
-        (sum, rec) => sum + (rec.vatAmount || 0) * recRate(rec),
-        0
-      );
-
-      // Vendor bills — pulled direct from vendor_bills since the bill module
-      // isn't in Drizzle yet. Reverse-charge bills feed Boxes 3/10; ordinary
-      // approved bills carry recoverable input VAT into Box 9 alongside
-      // posted receipts. Pending bills are excluded: input VAT is only
-      // claimable once the bill is approved (matching when it posts to GL).
-      try {
-        const billRes = await pool.query(
-          `SELECT
-             COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
-             COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
-             COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
-             COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_vat
-         FROM vendor_bills
-         WHERE company_id = $1
-           AND bill_date >= $2::date
-           AND bill_date <= $3::date
-           AND status NOT IN ('void','cancelled','draft','pending')`,
-          // Compare calendar dates, not timestamps — casting the JS Date to
-          // timestamptz shifts period boundaries in non-UTC server timezones.
-          [companyId, startDate.toISOString().slice(0, 10), endDate.toISOString().slice(0, 10)]
-        );
-        reverseChargeAmount += Number(billRes.rows[0]?.rc_amount || 0);
-        reverseChargeVatGross += Number(billRes.rows[0]?.rc_vat || 0);
-        totalExpenses += Number(billRes.rows[0]?.std_amount || 0);
-        inputTaxGross += Number(billRes.rows[0]?.std_vat || 0);
-      } catch (err) {
-        // Bill-pay schema may not be installed in dev — fail open, log via parent.
-      }
-
-      // Partial-exemption apportionment (FTA Article 55). When a company makes
-      // both taxable and exempt supplies, only the taxable portion of input VAT
-      // is recoverable. Output VAT (including reverse-charge output in Box 3) is
-      // unaffected — only the input/recovery side is reduced.
-      const exemptRatio = Math.min(1, Math.max(0, Number(company.exemptSupplyRatio || 0)));
-      const recoverableRatio = 1 - exemptRatio;
-      const inputTax = Math.round(inputTaxGross * recoverableRatio * 100) / 100;
-      const irrecoverableInputTax = Math.round((inputTaxGross - inputTax) * 100) / 100;
-      const reverseChargeVat = reverseChargeVatGross; // output side
-      const reverseChargeVatRecoverable =
-        Math.round(reverseChargeVatGross * recoverableRatio * 100) / 100;
-
-      // Due date is 28 days after period end (FTA requirement)
-      const dueDate = new Date(endDate);
-      dueDate.setDate(dueDate.getDate() + 28);
-
-      // Determine VAT stagger from company settings or default to quarterly
-      const vatStagger = company.vatFilingFrequency === "Monthly" ? "monthly" : "quarterly";
-
-      // Initialize emirate breakdown - all to company's registered emirate
-      const emirateBreakdown = {
-        box1aAbuDhabiAmount: 0,
-        box1aAbuDhabiVat: 0,
-        box1aAbuDhabiAdj: 0,
-        box1bDubaiAmount: 0,
-        box1bDubaiVat: 0,
-        box1bDubaiAdj: 0,
-        box1cSharjahAmount: 0,
-        box1cSharjahVat: 0,
-        box1cSharjahAdj: 0,
-        box1dAjmanAmount: 0,
-        box1dAjmanVat: 0,
-        box1dAjmanAdj: 0,
-        box1eUmmAlQuwainAmount: 0,
-        box1eUmmAlQuwainVat: 0,
-        box1eUmmAlQuwainAdj: 0,
-        box1fRasAlKhaimahAmount: 0,
-        box1fRasAlKhaimahVat: 0,
-        box1fRasAlKhaimahAdj: 0,
-        box1gFujairahAmount: 0,
-        box1gFujairahVat: 0,
-        box1gFujairahAdj: 0,
-      };
-
-      // Assign standard rated sales to company's emirate
-      switch (companyEmirate) {
-        case "abu_dhabi":
-          emirateBreakdown.box1aAbuDhabiAmount = standardRatedAmount;
-          emirateBreakdown.box1aAbuDhabiVat = standardRatedVat;
-          break;
-        case "sharjah":
-          emirateBreakdown.box1cSharjahAmount = standardRatedAmount;
-          emirateBreakdown.box1cSharjahVat = standardRatedVat;
-          break;
-        case "ajman":
-          emirateBreakdown.box1dAjmanAmount = standardRatedAmount;
-          emirateBreakdown.box1dAjmanVat = standardRatedVat;
-          break;
-        case "umm_al_quwain":
-          emirateBreakdown.box1eUmmAlQuwainAmount = standardRatedAmount;
-          emirateBreakdown.box1eUmmAlQuwainVat = standardRatedVat;
-          break;
-        case "ras_al_khaimah":
-          emirateBreakdown.box1fRasAlKhaimahAmount = standardRatedAmount;
-          emirateBreakdown.box1fRasAlKhaimahVat = standardRatedVat;
-          break;
-        case "fujairah":
-          emirateBreakdown.box1gFujairahAmount = standardRatedAmount;
-          emirateBreakdown.box1gFujairahVat = standardRatedVat;
-          break;
-        case "dubai":
-        default:
-          emirateBreakdown.box1bDubaiAmount = standardRatedAmount;
-          emirateBreakdown.box1bDubaiVat = standardRatedVat;
-          break;
-      }
-
-      // Calculate totals. Reverse charge feeds Box 3 (output, full) and Box 10
-      // (input, partial-exemption-reduced). Standard input tax (Box 9) is also
-      // partial-exemption reduced via `inputTax`.
-      const totalOutputAmount =
-        standardRatedAmount + zeroRatedAmount + exemptAmount + reverseChargeAmount;
-      const totalOutputVat = standardRatedVat + reverseChargeVat;
-      const totalInputAmount = totalExpenses + reverseChargeAmount;
-      const totalInputVat = inputTax + reverseChargeVatRecoverable;
-
-      // One return per period: regenerating refreshes the existing draft
-      // instead of stacking duplicates (and some production databases carry a
-      // unique (company, period) index that hard-rejects a second insert).
-      // A submitted/filed return is immutable — refuse to regenerate over it.
-      const existingReturns = await storage.getVatReturnsByCompanyId(companyId);
-      const samePeriod = existingReturns.find(
-        (r) =>
-          new Date(r.periodStart).getTime() === startDate.getTime() &&
-          new Date(r.periodEnd).getTime() === endDate.getTime()
-      );
-      if (samePeriod && samePeriod.status !== "draft") {
-        return res.status(409).json({
-          message: `A ${samePeriod.status} VAT return already exists for this period. Submitted returns cannot be regenerated.`,
-          code: "VAT_RETURN_EXISTS",
-        });
-      }
-
-      const persistVatReturn = (data: any) =>
-        samePeriod ? storage.updateVatReturn(samePeriod.id, data) : storage.createVatReturn(data);
-
-      const vatReturn = await persistVatReturn({
+      const userId = await requireCompanyAccess(req, res, companyId);
+      if (!userId) return;
+      const body = parsedBody<Body<typeof generateVatReturnBody>>(req);
+      const { vatReturn, computation: c } = await generateVatReturn({
         companyId,
-        periodStart: startDate,
-        periodEnd: endDate,
-        dueDate,
-        status: "draft",
-        vatStagger,
-        // Emirate breakdown from company registration
-        ...emirateBreakdown,
-        // Box 2: Tourist Refund Scheme (manual entry needed)
-        box2TouristRefundAmount: 0,
-        box2TouristRefundVat: 0,
-        // Box 3: Reverse charge supplies (imports requiring reverse charge) —
-        // OUTPUT side: buyer must self-assess output VAT on these supplies.
-        box3ReverseChargeAmount: reverseChargeAmount,
-        box3ReverseChargeVat: reverseChargeVat,
-        // Box 4: Zero-rated supplies (exports, international services)
-        box4ZeroRatedAmount: zeroRatedAmount,
-        // Box 5: Exempt supplies (financial services, residential rent)
-        box5ExemptAmount: exemptAmount,
-        // Box 6: Imports subject to VAT
-        box6ImportsAmount: 0,
-        box6ImportsVat: 0,
-        // Box 7: Adjustments for imports
-        box7ImportsAdjAmount: 0,
-        box7ImportsAdjVat: 0,
-        // Box 8: Total output amounts and VAT
-        box8TotalAmount: totalOutputAmount,
-        box8TotalVat: totalOutputVat,
-        box8TotalAdj: 0,
-        // Box 9: Standard rated expenses (input VAT recovery)
-        box9ExpensesAmount: totalExpenses,
-        box9ExpensesVat: inputTax,
-        box9ExpensesAdj: 0,
-        // Box 10: Reverse charge on imports (input side) — buyer claims back the
-        // self-assessed VAT, reduced by partial-exemption ratio when applicable.
-        box10ReverseChargeAmount: reverseChargeAmount,
-        box10ReverseChargeVat: reverseChargeVatRecoverable,
-        // Box 11: Total input amounts and VAT
-        box11TotalAmount: totalInputAmount,
-        box11TotalVat: totalInputVat,
-        box11TotalAdj: 0,
-        // Box 12-14: VAT calculations
-        box12TotalDueTax: totalOutputVat,
-        box13RecoverableTax: totalInputVat,
-        box14PayableTax: totalOutputVat - totalInputVat,
-        // Legacy fields for backward compatibility
-        box1SalesStandard: standardRatedAmount,
-        box2SalesOtherEmirates: 0,
-        box3SalesTaxExempt: zeroRatedAmount,
-        box4SalesExempt: exemptAmount,
-        box5TotalOutputTax: totalOutputVat,
-        box6ExpensesStandard: totalExpenses,
-        box7ExpensesTouristRefund: 0,
-        box8TotalInputTax: totalInputVat,
-        box9NetTax: totalOutputVat - totalInputVat,
-        createdBy: userId,
+        userId,
+        periodStart: body.periodStart,
+        periodEnd: body.periodEnd,
       });
-
-      // Return with additional metadata for the UI
       res.status(201).json({
         ...vatReturn,
         _metadata: {
-          invoicesProcessed: periodInvoices.length,
-          receiptsProcessed: periodReceipts.length,
-          companyEmirate,
-          trnNumber: company.trnVatNumber,
-          standardRatedSales: standardRatedAmount,
-          zeroRatedSales: zeroRatedAmount,
-          exemptSales: exemptAmount,
-          reverseChargeAmount,
-          reverseChargeVat,
-          reverseChargeVatRecoverable,
-          totalInputVat,
-          netVatPayable: totalOutputVat - totalInputVat,
-          partialExemption: {
-            exemptSupplyRatio: exemptRatio,
-            recoverableRatio,
-            grossInputVat: inputTaxGross,
-            recoverableInputVat: inputTax,
-            irrecoverableInputVat: irrecoverableInputTax,
+          engineVersion: c.engineVersion,
+          companyEmirate: c.company.emirate,
+          trnNumber: c.company.trn,
+          counts: c.counts,
+          invoicesProcessed: c.counts.invoices + c.counts.creditNotes + c.counts.debitNotes,
+          receiptsProcessed: c.counts.receipts,
+          billsProcessed: c.counts.bills,
+          excluded: {
+            outOfScopeAmount: c.excluded.outOfScopeFils / 100,
+            outOfScopeDocuments: c.excluded.outOfScope.length,
+            intraGroupDocuments: c.excluded.intraGroup.length,
           },
+          netVatPayable: c.boxes.box14PayableTax,
+          partialExemption: {
+            exemptSupplyRatio: c.partialExemption.exemptSupplyRatio,
+            recoverableRatio: c.partialExemption.recoverableRatio,
+            grossInputVat: c.partialExemption.grossInputVatFils / 100,
+            irrecoverableInputVat: c.partialExemption.apportionedFils / 100,
+          },
+          reconciliation: c.reconciliation,
+          group: c.group,
         },
       });
     })
   );
 
-  // Submit VAT return
+  app.get(
+    "/api/vat-returns/:id",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const access = await requireReturnAccess(req, res);
+      if (!access) return;
+      res.json(access.existing);
+    })
+  );
+
+  // FTA portal-order export (xlsx / csv). A preparation file — nothing is sent to the FTA.
+  app.get(
+    "/api/vat-returns/:id/export",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const access = await requireReturnAccess(req, res);
+      if (!access) return;
+      const company = await storage.getCompany(access.existing.companyId);
+      const shaped = exportShape(access.existing as unknown as Record<string, unknown>);
+      const info = { name: company?.name, trnVatNumber: company?.trnVatNumber };
+      const format = req.query.format === "csv" ? "csv" : "xlsx";
+      const name = vat201ExportFilename(shaped, info);
+      if (format === "csv") {
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="${name}-fta.csv"`);
+        return res.send("﻿" + vat201PortalCsv(shaped, info));
+      }
+      await sendTabular(res, "xlsx", name, [
+        prepareVat201PortalSheet(shaped),
+        ...prepareVat201ForExport(shaped, info),
+      ]);
+    })
+  );
+
+  // Readiness gate (R12-03): unexplained VAT-to-GL differences block "ready" without a reason.
+  app.post(
+    "/api/vat-returns/:id/ready",
+    authMiddleware,
+    strictBody(markVatReturnReadyBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const access = await requireReturnAccess(req, res);
+      if (!access) return;
+      await assertCompanyPermission(req, access.existing.companyId, "tax.submit");
+      const body = parsedBody<Body<typeof markVatReturnReadyBody>>(req);
+      const updated = await markVatReturnReady({
+        id: access.existing.id,
+        companyId: access.existing.companyId,
+        userId: access.userId,
+        overrideReason: body.overrideReason ?? null,
+        req,
+      });
+      res.json(updated);
+    })
+  );
+
+  // Submit VAT return. Never transmits anything to the FTA.
   app.post(
     "/api/vat-returns/:id/submit",
     authMiddleware,
+    strictBody(submitVatReturnBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { id } = req.params;
-      const { adjustmentAmount, adjustmentReason, notes, ftaReferenceNumber } = req.body;
-
-      const existing = await storage.getVatReturn(id);
-      if (!existing) {
-        return res.status(404).json({ message: "VAT return not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Submitting the return finalises the VAT settlement against periodEnd —
-      // refuse if the underlying period is already closed.
-      await assertPeriodNotLocked(existing.companyId, existing.periodEnd as any);
-
-      // H2 — HONEST FILING STATUS.
-      //
-      // This application does NOT transmit anything to the FTA. There is no
-      // EmaraTax integration. Two distinct things must never be conflated:
-      //
-      //   "submitted" = internally finalised and locked for review. Nothing was
-      //                 sent anywhere. The user still has to file via EmaraTax.
-      //   "filed"     = the user has filed through the official channel and is
-      //                 recording the FTA's acknowledgement reference here.
-      //
-      // A reference number is the only evidence that a real filing happened, so
-      // it is what promotes the return to "filed". Without it we must not use
-      // any wording that implies the return reached the FTA.
-      const reference =
-        typeof ftaReferenceNumber === "string" && ftaReferenceNumber.trim() !== ""
-          ? ftaReferenceNumber.trim()
-          : null;
-
-      const vatReturn = await storage.updateVatReturn(id, {
-        status: reference ? "filed" : "submitted",
-        adjustmentAmount: adjustmentAmount || 0,
-        adjustmentReason: adjustmentReason || null,
-        notes: notes || null,
-        ftaReferenceNumber: reference,
-        submittedBy: userId,
-        submittedAt: new Date(),
+      const access = await requireReturnAccess(req, res);
+      if (!access) return;
+      const { existing, userId } = access;
+      await assertCompanyPermission(req, existing.companyId, "tax.submit");
+      const body = parsedBody<Body<typeof submitVatReturnBody>>(req);
+      const vatReturn = await submitVatReturn({
+        ...body,
+        id: existing.id,
+        companyId: existing.companyId,
+        userId,
+        overrideReason: body.reconciliationOverrideReason,
+        req,
       });
+      const reference = vatReturn.ftaReferenceNumber;
 
       res.json({
         ...vatReturn,
@@ -916,42 +773,283 @@ export function registerVATRoutes(app: Express) {
           transmittedByMuhasib: false,
           channel: reference ? "manual-emaratax" : "none",
           message: reference
-            ? `Recorded as filed with FTA reference ${reference}. Muhasib did not transmit this return; this is your record of a filing you made through the official channel.`
-            : "Finalised for review. Muhasib does NOT file with the FTA — you must still submit this return through EmaraTax, then record the FTA reference number here.",
+            ? "Filing recorded with the EmaraTax reference you entered."
+            : "Ready to file. Submit your return in EmaraTax, then record the FTA reference number here.",
         },
       });
     })
   );
 
-  // Update VAT return (for editing draft returns)
+  // Amended return (R07-15): new draft referencing the original, with a box-by-box diff.
+  app.post(
+    "/api/vat-returns/:id/amend",
+    authMiddleware,
+    strictBody(amendVatReturnBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const access = await requireReturnAccess(req, res);
+      if (!access) return;
+      await assertCompanyPermission(req, access.existing.companyId, "tax.submit");
+      const body = parsedBody<Body<typeof amendVatReturnBody>>(req);
+      const result = await amendVatReturn({
+        id: access.existing.id,
+        companyId: access.existing.companyId,
+        userId: access.userId,
+        reason: body.reason,
+        req,
+      });
+      res.status(201).json({ ...result.vatReturn, diff: result.diff });
+    })
+  );
+
+  // VAT paid to / refunded by the FTA for a submitted return (Dr 2020 / Cr 1050 / Cr bank).
+  // The proper seam for clearing the VAT control accounts (A2 H8): no manual adjustment needed.
+  app.get(
+    "/api/vat-returns/:id/settlement",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const access = await requireReturnAccess(req, res);
+      if (!access) return;
+      res.json({
+        settlement: await getVatReturnSettlement(access.existing.companyId, access.existing.id),
+      });
+    })
+  );
+
+  app.post(
+    "/api/vat-returns/:id/settlement",
+    authMiddleware,
+    strictBody(settleVatReturnBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const access = await requireReturnAccess(req, res);
+      if (!access) return;
+      await assertCompanyPermission(req, access.existing.companyId, "tax.submit");
+      const body = parsedBody<Body<typeof settleVatReturnBody>>(req);
+      res.status(201).json(
+        await settleVatReturn({
+          companyId: access.existing.companyId,
+          vatReturnId: access.existing.id,
+          date: body.date,
+          paymentAccountId: body.paymentAccountId,
+          reference: body.reference ?? null,
+          actorId: access.userId,
+          req,
+        })
+      );
+    })
+  );
+
+  app.post(
+    "/api/vat-returns/:id/settlement/reverse",
+    authMiddleware,
+    strictBody(reverseVatReturnSettlementBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const access = await requireReturnAccess(req, res);
+      if (!access) return;
+      await assertCompanyPermission(req, access.existing.companyId, "tax.submit");
+      const body = parsedBody<Body<typeof reverseVatReturnSettlementBody>>(req);
+      res.json(
+        await reverseVatReturnSettlement({
+          companyId: access.existing.companyId,
+          vatReturnId: access.existing.id,
+          date: body.date,
+          reason: body.reason,
+          actorId: access.userId,
+          req,
+        })
+      );
+    })
+  );
+
+  // Descriptive fields only: boxes come from the engine and change through adjustments.
   app.patch(
     "/api/vat-returns/:id",
     authMiddleware,
+    strictBody(patchVatReturnBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { id } = req.params;
-      const updateData = req.body;
-
-      const existing = await storage.getVatReturn(id);
-      if (!existing) {
-        return res.status(404).json({ message: "VAT return not found" });
+      const access = await requireReturnAccess(req, res);
+      if (!access) return;
+      const body = parsedBody<Body<typeof patchVatReturnBody>>(req);
+      const { existing } = access;
+      if (!["draft", "pending_review", "ready", "submitted"].includes(existing.status)) {
+        throw new DomainError("INVALID_TRANSITION", 409);
       }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Never allow the client to rewrite the tenant scope of a VAT return.
-      delete (updateData as any).companyId;
-      delete (updateData as any).id;
-
-      const vatReturn = await storage.updateVatReturn(id, {
-        ...updateData,
-        updatedAt: new Date(),
-      });
-
+      const vatReturn = await storage.updateUnfiledVatReturn(
+        existing.companyId,
+        existing.id,
+        existing.status,
+        {
+          ...(body.notes !== undefined ? { notes: body.notes } : {}),
+          ...(body.declarantName !== undefined ? { declarantName: body.declarantName } : {}),
+          ...(body.declarantPosition !== undefined
+            ? { declarantPosition: body.declarantPosition }
+            : {}),
+        }
+      );
+      if (!vatReturn) throw new DomainError("INVALID_TRANSITION", 409);
       res.json(vatReturn);
+    })
+  );
+
+  // =====================================
+  // ADJUSTMENTS (R07-08, R07-15)
+  // =====================================
+
+  app.get(
+    "/api/companies/:companyId/vat/adjustments",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      if (!(await requireCompanyAccess(req, res, companyId))) return;
+      const { from, to } = readPeriod(req.query as Record<string, unknown>);
+      res.json(await listReturnAdjustments(companyId, from, to));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/vat/adjustments",
+    authMiddleware,
+    strictBody(vatReturnAdjustmentBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = await requireCompanyAccess(req, res, companyId);
+      if (!userId) return;
+      const b = parsedBody<Body<typeof vatReturnAdjustmentBody>>(req);
+      res.status(201).json(await addReturnAdjustment({ ...b, companyId, userId, req }));
+    })
+  );
+
+  app.delete(
+    "/api/companies/:companyId/vat/adjustments/:adjustmentId",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, adjustmentId } = req.params;
+      const userId = await requireCompanyAccess(req, res, companyId);
+      if (!userId) return;
+      if (!uuid.safeParse(adjustmentId).success)
+        return res.status(400).json({ message: "Invalid id", code: "INVALID_ID" });
+      res.json(await deleteReturnAdjustment(companyId, adjustmentId, userId, req));
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/vat/bad-debt-relief",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      if (!(await requireCompanyAccess(req, res, companyId))) return;
+      res.json(await listBadDebtReliefClaims(companyId));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/vat/bad-debt-relief",
+    authMiddleware,
+    requirePermission("ledger.post"),
+    strictBody(badDebtReliefClaimBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = await requireCompanyAccess(req, res, companyId);
+      if (!userId) return;
+      const b = parsedBody<Body<typeof badDebtReliefClaimBody>>(req);
+      res.status(201).json(await createBadDebtReliefClaim({ ...b, companyId, userId, req }));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/vat/bad-debt-relief/:claimId/reverse",
+    authMiddleware,
+    requirePermission("ledger.post"),
+    strictBody(badDebtReliefReverseBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, claimId } = req.params;
+      const userId = await requireCompanyAccess(req, res, companyId);
+      if (!userId) return;
+      if (!uuid.safeParse(claimId).success)
+        return res.status(400).json({ message: "Invalid id", code: "INVALID_ID" });
+      const b = parsedBody<Body<typeof badDebtReliefReverseBody>>(req);
+      res.json(
+        await reverseBadDebtReliefClaim({
+          companyId,
+          claimId,
+          userId,
+          date: b.date,
+          reason: b.reason,
+          req,
+        })
+      );
+    })
+  );
+
+  // Input-VAT recovery rules (R05-28): blocked / partly recoverable categories.
+  app.get(
+    "/api/companies/:companyId/vat/recovery-rules",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      if (!(await requireCompanyAccess(req, res, companyId))) return;
+      res.json({ builtIn: DEFAULT_RECOVERY_RULES, rules: await loadRecoveryRules(companyId) });
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/vat/recovery-rules",
+    authMiddleware,
+    requirePermission("settings.company"),
+    strictBody(vatRecoveryRuleBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = await requireCompanyAccess(req, res, companyId);
+      if (!userId) return;
+      const b = parsedBody<Body<typeof vatRecoveryRuleBody>>(req);
+      const rule = await upsertRecoveryRule(companyId, userId, b);
+      await recordAudit({
+        userId,
+        companyId,
+        action: "vat.recovery_rule.upsert",
+        entityType: "vat_recovery_rule",
+        entityId: rule.id,
+        after: rule,
+        req,
+      });
+      res.status(201).json(rule);
+    })
+  );
+
+  app.delete(
+    "/api/companies/:companyId/vat/recovery-rules/:ruleId",
+    authMiddleware,
+    requirePermission("settings.company"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, ruleId } = req.params;
+      const userId = await requireCompanyAccess(req, res, companyId);
+      if (!userId) return;
+      if (!uuid.safeParse(ruleId).success)
+        return res.status(400).json({ message: "Invalid id", code: "INVALID_ID" });
+      res.json(await deleteRecoveryRule(companyId, ruleId));
+    })
+  );
+
+  // VAT group (Art. 14): this company is the representative member.
+  app.put(
+    "/api/companies/:companyId/vat/group",
+    authMiddleware,
+    requirePermission("settings.company"),
+    strictBody(vatGroupBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = await requireCompanyAccess(req, res, companyId);
+      if (!userId) return;
+      const b = parsedBody<Body<typeof vatGroupBody>>(req);
+      res.json(
+        await upsertVatGroup({
+          representativeCompanyId: companyId,
+          userId,
+          name: b.name,
+          groupTrn: b.groupTrn,
+          memberCompanyIds: b.memberCompanyIds,
+          req,
+        })
+      );
     })
   );
 }

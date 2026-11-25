@@ -1,1560 +1,433 @@
-import { motion, useInView, useScroll, useTransform } from "framer-motion";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
 import {
   ArrowRight,
-  ArrowUpRight,
-  Building2,
-  Check,
-  ChevronRight,
-  Cpu,
-  FileCheck,
+  FileDown,
+  FileSpreadsheet,
   FileText,
-  Languages,
-  Menu,
-  Receipt,
-  RefreshCw,
-  Shield,
-  Sparkles,
-  TrendingUp,
-  Wallet,
-  X,
+  Landmark,
+  LineChart,
+  Users,
+  type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { Link } from "wouter";
+import type { ReactNode } from "react";
+import { useTranslation } from "@/lib/i18n";
+import { MarketingLayout } from "@/components/marketing/MarketingLayout";
+import {
+  Amount,
+  ProductPreview,
+  StatusBadge,
+  VatPreview,
+} from "@/components/marketing/ProductPreview";
+import { SAMPLE } from "@/components/marketing/sample";
+import { Checklist, ClosingCta, FaqSection, SectionHeading } from "@/components/marketing/Sections";
+import { PlanCard } from "@/components/marketing/PlanCard";
+import { PLANS } from "@/components/marketing/plans";
+import { StatusBadge as Status } from "@/components/ui/status-badge";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Muhasib.ai · Landing page
-// Design system, distilled from a cross-category audit (Big Four, mainstream
-// accounting SaaS, AI-first fintech, Big Four firms, and tax SaaS):
-//
-//   Canvas      #FAFAF6 warm paper       Ink         #131820 deep
-//   Primary     #0D5C3D forest emerald   Voltage     #C19E50 warm gold
-//   Dark band   #0E1320 midnight         Hairline    rgba(15,20,25,.08)
-//
-//   Display     Instrument Serif (italic accent)
-//   Body / UI   Geist Sans
-//   Numerals    Geist Mono (tabular)
-//
-//   Animation budget: GPU-only — opacity / transform / filter. No parallax,
-//   no 3D blobs. Hero IS the product (dashboard mock + AI agent chat).
-// ─────────────────────────────────────────────────────────────────────────────
+// Muhasib.ai public landing page (D1). Every capability on this page exists in
+// the product today; anything that needs an outside party (FTA submission,
+// e-invoice transmission) says so. Styles: components/marketing/marketing.css.
 
-// Brand tokens — kept inline so the file is self-contained.
-const C = {
-  paper: "#FAFAF6",
-  ink: "#131820",
-  emerald: "#0D5C3D",
-  emeraldSoft: "#E6F1EC",
-  gold: "#C19E50",
-  goldSoft: "#F7EFDA",
-  midnight: "#0E1320",
-  hairline: "rgba(15,20,25,0.08)",
-  hairlineStrong: "rgba(15,20,25,0.14)",
-  muted: "rgba(15,20,25,0.55)",
-  whisper: "rgba(15,20,25,0.04)",
-};
+type Icon = LucideIcon;
 
-// ── 1.  Linear-style scroll-in (blur → clarity + translateY) ─────────────────
-function Reveal({
+function FeatureCard({
+  icon: IconCmp,
+  title,
+  body,
+  points,
   children,
-  delay = 0,
-  y = 24,
-  className,
 }: {
-  children: React.ReactNode;
-  delay?: number;
-  y?: number;
-  className?: string;
+  icon: Icon;
+  title: string;
+  body: string;
+  points: string[];
+  children: ReactNode;
 }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y, filter: "blur(8px)" }}
-      whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-      viewport={{ once: true, margin: "-80px" }}
-      transition={{ duration: 0.9, delay, ease: [0.22, 1, 0.36, 1] }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
-// ── 2. Animated counter (IntersectionObserver-triggered, cubic ease-out) ─────
-function Counter({
-  to,
-  suffix = "",
-  prefix = "",
-}: {
-  to: number;
-  suffix?: string;
-  prefix?: string;
-}) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const inView = useInView(ref, { once: true, amount: 0.6 });
-  const [v, setV] = useState(0);
-  useEffect(() => {
-    if (!inView) return;
-    const start = performance.now();
-    const dur = 1800;
-    let raf = 0;
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - start) / dur);
-      setV(Math.floor(to * (1 - Math.pow(1 - p, 3))));
-      if (p < 1) raf = requestAnimationFrame(tick);
-      else setV(to);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [inView, to]);
-  return (
-    <span ref={ref} className="tabular-nums">
-      {prefix}
-      {v.toLocaleString()}
-      {suffix}
-    </span>
-  );
-}
-
-// ── 3. Mesh gradient atmosphere — drifts behind hero, low opacity ────────────
-function HeroMesh() {
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      <motion.div
-        className="absolute -left-32 top-0 h-[640px] w-[640px] rounded-full opacity-50 blur-3xl"
-        style={{
-          background: "radial-gradient(circle, rgba(13,92,61,0.35) 0%, rgba(13,92,61,0) 60%)",
-        }}
-        animate={{ x: [0, 60, 0], y: [0, -30, 0] }}
-        transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <motion.div
-        className="absolute -right-32 top-32 h-[560px] w-[560px] rounded-full opacity-40 blur-3xl"
-        style={{
-          background: "radial-gradient(circle, rgba(193,158,80,0.32) 0%, rgba(193,158,80,0) 60%)",
-        }}
-        animate={{ x: [0, -40, 0], y: [0, 40, 0] }}
-        transition={{ duration: 26, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_60%,#FAFAF6_100%)]" />
-    </div>
-  );
-}
-
-// ── 4. Hero product mock — animated dashboard + AI agent chat surface ────────
-function HeroProductMock() {
-  return (
-    <div className="relative w-full">
-      <Reveal delay={0.2} y={40}>
-        <div
-          className="relative overflow-hidden rounded-2xl border bg-card shadow-[0_24px_80px_-30px_rgba(15,20,25,0.25),0_8px_24px_-12px_rgba(15,20,25,0.08)]"
-          style={{ borderColor: C.hairline }}
-        >
-          {/* Browser chrome */}
-          <div
-            className="flex items-center gap-1.5 border-b px-4 py-2.5"
-            style={{ borderColor: C.hairline, background: "rgba(15,20,25,0.02)" }}
-          >
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#ED6B5F" }} />
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#F4BE4F" }} />
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#60C354" }} />
-            <span
-              className="ml-3 rounded-md px-2.5 py-0.5 font-mono text-[10px]"
-              style={{ background: C.whisper, color: C.muted }}
-            >
-              app.muhasib.ai / dashboard
-            </span>
-          </div>
-
-          {/* Body */}
-          <div className="grid grid-cols-12 gap-px" style={{ background: C.hairline }}>
-            {/* Sidebar */}
-            <div className="col-span-3 bg-card p-4">
-              <div className="mb-4 flex items-center gap-2">
-                <div
-                  className="flex h-6 w-6 items-center justify-center rounded font-serif text-sm font-bold text-white"
-                  style={{ background: C.emerald }}
-                >
-                  م
-                </div>
-                <span className="text-[11px] font-semibold tracking-wide" style={{ color: C.ink }}>
-                  Acme Trading LLC
-                </span>
-              </div>
-              <div className="space-y-1">
-                {["Dashboard", "Invoices", "Receipts", "VAT 201", "Bank Imports", "Reports"].map(
-                  (l, i) => (
-                    <div
-                      key={l}
-                      className="flex items-center gap-2 rounded px-2 py-1.5 text-[11px]"
-                      style={{
-                        background: i === 0 ? C.emeraldSoft : "transparent",
-                        color: i === 0 ? C.emerald : C.muted,
-                        fontWeight: i === 0 ? 600 : 500,
-                      }}
-                    >
-                      <span
-                        className="h-1 w-1 rounded-full"
-                        style={{ background: i === 0 ? C.emerald : "transparent" }}
-                      />
-                      {l}
-                    </div>
-                  )
-                )}
-              </div>
-            </div>
-
-            {/* Main area */}
-            <div className="col-span-9 bg-card p-5">
-              {/* KPI row */}
-              <div className="grid grid-cols-3 gap-3">
-                <KpiTile label="Cash on hand" value="AED 412,840" delta="+8.4%" />
-                <KpiTile label="VAT due · Q3" value="AED 48,210" delta="-3.4%" negative />
-                <KpiTile label="Runway" value="14.2 mo" delta="+2.1%" />
-              </div>
-
-              {/* Chart */}
-              <div className="mt-4 rounded-xl border p-4" style={{ borderColor: C.hairline }}>
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <div className="text-[11px] font-semibold" style={{ color: C.ink }}>
-                      Cash flow · 90 days
-                    </div>
-                    <div
-                      className="text-[9px] font-medium uppercase tracking-wider"
-                      style={{ color: C.muted }}
-                    >
-                      Operating · Investing · Financing
-                    </div>
-                  </div>
-                  <span
-                    className="rounded-full px-2 py-0.5 font-mono text-[9px]"
-                    style={{ background: C.emeraldSoft, color: C.emerald }}
-                  >
-                    +12.6%
-                  </span>
-                </div>
-                <svg viewBox="0 0 400 100" className="h-20 w-full">
-                  <defs>
-                    <linearGradient id="hg" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="0%" stopColor={C.emerald} stopOpacity="0.22" />
-                      <stop offset="100%" stopColor={C.emerald} stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
-                  <motion.path
-                    initial={{ pathLength: 0 }}
-                    whileInView={{ pathLength: 1 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 2.2, ease: "easeInOut", delay: 0.6 }}
-                    d="M 0 75 Q 40 70 60 60 T 110 55 T 170 42 T 230 35 T 290 28 T 350 22 T 400 14"
-                    fill="none"
-                    stroke={C.emerald}
-                    strokeWidth="1.75"
-                  />
-                  <path
-                    d="M 0 75 Q 40 70 60 60 T 110 55 T 170 42 T 230 35 T 290 28 T 350 22 T 400 14 L 400 100 L 0 100 Z"
-                    fill="url(#hg)"
-                  />
-                </svg>
-              </div>
-
-              {/* Transactions row */}
-              <div className="mt-4 rounded-xl border" style={{ borderColor: C.hairline }}>
-                <div
-                  className="flex items-center justify-between border-b px-4 py-2.5"
-                  style={{ borderColor: C.hairline }}
-                >
-                  <span className="text-[11px] font-semibold" style={{ color: C.ink }}>
-                    Today · auto-categorised
-                  </span>
-                  <span
-                    className="text-[9px] font-medium uppercase tracking-wider"
-                    style={{ color: C.muted }}
-                  >
-                    AI · 99.2% confidence
-                  </span>
-                </div>
-                {[
-                  ["Carrefour Hypermarket", "Office supplies", "AED 432.10"],
-                  ["Etisalat — Business Line", "Telecom", "AED 879.00"],
-                  ["DEWA — June bill", "Utilities", "AED 1,204.50"],
-                ].map(([v, c, a], i) => (
-                  <motion.div
-                    key={v}
-                    initial={{ opacity: 0, x: -16 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.6, delay: 0.9 + i * 0.18 }}
-                    className="flex items-center justify-between border-b px-4 py-2 text-[11px] last:border-0"
-                    style={{ borderColor: C.hairline }}
-                  >
-                    <span className="font-medium" style={{ color: C.ink }}>
-                      {v}
-                    </span>
-                    <span
-                      className="rounded-full px-2 py-0.5 text-[9px] font-semibold"
-                      style={{ background: C.whisper, color: C.muted }}
-                    >
-                      {c}
-                    </span>
-                    <span className="font-mono" style={{ color: C.ink }}>
-                      {a}
-                    </span>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </Reveal>
-
-      {/* Floating AI chat surface */}
-      <Reveal delay={0.7} y={20}>
-        <div
-          className="absolute -bottom-8 -left-8 hidden w-[320px] overflow-hidden rounded-2xl border bg-card p-4 shadow-[0_24px_60px_-30px_rgba(15,20,25,0.3),0_8px_24px_-12px_rgba(15,20,25,0.1)] sm:block"
-          style={{ borderColor: C.hairline }}
-        >
-          <div
-            className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider"
-            style={{ color: C.muted }}
-          >
-            <span
-              className="flex h-5 w-5 items-center justify-center rounded-md"
-              style={{ background: C.emerald }}
-            >
-              <Sparkles className="h-2.5 w-2.5 text-white" />
-            </span>
-            Ask Muhasib
-          </div>
-          <div
-            className="mb-2 rounded-lg px-3 py-2 text-[11px]"
-            style={{ background: C.whisper, color: C.ink }}
-          >
-            What's my VAT liability for Q3?
-          </div>
-          <div
-            className="rounded-lg px-3 py-2.5 text-[11px] leading-relaxed"
-            style={{ background: C.emeraldSoft, color: C.ink }}
-          >
-            <span className="font-semibold">AED 48,210</span> due 28 October. Down 3.4% from Q2 —
-            driven by lower zero-rated exports. Want me to draft the return?
-            <div className="mt-2 flex gap-1.5">
-              <span
-                className="rounded-full bg-card px-2 py-0.5 font-mono text-[9px]"
-                style={{ color: C.emerald }}
-              >
-                Draft return
-              </span>
-              <span
-                className="rounded-full bg-card px-2 py-0.5 font-mono text-[9px]"
-                style={{ color: C.muted }}
-              >
-                Show workpaper
-              </span>
-            </div>
-          </div>
-        </div>
-      </Reveal>
-
-      {/* Floating compliance ribbon */}
-      <Reveal delay={0.9}>
-        <div
-          className="absolute -right-6 -top-6 hidden items-center gap-2 rounded-full border bg-card px-4 py-2 shadow-[0_12px_30px_-12px_rgba(15,20,25,0.2)] sm:flex"
-          style={{ borderColor: C.hairline }}
-        >
-          <FileCheck className="h-4 w-4" style={{ color: C.emerald }} />
-          <span
-            className="text-[10px] font-semibold uppercase tracking-wider"
-            style={{ color: C.ink }}
-          >
-            VAT 201 · review-ready export
-          </span>
-        </div>
-      </Reveal>
-    </div>
-  );
-}
-
-function KpiTile({
-  label,
-  value,
-  delta,
-  negative,
-}: {
-  label: string;
-  value: string;
-  delta: string;
-  negative?: boolean;
-}) {
-  return (
-    <div className="rounded-xl border p-3" style={{ borderColor: C.hairline }}>
-      <div className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
-        {label}
-      </div>
-      <div className="mt-1 font-mono text-[13px] font-semibold" style={{ color: C.ink }}>
-        {value}
-      </div>
-      <div className="mt-1.5">
-        <span
-          className="rounded-full px-1.5 py-0.5 font-mono text-[9px]"
-          style={{
-            background: negative ? "#FBE7E3" : C.emeraldSoft,
-            color: negative ? "#B5392B" : C.emerald,
-          }}
-        >
-          {delta}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-// ── 5. UAE tax workflow ticker ───────────────────────────────────────────────
-function FtaTicker() {
-  const updates = [
-    ["VAT 201", "Output tax, input tax, and net payable review queue"],
-    ["Corporate Tax", "Annual workpaper schedule with revenue and expense totals"],
-    ["e-Invoicing", "PINT AE XML generation and validation workflow"],
-    ["EmaraTax handoff", "Export figures for official-channel filing"],
-    ["Evidence", "Receipts, invoices, and bank lines tied to workpapers"],
-    ["Month-end", "Close checklist before VAT and CT review"],
-  ];
-  // Duplicate for seamless loop.
-  const stream = [...updates, ...updates];
-
-  return (
-    <div
-      className="relative overflow-hidden border-y"
-      style={{ borderColor: C.hairline, background: C.whisper }}
-    >
-      <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-[#FAFAF6] to-transparent" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-[#FAFAF6] to-transparent" />
-
-      <div className="flex items-center gap-3 px-6 py-3">
-        <span
-          className="flex shrink-0 items-center gap-2 rounded-full px-3 py-1 text-[9px] font-bold uppercase tracking-[0.2em]"
-          style={{ background: C.ink, color: C.paper }}
-        >
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="absolute inset-0 animate-ping rounded-full bg-success/60 opacity-75" />
-            <span className="relative h-1.5 w-1.5 rounded-full" style={{ background: C.emerald }} />
-          </span>
-          Tax workflow
-        </span>
-
-        <div className="relative flex-1 overflow-hidden">
-          <motion.div
-            className="flex items-center gap-10 whitespace-nowrap"
-            animate={{ x: ["0%", "-50%"] }}
-            transition={{ duration: 60, repeat: Infinity, ease: "linear" }}
-          >
-            {stream.map(([tag, body], i) => (
-              <div key={i} className="flex shrink-0 items-center gap-3 text-[12px]">
-                <span
-                  className="rounded-full px-2 py-0.5 font-mono text-[10px]"
-                  style={{ background: C.goldSoft, color: "#7B6228" }}
-                >
-                  {tag}
-                </span>
-                <span style={{ color: C.ink }}>{body}</span>
-                <span style={{ color: C.muted }}>·</span>
-              </div>
-            ))}
-          </motion.div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── 6. Capability bento (real product UI in tiles, not icons) ────────────────
-function CapabilityBento() {
-  return (
-    <div className="grid gap-4 md:grid-cols-6 md:grid-rows-2">
-      {/* Receipt OCR — wide */}
-      <BentoCard className="md:col-span-3 md:row-span-1">
-        <BentoHeader
-          icon={Receipt}
-          eyebrow="Receipt vision"
-          title="Photograph it. We do the rest."
-        />
-        <BentoBody>
-          Vendor, VAT, total, currency, IBAN — extracted in under a second. Arabic and English,
-          faded or crumpled.
-        </BentoBody>
-        <div
-          className="relative mt-5 overflow-hidden rounded-xl border"
-          style={{ borderColor: C.hairline, background: "rgba(15,20,25,0.02)" }}
-        >
-          <div className="grid grid-cols-5 gap-px p-px">
-            <div className="col-span-2 bg-card p-4">
-              {/* Mock receipt */}
-              <div
-                className="relative aspect-[3/4] rounded-md border"
-                style={{ borderColor: C.hairline, background: "#FBF9F2" }}
-              >
-                <div className="p-2.5 text-[8px] font-mono leading-tight" style={{ color: C.ink }}>
-                  CARREFOUR
-                  <br />
-                  Dubai Mall
-                  <br />
-                  ───────────────
-                  <br />
-                  Office supplies 432.10
-                  <br />
-                  VAT 5% 21.61
-                  <br />
-                  ───────────────
-                  <br />
-                  TOTAL AED 453.71
-                </div>
-                {/* Scan line */}
-                <motion.div
-                  className="absolute inset-x-2 h-0.5"
-                  style={{ background: C.emerald, boxShadow: `0 0 12px ${C.emerald}` }}
-                  animate={{ top: ["8%", "92%", "8%"] }}
-                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-                />
-              </div>
-            </div>
-            <div className="col-span-3 bg-card p-4">
-              {[
-                ["Vendor", "Carrefour Hypermarket"],
-                ["Date", "12 Jun 2026"],
-                ["Subtotal", "AED 432.10"],
-                ["VAT 5%", "AED 21.61"],
-                ["Total", "AED 453.71"],
-                ["Category", "Office supplies"],
-              ].map(([k, v], i) => (
-                <motion.div
-                  key={k}
-                  initial={{ opacity: 0, x: 8 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.5, delay: i * 0.08 }}
-                  className="flex items-center justify-between border-b py-1.5 text-[10px] last:border-0"
-                  style={{ borderColor: C.hairline }}
-                >
-                  <span style={{ color: C.muted }}>{k}</span>
-                  <span className="font-mono font-medium" style={{ color: C.ink }}>
-                    {v}
-                  </span>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </BentoCard>
-
-      {/* VAT 201 */}
-      <BentoCard className="md:col-span-3">
-        <BentoHeader icon={FileCheck} eyebrow="VAT 201" title="Review-ready before month end." />
-        <BentoBody>
-          Output VAT, input VAT, reverse charge, designated-zone adjustments — calculated
-          continuously and held audit-ready.
-        </BentoBody>
-        <div
-          className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border"
-          style={{ borderColor: C.hairline, background: C.hairline }}
-        >
-          {[
-            ["Box 1a · Standard rated", "AED 824,000"],
-            ["Box 1a · Output VAT", "AED 41,200"],
-            ["Box 9 · Input VAT", "AED 14,820"],
-            ["Net payable", "AED 26,380"],
-          ].map(([k, v], i) => (
-            <div key={k} className="bg-card p-3">
-              <div
-                className="text-[9px] font-semibold uppercase tracking-wider"
-                style={{ color: C.muted }}
-              >
-                {k}
-              </div>
-              <div className="mt-1 font-mono text-[13px]" style={{ color: C.ink }}>
-                {i === 3 ? <span style={{ color: C.emerald }}>{v}</span> : v}
-              </div>
-            </div>
-          ))}
-        </div>
-      </BentoCard>
-
-      {/* Bilingual invoice — narrow */}
-      <BentoCard className="md:col-span-2">
-        <BentoHeader icon={Languages} eyebrow="Bilingual" title="One invoice. Two scripts." />
-        <BentoBody>VAT-ready tax invoices with Arabic and English on the same document.</BentoBody>
-        <div
-          className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border text-[8px]"
-          style={{ borderColor: C.hairline, background: C.hairline }}
-        >
-          <div className="bg-card p-3 leading-tight" style={{ color: C.ink }}>
-            <div className="font-semibold" style={{ color: C.emerald }}>
-              Tax Invoice
-            </div>
-            <div className="mt-1 font-mono" style={{ color: C.muted }}>
-              TRN 100212345600003
-            </div>
-            <div className="mt-2 space-y-0.5 font-mono">
-              <div>Consulting · AED 5,000.00</div>
-              <div>VAT 5% · AED 250.00</div>
-              <div className="font-semibold">Total · AED 5,250.00</div>
-            </div>
-          </div>
-          <div
-            className="bg-card p-3 text-right leading-tight"
-            dir="rtl"
-            style={{ color: C.ink, fontFamily: '"Cairo", "Noto Sans Arabic", sans-serif' }}
-          >
-            <div className="font-semibold" style={{ color: C.emerald }}>
-              فاتورة ضريبية
-            </div>
-            <div className="mt-1 font-mono" style={{ color: C.muted }}>
-              ١٠٠٢١٢٣٤٥٦٠٠٠٠٣
-            </div>
-            <div className="mt-2 space-y-0.5">
-              <div>استشارة · ٥٠٠٠</div>
-              <div>ضريبة ٥٪ · ٢٥٠</div>
-              <div className="font-semibold">الإجمالي · ٥٢٥٠</div>
-            </div>
-          </div>
-        </div>
-      </BentoCard>
-
-      {/* Reconciliation */}
-      <BentoCard className="md:col-span-2">
-        <BentoHeader
-          icon={RefreshCw}
-          eyebrow="Bank imports"
-          title="Reconciled without live feeds."
-        />
-        <BentoBody>
-          Import CSV or PDF statements from UAE banks, review suggested matches, then post with a
-          human approval step.
-        </BentoBody>
-        <div
-          className="mt-5 space-y-1.5 overflow-hidden rounded-xl border bg-card p-3"
-          style={{ borderColor: C.hairline }}
-        >
-          {[
-            ["ENBD · 2841", "matched", "AED 12,400"],
-            ["ADCB · 0119", "matched", "AED 3,250"],
-            ["Mashreq · 5520", "review", "AED 880"],
-          ].map(([bank, status, amt], i) => (
-            <div key={i} className="flex items-center justify-between text-[10px]">
-              <span className="font-mono" style={{ color: C.muted }}>
-                {bank}
-              </span>
-              <span
-                className="rounded-full px-1.5 py-0.5 text-[8px] font-semibold uppercase"
-                style={{
-                  background: status === "matched" ? C.emeraldSoft : C.goldSoft,
-                  color: status === "matched" ? C.emerald : "#7B6228",
-                }}
-              >
-                {status}
-              </span>
-              <span className="font-mono" style={{ color: C.ink }}>
-                {amt}
-              </span>
-            </div>
-          ))}
-        </div>
-      </BentoCard>
-
-      {/* Multi-currency */}
-      <BentoCard className="md:col-span-2">
-        <BentoHeader icon={Wallet} eyebrow="Multi-currency" title="AED home, 150+ rails." />
-        <BentoBody>
-          Live FX rates, automatic gain/loss postings, designated-zone exemption handling.
-        </BentoBody>
-        <div className="mt-5 grid grid-cols-3 gap-1.5 text-center text-[10px]">
-          {[
-            ["USD", "3.6730", "+0.01"],
-            ["EUR", "3.9582", "-0.04"],
-            ["GBP", "4.6810", "+0.12"],
-          ].map(([k, r, d]) => (
-            <div key={k} className="rounded-lg border p-2" style={{ borderColor: C.hairline }}>
-              <div
-                className="font-mono text-[9px] uppercase tracking-wider"
-                style={{ color: C.muted }}
-              >
-                AED · {k}
-              </div>
-              <div className="mt-0.5 font-mono font-semibold" style={{ color: C.ink }}>
-                {r}
-              </div>
-              <div
-                className="font-mono text-[9px]"
-                style={{ color: d.startsWith("+") ? C.emerald : "#B5392B" }}
-              >
-                {d}
-              </div>
-            </div>
-          ))}
-        </div>
-      </BentoCard>
-    </div>
-  );
-}
-
-function BentoCard({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <Reveal className={className}>
-      <div
-        className="group h-full rounded-2xl border bg-card p-6 transition-shadow hover:shadow-[0_12px_40px_-20px_rgba(15,20,25,0.18)]"
-        style={{ borderColor: C.hairline }}
-      >
+    <article className="mk-card mk-feature">
+      <span className="mk-feature__icon">
+        <IconCmp aria-hidden="true" />
+      </span>
+      <h3 className="mk-h3">{title}</h3>
+      <p className="mk-body">{body}</p>
+      <Checklist items={points} />
+      <div className="mk-feature__visual" aria-hidden="true">
         {children}
       </div>
-    </Reveal>
+    </article>
   );
 }
 
-function BentoHeader({
-  icon: Icon,
-  eyebrow,
-  title,
-}: {
-  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
-  eyebrow: string;
-  title: string;
-}) {
-  return (
-    <div>
-      <div
-        className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em]"
-        style={{ color: C.muted }}
-      >
-        <Icon className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-        {eyebrow}
-      </div>
-      <h3 className="font-serif text-2xl leading-tight tracking-tight" style={{ color: C.ink }}>
-        {title}
-      </h3>
-    </div>
-  );
-}
-
-function BentoBody({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mt-2 text-sm leading-relaxed" style={{ color: C.muted }}>
-      {children}
-    </p>
-  );
-}
-
-// ── 7. Comparison strip ──────────────────────────────────────────────────────
-function ComparisonTable() {
-  const rows = [
-    ["VAT 201 workpaper export", true, false, false, false],
-    ["Arabic + English UI", true, false, false, true],
-    ["e-Invoicing PINT AE (2026)", true, false, false, false],
-    ["UAE bank CSV imports", true, false, false, false],
-    ["Receipt OCR — Arabic + English", true, true, false, false],
-    ["UAE corporate tax workpapers", true, false, false, false],
-    ["Pricing in AED", true, false, false, true],
+function Hero() {
+  const { t } = useTranslation();
+  const facts = [
+    "marketing.factLedger",
+    "marketing.factVat",
+    "marketing.factBilingual",
+    "marketing.factCurrency",
+    "marketing.factExports",
   ];
-  const cols = ["Muhasib", "QuickBooks", "Xero", "Zoho Books"];
   return (
-    <Reveal>
-      <div
-        className="overflow-hidden rounded-2xl border bg-card"
-        style={{ borderColor: C.hairline }}
-      >
-        <div
-          className="grid grid-cols-[1.6fr_repeat(4,1fr)] items-center border-b text-[10px] font-semibold uppercase tracking-[0.2em]"
-          style={{ borderColor: C.hairline, color: C.muted }}
-        >
-          <div className="px-5 py-4">UAE-built feature</div>
-          {cols.map((c, i) => (
-            <div
-              key={c}
-              className="border-l px-4 py-4 text-center"
-              style={{
-                borderColor: C.hairline,
-                background: i === 0 ? C.emeraldSoft : "transparent",
-                color: i === 0 ? C.emerald : C.muted,
-              }}
-            >
-              {c}
-            </div>
-          ))}
-        </div>
-        {rows.map(([label, ...vals], r) => (
-          <div
-            key={r}
-            className="grid grid-cols-[1.6fr_repeat(4,1fr)] items-center border-b text-sm last:border-0"
-            style={{ borderColor: C.hairline }}
-          >
-            <div className="px-5 py-3.5 font-medium" style={{ color: C.ink }}>
-              {label}
-            </div>
-            {(vals as boolean[]).map((v, i) => (
-              <div
-                key={i}
-                className="border-l px-4 py-3.5 text-center"
-                style={{
-                  borderColor: C.hairline,
-                  background: i === 0 ? C.emeraldSoft : "transparent",
-                }}
-              >
-                {v ? (
-                  <Check
-                    className="mx-auto h-4 w-4"
-                    style={{ color: i === 0 ? C.emerald : C.ink }}
-                  />
-                ) : (
-                  <span className="font-mono text-base" style={{ color: "rgba(15,20,25,0.2)" }}>
-                    —
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-    </Reveal>
-  );
-}
-
-// ── 8. Workflow walkthrough — scroll-driven 4-step morph ────────────────────
-function Workflow() {
-  const ref = useRef<HTMLDivElement>(null);
-  const { scrollYProgress } = useScroll({
-    target: ref,
-    offset: ["start end", "end start"],
-  });
-
-  // All useTransform calls happen at the top level — Rules of Hooks.
-  // Step opacities (left column number badges).
-  const s1Op = useTransform(scrollYProgress, [0.1, 0.3], [0.35, 1]);
-  const s2Op = useTransform(scrollYProgress, [0.3, 0.5], [0.35, 1]);
-  const s3Op = useTransform(scrollYProgress, [0.5, 0.7], [0.35, 1]);
-  const s4Op = useTransform(scrollYProgress, [0.7, 0.9], [0.35, 1]);
-
-  // Border colors (left column number badges).
-  const s1Border = useTransform(scrollYProgress, [0.1, 0.3], [C.hairline, C.emerald]);
-  const s2Border = useTransform(scrollYProgress, [0.3, 0.5], [C.hairline, C.emerald]);
-  const s3Border = useTransform(scrollYProgress, [0.5, 0.7], [C.hairline, C.emerald]);
-  const s4Border = useTransform(scrollYProgress, [0.7, 0.9], [C.hairline, C.emerald]);
-
-  // Pipeline row opacities (right column).
-  const p1Op = useTransform(scrollYProgress, [0.1, 0.3], [0.3, 1]);
-  const p2Op = useTransform(scrollYProgress, [0.3, 0.5], [0.3, 1]);
-  const p3Op = useTransform(scrollYProgress, [0.5, 0.7], [0.3, 1]);
-  const p4Op = useTransform(scrollYProgress, [0.7, 0.9], [0.3, 1]);
-
-  // Pipeline tick check opacities.
-  const t1 = useTransform(scrollYProgress, [0.2, 0.3], [0, 1]);
-  const t2 = useTransform(scrollYProgress, [0.4, 0.5], [0, 1]);
-  const t3 = useTransform(scrollYProgress, [0.6, 0.7], [0, 1]);
-  const t4 = useTransform(scrollYProgress, [0.8, 0.9], [0, 1]);
-
-  // Pipeline tick backgrounds.
-  const b1 = useTransform(scrollYProgress, [0.1, 0.3], [C.whisper, C.emeraldSoft]);
-  const b2 = useTransform(scrollYProgress, [0.3, 0.5], [C.whisper, C.emeraldSoft]);
-  const b3 = useTransform(scrollYProgress, [0.5, 0.7], [C.whisper, C.emeraldSoft]);
-  const b4 = useTransform(scrollYProgress, [0.7, 0.9], [C.whisper, C.emeraldSoft]);
-
-  const steps: Array<{
-    n: string;
-    t: string;
-    d: string;
-    op: import("framer-motion").MotionValue<number>;
-    border: import("framer-motion").MotionValue<string>;
-  }> = [
-    {
-      n: "01",
-      t: "Capture",
-      d: "Photo, email forward, or CSV import.",
-      op: s1Op,
-      border: s1Border,
-    },
-    {
-      n: "02",
-      t: "Categorise",
-      d: "AI assigns COA, VAT code, project, cost centre.",
-      op: s2Op,
-      border: s2Border,
-    },
-    {
-      n: "03",
-      t: "Reconcile",
-      d: "Matched against imported bank movements.",
-      op: s3Op,
-      border: s3Border,
-    },
-    {
-      n: "04",
-      t: "Export",
-      d: "VAT 201 figures exported for official-channel filing.",
-      op: s4Op,
-      border: s4Border,
-    },
-  ];
-
-  const pipeline: Array<{
-    label: string;
-    body: string;
-    op: import("framer-motion").MotionValue<number>;
-    tick: import("framer-motion").MotionValue<number>;
-    bg: import("framer-motion").MotionValue<string>;
-  }> = [
-    { label: "Receipt captured", body: "Carrefour · AED 453.71", op: p1Op, tick: t1, bg: b1 },
-    { label: "Categorised", body: "Office supplies · VAT 5%", op: p2Op, tick: t2, bg: b2 },
-    { label: "Reconciled", body: "Matched ADCB · 0119", op: p3Op, tick: t3, bg: b3 },
-    { label: "VAT 201 queued", body: "Q3 2026 · review-ready", op: p4Op, tick: t4, bg: b4 },
-  ];
-
-  return (
-    <div ref={ref} className="relative">
-      <div className="grid items-start gap-12 lg:grid-cols-2">
-        <div>
-          <div
-            className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
-            style={{ color: C.emerald }}
-          >
-            <span className="h-px w-8" style={{ background: C.emerald }} />
-            How it works
-          </div>
-          <h2
-            className="font-serif text-4xl leading-[1.05] tracking-tight md:text-5xl"
-            style={{ color: C.ink }}
-          >
-            From receipt to{" "}
-            <span className="italic" style={{ color: C.emerald }}>
-              review-ready
-            </span>
-            .<br />
-            With controls.
-          </h2>
-          <p className="mt-6 max-w-md text-base leading-relaxed" style={{ color: C.muted }}>
-            Snap a receipt, forward an invoice, or import a bank statement. Muhasib categorises it,
-            drafts the journal, updates your VAT position, and prepares the review queue before you
-            open your spreadsheet.
-          </p>
-
-          <div className="mt-10 space-y-5">
-            {steps.map((s) => (
-              <motion.div key={s.n} style={{ opacity: s.op }} className="flex items-start gap-5">
-                <motion.div
-                  style={{ borderColor: s.border }}
-                  className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 font-mono text-xs font-semibold"
-                >
-                  {s.n}
-                </motion.div>
-                <div>
-                  <div className="text-base font-semibold" style={{ color: C.ink }}>
-                    {s.t}
-                  </div>
-                  <div className="mt-1 text-sm" style={{ color: C.muted }}>
-                    {s.d}
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-
-        <div className="sticky top-32">
-          <div
-            className="relative overflow-hidden rounded-2xl border bg-card p-6"
-            style={{ borderColor: C.hairline, boxShadow: "0 24px 60px -30px rgba(15,20,25,0.25)" }}
-          >
-            <div
-              className="mb-4 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em]"
-              style={{ color: C.muted }}
-            >
-              <Cpu className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-              Live pipeline
-            </div>
-
-            <div className="space-y-3">
-              {pipeline.map((p, i) => (
-                <motion.div
-                  key={i}
-                  style={{ opacity: p.op }}
-                  className="flex items-center gap-3 rounded-xl border p-3"
-                  data-border-color={C.hairline}
-                >
-                  <motion.div
-                    className="flex h-8 w-8 items-center justify-center rounded-lg"
-                    style={{ background: p.bg }}
-                  >
-                    <motion.div style={{ opacity: p.tick }}>
-                      <Check className="h-4 w-4" style={{ color: C.emerald }} />
-                    </motion.div>
-                  </motion.div>
-                  <div className="flex-1">
-                    <div className="text-[11px] font-semibold" style={{ color: C.ink }}>
-                      {p.label}
-                    </div>
-                    <div className="font-mono text-[10px]" style={{ color: C.muted }}>
-                      {p.body}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── 9. Page ──────────────────────────────────────────────────────────────────
-export default function MuhasibLanding() {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 12);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  return (
-    <div
-      className="min-h-screen antialiased"
-      style={{ background: C.paper, color: C.ink, fontFamily: '"Geist", system-ui, sans-serif' }}
-    >
-      {/* ─── Navbar ────────────────────────────────────────────────────── */}
-      <header
-        className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
-          scrolled ? "border-b bg-[#FAFAF6]/85 backdrop-blur-xl" : "border-b border-transparent"
-        }`}
-        style={scrolled ? { borderColor: C.hairline } : undefined}
-      >
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-          <Link href="/">
-            <div className="flex cursor-pointer items-center gap-2.5">
-              <div
-                className="flex h-8 w-8 items-center justify-center rounded-lg font-serif text-base font-bold text-white"
-                style={{ background: C.emerald }}
-              >
-                م
-              </div>
-              <span className="text-[15px] font-semibold tracking-tight">
-                Muhasib<span style={{ color: C.emerald }}>.ai</span>
-              </span>
-            </div>
-          </Link>
-
-          <nav className="hidden items-center gap-8 md:flex">
-            {[
-              ["Product", "#capabilities"],
-              ["Compliance", "#compliance"],
-              ["Compare", "#compare"],
-              ["Demo", "/demo"],
-              ["Pricing", "/pricing"],
-            ].map(([l, h]) => (
-              <a
-                key={l}
-                href={h}
-                className="group relative text-[13px] font-medium transition-colors"
-                style={{ color: C.muted }}
-              >
-                {l}
-              </a>
-            ))}
-          </nav>
-
-          <div className="hidden items-center gap-3 md:flex">
-            <Link href="/login">
-              <button className="text-[13px] font-medium" style={{ color: C.muted }}>
-                Sign in
-              </button>
-            </Link>
-            <Link href="/register">
-              <button
-                className="group flex items-center gap-1.5 rounded-full px-4 py-2 text-[12px] font-semibold text-white transition-transform hover:scale-[1.02]"
-                style={{ background: C.emerald }}
-              >
-                Start free
-                <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-              </button>
-            </Link>
-          </div>
-
-          <button
-            className="rounded-md p-2 md:hidden"
-            onClick={() => setMenuOpen((o) => !o)}
-            aria-label="Toggle menu"
-          >
-            {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-        </div>
-
-        {menuOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="border-t bg-card md:hidden"
-            style={{ borderColor: C.hairline }}
-          >
-            <div className="flex flex-col gap-1 p-4">
-              {[
-                ["Product", "#capabilities"],
-                ["Compliance", "#compliance"],
-                ["Compare", "#compare"],
-                ["Demo", "/demo"],
-                ["Pricing", "/pricing"],
-              ].map(([l, h]) => (
-                <a
-                  key={l}
-                  href={h}
-                  className="rounded-md px-3 py-3 text-sm font-medium"
-                  style={{ color: C.ink }}
-                >
-                  {l}
-                </a>
-              ))}
-              <Link href="/register" className="mt-2">
-                <button
-                  className="w-full rounded-full px-4 py-3 text-sm font-semibold text-white"
-                  style={{ background: C.emerald }}
-                >
-                  Start free
-                </button>
+    <section className="mk-hero" aria-labelledby="mk-hero-title">
+      <div className="mk-container">
+        <div className="mk-hero__copy">
+          <p className="mk-eyebrow mk-rise">{t["marketing.heroEyebrow"]}</p>
+          <h1 id="mk-hero-title" className="mk-display mk-rise mk-rise--2">
+            {t["marketing.heroTitleLead"]}{" "}
+            <span className="mk-accent">{t["marketing.heroTitleAccent"]}</span>
+          </h1>
+          <p className="mk-lead mk-rise mk-rise--3">{t["marketing.heroBody"]}</p>
+          <div className="mk-hero__ctas mk-rise mk-rise--3">
+            <Button asChild size="xl">
+              <Link href="/register" data-testid="button-hero-start">
+                {t["marketing.startFreeTrial"]}
+                <ArrowRight className="mk-flip" aria-hidden="true" />
               </Link>
-            </div>
-          </motion.div>
-        )}
-      </header>
-
-      {/* ─── Hero ──────────────────────────────────────────────────────── */}
-      <section className="relative pt-32 lg:pt-40">
-        <HeroMesh />
-        <div className="relative mx-auto max-w-7xl px-6">
-          <div className="grid items-center gap-16 lg:grid-cols-[1.05fr_1fr]">
-            <div>
-              {/* Eyebrow */}
-              <Reveal>
-                <div
-                  className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]"
-                  style={{
-                    borderColor: C.hairlineStrong,
-                    background: "rgba(255,255,255,0.6)",
-                    color: C.muted,
-                  }}
-                >
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: C.emerald }} />
-                  Built in Dubai · for the UAE
-                </div>
-              </Reveal>
-
-              {/* Headline */}
-              <Reveal delay={0.05}>
-                <h1
-                  className="mt-7 font-serif text-[3.2rem] font-medium leading-[0.98] tracking-tight md:text-[4.4rem] lg:text-[5.2rem]"
-                  style={{ color: C.ink }}
-                >
-                  The ledger,
-                  <br />
-                  <span className="italic" style={{ color: C.emerald }}>
-                    handled.
-                  </span>
-                </h1>
-              </Reveal>
-
-              {/* Subhead */}
-              <Reveal delay={0.15}>
-                <p
-                  className="mt-7 max-w-xl text-base leading-relaxed md:text-lg"
-                  style={{ color: C.muted }}
-                >
-                  AI-native accounting for UAE businesses. Receipts captured, VAT calculated,
-                  imported bank statements reconciled, and tax workpapers prepared continuously,
-                  with review steps where judgment matters.
-                </p>
-              </Reveal>
-
-              {/* CTAs */}
-              <Reveal delay={0.25}>
-                <div className="mt-9 flex flex-wrap items-center gap-3">
-                  <Link href="/register">
-                    <button
-                      className="group flex items-center gap-2 rounded-full px-6 py-3.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02]"
-                      style={{ background: C.emerald }}
-                    >
-                      Start 14-day trial
-                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                    </button>
-                  </Link>
-                  <Link
-                    href="/demo"
-                    className="flex items-center gap-2 rounded-full border px-6 py-3.5 text-sm font-semibold"
-                    style={{ borderColor: C.hairlineStrong, color: C.ink }}
-                  >
-                    Explore demo data
-                    <ChevronRight className="h-4 w-4" />
-                  </Link>
-                </div>
-              </Reveal>
-
-              {/* Trust strip */}
-              <Reveal delay={0.4}>
-                <div
-                  className="mt-12 flex flex-wrap items-center gap-x-6 gap-y-3 text-[11px] font-medium uppercase tracking-[0.16em]"
-                  style={{ color: C.muted }}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <FileCheck className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    FTA · VAT 201
-                  </div>
-                  <span style={{ color: C.hairlineStrong }}>·</span>
-                  <div className="flex items-center gap-1.5">
-                    <Shield className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    Official-channel handoff
-                  </div>
-                  <span style={{ color: C.hairlineStrong }}>·</span>
-                  <div className="flex items-center gap-1.5">
-                    <FileText className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    E-invoicing roadmap
-                  </div>
-                  <span style={{ color: C.hairlineStrong }}>·</span>
-                  <div className="flex items-center gap-1.5">
-                    <Shield className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    SOC / ISO roadmap
-                  </div>
-                </div>
-              </Reveal>
-            </div>
-
-            {/* Product mock */}
-            <div className="relative">
-              <HeroProductMock />
-            </div>
+            </Button>
+            <Button asChild variant="outline" size="xl">
+              <Link href="/demo" data-testid="button-hero-demo">
+                {t["marketing.heroSecondary"]}
+              </Link>
+            </Button>
           </div>
+          <p className="mk-hero__note mk-rise mk-rise--3">{t["marketing.heroNote"]}</p>
         </div>
-      </section>
-
-      {/* ─── FTA Ticker ───────────────────────────────────────────────── */}
-      <section className="mt-24">
-        <FtaTicker />
-      </section>
-
-      {/* ─── Numbers ──────────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-7xl px-6 py-24 lg:py-32">
-        <Reveal>
-          <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
-            {(
-              [
-                { value: 4, label: "Migration paths prepared" },
-                { value: 5, label: "Mobile workflows checked" },
-                { value: 2, label: "VAT and CT export workbooks" },
-                { value: 0, label: "Direct filing claims made" },
-              ] as Array<{ value: number; label: string; suffix?: string; prefix?: string }>
-            ).map((s) => (
-              <div key={s.label}>
-                <div
-                  className="font-serif text-5xl tracking-tight md:text-6xl"
-                  style={{ color: C.ink }}
-                >
-                  <Counter to={s.value} suffix={s.suffix} prefix={s.prefix} />
-                </div>
-                <div
-                  className="mt-3 text-[11px] font-semibold uppercase tracking-[0.22em]"
-                  style={{ color: C.muted }}
-                >
-                  {s.label}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Reveal>
-      </section>
-
-      {/* ─── Capabilities Bento ──────────────────────────────────────── */}
-      <section id="capabilities" className="mx-auto max-w-7xl px-6 py-24 lg:py-32">
-        <Reveal>
-          <div className="mb-14 max-w-3xl">
-            <div
-              className="mb-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
-              style={{ color: C.emerald }}
-            >
-              <span className="h-px w-8" style={{ background: C.emerald }} />
-              Product
-            </div>
-            <h2
-              className="font-serif text-4xl leading-[1.05] tracking-tight md:text-6xl"
-              style={{ color: C.ink }}
-            >
-              Every UAE accounting workflow,
-              <br />
-              <span className="italic" style={{ color: C.emerald }}>
-                quietly automated.
-              </span>
-            </h2>
-          </div>
-        </Reveal>
-        <CapabilityBento />
-      </section>
-
-      {/* ─── Workflow ─────────────────────────────────────────────────── */}
-      <section
-        id="compliance"
-        className="mx-auto max-w-7xl px-6 py-24 lg:py-32"
-        style={{ background: "linear-gradient(180deg,transparent,rgba(13,92,61,0.025))" }}
-      >
-        <Workflow />
-      </section>
-
-      {/* ─── Compare ─────────────────────────────────────────────────── */}
-      <section id="compare" className="mx-auto max-w-7xl px-6 py-24 lg:py-32">
-        <Reveal>
-          <div className="mb-14 max-w-3xl">
-            <div
-              className="mb-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
-              style={{ color: C.emerald }}
-            >
-              <span className="h-px w-8" style={{ background: C.emerald }} />
-              Compare
-            </div>
-            <h2
-              className="font-serif text-4xl leading-[1.05] tracking-tight md:text-5xl"
-              style={{ color: C.ink }}
-            >
-              Other tools were built
-              <br />
-              <span className="italic" style={{ color: C.emerald }}>
-                somewhere else.
-              </span>
-            </h2>
-            <p className="mt-6 max-w-2xl text-base leading-relaxed" style={{ color: C.muted }}>
-              QuickBooks was built for the US tax code. Xero for the Anzac market. Zoho is closer,
-              but adapts global features for the UAE — instead of starting here.
-            </p>
-          </div>
-        </Reveal>
-        <ComparisonTable />
-      </section>
-
-      {/* Testimonial section removed: fabricated quote from a named individual/company
-          on a pre-launch product with zero customers. Do not re-add a testimonial
-          until it is real, attributable, and the customer has approved the wording. */}
-
-      {/* ─── Insight rail ────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-7xl px-6 py-24">
-        <Reveal>
-          <div className="flex items-end justify-between gap-6">
-            <div>
-              <div
-                className="mb-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
-                style={{ color: C.emerald }}
-              >
-                <span className="h-px w-8" style={{ background: C.emerald }} />
-                Insights
-              </div>
-              <h2
-                className="font-serif text-3xl tracking-tight md:text-5xl"
-                style={{ color: C.ink }}
-              >
-                From the desk.
-              </h2>
-            </div>
-            <a
-              href="#"
-              className="hidden items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] sm:inline-flex"
-              style={{ color: C.muted }}
-            >
-              All insights <ArrowUpRight className="h-3.5 w-3.5" />
-            </a>
-          </div>
-        </Reveal>
-
-        <div className="mt-10 grid gap-6 md:grid-cols-3">
-          {[
-            [
-              "FTA decision 5/2025",
-              "A practical guide to the new real-estate VAT clarification",
-              "8 min read",
-            ],
-            [
-              "Corporate tax",
-              "When the AED 3M small-business relief actually saves you money",
-              "6 min read",
-            ],
-            [
-              "e-Invoicing",
-              "PINT AE in plain Arabic: what changes for your invoicing in July 2026",
-              "11 min read",
-            ],
-          ].map(([eyebrow, title, meta], i) => (
-            <Reveal key={i} delay={i * 0.08}>
-              <article
-                className="group relative h-full overflow-hidden rounded-2xl border bg-card p-7 transition-shadow hover:shadow-[0_12px_36px_-18px_rgba(15,20,25,0.18)]"
-                style={{ borderColor: C.hairline }}
-              >
-                <div
-                  className="text-[10px] font-bold uppercase tracking-[0.22em]"
-                  style={{ color: C.emerald }}
-                >
-                  {eyebrow}
-                </div>
-                <h3 className="mt-3 font-serif text-2xl leading-tight" style={{ color: C.ink }}>
-                  {title}
-                </h3>
-                <div
-                  className="mt-8 flex items-center justify-between text-[11px] font-medium"
-                  style={{ color: C.muted }}
-                >
-                  <span>{meta}</span>
-                  <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-                </div>
-              </article>
-            </Reveal>
+        <div className="mk-hero__visual mk-rise mk-rise--4">
+          <span className="mk-ruling bg-ledger-ruling" aria-hidden="true" />
+          <ProductPreview />
+        </div>
+        <ul className="mk-facts">
+          {facts.map((key) => (
+            <li key={key}>{t[key]}</li>
           ))}
-        </div>
-      </section>
-
-      {/* ─── Final CTA ───────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-7xl px-6 py-24 lg:py-32">
-        <Reveal>
-          <div
-            className="relative overflow-hidden rounded-3xl border p-12 text-center lg:p-20"
-            style={{ background: C.paper, borderColor: C.hairline }}
-          >
-            <HeroMesh />
-            <div className="relative">
-              <div
-                className="mb-6 inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
-                style={{ color: C.emerald }}
-              >
-                <span className="h-px w-8" style={{ background: C.emerald }} />
-                14-day trial · no card
-              </div>
-              <h2
-                className="mx-auto max-w-3xl font-serif text-4xl leading-[1.05] tracking-tight md:text-6xl"
-                style={{ color: C.ink }}
-              >
-                Hand the ledger to an
-                <br />
-                <span className="italic" style={{ color: C.emerald }}>
-                  agent that never sleeps.
-                </span>
-              </h2>
-              <p
-                className="mx-auto mt-7 max-w-xl text-base leading-relaxed"
-                style={{ color: C.muted }}
-              >
-                Use guided migration templates for your chart of accounts, opening balances,
-                contacts, and historical activity.
-              </p>
-              <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-                <Link href="/register">
-                  <button
-                    className="group flex items-center gap-2 rounded-full px-7 py-3.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02]"
-                    style={{ background: C.emerald }}
-                  >
-                    Start 14-day trial
-                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                  </button>
-                </Link>
-                <Link
-                  href="/demo"
-                  className="rounded-full border px-7 py-3.5 text-sm font-semibold"
-                  style={{ borderColor: C.hairlineStrong, color: C.ink }}
-                >
-                  Explore demo
-                </Link>
-              </div>
-            </div>
-          </div>
-        </Reveal>
-      </section>
-
-      {/* ─── Footer ──────────────────────────────────────────────────── */}
-      <footer
-        className="border-t"
-        style={{ borderColor: C.hairline, background: "rgba(15,20,25,0.02)" }}
-      >
-        <div className="mx-auto max-w-7xl px-6 py-14">
-          <div className="grid gap-10 md:grid-cols-4">
-            <div className="md:col-span-2">
-              <div className="flex items-center gap-2.5">
-                <div
-                  className="flex h-8 w-8 items-center justify-center rounded-lg font-serif text-base font-bold text-white"
-                  style={{ background: C.emerald }}
-                >
-                  م
-                </div>
-                <span className="text-[15px] font-semibold tracking-tight">
-                  Muhasib<span style={{ color: C.emerald }}>.ai</span>
-                </span>
-              </div>
-              <p className="mt-5 max-w-md text-sm" style={{ color: C.muted }}>
-                AI-native accounting, built in Dubai for the UAE. Headquartered in DIFC. Operating
-                across the GCC.
-              </p>
-              <div className="mt-6 flex items-center gap-2 text-[11px]" style={{ color: C.muted }}>
-                <Building2 className="h-3.5 w-3.5" />
-                Index Tower · DIFC · Dubai
-              </div>
-            </div>
-
-            <FooterCol
-              title="Product"
-              links={[
-                ["Receipts", "#"],
-                ["VAT 201", "#"],
-                ["Bank imports", "#"],
-                ["Demo workspace", "/demo"],
-                ["Bilingual invoices", "#"],
-                ["Pricing", "/pricing"],
-              ]}
-            />
-            <FooterCol
-              title="Company"
-              links={[
-                ["Sign in", "/login"],
-                ["Register", "/register"],
-                ["Privacy", "/privacy"],
-                ["Terms", "/terms"],
-                ["Cookies", "/cookies"],
-              ]}
-            />
-          </div>
-
-          <div
-            className="mt-14 flex flex-col items-start justify-between gap-3 border-t pt-8 text-[11px] md:flex-row md:items-center"
-            style={{ borderColor: C.hairline, color: C.muted }}
-          >
-            <div>© {new Date().getFullYear()} Muhasib.ai · DIFC, Dubai, United Arab Emirates</div>
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-              All systems normal
-            </div>
-          </div>
-        </div>
-      </footer>
-    </div>
+        </ul>
+      </div>
+    </section>
   );
 }
 
-function FooterCol({ title, links }: { title: string; links: [string, string][] }) {
+function Product() {
+  const { t } = useTranslation();
+  const pl = SAMPLE.pl;
+  const gross = pl.income - pl.costOfSales;
   return (
-    <div>
-      <h4
-        className="mb-4 text-[10px] font-bold uppercase tracking-[0.3em]"
-        style={{ color: C.muted }}
-      >
-        {title}
-      </h4>
-      <ul className="space-y-3">
-        {links.map(([l, h]) => (
-          <li key={l}>
-            <a href={h} className="text-sm" style={{ color: C.ink }}>
-              {l}
+    <section id="product" className="mk-section" aria-labelledby="mk-product-title">
+      <div className="mk-container">
+        <SectionHeading
+          id="mk-product-title"
+          eyebrow={t["marketing.productEyebrow"]}
+          title={t["marketing.productTitle"]}
+          body={t["marketing.productBody"]}
+        />
+
+        <div className="mk-spotlight">
+          <div>
+            <p className="mk-eyebrow">{t["marketing.vatEyebrow"]}</p>
+            <h3 className="mk-h2 mk-spotlight__title">{t["marketing.vatTitle"]}</h3>
+            <p className="mk-body mk-spotlight__body">{t["marketing.vatBody"]}</p>
+            <Checklist
+              items={[t["marketing.vatPoint1"], t["marketing.vatPoint2"], t["marketing.vatPoint3"]]}
+            />
+            <Alert tone="info" className="mk-spotlight__note">
+              {t["marketing.vatNote"]}
+            </Alert>
+          </div>
+          <VatPreview />
+        </div>
+
+        <div className="mk-features">
+          <FeatureCard
+            icon={FileText}
+            title={t["marketing.invoiceTitle"]}
+            body={t["marketing.invoiceBody"]}
+            points={[t["marketing.invoicePoint1"], t["marketing.invoicePoint2"]]}
+          >
+            <div className="mk-doc">
+              <div className="mk-doc__head">
+                <div>
+                  <div className="mk-doc__title" lang="en" dir="ltr">
+                    {"Tax Invoice"}
+                  </div>
+                  <div className="mk-small mk-num">{"INV-1043"}</div>
+                </div>
+                <div className="mk-doc__end">
+                  <div className="mk-doc__title-ar" lang="ar" dir="rtl">
+                    {t["marketing.invoiceDocTitleAr"]}
+                  </div>
+                  <div className="mk-small">
+                    {t["marketing.invoiceDocTrn"]}{" "}
+                    <span className="mk-num">{"100000000000003"}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="mk-doc__row">
+                <span>{t["marketing.invoiceDocLine"]}</span>
+                <Amount value={9200} />
+              </div>
+              <div className="mk-doc__row">
+                <span>{t["marketing.invoiceDocVat"]}</span>
+                <Amount value={460} />
+              </div>
+              <div className="mk-doc__row mk-doc__row--total">
+                <span>{t["marketing.invoiceDocTotal"]}</span>
+                <Amount value={9660} />
+              </div>
+            </div>
+          </FeatureCard>
+
+          <FeatureCard
+            icon={Landmark}
+            title={t["marketing.bankTitle"]}
+            body={t["marketing.bankBody"]}
+            points={[t["marketing.bankPoint1"], t["marketing.bankPoint2"]]}
+          >
+            <div className="mk-lines">
+              {SAMPLE.bankLines.map((line) => (
+                <div key={line.text} className="mk-line">
+                  <span className="mk-line__date mk-num">{line.date}</span>
+                  <span className="mk-line__desc" translate="no" dir="ltr">
+                    {line.text}
+                  </span>
+                  <StatusBadge status={line.status} />
+                  <span className="mk-line__amt" data-neg={line.amount < 0}>
+                    <Amount value={line.amount} currency={false} />
+                  </span>
+                </div>
+              ))}
+            </div>
+          </FeatureCard>
+
+          <FeatureCard
+            icon={Users}
+            title={t["marketing.payrollTitle"]}
+            body={t["marketing.payrollBody"]}
+            points={[t["marketing.payrollPoint1"], t["marketing.payrollPoint2"]]}
+          >
+            <div className="mk-payroll__top">
+              <span className="mk-panel__title">{t["marketing.payrollRun"]}</span>
+              <Status tone="success" className="mk-status">
+                {t["marketing.payrollApproved"]}
+              </Status>
+            </div>
+            <div className="mk-payroll__stats">
+              <div className="mk-stat">
+                <div className="mk-stat__label">{t["marketing.payrollEmployees"]}</div>
+                <div className="mk-stat__value mk-num">{SAMPLE.payroll.employees}</div>
+              </div>
+              <div className="mk-stat">
+                <div className="mk-stat__label">{t["marketing.payrollNet"]}</div>
+                <div className="mk-stat__value">
+                  <Amount value={SAMPLE.payroll.net} />
+                </div>
+              </div>
+            </div>
+            <div className="mk-file">
+              <FileSpreadsheet aria-hidden="true" />
+              <span className="mk-num">{"WPS_202606.SIF"}</span>
+              <Status tone="success" className="mk-status">
+                {t["marketing.payrollSif"]}
+              </Status>
+            </div>
+          </FeatureCard>
+
+          <FeatureCard
+            icon={LineChart}
+            title={t["marketing.reportsTitle"]}
+            body={t["marketing.reportsBody"]}
+            points={[t["marketing.reportsPoint1"], t["marketing.reportsPoint2"]]}
+          >
+            <div className="mk-pl">
+              <div className="mk-pl__row mk-pl__row--sub">
+                <span>{t["marketing.reportsPl"]}</span>
+                <span className="mk-small">{"Q2 2026"}</span>
+              </div>
+              <div className="mk-pl__row">
+                <span>{t["marketing.reportsIncome"]}</span>
+                <Amount value={pl.income} currency={false} />
+              </div>
+              <div className="mk-pl__row">
+                <span>{t["marketing.reportsCostOfSales"]}</span>
+                <Amount value={-pl.costOfSales} currency={false} />
+              </div>
+              <div className="mk-pl__row mk-pl__row--sub">
+                <span>{t["marketing.reportsGrossProfit"]}</span>
+                <Amount value={gross} currency={false} />
+              </div>
+              <div className="mk-pl__row">
+                <span>{t["marketing.reportsOperating"]}</span>
+                <Amount value={-pl.operating} currency={false} />
+              </div>
+              <div className="mk-pl__row mk-pl__row--total">
+                <span>{t["marketing.reportsNetProfit"]}</span>
+                <Amount value={gross - pl.operating} currency={false} />
+              </div>
+            </div>
+          </FeatureCard>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Real screenshots of the product on sample data (X6d), plus the sample invoice PDF. */
+const SCREENS = [
+  {
+    id: "dashboard",
+    titleKey: "marketing.screenDashboardTitle",
+    altKey: "marketing.screenDashboardAlt",
+  },
+  { id: "vat", titleKey: "marketing.screenVatTitle", altKey: "marketing.screenVatAlt" },
+  {
+    id: "invoices",
+    titleKey: "marketing.screenInvoicesTitle",
+    altKey: "marketing.screenInvoicesAlt",
+  },
+  { id: "aging", titleKey: "marketing.screenAgingTitle", altKey: "marketing.screenAgingAlt" },
+] as const;
+
+function ProductScreens() {
+  const { t, locale } = useTranslation();
+  const lang = locale === "ar" ? "ar" : "en";
+  return (
+    <section
+      id="screens"
+      className="mk-section mk-section--sunken"
+      aria-labelledby="mk-screens-title"
+    >
+      <div className="mk-container">
+        <SectionHeading
+          id="mk-screens-title"
+          eyebrow={t["marketing.screensEyebrow"]}
+          title={t["marketing.screensTitle"]}
+          body={t["marketing.screensBody"]}
+        />
+        <div className="mk-screens" data-testid="landing-screenshots">
+          {SCREENS.map((screen) => (
+            <figure key={screen.id} className="mk-screen">
+              <img
+                src={`/product/${screen.id}-${lang}.webp`}
+                alt={t[screen.altKey]}
+                width={1280}
+                height={800}
+                loading="lazy"
+                decoding="async"
+                data-testid={`landing-screenshot-${screen.id}`}
+              />
+              <figcaption>{t[screen.titleKey]}</figcaption>
+            </figure>
+          ))}
+        </div>
+        <div className="mk-sample" data-testid="landing-sample-invoice">
+          <FileText aria-hidden="true" />
+          <div>
+            <h3 className="mk-h3">{t["marketing.sampleInvoiceTitle"]}</h3>
+            <p className="mk-body">{t["marketing.sampleInvoiceBody"]}</p>
+          </div>
+          <Button asChild variant="outline" size="lg">
+            <a
+              href="/samples/muhasib-sample-invoice.pdf"
+              download
+              data-testid="button-sample-invoice"
+            >
+              <FileDown aria-hidden="true" />
+              {t["marketing.sampleInvoiceCta"]}
             </a>
-          </li>
-        ))}
-      </ul>
-    </div>
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Steps() {
+  const { t } = useTranslation();
+  return (
+    <section id="how-it-works" className="mk-section" aria-labelledby="mk-steps-title">
+      <div className="mk-container">
+        <SectionHeading
+          id="mk-steps-title"
+          eyebrow={t["marketing.stepsEyebrow"]}
+          title={t["marketing.stepsTitle"]}
+        />
+        <ol className="mk-steps">
+          {[1, 2, 3].map((n) => (
+            <li key={n} className="mk-step">
+              <span className="mk-step__num mk-num">{`0${n}`}</span>
+              <h3 className="mk-h3">{t[`marketing.step${n}Title`]}</h3>
+              <p className="mk-body">{t[`marketing.step${n}Body`]}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+function PricingTeaser() {
+  const { t } = useTranslation();
+  return (
+    <section className="mk-section mk-section--sunken" aria-labelledby="mk-pricing-title">
+      <div className="mk-container">
+        <SectionHeading
+          id="mk-pricing-title"
+          eyebrow={t["marketing.pricingEyebrow"]}
+          title={t["marketing.pricingTitleTrial"]}
+          body={t["marketing.pricingBodyTrial"]}
+        />
+        <div className="mk-prplans__row" data-testid="landing-plans">
+          {PLANS.map((plan) => (
+            <PlanCard key={plan.id} plan={plan} cycle="monthly" compact headingLevel="h3" />
+          ))}
+        </div>
+        <div className="mk-plans__foot">
+          <Button asChild variant="outline" size="lg">
+            <Link href="/pricing" data-testid="link-compare-plans">
+              {t["marketing.pricingCompare"]}
+              <ArrowRight className="mk-flip" aria-hidden="true" />
+            </Link>
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const FAQ_LINKS: Record<number, [string, string]> = {
+  6: ["/migration-guides", "marketing.faqMigrationLink"],
+  7: ["/trust", "marketing.faqTrustLink"],
+};
+
+function Faq() {
+  const { t } = useTranslation();
+  return (
+    <FaqSection
+      id="mk-faq-title"
+      eyebrow={t["marketing.faqEyebrow"]}
+      title={t["marketing.faqTitle"]}
+      items={[1, 2, 3, 4, 5, 6, 7].map((n) => ({
+        q: t[`marketing.faq${n}Q`],
+        a: t[`marketing.faq${n}A`],
+        link: FAQ_LINKS[n] ? { href: FAQ_LINKS[n][0], label: t[FAQ_LINKS[n][1]] } : undefined,
+      }))}
+    />
+  );
+}
+
+export default function MuhasibLanding() {
+  return (
+    <MarketingLayout
+      titleKey="marketing.seoHomeTitle"
+      descriptionKey="marketing.seoHomeDescription"
+    >
+      <Hero />
+      <Product />
+      <ProductScreens />
+      <Steps />
+      <PricingTeaser />
+      <Faq />
+      <ClosingCta />
+    </MarketingLayout>
   );
 }

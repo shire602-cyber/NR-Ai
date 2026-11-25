@@ -13,10 +13,19 @@ vi.hoisted(() => {
 });
 
 vi.mock("../../server/db", () => ({ db: {} }));
+const { oauthGrant } = vi.hoisted(() => ({ oauthGrant: vi.fn() }));
+vi.mock("openid-client", () => ({
+  discovery: vi.fn(async () => ({})),
+  authorizationCodeGrant: oauthGrant,
+}));
 
+import { validateEnv } from "../../server/config/env";
 import {
   decryptOAuthSecret,
   encryptOAuthSecret,
+  exchangeOAuthCallback,
+  extractOAuthSignupLocale,
+  withOAuthSignupLocale,
   getOAuthProviderInfo,
   hashOAuthSecret,
   isOAuthProviderId,
@@ -24,6 +33,24 @@ import {
   oauthCallbackSuccessUrl,
   sanitizeOAuthNextPath,
 } from "../../server/services/oauth.service";
+
+describe("oauth signup locale carrier", () => {
+  it("round-trips Arabic through next_path and strips it from the redirect path", () => {
+    const carried = withOAuthSignupLocale("/dashboard?signup_plan=starter", "ar");
+    expect(carried).toContain("signup_locale=ar");
+    expect(extractOAuthSignupLocale(carried)).toEqual({
+      locale: "ar",
+      nextPath: "/dashboard?signup_plan=starter",
+    });
+  });
+
+  it("leaves English and unknown languages untouched", () => {
+    expect(withOAuthSignupLocale("/dashboard", "en")).toBe("/dashboard");
+    expect(withOAuthSignupLocale("/dashboard", "fr")).toBe("/dashboard");
+    expect(extractOAuthSignupLocale("/dashboard?signup_locale=fr").locale).toBe("en");
+    expect(withOAuthSignupLocale("//evil.test", "ar")).toBe("/dashboard?signup_locale=ar");
+  });
+});
 
 describe("oauth service helpers", () => {
   it("recognizes only supported providers", () => {
@@ -41,6 +68,49 @@ describe("oauth service helpers", () => {
 
   it("normalizes email addresses for exact-match linking", () => {
     expect(normalizeOAuthEmail(" Owner@Example.COM ")).toBe("owner@example.com");
+  });
+
+  it("requires a Microsoft email claim and its explicit verification flag for mailbox proof", async () => {
+    vi.stubEnv("OAUTH_MICROSOFT_CLIENT_ID", "test-microsoft-client");
+    vi.stubEnv("OAUTH_MICROSOFT_CLIENT_SECRET", "test-microsoft-secret");
+    validateEnv();
+    try {
+      async function exchange(emailClaims: Record<string, unknown>) {
+        oauthGrant.mockResolvedValueOnce({
+          claims: () => ({
+            aud: "test-microsoft-client",
+            iss: "https://login.microsoftonline.com/test-tenant/v2.0",
+            sub: "test-subject",
+            ...emailClaims,
+          }),
+        });
+        return exchangeOAuthCallback(
+          "microsoft",
+          new URL("https://app.muhasib.test/api/auth/oauth/microsoft/callback"),
+          {
+            provider: "microsoft",
+            state: "state",
+            codeVerifier: "verifier",
+            nonce: "nonce",
+            nextPath: "/dashboard",
+          }
+        );
+      }
+      expect((await exchange({ email: "customer@example.test" })).emailVerified).toBe(false);
+      expect(
+        (await exchange({ email: "customer@example.test", email_verified: false })).emailVerified
+      ).toBe(false);
+      expect(
+        (await exchange({ preferred_username: "customer@example.test", email_verified: true }))
+          .emailVerified
+      ).toBe(false);
+      expect(
+        (await exchange({ email: "customer@example.test", email_verified: true })).emailVerified
+      ).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+      validateEnv();
+    }
   });
 
   it("keeps OAuth next redirects relative to the app", () => {

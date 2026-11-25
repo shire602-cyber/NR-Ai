@@ -9,6 +9,7 @@ import {
   ToastViewport,
 } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 const VARIANT_ICON = {
   default: Info,
@@ -18,16 +19,17 @@ const VARIANT_ICON = {
 } as const;
 
 const VARIANT_ICON_COLOR = {
-  default: "text-muted-foreground",
-  success: "text-[hsl(var(--chart-5))]",
-  warning: "text-[hsl(var(--chart-4))]",
-  destructive: "text-destructive-foreground",
+  default: "text-info",
+  success: "text-success",
+  warning: "text-warning",
+  destructive: "text-danger",
 } as const;
 
 type ToastVariant = keyof typeof VARIANT_ICON;
 
 export function Toaster() {
   const { toasts } = useToast();
+  const { t } = useTranslation();
 
   return (
     <ToastProvider>
@@ -40,7 +42,7 @@ export function Toaster() {
               {Icon && (
                 <Icon
                   aria-hidden="true"
-                  className={cn("mt-0.5 h-5 w-5 shrink-0", VARIANT_ICON_COLOR[v])}
+                  className={cn("mt-px h-[18px] w-[18px] shrink-0", VARIANT_ICON_COLOR[v])}
                 />
               )}
               <div className="grid gap-1 flex-1">
@@ -53,7 +55,7 @@ export function Toaster() {
           </Toast>
         );
       })}
-      <ToastViewport />
+      <ToastViewport label={`${t["components.notificationsTitle"]} ({hotkey})`} />
     </ToastProvider>
   );
 }

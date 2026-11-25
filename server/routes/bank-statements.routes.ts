@@ -1,680 +1,533 @@
+import { assertUploadSize } from "../http/upload-errors";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { validate } from "../middleware/validate";
-import { storage } from "../storage";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
 import {
-  autoReconcileTransactions,
-  getSuggestionsForTransaction,
-} from "../services/auto-reconcile.service";
+  assertDifferentActor,
+  companyHasSingleMember,
+  requirePermission,
+} from "../middleware/companyRolePolicy";
+import { DomainError } from "../errors";
+import { storage } from "../storage";
+import { db } from "../db";
+import { and, desc, eq } from "drizzle-orm";
+import { getSuggestionsForTransaction } from "../services/auto-reconcile.service";
 import { createLogger } from "../config/logger";
 import { createAndEmitNotification } from "../services/socket.service";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
-import { ACCOUNT_CODES } from "../constants";
+import { notificationCopy } from "../../shared/server-copy";
+import { bankStatementCopy, statementRecognized } from "../../shared/bank-statement-copy";
+import {
+  parseBankCsvText,
+  toLegacyTransactions,
+  type BankParseResult,
+  type ParseOptions,
+} from "../services/bank-statement-parser.service";
+import {
+  assertStatementDatesValid,
+  importStatementRows,
+  parseStatementCsv,
+  statementImportChoice,
+} from "../services/bank-import.service";
+import {
+  applyMatch,
+  assertLinkableGlAccount,
+  buildReconciliationStatement,
+  confirmPendingEntry,
+  createBankGlAccount,
+  dbFils,
+  editTransaction,
+  getMatches,
+  setExcluded,
+  softDeleteTransaction,
+  syncUnreconciledGlLink,
+  undoImportBatch,
+  unmatchTransaction,
+  reconciliationSheets,
+  renderReconciliationPdf,
+  type MatchTarget,
+} from "../services/bank-reconciliation.service";
+import { sendTabular } from "../reporting/http";
+import { fromFils } from "../../shared/money";
+import {
+  bankAccountCreateBody,
+  bankAccountRelinkBody,
+  bankAccountUpdateBody,
+  bankCreateEntryBody,
+  bankMatchBody,
+  bankTransactionDeleteBody,
+  bankTransactionEditBody,
+  bankTransactionExcludeBody,
+  reconciliationStatementBody,
+  UAE_BANK_SUGGESTIONS,
+  type BankAccountCreateBody,
+  type BankAccountUpdateBody,
+  type BankCreateEntryBody,
+  type BankMatchBody,
+  type ReconciliationStatementBody,
+} from "../../shared/validators/banking";
+import { zDate } from "../../shared/validators/primitives";
+import {
+  bankImportBatches,
+  bankReconciliations,
+  type BankReconciliation,
+} from "../../shared/schema";
 
 const log = createLogger("bank-statements");
 
-// =====================================
-// Zod schemas
-// =====================================
+// ─── Statement parsing schemas (R06-23, parser from W1-E) ────────────────────
 
-const UAE_BANKS = ["Emirates NBD", "ADCB", "FAB", "Mashreq", "Other"] as const;
+const columnIndex = z.number().int().min(0).max(200).nullable().optional();
 
-// `name` is accepted as an alias for `nameEn` — it is the field name callers
-// reach for first, and sending it previously hit a NOT NULL column and returned
-// HTTP 500. Normalised before validation so the error messages stay accurate.
-const bankAccountCreateSchema = z.preprocess(
-  (value) => {
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      const v = { ...(value as Record<string, unknown>) };
-      if (v.nameEn == null && typeof v.name === "string") v.nameEn = v.name;
-      delete v.name;
-      return v;
-    }
-    return value;
-  },
-  z.object({
-    nameEn: z.string().min(1, "nameEn (or name) is required").max(255),
-    bankName: z.enum(UAE_BANKS, {
-      errorMap: () => ({ message: `bankName must be one of: ${UAE_BANKS.join(", ")}` }),
-    }),
-    accountNumber: z.string().max(64).optional().nullable(),
-    iban: z.string().max(64).optional().nullable(),
-    currency: z.string().length(3).optional(),
-    glAccountId: z.string().uuid().optional().nullable(),
+const statementSourceShape = {
+  csvContent: z.string().optional(),
+  fileBase64: z.string().optional(),
+  fileName: z.string().max(255).optional(),
+  expectedKind: z.literal("csv").optional(),
+  delimiter: z.enum([",", ";", "\t", "|"]).optional(),
+  decimalSeparator: z.enum([".", ","]).optional(),
+  dateOrder: z.enum(["DMY", "MDY", "YMD"]).optional(),
+  headerRow: z.number().int().min(1).max(10000).optional(),
+  format: z
+    .enum([
+      "emiratesnbd",
+      "adcb",
+      "fab",
+      "mashreq",
+      "mashreqneo",
+      "rakbank",
+      "cbd",
+      "wio",
+      "generic",
+    ])
+    .optional(),
+  mapping: z
+    .object({
+      date: columnIndex,
+      description: columnIndex,
+      reference: columnIndex,
+      debit: columnIndex,
+      credit: columnIndex,
+      amount: columnIndex,
+      direction: columnIndex,
+      balance: columnIndex,
+    })
+    .strict()
+    .optional(),
+};
+
+const hasStatementSource = (v: { csvContent?: string; fileBase64?: string }) =>
+  Boolean(v.csvContent?.trim() || v.fileBase64?.trim());
+const statementSourceMessage = {
+  message: bankStatementCopy.en,
+};
+
+const bankStatementImportSchema = z
+  .object({
+    bankAccountId: z.string().guid("bankAccountId must be a valid UUID"),
+    ...statementSourceShape,
+    /** Import rows even when they match transactions already on the account. */
+    allowDuplicates: z.boolean().optional(),
+    /** Proceed although the preview flagged an ambiguity (assumed DD/MM, decimal point). */
+    acknowledgeAmbiguity: z.boolean().optional(),
   })
-);
+  .refine(hasStatementSource, statementSourceMessage);
 
-const bankAccountUpdateSchema = z.object({
-  nameEn: z.string().min(1).max(255).optional(),
-  bankName: z.enum(UAE_BANKS).optional(),
-  accountNumber: z.string().max(64).optional().nullable(),
-  iban: z.string().max(64).optional().nullable(),
-  currency: z.string().length(3).optional(),
-  glAccountId: z.string().uuid().optional().nullable(),
-  isActive: z.boolean().optional(),
-});
+const bankStatementPreviewSchema = z
+  .object({
+    bankAccountId: z.string().guid().optional(),
+    ...statementSourceShape,
+  })
+  .refine(hasStatementSource, statementSourceMessage);
 
-const bankStatementImportSchema = z.object({
-  bankAccountId: z.string().uuid("bankAccountId must be a valid UUID"),
-  csvContent: z.string().min(1, "csvContent (raw CSV text) is required"),
-});
-
-const bankMatchSchema = z.object({
-  matchedType: z.enum(["invoice", "receipt", "journal"]),
-  matchedId: z.string().uuid("matchedId must be a valid UUID"),
-});
-
-const bankCreateEntrySchema = z.object({
-  accountId: z.string().uuid("accountId (GL account to debit/credit) must be a valid UUID"),
-  memo: z.string().max(500).optional().nullable(),
-});
-
-// ─── UAE Bank CSV Format Detection ─────────────────────────────────────────
-
-interface ParsedTransaction {
-  date: Date;
-  description: string;
-  debit: number;
-  credit: number;
-  balance: number | null;
-  reference: string | null;
-}
-
-type BankFormat = "emiratesnbd" | "adcb" | "fab" | "mashreq" | "generic";
-
-function normalizeHeader(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/\ufeff/g, "")
-    .replace(/[\u200e\u200f]/g, "")
-    .replace(/[^a-z0-9\u0600-\u06ff]/g, "");
-}
-
-function detectBankFormat(headers: string[]): BankFormat {
-  const h = headers.map(normalizeHeader);
-  const joined = h.join(",");
-
-  if (joined.includes("valuedate") || joined.includes("narration")) return "emiratesnbd";
-  if (joined.includes("txndate") || joined.includes("particulars")) return "adcb";
-  if (joined.includes("transdate") || joined.includes("chequeno")) return "fab";
-  if (joined.includes("postingdate") || joined.includes("transactiondetails")) return "mashreq";
-  return "generic";
-}
+const unmatchBody = z.object({ reason: z.string().trim().max(500).optional() }).strict();
+const emptyBody = z.object({}).strict();
 
 /**
- * Parse a raw CSV string into normalized transaction rows.
- * Handles quoted fields and various line endings.
+ * Synchronous CSV helper kept for existing callers/tests: parses CSV text and returns the
+ * valid transactions plus row error messages.
  */
-function parseCsvRow(line: string, delimiter = ","): string[] {
-  const fields: string[] = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === delimiter && !inQuotes) {
-      fields.push(current.trim());
-      current = "";
-    } else {
-      current += ch;
-    }
-  }
-  fields.push(current.trim());
-  return fields;
+export function parseBankCsv(csvContent: string) {
+  return toLegacyTransactions(parseBankCsvText(csvContent));
 }
 
-function normalizeNumberGlyphs(value: string): string {
-  return value
-    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - "٠".charCodeAt(0)))
-    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - "۰".charCodeAt(0)))
-    .replace(/٫/g, ".")
-    .replace(/٬/g, ",");
+type StatementRequestBody = {
+  csvContent?: string;
+  fileBase64?: string;
+  fileName?: string;
+  delimiter?: string;
+  decimalSeparator?: "." | ",";
+  dateOrder?: "DMY" | "MDY" | "YMD";
+  headerRow?: number;
+  format?: ParseOptions["format"];
+  mapping?: ParseOptions["mapping"];
+};
+
+function statementBytes(body: StatementRequestBody): Buffer {
+  const bytes = body.fileBase64?.trim()
+    ? Buffer.from(body.fileBase64, "base64")
+    : Buffer.from(body.csvContent ?? "", "utf8");
+  assertUploadSize(bytes.length);
+  return bytes;
 }
 
-function parseDate(raw: string): Date | null {
-  if (!raw) return null;
-  const cleaned = normalizeNumberGlyphs(raw).trim().replace(/\//g, "-");
+function statementOptions(body: StatementRequestBody): ParseOptions {
+  const options: ParseOptions = {};
+  if (body.delimiter) options.delimiter = body.delimiter;
+  if (body.decimalSeparator) options.decimalSeparator = body.decimalSeparator;
+  if (body.dateOrder) options.dateOrder = body.dateOrder;
+  if (body.headerRow) options.headerRow = body.headerRow;
+  if (body.format) options.format = body.format;
+  if (body.mapping) options.mapping = body.mapping;
+  return options;
+}
 
-  // Try YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}/.test(cleaned)) {
-    const d = new Date(cleaned);
-    return isNaN(d.getTime()) ? null : d;
-  }
+function summarizeRowErrors(parsed: BankParseResult): string[] {
+  return parsed.rows
+    .filter((r) => r.errors.length > 0)
+    .map((r) => `Row ${r.rowIndex}: ${r.errors.join("; ")}`);
+}
 
-  // Try DD-MM-YYYY or DD-MMM-YYYY
-  const parts = cleaned.split(/[-\/\s]/);
-  if (parts.length >= 3) {
-    const months: Record<string, number> = {
-      jan: 0,
-      feb: 1,
-      mar: 2,
-      apr: 3,
-      may: 4,
-      jun: 5,
-      jul: 6,
-      aug: 7,
-      sep: 8,
-      oct: 9,
-      nov: 10,
-      dec: 11,
+function actor(req: Request): string {
+  return (req as Request & { user: { id: string } }).user.id;
+}
+
+async function assertAccess(req: Request, companyId: string): Promise<void> {
+  if (!(await storage.hasCompanyAccess(actor(req), companyId)))
+    throw new DomainError("COMPANY_ACCESS_DENIED", 403, undefined, "Access denied");
+}
+
+async function ownedBankAccount(companyId: string, accountId: string) {
+  const account = await storage.getBankAccountById(accountId, companyId);
+  if (!account)
+    throw new DomainError("BANK_ACCOUNT_NOT_FOUND", 404, undefined, "Bank account not found");
+  return account;
+}
+
+function idempotencyKeyOf(req: Request, bodyKey?: string): string | undefined {
+  const header = req.header("idempotency-key");
+  const key = bodyKey ?? (typeof header === "string" ? header.trim() : undefined);
+  if (key && !/^[A-Za-z0-9:_\-.]{8,120}$/.test(key))
+    throw new DomainError("INVALID_IDEMPOTENCY_KEY", 400);
+  return key || undefined;
+}
+
+/** Match request body -> match target. */
+function targetFromBody(body: BankMatchBody): MatchTarget {
+  if (body.allocations) {
+    return {
+      kind: "split",
+      allocations: body.allocations.map((a) => ({ type: a.type, id: a.id, amountFils: a.amount })),
     };
-    const day = parseInt(parts[0]);
-    const monthStr = parts[1].toLowerCase();
-    const month = isNaN(parseInt(parts[1])) ? months[monthStr.slice(0, 3)] : parseInt(parts[1]) - 1;
-    const year = parseInt(parts[2].length === 2 ? "20" + parts[2] : parts[2]);
-    const d = new Date(year, month, day);
-    return isNaN(d.getTime()) ? null : d;
   }
-
-  return null;
+  const id = body.matchedId as string;
+  switch (body.matchedType) {
+    case "invoice":
+      return { kind: "invoice", id, amountFils: body.amount, exchangeRate: body.exchangeRate };
+    case "bill":
+      return { kind: "bill", id, amountFils: body.amount };
+    case "receipt":
+      return { kind: "receipt", id };
+    case "transfer":
+      return { kind: "transfer", id, counterpartTransactionId: body.counterpartTransactionId };
+    default:
+      return { kind: "journal", id };
+  }
 }
 
-function parseAmount(raw: string): number {
-  if (!raw) return 0;
-  const normalizedDigits = normalizeNumberGlyphs(raw);
-  // Remove currency symbols, commas, spaces; handle parentheses as negative
-  const negative =
-    normalizedDigits.trim().startsWith("(") ||
-    normalizedDigits.trim().startsWith("-") ||
-    /\bdr\b/i.test(normalizedDigits) ||
-    /مدين|سحب|خصم/.test(normalizedDigits);
-  const cleaned = normalizedDigits.replace(/[^0-9.]/g, "");
-  const val = parseFloat(cleaned) || 0;
-  return negative ? -val : val;
-}
-
-function debitCreditDirection(raw: string): "debit" | "credit" | null {
-  const normalized = normalizeHeader(raw);
-  if (!normalized) return null;
-
-  if (["d", "dr"].includes(normalized)) return "debit";
-  if (["c", "cr"].includes(normalized)) return "credit";
-
-  if (
-    ["debit", "withdrawal", "outflow", "paid", "مدين", "سحب", "خصم"].some((token) =>
-      normalized.includes(normalizeHeader(token))
-    )
-  ) {
-    return "debit";
-  }
-
-  if (
-    ["credit", "deposit", "inflow", "received", "دائن", "ايداع", "إيداع"].some((token) =>
-      normalized.includes(normalizeHeader(token))
-    )
-  ) {
-    return "credit";
-  }
-
-  return null;
-}
-
-function mapRow(fields: string[], headers: string[], format: BankFormat): ParsedTransaction | null {
-  const normalizedHeaders = headers.map(normalizeHeader);
-  const get = (...keys: string[]): string => {
-    const normalizedKeys = keys.map(normalizeHeader).filter(Boolean);
-    const idx = normalizedHeaders.findIndex(
-      (header) =>
-        Boolean(header) &&
-        normalizedKeys.some(
-          (key) =>
-            header === key ||
-            (key.length > 2 && header.includes(key)) ||
-            (key.length > 2 && header.length > 2 && key.includes(header))
-        )
+function statementQuery(req: Request): ReconciliationStatementBody {
+  const q = req.query as Record<string, unknown>;
+  const parsed = reconciliationStatementBody.safeParse({
+    periodEnd: q.periodEnd,
+    ...(q.periodStart ? { periodStart: q.periodStart } : {}),
+    statementClosingBalance: q.statementClosingBalance,
+  });
+  if (!parsed.success)
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      400,
+      parsed.error.flatten().fieldErrors,
+      "periodEnd (YYYY-MM-DD) and statementClosingBalance are required"
     );
-    return idx >= 0 ? (fields[idx] || "").trim() : "";
-  };
-
-  let dateStr = "";
-  let description = "";
-  let debitStr = "";
-  let creditStr = "";
-  let balanceStr = "";
-  let reference = "";
-
-  if (format === "emiratesnbd") {
-    dateStr = get("ValueDate", "Date", "TransactionDate", "تاريخ", "تاريخالقيمة");
-    description = get("Narration", "Description", "Details", "البيان", "الوصف", "تفاصيل");
-    debitStr = get("Debit", "Withdrawal", "Dr", "مدين", "سحب", "خصم");
-    creditStr = get("Credit", "Deposit", "Cr", "دائن", "ايداع", "إيداع");
-    balanceStr = get("Balance", "RunningBalance", "الرصيد", "رصيد");
-    reference = get("ChequeNo", "Reference", "Ref", "مرجع", "رقمالمرجع");
-  } else if (format === "adcb") {
-    dateStr = get("TxnDate", "Date", "TransactionDate", "تاريخ", "تاريخالعملية");
-    description = get("Particulars", "Description", "Details", "البيان", "الوصف", "تفاصيل");
-    debitStr = get("Debit", "Withdrawal", "Dr", "مدين", "سحب", "خصم");
-    creditStr = get("Credit", "Deposit", "Cr", "دائن", "ايداع", "إيداع");
-    balanceStr = get("Balance", "ClosingBalance", "الرصيد", "رصيد");
-    reference = get("Reference", "Ref", "ChequeNo", "مرجع", "رقمالمرجع");
-  } else if (format === "fab") {
-    dateStr = get("TransDate", "Date", "ValueDate", "تاريخ", "تاريخالعملية");
-    description = get("Description", "Details", "Narration", "البيان", "الوصف", "تفاصيل");
-    debitStr = get("Debit", "Withdrawal", "Dr", "مدين", "سحب", "خصم");
-    creditStr = get("Credit", "Deposit", "Cr", "دائن", "ايداع", "إيداع");
-    balanceStr = get("Balance", "RunningBalance", "الرصيد", "رصيد");
-    reference = get("ChequeNo", "Reference", "TxnRef", "مرجع", "رقمالمرجع");
-  } else if (format === "mashreq") {
-    dateStr = get("PostingDate", "Date", "ValueDate", "تاريخ", "تاريخالقيد");
-    description = get(
-      "TransactionDetails",
-      "Description",
-      "Narration",
-      "البيان",
-      "الوصف",
-      "تفاصيل"
-    );
-    debitStr = get("Debit", "Withdrawal", "Dr", "مدين", "سحب", "خصم");
-    creditStr = get("Credit", "Deposit", "Cr", "دائن", "ايداع", "إيداع");
-    balanceStr = get("Balance", "AvailableBalance", "الرصيد", "رصيد");
-    reference = get("Reference", "Ref", "ChequeNo", "مرجع", "رقمالمرجع");
-  } else {
-    // Generic: try common column names
-    dateStr = get("Date", "TransactionDate", "ValueDate", "TxnDate", "تاريخ", "تاريخالعملية");
-    description = get(
-      "Description",
-      "Details",
-      "Narration",
-      "Particulars",
-      "البيان",
-      "الوصف",
-      "تفاصيل"
-    );
-    debitStr = get("Debit", "Withdrawal", "Dr", "مدين", "سحب", "خصم");
-    creditStr = get("Credit", "Deposit", "Cr", "دائن", "ايداع", "إيداع");
-    balanceStr = get("Balance", "RunningBalance", "ClosingBalance", "الرصيد", "رصيد");
-    reference = get("Reference", "Ref", "ChequeNo", "TxnRef", "مرجع", "رقمالمرجع");
-
-    // If there's a single amount column, respect a paired Dr/Cr or type column when present.
-    if (!debitStr && !creditStr) {
-      const amtStr = get("Amount", "TransactionAmount", "Debit/Credit", "المبلغ", "مبلغ");
-      const direction = debitCreditDirection(
-        get(
-          "Type",
-          "TransactionType",
-          "DrCr",
-          "DebitCredit",
-          "Debit/CreditType",
-          "النوع",
-          "نوعالعملية",
-          "مديندائن",
-          "دائنمدين"
-        )
-      );
-      const amt = parseAmount(amtStr);
-      if (direction === "debit") debitStr = String(Math.abs(amt));
-      else if (direction === "credit") creditStr = String(Math.abs(amt));
-      else if (amt < 0) debitStr = String(Math.abs(amt));
-      else creditStr = String(amt);
-    }
-  }
-
-  const txnDate = parseDate(dateStr);
-  if (!txnDate) return null;
-
-  const debit = Math.abs(parseAmount(debitStr));
-  const credit = Math.abs(parseAmount(creditStr));
-  const balance = balanceStr ? parseAmount(balanceStr) : null;
-
-  // Skip rows with no monetary value
-  if (debit === 0 && credit === 0) return null;
-
-  const cleanedDesc = description.replace(/\s+/g, " ").trim();
-  if (!cleanedDesc) return null;
-
-  return {
-    date: txnDate,
-    description: cleanedDesc,
-    debit,
-    credit,
-    balance: balance !== 0 ? balance : null,
-    reference: reference || null,
-  };
+  return parsed.data;
 }
-
-/**
- * Parse CSV content and return normalized transactions.
- * Skips header-only detection rows and blank lines.
- */
-export function parseBankCsv(csvContent: string): {
-  transactions: ParsedTransaction[];
-  format: BankFormat;
-  errors: string[];
-  skippedRows: number;
-} {
-  const lines = csvContent
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .split("\n")
-    .filter((l) => l.trim().length > 0);
-
-  if (lines.length < 2) {
-    return { transactions: [], format: "generic", errors: ["CSV has no data rows"], skippedRows: 0 };
-  }
-
-  const delimiters = [",", ";", "\t"];
-  let delimiter = ",";
-  let headerIdx = 0;
-  let headerFieldCount = 0;
-  for (let i = 0; i < Math.min(10, lines.length); i++) {
-    for (const candidate of delimiters) {
-      const fields = parseCsvRow(lines[i], candidate);
-      if (fields.length > headerFieldCount) {
-        headerIdx = i;
-        delimiter = candidate;
-        headerFieldCount = fields.length;
-      }
-    }
-    if (headerFieldCount >= 3) {
-      break;
-    }
-  }
-
-  const headers = parseCsvRow(lines[headerIdx], delimiter);
-  const format = detectBankFormat(headers);
-  const transactions: ParsedTransaction[] = [];
-  const errors: string[] = [];
-  let skippedRows = 0;
-
-  for (let i = headerIdx + 1; i < lines.length; i++) {
-    const fields = parseCsvRow(lines[i], delimiter);
-    if (fields.every((f) => !f)) continue; // blank row
-
-    try {
-      const txn = mapRow(fields, headers, format);
-      if (txn) {
-        transactions.push(txn);
-      } else {
-        skippedRows++;
-      }
-    } catch (err: any) {
-      errors.push(`Row ${i + 1}: ${err.message}`);
-    }
-  }
-
-  return { transactions, format, errors, skippedRows };
-}
-
-// ─── AI Transaction Matching ────────────────────────────────────────────────
-
-/**
- * After bulk import, attempt to auto-match each new transaction to
- * existing invoices/receipts using the auto-reconcile service.
- * Updates matchStatus to 'suggested' for confident matches.
- */
-async function autoMatchImportedTransactions(companyId: string): Promise<void> {
-  try {
-    const result = await autoReconcileTransactions(companyId);
-    // Apply high-confidence suggestions (>=75%) as 'suggested' status
-    for (const match of result.matches) {
-      if (match.confidence >= 75) {
-        await storage.updateBankTransaction(match.bankTransactionId, companyId, {
-          matchStatus: "suggested",
-          matchConfidence: match.confidence / 100,
-          ...(match.matchedType === "journal_entry" && { matchedJournalEntryId: match.matchedId }),
-          ...(match.matchedType === "receipt" && { matchedReceiptId: match.matchedId }),
-          ...(match.matchedType === "invoice" && { matchedInvoiceId: match.matchedId }),
-        });
-      }
-    }
-  } catch (err: any) {
-    log.warn({ err: err.message }, "Auto-matching failed after import, continuing without matches");
-  }
-}
-
-// ─── Route Registration ──────────────────────────────────────────────────────
 
 export function registerBankStatementRoutes(app: Express) {
   // ─────────────────────────────────────────────────────────────
-  // Bank Account Management
+  // Bank account management (R06-01, R06-17)
   // ─────────────────────────────────────────────────────────────
 
-  /**
-   * GET /api/companies/:companyId/bank-accounts
-   * List all managed bank accounts for a company.
-   */
   app.get(
     "/api/companies/:companyId/bank-accounts",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-
+      await assertAccess(req, companyId);
       const accounts = await storage.getBankAccountsByCompanyId(companyId);
       res.json(accounts);
     })
   );
 
+  /** Bank names are free text; this list only feeds the form's suggestions. */
+  app.get(
+    "/api/companies/:companyId/bank-accounts/bank-name-suggestions",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      await assertAccess(req, req.params.companyId);
+      res.json({ suggestions: UAE_BANK_SUGGESTIONS });
+    })
+  );
+
   /**
-   * POST /api/companies/:companyId/bank-accounts
-   * Create a new managed bank account linked to a GL account.
-   * Body: { nameEn, bankName, accountNumber?, iban?, currency?, glAccountId? }
+   * Create a managed bank account. Without glAccountId a dedicated GL account (asset, sub_type
+   * bank, code 1021-1029) is created, so every line imported later can be reconciled (R06-01).
    */
   app.post(
     "/api/companies/:companyId/bank-accounts",
     authMiddleware,
     requireCustomer,
-    validate({ body: bankAccountCreateSchema }),
+    strictBody(bankAccountCreateBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-
-      const { nameEn, bankName, accountNumber, iban, currency, glAccountId } = req.body;
-
+      await assertAccess(req, companyId);
+      const body = parsedBody<BankAccountCreateBody>(req);
+      const currency = body.currency ?? "AED";
+      const gl = body.glAccountId
+        ? await assertLinkableGlAccount(companyId, body.glAccountId)
+        : await createBankGlAccount(companyId, { nameEn: body.nameEn, currency });
       const account = await storage.createBankAccount({
         companyId,
-        nameEn,
-        bankName,
-        accountNumber: accountNumber || null,
-        iban: iban || null,
-        currency: currency || "AED",
-        glAccountId: glAccountId || null,
+        nameEn: body.nameEn,
+        bankName: body.bankName,
+        accountNumber: body.accountNumber || null,
+        iban: body.iban || null,
+        currency,
+        glAccountId: gl.id,
         isActive: true,
+        openingBalance:
+          body.openingBalance !== undefined ? Number(fromFils(body.openingBalance)) : 0,
+        openingBalanceDate: body.openingBalanceDate ?? null,
       });
-
-      res.status(201).json(account);
+      res
+        .status(201)
+        .json({ ...account, glAccount: { id: gl.id, code: gl.code, nameEn: gl.nameEn } });
     })
   );
 
-  /**
-   * PATCH /api/companies/:companyId/bank-accounts/:accountId
-   * Update a bank account (e.g., link to GL account).
-   */
+  async function relink(req: Request, companyId: string, accountId: string, glAccountId: string) {
+    const existing = await ownedBankAccount(companyId, accountId);
+    const gl = await assertLinkableGlAccount(companyId, glAccountId);
+    const updated = await storage.updateBankAccount(existing.id, { glAccountId: gl.id });
+    const relinked = await syncUnreconciledGlLink(companyId, existing.id, gl.id);
+    const { recordAudit } = await import("../services/audit.service");
+    await recordAudit({
+      userId: actor(req),
+      companyId,
+      action: "bank.account_relink",
+      entityType: "bank_account",
+      entityId: existing.id,
+      before: { glAccountId: existing.glAccountId },
+      after: { glAccountId: gl.id, relinkedUnreconciled: relinked },
+      req,
+    });
+    return { ...updated, relinkedTransactions: relinked };
+  }
+
   app.patch(
     "/api/companies/:companyId/bank-accounts/:accountId",
     authMiddleware,
     requireCustomer,
-    validate({ body: bankAccountUpdateSchema }),
+    strictBody(bankAccountUpdateBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, accountId } = req.params;
-      const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-
-      const existing = await storage.getBankAccountById(accountId);
-      if (!existing || existing.companyId !== companyId) {
-        return res.status(404).json({ message: "Bank account not found" });
+      await assertAccess(req, companyId);
+      const existing = await ownedBankAccount(companyId, accountId);
+      const body = parsedBody<BankAccountUpdateBody>(req);
+      const patch = {
+        ...(body.nameEn !== undefined && { nameEn: body.nameEn }),
+        ...(body.bankName !== undefined && { bankName: body.bankName }),
+        ...(body.accountNumber !== undefined && { accountNumber: body.accountNumber || null }),
+        ...(body.iban !== undefined && { iban: body.iban || null }),
+        ...(body.currency !== undefined && { currency: body.currency }),
+        ...(body.isActive !== undefined && { isActive: body.isActive }),
+        ...(body.openingBalance !== undefined && {
+          openingBalance: Number(fromFils(body.openingBalance)),
+        }),
+        ...(body.openingBalanceDate !== undefined && {
+          openingBalanceDate: body.openingBalanceDate,
+        }),
+      };
+      let updated = Object.keys(patch).length
+        ? await storage.updateBankAccount(existing.id, patch)
+        : existing;
+      if (body.glAccountId && body.glAccountId !== existing.glAccountId) {
+        updated = await relink(req, companyId, accountId, body.glAccountId);
       }
-
-      const { nameEn, bankName, accountNumber, iban, currency, glAccountId, isActive } = req.body;
-      const updated = await storage.updateBankAccount(accountId, {
-        ...(nameEn !== undefined && { nameEn }),
-        ...(bankName !== undefined && { bankName }),
-        ...(accountNumber !== undefined && { accountNumber }),
-        ...(iban !== undefined && { iban }),
-        ...(currency !== undefined && { currency }),
-        ...(glAccountId !== undefined && { glAccountId }),
-        ...(isActive !== undefined && { isActive }),
-      });
-
       res.json(updated);
     })
   );
 
-  // ─────────────────────────────────────────────────────────────
-  // Bank Statement Import
-  // ─────────────────────────────────────────────────────────────
-
-  /**
-   * POST /api/companies/:companyId/bank-statements/import-preview
-   * Parse a CSV and return a lightweight preview without writing to the DB.
-   *
-   * Body: { csvContent: string }
-   * Response: { transactionCount, skippedRows, format, preview: first 5 rows }
-   */
+  /** Relink to another GL account; unreconciled lines follow (R06-01, R06-22). */
   app.post(
-    "/api/companies/:companyId/bank-statements/import-preview",
+    "/api/companies/:companyId/bank-accounts/:accountId/relink",
     authMiddleware,
     requireCustomer,
+    requirePermission("settings.company"),
+    strictBody(bankAccountRelinkBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, accountId } = req.params;
+      await assertAccess(req, companyId);
+      res.json(await relink(req, companyId, accountId, req.body.glAccountId));
+    })
+  );
+
+  // ─────────────────────────────────────────────────────────────
+  // Statement import (parser: services/bank-statement-parser.service.ts)
+  // ─────────────────────────────────────────────────────────────
+
+  app.post(
+    "/api/companies/:companyId/bank-statements/preview",
+    authMiddleware,
+    requireCustomer,
+    strictBody(bankStatementPreviewSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      await assertAccess(req, companyId);
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-
-      const parsed = z.object({ csvContent: z.string().min(1) }).safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+      let parsed: BankParseResult;
+      try {
+        parsed = parseStatementCsv(statementBytes(req.body), statementOptions(req.body));
+      } catch (err) {
+        if (err instanceof DomainError) throw err;
+        log.warn({ err: (err as Error).message }, "Bank statement preview failed to parse");
+        return res
+          .status(400)
+          .json({ message: "Could not read the statement file", code: "STATEMENT_UNREADABLE" });
       }
 
-      const { transactions, format, errors, skippedRows } = parseBankCsv(parsed.data.csvContent);
+      const errorRows = parsed.rows.filter((r) => r.errors.length > 0);
+      const validRows = parsed.rows.length - errorRows.length;
       res.json({
-        transactionCount: transactions.length,
-        skippedRows,
-        format,
-        parseErrors: errors.length > 0 ? errors.slice(0, 5) : undefined,
-        preview: transactions.slice(0, 5).map((t) => ({
-          date: t.date instanceof Date ? t.date.toISOString().slice(0, 10) : String(t.date),
-          description: t.description,
-          debit: t.debit,
-          credit: t.credit,
+        kind: parsed.kind,
+        detectedFormat: parsed.format,
+        detectedFormatLabel: validRows > 0 ? statementRecognized.en : null,
+        delimiter: parsed.delimiter,
+        decimalSeparator: parsed.decimalSeparator,
+        dateOrder: parsed.dateOrder,
+        headerRow: parsed.headerRowIndex,
+        headers: parsed.headers,
+        mapping: parsed.mapping,
+        fileFingerprint: parsed.fileFingerprint,
+        accountHint: parsed.accountHint,
+        currency: parsed.currency,
+        totalRows: parsed.rows.length,
+        validRows,
+        errorRows: errorRows.length,
+        ignoredRows: parsed.ignored.length,
+        firstInvalidDateRow: parsed.rows.find((row) => row.date === null)?.rowIndex ?? null,
+        sampleRows: parsed.rows.slice(0, 10).map((r) => ({
+          rowIndex: r.rowIndex,
+          date: r.date ? r.date.toISOString().slice(0, 10) : null,
+          description: r.description,
+          debit: r.debit,
+          credit: r.credit,
+          amount: r.amount,
+          balance: r.balance,
+          reference: r.reference,
+          errors: r.errors,
+          raw: r.raw,
         })),
+        errors: errorRows
+          .slice(0, 50)
+          .map((r) => ({ rowIndex: r.rowIndex, errors: r.errors, raw: r.raw })),
+        warnings: parsed.warnings,
+        requiresChoice: parsed.warnings.some((w) => w.requiresChoice),
       });
     })
   );
 
   /**
-   * POST /api/companies/:companyId/bank-statements/import
-   * Import bank statement rows from a CSV.
-   *
-   * Body: {
-   *   bankAccountId: string  (from bank_accounts table),
-   *   csvContent: string     (raw CSV text),
-   * }
-   *
-   * Supports UAE bank formats: Emirates NBD, ADCB, FAB, Mashreq, generic.
-   * Columns: date, description, debit, credit, balance (bank-specific headers auto-detected).
-   * After import, runs AI auto-matching against existing invoices/receipts.
+   * Import a CSV statement into a managed bank account.
+   * Every import is a batch (history + undo) with an opening-balance continuity check.
    */
   app.post(
     "/api/companies/:companyId/bank-statements/import",
     authMiddleware,
     requireCustomer,
-    validate({ body: bankStatementImportSchema }),
+    strictBody(bankStatementImportSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = actor(req);
+      await assertAccess(req, companyId);
+      const { bankAccountId, allowDuplicates, acknowledgeAmbiguity } = req.body;
+      const bankAccount = await ownedBankAccount(companyId, bankAccountId);
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-
-      const { bankAccountId, csvContent } = req.body;
-
-      // Validate bank account belongs to this company
-      const bankAccount = await storage.getBankAccountById(bankAccountId);
-      if (!bankAccount || bankAccount.companyId !== companyId) {
-        return res.status(404).json({ message: "Bank account not found" });
+      let parsedFile: BankParseResult;
+      try {
+        parsedFile = parseStatementCsv(statementBytes(req.body), statementOptions(req.body));
+      } catch (err) {
+        if (err instanceof DomainError) throw err;
+        log.warn({ err: (err as Error).message }, "Bank statement import failed to parse");
+        return res
+          .status(400)
+          .json({ message: "Could not read the statement file", code: "STATEMENT_UNREADABLE" });
       }
+      assertStatementDatesValid(parsedFile);
+      const format = parsedFile.format;
+      const parseErrors = summarizeRowErrors(parsedFile);
+      const validRows = parsedFile.rows.filter((r) => r.errors.length === 0 && r.date);
 
-      // Parse CSV
-      const { transactions: parsed, format, errors: parseErrors, skippedRows: parseSkipped } = parseBankCsv(csvContent);
-
-      if (parsed.length === 0) {
+      if (validRows.length === 0) {
         return res.status(400).json({
-          message: "No valid transactions found in CSV",
+          code: "NO_VALID_TRANSACTIONS",
+          message: "No valid transactions found in the statement",
           parseErrors,
-          skippedRows: parseSkipped,
+          warnings: parsedFile.warnings,
           detectedFormat: format,
         });
       }
 
-      // Map parsed rows to insert records
-      const allRows = parsed.map((txn) => ({
+      const choice = statementImportChoice(parsedFile, acknowledgeAmbiguity);
+      if (choice) return res.status(409).json(choice);
+
+      const result = await importStatementRows({
         companyId,
-        bankAccountId: bankAccount.glAccountId || null,
-        bankStatementAccountId: bankAccountId,
-        transactionDate: txn.date,
-        description: txn.description,
-        // amount: positive = credit (inflow), negative = debit (outflow)
-        amount: txn.credit > 0 ? txn.credit : -txn.debit,
-        balance: txn.balance,
-        reference: txn.reference,
-        category: null,
-        matchStatus: "unmatched" as const,
-        isReconciled: false,
-        importSource: "csv",
-      }));
-
-      // Dedupe against existing transactions on the same managed bank account.
-      // Re-importing the same statement (or overlapping date ranges) is common,
-      // and bulk-inserting duplicates would corrupt the reconciliation worklist.
-      const existing = await storage.getBankTransactionsByCompanyId(companyId);
-      const dedupeKey = (t: {
-        transactionDate: Date | string;
-        amount: number;
-        reference: string | null;
-      }) => {
-        const dateStr = (
-          t.transactionDate instanceof Date ? t.transactionDate : new Date(t.transactionDate)
-        )
-          .toISOString()
-          .slice(0, 10);
-        return `${dateStr}|${Number(t.amount).toFixed(2)}|${t.reference ?? ""}`;
-      };
-      const existingKeys = new Set(
-        existing.filter((t) => t.bankStatementAccountId === bankAccountId).map(dedupeKey)
-      );
-      const toInsert: typeof allRows = [];
-      let skippedDuplicates = 0;
-      for (const row of allRows) {
-        const key = dedupeKey(row);
-        if (existingKeys.has(key)) {
-          skippedDuplicates++;
-          continue;
-        }
-        existingKeys.add(key); // also dedupe within this batch
-        toInsert.push(row);
-      }
-
-      const created = toInsert.length > 0 ? await storage.bulkCreateBankTransactions(toInsert) : [];
-
-      // Run AI auto-matching in background (non-blocking)
-      autoMatchImportedTransactions(companyId).catch(() => {});
+        bankAccountId: bankAccount.id,
+        rows: parsedFile.rows,
+        kind: parsedFile.kind,
+        fileFingerprint: parsedFile.fileFingerprint,
+        source: parsedFile.kind,
+        fileName: req.body.fileName ?? null,
+        format,
+        actorId: userId,
+        allowDuplicates: Boolean(allowDuplicates),
+      });
+      const created = result.imported;
+      const duplicateSkips = result.plan.skipped.filter((s) => s.reason !== "invalid_row");
+      const skippedDuplicates = duplicateSkips.length;
 
       createAndEmitNotification({
         userId,
         companyId,
         type: "bank_import",
-        title: "Bank statement imported",
-        message: `${created.length} transaction(s) imported from ${bankAccount.bankName} (${format} format)`,
+        ...notificationCopy(
+          "notification.bankStatementImported.title",
+          // A re-import that adds nothing (or skips some rows) says so, instead of "0 imported".
+          created.length === 0 && skippedDuplicates > 0
+            ? "notification.bankStatementNothingNew.message"
+            : skippedDuplicates > 0
+              ? "notification.bankStatementImportedSkipped.message"
+              : "notification.bankStatementImported.message",
+          {
+            count: created.length,
+            skipped: skippedDuplicates,
+            bank: bankAccount.bankName,
+          }
+        ),
         priority: "normal",
         relatedEntityType: "bank_statement",
         actionUrl: "/bank-reconciliation",
@@ -682,384 +535,348 @@ export function registerBankStatementRoutes(app: Express) {
 
       res.status(201).json({
         imported: created.length,
+        batchId: result.batchId,
+        continuityWarning: result.continuityWarning,
         skippedDuplicates,
-        skippedRows: parseSkipped > 0 ? parseSkipped : undefined,
+        skipped: result.plan.skipped.slice(0, 200).map(({ rowIndex, reason, detail }) => ({
+          rowIndex,
+          reason,
+          detail,
+        })),
+        fileAlreadyImported: result.plan.fileAlreadyImported,
+        fileFingerprint: parsedFile.fileFingerprint,
         detectedFormat: format,
+        dateOrder: parsedFile.dateOrder,
+        decimalSeparator: parsedFile.decimalSeparator,
+        warnings: parsedFile.warnings.length > 0 ? parsedFile.warnings : undefined,
         parseErrors: parseErrors.length > 0 ? parseErrors : undefined,
         message:
           skippedDuplicates > 0
-            ? `Imported ${created.length} new transaction(s); skipped ${skippedDuplicates} duplicate(s). Auto-matching running in background.`
-            : `Imported ${created.length} transaction(s). Auto-matching running in background.`,
+            ? `Imported ${created.length} new transaction(s); skipped ${skippedDuplicates} duplicate(s).`
+            : `Imported ${created.length} transaction(s).`,
       });
     })
   );
 
+  /** Import history per file (R06-22). */
+  app.get(
+    "/api/companies/:companyId/bank-statements/imports",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertAccess(req, companyId);
+      const bankAccountId =
+        typeof req.query.bankAccountId === "string" ? req.query.bankAccountId : null;
+      const rows = await db
+        .select()
+        .from(bankImportBatches)
+        .where(
+          bankAccountId && /^[0-9a-f-]{36}$/i.test(bankAccountId)
+            ? and(
+                eq(bankImportBatches.companyId, companyId),
+                eq(bankImportBatches.bankAccountId, bankAccountId)
+              )
+            : eq(bankImportBatches.companyId, companyId)
+        )
+        .orderBy(desc(bankImportBatches.createdAt))
+        .limit(200);
+      res.json(rows);
+    })
+  );
+
+  /** Undo an import: removes its unreconciled rows (reconciled rows stay). */
+  app.post(
+    "/api/companies/:companyId/bank-statements/imports/:batchId/undo",
+    authMiddleware,
+    requireCustomer,
+    strictBody(emptyBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, batchId } = req.params;
+      await assertAccess(req, companyId);
+      res.json(await undoImportBatch({ companyId, batchId, actorId: actor(req), req }));
+    })
+  );
+
   // ─────────────────────────────────────────────────────────────
-  // Reconciliation Endpoints
+  // Reconciliation
   // ─────────────────────────────────────────────────────────────
 
-  /**
-   * GET /api/companies/:companyId/bank-statements/unreconciled
-   * Return all unmatched/unreconciled bank transactions.
-   * Optional query param: bankAccountId — filter by managed bank account.
-   */
   app.get(
     "/api/companies/:companyId/bank-statements/unreconciled",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      await assertAccess(req, companyId);
       const { bankAccountId } = req.query;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-
       let transactions = await storage.getUnreconciledBankTransactions(companyId);
-
       if (bankAccountId && typeof bankAccountId === "string") {
         transactions = transactions.filter((t) => t.bankStatementAccountId === bankAccountId);
       }
-
       res.json(transactions);
     })
   );
 
   /**
-   * POST /api/companies/:companyId/bank-statements/:tid/match
-   * Manually match a bank transaction to an invoice or receipt.
-   * Body: { matchedType: 'invoice' | 'receipt' | 'journal', matchedId: string }
+   * Match a bank line (R06-03, R06-05, R06-13, R06-21): invoice, bill, cash-side journal, receipt,
+   * transfer, or a split across invoices / bills. Repeating the same match is a no-op.
    */
   app.post(
     "/api/companies/:companyId/bank-statements/:tid/match",
     authMiddleware,
     requireCustomer,
-    validate({ body: bankMatchSchema }),
+    requirePermission("ledger.post"),
+    strictBody(bankMatchBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, tid } = req.params;
-      const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-
-      const txn = await storage.getBankTransactionById(tid, companyId);
-      if (!txn) {
-        return res.status(404).json({ message: "Bank transaction not found" });
-      }
-
-      const { matchedType, matchedId } = req.body;
-
-      // Manual reconciliation flips a transaction inside a period to matched —
-      // refuse to mutate reconciliation state inside a locked period.
-      await assertPeriodNotLocked(companyId, txn.transactionDate);
-
-      let updated;
-
-      if (matchedType === "invoice") {
-        // Matching against an invoice means the customer has paid: we must
-        // record the payment so the invoice's status/totalPaid update and a
-        // proper double-entry JE is posted (Dr Bank, Cr A/R). Just flipping
-        // the bank transaction's columns (the previous behaviour) left
-        // invoices stuck on 'sent' indefinitely.
-        const invoice = await storage.getInvoice(matchedId, companyId);
-        if (!invoice) {
-          return res.status(404).json({ message: "Invoice not found" });
-        }
-
-        if (!txn.bankAccountId) {
-          return res.status(400).json({
-            message:
-              "Bank transaction has no linked GL bank account; cannot post payment journal entry.",
-          });
-        }
-
-        const accounts = await storage.getAccountsByCompanyId(companyId);
-        const accountsReceivable = accounts.find(
-          (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
-        );
-        if (!accountsReceivable) {
-          return res.status(500).json({ message: "Accounts Receivable account not found" });
-        }
-
-        const paymentAccount = await storage.getAccount(txn.bankAccountId, companyId);
-        if (!paymentAccount) {
-          return res.status(400).json({ message: "Bank GL account not found" });
-        }
-
-        // Match the unpaid remainder (or what the bank says, whichever is smaller).
-        const previouslyPaid = await storage.getInvoicePaidTotal(matchedId);
-        const remaining = Number(invoice.total) - previouslyPaid;
-        const bankAbs = Math.abs(Number(txn.amount));
-        const paymentAmount = Math.min(remaining, bankAbs);
-
-        let journalEntryId: string | null = null;
-        if (paymentAmount > 0.005) {
-          try {
-            const result = await storage.recordInvoicePayment({
-              invoiceId: matchedId,
-              companyId,
-              amount: paymentAmount,
-              date: new Date(txn.transactionDate),
-              method: "bank_reconciliation",
-              reference: txn.reference,
-              notes: `Reconciled from bank statement: ${txn.description}`.slice(0, 500),
-              paymentAccountId: txn.bankAccountId,
-              paymentAccountCurrency: (paymentAccount as any).currency ?? null,
-              receivableAccountId: accountsReceivable.id,
-              createdBy: userId,
-            });
-            journalEntryId = result.journalEntryId;
-          } catch (err: any) {
-            if (
-              err?.code === "CURRENCY_MISMATCH" ||
-              err?.code === "OVERPAYMENT" ||
-              err?.code === "INVOICE_TERMINAL"
-            ) {
-              return res.status(422).json({ message: err.message, code: err.code });
-            }
-            throw err;
-          }
-        }
-
-        // Link the bank transaction to the invoice + the payment JE.
-        // Bypass storage.reconcileBankTransaction here so we don't create a
-        // second JE (recordInvoicePayment already posted the canonical one).
-        updated = await storage.updateBankTransaction(tid, companyId, {
-          isReconciled: true,
-          matchStatus: "matched",
-          matchedInvoiceId: matchedId,
-          ...(journalEntryId ? { matchedJournalEntryId: journalEntryId } : {}),
-        });
-      } else {
-        updated = await storage.reconcileBankTransaction(
-          tid,
-          companyId,
-          matchedId,
-          matchedType as "journal" | "receipt" | "invoice",
-          userId
-        );
-        updated = await storage.updateBankTransaction(tid, companyId, { matchStatus: "matched" });
-      }
-
-      const { recordAudit } = await import("../services/audit.service");
-      await recordAudit({
-        userId,
+      await assertAccess(req, companyId);
+      const body = parsedBody<BankMatchBody>(req);
+      const result = await applyMatch({
         companyId,
-        action: "bank.reconcile",
-        entityType: "bank_transaction",
-        entityId: tid,
-        before: { matchStatus: txn.matchStatus },
-        after: { matchedType, matchedId, matchStatus: "matched" },
+        transactionId: tid,
+        actorId: actor(req),
+        target: targetFromBody(body),
+        idempotencyKey: idempotencyKeyOf(req, body.idempotencyKey),
         req,
       });
-
-      res.json({ ...updated, matchStatus: "matched" });
+      res.status(result.status === "replayed" ? 200 : 201).json({
+        ...result.transaction,
+        status: result.status,
+        replayed: result.status === "replayed",
+        matches: result.matches,
+        journalEntryIds: result.journalEntryIds,
+      });
     })
   );
 
   /**
-   * POST /api/companies/:companyId/bank-statements/:tid/create-entry
-   * Create a journal entry from an unmatched bank transaction.
-   * Body: { accountId: string, memo?: string }
-   * The bank account's GL account is the contra entry.
+   * Create a journal entry from a bank line through the ledger kernel: contra account, optional
+   * 5% VAT split, bank fee and FX difference lines; postingMode draft creates an entry for review.
    */
   app.post(
     "/api/companies/:companyId/bank-statements/:tid/create-entry",
     authMiddleware,
     requireCustomer,
-    validate({ body: bankCreateEntrySchema }),
+    requirePermission("ledger.post"),
+    strictBody(bankCreateEntryBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, tid } = req.params;
-      const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-
-      const txn = await storage.getBankTransactionById(tid, companyId);
-      if (!txn) {
-        return res.status(404).json({ message: "Bank transaction not found" });
-      }
-
-      // S-C2: refuse to create a second journal entry for a transaction that is
-      // already matched/reconciled. Without this guard, calling the endpoint
-      // twice posts two balanced JEs against the same bank line, double-counting
-      // the cash movement and breaking reconciliation.
-      if (txn.matchStatus === "matched" || txn.isReconciled || txn.matchedJournalEntryId) {
-        return res.status(409).json({
-          message: "This bank transaction is already reconciled to a journal entry.",
-          code: "ALREADY_RECONCILED",
-          matchedJournalEntryId: txn.matchedJournalEntryId ?? null,
-        });
-      }
-
-      const { accountId, memo } = req.body;
-
-      // Determine debit/credit based on transaction direction
-      // Positive amount = credit to bank (inflow) → debit bank GL, credit the specified account
-      // Negative amount = debit from bank (outflow) → credit bank GL, debit the specified account
-      const absAmount = Math.abs(txn.amount);
-      const isInflow = txn.amount > 0;
-
-      const bankGlAccountId = txn.bankAccountId;
-      if (!bankGlAccountId) {
-        return res.status(400).json({
-          message:
-            "Cannot create journal entry: bank transaction has no associated bank account (bankAccountId is null). Link the transaction to a bank account first.",
-        });
-      }
-
-      // Block creating reconciliation journal entries into a locked period.
-      await assertPeriodNotLocked(companyId, txn.transactionDate);
-
-      const entryNumber = await storage.generateEntryNumber(
+      await assertAccess(req, companyId);
+      const body = parsedBody<BankCreateEntryBody>(req);
+      const result = await applyMatch({
         companyId,
-        new Date(txn.transactionDate)
-      );
-
-      const entry = await storage.createJournalEntry(
-        {
-          companyId,
-          entryNumber,
-          date: new Date(txn.transactionDate),
-          memo: memo || txn.description,
-          status: "posted",
-          source: "bank_reconciliation",
-          sourceId: txn.id,
-          createdBy: userId,
-          postedBy: userId,
-          postedAt: new Date(),
+        transactionId: tid,
+        actorId: actor(req),
+        idempotencyKey: idempotencyKeyOf(req, body.idempotencyKey),
+        req,
+        target: {
+          kind: "entry",
+          accountId: body.accountId,
+          memo: body.memo ?? null,
+          vatTreatment: body.vatTreatment,
+          vatAmountFils: body.vatAmount,
+          bankFeeFils: body.bankFee,
+          bankFeeAccountId: body.bankFeeAccountId,
+          contraAmountFils: body.contraAmount,
+          costCenterId: body.costCenterId ?? null,
+          postingMode: body.postingMode,
         },
-        [
-          {
-            accountId: bankGlAccountId,
-            debit: isInflow ? absAmount : 0,
-            credit: isInflow ? 0 : absAmount,
-            description: txn.description,
-          },
-          {
-            accountId,
-            debit: isInflow ? 0 : absAmount,
-            credit: isInflow ? absAmount : 0,
-            description: txn.description,
-          },
-        ]
-      );
+      });
+      const entryId = result.journalEntryIds[0] ?? null;
+      const journalEntry = entryId ? await storage.getJournalEntry(entryId, companyId) : null;
+      res.status(result.status === "replayed" ? 200 : 201).json({
+        status: result.status,
+        replayed: result.status === "replayed",
+        journalEntry,
+        bankTransaction: result.transaction,
+        matches: result.matches,
+      });
+    })
+  );
 
-      // Mark transaction as matched to this journal entry
-      const updated = await storage.reconcileBankTransaction(tid, companyId, entry.id, "journal");
-      await storage.updateBankTransaction(tid, companyId, { matchStatus: "matched" });
-
-      // S-H4: audit the GL posting from a bank transaction.
-      const { recordAudit } = await import("../services/audit.service");
-      await recordAudit({
-        userId,
+  /** Post the draft entry a review rule or create-entry draft left on the line. */
+  app.post(
+    "/api/companies/:companyId/bank-statements/:tid/confirm-entry",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("ledger.post"),
+    strictBody(emptyBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, tid } = req.params;
+      await assertAccess(req, companyId);
+      const result = await confirmPendingEntry({
         companyId,
-        action: "bank.reconcile_create_entry",
-        entityType: "bank_transaction",
-        entityId: tid,
-        after: { journalEntryId: entry.id, amount: absAmount },
+        transactionId: tid,
+        actorId: actor(req),
         req,
       });
-
-      res.status(201).json({
-        journalEntry: entry,
-        bankTransaction: { ...updated, matchStatus: "matched" },
+      res.json({
+        ...result.transaction,
+        matches: result.matches,
+        journalEntryIds: result.journalEntryIds,
       });
     })
   );
 
   /**
-   * GET /api/companies/:companyId/bank-statements/transactions
-   * Return all bank transactions for a company (optionally filter by bankAccountId).
+   * Unmatch (R06-02): reverse what the match created (entries via reverseBySource, invoice / bill
+   * payments) and put the line back on the worklist.
    */
+  app.delete(
+    "/api/companies/:companyId/bank-statements/:tid/match",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("ledger.post"),
+    strictBody(unmatchBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, tid } = req.params;
+      await assertAccess(req, companyId);
+      const result = await unmatchTransaction({
+        companyId,
+        transactionId: tid,
+        actorId: actor(req),
+        reason: req.body?.reason,
+        req,
+      });
+      res.json({
+        ...result.transaction,
+        reversedEntryIds: result.reversedEntryIds,
+        reversedPayments: result.reversedPayments,
+        unmatchedTransactionIds: result.unmatchedTransactionIds,
+      });
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/bank-statements/:tid/matches",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, tid } = req.params;
+      await assertAccess(req, companyId);
+      const txn = await storage.getBankTransactionById(tid, companyId);
+      if (!txn) throw new DomainError("BANK_TRANSACTION_NOT_FOUND", 404);
+      res.json(await getMatches(companyId, tid, ["pending", "active", "reversed"]));
+    })
+  );
+
+  /** All lines (optionally one bank account; excluded rows with includeExcluded=true). */
   app.get(
     "/api/companies/:companyId/bank-statements/transactions",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
-      const { bankAccountId } = req.query;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-
+      await assertAccess(req, companyId);
+      const { bankAccountId, includeExcluded } = req.query;
       let transactions = await storage.getBankTransactionsByCompanyId(companyId);
-
       if (bankAccountId && typeof bankAccountId === "string") {
         transactions = transactions.filter((t) => t.bankStatementAccountId === bankAccountId);
       }
-
+      if (includeExcluded !== "true") transactions = transactions.filter((t) => !t.excludedAt);
       res.json(transactions);
     })
   );
 
-  /**
-   * GET /api/companies/:companyId/bank-statements/:tid/suggestions
-   * Return top match suggestions for a single bank transaction.
-   */
   app.get(
     "/api/companies/:companyId/bank-statements/:tid/suggestions",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, tid } = req.params;
-      const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-
+      await assertAccess(req, companyId);
       const txn = await storage.getBankTransactionById(tid, companyId);
-      if (!txn) {
-        return res.status(404).json({ message: "Bank transaction not found" });
-      }
-
-      const suggestions = await getSuggestionsForTransaction(companyId, tid, 5);
-      res.json(suggestions);
+      if (!txn || txn.deletedAt) throw new DomainError("BANK_TRANSACTION_NOT_FOUND", 404);
+      res.json(await getSuggestionsForTransaction(companyId, tid, 5));
     })
   );
 
-  /**
-   * DELETE /api/companies/:companyId/bank-statements/:tid/match
-   * Unmatch a reconciled transaction, resetting it to unmatched status.
-   */
-  app.delete(
-    "/api/companies/:companyId/bank-statements/:tid/match",
+  // ─── Edit / exclude / restore / delete (R06-22) ───────────────
+
+  app.patch(
+    "/api/companies/:companyId/bank-statements/:tid",
     authMiddleware,
     requireCustomer,
+    strictBody(bankTransactionEditBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, tid } = req.params;
-      const userId = (req as any).user.id;
+      await assertAccess(req, companyId);
+      res.json(
+        await editTransaction({
+          companyId,
+          transactionId: tid,
+          actorId: actor(req),
+          patch: req.body,
+          req,
+        })
+      );
+    })
+  );
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+  app.post(
+    "/api/companies/:companyId/bank-statements/:tid/exclude",
+    authMiddleware,
+    requireCustomer,
+    strictBody(bankTransactionExcludeBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, tid } = req.params;
+      await assertAccess(req, companyId);
+      res.json(
+        await setExcluded({
+          companyId,
+          transactionId: tid,
+          actorId: actor(req),
+          exclude: true,
+          reason: req.body.reason,
+          req,
+        })
+      );
+    })
+  );
 
-      const txn = await storage.getBankTransactionById(tid, companyId);
-      if (!txn) {
-        return res.status(404).json({ message: "Bank transaction not found" });
-      }
+  app.post(
+    "/api/companies/:companyId/bank-statements/:tid/restore",
+    authMiddleware,
+    requireCustomer,
+    strictBody(emptyBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, tid } = req.params;
+      await assertAccess(req, companyId);
+      res.json(
+        await setExcluded({
+          companyId,
+          transactionId: tid,
+          actorId: actor(req),
+          exclude: false,
+          req,
+        })
+      );
+    })
+  );
 
-      // Unmatching reverses reconciliation state on the transaction's date —
-      // refuse if that date is inside a locked period.
-      await assertPeriodNotLocked(companyId, txn.transactionDate);
-
-      const updated = await storage.updateBankTransaction(tid, companyId, {
-        isReconciled: false,
-        matchStatus: "unmatched",
-        matchedJournalEntryId: null,
-        matchedReceiptId: null,
-        matchedInvoiceId: null,
-        matchConfidence: null,
+  app.delete(
+    "/api/companies/:companyId/bank-statements/:tid",
+    authMiddleware,
+    requireCustomer,
+    strictBody(bankTransactionDeleteBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, tid } = req.params;
+      await assertAccess(req, companyId);
+      const row = await softDeleteTransaction({
+        companyId,
+        transactionId: tid,
+        actorId: actor(req),
+        reason: req.body.reason,
+        req,
       });
-
-      res.json(updated);
+      res.json({ id: row.id, deletedAt: row.deletedAt });
     })
   );
 
   /**
-   * GET /api/companies/:companyId/bank-statements/report
-   * Reconciliation summary report — totals and counts by status.
-   * Optional query params: from (ISO date), to (ISO date), bankAccountId.
+   * Summary counts (R06-18): excluded / deleted rows are not part of the worklist; reconciled =
+   * matched (one invariant, enforced by the database).
    */
   app.get(
     "/api/companies/:companyId/bank-statements/report",
@@ -1067,49 +884,39 @@ export function registerBankStatementRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      await assertAccess(req, companyId);
       const { from, to, bankAccountId } = req.query;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-
-      let transactions = await storage.getBankTransactionsByCompanyId(companyId);
-
-      // Optional filters
+      let transactions = (await storage.getBankTransactionsByCompanyId(companyId)).filter(
+        (t) => !t.excludedAt
+      );
       if (bankAccountId && typeof bankAccountId === "string") {
         transactions = transactions.filter((t) => t.bankStatementAccountId === bankAccountId);
       }
-      if (from && typeof from === "string") {
-        const fromDate = new Date(from);
-        transactions = transactions.filter((t) => new Date(t.transactionDate) >= fromDate);
-      }
-      if (to && typeof to === "string") {
-        const toDate = new Date(to);
-        transactions = transactions.filter((t) => new Date(t.transactionDate) <= toDate);
-      }
+      const fromIso = typeof from === "string" ? zDate.safeParse(from) : null;
+      const toIso = typeof to === "string" ? zDate.safeParse(to) : null;
+      if ((fromIso && !fromIso.success) || (toIso && !toIso.success))
+        throw new DomainError("INVALID_REPORT_DATE", 400);
+      const day = (d: Date | string) => new Date(d).toISOString().slice(0, 10);
+      if (fromIso?.success)
+        transactions = transactions.filter((t) => day(t.transactionDate) >= fromIso.data);
+      if (toIso?.success)
+        transactions = transactions.filter((t) => day(t.transactionDate) <= toIso.data);
 
-      const reconciled = transactions.filter((t) => t.isReconciled);
+      const reconciled = transactions.filter((t) => t.isReconciled && t.matchStatus === "matched");
       const unreconciled = transactions.filter((t) => !t.isReconciled);
       const suggested = unreconciled.filter((t) => t.matchStatus === "suggested");
-
-      const totalCredits = transactions
-        .filter((t) => t.amount > 0)
-        .reduce((s, t) => s + t.amount, 0);
-      const totalDebits = transactions
-        .filter((t) => t.amount < 0)
-        .reduce((s, t) => s + Math.abs(t.amount), 0);
-      const reconciledCredits = reconciled
-        .filter((t) => t.amount > 0)
-        .reduce((s, t) => s + t.amount, 0);
-      const reconciledDebits = reconciled
-        .filter((t) => t.amount < 0)
-        .reduce((s, t) => s + Math.abs(t.amount), 0);
+      const sum = (xs: typeof transactions, sign: 1 | -1) =>
+        xs
+          .filter((t) => Math.sign(Number(t.amount)) === sign)
+          .reduce((s, t) => s + Math.abs(dbFils(t.amount)), 0);
+      const totalCredits = sum(transactions, 1);
+      const totalDebits = sum(transactions, -1);
+      const reconciledCredits = sum(reconciled, 1);
+      const reconciledDebits = sum(reconciled, -1);
+      const n = (f: number) => Number(fromFils(f));
 
       res.json({
-        period: {
-          from: from || null,
-          to: to || null,
-        },
+        period: { from: from || null, to: to || null },
         summary: {
           totalTransactions: transactions.length,
           reconciledCount: reconciled.length,
@@ -1121,15 +928,204 @@ export function registerBankStatementRoutes(app: Express) {
               : 0,
         },
         amounts: {
-          totalCredits,
-          totalDebits,
-          netAmount: totalCredits - totalDebits,
-          reconciledCredits,
-          reconciledDebits,
-          unreconciledCredits: totalCredits - reconciledCredits,
-          unreconciledDebits: totalDebits - reconciledDebits,
+          totalCredits: n(totalCredits),
+          totalDebits: n(totalDebits),
+          netAmount: n(totalCredits - totalDebits),
+          reconciledCredits: n(reconciledCredits),
+          reconciledDebits: n(reconciledDebits),
+          unreconciledCredits: n(totalCredits - reconciledCredits),
+          unreconciledDebits: n(totalDebits - reconciledDebits),
         },
       });
+    })
+  );
+
+  // ─────────────────────────────────────────────────────────────
+  // Reconciliation statement + sign-off (R06-20)
+  // ─────────────────────────────────────────────────────────────
+
+  app.get(
+    "/api/companies/:companyId/bank-accounts/:accountId/reconciliation-statement",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, accountId } = req.params;
+      await assertAccess(req, companyId);
+      const q = statementQuery(req);
+      res.json(
+        await buildReconciliationStatement({
+          companyId,
+          bankAccountId: accountId,
+          periodEnd: q.periodEnd,
+          periodStart: q.periodStart ?? null,
+          statementClosingBalanceFils: q.statementClosingBalance,
+        })
+      );
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/bank-accounts/:accountId/reconciliations",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, accountId } = req.params;
+      await assertAccess(req, companyId);
+      await ownedBankAccount(companyId, accountId);
+      const rows = await db
+        .select()
+        .from(bankReconciliations)
+        .where(
+          and(
+            eq(bankReconciliations.companyId, companyId),
+            eq(bankReconciliations.bankAccountId, accountId)
+          )
+        )
+        .orderBy(desc(bankReconciliations.periodEnd));
+      res.json(rows.map((r: BankReconciliation) => ({ ...r, snapshot: undefined })));
+    })
+  );
+
+  /** Save a statement snapshot (draft) for sign-off. */
+  app.post(
+    "/api/companies/:companyId/bank-accounts/:accountId/reconciliations",
+    authMiddleware,
+    requireCustomer,
+    strictBody(reconciliationStatementBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, accountId } = req.params;
+      await assertAccess(req, companyId);
+      const body = parsedBody<ReconciliationStatementBody>(req);
+      const statement = await buildReconciliationStatement({
+        companyId,
+        bankAccountId: accountId,
+        periodEnd: body.periodEnd,
+        periodStart: body.periodStart ?? null,
+        statementClosingBalanceFils: body.statementClosingBalance,
+      });
+      const [row] = await db
+        .insert(bankReconciliations)
+        .values({
+          companyId,
+          bankAccountId: accountId,
+          periodStart: body.periodStart ?? null,
+          periodEnd: body.periodEnd,
+          statementClosingBalance: Number(fromFils(statement.statementClosingBalanceFils)),
+          glBalance: Number(fromFils(statement.glBalanceFils)),
+          difference: Number(fromFils(statement.differenceFils)),
+          snapshot: statement,
+          status: "draft",
+          createdBy: actor(req),
+        })
+        .returning();
+      res.status(201).json({ ...row, statement });
+    })
+  );
+
+  async function ownedReconciliation(companyId: string, id: string): Promise<BankReconciliation> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+      throw new DomainError("RECONCILIATION_NOT_FOUND", 404);
+    const [row] = await db
+      .select()
+      .from(bankReconciliations)
+      .where(and(eq(bankReconciliations.id, id), eq(bankReconciliations.companyId, companyId)));
+    if (!row)
+      throw new DomainError("RECONCILIATION_NOT_FOUND", 404, undefined, "Reconciliation not found");
+    return row as BankReconciliation;
+  }
+
+  /**
+   * Sign-off: recomputed now; only a zero difference can be signed (422 RECONCILIATION_DIFFERENCE),
+   * by someone other than the preparer unless the company has a single member.
+   */
+  app.post(
+    "/api/companies/:companyId/bank-reconciliations/:reconciliationId/sign-off",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("ledger.post"),
+    strictBody(emptyBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, reconciliationId } = req.params;
+      await assertAccess(req, companyId);
+      const rec = await ownedReconciliation(companyId, reconciliationId);
+      if (rec.status === "signed_off") throw new DomainError("RECONCILIATION_SIGNED_OFF", 409);
+      assertDifferentActor(rec.createdBy, actor(req), {
+        allowSingleOwner: await companyHasSingleMember(companyId),
+      });
+      const statement = await buildReconciliationStatement({
+        companyId,
+        bankAccountId: rec.bankAccountId,
+        periodEnd: rec.periodEnd,
+        periodStart: rec.periodStart,
+        statementClosingBalanceFils: dbFils(rec.statementClosingBalance),
+      });
+      if (statement.differenceFils !== 0) {
+        throw new DomainError(
+          "RECONCILIATION_DIFFERENCE",
+          422,
+          { difference: fromFils(statement.differenceFils) },
+          "The statement does not reconcile; resolve the difference before signing off"
+        );
+      }
+      const [row] = await db
+        .update(bankReconciliations)
+        .set({
+          status: "signed_off",
+          signedOffBy: actor(req),
+          signedOffAt: new Date(),
+          snapshot: statement,
+          glBalance: Number(fromFils(statement.glBalanceFils)),
+          difference: 0,
+        })
+        .where(and(eq(bankReconciliations.id, rec.id), eq(bankReconciliations.status, "draft")))
+        .returning();
+      if (!row) throw new DomainError("RECONCILIATION_SIGNED_OFF", 409);
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId: actor(req),
+        companyId,
+        action: "bank.reconciliation_sign_off",
+        entityType: "bank_reconciliation",
+        entityId: rec.id,
+        after: { periodEnd: rec.periodEnd, glBalance: statement.totals.glBalance },
+        req,
+      });
+      res.json({ ...row, statement });
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/bank-reconciliations/:reconciliationId/export",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, reconciliationId } = req.params;
+      await assertAccess(req, companyId);
+      const rec = await ownedReconciliation(companyId, reconciliationId);
+      const statement = rec.snapshot as unknown as Awaited<
+        ReturnType<typeof buildReconciliationStatement>
+      >;
+      const company = await storage.getCompany(companyId);
+      const format =
+        req.query.format === "xlsx" ? "xlsx" : req.query.format === "csv" ? "csv" : "pdf";
+      const base = `bank-reconciliation-${statement.bankAccountName}-${rec.periodEnd}`;
+      if (format === "pdf") {
+        const signer = rec.signedOffBy ? await storage.getUser(rec.signedOffBy) : undefined;
+        const pdf = await renderReconciliationPdf(statement, {
+          companyName: company?.name ?? "",
+          locale: (company as { locale?: string | null } | undefined)?.locale ?? null,
+          status: rec.status,
+          signedOffBy: signer?.name ?? signer?.email ?? null,
+          signedOffAt: rec.signedOffAt ? rec.signedOffAt.toISOString() : null,
+        });
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${base.replace(/[^A-Za-z0-9._-]+/g, "-")}.pdf"`
+        );
+        return res.send(pdf);
+      }
+      await sendTabular(res, format, base, reconciliationSheets(statement, rec));
     })
   );
 }

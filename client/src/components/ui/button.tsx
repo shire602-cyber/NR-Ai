@@ -4,36 +4,49 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Button — D2 design system.
+ * Heights: sm 32 · default 36 · lg 40 · xl 48 (every size is 44 on touch screens). One primary action per view;
+ * pair it with `outline` or `ghost` secondaries. Icons inherit 16px.
+ */
+// Spec 2.3: a disabled solid button is neutral (`--disabled-surface`), never pale green — pale
+// green reads as "loading".
+const SOLID_DISABLED =
+  " disabled:opacity-100 disabled:border-transparent disabled:shadow-none disabled:bg-[hsl(var(--disabled-surface))] disabled:text-[hsl(var(--disabled-foreground))]";
+
 const buttonVariants = cva(
-  "relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium tracking-tight" +
-    " focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" +
+  "relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium" +
+    " select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" +
     " disabled:pointer-events-none disabled:opacity-50" +
-    " transition-[transform,box-shadow,background-color,color,border-color] duration-150 ease-out" +
-    " active:translate-y-px" +
-    " [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0" +
-    " hover-elevate active-elevate-2",
+    " transition-[background-color,color,border-color,box-shadow] duration-fast ease-standard" +
+    " [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground border border-primary-border shadow-xs hover:shadow-sm",
+          "bg-primary text-primary-foreground border border-primary-border shadow-xs hover:bg-[hsl(var(--primary-hover))] active:shadow-none" +
+          SOLID_DISABLED,
         destructive:
-          "bg-destructive text-destructive-foreground border border-destructive-border shadow-xs hover:shadow-sm",
+          "bg-destructive text-destructive-foreground border border-destructive-border shadow-xs hover:bg-destructive/90 active:shadow-none" +
+          SOLID_DISABLED,
         accent:
-          "bg-accent text-accent-foreground border border-accent-border shadow-xs hover:shadow-sm",
+          "bg-accent text-accent-foreground border border-accent-border shadow-xs hover:bg-accent/90 active:shadow-none" +
+          SOLID_DISABLED,
         outline:
-          "border [border-color:var(--button-outline)] shadow-xs hover:bg-secondary/50 active:shadow-none",
-        secondary: "border bg-secondary text-secondary-foreground border-secondary-border",
-        ghost: "border border-transparent hover:bg-secondary/60",
-        link: "border border-transparent text-primary underline-offset-4 hover:underline px-0",
+          "border border-input bg-card text-foreground shadow-xs hover:bg-secondary hover:border-border-strong active:shadow-none",
+        secondary:
+          "border border-transparent bg-secondary text-secondary-foreground hover:bg-neutral-200 dark:hover:bg-neutral-700",
+        ghost: "border border-transparent text-foreground hover:bg-secondary",
+        link: "border border-transparent text-accent underline-offset-4 hover:underline px-0",
       },
       size: {
-        default: "min-h-9 px-4 py-2",
-        sm: "min-h-8 rounded-md px-3 text-xs",
-        lg: "min-h-10 rounded-md px-6 text-sm",
-        xl: "min-h-12 rounded-lg px-7 text-base",
-        icon: "h-9 w-9",
-        "icon-sm": "h-8 w-8 rounded-md",
+        // X3 (J2): 44px minimum hit area on touch screens (CTO rule); compact on mouse.
+        default: "min-h-9 px-4 py-2 [@media(pointer:coarse)]:min-h-11",
+        sm: "min-h-8 px-3 text-[13px] gap-1.5 [@media(pointer:coarse)]:min-h-11",
+        lg: "min-h-10 px-5 text-sm [@media(pointer:coarse)]:min-h-11",
+        xl: "min-h-12 rounded-lg px-6 text-base",
+        icon: "h-9 w-9 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11",
+        "icon-sm": "h-8 w-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11",
       },
     },
     defaultVariants: {
@@ -52,7 +65,14 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
     return (
-      <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
+      <Comp
+        className={cn(buttonVariants({ variant, size, className }))}
+        // Styling hooks for surfaces that re-skin the button (the public site, unified.css).
+        data-button={variant ?? "default"}
+        data-size={size ?? "default"}
+        ref={ref}
+        {...props}
+      />
     );
   }
 );

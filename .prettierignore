@@ -8,3 +8,5 @@ package-lock.json
 .env*
 .claude/
 .claire/
+sites/
+docs/archive/

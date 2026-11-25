@@ -9,8 +9,13 @@ vi.mock("../../server/middleware/auth", () => ({
   requireCustomer: (_req: any, _res: any, next: any) => next(),
 }));
 
+vi.mock("../../server/db", () => ({
+  pool: { query: vi.fn(async () => ({ rows: [{ at: null }] })) },
+}));
+
+const detectAnomaliesMock = vi.hoisted(() => vi.fn());
 vi.mock("../../server/services/anomaly-detection.service", () => ({
-  detectAnomalies: vi.fn(async () => ({
+  detectAnomalies: detectAnomaliesMock.mockImplementation(async () => ({
     anomalies: [],
     summary: { total: 0, critical: 0, warning: 0, info: 0 },
     scannedAt: "2026-06-13T10:00:00.000Z",
@@ -25,6 +30,7 @@ vi.mock("../../server/storage", () => ({
     getAnomalyAlertsByCompanyId: vi.fn(async () => []),
     getUnresolvedAnomalyAlerts: vi.fn(async () => unresolvedAlerts),
     createAnomalyAlert: vi.fn(async (data: any) => ({ id: "new-alert", ...data })),
+    createAnomalyAlertIfNew: vi.fn(async (data: any) => ({ id: "new-alert", ...data })),
   },
 }));
 
@@ -103,6 +109,8 @@ describe("anomaly routes", () => {
     );
 
     const res = await get(appWithRoutes(), "/api/companies/company-1/anomalies");
+    // R13-15: GET is read-only, it never runs the scan.
+    expect(detectAnomaliesMock).not.toHaveBeenCalled();
 
     expect(res.status).toBe(200);
     expect(res.body.summary).toEqual({ total: 4, critical: 1, warning: 2, info: 1 });
@@ -116,7 +124,8 @@ describe("anomaly routes", () => {
       id: "alert-medium",
       type: "unusual_amount",
       description: "Medium persisted severity",
-      amount: 0,
+      // R13-14: alerts without recorded transaction facts report null, never a fabricated 0.
+      amount: null,
       date: "2026-06-13T09:00:00.000Z",
       relatedId: "receipt-1",
       relatedType: "receipt",

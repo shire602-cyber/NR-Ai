@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
+import { planLimitJustAnnounced } from "@/lib/plan-limit";
 
 const TOAST_LIMIT = 1;
 const TOAST_REMOVE_DELAY = 1000000;
@@ -12,7 +13,7 @@ type ToasterToast = ToastProps & {
   action?: ToastActionElement;
 };
 
-const actionTypes = {
+const _actionTypes = {
   ADD_TOAST: "ADD_TOAST",
   UPDATE_TOAST: "UPDATE_TOAST",
   DISMISS_TOAST: "DISMISS_TOAST",
@@ -26,7 +27,7 @@ function genId() {
   return count.toString();
 }
 
-type ActionType = typeof actionTypes;
+type ActionType = typeof _actionTypes;
 
 type Action =
   | {
@@ -136,6 +137,10 @@ type Toast = Omit<ToasterToast, "id">;
 
 function toast({ ...props }: Toast) {
   const id = genId();
+  // F1: a plan refusal already opened the upgrade prompt; no second, red "Error" toast for it.
+  if (props.variant === "destructive" && planLimitJustAnnounced()) {
+    return { id, dismiss: () => undefined, update: (_props: ToasterToast) => undefined };
+  }
 
   const update = (props: ToasterToast) =>
     dispatch({

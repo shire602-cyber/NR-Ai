@@ -1,284 +1,232 @@
+import { MARKETING_BRAND } from "@shared/marketing-brand";
+import { T } from "@/components/layout/T";
+import { MarketingLayout } from "@/components/marketing/MarketingLayout";
+import { Checklist, SectionHeading, Tiles } from "@/components/marketing/Sections";
 import { Link } from "wouter";
+import { SHOW_DATA_RESIDENCY } from "@/components/marketing/phase/home/flags";
 import {
   ArrowRight,
-  CheckCircle2,
   Clock,
   Database,
+  History,
   FileCheck,
   KeyRound,
   Lock,
   ShieldCheck,
   UserCheck,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useTranslation } from "@/lib/i18n";
 
-const controls = [
-  {
-    icon: Lock,
-    title: "Authenticated access",
-    text: "Customer workspaces require signed-in access, scoped company membership, and role-aware route checks.",
-  },
-  {
-    icon: KeyRound,
-    title: "Secure sessions",
-    text: "Session handling uses httpOnly cookies, token revocation, CSRF protection for cookie requests, and startup secret validation.",
-  },
-  {
-    icon: Database,
-    title: "Data protection controls",
-    text: "Sensitive operational settings are separated from the public app surface, with encrypted transport expected in production.",
-  },
-  {
-    icon: FileCheck,
-    title: "Auditability",
-    text: "Accounting actions are designed around traceable records, period locks, retention rules, and exportable supporting schedules.",
-  },
-];
+// R3 (CTO 8): the trust page is written for customers. It leads with the controls a customer
+// uses today, then who operates the service and how to reach them, then how we operate, and
+// ends with the honest "not certified yet" roadmap. Copy lives in the marketing catalog
+// (en + ar); claims stay limited to what the product does today and what docs/ and the legal
+// pages document (operator, support and privacy mailboxes). Release-gate / CI notes are
+// internal evidence (docs/TRUST.md), not customer copy.
 
-const roadmap = [
-  "Publish formal uptime and incident-response history after launch traffic is measurable.",
-  "Complete external penetration testing after the launch environment is frozen.",
-  "Prepare SOC 2 / ISO 27001 readiness evidence once operational controls have live history.",
-  "Expand data-processing and residency documentation for enterprise customers.",
-];
+const SUPPORT_EMAIL = MARKETING_BRAND.supportEmail;
+const PRIVACY_EMAIL = MARKETING_BRAND.privacyEmail;
+const SECURITY_EMAIL = MARKETING_BRAND.securityEmail;
 
-const launchEvidence = [
-  {
-    title: "Release gates",
-    text: "Type-check, unit tests, API contract checks, dependency audit, and production build run before release promotion.",
-  },
-  {
-    title: "Production smoke",
-    text: "Read-only smoke checks cover liveness, readiness, deployed version, and OAuth-provider response on the production URL.",
-  },
-  {
-    title: "Protected-route crawl",
-    text: "Authenticated firm-route smoke is supported with dedicated smoke credentials and recorded as internal release evidence.",
-  },
-];
+const ROADMAP = [1, 2, 3, 4];
 
-const trustPosture = [
-  {
-    icon: Database,
-    title: "Backup and restore proof",
-    text: "The application backup flow creates checksum-verified snapshots, restore previews, transactional restores, and a pre-restore safety backup. Operational backup cadence is confirmed for each production environment.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Incident process",
-    text: "The response checklist covers containment, audit-log review, key/API-token rotation, recovery from backup when integrity is in question, and UAE PDPL notification review.",
-  },
-  {
-    icon: UserCheck,
-    title: "Privacy and DPA posture",
-    text: "The Privacy Policy is public. Enterprise DPA and security-questionnaire review is handled during onboarding while a standard downloadable DPA pack is prepared.",
-  },
-];
+function MailLink({ email }: { email: string }) {
+  return (
+    <a href={`mailto:${email}`} dir="ltr">
+      {email}
+    </a>
+  );
+}
 
 export default function TrustSecurity() {
+  const { t } = useTranslation();
+  const controls = [
+    { key: "access", icon: UserCheck, n: "trustControl1" },
+    { key: "roles", icon: Users, n: "trustRoles" },
+    { key: "2fa", icon: KeyRound, n: "trustControl3" },
+    { key: "sessions", icon: Lock, n: "trustControl2" },
+  ].map(({ key, icon, n }) => ({
+    key,
+    icon,
+    title: t[`marketing.${n}Title`],
+    body: t[`marketing.${n}Body`],
+    testId: `trust-control-${key}`,
+  }));
+  controls.push(
+    {
+      key: "activity",
+      icon: History,
+      title: t["marketing.trustActivityTitle"],
+      body: t["marketing.trustActivityBody"],
+      testId: "trust-control-activity",
+    },
+    {
+      key: "audit",
+      icon: FileCheck,
+      title: t["marketing.trustAuditTitle"],
+      body: t["marketing.trustControl5Body"],
+      testId: "trust-control-audit",
+    },
+    {
+      key: "backups",
+      icon: Database,
+      title: t["marketing.trustBackupTitle"],
+      body: t["marketing.trustBackupBody"],
+      testId: "trust-control-backups",
+    },
+    {
+      key: "pdpl",
+      icon: ShieldCheck,
+      title: t["marketing.trustPdplTitle"],
+      body: t["marketing.trustPdplBody"],
+      testId: "trust-control-pdpl",
+    }
+  );
+  const operations = [1, 2, 3].map((n) => ({
+    key: `op-${n}`,
+    title: t[`marketing.trustOp${n}Title`],
+    body: t[`marketing.trustOp${n}Body`],
+  }));
+
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-background/95 backdrop-blur">
-        <div className="container mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
-          <Link href="/" className="text-lg font-bold">
-            Muhasib.ai
-          </Link>
-          <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
-            <Link href="/pricing" className="hover:text-foreground">
-              Pricing
-            </Link>
-            <Link href="/help" className="hover:text-foreground">
-              Help
-            </Link>
-            <Link href="/migration-guides" className="hover:text-foreground">
-              Migrate
-            </Link>
-          </nav>
-          <Link href="/register">
-            <Button size="sm">Start Free</Button>
-          </Link>
-        </div>
-      </header>
+    <MarketingLayout
+      titleKey="marketing.seoTrustTitle"
+      descriptionKey="marketing.seoTrustDescription"
+    >
+      <>
+        <section className="mk-pagehead">
+          <div className="mk-container">
+            <p className="mk-eyebrow">
+              <T k="pageLabels.trustAndSecurity" />
+            </p>
+            <h1 className="mk-h1" data-testid="text-trust-title">
+              {t["marketing.trustTitle"]}
+            </h1>
+            <p className="mk-lead">{t["marketing.trustLead"]}</p>
+          </div>
+        </section>
 
-      <main>
-        <section className="border-b bg-muted/30">
-          <div className="container mx-auto max-w-6xl px-4 py-16 lg:py-20">
-            <Badge variant="outline" className="mb-5">
-              Trust and Security
-            </Badge>
-            <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
+        <section className="mk-container mk-inner-section" aria-labelledby="trust-controls-title">
+          <SectionHeading
+            id="trust-controls-title"
+            eyebrow={t["marketing.trustControlsEyebrow"]}
+            title={t["marketing.trustControlsTitle"]}
+          />
+          <Tiles items={controls} />
+        </section>
+
+        <section className="mk-section--sunken" aria-labelledby="trust-who-title">
+          <div className="mk-container mk-inner-section">
+            <SectionHeading
+              id="trust-who-title"
+              eyebrow={t["marketing.trustWhoEyebrow"]}
+              title={t["marketing.trustWhoTitle"]}
+            />
+            <dl className="mk-defs" data-testid="trust-facts">
               <div>
-                <h1 className="max-w-3xl text-4xl font-bold tracking-tight md:text-5xl">
-                  Built for cautious UAE finance teams, with claims kept honest.
-                </h1>
-                <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
-                  Muhasib.ai protects accounting workflows with access controls, secure sessions,
-                  auditable records, and a clear roadmap toward third-party assurance. We do not
-                  claim SOC 2, ISO 27001, or FTA accreditation until those reviews are complete.
-                </p>
+                <dt>{t["marketing.trustOperatorLabel"]}</dt>
+                <dd>
+                  {t["marketing.trustOperatorBody"]}{" "}
+                  <Link href="/services">{t["marketing.trustOperatorLink"]}</Link>
+                </dd>
               </div>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <ShieldCheck className="h-5 w-5 text-success" />
-                    Launch posture
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm text-muted-foreground">
-                  <div className="flex items-start gap-2">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-success" />
-                    <span>High/critical production dependency audit gate is part of release.</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-success" />
-                    <span>
-                      Automated test, build, type-check, and migration-secret gates run locally.
-                    </span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <Clock className="mt-0.5 h-4 w-4 text-warning" />
-                    <span>External certifications are roadmap items, not current claims.</span>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </section>
-
-        <section className="container mx-auto max-w-6xl px-4 py-14">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h2 className="text-2xl font-semibold">Launch verification evidence</h2>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-                Release evidence is kept practical: automated gates, production health checks, and
-                authenticated route crawls for protected firm workflows when smoke credentials are
-                available.
-              </p>
-            </div>
-            <Badge variant="outline">Internal release gate</Badge>
-          </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
-            {launchEvidence.map((item) => (
-              <div key={item.title} className="rounded-lg border p-4">
-                <div className="flex items-center gap-2 text-sm font-semibold">
-                  <FileCheck className="h-4 w-4 text-primary" />
-                  {item.title}
+              {/* Hosting claim stays off until the owner confirms it (flags.ts). */}
+              {SHOW_DATA_RESIDENCY && (
+                <div data-testid="trust-data-residency">
+                  <dt>{t["marketing.trustResidencyLabel"]}</dt>
+                  <dd>
+                    {t["marketing.trustResidencyBody"]}{" "}
+                    <Link href="/privacy">{t["marketing.trustResidencyLink"]}</Link>
+                  </dd>
                 </div>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.text}</p>
+              )}
+              <div data-testid="trust-support-contact">
+                <dt>{t["marketing.trustSupportLabel"]}</dt>
+                <dd>
+                  {t["marketing.trustSupportContact"]} <MailLink email={SUPPORT_EMAIL} />
+                  <span className="mt-2 block">{t["marketing.trustSupportBody"]}</span>
+                </dd>
               </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="container mx-auto max-w-6xl px-4 py-14">
-          <div className="grid gap-4 md:grid-cols-2">
-            {controls.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Card key={item.title}>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-3 text-lg">
-                      <Icon className="h-5 w-5 text-primary" />
-                      {item.title}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm leading-6 text-muted-foreground">
-                    {item.text}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="border-y bg-muted/30">
-          <div className="container mx-auto max-w-6xl px-4 py-14">
-            <div>
-              <h2 className="text-2xl font-semibold">Operational trust posture</h2>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-                The public posture separates working product controls from environment-specific
-                operating procedures and future certifications.
-              </p>
-            </div>
-            <div className="mt-6 grid gap-4 lg:grid-cols-3">
-              {trustPosture.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <Card key={item.title}>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-3 text-lg">
-                        <Icon className="h-5 w-5 text-primary" />
-                        {item.title}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm leading-6 text-muted-foreground">
-                      {item.text}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-
-        <section className="border-y bg-muted/30">
-          <div className="container mx-auto grid max-w-6xl gap-8 px-4 py-14 lg:grid-cols-2">
-            <div>
-              <h2 className="text-2xl font-semibold">Support commitments during launch</h2>
-              <p className="mt-3 text-muted-foreground">
-                Paid launch customers get guided onboarding, implementation checklists, and support
-                through the onboarding team. Formal enterprise support commitments are confirmed
-                during setup based on the active hosting and support configuration.
-              </p>
-            </div>
-            <div className="rounded-lg border bg-background p-5">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <UserCheck className="h-4 w-4 text-primary" />
-                What customers can expect
+              <div>
+                <dt>{t["marketing.trustPrivacyLabel"]}</dt>
+                <dd>
+                  {t["marketing.trustPrivacyContact"]} <MailLink email={PRIVACY_EMAIL} />
+                </dd>
               </div>
-              <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
-                <li>Guided company setup and chart-of-accounts review.</li>
-                <li>Migration support from mazeed, Wafeq, Zoho Books, or Excel exports.</li>
-                <li>Escalation path for accounting workflow blockers during onboarding.</li>
-                <li>
-                  Security and data-processing questions answered before enterprise activation.
+              <div>
+                <dt>{t["marketing.trustSecurityLabel"]}</dt>
+                <dd>
+                  {t["marketing.trustSecurityContact"]} <MailLink email={SECURITY_EMAIL} />
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </section>
+
+        <section className="mk-container mk-inner-section" aria-labelledby="trust-operate-title">
+          <SectionHeading
+            id="trust-operate-title"
+            eyebrow={t["marketing.trustOperateEyebrow"]}
+            title={t["marketing.trustOperateTitle"]}
+          />
+          <Tiles items={operations} />
+          <div className="mt-12 grid gap-6 lg:grid-cols-[1fr_1.4fr]">
+            <h3 className="mk-h3">{t["marketing.trustExpectTitle"]}</h3>
+            <Checklist
+              items={[
+                <T key="setup" k="pageLabels.guidedCompanySetupAndChartOf" />,
+                ...[2, 3, 4].map((n) => t[`marketing.trustExpect${n}`]),
+              ]}
+            />
+          </div>
+        </section>
+
+        <section className="mk-section--sunken" aria-labelledby="trust-roadmap-title">
+          <div className="mk-container mk-inner-section">
+            <div className="mk-heading">
+              <p className="mk-eyebrow">{t["marketing.trustRoadmapEyebrow"]}</p>
+              <h2 className="mk-h2" id="trust-roadmap-title">
+                <T k="pageLabels.externalCertificationsAreRoadmapItemsNot" />
+              </h2>
+              <p className="mk-lead">{t["marketing.trustRoadmapLead"]}</p>
+            </div>
+            <h3 className="mk-h3">
+              <T k="pageLabels.assuranceRoadmap" />
+            </h3>
+            <ul className="mk-defs mt-4" data-testid="trust-roadmap">
+              {ROADMAP.map((n) => (
+                <li key={n} className="flex gap-3">
+                  <Clock
+                    className="mt-1 h-4 w-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <span className="mk-body">{t[`marketing.trustRoadmap${n}`]}</span>
                 </li>
-              </ul>
+              ))}
+            </ul>
+            <div className="mk-actions">
+              <Button asChild>
+                <Link href="/help">
+                  <T k="pageLabels.visitHelpCenter" />
+                  <ArrowRight className="rtl:-scale-x-100" aria-hidden="true" />
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/migration-guides">
+                  <T k="pageLabels.migrationGuides" />
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/privacy">
+                  <T k="pages.privacyPolicy" />
+                </Link>
+              </Button>
             </div>
           </div>
         </section>
-
-        <section className="container mx-auto max-w-6xl px-4 py-14">
-          <h2 className="text-2xl font-semibold">Assurance roadmap</h2>
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
-            {roadmap.map((item) => (
-              <div
-                key={item}
-                className="flex gap-3 rounded-lg border p-4 text-sm text-muted-foreground"
-              >
-                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-                <span>{item}</span>
-              </div>
-            ))}
-          </div>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/help">
-              <Button>
-                Visit Help Center
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </Link>
-            <Link href="/migration-guides">
-              <Button variant="outline">Migration Guides</Button>
-            </Link>
-            <Link href="/privacy">
-              <Button variant="outline">Privacy Policy</Button>
-            </Link>
-          </div>
-        </section>
-      </main>
-    </div>
+      </>
+    </MarketingLayout>
   );
 }

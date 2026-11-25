@@ -1,0 +1,8 @@
+{
+  "date": "2026-11-13",
+  "rates": [
+    { "currency": "USD", "rate": "3.6725" },
+    { "currency": "EUR", "rate": "3.9708" },
+    { "currency": "KWD", "rate": "11.9601" }
+  ]
+}

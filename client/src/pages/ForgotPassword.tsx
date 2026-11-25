@@ -1,6 +1,7 @@
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -13,29 +14,37 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
-import { ArrowLeft, Briefcase, CheckCircle2, Mail } from "lucide-react";
+import { serverErrorMessage, VALIDATION_NAMESPACES } from "@/lib/validation-messages";
+import { TurnstileWidget } from "@/components/security/TurnstileWidget";
+import { ArrowLeft } from "lucide-react";
+import { AuthLayout } from "@/components/auth/AuthLayout";
+import {
+  AUTH_BUTTON,
+  AUTH_INPUT,
+  AuthAlert,
+  AuthHeader,
+  AuthSwitch,
+} from "@/components/auth/AuthBlocks";
+import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 
 const forgotSchema = z.object({
-  email: z.string().email("Please enter a valid email"),
+  email: z.string().email("components.validation.emailInvalid"),
 });
 
 type ForgotFormData = z.infer<typeof forgotSchema>;
 
 export default function ForgotPassword() {
-  const { toast } = useToast();
+  const { t } = useTranslation(VALIDATION_NAMESPACES);
   const [isLoading, setIsLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  // E1 (J2-r2): the API says when no email provider is configured; the page must not promise a
+  // message that cannot arrive.
+  const [emailUnavailable, setEmailUnavailable] = useState(false);
   const [devResetUrl, setDevResetUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
   const form = useForm<ForgotFormData>({
     resolver: zodResolver(forgotSchema),
@@ -44,141 +53,121 @@ export default function ForgotPassword() {
 
   const onSubmit = async (data: ForgotFormData) => {
     setIsLoading(true);
+    setError(null);
     try {
       const res = await fetch(apiUrl("/api/auth/forgot-password"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(captchaToken ? { ...data, captchaToken } : data),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err?.message || "Could not start password reset");
+        throw new Error(serverErrorMessage(err, t["marketing.forgotErrorBody"]));
       }
       const body = await res.json();
       // Server returns devResetUrl outside of production so QA can verify
       // the flow without a wired-up email service.
       if (body?.devResetUrl) setDevResetUrl(body.devResetUrl);
+      setEmailUnavailable(body?.emailDelivery === "unavailable");
+      // Spec 3.2: one customer sentence whatever the delivery set-up; it never claims a link
+      // was sent and never mentions how email is delivered.
       setSubmitted(true);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Could not send reset link",
-        description: error?.message || "Please try again in a moment.",
-      });
+    } catch (failure: any) {
+      setError(failure?.message || t["marketing.forgotErrorBody"]);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4 relative">
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[128px] animate-pulse" />
-        <div
-          className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-chart-5/10 rounded-full blur-[128px] animate-pulse"
-          style={{ animationDelay: "1s" }}
-        />
-      </div>
-
-      <div className="absolute top-8 left-8">
-        <Link href="/login">
-          <Button variant="ghost" className="gap-2" data-testid="button-back-login">
-            <ArrowLeft className="w-4 h-4" />
-            Back to sign in
-          </Button>
-        </Link>
-      </div>
-
-      <div className="absolute top-8 right-8">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center">
-            <Briefcase className="w-4 h-4 text-white" />
-          </div>
-          <span className="font-bold text-lg">Muhasib.ai</span>
-        </Link>
-      </div>
-
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-semibold">Forgot password?</CardTitle>
-          <CardDescription>
-            Enter the email associated with your account and we'll send a reset link.
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent>
-          {submitted ? (
-            <div className="space-y-4 py-2">
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-success-subtle border border-success/30 ">
-                <CheckCircle2 className="w-5 h-5 text-success mt-0.5 shrink-0" />
-                <div className="text-sm">
-                  <p className="font-medium text-success-subtle-foreground ">Check your inbox</p>
-                  <p className="text-success mt-0.5">
-                    If that email is registered, a reset link is on its way. The link is valid for
-                    one hour.
-                  </p>
-                </div>
-              </div>
-              {devResetUrl && (
-                <div className="text-xs text-muted-foreground p-3 border rounded-md break-all">
-                  <p className="font-medium mb-1 text-foreground">
-                    Dev mode: open this link to reset
-                  </p>
-                  <a
-                    href={devResetUrl}
-                    className="text-primary underline"
-                    data-testid="link-dev-reset"
-                  >
-                    {devResetUrl}
-                  </a>
-                </div>
-              )}
-            </div>
+    <AuthLayout variant="forgot">
+      <Link
+        href="/login"
+        className="mb-6 inline-flex min-h-11 items-center gap-2 text-small font-medium text-muted-foreground hover:text-foreground md:min-h-0"
+        data-testid="button-back-login"
+      >
+        <ArrowLeft className="h-4 w-4 rtl:-scale-x-100" aria-hidden="true" />
+        <T k="pages.backToSignIn" />
+      </Link>
+      <AuthHeader
+        title={<T k="pageLabels.forgotPassword" />}
+        description={t["marketing.forgotDescription"]}
+      />
+      {error ? (
+        <AuthAlert tone="danger" title={t["marketing.forgotErrorTitle"]}>
+          {error}
+        </AuthAlert>
+      ) : null}
+      {submitted ? (
+        <div data-testid="text-forgot-result">
+          {emailUnavailable ? (
+            <AuthAlert tone="info" title={t["marketing.forgotNoProviderTitle"]}>
+              {t["marketing.forgotNoProvider"]}
+            </AuthAlert>
           ) : (
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type="email"
-                          autoComplete="email"
-                          placeholder="you@example.com"
-                          disabled={isLoading}
-                          data-testid="input-email"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={isLoading}
-                  data-testid="button-send-reset"
-                >
-                  <Mail className="w-4 h-4 mr-2" />
-                  {isLoading ? "Sending…" : "Send reset link"}
-                </Button>
-              </form>
-            </Form>
+            <AuthAlert tone="info" title={t["marketing.forgotDoneTitle"]}>
+              {formatMessage(t["marketing.forgotDoneBody"], { email: UPGRADE_CONTACT_EMAIL })}
+            </AuthAlert>
           )}
-        </CardContent>
-        <CardFooter className="flex flex-col space-y-2">
-          <div className="text-sm text-muted-foreground text-center">
-            Remembered your password?{" "}
-            <Link href="/login" className="text-primary hover:underline font-medium">
-              Sign in
-            </Link>
-          </div>
-        </CardFooter>
-      </Card>
-    </div>
+          {devResetUrl && (
+            <div className="break-all rounded-lg border border-border p-3 text-caption text-muted-foreground">
+              <p className="mb-1 font-medium text-foreground">{t["marketing.forgotDevLink"]}</p>
+              <a href={devResetUrl} className="text-accent underline" data-testid="link-dev-reset">
+                {devResetUrl}
+              </a>
+            </div>
+          )}
+        </div>
+      ) : (
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5" noValidate>
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    <T k="pages.email" />
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="email"
+                      autoComplete="email"
+                      inputMode="email"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      enterKeyHint="send"
+                      ltr
+                      placeholder="you@example.com"
+                      className={AUTH_INPUT}
+                      disabled={isLoading}
+                      data-testid="input-email"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <TurnstileWidget onToken={setCaptchaToken} />
+            <Button
+              type="submit"
+              className={AUTH_BUTTON}
+              disabled={isLoading}
+              data-testid="button-send-reset"
+            >
+              {isLoading ? t["marketing.forgotSending"] : t["marketing.forgotSubmit"]}
+            </Button>
+          </form>
+        </Form>
+      )}
+      <AuthSwitch>
+        {t["marketing.forgotRemembered"]}{" "}
+        <Link href="/login" className="font-medium text-accent hover:underline">
+          {t["marketing.authSignIn"]}
+        </Link>
+      </AuthSwitch>
+    </AuthLayout>
   );
 }

@@ -13,15 +13,19 @@ const log = createLogger("monitoring");
 export interface CaptureContext {
   requestId?: string | null;
   method?: string;
-  url?: string;
-  userId?: string | null;
-  companyId?: string | null;
-  [key: string]: unknown;
+  route?: string;
+  code?: string;
+  operational?: boolean;
+  unhandled?: boolean;
+  source?: "unhandledRejection" | "uncaughtException";
+  fatal?: boolean;
 }
 
-function normaliseError(error: unknown): { message: string; name?: string; stack?: string } {
-  if (error instanceof Error) return { message: error.message, name: error.name, stack: error.stack };
-  return { message: typeof error === "string" ? error : JSON.stringify(error) };
+function errorType(error: unknown): string {
+  for (const type of [TypeError, RangeError, ReferenceError, SyntaxError, URIError]) {
+    if (error instanceof type) return type.name;
+  }
+  return error instanceof Error ? "Error" : typeof error;
 }
 
 /**
@@ -29,8 +33,8 @@ function normaliseError(error: unknown): { message: string; name?: string; stack
  * monitor when one is configured (no-op until then).
  */
 export function captureException(error: unknown, context: CaptureContext = {}): void {
-  const err = normaliseError(error);
-  log.error({ err, ...context, captured: true }, `captureException: ${err.message}`);
+  // Messages and stacks can embed SQL parameters, provider responses and URLs.
+  log.error({ ...context, errorType: errorType(error), captured: true }, "Captured exception");
 
   // Forward hook — wire an external tracker here when a DSN is configured. Kept
   // env-gated + lazy so no SDK dependency is required until you opt in.

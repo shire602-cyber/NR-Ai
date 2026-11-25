@@ -88,7 +88,7 @@ export function RTLProvider({ children }: RTLProviderProps) {
 
     // Load Arabic-optimised font when switching to RTL
     if (isRTL) {
-      loadArabicFont();
+      void loadArabicFont();
     }
 
     // Add/remove a class so plain CSS can also target the state
@@ -120,30 +120,25 @@ export function RTLProvider({ children }: RTLProviderProps) {
 
 /* ── Arabic font loader ───────────────────────────────────────────────── */
 
-let fontLoaded = false;
+let fontPromise: Promise<unknown> | null = null;
 
 /**
- * Load the Arabic UI fonts (Cairo + Noto Sans Arabic) the first time RTL is
+ * Load the Arabic UI font (Noto Sans Arabic — pairs with Geist Sans) the first time RTL is
  * activated. Self-hosted via Fontsource and dynamically imported so they add
  * zero weight for English-only users and never hit an external font CDN.
  */
-function loadArabicFont(): void {
-  if (fontLoaded) return;
-  fontLoaded = true;
-
-  void Promise.all([
-    import("@fontsource/cairo/400.css"),
-    import("@fontsource/cairo/500.css"),
-    import("@fontsource/cairo/600.css"),
-    import("@fontsource/cairo/700.css"),
-    import("@fontsource/noto-sans-arabic/400.css"),
-    import("@fontsource/noto-sans-arabic/500.css"),
-    import("@fontsource/noto-sans-arabic/600.css"),
-    import("@fontsource/noto-sans-arabic/700.css"),
+function loadArabicFont(): Promise<unknown> {
+  if (fontPromise) return fontPromise;
+  fontPromise = Promise.all([
+    import("@fontsource/noto-sans-arabic/arabic-400.css"),
+    import("@fontsource/noto-sans-arabic/arabic-500.css"),
+    import("@fontsource/noto-sans-arabic/arabic-600.css"),
+    import("@fontsource/noto-sans-arabic/arabic-700.css"),
   ]).catch(() => {
     // Best-effort: if a chunk fails, the RTL font stack falls back to system
     // Arabic fonts (defined in rtl.css) — text stays readable.
   });
+  return fontPromise;
 }
 
 export default RTLProvider;

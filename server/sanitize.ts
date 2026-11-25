@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_BYTES } from "../shared/upload-limits";
 import DOMPurify from "isomorphic-dompurify";
 import path from "path";
 
@@ -120,7 +121,7 @@ export function validateUpload(
   },
   opts: { maxBytes?: number; allowedMimePrefixes?: string[] } = {}
 ): UploadCheck {
-  const maxBytes = opts.maxBytes ?? 10 * 1024 * 1024; // 10 MB default
+  const maxBytes = Math.min(opts.maxBytes ?? MAX_UPLOAD_BYTES, MAX_UPLOAD_BYTES);
   if (file.size > maxBytes) {
     return { ok: false, error: `File exceeds ${Math.round(maxBytes / 1024 / 1024)}MB limit` };
   }

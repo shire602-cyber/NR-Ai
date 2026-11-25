@@ -1,11 +1,27 @@
 import { sql } from "drizzle-orm";
 import { db } from "../db";
+import { DomainError } from "../errors";
 
-export type InvoiceDocType = "invoice" | "credit_note" | "quote";
+export type InvoiceDocType = "invoice" | "cash_sale" | "credit_note" | "debit_note" | "quote";
+
+export const NUMBERED_DOC_TYPES: readonly InvoiceDocType[] = [
+  "invoice",
+  "cash_sale",
+  "credit_note",
+  "debit_note",
+  "quote",
+];
 
 const PREFIX: Record<InvoiceDocType, string> = {
   invoice: "INV",
+  // CASH-SERIES (owner decision 2026-11-18): cash sales are tax invoices with their own
+  // gap-free series (own prefix and counter per company), never shared with "invoice".
+  // The cash-sale migrations assign an alternative where "CS" is already occupied.
+  cash_sale: "CS",
   credit_note: "CN",
+  // W3-A: debit notes (additional charges on an issued invoice) are tax
+  // documents with their own gap-free sequence.
+  debit_note: "DN",
   // Quotes are not tax documents, so FTA gap-free numbering does not apply to
   // them — but they still need a unique, sequential, server-allocated number.
   // `quotes.number` is NOT NULL, and the create route used to leave it unset,
@@ -13,8 +29,49 @@ const PREFIX: Record<InvoiceDocType, string> = {
   quote: "QT",
 };
 
+/**
+ * Numbering settings per document type (WQ7, Settings › Numbering). The allocator below stays the
+ * single writer of invoice_number_sequences, so numbers stay gap-free and unique whatever the
+ * settings say: a prefix or padding change only changes how the next number is written, never
+ * the counter, and "next number" can only move the counter forward.
+ */
+export interface NumberingSettings {
+  docType: InvoiceDocType;
+  prefix: string;
+  padding: number;
+  /** true: the year is part of the number and the counter restarts each year. */
+  yearlyReset: boolean;
+}
+
+export function defaultNumberingSettings(docType: InvoiceDocType): NumberingSettings {
+  return { docType, prefix: PREFIX[docType], padding: 5, yearlyReset: true };
+}
+
+/** Year key of the sequence row: the calendar year, or 0 for one continuous sequence. */
+function sequenceYear(s: NumberingSettings, date: Date): number {
+  return s.yearlyReset ? date.getUTCFullYear() : 0;
+}
+
+export function formatDocumentNumber(s: NumberingSettings, year: number, n: number): string {
+  const digits = String(n).padStart(s.padding, "0");
+  return s.yearlyReset ? `${s.prefix}-${year}-${digits}` : `${s.prefix}-${digits}`;
+}
+
+function numberingSeriesOverlap(first: NumberingSettings, second: NumberingSettings): boolean {
+  if (first.prefix === second.prefix) return true;
+  if (first.yearlyReset === second.yearlyReset) return false;
+  const [yearly, continuous] = first.yearlyReset ? [first, second] : [second, first];
+  const stem = `${yearly.prefix}-`;
+  // Padding is a minimum width. Counters eventually have enough digits to overlap.
+  return (
+    continuous.prefix.startsWith(stem) &&
+    /^(0|[1-9][0-9]{0,3})$/.test(continuous.prefix.slice(stem.length))
+  );
+}
+
+/** Default format (INV-2026-00001); kept for callers and tests that format without settings. */
 export function formatInvoiceNumber(docType: InvoiceDocType, year: number, n: number): string {
-  return `${PREFIX[docType]}-${year}-${String(n).padStart(5, "0")}`;
+  return formatDocumentNumber(defaultNumberingSettings(docType), year, n);
 }
 
 // Drizzle executor type — accepts the global db handle or any nested tx so that
@@ -23,10 +80,34 @@ export function formatInvoiceNumber(docType: InvoiceDocType, year: number, n: nu
 // recordInvoicePayment, etc.).
 type Executor = typeof db;
 
+function rowsOf<T>(result: unknown): T[] {
+  return ((result as { rows?: T[] }).rows ?? (result as T[])) as T[];
+}
+
+export async function getNumberingSettings(
+  companyId: string,
+  docType: InvoiceDocType,
+  executor: Executor = db
+): Promise<NumberingSettings> {
+  const result = await executor.execute(sql`
+    SELECT prefix, padding, yearly_reset FROM document_numbering_settings
+     WHERE company_id = ${companyId} AND doc_type = ${docType}
+  `);
+  const row = rowsOf<{ prefix: string; padding: number; yearly_reset: boolean }>(result)[0];
+  if (!row) return defaultNumberingSettings(docType);
+  return {
+    docType,
+    prefix: row.prefix,
+    padding: Number(row.padding),
+    yearlyReset: row.yearly_reset === true,
+  };
+}
+
 // Atomically allocate the next number in a (company, docType, year) sequence.
 // The INSERT ... ON CONFLICT DO UPDATE ... RETURNING pattern is single-statement
 // and serialised by Postgres row locking, so concurrent calls cannot collide
-// and cannot produce gaps. Returns a fully formatted number like INV-2026-00001.
+// and cannot produce gaps. Returns a fully formatted number like INV-2026-00001
+// (or the company's own prefix / padding / reset from Settings › Numbering).
 //
 // Pass `executor` (a Drizzle tx) to enroll the allocation in a wider
 // transaction — required by FTA-compliance to ensure that if the surrounding
@@ -38,8 +119,15 @@ export async function allocateInvoiceNumber(
   date: Date = new Date(),
   executor: Executor = db
 ): Promise<string> {
-  const year = date.getUTCFullYear();
-  const result: any = await executor.execute(sql`
+  // Take the same company key-share lock as the invoice FK before writing the
+  // sequence, so a clone can't wait on a sequence row held by a blocked writer.
+  await executor.execute(sql`SELECT id FROM companies WHERE id = ${companyId} FOR KEY SHARE`);
+  await executor.execute(sql`
+    SELECT pg_advisory_xact_lock_shared(hashtextextended('document-numbering:' || ${companyId}, 0))
+  `);
+  const settings = await getNumberingSettings(companyId, docType, executor);
+  const year = sequenceYear(settings, date);
+  const result = await executor.execute(sql`
     INSERT INTO invoice_number_sequences (company_id, doc_type, year, last_value, updated_at)
       VALUES (${companyId}, ${docType}, ${year}, 1, now())
     ON CONFLICT (company_id, doc_type, year)
@@ -47,9 +135,23 @@ export async function allocateInvoiceNumber(
                     updated_at = now()
     RETURNING last_value
   `);
-  const rows = (result.rows ?? result) as Array<{ last_value: string | number }>;
-  const allocated = Number(rows[0]?.last_value);
-  return formatInvoiceNumber(docType, year, allocated);
+  const allocated = Number(rowsOf<{ last_value: string | number }>(result)[0]?.last_value);
+  return formatDocumentNumber(settings, date.getUTCFullYear(), allocated);
+}
+
+/** Last number issued in the sequence the settings point at for `date` (0 = none yet). */
+async function lastIssued(
+  companyId: string,
+  docType: InvoiceDocType,
+  year: number,
+  executor: Executor
+): Promise<number> {
+  const result = await executor.execute(sql`
+    SELECT last_value FROM invoice_number_sequences
+    WHERE company_id = ${companyId} AND doc_type = ${docType} AND year = ${year}
+  `);
+  const rows = rowsOf<{ last_value: string | number }>(result);
+  return rows.length === 0 ? 0 : Number(rows[0].last_value);
 }
 
 // Peek the next number without allocating it (for UI display before save).
@@ -59,12 +161,150 @@ export async function peekNextInvoiceNumber(
   date: Date = new Date(),
   executor: Executor = db
 ): Promise<string> {
-  const year = date.getUTCFullYear();
-  const result: any = await executor.execute(sql`
-    SELECT last_value FROM invoice_number_sequences
-    WHERE company_id = ${companyId} AND doc_type = ${docType} AND year = ${year}
+  const settings = await getNumberingSettings(companyId, docType, executor);
+  const next = (await lastIssued(companyId, docType, sequenceYear(settings, date), executor)) + 1;
+  return formatDocumentNumber(settings, date.getUTCFullYear(), next);
+}
+
+export interface NumberingView extends NumberingSettings {
+  /** Next counter value and how it will be written. */
+  nextNumber: number;
+  nextFormatted: string;
+  /** Highest counter value already issued in this sequence (0 = none). */
+  lastIssued: number;
+}
+
+export async function numberingView(
+  companyId: string,
+  docType: InvoiceDocType,
+  date: Date = new Date()
+): Promise<NumberingView> {
+  const settings = await getNumberingSettings(companyId, docType);
+  const last = await lastIssued(companyId, docType, sequenceYear(settings, date), db);
+  return {
+    ...settings,
+    lastIssued: last,
+    nextNumber: last + 1,
+    nextFormatted: formatDocumentNumber(settings, date.getUTCFullYear(), last + 1),
+  };
+}
+
+/**
+ * Reserve numbers already printed in the new format, including in years that can still
+ * receive backdated documents.
+ */
+async function reservePrintedNumbers(
+  companyId: string,
+  settings: NumberingSettings,
+  executor: Executor
+): Promise<void> {
+  // The prefix validator allows only letters, digits, "-" and "/".
+  const pattern = settings.yearlyReset
+    ? `^${settings.prefix}-([0-9]{4})-([0-9]+)$`
+    : `^${settings.prefix}-([0-9]+)$`;
+  await executor.execute(sql`
+    WITH docs AS (
+      SELECT number FROM invoices WHERE company_id = ${companyId}
+      UNION ALL SELECT number FROM credit_notes WHERE company_id = ${companyId}
+      UNION ALL SELECT number FROM quotes WHERE company_id = ${companyId}
+    ), hits AS (
+      SELECT regexp_match(number, ${pattern}) AS parts FROM docs WHERE number ~ ${pattern}
+    )
+    INSERT INTO invoice_number_sequences (company_id, doc_type, year, last_value, updated_at)
+    SELECT ${companyId}, ${settings.docType},
+           ${settings.yearlyReset ? sql`parts[1]::int` : sql`0`} AS year,
+           MAX(${settings.yearlyReset ? sql`parts[2]::bigint` : sql`parts[1]::bigint`}), now()
+      FROM hits GROUP BY 3
+    ON CONFLICT (company_id, doc_type, year)
+      DO UPDATE SET last_value = EXCLUDED.last_value, updated_at = now()
+      WHERE invoice_number_sequences.last_value < EXCLUDED.last_value
   `);
-  const rows = (result.rows ?? result) as Array<{ last_value: string | number }>;
-  const next = rows.length === 0 ? 1 : Number(rows[0].last_value) + 1;
-  return formatInvoiceNumber(docType, year, next);
+}
+
+/**
+ * Save the numbering settings and, optionally, move the next number forward. One transaction:
+ *   - the settings row is upserted;
+ *   - switching between yearly and continuous numbering seeds the new sequence with the highest
+ *     number already issued, so the counter never repeats;
+ *   - `nextNumber` must be above the highest number issued (409 NUMBERING_BELOW_ISSUED): the
+ *     sequence row is locked (FOR UPDATE) so a concurrent issue cannot slip under it.
+ */
+export async function saveNumberingSettings(
+  companyId: string,
+  docType: InvoiceDocType,
+  input: { prefix: string; padding: number; yearlyReset: boolean; nextNumber?: number },
+  userId: string,
+  date: Date = new Date()
+): Promise<NumberingView> {
+  await db.transaction(async (tx: Executor) => {
+    await tx.execute(sql`SELECT id FROM companies WHERE id = ${companyId} FOR KEY SHARE`);
+    await tx.execute(sql`
+      SELECT pg_advisory_xact_lock(hashtextextended('document-numbering:' || ${companyId}, 0))
+    `);
+    const before = await getNumberingSettings(companyId, docType, tx);
+    const settings: NumberingSettings = {
+      docType,
+      prefix: input.prefix.trim().toUpperCase(),
+      padding: input.padding,
+      yearlyReset: input.yearlyReset,
+    };
+    for (const other of NUMBERED_DOC_TYPES) {
+      if (other === docType) continue;
+      if (numberingSeriesOverlap(settings, await getNumberingSettings(companyId, other, tx))) {
+        throw new DomainError(
+          "NUMBERING_PREFIX_IN_USE",
+          409,
+          { prefix: settings.prefix, docType: other },
+          "This prefix overlaps with another document numbering series"
+        );
+      }
+    }
+    const year = sequenceYear(settings, date);
+    if (before.yearlyReset !== settings.yearlyReset || before.prefix !== settings.prefix) {
+      await reservePrintedNumbers(companyId, settings, tx);
+    }
+    if (before.yearlyReset !== settings.yearlyReset) {
+      const prevLast = await lastIssued(companyId, docType, sequenceYear(before, date), tx);
+      await tx.execute(sql`
+        INSERT INTO invoice_number_sequences (company_id, doc_type, year, last_value, updated_at)
+          VALUES (${companyId}, ${docType}, ${year}, ${prevLast}, now())
+        ON CONFLICT (company_id, doc_type, year)
+          DO UPDATE SET last_value = GREATEST(invoice_number_sequences.last_value, ${prevLast}),
+                        updated_at = now()
+      `);
+    }
+    if (input.nextNumber !== undefined) {
+      await tx.execute(sql`
+        INSERT INTO invoice_number_sequences (company_id, doc_type, year, last_value, updated_at)
+          VALUES (${companyId}, ${docType}, ${year}, 0, now())
+        ON CONFLICT (company_id, doc_type, year) DO NOTHING
+      `);
+      const locked = await tx.execute(sql`
+        SELECT last_value FROM invoice_number_sequences
+         WHERE company_id = ${companyId} AND doc_type = ${docType} AND year = ${year}
+         FOR UPDATE
+      `);
+      const last = Number(rowsOf<{ last_value: string | number }>(locked)[0]?.last_value ?? 0);
+      if (input.nextNumber <= last) {
+        throw new DomainError(
+          "NUMBERING_BELOW_ISSUED",
+          409,
+          { lastIssued: last, requested: input.nextNumber },
+          `The next number must be above ${last}, the highest number already issued`
+        );
+      }
+      await tx.execute(sql`
+        UPDATE invoice_number_sequences SET last_value = ${input.nextNumber - 1}, updated_at = now()
+         WHERE company_id = ${companyId} AND doc_type = ${docType} AND year = ${year}
+      `);
+    }
+    await tx.execute(sql`
+      INSERT INTO document_numbering_settings (company_id, doc_type, prefix, padding, yearly_reset, updated_by, updated_at)
+        VALUES (${companyId}, ${docType}, ${settings.prefix}, ${settings.padding}, ${settings.yearlyReset}, ${userId}, now())
+      ON CONFLICT (company_id, doc_type) DO UPDATE SET
+        prefix = EXCLUDED.prefix, padding = EXCLUDED.padding, yearly_reset = EXCLUDED.yearly_reset,
+        updated_by = EXCLUDED.updated_by, updated_at = now()
+    `);
+  });
+  return numberingView(companyId, docType, date);
 }

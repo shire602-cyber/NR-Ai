@@ -11,6 +11,10 @@
 //   - H4  absurd VAT return period is rejected  (only asserted if 1.6 is implemented)
 //   - ledger integrity: issue posts a balanced entry; TB balances
 
+import { throttledFetch } from "./_http.mjs";
+import { withRegisterLogin } from "./register-compat.mjs";
+
+const api = withRegisterLogin(apiRaw, { status: "status", body: "json" });
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 let pass = 0, fail = 0;
 const fails = [];
@@ -18,10 +22,10 @@ function ok(name, cond, detail) {
   if (cond) { pass++; console.log("PASS  " + name); }
   else { fail++; fails.push(name + "  :: " + JSON.stringify(detail)); console.log("FAIL  " + name + "  " + JSON.stringify(detail)); }
 }
-async function api(method, path, { body, token } = {}) {
+async function apiRaw(method, path, { body, token } = {}) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = "Bearer " + token;
-  const res = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const res = await throttledFetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const text = await res.text();
   let json = null; try { json = JSON.parse(text); } catch {}
   return { status: res.status, json, text };
@@ -29,6 +33,17 @@ async function api(method, path, { body, token } = {}) {
 const rnd = Math.random().toString(36).slice(2, 8);
 const today = new Date().toISOString().slice(0, 10);
 const n = (v) => Number(v ?? 0);
+function quarterOf(iso) {
+  const y = Number(iso.slice(0, 4)), q = Math.floor((Number(iso.slice(5, 7)) - 1) / 3);
+  return { y, q };
+}
+function quarterBounds(y, q) {
+  const sm = q * 3 + 1, em = sm + 2, last = new Date(Date.UTC(y, em, 0)).getUTCDate();
+  const p = (v) => String(v).padStart(2, "0");
+  return { start: `${y}-${p(sm)}-01`, end: `${y}-${p(em)}-${p(last)}` };
+}
+const currentQuarter = (iso) => { const { y, q } = quarterOf(iso); return quarterBounds(y, q); };
+const lastCompletedQuarter = (iso) => { const { y, q } = quarterOf(iso); return q === 0 ? quarterBounds(y - 1, 3) : quarterBounds(y, q - 1); };
 const close = (a, b, t = 0.005) => Math.abs(n(a) - n(b)) <= t;
 
 async function main() {
@@ -82,15 +97,16 @@ async function main() {
   // Build an invoice whose VAT 201 box carries an awkward figure and assert it
   // round-trips exactly (a float column would corrupt 9,999,999.99).
   r = await api("POST", `/api/companies/${companyId}/invoices`, {
-    token, body: { customerName: "Big Co", date: today, lines: [{ description: "big", quantity: 1, unitPrice: 9999999.99, vatRate: 0 }] },
+    token, body: { customerName: "Big Co", date: lastCompletedQuarter(today).end, lines: [{ description: "big", quantity: 1, unitPrice: 9999999.99, vatRate: 0, vatSupplyType: "zero_rated" }] },
   });
   const big = r.json;
+  // Dated in the last COMPLETED VAT quarter: a return period cannot end in the future and a
+  // quarterly return must cover the whole calendar quarter of the company stagger.
+  const q = lastCompletedQuarter(today);
   ok("C2 large invoice total stored exactly (9,999,999.99)", close(big?.subtotal, 9999999.99), { subtotal: big?.subtotal });
   await api("PATCH", `/api/invoices/${big.id}/status`, { token, body: { status: "sent" } });
-  // Use a valid current-month period (period validation now rejects absurd spans).
-  const monthStart = today.slice(0, 8) + "01";
   r = await api("POST", `/api/companies/${companyId}/vat-returns/generate`, {
-    token, body: { periodStart: monthStart, periodEnd: today },
+    token, body: { periodStart: q.start, periodEnd: q.end },
   });
   ok("C2 VAT return generates", r.status === 200 || r.status === 201, { status: r.status, msg: r.json?.message });
   // box4 zero-rated should equal the 9,999,999.99 line exactly (not 10,000,000)
@@ -101,13 +117,21 @@ async function main() {
   r = await api("POST", `/api/companies/${companyId}/vat-returns/generate`, {
     token, body: { periodStart: "1900-01-01", periodEnd: "2999-12-31" },
   });
-  ok("H4 absurd 1,100-year VAT period is rejected", r.status === 422, { status: r.status, code: r.json?.code });
+  // Out-of-range dates are refused by the request validator (400), not the period rule (422).
+  ok("H4 absurd 1,100-year VAT period is rejected", r.status === 400 || r.status === 422, { status: r.status, code: r.json?.code });
 
   // future period rejected
   r = await api("POST", `/api/companies/${companyId}/vat-returns/generate`, {
     token, body: { periodStart: "2099-01-01", periodEnd: "2099-03-31" },
   });
-  ok("H4 future VAT period is rejected", r.status === 422, { status: r.status, code: r.json?.code });
+  ok("H4 far-future VAT period is rejected", r.status === 400 || r.status === 422, { status: r.status, code: r.json?.code });
+
+  // the current (not yet finished) quarter is a well-formed period that ends in the future
+  const cur = currentQuarter(today);
+  r = await api("POST", `/api/companies/${companyId}/vat-returns/generate`, {
+    token, body: { periodStart: cur.start, periodEnd: cur.end },
+  });
+  ok("H4 VAT period ending in the future is rejected", r.status === 422 && r.json?.code === "PERIOD_IN_FUTURE", { status: r.status, code: r.json?.code });
 
   // ── H6: bank account creation does not 500 ─────────────────
   // The canonical handler lives in bank-statements.routes.ts. It used to be
@@ -126,17 +150,14 @@ async function main() {
   r = await api("POST", `/api/companies/${companyId}/bank-accounts`, {
     token, body: { nameEn: "Made Up", bankName: "Not A Real Bank", currency: "AED" },
   });
-  ok("H6 unrecognised bankName is rejected (shadowed handler is now live)", r.status >= 400 && r.status < 500, { status: r.status });
+  // bankName is free text (R06-17): the validator only suggests known banks, it never rejects one.
+  ok("H6 free-text bankName is accepted (R06-17)", r.status === 201, { status: r.status });
 
   // ── C3: period lock ────────────────────────────────────────
   // Locking is per calendar month (the month of periodEnd), so lock June 2020
   // and then attempt a write dated inside June 2020.
-  // F04: lock is gated by server-side readiness — load the checklist and
-  // acknowledge exactly the open items the server reports.
-  r = await api("GET", `/api/companies/${companyId}/month-end/checklist?period=2020-06`, { token });
-  const openIds = (r.json?.checklist ?? []).filter((i) => i.status !== "complete").map((i) => i.id);
   r = await api("POST", `/api/companies/${companyId}/month-end/lock-period`, {
-    token, body: { periodEnd: "2020-06-30", acknowledgedOpenItemIds: openIds },
+    token, body: { periodEnd: "2020-06-30", overrideChecklist: true, reason: "integration test: no VAT return for 2020" },
   });
   ok("C3 lock-period succeeds (no 500)", r.status === 200 || r.status === 201, { status: r.status, msg: r.json?.message });
 

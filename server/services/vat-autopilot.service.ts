@@ -18,12 +18,21 @@ import { randomUUID } from "node:crypto";
 import { lineNetAmount, lineVatAmount } from "../../shared/document-totals";
 import { pool } from "../db";
 import { UAE_VAT_RATE } from "../constants";
+import { DomainError } from "../errors";
 import { resolveNrClientVatPeriodStartMonth } from "./firm-clients.service";
+import { isFiledReturnStatus, loadVatApplicability, periodApplies } from "./vat-applicability";
+import { computeVat201, type VatComputation } from "../tax/vat-engine";
+import { EMIRATE_BOX_PREFIX, type Vat201Key } from "../tax/vat-boxes";
+import type { VatReconciliation } from "../tax/vat-reconciliation";
+import { assertCompanyTrn } from "../tax/vat-returns.service";
+import { EMIRATES } from "../../shared/validators/primitives";
+import type { QueryResultRow } from "pg";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type VatFrequency = "monthly" | "quarterly";
 export type VatPeriodStatus = "draft" | "ready" | "submitted" | "accepted";
+type VatPeriodDisplayStatus = "draft" | "ready" | "filed" | "paid";
 
 export interface VatPeriod {
   start: Date;
@@ -74,6 +83,11 @@ export interface VatAutopilotCalculation {
   period: VatPeriod;
   boxes: VatBoxBreakdown;
   reconciliation: ReconciliationResult;
+  /** Full VAT-to-GL reconciliation by source from the VAT engine (R12-08b). */
+  ledgerReconciliation: VatReconciliation;
+  engineVersion: string;
+  /** Every VAT 201 box (incl. 2, 6, 7 and adjustment columns) from the engine, AED. */
+  fullBoxes: Record<string, number>;
   invoicesProcessed: number;
   receiptsProcessed: number;
   partialExemption: {
@@ -85,7 +99,7 @@ export interface VatAutopilotCalculation {
 }
 
 export interface Vat201BoxValues {
-  // Standard-rated sales by emirate (only the company's emirate is populated)
+  // Standard-rated sales by the emirate of each supply (W4-E, R07-02)
   box1aAbuDhabiAmount: number;
   box1aAbuDhabiVat: number;
   box1bDubaiAmount: number;
@@ -124,12 +138,14 @@ export interface VatPeriodSummary {
   periodEnd: string;
   dueDate: string;
   frequency: VatFrequency;
-  status: VatPeriodStatus;
+  status: VatPeriodDisplayStatus;
   outputVat: number;
   inputVat: number;
   netVatPayable: number;
   calculatedAt: string | null;
   deadline: DeadlineStatus;
+  /** E3 (J3-r3): the period's VAT return on the Returns tab (the lifecycle's one source). */
+  lifecycle: ReturnLifecycle | null;
 }
 
 export interface DueDateView {
@@ -138,9 +154,98 @@ export interface DueDateView {
   trnVatNumber: string | null;
   periodEnd: Date;
   dueDate: Date;
-  status: VatPeriodStatus;
+  status: VatPeriodDisplayStatus;
   daysUntilDue: number;
   level: DeadlineStatus["level"];
+  lifecycle: ReturnLifecycle | null;
+}
+
+/**
+ * E3 (J3-r3): where a period's VAT return stands, read from `vat_returns` (record filing, record
+ * payment). The Periods tab, the deadlines card and the compliance calendar all take the filed /
+ * paid state from here, so a quarter filed on the Returns tab is never shown as overdue.
+ */
+export interface ReturnLifecycle {
+  returnId: string;
+  /** vat_returns.status: draft | pending_review | ready | submitted | filed | amended. */
+  returnStatus: string;
+  /** draft / ready (still to file), filed (filed, unpaid), paid (filed and settled). */
+  stage: "draft" | "ready" | "filed" | "paid";
+  filed: boolean;
+  paymentDate: string | null;
+  outputVat: number;
+  inputVat: number;
+  netVatPayable: number;
+}
+
+/** Period-end date (YYYY-MM-DD, calendar date) -> the period's return, per company. */
+export async function loadReturnLifecycle(
+  companyIds: string[]
+): Promise<Map<string, Map<string, ReturnLifecycle>>> {
+  const out = new Map<string, Map<string, ReturnLifecycle>>();
+  if (companyIds.length === 0) return out;
+  // period_end is stored as the period's last instant in UTC (vat-returns.service toEndTs), so
+  // the calendar date is its UTC date part (as in compliance-obligations.service).
+  const r = await pool.query(
+    `SELECT id, company_id, (period_end::date)::text AS period_end, status, payment_status, fta_reference_number,
+            payment_date::date::text AS payment_date, box12_total_due_tax::numeric AS output_vat,
+            box13_recoverable_tax::numeric AS input_vat,
+            box14_payable_tax::numeric AS net_vat
+       FROM vat_returns
+      WHERE company_id = ANY($1::uuid[])
+      ORDER BY created_at`,
+    [companyIds]
+  );
+  for (const row of r.rows as Array<Record<string, unknown>>) {
+    const cid = String(row.company_id);
+    const byEnd = out.get(cid) ?? new Map<string, ReturnLifecycle>();
+    out.set(cid, byEnd);
+    const status = String(row.status);
+    const filed = isFiledReturnStatus(status, row.fta_reference_number as string | null);
+    const paid = filed && row.payment_status === "paid";
+    const entry: ReturnLifecycle = {
+      returnId: String(row.id),
+      returnStatus: status,
+      stage: paid
+        ? "paid"
+        : filed
+          ? "filed"
+          : ["ready", "submitted", "filed", "paid", "accepted"].includes(status)
+            ? "ready"
+            : "draft",
+      filed,
+      paymentDate: row.payment_date as string | null,
+      outputVat: Number(row.output_vat) || 0,
+      inputVat: Number(row.input_vat) || 0,
+      netVatPayable: Number(row.net_vat) || 0,
+    };
+    const key = String(row.period_end);
+    const prev = byEnd.get(key);
+    // A filed return wins over a draft for the same period; later rows win ties (amendments).
+    if (!prev || filed || !prev.filed) byEnd.set(key, entry);
+  }
+  return out;
+}
+
+/** The calendar end date of a period (synthetic periods end on the last UTC instant of the day). */
+function periodEndDate(end: Date | string): string {
+  return new Date(end).toISOString().slice(0, 10);
+}
+
+/** Filed periods are not late, whatever the clock says. */
+function lifecycleDeadline(dueDate: Date, now: Date, lifecycle: ReturnLifecycle | null) {
+  const dl = deadlineStatus(dueDate, now);
+  return lifecycle?.filed ? { ...dl, level: "ok" as const, isOverdue: false } : dl;
+}
+
+/** The autopilot status shown for a period: the return's lifecycle when there is one. */
+function lifecycleStatus(
+  stored: VatPeriodStatus | undefined,
+  lifecycle: ReturnLifecycle | null
+): VatPeriodDisplayStatus {
+  if (lifecycle?.filed) return lifecycle.stage === "paid" ? "paid" : "filed";
+  if (lifecycle?.stage === "ready" || (stored && stored !== "draft")) return "ready";
+  return "draft";
 }
 
 // ─── Pure helpers (testable without a DB) ────────────────────────────────────
@@ -446,10 +551,14 @@ export function buildVat201Boxes(
       boxes.box1gFujairahVat = stdVat;
       break;
     case "dubai":
-    default:
       boxes.box1bDubaiAmount = stdAmt;
       boxes.box1bDubaiVat = stdVat;
       break;
+    default:
+      // R07-02 / R07-09: never guess the emirate.
+      if (stdAmt !== 0 || stdVat !== 0) {
+        throw new DomainError("EMIRATE_MISSING", 422, { emirate }, "Unknown or missing emirate");
+      }
   }
 
   // Box 8 totals output side; Box 11 totals input side; Boxes 12-14 net it out.
@@ -666,208 +775,67 @@ export async function calculateVatReturn(
   if (!company.trnVatNumber) {
     throw new Error("Company must have a TRN/VAT number to calculate a VAT return");
   }
-  // H1: Box 1a–1g attributes standard-rated supplies to a named emirate. With
-  // no emirate set, the box mapping would silently fall through to Dubai and
-  // misfile a non-Dubai company's entire turnover. Refuse instead of guessing.
-  if (!company.emirate) {
-    throw new Error(
-      "Set your company's emirate before calculating a VAT return. Box 1 of the VAT 201 attributes supplies by emirate and must not be guessed."
-    );
-  }
+  assertCompanyTrn(company.trnVatNumber);
 
   const frequency = frequencyFromCompany(company.vatFilingFrequency);
   const resolvedPeriod = period ?? detectFilingPeriod(frequency, company.vatPeriodStartMonth, now);
-
-  // ── Sales side ────────────────────────────────────────────────────────────
-  // Pull invoice lines for the period in a single query. We exclude draft,
-  // void, and cancelled invoices because they create no VAT obligation.
-  const invoiceLineRes = await pool.query(
-    `SELECT il.quantity::numeric AS quantity,
-            (il.unit_price::numeric * COALESCE(i.exchange_rate, 1)::numeric) AS unit_price,
-            il.vat_rate::numeric AS vat_rate,
-            il.vat_supply_type AS vat_supply_type,
-            i.id AS invoice_id
-     FROM invoice_lines il
-     JOIN invoices i ON i.id = il.invoice_id
-     WHERE i.company_id = $1
-       AND i.date >= $2 AND i.date <= $3
-       AND i.status NOT IN ('void','draft','cancelled')`,
-    [companyId, resolvedPeriod.start, resolvedPeriod.end]
-  );
-
-  const invoiceIdSet = new Set<string>();
-  const lines: InvoiceLineForVat[] = (invoiceLineRes.rows as Array<Record<string, unknown>>).map(
-    (row) => {
-      invoiceIdSet.add(String(row.invoice_id));
-      return {
-        quantity: Number(row.quantity) || 0,
-        unitPrice: Number(row.unit_price) || 0,
-        vatRate: row.vat_rate === null ? null : Number(row.vat_rate),
-        vatSupplyType: row.vat_supply_type as InvoiceLineForVat["vatSupplyType"],
-      };
-    }
-  );
-  const sales = aggregateInvoiceLines(lines);
-
-  // Credit notes are canonical invoice rows (`invoice_type = 'credit_note'`)
-  // with negative invoice lines after A-B11. The invoice-line query above
-  // therefore captures them exactly once and applies the invoice exchange rate.
-
-  // ── Purchases side ────────────────────────────────────────────────────────
-  // Posted receipts only — drafts cannot support input VAT recovery.
-  const receiptRes = await pool.query(
-    `SELECT id,
-            COALESCE(amount, 0)::numeric AS amount,
-            COALESCE(vat_amount, 0)::numeric AS vat_amount,
-            reverse_charge,
-            currency,
-            COALESCE(exchange_rate, 1)::numeric AS exchange_rate
-     FROM receipts
-     WHERE company_id = $1
-       AND posted = true
-       AND COALESCE(date, created_at) >= $2
-       AND COALESCE(date, created_at) <= $3`,
-    [companyId, resolvedPeriod.start, resolvedPeriod.end]
-  );
-
-  let totalExpenses = 0;
-  let inputVatGross = 0;
-  let receiptReverseChargeAmount = 0;
-  let receiptReverseChargeVat = 0;
-  for (const row of receiptRes.rows as Array<Record<string, unknown>>) {
-    const amount = Number(row.amount) || 0;
-    const vat = Number(row.vat_amount) || 0;
-    const rate = Number(row.exchange_rate) || 1;
-    const currency = String(row.currency || "AED");
-    // Convert to AED if the receipt is in foreign currency. Receipts already
-    // store base_currency_amount but only on insertion — for safety we
-    // recompute when the source currency isn't AED.
-    const aedAmount = currency === "AED" ? amount : convertToAed(amount, rate);
-    const aedVat = currency === "AED" ? vat : convertToAed(vat, rate);
-    if (row.reverse_charge) {
-      receiptReverseChargeAmount += aedAmount;
-      receiptReverseChargeVat += aedVat;
-    } else {
-      totalExpenses += aedAmount;
-      inputVatGross += aedVat;
-    }
-  }
-
-  // Vendor bills come from the bill-pay schema which isn't always installed
-  // in dev — only swallow the missing-table case, surface anything else (a
-  // real query failure must not silently mask VAT). Reverse-charge bills feed
-  // Boxes 3/10; ordinary approved/paid bills carry recoverable input VAT into
-  // Box 9. Pending bills are excluded to match GL posting at approval time.
-  let billReverseChargeAmount = 0;
-  let billReverseChargeVat = 0;
-  try {
-    const billRes = await pool.query(
-      `SELECT
-         COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
-         COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
-         COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
-         COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_vat
-       FROM vendor_bills
-       WHERE company_id = $1
-         AND bill_date >= $2::date AND bill_date <= $3::date
-         AND status NOT IN ('void','cancelled','draft','pending')`,
-      // Calendar-date comparison — timestamptz casts shift boundaries in
-      // non-UTC server timezones (e.g. an Apr 1 bill falling out of Q2).
-      [
-        companyId,
-        resolvedPeriod.start.toISOString().slice(0, 10),
-        resolvedPeriod.end.toISOString().slice(0, 10),
-      ]
-    );
-    billReverseChargeAmount = Number(billRes.rows[0]?.rc_amount || 0);
-    billReverseChargeVat = Number(billRes.rows[0]?.rc_vat || 0);
-    totalExpenses += Number(billRes.rows[0]?.std_amount || 0);
-    inputVatGross += Number(billRes.rows[0]?.std_vat || 0);
-  } catch (err) {
-    // PG SQLSTATE 42P01 = undefined_table. Anything else is a real error.
-    if ((err as { code?: string })?.code !== "42P01") throw err;
-  }
-
-  const reverseChargeAmount = receiptReverseChargeAmount + billReverseChargeAmount;
-  const reverseChargeVat = receiptReverseChargeVat + billReverseChargeVat;
-
-  const partialExemption = applyPartialExemption(inputVatGross, company.exemptSupplyRatio);
-  const reverseChargePartial = applyPartialExemption(reverseChargeVat, company.exemptSupplyRatio);
-
-  const totalOutputVat = round2(sales.standardRatedVat + reverseChargeVat);
-  const totalInputVat = round2(partialExemption.recoverable + reverseChargePartial.recoverable);
-
-  const boxes: VatBoxBreakdown = {
-    standardRatedSales: sales.standardRatedAmount,
-    standardRatedVat: sales.standardRatedVat,
-    zeroRatedSales: sales.zeroRatedAmount,
-    exemptSales: sales.exemptAmount,
-    reverseChargeAmount: round2(reverseChargeAmount),
-    reverseChargeVat: round2(reverseChargeVat),
-    totalOutputVat,
-    totalExpenses: round2(totalExpenses),
-    inputVatGross: round2(inputVatGross),
-    inputVatRecoverable: partialExemption.recoverable,
-    inputVatIrrecoverable: partialExemption.irrecoverable,
-    reverseChargeVatRecoverable: reverseChargePartial.recoverable,
-    totalInputVat,
-    netVatPayable: round2(totalOutputVat - totalInputVat),
-  };
-
-  // ── Reconciliation against the journal ───────────────────────────────────
-  const ledgerRes = await pool.query(
-    `SELECT a.vat_type, COALESCE(SUM(jl.credit), 0) AS credit_total,
-                          COALESCE(SUM(jl.debit), 0) AS debit_total
-     FROM journal_lines jl
-     JOIN journal_entries je ON je.id = jl.entry_id
-     JOIN accounts a ON a.id = jl.account_id
-     WHERE je.company_id = $1
-       AND je.status = 'posted'
-       AND je.date >= $2 AND je.date <= $3
-       AND a.is_vat_account = true
-     GROUP BY a.vat_type`,
-    [companyId, resolvedPeriod.start, resolvedPeriod.end]
-  );
-  let outputLedger = 0;
-  let inputLedger = 0;
-  for (const row of ledgerRes.rows as Array<Record<string, unknown>>) {
-    const vatType = String(row.vat_type || "");
-    const credit = Number(row.credit_total) || 0;
-    const debit = Number(row.debit_total) || 0;
-    if (vatType === "output") outputLedger += credit - debit;
-    else if (vatType === "input") inputLedger += debit - credit;
-  }
-
-  const reconciliation = reconcile(
-    { outputVat: totalOutputVat, inputVat: totalInputVat },
-    { outputVat: outputLedger, inputVat: inputLedger }
-  );
-
-  const vat201 = buildVat201Boxes(
-    {
-      standardRatedAmount: sales.standardRatedAmount,
-      standardRatedVat: sales.standardRatedVat,
-      zeroRatedAmount: sales.zeroRatedAmount,
-      exemptAmount: sales.exemptAmount,
-      reverseChargeAmount: boxes.reverseChargeAmount,
-      reverseChargeVat: boxes.reverseChargeVat,
-      reverseChargeVatRecoverable: boxes.reverseChargeVatRecoverable,
-      totalExpenses: boxes.totalExpenses,
-      inputVatRecoverable: boxes.inputVatRecoverable,
-    },
-    company.emirate
-  );
-
-  return {
+  // R07-03: the one VAT engine. Box 1 is split by each supply's emirate (R07-02).
+  const c = await computeVat201({
     companyId,
-    period: resolvedPeriod,
+    from: resolvedPeriod.start.toISOString().slice(0, 10),
+    to: resolvedPeriod.end.toISOString().slice(0, 10),
+  });
+  return autopilotViewOf(c, resolvedPeriod);
+}
+
+/** Autopilot response shape from an engine computation (pure). */
+export function autopilotViewOf(c: VatComputation, period: VatPeriod): VatAutopilotCalculation {
+  const b = c.boxes;
+  const sum = (suffix: string) =>
+    round2(EMIRATES.reduce((s, e) => s + b[`${EMIRATE_BOX_PREFIX[e]}${suffix}` as Vat201Key], 0));
+  const boxes: VatBoxBreakdown = {
+    standardRatedSales: sum("Amount"),
+    standardRatedVat: sum("Vat"),
+    zeroRatedSales: b.box4ZeroRatedAmount,
+    exemptSales: b.box5ExemptAmount,
+    reverseChargeAmount: round2(b.box3ReverseChargeAmount + b.box6ImportsAmount),
+    reverseChargeVat: round2(b.box3ReverseChargeVat + b.box6ImportsVat),
+    totalOutputVat: b.box12TotalDueTax,
+    totalExpenses: b.box9ExpensesAmount,
+    inputVatGross: round2(c.partialExemption.grossInputVatFils / 100),
+    inputVatRecoverable: b.box9ExpensesVat,
+    inputVatIrrecoverable: round2(c.partialExemption.apportionedFils / 100),
+    reverseChargeVatRecoverable: b.box10ReverseChargeVat,
+    totalInputVat: b.box13RecoverableTax,
+    netVatPayable: b.box14PayableTax,
+  };
+  const r = c.reconciliation;
+  const reconciliation: ReconciliationResult = {
+    outputVatLedger: r.ledgerOutputVatFils / 100,
+    outputVatCalculated: r.returnOutputVatFils / 100,
+    outputVatDelta: r.unexplainedOutputFils / 100,
+    inputVatLedger: r.ledgerInputVatFils / 100,
+    inputVatCalculated: r.returnInputVatFils / 100,
+    inputVatDelta: r.unexplainedInputFils / 100,
+    hasDiscrepancy: r.hasUnexplainedDifference,
+    toleranceAed: 0,
+  };
+  const vat201 = Object.fromEntries(
+    VAT201_BOX_KEYS.map((k) => [k, (b as Record<string, number>)[k] ?? 0])
+  ) as unknown as Vat201BoxValues;
+  return {
+    companyId: c.companyId,
+    period,
     boxes,
     reconciliation,
-    invoicesProcessed: invoiceIdSet.size,
-    receiptsProcessed: receiptRes.rows.length,
+    ledgerReconciliation: r,
+    engineVersion: c.engineVersion,
+    fullBoxes: { ...b },
+    invoicesProcessed: c.counts.invoices + c.counts.creditNotes + c.counts.debitNotes,
+    receiptsProcessed: c.counts.receipts,
     partialExemption: {
-      exemptSupplyRatio: company.exemptSupplyRatio,
-      recoverableRatio: partialExemption.recoverableRatio,
+      exemptSupplyRatio: c.partialExemption.exemptSupplyRatio,
+      recoverableRatio: c.partialExemption.recoverableRatio,
     },
     vat201,
   };
@@ -882,12 +850,13 @@ export async function upsertCalculatedPeriod(calc: VatAutopilotCalculation): Pro
   const res = await pool.query(
     `INSERT INTO vat_return_periods
        (company_id, period_start, period_end, due_date, frequency,
-        output_vat, input_vat, net_vat_payable, calculated_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())
+        output_vat, input_vat, net_vat_payable, reconciliation_snapshot, calculated_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, now(), now())
      ON CONFLICT (company_id, period_start, period_end)
      DO UPDATE SET output_vat = EXCLUDED.output_vat,
                    input_vat = EXCLUDED.input_vat,
                    net_vat_payable = EXCLUDED.net_vat_payable,
+                   reconciliation_snapshot = EXCLUDED.reconciliation_snapshot,
                    calculated_at = now(),
                    updated_at = now()
      RETURNING id`,
@@ -900,6 +869,7 @@ export async function upsertCalculatedPeriod(calc: VatAutopilotCalculation): Pro
       calc.boxes.totalOutputVat,
       calc.boxes.totalInputVat,
       calc.boxes.netVatPayable,
+      JSON.stringify(calc.ledgerReconciliation ?? null),
     ]
   );
   return String(res.rows[0].id);
@@ -956,10 +926,36 @@ export async function listPeriodsForCompany(
     Number.POSITIVE_INFINITY
   );
 
-  const summaries: VatPeriodSummary[] = synthetic.map((p) => {
+  // E1: periods that ended before the VAT registration / books start are not this company's to
+  // file (same rule as the dashboard's compliance calendar); a stored return keeps its row.
+  const applyFrom = (await loadVatApplicability([companyId])).get(companyId)?.applyFrom ?? null;
+  const applicable = synthetic.filter(
+    (p) =>
+      !applyFrom ||
+      periodApplies(p.end.toISOString().slice(0, 10), applyFrom) ||
+      storedByKey.has(periodKey(p.start, p.end))
+  );
+
+  const returns = (await loadReturnLifecycle([companyId])).get(companyId) ?? new Map();
+  const withLifecycle = (
+    lifecycle: ReturnLifecycle | null,
+    stored: { output: number; input: number; net: number; calculated: boolean }
+  ) =>
+    // A filed return carries the filed figures; an unfiled one fills in a period the autopilot
+    // has not calculated; otherwise the autopilot snapshot.
+    lifecycle && (lifecycle.filed || !stored.calculated)
+      ? {
+          outputVat: lifecycle.outputVat,
+          inputVat: lifecycle.inputVat,
+          netVatPayable: lifecycle.netVatPayable,
+        }
+      : { outputVat: stored.output, inputVat: stored.input, netVatPayable: stored.net };
+
+  const summaries: VatPeriodSummary[] = applicable.map((p) => {
     const key = periodKey(p.start, p.end);
     const row = storedByKey.get(key);
     if (row) storedByKey.delete(key);
+    const lifecycle = returns.get(periodEndDate(p.end)) ?? null;
     return {
       id: row ? String(row.id) : null,
       companyId,
@@ -967,12 +963,16 @@ export async function listPeriodsForCompany(
       periodEnd: p.end.toISOString(),
       dueDate: p.dueDate.toISOString(),
       frequency,
-      status: (row?.status as VatPeriodStatus) || "draft",
-      outputVat: Number(row?.output_vat) || 0,
-      inputVat: Number(row?.input_vat) || 0,
-      netVatPayable: Number(row?.net_vat_payable) || 0,
+      status: lifecycleStatus(row?.status as VatPeriodStatus | undefined, lifecycle),
+      ...withLifecycle(lifecycle, {
+        output: Number(row?.output_vat) || 0,
+        input: Number(row?.input_vat) || 0,
+        net: Number(row?.net_vat_payable) || 0,
+        calculated: !!row?.calculated_at,
+      }),
       calculatedAt: row?.calculated_at ? new Date(row.calculated_at).toISOString() : null,
-      deadline: deadlineStatus(p.dueDate, now),
+      deadline: lifecycleDeadline(p.dueDate, now, lifecycle),
+      lifecycle,
     };
   });
 
@@ -983,6 +983,7 @@ export async function listPeriodsForCompany(
     if (periodEnd.getTime() > oldestSyntheticEnd) continue;
 
     const due = new Date(row.due_date);
+    const lifecycle = returns.get(periodEndDate(periodEnd)) ?? null;
     summaries.push({
       id: String(row.id),
       companyId,
@@ -990,12 +991,16 @@ export async function listPeriodsForCompany(
       periodEnd: periodEnd.toISOString(),
       dueDate: due.toISOString(),
       frequency: (row.frequency as VatFrequency) || frequency,
-      status: row.status as VatPeriodStatus,
-      outputVat: Number(row.output_vat) || 0,
-      inputVat: Number(row.input_vat) || 0,
-      netVatPayable: Number(row.net_vat_payable) || 0,
+      status: lifecycleStatus(row.status as VatPeriodStatus, lifecycle),
+      ...withLifecycle(lifecycle, {
+        output: Number(row.output_vat) || 0,
+        input: Number(row.input_vat) || 0,
+        net: Number(row.net_vat_payable) || 0,
+        calculated: !!row.calculated_at,
+      }),
       calculatedAt: row.calculated_at ? new Date(row.calculated_at).toISOString() : null,
-      deadline: deadlineStatus(due, now),
+      deadline: lifecycleDeadline(due, now, lifecycle),
+      lifecycle,
     });
   }
 
@@ -1073,13 +1078,41 @@ export async function updatePeriodStatus(input: {
   newStatus: VatPeriodStatus;
   userId: string;
   ftaReferenceNumber?: string;
+  overrideReason?: string | null;
 }): Promise<VatPeriodSummary | null> {
   const cur = await pool.query(
-    `SELECT id, company_id, status FROM vat_return_periods
+    `SELECT id, company_id, status, period_start, period_end FROM vat_return_periods
      WHERE id = $1 AND company_id = $2`,
     [input.periodId, input.companyId]
   );
   if (cur.rows.length === 0) return null;
+  if (input.newStatus === "ready" && cur.rows[0].status === "draft") {
+    // R12-03: "ready to submit" is blocked while the return disagrees with the VAT control
+    // accounts, unless overridden with a reason (stored and audited by the caller).
+    const c = await computeVat201({
+      companyId: input.companyId,
+      from: new Date(cur.rows[0].period_start).toISOString().slice(0, 10),
+      to: new Date(cur.rows[0].period_end).toISOString().slice(0, 10),
+      allowIncomplete: true,
+    });
+    if (c.reconciliation.hasUnexplainedDifference) {
+      const reason = input.overrideReason?.trim();
+      if (!reason) {
+        throw new DomainError(
+          "VAT_RECONCILIATION_DIFFERENCE",
+          409,
+          { unexplained: c.reconciliation.aed },
+          "The VAT return does not agree with the VAT control accounts. Resolve it or give an override reason."
+        );
+      }
+      await pool.query(
+        `UPDATE vat_return_periods SET reconciliation_override_reason = $3,
+                reconciliation_override_by = $4, reconciliation_snapshot = $5::jsonb
+          WHERE id = $1 AND company_id = $2`,
+        [input.periodId, input.companyId, reason, input.userId, JSON.stringify(c.reconciliation)]
+      );
+    }
+  }
   const currentStatus = cur.rows[0].status as VatPeriodStatus;
   const cur_rank = STATUS_RANK[currentStatus];
   const new_rank = STATUS_RANK[input.newStatus];
@@ -1136,12 +1169,14 @@ export async function listDueDates(
        AND status IN ('draft','ready')`,
     [companyIds]
   );
-  const storedByCompany = new Map<string, any[]>();
+  const storedByCompany = new Map<string, QueryResultRow[]>();
   for (const row of periodRes.rows) {
     const key = String(row.company_id);
     storedByCompany.set(key, [...(storedByCompany.get(key) ?? []), row]);
   }
 
+  const applicability = await loadVatApplicability(companyIds);
+  const lifecycle = await loadReturnLifecycle(companyIds);
   const out: DueDateView[] = [];
   for (const c of companyRes.rows as Array<Record<string, unknown>>) {
     const cid = String(c.id);
@@ -1153,7 +1188,29 @@ export async function listDueDates(
     );
     const synthetic = listRecentPeriods(freq, periodStartMonth, 8, now);
     const syntheticKeys = new Set(synthetic.map((period) => periodKey(period.start, period.end)));
-    const scheduled = synthetic[0] ?? detectFilingPeriod(freq, periodStartMonth, now);
+    // E1: the first return that applies to this company's books. A period that ended before the
+    // VAT registration / books start is skipped (it is not late, it was never due here); with
+    // none left, the period in progress is the next filing.
+    const applyFrom = applicability.get(cid)?.applyFrom ?? null;
+    // E3 (J3-r3): the return lifecycle decides what is still to file. A period whose return was
+    // filed on the Returns tab is done, and so is everything before the latest filed period.
+    const returns = lifecycle.get(cid) ?? new Map<string, ReturnLifecycle>();
+    const lastFiledEnd = [...returns.entries()]
+      .filter(([, r]) => r.filed)
+      .reduce<string | null>((max, [end]) => (max && max > end ? max : end), null);
+    const stillToFile = (end: Date) => {
+      const day = periodEndDate(end);
+      return !returns.get(day)?.filed && (!lastFiledEnd || day > lastFiledEnd);
+    };
+    const scheduled =
+      synthetic.find(
+        (p) =>
+          (!applyFrom || periodApplies(p.end.toISOString().slice(0, 10), applyFrom)) &&
+          stillToFile(p.end)
+      ) ??
+      (applyFrom || lastFiledEnd
+        ? detectPeriod(freq, periodStartMonth, now)
+        : detectFilingPeriod(freq, periodStartMonth, now));
     let candidate: { periodEnd: Date; dueDate: Date; status: VatPeriodStatus } = {
       periodEnd: scheduled.end,
       dueDate: scheduled.dueDate,
@@ -1163,6 +1220,7 @@ export async function listDueDates(
     for (const stored of storedByCompany.get(cid) ?? []) {
       const storedPeriodKey = periodKey(stored.period_start ?? scheduled.start, stored.period_end);
       if (!syntheticKeys.has(storedPeriodKey)) continue;
+      if (!stillToFile(new Date(stored.period_end))) continue;
       const storedDue = new Date(stored.due_date);
       if (storedDue < candidate.dueDate) {
         candidate = {
@@ -1173,17 +1231,19 @@ export async function listDueDates(
       }
     }
 
-    const { periodEnd, dueDate, status } = candidate;
-    const dl = deadlineStatus(dueDate, now);
+    const { periodEnd, dueDate } = candidate;
+    const periodReturn = returns.get(periodEndDate(periodEnd)) ?? null;
+    const dl = lifecycleDeadline(dueDate, now, periodReturn);
     out.push({
       companyId: cid,
       companyName: String(c.name),
       trnVatNumber: (c.trn_vat_number as string | null) ?? null,
       periodEnd,
       dueDate,
-      status,
+      status: lifecycleStatus(candidate.status, periodReturn),
       daysUntilDue: dl.daysUntilDue,
       level: dl.level,
+      lifecycle: periodReturn,
     });
   }
   out.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());

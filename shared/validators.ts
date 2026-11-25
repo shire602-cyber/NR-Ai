@@ -7,7 +7,7 @@ import { z } from "zod";
  */
 
 // ── Primitives ────────────────────────────────────────────────────
-export const uuidSchema = z.string().uuid("Must be a valid UUID");
+export const uuidSchema = z.string().guid("Must be a valid UUID");
 
 export const idParamSchema = z.object({
   id: uuidSchema,
@@ -102,7 +102,7 @@ export const contactInputSchema = z.object({
 // ── Generic structured 400 response shape ────────────────────────
 export const validationErrorResponseSchema = z.object({
   message: z.literal("Validation error"),
-  errors: z.record(z.array(z.string()).optional()),
+  errors: z.record(z.string(), z.array(z.string()).optional()),
   formErrors: z.array(z.string()).optional(),
 });
 

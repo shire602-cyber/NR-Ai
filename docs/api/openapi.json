@@ -1,0 +1,762 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Muhasib.ai public API",
+    "version": "1.0.0",
+    "description": "Versioned REST API for one company. Authenticate with an API key created in Developer Settings: `Authorization: ApiKey muh_...` or `X-API-Key: muh_...`. Each key is bound to one company, carries scopes and has a per-minute rate limit. Money amounts are decimal AED strings or numbers with at most 2 decimals."
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    }
+  },
+  "x-scopes": [
+    "read:invoices",
+    "write:invoices",
+    "read:contacts",
+    "write:contacts",
+    "read:bills",
+    "read:payments",
+    "write:payments",
+    "read:accounts",
+    "read:reports"
+  ],
+  "paths": {
+    "/invoices": {
+      "get": {
+        "summary": "List invoices (newest first)",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-required-scope": "read:invoices",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["draft", "sent", "posted", "partial", "paid", "void"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ data: Invoice[], limit, offset }"
+          },
+          "400": {
+            "description": "VALIDATION_ERROR (unknown keys are rejected)"
+          },
+          "401": {
+            "description": "API_KEY_REQUIRED / API_KEY_INVALID / API_KEY_EXPIRED"
+          },
+          "403": {
+            "description": "INSUFFICIENT_SCOPE (needs read:invoices) or TIER_LOCKED"
+          },
+          "404": {
+            "description": "Not found in the key's company"
+          },
+          "429": {
+            "description": "API_KEY_RATE_LIMITED (see Retry-After)"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a draft invoice (unit prices are decimal AED)",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-required-scope": "write:invoices",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "The draft invoice"
+          },
+          "400": {
+            "description": "VALIDATION_ERROR (unknown keys are rejected)"
+          },
+          "401": {
+            "description": "API_KEY_REQUIRED / API_KEY_INVALID / API_KEY_EXPIRED"
+          },
+          "403": {
+            "description": "INSUFFICIENT_SCOPE (needs write:invoices) or TIER_LOCKED"
+          },
+          "404": {
+            "description": "Not found in the key's company"
+          },
+          "429": {
+            "description": "API_KEY_RATE_LIMITED (see Retry-After)"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "contactId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "nullable": true
+                  },
+                  "customerName": {
+                    "type": "string"
+                  },
+                  "customerTrn": {
+                    "type": "string",
+                    "pattern": "^\\d{15}$",
+                    "nullable": true
+                  },
+                  "customerAddress": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "date": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {}
+                    ]
+                  },
+                  "dueDate": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {}
+                    ],
+                    "nullable": true
+                  },
+                  "paymentTerms": {
+                    "type": "string",
+                    "pattern": "^(due_on_receipt|net\\d{1,3}|custom)$",
+                    "nullable": true
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "exchangeRate": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1000000,
+                    "nullable": true
+                  },
+                  "placeOfSupplyEmirate": {
+                    "type": "string",
+                    "enum": [
+                      "abu_dhabi",
+                      "dubai",
+                      "sharjah",
+                      "ajman",
+                      "umm_al_quwain",
+                      "ras_al_khaimah",
+                      "fujairah"
+                    ],
+                    "nullable": true
+                  },
+                  "notes": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "description": {
+                          "type": "string"
+                        },
+                        "quantity": {
+                          "oneOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "unitPrice": {
+                          "oneOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "vatRate": {
+                          "oneOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "vatSupplyType": {
+                          "type": "string",
+                          "enum": [
+                            "standard_rated",
+                            "zero_rated",
+                            "exempt",
+                            "out_of_scope",
+                            "reverse_charge"
+                          ],
+                          "nullable": true
+                        },
+                        "discountType": {
+                          "type": "string",
+                          "enum": ["amount", "percent"],
+                          "nullable": true
+                        },
+                        "discountValue": {
+                          "oneOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ],
+                          "nullable": true
+                        },
+                        "productId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "nullable": true
+                        },
+                        "costCenterId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "nullable": true
+                        }
+                      },
+                      "required": ["description", "quantity", "unitPrice"],
+                      "additionalProperties": false
+                    },
+                    "minItems": 1,
+                    "maxItems": 500
+                  }
+                },
+                "required": ["date", "lines"],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/invoices/{id}": {
+      "get": {
+        "summary": "Get one invoice with its lines",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-required-scope": "read:invoices",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invoice with lines"
+          },
+          "400": {
+            "description": "VALIDATION_ERROR (unknown keys are rejected)"
+          },
+          "401": {
+            "description": "API_KEY_REQUIRED / API_KEY_INVALID / API_KEY_EXPIRED"
+          },
+          "403": {
+            "description": "INSUFFICIENT_SCOPE (needs read:invoices) or TIER_LOCKED"
+          },
+          "404": {
+            "description": "Not found in the key's company"
+          },
+          "429": {
+            "description": "API_KEY_RATE_LIMITED (see Retry-After)"
+          }
+        }
+      }
+    },
+    "/invoices/{id}/payments": {
+      "post": {
+        "summary": "Record a payment against an issued invoice",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-required-scope": "write:payments",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The payment"
+          },
+          "400": {
+            "description": "VALIDATION_ERROR (unknown keys are rejected)"
+          },
+          "401": {
+            "description": "API_KEY_REQUIRED / API_KEY_INVALID / API_KEY_EXPIRED"
+          },
+          "403": {
+            "description": "INSUFFICIENT_SCOPE (needs write:payments) or TIER_LOCKED"
+          },
+          "404": {
+            "description": "Not found in the key's company"
+          },
+          "429": {
+            "description": "API_KEY_RATE_LIMITED (see Retry-After)"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "amount": {
+                    "oneOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "date": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {}
+                    ]
+                  },
+                  "paymentAccountId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "method": {
+                    "type": "string",
+                    "enum": ["bank_transfer", "cash", "card", "cheque", "other"]
+                  },
+                  "reference": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                },
+                "required": ["amount", "date", "paymentAccountId"],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments": {
+      "get": {
+        "summary": "List invoice payments",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-required-scope": "read:payments",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ data: Payment[], limit, offset }"
+          },
+          "400": {
+            "description": "VALIDATION_ERROR (unknown keys are rejected)"
+          },
+          "401": {
+            "description": "API_KEY_REQUIRED / API_KEY_INVALID / API_KEY_EXPIRED"
+          },
+          "403": {
+            "description": "INSUFFICIENT_SCOPE (needs read:payments) or TIER_LOCKED"
+          },
+          "404": {
+            "description": "Not found in the key's company"
+          },
+          "429": {
+            "description": "API_KEY_RATE_LIMITED (see Retry-After)"
+          }
+        }
+      }
+    },
+    "/contacts": {
+      "get": {
+        "summary": "List customer contacts",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-required-scope": "read:contacts",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ data: Contact[], limit, offset }"
+          },
+          "400": {
+            "description": "VALIDATION_ERROR (unknown keys are rejected)"
+          },
+          "401": {
+            "description": "API_KEY_REQUIRED / API_KEY_INVALID / API_KEY_EXPIRED"
+          },
+          "403": {
+            "description": "INSUFFICIENT_SCOPE (needs read:contacts) or TIER_LOCKED"
+          },
+          "404": {
+            "description": "Not found in the key's company"
+          },
+          "429": {
+            "description": "API_KEY_RATE_LIMITED (see Retry-After)"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a customer contact",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-required-scope": "write:contacts",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "The contact"
+          },
+          "400": {
+            "description": "VALIDATION_ERROR (unknown keys are rejected)"
+          },
+          "401": {
+            "description": "API_KEY_REQUIRED / API_KEY_INVALID / API_KEY_EXPIRED"
+          },
+          "403": {
+            "description": "INSUFFICIENT_SCOPE (needs write:contacts) or TIER_LOCKED"
+          },
+          "404": {
+            "description": "Not found in the key's company"
+          },
+          "429": {
+            "description": "API_KEY_RATE_LIMITED (see Retry-After)"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "nameAr": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "maxLength": 320,
+                    "nullable": true
+                  },
+                  "phone": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "trnNumber": {
+                    "type": "string",
+                    "pattern": "^\\d{15}$",
+                    "nullable": true
+                  },
+                  "address": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "city": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "country": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "emirate": {
+                    "type": "string",
+                    "enum": [
+                      "abu_dhabi",
+                      "dubai",
+                      "sharjah",
+                      "ajman",
+                      "umm_al_quwain",
+                      "ras_al_khaimah",
+                      "fujairah"
+                    ],
+                    "nullable": true
+                  },
+                  "paymentTerms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 365
+                  }
+                },
+                "required": ["name"],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bills": {
+      "get": {
+        "summary": "List vendor bills",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-required-scope": "read:bills",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ data: Bill[], limit, offset }"
+          },
+          "400": {
+            "description": "VALIDATION_ERROR (unknown keys are rejected)"
+          },
+          "401": {
+            "description": "API_KEY_REQUIRED / API_KEY_INVALID / API_KEY_EXPIRED"
+          },
+          "403": {
+            "description": "INSUFFICIENT_SCOPE (needs read:bills) or TIER_LOCKED"
+          },
+          "404": {
+            "description": "Not found in the key's company"
+          },
+          "429": {
+            "description": "API_KEY_RATE_LIMITED (see Retry-After)"
+          }
+        }
+      }
+    },
+    "/accounts": {
+      "get": {
+        "summary": "Chart of accounts",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-required-scope": "read:accounts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "{ data: Account[] }"
+          },
+          "400": {
+            "description": "VALIDATION_ERROR (unknown keys are rejected)"
+          },
+          "401": {
+            "description": "API_KEY_REQUIRED / API_KEY_INVALID / API_KEY_EXPIRED"
+          },
+          "403": {
+            "description": "INSUFFICIENT_SCOPE (needs read:accounts) or TIER_LOCKED"
+          },
+          "404": {
+            "description": "Not found in the key's company"
+          },
+          "429": {
+            "description": "API_KEY_RATE_LIMITED (see Retry-After)"
+          }
+        }
+      }
+    },
+    "/reports/trial-balance": {
+      "get": {
+        "summary": "Trial balance (server/reporting) for an optional date range",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-required-scope": "read:reports",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {}
+              ]
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {}
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "TrialBalance"
+          },
+          "400": {
+            "description": "VALIDATION_ERROR (unknown keys are rejected)"
+          },
+          "401": {
+            "description": "API_KEY_REQUIRED / API_KEY_INVALID / API_KEY_EXPIRED"
+          },
+          "403": {
+            "description": "INSUFFICIENT_SCOPE (needs read:reports) or TIER_LOCKED"
+          },
+          "404": {
+            "description": "Not found in the key's company"
+          },
+          "429": {
+            "description": "API_KEY_RATE_LIMITED (see Retry-After)"
+          }
+        }
+      }
+    }
+  }
+}

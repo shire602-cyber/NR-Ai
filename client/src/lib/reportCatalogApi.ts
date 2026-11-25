@@ -6,6 +6,7 @@ import type {
   ReportAutomationStarter,
   ReportAutomationTriggerRule,
   ReportCatalogItem,
+  ReportDataBasis,
   ReportComparisonPreset,
   ReportDecisionShortcut,
   ReportDeliverySubscription,
@@ -29,6 +30,9 @@ export interface ReportCatalogDiscoverySummary {
   apiReportCount: number;
   readyReportCount: number;
   plannedReportCount: number;
+  /** R12-13: reports computed from posted ledger lines vs indicator (documents/snapshot). */
+  ledgerReportCount: number;
+  indicatorReportCount: number;
   personaCount: number;
   workspaceCount: number;
   reportTabCount: number;
@@ -117,7 +121,7 @@ export interface ReportCatalogDiscovery {
   personas: ReportPersona[];
   tabs: ReportTab[];
   reportActionContexts: ReportCatalogReportActionContext[];
-  reports: Array<Omit<ReportCatalogItem, "href"> & { href: string | null }>;
+  reports: Array<Omit<ReportCatalogItem, "href"> & { href: string | null; indicator: boolean }>;
   workspaces: Array<
     ReportPersonaWorkspace & {
       href: string;
@@ -159,7 +163,12 @@ export interface ReportCatalogDiscovery {
   triggerRules: Array<ReportAutomationTriggerRule & { href: string }>;
   deliverySubscriptions: Array<ReportDeliverySubscription & { href: string }>;
   packTemplates: Array<ReportPackTemplate & { href: string }>;
-  comparisonPresets: Array<ReportComparisonPreset & { href: string }>;
+  comparisonPresets: Array<
+    ReportComparisonPreset & {
+      href: string;
+      metricBases: Array<{ metricId: string; basis: ReportDataBasis }>;
+    }
+  >;
   reportSuites: Array<ReportSuiteProfile & { href: string }>;
   managementBriefs: Array<ReportManagementBriefProfile & { href: string }>;
   quickAccessProfiles: Array<ReportQuickAccessProfile & { href: string }>;

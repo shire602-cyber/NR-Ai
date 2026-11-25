@@ -3,240 +3,360 @@
 @tailwind utilities;
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   Muhasib.ai · Editorial Fintech Design Tokens
-   Light: warm paper background + deep ink + emerald accent (finance positive)
-   Dark : deep midnight + luminescent indigo
+   Muhasib.ai design tokens — the ONE source of truth (D2 design system).
+
+   Layer 1 · palette   --brand-*, --neutral-*           raw HSL triplets
+   Layer 2 · semantic  --success/-warning/-danger/-info  status families
+   Layer 3 · roles     --background, --foreground, --primary, --card, …
+                       (shadcn names; components use these through Tailwind)
+
+   Every colour is an "H S% L%" triplet so Tailwind can add alpha:
+   `bg-primary/10`, `text-brand-700`, `border-neutral-200`.
+   Light and dark both redefine layer 2 and 3 only; layer 1 is fixed.
+   All text/background pairs below were checked for WCAG AA (≥ 4.5:1).
    ─────────────────────────────────────────────────────────────────────────── */
 
 :root {
-  --button-outline: rgba(15, 20, 25, 0.12);
-  --badge-outline: rgba(15, 20, 25, 0.08);
+  /* ── Layer 1 · Brand: Muhasib emerald (deep, calm, finance-positive) ── */
+  --brand-50: 152 48% 96%;
+  --brand-100: 152 45% 91%;
+  --brand-200: 154 42% 81%;
+  --brand-300: 156 40% 66%;
+  --brand-400: 157 48% 49%;
+  --brand-500: 159 66% 36%;
+  --brand-600: 160 78% 26.5%;
+  --brand-700: 159.789474 81.196581% 22.941176%; /* #0B6A4A */
+  --brand-ink: 157.5 28.571429% 10.980392%; /* #14241E */
+  --brand-paper: 75 22.222222% 96.470588%; /* #F7F8F4 */
+  --brand-800: 162 78% 18%;
+  --brand-900: 163 72% 13%;
+  --brand-950: 165 70% 8%;
 
-  --opaque-button-border-intensity: -8;
+  /* ── Layer 1 · Neutral: cool slate greys (UI chrome, text, hairlines) ── */
+  --neutral-0: 0 0% 100%;
+  --neutral-25: 220 25% 98.6%;
+  --neutral-50: 220 20% 97%;
+  --neutral-100: 220 17% 94.5%;
+  --neutral-200: 220 15% 90%;
+  --neutral-300: 220 13% 82%;
+  --neutral-400: 220 10% 64%;
+  --neutral-500: 220 9% 42%;
+  --neutral-600: 220 12% 35%;
+  --neutral-700: 221 17% 25%;
+  --neutral-800: 222 22% 16%;
+  --neutral-850: 223 25% 12.5%;
+  --neutral-900: 223 28% 9.5%;
+  --neutral-950: 224 32% 6.5%;
 
-  --elevate-1: rgba(15, 20, 25, 0.035);
-  --elevate-2: rgba(15, 20, 25, 0.075);
-
-  /* Surfaces — warm paper, not pure white */
-  --background: 36 24% 97%; /* #FAFAF6 paper */
-  --foreground: 220 32% 11%; /* #131820 deep ink */
-
-  --border: 220 14% 89%;
-  --input: 220 14% 86%;
-
-  --card: 0 0% 100%;
-  --card-foreground: 220 32% 11%;
-  --card-border: 220 14% 91%;
-
-  --popover: 0 0% 100%;
-  --popover-foreground: 220 32% 11%;
-  --popover-border: 220 14% 88%;
-
-  /* Sidebar — dark, premium, distinct from main canvas */
-  --sidebar: 222 35% 9%; /* #0E1320 midnight */
-  --sidebar-foreground: 220 14% 84%;
-  --sidebar-border: 222 30% 14%;
-  --sidebar-primary: 158 52% 48%; /* emerald accent (active dot) */
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 222 28% 16%; /* hover bg */
-  --sidebar-accent-foreground: 0 0% 98%;
-  --sidebar-ring: 158 52% 48%;
-
-  /* Brand */
-  --primary: 222 47% 22%; /* deep indigo ink — buttons, active */
-  --primary-foreground: 36 24% 98%;
-  --secondary: 220 14% 93%;
-  --secondary-foreground: 220 30% 20%;
-  --muted: 220 14% 95%;
-  --muted-foreground: 220 14% 42%;
-  --accent: 158 52% 38%; /* emerald — finance positive */
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 65% 48%;
-  --destructive-foreground: 0 0% 100%;
-
-  --ring: 222 47% 30%;
-
-  /* Semantic status colors (also used by Badge variants) */
-  --success: 158 52% 38%;
+  /* ── Layer 2 · Semantic status families ── */
+  --success: 158 70% 28%;
   --success-foreground: 0 0% 100%;
-  --success-subtle: 158 50% 94%;
-  --success-subtle-foreground: 158 60% 22%;
+  --success-subtle: 152 48% 94%;
+  --success-subtle-foreground: 160 75% 22%;
 
-  --warning: 32 92% 48%;
+  --warning: 32 95% 33%;
   --warning-foreground: 0 0% 100%;
-  --warning-subtle: 36 95% 94%;
-  --warning-subtle-foreground: 28 75% 28%;
+  --warning-subtle: 40 90% 93%;
+  --warning-subtle-foreground: 28 80% 27%;
 
-  --info: 218 75% 48%;
-  --info-foreground: 0 0% 100%;
-  --info-subtle: 218 95% 95%;
-  --info-subtle-foreground: 220 75% 28%;
-
+  --danger: 0 68% 45%;
+  --danger-foreground: 0 0% 100%;
   --danger-subtle: 0 80% 96%;
-  --danger-subtle-foreground: 0 65% 32%;
+  --danger-subtle-foreground: 0 65% 34%;
 
-  --neutral-subtle: 220 14% 92%;
-  --neutral-subtle-foreground: 220 30% 28%;
+  --info: 214 78% 45%;
+  --info-foreground: 0 0% 100%;
+  --info-subtle: 214 90% 95.5%;
+  --info-subtle-foreground: 216 72% 30%;
 
-  /* Charts — refined, harmonious palette */
-  --chart-1: 222 47% 30%;
-  --chart-2: 158 52% 42%;
-  --chart-3: 32 92% 55%;
-  --chart-4: 218 70% 55%;
-  --chart-5: 280 35% 50%;
+  --neutral-subtle: var(--neutral-100);
+  --neutral-subtle-foreground: var(--neutral-700);
 
-  /* Typography */
+  /* Money direction (amount colouring in tables / KPI deltas) */
+  --positive: var(--success-subtle-foreground);
+  --negative: var(--danger-subtle-foreground);
+
+  /* ── Layer 3 · Surface roles ── */
+  --background: var(--brand-paper);
+  --foreground: var(--brand-ink);
+  --surface-sunken: var(--neutral-50);
+
+  --border: var(--neutral-200);
+  --border-strong: var(--neutral-300);
+  --input: var(--neutral-300);
+
+  --card: var(--neutral-0);
+  --card-foreground: var(--brand-ink);
+  --card-border: var(--neutral-200);
+
+  --popover: var(--neutral-0);
+  --popover-foreground: var(--brand-ink);
+  --popover-border: var(--neutral-200);
+
+  --primary: var(--brand-700);
+  --primary-foreground: 0 0% 100%;
+  --primary-hover: var(--brand-800);
+  --secondary: var(--neutral-100);
+  --secondary-foreground: var(--neutral-800);
+  --muted: var(--neutral-100);
+  --muted-foreground: var(--neutral-500);
+  /* `accent` = brand text/fill on light surfaces (eyebrows, links, icons). */
+  --accent: var(--brand-700);
+  --accent-foreground: 0 0% 100%;
+  --destructive: var(--danger);
+  --destructive-foreground: var(--danger-foreground);
+
+  --ring: var(--brand-500);
+
+  /* Sidebar — light, quiet chrome that lets the content lead */
+  --sidebar: var(--neutral-50);
+  --sidebar-foreground: var(--neutral-700);
+  --sidebar-muted-foreground: var(--neutral-500);
+  --sidebar-border: var(--neutral-200);
+  --sidebar-primary: var(--brand-700);
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: var(--neutral-200);
+  --sidebar-accent-foreground: var(--neutral-900);
+  --sidebar-ring: var(--brand-500);
+
+  /* Charts — brand-led sequence. Also used as text colours by some screens,
+     so every step keeps AA (>= 4.5:1) on card and muted surfaces. */
+  /* WP-A (spec 2.3): brand, slate blue, ochre, plum, teal. Money in = chart-1, money out =
+     chart-neutral (never red, never brown). Red is used in charts only for a negative net. */
+  --chart-1: var(--brand-700);
+  --chart-2: 215 45% 45%;
+  --chart-3: 38 72% 40%;
+  --chart-4: 280 24% 48%;
+  --chart-5: 190 55% 34%;
+  /* Comparison series (expenses, prior period, "other"): never amber (amber = warning). Always
+     dashed or paired with a label/tooltip, never colour alone. 220 9% 56% gives 3.40:1 on the
+     card, meeting WCAG 1.4.11 (3:1 for graphics); spec 2.3's neutral-400 is only 2.62:1. */
+  --chart-neutral: 220 9% 56%;
+  --chart-grid: var(--neutral-100);
+  --chart-axis: var(--neutral-500);
+
+  /* WP-A (spec 2.3): one inverse surface for the auth panel, the featured pricing card and
+     marketing dark bands. */
+  --surface-inverse: var(--brand-ink);
+  --surface-inverse-foreground: var(--neutral-50);
+  --surface-inverse-muted: 220 12% 72%;
+  --surface-inverse-border: 222 20% 20%;
+
+  /* Disabled primary/solid button (spec 2.3): neutral, never pale green (reads as loading). */
+  --disabled-surface: var(--neutral-200);
+  --disabled-foreground: var(--neutral-500);
+
+  /* ── Typography ── */
   --font-sans:
-    "Geist Sans", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --font-display: "Instrument Serif", "Iowan Old Style", "Apple Garamond", Georgia, serif;
+    "Geist Sans", "Geist", "Noto Sans Arabic", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    system-ui, sans-serif;
+  /* D2b (CTO 2): Latin letters and digits stay Geist in Arabic; only Arabic code points fall
+     through to Noto Sans Arabic (its @font-face is the Arabic subset, unicode-range scoped). */
+  --font-arabic: "Geist Sans", "Noto Sans Arabic", system-ui, "Segoe UI", "Geeza Pro", sans-serif;
+  /* One Latin face: display = Geist Sans set tight and heavy. */
+  --font-display: var(--font-sans);
   --font-serif: "Instrument Serif", Georgia, serif;
-  --font-mono: "Geist Mono", "JetBrains Mono", "SF Mono", Monaco, Consolas, monospace;
+  --font-mono: "Geist Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  /* Figures (money, document numbers, IDs): the UI sans with tabular numerals. */
+  --font-figures: var(--font-sans);
 
-  --radius: 0.625rem; /* 10px — softer */
+  /* ── Shape ── */
+  --radius: 0.5rem; /* 8px — lg; md 6, sm 4, xl 12, 2xl 16 */
 
-  /* Refined paper-like shadows */
-  --shadow-2xs: 0px 1px 2px 0px hsl(220 30% 8% / 0.04);
-  --shadow-xs: 0px 1px 2px 0px hsl(220 30% 8% / 0.05), 0px 1px 1px 0px hsl(220 30% 8% / 0.03);
-  --shadow-sm: 0px 2px 4px -1px hsl(220 30% 8% / 0.06), 0px 1px 2px -1px hsl(220 30% 8% / 0.04);
-  --shadow: 0px 4px 8px -2px hsl(220 30% 8% / 0.08), 0px 2px 4px -2px hsl(220 30% 8% / 0.04);
-  --shadow-md: 0px 8px 16px -4px hsl(220 30% 8% / 0.1), 0px 3px 6px -3px hsl(220 30% 8% / 0.06);
-  --shadow-lg: 0px 16px 32px -8px hsl(220 30% 8% / 0.14), 0px 6px 12px -6px hsl(220 30% 8% / 0.08);
-  --shadow-xl: 0px 24px 48px -12px hsl(220 30% 8% / 0.18), 0px 10px 20px -8px hsl(220 30% 8% / 0.1);
-  --shadow-2xl: 0px 40px 80px -20px hsl(220 30% 8% / 0.24);
+  /* ── Motion ── */
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 240ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* Card elevation — tight, layered, low-opacity (premium fintech resting
-     depth). Includes a hairline ring so cards read crisp on the warm paper
-     canvas. Referenced by the Card primitive via shadow-card-soft/hover. */
-  --card-shadow:
-    0 0 0 1px hsl(220 30% 8% / 0.03), 0 1px 2px 0 hsl(220 30% 8% / 0.05),
-    0 2px 6px -1px hsl(220 30% 8% / 0.06);
+  /* ── Layout (spec 2.2) ── lists/dashboards 1280 · forms/settings 760 · reading 680 ·
+     marketing container 1120. */
+  --content-max: 1280px;
+  --content-narrow: 760px;
+  --content-reading: 680px;
+  --content-marketing: 1120px;
+  --header-height: 3.5rem;
+  /* Height of the fixed mobile bottom nav (0 from 768 px); sticky footers sit above it. */
+  --mobile-nav-height: calc(3.75rem + env(safe-area-inset-bottom, 0px));
+
+  /* ── Type scale (spec 2.1). Sizes that change on mobile are variables so one Tailwind
+     class (`text-display-xl`, `text-display`, `text-kpi`) is responsive. ── */
+  --text-display-xl-size: 2.25rem; /* 36 / 40 mobile → 56 / 60 */
+  --text-display-xl-line: 2.5rem;
+  --text-display-size: 1.875rem; /* 30 / 36 mobile → 40 / 46 */
+  --text-display-line: 2.25rem;
+  --text-kpi-size: 1.375rem; /* 22 / 28 mobile → 28 / 32 */
+  --text-kpi-line: 1.75rem;
+
+  /* ── Elevation (light) — low, layered, neutral-tinted ── */
+  --shadow-color: 222 30% 12%;
+  --shadow-2xs: 0 1px 1px 0 hsl(var(--shadow-color) / 0.04);
+  --shadow-xs: 0 1px 2px 0 hsl(var(--shadow-color) / 0.06);
+  --shadow-sm:
+    0 1px 2px 0 hsl(var(--shadow-color) / 0.06), 0 1px 3px 0 hsl(var(--shadow-color) / 0.05);
+  --shadow:
+    0 2px 4px -1px hsl(var(--shadow-color) / 0.06), 0 4px 8px -2px hsl(var(--shadow-color) / 0.06);
+  --shadow-md:
+    0 4px 8px -2px hsl(var(--shadow-color) / 0.08), 0 8px 16px -4px hsl(var(--shadow-color) / 0.06);
+  --shadow-lg:
+    0 8px 16px -4px hsl(var(--shadow-color) / 0.1), 0 16px 32px -8px hsl(var(--shadow-color) / 0.1);
+  --shadow-xl:
+    0 12px 24px -6px hsl(var(--shadow-color) / 0.12),
+    0 24px 48px -12px hsl(var(--shadow-color) / 0.14);
+  --shadow-2xl: 0 32px 64px -16px hsl(var(--shadow-color) / 0.22);
+  --card-shadow: 0 1px 2px 0 hsl(var(--shadow-color) / 0.04);
   --card-shadow-hover:
-    0 0 0 1px hsl(220 30% 8% / 0.04), 0 4px 10px -2px hsl(220 30% 8% / 0.1),
-    0 10px 24px -6px hsl(220 30% 8% / 0.1);
+    0 2px 4px -1px hsl(var(--shadow-color) / 0.06), 0 8px 20px -6px hsl(var(--shadow-color) / 0.1);
+
+  /* Legacy interaction tints (hover-elevate utilities) */
+  --button-outline: hsl(var(--neutral-300));
+  --badge-outline: hsl(var(--neutral-200));
+  --opaque-button-border-intensity: -6;
+  --elevate-1: hsl(var(--shadow-color) / 0.035);
+  --elevate-2: hsl(var(--shadow-color) / 0.07);
 
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
-  /* Auto borders */
-  --sidebar-primary-border: hsl(var(--sidebar-primary));
-  --sidebar-primary-border: hsl(
-    from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
-  );
-  --sidebar-accent-border: hsl(var(--sidebar-accent));
-  --sidebar-accent-border: hsl(
-    from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
-  );
-  --primary-border: hsl(var(--primary));
-  --primary-border: hsl(
-    from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
-  );
-  --secondary-border: hsl(var(--secondary));
-  --secondary-border: hsl(
-    from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
-  );
-  --muted-border: hsl(var(--muted));
-  --muted-border: hsl(
-    from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
-  );
-  --accent-border: hsl(var(--accent));
-  --accent-border: hsl(
-    from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
-  );
-  --destructive-border: hsl(var(--destructive));
-  --destructive-border: hsl(
-    from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
-  );
+  /* Solid-button borders: same hue, one step deeper */
+  --primary-border: hsl(var(--brand-800));
+  --secondary-border: hsl(var(--neutral-200));
+  --muted-border: hsl(var(--neutral-200));
+  --accent-border: hsl(var(--brand-700));
+  --destructive-border: hsl(0 68% 40%);
+  --sidebar-primary-border: hsl(var(--brand-800));
+  --sidebar-accent-border: hsl(var(--neutral-300));
+
+  color-scheme: light;
 }
 
 .dark {
-  --button-outline: rgba(255, 255, 255, 0.1);
-  --badge-outline: rgba(255, 255, 255, 0.06);
+  --success: 156 52% 50%;
+  --success-foreground: 224 32% 6.5%;
+  --success-subtle: 158 45% 13%;
+  --success-subtle-foreground: 152 55% 72%;
 
-  --opaque-button-border-intensity: 9;
+  --warning: 36 88% 56%;
+  --warning-foreground: 224 32% 6.5%;
+  --warning-subtle: 34 55% 13%;
+  --warning-subtle-foreground: 38 92% 72%;
 
-  --elevate-1: rgba(255, 255, 255, 0.04);
-  --elevate-2: rgba(255, 255, 255, 0.085);
+  --danger: 0 72% 60%;
+  --danger-foreground: 224 32% 6.5%;
+  --danger-subtle: 0 45% 15%;
+  --danger-subtle-foreground: 0 85% 80%;
 
-  --background: 222 32% 7%;
-  --foreground: 220 14% 94%;
+  --info: 214 85% 64%;
+  --info-foreground: 224 32% 6.5%;
+  --info-subtle: 216 50% 15%;
+  --info-subtle-foreground: 214 90% 80%;
 
-  --border: 222 22% 16%;
-  --input: 222 22% 22%;
+  --neutral-subtle: var(--neutral-800);
+  --neutral-subtle-foreground: var(--neutral-300);
 
-  --card: 222 28% 9%;
-  --card-foreground: 220 14% 94%;
-  --card-border: 222 22% 14%;
+  --background: var(--neutral-950);
+  --foreground: 220 16% 93%;
+  --surface-sunken: 224 34% 5%;
 
-  --popover: 222 28% 11%;
-  --popover-foreground: 220 14% 94%;
-  --popover-border: 222 22% 18%;
+  --border: 222 20% 17%;
+  --border-strong: 222 18% 24%;
+  --input: 222 18% 24%;
 
-  --sidebar: 222 38% 6%;
-  --sidebar-foreground: 220 14% 84%;
-  --sidebar-border: 222 30% 12%;
-  --sidebar-primary: 158 60% 50%;
-  --sidebar-primary-foreground: 222 32% 7%;
-  --sidebar-accent: 222 28% 14%;
-  --sidebar-accent-foreground: 220 14% 96%;
-  --sidebar-ring: 158 60% 50%;
+  /* D2b (CTO 9): surfaces step clearly off the neutral-950 canvas. */
+  --card: 223 24% 11%;
+  --card-foreground: 220 16% 93%;
+  --card-border: 222 20% 17%;
 
-  --primary: 220 14% 94%;
-  --primary-foreground: 222 32% 9%;
-  --secondary: 222 22% 16%;
-  --secondary-foreground: 220 14% 92%;
-  --muted: 222 22% 14%;
-  --muted-foreground: 220 12% 60%;
-  --accent: 158 55% 48%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 65% 55%;
-  --destructive-foreground: 0 0% 100%;
+  --popover: 223 22% 13%;
+  --popover-foreground: 220 16% 93%;
+  --popover-border: 222 20% 20%;
 
-  --ring: 158 60% 50%;
+  /* D2b (CTO 9): a deep emerald fill with white text (4.7:1). The CTO's suggested
+     158 64% 40% / 159 66% 36% measure 3.05 / 3.62:1 with white, so the same hue is set at
+     31% lightness. brand-400 stays for text, links and icons (--accent). */
+  --primary: 159 66% 31%;
+  --primary-foreground: 0 0% 100%;
+  --primary-hover: 159 66% 27%;
+  --secondary: var(--neutral-800);
+  --secondary-foreground: 220 16% 90%;
+  --muted: var(--neutral-850);
+  --muted-foreground: 220 10% 64%;
+  --accent: var(--brand-400);
+  --accent-foreground: var(--brand-950);
+  --destructive: var(--danger);
+  --destructive-foreground: var(--danger-foreground);
 
-  --success: 158 55% 50%;
-  --success-foreground: 222 32% 7%;
-  --success-subtle: 158 40% 14%;
-  --success-subtle-foreground: 158 55% 78%;
+  --ring: var(--brand-400);
 
-  --warning: 32 90% 58%;
-  --warning-foreground: 222 32% 7%;
-  --warning-subtle: 32 50% 14%;
-  --warning-subtle-foreground: 32 90% 78%;
+  --sidebar: 224 34% 5%;
+  --sidebar-foreground: 220 14% 82%;
+  --sidebar-muted-foreground: 220 10% 60%;
+  --sidebar-border: 222 22% 13%;
+  --sidebar-primary: var(--brand-400);
+  --sidebar-primary-foreground: var(--neutral-950);
+  --sidebar-accent: 222 22% 13%;
+  --sidebar-accent-foreground: 220 16% 96%;
+  --sidebar-ring: var(--brand-400);
 
-  --info: 218 75% 60%;
-  --info-foreground: 222 32% 7%;
-  --info-subtle: 218 50% 16%;
-  --info-subtle-foreground: 218 80% 80%;
+  --chart-1: 157 48% 49%;
+  --chart-2: 215 60% 66%;
+  --chart-3: 40 80% 60%;
+  --chart-4: 280 40% 70%;
+  --chart-5: 190 55% 58%;
+  --chart-neutral: var(--neutral-500);
+  --chart-grid: var(--neutral-800);
+  --chart-axis: var(--neutral-400);
 
-  --danger-subtle: 0 50% 16%;
-  --danger-subtle-foreground: 0 80% 82%;
+  /* Inverse on dark is not visible as "inverse"; it steps up one surface and the featured
+     card adds a brand-500 hairline (spec 3.1 Dark). */
+  --surface-inverse: var(--neutral-800);
+  --surface-inverse-foreground: var(--neutral-50);
+  --surface-inverse-muted: 220 12% 72%;
+  --surface-inverse-border: 222 18% 26%;
 
-  --neutral-subtle: 222 22% 16%;
-  --neutral-subtle-foreground: 220 12% 78%;
+  --disabled-surface: var(--neutral-800);
+  --disabled-foreground: var(--neutral-500);
 
-  --chart-1: 220 14% 80%;
-  --chart-2: 158 60% 56%;
-  --chart-3: 32 90% 62%;
-  --chart-4: 218 75% 62%;
-  --chart-5: 280 50% 65%;
+  --shadow-color: 0 0% 0%;
+  --shadow-2xs: 0 1px 1px 0 hsl(0 0% 0% / 0.3);
+  --shadow-xs: 0 1px 2px 0 hsl(0 0% 0% / 0.35);
+  --shadow-sm: 0 1px 3px 0 hsl(0 0% 0% / 0.4);
+  --shadow: 0 2px 6px -1px hsl(0 0% 0% / 0.45);
+  --shadow-md: 0 6px 14px -4px hsl(0 0% 0% / 0.5);
+  --shadow-lg: 0 12px 28px -8px hsl(0 0% 0% / 0.55);
+  --shadow-xl: 0 20px 40px -12px hsl(0 0% 0% / 0.6);
+  --shadow-2xl: 0 32px 64px -16px hsl(0 0% 0% / 0.66);
+  --card-shadow: 0 0 0 0 transparent;
+  --card-shadow-hover: 0 8px 24px -8px hsl(0 0% 0% / 0.6);
 
-  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.3);
-  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.35);
-  --shadow-sm: 0px 2px 4px -1px hsl(0 0% 0% / 0.32), 0px 1px 2px -1px hsl(0 0% 0% / 0.24);
-  --shadow: 0px 4px 8px -2px hsl(0 0% 0% / 0.4), 0px 2px 4px -2px hsl(0 0% 0% / 0.28);
-  --shadow-md: 0px 8px 16px -4px hsl(0 0% 0% / 0.46), 0px 3px 6px -3px hsl(0 0% 0% / 0.32);
-  --shadow-lg: 0px 16px 32px -8px hsl(0 0% 0% / 0.52), 0px 6px 12px -6px hsl(0 0% 0% / 0.38);
-  --shadow-xl: 0px 24px 48px -12px hsl(0 0% 0% / 0.58);
-  --shadow-2xl: 0px 40px 80px -20px hsl(0 0% 0% / 0.66);
+  --button-outline: hsl(222 18% 24%);
+  --badge-outline: hsl(222 18% 22%);
+  --opaque-button-border-intensity: 8;
+  --elevate-1: hsl(0 0% 100% / 0.04);
+  --elevate-2: hsl(0 0% 100% / 0.08);
 
-  /* Card elevation — on dark surfaces the ring carries most of the definition;
-     shadows are deeper but still restrained. */
-  --card-shadow:
-    0 0 0 1px hsl(0 0% 100% / 0.04), 0 1px 2px 0 hsl(0 0% 0% / 0.4),
-    0 2px 8px -2px hsl(0 0% 0% / 0.5);
-  --card-shadow-hover:
-    0 0 0 1px hsl(0 0% 100% / 0.06), 0 6px 16px -4px hsl(0 0% 0% / 0.55),
-    0 12px 28px -8px hsl(0 0% 0% / 0.5);
+  --primary-border: hsl(159 66% 36%);
+  --secondary-border: hsl(222 18% 22%);
+  --muted-border: hsl(222 18% 20%);
+  --accent-border: hsl(var(--brand-500));
+  --destructive-border: hsl(0 60% 50%);
+  --sidebar-primary-border: hsl(var(--brand-500));
+  --sidebar-accent-border: hsl(222 18% 20%);
+
+  color-scheme: dark;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --mobile-nav-height: 0px;
+    --text-display-xl-size: 3.5rem;
+    --text-display-xl-line: 3.75rem;
+    --text-display-size: 2.5rem;
+    --text-display-line: 2.875rem;
+    --text-kpi-size: 1.75rem;
+    --text-kpi-line: 2rem;
+  }
 }
 
 @layer base {
@@ -248,20 +368,60 @@
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
     /* tnum app-wide: in accounting software every digit column must align. */
-    font-feature-settings:
-      "cv02",
-      "cv03",
-      "cv04",
-      "cv11",
-      "ss01",
-      "tnum" 1;
+    font-feature-settings: "tnum" 1;
     font-variant-numeric: tabular-nums;
+  }
+
+  /* Arabic: Geist for Latin + digits, Noto Sans Arabic for Arabic script; letter-spacing
+     breaks joining, so it is reset. Body copy gets more leading; headings are 600. */
+  [dir="rtl"],
+  [dir="rtl"] body,
+  :lang(ar) {
+    font-family: var(--font-arabic);
+    letter-spacing: normal;
+  }
+  /* Spec 2.1: Arabic body 15 / 26. */
+  [dir="rtl"] body {
+    font-size: 0.9375rem;
+    line-height: 1.625rem;
+  }
+  [dir="rtl"] h1,
+  [dir="rtl"] h2,
+  [dir="rtl"] h3,
+  [dir="rtl"] h4 {
+    font-weight: 600;
+    letter-spacing: normal;
+  }
+  [dir="rtl"] {
+    --font-figures: var(--font-arabic);
+  }
+  code,
+  pre,
+  kbd,
+  samp {
+    font-family: var(--font-mono);
+  }
+  /* Money and document numbers never use the mono face (CTO 2). */
+  .money,
+  .money-figure,
+  [data-numeric],
+  [data-numeric] .font-mono,
+  .money.font-mono {
+    font-family: inherit;
+  }
+
+  /* Headings default to the type scale so bare <h1>…<h4> already look right. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
   }
 
   /* Tabular figures everywhere a number is rendered with .font-mono */
@@ -270,27 +430,25 @@
   td.numeric,
   .numeric {
     font-variant-numeric: tabular-nums;
-    font-feature-settings:
-      "tnum" 1,
-      "ss01" 1;
+    font-feature-settings: "tnum" 1;
   }
 
-  /* Display serif lockup */
+  /* Display lockup — one Latin face (Geist), set tight and confident. */
   .font-display {
     font-family: var(--font-display);
-    font-feature-settings:
-      "liga" 1,
-      "dlig" 1;
-    letter-spacing: -0.01em;
+    font-weight: 600;
+    letter-spacing: -0.022em;
+  }
+  [dir="rtl"] .font-display {
+    font-family: var(--font-arabic);
+    letter-spacing: normal;
   }
 
-  /* Selection */
   ::selection {
-    background: hsl(var(--accent) / 0.25);
+    background: hsl(var(--brand-400) / 0.28);
     color: hsl(var(--foreground));
   }
 
-  /* Scrollbar — refined */
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -299,12 +457,197 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: hsl(var(--border));
+    background: hsl(var(--border-strong));
     border-radius: 999px;
     border: 2px solid hsl(var(--background));
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.4);
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+}
+
+/* ─── Shared patterns (component layer — Tailwind utilities still win) ─── */
+@layer components {
+  /* Money: tabular, never wraps, always LTR digits even inside Arabic text. */
+  .money {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    white-space: nowrap;
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+  .money-negative {
+    color: hsl(var(--negative));
+  }
+  /* <Money>: [currency] [sign+digits] in LTR, [sign+digits] [currency] in RTL. The flex row
+     follows the element's own dir, so the order is fixed whatever the surrounding text is. */
+  .money-figure {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.25em;
+    white-space: nowrap;
+    unicode-bidi: isolate;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+  .money-currency {
+    /* Never below 12px (an 11px table cell used to give a 9px currency code). */
+    font-size: max(0.8em, 0.75rem);
+    font-weight: 500;
+    color: hsl(var(--muted-foreground));
+    unicode-bidi: isolate;
+  }
+  .money-sign {
+    margin-inline-end: 0.04em;
+  }
+  /* Latin display figures (KPI values): slight negative tracking (CTO 12). */
+  .figure-display {
+    font-size: var(--text-kpi-size);
+    line-height: var(--text-kpi-line);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  [dir="rtl"] .figure-display {
+    letter-spacing: -0.02em;
+  }
+
+  /* Small uppercase section label (12 px, 0.08em; spec 2.1). Arabic gets normal case + no
+     tracking. Page and marketing eyebrows add `text-accent` (brand-600). */
+  .eyebrow {
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+  }
+  [dir="rtl"] .eyebrow {
+    letter-spacing: normal;
+    text-transform: none;
+    font-size: 0.75rem;
+  }
+
+  /* Page container: the one width every authenticated screen uses. */
+  .page-container {
+    margin-inline: auto;
+    width: 100%;
+    max-width: var(--content-max);
+    padding-inline: 1rem;
+    padding-block: 1.25rem 2.5rem;
+  }
+  @media (min-width: 768px) {
+    .page-container {
+      padding-inline: 2rem;
+      padding-block: 2rem 3rem;
+    }
+  }
+
+  /* Ledger ruling (spec 2.6): the one brand motif. 1 px hairlines on an 8 px pitch with one
+     vertical margin rule in brand-200, faded with a radial mask. `.on-inverse` sets the lines
+     at 6% white for the inverse auth panel and dark bands. Decorative only. */
+  .bg-ledger-ruling {
+    --ledger-line: hsl(var(--neutral-200));
+    --ledger-margin: hsl(var(--brand-200));
+    background-image:
+      linear-gradient(
+        to right,
+        transparent 47px,
+        var(--ledger-margin) 47px,
+        var(--ledger-margin) 48px,
+        transparent 48px
+      ),
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 7px,
+        var(--ledger-line) 7px,
+        var(--ledger-line) 8px
+      );
+    -webkit-mask-image: radial-gradient(ellipse 70% 65% at 50% 40%, #000 35%, transparent 80%);
+    mask-image: radial-gradient(ellipse 70% 65% at 50% 40%, #000 35%, transparent 80%);
+  }
+  [dir="rtl"] .bg-ledger-ruling {
+    background-image:
+      linear-gradient(
+        to left,
+        transparent 47px,
+        var(--ledger-margin) 47px,
+        var(--ledger-margin) 48px,
+        transparent 48px
+      ),
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 7px,
+        var(--ledger-line) 7px,
+        var(--ledger-line) 8px
+      );
+  }
+  .dark .bg-ledger-ruling {
+    --ledger-line: hsl(var(--neutral-800));
+    --ledger-margin: hsl(var(--brand-900));
+  }
+  .bg-ledger-ruling.on-inverse,
+  .dark .bg-ledger-ruling.on-inverse {
+    --ledger-line: hsl(0 0% 100% / 0.06);
+    --ledger-margin: hsl(var(--brand-400) / 0.18);
+  }
+
+  /* Fade the inline edges of a horizontal scroller (ScrollTabs, chip rows). */
+  .scroll-fade-x {
+    scrollbar-width: none;
+  }
+  .scroll-fade-x::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Page content enters once per route change (spec 2.5). */
+  .page-enter {
+    animation: page-in var(--duration-base) var(--ease-out) both;
+  }
+
+  .shell-slide-in {
+    animation: shell-slide-in 180ms ease-out both;
+  }
+  [dir="rtl"] .shell-slide-in {
+    --shell-slide-from: 6px;
+  }
+  .shell-group-open {
+    display: grid;
+    animation: shell-group-open 180ms ease-out both;
+  }
+  .shell-group-open > * {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .shell-fade-in {
+    animation: shell-fade-in 150ms ease-out both;
+  }
+  .shell-sheet-up {
+    animation: shell-sheet-up 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* Hairline-divided list surface */
+  .divide-hairline > * + * {
+    border-top: 1px solid hsl(var(--border));
+  }
+
+  /* Keyboard key cap */
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.125rem;
+    border-radius: 0.25rem;
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--muted));
+    padding: 0 0.375rem;
+    min-height: 1.25rem;
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: hsl(var(--muted-foreground));
+    direction: ltr;
+    unicode-bidi: isolate;
   }
 }
 
@@ -467,6 +810,61 @@
     }
   }
 
+  @keyframes page-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    /* Ends on `none`: a lingering transform would make the page the containing block of every
+       position:fixed descendant (bottom action bars). */
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Shell motion that framer-motion used to drive (kept CSS-only so the app shell does not ship
+     the library): sidebar header slide-in (mirrored in RTL), group expand, mobile sheet. */
+  @keyframes shell-slide-in {
+    from {
+      opacity: 0;
+      transform: translateX(var(--shell-slide-from, -6px));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes shell-group-open {
+    from {
+      grid-template-rows: 0fr;
+      opacity: 0;
+    }
+    to {
+      grid-template-rows: 1fr;
+      opacity: 1;
+    }
+  }
+
+  @keyframes shell-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes shell-sheet-up {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: none;
+    }
+  }
+
   @keyframes shimmer-skeleton {
     0% {
       background-position: 200% 0;
@@ -535,7 +933,7 @@
 
   /* Smooth transition */
   .transition-smooth {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all var(--duration-base) var(--ease-standard);
   }
 
   /* Glassmorphism */
@@ -613,7 +1011,7 @@
       hsl(var(--muted)) 100%
     );
     background-size: 200% 100%;
-    animation: shimmer-skeleton 2.2s linear infinite;
+    animation: shimmer-skeleton 1.2s linear infinite;
   }
 
   /* Text utilities */
@@ -693,4 +1091,16 @@ select:focus-visible,
 textarea:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
+}
+
+/* R2-11: no native number spinners on quantity/price/amount inputs (they crowd the value and
+   flip sides in RTL); values are typed or stepped with the keyboard. */
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }

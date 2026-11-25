@@ -127,3 +127,69 @@ export class ExternalServiceError extends AppError {
     });
   }
 }
+
+/**
+ * Domain/business-rule failure with a stable machine code. Prefer this over
+ * ad-hoc `res.status(x).json(...)` in new code:
+ *
+ *   throw new DomainError("PERIOD_LOCKED", 409, { period: "2026-03" });
+ *
+ * The global error handler renders `{ message, code, details?, requestId }`
+ * with `httpStatus`. `code` is UPPER_SNAKE_CASE and part of the API contract.
+ */
+export class DomainError extends AppError {
+  constructor(code: string, httpStatus = 400, details?: unknown, message?: string) {
+    super({
+      message: message ?? humanizeCode(code),
+      statusCode: httpStatus,
+      code,
+      details,
+      isOperational: true,
+    });
+  }
+
+  get httpStatus(): number {
+    return this.statusCode;
+  }
+}
+
+function humanizeCode(code: string): string {
+  const words = code.toLowerCase().replace(/_/g, " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "Request failed";
+}
+
+/** A property of an unknown thrown value (undefined for primitives and missing keys). */
+export function errorProperty(err: unknown, key: string): unknown {
+  return typeof err === "object" && err !== null && key in err
+    ? (err as Record<string, unknown>)[key]
+    : undefined;
+}
+
+/**
+ * `.message` of an unknown thrown value, read the way `(err as any).message`
+ * used to be: the Error message, a string `message` property on a plain
+ * object, otherwise undefined.
+ */
+export function errorMessage(err: unknown): string | undefined {
+  if (err instanceof Error) return err.message;
+  const message = errorProperty(err, "message");
+  return typeof message === "string" ? message : undefined;
+}
+
+/** Numeric `statusCode` carried by an unknown thrown value, if any. */
+export function errorStatusCode(err: unknown): number | undefined {
+  const status = errorProperty(err, "statusCode");
+  return typeof status === "number" ? status : undefined;
+}
+
+/** Numeric `status` carried by an unknown thrown value (HTTP client errors), if any. */
+export function errorStatus(err: unknown): number | undefined {
+  const status = errorProperty(err, "status");
+  return typeof status === "number" ? status : undefined;
+}
+
+/** String `code` carried by an unknown thrown value (e.g. Postgres SQLSTATE), if any. */
+export function errorCode(err: unknown): string | undefined {
+  const code = errorProperty(err, "code");
+  return typeof code === "string" ? code : undefined;
+}

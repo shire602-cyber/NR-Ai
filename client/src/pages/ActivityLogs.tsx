@@ -1,29 +1,30 @@
+import { T } from "@/components/layout/T";
+import {
+  activityActionLabel,
+  activityEntityLabel,
+  activitySentence,
+  metadataChanges,
+} from "@/lib/activity-log-labels";
+import { formatDateTime, formatDateTimePlain } from "@/lib/format-date";
+import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Activity,
   Search,
-  Filter,
   User,
   Building2,
   FileText,
   Receipt,
   Settings,
   Mail,
-  Trash2,
-  Edit,
-  Plus,
-  Eye,
-  LogIn,
-  LogOut,
   Download,
+  ShieldCheck,
 } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -31,21 +32,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { format } from "date-fns";
 import type { ActivityLog, User as UserType, Company } from "@shared/schema";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { securityFetch } from "@/lib/securityApi";
+import { exportToExcel } from "@/lib/export";
 
 export default function ActivityLogs() {
   const [searchTerm, setSearchTerm] = useState("");
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [entityFilter, setEntityFilter] = useState<string>("all");
+  const { t, locale } = useTranslation();
+  // W5-E: verify the account-level ("global") tamper-evident audit chain.
+  const [chainStatus, setChainStatus] = useState<{
+    ok: boolean;
+    checked: number;
+    firstBroken: { seq: number; reason: string } | null;
+  } | null>(null);
+  const verifyGlobalChain = async () => {
+    try {
+      setChainStatus(await securityFetch("GET", "/api/admin/audit-log/verify"));
+    } catch {
+      setChainStatus(null);
+    }
+  };
 
   const { data: logs = [], isLoading } = useQuery<ActivityLog[]>({
     queryKey: ["/api/admin/activity-logs"],
@@ -66,26 +75,31 @@ export default function ActivityLogs() {
     return matchesSearch && matchesAction && matchesEntity;
   });
 
-  const getActionIcon = (action: string) => {
-    switch (action) {
-      case "create":
-        return <Plus className="h-4 w-4 text-success" />;
-      case "update":
-        return <Edit className="h-4 w-4 text-info" />;
-      case "delete":
-        return <Trash2 className="h-4 w-4 text-destructive" />;
-      case "view":
-        return <Eye className="h-4 w-4 text-muted-foreground" />;
-      case "login":
-        return <LogIn className="h-4 w-4 text-chart-5" />;
-      case "logout":
-        return <LogOut className="h-4 w-4 text-warning" />;
-      case "invite":
-        return <Mail className="h-4 w-4 text-info" />;
-      default:
-        return <Activity className="h-4 w-4" />;
-    }
-  };
+  // Broken-path sweep: "Export logs" had no handler. It exports the rows the filters show.
+  const exportLogs = () =>
+    exportToExcel(
+      [
+        {
+          sheetName: t["activityLog.export.sheet"],
+          rtl: locale === "ar",
+          columns: [
+            { header: t["activityLog.export.date"], key: "date", width: 20 },
+            { header: t["activityLog.export.user"], key: "user", width: 28 },
+            { header: t["activityLog.export.action"], key: "action", width: 28 },
+            { header: t["activityLog.export.entity"], key: "entity", width: 22 },
+            { header: t["activityLog.export.description"], key: "description", width: 60 },
+          ],
+          rows: filteredLogs.map((log) => ({
+            date: formatDateTimePlain(log.createdAt, locale),
+            user: users.find((u) => u.id === log.userId)?.email ?? "",
+            action: activityActionLabel(t, log.action),
+            entity: activityEntityLabel(t, log.entityType ?? ""),
+            description: activitySentence(t, log, locale),
+          })),
+        },
+      ],
+      "activity-log"
+    );
 
   const getEntityIcon = (entityType: string) => {
     switch (entityType) {
@@ -104,43 +118,16 @@ export default function ActivityLogs() {
     }
   };
 
-  const getActionBadge = (action: string) => {
-    switch (action) {
-      case "create":
-        return <Badge className="bg-success/10 text-success border-success/20">Create</Badge>;
-      case "update":
-        return <Badge className="bg-info/10 text-info border-info/20">Update</Badge>;
-      case "delete":
-        return <Badge variant="destructive">Delete</Badge>;
-      case "view":
-        return <Badge variant="secondary">View</Badge>;
-      case "login":
-        return (
-          <Badge className="bg-chart-5/10 text-chart-5 border-chart-5/20">Login</Badge>
-        );
-      case "logout":
-        return (
-          <Badge className="bg-warning/10 text-warning border-warning/20">Logout</Badge>
-        );
-      case "invite":
-        return (
-          <Badge className="bg-info/10 text-info border-info/20">Invite</Badge>
-        );
-      default:
-        return <Badge variant="outline">{action}</Badge>;
-    }
-  };
-
   const getUserName = (userId: string | null) => {
-    if (!userId) return "System";
+    if (!userId) return t["shell.themeSystem"];
     const user = users.find((u) => u.id === userId);
-    return user?.name || user?.email || "Unknown";
+    return user?.name || user?.email || t["activityLog.unknown"];
   };
 
   const getCompanyName = (companyId: string | null) => {
     if (!companyId) return null;
     const company = clients.find((c) => c.id === companyId);
-    return company?.name || "Unknown";
+    return company?.name || t["activityLog.unknown"];
   };
 
   if (isLoading) {
@@ -155,147 +142,194 @@ export default function ActivityLogs() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Admin"
-        title="Activity Logs"
+        title={t["pageLabels.activityLogs"]}
         testId="text-logs-title"
-        description="Complete audit trail of all system activities"
+        description={t["activityLogs.completeAuditTrailOfAll"]}
         actions={
-          <Button variant="outline" className="w-full sm:w-auto" data-testid="button-export-logs">
-            <Download className="w-4 h-4 mr-2" />
-            Export Logs
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={verifyGlobalChain}
+              data-testid="button-verify-global-chain"
+            >
+              <ShieldCheck className="w-4 h-4 me-2" />
+              <T k="security.auditVerify" />
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => void exportLogs()}
+              disabled={filteredLogs.length === 0}
+              data-testid="button-export-logs"
+            >
+              <Download className="w-4 h-4 me-2" />
+              <T k="pages.exportLogs" />
+            </Button>
+          </div>
         }
       />
+      {chainStatus && (
+        <p
+          className={`text-sm ${chainStatus.ok ? "" : "text-destructive"}`}
+          role="status"
+          data-testid="text-global-chain"
+        >
+          {chainStatus.ok
+            ? formatMessage(t["security.auditVerified"], { count: chainStatus.checked })
+            : formatMessage(t["security.auditBroken"], {
+                seq: chainStatus.firstBroken?.seq ?? "?",
+                reason: chainStatus.firstBroken?.reason ?? "",
+              })}
+        </p>
+      )}
 
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex items-center gap-4 flex-1 min-w-[300px]">
+            <div className="flex w-full min-w-0 items-center gap-4 sm:min-w-[300px] sm:flex-1 sm:w-auto">
               <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search activities..."
+                  placeholder={t["activityLogs.searchActivities"]}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="ps-10"
                   data-testid="input-search-logs"
                 />
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               <Select value={actionFilter} onValueChange={setActionFilter}>
                 <SelectTrigger className="w-32" data-testid="select-filter-action">
-                  <SelectValue placeholder="Action" />
+                  <SelectValue placeholder={t["components.vwColAction"]} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Actions</SelectItem>
-                  <SelectItem value="create">Create</SelectItem>
-                  <SelectItem value="update">Update</SelectItem>
-                  <SelectItem value="delete">Delete</SelectItem>
-                  <SelectItem value="view">View</SelectItem>
-                  <SelectItem value="login">Login</SelectItem>
-                  <SelectItem value="logout">Logout</SelectItem>
-                  <SelectItem value="invite">Invite</SelectItem>
+                  <SelectItem value="all">
+                    <T k="pages.allActions" />
+                  </SelectItem>
+                  <SelectItem value="create">
+                    <T k="pages.create" />
+                  </SelectItem>
+                  <SelectItem value="update">
+                    <T k="pages.update" />
+                  </SelectItem>
+                  <SelectItem value="delete">
+                    <T k="pages.delete" />
+                  </SelectItem>
+                  <SelectItem value="view">{t["hr.view"]}</SelectItem>
+                  <SelectItem value="login">
+                    <T k="pages.login" />
+                  </SelectItem>
+                  <SelectItem value="logout">
+                    <T k="pages.logout" />
+                  </SelectItem>
+                  <SelectItem value="invite">
+                    <T k="pages.invite" />
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <Select value={entityFilter} onValueChange={setEntityFilter}>
                 <SelectTrigger className="w-36" data-testid="select-filter-entity">
-                  <SelectValue placeholder="Entity Type" />
+                  <SelectValue placeholder={t["activityLogs.entityType"]} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Entities</SelectItem>
-                  <SelectItem value="user">Users</SelectItem>
-                  <SelectItem value="company">Companies</SelectItem>
-                  <SelectItem value="document">Documents</SelectItem>
-                  <SelectItem value="invoice">Invoices</SelectItem>
-                  <SelectItem value="journal_entry">Journal Entries</SelectItem>
-                  <SelectItem value="invitation">Invitations</SelectItem>
+                  <SelectItem value="all">
+                    <T k="pages.allEntities" />
+                  </SelectItem>
+                  <SelectItem value="user">
+                    <T k="pages.users" />
+                  </SelectItem>
+                  <SelectItem value="company">
+                    <T k="pages.companies" />
+                  </SelectItem>
+                  <SelectItem value="document">
+                    <T k="pages.documents" />
+                  </SelectItem>
+                  <SelectItem value="invoice">
+                    <T k="pages.invoices" />
+                  </SelectItem>
+                  <SelectItem value="journal_entry">
+                    <T k="pages.journalEntries" />
+                  </SelectItem>
+                  <SelectItem value="invitation">
+                    <T k="pages.invitations" />
+                  </SelectItem>
                 </SelectContent>
               </Select>
-              <Badge variant="secondary">{filteredLogs.length} entries</Badge>
+              <Badge variant="secondary" className="whitespace-nowrap">
+                {formatMessage(t["activityLog.entries"], { count: filteredLogs.length })}
+              </Badge>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-[600px]">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[50px]"></TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Entity</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Date & Time</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredLogs.map((log) => (
-                  <TableRow key={log.id} data-testid={`row-log-${log.id}`}>
-                    <TableCell>
-                      <div className="flex items-center justify-center">
-                        {getActionIcon(log.action)}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <p className="font-medium">{log.description}</p>
-                      {log.metadata && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {JSON.parse(log.metadata).changes?.join(", ") || ""}
-                        </p>
-                      )}
-                    </TableCell>
-                    <TableCell>{getActionBadge(log.action)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {getEntityIcon(log.entityType)}
-                        <span className="capitalize">{log.entityType.replace("_", " ")}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-muted-foreground" />
-                        {getUserName(log.userId)}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {log.companyId ? (
-                        <div className="flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-muted-foreground" />
-                          {getCompanyName(log.companyId)}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {log.createdAt ? (
-                        <div>
-                          <p className="text-sm">
-                            {format(new Date(log.createdAt), "MMM d, yyyy")}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {format(new Date(log.createdAt), "h:mm a")}
-                          </p>
-                        </div>
-                      ) : (
-                        "-"
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {filteredLogs.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      {searchTerm || actionFilter !== "all" || entityFilter !== "all"
-                        ? "No logs match your filters"
-                        : "No activity logs yet"}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </ScrollArea>
+        <CardContent className="p-0">
+          {/* Fable B13: the activity-feed row (History, admin audit tab): one sentence with no
+              ids, actor and client on a second line, a one-line formatted date. */}
+          {filteredLogs.length === 0 ? (
+            <EmptyState
+              size="sm"
+              className="px-4 py-6 sm:px-5"
+              title={
+                searchTerm || actionFilter !== "all" || entityFilter !== "all"
+                  ? t["activityLogs.noLogsMatchYourFilters"]
+                  : t["activityLogs.noActivityLogsYet"]
+              }
+            />
+          ) : (
+            <ul className="divide-y divide-border/70" data-testid="activity-log-feed">
+              {filteredLogs.map((log) => {
+                const changes = metadataChanges(log.metadata);
+                const company = getCompanyName(log.companyId);
+                return (
+                  <li
+                    key={log.id}
+                    className="flex items-start gap-3 px-4 py-3 sm:px-5"
+                    data-testid={`row-log-${log.id}`}
+                  >
+                    <span
+                      className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-surface-sunken text-muted-foreground"
+                      aria-hidden
+                    >
+                      {getEntityIcon(log.entityType)}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-body text-foreground">
+                        {activitySentence(t, log, locale)}
+                      </p>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-caption text-muted-foreground">
+                        <span translate="no">{getUserName(log.userId)}</span>
+                        {company ? (
+                          <span className="inline-flex items-baseline gap-x-2">
+                            <span aria-hidden>·</span>
+                            <span translate="no">{company}</span>
+                          </span>
+                        ) : null}
+                        <span className="inline-flex items-baseline gap-x-2">
+                          <span aria-hidden>·</span>
+                          <span>{activityEntityLabel(t, log.entityType)}</span>
+                        </span>
+                        {changes ? (
+                          <span className="inline-flex min-w-0 items-baseline gap-x-2">
+                            <span aria-hidden>·</span>
+                            <span className="truncate">{changes}</span>
+                          </span>
+                        ) : null}
+                      </p>
+                    </div>
+                    {log.createdAt ? (
+                      <time
+                        dateTime={new Date(log.createdAt).toISOString()}
+                        className="shrink-0 whitespace-nowrap text-caption tabular-nums text-muted-foreground"
+                      >
+                        {formatDateTime(log.createdAt, locale)}
+                      </time>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </CardContent>
       </Card>
     </div>

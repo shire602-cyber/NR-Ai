@@ -1,24 +1,82 @@
-// @ts-ignore - pdfkit has no type declarations
+// @ts-expect-error - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
-import { lineNetAmount, lineVatAmount } from "../../shared/document-totals";
+import { loadCompanyLogo } from "./pdf-logo";
+import { calendarParts } from "../../shared/uae-date";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
-import { UAE_VAT_RATE } from "../constants";
-import { renderEInvoiceQrPng } from "./einvoice-qr.service";
+import { renderInvoiceShareQrPng } from "./einvoice-qr.service";
+import {
+  isArabic,
+  isDraftStatus,
+  isVoidedStatus,
+  pdfLocale,
+  preparePdfDocument,
+  stampDraftWatermark,
+  text,
+  type PdfDoc,
+  type PdfLocale,
+} from "./pdf-fonts";
+import {
+  amount,
+  bi,
+  companyDetails,
+  date as ledgerDate,
+  Ledger,
+  LEDGER_COLORS,
+  lineVatRate,
+  ltr,
+  MM,
+  money,
+  trnLine,
+  type Bi,
+} from "./pdf-ledger";
 
 const PAGE_WIDTH = 595.28;
 const NR_GREEN = "#6F9E3A";
 const BORDER = "#111111";
 const HEADER_FILL = "#E6E6E6";
-type PdfDoc = any;
 
 export type InvoicePdfTemplate = "standard" | "nra";
 
 export interface GenerateInvoicePdfOptions {
-  template?: InvoicePdfTemplate;
+  /** Document language; defaults to the company's `locale` (en/ar). */
+  locale?: PdfLocale;
+  /** Payments received so far. Defaults to the full total for `paid` invoices, else 0. */
+  amountPaid?: number;
+  /** Date of supply; defaults to the invoice date when absent. */
+  supplyDate?: Date | string | null;
+  /** Customer details from the linked contact, used when the invoice has none stored. */
+  customer?: {
+    name?: string | null;
+    trn?: string | null;
+    address?: string | null;
+    /** WQ1 (14.7): the name printed on the document (the contact's Arabic name on an Arabic one). */
+    displayName?: string | null;
+  };
+  /**
+   * W3-A (R03-24): invoice-template branding applied to the standard layout. WP-F: the template
+   * colour is the document accent (top rule, section labels, amount-due row only).
+   */
+  branding?: InvoicePdfBranding | null;
+}
+
+export interface InvoicePdfBranding {
+  primaryColor?: string | null;
+  headerText?: string | null;
+  footerText?: string | null;
+  termsText?: string | null;
+  bankDetails?: string | null;
+  /**
+   * Legacy template logo (raster data: URL). The company's uploaded logo (companies.logo_path)
+   * wins; nothing is fetched from the network while rendering.
+   */
+  logoUrl?: string | null;
+  showLogo?: boolean | null;
 }
 
 export function invoicePdfTemplateForCompany(company: Company): InvoicePdfTemplate {
-  return company.companyType === "client" ? "nra" : "standard";
+  return company.id === process.env.NRA_INVOICE_ISSUER_COMPANY_ID && !company.trnVatNumber
+    ? "nra"
+    : "standard";
 }
 
 export async function generateInvoicePDF(
@@ -27,381 +85,387 @@ export async function generateInvoicePDF(
   company: Company,
   options: GenerateInvoicePdfOptions = {}
 ): Promise<Buffer> {
-  const template = options.template ?? invoicePdfTemplateForCompany(company);
+  const template = invoicePdfTemplateForCompany(company);
   if (template === "nra") {
     return generateNraInvoicePDF(invoice, lines);
   }
 
-  return generateStandardInvoicePDF(invoice, lines, company);
+  return generateStandardInvoicePDF(invoice, lines, company, options);
+}
+
+export type VatTreatment =
+  | "standard_rated"
+  | "zero_rated"
+  | "exempt"
+  | "out_of_scope"
+  | "reverse_charge";
+
+const TREATMENT_LABELS: Record<VatTreatment, { en: string; ar: string }> = {
+  standard_rated: { en: "Standard rated", ar: "خاضع للنسبة الأساسية" },
+  zero_rated: { en: "Zero-rated", ar: "خاضع لنسبة الصفر" },
+  exempt: { en: "Exempt", ar: "معفى" },
+  out_of_scope: { en: "Out of scope", ar: "خارج النطاق" },
+  reverse_charge: { en: "Reverse charge", ar: "الاحتساب العكسي" },
+};
+
+/**
+ * VAT treatment of one invoice line (R03-19). Reads `line.vatSupplyType` when present and
+ * consistent with the rate, otherwise derives it from the rate; a reverse-charge invoice marks
+ * every taxable line as reverse charge.
+ */
+export function vatTreatmentForLine(
+  line: Pick<InvoiceLine, "vatRate"> & { vatSupplyType?: string | null },
+  reverseCharge = false
+): VatTreatment {
+  const rate = lineVatRate(line);
+  const declared = (line.vatSupplyType ?? "").toLowerCase().replace(/[\s-]+/g, "_");
+  const known: VatTreatment[] = [
+    "standard_rated",
+    "zero_rated",
+    "exempt",
+    "out_of_scope",
+    "reverse_charge",
+  ];
+  let treatment: VatTreatment;
+  if ((known as string[]).includes(declared) && !(declared === "standard_rated" && rate === 0)) {
+    treatment = declared as VatTreatment;
+  } else {
+    treatment = rate > 0 ? "standard_rated" : "zero_rated";
+  }
+  if (reverseCharge && treatment === "standard_rated") return "reverse_charge";
+  return treatment;
+}
+
+export interface InvoicePdfTotals {
+  currency: string;
+  subtotal: number;
+  vat: number;
+  total: number;
+  amountPaid: number;
+  amountDue: number;
+  paid: boolean;
+  /** VAT in AED for foreign-currency invoices; null when the invoice is already in AED. */
+  vatAed: number | null;
+  exchangeRate: number;
+}
+
+/** Totals block (R03-15): amount due = total minus payments, never negative. */
+export function computeInvoicePdfTotals(
+  invoice: Invoice,
+  options: Pick<GenerateInvoicePdfOptions, "amountPaid"> = {}
+): InvoicePdfTotals {
+  const currency = invoice.currency || "AED";
+  const total = Number(invoice.total) || 0;
+  const status = (invoice.status || "").toLowerCase();
+  let amountPaid = options.amountPaid ?? (status === "paid" ? total : 0);
+  amountPaid = Math.min(Math.max(amountPaid, 0), Math.max(total, 0));
+  const amountDue = Math.max(0, Math.round((total - amountPaid) * 100) / 100);
+  const exchangeRate = Number(invoice.exchangeRate) > 0 ? Number(invoice.exchangeRate) : 1;
+  return {
+    currency,
+    subtotal: Number(invoice.subtotal) || 0,
+    vat: Number(invoice.vatAmount) || 0,
+    total,
+    amountPaid,
+    amountDue,
+    paid: status === "paid" || (total > 0 && amountDue === 0),
+    vatAed: currency === "AED" ? null : (Number(invoice.vatAmount) || 0) * exchangeRate,
+    exchangeRate,
+  };
 }
 
 async function generateStandardInvoicePDF(
   invoice: Invoice,
   lines: InvoiceLine[],
-  company: Company
+  company: Company,
+  options: GenerateInvoicePdfOptions = {}
 ): Promise<Buffer> {
-  let qrPng: Buffer | null = null;
-  if (company.trnVatNumber) {
-    try {
-      qrPng = await renderEInvoiceQrPng({
-        sellerName: company.name,
-        vatRegistrationNumber: company.trnVatNumber,
-        timestamp: invoice.date instanceof Date ? invoice.date : new Date(invoice.date),
-        invoiceTotalWithVat: invoice.total,
-        vatAmount: invoice.vatAmount,
-      });
-    } catch {
-      qrPng = null;
-    }
+  const qrPng = await renderInvoiceShareQrPng(invoice).catch(() => null);
+  const locale = options.locale ?? pdfLocale(company);
+  const legalName = company.legalName?.trim() || company.name;
+  const legalNameAr = company.legalNameAr?.trim();
+  const sellerNames = [
+    ...new Set(
+      (locale === "ar" ? [legalNameAr, legalName] : [legalName, legalNameAr]).filter(
+        (value): value is string => Boolean(value)
+      )
+    ),
+  ];
+  const [sellerName, ...otherSellerNames] = sellerNames;
+  const sellerAddresses = [
+    ...new Set(
+      (locale === "ar"
+        ? [company.addressAr?.trim(), company.businessAddress?.trim()]
+        : [company.businessAddress?.trim(), company.addressAr?.trim()]
+      ).filter((value): value is string => Boolean(value))
+    ),
+  ];
+  const totals = computeInvoicePdfTotals(invoice, options);
+  const customer = {
+    name: options.customer?.displayName || invoice.customerName || options.customer?.name || "",
+    trn: invoice.customerTrn || options.customer?.trn || null,
+    address: invoice.customerAddress || options.customer?.address || null,
+  };
+  const supplyDate =
+    options.supplyDate ??
+    (invoice as Invoice & { supplyDate?: Date | string | null }).supplyDate ??
+    invoice.date;
+
+  // S1 (R14-13): the uploaded logo (companies.logo_path), template data: URL as legacy fallback.
+  const logo = await loadCompanyLogo(company, {
+    fallbackDataUrl: options.branding?.logoUrl ?? null,
+    show: options.branding?.showLogo,
+  });
+  const brand = options.branding ?? null;
+  const isVATRegistered = !!company.trnVatNumber;
+
+  const ledger = new Ledger({
+    locale,
+    accent: brand?.primaryColor,
+    info: {
+      Title: `Invoice ${invoice.number}`,
+      Author: legalName,
+      Subject: "Tax Invoice",
+    },
+  });
+  const m = (n: number) => money(n, totals.currency);
+
+  ledger.header({
+    companyName: sellerName,
+    logo,
+    details: [
+      ...otherSellerNames,
+      ...sellerAddresses,
+      ...companyDetails(ledger, {
+        trn: isVATRegistered ? company.trnVatNumber : null,
+        phone: company.contactPhone,
+        email: company.contactEmail,
+      }),
+      brand?.headerText ?? "",
+    ],
+    title: isVATRegistered ? bi("Tax invoice", "فاتورة ضريبية") : bi("Invoice", "فاتورة"),
+  });
+
+  if (invoice.reverseCharge) {
+    ledger.note(
+      bi("Reverse charge", "آلية الاحتساب العكسي"),
+      ledger.rtl
+        ? "تُحتسب ضريبة القيمة المضافة من قبل المستلم بموجب آلية الاحتساب العكسي (قانون ضريبة القيمة المضافة الإماراتي). VAT is to be accounted for by the recipient under the reverse-charge mechanism."
+        : "VAT is to be accounted for by the recipient under the reverse-charge mechanism (UAE VAT law). تُحتسب ضريبة القيمة المضافة من قبل المستلم بموجب آلية الاحتساب العكسي."
+    );
   }
 
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({
-        size: "A4",
-        margin: 50,
-        info: {
-          Title: `Invoice ${invoice.number}`,
-          Author: company.name,
-          Subject: "Tax Invoice",
-          Creator: "Muhasib.ai",
+  ledger.meta([
+    { label: bi("Invoice no.", "رقم الفاتورة"), value: ltr(invoice.number) },
+    { label: bi("Issue date", "تاريخ الإصدار"), value: formatDate(invoice.date) },
+    { label: bi("Date of supply", "تاريخ التوريد"), value: formatDate(supplyDate) },
+    {
+      label: bi("Due date", "تاريخ الاستحقاق"),
+      value: invoice.dueDate
+        ? formatDate(invoice.dueDate)
+        : paymentTermsLabel(invoice.paymentTerms, invoice.date, locale),
+    },
+    { label: bi("Currency", "العملة"), value: totals.currency },
+  ]);
+
+  ledger.parties([
+    {
+      label: bi("From", "من"),
+      name: sellerName,
+      lines: [
+        ...otherSellerNames,
+        trnLine(ledger, isVATRegistered ? company.trnVatNumber : null),
+        ...sellerAddresses,
+      ],
+    },
+    {
+      label: bi("Bill to", "فاتورة إلى"),
+      name: customer.name,
+      lines: [trnLine(ledger, customer.trn), customer.address],
+    },
+  ]);
+
+  ledger.table(
+    [
+      { key: "desc", label: bi("Description", "الوصف"), weight: 2.7 },
+      { key: "qty", label: bi("Qty", "الكمية"), weight: 0.75, align: "end" },
+      { key: "price", label: bi("Unit price", "سعر الوحدة"), weight: 1.25, align: "end" },
+      { key: "net", label: bi("Net amount", "المبلغ الصافي"), weight: 1.35, align: "end" },
+      { key: "type", label: bi("VAT treatment", "المعالجة الضريبية"), weight: 1.65 },
+      { key: "rate", label: bi("Rate", "النسبة"), weight: 0.75, align: "end" },
+      { key: "vat", label: bi("VAT amount", "قيمة الضريبة"), weight: 1.35, align: "end" },
+      { key: "total", label: bi("Total", "الإجمالي"), weight: 1.35, align: "end" },
+    ],
+    lines.map((line) => {
+      const treatment = vatTreatmentForLine(line, !!invoice.reverseCharge);
+      const label = TREATMENT_LABELS[treatment];
+      // Net after line + allocated document discount (W3-A); legacy rows
+      // without net_amount fall back to quantity × unit price.
+      const storedNet = (line as InvoiceLine & { netAmount?: number | null }).netAmount;
+      const net =
+        storedNet !== null && storedNet !== undefined
+          ? Math.abs(Number(storedNet))
+          : line.quantity * line.unitPrice;
+      const rate = lineVatRate(line);
+      const vat = net * rate;
+      const [primary, secondary] = ledger.pair(label);
+      return {
+        cells: {
+          desc: line.description,
+          qty: formatQuantity(line.quantity),
+          price: amount(line.unitPrice),
+          net: amount(net),
+          type: { text: `${primary}\n${secondary}`, size: 7, color: LEDGER_COLORS.muted },
+          rate: `${(rate * 100).toFixed(0)}%`,
+          vat: amount(vat),
+          total: amount(net + vat),
         },
-      });
-
-      const chunks: Buffer[] = [];
-      doc.on("data", (chunk: Buffer) => chunks.push(chunk));
-      doc.on("end", () => resolve(Buffer.concat(chunks)));
-      doc.on("error", reject);
-
-      const pageWidth = 595.28;
-      const margin = 50;
-      const contentWidth = pageWidth - 2 * margin;
-
-      const isVATRegistered = !!company.trnVatNumber;
-      const invoiceLabelEn = isVATRegistered ? "TAX INVOICE" : "INVOICE";
-      const invoiceLabelAr = isVATRegistered ? "فاتورة ضريبية" : "فاتورة";
-
-      doc.rect(0, 0, pageWidth, 110).fill("#1E40AF");
-
-      doc.fontSize(22).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text(company.name, margin, 24, { width: contentWidth * 0.65 });
-
-      doc.fontSize(18).fillColor("#BFDBFE").font("Helvetica-Bold");
-      doc.text(invoiceLabelEn, margin, 24, { width: contentWidth, align: "right" });
-      doc.fontSize(11).fillColor("#DBEAFE").font("Helvetica");
-      doc.text(invoiceLabelAr, margin, 46, { width: contentWidth, align: "right" });
-
-      if (isVATRegistered && company.trnVatNumber) {
-        doc.fontSize(9).fillColor("#BFDBFE").font("Helvetica");
-        doc.text(`TRN / الرقم الضريبي: ${company.trnVatNumber}`, margin, 56, {
-          width: contentWidth * 0.65,
-        });
-      }
-
-      doc.fontSize(8).fillColor("#DBEAFE").font("Helvetica");
-      let headerRightY = 70;
-      if (company.businessAddress) {
-        doc.text(company.businessAddress, margin, headerRightY, {
-          width: contentWidth,
-          align: "right",
-        });
-        headerRightY += 11;
-      }
-      if (company.contactPhone) {
-        doc.text(`Tel: ${company.contactPhone}`, margin, headerRightY, {
-          width: contentWidth,
-          align: "right",
-        });
-        headerRightY += 11;
-      }
-      if (company.contactEmail) {
-        doc.text(company.contactEmail, margin, headerRightY, {
-          width: contentWidth,
-          align: "right",
-        });
-      }
-
-      let y = 125;
-      if (invoice.reverseCharge) {
-        const bannerH = 38;
-        doc.rect(margin, y, contentWidth, bannerH).fill("#FEF3C7").stroke("#F59E0B");
-        doc.fontSize(9).fillColor("#92400E").font("Helvetica-Bold");
-        doc.text("REVERSE CHARGE / آلية الاحتساب العكسي", margin + 10, y + 7, {
-          width: contentWidth - 20,
-        });
-        doc.fontSize(8).fillColor("#78350F").font("Helvetica");
-        doc.text(
-          "VAT is to be accounted for by the recipient under the reverse-charge mechanism (UAE VAT law).",
-          margin + 10,
-          y + 21,
-          { width: contentWidth - 20 }
-        );
-        y += bannerH + 10;
-      }
-
-      const metaBoxH = 55;
-      doc.rect(margin, y, contentWidth, metaBoxH).fill("#F0F9FF").stroke("#BAE6FD");
-
-      const metaColW = contentWidth / 4;
-      const metaFields = [
-        { label: "Invoice # / رقم الفاتورة", value: invoice.number },
-        { label: "Issue Date / تاريخ الإصدار", value: formatDate(invoice.date) },
-        {
-          label: "Due Date / تاريخ الاستحقاق",
-          value: invoice.dueDate
-            ? formatDate(invoice.dueDate)
-            : paymentTermsLabel(invoice.paymentTerms, invoice.date),
-        },
-        { label: "Status / الحالة", value: (invoice.status || "draft").toUpperCase() },
-      ];
-
-      metaFields.forEach((field, i) => {
-        const x = margin + i * metaColW + 8;
-        doc.fontSize(7).fillColor("#6B7280").font("Helvetica");
-        doc.text(field.label, x, y + 10, { width: metaColW - 10 });
-        doc.fontSize(9).fillColor("#111827").font("Helvetica-Bold");
-        doc.text(field.value, x, y + 26, { width: metaColW - 10 });
-      });
-
-      y += metaBoxH + 16;
-
-      const halfW = contentWidth / 2 - 8;
-      const partiesTop = y;
-
-      doc.fontSize(8).fillColor("#6B7280").font("Helvetica-Bold");
-      doc.text("FROM / من:", margin, partiesTop);
-      let fromY = partiesTop + 13;
-      doc.fontSize(11).fillColor("#111827").font("Helvetica-Bold");
-      doc.text(company.name, margin, fromY, { width: halfW });
-      fromY += 15;
-      if (isVATRegistered && company.trnVatNumber) {
-        doc.fontSize(9).fillColor("#374151").font("Helvetica");
-        doc.text(`TRN: ${company.trnVatNumber}`, margin, fromY, { width: halfW });
-        fromY += 12;
-      }
-      if (company.businessAddress) {
-        doc.fontSize(9).fillColor("#374151").font("Helvetica");
-        doc.text(company.businessAddress, margin, fromY, { width: halfW });
-        fromY += 12 * countLines(company.businessAddress);
-      }
-
-      const toX = margin + halfW + 16;
-      doc.fontSize(8).fillColor("#6B7280").font("Helvetica-Bold");
-      doc.text("BILL TO / إلى:", toX, partiesTop);
-      let toY = partiesTop + 13;
-      doc.fontSize(11).fillColor("#111827").font("Helvetica-Bold");
-      doc.text(invoice.customerName, toX, toY, { width: halfW });
-      toY += 15;
-      if (invoice.customerTrn) {
-        doc.fontSize(9).fillColor("#374151").font("Helvetica");
-        doc.text(`TRN: ${invoice.customerTrn}`, toX, toY, { width: halfW });
-        toY += 12;
-      }
-      if (invoice.customerAddress) {
-        doc.fontSize(9).fillColor("#374151").font("Helvetica");
-        doc.text(invoice.customerAddress, toX, toY, { width: halfW });
-        toY += 12 * countLines(invoice.customerAddress);
-      }
-
-      y = Math.max(fromY, toY) + 10;
-
-      const tableTop = y;
-      const rowH = 22;
-      const colX = {
-        desc: margin + 5,
-        qty: margin + 248,
-        price: margin + 308,
-        vat: margin + 376,
-        amount: pageWidth - margin - 5,
       };
-      const colWidths = {
-        desc: 238,
-        qty: 55,
-        price: 63,
-        vat: 60,
-        amount: 65,
-      };
+    }),
+    { size: 8.5 }
+  );
 
-      doc.rect(margin, tableTop, contentWidth, rowH).fill("#1E40AF");
-      doc.fontSize(8).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text("Description", colX.desc, tableTop + 7);
-      doc.text("Qty", colX.qty, tableTop + 7, { width: colWidths.qty, align: "center" });
-      doc.text("Unit Price", colX.price, tableTop + 7, { width: colWidths.price, align: "right" });
-      doc.text("VAT %", colX.vat, tableTop + 7, { width: colWidths.vat, align: "center" });
-      doc.text("Amount", colX.amount - colWidths.amount + 5, tableTop + 7, {
-        width: colWidths.amount,
-        align: "right",
-      });
-
-      y = tableTop + rowH;
-
-      doc.font("Helvetica").fillColor("#1F2937").fontSize(9);
-      lines.forEach((line, index) => {
-        const bgColor = index % 2 === 0 ? "#FFFFFF" : "#F8FAFC";
-        doc.rect(margin, y, contentWidth, rowH).fill(bgColor);
-        doc.rect(margin, y, contentWidth, rowH).stroke("#E5E7EB");
-
-        const lineTotal = line.quantity * line.unitPrice;
-        const vatPercent = ((line.vatRate ?? UAE_VAT_RATE) * 100).toFixed(0);
-
-        doc.fillColor("#1F2937").fontSize(9);
-        doc.text(line.description, colX.desc, y + 7, { width: colWidths.desc });
-        doc.text(line.quantity.toString(), colX.qty, y + 7, {
-          width: colWidths.qty,
-          align: "center",
-        });
-        doc.text(formatAmount(line.unitPrice, invoice.currency), colX.price, y + 7, {
-          width: colWidths.price,
-          align: "right",
-        });
-        doc.text(`${vatPercent}%`, colX.vat, y + 7, { width: colWidths.vat, align: "center" });
-        doc.text(
-          formatAmount(lineTotal, invoice.currency),
-          colX.amount - colWidths.amount + 5,
-          y + 7,
-          { width: colWidths.amount, align: "right" }
-        );
-
-        y += rowH;
-      });
-
-      doc
-        .moveTo(margin, y)
-        .lineTo(margin + contentWidth, y)
-        .stroke("#E5E7EB");
-
-      y += 16;
-
-      const vatBuckets = aggregateVatByRate(lines);
-      if (vatBuckets.length > 1) {
-        const breakdownTop = y;
-        const breakdownH = 18 + vatBuckets.length * 16 + 6;
-        doc.rect(margin, breakdownTop, contentWidth, breakdownH).fill("#F8FAFC").stroke("#E5E7EB");
-
-        doc.fontSize(9).fillColor("#1E40AF").font("Helvetica-Bold");
-        doc.text("VAT Breakdown / تفاصيل ضريبة القيمة المضافة", margin + 8, breakdownTop + 6);
-
-        const cols = {
-          rate: margin + 8,
-          taxable: margin + 120,
-          vat: margin + 260,
+  // VAT breakdown by treatment and rate
+  const buckets = aggregateVatBuckets(lines, !!invoice.reverseCharge);
+  if (buckets.length > 1 || (buckets[0] && buckets[0].treatment !== "standard_rated")) {
+    ledger.section(bi("VAT breakdown", "تفاصيل ضريبة القيمة المضافة"));
+    ledger.table(
+      [
+        { key: "t", label: bi("Treatment", "المعالجة"), weight: 2 },
+        { key: "taxable", label: bi("Taxable amount", "المبلغ الخاضع"), weight: 1, align: "end" },
+        { key: "vat", label: bi("VAT", "الضريبة"), weight: 1, align: "end" },
+        { key: "incl", label: bi("Inclusive total", "الإجمالي"), weight: 1, align: "end" },
+      ],
+      buckets.map((b) => {
+        const lbl = TREATMENT_LABELS[b.treatment];
+        return {
+          cells: {
+            t: `${ledger.rtl ? lbl.ar : lbl.en} ${ltr(`${(b.rate * 100).toFixed(0)}%`)}`,
+            taxable: amount(b.taxable),
+            vat: amount(b.vat),
+            incl: amount(b.taxable + b.vat),
+          },
         };
-        const breakdownRowY = breakdownTop + 22;
-        doc.fontSize(7).fillColor("#6B7280").font("Helvetica");
-        doc.text("Rate", cols.rate, breakdownRowY);
-        doc.text("Taxable Amount", cols.taxable, breakdownRowY);
-        doc.text("VAT", cols.vat, breakdownRowY);
-        doc.text("Inclusive Total", margin + contentWidth - 100 - 8, breakdownRowY, {
-          width: 100,
-          align: "right",
-        });
+      }),
+      { size: 8 }
+    );
+  }
 
-        let bRowY = breakdownRowY + 10;
-        doc.fontSize(9).fillColor("#1F2937").font("Helvetica");
-        for (const bucket of vatBuckets) {
-          doc.text(`${(bucket.rate * 100).toFixed(0)}%`, cols.rate, bRowY);
-          doc.text(formatAmount(bucket.taxable, invoice.currency), cols.taxable, bRowY);
-          doc.text(formatAmount(bucket.vat, invoice.currency), cols.vat, bRowY);
-          doc.text(
-            formatAmount(bucket.taxable + bucket.vat, invoice.currency),
-            margin + contentWidth - 100 - 8,
-            bRowY,
-            { width: 100, align: "right" }
-          );
-          bRowY += 14;
-        }
-
-        y = breakdownTop + breakdownH + 10;
+  const discountAmount = Number(
+    (invoice as Invoice & { discountAmount?: number | null }).discountAmount ?? 0
+  );
+  const rows: Array<{ label: Bi; value: string; bold?: boolean; ruleAbove?: boolean }> = [];
+  if (discountAmount > 0)
+    // Fable P16: a true minus with no space ("−AED 25,000.00"), as in the app.
+    rows.push({ label: bi("Discount", "الخصم"), value: `\u2212${m(discountAmount)}` });
+  rows.push({ label: bi("Subtotal excl. VAT", "المجموع قبل الضريبة"), value: m(totals.subtotal) });
+  rows.push({
+    label: invoice.reverseCharge
+      ? bi("VAT (reverse charge)", "الضريبة (احتساب عكسي)")
+      : bi("VAT", "ضريبة القيمة المضافة"),
+    value: m(totals.vat),
+  });
+  if (totals.vatAed !== null) {
+    rows.push({
+      label: bi("VAT total (AED)", "إجمالي الضريبة (درهم)"),
+      value: money(totals.vatAed),
+    });
+  }
+  rows.push({
+    label: bi("Total", "الإجمالي"),
+    value: m(totals.total),
+    bold: true,
+    ruleAbove: true,
+  });
+  if (totals.amountPaid > 0) {
+    rows.push({
+      label: bi("Payments received", "المدفوعات المستلمة"),
+      value: `\u2212${m(totals.amountPaid)}`,
+    });
+  }
+  const totalsW = 78 * MM;
+  const totalsBlock = ledger.totals(rows, {
+    label: bi("Amount due", "المبلغ المستحق"),
+    value: m(totals.amountDue),
+  });
+  const totalsX = ledger.x(ledger.width - totalsW, totalsW);
+  if (totals.vatAed !== null) {
+    text(
+      ledger.doc,
+      // Fable P16: label and colon share one isolate so Arabic never reads "AED :Exchange rate".
+      `\u2068${ledger.inline(bi("Exchange rate", "سعر الصرف"))}:\u2069 ${ltr(`1 ${totals.currency} = ${totals.exchangeRate.toFixed(4)} AED`)}`,
+      {
+        x: totalsX,
+        y: ledger.y - 8,
+        width: totalsW,
+        size: 7,
+        color: LEDGER_COLORS.muted,
+        align: ledger.end,
       }
+    );
+    ledger.y += 6;
+  }
+  if (totals.paid) {
+    text(ledger.doc, ledger.inline(bi("Paid in full", "مدفوعة بالكامل")), {
+      x: totalsX,
+      y: ledger.y - 6,
+      width: totalsW,
+      size: 8,
+      bold: true,
+      color: LEDGER_COLORS.success,
+      align: ledger.end,
+    });
+    ledger.y += 8;
+  }
 
-      const totalsX = margin + contentWidth - 200;
-      const labelW = 120;
-      const valueW = 80;
+  // QR (24 mm) at the start side level with the totals block; payment terms beside it.
+  const afterTotals = ledger.y;
+  const qrSize = 24 * MM;
+  const qrY = totalsBlock.top;
+  let sideBottom = qrY;
+  if (qrPng) {
+    ledger.doc.image(qrPng, ledger.x(0, qrSize), qrY, { width: qrSize, height: qrSize });
+    sideBottom =
+      text(ledger.doc, ledger.inline(bi("Scan to view", "امسح للعرض")), {
+        x: ledger.x(0, qrSize + 60),
+        y: qrY + qrSize + 3,
+        width: qrSize + 60,
+        size: 7,
+        color: LEDGER_COLORS.muted,
+        align: ledger.start,
+      }).endY + 8;
+  }
+  if (invoice.paymentTerms) {
+    const offset = qrPng ? qrSize + 16 : 0;
+    ledger.y = qrY;
+    ledger.note(bi("Payment terms", "شروط الدفع"), paymentTermsText(invoice.paymentTerms, locale), {
+      offset,
+      width: ledger.width - totalsW - offset - 16,
+    });
+    sideBottom = Math.max(sideBottom, ledger.y);
+  }
+  ledger.y = Math.max(afterTotals, sideBottom);
 
-      doc.fontSize(9).fillColor("#374151").font("Helvetica");
-      doc.text("Subtotal:", totalsX, y, { width: labelW });
-      doc.text(formatAmount(invoice.subtotal, invoice.currency), totalsX + labelW, y, {
-        width: valueW,
-        align: "right",
-      });
-      y += 16;
+  if (brand?.termsText) ledger.note(bi("Terms", "الشروط"), brand.termsText);
+  if (brand?.bankDetails)
+    ledger.note(bi("Bank details", "تفاصيل الحساب البنكي"), brand.bankDetails);
 
-      const vatLabel = invoice.reverseCharge
-        ? "VAT (reverse charge):"
-        : vatBuckets.length === 1
-          ? `VAT (${(vatBuckets[0].rate * 100).toFixed(0)}%):`
-          : "VAT:";
-      doc.text(vatLabel, totalsX, y, { width: labelW });
-      doc.text(formatAmount(invoice.vatAmount, invoice.currency), totalsX + labelW, y, {
-        width: valueW,
-        align: "right",
-      });
-      y += 10;
+  ledger.smallPrint([
+    brand?.footerText ||
+      ledger.sentence(bi("Thank you for your business.", "شكراً لتعاملكم معنا.")),
+    isVATRegistered
+      ? ledger.sentence(
+          bi(
+            "This is a computer-generated tax invoice and is valid without a signature.",
+            "هذه فاتورة ضريبية صادرة إلكترونياً وصالحة بدون توقيع."
+          )
+        )
+      : "",
+  ]);
 
-      doc
-        .moveTo(totalsX, y)
-        .lineTo(totalsX + labelW + valueW, y)
-        .stroke("#D1D5DB");
-      y += 8;
-
-      doc.rect(totalsX - 8, y - 6, labelW + valueW + 16, 28).fill("#1E40AF");
-      doc.fontSize(12).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text("TOTAL DUE:", totalsX, y + 2, { width: labelW });
-      doc.text(formatAmount(invoice.total, invoice.currency), totalsX + labelW, y + 2, {
-        width: valueW,
-        align: "right",
-      });
-
-      y += 40;
-
-      if (invoice.paymentTerms) {
-        doc.fontSize(8).fillColor("#374151").font("Helvetica-Bold");
-        doc.text("Payment Terms:", margin, y);
-        doc.font("Helvetica").fillColor("#6B7280");
-        doc.text(paymentTermsText(invoice.paymentTerms), margin + 90, y);
-        y += 16;
-      }
-
-      const qrSize = 72;
-      const qrX = pageWidth - margin - qrSize;
-      const qrY = y - 16;
-      if (qrPng) {
-        doc.image(qrPng, qrX, qrY, { width: qrSize, height: qrSize });
-        doc.fontSize(6).fillColor("#6B7280").font("Helvetica");
-        doc.text("FTA e-Invoice", qrX, qrY + qrSize + 2, { width: qrSize, align: "center" });
-      } else {
-        doc.rect(qrX, qrY, qrSize, qrSize).stroke("#D1D5DB");
-        doc.fontSize(6).fillColor("#9CA3AF").font("Helvetica");
-        doc.text("QR CODE", qrX, qrY + qrSize / 2 - 6, { width: qrSize, align: "center" });
-        doc.text("(N/A)", qrX, qrY + qrSize / 2 + 2, { width: qrSize, align: "center" });
-      }
-
-      const footerY = 760;
-      doc
-        .moveTo(margin, footerY - 8)
-        .lineTo(margin + contentWidth, footerY - 8)
-        .stroke("#E5E7EB");
-
-      doc.fontSize(8).fillColor("#6B7280").font("Helvetica");
-      doc.text("Thank you for your business.", margin, footerY, {
-        width: contentWidth,
-        align: "center",
-      });
-
-      if (isVATRegistered) {
-        doc.fontSize(7).fillColor("#9CA3AF");
-        doc.text(
-          "This is a computer-generated tax invoice and is valid without a signature.",
-          margin,
-          footerY + 12,
-          { width: contentWidth, align: "center" }
-        );
-      }
-
-      doc.end();
-    } catch (err) {
-      reject(err);
-    }
+  return ledger.finish((doc) => {
+    if (isDraftStatus(invoice.status)) stampDraftWatermark(doc);
+    else if (isVoidedStatus(invoice.status)) stampDraftWatermark(doc, "void");
   });
 }
 
@@ -411,6 +475,7 @@ async function generateNraInvoicePDF(invoice: Invoice, lines: InvoiceLine[]): Pr
       const doc = new PDFDocument({
         size: "A4",
         margin: 0,
+        bufferPages: true,
         info: {
           Title: `Invoice ${invoice.number}`,
           Author: "Najma Al Raeda Accounting Services",
@@ -418,6 +483,14 @@ async function generateNraInvoicePDF(invoice: Invoice, lines: InvoiceLine[]): Pr
           Creator: "Muhasib.ai",
         },
       });
+
+      if (
+        isDraftStatus(invoice.status) ||
+        isArabic(invoice.customerName) ||
+        lines.some((line) => isArabic(line.description))
+      ) {
+        preparePdfDocument(doc);
+      }
 
       const chunks: Buffer[] = [];
       doc.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -431,6 +504,7 @@ async function generateNraInvoicePDF(invoice: Invoice, lines: InvoiceLine[]): Pr
       drawNraLineItemsTable(doc, lines);
       drawNraTotalBox(doc, invoice);
 
+      if (isDraftStatus(invoice.status)) stampDraftWatermark(doc);
       doc.end();
     } catch (err) {
       reject(err);
@@ -629,29 +703,46 @@ function drawNraTotalBox(doc: PdfDoc, invoice: Invoice) {
   doc.text("Total", splitX + 13, y + 13, { width: 95 });
 
   doc.font("Times-Roman").fontSize(10.5);
-  doc.text(formatNraTotalAmount(Number(invoice.total || 0), invoice.currency), splitX + 72, y + 17, {
-    width: x + w - splitX - 84,
-    align: "right",
-  });
+  doc.text(
+    formatNraTotalAmount(Number(invoice.total || 0), invoice.currency),
+    splitX + 72,
+    y + 17,
+    {
+      width: x + w - splitX - 84,
+      align: "right",
+    }
+  );
 }
 
-type VatBucket = { rate: number; taxable: number; vat: number };
+type VatBucket = { treatment: VatTreatment; rate: number; taxable: number; vat: number };
 
-function aggregateVatByRate(lines: InvoiceLine[]): VatBucket[] {
-  const buckets = new Map<number, VatBucket>();
+function aggregateVatBuckets(lines: InvoiceLine[], reverseCharge: boolean): VatBucket[] {
+  const buckets = new Map<string, VatBucket>();
   for (const line of lines) {
-    const rate = line.vatRate ?? UAE_VAT_RATE;
-    const taxable = lineNetAmount(line);
-    const vat = lineVatAmount(line, rate);
-    const existing = buckets.get(rate);
+    const rate = lineVatRate(line);
+    const treatment = vatTreatmentForLine(line, reverseCharge);
+    const storedNet = (line as InvoiceLine & { netAmount?: number | null }).netAmount;
+    const taxable =
+      storedNet !== null && storedNet !== undefined
+        ? Math.abs(Number(storedNet))
+        : line.quantity * line.unitPrice;
+    const vat = taxable * rate;
+    const key = `${treatment}:${rate}`;
+    const existing = buckets.get(key);
     if (existing) {
       existing.taxable += taxable;
       existing.vat += vat;
     } else {
-      buckets.set(rate, { rate, taxable, vat });
+      buckets.set(key, { treatment, rate, taxable, vat });
     }
   }
-  return Array.from(buckets.values()).sort((a, b) => a.rate - b.rate);
+  return Array.from(buckets.values()).sort(
+    (a, b) => a.rate - b.rate || a.treatment.localeCompare(b.treatment)
+  );
+}
+
+function formatQuantity(quantity: number): string {
+  return Number.isInteger(quantity) ? String(quantity) : String(Number(quantity.toFixed(4)));
 }
 
 function splitLineDescription(description: string): { itemCode: string; description: string } {
@@ -671,23 +762,18 @@ function splitLineDescription(description: string): { itemCode: string; descript
   return { itemCode: description, description: "" };
 }
 
-function countLines(text: string): number {
-  return Math.max(1, text.split("\n").length);
+function formatDate(value: Date | string | null | undefined): string {
+  return ledgerDate(value);
 }
 
-function formatDate(date: Date | string | null | undefined): string {
-  if (!date) return "—";
-  return new Date(date).toLocaleDateString("en-AE", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function paymentTermsLabel(terms: string | null | undefined, invoiceDate: Date | string): string {
+function paymentTermsLabel(
+  terms: string | null | undefined,
+  invoiceDate: Date | string,
+  locale: PdfLocale
+): string {
   if (!terms) return "—";
   const days = paymentTermsDays(terms);
-  if (days === null) return formatPaymentTerms(terms);
+  if (days === null) return formatPaymentTerms(terms, locale);
   const due = new Date(invoiceDate);
   due.setDate(due.getDate() + days);
   return formatDate(due);
@@ -706,25 +792,24 @@ function paymentTermsDays(terms: string): number | null {
   return map[terms.toLowerCase()] ?? null;
 }
 
-function formatPaymentTerms(terms: string): string {
-  const labels: Record<string, string> = {
-    net7: "Net 7 days",
-    net14: "Net 14 days",
-    net30: "Net 30 days",
-    net60: "Net 60 days",
-    net90: "Net 90 days",
-    immediate: "Due Immediately",
-    cod: "Cash on Delivery",
-  };
-  return labels[terms.toLowerCase()] || terms;
+const PAYMENT_TERMS: Record<string, Bi> = {
+  net7: { en: "Net 7 days", ar: "خلال 7 أيام" },
+  net14: { en: "Net 14 days", ar: "خلال 14 يومًا" },
+  net30: { en: "Net 30 days", ar: "خلال 30 يومًا" },
+  net60: { en: "Net 60 days", ar: "خلال 60 يومًا" },
+  net90: { en: "Net 90 days", ar: "خلال 90 يومًا" },
+  immediate: { en: "Due immediately", ar: "مستحقة فورًا" },
+  cod: { en: "Cash on delivery", ar: "الدفع عند التسليم" },
+};
+
+function formatPaymentTerms(terms: string, locale: PdfLocale): string {
+  const label = PAYMENT_TERMS[terms.toLowerCase()];
+  if (!label) return terms;
+  return locale === "ar" ? `${label.ar} / ${label.en}` : `${label.en} / ${label.ar}`;
 }
 
-function paymentTermsText(terms: string): string {
-  return formatPaymentTerms(terms);
-}
-
-function formatAmount(amount: number, currency: string = "AED"): string {
-  return `${currency} ${amount.toFixed(2)}`;
+function paymentTermsText(terms: string, locale: PdfLocale): string {
+  return formatPaymentTerms(terms, locale);
 }
 
 function nraTextHeight(doc: PdfDoc, text: string, width: number): number {
@@ -746,11 +831,11 @@ function drawNraSingleLineCellText(doc: PdfDoc, text: string, x: number, y: numb
 }
 
 function formatNraInvoiceDate(date: Date | string | null | undefined): string {
-  if (!date) return "";
-  const d = new Date(date);
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${month}/${day}/${d.getFullYear()}`;
+  const p = calendarParts(date);
+  if (!p) return "";
+  const month = String(p.month).padStart(2, "0");
+  const day = String(p.day).padStart(2, "0");
+  return `${month}/${day}/${p.year}`;
 }
 
 function formatNraQuantity(quantity: number): string {
@@ -767,4 +852,79 @@ function formatNraPlainAmount(amount: number): string {
 
 function formatNraTotalAmount(amount: number, currency: string = "AED"): string {
   return `${currency} ${formatNraPlainAmount(amount)}`;
+}
+
+/**
+ * Delivery note derived from an invoice (W3-A, R03-24): goods and quantities
+ * only — no prices or VAT — with receiver signature boxes. Not a tax document.
+ */
+export async function generateDeliveryNotePDF(
+  invoice: Invoice,
+  lines: InvoiceLine[],
+  company: Company,
+  options: { locale?: PdfLocale } = {}
+): Promise<Buffer> {
+  const ledger = new Ledger({
+    locale: options.locale ?? pdfLocale(company),
+    info: { Title: `Delivery Note ${invoice.number}`, Author: company.name },
+  });
+  ledger.header({
+    companyName: company.legalName || company.name,
+    details: companyDetails(ledger, {
+      trn: company.trnVatNumber,
+      address: company.businessAddress,
+      phone: company.contactPhone,
+      email: company.contactEmail,
+    }),
+    title: bi("Delivery note", "إشعار تسليم"),
+  });
+  ledger.meta([
+    { label: bi("Reference invoice", "الفاتورة المرجعية"), value: ltr(invoice.number) },
+    { label: bi("Date", "التاريخ"), value: formatDate(invoice.supplyDate ?? invoice.date) },
+  ]);
+  ledger.parties([
+    {
+      label: bi("Deliver to", "التسليم إلى"),
+      name: invoice.customerName,
+      lines: [invoice.customerAddress],
+    },
+  ]);
+  ledger.table(
+    [
+      { key: "n", label: bi("#", "#"), weight: 0.4 },
+      { key: "desc", label: bi("Description", "الوصف"), weight: 5 },
+      { key: "qty", label: bi("Quantity", "الكمية"), weight: 1, align: "end" },
+    ],
+    lines.map((line, i) => ({
+      cells: {
+        n: String(i + 1),
+        desc: line.description,
+        qty: formatQuantity(Math.abs(line.quantity)),
+      },
+    }))
+  );
+  ledger.ensure(110);
+  ledger.y = Math.max(ledger.y + 24, ledger.bottom - 110);
+  const boxW = ledger.width / 2 - 10;
+  [
+    bi("Delivered by", "سُلّم بواسطة"),
+    bi("Received by (name, signature, date)", "استلم بواسطة (الاسم، التوقيع، التاريخ)"),
+  ].forEach((label, i) => {
+    const x = ledger.x(i * (boxW + 20), boxW);
+    ledger.doc
+      .save()
+      .lineWidth(0.5)
+      .rect(x, ledger.y, boxW, 70)
+      .strokeColor(LEDGER_COLORS.hairline)
+      .stroke()
+      .restore();
+    ledger.stacked(label, x + 6, ledger.y + 6, boxW - 12, { size: 7.5 });
+  });
+  ledger.y += 84;
+  ledger.smallPrint([
+    ledger.inline(
+      bi("This delivery note is not a tax invoice.", "إشعار التسليم هذا ليس فاتورة ضريبية.")
+    ),
+  ]);
+  return ledger.finish();
 }

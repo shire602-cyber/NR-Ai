@@ -1,0 +1,11 @@
+Trial Balance
+Demo Trading LLC
+As at 31 December 2025
+Account,Debit - Year to date,Credit - Year to date
+Bank Accounts (1020),"42,500.00",
+Accounts Receivable (1040),"1,500.00",
+Security Deposits (1110),"5,000.00",
+Accounts Payable (2010),,"2,000.00"
+Owner's Capital / Share Capital (3010),,"30,000.00"
+Retained Earnings (3020),,"17,000.00"
+Total,"49,000.00","49,000.00"

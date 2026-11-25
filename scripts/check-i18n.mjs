@@ -3,65 +3,39 @@
 //
 // Reports (a) how many page components import useTranslation and (b) an
 // approximate count of hardcoded user-visible strings in JSX. It is
-// INFORMATIONAL by default (exit 0) because the current surface is large; once
-// the screen count is reduced it becomes a hard gate:
+// INFORMATIONAL by default (exit 0); the hard gate is the ratchet in
+// scripts/check-i18n-ratchet.mjs, which fails when the count grows past
+// scripts/guard-baselines/i18n.json.
 //
 //   node scripts/check-i18n.mjs --max-hardcoded 0   # fail if any remain
 //   node scripts/check-i18n.mjs --require-translation # fail if a page lacks useTranslation
+//   node scripts/check-i18n.mjs --by-file           # list the worst offenders
 //
-// Heuristic, not a compiler — it counts JSX text nodes that are plain English
-// words. Treat the number as a trend line, not an exact figure.
+// Heuristic, not a compiler — see scripts/i18n-scan.mjs. Justify an intentional
+// English string with an `i18n-ignore: <reason>` comment on or above its line.
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const pagesDir = join(root, "client", "src", "pages");
+import { scanPages } from "./i18n-scan.mjs";
 
 const args = process.argv.slice(2);
 const maxHardcoded = args.includes("--max-hardcoded")
   ? Number(args[args.indexOf("--max-hardcoded") + 1])
   : null;
 const requireTranslation = args.includes("--require-translation");
+const byFile = args.includes("--by-file");
 
-function walk(dir) {
-  const out = [];
-  for (const name of readdirSync(dir)) {
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) out.push(...walk(p));
-    else if (p.endsWith(".tsx")) out.push(p);
-  }
-  return out;
-}
-
-const files = walk(pagesDir);
-let translated = 0;
-let hardcoded = 0;
-const untranslatedPages = [];
-
-// JSX text node between tags that is an English phrase of 2+ words or a
-// capitalised word of 4+ letters. Excludes bindings ({...}), entities, numbers.
-const JSX_TEXT = />\s*([A-Z][A-Za-z][A-Za-z ,.'!?&-]{3,60})\s*</g;
-
-for (const f of files) {
-  const src = readFileSync(f, "utf8");
-  const hasT = /useTranslation|\bt\(|i18n/.test(src);
-  if (hasT) translated++;
-  else untranslatedPages.push(f.replace(root + "/", ""));
-
-  for (const m of src.matchAll(JSX_TEXT)) {
-    const text = m[1].trim();
-    // skip single short capitalised tokens that are usually component/JSX noise
-    if (/^[A-Z]{1,3}$/.test(text)) continue;
-    hardcoded++;
-  }
-}
+const { pages, translated, hardcoded, justified, untranslatedPages, perFile } = scanPages();
 
 console.log(`i18n baseline:`);
-console.log(`  pages: ${files.length}`);
-console.log(`  importing translation: ${translated}/${files.length}`);
+console.log(`  pages: ${pages}`);
+console.log(`  importing translation: ${translated}/${pages}`);
 console.log(`  approx hardcoded JSX strings: ~${hardcoded}`);
+console.log(`  justified English strings (i18n-ignore): ${justified}`);
+if (byFile) {
+  const rows = Object.entries(perFile).sort((a, b) => b[1] - a[1]);
+  console.log(
+    `  by file:\n` + rows.map(([file, n]) => `    ${String(n).padStart(4)}  ${file}`).join("\n")
+  );
+}
 if (untranslatedPages.length && requireTranslation) {
   console.log(`  pages without translation:\n    ` + untranslatedPages.join("\n    "));
 }

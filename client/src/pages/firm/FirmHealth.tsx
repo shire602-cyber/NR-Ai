@@ -1,8 +1,10 @@
+import { T } from "@/components/layout/T";
+import { PracticeNav } from "@/components/firm/PracticeNav";
+import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
-  Activity,
   AlertTriangle,
   CheckCircle2,
   XCircle,
@@ -22,8 +24,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { format } from "date-fns";
-import { useTranslation } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -105,7 +107,7 @@ function TrafficDot({ status }: { status: HealthStatus | VatStatus | DeadlineSta
   return (
     <span
       className={`inline-block w-2.5 h-2.5 rounded-full ${colorMap[status] ?? "bg-muted-foreground/30"}`}
-      title={status}
+      aria-hidden
     />
   );
 }
@@ -115,7 +117,7 @@ function HealthBadge({ status }: { status: HealthStatus }) {
     return (
       <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30 gap-1">
         <CheckCircle2 className="w-3 h-3" />
-        Healthy
+        <T k="pages.healthy" />
       </Badge>
     );
   }
@@ -123,34 +125,36 @@ function HealthBadge({ status }: { status: HealthStatus }) {
     return (
       <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30 gap-1">
         <AlertTriangle className="w-3 h-3" />
-        Attention
+        <T k="pages.attention" />
       </Badge>
     );
   }
   return (
     <Badge className="bg-danger-subtle text-danger-subtle-foreground border-destructive/30 gap-1">
       <XCircle className="w-3 h-3" />
-      Critical
+      <T k="pages.critical" />
     </Badge>
   );
 }
 
 function DeadlineBadge({ status, daysTilDue }: { status: DeadlineStatus; daysTilDue: number }) {
+  const { t } = useTranslation();
+  const n = Math.abs(daysTilDue);
   if (status === "overdue") {
     return (
       <Badge className="bg-danger-subtle text-danger-subtle-foreground border-destructive/30">
-        {Math.abs(daysTilDue)}d overdue
+        {formatMessage(t["firmOps.healthDaysOverdue"], { n })}
       </Badge>
     );
   }
   if (status === "due-soon") {
     return (
       <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30">
-        Due in {daysTilDue}d
+        {formatMessage(t["firmOps.healthDueInDays"], { n })}
       </Badge>
     );
   }
-  return <Badge variant="outline">In {daysTilDue}d</Badge>;
+  return <Badge variant="outline">{formatMessage(t["firmOps.healthInDays"], { n })}</Badge>;
 }
 
 function SortIcon({
@@ -162,11 +166,11 @@ function SortIcon({
   sortField: SortField;
   sortDir: SortDir;
 }) {
-  if (field !== sortField) return <ChevronsUpDown className="w-3 h-3 ml-1 text-muted-foreground" />;
+  if (field !== sortField) return <ChevronsUpDown className="w-3 h-3 ms-1 text-muted-foreground" />;
   return sortDir === "asc" ? (
-    <ChevronUp className="w-3 h-3 ml-1" />
+    <ChevronUp className="w-3 h-3 ms-1" />
   ) : (
-    <ChevronDown className="w-3 h-3 ml-1" />
+    <ChevronDown className="w-3 h-3 ms-1" />
   );
 }
 
@@ -177,7 +181,7 @@ const VAT_ORDER: Record<VatStatus, number> = { overdue: 0, "due-soon": 1, "on-tr
 
 export default function FirmHealth() {
   const [, navigate] = useLocation();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [sortField, setSortField] = useState<SortField>("health");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -226,66 +230,59 @@ export default function FirmHealth() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <Activity className="w-6 h-6 text-warning" />
-          {t.healthDashboard}
-        </h1>
-        <p className="text-muted-foreground mt-1">{t.healthDashboardDesc}</p>
-      </div>
+      <PageHeader
+        eyebrow={t["firm.firmLabel"]}
+        title={t.healthDashboard}
+        description={t.healthDashboardDesc}
+      />
+      <PracticeNav />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-small font-medium text-muted-foreground">
               {t.totalClients}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">{summary?.totalClients ?? 0}</p>
+            <p className="text-h1 font-semibold tabular-nums">{summary?.totalClients ?? 0}</p>
           </CardContent>
         </Card>
 
-        <Card className="border-success/30 bg-success-subtle/40 ">
+        <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-success flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4" />
+            <CardTitle className="flex items-center gap-1.5 text-small font-medium text-muted-foreground">
+              <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
               {t.healthy}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-success ">
-              {summary?.healthy ?? 0}
-            </p>
+            <p className="text-h1 font-semibold tabular-nums">{summary?.healthy ?? 0}</p>
           </CardContent>
         </Card>
 
-        <Card className="border-warning/30 bg-warning-subtle/40 ">
+        <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-warning flex items-center gap-1.5">
-              <AlertTriangle className="w-4 h-4" />
+            <CardTitle className="flex items-center gap-1.5 text-small font-medium text-muted-foreground">
+              <AlertTriangle className="h-4 w-4 text-warning" aria-hidden />
               {t.needsAttention}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-warning ">
-              {summary?.attention ?? 0}
-            </p>
+            <p className="text-h1 font-semibold tabular-nums">{summary?.attention ?? 0}</p>
           </CardContent>
         </Card>
 
-        <Card className="border-destructive/30 bg-danger-subtle/40 ">
+        <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-destructive flex items-center gap-1.5">
-              <XCircle className="w-4 h-4" />
+            <CardTitle className="flex items-center gap-1.5 text-small font-medium text-muted-foreground">
+              <XCircle className="h-4 w-4 text-danger" aria-hidden />
               {t.critical}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-destructive ">
-              {summary?.critical ?? 0}
-            </p>
+            <p className="text-h1 font-semibold tabular-nums">{summary?.critical ?? 0}</p>
           </CardContent>
         </Card>
       </div>
@@ -361,7 +358,9 @@ export default function FirmHealth() {
                         <div>
                           <p className="font-medium">{client.companyName}</p>
                           {client.trn && (
-                            <p className="text-xs text-muted-foreground">TRN: {client.trn}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatMessage(t["firmOps.healthTrn"], { trn: client.trn })}
+                            </p>
                           )}
                         </div>
                       </TableCell>
@@ -370,7 +369,7 @@ export default function FirmHealth() {
                           <TrafficDot status={client.vatStatus.status} />
                           <span className="text-sm">
                             {client.vatStatus.nextDueDate
-                              ? format(new Date(client.vatStatus.nextDueDate), "MMM d")
+                              ? formatDate(client.vatStatus.nextDueDate, locale)
                               : "—"}
                           </span>
                         </div>
@@ -380,8 +379,10 @@ export default function FirmHealth() {
                           <TrafficDot status={client.arHealth.status} />
                           <span className="text-sm">
                             {client.arHealth.overdueCount > 0
-                              ? `${client.arHealth.overdueCount} overdue`
-                              : "Clear"}
+                              ? formatMessage(t["firmOps.healthOverdueCount"], {
+                                  n: client.arHealth.overdueCount,
+                                })
+                              : t["firmOps.healthClear"]}
                           </span>
                         </div>
                       </TableCell>
@@ -390,8 +391,10 @@ export default function FirmHealth() {
                           <TrafficDot status={client.bankRecStatus.status} />
                           <span className="text-sm">
                             {client.bankRecStatus.unreconciledCount > 0
-                              ? `${client.bankRecStatus.unreconciledCount} unmatched`
-                              : "Clear"}
+                              ? formatMessage(t["firmOps.healthUnmatchedCount"], {
+                                  n: client.bankRecStatus.unreconciledCount,
+                                })
+                              : t["firmOps.healthClear"]}
                           </span>
                         </div>
                       </TableCell>
@@ -399,14 +402,14 @@ export default function FirmHealth() {
                         <div className="flex items-center gap-2">
                           <TrafficDot status={client.trialBalanceStatus.status} />
                           <span className="text-sm">
-                            {client.trialBalanceStatus.balanced ? "Balanced" : "Off"}
+                            {client.trialBalanceStatus.balanced
+                              ? t["firmOps.healthBalanced"]
+                              : t["firmOps.healthOff"]}
                           </span>
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {client.lastActivity
-                          ? format(new Date(client.lastActivity), "MMM d, yyyy")
-                          : "—"}
+                        {client.lastActivity ? formatDate(client.lastActivity, locale) : "—"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -443,14 +446,14 @@ export default function FirmHealth() {
                     <TrafficDot status={dl.status} />
                     <div>
                       <p className="font-medium text-sm">{dl.companyName}</p>
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                        {dl.type}
+                      <p className="text-xs text-muted-foreground">
+                        {t["firmOps.healthDeadlineVat"]}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground">
-                      {format(new Date(dl.dueDate), "MMM d, yyyy")}
+                      {formatDate(dl.dueDate, locale)}
                     </span>
                     <DeadlineBadge status={dl.status} daysTilDue={dl.daysTilDue} />
                   </div>

@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from "@shared/product-brand";
 import { cn } from "@/lib/utils";
 
 const SIZES = {
@@ -22,12 +23,29 @@ export function BrandMark({ size = "md", className }: BrandMarkProps) {
       aria-hidden
       className={cn(
         "flex items-center justify-center shrink-0 select-none font-semibold text-white",
-        "from-[#0D5C3D] to-[#0A4530] shadow-sm ring-1 ring-white/10",
+        "bg-brand-700 shadow-xs ring-1 ring-inset ring-white/10",
         SIZES[size],
         className
       )}
     >
       <span className="translate-y-[-1px]">م</span>
     </div>
+  );
+}
+
+const dot = PRODUCT_NAME.lastIndexOf(".");
+
+export function ProductWordmark({
+  className,
+  accentClassName,
+}: {
+  className?: string;
+  accentClassName?: string;
+}) {
+  return (
+    <span className={className} translate="no" lang="en" dir="ltr">
+      {PRODUCT_NAME.slice(0, dot)}
+      <span className={accentClassName}>{PRODUCT_NAME.slice(dot)}</span>
+    </span>
   );
 }

@@ -1,17 +1,20 @@
+import type { Request } from "express";
 import { storage } from "../storage";
-import type {
-  BankTransaction,
-  JournalEntry,
-  JournalLine,
-  Invoice,
-  Receipt,
-  Account,
-} from "../../shared/schema";
-import { ACCOUNT_CODES } from "../constants";
+import { pool } from "../db";
+import { has } from "../platform/service-registry";
+import { PAYABLE_BILL_STATES } from "./bill-posting.service";
+import type { BankTransaction, JournalEntry, Invoice, Receipt } from "../../shared/schema";
+import { payableOpenSql, receivableOpenSql } from "../reporting/settlement";
+import {
+  applyMatch,
+  dbFils,
+  publicErrorMessage,
+  type MatchTarget,
+} from "./bank-reconciliation.service";
 
 export interface ReconcileMatch {
   bankTransactionId: string;
-  matchedType: "journal_entry" | "invoice" | "receipt";
+  matchedType: "journal_entry" | "invoice" | "receipt" | "bill";
   matchedId: string;
   confidence: number;
   matchReason: string;
@@ -201,89 +204,119 @@ function calculateConfidence(
 // ─── Shared data loading ────────────────────────────────────────────────────
 
 /**
- * Per-entry amounts derived from journal lines, used by the scorer.
- *
- * `totalDebit` and `totalCredit` are equal in any balanced JE, so they cannot
- * disambiguate inflow vs outflow on their own — we keep them as a coarse
- * fallback only. The real signal is the AR/AP-side line amount, which mirrors
- * the contra side of a bank movement (Dr Bank, Cr AR for inflows; Dr AP, Cr
- * Bank for outflows). When neither is present we fall back to the largest
- * non-bank-account line, then finally to the JE total.
+ * Candidate pool (W3-C, R06-03). Journal entries are offered only when they carry a line on the
+ * bank line's OWN GL account for the same amount and direction (a cash-side entry that is not
+ * already matched). A sales/revenue entry (Dr AR / Cr revenue) never qualifies: the invoice is
+ * offered instead, at its unpaid remainder, and matching it records the payment.
  */
-interface JournalAmounts {
-  totalDebit: number;
-  totalCredit: number;
-  arAmount: number; // sum of credits + debits on AR lines (sign agnostic)
-  apAmount: number;
-  largestNonBankLine: number;
-  description: string;
-}
-
 interface CandidatePool {
   postedEntries: JournalEntry[];
-  journalAmounts: Map<string, JournalAmounts>;
-  invoices: Invoice[];
+  /** entryId -> accountId -> net fils (debit - credit). */
+  entryNets: Map<string, Map<string, number>>;
+  entryMemo: Map<string, string>;
+  invoices: Array<Invoice & { remainingFils: number }>;
   receipts: Receipt[];
-  bankGlAccountIds: Set<string>;
+  bills: Array<{ id: string; label: string; date: Date; remainingFils: number }>;
+  /** managed bank account id -> GL account id */
+  bankGl: Map<string, string>;
+  matchedEntryIds: Set<string>;
 }
 
+const OPEN_INVOICE_STATUSES = new Set(["sent", "posted", "partial", "overdue"]);
+
 async function loadCandidatePool(companyId: string): Promise<CandidatePool> {
-  const [entriesWithLines, invoices, receipts, accounts, managedBankAccounts] = await Promise.all([
+  const [entriesWithLines, invoices, receipts, managedBankAccounts] = await Promise.all([
     storage.getPostedJournalEntriesWithLines(companyId),
     storage.getInvoicesByCompanyId(companyId),
     storage.getReceiptsByCompanyId(companyId),
-    storage.getAccountsByCompanyId(companyId),
     storage.getBankAccountsByCompanyId(companyId),
   ]);
-
-  const arAccountIds = new Set(
-    accounts.filter((a) => a.code === ACCOUNT_CODES.AR).map((a) => a.id)
-  );
-  const apAccountIds = new Set(
-    accounts.filter((a) => a.code === ACCOUNT_CODES.AP).map((a) => a.id)
-  );
-  // Bank GL accounts are the cash/bank side of any reconciliation JE — we
-  // exclude them from the "largest non-bank line" fallback so the scorer
-  // doesn't trivially match a JE against itself by its own bank-side amount.
-  const bankGlAccountIds = new Set(
-    managedBankAccounts.map((b) => b.glAccountId).filter((id): id is string => id !== null)
-  );
+  const bankGl = new Map<string, string>();
+  for (const b of managedBankAccounts) if (b.glAccountId) bankGl.set(b.id, b.glAccountId);
 
   const postedEntries: JournalEntry[] = [];
-  const journalAmounts = new Map<string, JournalAmounts>();
+  const entryNets = new Map<string, Map<string, number>>();
+  const entryMemo = new Map<string, string>();
   for (const { entry, lines } of entriesWithLines) {
+    if (entry.reversedByEntryId || entry.entryKind === "reversal") continue;
     postedEntries.push(entry);
-
-    let totalDebit = 0;
-    let totalCredit = 0;
-    let arAmount = 0;
-    let apAmount = 0;
-    let largestNonBankLine = 0;
+    const nets = new Map<string, number>();
     for (const line of lines) {
-      const debit = Number(line.debit) || 0;
-      const credit = Number(line.credit) || 0;
-      totalDebit += debit;
-      totalCredit += credit;
-
-      const lineAmount = debit + credit;
-      if (arAccountIds.has(line.accountId)) arAmount += lineAmount;
-      if (apAccountIds.has(line.accountId)) apAmount += lineAmount;
-      if (!bankGlAccountIds.has(line.accountId) && lineAmount > largestNonBankLine) {
-        largestNonBankLine = lineAmount;
-      }
+      nets.set(
+        line.accountId,
+        (nets.get(line.accountId) ?? 0) + dbFils(line.debit) - dbFils(line.credit)
+      );
     }
-
-    journalAmounts.set(entry.id, {
-      totalDebit,
-      totalCredit,
-      arAmount,
-      apAmount,
-      largestNonBankLine,
-      description: entry.memo || entry.entryNumber,
-    });
+    entryNets.set(entry.id, nets);
+    entryMemo.set(entry.id, entry.memo || entry.entryNumber);
   }
 
-  return { postedEntries, journalAmounts, invoices, receipts, bankGlAccountIds };
+  // Remaining balance under the one settlement rule (server/reporting/settlement.ts, D5c):
+  // payments, issued credit notes and applied customer credits.
+  const { rows: openRows } = await pool.query(
+    `SELECT i.id, ${receivableOpenSql("i")}::text AS open FROM invoices i WHERE i.company_id = $1`,
+    [companyId]
+  );
+  const open = new Map<string, number>(
+    (openRows as Array<{ id: string; open: string }>).map((r) => [r.id, dbFils(r.open)])
+  );
+  const openInvoices = invoices
+    .filter((inv) => OPEN_INVOICE_STATUSES.has(inv.status) && inv.invoiceType !== "credit_note")
+    .map((inv) => ({ ...inv, remainingFils: open.get(inv.id) ?? 0 }))
+    .filter((inv) => inv.remainingFils > 0);
+
+  let bills: CandidatePool["bills"] = [];
+  if (has("bills.recordPayment")) {
+    const { rows } = await pool.query(
+      `SELECT id, COALESCE(bill_number, '') AS bill_number, vendor_name, bill_date,
+              ${payableOpenSql("vendor_bills")}::text AS remaining
+         FROM vendor_bills
+        WHERE company_id = $1 AND status = ANY($2::text[])`,
+      // Only bills a payment can be recorded against (approved / overdue / partial): a bill
+      // still pending approval is not a payable yet, and applying it would 409 BILL_NOT_PAYABLE.
+      [companyId, [...PAYABLE_BILL_STATES]]
+    );
+    bills = (
+      rows as Array<{
+        id: string;
+        bill_number: string;
+        vendor_name: string;
+        bill_date: Date;
+        remaining: string;
+      }>
+    )
+      .map((b) => ({
+        id: b.id,
+        label: `Bill ${b.bill_number} ${b.vendor_name}`.trim(),
+        date: new Date(b.bill_date),
+        remainingFils: dbFils(b.remaining),
+      }))
+      .filter((b) => b.remainingFils > 0);
+  }
+
+  const { rows: matchedRows } = await pool.query(
+    `SELECT DISTINCT journal_entry_id FROM bank_transaction_matches
+      WHERE company_id = $1 AND status IN ('active', 'pending') AND journal_entry_id IS NOT NULL`,
+    [companyId]
+  );
+  const matchedEntryIds = new Set(
+    (matchedRows as Array<{ journal_entry_id: string }>).map((r) => r.journal_entry_id)
+  );
+
+  return {
+    postedEntries,
+    entryNets,
+    entryMemo,
+    invoices: openInvoices,
+    receipts,
+    bills,
+    bankGl,
+    matchedEntryIds,
+  };
+}
+
+function iso(d: Date | string): string {
+  return d instanceof Date ? d.toISOString() : String(d);
 }
 
 /**
@@ -297,119 +330,123 @@ function matchTransaction(
   limit = 5
 ): ReconcileMatch[] {
   const bankAmount = Math.abs(txn.amount);
+  const bankFils = dbFils(bankAmount);
   const bankDate = new Date(txn.transactionDate);
   const bankDesc = txn.description + (txn.reference ? " " + txn.reference : "");
   const isCredit = txn.amount > 0;
+  const bankGlId =
+    (txn.bankStatementAccountId && pool.bankGl.get(txn.bankStatementAccountId)) ||
+    txn.bankAccountId ||
+    null;
 
   const candidates: ReconcileMatch[] = [];
+  const base = {
+    bankTransactionId: txn.id,
+    bankDescription: txn.description,
+    bankAmount: txn.amount,
+    bankDate: iso(txn.transactionDate),
+  };
 
-  // Journal entries (match both directions)
-  //
-  // Pick the candidate amount from the relevant non-bank line, NOT from the
-  // JE's debit/credit totals (which are equal in any balanced JE and would
-  // therefore never disambiguate between e.g. a $100 sale-on-credit and a
-  // $100 vendor payment). Inflows (Dr Bank, Cr A/R) match against the AR
-  // line; outflows (Dr A/P, Cr Bank) match against the AP line. JEs without
-  // an AR/AP line fall back to their largest non-bank line, then to the JE
-  // total as a last resort.
-  for (const entry of pool.postedEntries) {
-    const key = `je-${entry.id}`;
-    if (usedCandidates?.has(key)) continue;
-
-    const amounts = pool.journalAmounts.get(entry.id);
-    if (!amounts) continue;
-
-    const preferred = isCredit ? amounts.arAmount : amounts.apAmount;
-    const candidateAmount =
-      preferred > 0
-        ? preferred
-        : amounts.largestNonBankLine > 0
-          ? amounts.largestNonBankLine
-          : amounts.totalDebit;
-    if (candidateAmount === 0) continue;
-
-    const entryDate = new Date(entry.date);
-    const { score, reasons } = calculateConfidence(
-      bankAmount,
-      candidateAmount,
-      bankDate,
-      entryDate,
-      bankDesc,
-      amounts.description
-    );
-
-    if (score > 0) {
-      candidates.push({
-        bankTransactionId: txn.id,
-        matchedType: "journal_entry",
-        matchedId: entry.id,
-        confidence: score,
-        matchReason: reasons.join("; "),
-        bankDescription: txn.description,
-        bankAmount: txn.amount,
-        bankDate:
-          txn.transactionDate instanceof Date
-            ? txn.transactionDate.toISOString()
-            : String(txn.transactionDate),
-        matchedDescription: amounts.description,
-        matchedAmount: candidateAmount,
-        matchedDate: entry.date instanceof Date ? entry.date.toISOString() : String(entry.date),
-      });
-    }
-  }
-
-  // Invoices (credit/inflow transactions)
-  if (isCredit) {
-    for (const inv of pool.invoices) {
-      const key = `inv-${inv.id}`;
-      if (usedCandidates?.has(key)) continue;
-      if (inv.status === "void") continue;
-
-      const invDesc = `Invoice ${inv.number} ${(inv as any).customerName || ""}`.trim();
+  // Cash-side journal entries on this bank's GL account, same direction and exact amount.
+  if (bankGlId) {
+    for (const entry of pool.postedEntries) {
+      const key = `je-${entry.id}`;
+      if (usedCandidates?.has(key) || pool.matchedEntryIds.has(entry.id)) continue;
+      const net = pool.entryNets.get(entry.id)?.get(bankGlId) ?? 0;
+      if (net === 0 || (isCredit ? net <= 0 : net >= 0) || Math.abs(net) !== bankFils) continue;
+      const description = pool.entryMemo.get(entry.id) ?? "";
       const { score, reasons } = calculateConfidence(
         bankAmount,
-        inv.total,
+        Math.abs(net) / 100,
         bankDate,
-        new Date(inv.date),
+        new Date(entry.date),
         bankDesc,
-        invDesc
+        description
       );
-
       if (score > 0) {
         candidates.push({
-          bankTransactionId: txn.id,
-          matchedType: "invoice",
-          matchedId: inv.id,
+          ...base,
+          matchedType: "journal_entry",
+          matchedId: entry.id,
           confidence: score,
-          matchReason: reasons.join("; "),
-          bankDescription: txn.description,
-          bankAmount: txn.amount,
-          bankDate:
-            txn.transactionDate instanceof Date
-              ? txn.transactionDate.toISOString()
-              : String(txn.transactionDate),
-          matchedDescription: invDesc,
-          matchedAmount: inv.total,
-          matchedDate: inv.date instanceof Date ? inv.date.toISOString() : String(inv.date),
+          matchReason: [...reasons, "Entry on this bank account"].join("; "),
+          matchedDescription: description,
+          matchedAmount: Math.abs(net) / 100,
+          matchedDate: iso(entry.date),
         });
       }
     }
   }
 
-  // Receipts (debit/outflow transactions)
+  // Open invoices at their unpaid remainder (money in).
+  if (isCredit) {
+    for (const inv of pool.invoices) {
+      const key = `inv-${inv.id}`;
+      if (usedCandidates?.has(key)) continue;
+      const invDesc = `Invoice ${inv.number} ${inv.customerName || ""}`.trim();
+      const remaining = inv.remainingFils / 100;
+      const { score, reasons } = calculateConfidence(
+        bankAmount,
+        remaining,
+        bankDate,
+        new Date(inv.date),
+        bankDesc,
+        invDesc
+      );
+      if (score > 0) {
+        candidates.push({
+          ...base,
+          matchedType: "invoice",
+          matchedId: inv.id,
+          confidence: score,
+          matchReason: reasons.join("; "),
+          matchedDescription: invDesc,
+          matchedAmount: remaining,
+          matchedDate: iso(inv.date),
+        });
+      }
+    }
+  }
+
   if (!isCredit) {
+    // Open vendor bills (only when the bill payment service is available).
+    for (const bill of pool.bills) {
+      const key = `bill-${bill.id}`;
+      if (usedCandidates?.has(key)) continue;
+      const remaining = bill.remainingFils / 100;
+      const { score, reasons } = calculateConfidence(
+        bankAmount,
+        remaining,
+        bankDate,
+        bill.date,
+        bankDesc,
+        bill.label
+      );
+      if (score > 0) {
+        candidates.push({
+          ...base,
+          matchedType: "bill",
+          matchedId: bill.id,
+          confidence: score,
+          matchReason: reasons.join("; "),
+          matchedDescription: bill.label,
+          matchedAmount: remaining,
+          matchedDate: bill.date.toISOString(),
+        });
+      }
+    }
+
+    // Posted receipts paid from this bank account.
     for (const receipt of pool.receipts) {
       const key = `rcpt-${receipt.id}`;
       if (usedCandidates?.has(key)) continue;
+      if (!receipt.posted || !receipt.journalEntryId) continue;
+      if (pool.matchedEntryIds.has(receipt.journalEntryId)) continue;
+      if (bankGlId && receipt.paymentAccountId && receipt.paymentAccountId !== bankGlId) continue;
       if (!receipt.amount || receipt.amount <= 0) continue;
-
       const rcptDate = receipt.date ? new Date(receipt.date) : new Date(receipt.createdAt);
-      const rcptDesc = `${(receipt as any).merchant || ""} ${receipt.category || ""}`.trim();
-
-      // Bank transactions show the gross paid amount; receipts.amount is
-      // the net subtotal so we add VAT to compare like-for-like.
-      const receiptGross = receipt.amount + ((receipt as any).vatAmount || 0);
-
+      const rcptDesc = `${receipt.merchant || ""} ${receipt.category || ""}`.trim();
+      const receiptGross = receipt.amount + (receipt.vatAmount || 0);
       const { score, reasons } = calculateConfidence(
         bankAmount,
         receiptGross,
@@ -418,20 +455,13 @@ function matchTransaction(
         bankDesc,
         rcptDesc
       );
-
       if (score > 0) {
         candidates.push({
-          bankTransactionId: txn.id,
+          ...base,
           matchedType: "receipt",
           matchedId: receipt.id,
           confidence: score,
           matchReason: reasons.join("; "),
-          bankDescription: txn.description,
-          bankAmount: txn.amount,
-          bankDate:
-            txn.transactionDate instanceof Date
-              ? txn.transactionDate.toISOString()
-              : String(txn.transactionDate),
           matchedDescription: rcptDesc || "Receipt",
           matchedAmount: receiptGross,
           matchedDate: rcptDate.toISOString(),
@@ -461,8 +491,16 @@ export async function getSuggestionsForTransaction(
   return matchTransaction(txn, pool, undefined, limit);
 }
 
+const PREFIX: Record<ReconcileMatch["matchedType"], string> = {
+  journal_entry: "je",
+  invoice: "inv",
+  receipt: "rcpt",
+  bill: "bill",
+};
+
 /**
- * Scan all unreconciled bank transactions and find their best matches.
+ * Scan all unreconciled bank transactions and find their best matches. Read-only: nothing is
+ * reconciled until the user applies a suggestion.
  */
 export async function autoReconcileTransactions(companyId: string): Promise<AutoReconcileResult> {
   const [unreconciledTxns, pool] = await Promise.all([
@@ -479,13 +517,7 @@ export async function autoReconcileTransactions(companyId: string): Promise<Auto
     if (candidates.length > 0) {
       const best = candidates[0];
       matches.push(best);
-      const prefix =
-        best.matchedType === "journal_entry"
-          ? "je"
-          : best.matchedType === "invoice"
-            ? "inv"
-            : "rcpt";
-      matchedCandidates.add(`${prefix}-${best.matchedId}`);
+      matchedCandidates.add(`${PREFIX[best.matchedType]}-${best.matchedId}`);
     }
   }
 
@@ -502,36 +534,59 @@ export async function autoReconcileTransactions(companyId: string): Promise<Auto
 }
 
 /**
- * Apply a set of reconciliation matches.
- *
- * `userId` is forwarded to `reconcileBankTransaction` so it can post the
- * bank-reconciliation journal entry (createdBy/postedBy). Without a user the
- * storage layer will skip JE posting and only flip the bank txn's flags.
+ * Apply a set of reconciliation matches through the one match service (R06-05): invoices record
+ * a payment, journals must be cash-side, every apply is conditional on the line being
+ * unreconciled and checks the period lock. Errors carry a code and a message, never SQL (R06-16).
  */
 export async function applyReconcileMatches(
   companyId: string,
   matchIds: { bankTransactionId: string; matchedType: string; matchedId: string }[],
-  userId?: string
-): Promise<{ applied: number; errors: string[] }> {
+  userId: string,
+  req?: Request
+): Promise<{
+  applied: number;
+  skipped: number;
+  errors: string[];
+  results: Array<{ bankTransactionId: string; status: string; code?: string; message?: string }>;
+}> {
   let applied = 0;
+  let skipped = 0;
   const errors: string[] = [];
+  const results: Array<{
+    bankTransactionId: string;
+    status: string;
+    code?: string;
+    message?: string;
+  }> = [];
 
   for (const match of matchIds) {
+    const type = match.matchedType === "journal_entry" ? "journal" : match.matchedType;
+    const target: MatchTarget =
+      type === "invoice"
+        ? { kind: "invoice", id: match.matchedId }
+        : type === "bill"
+          ? { kind: "bill", id: match.matchedId }
+          : type === "receipt"
+            ? { kind: "receipt", id: match.matchedId }
+            : { kind: "journal", id: match.matchedId };
     try {
-      await storage.reconcileBankTransaction(
-        match.bankTransactionId,
+      const r = await applyMatch({
         companyId,
-        match.matchedId,
-        match.matchedType as "journal" | "receipt" | "invoice",
-        userId
-      );
-      applied++;
-    } catch (err: any) {
-      errors.push(
-        `Failed to reconcile ${match.bankTransactionId}: ${err.message || "Unknown error"}`
-      );
+        transactionId: match.bankTransactionId,
+        actorId: userId,
+        target,
+        req,
+      });
+      if (r.status === "replayed") skipped++;
+      else applied++;
+      results.push({ bankTransactionId: match.bankTransactionId, status: r.status });
+    } catch (err) {
+      const e = publicErrorMessage(err);
+      if (e.code === "ALREADY_RECONCILED") skipped++;
+      errors.push(`Failed to reconcile ${match.bankTransactionId}: ${e.message}`);
+      results.push({ bankTransactionId: match.bankTransactionId, status: "error", ...e });
     }
   }
 
-  return { applied, errors };
+  return { applied, skipped, errors, results };
 }

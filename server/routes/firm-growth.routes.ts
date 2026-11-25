@@ -4,7 +4,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 
 import { authMiddleware } from "../middleware/auth";
-import { requireFirmAdmin } from "../middleware/rbac";
+import { requireNraAccess } from "../middleware/rbac";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { db } from "../db";
@@ -19,11 +19,11 @@ import {
 
 const logger = createLogger("firm-growth-routes");
 
-const opportunityIdParamSchema = z.object({ id: z.string().uuid() });
+const opportunityIdParamSchema = z.object({ id: z.string().guid() });
 
 const updateOpportunitySchema = z.object({
   status: z.enum(["open", "accepted", "snoozed", "dismissed", "completed"]).optional(),
-  ownerUserId: z.string().uuid().nullable().optional(),
+  ownerUserId: z.string().guid().nullable().optional(),
   snoozedUntil: z.string().datetime().nullable().optional(),
   resolutionNote: z.string().trim().max(2000).nullable().optional(),
   note: z.string().trim().max(4000).nullable().optional(),
@@ -33,7 +33,7 @@ const updateOpportunitySchema = z.object({
 });
 
 async function accessibleClientIdsFor(req: Request): Promise<string[]> {
-  const { id: userId, firmRole } = (req as any).user;
+  const { id: userId, firmRole } = req.user!;
   return resolveAccessibleClientIds(userId, firmRole ?? null);
 }
 
@@ -66,8 +66,9 @@ async function requireOpportunityAccess(req: Request, res: Response): Promise<st
 export function registerFirmGrowthRoutes(app: Express): void {
   const router = Router();
 
-  router.use(authMiddleware as any);
-  router.use(requireFirmAdmin());
+  router.use(authMiddleware);
+  // NR-only revenue ops (keyed on NR staff); other firms never reach these.
+  router.use(requireNraAccess());
 
   router.get(
     "/",
@@ -85,7 +86,7 @@ export function registerFirmGrowthRoutes(app: Express): void {
       const refresh = await refreshGrowthOpportunities(companyIds);
       const dashboard = await listGrowthOpportunities(companyIds);
       await recordAudit({
-        userId: (req as any).user?.id,
+        userId: req.user?.id,
         action: "firm_growth_opportunities_refresh",
         entityType: "firm_growth_opportunity",
         req,
@@ -125,15 +126,11 @@ export function registerFirmGrowthRoutes(app: Express): void {
       if (parsed.resolutionNote !== undefined) updatePayload.resolutionNote = parsed.resolutionNote;
       if (parsed.note !== undefined) updatePayload.note = parsed.note;
 
-      const updated = await updateGrowthOpportunity(
-        opportunityId,
-        (req as any).user.id,
-        updatePayload
-      );
+      const updated = await updateGrowthOpportunity(opportunityId, req.user!.id, updatePayload);
       if (!updated) return res.status(404).json({ message: "Growth opportunity not found" });
 
       await recordAudit({
-        userId: (req as any).user?.id,
+        userId: req.user?.id,
         companyId: updated.companyId,
         action: `firm_growth_opportunity_${actionType}`,
         entityType: "firm_growth_opportunity",

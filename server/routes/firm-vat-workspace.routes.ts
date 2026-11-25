@@ -1,18 +1,27 @@
+import { assertUploadSize } from "../http/upload-errors";
+import { DomainError } from "../errors";
 import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
 import { Router } from "express";
 import { z } from "zod";
 
-import { ValidationError } from "../errors";
+import { AppError, ValidationError } from "../errors";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
-import { requireFirmAdmin } from "../middleware/rbac";
+import { firmContextOf, requireFirmAdmin } from "../middleware/rbac";
+import { canPrepareFirmWorkpaper, canReviewFirmWorkpaper } from "../../shared/access";
 import { asyncHandler } from "../middleware/errorHandler";
+import {
+  deleteObject,
+  getObject,
+  hasDurableObjectStore,
+  putObject,
+  VAT_EVIDENCE_PREFIX,
+} from "../services/fileStorage";
 import { createLogger } from "../config/logger";
 import { recordAudit } from "../services/audit.service";
 import { resolveAccessibleClientIds } from "../services/firm-command-center.service";
+import { requireFirmCompanyMfa } from "../services/security/policy";
 import {
   addVatWorkpaperRow,
   addVatWorkpaperRowsBulk,
@@ -24,13 +33,23 @@ import {
   generateVatReturnFromWorkpaper,
   getVatWorkpaperDetail,
   listVatWorkpapers,
+  normalizeWorkpaperStatus,
   recalculateVatWorkpaper,
+  resolveFirmVatWorkpaperListCompanies,
   scanVatWorkpaperEvidence,
   updateVatWorkpaperRow,
   updateVatWorkpaperStatus,
   VAT_WORKPAPER_CATEGORIES,
   type VatWorkpaperCategory,
 } from "../services/firm-vat-workspace.service";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import {
+  vatWorkpaperBulkStatusBody,
+  vatWorkpaperRowBody,
+  vatWorkpaperRowPatchBody,
+  vatWorkpaperStatusBody,
+} from "../../shared/validators/vat";
 import {
   buildVatWorkpaperTemplateWorkbook,
   buildVatWorkpaperWorkbook,
@@ -40,9 +59,9 @@ import {
 
 const logger = createLogger("firm-vat-workspace-routes");
 
-const uuidParamSchema = z.object({ id: z.string().uuid() });
-const rowParamSchema = z.object({ id: z.string().uuid(), rowId: z.string().uuid() });
-const attachmentParamSchema = z.object({ id: z.string().uuid(), attachmentId: z.string().uuid() });
+const uuidParamSchema = z.object({ id: z.string().guid() });
+const rowParamSchema = z.object({ id: z.string().guid(), rowId: z.string().guid() });
+const attachmentParamSchema = z.object({ id: z.string().guid(), attachmentId: z.string().guid() });
 
 const vatRowSchema = z.object({
   rowCategory: z.enum(VAT_WORKPAPER_CATEGORIES),
@@ -59,21 +78,18 @@ const vatRowSchema = z.object({
   status: z.enum(["draft", "approved", "excluded"]).optional(),
   sourceMethod: z.enum(["manual", "ocr", "import", "generated"]).optional(),
   sourceDocumentType: z.string().trim().max(80).optional().nullable(),
-  sourceDocumentId: z.string().uuid().optional().nullable(),
+  sourceDocumentId: z.string().guid().optional().nullable(),
   notes: z.string().trim().max(4000).optional().nullable(),
   auditReason: z.string().trim().max(2000).optional().nullable(),
-});
-
-const partialVatRowSchema = vatRowSchema.partial().extend({
-  rowCategory: z.enum(VAT_WORKPAPER_CATEGORIES).optional(),
+  vatOverrideReason: z.string().trim().max(2000).optional().nullable(),
 });
 
 const createWorkpaperSchema = z.object({
-  companyId: z.string().uuid(),
+  companyId: z.string().guid(),
   periodStart: z.string(),
   periodEnd: z.string(),
   dueDate: z.string().optional().nullable(),
-  reviewerUserId: z.string().uuid().optional().nullable(),
+  reviewerUserId: z.string().guid().optional().nullable(),
   notes: z.string().trim().max(4000).optional().nullable(),
 });
 
@@ -81,8 +97,7 @@ const scanSchema = z.object({
   attachment: z.object({
     fileName: z.string().trim().min(1).max(255),
     mimeType: z.string().trim().min(1).max(120),
-    filePath: z.string().trim().max(1000).optional().nullable(),
-    fileDataBase64: z.string().max(15_000_000).optional().nullable(),
+    fileDataBase64: z.string().optional().nullable(),
     extractedText: z.string().max(100000).optional().nullable(),
     extractionJson: z.record(z.string(), z.unknown()).optional(),
   }),
@@ -95,24 +110,14 @@ const scanSchema = z.object({
   }),
 });
 
-const VAT_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 const VAT_IMPORT_MAX_ROWS = 2000;
 
 const importFileSchema = z.object({
   fileName: z.string().trim().min(1).max(255),
-  fileDataBase64: z.string().min(1).max(15_000_000),
+  fileDataBase64: z.string().min(1),
   defaultEmirate: z.string().trim().max(40).optional(),
 });
 
-const statusSchema = z.object({
-  status: z.enum(["draft", "in_review", "ready", "generated", "filed", "locked"]),
-  reviewerUserId: z.string().uuid().optional().nullable(),
-  notes: z.string().trim().max(4000).optional().nullable(),
-});
-
-const VAT_EVIDENCE_MAX_BYTES = Number(
-  process.env.VAT_EVIDENCE_UPLOAD_MAX_BYTES ?? 10 * 1024 * 1024
-);
 const VAT_EVIDENCE_MIME_TYPES = new Set([
   "application/pdf",
   "image/jpeg",
@@ -124,20 +129,20 @@ const VAT_EVIDENCE_MIME_TYPES = new Set([
   "application/octet-stream",
 ]);
 
-function sanitizeFileName(fileName: string) {
-  const normalized = fileName
-    .replace(/[/\\?%*:|"<>]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim();
-  return (normalized || "vat-evidence").slice(0, 140);
+function requireVatEvidenceStorage(): void {
+  if (!hasDurableObjectStore()) {
+    throw new DomainError(
+      "VAT_EVIDENCE_STORAGE_UNAVAILABLE",
+      503,
+      undefined,
+      "VAT evidence requires private object storage. Configure Vercel Blob or S3-compatible storage."
+    );
+  }
 }
 
 async function persistEvidenceUpload(attachment: z.infer<typeof scanSchema>["attachment"]) {
-  const fileDataBase64 = attachment.fileDataBase64;
-  if (!fileDataBase64) {
-    const { fileDataBase64: _unused, ...withoutData } = attachment;
-    return withoutData;
-  }
+  const { fileDataBase64, ...withoutData } = attachment;
+  if (!fileDataBase64) return { ...withoutData, filePath: null };
 
   if (!VAT_EVIDENCE_MIME_TYPES.has(attachment.mimeType)) {
     throw new ValidationError("Unsupported VAT evidence file type");
@@ -146,29 +151,18 @@ async function persistEvidenceUpload(attachment: z.infer<typeof scanSchema>["att
   const rawBase64 = fileDataBase64.replace(/^data:[^;]+;base64,/, "");
   const buffer = Buffer.from(rawBase64, "base64");
   if (buffer.length === 0) throw new ValidationError("VAT evidence upload is empty");
-  if (buffer.length > VAT_EVIDENCE_MAX_BYTES)
-    throw new ValidationError("VAT evidence upload is too large");
+  assertUploadSize(buffer.length);
+  requireVatEvidenceStorage();
 
-  const uploadsRoot = path.resolve(process.cwd(), "uploads");
-  const datedFolder = new Date().toISOString().slice(0, 10);
-  const relativeFolder = path.join("vat-workpapers", datedFolder);
-  const absoluteFolder = path.resolve(uploadsRoot, relativeFolder);
-  if (!absoluteFolder.startsWith(uploadsRoot + path.sep)) {
-    throw new ValidationError("Invalid VAT evidence upload path");
-  }
-
-  await fs.mkdir(absoluteFolder, { recursive: true });
-  const storedFileName = `${crypto.randomUUID()}-${sanitizeFileName(attachment.fileName)}`;
-  const absolutePath = path.resolve(absoluteFolder, storedFileName);
-  if (!absolutePath.startsWith(uploadsRoot + path.sep)) {
-    throw new ValidationError("Invalid VAT evidence upload path");
-  }
-  await fs.writeFile(absolutePath, buffer, { flag: "wx" });
-
-  const { fileDataBase64: _unused, ...withoutData } = attachment;
+  const filePath = await putObject(
+    VAT_EVIDENCE_PREFIX,
+    crypto.randomUUID(),
+    buffer,
+    attachment.mimeType
+  );
   return {
     ...withoutData,
-    filePath: path.posix.join("vat-workpapers", datedFolder, storedFileName),
+    filePath,
     extractionJson: {
       ...(withoutData.extractionJson ?? {}),
       uploadedBytes: buffer.length,
@@ -177,16 +171,8 @@ async function persistEvidenceUpload(attachment: z.infer<typeof scanSchema>["att
   };
 }
 
-async function resolveEvidencePath(filePath: string | null | undefined) {
-  if (!filePath) return null;
-  const uploadsRoot = path.resolve(process.cwd(), "uploads");
-  const absolutePath = path.resolve(uploadsRoot, filePath);
-  if (absolutePath !== uploadsRoot && !absolutePath.startsWith(uploadsRoot + path.sep)) return null;
-  return absolutePath;
-}
-
 async function accessibleClientIdsFor(req: Request): Promise<string[]> {
-  const { id: userId, firmRole } = (req as any).user;
+  const { id: userId, firmRole } = req.user!;
   return resolveAccessibleClientIds(userId, firmRole ?? null);
 }
 
@@ -213,18 +199,65 @@ async function requireWorkpaperAccess(req: Request, res: Response, workpaperId: 
   return detail;
 }
 
+export type WorkpaperSide = "prepare" | "review" | null;
+
+/**
+ * S4 (W5-D follow-up): which side of the maker-checker a workpaper request
+ * needs. Building the workpaper (create, rows, pull/import/scan, row status,
+ * recalculate) is the maker side; generating the return is the checker side;
+ * status changes are decided per transition (statusSide). Reads need neither.
+ */
+export function workpaperRequestSide(method: string, path: string): WorkpaperSide {
+  const m = method.toUpperCase();
+  if (m === "GET" || m === "HEAD" || m === "OPTIONS") return null;
+  if (/^\/[^/]+\/status\/?$/.test(path)) return null; // decided by the transition
+  if (/^\/[^/]+\/generate-return\/?$/.test(path)) return "review";
+  return "prepare";
+}
+
+/** Draft <-> prepared is the maker side; review, send-back, file and lock the checker side. */
+export function statusSide(from: string, to: string): Exclude<WorkpaperSide, null> {
+  const current = normalizeWorkpaperStatus(from);
+  if (to === "draft" || (to === "prepared" && current === "draft")) return "prepare";
+  return "review";
+}
+
+function hasWorkpaperSide(res: Response, side: Exclude<WorkpaperSide, null>): boolean {
+  const role = firmContextOf(res).role;
+  const ok = side === "prepare" ? canPrepareFirmWorkpaper(role) : canReviewFirmWorkpaper(role);
+  if (!ok) {
+    res.status(403).json({
+      message:
+        side === "prepare"
+          ? "Your firm role cannot prepare VAT workpapers"
+          : "Your firm role cannot review, file or lock VAT workpapers",
+      code: side === "prepare" ? "FIRM_WORKPAPER_PREPARE_DENIED" : "FIRM_WORKPAPER_REVIEW_DENIED",
+      role,
+    });
+  }
+  return ok;
+}
+
 export function registerFirmVatWorkspaceRoutes(app: Express): void {
   const router = Router();
 
-  router.use(authMiddleware as any);
+  router.use(authMiddleware);
   router.use(requireFirmAdmin());
+  // Maker-checker by firm role (shared/access.ts canPrepare/canReviewFirmWorkpaper).
+  router.use((req: Request, res: Response, next) => {
+    const side = workpaperRequestSide(req.method, req.path);
+    if (side && !hasWorkpaperSide(res, side)) return;
+    next();
+  });
 
   router.get(
     "/",
     asyncHandler(async (req: Request, res: Response) => {
       const companyId = typeof req.query.companyId === "string" ? req.query.companyId : undefined;
       const accessible = await accessibleClientIdsFor(req);
-      const workpapers = await listVatWorkpapers(accessible, companyId);
+      const targetIds = await resolveFirmVatWorkpaperListCompanies(accessible, companyId);
+      if (!(await requireFirmCompanyMfa(req.user!, res, targetIds))) return;
+      const workpapers = await listVatWorkpapers(targetIds);
       res.json({ workpapers });
     })
   );
@@ -237,11 +270,11 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
 
       const workpaper = await createVatWorkpaper({
         ...parsed,
-        createdBy: (req as any).user.id,
+        createdBy: req.user!.id,
       });
 
       await recordAudit({
-        userId: (req as any).user?.id,
+        userId: req.user?.id,
         companyId: workpaper.companyId,
         action: "firm_vat_workpaper_create",
         entityType: "vat_workpaper",
@@ -284,6 +317,7 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
 
   router.post(
     "/:id/rows",
+    strictBody(vatWorkpaperRowBody, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = uuidParamSchema.safeParse(req.params);
       if (!parsedParams.success)
@@ -291,10 +325,10 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       const detail = await requireWorkpaperAccess(req, res, parsedParams.data.id);
       if (!detail) return;
 
-      const parsed = vatRowSchema.parse(req.body);
-      const row = await addVatWorkpaperRow(parsedParams.data.id, (req as any).user.id, parsed);
+      const parsed = parsedBody<z.output<typeof vatWorkpaperRowBody>>(req);
+      const row = await addVatWorkpaperRow(parsedParams.data.id, req.user!.id, parsed);
       await recordAudit({
-        userId: (req as any).user?.id,
+        userId: req.user?.id,
         companyId: detail.workpaper.companyId,
         action: "firm_vat_workpaper_row_create",
         entityType: "vat_workpaper_row",
@@ -308,6 +342,7 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
 
   router.patch(
     "/:id/rows/:rowId",
+    strictBody(vatWorkpaperRowPatchBody, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = rowParamSchema.safeParse(req.params);
       if (!parsedParams.success)
@@ -315,15 +350,15 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       const detail = await requireWorkpaperAccess(req, res, parsedParams.data.id);
       if (!detail) return;
 
-      const parsed = partialVatRowSchema.parse(req.body);
+      const parsed = parsedBody<z.output<typeof vatWorkpaperRowPatchBody>>(req);
       const row = await updateVatWorkpaperRow(
         parsedParams.data.id,
         parsedParams.data.rowId,
-        (req as any).user.id,
+        req.user!.id,
         parsed
       );
       await recordAudit({
-        userId: (req as any).user?.id,
+        userId: req.user?.id,
         companyId: detail.workpaper.companyId,
         action: "firm_vat_workpaper_row_update",
         entityType: "vat_workpaper_row",
@@ -346,7 +381,7 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
 
       const result = await deleteVatWorkpaperRow(parsedParams.data.id, parsedParams.data.rowId);
       await recordAudit({
-        userId: (req as any).user?.id,
+        userId: req.user?.id,
         companyId: detail.workpaper.companyId,
         action: "firm_vat_workpaper_row_delete",
         entityType: "vat_workpaper_row",
@@ -371,10 +406,10 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       const result = await postVatWorkpaperRowToLedger(
         parsedParams.data.id,
         parsedParams.data.rowId,
-        (req as any).user.id
+        req.user!.id
       );
       await recordAudit({
-        userId: (req as any).user?.id,
+        userId: req.user?.id,
         companyId: detail.workpaper.companyId,
         action: "firm_vat_workpaper_row_post",
         entityType: "vat_workpaper_row",
@@ -397,7 +432,7 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       const detail = await requireWorkpaperAccess(req, res, parsedParams.data.id);
       if (!detail) return;
 
-      const row = detail.rows.find((r: any) => r.id === parsedParams.data.rowId);
+      const row = detail.rows.find((r) => r.id === parsedParams.data.rowId);
       if (!row) return res.status(404).json({ message: "Workpaper row not found" });
       if (!row.sourceDocumentType || !row.sourceDocumentId) {
         return res.json({ row, sourceDocumentType: null, document: null });
@@ -421,6 +456,7 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
 
   router.post(
     "/:id/scan",
+    strictBody(scanSchema, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = uuidParamSchema.safeParse(req.params);
       if (!parsedParams.success)
@@ -428,16 +464,23 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       const detail = await requireWorkpaperAccess(req, res, parsedParams.data.id);
       if (!detail) return;
 
-      const parsed = scanSchema.parse(req.body);
+      const parsed = parsedBody<z.infer<typeof scanSchema>>(req);
       const attachment = await persistEvidenceUpload(parsed.attachment);
       const result = await scanVatWorkpaperEvidence(
         parsedParams.data.id,
-        (req as any).user.id,
+        req.user!.id,
         attachment,
         parsed.draftRow
-      );
+      ).catch(async (err: unknown) => {
+        // A connection error can leave the commit outcome unknown. Keep the
+        // object in that case so a committed attachment can still be read.
+        if (attachment.filePath && err instanceof AppError && err.statusCode < 500) {
+          await deleteObject(attachment.filePath, [VAT_EVIDENCE_PREFIX]);
+        }
+        throw err;
+      });
       await recordAudit({
-        userId: (req as any).user?.id,
+        userId: req.user?.id,
         companyId: detail.workpaper.companyId,
         action: "firm_vat_workpaper_scan_logged",
         entityType: "vat_workpaper_attachment",
@@ -459,21 +502,23 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       if (!detail) return;
 
       const attachment = detail.attachments.find(
-        (item: any) => item.id === parsedParams.data.attachmentId
+        (item) => item.id === parsedParams.data.attachmentId
       );
       if (!attachment) return res.status(404).json({ message: "VAT evidence file not found" });
 
-      const absolutePath = await resolveEvidencePath(attachment.filePath);
-      if (!absolutePath)
-        return res.status(404).json({ message: "VAT evidence file is not stored" });
+      const ref = attachment.filePath;
+      if (!ref) return res.status(404).json({ message: "VAT evidence file is not stored" });
 
-      try {
-        await fs.access(absolutePath);
-      } catch {
+      requireVatEvidenceStorage();
+      const file = await getObject(ref, [VAT_EVIDENCE_PREFIX]).catch(() => null);
+      if (!file)
         return res.status(404).json({ message: "VAT evidence file is missing from storage" });
-      }
 
-      res.download(absolutePath, attachment.fileName);
+      res.setHeader("Cache-Control", "private, no-store");
+      res.attachment(attachment.fileName);
+      res.type(file.contentType);
+      res.write(file.buffer);
+      res.end();
     })
   );
 
@@ -488,10 +533,10 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       const detail = await requireWorkpaperAccess(req, res, parsed.data.id);
       if (!detail) return;
 
-      const result = await pullVatWorkpaperRowsFromBooks(parsed.data.id, (req as any).user.id);
+      const result = await pullVatWorkpaperRowsFromBooks(parsed.data.id, req.user!.id);
 
       await recordAudit({
-        userId: (req as any).user?.id,
+        userId: req.user?.id,
         companyId: detail.workpaper.companyId,
         action: "firm_vat_workpaper_pull_from_books",
         entityType: "vat_workpaper",
@@ -526,13 +571,15 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       } catch {
         return res.status(400).json({ message: "Workbook payload is not valid base64" });
       }
-      if (buffer.length === 0 || buffer.length > VAT_IMPORT_MAX_BYTES) {
-        return res.status(400).json({ message: "Workbook must be between 1 byte and 10 MB" });
+      if (buffer.length === 0) {
+        return res.status(400).json({ message: "Workbook is empty" });
       }
+      assertUploadSize(buffer.length);
 
       let rows;
       try {
-        rows = await parseVatWorkbookRows(buffer, parsed.defaultEmirate || "dubai");
+        // R07-09: no default emirate. Rows without one fail validation and are listed.
+        rows = await parseVatWorkbookRows(buffer, parsed.defaultEmirate || "");
       } catch {
         return res
           .status(400)
@@ -549,12 +596,12 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
 
       const created = await addVatWorkpaperRowsBulk(
         parsedParams.data.id,
-        (req as any).user.id,
+        req.user!.id,
         rows.map((row) => ({ ...row, auditReason: "Imported from Excel file" }))
       );
 
       await recordAudit({
-        userId: (req as any).user?.id,
+        userId: req.user?.id,
         companyId: detail.workpaper.companyId,
         action: "firm_vat_workpaper_import_file",
         entityType: "vat_workpaper",
@@ -570,26 +617,19 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
   // Review queue: approve (or exclude) all draft rows in one action.
   router.post(
     "/:id/rows/bulk-status",
+    strictBody(vatWorkpaperBulkStatusBody),
     asyncHandler(async (req: Request, res: Response) => {
       const parsed = uuidParamSchema.safeParse(req.params);
       if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
       const detail = await requireWorkpaperAccess(req, res, parsed.data.id);
       if (!detail) return;
 
-      const bodySchema = z.object({
-        to: z.enum(["approved", "excluded"]),
-        rowIds: z.array(z.string().uuid()).max(2000).optional(),
-      });
-      const body = bodySchema.parse(req.body);
+      const body = parsedBody<z.output<typeof vatWorkpaperBulkStatusBody>>(req);
 
-      const result = await bulkUpdateVatWorkpaperRowStatus(
-        parsed.data.id,
-        (req as any).user.id,
-        body
-      );
+      const result = await bulkUpdateVatWorkpaperRowStatus(parsed.data.id, req.user!.id, body);
 
       await recordAudit({
-        userId: (req as any).user?.id,
+        userId: req.user?.id,
         companyId: detail.workpaper.companyId,
         action: "firm_vat_workpaper_rows_bulk_status",
         entityType: "vat_workpaper",
@@ -616,7 +656,7 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       const filename = vatWorkpaperExportFilename(detail);
 
       await recordAudit({
-        userId: (req as any).user?.id,
+        userId: req.user?.id,
         companyId: detail.workpaper.companyId,
         action: "firm_vat_workpaper_export",
         entityType: "vat_workpaper",
@@ -653,9 +693,9 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       const detail = await requireWorkpaperAccess(req, res, parsed.data.id);
       if (!detail) return;
 
-      const result = await generateVatReturnFromWorkpaper(parsed.data.id, (req as any).user.id);
+      const result = await generateVatReturnFromWorkpaper(parsed.data.id, req.user!.id);
       await recordAudit({
-        userId: (req as any).user?.id,
+        userId: req.user?.id,
         companyId: detail.workpaper.companyId,
         action: "firm_vat_workpaper_generate_return",
         entityType: "vat_workpaper",
@@ -672,6 +712,7 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
 
   router.patch(
     "/:id/status",
+    strictBody(vatWorkpaperStatusBody, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = uuidParamSchema.safeParse(req.params);
       if (!parsedParams.success)
@@ -679,13 +720,18 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       const detail = await requireWorkpaperAccess(req, res, parsedParams.data.id);
       if (!detail) return;
 
-      const parsed = statusSchema.parse(req.body);
-      const workpaper = await updateVatWorkpaperStatus(parsedParams.data.id, parsed.status, {
-        reviewerUserId: parsed.reviewerUserId,
-        notes: parsed.notes,
-      });
+      const parsed = parsedBody<z.output<typeof vatWorkpaperStatusBody>>(req);
+      if (!hasWorkpaperSide(res, statusSide(detail.workpaper.status, parsed.status))) return;
+      // R15-02: maker-checker state machine; the reviewer is always the caller.
+      const workpaper = await updateVatWorkpaperStatus(
+        parsedParams.data.id,
+        parsed.status,
+        req.user!.id,
+        { notes: parsed.notes, reason: parsed.reason },
+        req
+      );
       await recordAudit({
-        userId: (req as any).user?.id,
+        userId: req.user?.id,
         companyId: detail.workpaper.companyId,
         action: `firm_vat_workpaper_status_${parsed.status}`,
         entityType: "vat_workpaper",

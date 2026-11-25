@@ -1,11 +1,16 @@
 import { type Express, type Request, type Response } from "express";
+import { parsedBody } from "../http/parsed-body";
+import { strictBody } from "../http/strict-body";
+import { whatsappLogMessageBody, whatsappRulesBody } from "../../shared/validators/route-bodies";
 import { randomUUID } from "crypto";
 import { and, desc, eq, gt } from "drizzle-orm";
 import { z } from "zod";
 import { storage } from "../storage";
 import { db } from "../db";
 import { authMiddleware } from "../middleware/auth";
+import { billingEnforced, refuseExpiredTrial } from "../middleware/featureGate";
 import { requireFirmRole } from "../middleware/rbac";
+import { companyTrialLocked } from "../middleware/trialAccessPolicy";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { whatsappBridgeJobs, whatsappBridgeSessions, whatsappMessages } from "../../shared/schema";
@@ -20,17 +25,17 @@ import {
 
 const log = createLogger("whatsapp");
 
-const sessionIdSchema = z.object({ sessionId: z.string().uuid() });
-const jobIdSchema = z.object({ jobId: z.string().uuid() });
-const messageIdSchema = z.object({ messageId: z.string().uuid() });
+const sessionIdSchema = z.object({ sessionId: z.string().guid() });
+const jobIdSchema = z.object({ jobId: z.string().guid() });
+const messageIdSchema = z.object({ messageId: z.string().guid() });
 const messageStatusUpdateSchema = z.object({
   status: z.enum(["sent_unverified", "failed"]),
   errorMessage: z.string().max(1000).optional(),
 });
 
 async function resolveCompanyId(req: Request, requestedCompanyId?: string): Promise<string | null> {
-  const userId = (req as any).user?.id as string | undefined;
-  const firmRole = ((req as any).user?.firmRole ?? null) as string | null;
+  const userId = req.user?.id as string | undefined;
+  const firmRole = (req.user?.firmRole ?? null) as string | null;
   if (!userId) return null;
 
   if (requestedCompanyId) {
@@ -47,13 +52,25 @@ function sessionExpiry(): Date {
   return new Date(Date.now() + 60 * 60 * 1000);
 }
 
-function personalWhatsAppStatusPayload() {
+/**
+ * R15-08: report the truth. No WhatsApp provider (Business API / BSP) is
+ * connected, so nothing is ever sent by the server: messages open as
+ * WhatsApp Web drafts that staff send by hand, and the server only logs them.
+ */
+export function personalWhatsAppStatusPayload() {
   return {
-    connected: true,
-    configured: true,
+    connected: false,
+    providerConnected: false,
+    configured: false,
+    capability: "requires_external" as const,
+    canSend: false,
     mode: "personal",
     deliveryMode: "personal_link",
     deliveryStatus: "logged_only",
+    note: {
+      en: "No WhatsApp provider is connected. Messages open as WhatsApp Web drafts that staff send themselves; Muhasib.ai only logs them and cannot confirm delivery.",
+      ar: "لا يوجد مزود واتساب متصل. تُفتح الرسائل كمسودات في واتساب ويب يرسلها الموظف بنفسه؛ يكتفي Muhasib.ai بتسجيلها ولا يمكنه تأكيد التسليم.",
+    },
   };
 }
 
@@ -72,13 +89,14 @@ export function registerWhatsAppRoutes(app: Express) {
   app.post(
     "/api/integrations/whatsapp/log-message",
     authMiddleware,
+    strictBody(whatsappLogMessageBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
 
-      const { to, message } = req.body;
+      const { to, message } = parsedBody<{ to: string; message: string }>(req);
       if (!to || !message) {
         return res.status(400).json({ message: "Phone number and message are required" });
       }
@@ -113,7 +131,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/messages",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
@@ -124,6 +142,10 @@ export function registerWhatsAppRoutes(app: Express) {
       }
 
       const companyId = companies[0].id;
+      // Firm access authorizes the route. History availability follows the company being read.
+      if (billingEnforced() && (await companyTrialLocked(companyId))) {
+        return refuseExpiredTrial(res, companyId);
+      }
       const messages = await storage.getWhatsappMessagesByCompanyId(companyId);
       res.json(messages);
     })
@@ -133,7 +155,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/messages/:messageId/status",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
@@ -229,7 +251,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/bridge/status",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
       const companyId = await resolveCompanyId(req, req.query.companyId as string | undefined);
@@ -261,7 +283,9 @@ export function registerWhatsAppRoutes(app: Express) {
 
       res.json({
         provider: WHATSAPP_BRIDGE_PROVIDER,
+        // A live extension session is not a delivery channel: staff still send by hand.
         connected: activeSessions.length > 0,
+        providerConnected: false,
         configured: true,
         canAutoSend: false,
         deliveryMode: "whatsapp_web_human_confirmed",
@@ -277,7 +301,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/bridge/sessions",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
       const validated = createBridgeSessionSchema.parse(req.body);
@@ -306,7 +330,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/bridge/sessions/:sessionId/heartbeat",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
       const { sessionId } = sessionIdSchema.parse(req.params);
@@ -332,7 +356,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/bridge/jobs",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
       const validated = createBridgeJobSchema.parse(req.body);
@@ -390,7 +414,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/bridge/jobs",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
       const companyId = await resolveCompanyId(req, req.query.companyId as string | undefined);
@@ -413,7 +437,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/bridge/jobs/:jobId/status",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
       const { jobId } = jobIdSchema.parse(req.params);
@@ -426,7 +450,7 @@ export function registerWhatsAppRoutes(app: Express) {
           : validated.status === "drafted"
             ? "drafted"
             : "logged");
-      const jobUpdate: any = {
+      const jobUpdate: Partial<typeof whatsappBridgeJobs.$inferInsert> = {
         status: validated.status,
         deliveryStatus: nextDeliveryStatus,
         errorMessage: validated.errorMessage || null,
@@ -472,13 +496,14 @@ export function registerWhatsAppRoutes(app: Express) {
   app.post(
     "/api/integrations/whatsapp/save-rules",
     authMiddleware,
+    strictBody(whatsappRulesBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
 
-      const { rules } = req.body;
+      const { rules } = parsedBody<{ rules: Array<Record<string, unknown>> }>(req);
       if (!Array.isArray(rules)) {
         return res.status(400).json({ message: "Rules must be an array" });
       }
@@ -513,7 +538,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/rules",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }

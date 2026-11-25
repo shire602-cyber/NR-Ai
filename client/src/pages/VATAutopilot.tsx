@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { T } from "@/components/layout/T";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { Fragment, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link, useLocation } from "wouter";
+import { TrialReadOnlyContext } from "@/lib/trial-access";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -34,22 +38,12 @@ import {
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
-import { PageHeader } from "@/components/ui/page-header";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
-  FileText,
-  RefreshCw,
-  Send,
-  Loader2,
-  XCircle,
-} from "lucide-react";
+import { Money } from "@/components/ui/money";
+import { AlertTriangle, CheckCircle2, Clock, FileText, Send, Loader2, XCircle } from "lucide-react";
 
 // ─── Types matching the server's VAT autopilot service ───────────────────────
 
-type VatPeriodStatus = "draft" | "ready" | "submitted" | "accepted";
+type VatPeriodStatus = "draft" | "ready" | "filed" | "paid";
 
 interface DeadlineStatus {
   daysUntilDue: number;
@@ -70,6 +64,15 @@ interface VatPeriodSummary {
   netVatPayable: number;
   calculatedAt: string | null;
   deadline: DeadlineStatus;
+  lifecycle?: ReturnLifecycle | null;
+}
+
+/** E3 (J3-r3): the period's return on the Returns tab (server: vat-autopilot ReturnLifecycle). */
+interface ReturnLifecycle {
+  returnId: string;
+  stage: "draft" | "ready" | "filed" | "paid";
+  filed: boolean;
+  paymentDate: string | null;
 }
 
 interface DueDateView {
@@ -81,6 +84,17 @@ interface DueDateView {
   status: VatPeriodStatus;
   daysUntilDue: number;
   level: "ok" | "warning" | "critical" | "overdue";
+  lifecycle?: ReturnLifecycle | null;
+}
+
+/** Status label: a filed return reads Filed / Paid (the Returns tab's words), else the stage. */
+function statusKeyFor(status: VatPeriodStatus, lifecycle?: ReturnLifecycle | null): string {
+  if (lifecycle?.filed) {
+    return lifecycle.stage === "paid"
+      ? "compliance.autopilotStagePaid"
+      : "compliance.autopilotStageFiled";
+  }
+  return STATUS_KEY[status];
 }
 
 interface CalculationResult {
@@ -124,51 +138,127 @@ const STATUS_VARIANT: Record<VatPeriodStatus, "default" | "secondary" | "destruc
   {
     draft: "outline",
     ready: "default",
-    submitted: "secondary",
-    accepted: "secondary",
+    filed: "secondary",
+    paid: "secondary",
   };
 
-const LEVEL_BADGE: Record<DeadlineStatus["level"], { label: string; className: string }> = {
-  ok: { label: "On track", className: "bg-success-subtle text-success-subtle-foreground" },
-  warning: { label: "Due soon", className: "bg-warning-subtle text-warning-subtle-foreground" },
-  critical: { label: "Critical", className: "bg-warning-subtle text-warning-subtle-foreground" },
-  overdue: { label: "Overdue", className: "bg-danger-subtle text-danger-subtle-foreground" },
+const LEVEL_BADGE: Record<DeadlineStatus["level"], { labelKey: string; className: string }> = {
+  ok: {
+    labelKey: "compliance.autopilotLevelOk",
+    className: "bg-success-subtle text-success-subtle-foreground",
+  },
+  warning: {
+    labelKey: "compliance.autopilotLevelWarning",
+    className: "bg-warning-subtle text-warning-subtle-foreground",
+  },
+  critical: {
+    labelKey: "compliance.autopilotLevelCritical",
+    className: "bg-warning-subtle text-warning-subtle-foreground",
+  },
+  overdue: {
+    labelKey: "compliance.autopilotLevelOverdue",
+    className: "bg-danger-subtle text-danger-subtle-foreground",
+  },
 };
 
-function formatDate(iso: string): string {
+const ADJUSTMENT_BOXES = [
+  "box1aAbuDhabiAmount",
+  "box1aAbuDhabiVat",
+  "box1bDubaiAmount",
+  "box1bDubaiVat",
+  "box1cSharjahAmount",
+  "box1cSharjahVat",
+  "box1dAjmanAmount",
+  "box1dAjmanVat",
+  "box1eUmmAlQuwainAmount",
+  "box1eUmmAlQuwainVat",
+  "box1fRasAlKhaimahAmount",
+  "box1fRasAlKhaimahVat",
+  "box1gFujairahAmount",
+  "box1gFujairahVat",
+  "box3ReverseChargeAmount",
+  "box3ReverseChargeVat",
+  "box4ZeroRatedAmount",
+  "box5ExemptAmount",
+  "box9ExpensesAmount",
+  "box9ExpensesVat",
+  "box10ReverseChargeAmount",
+  "box10ReverseChargeVat",
+] as const;
+
+const STATUS_KEY: Record<VatPeriodStatus, string> = {
+  draft: "compliance.autopilotStatusDraft",
+  ready: "compliance.autopilotStatusReady",
+  filed: "compliance.autopilotStageFiled",
+  paid: "compliance.autopilotStagePaid",
+};
+
+const FREQUENCY_KEY: Record<VatPeriodSummary["frequency"], string> = {
+  monthly: "compliance.autopilotFreqMonthly",
+  quarterly: "compliance.autopilotFreqQuarterly",
+};
+
+/** Fill `{name}` slots with React nodes (e.g. <Money>) so word order follows the catalog. */
+function fillNodes(template: string, nodes: Record<string, ReactNode>): ReactNode[] {
+  return template.split(/(\{\w+\})/).map((part, i) => {
+    const m = /^\{(\w+)\}$/.exec(part);
+    return m && m[1] in nodes ? <Fragment key={i}>{nodes[m[1]]}</Fragment> : part;
+  });
+}
+
+function formatDate(iso: string, locale: string): string {
   // Period boundaries are UTC instants (e.g. 30 Jun 23:59:59.999Z). Format the
   // UTC calendar date — local-time formatting in UAE (UTC+4) would roll the
   // period end over to "01 Jul".
-  return format(new Date(iso.slice(0, 10) + "T00:00:00"), "dd MMM yyyy");
+  return formatDisplayDate(iso.slice(0, 10), locale);
 }
 
 function periodKey(period: Pick<VatPeriodSummary, "periodStart" | "periodEnd">): string {
   return `${period.periodStart}::${period.periodEnd}`;
 }
 
-function periodLabel(period: Pick<VatPeriodSummary, "periodStart" | "periodEnd" | "frequency">) {
-  return `${formatDate(period.periodStart)} - ${formatDate(period.periodEnd)} (${period.frequency})`;
+function periodLabel(
+  period: Pick<VatPeriodSummary, "periodStart" | "periodEnd" | "frequency">,
+  locale: string,
+  t: Record<string, string>
+) {
+  return `${formatDate(period.periodStart, locale)} - ${formatDate(period.periodEnd, locale)} (${t[FREQUENCY_KEY[period.frequency]] ?? period.frequency})`;
 }
 
-function calculationPath(companyId: string, period: VatPeriodSummary): string {
+function calculationPath(companyId: string, period: VatPeriodSummary, readOnly: boolean): string {
   const params = new URLSearchParams({
     periodStart: period.periodStart,
     periodEnd: period.periodEnd,
     frequency: period.frequency,
   });
+  if (readOnly) params.set("persist", "false");
   return `/api/vat/autopilot/calculate/${companyId}?${params.toString()}`;
 }
 
 // ─── Page ───────────────────────────────────────────────────────────────────
 
+/**
+ * Spec 3.12 (WP-D): VAT autopilot is no longer a page. Its periods, calculation, adjustments and
+ * status steps are the "Periods" tab of /vat-filing; /vat-autopilot stays as a redirect.
+ */
 export default function VATAutopilot() {
+  const [, navigate] = useLocation();
+  useEffect(() => {
+    navigate("/vat-filing?tab=periods", { replace: true });
+  }, [navigate]);
+  return <Skeleton className="h-96 w-full" />;
+}
+
+export function VatPeriodsPanel() {
+  const readOnly = useContext(TrialReadOnlyContext);
+  const { t, locale } = useTranslation();
   const { companyId, isLoading: companyLoading } = useDefaultCompany();
   const { toast } = useToast();
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
   const [adjustmentBox, setAdjustmentBox] = useState("");
   const [adjustmentAmount, setAdjustmentAmount] = useState("0");
   const [adjustmentReason, setAdjustmentReason] = useState("");
-  const [selectedPeriodKey, setSelectedPeriodKey] = useState<string | null>(null);
+  const [pickedPeriodKey, setSelectedPeriodKey] = useState<string | null>(null);
 
   const periodsQuery = useQuery<VatPeriodSummary[]>({
     queryKey: ["/api/vat/autopilot/periods", companyId],
@@ -182,42 +272,42 @@ export default function VATAutopilot() {
     queryFn: () => apiRequest("GET", `/api/vat/autopilot/due-dates?companyId=${companyId}`),
   });
 
-  const periods = periodsQuery.data || [];
+  const periods = useMemo(() => periodsQuery.data || [], [periodsQuery.data]);
+  // A pick that is no longer among the loaded periods reads as "no selection".
+  const selectedPeriodKey =
+    pickedPeriodKey &&
+    periodsQuery.data &&
+    !periodsQuery.data.some((p) => periodKey(p) === pickedPeriodKey)
+      ? null
+      : pickedPeriodKey;
   const selectedPeriod = useMemo(
     () => periods.find((p) => periodKey(p) === selectedPeriodKey) || null,
     [periods, selectedPeriodKey]
   );
 
-  useEffect(() => {
-    if (!periodsQuery.data) return;
-    if (!selectedPeriodKey) return;
-    if (!periodsQuery.data.some((p) => periodKey(p) === selectedPeriodKey)) {
-      setSelectedPeriodKey(null);
-    }
-  }, [periodsQuery.data, selectedPeriodKey]);
-
   const calcMutation = useMutation<CalculationResult, Error, VatPeriodSummary>({
     mutationFn: (period) => {
-      if (!companyId) throw new Error("Choose a company before calculating VAT.");
-      return apiRequest("GET", calculationPath(companyId, period));
+      if (!companyId) throw new Error(t["compliance.autopilotChooseCompanyFirst"]);
+      return apiRequest("GET", calculationPath(companyId, period, readOnly));
     },
     onSuccess: (calc) => {
       setSelectedPeriodKey(
         periodKey({ periodStart: calc.period.start, periodEnd: calc.period.end })
       );
+      if (readOnly) return;
       queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/periods", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/due-dates", companyId] });
       toast({
-        title: "VAT return recalculated",
-        description: `All boxes updated for ${formatDate(calc.period.start)} - ${formatDate(
-          calc.period.end
-        )}.`,
+        title: t["compliance.autopilotRecalculated"],
+        description: formatMessage(t["compliance.autopilotRecalculatedBody"], {
+          period: `${formatDate(calc.period.start, locale)} - ${formatDate(calc.period.end, locale)}`,
+        }),
       });
     },
     onError: (err: any) => {
       toast({
-        title: "Calculation failed",
-        description: err?.message || "Could not auto-calculate VAT return",
+        title: t["compliance.autopilotCalcFailed"],
+        description: err?.message || t["compliance.autopilotCalcFailedBody"],
         variant: "destructive",
       });
     },
@@ -260,7 +350,10 @@ export default function VATAutopilot() {
         reason: adjustmentReason,
       }),
     onSuccess: () => {
-      toast({ title: "Adjustment saved", description: "It will appear in the audit trail." });
+      toast({
+        title: t["compliance.autopilotAdjustmentSaved"],
+        description: t["compliance.autopilotAdjustmentSavedBody"],
+      });
       setAdjustmentOpen(false);
       setAdjustmentReason("");
       setAdjustmentAmount("0");
@@ -269,7 +362,7 @@ export default function VATAutopilot() {
     },
     onError: (err: any) => {
       toast({
-        title: "Could not save adjustment",
+        title: t["compliance.autopilotAdjustmentFailed"],
         description: err?.message,
         variant: "destructive",
       });
@@ -277,15 +370,43 @@ export default function VATAutopilot() {
   });
 
   const statusMutation = useMutation({
-    mutationFn: ({ periodId, status }: { periodId: string; status: VatPeriodStatus }) =>
-      apiRequest("PATCH", `/api/vat/autopilot/periods/${periodId}/status`, { status, companyId }),
+    mutationFn: ({
+      periodId,
+      status,
+      overrideReason,
+    }: {
+      periodId: string;
+      status: VatPeriodStatus;
+      overrideReason?: string;
+    }) =>
+      apiRequest("PATCH", `/api/vat/autopilot/periods/${periodId}/status`, {
+        status,
+        companyId,
+        ...(overrideReason ? { overrideReason } : {}),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/periods", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/due-dates", companyId] });
-      toast({ title: "Status updated" });
+      toast({ title: t["compliance.autopilotStatusUpdated"] });
     },
-    onError: (err: any) => {
-      toast({ title: "Status update failed", description: err?.message, variant: "destructive" });
+    onError: (err: Error, vars) => {
+      // W4-E (R12-03): an unexplained VAT-to-GL difference needs an audited override reason.
+      if (
+        vars.status === "ready" &&
+        !vars.overrideReason &&
+        /VAT control accounts/.test(err?.message || "")
+      ) {
+        const reason = window.prompt(t["compliance.autopilotReconPrompt"]);
+        if (reason && reason.trim()) {
+          statusMutation.mutate({ ...vars, overrideReason: reason.trim() });
+          return;
+        }
+      }
+      toast({
+        title: t["compliance.autopilotStatusFailed"],
+        description: err?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -300,10 +421,9 @@ export default function VATAutopilot() {
   if (!companyId) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">VAT Autopilot</h1>
         <Card>
           <CardContent className="p-6 text-muted-foreground">
-            Set up a company before using VAT autopilot.
+            <T k="pageLabels.setUpACompanyBeforeUsing" />
           </CardContent>
         </Card>
       </div>
@@ -311,242 +431,16 @@ export default function VATAutopilot() {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <PageHeader
-        eyebrow="Compliance"
-        title="VAT Autopilot"
-        description="Auto-calculate the UAE FTA VAT 201 for any filing period — review, adjust, and hand off to filing."
-        backHref="/vat-filing"
-        backLabel="Back to VAT filing"
-        actions={
-          <Button
-            onClick={() => selectedPeriod && calcMutation.mutate(selectedPeriod)}
-            disabled={calcMutation.isPending || !selectedPeriod}
-            data-testid="button-calculate-now"
-          >
-            {calcMutation.isPending ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4 mr-2" />
-            )}
-            {selectedPeriod ? "Calculate selected period" : "Choose period first"}
-          </Button>
-        }
-      />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Filing period</CardTitle>
-          <CardDescription>
-            Choose the VAT return period first. The calculation will only use transactions inside
-            that selected period.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div className="space-y-2 md:min-w-[360px]">
-            <Label htmlFor="vat-filing-period">Period to file</Label>
-            <Select
-              value={selectedPeriodKey ?? ""}
-              onValueChange={setSelectedPeriodKey}
-              disabled={periodsQuery.isLoading || periods.length === 0 || calcMutation.isPending}
-            >
-              <SelectTrigger id="vat-filing-period" data-testid="select-vat-filing-period">
-                <SelectValue placeholder="Select a VAT filing period" />
-              </SelectTrigger>
-              <SelectContent>
-                {periods.map((period) => (
-                  <SelectItem key={periodKey(period)} value={periodKey(period)}>
-                    {periodLabel(period)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {selectedPeriod ? (
-            <div
-              className="flex flex-wrap items-center gap-3 text-sm"
-              data-testid="selected-vat-filing-period"
-            >
-              <span className="text-muted-foreground">
-                Due {formatDate(selectedPeriod.dueDate)}
-              </span>
-              <Badge className={LEVEL_BADGE[selectedPeriod.deadline.level].className}>
-                {LEVEL_BADGE[selectedPeriod.deadline.level].label}
-              </Badge>
-              <Badge variant={STATUS_VARIANT[selectedPeriod.status]} className="capitalize">
-                {selectedPeriod.status}
-              </Badge>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground" data-testid="selected-vat-period-empty">
-              No filing period selected.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Reconciliation alert */}
-      {visibleCalc?.reconciliation.hasDiscrepancy && (
-        <Card className="border-warning/30">
-          <CardContent className="p-4 flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-warning mt-0.5" />
-            <div className="text-sm">
-              <p className="font-medium">Ledger reconciliation mismatch</p>
-              <p className="text-muted-foreground">
-                Calculated output VAT differs from the ledger by{" "}
-                {formatCurrency(visibleCalc.reconciliation.outputVatDelta)}; input VAT differs by{" "}
-                {formatCurrency(visibleCalc.reconciliation.inputVatDelta)}. Review journal entries
-                before marking this period as ready.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Auto-calculated 201 form preview */}
-      {lastCalc && selectedPeriod && !visibleCalc && (
-        <Card>
-          <CardContent className="p-4 text-sm text-muted-foreground">
-            The last calculation was for a different period. Click{" "}
-            <span className="font-medium text-foreground">Calculate selected period</span> to update
-            VAT 201 for {periodLabel(selectedPeriod)}.
-          </CardContent>
-        </Card>
-      )}
-
-      {visibleCalc && (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              Calculated filing period: {formatDate(visibleCalc.period.start)} –{" "}
-              {formatDate(visibleCalc.period.end)}
-            </CardTitle>
-            <CardDescription>
-              Due {formatDate(visibleCalc.period.dueDate)} · {visibleCalc.invoicesProcessed}{" "}
-              invoices, {visibleCalc.receiptsProcessed} receipts
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2 rounded-md border p-4">
-                <h3 className="font-medium">Output VAT (sales)</h3>
-                <BoxRow
-                  label="Standard rated supplies"
-                  amount={visibleCalc.boxes.standardRatedSales}
-                  vat={visibleCalc.boxes.standardRatedVat}
-                />
-                <BoxRow
-                  label="Zero rated supplies"
-                  amount={visibleCalc.boxes.zeroRatedSales}
-                  vat={0}
-                />
-                <BoxRow label="Exempt supplies" amount={visibleCalc.boxes.exemptSales} vat={0} />
-                <BoxRow
-                  label="Reverse charge (output)"
-                  amount={visibleCalc.boxes.reverseChargeAmount}
-                  vat={visibleCalc.boxes.reverseChargeVat}
-                />
-                <div className="flex justify-between font-medium border-t pt-2">
-                  <span>Box 12 — Total output VAT</span>
-                  <span>{formatCurrency(visibleCalc.boxes.totalOutputVat)}</span>
-                </div>
-              </div>
-              <div className="space-y-2 rounded-md border p-4">
-                <h3 className="font-medium">Input VAT (purchases)</h3>
-                <BoxRow
-                  label="Standard expenses"
-                  amount={visibleCalc.boxes.totalExpenses}
-                  vat={visibleCalc.boxes.inputVatRecoverable}
-                />
-                <BoxRow
-                  label="Reverse charge (input)"
-                  amount={visibleCalc.boxes.reverseChargeAmount}
-                  vat={visibleCalc.boxes.reverseChargeVatRecoverable}
-                />
-                {visibleCalc.boxes.inputVatIrrecoverable > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Partial exemption reduced input VAT by{" "}
-                    {formatCurrency(visibleCalc.boxes.inputVatIrrecoverable)}.
-                  </p>
-                )}
-                <div className="flex justify-between font-medium border-t pt-2">
-                  <span>Box 13 — Total input VAT</span>
-                  <span>{formatCurrency(visibleCalc.boxes.totalInputVat)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-md bg-muted p-4 flex items-center justify-between">
-              <span className="font-medium">Box 14 — Net VAT payable</span>
-              <span className="text-lg font-semibold">
-                {formatCurrency(visibleCalc.boxes.netVatPayable)}
-              </span>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <Button
-                variant="outline"
-                onClick={() => setAdjustmentOpen(true)}
-                disabled={!currentPeriodId}
-              >
-                Add manual adjustment
-              </Button>
-              {currentPeriodId && currentPeriodStatus === "draft" && (
-                <Button
-                  variant="default"
-                  onClick={() =>
-                    statusMutation.mutate({ periodId: currentPeriodId, status: "ready" })
-                  }
-                  disabled={statusMutation.isPending}
-                  data-testid="button-mark-ready"
-                >
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Mark ready
-                </Button>
-              )}
-              {currentPeriodId && currentPeriodStatus === "ready" && (
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    statusMutation.mutate({ periodId: currentPeriodId, status: "submitted" })
-                  }
-                  disabled={statusMutation.isPending}
-                  data-testid="button-mark-submitted"
-                >
-                  <Send className="h-4 w-4 mr-2" />
-                  Mark submitted
-                </Button>
-              )}
-              {currentPeriodId && currentPeriodStatus === "submitted" && (
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    statusMutation.mutate({ periodId: currentPeriodId, status: "accepted" })
-                  }
-                  disabled={statusMutation.isPending}
-                  data-testid="button-mark-accepted"
-                >
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Mark accepted by FTA
-                </Button>
-              )}
-              {currentPeriodId && currentPeriodStatus === "accepted" && (
-                <Badge variant="secondary" className="text-xs">
-                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                  Accepted by FTA
-                </Badge>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
+    <div className="space-y-6">
       {/* Periods table */}
       <Card>
         <CardHeader>
-          <CardTitle>Periods</CardTitle>
-          <CardDescription>Last several VAT filing windows for this company.</CardDescription>
+          <CardTitle>
+            <T k="pageLabels.periods" />
+          </CardTitle>
+          <CardDescription>
+            <T k="pageLabels.lastSeveralVatFilingWindowsFor" />
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {periodsQuery.isLoading ? (
@@ -558,27 +452,39 @@ export default function VATAutopilot() {
             >
               <XCircle className="h-4 w-4 mt-0.5" />
               <div>
-                <p className="font-medium">Could not load VAT periods</p>
+                <p className="font-medium">
+                  <T k="pageLabels.couldNotLoadVatPeriods" />
+                </p>
                 <p className="text-xs">
-                  {(periodsQuery.error as Error)?.message || "Please try again or contact support."}
+                  {(periodsQuery.error as Error)?.message || t["compliance.autopilotTryAgain"]}
                 </p>
               </div>
             </div>
           ) : (periodsQuery.data?.length ?? 0) === 0 ? (
             <p className="text-sm text-muted-foreground" data-testid="periods-empty">
-              No VAT periods yet. Click “Calculate now” to generate the first one.
+              <T k="compliance.autopilotNoPeriods" />
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Filing</TableHead>
-                  <TableHead>Period</TableHead>
-                  <TableHead>Due</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Output VAT</TableHead>
-                  <TableHead className="text-right">Input VAT</TableHead>
-                  <TableHead className="text-right">Net</TableHead>
+                  <TableHead>
+                    <T k="hr.period" />
+                  </TableHead>
+                  <TableHead>{t["compliance.autopilotColDue"]}</TableHead>
+                  <TableHead>
+                    <T k="banking.common.status" />
+                  </TableHead>
+                  <TableHead data-numeric>
+                    <T k="pageLabels.outputVat" />
+                  </TableHead>
+                  <TableHead data-numeric>
+                    <T k="pageLabels.inputVat" />
+                  </TableHead>
+                  <TableHead data-numeric>{t["compliance.autopilotColNet"]}</TableHead>
+                  <TableHead>
+                    <span className="sr-only">{t["compliance.periodsAction"]}</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -592,42 +498,60 @@ export default function VATAutopilot() {
                       className={isSelected ? "bg-muted/50" : undefined}
                     >
                       <TableCell>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={isSelected ? "default" : "outline"}
-                          onClick={() => setSelectedPeriodKey(key)}
-                          disabled={calcMutation.isPending}
-                          data-testid={`button-select-vat-period-${p.periodStart.slice(0, 10)}`}
-                        >
-                          {isSelected ? "Selected" : "Select"}
-                        </Button>
-                      </TableCell>
-                      <TableCell>
                         <div className="font-medium">
-                          {formatDate(p.periodStart)} – {formatDate(p.periodEnd)}
+                          {formatDate(p.periodStart, locale)} – {formatDate(p.periodEnd, locale)}
                         </div>
-                        <div className="text-xs text-muted-foreground capitalize">
-                          {p.frequency}
+                        <div className="text-xs text-muted-foreground">
+                          {t[FREQUENCY_KEY[p.frequency]]}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          {formatDate(p.dueDate)}
-                          <Badge className={LEVEL_BADGE[p.deadline.level].className}>
-                            {LEVEL_BADGE[p.deadline.level].label}
-                          </Badge>
+                          {formatDate(p.dueDate, locale)}
+                          {p.lifecycle?.filed ? null : (
+                            <Badge className={LEVEL_BADGE[p.deadline.level].className}>
+                              {t[LEVEL_BADGE[p.deadline.level].labelKey]}
+                            </Badge>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={STATUS_VARIANT[p.status]} className="capitalize">
-                          {p.status}
+                        <Badge
+                          variant={STATUS_VARIANT[p.status]}
+                          data-testid={`status-vat-period-${p.periodStart.slice(0, 10)}`}
+                        >
+                          {t[statusKeyFor(p.status, p.lifecycle)]}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">{formatCurrency(p.outputVat)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(p.inputVat)}</TableCell>
-                      <TableCell className="text-right font-medium">
-                        {formatCurrency(p.netVatPayable)}
+                      <TableCell data-numeric>
+                        <Money amount={p.outputVat} />
+                      </TableCell>
+                      <TableCell data-numeric>
+                        <Money amount={p.inputVat} />
+                      </TableCell>
+                      <TableCell data-numeric className=" font-medium">
+                        <Money amount={p.netVatPayable} />
+                      </TableCell>
+                      <TableCell className="text-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={isSelected ? "default" : "outline"}
+                          onClick={() => {
+                            setSelectedPeriodKey(key);
+                            calcMutation.mutate(p);
+                          }}
+                          disabled={calcMutation.isPending}
+                          aria-pressed={isSelected}
+                          data-testid={`button-select-vat-period-${p.periodStart.slice(0, 10)}`}
+                        >
+                          {calcMutation.isPending && isSelected ? (
+                            <Loader2 className="h-4 w-4 me-2 animate-spin" />
+                          ) : null}
+                          {p.status === "draft"
+                            ? t["compliance.periodsPrepare"]
+                            : t["compliance.periodsReview"]}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );
@@ -638,11 +562,184 @@ export default function VATAutopilot() {
         </CardContent>
       </Card>
 
+      {/* Reconciliation alert */}
+      {visibleCalc?.reconciliation.hasDiscrepancy && (
+        <Card className="border-warning/30">
+          <CardContent className="p-4 flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-warning mt-0.5" />
+            <div className="text-sm">
+              <p className="font-medium">
+                <T k="pageLabels.ledgerReconciliationMismatch" />
+              </p>
+              <p className="text-muted-foreground">
+                {fillNodes(t["compliance.autopilotReconBody"], {
+                  output: <Money amount={visibleCalc.reconciliation.outputVatDelta} />,
+                  input: <Money amount={visibleCalc.reconciliation.inputVatDelta} />,
+                })}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Auto-calculated 201 form preview */}
+      {lastCalc && selectedPeriod && !visibleCalc && (
+        <Card>
+          <CardContent className="p-4 text-sm text-muted-foreground">
+            {fillNodes(t["compliance.autopilotStaleCalc"], {
+              action: (
+                <span className="font-medium text-foreground">
+                  <T k="pageLabels.calculateSelectedPeriod" />
+                </span>
+              ),
+              period: periodLabel(selectedPeriod, locale, t),
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {visibleCalc && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              {formatMessage(t["compliance.autopilotCalcPeriod"], {
+                start: formatDate(visibleCalc.period.start, locale),
+                end: formatDate(visibleCalc.period.end, locale),
+              })}
+            </CardTitle>
+            <CardDescription>
+              {formatMessage(t["compliance.autopilotCalcSummary"], {
+                date: formatDate(visibleCalc.period.dueDate, locale),
+                invoices: visibleCalc.invoicesProcessed,
+                receipts: visibleCalc.receiptsProcessed,
+              })}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2 rounded-md border p-4">
+                <h3 className="font-medium">
+                  <T k="compliance.autopilotOutputHeading" />
+                </h3>
+                <BoxRow
+                  label={t["compliance.autopilotStandardRated"]}
+                  amount={visibleCalc.boxes.standardRatedSales}
+                  vat={visibleCalc.boxes.standardRatedVat}
+                />
+                <BoxRow
+                  label={t["compliance.autopilotZeroRated"]}
+                  amount={visibleCalc.boxes.zeroRatedSales}
+                  vat={0}
+                />
+                <BoxRow
+                  label={t["compliance.autopilotExempt"]}
+                  amount={visibleCalc.boxes.exemptSales}
+                  vat={0}
+                />
+                <BoxRow
+                  label={t["compliance.autopilotReverseOutput"]}
+                  amount={visibleCalc.boxes.reverseChargeAmount}
+                  vat={visibleCalc.boxes.reverseChargeVat}
+                />
+                <div className="flex justify-between font-medium border-t pt-2">
+                  <span>
+                    <T k="compliance.autopilotBox12" />
+                  </span>
+                  <span>
+                    <Money amount={visibleCalc.boxes.totalOutputVat} />
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-2 rounded-md border p-4">
+                <h3 className="font-medium">
+                  <T k="compliance.autopilotInputHeading" />
+                </h3>
+                <BoxRow
+                  label={t["compliance.autopilotStandardExpenses"]}
+                  amount={visibleCalc.boxes.totalExpenses}
+                  vat={visibleCalc.boxes.inputVatRecoverable}
+                />
+                <BoxRow
+                  label={t["compliance.autopilotReverseInput"]}
+                  amount={visibleCalc.boxes.reverseChargeAmount}
+                  vat={visibleCalc.boxes.reverseChargeVatRecoverable}
+                />
+                {visibleCalc.boxes.inputVatIrrecoverable > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {fillNodes(t["compliance.autopilotPartialExemption"], {
+                      amount: <Money amount={visibleCalc.boxes.inputVatIrrecoverable} />,
+                    })}
+                  </p>
+                )}
+                <div className="flex justify-between font-medium border-t pt-2">
+                  <span>
+                    <T k="compliance.autopilotBox13" />
+                  </span>
+                  <span>
+                    <Money amount={visibleCalc.boxes.totalInputVat} />
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-md bg-muted p-4 flex items-center justify-between">
+              <span className="font-medium">
+                <T k="compliance.autopilotBox14" />
+              </span>
+              <span className="text-lg font-semibold">
+                <Money amount={visibleCalc.boxes.netVatPayable} />
+              </span>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setAdjustmentOpen(true)}
+                disabled={readOnly || !currentPeriodId}
+              >
+                <T k="pageLabels.addManualAdjustment" />
+              </Button>
+              {currentPeriodId && currentPeriodStatus === "draft" && (
+                <Button
+                  variant="default"
+                  onClick={() =>
+                    statusMutation.mutate({ periodId: currentPeriodId, status: "ready" })
+                  }
+                  disabled={readOnly || statusMutation.isPending}
+                  data-testid="button-mark-ready"
+                >
+                  <CheckCircle2 className="h-4 w-4 me-2" />
+                  <T k="pageLabels.markReady" />
+                </Button>
+              )}
+              {/* E1 (J3-r2): the Periods tab is read-only for filing. Submitting and filing happen on
+                  the Returns tab (one state machine), so this links there instead of marking a
+                  period submitted in one click. */}
+              {currentPeriodId &&
+                (currentPeriodStatus === "ready" || currentPeriodStatus === "filed") && (
+                  <Button asChild variant="secondary" data-testid="link-open-vat-return">
+                    <Link href="/vat-filing?tab=returns">
+                      <Send className="h-4 w-4 me-2" />
+                      {t["compliance.periodsOpenReturn"]}
+                    </Link>
+                  </Button>
+                )}
+              {currentPeriodId && currentPeriodStatus === "paid" && (
+                <Badge variant="secondary" className="text-xs">
+                  <CheckCircle2 className="h-3 w-3 me-1" />
+                  <T k="compliance.autopilotStagePaid" />
+                </Badge>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Active-company deadlines */}
       <Card>
         <CardHeader>
-          <CardTitle>This company’s VAT deadlines</CardTitle>
-          <CardDescription>VAT 201 due dates for the active company file.</CardDescription>
+          <CardTitle>{t["compliance.autopilotDeadlinesTitle"]}</CardTitle>
+          <CardDescription>{t["compliance.autopilotDeadlinesHint"]}</CardDescription>
         </CardHeader>
         <CardContent>
           {dueDatesQuery.isLoading ? (
@@ -654,44 +751,55 @@ export default function VATAutopilot() {
             >
               <XCircle className="h-4 w-4 mt-0.5" />
               <div>
-                <p className="font-medium">Could not load upcoming deadlines</p>
+                <p className="font-medium">
+                  <T k="pageLabels.couldNotLoadUpcomingDeadlines" />
+                </p>
                 <p className="text-xs">
-                  {(dueDatesQuery.error as Error)?.message ||
-                    "Please try again or contact support."}
+                  {(dueDatesQuery.error as Error)?.message || t["compliance.autopilotTryAgain"]}
                 </p>
               </div>
             </div>
           ) : upcoming.length === 0 ? (
             <p className="text-sm text-muted-foreground" data-testid="due-dates-empty">
-              No upcoming VAT deadlines.
+              <T k="pageLabels.noUpcomingVatDeadlines" />
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Period end</TableHead>
-                  <TableHead>Due</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>
+                    <T k="banking.statement.periodEnd" />
+                  </TableHead>
+                  <TableHead>{t["compliance.autopilotColDue"]}</TableHead>
+                  <TableHead>
+                    <T k="banking.common.status" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {upcoming.map((d) => (
                   <TableRow key={`${d.companyId}-${d.periodEnd}`} data-testid="row-due-date">
-                    <TableCell>{formatDate(d.periodEnd)}</TableCell>
+                    <TableCell>{formatDate(d.periodEnd, locale)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        {formatDate(d.dueDate)}
-                        <Badge className={LEVEL_BADGE[d.level].className}>
-                          <Clock className="h-3 w-3 mr-1" />
-                          {d.daysUntilDue >= 0
-                            ? `${d.daysUntilDue}d`
-                            : `${Math.abs(d.daysUntilDue)}d late`}
-                        </Badge>
+                        {formatDate(d.dueDate, locale)}
+                        {d.lifecycle?.filed ? null : (
+                          <Badge className={LEVEL_BADGE[d.level].className}>
+                            <Clock className="h-3 w-3 me-1" />
+                            {d.daysUntilDue >= 0
+                              ? formatMessage(t["compliance.autopilotDaysLeft"], {
+                                  n: d.daysUntilDue,
+                                })
+                              : formatMessage(t["compliance.autopilotDaysLate"], {
+                                  n: Math.abs(d.daysUntilDue),
+                                })}
+                          </Badge>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={STATUS_VARIANT[d.status]} className="capitalize">
-                        {d.status}
+                      <Badge variant={STATUS_VARIANT[d.status]}>
+                        {t[statusKeyFor(d.status, d.lifecycle)]}
                       </Badge>
                     </TableCell>
                   </TableRow>
@@ -706,87 +814,35 @@ export default function VATAutopilot() {
       <Dialog open={adjustmentOpen} onOpenChange={setAdjustmentOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Manual adjustment</DialogTitle>
+            <DialogTitle>
+              <T k="pageLabels.manualAdjustment" />
+            </DialogTitle>
             <DialogDescription>
-              Adjustments are appended to the audit trail and applied on top of auto-calculated
-              boxes.
+              <T k="compliance.autopilotAdjustHint" />
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label>Box</Label>
+              <Label>
+                <T k="compliance.autopilotBoxLabel" />
+              </Label>
               <Select value={adjustmentBox} onValueChange={setAdjustmentBox}>
                 <SelectTrigger data-testid="select-adjustment-box">
-                  <SelectValue placeholder="Select a box" />
+                  <SelectValue placeholder={t["compliance.autopilotSelectBox"]} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="box1aAbuDhabiAmount">
-                    Box 1a — Abu Dhabi standard supplies (amount)
-                  </SelectItem>
-                  <SelectItem value="box1aAbuDhabiVat">
-                    Box 1a — Abu Dhabi standard supplies (VAT)
-                  </SelectItem>
-                  <SelectItem value="box1bDubaiAmount">
-                    Box 1b — Dubai standard supplies (amount)
-                  </SelectItem>
-                  <SelectItem value="box1bDubaiVat">
-                    Box 1b — Dubai standard supplies (VAT)
-                  </SelectItem>
-                  <SelectItem value="box1cSharjahAmount">
-                    Box 1c — Sharjah standard supplies (amount)
-                  </SelectItem>
-                  <SelectItem value="box1cSharjahVat">
-                    Box 1c — Sharjah standard supplies (VAT)
-                  </SelectItem>
-                  <SelectItem value="box1dAjmanAmount">
-                    Box 1d — Ajman standard supplies (amount)
-                  </SelectItem>
-                  <SelectItem value="box1dAjmanVat">
-                    Box 1d — Ajman standard supplies (VAT)
-                  </SelectItem>
-                  <SelectItem value="box1eUmmAlQuwainAmount">
-                    Box 1e — Umm Al Quwain standard supplies (amount)
-                  </SelectItem>
-                  <SelectItem value="box1eUmmAlQuwainVat">
-                    Box 1e — Umm Al Quwain standard supplies (VAT)
-                  </SelectItem>
-                  <SelectItem value="box1fRasAlKhaimahAmount">
-                    Box 1f — Ras Al Khaimah standard supplies (amount)
-                  </SelectItem>
-                  <SelectItem value="box1fRasAlKhaimahVat">
-                    Box 1f — Ras Al Khaimah standard supplies (VAT)
-                  </SelectItem>
-                  <SelectItem value="box1gFujairahAmount">
-                    Box 1g — Fujairah standard supplies (amount)
-                  </SelectItem>
-                  <SelectItem value="box1gFujairahVat">
-                    Box 1g — Fujairah standard supplies (VAT)
-                  </SelectItem>
-                  <SelectItem value="box3ReverseChargeAmount">
-                    Box 3 — Reverse-charge supplies (amount)
-                  </SelectItem>
-                  <SelectItem value="box3ReverseChargeVat">
-                    Box 3 — Reverse-charge supplies (VAT)
-                  </SelectItem>
-                  <SelectItem value="box4ZeroRatedAmount">Box 4 — Zero rated supplies</SelectItem>
-                  <SelectItem value="box5ExemptAmount">Box 5 — Exempt supplies</SelectItem>
-                  <SelectItem value="box9ExpensesAmount">
-                    Box 9 — Standard expenses (amount)
-                  </SelectItem>
-                  <SelectItem value="box9ExpensesVat">
-                    Box 9 — Standard expenses input VAT
-                  </SelectItem>
-                  <SelectItem value="box10ReverseChargeAmount">
-                    Box 10 — Reverse-charge expenses (amount)
-                  </SelectItem>
-                  <SelectItem value="box10ReverseChargeVat">
-                    Box 10 — Reverse-charge input VAT
-                  </SelectItem>
+                  {ADJUSTMENT_BOXES.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {t[`compliance.autopilotBoxOpt.${value}`]}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Adjustment (AED)</Label>
+              <Label>
+                <T k="compliance.autopilotAdjustmentLabel" />
+              </Label>
               <Input
                 type="number"
                 step="0.01"
@@ -796,23 +852,25 @@ export default function VATAutopilot() {
               />
               {adjustmentAmount.trim() !== "" && !adjustmentAmountValid && (
                 <p className="text-xs text-destructive mt-1">
-                  Amount must be a non-zero number (negatives allowed for corrections).
+                  <T k="compliance.autopilotAmountInvalid" />
                 </p>
               )}
             </div>
             <div>
-              <Label>Reason</Label>
+              <Label>
+                <T k="banking.line.excludeReason" />
+              </Label>
               <Textarea
                 value={adjustmentReason}
                 onChange={(e) => setAdjustmentReason(e.target.value)}
-                placeholder="e.g. VAT correction for invoice INV-2026-00042"
+                placeholder={t["compliance.autopilotReasonPlaceholder"]}
                 data-testid="input-adjustment-reason"
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAdjustmentOpen(false)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() => adjustmentMutation.mutate()}
@@ -820,13 +878,14 @@ export default function VATAutopilot() {
                 !adjustmentBox ||
                 !adjustmentReason.trim() ||
                 !adjustmentAmountValid ||
+                readOnly ||
                 adjustmentMutation.isPending
               }
               data-testid="button-save-adjustment"
             >
-              {adjustmentMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              <FileText className="h-4 w-4 mr-2" />
-              Save adjustment
+              {adjustmentMutation.isPending && <Loader2 className="h-4 w-4 me-2 animate-spin" />}
+              <FileText className="h-4 w-4 me-2" />
+              <T k="pageLabels.saveAdjustment" />
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -840,8 +899,13 @@ function BoxRow({ label, amount, vat }: { label: string; amount: number; vat: nu
     <div className="flex justify-between text-sm">
       <span className="text-muted-foreground">{label}</span>
       <span>
-        {formatCurrency(amount)}
-        {vat > 0 && <span className="text-muted-foreground"> · {formatCurrency(vat)} VAT</span>}
+        <Money amount={amount} />
+        {vat > 0 && (
+          <span className="text-muted-foreground">
+            {" "}
+            · <Money amount={vat} /> <T k="compliance.autopilotVatSuffix" />
+          </span>
+        )}
       </span>
     </div>
   );

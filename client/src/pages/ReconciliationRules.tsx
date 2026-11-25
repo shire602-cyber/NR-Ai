@@ -1,8 +1,13 @@
-import { PageHeader } from "@/components/ui/page-header";
+import { accountDisplayName } from "@/lib/account-name";
+import { withoutControlAccounts } from "@/lib/control-account-options";
+import { T } from "@/components/layout/T";
+import { EmptyState } from "@/components/ui/empty-state";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +19,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
 import {
   Dialog,
@@ -30,7 +36,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -41,7 +46,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
@@ -56,7 +61,10 @@ interface ReconciliationRule {
   matchField: string;
   matchType: string;
   matchValue: string;
-  targetAccountId: string | null;
+  accountId: string | null;
+  vatTreatment: string;
+  requireReview: boolean;
+  direction: string;
   category: string | null;
   memo: string | null;
   isActive: boolean | null;
@@ -66,16 +74,44 @@ interface ReconciliationRule {
 
 interface AutoMatchResult {
   matched: number;
+  posted: number;
+  pendingReview: number;
   totalUnreconciled: number;
   rulesEvaluated: number;
+  errors: Array<{ bankTransactionId: string; message: string }>;
+}
+
+interface RuleSuggestion {
+  matchValue: string;
+  accountId: string;
+  accountCode: string | null;
+  accountName: string | null;
+  occurrences: number;
+  direction: "inflow" | "outflow";
+}
+
+interface RuleAccountOption {
+  id: string;
+  code: string;
+  nameEn: string;
+  type: string;
+  subType: string | null;
+  isActive: boolean;
+  parentId?: string | null;
+  isVatAccount?: boolean | null;
+  vatType?: string | null;
 }
 
 const ruleFormSchema = z.object({
-  name: z.string().min(1, "Rule name is required"),
+  name: z.string().min(1, "forms.errors.ruleNameRequired"),
   priority: z.coerce.number().int().min(0).default(0),
   matchField: z.enum(["description", "reference", "amount"]),
   matchType: z.enum(["contains", "exact", "starts_with", "regex"]),
-  matchValue: z.string().min(1, "Match value is required"),
+  matchValue: z.string().min(1, "forms.errors.matchValueRequired"),
+  accountId: z.string().guid("forms.errors.ruleAccountRequired"),
+  vatTreatment: z.enum(["none", "standard", "zero_rated", "exempt"]),
+  requireReview: z.boolean().default(false),
+  direction: z.enum(["any", "inflow", "outflow"]).default("any"),
   category: z.string().optional(),
   memo: z.string().optional(),
   isActive: z.boolean().default(true),
@@ -83,21 +119,11 @@ const ruleFormSchema = z.object({
 
 type RuleFormData = z.infer<typeof ruleFormSchema>;
 
-const matchFieldLabels: Record<string, string> = {
-  description: "Description",
-  reference: "Reference",
-  amount: "Amount",
-};
-
-const matchTypeLabels: Record<string, string> = {
-  contains: "Contains",
-  exact: "Exact Match",
-  starts_with: "Starts With",
-  regex: "Regex",
-};
-
-export default function ReconciliationRules() {
-  const { t } = useTranslation();
+/**
+ * Bank reconciliation → Rules (spec 3.9; the former /reconciliation-rules page).
+ */
+export function ReconciliationRulesPanel() {
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier } = useSubscription();
@@ -109,6 +135,18 @@ export default function ReconciliationRules() {
     queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
     enabled: !!selectedCompanyId,
   });
+  const { data: ruleAccounts } = useQuery<RuleAccountOption[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "accounts"],
+    enabled: !!selectedCompanyId,
+  });
+  const { data: ruleSuggestions } = useQuery<RuleSuggestion[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules", "suggestions"],
+    enabled: !!selectedCompanyId,
+  });
+  // C1 (RL1): a rule never codes bank lines to a control account (the server refuses it).
+  const postableAccounts = withoutControlAccounts(ruleAccounts ?? []).filter(
+    (a) => a.isActive && !(a.type === "asset" && a.subType === "bank")
+  );
 
   const form = useForm<RuleFormData>({
     resolver: zodResolver(ruleFormSchema),
@@ -118,6 +156,10 @@ export default function ReconciliationRules() {
       matchField: "description",
       matchType: "contains",
       matchValue: "",
+      accountId: "",
+      vatTreatment: "none",
+      requireReview: false,
+      direction: "any",
       category: "",
       memo: "",
       isActive: true,
@@ -137,13 +179,17 @@ export default function ReconciliationRules() {
         queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
       });
       toast({
-        title: "Rule created",
-        description: "Reconciliation rule has been created successfully.",
+        title: translateNow("toasts.ruleCreated"),
+        description: translateNow("toasts.reconciliationRuleHasBeenCreatedSuccessfully"),
       });
       closeDialog();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -156,13 +202,17 @@ export default function ReconciliationRules() {
         queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
       });
       toast({
-        title: "Rule updated",
-        description: "Reconciliation rule has been updated successfully.",
+        title: translateNow("toasts.ruleUpdated"),
+        description: translateNow("toasts.reconciliationRuleHasBeenUpdatedSuccessfully"),
       });
       closeDialog();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -174,10 +224,17 @@ export default function ReconciliationRules() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
       });
-      toast({ title: "Rule deleted", description: "Reconciliation rule has been deleted." });
+      toast({
+        title: translateNow("toasts.ruleDeleted"),
+        description: translateNow("toasts.reconciliationRuleHasBeenDeleted"),
+      });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -191,7 +248,11 @@ export default function ReconciliationRules() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -207,15 +268,24 @@ export default function ReconciliationRules() {
         queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
       });
       queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "bank-transactions"],
+        queryKey: ["/api/companies", selectedCompanyId, "bank-statements"],
       });
       toast({
-        title: "Auto-match completed",
-        description: `Matched ${result.matched} of ${result.totalUnreconciled} unreconciled transactions using ${result.rulesEvaluated} rules.`,
+        title: t["banking.rules.ranTitle"],
+        description: formatMessage(t["banking.rules.ranResult"], {
+          posted: result.posted,
+          review: result.pendingReview,
+          total: result.totalUnreconciled,
+          errors: result.errors?.length ?? 0,
+        }),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Auto-match failed", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.autoMatchFailed"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -227,6 +297,29 @@ export default function ReconciliationRules() {
       matchField: "description",
       matchType: "contains",
       matchValue: "",
+      accountId: "",
+      vatTreatment: "none",
+      requireReview: false,
+      direction: "any",
+      category: "",
+      memo: "",
+      isActive: true,
+    });
+    setDialogOpen(true);
+  }
+
+  function openFromSuggestion(sg: RuleSuggestion) {
+    setEditingRule(null);
+    form.reset({
+      name: sg.matchValue.toUpperCase(),
+      priority: 0,
+      matchField: "description",
+      matchType: "contains",
+      matchValue: sg.matchValue,
+      accountId: sg.accountId,
+      vatTreatment: "none",
+      requireReview: false,
+      direction: sg.direction,
       category: "",
       memo: "",
       isActive: true,
@@ -242,6 +335,10 @@ export default function ReconciliationRules() {
       matchField: rule.matchField as "description" | "reference" | "amount",
       matchType: rule.matchType as "contains" | "exact" | "starts_with" | "regex",
       matchValue: rule.matchValue,
+      accountId: rule.accountId ?? "",
+      vatTreatment: (rule.vatTreatment ?? "none") as RuleFormData["vatTreatment"],
+      requireReview: rule.requireReview ?? false,
+      direction: (rule.direction ?? "any") as RuleFormData["direction"],
       category: rule.category ?? "",
       memo: rule.memo ?? "",
       isActive: rule.isActive ?? true,
@@ -273,7 +370,7 @@ export default function ReconciliationRules() {
         <Card>
           <CardContent className="p-6">
             <p className="text-muted-foreground">
-              Please select a company to manage reconciliation rules.
+              <T k="pageLabels.pleaseSelectACompanyToManage" />
             </p>
           </CardContent>
         </Card>
@@ -282,42 +379,60 @@ export default function ReconciliationRules() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <PageHeader
-        eyebrow="Accounting"
-        title="Reconciliation Rules"
-        description="Define rules to automatically match and categorize bank transactions."
-        actions={
-          <>
-            <Button
-              variant="outline"
-              onClick={() => autoMatchMutation.mutate()}
-              disabled={autoMatchMutation.isPending}
-            >
-              {autoMatchMutation.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Zap className="mr-2 h-4 w-4" />
-              )}
-              Run Auto-Match
-            </Button>
-            <Button onClick={openCreateDialog}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Rule
-            </Button>
-          </>
-        }
-      />
+    <div className="space-y-6">
+      {/* Rules are a tab of Bank reconciliation (spec 3.9): a toolbar, not a page header. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-2xl text-small text-muted-foreground">
+          {t["banking.rulesEvaluationOrder"]}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => autoMatchMutation.mutate()}
+            disabled={autoMatchMutation.isPending}
+          >
+            {autoMatchMutation.isPending ? (
+              <Loader2 className="animate-spin" aria-hidden />
+            ) : (
+              <Zap aria-hidden />
+            )}
+            {t["banking.rulesRunAutoMatch"]}
+          </Button>
+          <Button size="sm" onClick={openCreateDialog} data-testid="button-add-rule">
+            <Plus aria-hidden />
+            <T k="pageLabels.addRule" />
+          </Button>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Rules</CardTitle>
-          <CardDescription>
-            Rules are evaluated in priority order (lowest number first). The first matching rule
-            wins.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      {ruleSuggestions && ruleSuggestions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t["banking.rules.suggestionsTitle"]}</CardTitle>
+            <CardDescription>{t["banking.rules.suggestionsHint"]}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {ruleSuggestions.map((sg) => (
+              <div
+                key={`${sg.matchValue}-${sg.accountId}-${sg.direction}`}
+                className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm"
+              >
+                <span>
+                  <span className="font-mono">{sg.matchValue}</span> → {sg.accountCode}{" "}
+                  {sg.accountName} ({sg.occurrences})
+                </span>
+                <Button size="sm" variant="outline" onClick={() => openFromSuggestion(sg)}>
+                  {t["banking.rules.useSuggestion"]}
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="overflow-hidden">
+        <CardContent className="p-0">
           {isLoading ? (
             <div className="space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
@@ -325,68 +440,86 @@ export default function ReconciliationRules() {
               ))}
             </div>
           ) : !rules || rules.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No reconciliation rules yet. Create one to get started.
-            </div>
+            <EmptyState
+              size="md"
+              title={t["banking.rulesEmptyTitle"]}
+              description={t["banking.rulesEmptyBody"]}
+              action={{ label: t["pageLabels.addRule"], onClick: openCreateDialog }}
+            />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[60px]">Priority</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Match Field</TableHead>
-                  <TableHead>Match Type</TableHead>
-                  <TableHead>Match Value</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-center">Applied</TableHead>
-                  <TableHead className="text-center">Active</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="w-px text-end">
+                    <T k="pages.priority" />
+                  </TableHead>
+                  <TableHead>{t["banking.rulesColRule"]}</TableHead>
+                  <TableHead>
+                    <T k="pages.category" />
+                  </TableHead>
+                  <TableHead className="text-end">
+                    <T k="pageLabels.applied" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.active" />
+                  </TableHead>
+                  <TableHead className="w-px">
+                    <span className="sr-only">
+                      <T k="pages.actions" />
+                    </span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rules.map((rule) => (
                   <TableRow key={rule.id}>
-                    <TableCell className="font-mono text-sm">{rule.priority ?? 0}</TableCell>
-                    <TableCell className="font-medium">{rule.name}</TableCell>
+                    <TableCell className="text-end tabular-nums">{rule.priority ?? 0}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">
-                        {matchFieldLabels[rule.matchField] || rule.matchField}
-                      </Badge>
+                      <div dir="auto" className="font-medium text-foreground">
+                        {rule.name}
+                      </div>
+                      <div className="text-caption text-muted-foreground">
+                        {t[`banking.rulesField.${rule.matchField}`] ?? rule.matchField}{" "}
+                        {t[`banking.rulesType.${rule.matchType}`] ?? rule.matchType}{" "}
+                        <span dir="ltr" className="font-mono [unicode-bidi:isolate]">
+                          {rule.matchValue}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell dir="auto">{rule.category || "—"}</TableCell>
+                    <TableCell className="text-end tabular-nums">
+                      {rule.timesApplied ?? 0}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">
-                        {matchTypeLabels[rule.matchType] || rule.matchType}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="max-w-[200px] truncate font-mono text-sm">
-                      {rule.matchValue}
-                    </TableCell>
-                    <TableCell>{rule.category || "-"}</TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="outline">{rule.timesApplied ?? 0}</Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
                       <Switch
+                        touchTarget
                         checked={rule.isActive ?? true}
+                        aria-label={t["pages.active"]}
                         onCheckedChange={(checked) =>
                           toggleActiveMutation.mutate({ id: rule.id, isActive: checked })
                         }
                       />
                     </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(rule)}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteMutation.mutate(rule.id)}
-                          disabled={deleteMutation.isPending}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
+                    <TableCell>
+                      <RowActions
+                        maxInline={1}
+                        menu={
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onSelect={() => deleteMutation.mutate(rule.id)}
+                            disabled={deleteMutation.isPending}
+                          >
+                            <Trash2 aria-hidden />
+                            {t["banking.rulesDelete"]}
+                          </DropdownMenuItem>
+                        }
+                      >
+                        <RowActionButton
+                          icon={Edit}
+                          label={t["banking.rulesEditRule"]}
+                          onClick={() => openEditDialog(rule)}
+                        />
+                      </RowActions>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -398,25 +531,27 @@ export default function ReconciliationRules() {
 
       {/* Create / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent size="md">
           <DialogHeader>
-            <DialogTitle>{editingRule ? "Edit Rule" : "Create Rule"}</DialogTitle>
+            <DialogTitle>
+              {editingRule ? t["banking.rulesEditRule"] : t["banking.rulesCreateRule"]}
+            </DialogTitle>
             <DialogDescription>
-              {editingRule
-                ? "Update this reconciliation rule."
-                : "Define a new rule to automatically match bank transactions."}
+              {editingRule ? t["banking.rulesEditDesc"] : t["banking.rulesCreateDesc"]}
             </DialogDescription>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4 sm:grid-cols-2">
               <FormField
                 control={form.control}
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Rule Name</FormLabel>
+                    <FormLabel>
+                      <T k="pageLabels.ruleName" />
+                    </FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g. Office Rent Payment" {...field} />
+                      <Input placeholder={t["banking.rulesNamePlaceholder"]} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -428,7 +563,9 @@ export default function ReconciliationRules() {
                 name="priority"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Priority</FormLabel>
+                    <FormLabel>
+                      <T k="pages.priority" />
+                    </FormLabel>
                     <FormControl>
                       <Input type="number" min={0} placeholder="0" {...field} />
                     </FormControl>
@@ -437,23 +574,31 @@ export default function ReconciliationRules() {
                 )}
               />
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="contents">
                 <FormField
                   control={form.control}
                   name="matchField"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Match Field</FormLabel>
+                      <FormLabel>
+                        <T k="pages.matchField" />
+                      </FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select field" />
+                            <SelectValue placeholder={t["banking.rulesSelectField"]} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="description">Description</SelectItem>
-                          <SelectItem value="reference">Reference</SelectItem>
-                          <SelectItem value="amount">Amount</SelectItem>
+                          <SelectItem value="description">
+                            <T k="pages.description" />
+                          </SelectItem>
+                          <SelectItem value="reference">
+                            <T k="pages.reference" />
+                          </SelectItem>
+                          <SelectItem value="amount">
+                            <T k="pages.amount" />
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -466,18 +611,28 @@ export default function ReconciliationRules() {
                   name="matchType"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Match Type</FormLabel>
+                      <FormLabel>
+                        <T k="pages.matchType" />
+                      </FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select type" />
+                            <SelectValue placeholder={t["screens.inv2SelectType"]} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="contains">Contains</SelectItem>
-                          <SelectItem value="exact">Exact Match</SelectItem>
-                          <SelectItem value="starts_with">Starts With</SelectItem>
-                          <SelectItem value="regex">Regex</SelectItem>
+                          <SelectItem value="contains">
+                            <T k="pageLabels.contains" />
+                          </SelectItem>
+                          <SelectItem value="exact">
+                            <T k="pageLabels.exactMatch" />
+                          </SelectItem>
+                          <SelectItem value="starts_with">
+                            <T k="pageLabels.startsWith" />
+                          </SelectItem>
+                          <SelectItem value="regex">
+                            <T k="pageLabels.regex" />
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -490,8 +645,10 @@ export default function ReconciliationRules() {
                 control={form.control}
                 name="matchValue"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Match Value</FormLabel>
+                  <FormItem className="sm:col-span-2">
+                    <FormLabel>
+                      <T k="pages.matchValue" />
+                    </FormLabel>
                     <FormControl>
                       <Input placeholder="e.g. RENT or ^SALARY.*" {...field} />
                     </FormControl>
@@ -502,12 +659,108 @@ export default function ReconciliationRules() {
 
               <FormField
                 control={form.control}
+                name="accountId"
+                render={({ field }) => (
+                  <FormItem className="sm:col-span-2">
+                    <FormLabel>{t["banking.rules.account"]}</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-rule-account">
+                          <SelectValue placeholder={t["banking.rules.account"]} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {postableAccounts.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>
+                            {a.code} {accountDisplayName(a, locale)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>{t["forms.controlAccountsHidden"]}</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="contents">
+                <FormField
+                  control={form.control}
+                  name="vatTreatment"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t["banking.line.vatTreatment"]}</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {(["none", "standard", "zero_rated", "exempt"] as const).map((v) => (
+                            <SelectItem key={v} value={v}>
+                              {t[`banking.line.vat.${v}`]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="direction"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t["banking.rules.direction"]}</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {(["any", "inflow", "outflow"] as const).map((v) => (
+                            <SelectItem key={v} value={v}>
+                              {t[`banking.rules.direction.${v}`]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name="requireReview"
+                render={({ field }) => (
+                  <FormItem className="sm:col-span-2 flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <FormLabel className="text-base">
+                        {t["banking.rules.requireReview"]}
+                      </FormLabel>
+                      <p className="text-sm text-muted-foreground">
+                        {t["banking.rules.requireReviewHint"]}
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch touchTarget checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
                 name="category"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Category (optional)</FormLabel>
+                  <FormItem className="sm:col-span-2">
+                    <FormLabel>{t["banking.rules.category"]}</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g. Rent, Salary, Utilities" {...field} />
+                      <Input placeholder={t["banking.rules.categoryPlaceholder"]} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -518,10 +771,10 @@ export default function ReconciliationRules() {
                 control={form.control}
                 name="memo"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Memo (optional)</FormLabel>
+                  <FormItem className="sm:col-span-2">
+                    <FormLabel>{t["banking.rules.memo"]}</FormLabel>
                     <FormControl>
-                      <Input placeholder="Internal note for this rule" {...field} />
+                      <Input placeholder={t["banking.rulesNotePlaceholder"]} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -532,32 +785,34 @@ export default function ReconciliationRules() {
                 control={form.control}
                 name="isActive"
                 render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                  <FormItem className="sm:col-span-2 flex items-center justify-between rounded-lg border p-3">
                     <div>
-                      <FormLabel className="text-base">Active</FormLabel>
+                      <FormLabel className="text-base">
+                        <T k="pages.active" />
+                      </FormLabel>
                       <p className="text-sm text-muted-foreground">
-                        Enable this rule for auto-matching
+                        <T k="pageLabels.enableThisRuleForAutoMatching" />
                       </p>
                     </div>
                     <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      <Switch touchTarget checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
                   </FormItem>
                 )}
               />
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 sm:col-span-2">
                 <Button type="button" variant="outline" onClick={closeDialog}>
-                  Cancel
+                  <T k="pages.cancel" />
                 </Button>
                 <Button
                   type="submit"
                   disabled={createMutation.isPending || updateMutation.isPending}
                 >
                   {(createMutation.isPending || updateMutation.isPending) && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <Loader2 className="animate-spin" aria-hidden="true" />
                   )}
-                  {editingRule ? "Update Rule" : "Create Rule"}
+                  {editingRule ? t["banking.rulesUpdateRule"] : t["banking.rulesCreateRule"]}
                 </Button>
               </div>
             </form>

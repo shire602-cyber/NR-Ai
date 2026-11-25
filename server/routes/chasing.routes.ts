@@ -12,6 +12,8 @@
  * /firm middleware split mirrors invoices.routes.ts.
  */
 
+import { getInvoiceBalances } from "../services/invoice-balances";
+import type { InvoiceBalanceFields } from "../../shared/invoice-balance";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
@@ -49,18 +51,30 @@ async function findInvoiceForUser(userId: string, invoiceId: string, firmRole?: 
   return undefined;
 }
 
+/** Settled amount per invoice, from the settlement rule, in the shape the chasing maths takes. */
+function settledAsPayments(
+  invoices: Array<{ id: string; total: unknown }>,
+  balances: Map<string, InvoiceBalanceFields>
+): ChasePayment[] {
+  return invoices.map((inv) => {
+    const total = Number(inv.total) || 0;
+    const open = balances.get(inv.id)?.openBalance ?? total;
+    return { invoiceId: inv.id, amount: Math.max(0, total - open) };
+  });
+}
+
 async function loadAgingRows(companyId: string): Promise<ChaseAgingRow[]> {
   // Fetch invoices and all their payments in two queries, not 1+N. Each
   // invoice row only needs its own payments, but a single SELECT scoped to
   // companyId is far cheaper than fanning out per-invoice on a large book.
-  const [invoices, payments] = await Promise.all([
+  // PR-61 port: the amount settled comes from the one settlement rule
+  // (server/reporting/settlement.ts: payments + credit notes + applied credits), so a
+  // partly credited invoice is chased for what is really open, not its full total.
+  const [invoices, balances] = await Promise.all([
     storage.getInvoicesByCompanyId(companyId),
-    storage.getInvoicePaymentsByCompanyId(companyId),
+    getInvoiceBalances(companyId),
   ]);
-  const flatPayments: ChasePayment[] = payments.map((p) => ({
-    invoiceId: p.invoiceId,
-    amount: Number(p.amount) || 0,
-  }));
+  const flatPayments = settledAsPayments(invoices, balances);
   return invoices.map((inv) =>
     buildAgingRow(
       {
@@ -117,7 +131,7 @@ const bulkSendSchema = z.object({
   method: z.enum(["email", "manual"]).default("email"),
   paymentLink: z.string().url().optional().or(z.literal("")),
   senderName: z.string().min(1).max(200).optional(),
-  invoiceIds: z.array(z.string().uuid()).max(BULK_SEND_MAX).optional(),
+  invoiceIds: z.array(z.string().guid()).max(BULK_SEND_MAX).optional(),
 });
 
 const updateConfigSchema = z.object({
@@ -125,7 +139,7 @@ const updateConfigSchema = z.object({
   chaseFrequencyDays: z.number().int().min(1).max(365).optional(),
   maxLevel: z.number().int().min(1).max(4).optional(),
   preferredMethod: z.enum(["email"]).optional(),
-  doNotChaseContactIds: z.array(z.string().uuid()).optional(),
+  doNotChaseContactIds: z.array(z.string().guid()).optional(),
   defaultLanguage: z.enum(["en", "ar"]).optional(),
 });
 
@@ -146,7 +160,7 @@ export function registerChasingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -172,7 +186,7 @@ export function registerChasingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -209,14 +223,14 @@ export function registerChasingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { invoiceId } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
 
       const invoice = await findInvoiceForUser(userId, invoiceId, firmRole);
       if (!invoice) return res.status(404).json({ message: "Invoice not found" });
 
       const parse = sendChaseSchema.safeParse(req.body ?? {});
       if (!parse.success)
-        return res.status(400).json({ message: "Invalid payload", errors: parse.error.errors });
+        return res.status(400).json({ message: "Invalid payload", errors: parse.error.issues });
       const body = parse.data;
 
       const company = await storage.getCompany(invoice.companyId);
@@ -227,7 +241,10 @@ export function registerChasingRoutes(app: Express) {
         "en") as ChaseLanguage;
 
       // Build aging row from this invoice + payments
-      const payments = await storage.getInvoicePaymentsByInvoiceId(invoice.id);
+      const payments = settledAsPayments(
+        [invoice],
+        await getInvoiceBalances(invoice.companyId, [invoice.id])
+      );
       const row = buildAgingRow(
         {
           id: invoice.id,
@@ -335,13 +352,13 @@ export function registerChasingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied" });
       }
       const parse = bulkSendSchema.safeParse(req.body ?? {});
       if (!parse.success)
-        return res.status(400).json({ message: "Invalid payload", errors: parse.error.errors });
+        return res.status(400).json({ message: "Invalid payload", errors: parse.error.issues });
       const body = parse.data;
 
       const company = await storage.getCompany(companyId);
@@ -485,7 +502,7 @@ export function registerChasingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -504,7 +521,7 @@ export function registerChasingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -529,7 +546,7 @@ export function registerChasingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -544,13 +561,13 @@ export function registerChasingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied" });
       }
       const parse = upsertTemplateSchema.safeParse(req.body);
       if (!parse.success)
-        return res.status(400).json({ message: "Invalid payload", errors: parse.error.errors });
+        return res.status(400).json({ message: "Invalid payload", errors: parse.error.issues });
       const body = parse.data;
       const created = await storage.createChaseTemplate({
         companyId,
@@ -570,13 +587,13 @@ export function registerChasingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied" });
       }
       const parse = upsertTemplateSchema.partial().safeParse(req.body);
       if (!parse.success)
-        return res.status(400).json({ message: "Invalid payload", errors: parse.error.errors });
+        return res.status(400).json({ message: "Invalid payload", errors: parse.error.issues });
       // Storage filters by (id, companyId) — guarantees a caller scoped to
       // company A cannot mutate company B's (or a system-default) template.
       // Missing row could mean: doesn't exist, belongs to another tenant, or
@@ -595,7 +612,7 @@ export function registerChasingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -614,7 +631,7 @@ export function registerChasingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -639,13 +656,13 @@ export function registerChasingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied" });
       }
       const parse = updateConfigSchema.safeParse(req.body);
       if (!parse.success)
-        return res.status(400).json({ message: "Invalid payload", errors: parse.error.errors });
+        return res.status(400).json({ message: "Invalid payload", errors: parse.error.issues });
       const { doNotChaseContactIds, ...rest } = parse.data;
       const updated = await storage.upsertChaseConfig(companyId, {
         ...rest,
@@ -664,7 +681,7 @@ export function registerChasingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { invoiceId } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const invoice = await findInvoiceForUser(userId, invoiceId, firmRole);
       if (!invoice) return res.status(404).json({ message: "Invoice not found" });
       const value = Boolean(req.body?.doNotChase);
@@ -680,7 +697,7 @@ export function registerChasingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { invoiceId } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const invoice = await findInvoiceForUser(userId, invoiceId, firmRole);
       if (!invoice) return res.status(404).json({ message: "Invoice not found" });
       const chases = await storage.getPaymentChasesByInvoiceId(invoiceId);

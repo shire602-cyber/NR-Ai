@@ -1,0 +1,19 @@
+Vendored e-invoicing validation artefacts (W4-C)
+
+xsd/ubl-2.1/
+  OASIS Universal Business Language (UBL) 2.1 schemas, Copyright (c) OASIS Open 2013,
+  distributed under the OASIS IPR policy notice contained in each file. Taken from
+  github.com/phax/ph-ubl (ph-ubl21/src/main/resources/external/schemas/ubl21), with the
+  CCTS, XMLDSig and XAdES modules from github.com/phax/ph-xsds. The only change: xsd:import
+  elements that ph-ubl resolves through a catalog were given their original OASIS
+  relative schemaLocation values so the tree validates standalone.
+
+schematron/2026.5/
+  OpenPeppol PINT AE (UAE) billing schematron, release 2026.5 (aka 1.0.4), Copyright (C)
+  2020-2023 OpenPEPPOL AISBL, Apache License 2.0. Pre-processed XSLT as published in
+  github.com/phax/phive-rules (phive-rules-peppol-pint/src/main/resources/external/
+  schematron/pint-ae/2026.5/billing). The *.sef.json files are the same XSLT compiled
+  for saxon-js with Saxonica xslt3 2.7.0 (`node scripts/validate-ubl.mjs --compile`).
+
+Update procedure: replace the XSLT with the next OpenPeppol release, rerun --compile,
+then `npx vitest run tests/unit/einvoice-pint-ae.test.ts`.

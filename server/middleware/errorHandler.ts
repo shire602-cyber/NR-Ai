@@ -1,9 +1,17 @@
+import { sizeErrorBody } from "../http/upload-errors";
 import type { Request, Response, NextFunction } from "express";
 import { ZodError } from "zod";
-import { isProduction } from "../config/env";
 import { RetentionViolationError } from "../services/retention.service";
 import { AppError, RetentionError, ValidationError, AuthError } from "../errors";
 import { captureException } from "../services/monitoring";
+import { MoneyError } from "../../shared/money";
+import { flattenIssues, zodFieldErrors } from "../http/strict-body";
+import { portalInviteLogPath } from "../http/portal-invite-privacy";
+
+/** 5xx answers that are the documented "not configured" state, not faults: never reported. */
+export const EXPECTED_UNAVAILABLE_CODES: ReadonlySet<string> = new Set([
+  "PAYMENTS_REQUIRES_EXTERNAL",
+]);
 
 // Re-export AppError so existing imports of AppError from this module keep working.
 export { AppError };
@@ -14,16 +22,140 @@ function withRequestId<T extends object>(body: T, req: Request): T & { requestId
 
 /**
  * Walk an error's `cause` chain (max 5 hops) looking for a Postgres
- * SQLSTATE code. Drizzle wraps the underlying pg error in
- * DrizzleQueryError, so the code usually lives one level down.
+ * SQLSTATE code for input errors, transaction conflicts, or temporary unavailability.
+ * Drizzle wraps the underlying pg error in DrizzleQueryError, so the code
+ * usually lives one level down.
  */
-function hasPgErrorCode(err: unknown, code: string): boolean {
+function findMappedPgErrorCode(err: unknown): string | null {
   let current: unknown = err;
   for (let depth = 0; depth < 5 && current && typeof current === "object"; depth++) {
-    if ((current as { code?: unknown }).code === code) return true;
+    const code = (current as { code?: unknown }).code;
+    if (
+      typeof code === "string" &&
+      (Object.hasOwn(PG_ERRORS, code) || /^2[23][0-9A-Z]{3}$/.test(code))
+    ) {
+      return code;
+    }
     current = (current as { cause?: unknown }).cause;
   }
-  return false;
+  return null;
+}
+
+/**
+ * Postgres SQLSTATEs caused by client input. The response never carries SQL
+ * text, constraint names or column values — only a stable code.
+ */
+const PG_ERRORS: Record<string, { status: number; code: string; message: string }> = {
+  "40001": {
+    status: 409,
+    code: "TRANSACTION_CONFLICT",
+    message: "The operation conflicted with another update. Please retry.",
+  },
+  "40P01": {
+    status: 409,
+    code: "TRANSACTION_CONFLICT",
+    message: "The operation conflicted with another update. Please retry.",
+  },
+  "57P01": {
+    status: 503,
+    code: "DATABASE_UNAVAILABLE",
+    message: "The service is temporarily unavailable.",
+  },
+  "57P03": {
+    status: 503,
+    code: "DATABASE_UNAVAILABLE",
+    message: "The service is temporarily unavailable.",
+  },
+  "22P02": { status: 400, code: "INVALID_IDENTIFIER", message: "Invalid identifier format" },
+  "22007": { status: 400, code: "INVALID_DATE", message: "Invalid date or time value" },
+  "22008": { status: 400, code: "INVALID_DATE", message: "Date or time value out of range" },
+  "22003": { status: 400, code: "NUMERIC_OUT_OF_RANGE", message: "Numeric value out of range" },
+  "22001": { status: 400, code: "VALUE_TOO_LONG", message: "Value too long for field" },
+  "23502": { status: 400, code: "REQUIRED_FIELD_MISSING", message: "A required field is missing" },
+  "23514": { status: 400, code: "CONSTRAINT_VIOLATION", message: "A value failed a data rule" },
+  "23505": {
+    status: 409,
+    code: "DUPLICATE_VALUE",
+    message: "A record with this value already exists",
+  },
+  "23503": {
+    status: 409,
+    code: "REFERENCE_CONFLICT",
+    message: "The record references, or is referenced by, another record",
+  },
+};
+
+/** Message the CORS origin callback (middleware/security.ts) rejects with. */
+export const CORS_REJECTION_MESSAGE = "Not allowed by CORS";
+
+interface HttpLikeError {
+  type?: unknown;
+  status?: unknown;
+  statusCode?: unknown;
+  expose?: unknown;
+}
+
+export interface MappedTransportError {
+  status: number;
+  body: { message: string; code: string };
+}
+
+/**
+ * Map transport-level request errors (body-parser, CORS) to a 4xx response,
+ * or return null when the error is not one of them.
+ */
+export function mapRequestTransportError(err: unknown): MappedTransportError | null {
+  if (!err || typeof err !== "object") return null;
+  if (err instanceof Error && err.message === CORS_REJECTION_MESSAGE) {
+    return { status: 403, body: { message: "Origin not allowed", code: "ORIGIN_NOT_ALLOWED" } };
+  }
+  if (err instanceof URIError && (err as HttpLikeError).status === 400) {
+    return { status: 400, body: { message: "Malformed request", code: "BAD_REQUEST" } };
+  }
+  const e = err as HttpLikeError;
+  if (typeof e.type !== "string") return null;
+  if (e.type === "entity.parse.failed") {
+    return {
+      status: 400,
+      body: { message: "Request body is not valid JSON", code: "INVALID_JSON" },
+    };
+  }
+  if (e.type === "entity.too.large") {
+    return {
+      status: 413,
+      body: { message: "Request body is too large", code: "PAYLOAD_TOO_LARGE" },
+    };
+  }
+  if (e.type === "encoding.unsupported" || e.type === "charset.unsupported") {
+    return {
+      status: 415,
+      body: { message: "Unsupported request encoding", code: "UNSUPPORTED_ENCODING" },
+    };
+  }
+  // Other http-errors from body-parser (request.aborted, parameters.too.many, …).
+  const status =
+    typeof e.status === "number" ? e.status : typeof e.statusCode === "number" ? e.statusCode : 0;
+  if (e.expose === true && status >= 400 && status < 500) {
+    return { status, body: { message: "Malformed request", code: "BAD_REQUEST" } };
+  }
+  return null;
+}
+
+/**
+ * Mounted right after the body parsers (server/index.ts) so malformed JSON
+ * and CORS rejections (including preflight) answer 400/403 immediately
+ * instead of travelling on and surfacing as a 500.
+ */
+export function requestTransportErrorHandler(
+  err: unknown,
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  const mapped = mapRequestTransportError(err);
+  if (!mapped) return next(err);
+  const body = mapped.status === 413 ? sizeErrorBody(req, "PAYLOAD_TOO_LARGE") : mapped.body;
+  res.status(mapped.status).json(withRequestId(body, req));
 }
 
 /**
@@ -32,15 +164,16 @@ function hasPgErrorCode(err: unknown, code: string): boolean {
  *
  * Returns a consistent error shape:
  *   { message, code, requestId, details? }
- * In production, stack traces are never returned to the client. They are
- * always logged via pino with method/url/requestId for traceability.
+ * Unexpected failures are logged with method, route template and request ID.
+ * Client-input failures never answer 500.
  */
 export function globalErrorHandler(
   err: Error,
   req: Request,
   res: Response,
-  _next: NextFunction
+  next: NextFunction
 ): void {
+  if (res.headersSent) return next(err);
   // FTA 5-year retention: cannot delete records still inside the window.
   // Translate the legacy service-thrown error into the new RetentionError.
   if (err instanceof RetentionViolationError) {
@@ -55,13 +188,29 @@ export function globalErrorHandler(
   }
 
   // Zod errors thrown directly from handlers — render the same shape that
-  // the validate() middleware produces so the client sees one schema.
+  // the validate()/strictBody() middleware produces so the client sees one schema.
   if (err instanceof ZodError) {
+    const flat = flattenIssues(err);
     const ve = new ValidationError("Validation error", {
-      errors: err.flatten().fieldErrors,
-      formErrors: err.flatten().formErrors,
+      errors: flat.fieldErrors,
+      formErrors: flat.formErrors,
     });
-    res.status(ve.statusCode).json(withRequestId(ve.toJSON(), req));
+    res
+      .status(ve.statusCode)
+      .json(withRequestId({ ...ve.toJSON(), fields: zodFieldErrors(err) }, req));
+    return;
+  }
+
+  // Exact-money parse failures (shared/money.ts) are always bad client input.
+  if (err instanceof MoneyError) {
+    res.status(400).json(withRequestId({ message: err.message, code: err.code }, req));
+    return;
+  }
+
+  // Malformed JSON, oversize bodies, rejected CORS origins (incl. preflight).
+  const transport = mapRequestTransportError(err);
+  if (transport) {
+    requestTransportErrorHandler(err, req, res, next);
     return;
   }
 
@@ -72,69 +221,77 @@ export function globalErrorHandler(
     return;
   }
 
-  // Postgres "invalid input syntax" (22P02) — e.g. a malformed UUID in a
-  // path param reaching a uuid column. This is bad *input*, not a server
-  // fault: answer 400, not 500. Drizzle wraps the pg error, so walk the
-  // cause chain looking for the SQLSTATE code.
-  if (hasPgErrorCode(err, "22P02")) {
-    res.status(400).json(
+  // Postgres data/integrity errors caused by client input (bad uuid/date,
+  // numeric overflow, duplicates, FK) — 400/409 with a stable code, never the
+  // SQL text. Drizzle wraps the pg error, so walk the cause chain.
+  const pgCode = err instanceof AppError ? null : findMappedPgErrorCode(err);
+  const pgMapped = pgCode ? PG_ERRORS[pgCode] : undefined;
+  if (pgMapped) {
+    if (pgMapped.status === 503) res.setHeader("Retry-After", "1");
+    res
+      .status(pgMapped.status)
+      .json(withRequestId({ message: pgMapped.message, code: pgMapped.code }, req));
+    return;
+  }
+
+  const invitePath = portalInviteLogPath(req.originalUrl || req.url);
+  if (invitePath && (!(err instanceof AppError) || !err.isOperational || err.statusCode >= 500)) {
+    captureException(new Error("Customer portal invitation request failed"), {
+      requestId: req.id,
+      method: req.method,
+      route: invitePath,
+    });
+    const status = err instanceof AppError ? err.statusCode : 500;
+    const deliveryFailed = err instanceof AppError && err.code === "PORTAL_INVITE_DELIVERY_FAILED";
+    res.status(status).json(
       withRequestId(
-        { message: "Invalid identifier format", code: "INVALID_IDENTIFIER" },
+        deliveryFailed
+          ? {
+              message: "Could not deliver the invitation email",
+              code: "PORTAL_INVITE_DELIVERY_FAILED",
+            }
+          : { message: "Could not process the invitation", code: "INTERNAL_ERROR" },
         req
       )
     );
     return;
   }
 
-  // Postgres unique violation (23505) — e.g. creating a cost centre with a
-  // code that already exists. A conflict with existing data, not a server
-  // fault: answer 409, not 500.
-  if (hasPgErrorCode(err, "23505")) {
-    res.status(409).json(
-      withRequestId(
-        { message: "A record with this value already exists", code: "DUPLICATE_VALUE" },
-        req
-      )
-    );
-    return;
-  }
-
-  // Any AppError (or subclass).
+  // Any AppError (or subclass, including DomainError).
   if (err instanceof AppError) {
-    if (!err.isOperational || err.statusCode >= 500) {
+    // S5-SEC-6: a refusal the product expects (no payment gateway configured) is not an incident.
+    const expected = err.isOperational && EXPECTED_UNAVAILABLE_CODES.has(err.code);
+    if (expected) res.locals.expectedRefusal = true;
+    if (!expected && (!err.isOperational || err.statusCode >= 500)) {
       captureException(err, {
         requestId: req.id,
         method: req.method,
-        url: req.url,
-        userId: (req as any).user?.id,
+        route: typeof req.route?.path === "string" ? req.route.path : undefined,
         code: err.code,
         operational: err.isOperational,
       });
     }
-    res.status(err.statusCode).json(withRequestId(err.toJSON(), req));
+    const body = err.toJSON();
+    if (err.statusCode === 413 && err.code === "FILE_TOO_LARGE") {
+      Object.assign(body, sizeErrorBody(req, err.code));
+    }
+    res.status(err.statusCode).json(withRequestId(body, req));
     return;
   }
 
-  // Anything else — unhandled. Always capture full detail; never leak stack
-  // to the client in production.
+  // Correlate unexpected failures with the request and registered route.
   captureException(err, {
     requestId: req.id,
     method: req.method,
-    url: req.url,
-    userId: (req as any).user?.id,
+    route: typeof req.route?.path === "string" ? req.route.path : undefined,
     unhandled: true,
   });
 
-  // Platform admins get the underlying message even in production — they own
-  // the deployment and need it to diagnose schema/data drift without log
-  // access. Regular users still get the opaque message + requestId.
-  const isAdmin = Boolean((req as any).user?.isAdmin);
   res.status(500).json(
     withRequestId(
       {
-        message: isProduction() && !isAdmin ? "Internal Server Error" : err.message,
+        message: "Internal Server Error",
         code: "INTERNAL_ERROR",
-        ...(isAdmin && isProduction() ? { adminDetail: { name: err.name } } : {}),
       },
       req
     )
@@ -145,10 +302,11 @@ export function globalErrorHandler(
  * 404 handler for unmatched routes.
  */
 export function notFoundHandler(req: Request, res: Response): void {
+  const path = (req.originalUrl || req.url).split(/[?#]/, 1)[0];
   res.status(404).json(
     withRequestId(
       {
-        message: `Route ${req.method} ${req.path} not found`,
+        message: `Route ${req.method} ${portalInviteLogPath(path) ?? path} not found`,
         code: "ROUTE_NOT_FOUND",
       },
       req
@@ -161,7 +319,7 @@ export function notFoundHandler(req: Request, res: Response): void {
  * Usage: app.get('/route', asyncHandler(async (req, res) => { ... }));
  */
 export function asyncHandler(
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<any>
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>
 ) {
   return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);

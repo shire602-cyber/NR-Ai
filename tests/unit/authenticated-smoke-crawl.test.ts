@@ -1,3 +1,6 @@
+// Source inspection is intentional: the subject is a Playwright script (tests/e2e/*.mjs) that needs
+// a deployed target and a browser, so unit tests can only assert its guard rails (login-only, no
+// data creation, artifacts) from its text; the missing-credentials exit path is run for real below.
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
