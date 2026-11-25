@@ -62,7 +62,7 @@ export function pdfActualText(pdf: Buffer): string[] {
     let inText = false;
     // BT/ET delimit text objects. Positioning and next-line operators start a new sequence.
     const tokens =
-      /\/ActualText\s*<([0-9A-Fa-f\s]+)>|%[^\r\n]*|\((?:\\[\s\S]|[^\\()])*\)|(?<![^\s<>\[\]()])(BT|ET|Tm|Td|TD|T\*|'|")(?=$|[\s<>\[\]()])/g;
+      /\/ActualText\s*<([0-9A-Fa-f\s]+)>|%[^\r\n]*|\((?:\\[\s\S]|[^\\()])*\)|(?<![^\s<>[\]()])(BT|ET|Tm|Td|TD|T\*|'|")(?=$|[\s<>[\]()])/g;
     for (const [, actualText, operator] of body.matchAll(tokens)) {
       if (operator) {
         flush();
