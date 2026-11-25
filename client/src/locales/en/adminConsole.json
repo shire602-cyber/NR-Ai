@@ -1,4 +1,9 @@
 {
+  "activityLogs.loadFailedTitle": "Activity logs could not be loaded",
+  "activityLogs.loadFailedDescription": "Check your connection and try again. Nothing has been changed.",
+  "activityLogs.clearFilters": "Clear filters",
+  "activityLogs.chainCheckFailed": "The integrity check could not be completed. Try again.",
+  "activityLogs.chainChecking": "Checking integrity...",
   "activityLogs.noLogsMatchYourFilters": "No logs match your filters",
   "activityLogs.completeAuditTrailOfAll": "Complete audit trail of all system activities",
   "activityLogs.searchActivities": "Search activities...",

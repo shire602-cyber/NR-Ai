@@ -9,6 +9,8 @@ import { formatDateTime, formatDateTimePlain } from "@/lib/format-date";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
+import { ErrorState } from "@/components/ui/error-state";
+import { activitySearchText, matchesActionFilter } from "@/lib/activity-log-filters";
 import { useQuery } from "@tanstack/react-query";
 import {
   Search,
@@ -48,15 +50,24 @@ export default function ActivityLogs() {
     checked: number;
     firstBroken: { seq: number; reason: string } | null;
   } | null>(null);
+  const [chainState, setChainState] = useState<"idle" | "checking" | "failed">("idle");
   const verifyGlobalChain = async () => {
+    setChainState("checking");
     try {
       setChainStatus(await securityFetch("GET", "/api/admin/audit-log/verify"));
+      setChainState("idle");
     } catch {
       setChainStatus(null);
+      setChainState("failed");
     }
   };
 
-  const { data: logs = [], isLoading } = useQuery<ActivityLog[]>({
+  const {
+    data: logs = [],
+    isLoading,
+    isError: logsFailed,
+    refetch: refetchLogs,
+  } = useQuery<ActivityLog[]>({
     queryKey: ["/api/admin/activity-logs"],
   });
 
@@ -69,8 +80,15 @@ export default function ActivityLogs() {
   });
 
   const filteredLogs = logs.filter((log) => {
-    const matchesSearch = log.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesAction = actionFilter === "all" || log.action === actionFilter;
+    const needle = searchTerm.trim().toLowerCase();
+    const matchesSearch =
+      !needle ||
+      activitySearchText(t, log, locale, [
+        users.find((u) => u.id === log.userId)?.name,
+        users.find((u) => u.id === log.userId)?.email,
+        clients.find((c) => c.id === log.companyId)?.name,
+      ]).includes(needle);
+    const matchesAction = matchesActionFilter(log.action, actionFilter);
     const matchesEntity = entityFilter === "all" || log.entityType === entityFilter;
     return matchesSearch && matchesAction && matchesEntity;
   });
@@ -141,7 +159,7 @@ export default function ActivityLogs() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Admin"
+        eyebrow={t["pages.eyebrowAdmin"]}
         title={t["pageLabels.activityLogs"]}
         testId="text-logs-title"
         description={t["activityLogs.completeAuditTrailOfAll"]}
@@ -151,6 +169,7 @@ export default function ActivityLogs() {
               variant="outline"
               className="w-full sm:w-auto"
               onClick={verifyGlobalChain}
+              disabled={chainState === "checking"}
               data-testid="button-verify-global-chain"
             >
               <ShieldCheck className="w-4 h-4 me-2" />
@@ -169,6 +188,16 @@ export default function ActivityLogs() {
           </div>
         }
       />
+      {chainState === "checking" && (
+        <p className="text-sm text-muted-foreground" role="status">
+          {t["activityLogs.chainChecking"]}
+        </p>
+      )}
+      {chainState === "failed" && (
+        <p className="text-sm text-destructive" role="alert" data-testid="text-global-chain-error">
+          {t["activityLogs.chainCheckFailed"]}
+        </p>
+      )}
       {chainStatus && (
         <p
           className={`text-sm ${chainStatus.ok ? "" : "text-destructive"}`}
@@ -266,7 +295,15 @@ export default function ActivityLogs() {
         <CardContent className="p-0">
           {/* Fable B13: the activity-feed row (History, admin audit tab): one sentence with no
               ids, actor and client on a second line, a one-line formatted date. */}
-          {filteredLogs.length === 0 ? (
+          {logsFailed ? (
+            <ErrorState
+              compact
+              title={t["activityLogs.loadFailedTitle"]}
+              description={t["activityLogs.loadFailedDescription"]}
+              onRetry={() => void refetchLogs()}
+              testId="state-activity-logs-error"
+            />
+          ) : filteredLogs.length === 0 ? (
             <EmptyState
               size="sm"
               className="px-4 py-6 sm:px-5"
@@ -274,6 +311,18 @@ export default function ActivityLogs() {
                 searchTerm || actionFilter !== "all" || entityFilter !== "all"
                   ? t["activityLogs.noLogsMatchYourFilters"]
                   : t["activityLogs.noActivityLogsYet"]
+              }
+              action={
+                searchTerm || actionFilter !== "all" || entityFilter !== "all"
+                  ? {
+                      label: t["activityLogs.clearFilters"],
+                      onClick: () => {
+                        setSearchTerm("");
+                        setActionFilter("all");
+                        setEntityFilter("all");
+                      },
+                    }
+                  : undefined
               }
             />
           ) : (

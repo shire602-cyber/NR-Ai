@@ -1,4 +1,9 @@
 {
+  "activityLogs.loadFailedTitle": "تعذّر تحميل سجلات النشاط",
+  "activityLogs.loadFailedDescription": "تحقق من اتصالك وحاول مرة أخرى. لم يتم تغيير أي شيء.",
+  "activityLogs.clearFilters": "مسح عوامل التصفية",
+  "activityLogs.chainCheckFailed": "تعذّر إكمال فحص السلامة. حاول مرة أخرى.",
+  "activityLogs.chainChecking": "جارٍ فحص السلامة...",
   "activityLogs.noLogsMatchYourFilters": "لا توجد سجلات تطابق عوامل التصفية",
   "activityLogs.completeAuditTrailOfAll": "سجل تدقيق كامل لجميع أنشطة النظام",
   "activityLogs.searchActivities": "ابحث في الأنشطة...",
