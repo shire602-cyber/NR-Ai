@@ -1,4 +1,5 @@
 import { once } from "node:events";
+import net from "node:net";
 import type { AddressInfo } from "node:net";
 import express from "express";
 import { afterEach, expect, it, vi } from "vitest";
@@ -14,6 +15,9 @@ import {
   CHECK_LOCKOUT,
   FIXED_WINDOW,
   INCREMENT_WINDOW,
+  RedisUrlThrottleClient,
+  configuredThrottleRedis,
+  parseRedisUrl,
 } from "../../server/middleware/redis-throttle";
 import { FixedWindowThrottle } from "../../server/middleware/fixed-window-throttle";
 
@@ -190,6 +194,7 @@ it.each(["development", "test"])(
     vi.stubEnv("VERCEL", undefined);
     vi.stubEnv("UPSTASH_REDIS_REST_URL", undefined);
     vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", undefined);
+    vi.stubEnv("REDIS_URL", undefined);
     const tracker = buildLockoutTracker("login");
     const store = buildLimiter("test", profile).store;
     expect(tracker).toBeInstanceOf(LockoutTracker);
@@ -204,7 +209,9 @@ it.each([{ NODE_ENV: "production" }, { VERCEL: "1" }])("requires shared Redis wi
   vi.stubEnv("VERCEL", "VERCEL" in env ? env.VERCEL : undefined);
   vi.stubEnv("UPSTASH_REDIS_REST_URL", undefined);
   vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", undefined);
+  vi.stubEnv("REDIS_URL", undefined);
   expect(() => buildLockoutTracker("mfa")).toThrow(/UPSTASH_REDIS_REST_URL/);
+  expect(() => buildLockoutTracker("mfa")).toThrow(/REDIS_URL/);
   expect(() => buildLimiter("missing", profile)).toThrow(/UPSTASH_REDIS_REST_TOKEN/);
 });
 
@@ -219,4 +226,159 @@ it("rejects requests when configured Redis is unavailable", async () => {
     code: "THROTTLE_UNAVAILABLE",
     statusCode: 503,
   });
+});
+
+function encodeReply(value: unknown): Buffer {
+  if (value instanceof Error) return Buffer.from("-" + value.message + "\r\n");
+  if (typeof value === "string") return Buffer.from("+" + value + "\r\n");
+  if (typeof value === "number") return Buffer.from(":" + value + "\r\n");
+  if (Array.isArray(value)) {
+    return Buffer.concat([Buffer.from("*" + value.length + "\r\n"), ...value.map(encodeReply)]);
+  }
+  if (value === null) return Buffer.from("$-1\r\n");
+  const raw = Buffer.from(String(value), "utf8");
+  return Buffer.concat([Buffer.from("$" + raw.length + "\r\n"), raw, Buffer.from("\r\n")]);
+}
+
+function decodeCommand(buf: Buffer, offset = 0): { value: Array<string | number>; rest: number } | null {
+  if (offset >= buf.length || buf[offset] !== 42) return null;
+  const nl = buf.indexOf("\r\n", offset);
+  if (nl === -1) return null;
+  const count = Number(buf.toString("utf8", offset + 1, nl));
+  let cursor = nl + 2;
+  const items: Array<string | number> = [];
+  for (let i = 0; i < count; i += 1) {
+    if (cursor >= buf.length || buf[cursor] !== 36) return null;
+    const sizeNl = buf.indexOf("\r\n", cursor);
+    if (sizeNl === -1) return null;
+    const len = Number(buf.toString("utf8", cursor + 1, sizeNl));
+    const start = sizeNl + 2;
+    const end = start + len;
+    if (buf.length < end + 2) return null;
+    items.push(buf.toString("utf8", start, end));
+    cursor = end + 2;
+  }
+  return { value: items, rest: cursor };
+}
+
+async function startRedisUrlStub(password = "secret") {
+  const buckets = new Map<string, Map<string, number>>();
+  let now = Date.now();
+  const sockets = new Set<net.Socket>();
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    let buf = Buffer.alloc(0);
+    socket.on("data", (chunk) => {
+      buf = Buffer.concat([buf, chunk]);
+      while (true) {
+        const decoded = decodeCommand(buf, 0);
+        if (!decoded) break;
+        buf = buf.subarray(decoded.rest);
+        const [command, ...args] = decoded.value.map(String);
+        const reply = (value: unknown) => socket.write(encodeReply(value));
+        if (command === "AUTH") {
+          reply(args.at(-1) === password ? "OK" : new Error("ERR invalid password"));
+          continue;
+        }
+        if (command === "DEL") {
+          reply(Number(buckets.delete(String(args[0]))));
+          continue;
+        }
+        if (command === "ZREM") {
+          reply(Number(buckets.get(String(args[0]))?.delete(String(args[1])) ?? false));
+          continue;
+        }
+        if (command !== "EVAL") {
+          reply(new Error("ERR unknown command"));
+          continue;
+        }
+        const [script, , bucketKey, horizon, ...argv] = args;
+        const key = String(bucketKey);
+        const hits = buckets.get(key) ?? new Map<string, number>();
+        for (const [id, at] of hits) {
+          if (at <= now - Number(horizon)) hits.delete(id);
+        }
+        buckets.set(key, hits);
+        if (script === INCREMENT_WINDOW) {
+          const [max, id] = argv;
+          const count = hits.size + 1;
+          if (hits.size < Number(max)) hits.set(String(id), now);
+          reply([count, Math.min(...hits.values()) + Number(horizon)]);
+          continue;
+        }
+        const [id, ...rules] = argv;
+        const retryAfter = () => {
+          let retry = 0;
+          for (let i = 0; i < rules.length; i += 2) {
+            const max = Number(rules[i]);
+            const window = Number(rules[i + 1]);
+            const recent = [...hits.values()].filter((at) => at > now - window);
+            if (recent.length >= max) {
+              retry = Math.max(retry, recent[recent.length - max] + window - now);
+            }
+          }
+          return retry;
+        };
+        const before = retryAfter();
+        if (id && !before) hits.set(String(id), now);
+        const after = retryAfter();
+        reply([after, hits.size, id && !before && after ? 1 : 0]);
+      }
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address() as AddressInfo;
+  return {
+    url: "redis://default:" + encodeURIComponent(password) + "@127.0.0.1:" + port,
+    advance: (ms: number) => {
+      now += ms;
+    },
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        for (const socket of sockets) socket.destroy();
+        server.close((error) => (error ? reject(error) : resolve()));
+      }),
+  };
+}
+
+it("parses redis and rediss URLs", () => {
+  expect(parseRedisUrl("redis://default:p%40ss@example.test:6379/2")).toEqual({
+    host: "example.test",
+    port: 6379,
+    username: "default",
+    password: "p@ss",
+    db: 2,
+    useTls: false,
+  });
+  expect(parseRedisUrl("rediss://example.test")).toMatchObject({
+    port: 6380,
+    useTls: true,
+    password: null,
+  });
+  expect(() => parseRedisUrl("https://example.test")).toThrow(/REDIS_URL/);
+});
+
+it("uses REDIS_URL in production without Upstash", async () => {
+  const redis = await startRedisUrlStub();
+  try {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL", undefined);
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", undefined);
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", undefined);
+    vi.stubEnv("REDIS_URL", redis.url);
+    vi.stubEnv("RL_LOGIN_LOCK_MAX", "2");
+    vi.stubEnv("RL_LOGIN_LOCK_WINDOW_MS", "1000");
+    expect(configuredThrottleRedis()).toBeInstanceOf(RedisUrlThrottleClient);
+    const first = buildLockoutTracker("login");
+    const second = buildLockoutTracker("login");
+    expect(first).toBeInstanceOf(RedisLockoutTracker);
+    expect(await first.recordFailure(identity)).toMatchObject({ locked: false, failures: 1 });
+    expect(await second.recordFailure(identity)).toMatchObject({ lockedNow: true, failures: 2 });
+    redis.advance(1000);
+    expect(await first.status(identity)).toMatchObject({ locked: false, failures: 2 });
+  } finally {
+    await redis.close();
+  }
 });
