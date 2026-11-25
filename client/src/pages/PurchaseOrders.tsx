@@ -14,7 +14,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EditorShell } from "@/components/ui/editor-shell";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { useEditorRoute } from "@/hooks/useEditorRoute";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
@@ -41,6 +41,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/badge";
+import { STATUS_NAMESPACES } from "@/components/ui/status-meta";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -166,7 +167,7 @@ interface PurchaseOrder {
 }
 
 export default function PurchaseOrders() {
-  const { t, locale } = useTranslation();
+  const { t, locale } = useTranslation(STATUS_NAMESPACES);
   // E2 (J3-r2 / J4-r2): approve needs documents.approve and someone other than the preparer.
   const { gate, gateApproval, can } = useCompanyPermission();
   const pc = PO_COPY[locale === "ar" ? "ar" : "en"];
@@ -177,6 +178,7 @@ export default function PurchaseOrders() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const { data: purchaseOrders, isLoading } = useQuery<PurchaseOrder[]>({
     queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
@@ -196,11 +198,12 @@ export default function PurchaseOrders() {
     queryKey: [`/api/companies/${selectedCompanyId}/products`],
     enabled: !!selectedCompanyId && (editorOpen || !!editor),
   });
-  const visibleOrders = useMemo(
-    () => filterPurchaseOrders(purchaseOrders, searchQuery),
-    [purchaseOrders, searchQuery]
-  );
-  const searching = searchQuery.trim() !== "";
+  const visibleOrders = filterPurchaseOrders(purchaseOrders, searchQuery, t);
+  const hasSearchNoMatches =
+    !isLoading &&
+    searchQuery.trim() !== "" &&
+    (purchaseOrders?.length ?? 0) > 0 &&
+    visibleOrders.length === 0;
   const stockProducts = products.filter((p) => p.isActive !== false);
 
   const form = useForm<PurchaseOrderFormData>({
@@ -891,8 +894,8 @@ export default function PurchaseOrders() {
             aria-hidden
           />
           <Input
+            ref={searchInputRef}
             type="search"
-            dir="auto"
             placeholder={t["purchases.poSearch"]}
             aria-label={t["purchases.poSearch"]}
             value={searchQuery}
@@ -903,19 +906,26 @@ export default function PurchaseOrders() {
         </div>
       )}
 
+      <div role="status" className="sr-only">
+        {hasSearchNoMatches ? t["purchases.poNoMatch"] : ""}
+      </div>
+
       <DataTableCard
         status={isLoading ? "loading" : visibleOrders.length > 0 ? "ready" : "empty"}
         columnLabels={[t["pages.vendor"], t.date, t.total, t.status]}
         testId="purchase-orders-table"
         empty={
-          searching && (purchaseOrders?.length ?? 0) > 0
+          hasSearchNoMatches
             ? {
                 icon: Search,
                 title: t["purchases.poNoMatch"],
                 description: t["purchases.poNoMatchBody"],
                 action: {
                   label: t["screens.clearSearch"],
-                  onClick: () => setSearchQuery(""),
+                  onClick: () => {
+                    setSearchQuery("");
+                    searchInputRef.current?.focus();
+                  },
                   variant: "outline",
                 },
                 testId: "empty-purchase-orders-search",
