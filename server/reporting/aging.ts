@@ -8,7 +8,7 @@
  * A reconciliation line ties the net aging total (documents less unapplied
  * credits) to the GL control account (1040 A/R, 2010 A/P) at the same date.
  */
-import { pool } from "../db";
+import { getPoolStats, pool } from "../db";
 import { DomainError } from "../errors";
 import { baseCurrencyOf } from "../ledger/currency";
 import {
@@ -324,6 +324,27 @@ function build(
 const LOCAL = localDateSql;
 const AS_OF = { asOf: "$2::date" };
 
+const AGED_PAYABLES_SQL = `SELECT co.base_currency,
+            (SELECT row_to_json(control) FROM (${CONTROL_BALANCE_SQL}) control) AS control_balance,
+            (${unappliedPayableCreditsFilsSql("$1", AS_OF)})::text AS unapplied_fils,
+            COALESCE((
+              SELECT json_agg(doc) FROM (
+                SELECT b.id, b.vendor_id, b.bill_number AS number,
+                       COALESCE(NULLIF(TRIM(b.vendor_name), ''), 'Unknown Vendor') AS name,
+                       ${LOCAL("b.bill_date")}::text AS date,
+                       COALESCE(${LOCAL("b.due_date")}, ${LOCAL("b.bill_date")})::text AS due,
+                       COALESCE(b.currency, co.base_currency) AS currency,
+                       ($2::date - COALESCE(${LOCAL("b.due_date")}, ${LOCAL("b.bill_date")})) AS days,
+                       (${payableOpenBaseFilsSql("b", AS_OF)})::text AS open_fils
+                  FROM vendor_bills b
+                 WHERE b.company_id = co.id
+                   AND ${payableStatusSql("b")}
+                   AND ${LOCAL("b.bill_date")} <= $2::date
+                 ORDER BY b.bill_date, b.bill_number
+              ) doc
+            ), '[]'::json) AS payable_documents
+       FROM companies co WHERE co.id = $1`;
+
 async function unappliedFils(
   expr: string,
   companyId: string,
@@ -392,29 +413,12 @@ export async function agedPayablesWithVendors(
 ): Promise<{ report: AgingReport; vendorOf: Map<string, string> }> {
   const { companyId, asOf } = args;
   // Share a pool checkout and statement snapshot across the bills, credits and ledger totals.
-  const { rows } = await q.query(
-    `SELECT co.base_currency,
-            (SELECT row_to_json(control) FROM (${CONTROL_BALANCE_SQL}) control) AS control_balance,
-            (${unappliedPayableCreditsFilsSql("$1", AS_OF)})::text AS unapplied_fils,
-            COALESCE((
-              SELECT json_agg(doc) FROM (
-                SELECT b.id, b.vendor_id, b.bill_number AS number,
-                       COALESCE(NULLIF(TRIM(b.vendor_name), ''), 'Unknown Vendor') AS name,
-                       ${LOCAL("b.bill_date")}::text AS date,
-                       COALESCE(${LOCAL("b.due_date")}, ${LOCAL("b.bill_date")})::text AS due,
-                       COALESCE(b.currency, co.base_currency) AS currency,
-                       ($2::date - COALESCE(${LOCAL("b.due_date")}, ${LOCAL("b.bill_date")})) AS days,
-                       (${payableOpenBaseFilsSql("b", AS_OF)})::text AS open_fils
-                  FROM vendor_bills b
-                 WHERE b.company_id = co.id
-                   AND ${payableStatusSql("b")}
-                   AND ${LOCAL("b.bill_date")} <= $2::date
-                 ORDER BY b.bill_date, b.bill_number
-              ) doc
-            ), '[]'::json) AS payable_documents
-       FROM companies co WHERE co.id = $1`,
-    [companyId, asOf, ...CONTROL_ACCOUNT.payable]
-  );
+  const values = [companyId, asOf, ...CONTROL_ACCOUNT.payable];
+  // Let PostgreSQL reuse parsing and, when it selects a generic plan, planning on pooled sessions.
+  const { rows } =
+    q === pool && getPoolStats().driver === "pg"
+      ? await pool.query({ name: "aged_payables_with_vendors", text: AGED_PAYABLES_SQL, values })
+      : await q.query(AGED_PAYABLES_SQL, values);
   const result = rows[0] as PayableAgingRow | undefined;
   if (!result) throw new DomainError("COMPANY_NOT_FOUND", 404);
 
