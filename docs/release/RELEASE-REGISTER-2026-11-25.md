@@ -144,3 +144,13 @@ npx vitest run tests/unit/bank-statement-import.test.ts                         
 npx tsc --noEmit -p .                                                                                                   # exit 0
 npx vitest run                                                                                                          # 1045 passed, 1 skipped, 0 failed (93 files)
 ```
+
+Follow-up commits (O04, O07, S08):
+
+```
+npx vitest run tests/unit/bank-import-ux.test.ts tests/unit/bank-statement-import.test.ts     # 10 passed (O04)
+npx tsc --noEmit -p .                                                                          # exit 0 (background)
+npx vitest run tests/unit/wps-sif-fixture.test.ts                                             # 15 passed (O07)
+npx vitest run tests/unit/role-matrix.test.ts                                                 # 20 passed (S08)
+npx vitest run                                                                                 # 1092 passed, 1 skipped, 0 failed (96 files)
+```
